@@ -1,0 +1,107 @@
+@using BirkNext.DeliveryReporting
+@using BirkNext.Web.Services
+@* Shared focused feature detail (Delivery Overview = current state, Delivery Reports = comparison): objective, status, story summary, progress,
+   risks, quality evidence, recent changes and next actions. Tasks, phases, ids and raw evidence are under "Technical details" (closed). *@
+<div class="dfd" data-testid="dfd" data-mode="@(Comparison ? "comparison" : "current")">
+    <p class="dfd-objective" data-testid="dfd-objective">
+        @if (Card.Summary is { } summary) { @summary }
+        else { <span class="do-muted">No objective or user story description in the specification.</span> }
+    </p>
+    <dl class="dfd-facts">
+        <div><dt>Delivery status</dt><dd><span class="dd-badge dd-tone-@DeliveryDashboard.ToneClass(Card.StatusTone)" data-testid="dfd-status">@Card.StatusLabel</span></dd></div>
+        <div><dt>Task checklist</dt><dd data-testid="dfd-progress">@Card.Progress <span class="do-muted">· checkboxes only</span></dd></div>
+        <div><dt>Verification evidence</dt><dd data-testid="dfd-evidence">@Card.Evidence</dd></div>
+        @if (Card.RequirementModel.Length > 0) { <div><dt>Requirement model</dt><dd>@Card.RequirementModel</dd></div> }
+        @if (Comparison && Row is { } r && !Card.Removed)
+        {
+            <div><dt>Checklist this period</dt><dd data-testid="dfd-period">@DeliveryReportStories.Progress(r.BaselineTaskCompleted, r.BaselineTaskTotal) → @DeliveryReportStories.Progress(r.CurrentTaskCompleted, r.CurrentTaskTotal) · @r.TasksCompletedThisPeriod matched task@(r.TasksCompletedThisPeriod == 1 ? "" : "s") checked</dd></div>
+        }
+    </dl>
+
+    @if (Stories.Count > 0)
+    {
+        <h4 class="dfd-h">@(Stories.All(s => s.Kind == "Scenario") ? "Scenarios" : "User stories") <span class="do-muted">(@Stories.Count)</span></h4>
+        <ul class="dfd-stories" data-testid="dfd-stories">
+            @foreach (var s in Stories.Take(StoryPreview)) { @StoryLine(s) }
+        </ul>
+        @if (Stories.Count > StoryPreview)
+        {
+            <details class="dfd-more"><summary>@(Stories.Count - StoryPreview) more</summary>
+                <ul class="dfd-stories">@foreach (var s in Stories.Skip(StoryPreview)) { @StoryLine(s) }</ul>
+            </details>
+        }
+    }
+
+    @if (Row?.Attention is { Count: > 0 } attention)
+    {
+        <h4 class="dfd-h">Risks &amp; attention</h4>
+        <ul class="dfd-list" data-testid="dfd-attention">@foreach (var a in attention.Take(8)) { <li>@a</li> }</ul>
+        @if (attention.Count > 8) { <p class="do-muted">+@(attention.Count - 8) more in the work-item explorer</p> }
+    }
+
+    @if (Row?.Reasons is { Count: > 0 } reasons && (Comparison || Row.Changed))
+    {
+        <h4 class="dfd-h">@(Comparison ? "Changes this period" : "Recent changes (since the baseline)")</h4>
+        <ul class="dfd-list" data-testid="dfd-changes">@foreach (var reason in reasons.Take(6)) { <li>@reason</li> }</ul>
+    }
+
+    @if (DeliveryIntelligence.NextActions(Card, Row) is { Count: > 0 } actions)
+    {
+        <h4 class="dfd-h">Next actions</h4>
+        <ul class="dfd-list" data-testid="dfd-next">@foreach (var a in actions) { <li>@a</li> }</ul>
+    }
+
+    <details class="dfd-technical" data-testid="dfd-technical">
+        <summary>Technical details <span class="do-muted">— identifiers, phases, tasks and source evidence</span></summary>
+        <dl class="dfd-facts dfd-ids">
+            <div><dt>Feature id</dt><dd><code>@Card.FeatureKey</code></dd></div>
+            <div><dt>Module</dt><dd>@(Card.Module.Length == 0 ? "Project" : Card.Module)</dd></div>
+            @if (Row?.Evidence.SpecPath is { } spec) { <div><dt>Specification</dt><dd><code>@spec</code></dd></div> }
+            @if (Row?.Evidence.TasksPath is { } tasksPath) { <div><dt>Task source</dt><dd><code>@tasksPath</code></dd></div> }
+            @if (Row?.Evidence.CurrentStatusReason is { } why) { <div><dt>Status evidence</dt><dd>@why</dd></div> }
+        </dl>
+        @if (Row?.Hierarchy is { } h)
+        {
+            @if (h.Phases.Count > 0)
+            {
+                <h5 class="dfd-h5">Phases (@h.Phases.Count)</h5>
+                <ul class="dfd-list dfd-compact" data-testid="dfd-phases">@foreach (var p in h.Phases.OrderBy(p => p.Position)) { <li>@p.Title <span class="do-muted">· @p.TaskCompleted / @p.TaskTotal</span></li> }</ul>
+            }
+            @if (h.Tasks.Count > 0)
+            {
+                <h5 class="dfd-h5">Tasks (@h.Tasks.Count)</h5>
+                <ul class="dfd-list dfd-compact" data-testid="dfd-tasks">
+                    @foreach (var t in h.Tasks.Take(TaskPreview)) { <li><span aria-label="@(t.Completed ? "Checked" : "Open")">@(t.Completed ? "☑" : "☐")</span> @(t.TaskId is { } id ? $"{id} " : "")@t.Text</li> }
+                </ul>
+                @if (h.Tasks.Count > TaskPreview) { <p class="do-muted">+@(h.Tasks.Count - TaskPreview) more tasks — open the work-item explorer for all of them.</p> }
+            }
+        }
+        @if (OnOpenTechnical.HasDelegate && !Card.Removed)
+        {
+            <button type="button" class="btn-secondary btn-sm" data-testid="dfd-open-technical" @onclick="() => OnOpenTechnical.InvokeAsync(Card.FeatureKey)">Open in the work-item explorer</button>
+        }
+    </details>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public DeliveryFeatureCard Card { get; set; } = default!;
+    /// <summary>The report row of the feature (stories, attention, changes, evidence); null without a report.</summary>
+    [Parameter] public DeliveryStoryRow? Row { get; set; }
+    [Parameter] public bool Comparison { get; set; }
+    [Parameter] public EventCallback<string> OnOpenTechnical { get; set; }
+
+    private const int StoryPreview = 5, TaskPreview = 40;
+
+    private IReadOnlyList<DeliveryUserStoryRow> Stories =>
+        [.. Row?.Hierarchy?.Stories.Where(s => Comparison || !s.Removed && s.Change != DeliveryItemChange.Removed) ?? []];
+
+    private RenderFragment StoryLine(DeliveryUserStoryRow s) => __builder =>
+    {
+        <li data-testid="dfd-story">
+            <span>@s.Title</span>
+            <span class="do-muted"> · @s.Criteria.Count @(s.Criteria.Count == 1 ? "criterion" : "criteria")@(s.TaskTotal > 0 ? $" · {s.TaskCompleted} / {s.TaskTotal} tasks checked" : "")</span>
+            @if (Comparison && s.Change != DeliveryItemChange.Unchanged) { <span class="dd-badge dd-tone-change">@s.Change</span> }
+            @if (s.Removed) { <span class="dd-badge dd-tone-neutral">Removed in spec</span> }
+        </li>
+    };
+}

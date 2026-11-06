@@ -102,6 +102,7 @@
     {
         @if (_tab == "overview") { @Overview() }
         else if (_tab == "stories") { @Stories() }
+        else if (_tab == "changes") { @ChangeBoardTab() }
         else if (_tab == "snapshots") { @Snapshots() }
         else if (_tab == "scope") { <FunctionalQualityScopePanel ProjectId="_projectId.Value" InitialScope="@ScopeKeyQuery" /> }
         else { @History() }
@@ -150,9 +151,9 @@
 
     private RenderFragment Overview() => __builder =>
     {
-        @GeneratePanel()
         if (_report is null)
         {
+            @GeneratePanel()
             <section class="dlr-card dlr-empty" data-testid="dlr-no-report">
                 <h2 class="dlr-h2">No weekly report yet</h2>
                 <p>@(_snapshots.Count < 2 ? "Import a baseline and a current snapshot, then generate the weekly report." : "Choose a baseline and a current snapshot above and generate the weekly report.")</p>
@@ -206,38 +207,22 @@
             }
         </section>
 
-        @* Summary first: three cards answer "what changed", "what is there" and "what needs attention"; every figure stays one click away. *@
-        <section class="dlr-headline" aria-label="Report summary" data-testid="dlr-headline">
-            <div class="dlr-headline-card" data-testid="dlr-headline-change">
-                <h3 class="dlr-headline-h">Delivery change</h3>
-                <p class="dlr-headline-value">@Fig(report, "features-changed") <span>changed features</span></p>
-                <ul class="dlr-headline-list">
-                    <li>@Fig(report, "new-features") new</li>
-                    <li>@Fig(report, "specifications-changed") specification@(Fig(report, "specifications-changed") == "1" ? "" : "s") changed</li>
-                    <li>@Fig(report, "removed-features") removed</li>
-                    <li>@Fig(report, "tasks-completed") tasks checked this period</li>
-                </ul>
+        @* Scrum Master summary (NEXT53): the shared Delivery Intelligence figures in comparison mode — scope, change, declared and verified
+           completion and the checklist apart — then the change charts. Same calculations as Delivery Overview. *@
+        <h3 class="dd-h" id="dlr-comparison-h">Baseline → current</h3>
+        <DeliveryKpiGrid Kpis="DeliveryIntelligence.Comparison(report)" Label="Baseline compared with current" TestId="dlr-comparison" />
+        @if (DeliveryDashboard.ChangeNotComparable(report) is { } notComparable)
+        {
+            <p class="dlr-card dlr-muted" data-testid="dlr-not-comparable">@notComparable</p>
+        }
+        else
+        {
+            <div class="dd-grid">
+                <section class="dd-card" aria-label="Feature changes" data-testid="dlr-chart-features"><h3 class="dd-card-h">Feature changes</h3><DeliveryBarChart Bars="DeliveryDashboard.FeatureChanges(report)" TestId="dlr-change-bar" /></section>
+                <section class="dd-card" aria-label="Task changes" data-testid="dlr-chart-tasks"><h3 class="dd-card-h">Task checklist changes</h3><DeliveryBarChart Bars="DeliveryDashboard.TaskChanges(report)" TestId="dlr-change-bar" Signed="true" /></section>
             </div>
-            <div class="dlr-headline-card" data-testid="dlr-headline-current">
-                <h3 class="dlr-headline-h">Current delivery</h3>
-                <p class="dlr-headline-value">@Fig(report, "inventory-features") <span>features</span></p>
-                <ul class="dlr-headline-list">
-                    <li>@Fig(report, "inventory-stories") user stories</li>
-                    <li>@CriteriaNow(report) acceptance criteria</li>
-                    <li>@Fig(report, "inventory-unchecked") open tasks</li>
-                </ul>
-            </div>
-            <div class="dlr-headline-card" data-testid="dlr-headline-quality">
-                <h3 class="dlr-headline-h">Quality</h3>
-                <p class="dlr-headline-value" title="@AttentionDefinition"><span data-testid="dlr-attention-total">@DeliveryAttention(report).Count</span> <span>feature attention item@(DeliveryAttention(report).Count == 1 ? "" : "s")</span></p>
-                <ul class="dlr-headline-list">
-                    <li data-testid="dlr-attention-features">on @DeliveryAttention(report).Select(a => a.FeatureKey).Distinct().Count() feature@(DeliveryAttention(report).Select(a => a.FeatureKey).Distinct().Count() == 1 ? "" : "s")</li>
-                    <li data-testid="dlr-attention-scope">@report.ScopeChanges.Count scope change@(report.ScopeChanges.Count == 1 ? "" : "s") to confirm (new or removed features — not defects)</li>
-                    <li title="Task-level reference counts; they overlap the feature attention items above.">@Fig(report, "quality-unresolved-references") unresolved · @Fig(report, "quality-removed-story-references") removed-story task references</li>
-                </ul>
-                <p class="dlr-muted dlr-headline-apart" data-testid="dlr-attention-apart">Not counted above: @HygieneItems(report).Count project hygiene warning@(HygieneItems(report).Count == 1 ? "" : "s") · @(report.ComparisonWarnings.Count + report.CoverageNotes.Count) comparison limitation@(report.ComparisonWarnings.Count + report.CoverageNotes.Count == 1 ? "" : "s")</p>
-            </div>
-        </section>
+        }
+        <p class="dlr-muted dd-trend" data-testid="dlr-trend">@(_reports.Count > 1 ? $"{_reports.Count} saved reports — see Report history for earlier periods; each report is one baseline → current comparison, not a trend line." : "A baseline and a current snapshot are two points, not a trend.") <a href="@TabHref("changes")" data-testid="dlr-open-board">Open the change board</a></p>
 
         @* Period changes, current inventory and quality signals are different questions: grouped, never one undifferentiated row (v3). *@
         <details class="dlr-all-figures">
@@ -336,6 +321,10 @@
                 }
             </section>
         </div>
+        <details class="dlr-generate-more" data-testid="dlr-generate-more">
+            <summary>Generate another report</summary>
+            @GeneratePanel()
+        </details>
     };
 
     private RenderFragment GeneratePanel() => __builder =>
@@ -406,19 +395,61 @@
             <section class="dlr-card dlr-empty" data-testid="dlr-stories-empty"><p>Generate a weekly report on the Overview to compare stories.</p></section>
             return;
         }
+        @* Features first (shared cards, comparison mode); the work-item explorer and the drill-down are advanced views of the same report. *@
         <div class="dlr-stories-mode" role="radiogroup" aria-label="Stories layout" data-testid="dlr-stories-mode">
-            <label><input type="radio" name="dlr-stories-mode" checked="@(!_drillDown)" @onchange="() => _drillDown = false" data-testid="dlr-mode-workspace" /> Work items</label>
-            <label><input type="radio" name="dlr-stories-mode" checked="@_drillDown" @onchange="() => _drillDown = true" data-testid="dlr-mode-drilldown" /> Feature drill-down</label>
+            <label class="@(StoriesMode == "features" ? "is-active" : "")"><input type="radio" name="dlr-stories-mode" checked="@(StoriesMode == "features")" @onchange="@(() => SetStoriesMode("features"))" data-testid="dlr-mode-features" /> Features</label>
+            <label class="@(StoriesMode == "workitems" ? "is-active" : "")"><input type="radio" name="dlr-stories-mode" checked="@(StoriesMode == "workitems")" @onchange="@(() => SetStoriesMode("workitems"))" data-testid="dlr-mode-workspace" /> Work items <span class="dlr-muted">(advanced)</span></label>
+            <label class="@(StoriesMode == "drilldown" ? "is-active" : "")"><input type="radio" name="dlr-stories-mode" checked="@(StoriesMode == "drilldown")" @onchange="@(() => SetStoriesMode("drilldown"))" data-testid="dlr-mode-drilldown" /> Feature drill-down <span class="dlr-muted">(advanced)</span></label>
         </div>
-        @if (_drillDown)
+        @if (StoriesMode == "drilldown")
         {
             <BirkNext.Web.Components.DeliveryFeatureExplorer @key="_report.ReportId" Report="_report" ProjectName="@(_report.ProjectName)" />
         }
-        else
+        else if (StoriesMode == "workitems")
         {
             <BirkNext.Web.Components.DeliveryWorkspace @key="_report.ReportId" Report="_report" Options="DeliveryExplorerOptions.Comparison" ProjectId="_projectId"
                 SelectedId="@ItemQuery" OnSelect="SelectWorkItem" />
         }
+        else
+        {
+            var cards = StoryCards(_report);
+            <div class="dd-list-tools" data-testid="dlr-feature-tools">
+                <label>Change
+                    <select data-testid="dlr-feature-change" value="@ChangeFilter" @onchange="OnChangeFilter">
+                        <option value="all">All features</option>
+                        <option value="changed">Changed this period</option>
+                        <option value="new">New</option>
+                        <option value="removed">Removed</option>
+                        <option value="review">Needs review</option>
+                    </select></label>
+                @if (StoryModules(_report) is { Count: > 1 } modules)
+                {
+                    <label>Module
+                        <select data-testid="dlr-feature-module" value="@(ModuleFilter ?? "")" @onchange="OnModuleFilter">
+                            <option value="">All modules</option>
+                            @foreach (var m in modules) { <option value="@m">@m</option> }
+                        </select></label>
+                }
+                <label><span class="visually-hidden">Search features</span>
+                    <input type="search" placeholder="Search features" value="@_featureSearch" @oninput="OnFeatureSearch" data-testid="dlr-feature-search" /></label>
+                <span class="dlr-muted" role="status" data-testid="dlr-feature-count">@cards.Count of @_report.Stories.Count features</span>
+            </div>
+            <DeliveryFeatureList Cards="cards" Report="_report" Comparison="true" SelectedKey="@OpenFeatureQuery" OnSelect="SelectFeatureCard"
+                OnOpenTechnical="OpenInWorkItems" TestId="dlr-features" Empty="No feature matches this filter in the selected report." />
+        }
+    };
+
+    // ── Change board (NEXT53) ─────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment ChangeBoardTab() => __builder =>
+    {
+        if (_report is null)
+        {
+            <section class="dlr-card dlr-empty" data-testid="dlr-board-empty"><p>Generate a report on the Summary tab to see what changed.</p></section>
+            return;
+        }
+        <p class="dlr-muted" data-testid="dlr-board-intro">What changed between “@_report.Baseline.Label” and “@_report.Current.Label”, grouped by what it means for the plan. Select a feature for its details.</p>
+        <DeliveryChangeBoard Lanes="DeliveryIntelligence.ChangeBoard(_report, AllCards(_report))" OnOpen="OpenFromBoard" />
     };
 
     private RenderFragment Evidence(DeliveryStoryRow s) => __builder =>
@@ -741,7 +772,58 @@
     [SupplyParameterFromQuery(Name = "scope")] public string? ScopeKeyQuery { get; set; }
     /// <summary>Deep link to one work item of the Stories workspace (browser back/forward move between selections).</summary>
     [SupplyParameterFromQuery(Name = "item")] public string? ItemQuery { get; set; }
-    private bool _drillDown;
+    [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "f")] public string? OpenFeatureQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "chg")] public string? ChangeQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "mod")] public string? ModuleQuery { get; set; }
+    /// <summary>Stories layout: shared feature cards by default; the work-item explorer and drill-down are advanced (a deep-linked item opens the explorer).</summary>
+    private string StoriesMode => ModeQuery is "workitems" or "drilldown" ? ModeQuery : ItemQuery is not null && ModeQuery is null ? "workitems" : "features";
+    private string ChangeFilter => ChangeQuery is "changed" or "new" or "removed" or "review" ? ChangeQuery : "all";
+    private string? ModuleFilter => string.IsNullOrWhiteSpace(ModuleQuery) ? null : ModuleQuery;
+    private string _featureSearch = "";
+
+    private WeeklyDeliveryReport? _cardsFor;
+    private IReadOnlyList<DeliveryFeatureCard> _allCards = [];
+    /// <summary>The feature cards of a report, current and removed (one calculation per report; the components only render).</summary>
+    private IReadOnlyList<DeliveryFeatureCard> AllCards(WeeklyDeliveryReport report)
+    {
+        if (!ReferenceEquals(_cardsFor, report)) { _allCards = DeliveryIntelligence.Cards(DeliveryBacklog.FromReport(report), report, includeRemoved: true); _cardsFor = report; }
+        return _allCards;
+    }
+
+    private static IReadOnlyList<string> StoryModules(WeeklyDeliveryReport report) =>
+        [.. report.Stories.Select(s => s.Module.Length == 0 ? "Project" : s.Module).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)];
+
+    private IReadOnlyList<DeliveryFeatureCard> StoryCards(WeeklyDeliveryReport report)
+    {
+        var rows = report.Stories.GroupBy(s => s.FeatureKey, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        bool Keep(DeliveryFeatureCard c)
+        {
+            if (rows.GetValueOrDefault(c.FeatureKey) is not { } s) return false;
+            var change = ChangeFilter switch
+            {
+                "changed" => s.Changed && !s.NewFeature && !s.RemovedFeature,
+                "new" => s.NewFeature,
+                "removed" => s.RemovedFeature,
+                "review" => s.HasActiveAttention || s.RemovalUnconfirmed || s.CurrentStatus == DeliveryStatus.NeedsClarification,
+                _ => true,
+            };
+            var module = ModuleFilter is null || string.Equals(c.Module.Length == 0 ? "Project" : c.Module, ModuleFilter, StringComparison.OrdinalIgnoreCase);
+            var search = _featureSearch.Length == 0 || c.Title.Contains(_featureSearch, StringComparison.OrdinalIgnoreCase) || c.Module.Contains(_featureSearch, StringComparison.OrdinalIgnoreCase);
+            return change && module && search;
+        }
+        return [.. AllCards(report).Where(Keep)];
+    }
+
+    private void SetQuery(string key, string? value) => Nav.NavigateTo(Nav.GetUriWithQueryParameter(key, value), replace: true);
+    private void OnChangeFilter(ChangeEventArgs e) => SetQuery("chg", e.Value?.ToString() is "all" ? null : e.Value?.ToString());
+    private void OnModuleFilter(ChangeEventArgs e) => SetQuery("mod", e.Value?.ToString() is { Length: > 0 } m ? m : null);
+    private void OnFeatureSearch(ChangeEventArgs e) => _featureSearch = e.Value?.ToString() ?? string.Empty;
+    private void SetStoriesMode(string mode) => Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["mode"] = mode == "features" ? null : mode, ["f"] = null }), replace: true);
+    /// <summary>Opening a card is a history entry (Back closes it); filters stay in the URL.</summary>
+    private void SelectFeatureCard(string? key) => Nav.NavigateTo(Nav.GetUriWithQueryParameter("f", key));
+    private void OpenInWorkItems(string key) => Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["mode"] = "workitems", ["item"] = DeliveryWorkItems.FeatureId(key), ["f"] = null }));
+    private void OpenFromBoard(string key) => Nav.NavigateTo($"{TabHref("stories")}&f={Uri.EscapeDataString(key)}");
 
     /// <summary>A selection is a history entry (Back returns to the previous item); the explorer's own filters (wi-*) stay in the URL.</summary>
     private void SelectWorkItem(string? id) => Nav.NavigateTo(Nav.GetUriWithQueryParameter("item", id));

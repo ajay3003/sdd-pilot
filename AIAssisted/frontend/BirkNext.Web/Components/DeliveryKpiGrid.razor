@@ -1,0 +1,18 @@
+@using BirkNext.Web.Services
+@* Shared KPI row of both Delivery pages: value, label, what it measures (detail) and its definition (ⓘ). The tone is always backed by text. *@
+<ul class="dd-kpis" aria-label="@Label" data-testid="@TestId">
+    @foreach (var k in Kpis)
+    {
+        <li class="dd-kpi dd-tone-@DeliveryDashboard.ToneClass(k.Tone)" data-testid="dd-kpi" data-key="@k.Key" title="@k.Info">
+            <span class="dd-kpi-value @(k.Value.Length > 7 ? "is-text" : "")">@k.Value</span>
+            <span class="dd-kpi-label">@k.Label@if (k.Info is { } info) { <span class="dd-info" aria-label="@info" tabindex="0">ⓘ</span> }</span>
+            <span class="dd-kpi-detail">@k.Detail</span>
+        </li>
+    }
+</ul>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<DeliveryKpi> Kpis { get; set; } = [];
+    [Parameter] public string Label { get; set; } = "Key figures";
+    [Parameter] public string TestId { get; set; } = "dd-current";
+}

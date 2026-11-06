@@ -1,0 +1,32 @@
+@using BirkNext.Web.Services
+@* Shared horizontal bar chart: one unit per chart (features, tasks or percent), each bar labelled with its value and its meaning as tooltip.
+   Values are printed, so the chart never relies on bar length or colour alone. Empty input renders the empty text, never a chart of zeros. *@
+@if (Bars.Count == 0)
+{
+    <p class="do-muted dd-note" data-testid="@($"{TestId}-empty")">@Empty</p>
+}
+else
+{
+    var max = Percent ? 100 : Math.Max(1, Bars.Max(b => Math.Abs(b.Value)));
+    <ul class="dd-bars" aria-label="@Label">
+        @foreach (var b in Bars)
+        {
+            <li data-testid="@TestId" data-key="@b.Key" title="@b.Info">
+                <span class="dd-bar-label">@b.Label</span>
+                <span class="dd-bar" aria-hidden="true"><span class="dd-bar-fill dd-tone-@DeliveryDashboard.ToneClass(b.Tone)" style="width:@(100 * Math.Min(Math.Abs(b.Value), max) / max)%"></span></span>
+                <span class="dd-bar-value">@(Signed && b.Value > 0 ? "+" : "")@b.Value@(Percent ? "%" : "")</span>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<DeliveryBar> Bars { get; set; } = [];
+    [Parameter] public string TestId { get; set; } = "dd-bar";
+    [Parameter] public string Label { get; set; } = "";
+    /// <summary>Values are percentages (scale 0–100).</summary>
+    [Parameter] public bool Percent { get; set; }
+    /// <summary>Positive values get a "+" (net changes).</summary>
+    [Parameter] public bool Signed { get; set; }
+    [Parameter] public string Empty { get; set; } = "Nothing to show.";
+}

@@ -1,0 +1,32 @@
+@using BirkNext.Web.Services
+@* Shared "Attention required": what to act on, how many, why, and a link to where it is handled. Nothing listed = says so explicitly. *@
+<section class="dd-card" aria-labelledby="@($"{TestId}-h")" data-testid="@TestId">
+    <h3 class="dd-card-h" id="@($"{TestId}-h")">Attention required</h3>
+    @if (Entries.Count == 0)
+    {
+        <p class="do-muted" data-testid="@($"{TestId}-none")">Nothing requires attention in this scope.</p>
+    }
+    else
+    {
+        <ul class="dd-att-entries">
+            @foreach (var e in Entries)
+            {
+                <li class="dd-att-entry dd-tone-@DeliveryDashboard.ToneClass(e.Tone)" data-testid="dd-att-entry" data-key="@e.Key">
+                    <span class="dd-att-count">@e.Count</span>
+                    <span class="dd-att-text"><strong>@e.Label</strong><span class="do-muted">@e.Detail</span></span>
+                    @if (Href is not null)
+                    {
+                        <a class="dd-att-go" href="@Href(e)" data-testid="dd-att-go" aria-label="@($"Show {e.Label}")">Show</a>
+                    }
+                </li>
+            }
+        </ul>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<DeliveryAttentionEntry> Entries { get; set; } = [];
+    /// <summary>Where an entry is handled (a URL in the hosting page); null = no link.</summary>
+    [Parameter] public Func<DeliveryAttentionEntry, string>? Href { get; set; }
+    [Parameter] public string TestId { get; set; } = "dd-attention-required";
+}

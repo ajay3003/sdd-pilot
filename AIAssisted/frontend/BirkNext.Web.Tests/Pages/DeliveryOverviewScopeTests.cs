@@ -100,15 +100,40 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
         return page;
     }
 
-    private static string Kpi(IRenderedComponent<BirkNext.Web.Pages.DeliveryOverview> page, string key) =>
-        page.Find($"[data-testid=dd-kpi][data-key={key}] .dd-kpi-value").TextContent;
+    /// <summary>Switches the page section (Overview dashboard by default; features, risks and technical details on request).</summary>
+    private void Show(string section) => Nav.NavigateTo(Nav.GetUriWithQueryParameter("section", section == "overview" ? null : section));
+
+    private string Kpi(IRenderedComponent<BirkNext.Web.Pages.DeliveryOverview> page, string key)
+    {
+        Show("overview");
+        return page.Find($"[data-testid=dd-kpi][data-key={key}] .dd-kpi-value").TextContent;
+    }
+
+    /// <summary>The shared feature cards of the Features section (the list the scope, module and work type narrow).</summary>
+    private IReadOnlyList<AngleSharp.Dom.IElement> Features(IRenderedComponent<BirkNext.Web.Pages.DeliveryOverview> page)
+    {
+        Show("features");
+        return page.FindAll("[data-testid=dfl-card]");
+    }
+
+    private IReadOnlyList<AngleSharp.Dom.IElement> Why(IRenderedComponent<BirkNext.Web.Pages.DeliveryOverview> page)
+    {
+        Show("features");
+        return page.FindAll("[data-testid=dfl-why]");
+    }
+
+    private string ChecklistNote(IRenderedComponent<BirkNext.Web.Pages.DeliveryOverview> page)
+    {
+        Show("overview");
+        return page.Find("[data-testid=dd-checklist-note]").TextContent;
+    }
 
     [Fact]
     public void AllWork_IsTheWholeProject_WithEverySourceAndScopeOffered()
     {
         var page = Open("&work=All");
 
-        page.FindAll("[data-testid=dws-feature-row]").Should().HaveCount(4);
+        Features(page).Should().HaveCount(4);
         Kpi(page, "features").Should().Be("4");
         page.Find("[data-testid=dd-scope-source]").TextContent.Should().Be("All sources · 2 evidence sources");
         page.Find("[data-testid=dd-scope-scope]").TextContent.Should().Be("All functional scopes");
@@ -117,7 +142,7 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
         page.Find("[data-testid=do-scope-filter] optgroup").GetAttribute("label").Should().Be("Change intent");
         page.FindAll("[data-testid=do-chip-source]").Should().BeEmpty();
         page.FindAll("[data-testid=do-chip-scope]").Should().BeEmpty();
-        page.FindAll("[data-testid=dws-feature-why]").Should().BeEmpty();
+        Why(page).Should().BeEmpty();
     }
 
     [Fact]
@@ -125,16 +150,17 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
     {
         var page = Open($"&work=All&scope={Uri.EscapeDataString(Adr)}");
 
-        page.WaitForAssertion(() => page.FindAll("[data-testid=dws-feature-row]").Should().HaveCount(2));
+        page.WaitForAssertion(() => Features(page).Should().HaveCount(2));
         _api.ScopeRequests[^1].FunctionalScopeId.Should().Be(Adr, "the scope id — never its label — is sent");
         Kpi(page, "features").Should().Be("2");
         Kpi(page, "checklist").Should().Be("50%");
         Kpi(page, "open").Should().Be("6");
-        page.Find("[data-testid=dd-checklist] svg").GetAttribute("aria-label").Should().Be("6 of 12 tasks checked, 6 open", "the donut follows the scope, not 14/24");
+        ChecklistNote(page).Should().Contain("6 of 12 tasks checked", "the checklist follows the scope, not 14/24");
         page.FindAll("[data-testid=dd-change-bar]").Single(b => b.GetAttribute("data-key") == "new-features").TextContent.Should().Contain("2");
         page.Find("[data-testid=dd-quality]").TextContent.Should().Contain("2 of 2 features have spec.md");
         page.Find("[data-testid=dd-scope-scope]").TextContent.Should().Be("ADR-029: Translate English");
-        page.FindAll("[data-testid=dws-feature-why]").Should().HaveCount(2).And.OnlyContain(w => w.TextContent.Contains("declared in the feature"));
+        Why(page).Should().HaveCount(2).And.OnlyContain(w => w.TextContent.Contains("declared in the feature"));
+        Show("risks");
         page.Find("[data-testid=do-scope-candidates]").TextContent.Should().Contain("awaiting review, not counted");
 
         var attention = page.Find("[data-testid=dd-attention]").TextContent;
@@ -152,7 +178,7 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
         page.WaitForAssertion(() => page.Find("[data-testid=dd-change-not-comparable]").TextContent.Should().Contain("M2LB-language is not present in the baseline"));
         page.FindAll("[data-testid=dd-change-features]").Should().BeEmpty();
         page.Find("[data-testid=dd-scope-source]").TextContent.Should().Be("M2LB-language");
-        page.FindAll("[data-testid=dws-feature-row]").Should().HaveCount(4);
+        Features(page).Should().HaveCount(4);
     }
 
     [Fact]
@@ -160,10 +186,10 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
     {
         var page = Open($"&work=All&scope={Uri.EscapeDataString(Adr)}&module=Frontend");
 
-        page.WaitForAssertion(() => page.FindAll("[data-testid=dws-feature-row]").Should().ContainSingle());
+        page.WaitForAssertion(() => Features(page).Should().ContainSingle());
         Kpi(page, "features").Should().Be("1");
         page.Find("[data-testid=dd-scope-module]").TextContent.Should().Be("Frontend");
-        page.Find("[data-testid=dws-feature-row]").TextContent.Should().Contain("Translate Frontend to English");
+        Features(page).Single().TextContent.Should().Contain("Translate Frontend to English");
     }
 
     [Fact]
@@ -173,12 +199,12 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
 
         page.WaitForAssertion(() => page.Find("[data-testid=do-invalid-filter]").TextContent.Should().Be("Selected functional scope is not available in this snapshot."));
         page.Find("[data-testid=do-empty-scope]").TextContent.Should().Contain("No Delivery features match this Source + Functional scope.");
-        page.FindAll("[data-testid=dws-feature-row]").Should().BeEmpty();
+        Features(page).Should().BeEmpty();
         page.Find("[data-testid=do-scope-filter]").GetAttribute("value").Should().Be("capability:decision:adr-999", "the selection is kept and shown as unavailable");
 
         page.Find("[data-testid=do-clear-scope]").Click();
         Nav.Uri.Should().NotContain("scope=");
-        page.WaitForAssertion(() => page.FindAll("[data-testid=dws-feature-row]").Should().HaveCount(4));
+        page.WaitForAssertion(() => Features(page).Should().HaveCount(4));
     }
 
     [Fact]
@@ -188,13 +214,13 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
 
         page.Find("[data-testid=do-scope-filter]").Change(Adr);
         Nav.Uri.Should().Contain($"scope={Uri.EscapeDataString(Adr)}");
-        page.WaitForAssertion(() => page.FindAll("[data-testid=dws-feature-row]").Should().HaveCount(2));
+        page.WaitForAssertion(() => Features(page).Should().HaveCount(2));
         page.Find("[data-testid=do-source-filter]").Change(Language);
         Nav.Uri.Should().Contain($"source={Uri.EscapeDataString(Language)}").And.Contain("scope=");
 
         page.Find("[data-testid=do-clear-filters]").Click();
-        Nav.Uri.Should().EndWith($"delivery-overview?project={ProjectId}");
-        page.WaitForAssertion(() => page.FindAll("[data-testid=dws-feature-row]").Should().HaveCount(2, "the default view is Non-technical delivery"));
+        Nav.Uri.Should().EndWith($"delivery-overview?project={ProjectId}&section=features", "clearing filters keeps the section the person is in");
+        page.WaitForAssertion(() => Features(page).Should().HaveCount(2, "the default view is Non-technical delivery"));
         Kpi(page, "features").Should().Be("2");
     }
 
@@ -205,7 +231,7 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
         var page = Open($"&work=All&scope={Uri.EscapeDataString(Adr)}");
 
         page.WaitForAssertion(() => page.Find("[data-testid=do-scope-error]").TextContent.Should().Contain("could not be applied"));
-        page.FindAll("[data-testid=dws-feature-row]").Should().HaveCount(4);
+        Features(page).Should().HaveCount(4);
     }
 
     // ---- Work type (shared feature classification): Non-technical by default ----
@@ -215,11 +241,11 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
     {
         var page = Open();
 
-        page.WaitForAssertion(() => page.FindAll("[data-testid=dws-feature-row]").Should().HaveCount(2));
-        page.FindAll("[data-testid=dws-feature-row]").Select(i => i.TextContent).Should().NotContain(t => t.Contains("ADR-029"), "translation work is technical");
+        page.WaitForAssertion(() => Features(page).Should().HaveCount(2));
+        Features(page).Select(i => i.TextContent).Should().NotContain(t => t.Contains("ADR-029"), "translation work is technical");
         _api.WorkRequests[^1].WorkType.Should().Be(DeliveryWorkType.NonTechnical);
         Kpi(page, "features").Should().Be("2");
-        page.Find("[data-testid=dd-checklist] svg").GetAttribute("aria-label").Should().Be("8 of 12 tasks checked, 4 open", "the checklist leaves out technical work");
+        ChecklistNote(page).Should().Contain("8 of 12 tasks checked", "the checklist leaves out technical work");
         page.Find("[data-testid=do-showing]").TextContent.Should().Contain("Showing: Non-technical delivery · 2 of 4 features").And.Contain("2 technical features hidden");
         page.Find("[data-testid=do-work]").GetAttribute("value").Should().Be(nameof(DeliveryWorkType.NonTechnical));
     }
@@ -229,8 +255,8 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
     {
         var page = Open("&work=Technical");
 
-        page.WaitForAssertion(() => page.FindAll("[data-testid=dws-feature-row]").Should().HaveCount(2));
-        page.FindAll("[data-testid=dws-feature-row]").Should().OnlyContain(i => i.TextContent.Contains("ADR-029"));
+        page.WaitForAssertion(() => Features(page).Should().HaveCount(2));
+        Features(page).Should().OnlyContain(i => i.TextContent.Contains("ADR-029"));
         page.FindAll("[data-testid=do-quality]").Should().BeEmpty("quality categories are the second level of non-technical work");
         Kpi(page, "features").Should().Be("2");
     }
@@ -256,6 +282,6 @@ public sealed class DeliveryOverviewScopeTests : BunitContext
         page.Find("[data-testid=do-show-all-work]").TextContent.Should().Contain("2 technical");
         page.Find("[data-testid=do-show-all-work]").Click();
         Nav.Uri.Should().Contain("work=All");
-        page.WaitForAssertion(() => page.FindAll("[data-testid=dws-feature-row]").Should().HaveCount(2));
+        page.WaitForAssertion(() => Features(page).Should().HaveCount(2));
     }
 }

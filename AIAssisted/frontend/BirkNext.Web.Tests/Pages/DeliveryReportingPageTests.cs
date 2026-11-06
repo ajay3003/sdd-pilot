@@ -42,7 +42,10 @@ public sealed class DeliveryReportingPageTests : BunitContext
         public WeeklyDeliveryReport Report { get; set; } = SampleReport();
         public List<Guid> Deleted { get; } = [];
 
-        public Task<(List<DeliveryProject> Projects, string? Error)> ProjectsAsync(CancellationToken ct = default) => Task.FromResult((Projects, (string?)null));
+        /// <summary>A failure of the project list (cleared to let a retry succeed).</summary>
+        public string? ProjectsError { get; set; }
+        public Task<(List<DeliveryProject> Projects, string? Error)> ProjectsAsync(CancellationToken ct = default) =>
+            Task.FromResult(ProjectsError is { } error ? (new List<DeliveryProject>(), (string?)error) : (Projects, (string?)null));
         public Task<(DeliveryProject? Project, string? Error)> CreateProjectAsync(string name, string? description, CancellationToken ct = default) =>
             Task.FromResult<(DeliveryProject?, string?)>((new(Guid.NewGuid(), name, description, Friday, Friday, 0, 0), null));
         public Task<(DeliveryImportPreview? Preview, string? Error)> PreviewAsync(Guid? projectId, string fileName, Stream content, CancellationToken ct = default) =>
@@ -173,8 +176,8 @@ public sealed class DeliveryReportingPageTests : BunitContext
     public void Stories_HideUnchangedByDefault_AndShowEvidenceOnRequest()
     {
         var page = RenderAt($"?project={ProjectId}&tab=stories");
-        page.WaitForAssertion(() => page.Find("[data-testid=dlr-workspace]"), TimeSpan.FromSeconds(5));
-        page.Find("[data-testid=dlr-mode-drilldown]").Change(true);   // the feature drill-down is the second Stories layout
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-mode-drilldown]"), TimeSpan.FromSeconds(5));
+        page.Find("[data-testid=dlr-mode-drilldown]").Change(true);   // the feature drill-down is an advanced Stories layout
 
         page.WaitForAssertion(() => page.FindAll("[data-testid=dlr-story-row]").Should().ContainSingle());
         var row = page.Find("[data-testid=dlr-story-row]");
@@ -344,14 +347,13 @@ public sealed class DeliveryReportingPageTests : BunitContext
         };
         var page = RenderAt($"?project={ProjectId}&tab=overview");
 
-        page.WaitForAssertion(() => page.Find("[data-testid=dlr-headline]"));
-        page.Find("[data-testid=dlr-headline-change]").TextContent.Should().Contain("1").And.Contain("changed features");
-        page.Find("[data-testid=dlr-headline-current]").TextContent.Should().Contain("2").And.Contain("3 user stories").And.Contain("4 open tasks");
-        page.Find("[data-testid=dlr-headline-quality]").TextContent.Should().Contain("1").And.Contain("2 project hygiene warnings");
-        page.Find("[data-testid=dlr-attention-total]").TextContent.Should().Be("1", "only the feature-attached item counts; hygiene is listed apart");
-        page.Find("[data-testid=dlr-attention-features]").TextContent.Should().Be("on 1 feature");
-        page.Find("[data-testid=dlr-attention-scope]").TextContent.Should().StartWith($"{_api.Report.ScopeChanges.Count} scope change").And.Contain("not defects");
-        page.Find("[data-testid=dlr-attention-apart]").TextContent.Should().StartWith("Not counted above: 2 project hygiene warnings");
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-comparison]"));
+        string Kpi(string key) => page.Find($"[data-testid=dlr-comparison] [data-key={key}] .dd-kpi-value").TextContent;
+        page.FindAll("[data-testid=dlr-comparison] [data-testid=dd-kpi]").Select(k => k.GetAttribute("data-key"))
+            .Should().Equal("scope", "new", "removed", "changed", "declared", "verified", "checklist", "attention");
+        Kpi("attention").Should().Be("1", "only the feature-attached item counts; hygiene is listed apart");
+        Kpi("verified").Should().Be("Not assessed", "declared done and a checked checklist are never verified completion");
+        page.Find("[data-testid=dlr-attention]").TextContent.Should().Contain("Project hygiene warnings · 2");
         page.Find("[data-testid=dlr-header-meta]").TextContent.Should().StartWith("2 features · 3 user stories");
         page.Find("[data-testid=dlr-sticky-header]").QuerySelector("[data-testid=dlr-tab-overview]").Should().NotBeNull("the tabs sit in the one sticky header");
         page.Find("[data-testid=dlr-cards]").Closest("details").Should().NotBeNull("every figure stays available under All figures");
@@ -452,9 +454,12 @@ public sealed class DeliveryReportingPageTests : BunitContext
     }
 
     [Fact]
-    public void Stories_default_to_the_work_item_workspace_with_deep_linked_selection()
+    public void Stories_default_to_feature_cards_and_the_work_item_workspace_is_advanced_with_deep_linked_selection()
     {
         var page = RenderAt($"?project={ProjectId}&tab=stories");
+        page.WaitForAssertion(() => page.FindAll("[data-testid=dfl-card]").Should().HaveCount(2, "features first — no task hierarchy by default"));
+        page.FindAll("[data-testid=dlr-workspace]").Should().BeEmpty();
+        page.Find("[data-testid=dlr-mode-workspace]").Change(true);
         page.WaitForAssertion(() => page.Find("[data-testid=dlr-workspace]"));
         page.Find("[data-testid=dws-view-hierarchy]").HasAttribute("checked").Should().BeTrue("Hierarchy is the default view");
         var feature = _api.Report.Stories[0];

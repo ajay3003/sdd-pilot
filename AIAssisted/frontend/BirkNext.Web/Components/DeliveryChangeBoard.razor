@@ -1,0 +1,54 @@
+@using BirkNext.DeliveryReporting
+@using BirkNext.Web.Services
+@* Delivery Reports → Change Board: full-width lanes New · Changed · Removed · Completed with evidence · Checklist completed this period · Needs
+   review, each with its business impact. A lane shows its first features; the rest open on request. Feature names open the shared detail. *@
+<section class="dcb" aria-label="Change board" data-testid="dcb">
+    @foreach (var lane in Lanes)
+    {
+        var current = lane;
+        var expanded = _expanded.Contains(current.Key);
+        <section class="dcb-lane dd-tone-@DeliveryDashboard.ToneClass(current.Tone)" data-testid="dcb-lane" data-key="@current.Key" aria-labelledby="@($"dcb-{current.Key}-h")">
+            <header class="dcb-head">
+                <h3 class="dcb-h" id="@($"dcb-{current.Key}-h")">@current.Label <span class="dcb-count" data-testid="dcb-count">@(current.NotAssessed is null ? current.Features.Count.ToString() : "–")</span></h3>
+                <p class="do-muted dcb-impact">@current.Impact</p>
+            </header>
+            @if (current.NotAssessed is { } na)
+            {
+                <p class="do-muted" data-testid="dcb-not-assessed">@na</p>
+            }
+            else if (current.Features.Count == 0)
+            {
+                <p class="do-muted" data-testid="dcb-none">None this period.</p>
+            }
+            else
+            {
+                <ul class="dcb-list">
+                    @foreach (var f in expanded ? current.Features : current.Features.Take(Preview))
+                    {
+                        var key = f.FeatureKey;
+                        <li data-testid="dcb-item" data-key="@key">
+                            <button type="button" class="dcb-item" @onclick="() => OnOpen.InvokeAsync(key)">@f.Title</button>
+                            <span class="do-muted">@(f.Module.Length == 0 ? "Project" : f.Module)</span>
+                        </li>
+                    }
+                </ul>
+                @if (current.Features.Count > Preview)
+                {
+                    <button type="button" class="btn-link dcb-toggle" aria-expanded="@(expanded ? "true" : "false")" data-testid="dcb-toggle" @onclick="() => Toggle(current.Key)">
+                        @(expanded ? "Show fewer" : $"Show all {current.Features.Count}")
+                    </button>
+                }
+            }
+        </section>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<DeliveryChangeLane> Lanes { get; set; } = [];
+    [Parameter] public EventCallback<string> OnOpen { get; set; }
+    [Parameter] public int Preview { get; set; } = 6;
+
+    private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
+
+    private void Toggle(string key) { if (!_expanded.Remove(key)) _expanded.Add(key); }
+}

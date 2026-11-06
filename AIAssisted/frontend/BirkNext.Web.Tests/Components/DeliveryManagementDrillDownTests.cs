@@ -126,9 +126,12 @@ public sealed class DeliveryManagementDrillDownTests : BunitContext
         Services.AddSingleton(new BackgroundOperationService());
         Services.GetRequiredService<NavigationManager>().NavigateTo($"delivery-overview?project={DeliveryReportingPageTests.ProjectId}{query}");
         var page = Render<BirkNext.Web.Pages.DeliveryOverview>();
-        page.WaitForAssertion(() => page.FindAll("[data-testid=dws-feature-row], [data-testid=dlr-feature-detail]").Should().NotBeEmpty());
+        page.WaitForAssertion(() => page.FindAll("[data-testid=dd-header], [data-testid=dlr-feature-detail]").Should().NotBeEmpty());
         return page;
     }
+
+    private void Show(string section) => Services.GetRequiredService<NavigationManager>().NavigateTo(
+        Services.GetRequiredService<NavigationManager>().GetUriWithQueryParameter("section", section));
 
     [Fact]
     public void Overview_ReadinessSeparatesChecklistFromVerification_AndFeaturesOpenInTheExplorer()
@@ -141,9 +144,12 @@ public sealed class DeliveryManagementDrillDownTests : BunitContext
         quality["acceptance"].Should().Be("Not recorded");
         page.FindAll("[data-testid=dd-kpi]").Select(k => k.GetAttribute("data-key")).Should().Contain(["checklist", "open", "in-progress", "review", "blocked"]);
         page.Markup.Should().NotContain("On track").And.NotContain("Health score");
-        page.FindAll("[data-testid=dws-feature-row]").Should().OnlyContain(r => !r.TextContent.Contains("Implemented"));
+        Show("features");
+        page.FindAll("[data-testid=dfl-card]").Should().HaveCount(2).And.OnlyContain(r => !r.TextContent.Contains("Implemented"));
+        page.FindAll("[data-testid=dfl-evidence]").Should().OnlyContain(e => e.TextContent == "Not verified", "a checked checklist is never verification");
 
-        // The backlog is the shared explorer's Features view: a feature opens in the same details panel, and from there in the feature explorer.
+        // Tasks live in Technical details: the shared explorer's Features view opens the same details panel, and from there the feature explorer.
+        Show("technical");
         page.FindAll("[data-testid=dws-feature-open]").First().Click();
         page.WaitForAssertion(() => page.Find("[data-testid=dws-detail-backlog]").TextContent.Should().NotContain("Implemented"));
         page.Find("[data-testid=dws-open-feature]").Click();
@@ -164,13 +170,13 @@ public sealed class DeliveryManagementDrillDownTests : BunitContext
     [Fact]
     public void Overview_FiltersSearch_AndOrdersByPriority()
     {
-        var page = Overview();
-        page.FindAll("[data-testid=dws-feature-row]").Should().HaveCount(2);
+        var page = Overview("&section=features");
+        page.WaitForAssertion(() => page.FindAll("[data-testid=dfl-card]").Should().HaveCount(2));
         page.Find("[data-testid=do-search]").Input("case");
-        page.WaitForAssertion(() => page.FindAll("[data-testid=dws-feature-row]").Should().ContainSingle().Which.TextContent.Should().Contain("Case overview"));
+        page.WaitForAssertion(() => page.FindAll("[data-testid=dfl-card]").Should().ContainSingle().Which.TextContent.Should().Contain("Case overview"));
         page.Find("[data-testid=do-search]").Input("");
-        page.WaitForAssertion(() => page.Find("[data-testid=do-count]").TextContent.Should().StartWith("2 of 2 features").And.Contain("blocked, needs review, new and changed first"));
-        page.FindAll("[data-testid=dws-feature-status]").Select(c => c.TextContent).Should().OnlyContain(s => s.Length > 0 && s != "—", "every feature shows its backlog status");
+        page.WaitForAssertion(() => page.Find("[data-testid=do-count]").TextContent.Should().StartWith("2 of 2 features"));
+        page.FindAll("[data-testid=dfl-status]").Select(c => c.TextContent).Should().OnlyContain(s => s.Length > 0 && s != "—", "every feature shows its delivery status");
     }
 
     [Fact]
@@ -178,7 +184,7 @@ public sealed class DeliveryManagementDrillDownTests : BunitContext
     {
         var page = Overview();
         page.Find("h1").TextContent.Should().Be("Delivery Overview");
-        page.Find("[data-testid=do-lead]").TextContent.Should().Be("Current delivery state, work-item progress, and quality findings.");
+        page.Find("[data-testid=do-lead]").TextContent.Should().Be("Where delivery stands now: features, verified completion, risks and what needs a decision.");
         page.Find("[data-testid=do-checklist-clarification]").TextContent.Should().Contain("source checkboxes, not verified implementation or QA completion");
         page.Find("[data-testid=do-context]").TextContent.Should().StartWith("Current snapshot: ").And.EndWith("2 features");
         page.FindAll(".do-filter-note").Should().BeEmpty("no paragraph explaining the filter implementation");
@@ -190,7 +196,7 @@ public sealed class DeliveryManagementDrillDownTests : BunitContext
         Services.AddSingleton<IDeliveryReportingApiService>(new DeliveryReportingPageTests.FakeApi());
         Services.AddSingleton(new BackgroundOperationService());
         var nav = Services.GetRequiredService<NavigationManager>();
-        nav.NavigateTo($"delivery-overview?project={DeliveryReportingPageTests.ProjectId}&state=InProgress");
+        nav.NavigateTo($"delivery-overview?project={DeliveryReportingPageTests.ProjectId}&section=technical&state=InProgress");
         var page = Render<BirkNext.Web.Pages.DeliveryOverview>();
         page.WaitForAssertion(() => page.Find("[data-testid=dlr-workspace]").GetAttribute("data-mode").Should().Be("CurrentState"));
         page.Find("[data-testid=dws-master]").GetAttribute("data-view").Should().Be("features", "the backlog opens on the Features view of the shared explorer");

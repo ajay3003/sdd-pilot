@@ -132,7 +132,7 @@ public sealed class DeliveryOperationsTests : BunitContext
         Nav.NavigateTo($"delivery-overview?project={DeliveryReportingPageTests.ProjectId}");
         var page = Render<BirkNext.Web.Pages.DeliveryOverview>();
 
-        page.WaitForAssertion(() => page.FindAll("[data-testid=dws-feature-row]").Should().HaveCount(2));
+        page.WaitForAssertion(() => page.Find("[data-testid=dd-header]"));
         // Only statuses the source supports are charted; verification is a quality state ("Not recorded" / "Not assessed"), never a 0 or a tile.
         page.FindAll("[data-testid=dd-status-bar]").Select(t => t.GetAttribute("data-key")).Should().Equal("InProgress");
         page.Find("[data-testid=dd-status-bar][data-key=InProgress] .dd-bar-value").TextContent.Should().Be("2");
@@ -141,11 +141,13 @@ public sealed class DeliveryOperationsTests : BunitContext
         page.Find("[data-testid=do-source]").TextContent.Should().Contain("From report 2026-W44");
         page.Find("[data-testid=dd-header]").TextContent.Should().Contain("Monday", "the baseline is named in the comparison context");
         page.Find("[data-testid=do-provenance]").TextContent.Should().Be("ZIP import");
-        page.Find("[data-testid=do-open-report]").GetAttribute("href").Should().Contain($"project={DeliveryReportingPageTests.ProjectId}").And.Contain("tab=stories");
+        page.Find("[data-testid=do-open-report]").GetAttribute("href").Should().Contain($"project={DeliveryReportingPageTests.ProjectId}").And.Contain("report=");
 
+        Nav.NavigateTo(Nav.GetUriWithQueryParameter("section", "features"));
+        page.WaitForAssertion(() => page.FindAll("[data-testid=dfl-card]").Should().HaveCount(2));
         page.Find("[data-testid=do-filter]").Change(nameof(BacklogStatus.Accepted));
-        page.FindAll("[data-testid=dws-feature-row]").Should().BeEmpty();
-        page.Find("[data-testid=do-empty-filter]").Should().NotBeNull();
+        page.FindAll("[data-testid=dfl-card]").Should().BeEmpty();
+        page.Find("[data-testid=do-features-empty]").Should().NotBeNull();
     }
 
     [Fact]

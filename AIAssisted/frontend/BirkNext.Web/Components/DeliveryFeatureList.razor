@@ -1,0 +1,100 @@
+@using BirkNext.DeliveryReporting
+@using BirkNext.Web.Services
+@* Shared full-width feature list of both Delivery pages: one card per feature (name, module, business summary, delivery status, qualified
+   checklist progress, verification evidence, attention, change). Selecting a card opens its focused detail in place, so the list keeps its
+   position and context. Rendered in pages (PageSize, then "Show more"), never every work item at once. *@
+<div class="dfl" data-testid="@TestId">
+    @if (Cards.Count == 0)
+    {
+        <p class="do-muted" data-testid="@($"{TestId}-empty")">@Empty</p>
+    }
+    else
+    {
+        <ul class="dfl-list" aria-label="Features">
+            @foreach (var c in Cards.Take(_shown))
+            {
+                var card = c;
+                var open = card.FeatureKey == SelectedKey;
+                var detailId = $"dfl-detail-{(uint)card.FeatureKey.GetHashCode()}";
+                <li class="dfl-card @(open ? "is-open" : "") @(card.Removed ? "is-removed" : "")" data-testid="dfl-card" data-key="@card.FeatureKey" data-status="@card.Status" @key="card.FeatureKey">
+                    <button type="button" class="dfl-head" aria-expanded="@(open ? "true" : "false")" aria-controls="@detailId" data-testid="dfl-open" @onclick="() => Toggle(card.FeatureKey)">
+                        <span class="dfl-name">
+                            <strong data-testid="dfl-title">@card.Title</strong>
+                            <span class="dfl-module">@(card.Module.Length == 0 ? "Project" : card.Module)</span>
+                            @if (card.Summary is { } summary) { <span class="dfl-summary">@summary</span> }
+                            @if (Why?.Invoke(card.FeatureKey) is { Length: > 0 } why) { <span class="dfl-why" data-testid="dfl-why" title="@why">Why included: @why</span> }
+                        </span>
+                        <span class="dfl-progress" title="@DeliveryIntelligence.ProgressNote">
+                            @if (card.ProgressPercent is { } pct) { <span class="dd-bar" aria-hidden="true"><span class="dd-bar-fill dd-tone-progress" style="width:@(pct)%"></span></span> }
+                            <span data-testid="dfl-progress">@card.Progress</span>
+                        </span>
+                        <span class="dfl-badges">
+                            <span class="dd-badge dd-tone-@DeliveryDashboard.ToneClass(card.StatusTone)" data-testid="dfl-status">@card.StatusLabel</span>
+                            <span class="dd-badge dd-tone-@DeliveryDashboard.ToneClass(card.EvidenceTone)" data-testid="dfl-evidence" title="Verification evidence">@(card.Verified ? card.Evidence : "Not verified")</span>
+                            @if (ShowChange && card.Change is not ("—" or "Unchanged")) { <span class="dd-badge dd-tone-@DeliveryDashboard.ToneClass(card.ChangeTone)" data-testid="dfl-change">@card.Change</span> }
+                            @if (card.Attention > 0) { <span class="dd-badge dd-tone-review" data-testid="dfl-attention">@card.Attention to review</span> }
+                        </span>
+                    </button>
+                    @if (open)
+                    {
+                        <div id="@detailId" class="dfl-detail">
+                            <DeliveryFeatureDetail Card="card" Row="RowOf(card.FeatureKey)" Comparison="Comparison" OnOpenTechnical="OnOpenTechnical" />
+                        </div>
+                    }
+                </li>
+            }
+        </ul>
+        @if (Cards.Count > _shown)
+        {
+            <p class="dfl-more">
+                <span class="do-muted" role="status">Showing @_shown of @Cards.Count features</span>
+                <button type="button" class="btn-secondary btn-sm" data-testid="dfl-show-more" @onclick="ShowMore">Show @Math.Min(PageSize, Cards.Count - _shown) more</button>
+            </p>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<DeliveryFeatureCard> Cards { get; set; } = [];
+    [Parameter] public WeeklyDeliveryReport? Report { get; set; }
+    [Parameter] public bool Comparison { get; set; }
+    /// <summary>Show the change badge (comparison context or a report-backed overview).</summary>
+    [Parameter] public bool ShowChange { get; set; } = true;
+    [Parameter] public string? SelectedKey { get; set; }
+    [Parameter] public EventCallback<string?> OnSelect { get; set; }
+    [Parameter] public EventCallback<string> OnOpenTechnical { get; set; }
+    /// <summary>Why a feature is in the selected scope (scope membership), when a scope is applied.</summary>
+    [Parameter] public Func<string, string?>? Why { get; set; }
+    [Parameter] public int PageSize { get; set; } = 25;
+    [Parameter] public string TestId { get; set; } = "dfl";
+    [Parameter] public string Empty { get; set; } = "No feature matches these filters.";
+
+    private int _shown;
+    private IReadOnlyList<DeliveryFeatureCard>? _for;
+    private WeeklyDeliveryReport? _rowsFor;
+    private Dictionary<string, DeliveryStoryRow> _rows = new(StringComparer.Ordinal);
+
+    protected override void OnParametersSet()
+    {
+        // A new list (filters, scope, report) starts at one page — but always far enough to show the selected feature.
+        if (!ReferenceEquals(_for, Cards)) { _for = Cards; _shown = PageSize; }
+        if (SelectedKey is not null && IndexOf(SelectedKey) is >= 0 and var at && at >= _shown) _shown = at + 1;
+        if (!ReferenceEquals(_rowsFor, Report))
+        {
+            _rowsFor = Report;
+            _rows = Report?.Stories.GroupBy(s => s.FeatureKey, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal) ?? new(StringComparer.Ordinal);
+        }
+    }
+
+    private int IndexOf(string key)
+    {
+        for (var i = 0; i < Cards.Count; i++) if (Cards[i].FeatureKey == key) return i;
+        return -1;
+    }
+
+    private DeliveryStoryRow? RowOf(string key) => _rows.GetValueOrDefault(key);
+
+    private void ShowMore() => _shown = Math.Min(Cards.Count, _shown + PageSize);
+
+    private Task Toggle(string key) => OnSelect.InvokeAsync(key == SelectedKey ? null : key);
+}

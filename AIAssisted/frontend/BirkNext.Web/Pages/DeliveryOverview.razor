@@ -4,6 +4,7 @@
 @using BirkNext.DeliveryReporting
 @using BirkNext.Web.Services
 @using BirkNext.Interpretation
+@using BirkNext.Web.Components
 @using P = BirkNext.Web.Services.DeliveryReportingPresentation
 @inject IDeliveryReportingApiService Api
 @inject NavigationManager Nav
@@ -15,10 +16,9 @@
 <div class="do-page" data-testid="delivery-overview">
     <header class="do-head" data-testid="do-header">
         <h1>Delivery Overview</h1>
-        <p class="do-lead" data-testid="do-lead">Current delivery state, work-item progress, and quality findings.</p>
-        <p class="do-sub">Explore Features, User Stories, acceptance criteria, phases and tasks in the selected snapshot.
+        <p class="do-lead" data-testid="do-lead">Where delivery stands now: features, verified completion, risks and what needs a decision.</p>
+        <p class="do-clarify do-muted" data-testid="do-checklist-clarification">Task checklist progress reflects source checkboxes, not verified implementation or QA completion.
             <span class="dd-info" tabindex="0" title="@ChecklistHelp" aria-label="@ChecklistHelp">ⓘ</span></p>
-        <p class="do-clarify do-muted" data-testid="do-checklist-clarification">Task checklist progress reflects source checkboxes, not verified implementation or QA completion.</p>
         @if (_view is { } summaryView)
         {
             <p class="do-context" role="status" data-testid="do-context">Current snapshot: <strong>@summaryView.Source.SnapshotLabel</strong> · @summaryView.Items.Count feature@(summaryView.Items.Count == 1 ? "" : "s")@(Scoped ? " in this scope" : "")</p>
@@ -26,7 +26,7 @@
     </header>
 
     @if (!_loaded) { <InlineLoading Text="Loading delivery projects…" /> }
-    else if (_error is not null) { <p class="do-error" role="alert">@_error</p> }
+    else if (_error is not null) { <LoadError Title="Delivery projects could not be loaded" Message="@_error" OnRetry="RetryProjectsAsync" TestId="do-load-error" /> }
     else if (_projects.Count == 0)
     {
         <section class="do-card" data-testid="do-no-project">
@@ -81,38 +81,19 @@
                 </p>
             </section>
 
+            @* Sections instead of one long page: the dashboard first; features, risks and the technical work-item explorer on request. *@
+            <nav class="dd-section-nav" aria-label="Delivery Overview sections" data-testid="do-sections">
+                <a href="@Url(section: "overview")" aria-current="@(Section == "overview" ? "page" : null)" data-testid="do-section-overview">Overview</a>
+                <a href="@Url(section: "features")" aria-current="@(Section == "features" ? "page" : null)" data-testid="do-section-features">Features <span class="do-muted">(@view.Items.Count)</span></a>
+                <a href="@Url(section: "risks")" aria-current="@(Section == "risks" ? "page" : null)" data-testid="do-section-risks">Risks &amp; quality@(AttentionEntries(view).Count > 0 ? $" ({AttentionEntries(view).Sum(e => e.Key is "evidence" or "limitations" ? 0 : e.Count)})" : "")</a>
+                <a class="dd-nav-advanced" href="@Url(section: "technical")" aria-current="@(Section == "technical" ? "page" : null)" data-testid="do-section-technical">Technical details</a>
+            </nav>
+
             <section class="do-filters" aria-label="Scope and filters" data-testid="do-filters">
                 <div class="do-toolbar" role="group" aria-label="Scope the overview">
-                    <label class="do-field"><span>Source <span class="dd-info" tabindex="0" title="@CanonicalScopeText.SourceHelp" aria-label="@CanonicalScopeText.SourceHelp">ⓘ</span></span>
-                        <select data-testid="do-source-filter" value="@(_source ?? "")" @onchange="OnSourceChanged">
-                            <option value="">All sources@(SourceOptions.Count > 1 ? $" ({SourceOptions.Count} evidence sources)" : "")</option>
-                            @foreach (var s in SourceOptions) { <option value="@s.Id" title="@s.Provenance">@s.Name (@SourceCount(s))</option> }
-                            @if (_source is { } src && SourceOptions.All(o => o.Id != src)) { <option value="@src">Unavailable source</option> }
-                        </select></label>
-                    <label class="do-field"><span>Functional scope <span class="dd-info" tabindex="0" title="@CanonicalScopeText.FunctionalScopeHelp" aria-label="@CanonicalScopeText.FunctionalScopeHelp">ⓘ</span></span>
-                        <select data-testid="do-scope-filter" value="@(_scope ?? "")" @onchange="OnScopeChanged">
-                            <option value="">All functional scopes</option>
-                            @foreach (var g in ScopeOptions.GroupBy(o => o.Kind))
-                            {
-                                <optgroup label="@CanonicalScopeText.KindLabel(g.Key)">
-                                    @foreach (var o in g) { <option value="@o.Id" title="@o.Detail">@o.Name (@o.CurrentFeatures)</option> }
-                                </optgroup>
-                            }
-                            @if (_scope is { } sc && ScopeOptions.All(o => o.Id != sc)) { <option value="@sc">Unavailable scope</option> }
-                        </select></label>
-                    <label class="do-field"><span>Work type <span class="dd-info" tabindex="0" title="@WorkHelp" aria-label="@WorkHelp">ⓘ</span></span>
-                        <select data-testid="do-work" value="@_work" @onchange="OnWorkChanged">
-                            <option value="@nameof(DeliveryWorkType.NonTechnical)">Non-technical</option>
-                            <option value="@nameof(DeliveryWorkType.Technical)">Technical</option>
-                            <option value="@nameof(DeliveryWorkType.All)">All work</option>
-                        </select></label>
-                    @if (_work != nameof(DeliveryWorkType.Technical))
+                    @if (Section is "features" or "technical")
                     {
-                        <label class="do-field"><span>Quality category</span>
-                            <select data-testid="do-quality" value="@(_quality ?? "")" @onchange="OnQualityChanged">
-                                <option value="">All categories</option>
-                                @foreach (var q in FunctionalQualityClassifier.NonTechnicalCategories) { <option value="@q">@FunctionalQualityClassifier.Label(q)@QualityCount(q)</option> }
-                            </select></label>
+                        <label class="do-field"><span>Search</span><input type="search" data-testid="do-search" @bind="_search" @bind:event="oninput" @bind:after="WriteUrl" placeholder="Feature or module" /></label>
                     }
                     @if (Modules.Count > 1 || _module.Length > 0)
                     {
@@ -122,19 +103,58 @@
                                 @foreach (var m in Modules) { <option value="@m">@ModuleLabel(m)</option> }
                             </select></label>
                     }
-                    <label class="do-field"><span>State</span>
-                        <select data-testid="do-filter" value="@_status" @onchange="OnStateChanged">
-                            <option value="@AllFilter">All states</option>
-                            @foreach (var st in Enum.GetValues<BacklogStatus>().Where(x => !DeliveryBacklog.NotFromSnapshots(x))) { <option value="@st">@DeliveryBacklog.Label(st)</option> }
+                    <label class="do-field"><span>Work type <span class="dd-info" tabindex="0" title="@WorkHelp" aria-label="@WorkHelp">ⓘ</span></span>
+                        <select data-testid="do-work" value="@_work" @onchange="OnWorkChanged">
+                            <option value="@nameof(DeliveryWorkType.NonTechnical)">Non-technical</option>
+                            <option value="@nameof(DeliveryWorkType.Technical)">Technical</option>
+                            <option value="@nameof(DeliveryWorkType.All)">All work</option>
                         </select></label>
-                    <label class="do-field"><span>Attention</span>
-                        <select data-testid="do-attention" value="@_attention" @onchange="OnAttentionChanged">
-                            <option value="@AllFilter">All features</option>
-                            <option value="attention">Needs attention</option>
-                            <option value="open">Has open tasks</option>
-                        </select></label>
-                    <label class="do-field"><span>Search</span><input type="search" data-testid="do-search" @bind="_search" @bind:event="oninput" @bind:after="WriteUrl" placeholder="Feature or module" /></label>
+                    @if (Section is "features" or "technical")
+                    {
+                        <label class="do-field"><span>Delivery status</span>
+                            <select data-testid="do-filter" value="@_status" @onchange="OnStateChanged">
+                                <option value="@AllFilter">All statuses</option>
+                                @foreach (var st in Enum.GetValues<BacklogStatus>().Where(x => !DeliveryBacklog.NotFromSnapshots(x))) { <option value="@st">@DeliveryBacklog.Label(st)</option> }
+                            </select></label>
+                        <label class="do-field"><span>Attention</span>
+                            <select data-testid="do-attention" value="@_attention" @onchange="OnAttentionChanged">
+                                <option value="@AllFilter">All features</option>
+                                <option value="attention">Needs attention</option>
+                                <option value="open">Has open tasks</option>
+                            </select></label>
+                    }
                 </div>
+                @* Evidence source, functional scope and quality category are less frequent: one click away, open while any is applied. *@
+                <details class="do-more-filters" data-testid="do-more-filters" open="@(_source is not null || _scope is not null || _quality is not null)">
+                    <summary>Source, functional scope and quality category</summary>
+                    <div class="do-toolbar">
+                        <label class="do-field"><span>Source <span class="dd-info" tabindex="0" title="@CanonicalScopeText.SourceHelp" aria-label="@CanonicalScopeText.SourceHelp">ⓘ</span></span>
+                            <select data-testid="do-source-filter" value="@(_source ?? "")" @onchange="OnSourceChanged">
+                                <option value="">All sources@(SourceOptions.Count > 1 ? $" ({SourceOptions.Count} evidence sources)" : "")</option>
+                                @foreach (var s in SourceOptions) { <option value="@s.Id" title="@s.Provenance">@s.Name (@SourceCount(s))</option> }
+                                @if (_source is { } src && SourceOptions.All(o => o.Id != src)) { <option value="@src">Unavailable source</option> }
+                            </select></label>
+                        <label class="do-field"><span>Functional scope <span class="dd-info" tabindex="0" title="@CanonicalScopeText.FunctionalScopeHelp" aria-label="@CanonicalScopeText.FunctionalScopeHelp">ⓘ</span></span>
+                            <select data-testid="do-scope-filter" value="@(_scope ?? "")" @onchange="OnScopeChanged">
+                                <option value="">All functional scopes</option>
+                                @foreach (var g in ScopeOptions.GroupBy(o => o.Kind))
+                                {
+                                    <optgroup label="@CanonicalScopeText.KindLabel(g.Key)">
+                                        @foreach (var o in g) { <option value="@o.Id" title="@o.Detail">@o.Name (@o.CurrentFeatures)</option> }
+                                    </optgroup>
+                                }
+                                @if (_scope is { } sc && ScopeOptions.All(o => o.Id != sc)) { <option value="@sc">Unavailable scope</option> }
+                            </select></label>
+                        @if (_work != nameof(DeliveryWorkType.Technical))
+                        {
+                            <label class="do-field"><span>Quality category</span>
+                                <select data-testid="do-quality" value="@(_quality ?? "")" @onchange="OnQualityChanged">
+                                    <option value="">All categories</option>
+                                    @foreach (var q in FunctionalQualityClassifier.NonTechnicalCategories) { <option value="@q">@FunctionalQualityClassifier.Label(q)@QualityCount(q)</option> }
+                                </select></label>
+                        }
+                    </div>
+                </details>
                 @if (_scopeView?.WorkSummary is { } ws)
                 {
                     <p class="do-showing" role="status" data-testid="do-showing">
@@ -158,14 +178,6 @@
                 @foreach (var invalid in _scopeView?.InvalidFilters ?? []) { <p class="do-notice" role="alert" data-testid="do-invalid-filter">@invalid</p> }
                 @foreach (var notice in _scopeView?.Notices ?? []) { <p class="do-notice" role="status" data-testid="do-scope-notice">@notice</p> }
                 @if (_scopeError is { } scopeError) { <p class="do-notice" role="alert" data-testid="do-scope-error">@scopeError</p> }
-                @if (_scope is not null && _scopeView?.Candidates is { Count: > 0 } candidates)
-                {
-                    <details class="do-candidates" data-testid="do-scope-candidates">
-                        <summary>@candidates.Count more feature@(candidates.Count == 1 ? "" : "s") may belong to this scope — awaiting review, not counted</summary>
-                        <ul>@foreach (var c in candidates) { <li><strong>@c.Title</strong> — @c.Why</li> }</ul>
-                        <p><a href="correlation-review">Confirm or reject them in Relationship Review</a></p>
-                    </details>
-                }
                 @if (_scopeView?.InterpretationNote is { } interpretationNote) { <p class="do-muted" data-testid="do-interpretation-note">@interpretationNote</p> }
             </section>
 
@@ -184,166 +196,229 @@
                     </p>
                 </section>
             }
-            <h3 class="dd-h" id="dd-current-h">Current delivery state</h3>
-            <ul class="dd-kpis" aria-labelledby="dd-current-h" data-testid="dd-current">
-                @foreach (var k in DeliveryDashboard.Current(view))
-                {
-                    <li class="dd-kpi dd-tone-@DeliveryDashboard.ToneClass(k.Tone)" data-testid="dd-kpi" data-key="@k.Key" title="@k.Info">
-                        <span class="dd-kpi-value">@k.Value</span>
-                        <span class="dd-kpi-label">@k.Label@if (k.Info is { } info) { <span class="dd-info" aria-label="@info" tabindex="0">ⓘ</span> }</span>
-                        <span class="dd-kpi-detail">@k.Detail</span>
-                    </li>
-                }
-            </ul>
 
-            <div class="dd-grid">
-                @{ var total = view.Items.Sum(i => i.TasksTotal); var done = view.Items.Sum(i => i.TasksCompleted); }
-                <section class="dd-card" aria-labelledby="dd-checklist-h" data-testid="dd-checklist">
-                    <h3 class="dd-card-h" id="dd-checklist-h">Task checklist</h3>
-                    @if (total == 0) { <p class="do-muted">No tasks.md checkboxes in this snapshot.</p> }
-                    else
-                    {
-                        <div class="dd-donut-wrap">
-                            <svg class="dd-donut" viewBox="0 0 100 100" role="img" aria-label="@($"{done} of {total} tasks checked, {total - done} open")">
-                                <title>@DeliveryDashboard.ChecklistInfo</title>
-                                <circle cx="50" cy="50" r="40" class="dd-donut-track" />
-                                <circle cx="50" cy="50" r="40" class="dd-donut-value" stroke-dasharray="@($"{251.33 * done / total:0.##} 251.33")" transform="rotate(-90 50 50)" />
-                                <text x="50" y="54" text-anchor="middle" class="dd-donut-text">@(100 * done / total)%</text>
-                            </svg>
-                            <ul class="dd-legend">
-                                <li><span class="dd-swatch dd-tone-progress" aria-hidden="true"></span>@done checked</li>
-                                <li><span class="dd-swatch dd-tone-neutral" aria-hidden="true"></span>@(total - done) open</li>
-                            </ul>
-                        </div>
-                        <p class="do-muted dd-note" data-testid="dd-checklist-note">@DeliveryDashboard.ChecklistInfo</p>
-                    }
-                </section>
-                <section class="dd-card" aria-labelledby="dd-status-h" data-testid="dd-status">
-                    <h3 class="dd-card-h" id="dd-status-h">Features by checklist state</h3>
-                    @Bars(DeliveryDashboard.FeatureStatus(view), "dd-status-bar")
-                    <p class="do-muted dd-note">Statuses come from task checkboxes and explicit status lines only — no workflow state is inferred.</p>
-                </section>
-            </div>
-
-            @if (_report is not null)
+            @switch (Section)
             {
-                <h3 class="dd-h" id="dd-change-h">Change this period <span class="do-muted">compared with the baseline@(Scoped ? ", same scope on both sides" : "")</span></h3>
-                @if (DeliveryDashboard.ChangeNotComparable(_report) is { } notComparable)
-                {
-                    <p class="do-card do-muted" data-testid="dd-change-not-comparable">@notComparable</p>
-                }
-                else
-                {
-                    <div class="dd-grid">
-                        <section class="dd-card" aria-label="Feature changes" data-testid="dd-change-features"><h3 class="dd-card-h">Features</h3>@Bars(DeliveryDashboard.FeatureChanges(_report), "dd-change-bar")</section>
-                        <section class="dd-card" aria-label="Task changes" data-testid="dd-change-tasks"><h3 class="dd-card-h">Tasks</h3>@Bars(DeliveryDashboard.TaskChanges(_report), "dd-change-bar")</section>
-                    </div>
-                }
-            }
-
-            <div class="dd-grid">
-                <section class="dd-card" aria-labelledby="dd-quality-h" data-testid="dd-quality">
-                    <h3 class="dd-card-h" id="dd-quality-h">Quality &amp; readiness</h3>
-                    <ul class="dd-quality">
-                        @foreach (var q in DeliveryDashboard.Quality(view))
-                        {
-                            <li data-testid="dd-quality-row" data-key="@q.Key" title="@q.Detail">
-                                <span class="dd-q-label">@q.Label</span>
-                                <span class="dd-q-track" aria-hidden="true">@if (q.Filled is { } f && q.Of is > 0 and var of) { <span class="dd-q-fill dd-tone-@DeliveryDashboard.ToneClass(q.Tone)" style="width:@(100 * f / of)%"></span> }</span>
-                                <span class="dd-badge dd-tone-@DeliveryDashboard.ToneClass(q.Tone)" data-testid="dd-quality-state">@q.State</span>
-                                <span class="dd-q-detail do-muted">@q.Detail</span>
-                            </li>
-                        }
-                    </ul>
-                </section>
-                <section class="dd-card" aria-labelledby="dd-attention-h" data-testid="dd-attention">
-                    <h3 class="dd-card-h" id="dd-attention-h">Needs attention</h3>
-                    @if (_report is null) { <p class="do-muted">Generate a report to see scope changes and traceability issues.</p> }
-                    else if (DeliveryDashboard.Attention(_report) is { Count: 0 }) { <p class="do-muted" data-testid="dd-attention-none">No attention items. Shared &amp; foundational tasks are normal and never listed here.</p> }
-                    else
-                    {
-                        @foreach (var g in DeliveryDashboard.Attention(_report))
-                        {
-                            <details class="dd-att-group" data-testid="dd-attention-group" data-category="@g.Category">
-                                <summary><strong>@g.Label</strong> <span class="dd-badge dd-tone-@(g.Items.Any(i => i.Severity == DeliveryAttentionSeverity.Blocker) ? "blocker" : "review")">@g.Items.Count</span></summary>
-                                <ul class="dd-att-list">@foreach (var a in g.Items.Take(20)) { <li><strong>@a.Title</strong> — @a.Detail</li> }</ul>
-                                @if (g.Items.Count > 20) { <p class="do-muted">+@(g.Items.Count - 20) more in the report</p> }
-                            </details>
-                        }
-                    }
-                </section>
-            </div>
-            <p class="do-muted dd-trend" data-testid="dd-trend">Trend available after more delivery snapshots — a baseline and a current snapshot are two points, not a trend.</p>
-
-            @if (_report is not null)
-            {
-                @* One explorer for features and work items (the same component Delivery Reports → Stories uses, in current-state mode): the Features
-                   view is the backlog list; Hierarchy, List and Phases show the same canonical items. *@
-                var options = ExplorerOptions(view, _report);
-                <p class="do-muted" role="status" data-testid="do-count">@options.FeatureKeys!.Count of @view.Items.Count features @(Scoped ? "in this scope " : "")· blocked, needs review, new and changed first</p>
-                <BirkNext.Web.Components.DeliveryWorkspace @key="_report.ReportId" Report="_report" Options="options"
-                    ProjectId="_projectId" SelectedId="@ItemQuery" OnSelect="SelectItem" OnOpenFeature="OpenFeature" />
-                @if (options.FeatureKeys.Count == 0 && view.Items.Count > 0) { <p class="do-muted" data-testid="do-empty-filter">No feature matches these filters.</p> }
-                @if (view.RemovedFeatures.Count > 0)
-                {
-                    <p class="do-muted" data-testid="do-removed">Removed this period (scope change to confirm, not counted as delivered): @string.Join(", ", view.RemovedFeatures)</p>
-                }
-                <p class="do-links">
-                    @if (view.Source.ReportId is { } openReport)
-                    {
-                        <a href="@($"delivery-reporting?project={_projectId}&tab=stories&report={openReport}")" data-testid="do-open-report">Open the report (changes between snapshots)</a>
-                    }
-                </p>
-            }
-            else
-            {
-            @* No report yet (snapshot only): the explorer needs a frozen report's hierarchy, so the backlog is listed from the snapshot until one exists. *@
-            var keys = Filtered(view).Select(i => i.FeatureKey).ToHashSet(StringComparer.Ordinal);
-            var rows = DeliveryDashboard.Rows(view, _report).Where(r => keys.Contains(r.Item.FeatureKey)).ToList();
-            <p class="do-muted" role="status" data-testid="do-count">@rows.Count of @view.Items.Count features @(Scoped ? "in this scope " : "")shown · blocked, needs review, new and changed first</p>
-            <ul class="dd-features" data-testid="do-backlog" aria-label="Features">
-                @foreach (var r in rows)
-                {
-                    var item = r.Item;
-                    var key = item.FeatureKey;
-                    var pct = item.TasksTotal == 0 ? 0 : 100 * item.TasksCompleted / item.TasksTotal;
-                    <li data-testid="do-item" data-status="@item.Status">
-                        <button type="button" class="dd-feature" data-testid="do-feature-open" disabled="@(_report is null)" @onclick="() => OpenFeature(key)">
-                            <span class="dd-f-title"><strong>@item.Title</strong><span class="dd-f-id">@DeliveryWorkItems.FeatureSourceId(key) · @(item.Module.Length == 0 ? "Project" : item.Module)</span>
-                                @if (Why(key) is { Length: > 0 } why) { <span class="dd-f-why" data-testid="do-why" title="@why">Why included: @why</span> }</span>
-                            <span class="dd-f-progress" title="Task checklist only">
-                                @if (item.TasksTotal == 0) { <span class="do-muted">No tasks</span> }
-                                else
-                                {
-                                    <span class="dd-bar" aria-hidden="true"><span class="dd-bar-fill" style="width:@(pct)%"></span></span>
-                                    <span data-testid="do-tasks">@item.TasksCompleted / @item.TasksTotal · @(pct)% · @item.OpenTasks open</span>
-                                }
-                            </span>
-                            <span class="dd-f-model" data-testid="do-model">@r.RequirementModel</span>
-                            <span class="dd-badge dd-tone-@DeliveryDashboard.ToneClass(r.ChangeTone)" data-testid="do-change">@r.Change</span>
-                            <span class="dd-f-attention" data-testid="do-attention-cell">@if (item.Attention > 0) { <span class="dd-badge dd-tone-review" data-testid="do-attention-count">@item.Attention issue@(item.Attention == 1 ? "" : "s")</span> } else { <span class="do-muted">No issues</span> }</span>
-                        </button>
-                    </li>
-                }
-            </ul>
-            @if (rows.Count == 0 && view.Items.Count > 0) { <p class="do-muted" data-testid="do-empty-filter">No feature matches these filters.</p> }
-            @if (view.RemovedFeatures.Count > 0)
-            {
-                <p class="do-muted" data-testid="do-removed">Removed this period (scope change to confirm, not counted as delivered): @string.Join(", ", view.RemovedFeatures)</p>
-            }
-            <p class="do-links">
-                @if (view.Source.ReportId is { } reportId)
-                {
-                    <a href="@($"delivery-reporting?project={_projectId}&tab=stories&report={reportId}")" data-testid="do-open-report">Open the report (stories, criteria, tasks and changes)</a>
-                }
-                else { <a href="@($"delivery-reporting?project={_projectId}")">Generate a report to see user stories, acceptance criteria, phases and baseline changes</a> }
-            </p>
+                case "features": @FeaturesSection(view) break;
+                case "risks": @RisksSection(view) break;
+                case "technical": @TechnicalSection(view) break;
+                default: @OverviewSection(view) break;
             }
         }
     }
 </div>
 
 @code {
+    // ── Sections (NEXT53): Overview dashboard · Features · Risks & quality · Technical details (advanced) ─────────────────────────────
+
+    /// <summary>The page section (?section=); the dashboard by default. Tasks are only in Technical details.</summary>
+    [SupplyParameterFromQuery(Name = "section")] public string? SectionQuery { get; set; }
+    /// <summary>The feature open in the feature list (?f=, a canonical feature key).</summary>
+    [SupplyParameterFromQuery(Name = "f")] public string? OpenFeatureQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "sort")] public string? SortQuery { get; set; }
+
+    private static readonly string[] Sections = ["overview", "features", "risks", "technical"];
+    private string Section => SectionQuery is { } s && Sections.Contains(s) ? s : "overview";
+    private DeliveryFeatureSort Sort => Enum.TryParse<DeliveryFeatureSort>(SortQuery, true, out var s) ? s : DeliveryFeatureSort.Priority;
+
+    // One calculation per data change (the components only render): cards, attention entries and the filtered list are memoised.
+    private (DeliveryBacklogView View, WeeklyDeliveryReport? Report)? _cardsFor;
+    private IReadOnlyList<DeliveryFeatureCard> _cards = [];
+    private IReadOnlyList<DeliveryAttentionEntry> _entries = [];
+    private (IReadOnlyList<DeliveryFeatureCard> Cards, string Status, string Attention, string Search, DeliveryFeatureSort Sort)? _shownFor;
+    private IReadOnlyList<DeliveryFeatureCard> _shownCards = [];
+
+    private IReadOnlyList<DeliveryFeatureCard> Cards(DeliveryBacklogView view)
+    {
+        if (_cardsFor is { } f && ReferenceEquals(f.View, view) && ReferenceEquals(f.Report, _report)) return _cards;
+        _cards = DeliveryIntelligence.Cards(view, _report);
+        _entries = DeliveryIntelligence.AttentionRequired(view, _report, _scope is not null ? _scopeView?.Candidates?.Count ?? 0 : 0);
+        _cardsFor = (view, _report);
+        return _cards;
+    }
+
+    private IReadOnlyList<DeliveryAttentionEntry> AttentionEntries(DeliveryBacklogView view) { Cards(view); return _entries; }
+
+    private IReadOnlyList<DeliveryFeatureCard> ShownCards(DeliveryBacklogView view)
+    {
+        var cards = Cards(view);
+        if (_shownFor is { } s && ReferenceEquals(s.Cards, cards) && s.Status == _status && s.Attention == _attention && s.Search == _search && s.Sort == Sort) return _shownCards;
+        var keys = Filtered(view).Select(i => i.FeatureKey).ToHashSet(StringComparer.Ordinal);
+        _shownCards = DeliveryIntelligence.Sort(cards.Where(c => keys.Contains(c.FeatureKey)), Sort);
+        _shownFor = (cards, _status, _attention, _search, Sort);
+        return _shownCards;
+    }
+
+    /// <summary>Where an attention entry is handled on this page (its section, with its filter).</summary>
+    private string AttentionHref(DeliveryAttentionEntry e)
+    {
+        var url = Url(section: e.View, state: e.Filter?.StartsWith("state=") == true ? e.Filter["state=".Length..] : null,
+            attention: e.Filter?.StartsWith("attention=") == true ? e.Filter["attention=".Length..] : null);
+        return url;
+    }
+
+    private RenderFragment OverviewSection(DeliveryBacklogView view) => __builder =>
+    {
+        <h3 class="dd-h" id="dd-current-h">Current delivery state</h3>
+        <DeliveryKpiGrid Kpis="DeliveryDashboard.Current(view)" Label="Current delivery state" />
+
+        <div class="dd-grid">
+            <DeliveryAttentionRequired Entries="AttentionEntries(view)" Href="AttentionHref" />
+            <section class="dd-card" aria-labelledby="dd-status-h" data-testid="dd-status">
+                <h3 class="dd-card-h" id="dd-status-h">Feature status</h3>
+                <DeliveryBarChart Bars="DeliveryDashboard.FeatureStatus(view)" TestId="dd-status-bar" Label="Features by delivery status" Empty="No features in this scope." />
+                <p class="do-muted dd-note">From task checkboxes and explicit status lines only — no workflow state is inferred; none of these is verified completion.</p>
+            </section>
+        </div>
+
+        <div class="dd-grid">
+            @{ var total = view.Items.Sum(i => i.TasksTotal); var done = view.Items.Sum(i => i.TasksCompleted); }
+            <section class="dd-card" aria-labelledby="dd-module-h" data-testid="dd-module-progress">
+                <h3 class="dd-card-h" id="dd-module-h">Task checklist by module</h3>
+                <DeliveryBarChart Bars="DeliveryIntelligence.ModuleProgress(view)" TestId="dd-module-bar" Label="Checked tasks by module" Percent="true" Empty="No tasks.md checkboxes in this scope." />
+                <p class="do-muted dd-note" data-testid="dd-checklist-note">@(total == 0 ? "No tasks.md checkboxes in this snapshot." : $"{done} of {total} tasks checked overall ({100 * done / total}%).") @DeliveryDashboard.ChecklistInfo</p>
+            </section>
+            <section class="dd-card" aria-labelledby="dd-quality-h" data-testid="dd-quality">
+                <h3 class="dd-card-h" id="dd-quality-h">Quality &amp; evidence</h3>
+                @QualityRows(view)
+            </section>
+        </div>
+
+        @if (DeliveryIntelligence.BlockersByModule(view) is { Count: > 0 } blockers)
+        {
+            <section class="dd-card dd-spaced" aria-labelledby="dd-blockers-h" data-testid="dd-blockers">
+                <h3 class="dd-card-h" id="dd-blockers-h">Blockers by module</h3>
+                <DeliveryBarChart Bars="blockers" TestId="dd-blocker-bar" Label="Blocked features by module" />
+            </section>
+        }
+
+        @if (_report is not null)
+        {
+            <h3 class="dd-h" id="dd-change-h">Change this period <span class="do-muted">compared with the baseline@(Scoped ? ", same scope on both sides" : "")</span></h3>
+            @if (DeliveryDashboard.ChangeNotComparable(_report) is { } notComparable)
+            {
+                <p class="do-card do-muted" data-testid="dd-change-not-comparable">@notComparable</p>
+            }
+            else
+            {
+                <div class="dd-grid">
+                    <section class="dd-card" aria-label="Feature changes" data-testid="dd-change-features"><h3 class="dd-card-h">Features</h3><DeliveryBarChart Bars="DeliveryDashboard.FeatureChanges(_report)" TestId="dd-change-bar" /></section>
+                    <section class="dd-card" aria-label="Task changes" data-testid="dd-change-tasks"><h3 class="dd-card-h">Tasks</h3><DeliveryBarChart Bars="DeliveryDashboard.TaskChanges(_report)" TestId="dd-change-bar" Signed="true" /></section>
+                </div>
+                @if (view.Source.ReportId is { } reportLink)
+                {
+                    <p class="do-links"><a href="@($"delivery-reporting?project={_projectId}&report={reportLink}")" data-testid="do-open-report">Open the full change report in Delivery Reports</a></p>
+                }
+            }
+        }
+        else
+        {
+            <p class="do-links"><a href="@($"delivery-reporting?project={_projectId}")" data-testid="do-generate-report">Generate a report to see changes since a baseline, user stories and acceptance criteria</a></p>
+        }
+        <p class="do-muted dd-trend" data-testid="dd-trend">Trend available after more delivery snapshots — a baseline and a current snapshot are two points, not a trend.</p>
+    };
+
+    private RenderFragment FeaturesSection(DeliveryBacklogView view) => __builder =>
+    {
+        var shown = ShownCards(view);
+        <div class="dd-list-tools">
+            <p class="do-muted" role="status" data-testid="do-count">@shown.Count of @view.Items.Count features@(Scoped ? " in this scope" : "")</p>
+            <label>Sort
+                <select data-testid="do-sort" value="@Sort" @onchange="OnSortChanged">
+                    <option value="@DeliveryFeatureSort.Priority">Needs attention first</option>
+                    <option value="@DeliveryFeatureSort.Name">Name</option>
+                    <option value="@DeliveryFeatureSort.Module">Module</option>
+                    <option value="@DeliveryFeatureSort.Progress">Least checklist progress</option>
+                </select></label>
+        </div>
+        <DeliveryFeatureList Cards="shown" Report="_report" SelectedKey="@OpenFeatureQuery" OnSelect="SelectFeatureCard" OnOpenTechnical="OpenTechnical"
+            ShowChange="_report is not null" Why="Why" TestId="do-features" />
+        @if (view.RemovedFeatures.Count > 0)
+        {
+            <p class="do-muted" data-testid="do-removed">Removed this period (scope change to confirm, not counted as delivered): @string.Join(", ", view.RemovedFeatures)</p>
+        }
+    };
+
+    private RenderFragment RisksSection(DeliveryBacklogView view) => __builder =>
+    {
+        <div class="dd-grid">
+            <DeliveryAttentionRequired Entries="AttentionEntries(view)" Href="AttentionHref" />
+            <section class="dd-card" aria-labelledby="dd-quality-h" data-testid="dd-quality">
+                <h3 class="dd-card-h" id="dd-quality-h">Quality &amp; evidence</h3>
+                @QualityRows(view)
+            </section>
+        </div>
+        <section class="dd-card dd-spaced" aria-labelledby="dd-attention-h" data-testid="dd-attention">
+            <h3 class="dd-card-h" id="dd-attention-h">Review items by category</h3>
+            @if (_report is null) { <p class="do-muted">Generate a report to see scope changes and traceability issues.</p> }
+            else if (DeliveryDashboard.Attention(_report) is { Count: 0 }) { <p class="do-muted" data-testid="dd-attention-none">No attention items. Shared &amp; foundational tasks are normal and never listed here.</p> }
+            else
+            {
+                @foreach (var g in DeliveryDashboard.Attention(_report))
+                {
+                    <details class="dd-att-group" data-testid="dd-attention-group" data-category="@g.Category">
+                        <summary><strong>@g.Label</strong> <span class="dd-badge dd-tone-@(g.Items.Any(i => i.Severity == DeliveryAttentionSeverity.Blocker) ? "blocker" : "review")">@g.Items.Count</span></summary>
+                        <ul class="dd-att-list">@foreach (var a in g.Items.Take(20)) { <li><strong>@a.Title</strong> — @a.Detail</li> }</ul>
+                        @if (g.Items.Count > 20) { <p class="do-muted">+@(g.Items.Count - 20) more in the report</p> }
+                    </details>
+                }
+            }
+        </section>
+        @if (_scope is not null && _scopeView?.Candidates is { Count: > 0 } candidates)
+        {
+            <details class="do-candidates dd-spaced" data-testid="do-scope-candidates">
+                <summary>@candidates.Count more feature@(candidates.Count == 1 ? "" : "s") may belong to this scope — awaiting review, not counted</summary>
+                <ul>@foreach (var c in candidates) { <li><strong>@c.Title</strong> — @c.Why</li> }</ul>
+                <p><a href="correlation-review">Confirm or reject them in Relationship Review</a></p>
+            </details>
+        }
+        @if (view.RemovedFeatures.Count > 0)
+        {
+            <p class="do-muted" data-testid="do-removed">Removed this period (scope change to confirm, not counted as delivered): @string.Join(", ", view.RemovedFeatures)</p>
+        }
+    };
+
+    private RenderFragment TechnicalSection(DeliveryBacklogView view) => __builder =>
+    {
+        <p class="do-muted" data-testid="do-technical-note">Work items for analysis: features, user stories, phases and tasks with their identifiers and source evidence. Task checkboxes are progress, not verification.</p>
+        @if (_report is not null)
+        {
+            var options = ExplorerOptions(view, _report);
+            <p class="do-muted" role="status" data-testid="do-count">@options.FeatureKeys!.Count of @view.Items.Count features @(Scoped ? "in this scope " : "")· blocked, needs review, new and changed first</p>
+            <BirkNext.Web.Components.DeliveryWorkspace @key="_report.ReportId" Report="_report" Options="options"
+                ProjectId="_projectId" SelectedId="@ItemQuery" OnSelect="SelectItem" OnOpenFeature="OpenFeature" />
+            @if (options.FeatureKeys.Count == 0 && view.Items.Count > 0) { <p class="do-muted" data-testid="do-empty-filter">No feature matches these filters.</p> }
+        }
+        else
+        {
+            <p class="do-card do-muted" data-testid="do-technical-no-report">The work-item explorer needs a generated report (it reads the frozen hierarchy).
+                <a href="@($"delivery-reporting?project={_projectId}")">Generate a report in Delivery Reports</a>.</p>
+        }
+    };
+
+    private static RenderFragment QualityRows(DeliveryBacklogView view) => __builder =>
+    {
+        <ul class="dd-quality">
+            @foreach (var q in DeliveryDashboard.Quality(view))
+            {
+                <li data-testid="dd-quality-row" data-key="@q.Key" title="@q.Detail">
+                    <span class="dd-q-label">@q.Label</span>
+                    <span class="dd-q-track" aria-hidden="true">@if (q.Filled is { } f && q.Of is > 0 and var of) { <span class="dd-q-fill dd-tone-@DeliveryDashboard.ToneClass(q.Tone)" style="width:@(100 * f / of)%"></span> }</span>
+                    <span class="dd-badge dd-tone-@DeliveryDashboard.ToneClass(q.Tone)" data-testid="dd-quality-state">@q.State</span>
+                    <span class="dd-q-detail do-muted">@q.Detail</span>
+                </li>
+            }
+        </ul>
+    };
+
+    private void OnSortChanged(ChangeEventArgs e) => Go(Nav.GetUriWithQueryParameter("sort", e.Value?.ToString() is { } s && s != nameof(DeliveryFeatureSort.Priority) ? s : null));
+
+    /// <summary>Opening a card is a history entry (back closes it); the list position and filters stay.</summary>
+    private void SelectFeatureCard(string? key) => Nav.NavigateTo(Nav.GetUriWithQueryParameter("f", key));
+
+    /// <summary>The same feature in the work-item explorer (Technical details), selected there.</summary>
+    private void OpenTechnical(string key) => Nav.NavigateTo(Url(section: "technical") + $"&item={Uri.EscapeDataString("f:" + key)}");
+
     private const string AllFilter = "all";
     [SupplyParameterFromQuery(Name = "project")] public string? ProjectQuery { get; set; }
     [SupplyParameterFromQuery(Name = "feature")] public string? FeatureQuery { get; set; }
@@ -415,6 +490,14 @@
     private string QualityCount(QualityCategory q) => _scopeView?.WorkSummary?.ByCategory.GetValueOrDefault(q) is int n and > 0 ? $" ({n})" : "";
     private IReadOnlyList<DeliveryScopeSourceOption> SourceOptions => _scopeView?.Sources ?? [];
     private IReadOnlyList<DeliveryFunctionalScopeOption> ScopeOptions => _scopeView?.Scopes ?? [];
+
+    /// <summary>Retry after the project list failed: reads it again and continues with the requested project.</summary>
+    private async Task RetryProjectsAsync()
+    {
+        _loaded = false;
+        _projectId = null;
+        await OnParametersSetAsync();
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -533,28 +616,14 @@
 
     private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
-    /// <summary>Horizontal bars of one unit (features or tasks), each with a label, count and its meaning as tooltip; scaled within the group.</summary>
-    private static RenderFragment Bars(IReadOnlyList<DeliveryBar> bars, string testId) => __builder =>
-    {
-        var max = Math.Max(1, bars.Select(b => Math.Abs(b.Value)).DefaultIfEmpty(1).Max());
-        <ul class="dd-bars">
-            @foreach (var b in bars)
-            {
-                <li data-testid="@testId" data-key="@b.Key" title="@b.Info">
-                    <span class="dd-bar-label">@b.Label</span>
-                    <span class="dd-bar" aria-hidden="true"><span class="dd-bar-fill dd-tone-@DeliveryDashboard.ToneClass(b.Tone)" style="width:@(100 * Math.Abs(b.Value) / max)%"></span></span>
-                    <span class="dd-bar-value">@(b.Value > 0 && b.Key == "net-checked" ? "+" : "")@b.Value</span>
-                </li>
-            }
-        </ul>
-    };
-
     // ── URL state: every filter lives in the query, so refresh and back keep the scope (ids only, never display names) ──
 
     private string Url(string? feature = null, string? source = null, string? scope = null, string? module = null, string? state = null, string? attention = null,
-        bool keep = true)
+        bool keep = true, string? section = null)
     {
         var parts = new List<string> { $"project={_projectId}" };
+        var sec = section ?? Section;
+        if (sec != "overview") parts.Add($"section={sec}");
         void Add(string key, string? value) { if (!string.IsNullOrEmpty(value)) parts.Add($"{key}={Uri.EscapeDataString(value)}"); }
         Add("source", keep ? source ?? _source : source);
         Add("scope", keep ? scope ?? _scope : scope);
@@ -566,8 +635,10 @@
         var at = keep ? attention ?? _attention : attention;
         if (at != AllFilter) Add("attention", at);
         if (keep) Add("q", _search);
-        if (keep) Add("item", ItemQuery);
-        if (keep) parts.AddRange(ExplorerQuery());
+        if (keep && sec == "technical") Add("item", ItemQuery);
+        if (keep && sec == "features") Add("f", OpenFeatureQuery);
+        if (keep && sec == "features" && Sort != DeliveryFeatureSort.Priority) Add("sort", Sort.ToString());
+        if (keep && sec == "technical") parts.AddRange(ExplorerQuery());
         Add("feature", feature);
         return "delivery-overview?" + string.Join('&', parts);
     }
