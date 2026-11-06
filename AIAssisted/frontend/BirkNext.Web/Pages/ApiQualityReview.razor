@@ -589,16 +589,21 @@
                             {
                                 var guide = ApiReviewPresentation.ManualObligationGuide(obligation.Area);
                                 <li data-testid="aqr-limitation-area">
-                                    <strong>@obligation.Area</strong> <span class="aqr-pill" data-testid="aqr-obligation-status">Not reviewed</span>
+                                    <strong>@obligation.Area</strong>
                                     <ul class="aqr-list aqr-muted">@foreach (var detail in obligation.Details) { <li data-testid="aqr-limitation-detail">@detail</li> }</ul>
                                     <dl class="aqr-obligation" data-testid="aqr-obligation">
                                         <div><dt>Purpose</dt><dd>@guide.Purpose</dd></div>
                                         <div><dt>Evidence required</dt><dd>@guide.Evidence</dd></div>
                                     </dl>
+                                    @if (_context?.ActiveProfileOrNull is { } decisionProfile)
+                                    {
+                                        <BirkNext.Web.Components.ManualDecisionPanel Module="@BirkNext.ManualReview.ManualReviewModules.ApiQuality" ScopeKey="@decisionProfile.Id" SubjectKey="@obligation.Area"
+                                            AppliesTo="@string.Join(", ", report.Targets.Select(t => t.Target.ServiceName).Distinct())" TestId="aqr-obligation-decision" />
+                                    }
                                 </li>
                             }
                         </ul>
-                        <p class="aqr-muted" data-testid="aqr-obligation-note">BirkNext does not record manual review decisions yet: record each outcome where your team tracks test results. The automated run never marks an obligation as done.</p>
+                        <p class="aqr-muted" data-testid="aqr-obligation-note">Each decision is stored with the reviewer, evidence references and its history for this Target Environment. The automated run never marks an obligation as done, and a decision never changes the automated result.</p>
                     </ReviewDisclosure>
                 </section>
 
@@ -870,6 +875,22 @@
     private string _progressMessage = "";
     private string? _errorMessage;
     private string _tab = "Overview";
+    [SupplyParameterFromQuery(Name = "tab")] public string? TabParam { get; set; }
+    private string? _urlTab;
+
+    protected override void OnParametersSet()
+    {
+        var fromUrl = Tabs.FirstOrDefault(t => string.Equals(t, TabParam, StringComparison.OrdinalIgnoreCase)) ?? "Overview";
+        if (_urlTab != fromUrl) { _tab = fromUrl; _urlTab = fromUrl; }
+    }
+
+    /// <summary>Writes the result tab to the URL after the user changes it (replace: no history entry per click; other parameters are kept).</summary>
+    private void SyncTabToUrl()
+    {
+        if (_report is null || _urlTab == _tab) return;
+        _urlTab = _tab;
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("tab", _tab == "Overview" ? null : _tab.ToLowerInvariant()), replace: true);
+    }
     private string? _requestedTargetId;
     private List<string>? _requestedSelection;
 
@@ -1120,6 +1141,7 @@
     private void ShowReviewDetails() { _tab = "Overview"; _focusReviewDetails = true; }
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        SyncTabToUrl();
         if (_focusReviewDetails)
         {
             _focusReviewDetails = false;
