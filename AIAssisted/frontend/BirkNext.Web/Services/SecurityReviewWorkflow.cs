@@ -38,7 +38,7 @@ public static class SecurityReviewWorkflow
                 liveCanRun ? "Synthetic test children and identities are configured for an approved DEV/QA environment (values are never shown)." : $"{liveReason} {runtimeItems} runtime item(s) missing. This never blocks the static review.",
                 DisabledReason: liveCanRun ? null : "Runtime verification stays unverified until an approved synthetic context exists."),
             new("runtime", "Run runtime verification", executedRuntime > 0 ? GuidedStepState.Done : liveCanRun ? GuidedStepState.Waiting : GuidedStepState.Blocked,
-                executedRuntime > 0 ? $"{executedRuntime} runtime check(s) executed" : liveCanRun ? "Runs with the next review" : "RUNTIME UNVERIFIED",
+                executedRuntime > 0 ? $"{executedRuntime} runtime check(s) executed" : liveCanRun ? "Not run — start it explicitly" : "RUNTIME UNVERIFIED",
                 executedRuntime > 0 ? "Each runtime check compares the expected and observed result for a synthetic identity; blocked or skipped is neither Passed nor Failed."
                     : "Runtime verification runs only on an explicit Run with an approved context; it never runs from opening the page or checking readiness."),
         };

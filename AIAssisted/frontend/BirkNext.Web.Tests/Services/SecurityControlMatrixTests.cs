@@ -112,6 +112,15 @@ public sealed class SecurityControlMatrixTests
     }
 
     [Fact]
+    public void An_approved_context_without_a_runtime_run_is_waiting_not_done_and_never_runs_by_itself()
+    {
+        var steps = SecurityReviewWorkflow.Derive(true, true, Needed((ClassificationMissingGroup.SourceEvidence, ClassificationReadiness.Ready, "Source")), true, "", null);
+        var runtime = steps.Single(s => s.Id == "runtime");
+        runtime.State.Should().Be(GuidedStepState.Waiting, "configured is not executed");
+        runtime.StatusLabel.Should().Be("Not run — start it explicitly");
+    }
+
+    [Fact]
     public void Static_review_with_partial_source_has_limitations_and_without_source_is_blocked()
     {
         var partial = Needed((ClassificationMissingGroup.SourceEvidence, ClassificationReadiness.Missing, "CDC pipeline source"));
