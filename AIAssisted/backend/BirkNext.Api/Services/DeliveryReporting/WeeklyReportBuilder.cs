@@ -179,14 +179,15 @@ public static class WeeklyReportBuilder
         // Same effective date matters whatever else the direction says (a same-day pair can also be a reduced inventory).
         if (bDate == cDate && state != DeliveryDirectionState.BaselineLater)
             warnings.Add(SameEffectiveDateWarning(baseline.Ref, current.Ref));
-        var bKeys = baseline.Features.Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
-        var cKeys = current.Features.Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
+        // The same feature matching as the report (a feature whose module path changed is matched by its unique folder), so the preview never
+        // announces a moved feature as missing + new when the generated report pairs it.
+        var pairs = DeliverySnapshotComparison.Match(baseline.Features, current.Features);
         var (coverage, text) = PeriodCoverage(kind, bDate, cDate, weekStart);
         return new DeliveryComparisonPreview
         {
             Baseline = baseline.Ref, Current = current.Ref, BaselineInventory = bInv, CurrentInventory = cInv,
-            MissingFeatures = [.. baseline.Features.Where(f => !cKeys.Contains(f.Key)).Select(f => f.Title).Order(StringComparer.Ordinal).Take(50)],
-            NewFeatures = [.. current.Features.Where(f => !bKeys.Contains(f.Key)).Select(f => f.Title).Order(StringComparer.Ordinal).Take(50)],
+            MissingFeatures = [.. pairs.Where(p => p.Current is null).Select(p => p.Baseline!.Title).Order(StringComparer.Ordinal).Take(50)],
+            NewFeatures = [.. pairs.Where(p => p.Baseline is null).Select(p => p.Current!.Title).Order(StringComparer.Ordinal).Take(50)],
             Direction = state, Warnings = warnings, RequiresConfirmation = state == DeliveryDirectionState.InventoryReduced,
             CanGenerate = state != DeliveryDirectionState.BaselineLater, PeriodCoverage = coverage, CoverageText = text, Kind = kind,
         };

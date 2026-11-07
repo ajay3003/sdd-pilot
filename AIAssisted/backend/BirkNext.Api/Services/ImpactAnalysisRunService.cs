@@ -58,7 +58,11 @@ public sealed class ImpactAnalysisRunService(AppDbContext db, SourceChangeImpact
         var limitations = new List<string>();
         if (source is not null) AddSourceFindings(source, findings);
         if (source is not null && currentSourceEvidence is not null)
+        {
             AddSnapshotEvidenceFindings(currentSourceEvidence, source, findings);
+            BindEvidenceToSnapshots(findings, source.BaselineSnapshotId, source.TargetSnapshotId, Paths(currentSourceEvidence),
+                Paths(await sourceEvidence.ResolveAsync(string.Empty, source.BaselineSnapshotId, ct)));
+        }
         var (selectedRequirements, linkedRequirementTests) = await AddRequirementFindingsAsync(request.ProjectId, requirementIds, source?.TargetSnapshotId, findings, ct);
         if (requirementIds.Count > 0 && selectedRequirements < requirementIds.Count)
             limitations.Add($"{requirementIds.Count - selectedRequirements} selected requirement(s) were not found in the current project traceability records. No relationships were inferred for them.");
@@ -334,6 +338,22 @@ public sealed class ImpactAnalysisRunService(AppDbContext db, SourceChangeImpact
         ImpactChangeDomain.Observability => ImpactAnalysisFindingKind.Integration,
         _ => ImpactAnalysisFindingKind.Source
     };
+
+    private static HashSet<string>? Paths(IqrSourceSnapshot? snapshot) =>
+        snapshot?.TargetIndex is { FileInventoryComplete: true } index ? index.Files.Select(f => f.RelativePath).ToHashSet(StringComparer.Ordinal) : null;
+
+    /// <summary>Evidence cites the snapshot that holds its file: a path only the baseline inventory has (a removed or moved file) is bound to the
+    /// baseline, never to the current snapshot where it does not exist. Without both complete inventories nothing is rebound.</summary>
+    private static void BindEvidenceToSnapshots(Dictionary<string, ImpactAnalysisFinding> findings, Guid baselineId, Guid currentId,
+        HashSet<string>? currentPaths, HashSet<string>? baselinePaths)
+    {
+        if (currentPaths is null || baselinePaths is null) return;
+        ImpactAnalysisEvidence Bind(ImpactAnalysisEvidence e) =>
+            e.SourceSnapshotId == currentId && e.SourcePath is { Length: > 0 } path && !currentPaths.Contains(path) && baselinePaths.Contains(path)
+                ? e with { SourceSnapshotId = baselineId } : e;
+        foreach (var (key, finding) in findings.ToList())
+            findings[key] = finding with { Evidence = finding.Evidence.Select(Bind).Distinct().ToList() };
+    }
 
     private static void AddFinding(Dictionary<string, ImpactAnalysisFinding> findings, ImpactAnalysisFinding finding)
     {

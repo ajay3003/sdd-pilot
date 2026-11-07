@@ -132,6 +132,34 @@ public sealed class ImpactAnalysisRunServiceTests
         report.DomainAssessments.Should().Contain(x => x.Domain == "Security/authentication" && x.Status == ImpactAnalysisEvidenceStatus.NotEvaluated);
     }
 
+    [Fact]
+    public async Task Evidence_of_a_removed_file_cites_the_baseline_snapshot_that_holds_it()
+    {
+        // Real-data shape (M2LB → M2LB-language): a module folder was renamed, so its files exist only in the baseline. Their evidence must not
+        // point at the current snapshot, where the file does not exist.
+        await using var db = Db();
+        static SourceEvidenceDomainsSnapshot Resource(string file, string name) => new()
+        {
+            Infrastructure = new InfrastructureEvidence
+            {
+                Domain = SourceEvidenceDomain.Infrastructure,
+                Resources = [new InfrastructureResource { Id = $"{file}#{name}", File = file, LogicalName = name, ResourceType = "eventHub" }]
+            }
+        };
+        static SourceTargetIndex Index(params string[] files) => new() { FileInventoryComplete = true, Files = [.. files.Select(f => new SourceFileTarget(f, "fp"))] };
+        var baseline = Snapshot('a', DateTimeOffset.UtcNow.AddDays(-1)) with { EvidenceDomains = Resource("Hendelse/infra/bus.tf", "bus"), TargetIndex = Index("Hendelse/infra/bus.tf") };
+        var current = Snapshot('b', DateTimeOffset.UtcNow) with { EvidenceDomains = Resource("HendelseService/infra/bus.tf", "bus2"), TargetIndex = Index("HendelseService/infra/bus.tf") };
+        var evidence = new SnapshotProvider([baseline, current]);
+        var service = new ImpactAnalysisRunService(db, new SourceChangeImpactService(db, evidence), evidence);
+
+        var report = await service.RunAsync(new("orders", "Orders", null, [], baseline.Id, current.Id), default);
+        var cited = report.Findings.SelectMany(f => f.Evidence).Where(e => e.SourcePath is not null).ToList();
+
+        cited.Should().Contain(e => e.SourcePath == "Hendelse/infra/bus.tf", "the removed resource is a selected change");
+        cited.Where(e => e.SourcePath == "Hendelse/infra/bus.tf").Should().OnlyContain(e => e.SourceSnapshotId == baseline.Id);
+        cited.Where(e => e.SourcePath == "HendelseService/infra/bus.tf").Should().NotBeEmpty().And.OnlyContain(e => e.SourceSnapshotId == current.Id);
+    }
+
     private static AppDbContext Db() => new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
 
     private static IqrSourceSnapshot Snapshot(char fingerprint, DateTimeOffset analyzedAt) => new()

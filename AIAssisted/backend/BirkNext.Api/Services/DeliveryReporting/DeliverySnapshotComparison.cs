@@ -147,7 +147,7 @@ public static class DeliverySnapshotComparison
             stories.Count(s => s.NewFeature), stories.Count(s => s.RemovedFeature), stories.Count(s => s.Changed)) { ScopeChanges = scope };
     }
 
-    private static List<(DeliveryContentFeature? Baseline, DeliveryContentFeature? Current)> Match(List<DeliveryContentFeature> baseline, List<DeliveryContentFeature> current)
+    internal static List<(DeliveryContentFeature? Baseline, DeliveryContentFeature? Current)> Match(List<DeliveryContentFeature> baseline, List<DeliveryContentFeature> current)
     {
         var byKey = baseline.ToDictionary(f => f.Key, StringComparer.Ordinal);
         var pairs = new List<(DeliveryContentFeature?, DeliveryContentFeature?)>();

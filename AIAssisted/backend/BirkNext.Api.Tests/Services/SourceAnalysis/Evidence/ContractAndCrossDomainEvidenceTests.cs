@@ -1,4 +1,5 @@
 using BirkNext.Api.Services.SourceAnalysis.Evidence;
+using BirkNext.ContractSchemaEvidence;
 using BirkNext.SourceArchitecture;
 using BirkNext.SourceDomains;
 using FluentAssertions;
@@ -66,6 +67,23 @@ public sealed class ContractAndCrossDomainEvidenceTests
         classes.Should().BeEquivalentTo([ContractChangeClass.OperationAdded, ContractChangeClass.TypeChanged, ContractChangeClass.RequirednessChanged,
             ContractChangeClass.FieldAddedOptional, ContractChangeClass.FieldAddedRequired, ContractChangeClass.FieldRemoved]);
         SourceEvidenceDiff.Label.Should().Contain("not runtime or deployment drift");
+    }
+
+    [Fact]
+    public void Enum_values_added_or_removed_between_versions_are_contract_changes()
+    {
+        // Real-data shape (M2LB SkoleService schema.graphql): one enum gained a member; nothing else changed.
+        SourceContract Contract(params string[] values) => new()
+        {
+            Id = "graphqlschema:schema.graphql", Name = "schema", Type = SourceContractType.GraphQlSchema, Operations = [new("query skole", "query", null, [])],
+            Types = [new("Skoletype", "enum", []) { Values = [.. values] }, new("Skole", "type", [new("id", "ID!", true)])],
+        };
+        var changes = ContractComparison.Compare(Contract("GRUNNSKOLE", "VGS"), Contract("GRUNNSKOLE", "VGS", "FOLKEHOYSKOLE"));
+        changes.Should().ContainSingle().Which.Should().Match<ContractChangeFact>(c => c.Kind == SourceEvidenceChangeKind.Added && c.Area == "Enum value"
+            && c.Path == "Skoletype.FOLKEHOYSKOLE" && c.Class == ContractChangeClass.EnumValueAdded && c.Classification == ContractComparison.NonBreakingCandidate);
+        ContractComparison.Compare(Contract("GRUNNSKOLE", "VGS", "FOLKEHOYSKOLE"), Contract("GRUNNSKOLE", "VGS")).Should().ContainSingle()
+            .Which.Should().Match<ContractChangeFact>(c => c.Kind == SourceEvidenceChangeKind.Removed && c.Class == ContractChangeClass.EnumValueRemoved && c.Classification == ContractComparison.PotentialBreaking);
+        ContractComparison.Compare(Contract("VGS", "GRUNNSKOLE"), Contract("GRUNNSKOLE", "VGS")).Should().BeEmpty("member order is not a change");
     }
 
     [Fact]

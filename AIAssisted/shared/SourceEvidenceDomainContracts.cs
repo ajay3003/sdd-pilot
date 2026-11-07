@@ -702,6 +702,8 @@ public static class SourceEvidenceDiff
                     $"{type.Name}.{field.Name}: {(was.Required ? "required" : "optional")} → {(field.Required ? "required" : "optional")}", ContractChangeClass.RequirednessChanged);
             }
             foreach (var gone in old.Fields.Where(f => type.Fields.All(n => n.Name != f.Name))) Add(SourceEvidenceChangeKind.Removed, "Field", $"{type.Name}.{gone.Name}", $"{type.Name}.{gone.Name}", ContractChangeClass.FieldRemoved);
+            foreach (var value in type.Values.Except(old.Values, StringComparer.Ordinal)) Add(SourceEvidenceChangeKind.Added, "Enum value", $"{type.Name}.{value}", $"{type.Name}.{value}", ContractChangeClass.EnumValueAdded);
+            foreach (var value in old.Values.Except(type.Values, StringComparer.Ordinal)) Add(SourceEvidenceChangeKind.Removed, "Enum value", $"{type.Name}.{value}", $"{type.Name}.{value}", ContractChangeClass.EnumValueRemoved);
         }
         foreach (var gone in before.Types.Where(t => after.Types.All(a => a.Name != t.Name))) Add(SourceEvidenceChangeKind.Removed, "Type", gone.Name, gone.Name, ContractChangeClass.TypeRemoved);
         return changes;

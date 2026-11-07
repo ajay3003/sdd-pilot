@@ -74,6 +74,26 @@ public sealed class DeliverySnapshotIdentityTests
     }
 
     [Fact]
+    public void The_preview_pairs_a_feature_whose_module_path_changed_exactly_like_the_report()
+    {
+        // Real-data shape (M2LB → M2LB-language): module Tjeneste renamed TjenesteService, its features kept their folders; one new feature.
+        static DeliveryContentFeature F(string module, string folder, int position) =>
+            new() { Key = $"{module.ToLowerInvariant()}::{folder}", Folder = folder, Module = module, Title = folder, Position = position };
+        static DeliverySnapshotContent C(DateTimeOffset at, params DeliveryContentFeature[] features) =>
+            new() { Ref = new() { SnapshotId = Guid.NewGuid(), EffectiveAt = at, ImportedAt = at }, Coverage = DeliveryCoverage.Complete, Features = [.. features] };
+        var baseline = C(Monday, F("Tjeneste", "001-tjenestemodul", 0), F("Frontend", "002-search", 1));
+        var current = C(Friday, F("TjenesteService", "001-tjenestemodul", 0), F("Frontend", "002-search", 1), F("TjenesteService", "004-placements", 2));
+
+        var preview = WeeklyReportBuilder.Preview(baseline, current, TimeZoneInfo.Utc);
+        var report = DeliverySnapshotComparison.Compare(baseline, current);
+
+        preview.MissingFeatures.Should().BeEmpty("the report pairs the moved feature, so the preview must not call it missing");
+        preview.NewFeatures.Should().Equal(["004-placements"]);
+        report.FeaturesRemoved.Should().Be(preview.MissingFeatures.Count);
+        report.FeaturesAdded.Should().Be(preview.NewFeatures.Count);
+    }
+
+    [Fact]
     public void Azure_devops_commit_times_clarify_same_day_order_and_a_reversed_pair_is_said()
     {
         DeliveryAzureDevOpsSource Commit(string id, int minute) => new("org", "proj", "M2LB", "main", id, Friday.AddMinutes(minute));
