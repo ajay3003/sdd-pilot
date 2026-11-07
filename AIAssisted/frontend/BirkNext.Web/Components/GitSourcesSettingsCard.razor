@@ -1,6 +1,7 @@
 @using BirkNext.GitSources
 @inject IGitSourcesApiService Git
 @inject IServiceProvider Services
+@inject Microsoft.JSInterop.IJSRuntime JS
 
 @* System Settings → Git Sources. Opening this section reads only the local sign-in state; Azure DevOps is contacted only by Sign in, Test Git
    connection, Refresh repositories / branches and Track. Configured is not verified: only the explicit test verifies the chain. *@
@@ -20,13 +21,26 @@
             @* Signed in to Microsoft is not Azure DevOps access: only the explicit read-only test verifies the organization, projects and repositories. *@
             <div><dt>Azure DevOps access</dt><dd data-testid="gss-last-test">@GitSourcesPresentation.AccessText(_status)</dd></div>
         </dl>
-        @if (_status.Requirements.Count > 0)
+        @* One guided path with exactly one next step; each step says who acts (an Entra administrator, you here, Azure DevOps) and what is verified. *@
+        <GuidedStepList Steps="@GitSourcesPresentation.SetupSteps(_status, _signIn?.RestartRequired == true)" OnAction="StepActionAsync" Busy="_busy"
+                        TestId="gss-steps" Label="Git Sources setup steps" />
+        @if (_status.State is GitConnectionState.NotConfigured || _registrationOpen)
         {
-            <ul class="gss-list" data-testid="gss-requirements">@foreach (var r in _status.Requirements) { <li>@r</li> }</ul>
+            <details class="gss-health gss-setup" open="@(_registrationOpen || _status.State is GitConnectionState.NotConfigured)" data-testid="gss-registration">
+                <summary>Details for the Microsoft Entra administrator (step 1)</summary>
+                <p class="gss-muted gss-small">The app registration is created once per organization, outside BirkNext. Send this to whoever registers applications in
+                    Microsoft Entra ID; they send back two IDs that you enter in step 2. BirkNext never creates the registration or grants consent itself.</p>
+                <pre class="gss-request" data-testid="gss-registration-text">@GitSourcesPresentation.RegistrationRequest</pre>
+                <div class="gss-row">
+                    <button type="button" class="btn-secondary btn-sm" @onclick="CopyRegistrationAsync" data-testid="gss-registration-copy">Copy details</button>
+                    @if (_copied) { <span class="gss-muted gss-small" role="status" data-testid="gss-registration-copied">Copied.</span> }
+                </div>
+            </details>
         }
         @if (_status.Diagnostics.Count > 0)
         {
-            <details class="gss-health" open="@(_status.State is not GitConnectionState.Connected)" data-testid="gss-diagnostics">
+            @* Supporting technical detail: every check behind the steps above, open by default only when one of them failed. *@
+            <details class="gss-health" open="@(GitSourcesPresentation.Failures(_status).Count > 0)" data-testid="gss-diagnostics">
                 @* Missing configuration is an administrator prerequisite, not a runtime failure; failed checks are counted apart. *@
                 <summary data-testid="gss-health-summary" data-prerequisites="@GitSourcesPresentation.Prerequisites(_status).Count" data-failures="@GitSourcesPresentation.Failures(_status).Count">@GitSourcesPresentation.HealthSummary(_status)</summary>
                 <ul class="gss-list">
@@ -42,7 +56,7 @@
         {
             @* The Microsoft sign-in prerequisites are editable here (saved to this installation's appsettings.Local.json, like the other System Settings).
                Only the app registration itself is created outside BirkNext, in Microsoft Entra ID. *@
-            <details class="gss-health gss-setup" open="@(_status.State is GitConnectionState.NotConfigured || _signIn.RestartRequired)" data-testid="gss-signin-setup">
+            <details class="gss-health gss-setup" open="@(_setupOpen || _status.State is GitConnectionState.NotConfigured || _signIn.RestartRequired)" data-testid="gss-signin-setup">
                 <summary>Microsoft sign-in setup</summary>
                 <p class="gss-muted gss-small">Git Sources signs in through a Microsoft Entra app registration: a public client (platform "Mobile and desktop applications",
                     redirect URI <code>http://localhost</code>, delegated Azure DevOps permission <code>user_impersonation</code>). Its Application (client) ID is not a
@@ -94,7 +108,7 @@
                 <button type="button" class="btn-secondary" disabled="@_busy" @onclick="DeviceCodeAsync" data-testid="gss-device-sign-in">Sign in with a device code</button>
             }
             @if (_status.State == GitConnectionState.SigningIn) { <button type="button" class="btn-secondary" @onclick="RefreshAsync" data-testid="gss-refresh-status">I have signed in — refresh</button> }
-            <button type="button" class="btn-secondary" disabled="@(_busy || _status.State == GitConnectionState.NotConfigured)" @onclick="TestAsync" data-testid="gss-test"
+            <button type="button" class="btn-secondary" disabled="@(_busy || GitSourcesPresentation.TestBlockedReason(_status) is not null)" @onclick="TestAsync" data-testid="gss-test"
                     aria-describedby="@(GitSourcesPresentation.TestBlockedReason(_status) is null ? null : "gss-test-reason")">Test Git connection</button>
             @if (_status.State is GitConnectionState.Connected or GitConnectionState.AccessDenied)
             {
@@ -205,6 +219,7 @@
 
     // Microsoft sign-in setup: the saved values (null when System Settings cannot be read) and the form's draft.
     private MicrosoftSignInInfoDto? _signIn;
+    private bool _setupOpen, _registrationOpen, _copied;
     private bool _signInEnabled, _signInDeviceCode = true;
     private string? _signInClientId, _signInTenant, _signInProblem;
 
@@ -234,7 +249,29 @@
         } });
         if (!saved) { _signInProblem = message; return; }
         await LoadSignInAsync();
+        // The backend applies saved sign-in settings at once: re-read the Git Sources state so the steps never show the previous configuration.
+        await RefreshAsync();
     });
+
+    /// <summary>A guided step's action: the same calls as the buttons below, never a different path.</summary>
+    private Task StepActionAsync(string action) => action switch
+    {
+        "copy-registration" => CopyRegistrationAsync(),
+        "open-setup" => Task.FromResult(_setupOpen = true),
+        "sign-in" => SignInAsync(),
+        "device" => DeviceCodeAsync(),
+        "test" => TestAsync(),
+        "find-orgs" => LoadOrganizationsAsync(),
+        "load-repos" => LoadRepositoriesAsync(),
+        _ => Task.CompletedTask,
+    };
+
+    private async Task CopyRegistrationAsync()
+    {
+        _registrationOpen = true;
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", GitSourcesPresentation.RegistrationRequest); _copied = true; }
+        catch (Exception e) when (e is Microsoft.JSInterop.JSException or InvalidOperationException) { _copied = false; }
+    }
 
     private void ToggleOrganization(string url, bool on) { if (on) _selectedOrgs.Add(url); else _selectedOrgs.Remove(url); }
 

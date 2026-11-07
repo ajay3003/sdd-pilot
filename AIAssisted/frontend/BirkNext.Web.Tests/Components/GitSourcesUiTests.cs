@@ -48,13 +48,126 @@ public sealed class GitSourcesUiTests : BunitContext
     }
 
     [Fact]
-    public void Not_configured_names_the_requirements_and_disables_the_test()
+    public void Not_configured_guides_to_the_app_registration_with_copyable_details_and_disables_the_test()
     {
         Api(new() { State = GitConnectionState.NotConfigured, Message = "Microsoft sign-in is not configured.", Requirements = ["Set AzureEnvironment:ClientId"] });
+        JSInterop.SetupVoid("navigator.clipboard.writeText", _ => true).SetVoidResult();
         var cut = Render<GitSourcesSettingsCard>();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=gss-requirements]").TextContent.Should().Contain("AzureEnvironment:ClientId"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gss-steps]"));
+        cut.FindAll("[data-testid=gss-requirements]").Should().BeEmpty("the administrator checklist of configuration keys is replaced by guided steps");
+        var steps = cut.FindAll("[data-testid=gsl-step]");
+        steps.Select(s => (s.GetAttribute("data-step"), s.GetAttribute("data-state"))).Should().Equal(
+            ("registration", "Current"), ("settings", "Waiting"), ("sign-in", "Waiting"), ("access", "Waiting"), ("repositories", "Waiting"));
+        steps[0].TextContent.Should().Contain("Needs an administrator").And.Contain("Microsoft Entra administrator");
+        var details = cut.Find("[data-testid=gss-registration-text]").TextContent;
+        details.Should().Contain("Mobile and desktop applications").And.Contain("http://localhost").And.Contain("Azure DevOps > user_impersonation")
+            .And.Contain("499b84ac-1321-427f-aa17-267ca6975798").And.Contain("No client secret");
+        cut.Find("[data-testid=gsl-action][data-action=copy-registration]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gss-registration-copied]"));
+        JSInterop.VerifyInvoke("navigator.clipboard.writeText").Arguments.Single().Should().Be(GitSourcesPresentation.RegistrationRequest);
         cut.Find("[data-testid=gss-test]").HasAttribute("disabled").Should().BeTrue();
         cut.FindAll("[data-testid=gss-sign-in]").Should().BeEmpty();
+    }
+
+    // ── Guided setup: one next step per state, each through the same calls as the buttons ───────────────────────────────────
+
+    private static readonly IReadOnlyList<GitConfigurationCheck> Configured =
+    [
+        new("enabled", "Microsoft sign-in enabled", GitCheckState.Ok, "AzureEnvironment:Enabled is true."),
+        new("client-id", "App registration (client id)", GitCheckState.Ok, "Client id 11111111-2222-3333-4444-555555555555."),
+        new("tenant", "Tenant / authority", GitCheckState.Ok, "Authority https://login.microsoftonline.com/organizations."),
+    ];
+
+    private static (string? Step, string? State)[] States(IReadOnlyList<BirkNext.Web.Services.GuidedStep> steps) => [.. steps.Select(s => ((string?)s.Id, (string?)s.State.ToString()))];
+
+    [Fact]
+    public void A_client_id_without_sign_in_turned_on_makes_the_local_settings_the_next_step()
+    {
+        var status = new GitConnectionStatus { State = GitConnectionState.NotConfigured, Diagnostics =
+            [new("enabled", "Microsoft sign-in enabled", GitCheckState.Missing, "AzureEnvironment:Enabled is false."), Configured[1], Configured[2]] };
+        var steps = GitSourcesPresentation.SetupSteps(status);
+        States(steps).Should().Equal(("registration", "Done"), ("settings", "Current"), ("sign-in", "Waiting"), ("access", "Waiting"), ("repositories", "Waiting"));
+        steps[0].StatusLabel.Should().Be("Client ID entered", "a typed client id is not yet confirmed by Microsoft");
+        steps[1].ActionId.Should().Be("open-setup");
+        steps[1].Evidence.Should().Contain("you, on this page");
+    }
+
+    [Fact]
+    public void Configured_but_not_signed_in_offers_sign_in_and_keeps_the_test_unavailable()
+    {
+        var api = Api(new() { State = GitConnectionState.NotConnected, SignInAvailable = true, OrganizationUrl = "https://dev.azure.com/bufdir", Diagnostics = Configured });
+        api.Setup(a => a.SignInAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new GitConnectionStatus { State = GitConnectionState.SigningIn, Message = "Complete sign-in." }, (string?)null));
+        var cut = Render<GitSourcesSettingsCard>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gsl-step][data-step=sign-in]").GetAttribute("data-state").Should().Be("Current"));
+        cut.Find("[data-testid=gsl-step][data-step=settings]").GetAttribute("data-state").Should().Be("Done");
+        cut.Find("[data-testid=gsl-step][data-step=access]").TextContent.Should().Contain("not proof of repository access");
+        cut.Find("[data-testid=gss-test]").HasAttribute("disabled").Should().BeTrue("a test needs a sign-in");
+        cut.Find("[data-testid=gss-test-reason]").TextContent.Should().Contain("Sign in first");
+        cut.Find("[data-testid=gsl-action][data-action=sign-in]").Click();
+        api.Verify(a => a.SignInAsync(It.IsAny<CancellationToken>()), Times.Once(), "the step uses the same sign-in call as the button");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gss-state]").GetAttribute("data-state").Should().Be("SigningIn"));
+    }
+
+    [Fact]
+    public void Signed_in_the_access_test_is_the_next_step_and_a_passed_test_leads_to_repository_discovery()
+    {
+        var connected = new GitConnectionStatus { State = GitConnectionState.Connected, Account = "tester@bufdir.no", OrganizationUrl = "https://dev.azure.com/bufdir", Diagnostics = Configured };
+        var api = Api(connected);
+        api.Setup(a => a.TestAsync(It.IsAny<CancellationToken>())).ReturnsAsync((Passed, (string?)null))
+            .Callback(() => api.Setup(a => a.StatusAsync(It.IsAny<CancellationToken>())).ReturnsAsync((connected with { LastTest = Passed }, (string?)null)));
+        api.Setup(a => a.RepositoriesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitRepository>)[new GitRepository("r1", "M2LB.Common", "M2LB", "main", null, false)], (string?)null));
+        api.Setup(a => a.BranchesAsync("r1", It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitBranch>)[new GitBranch("main", Sha, null, null, null, true)], (string?)null));
+        api.Setup(a => a.SaveSettingsAsync(It.IsAny<GitSourceSettings>(), It.IsAny<CancellationToken>())).ReturnsAsync((connected, (string?)null));
+        var cut = Render<GitSourcesSettingsCard>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gsl-step][data-step=access]").GetAttribute("data-state").Should().Be("Current"));
+        cut.Find("[data-testid=gsl-step][data-step=registration]").TextContent.Should().Contain("Confirmed by sign-in");
+        cut.Find("[data-testid=gsl-step][data-step=repositories]").GetAttribute("data-state").Should().Be("Waiting", "discovery needs verified access first");
+        cut.Find("[data-testid=gsl-action][data-action=test]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gsl-step][data-step=access]").GetAttribute("data-state").Should().Be("Done"));
+        cut.Find("[data-testid=gss-test-result]").GetAttribute("data-ready").Should().Be("true");
+
+        cut.Find("[data-testid=gsl-action][data-action=load-repos]").Click();
+        cut.WaitForElement("[data-testid=gss-repo]").Change("r1");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=gss-branch]").Should().ContainSingle());
+        cut.Find("[data-testid=gss-branch] button").Click();
+        api.Verify(a => a.SaveSettingsAsync(It.Is<GitSourceSettings>(s => s.TrackedBranches.Single().Branch == "main"), It.IsAny<CancellationToken>()), Times.Once(),
+            "tracking a branch saves a BirkNext setting; nothing is written to the repository");
+        api.Verify(a => a.TestAsync(It.IsAny<CancellationToken>()), Times.Once());
+    }
+
+    [Fact]
+    public void Denied_access_and_a_rejected_registration_name_who_has_to_act()
+    {
+        var denied = GitSourcesPresentation.SetupSteps(new() { State = GitConnectionState.AccessDenied, Account = "tester@bufdir.no", OrganizationUrl = "https://dev.azure.com/bufdir", Diagnostics = Configured });
+        denied.Single(s => s.Id == "access").State.Should().Be(BirkNext.Web.Services.GuidedStepState.Blocked);
+        denied.Single(s => s.Id == "access").Evidence.Should().Contain("Azure DevOps organization administrator");
+
+        var redirect = GitSourcesPresentation.SetupSteps(new() { State = GitConnectionState.Failed, SignInAvailable = true, Diagnostics =
+            [.. Configured, new("redirect", "Redirect URI", GitCheckState.Failed, "The identity platform rejected the redirect URI (AADSTS50011).", "Add http://localhost under \"Mobile and desktop applications\".")] });
+        redirect[0].State.Should().Be(BirkNext.Web.Services.GuidedStepState.Blocked);
+        redirect[0].Explanation.Should().Contain("AADSTS50011");
+        redirect[0].Evidence.Should().Contain("Microsoft Entra administrator").And.Contain("http://localhost");
+
+        var restart = GitSourcesPresentation.SetupSteps(new() { State = GitConnectionState.NotConfigured, Diagnostics = Configured }, restartRequired: true);
+        restart.Single(s => s.Id == "settings").StatusLabel.Should().Be("Saved — restart needed");
+    }
+
+    [Fact]
+    public void A_failed_test_is_not_access_and_tracked_branches_complete_the_setup()
+    {
+        var failedTest = new GitTestResult(false, "Organization not found", [new("Azure DevOps organization", GitTestStepState.Failed, "404", 10)], DateTimeOffset.UtcNow, "nope", null);
+        var failed = GitSourcesPresentation.SetupSteps(new() { State = GitConnectionState.Connected, OrganizationUrl = "https://dev.azure.com/nope", LastTest = failedTest, Diagnostics = Configured });
+        failed.Single(s => s.Id == "access").Should().Match<BirkNext.Web.Services.GuidedStep>(s => s.State == BirkNext.Web.Services.GuidedStepState.Current
+            && s.StatusLabel == "Last test failed" && s.Evidence == "Organization not found" && s.ActionId == "test");
+
+        var noOrganization = GitSourcesPresentation.SetupSteps(new() { State = GitConnectionState.Connected, Diagnostics = Configured });
+        noOrganization.Single(s => s.Id == "access").ActionId.Should().Be("find-orgs");
+
+        var done = GitSourcesPresentation.SetupSteps(new() { State = GitConnectionState.Connected, OrganizationUrl = "https://dev.azure.com/bufdir", LastTest = Passed, Diagnostics = Configured,
+            TrackedBranches = [new("r1", "M2LB.Common", "M2LB", "main")] });
+        done.Should().OnlyContain(s => s.State == BirkNext.Web.Services.GuidedStepState.Done);
+        BirkNext.Web.Services.GuidedWorkflow.Next(done).Should().BeNull();
     }
 
     [Fact]
@@ -214,9 +327,10 @@ public sealed class GitSourcesUiTests : BunitContext
     [Fact]
     public void A_missing_organization_and_denied_access_are_said_plainly()
     {
-        Api(new() { State = GitConnectionState.NotConnected, SignInAvailable = true });
+        Api(new() { State = GitConnectionState.Connected, Account = "tester@bufdir.no" });
         var cut = Render<GitSourcesSettingsCard>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=gss-test-reason]").TextContent.Should().Contain("organization URL"));
+        GitSourcesPresentation.TestBlockedReason(new() { State = GitConnectionState.NotConnected }).Should().Contain("Sign in first", "signing in comes before the organization");
 
         var denied = new GitConnectionStatus { State = GitConnectionState.AccessDenied, OrganizationUrl = "https://dev.azure.com/bufdir", Account = "tester@bufdir.no" };
         GitSourcesPresentation.AccessText(denied).Should().StartWith("Denied");
@@ -245,7 +359,7 @@ public sealed class GitSourcesUiTests : BunitContext
     [Fact]
     public void Not_set_up_opens_the_sign_in_setup_and_saves_the_entered_values()
     {
-        Api(NotSetUp());
+        var api = Api(NotSetUp());
         var admin = Admin(new() { Enabled = false, ClientId = "", TenantId = "", AllowDeviceCode = true });
         SaveSettingsRequest? sent = null;
         admin.Setup(a => a.SaveSettingsAsync(It.IsAny<SaveSettingsRequest>())).ReturnsAsync((true, "Saved."))
@@ -266,6 +380,7 @@ public sealed class GitSourcesUiTests : BunitContext
         cut.Find("[data-testid=gss-signin-save]").Click();
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=gss-signin-restart]").TextContent.Should().Contain("Restart BirkNext to apply"));
+        api.Verify(a => a.StatusAsync(It.IsAny<CancellationToken>()), Times.Exactly(2), "after a save the Git Sources state is read again, never left stale");
         sent!.MicrosoftSignIn.Should().BeEquivalentTo(new SaveMicrosoftSignInRequest { Enabled = true, ClientId = "11111111-2222-3333-4444-555555555555", TenantId = "bufdir.no", AllowDeviceCode = true });
         sent.FeatureVisibility.Should().BeNull("only the sign-in section is written");
         cut.FindAll("[data-testid=gss-signin-error]").Should().BeEmpty();

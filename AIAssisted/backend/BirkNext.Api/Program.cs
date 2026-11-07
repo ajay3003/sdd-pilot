@@ -607,6 +607,8 @@ builder.Services.AddScoped<BirkNext.Api.Services.Integrations.SourceDiscovery.So
 // Azure Environment Analysis: the person's own interactive sign-in (dedicated Edge profile / device code; MFA and PIM are theirs), token in
 // memory only, read-only Azure Resource Manager GETs + predefined Resource Graph queries. Off unless AzureEnvironment:Enabled and a ClientId.
 builder.Services.Configure<BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions>(builder.Configuration.GetSection(BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions.SectionName));
+// Microsoft sign-in setup saved in System Settings applies while BirkNext runs (no restart): IOptions reads the reloaded section on every access.
+builder.Services.AddSingleton<Microsoft.Extensions.Options.IOptions<BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions>, BirkNext.Api.Services.AzureEnvironment.LiveAzureEnvironmentOptions>();
 builder.Services.AddSingleton<BirkNext.Api.Services.AzureEnvironment.IAzureTokenBroker, BirkNext.Api.Services.AzureEnvironment.MsalAzureTokenBroker>();
 builder.Services.AddSingleton<BirkNext.Api.Services.AzureEnvironment.IAzureSignInBrowser, BirkNext.Api.Services.AzureEnvironment.DedicatedEdgeSignInBrowser>();
 builder.Services.AddSingleton<BirkNext.Api.Services.AzureEnvironment.IAzureSignInService, BirkNext.Api.Services.AzureEnvironment.AzureSignInService>();

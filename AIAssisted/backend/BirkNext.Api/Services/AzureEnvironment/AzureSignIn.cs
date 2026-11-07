@@ -34,20 +34,38 @@ public interface IAzureTokenBroker
 public sealed class MsalAzureTokenBroker : IAzureTokenBroker
 {
     private static readonly string[] Scopes = [AzureEnvironmentOptions.ManagementScope];
-    private readonly IPublicClientApplication? _app;
+    private readonly IOptionsMonitor<AzureEnvironmentOptions> _options;
+    private readonly object _gate = new();
+    private (string Key, IPublicClientApplication App)? _client;
 
-    public MsalAzureTokenBroker(IOptions<AzureEnvironmentOptions> options)
+    public MsalAzureTokenBroker(IOptionsMonitor<AzureEnvironmentOptions> options) => _options = options;
+
+    /// <summary>
+    /// The public client for the current settings. Microsoft sign-in setup saved in System Settings reloads the configuration while BirkNext runs:
+    /// a different client id or tenant builds a new client (and so starts without the old in-memory token cache); disabled means none.
+    /// </summary>
+    private IPublicClientApplication? Current
     {
-        var o = options.Value;
-        if (!o.Configured) return;
-        // No token-cache serialization is registered: MSAL keeps tokens in memory for this process only.
-        _app = PublicClientApplicationBuilder.Create(o.ClientId!.Trim())
-            .WithAuthority($"{AzureEnvironmentOptions.AuthorityHost}/{Uri.EscapeDataString(o.Tenant)}")
-            .WithRedirectUri("http://localhost")
-            .Build();
+        get
+        {
+            var o = _options.CurrentValue;
+            if (!o.Configured) return null;
+            var key = $"{o.ClientId!.Trim()}|{o.Tenant}";
+            lock (_gate)
+            {
+                if (_client is { } existing && existing.Key == key) return existing.App;
+                // No token-cache serialization is registered: MSAL keeps tokens in memory for this process only.
+                var app = PublicClientApplicationBuilder.Create(o.ClientId!.Trim())
+                    .WithAuthority($"{AzureEnvironmentOptions.AuthorityHost}/{Uri.EscapeDataString(o.Tenant)}")
+                    .WithRedirectUri("http://localhost")
+                    .Build();
+                _client = (key, app);
+                return app;
+            }
+        }
     }
 
-    private IPublicClientApplication App => _app ?? throw new InvalidOperationException("Azure Environment Analysis is not configured.");
+    private IPublicClientApplication App => Current ?? throw new InvalidOperationException("Microsoft sign-in is not configured.");
 
     public async Task<AzureToken> InteractiveAsync(Func<Uri, Task> openBrowser, CancellationToken ct)
     {
@@ -101,17 +119,17 @@ public sealed class MsalAzureTokenBroker : IAzureTokenBroker
 
     public async Task<AzureToken?> SilentForAsync(IReadOnlyList<string> scopes, CancellationToken ct)
     {
-        if (_app is null) return null;
-        var account = (await _app.GetAccountsAsync()).FirstOrDefault();
+        if (Current is not { } app) return null;
+        var account = (await app.GetAccountsAsync()).FirstOrDefault();
         if (account is null) return null;
-        try { return From(await _app.AcquireTokenSilent(scopes, account).ExecuteAsync(ct)); }
+        try { return From(await app.AcquireTokenSilent(scopes, account).ExecuteAsync(ct)); }
         catch (MsalUiRequiredException) { return null; }
     }
 
     public async Task SignOutAsync()
     {
-        if (_app is null) return;
-        foreach (var account in await _app.GetAccountsAsync()) await _app.RemoveAsync(account);
+        if (Current is not { } app) return;
+        foreach (var account in await app.GetAccountsAsync()) await app.RemoveAsync(account);
     }
 
     private static AzureToken From(AuthenticationResult r) => new(r.AccessToken, r.ExpiresOn, r.Account?.Username, r.TenantId);
@@ -220,6 +238,8 @@ public sealed class AzureSignInService(IOptions<AzureEnvironmentOptions> options
     private string _message = "";
     private AzureDeviceCodePrompt? _deviceCode;
     private CancellationTokenSource? _pending;
+    // The client id + tenant the current sign-in was made with: after Microsoft sign-in setup changes them, that sign-in no longer counts.
+    private string? _signedInKey;
 
     public AzureSignInMethod Method { get { lock (_gate) return _method; } }
 
@@ -234,6 +254,12 @@ public sealed class AzureSignInService(IOptions<AzureEnvironmentOptions> options
             };
         lock (_gate)
         {
+            if (_state is AzureConnectionState.SignedIn or AzureConnectionState.Expired && _signedInKey != o.ClientKey)
+                return new()
+                {
+                    State = AzureConnectionState.SignedOut, DedicatedEdgeAvailable = browser.Available, DeviceCodeAllowed = o.AllowDeviceCode,
+                    Message = "Microsoft sign-in setup changed since you signed in. Sign in again.",
+                };
             var state = _state == AzureConnectionState.SignedIn && _token is { } t && t.ExpiresOn <= _clock.GetUtcNow() ? AzureConnectionState.Expired : _state;
             return new()
             {
@@ -283,7 +309,7 @@ public sealed class AzureSignInService(IOptions<AzureEnvironmentOptions> options
                 lock (_gate)
                 {
                     if (!ReferenceEquals(_pending, cts)) return;
-                    _token = token; _signedInAt = _clock.GetUtcNow(); _state = AzureConnectionState.SignedIn; _deviceCode = null;
+                    _token = token; _signedInAt = _clock.GetUtcNow(); _state = AzureConnectionState.SignedIn; _deviceCode = null; _signedInKey = options.Value.ClientKey;
                     _message = "Signed in. BirkNext reads Azure with your permissions and never changes anything.";
                 }
                 logger.LogInformation("Azure sign-in completed ({Method}).", method);
@@ -321,7 +347,7 @@ public sealed class AzureSignInService(IOptions<AzureEnvironmentOptions> options
         AzureToken? current;
         lock (_gate)
         {
-            if (_state is not (AzureConnectionState.SignedIn or AzureConnectionState.Expired)) return null;
+            if (_state is not (AzureConnectionState.SignedIn or AzureConnectionState.Expired) || _signedInKey != options.Value.ClientKey) return null;
             current = _token;
         }
         if (!forceRefresh && current is not null && current.ExpiresOn - RefreshMargin > _clock.GetUtcNow()) return current.AccessToken;

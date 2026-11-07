@@ -8,6 +8,9 @@ namespace BirkNext.Api.Services.AzureEnvironment;
 /// </summary>
 public sealed class AzureEnvironmentOptions
 {
+    /// <summary>The settings key of a configured public client: a sign-in made with another client id or tenant is not this configuration's.</summary>
+    public string? ClientKey => Configured ? $"{ClientId!.Trim()}|{Tenant}" : null;
+
     public const string SectionName = "AzureEnvironment";
     public const string ManagementEndpoint = "https://management.azure.com";
     public const string ManagementScope = "https://management.azure.com/.default";
@@ -46,4 +49,14 @@ public sealed class AzureEnvironmentOptions
         "Optionally set AzureEnvironment:TenantId to the directory to sign in to (default: your home tenant).",
         "No client secret, certificate, username or password is used or stored. You sign in yourself, with MFA, and BirkNext uses only your own read access.",
     ];
+}
+
+/// <summary>
+/// <see cref="Microsoft.Extensions.Options.IOptions{TOptions}"/> that reads the current configuration on every access. Microsoft sign-in setup is
+/// saved from System Settings into the reloadable local settings file; the singletons that read these options (sign-in, token broker, Git Sources,
+/// Azure Environment Analysis) then follow the saved values without a restart. Only non-secret values exist in this section.
+/// </summary>
+public sealed class LiveAzureEnvironmentOptions(Microsoft.Extensions.Options.IOptionsMonitor<AzureEnvironmentOptions> monitor) : Microsoft.Extensions.Options.IOptions<AzureEnvironmentOptions>
+{
+    public AzureEnvironmentOptions Value => monitor.CurrentValue;
 }

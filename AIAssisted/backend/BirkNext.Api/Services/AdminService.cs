@@ -25,7 +25,7 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
     private readonly ILogger<AdminService> _logger;
     private readonly FrontendQualityEngineLegacyConfigInterpreter? _legacyInterpreter;
     /// <summary>The Microsoft sign-in values the running backend was started with (the sign-in client is built once, at startup).</summary>
-    private readonly BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions? _signInRuntime;
+    private readonly Microsoft.Extensions.Options.IOptions<BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions>? _signInRuntime;
 
     private static readonly HashSet<string> PlatformFeatureKeys =
         new(StringComparer.OrdinalIgnoreCase)
@@ -92,7 +92,7 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         FrontendQualityEngineLegacyConfigInterpreter? legacyInterpreter = null,
         Microsoft.Extensions.Options.IOptions<BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions>? signInRuntime = null)
     {
-        _signInRuntime = signInRuntime?.Value;
+        _signInRuntime = signInRuntime;
         _config = config;
         _env = env;
         _db = db;
@@ -229,7 +229,8 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
     {
         var saved = new BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions();
         _config.GetSection(BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions.SectionName).Bind(saved);
-        var running = _signInRuntime ?? saved;
+        // What the running services use now (the live options follow the reloaded file; a restart is needed only if they do not).
+        var running = _signInRuntime?.Value ?? saved;
         return new MicrosoftSignInInfo
         {
             Enabled = saved.Enabled,
@@ -497,7 +498,9 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
 
         _logger.LogInformation("Local settings saved to {Path}", path);
         return (true, request.MicrosoftSignIn is not null
-            ? "Microsoft sign-in settings saved to this installation's appsettings.Local.json. Restart BirkNext to apply them."
+            ? (BuildMicrosoftSignInInfo().RestartRequired
+                ? "Microsoft sign-in settings saved to this installation's appsettings.Local.json. Restart BirkNext to apply them."
+                : "Microsoft sign-in settings saved to this installation's appsettings.Local.json and applied. No restart is needed.")
             : "Settings saved. Feature visibility changes apply immediately. Logging changes require a backend restart.");
     }
 
