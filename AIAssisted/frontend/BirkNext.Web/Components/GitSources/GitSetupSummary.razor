@@ -1,0 +1,13 @@
+@using BirkNext.GitSources
+@* Compact setup summary from backend state: application, organization, sign-in, connection. *@
+@{ var s = Setup.Status!; }
+<dl class="gsx-summary" data-testid="gss-summary">
+    <div><dt>Microsoft application</dt><dd data-testid="gss-summary-application">@(Setup.Step("application")?.State == GuidedStepState.Done ? (Setup.SignedIn ? "Confirmed by sign-in" : "Configured") : "Not configured")</dd></div>
+    <div><dt>Organization</dt><dd data-testid="gss-summary-organization">@(string.IsNullOrEmpty(Setup.OrganizationUrl) ? "Not set" : $"{GitSourcePolicy.OrganizationName(Setup.OrganizationUrl)} · saved")</dd></div>
+    <div><dt>Sign-in</dt><dd data-testid="gss-summary-signin">@GitSourcesPresentation.SignInState(s)</dd></div>
+    <div><dt>Connection</dt><dd data-testid="gss-summary-connection">@GitSourcesPresentation.ConnectionState(s, Setup.Testing)</dd></div>
+</dl>
+
+@code {
+    [Parameter, EditorRequired] public GitSourcesSetupState Setup { get; set; } = default!;
+}

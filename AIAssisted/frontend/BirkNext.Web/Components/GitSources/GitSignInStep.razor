@@ -1,0 +1,64 @@
+@using BirkNext.GitSources
+@* Step 4: Microsoft sign-in — blocked (with the step to fix), ready, signing in, signed in or failed. The token never reaches the browser. *@
+@{ var s = Setup.Status!; var state = GitSourcesPresentation.SignInState(s); }
+@if (s.State == GitConnectionState.NotConfigured)
+{
+    <div class="gsx-state is-blocked" data-testid="gss-signin-blocked">
+        <p><strong>Microsoft application setup is incomplete.</strong> Sign-in needs Git Sources enabled and the application details saved.</p>
+        <button type="button" class="btn-primary" @onclick="@(() => Setup.Select(Setup.Step("provider")?.State == GuidedStepState.Done ? "application" : "provider"))" data-testid="gss-goto-setup">Go to Microsoft Entra setup</button>
+    </div>
+}
+else
+{
+    <dl class="gsx-facts">
+        <div><dt>Microsoft sign-in</dt><dd data-testid="gss-signin-state">@state</dd></div>
+        @if (s.Account is not null) { <div><dt>Account</dt><dd data-testid="gss-account">@s.Account</dd></div> }
+        <div><dt>Azure DevOps permission</dt><dd data-testid="gss-consent">@Consent(s)</dd></div>
+    </dl>
+    @if (s.DeviceCode is { } device)
+    {
+        <p class="gsx-notice" role="status" data-testid="gss-device-code">Open <a href="@device.VerificationUrl" target="_blank" rel="noopener">@device.VerificationUrl</a> and enter <strong><code>@device.UserCode</code></strong> (expires @device.ExpiresOn.UtcDateTime.ToString("HH:mm") UTC).</p>
+    }
+    @if (s.State is GitConnectionState.SigningIn or GitConnectionState.AwaitingDeviceCode)
+    {
+        <p class="gsx-muted" role="status" data-testid="gss-signin-progress"><span class="gsx-spinner" aria-hidden="true"></span> Waiting for you to finish signing in with Microsoft…</p>
+        <div class="gsx-actions">
+            <button type="button" class="btn-secondary" @onclick="Setup.CheckSignInAsync" data-testid="gss-refresh-status">I have signed in — check again</button>
+            <button type="button" class="btn-secondary" @onclick="Setup.SignInAsync" data-testid="gss-sign-in-retry">Start again</button>
+        </div>
+    }
+    else if (Setup.SignedIn)
+    {
+        <div class="gsx-actions">
+            <button type="button" class="btn-secondary" disabled="@Setup.Busy" @onclick="Setup.SignOutAsync" data-testid="gss-disconnect">Sign out</button>
+            <button type="button" class="btn-primary" @onclick="@(() => Setup.Select("test"))" data-testid="gss-continue-test">Continue to connection test</button>
+        </div>
+    }
+    else
+    {
+        @if (s.State is GitConnectionState.Failed or GitConnectionState.ReconnectRequired && s.Message is { Length: > 0 } message)
+        {
+            <p class="gsx-error" role="alert" data-testid="gss-signin-failure">@message</p>
+            @if (s.Diagnostics.Any(d => d.State == GitCheckState.Failed))
+            {
+                <details class="gsx-advanced" data-testid="gss-diagnostics"><summary>Technical details</summary>
+                    <ul class="gsx-list">@foreach (var d in s.Diagnostics.Where(d => d.State == GitCheckState.Failed)) { <li data-testid="gss-check" data-key="@d.Key">@d.Label — @d.Detail@(d.AdminAction is { } a ? $" ({a})" : "")</li> }</ul>
+                </details>
+            }
+        }
+        <div class="gsx-actions">
+            @if (s.DeviceCodeAllowed) { <button type="button" class="btn-secondary" disabled="@Setup.Busy" @onclick="Setup.DeviceCodeAsync" data-testid="gss-device-sign-in">Use a device code</button> }
+            <button type="button" class="btn-primary" disabled="@(Setup.Busy || !s.SignInAvailable)" @onclick="Setup.SignInAsync" data-testid="gss-sign-in"
+                    aria-describedby="@(s.SignInAvailable ? null : "gss-sign-in-reason")">@(s.State switch { GitConnectionState.ReconnectRequired => "Sign in again", GitConnectionState.Failed => "Retry sign-in", _ => "Sign in with Microsoft" })</button>
+        </div>
+        @if (!s.SignInAvailable && GitSourcesPresentation.SignInBlockedReason(s) is { } why) { <p id="gss-sign-in-reason" class="gsx-muted gsx-small" data-testid="gss-sign-in-reason">@why</p> }
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public GitSourcesSetupState Setup { get; set; } = default!;
+
+    private string Consent(GitConnectionStatus s) =>
+        s.Diagnostics.FirstOrDefault(d => d.Key == "consent" && d.State == GitCheckState.Failed) is not null ? "Consent required — ask your Entra administrator"
+        : Setup.SignedIn ? "Granted (observed at sign-in)" : "Checked by Microsoft when you sign in";
+}

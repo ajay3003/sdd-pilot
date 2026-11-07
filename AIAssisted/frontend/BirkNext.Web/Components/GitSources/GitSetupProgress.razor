@@ -1,0 +1,33 @@
+@* The six setup steps as a compact stepper: every step can be opened; its status comes from the backend state (never from having been viewed). *@
+<nav class="gsx-stepper" aria-label="Git Sources setup progress">
+    <ol data-testid="gss-stepper">
+        @foreach (var ((id, label), n) in GitSourcesSetupState.StepLabels.Select((s, i) => (s, i + 1)))
+        {
+            var step = Setup.Step(id);
+            var status = Status(id, step);
+            var active = Setup.Active == id;
+            <li>
+                <button type="button" class="gsx-step is-@status.Css @(active ? "is-active" : "")" aria-current="@(active ? "step" : null)"
+                        aria-label="@($"Step {n} of 6: {label}, {status.Label}")" @onclick="() => Setup.Select(id)"
+                        data-testid="gss-stepper-item" data-step="@id" data-status="@status.Label">
+                    <span class="gsx-step-n" aria-hidden="true">@(step?.State == GuidedStepState.Done ? "✓" : n.ToString())</span>
+                    <span class="gsx-step-text"><span class="gsx-step-label">@label</span><span class="gsx-step-status">@status.Label</span></span>
+                </button>
+            </li>
+        }
+    </ol>
+</nav>
+
+@code {
+    [Parameter, EditorRequired] public GitSourcesSetupState Setup { get; set; } = default!;
+
+    /// <summary>Complete · Current · Needs setup · Blocked · Not tested (the connection step before a test).</summary>
+    private static (string Label, string Css) Status(string id, GuidedStep? step) => step?.State switch
+    {
+        GuidedStepState.Done => ("Complete", "complete"),
+        GuidedStepState.Blocked => ("Blocked", "blocked"),
+        GuidedStepState.Current => ("Current", "current"),
+        _ when id == "test" => ("Not tested", "waiting"),
+        _ => ("Needs setup", "waiting"),
+    };
+}

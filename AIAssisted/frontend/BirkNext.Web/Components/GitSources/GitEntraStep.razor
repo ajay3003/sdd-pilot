@@ -1,0 +1,53 @@
+@* Step 2: the organization's Microsoft application (client id, tenant), the redirect URI to register, and administrator help on demand. *@
+<div class="gsx-form">
+    <div class="gsx-field">
+        <label for="gss-client">Application (Client) ID</label>
+        <input id="gss-client" class="form-control" @bind="Setup.ClientId" @bind:event="oninput" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+               autocomplete="off" spellcheck="false" aria-invalid="@(Setup.ClientProblem is not null ? "true" : null)" aria-describedby="gss-client-hint" data-testid="gss-signin-client" />
+        <span id="gss-client-hint" class="@(Setup.ClientProblem is null ? "gsx-help-text" : "gsx-field-error")" data-testid="gss-client-hint">
+            @(Setup.ClientProblem ?? "From the app registration's Overview page. It is not a secret.")</span>
+    </div>
+    <div class="gsx-row">
+        <div class="gsx-field">
+            <label for="gss-tenant-mode">Tenant</label>
+            <select id="gss-tenant-mode" class="form-control" @bind="Setup.TenantMode" data-testid="gss-tenant-mode">
+                <option value="organizations">Organizations (any work account)</option>
+                <option value="specific">Specific tenant</option>
+            </select>
+        </div>
+        @if (Setup.TenantMode == "specific")
+        {
+            <div class="gsx-field">
+                <label for="gss-tenant">Tenant ID</label>
+                <input id="gss-tenant" class="form-control" @bind="Setup.Tenant" @bind:event="oninput" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx or contoso.no"
+                       autocomplete="off" spellcheck="false" aria-invalid="@(Setup.TenantProblem is not null ? "true" : null)" aria-describedby="gss-tenant-hint" data-testid="gss-signin-tenant" />
+                @if (Setup.TenantProblem is { } tp) { <span id="gss-tenant-hint" class="gsx-field-error" data-testid="gss-tenant-hint">@tp</span> }
+            </div>
+        }
+    </div>
+    <div class="gsx-field">
+        <label for="gss-redirect">Redirect URI</label>
+        <div class="gsx-copy">
+            <input id="gss-redirect" class="form-control" value="@GitSourcesPresentation.RedirectUri" readonly data-testid="gss-redirect" />
+            <button type="button" class="btn-secondary" @onclick="@(() => Setup.CopyAsync(GitSourcesPresentation.RedirectUri, "redirect"))" data-testid="gss-redirect-copy">
+                @(Setup.Copied == "redirect" ? "Copied" : "Copy")</button>
+        </div>
+        <span class="gsx-help-text">Register it as a "Mobile and desktop applications" redirect. Microsoft confirms it at sign-in.</span>
+    </div>
+    <details class="gsx-advanced">
+        <summary>Advanced options</summary>
+        <label class="gsx-check"><input type="checkbox" checked="@Setup.AllowDeviceCode" @onchange="e => Setup.AllowDeviceCode = (bool)e.Value!" data-testid="gss-signin-device" />
+            Allow device-code sign-in if the browser cannot open</label>
+    </details>
+</div>
+
+<GitAdminInstructions Setup="Setup" />
+
+@if (Setup.SignInProblem is { } problem) { <p class="gsx-error" role="alert" data-testid="gss-signin-error">@problem</p> }
+@if (Setup.SignIn?.RestartRequired == true) { <p class="gsx-notice" role="status" data-testid="gss-signin-restart">Restart required: the saved values are not yet used by the running backend.</p> }
+<GitStepActions Setup="Setup" Back="provider" Primary="Save & continue" BusyLabel="Saving…" PrimaryTestId="gss-signin-save" OnPrimary="Setup.SaveApplicationAsync"
+                PrimaryDisabledReason="@(!Setup.CanSave ? "Saving needs access to System Settings on this installation." : Setup.ClientProblem ?? Setup.TenantProblem)" />
+
+@code {
+    [Parameter, EditorRequired] public GitSourcesSetupState Setup { get; set; } = default!;
+}

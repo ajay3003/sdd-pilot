@@ -1,0 +1,83 @@
+@using BirkNext.GitSources
+@* Step 6: project → repository → branch from real discovery, review import through Import Project, and the tracked sources with Fetch latest. *@
+@if (!Setup.Discoverable)
+{
+    <div class="gsx-state" data-testid="gss-import-blocked">
+        <p>Verify your Azure DevOps connection before browsing repositories.</p>
+        <button type="button" class="btn-primary" @onclick="@(() => Setup.Select("test"))" data-testid="gss-goto-test">Go to connection test</button>
+    </div>
+}
+else
+{
+    @if (Setup.Projects is null)
+    {
+        <div class="gsx-actions"><button type="button" class="btn-primary" disabled="@Setup.Busy" @onclick="Setup.LoadProjectsAsync" data-testid="gss-load-projects">Load projects</button></div>
+    }
+    else
+    {
+        <div class="gsx-form">
+            <div class="gsx-field">
+                <label for="gss-project">Project</label>
+                <input class="form-control" type="search" @bind="Setup.ProjectFilter" @bind:event="oninput" placeholder="Search projects" aria-label="Search projects" data-testid="gss-project-filter" />
+                <select id="gss-project" class="form-control" value="@Setup.ProjectId" @onchange="@(e => Setup.SelectProjectAsync(e.Value?.ToString()))" data-testid="gss-project">
+                    <option value="">@(Setup.Projects.Count == 0 ? "No projects you can read" : "Choose a project")</option>
+                    @foreach (var p in Setup.Projects.Where(p => Matches(p.Name, Setup.ProjectFilter))) { <option value="@p.Id">@p.Name</option> }
+                </select>
+            </div>
+            @if (Setup.Repositories is { } repos)
+            {
+                <div class="gsx-field">
+                    <label for="gss-repo">Repository</label>
+                    <input class="form-control" type="search" @bind="Setup.RepositoryFilter" @bind:event="oninput" placeholder="Search repositories" aria-label="Search repositories" data-testid="gss-repo-filter" />
+                    <select id="gss-repo" class="form-control" value="@Setup.RepositoryId" @onchange="@(e => Setup.SelectRepositoryAsync(e.Value?.ToString()))" data-testid="gss-repo">
+                        <option value="">@(repos.Count == 0 ? "No repositories you can read in this project" : "Choose a repository")</option>
+                        @foreach (var r in repos.Where(r => Matches(r.Name, Setup.RepositoryFilter))) { <option value="@r.Id" disabled="@r.IsDisabled">@r.Name@(r.IsDisabled ? " (disabled)" : "")</option> }
+                    </select>
+                </div>
+            }
+            @if (Setup.Branches is { } branches && Setup.RepositoryId is not null)
+            {
+                <div class="gsx-field">
+                    <label for="gss-branch">Branch</label>
+                    <input class="form-control" type="search" @bind="Setup.BranchFilter" @bind:event="oninput" placeholder="Search branches" aria-label="Search branches" data-testid="gss-branch-filter" />
+                    <select id="gss-branch" class="form-control" @bind="Setup.Branch" data-testid="gss-branch">
+                        @foreach (var b in branches.Where(b => Matches(b.Name, Setup.BranchFilter))) { <option value="@b.Name">@b.Name@(b.IsDefault ? " (default)" : "")</option> }
+                    </select>
+                </div>
+            }
+        </div>
+        <div class="gsx-actions">
+            <button type="button" class="btn-secondary" disabled="@(Setup.Busy || string.IsNullOrEmpty(Setup.Branch))" @onclick="Setup.ToggleTrackAsync" data-testid="gss-track">
+                @(Setup.IsTracked(Setup.RepositoryId, Setup.Branch) ? "Stop tracking" : "Track branch")</button>
+            <button type="button" class="btn-primary" disabled="@(Setup.Busy || string.IsNullOrEmpty(Setup.Branch))" @onclick="Setup.ReviewImport" data-testid="gss-import"
+                    aria-describedby="@(string.IsNullOrEmpty(Setup.Branch) ? "gss-import-reason" : null)">Review import</button>
+        </div>
+        @if (string.IsNullOrEmpty(Setup.Branch)) { <p id="gss-import-reason" class="gsx-muted gsx-small" data-testid="gss-import-reason">Choose a project, repository and branch to review the import.</p> }
+    }
+}
+@if (Setup.Tracked.Count > 0)
+{
+    <div class="gsx-table-wrap">
+        <table class="gsx-table" data-testid="gss-tracked">
+            <caption class="gsx-small">Tracked repositories</caption>
+            <thead><tr><th scope="col">Project</th><th scope="col">Repository</th><th scope="col">Branch</th><th scope="col">Last imported</th><th scope="col"><span class="visually-hidden">Action</span></th></tr></thead>
+            <tbody>
+                @foreach (var t in Setup.Tracked)
+                {
+                    var link = Setup.LinkFor(t);
+                    <tr data-testid="gss-tracked-branch">
+                        <td>@t.Project</td><td>@t.Repository</td><td>@t.Branch</td>
+                        <td>@(link?.LastImport is { } last ? $"{last.CommitSha[..Math.Min(8, last.CommitSha.Length)]} · {last.ImportedAt.UtcDateTime:yyyy-MM-dd}" : "Not imported")</td>
+                        <td><button type="button" class="btn-secondary btn-sm" disabled="@(Setup.Busy || !Setup.Discoverable)" @onclick="() => Setup.FetchLatest(t)"
+                                    title="@(Setup.Discoverable ? "Import the branch's newest commit (earlier snapshots are kept)" : "Needs a verified connection")" data-testid="gss-fetch-latest">Fetch latest</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public GitSourcesSetupState Setup { get; set; } = default!;
+    private static bool Matches(string value, string? filter) => string.IsNullOrWhiteSpace(filter) || value.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase);
+}

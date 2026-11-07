@@ -1,0 +1,30 @@
+@* "Need an Entra application?" — a compact help card; the structured administrator instructions open on demand. Identifiers appear only here. *@
+<aside class="gsx-callout" aria-labelledby="gss-admin-title" data-testid="gss-registration">
+    <div class="gsx-callout-head">
+        <div>
+            <strong id="gss-admin-title">Need an Entra application?</strong>
+            <p class="gsx-help-text">Your administrator must register a public-client application and grant the required delegated Azure DevOps permission.</p>
+        </div>
+        <div class="gsx-actions">
+            <button type="button" class="btn-secondary" aria-expanded="@(Setup.InstructionsOpen ? "true" : "false")" aria-controls="gss-admin-steps"
+                    @onclick="() => Setup.InstructionsOpen = !Setup.InstructionsOpen" data-testid="gss-instructions-toggle">@(Setup.InstructionsOpen ? "Hide setup instructions" : "View setup instructions")</button>
+            <button type="button" class="btn-secondary" @onclick="@(() => Setup.CopyAsync(GitSourcesPresentation.RegistrationRequest, "instructions"))" data-testid="gss-registration-copy">
+                @(Setup.Copied == "instructions" ? "Copied" : "Copy instructions")</button>
+        </div>
+    </div>
+    @if (Setup.InstructionsOpen)
+    {
+        <ol id="gss-admin-steps" class="gsx-instructions" data-testid="gss-registration-text">
+            <li><strong>App registration</strong><span>Register an application (or choose BirkNext's). Supported account types: this organizational directory only.</span></li>
+            <li><strong>Authentication platform</strong><span>Add the platform "Mobile and desktop applications". Allow public client flows (device code). No client secret or certificate.</span></li>
+            <li><strong>Redirect URI</strong><span><code>@GitSourcesPresentation.RedirectUri</code></span></li>
+            <li><strong>API permissions</strong><span>Azure DevOps (<code class="gsx-wrap">@GitSourcesPresentation.AzureDevOpsResourceId</code>) → delegated <code>user_impersonation</code>. Optional for Azure Environment Analysis: Azure Service Management → <code>user_impersonation</code>.</span></li>
+            <li><strong>Consent</strong><span>Grant admin consent if users in the tenant may not consent themselves.</span></li>
+            <li><strong>Information to send back</strong><span>The Application (client) ID and the Directory (tenant) ID. The person using BirkNext also needs Azure DevOps access (Basic or Stakeholder) and read permission on the repositories.</span></li>
+        </ol>
+    }
+</aside>
+
+@code {
+    [Parameter, EditorRequired] public GitSourcesSetupState Setup { get; set; } = default!;
+}

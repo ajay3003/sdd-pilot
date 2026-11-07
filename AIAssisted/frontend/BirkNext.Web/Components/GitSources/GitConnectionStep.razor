@@ -1,0 +1,47 @@
+@using BirkNext.GitSources
+@* Step 5: the backend's read-only connection test — prerequisites, the result and what to do next. Never success from saved settings. *@
+@{ var s = Setup.Status!; var connection = GitSourcesPresentation.ConnectionState(s, Setup.Testing); var test = Setup.Test ?? s.LastTest; }
+<ul class="gsx-checklist" aria-label="Prerequisites" data-testid="gss-prerequisites">
+    @foreach (var (label, ok, step) in Prerequisites(s))
+    {
+        <li class="@(ok ? "is-ok" : "is-missing")" data-testid="gss-prerequisite" data-ok="@(ok ? "true" : "false")">
+            <span aria-hidden="true">@(ok ? "✓" : "○")</span> @label
+            @if (!ok) { <button type="button" class="gsx-link" @onclick="() => Setup.Select(step)">Set up</button> }
+        </li>
+    }
+</ul>
+
+<div class="gsx-result" data-testid="gss-connection-result" data-state="@connection">
+    <strong data-testid="gss-connection-state">@connection</strong>
+    @if (s.LastTest is { Ready: true } passed && !s.LastTestStale && connection == "Connected")
+    {
+        <span class="gsx-muted" data-testid="gss-last-success">@passed.Organization · verified @passed.TestedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC@(s.Account is null ? "" : $" · {s.Account}")</span>
+    }
+    else if (s.LastTestStale) { <span class="gsx-muted" data-testid="gss-test-stale">The settings changed after the last test, so that result no longer counts.</span> }
+    else if (test is { Ready: false } failed) { <span class="gsx-field-error" data-testid="gss-test-failure">@failed.Summary</span> }
+</div>
+@if (test is not null && test.Steps.Count > 0)
+{
+    <details class="gsx-advanced" data-testid="gss-test-result" data-ready="@(test.Ready && !s.LastTestStale ? "true" : "false")"><summary>Test details</summary>
+        <ul class="gsx-list">@foreach (var st in test.Steps) { <li data-testid="gss-test-step" data-state="@st.State">@(st.State switch { GitTestStepState.Verified => "✓", GitTestStepState.Failed => "✕", _ => "–" }) @st.Name — @st.Message</li> }</ul>
+    </details>
+}
+<div class="gsx-actions">
+    <button type="button" class="@(connection == "Connected" ? "btn-secondary" : "btn-primary")" disabled="@(Setup.Busy || Setup.Testing || GitSourcesPresentation.TestBlockedReason(s) is not null)"
+            @onclick="Setup.TestAsync" aria-describedby="@(GitSourcesPresentation.TestBlockedReason(s) is null ? null : "gss-test-reason")" data-testid="gss-test">
+        @(Setup.Testing ? "Testing…" : test is null ? "Test connection" : "Test again")</button>
+    @if (connection == "Connected") { <button type="button" class="btn-primary" @onclick="@(() => Setup.Select("import"))" data-testid="gss-browse">Browse repositories</button> }
+</div>
+@if (GitSourcesPresentation.TestBlockedReason(s) is { } blocked) { <p id="gss-test-reason" class="gsx-muted gsx-small" data-testid="gss-test-reason">@blocked</p> }
+
+@code {
+    [Parameter, EditorRequired] public GitSourcesSetupState Setup { get; set; } = default!;
+
+    private IEnumerable<(string Label, bool Ok, string Step)> Prerequisites(GitConnectionStatus s)
+    {
+        yield return ("Git Sources enabled", Setup.Step("provider")?.State == GuidedStepState.Done, "provider");
+        yield return ("Microsoft application configured", Setup.Step("application")?.State == GuidedStepState.Done, "application");
+        yield return ("Organization saved", Setup.Step("organization")?.State == GuidedStepState.Done, "organization");
+        yield return ("Signed in", Setup.SignedIn, "authentication");
+    }
+}

@@ -1,0 +1,17 @@
+@* Step 3: the Azure DevOps organization URL. Saving it is not proof of access. *@
+<div class="gsx-form">
+    <div class="gsx-field">
+        <label for="gss-org">Azure DevOps organization URL</label>
+        <input id="gss-org" class="form-control" @bind="Setup.Organization" @bind:event="oninput" placeholder="https://dev.azure.com/your-organization" autocomplete="off" spellcheck="false"
+               aria-invalid="@(ShowProblem ? "true" : null)" aria-describedby="gss-org-hint" data-testid="gss-org" />
+        <span id="gss-org-hint" class="@(ShowProblem ? "gsx-field-error" : "gsx-help-text")" data-testid="@(ShowProblem ? "gss-org-hint" : "gss-org-example")">
+            @(ShowProblem ? Setup.OrganizationProblem : "For example https://dev.azure.com/Smidig or https://smidig.visualstudio.com")</span>
+    </div>
+</div>
+<GitStepActions Setup="Setup" Back="application" Primary="Save & continue" BusyLabel="Saving…" PrimaryTestId="gss-save" OnPrimary="Setup.SaveOrganizationAsync"
+                PrimaryDisabledReason="@(string.IsNullOrWhiteSpace(Setup.Organization) ? "Enter the organization URL." : Setup.OrganizationProblem)" />
+
+@code {
+    [Parameter, EditorRequired] public GitSourcesSetupState Setup { get; set; } = default!;
+    private bool ShowProblem => !string.IsNullOrWhiteSpace(Setup.Organization) && Setup.OrganizationProblem is not null;
+}

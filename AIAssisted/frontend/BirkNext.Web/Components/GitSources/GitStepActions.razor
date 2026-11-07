@@ -1,0 +1,23 @@
+@* The one action row of a step: primary (with its disabled reason), and Back or Cancel changes. *@
+<div class="gsx-actions">
+    @if (Back is not null) { <button type="button" class="btn-secondary" disabled="@Setup.Busy" @onclick="() => Setup.Select(Back)" data-testid="gss-back">Back</button> }
+    @if (ShowCancel) { <button type="button" class="btn-secondary" disabled="@(Setup.Busy || !Setup.SignInDirty)" @onclick="Setup.Revert" data-testid="gss-signin-revert">Cancel changes</button> }
+    @if (Primary is not null)
+    {
+        <button type="button" class="btn-primary" disabled="@(Setup.Busy || PrimaryDisabledReason is not null)" @onclick="OnPrimary"
+                aria-describedby="@(PrimaryDisabledReason is null ? null : ReasonId)" data-testid="@PrimaryTestId">@(Setup.Busy ? BusyLabel ?? Primary : Primary)</button>
+    }
+</div>
+@if (PrimaryDisabledReason is { } reason) { <p id="@ReasonId" class="gsx-muted gsx-small" data-testid="@($"{PrimaryTestId}-reason")">@reason</p> }
+
+@code {
+    [Parameter, EditorRequired] public GitSourcesSetupState Setup { get; set; } = default!;
+    [Parameter] public string? Primary { get; set; }
+    [Parameter] public string? BusyLabel { get; set; }
+    [Parameter] public string PrimaryTestId { get; set; } = "gss-primary";
+    [Parameter] public Func<Task>? OnPrimary { get; set; }
+    [Parameter] public string? PrimaryDisabledReason { get; set; }
+    [Parameter] public string? Back { get; set; }
+    [Parameter] public bool ShowCancel { get; set; }
+    private string ReasonId => $"{PrimaryTestId}-reason";
+}

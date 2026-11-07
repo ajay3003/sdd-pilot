@@ -1,0 +1,18 @@
+@* Step 1: provider, the Enable switch and the authentication model. One save for the step. *@
+<dl class="gsx-facts">
+    <div><dt>Git provider</dt><dd data-testid="gss-provider">Azure DevOps</dd></div>
+    <div><dt>Authentication</dt><dd data-testid="gss-auth-method">Microsoft Entra ID · delegated sign-in · no PAT or client secret</dd></div>
+</dl>
+<label class="gsx-switch">
+    <input type="checkbox" role="switch" checked="@Setup.Enabled" disabled="@(!Setup.CanSave)" @onchange="e => Setup.Enabled = (bool)e.Value!"
+           aria-describedby="gss-enable-help" data-testid="gss-signin-enabled" />
+    <span class="gsx-switch-track" aria-hidden="true"></span>
+    <span><strong>Enable Azure DevOps Git</strong><span id="gss-enable-help" class="gsx-help-text">Allows read-only source import. Signing in is a separate step.</span></span>
+</label>
+@if (Setup.SignInProblem is { } problem) { <p class="gsx-error" role="alert" data-testid="gss-signin-error">@problem</p> }
+<GitStepActions Setup="Setup" Primary="Save & continue" BusyLabel="Saving…" PrimaryTestId="gss-signin-save" OnPrimary="Setup.SaveProviderAsync" ShowCancel="true"
+                PrimaryDisabledReason="@(!Setup.CanSave ? "Saving needs access to System Settings on this installation." : null)" />
+
+@code {
+    [Parameter, EditorRequired] public GitSourcesSetupState Setup { get; set; } = default!;
+}
