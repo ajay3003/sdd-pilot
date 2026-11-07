@@ -595,6 +595,15 @@ builder.Services.AddScoped<BirkNext.Api.Services.PerformanceTests.PerformanceSce
 builder.Services.AddHttpClient(BirkNext.Api.Services.PerformanceTests.PerformanceTrialService.ClientName)
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, AutomaticDecompression = System.Net.DecompressionMethods.All });
 builder.Services.AddScoped<BirkNext.Api.Services.PerformanceTests.PerformanceTrialService>();
+// Execution Evidence: the shared run → call → attempt record. The capture handler is the last handler before the socket handler, so it
+// records exactly what is sent and received (redacted before storage). No redirects, no cookies, standard TLS; decompressed bodies captured.
+builder.Services.AddTransient<BirkNext.Api.Services.ExecutionEvidence.EvidenceCaptureHandler>();
+builder.Services.AddHttpClient(BirkNext.Api.Services.ExecutionEvidence.ExecutionRunService.ClientName)
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, AutomaticDecompression = System.Net.DecompressionMethods.All })
+    .AddHttpMessageHandler<BirkNext.Api.Services.ExecutionEvidence.EvidenceCaptureHandler>();
+builder.Services.AddScoped<BirkNext.Api.Services.ExecutionEvidence.ExecutionEvidenceStore>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ExecutionEvidence.ExecutionRunService>();
+builder.Services.AddHostedService<BirkNext.Api.Services.ExecutionEvidence.ExecutionEvidenceRecoveryService>();
 // Resource Stability: provider-based observation of approved components (Podman container stats; .NET runtime counters of BirkNext's own process).
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.Resources.IResourceObservationProvider, BirkNext.Api.Services.PerformanceTests.Resources.PodmanResourceObservationProvider>();
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.Resources.IResourceObservationProvider, BirkNext.Api.Services.PerformanceTests.Resources.DotNetRuntimeSelfObservationProvider>();

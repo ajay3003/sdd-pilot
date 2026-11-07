@@ -14,6 +14,8 @@ public class AppDbContext : DbContext
     public DbSet<ActiveEventRunRecord> ActiveEventRuns => Set<ActiveEventRunRecord>();
     public DbSet<ActiveEventSyntheticIdentityRecord> ActiveEventSyntheticIdentities => Set<ActiveEventSyntheticIdentityRecord>();
     public DbSet<IntegrationJourneyRunRecord> IntegrationJourneyRuns => Set<IntegrationJourneyRunRecord>();
+    public DbSet<ExecutionRunRow> ExecutionRuns => Set<ExecutionRunRow>();
+    public DbSet<ExecutionCallRow> ExecutionCalls => Set<ExecutionCallRow>();
     public DbSet<ImpactAnalysisRunRecord> ImpactAnalysisRuns => Set<ImpactAnalysisRunRecord>();
     public DbSet<ReviewedCandidate> ReviewedCandidates => Set<ReviewedCandidate>();
     public DbSet<CandidateLink> CandidateLinks => Set<CandidateLink>();
@@ -1062,6 +1064,30 @@ public class AppDbContext : DbContext
             entity.Property(r => r.State).HasMaxLength(40).IsRequired();
             entity.Property(r => r.ResultJson).HasColumnType("text").IsRequired();
             entity.HasIndex(r => new { r.EnvironmentId, r.PackId, r.JourneyId, r.StartedAt });
+        });
+
+        // Execution Evidence: run → logical calls (attempts, redacted captures and assertions in the call document).
+        modelBuilder.Entity<ExecutionRunRow>(entity =>
+        {
+            entity.ToTable("execution_runs");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.EnvironmentId).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.Name).HasMaxLength(300).IsRequired();
+            entity.Property(r => r.State).HasMaxLength(40).IsRequired();
+            entity.Property(r => r.SummaryJson).HasColumnType("text").IsRequired();
+            entity.HasIndex(r => new { r.EnvironmentId, r.StartedAt });
+        });
+        modelBuilder.Entity<ExecutionCallRow>(entity =>
+        {
+            entity.ToTable("execution_calls");
+            entity.HasKey(c => c.Id);
+            entity.Property(c => c.Name).HasMaxLength(300).IsRequired();
+            entity.Property(c => c.Protocol).HasMaxLength(20).IsRequired();
+            entity.Property(c => c.Method).HasMaxLength(20).IsRequired();
+            entity.Property(c => c.State).HasMaxLength(40).IsRequired();
+            entity.Property(c => c.DocumentJson).HasColumnType("text").IsRequired();
+            entity.HasIndex(c => new { c.RunId, c.Sequence }).IsUnique();
+            entity.HasIndex(c => new { c.RunId, c.State });
         });
 
         modelBuilder.Entity<IqrSourceSnapshotRecord>(entity =>
