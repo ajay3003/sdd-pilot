@@ -5,6 +5,7 @@ using BirkNext.Api.Services.Integrations.SourceEvidence;
 using BirkNext.Api.Services.SourceAnalysis.Technology;
 using BirkNext.Api.Services.TestEvidence;
 using BirkNext.Api.Tests.Services.Integrations;
+using BirkNext.Api.Tests.TestInfrastructure;
 using BirkNext.Integrations;
 using BirkNext.Sdd;
 using BirkNext.Technology;
@@ -519,13 +520,124 @@ public sealed class TestEvidenceTests
         coverage.Limitations.Should().Contain(l => l.Contains("NUnit"));
     }
 
-    // ── Real pilots (environment-dependent) ──────────────────────────────────────────────────────────────────────────
-    // These read the developer's downloaded archives, which are replaced when a newer export is downloaded. They run only where the archive
-    // exists (Category=EnvironmentDependent, excludable with --filter "Category!=EnvironmentDependent") and never hard-code the size of an
-    // archive they do not own: expected counts are derived from the archive itself, independently of the provider under test. The
-    // deterministic coverage of the provider is the synthetic-fixture tests above.
+    // ── M2LB-shaped estate (deterministic, repository-owned) ─────────────────────────────────────────────────────────
 
-    private static readonly string Downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+    private static SourceTestInventory DiscoverEstate((string Path, string Content)[] files)
+    {
+        var (workspace, error) = IqrSourceArchiveReader.Read("M2LB.zip", IqrSourceEvidenceTests.Zip(files));
+        error.Should().BeNull();
+        return DotNetXunitTestDiscoveryProvider.Discover(SnapshotId, workspace!.Archive.Sha256, "M2LB", workspace);
+    }
+
+    [Fact]
+    public void M2lbShapedEstate_DiscoversEveryXunitV3TestProject_WithTheGenericProvider()
+    {
+        var bytes = IqrSourceEvidenceTests.Zip(M2lbShapedTestEstate.Files());
+        var inventory = DiscoverEstate(M2lbShapedTestEstate.Files());
+        var expected = CountArchive(bytes);
+
+        // The fixed counts and the provider-independent count from the ZIP agree, so neither can drift unnoticed.
+        expected.Should().Be((M2lbShapedTestEstate.ProjectCount, M2lbShapedTestEstate.DefinitionCount, M2lbShapedTestEstate.TrxPublicationCount));
+        inventory.Projects.Should().HaveCount(M2lbShapedTestEstate.ProjectCount, "every .csproj referencing xunit.v3 is one discovered test project");
+        inventory.Projects.Should().NotContain(p => p.Name == "M2LB.TestSupport" || p.Name == "M2LB.Person.Api", "projects without a test framework are not test projects");
+        inventory.Projects.Should().OnlyContain(p => p.Framework == "xUnit" && p.FrameworkPackage == "xunit.v3" && p.TrxReportConfigured && p.DiscoverySupported,
+            "TrxReport is inherited from tests/Directory.Build.props");
+        inventory.Projects.Single(p => p.Name == "M2LB.Frontend.Tests").Kind.Should().Be(TestKind.FrontendComponent);
+        inventory.Projects.Single(p => p.Name == "M2LB.Person.Contract.Tests").Kind.Should().Be(TestKind.Contract);
+        inventory.Projects.Single(p => p.Name == "M2LB.Autorisasjon.ContractTests").Kind.Should().Be(TestKind.Contract);
+        inventory.Projects.Single(p => p.Name == "M2LB.Person.Integration.Tests").Kind.Should().Be(TestKind.Integration);
+        inventory.Projects.Single(p => p.Name == "M2LB.Hendelse.Unit").Kind.Should().Be(TestKind.Unit);
+        inventory.Projects.Where(p => p.Packages.Any(x => x.StartsWith("Testcontainers"))).Select(p => p.Name).Should().Equal("M2LB.Person.Integration.Tests");
+        inventory.Definitions.Should().HaveCount(M2lbShapedTestEstate.DefinitionCount);
+        inventory.Definitions.Count(d => d.DefinitionKind == TestDefinitionKind.Theory).Should().Be(M2lbShapedTestEstate.TheoryCount);
+        inventory.Definitions.Should().Contain(d => d.Project == "M2LB.Tjeneste.Unit");
+        inventory.Definitions.Should().Contain(d => d.MethodName == "CountsEveryRow", "a C# 12 collection expression does not hide the test");
+        inventory.Definitions.Should().Contain(d => d.MethodName == "StoredPerson_CanBeReadBack", "a primary-constructor test class is parsed");
+        inventory.Projects.Where(p => p.Kind == TestKind.Unknown).Select(p => p.Name).Should().BeEquivalentTo(
+            ["M2LB.CdcReplay.Tests", "M2LB.Person.Api.Tests", "M2LB.Person.Application.Tests", "M2LB.Person.Domain.Tests"], "a name that does not state the kind stays Unknown");
+        inventory.Projects.Should().OnlyContain(p => p.DefinitionCount == inventory.Definitions.Count(d => d.Project == p.Name));
+        inventory.Definitions.Select(d => d.TestDefinitionId).Should().OnlyHaveUniqueItems();
+        inventory.TrxConfiguration.Should().Contain(e => e.Kind == "TrxGeneration").And.Contain(e => e.Kind == "TrxPublication");
+        inventory.TrxConfiguration.Where(e => e.Kind == "TrxPublication" && e.File.EndsWith(".pipeline/runtests.yml")).Should().HaveCount(M2lbShapedTestEstate.TrxPublicationCount)
+            .And.OnlyContain(e => e.Detail.Contains("publishes TRX"));
+        inventory.Projects.Should().NotContain(p => p.Packages.Any(x => x.Contains("Playwright")));
+
+        var references = inventory.Definitions.SelectMany(d => d.References.Select(r => (d, r))).ToList();
+        references.Should().Contain(x => x.r.Id == "FR-023" && x.r.Confidence == TestEvidenceConfidence.StronglySupported && x.d.ClassName.EndsWith("InnmatingServiceTests"));
+        references.Should().Contain(x => x.r.Id == "FR-026" && x.r.Confidence == TestEvidenceConfidence.StronglySupported && x.d.Project == "M2LB.Person.Contract.Tests");
+        references.Select(x => x.r.Id).Should().Contain(["FR-010", "FR-012", "FR-025", "FR-027", "FR-029"]);
+        references.Should().NotContain(x => x.r.Confidence == TestEvidenceConfidence.Confirmed, "the source declares no requirement traits");
+        references.Should().Contain(x => x.r.Id == "AC-003" && x.r.Confidence == TestEvidenceConfidence.StronglySupported && x.r.Kind == TestReferenceKind.AcceptanceCriterion);
+        references.Where(x => x.r.Id == "FR-012").Should().OnlyContain(x => x.r.Confidence == TestEvidenceConfidence.Inferred, "FR-012 appears only in class and prose comments");
+        references.Should().NotContain(x => x.r.Id == "FR-077", "a comment in a non-test support project links no test");
+        inventory.Definitions.SelectMany(d => d.Categories).Distinct().Should().Contain(["Unit", "Security", "Contract"]);
+    }
+
+    [Fact]
+    public void M2lbShapedEstate_AMissingProjectFile_LosesExactlyThatProjectAndItsTests()
+    {
+        var files = M2lbShapedTestEstate.Files().Where(f => f.Path != M2lbShapedTestEstate.ContractProjectPath).ToArray();
+        var inventory = DiscoverEstate(files);
+
+        inventory.Projects.Should().HaveCount(M2lbShapedTestEstate.ProjectCount - 1).And.NotContain(p => p.Name == "M2LB.Person.Contract.Tests");
+        inventory.Definitions.Should().HaveCount(M2lbShapedTestEstate.DefinitionCount - 2, "test code without its project is not attributed to another project");
+        inventory.Definitions.Should().NotContain(d => d.FilePath.Contains("M2LB.Person.Contract.Tests/"));
+        inventory.Definitions.SelectMany(d => d.References).Should().NotContain(r => r.Id == "FR-026");
+        inventory.Projects.Single(p => p.Name == "M2LB.Autorisasjon.ContractTests").Kind.Should().Be(TestKind.Contract, "the other projects are unaffected");
+    }
+
+    [Fact]
+    public void M2lbShapedEstate_ACopiedProjectWithTheSameName_StaysTwoProjects_WithDistinctTestIdentities()
+    {
+        var copy = M2lbShapedTestEstate.Files().Where(f => f.Path.StartsWith("M2LB/tests/M2LB.Tjeneste.Unit/"))
+            .Select(f => (f.Path.Replace("M2LB/tests/", "M2LB/tests/legacy/"), f.Content)).ToArray();
+        var inventory = DiscoverEstate([.. M2lbShapedTestEstate.Files(), .. copy]);
+
+        var twins = inventory.Projects.Where(p => p.Name == "M2LB.Tjeneste.Unit").ToList();
+        twins.Should().HaveCount(2).And.OnlyContain(p => p.DefinitionCount == 1, "each copy counts its own tests, not the tests of every project with that name");
+        twins.Select(p => p.Path).Should().OnlyHaveUniqueItems();
+        inventory.Definitions.Where(d => d.Project == "M2LB.Tjeneste.Unit").Select(d => d.FilePath).Should().OnlyHaveUniqueItems().And.HaveCount(2);
+        inventory.Definitions.Select(d => d.TestDefinitionId).Should().OnlyHaveUniqueItems("the same method in two copies keeps two identities");
+        inventory.Definitions.Should().ContainSingle(d => d.StableIdentity.EndsWith("#2"), "the copy is marked as a second occurrence, never merged");
+    }
+
+    [Fact]
+    public void M2lbShapedEstate_UnsupportedFrameworks_AreProjectsButNotDiscoveredTests()
+    {
+        var inventory = DiscoverEstate([.. M2lbShapedTestEstate.Files(), .. M2lbShapedTestEstate.UnsupportedFrameworkProjects()]);
+
+        inventory.Projects.Should().HaveCount(M2lbShapedTestEstate.ProjectCount + 2);
+        inventory.Projects.Where(p => !p.DiscoverySupported).Select(p => p.Framework).Should().BeEquivalentTo(["NUnit", "MSTest"]);
+        inventory.Definitions.Should().HaveCount(M2lbShapedTestEstate.DefinitionCount, "a [Fact] inside an NUnit project is not an xUnit test");
+        inventory.Limitations.Should().Contain(l => l.StartsWith("NUnit source test discovery is not implemented"))
+            .And.Contain(l => l.StartsWith("MSTest source test discovery is not implemented"));
+        inventory.Status.Should().Be(SourceTestDiscoveryStatus.Partial);
+    }
+
+    [Theory]
+    [InlineData("not a zip at all")]
+    [InlineData("PK\u0003\u0004 truncated local header")]
+    public void MalformedArchive_IsRejectedWithAnError_AndNothingIsDiscovered(string content)
+    {
+        var (workspace, error) = IqrSourceArchiveReader.Read("broken.zip", Encoding.UTF8.GetBytes(content));
+        workspace.Should().BeNull();
+        error.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public void TruncatedArchive_IsRejectedWithAnError()
+    {
+        var bytes = IqrSourceEvidenceTests.Zip(M2lbShapedTestEstate.Files());
+        var (workspace, error) = IqrSourceArchiveReader.Read("cut.zip", bytes[..(bytes.Length / 2)]);
+        workspace.Should().BeNull();
+        error.Should().NotBeNullOrWhiteSpace();
+    }
+
+    // ── Real archives (opt-in acceptance) ─────────────────────────────────────────────────────────────────────────────
+    // These read developer-owned exports that are replaced when a newer one is downloaded. They run only when BIRKNEXT_REAL_ARCHIVE_DIR names
+    // a folder holding the archive and are otherwise reported as skipped (see RealArchiveTestGate). They never hard-code the size of an archive
+    // they do not own: expected counts are derived from the archive itself, independently of the provider under test. The mandatory coverage
+    // is the synthetic M2LB-shaped estate above.
 
     /// <summary>Counted straight from the ZIP entries, independent of the discovery provider: test projects (a .csproj referencing
     /// xunit.v3) and [Fact]/[Theory] attributes at the start of a line in .cs files.</summary>
@@ -541,13 +653,11 @@ public sealed class TestEvidenceTests
         return (projects, definitions, publications);
     }
 
-    [Fact]
-    [Trait("Category", "EnvironmentDependent")]
+    [RealArchiveFact("M2LB (2).zip")]
+    [Trait("Category", RealArchiveTestGate.Category)]
     public void RealM2lb_DiscoversItsXunitV3TestEstate_WithTheGenericProvider()
     {
-        var path = Path.Combine(Downloads, "M2LB (2).zip");
-        if (!File.Exists(path)) return;
-        var bytes = File.ReadAllBytes(path);
+        var bytes = File.ReadAllBytes(RealArchiveTestGate.Path("M2LB (2).zip")!);
         var (workspace, error) = IqrSourceArchiveReader.Read("M2LB (2).zip", bytes);
         error.Should().BeNull();
         var inventory = DotNetXunitTestDiscoveryProvider.Discover(Guid.NewGuid(), workspace!.Archive.Sha256, "M2LB", workspace);
@@ -584,13 +694,11 @@ public sealed class TestEvidenceTests
         inventory.Definitions.SelectMany(d => d.Categories).Distinct().Should().Contain(["Unit", "Security", "Contract"]);
     }
 
-    [Fact]
-    [Trait("Category", "EnvironmentDependent")]
+    [RealArchiveFact("M2LB.Common (1).zip")]
+    [Trait("Category", RealArchiveTestGate.Category)]
     public void RealM2lbCommon_UsesTheSameProviderWithNoSpecialCase()
     {
-        var path = Path.Combine(Downloads, "M2LB.Common (1).zip");
-        if (!File.Exists(path)) return;
-        var (workspace, error) = IqrSourceArchiveReader.Read("M2LB.Common (1).zip", File.ReadAllBytes(path));
+        var (workspace, error) = IqrSourceArchiveReader.Read("M2LB.Common (1).zip", File.ReadAllBytes(RealArchiveTestGate.Path("M2LB.Common (1).zip")!));
         error.Should().BeNull();
         var inventory = DotNetXunitTestDiscoveryProvider.Discover(Guid.NewGuid(), workspace!.Archive.Sha256, "M2LB.Common", workspace);
         inventory.Projects.Should().ContainSingle(p => p.Name == "M2LB.Common.Tests" && p.Framework == "xUnit" && p.TrxReportConfigured);

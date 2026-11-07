@@ -7,6 +7,7 @@ using BirkNext.Api.Services.Integrations;
 using BirkNext.Api.Services.Integrations.ApplicationMessaging;
 using BirkNext.Api.Services.Integrations.Scim;
 using BirkNext.Integrations;
+using BirkNext.Api.Tests.TestInfrastructure;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -801,21 +802,20 @@ public sealed class ScimProvisioningTests
         catalog.Platforms.Select(p => p.Id).Should().Contain(M2lbDevIntegrationSeed.ScimPlatformId).And.NotContain(M2lbDevIntegrationSeed.ServiceBusPlatformId);
     }
 
-    // ── Real read-only acceptance (runs only where the developer's archives exist) ─────────────────────────────────
+    // ── Real read-only acceptance (opt-in: BIRKNEXT_REAL_ARCHIVE_DIR, otherwise skipped with the reason) ─────────────
 
-    [Fact]
+    [RealArchiveFact("M2LB (1).zip", "M2LB.Common.zip")]
+    [Trait("Category", RealArchiveTestGate.Category)]
     public void RealM2lbSourceAcceptance()
     {
-        var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
         var names = new[] { "M2LB (1).zip", "M2LB.Common.zip" };
-        if (names.Any(n => !File.Exists(Path.Combine(downloads, n)))) return;
         var archives = new List<SourceArchive>();
         var code = new List<SourceFile>();
         var documents = new List<SourceFile>();
         var settings = new List<ScimSettingsFile>();
         foreach (var name in names)
         {
-            var (archive, files, error) = ScimSourceReader.Read(name, File.ReadAllBytes(Path.Combine(downloads, name)));
+            var (archive, files, error) = ScimSourceReader.Read(name, File.ReadAllBytes(RealArchiveTestGate.Path(name)!));
             error.Should().BeNull();
             archives.Add(archive!);
             code.AddRange(files.Code);

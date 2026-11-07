@@ -9,6 +9,7 @@ using BirkNext.Api.Services.Integrations.SourceEvidence;
 using BirkNext.Api.Services.SecurityClassification;
 using BirkNext.Integrations;
 using FluentAssertions;
+using BirkNext.Api.Tests.TestInfrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -952,12 +953,11 @@ public sealed class SecurityClassificationTests
     /// defect it showed (a constant classification at the deserializer) stays covered by the fixture tests above.</summary>
     private const string RealM2lbArchive = "40ef503403afb11abb1e4fc9fd0e7aea8c4cfc540b44b436bbe0411caad750fe";
 
-    [Fact]
+    [RealArchiveFact("M2LB (1).zip")]
+    [Trait("Category", RealArchiveTestGate.Category)]
     public void RealM2lbSourceAcceptance()
     {
-        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "M2LB (1).zip");
-        if (!File.Exists(path)) return;
-        var bytes = File.ReadAllBytes(path);
+        var bytes = File.ReadAllBytes(RealArchiveTestGate.Path("M2LB (1).zip")!);
         Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant().Should().Be(RealM2lbArchive,
             "archive drift: these expectations describe one exact M2LB archive — review what the new archive changed and pin it, never loosen the assertions");
         var (archive, files, error) = ScimSourceReader.Read("M2LB (1).zip", bytes, p => p.Contains("/docs/") || p.Contains("/specs/"));

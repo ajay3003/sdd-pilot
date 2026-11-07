@@ -1,5 +1,6 @@
 using BirkNext.Api.Services.DeliveryReporting;
 using BirkNext.DeliveryReporting;
+using BirkNext.Api.Tests.TestInfrastructure;
 using FluentAssertions;
 using Xunit;
 using static BirkNext.Api.Tests.DeliveryReporting.DeliveryReportingFixtures;
@@ -91,13 +92,13 @@ public sealed class DeliveryManagementAccuracyTests
         h.Tasks.Count(t => t.PhaseKey is null).Should().Be(1, "a task outside a Phase group is unphased, never invented into a phase");
     }
 
-    /// <summary>Real M2LB archives (only where the developer has them): every feature's counters reconcile with its task records.</summary>
-    [Fact]
+    /// <summary>Real M2LB archives (opt-in: BIRKNEXT_REAL_ARCHIVE_DIR, otherwise skipped with the reason): every feature's counters reconcile
+    /// with its task records.</summary>
+    [RealArchiveFact("M2LB.zip", "M2LB (1).zip")]
+    [Trait("Category", RealArchiveTestGate.Category)]
     public void RealM2lbArchives_EveryFeatureReconciles()
     {
-        var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
-        var paths = new[] { "M2LB.zip", "M2LB (1).zip" }.Select(n => Path.Combine(downloads, n)).Where(File.Exists).ToList();
-        if (paths.Count < 2) return;
+        var paths = new[] { "M2LB.zip", "M2LB (1).zip" }.Select(n => RealArchiveTestGate.Path(n)!).ToList();
         var b = Content(DeliverySnapshotParser.Parse("M2LB.zip", File.ReadAllBytes(paths[0])).Snapshot!, Monday);
         var c = Content(DeliverySnapshotParser.Parse("M2LB (1).zip", File.ReadAllBytes(paths[1])).Snapshot!, Friday);
         var report = Report(b, c);

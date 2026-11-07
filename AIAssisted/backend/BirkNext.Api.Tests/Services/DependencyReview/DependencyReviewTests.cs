@@ -3,6 +3,7 @@ using System.Text;
 using BirkNext.Api.Data;
 using BirkNext.Api.Services.DependencyReview;
 using BirkNext.Dependencies;
+using BirkNext.Api.Tests.TestInfrastructure;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -546,17 +547,15 @@ public sealed class DependencyReviewTests
         categories.Single(c => c.Name == "Runtime automation").State.Should().Be(ReviewCategoryState.NotAssessed);
     }
 
-    // ── Real read-only acceptance (runs only where the developer's archives exist) ─────────────────────────────────
+    // ── Real read-only acceptance (opt-in: BIRKNEXT_REAL_ARCHIVE_DIR, otherwise skipped with the reason) ─────────────
 
-    private static readonly string Downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
-
-    [Fact]
+    [RealArchiveFact("M2LB (1).zip", "M2LB.Common.zip", "renovate.json")]
+    [Trait("Category", RealArchiveTestGate.Category)]
     public async Task RealM2lbArchivesAcceptance()
     {
-        var m2lb = Path.Combine(Downloads, "M2LB (1).zip");
-        var common = Path.Combine(Downloads, "M2LB.Common.zip");
-        var standalone = Path.Combine(Downloads, "renovate.json");
-        if (!File.Exists(m2lb) || !File.Exists(common) || !File.Exists(standalone)) return;
+        var m2lb = RealArchiveTestGate.Path("M2LB (1).zip")!;
+        var common = RealArchiveTestGate.Path("M2LB.Common.zip")!;
+        var standalone = RealArchiveTestGate.Path("renovate.json")!;
         // Pinned to exact archives (SHA-256). M2LB.Common gained renovate.json + renovate-pipeline.yml on 28 Oct 2026; the version without
         // them is no longer on disk — "Missing" coverage stays covered by the fixture tests above.
         foreach (var (file, sha) in new[] { (m2lb, "40ef503403afb11abb1e4fc9fd0e7aea8c4cfc540b44b436bbe0411caad750fe"),

@@ -158,9 +158,9 @@ public sealed class IntegrationContractDiscoveryTests
     [Trait("Category", "EnvironmentDependent")]
     public void RealReceiverArchives_ResolveOnlyWhatTheirCodeReferences()
     {
-        static IntegrationContractDiscovery? Run(string path)
+        static IntegrationContractDiscovery? Run(string? path)
         {
-            if (!File.Exists(path)) return null;
+            if (path is null || !File.Exists(path)) return null;
             var (workspace, error) = BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceArchiveReader.Read(System.IO.Path.GetFileName(path), File.ReadAllBytes(path));
             error.Should().BeNull();
             var id = Guid.NewGuid();
@@ -186,7 +186,8 @@ public sealed class IntegrationContractDiscoveryTests
 
         // The message hub loads its schemas from storage at runtime; its test-data project only bundles copies (several versions). The sender's
         // declared data type has an exact copy there: a producer candidate, never resolved; the consumer side is never resolved by a bundle.
-        var hub = Run(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Tiltak 2 - Sikkert digitalt økosystem.zip"));
+        // Opt-in only (BIRKNEXT_REAL_ARCHIVE_DIR); never read from the developer's Downloads folder.
+        var hub = Run(BirkNext.Api.Tests.TestInfrastructure.RealArchiveTestGate.Path("Tiltak 2 - Sikkert digitalt økosystem.zip"));
         if (hub is not null)
         {
             hub.Producer.State.Should().Be(IntegrationContractCandidateState.Candidate);

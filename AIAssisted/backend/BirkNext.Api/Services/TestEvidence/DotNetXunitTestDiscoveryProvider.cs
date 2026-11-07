@@ -76,6 +76,8 @@ public static class DotNetXunitTestDiscoveryProvider
 
         var definitions = new List<SourceTestDefinition>();
         var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        // Per project file, not per name: two copies of a project with the same name each count only their own tests.
+        var perProject = new Dictionary<string, int>(StringComparer.Ordinal);
         var partial = false;
         foreach (var file in workspace.Files.Where(f => f.Path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)))
         {
@@ -102,12 +104,12 @@ public static class DotNetXunitTestDiscoveryProvider
                 if (types.Count == 0) continue;
                 var definition = Define(file.Path, owner, repositoryName, method, testAttribute, attributes, types, counts);
                 definitions.Add(definition);
+                perProject[owner.Path] = perProject.GetValueOrDefault(owner.Path) + 1;
             }
             if (definitions.Count >= MaxDefinitions) { limitations.Add($"Test definition limit reached ({MaxDefinitions:N0}); further tests are not discovered."); break; }
         }
 
-        var byProject = definitions.GroupBy(d => d.Project).ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
-        var finalProjects = projects.Select(p => p.Project with { DefinitionCount = byProject.GetValueOrDefault(p.Project.Name) }).OrderBy(p => p.Path, StringComparer.Ordinal).ToList();
+        var finalProjects = projects.Select(p => p.Project with { DefinitionCount = perProject.GetValueOrDefault(p.Path) }).OrderBy(p => p.Path, StringComparer.Ordinal).ToList();
         limitations.Add("Syntax-only discovery: custom attributes derived from FactAttribute, inherited test methods and MemberData/ClassData rows are not resolved.");
         limitations.Add("A discovered test is source evidence only. Whether it ran and passed comes from imported execution results.");
         var status = finalProjects.Count == 0 ? SourceTestDiscoveryStatus.NoTestProjects
