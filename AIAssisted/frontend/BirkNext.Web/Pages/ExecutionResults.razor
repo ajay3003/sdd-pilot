@@ -108,7 +108,7 @@
                 <div class="xr-tabs" role="tablist" aria-label="Call evidence">
                     @foreach (var (key, label) in Tabs)
                     {
-                        <button type="button" role="tab" id="@($"xr-tab-{key}")" aria-selected="@(Tab == key ? "true" : "false")" aria-controls="xr-tabpanel" tabindex="@(Tab == key ? 0 : -1)"
+                        <button type="button" role="tab" id="@($"xr-tab-{key}")" aria-selected="@(Tab == key ? "true" : "false")" aria-controls="xr-tabpanel" tabindex="@(Tab == key ? "0" : "-1")"
                                 class="xr-tab @(Tab == key ? "is-active" : "")" data-testid="@($"xr-tab-{key}")" @onclick="() => Go(tab: key)">@label</button>
                     }
                 </div>

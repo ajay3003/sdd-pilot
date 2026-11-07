@@ -128,4 +128,22 @@ public sealed class ExecutionResultsPageTests : BunitContext
         page = Open($"?run={Run}&call={Blocked}");
         page.Find("[data-testid=xr-not-sent]").TextContent.Should().Contain("blocked before any request");
     }
+
+    [Fact]
+    public void Only_the_selected_tab_is_in_the_tab_order_under_a_Norwegian_culture()
+    {
+        // Regression: an int tabindex was culture-formatted, and nb-NO in the browser (ICU) writes −1 with U+2212, which browsers ignore — every
+        // tab became a tab stop. Windows NLS uses a hyphen for nb-NO, so the test pins the ICU negative sign explicitly.
+        var norwegian = (System.Globalization.CultureInfo)new System.Globalization.CultureInfo("nb-NO").Clone();
+        norwegian.NumberFormat.NegativeSign = "\u2212";
+        var (culture, fallback) = (System.Globalization.CultureInfo.CurrentCulture, System.Globalization.CultureInfo.DefaultThreadCurrentCulture);
+        System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.DefaultThreadCurrentCulture = norwegian;
+        try
+        {
+            var page = Open($"?run={Run}&call={Ok}&tab=evidence");
+            page.FindAll("[role=tab]").Select(t => (t.GetAttribute("data-testid"), t.GetAttribute("tabindex"))).Should().Equal(
+                ("xr-tab-request", "-1"), ("xr-tab-response", "-1"), ("xr-tab-assertions", "-1"), ("xr-tab-attempts", "-1"), ("xr-tab-evidence", "0"));
+        }
+        finally { (System.Globalization.CultureInfo.CurrentCulture, System.Globalization.CultureInfo.DefaultThreadCurrentCulture) = (culture, fallback); }
+    }
 }
