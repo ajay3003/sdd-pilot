@@ -156,6 +156,12 @@
     </ReviewDisclosure>
 </section>
 
+<section id="execution-results" class="ug-section ug-topic" data-topic="execution-results" aria-labelledby="execution-results-title">
+    <h2 id="execution-results-title" class="ug-section-title" tabindex="-1">Execution Results</h2>
+    <p class="ug-lead"><a href="/execution-results">Execution Results</a> shows what an authorized REST or GraphQL run actually sent and received: one row per logical call, every physical attempt (retries are attempts, not extra tests), the captured request and response, and each assertion. <strong>Opening a result never executes anything.</strong></p>
+    <p>Everything is redacted before it is stored (authentication headers, cookies, API keys, sensitive fields, token patterns and 11-digit numbers); a body may be Truncated or Metadata only, and is never called the original. A call without assertions is <strong>Not assessed</strong>; HTTP 200 with GraphQL errors is not a success by itself, and an expected 404 can pass. Blocked calls were refused before sending and have no request.</p>
+</section>
+
 <section id="pipeline" class="ug-section ug-topic" data-topic="pipeline" aria-labelledby="pipeline-title">
     <h2 id="pipeline-title" class="ug-section-title" tabindex="-1">Pipeline Review</h2>
     <p class="ug-lead"><a href="/pipeline-review">Pipeline Review</a> interprets CI/CD definitions captured by Source Analysis — Overview, Flow, Gaps, Tests, Environments, Dependencies and Changes. A detected definition does not mean the pipeline executed, passed or deployed.</p>

@@ -1,0 +1,327 @@
+@page "/execution-results"
+@using System.Text.Json
+@using System.Text.Json.Nodes
+@using BirkNext.ExecutionEvidence
+@inject IServiceProvider Services
+@inject NavigationManager Nav
+
+<PageTitle>Execution Results</PageTitle>
+
+@* Execution Results: saved REST/GraphQL runs — what BirkNext actually sent and received (redacted before storage), each logical call with its
+   physical attempts and assertion outcomes. Opening a result never executes anything; there is no replay here. State lives in the URL so
+   returning from a call keeps the run's filters. *@
+<div class="xr" data-testid="xr-page" aria-busy="@(_loading ? "true" : "false")">
+    <PageHeader Title="Execution Results" Description="What was actually sent and received in authorized REST and GraphQL runs — redacted before storage, never re-executed by opening it." />
+
+    @if (_error is not null) { <p class="xr-error" role="alert" data-testid="xr-error">@_error</p> }
+
+    @if (RunId is null)
+    {
+        <section class="xr-card" aria-labelledby="xr-runs-heading" data-testid="xr-runs">
+            <h2 id="xr-runs-heading">Run history</h2>
+            @if (_runs is null) { <p class="xr-muted">Loading…</p> }
+            else if (_runs.Count == 0) { <p class="xr-muted" data-testid="xr-runs-empty">No runs yet. Runs are started from a review (for example API Quality Review); their evidence appears here.</p> }
+            else
+            {
+                <table class="xr-table" data-testid="xr-runs-table">
+                    <caption class="visually-hidden">Saved execution runs, newest first</caption>
+                    <thead><tr><th scope="col">Run</th><th scope="col">Outcome</th><th scope="col">Calls</th><th scope="col">Attempts</th><th scope="col">Environment</th><th scope="col">Started</th></tr></thead>
+                    <tbody>
+                        @foreach (var r in _runs)
+                        {
+                            <tr data-testid="xr-run-row" data-run="@r.RunId" data-state="@r.State">
+                                <th scope="row"><a href="@Href(run: r.RunId)" data-testid="xr-run-open">@r.Name</a></th>
+                                <td><span class="xr-pill xr-@Tone(r.State)">@Label(r.State)</span></td>
+                                <td>@r.Counts.Planned</td><td>@r.Counts.Attempts</td><td>@r.EnvironmentId</td><td>@r.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    }
+    else if (_detail is { } d)
+    {
+        var run = d.Run;
+        <nav class="xr-crumbs" aria-label="Breadcrumb"><a href="@Href(clearRun: true)" data-testid="xr-back-runs">All runs</a> / @if (CallId is not null) { <a href="@Href(clearCall: true)" data-testid="xr-back-calls">@run.Name</a><span> / call</span> } else { <span>@run.Name</span> }</nav>
+        <section class="xr-card" aria-labelledby="xr-run-heading" data-testid="xr-run" data-state="@run.State">
+            <div class="xr-head">
+                <h2 id="xr-run-heading">@run.Name <span class="xr-pill xr-@Tone(run.State)" data-testid="xr-run-state">@Label(run.State)</span></h2>
+                <a class="btn-secondary" href="@Api!.ExportUrl(run.RunId)" data-testid="xr-export" download>Export redacted evidence</a>
+            </div>
+            <p class="xr-muted" data-testid="xr-run-meta">@run.EnvironmentId (@(run.EnvironmentType ?? "unclassified")) · @run.TargetOrigin · started @run.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")@(run.CompletedAt is { } done ? $" · {(done - run.StartedAt).TotalSeconds:0.0} s" : "") · authentication: @(run.AuthenticationMode ?? "None") · redaction @run.RedactionVersion</p>
+            <dl class="xr-kpis" data-testid="xr-kpis">
+                @Kpi("Logical calls", run.Counts.Planned, "planned")
+                @Kpi("Attempts", run.Counts.Attempts, "attempts")
+                @Kpi("Passed", run.Counts.Passed, "passed")
+                @Kpi("Failed", run.Counts.Failed, "failed")
+                @Kpi("Errors", run.Counts.Errors + run.Counts.TimedOut, "errors")
+                @Kpi("Blocked", run.Counts.Blocked, "blocked")
+                @Kpi("Not assessed", run.Counts.NotAssessed + run.Counts.Skipped, "notassessed")
+                @Kpi("Evidence complete", run.CallsWithCompleteEvidence, "evidence", $"of {run.Counts.Planned}")
+            </dl>
+        </section>
+
+        @if (CallId is null)
+        {
+            <section class="xr-card" aria-labelledby="xr-calls-heading" data-testid="xr-calls">
+                <h2 id="xr-calls-heading">Calls <span class="xr-muted" data-testid="xr-call-count">(@d.TotalCalls)</span></h2>
+                <div class="xr-filters" role="group" aria-label="Filter calls">
+                    <label>Search <input type="search" class="form-control" data-testid="xr-search" value="@Search" @onchange='e => Go(search: e.Value?.ToString() ?? "")' placeholder="Call name" /></label>
+                    @Select("Status", "xr-filter-state", State, v => Go(state: v), Enum.GetNames<ExecutionState>())
+                    @Select("Type", "xr-filter-protocol", Protocol, v => Go(protocol: v), Enum.GetNames<ExecutionProtocol>())
+                    @Select("Method", "xr-filter-method", Method, v => Go(method: v), ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
+                    @Select("Sort", "xr-sort", Sort, v => Go(sort: v), ["sequence", "duration", "status"], includeAll: false)
+                </div>
+                <table class="xr-table" data-testid="xr-calls-table">
+                    <caption class="visually-hidden">Logical calls of the run</caption>
+                    <thead><tr><th scope="col">#</th><th scope="col">Type</th><th scope="col">Call</th><th scope="col">Status</th><th scope="col">HTTP</th><th scope="col">Duration</th><th scope="col">Attempts</th></tr></thead>
+                    <tbody>
+                        @foreach (var c in d.Calls)
+                        {
+                            var last = c.Attempts.LastOrDefault();
+                            <tr data-testid="xr-call-row" data-seq="@c.Sequence" data-state="@c.State">
+                                <td>@c.Sequence</td>
+                                <td>@(c.Definition.Protocol == ExecutionProtocol.GraphQl ? $"GraphQL {(c.Definition.GraphQlQuery?.TrimStart().StartsWith("mutation") == true ? "mutation" : "query")}" : c.Definition.Method)</td>
+                                <th scope="row"><a href="@Href(call: c.CallId)" data-testid="xr-call-open">@c.Definition.Name</a></th>
+                                <td><span class="xr-pill xr-@Tone(c.State)" data-testid="xr-call-state">@Label(c.State)</span></td>
+                                <td data-testid="xr-call-http">@(last?.Response?.StatusCode.ToString() ?? (last is null ? "not sent" : last.Transport.ToString()))</td>
+                                <td>@(last?.Response is { } r ? $"{r.DurationMs} ms" : "—")</td>
+                                <td data-testid="xr-call-attempts">@c.Attempts.Count</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <nav class="xr-pager" aria-label="Pages" data-testid="xr-pager">
+                    <button type="button" class="btn-secondary" disabled="@(Page <= 1)" data-testid="xr-prev" @onclick="() => Go(page: Page - 1)">Previous</button>
+                    <span>Page @Page of @Math.Max(1, (int)Math.Ceiling(d.TotalCalls / (double)PageSize))</span>
+                    <button type="button" class="btn-secondary" disabled="@(Page * PageSize >= d.TotalCalls)" data-testid="xr-next" @onclick="() => Go(page: Page + 1)">Next</button>
+                </nav>
+            </section>
+        }
+        else if (_call is { } call)
+        {
+            var last = call.Attempts.LastOrDefault();
+            <section class="xr-card" aria-labelledby="xr-call-heading" data-testid="xr-call" data-state="@call.State">
+                <h2 id="xr-call-heading">#@call.Sequence @call.Definition.Name <span class="xr-pill xr-@Tone(call.State)" data-testid="xr-call-detail-state">@Label(call.State)</span></h2>
+                @if (call.Reason is { } reason) { <p class="xr-muted" data-testid="xr-call-reason">@reason</p> }
+                <div class="xr-tabs" role="tablist" aria-label="Call evidence">
+                    @foreach (var (key, label) in Tabs)
+                    {
+                        <button type="button" role="tab" id="@($"xr-tab-{key}")" aria-selected="@(Tab == key ? "true" : "false")" aria-controls="xr-tabpanel" tabindex="@(Tab == key ? 0 : -1)"
+                                class="xr-tab @(Tab == key ? "is-active" : "")" data-testid="@($"xr-tab-{key}")" @onclick="() => Go(tab: key)">@label</button>
+                    }
+                </div>
+                <div id="xr-tabpanel" role="tabpanel" aria-labelledby="@($"xr-tab-{Tab}")" class="xr-panel" data-testid="xr-tabpanel" data-tab="@Tab">
+                    @switch (Tab)
+                    {
+                        case "response":
+                            if (last?.Response is { } resp) { @ResponseView(resp) }
+                            else { <p data-testid="xr-no-response">@(last is null ? "Not sent: this call was blocked before any request." : $"No response was received ({last.Transport}). {last.Error}")</p> }
+                            break;
+                        case "assertions":
+                            if (call.Assertions.Count == 0) { <p data-testid="xr-no-assertions">No assertions are configured, so this call is not assessed (never a pass by default).</p> }
+                            else
+                            {
+                                <table class="xr-table" data-testid="xr-assertions">
+                                    <caption class="visually-hidden">Assertion outcomes, failed first</caption>
+                                    <thead><tr><th scope="col">Outcome</th><th scope="col">Check</th><th scope="col">Expected</th><th scope="col">Actual</th><th scope="col">Why</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var a in call.Assertions.OrderBy(a => a.Outcome != AssertionOutcome.Failed))
+                                        {
+                                            <tr data-testid="xr-assertion" data-outcome="@a.Outcome"><td><span class="xr-pill xr-@(a.Outcome == AssertionOutcome.Passed ? "ok" : a.Outcome == AssertionOutcome.Failed ? "bad" : "neutral")">@a.Outcome</span></td>
+                                                <td>@a.Kind @a.Operator @a.Target</td><td class="xr-mono">@a.Expected</td><td class="xr-mono">@(a.Actual ?? "—")</td><td>@a.Explanation</td></tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+                            break;
+                        case "attempts":
+                            <ol class="xr-timeline" data-testid="xr-attempts">
+                                @foreach (var at in call.Attempts)
+                                {
+                                    <li data-testid="xr-attempt" data-transport="@at.Transport">
+                                        <strong>Attempt @at.AttemptNumber</strong> · @at.Transport@(at.Response is { } r ? $" · HTTP {r.StatusCode} · {r.DurationMs} ms" : "")@(at.RetryReason is { } rr ? $" · {rr}" : "")@(at.Error is { } err ? $" · {err}" : "")
+                                        <label class="xr-check"><input type="checkbox" data-testid="xr-compare-pick" checked="@_picked.Contains(at.AttemptNumber)" @onchange="() => Pick(at.AttemptNumber)" /> Compare</label>
+                                    </li>
+                                }
+                            </ol>
+                            @if (call.Attempts.Count == 0) { <p>Not sent: blocked before any request.</p> }
+                            <button type="button" class="btn-secondary" data-testid="xr-compare" disabled="@(_picked.Count != 2)" @onclick="CompareAsync">Compare selected attempts</button>
+                            @if (_comparison is { } cmp)
+                            {
+                                <ul class="xr-list" data-testid="xr-comparison">@if (cmp.Differences.Count == 0) { <li>No differences in the stored evidence.</li> } @foreach (var x in cmp.Differences) { <li>@x</li> }</ul>
+                                <p class="xr-muted">Equal stored evidence does not prove equal domain state.</p>
+                            }
+                            break;
+                        case "evidence":
+                            <dl class="xr-facts" data-testid="xr-evidence">
+                                <div><dt>Operation</dt><dd>@(call.Definition.OperationRef ?? "not linked to a contract operation")</dd></div>
+                                <div><dt>Test data</dt><dd data-testid="xr-test-data">@(call.Definition.TestDataRefs.Count > 0 ? string.Join(", ", call.Definition.TestDataRefs) : "none")</dd></div>
+                                <div><dt>Source snapshot</dt><dd>@(run.SourceSnapshotId?.ToString() ?? "not recorded")</dd></div>
+                                <div><dt>Environment</dt><dd>@run.EnvironmentId · @run.TargetOrigin</dd></div>
+                                <div><dt>Capture policy</dt><dd>@run.CapturePolicy · @run.RedactionVersion</dd></div>
+                                <div><dt>Response body hash</dt><dd class="xr-mono">@(last?.Response?.Body?.Sha256 ?? "—")</dd></div>
+                                <div><dt>Capture</dt><dd data-testid="xr-capture">request @(last?.Request?.Body?.Completeness.ToString() ?? (last?.Request is null ? "not sent" : "no body")) · response @(last?.Response?.Body?.Completeness.ToString() ?? "none")</dd></div>
+                                <div><dt>Timing</dt><dd>Client elapsed time only; DNS/connect/TLS/first byte: not captured</dd></div>
+                            </dl>
+                            break;
+                        default:
+                            if (last?.Request is { } req) { @RequestView(req, call.Definition) }
+                            else { <p data-testid="xr-not-sent">Not sent: this call was blocked before any request. @call.Reason</p> }
+                            break;
+                    }
+                </div>
+            </section>
+        }
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "run")] public Guid? RunId { get; set; }
+    [SupplyParameterFromQuery(Name = "call")] public Guid? CallId { get; set; }
+    [SupplyParameterFromQuery(Name = "tab")] public string? TabQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "state")] public string? State { get; set; }
+    [SupplyParameterFromQuery(Name = "protocol")] public string? Protocol { get; set; }
+    [SupplyParameterFromQuery(Name = "method")] public string? Method { get; set; }
+    [SupplyParameterFromQuery(Name = "q")] public string? Search { get; set; }
+    [SupplyParameterFromQuery(Name = "sort")] public string? SortQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageQuery { get; set; }
+
+    private const int PageSize = 25;
+    private static readonly (string Key, string Label)[] Tabs = [("request", "Request"), ("response", "Response"), ("assertions", "Assertions"), ("attempts", "Attempts"), ("evidence", "Evidence")];
+    private string Tab => Tabs.Any(t => t.Key == TabQuery) ? TabQuery! : "request";
+    private string Sort => SortQuery is "duration" or "status" ? SortQuery : "sequence";
+    private int Page => Math.Max(1, PageQuery ?? 1);
+    private IExecutionEvidenceApiService? Api => Services.GetService(typeof(IExecutionEvidenceApiService)) as IExecutionEvidenceApiService;
+
+    private bool _loading = true;
+    private string? _error;
+    private IReadOnlyList<ExecutionRunSummary>? _runs;
+    private ExecutionRunDetail? _detail;
+    private ExecutionCallRecord? _call;
+    private readonly HashSet<int> _picked = [];
+    private AttemptComparison? _comparison;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true; _error = null; _comparison = null;
+        if (Api is not { } api) { _error = "Execution Results are not available in this host."; _loading = false; return; }
+        if (RunId is not { } runId) { (_runs, _error) = await api.RunsAsync(); _detail = null; _call = null; }
+        else
+        {
+            (_detail, _error) = await api.RunAsync(runId, (Page - 1) * PageSize, PageSize, State, Protocol, Method, Search, Sort);
+            _call = null;
+            if (CallId is { } callId && _error is null)
+            {
+                (_call, _error) = await api.CallAsync(runId, callId);
+                if (_picked.Any(n => _call?.Attempts.All(a => a.AttemptNumber != n) != false)) _picked.Clear();
+            }
+        }
+        _loading = false;
+    }
+
+    private void Go(string? state = null, string? protocol = null, string? method = null, string? search = null, string? sort = null, int? page = null, string? tab = null)
+    {
+        var filterChanged = state is not null || protocol is not null || method is not null || search is not null || sort is not null;
+        Nav.NavigateTo(Href(state: state ?? State, protocol: protocol ?? Protocol, method: method ?? Method, search: search ?? Search, sort: sort ?? SortQuery,
+            page: filterChanged ? 1 : page ?? PageQuery, tab: tab ?? TabQuery, call: CallId));
+    }
+
+    private string Href(Guid? run = null, Guid? call = null, bool clearRun = false, bool clearCall = false, string? state = null, string? protocol = null, string? method = null,
+        string? search = null, string? sort = null, int? page = null, string? tab = null)
+    {
+        if (clearRun) return "execution-results";
+        var q = new List<string> { $"run={run ?? RunId}" };
+        // Filters stay in the URL, so "back to calls" restores them.
+        void Add(string key, string? value) { if (!string.IsNullOrEmpty(value)) q.Add($"{key}={Uri.EscapeDataString(value)}"); }
+        Add("state", state ?? State); Add("protocol", protocol ?? Protocol); Add("method", method ?? Method); Add("q", search ?? Search);
+        Add("sort", sort ?? SortQuery); if ((page ?? PageQuery) is { } p and > 1) q.Add($"page={p}");
+        if (!clearCall && (call ?? CallId) is { } c) { q.Add($"call={c}"); Add("tab", tab ?? (call is not null ? null : TabQuery)); }
+        return "execution-results?" + string.Join('&', q);
+    }
+
+    private void Pick(int attempt) { if (!_picked.Remove(attempt)) _picked.Add(attempt); _comparison = null; }
+
+    private async Task CompareAsync()
+    {
+        if (Api is null || _call is null || RunId is not { } run || _picked.Count != 2) return;
+        var pair = _picked.Order().ToArray();
+        (_comparison, _error) = await Api.CompareAsync(run, _call.CallId, pair[0], run, _call.CallId, pair[1]);
+    }
+
+    private static string Label(ExecutionState s) => s switch { ExecutionState.NotAssessed => "Not assessed", ExecutionState.TimedOut => "Timed out", _ => s.ToString() };
+    private static string Tone(ExecutionState s) => s switch
+    {
+        ExecutionState.Passed => "ok",
+        ExecutionState.Failed or ExecutionState.Error or ExecutionState.TimedOut or ExecutionState.Interrupted => "bad",
+        ExecutionState.Blocked or ExecutionState.Cancelled => "warn",
+        ExecutionState.Running or ExecutionState.Planned or ExecutionState.Queued => "info",
+        _ => "neutral",
+    };
+
+    private static RenderFragment Kpi(string label, int value, string key, string? note = null) => __builder =>
+    {
+        <div class="xr-kpi" data-testid="@($"xr-kpi-{key}")"><dt>@label</dt><dd><span class="xr-kpi-value">@value</span>@if (note is not null) { <span class="xr-muted"> @note</span> }</dd></div>
+    };
+
+    private RenderFragment Select(string label, string testId, string? value, Action<string> set, IEnumerable<string> options, bool includeAll = true) => __builder =>
+    {
+        <label>@label
+            <select class="form-control" data-testid="@testId" value="@(value ?? (includeAll ? "" : "sequence"))" @onchange="e => set(e.Value?.ToString() ?? string.Empty)">
+                @if (includeAll) { <option value="">All</option> }
+                @foreach (var o in options) { <option value="@o">@o</option> }
+            </select>
+        </label>
+    };
+
+    private static RenderFragment Headers(List<CapturedHeader> headers, string testId) => __builder =>
+    {
+        <table class="xr-table xr-compact" data-testid="@testId"><caption class="visually-hidden">Headers</caption><tbody>
+            @foreach (var h in headers) { <tr><th scope="row">@h.Name</th><td class="xr-mono">@h.Value@if (h.Redacted) { <span class="xr-redacted" data-testid="xr-redacted"> redacted</span> }</td></tr> }
+        </tbody></table>
+    };
+
+    private static RenderFragment Body(CapturedBody? body, string testId) => __builder =>
+    {
+        if (body is null) { <p class="xr-muted">No body.</p> return; }
+        <p class="xr-muted" data-testid="@($"{testId}-meta")" data-completeness="@body.Completeness">@body.ContentType · @body.ByteCount bytes · @body.Completeness@(body.RedactedFields > 0 ? $" · {body.RedactedFields} value(s) redacted" : "")@(body.Note is { } n ? $" · {n}" : "")</p>
+        if (body.Text is { } text) { <pre class="xr-body" data-testid="@testId" tabindex="0">@Pretty(text, body.ContentType)</pre> }
+    };
+
+    /// <summary>JSON is indented for reading only; the stored evidence is unchanged. Everything else is shown as escaped text.</summary>
+    private static string Pretty(string text, string? contentType)
+    {
+        if ((contentType ?? "").Contains("json", StringComparison.OrdinalIgnoreCase))
+            try { return JsonNode.Parse(text)?.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) ?? text; } catch (JsonException) { }
+        return text;
+    }
+
+    private static RenderFragment RequestView(CapturedRequest req, ExecutionCallDefinition d) => __builder =>
+    {
+        <p class="xr-mono" data-testid="xr-request-line"><strong>@req.Method</strong> @req.Url</p>
+        if (req.GraphQlOperationType is { } type) { <p data-testid="xr-request-graphql">GraphQL @type@(req.GraphQlOperationName is { } name ? $" {name}" : "")</p> }
+        <h3 class="xr-h3">Headers sent</h3>
+        @Headers(req.Headers, "xr-request-headers")
+        <h3 class="xr-h3">Body sent</h3>
+        @Body(req.Body, "xr-request-body")
+        <p class="xr-muted">Captured at the transport boundary at @req.CapturedAt.ToLocalTime().ToString("HH:mm:ss.fff"), after redaction — not a preview.</p>
+    };
+
+    private static RenderFragment ResponseView(CapturedResponse resp) => __builder =>
+    {
+        <p data-testid="xr-response-status"><strong>HTTP @resp.StatusCode</strong> @resp.ReasonPhrase · @resp.DurationMs ms@(resp.InvalidJson ? " · invalid JSON" : "")</p>
+        if (resp.GraphQlErrorCount is { } errors)
+        {
+            <div class="xr-gql" data-testid="xr-graphql">
+                <p>GraphQL: data @(resp.GraphQlHasData == true ? "present" : "absent") · @errors error(s)@(errors > 0 && resp.GraphQlHasData == true ? " (partial result)" : "")</p>
+                @if (errors > 0) { <ul class="xr-list" data-testid="xr-graphql-errors">@for (var i = 0; i < resp.GraphQlErrorMessages.Count; i++) { <li>@resp.GraphQlErrorMessages[i]@(i < resp.GraphQlErrorPaths.Count ? $" · path {resp.GraphQlErrorPaths[i]}" : "")</li> }</ul> }
+                @if (resp.GraphQlErrorCodes.Count > 0) { <p>Codes: @string.Join(", ", resp.GraphQlErrorCodes)</p> }
+            </div>
+        }
+        <h3 class="xr-h3">Headers received</h3>
+        @Headers(resp.Headers, "xr-response-headers")
+        <h3 class="xr-h3">Body received</h3>
+        @Body(resp.Body, "xr-response-body")
+    };
+}

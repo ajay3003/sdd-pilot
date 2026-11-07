@@ -71,6 +71,7 @@ public static class UserGuideContent
         new("skolenaervaer", "Skolenærvær Testing", Testing, "skolenaervaer altinn mu mm bufdata rapportmottak journey reporter child"),
         new("test-coverage-review", "Test Coverage & Overlap", Testing, "test coverage overlap duplicate journeys qa scope"),
         new("code-risk-review", "Code Risk Review", Testing, "code risk deterministic rules findings"),
+        new("execution-results", "Execution Results", Testing, "execution evidence run call attempt request response assertion graphql retry redacted export"),
         new("pipeline", "Pipeline Review", Testing, "pipeline ci cd definitions needs refresh"),
 
         new("documentation-drift", "Documentation Drift", Governance, "drift compare changes overview authored generated lineage consistent difference conflict", "drift-statuses"),

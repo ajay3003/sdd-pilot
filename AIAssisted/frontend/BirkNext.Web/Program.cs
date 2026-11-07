@@ -350,6 +350,10 @@ if (entra.Configured)
 var testDataClient = builder.Services.AddHttpClient<ITestDataApiService, TestDataApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
     testDataClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
+// Execution Results: saved run → call → attempt evidence (read-only; opening a result never executes anything).
+var executionEvidenceClient = builder.Services.AddHttpClient<IExecutionEvidenceApiService, ExecutionEvidenceApiService>(client => client.BaseAddress = backendBase);
+if (entra.Configured)
+    executionEvidenceClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
 // IQR -> Integration journeys: one shared client for every journey pack; runs/history use the same execution permission and token pipeline.
 var journeysClient = builder.Services.AddHttpClient<IIntegrationJourneysApiService, IntegrationJourneysApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
