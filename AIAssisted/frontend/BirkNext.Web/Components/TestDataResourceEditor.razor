@@ -1,0 +1,599 @@
+@using System.Globalization
+@using System.Text.Json
+@using System.Text.Json.Nodes
+@using BirkNext.SourceDomains
+@using BirkNext.TestData
+@inject IServiceProvider Services
+
+@* Add data / Edit data: choose a kind, configure it with a type-aware editor, validate (tiers shown separately), save as Draft. Never approves,
+   binds or executes. XML is authored in the existing XML fixture editor (OnXmlRequested), never here. *@
+<section class="tdx" role="dialog" aria-modal="false" aria-labelledby="tdx-title" data-testid="tdx" data-step="@_step" data-kind="@_kind">
+    <header class="tdx-head">
+        <h3 id="tdx-title" class="tdx-title" tabindex="-1">@(Existing is { } e ? $"Edit data · {e.Alias}" : "Add data")</h3>
+        <ol class="tdx-steps" aria-label="Steps">
+            @foreach (var (n, label) in new[] { (1, "Kind"), (2, "Configure"), (3, "Validate and save") })
+            {
+                <li class="@(n == _step ? "is-current" : n < _step ? "is-done" : "")" aria-current="@(n == _step ? "step" : null)">@n. @label</li>
+            }
+        </ol>
+    </header>
+
+    @if (_step == 1)
+    {
+        <fieldset class="tdx-kinds" data-testid="tdx-kinds">
+            <legend>What do you want to add?</legend>
+            @foreach (var (kind, help) in Kinds)
+            {
+                <button type="button" class="tdx-kind @(_kind == kind ? "is-selected" : "")" aria-pressed="@(_kind == kind ? "true" : "false")" data-testid="tdx-kind" data-kind="@kind" @onclick="() => _kind = kind">
+                    <span class="tdx-kind-name">@TestDataResourceRules.Label(kind)</span><span class="tdx-kind-help">@help</span>
+                </button>
+            }
+            <button type="button" class="tdx-kind" data-testid="tdx-kind-xml" @onclick="XmlAsync">
+                <span class="tdx-kind-name">XML</span><span class="tdx-kind-help">Opens the XML fixture editor (XSD validation and approval).</span>
+            </button>
+        </fieldset>
+        <div class="tdx-actions">
+            <button type="button" class="btn-secondary" data-testid="tdx-cancel" @onclick="CancelAsync">Cancel</button>
+            <button type="button" class="btn-primary" data-testid="tdx-next" @onclick="() => Go(2)">Next</button>
+        </div>
+    }
+    else if (_step == 2)
+    {
+        var local = Local();
+        <div class="tdx-common">
+            <label class="tdx-field">Name <span class="tdx-req">(required)</span>
+                <input class="form-control" data-testid="tdx-alias" @bind="_alias" @bind:event="oninput" disabled="@(Existing is not null)" placeholder="e.g. child-age" aria-describedby="tdx-alias-help" />
+                <span id="tdx-alias-help" class="tdx-help">Lower-case letters, digits and '-'. The name is how consumers refer to it.</span>
+                @Error(local, "name")
+            </label>
+            <label class="tdx-field">Description <input class="form-control" data-testid="tdx-description" @bind="_description" /></label>
+            <label class="tdx-field">Scope
+                <select class="form-control" data-testid="tdx-scope" @bind="_environment">
+                    <option value="">Shared (all environments)</option>
+                    @foreach (var env in Environments) { <option value="@env">@env</option> }
+                </select>
+            </label>
+        </div>
+        <div class="tdx-editor" data-testid="tdx-editor">@Editor(local)</div>
+        <div class="tdx-actions">
+            <button type="button" class="btn-secondary" data-testid="tdx-cancel" @onclick="CancelAsync">Cancel</button>
+            @if (Existing is null) { <button type="button" class="btn-secondary" data-testid="tdx-back" @onclick="() => Go(1)">Back</button> }
+            <button type="button" class="btn-primary" data-testid="tdx-validate" @onclick="ValidateAsync">Validate</button>
+        </div>
+    }
+    else
+    {
+        var validation = _validation ?? Local();
+        <ul class="tdx-tiers" data-testid="tdx-tiers">
+            @foreach (var tier in new[] { TestDataCheckTiers.Syntax, TestDataCheckTiers.Type, TestDataCheckTiers.Contract, TestDataCheckTiers.References, TestDataCheckTiers.Sensitive, TestDataCheckTiers.Size })
+            {
+                var state = validation.Tier(tier);
+                // Size and References are listed only when they apply (a value without references has nothing to resolve).
+                if (tier is TestDataCheckTiers.Size or TestDataCheckTiers.References && validation.Checks.All(c => c.Tier != tier)) continue;
+                <li class="tdx-tier" data-testid="tdx-tier" data-tier="@tier" data-state="@state">
+                    <span class="tdx-badge tdx-@state.ToString().ToLowerInvariant()">@StateLabel(state)</span> <strong>@tier</strong>
+                    <ul>@foreach (var c in validation.Checks.Where(c => c.Tier == tier)) { <li data-testid="tdx-check" data-state="@c.State">@c.Message@(c.Location is { } at ? $" ({at})" : "")</li> }</ul>
+                </li>
+            }
+        </ul>
+        <p class="tdx-help" data-testid="tdx-readiness-note">Saved as Draft. Approval, binding to a consumer and readiness for an environment are separate steps; nothing is executed.</p>
+        @if (Existing is not null) { <label class="tdx-field">Change note <input class="form-control" data-testid="tdx-note" @bind="_note" /></label> }
+        <div class="tdx-actions">
+            <button type="button" class="btn-secondary" data-testid="tdx-cancel" @onclick="CancelAsync">Cancel</button>
+            <button type="button" class="btn-secondary" data-testid="tdx-back" @onclick="() => Go(2)">Back</button>
+            @if (Existing is not null) { <button type="button" class="btn-secondary" data-testid="tdx-save-new" disabled="@(_busy || validation.Blocking)" @onclick="SaveAsNewAsync">Save as new…</button> }
+            <button type="button" class="btn-primary" data-testid="tdx-save" disabled="@(_busy || validation.Blocking)" @onclick="SaveAsync">@(Existing is null ? "Save draft" : "Save new version")</button>
+        </div>
+        @if (_asNew)
+        {
+            <label class="tdx-field">New name <input class="form-control" data-testid="tdx-new-alias" @bind="_newAlias" @bind:event="oninput" /></label>
+            <div class="tdx-actions"><button type="button" class="btn-primary" data-testid="tdx-save-new-confirm" disabled="@_busy" @onclick="ConfirmSaveAsNewAsync">Save as new draft</button></div>
+        }
+    }
+    @if (_message is not null) { <p class="tdx-error" role="alert" data-testid="tdx-message">@_message</p> }
+</section>
+
+@code {
+    [Parameter] public TestDataResourceView? Existing { get; set; }
+    [Parameter] public IReadOnlyList<string> KnownAliases { get; set; } = [];
+    [Parameter] public IReadOnlyList<string> Environments { get; set; } = [];
+    [Parameter] public EventCallback<string?> OnClose { get; set; }
+    [Parameter] public EventCallback OnXmlRequested { get; set; }
+
+    private static readonly (TestDataResourceKind Kind, string Help)[] Kinds =
+    [
+        (TestDataResourceKind.SingleValue, "One typed value: text, number, boolean, date, UUID, enum or null."),
+        (TestDataResourceKind.KeyValue, "Named typed values, e.g. query parameters or a flat object."),
+        (TestDataResourceKind.Json, "A JSON object or array with nested values."),
+        (TestDataResourceKind.GraphQlVariables, "Variables for a discovered GraphQL query or mutation."),
+        (TestDataResourceKind.RestRequest, "Method, path, parameters and body for a REST operation."),
+        (TestDataResourceKind.Dataset, "Several resources and values used together."),
+        (TestDataResourceKind.Generated, "A generator (UUID, sequence, date offset, synthetic name …) with a fixed seed."),
+        (TestDataResourceKind.FileReference, "A file inside the Test Data folder (never uploaded here)."),
+    ];
+
+    private sealed class Row
+    {
+        public string Name { get; set; } = "";
+        public TestDataPrimitive Type { get; set; } = TestDataPrimitive.String;
+        public string Value { get; set; } = "";
+        public bool Required { get; set; } = true;
+        public string In { get; set; } = "query";
+        public string EnumText { get; set; } = "";
+        public string? Reference { get; set; }
+        public TestDataTypedEntry Entry() => new(Name.Trim(), Type, Type == TestDataPrimitive.Null ? null : Value, Required)
+            { EnumValues = Type == TestDataPrimitive.Enum ? [.. EnumText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)] : null };
+    }
+
+    private int _step = 1;
+    private TestDataResourceKind _kind = TestDataResourceKind.SingleValue;
+    private string _alias = "", _description = "", _environment = "", _note = "", _newAlias = "";
+    private readonly Row _value = new() { Name = "" };
+    private readonly List<Row> _rows = [new()];
+    private string _json = "{\n  \n}";
+    private string _method = "GET", _path = "/", _contentType = "application/json", _body = "", _filePath = "", _mediaType = "application/octet-stream";
+    private bool _useAuth = true;
+    private TestDataGeneratorKind _generator = TestDataGeneratorKind.Uuid;
+    private int? _seed = 1;
+    private string _genMin = "1", _genMax = "100", _genStart = "1", _genStep = "1", _genOffset = "0", _genValues = "", _genPattern = "AA-####";
+    private IReadOnlyList<TestDataOperationOption>? _operations;
+    private string _operationKey = "";
+    private TestDataResourceValidation? _validation;
+    private bool _busy, _asNew;
+    private string? _message;
+
+    private ITestDataApiService? Api => Services.GetService(typeof(ITestDataApiService)) as ITestDataApiService;
+
+    protected override void OnInitialized()
+    {
+        if (Existing is not { } e) return;
+        _step = 2; _kind = e.Content.Kind; _alias = e.Alias; _description = e.Description ?? ""; _environment = e.EnvironmentId ?? "";
+        var c = e.Content;
+        if (c.Value is { } v) { _value.Type = v.Type; _value.Value = v.Value ?? ""; _value.EnumText = string.Join(", ", v.EnumValues ?? []); }
+        if (c.Kind == TestDataResourceKind.KeyValue) { _rows.Clear(); _rows.AddRange(c.Entries.Select(Of)); }
+        if (c.Kind == TestDataResourceKind.RestRequest)
+        {
+            _rows.Clear(); _rows.AddRange(c.Parameters.Select(p => new Row { Name = p.Name, In = p.In, Type = p.Type, Value = p.Value ?? "", Required = p.Required }));
+            _method = c.Method ?? "GET"; _path = c.Path ?? "/"; _contentType = c.ContentType ?? "application/json"; _body = c.Body ?? ""; _useAuth = c.UseTargetAuthentication;
+        }
+        if (c.Kind == TestDataResourceKind.Dataset)
+        {
+            _rows.Clear();
+            _rows.AddRange(c.Members.Select(m => m.Inline is { } i ? Named(Of(i), m.Name) : new Row { Name = m.Name, Reference = m.Reference }));
+        }
+        if (c.Json is { } json) _json = json;
+        if (c.Generator is { } g)
+        {
+            _generator = g.Kind; _seed = g.Seed; _genMin = g.Min?.ToString(CultureInfo.InvariantCulture) ?? _genMin; _genMax = g.Max?.ToString(CultureInfo.InvariantCulture) ?? _genMax;
+            _genStart = g.Start?.ToString(CultureInfo.InvariantCulture) ?? _genStart; _genStep = g.Step?.ToString(CultureInfo.InvariantCulture) ?? _genStep;
+            _genOffset = g.OffsetDays?.ToString(CultureInfo.InvariantCulture) ?? _genOffset; _genValues = string.Join(", ", g.Values ?? []); _genPattern = g.Pattern ?? _genPattern;
+        }
+        _filePath = c.FilePath ?? ""; _mediaType = c.MediaType ?? _mediaType;
+        if (c.Operation is { } op) _operationKey = $"{op.ContractId}|{op.Operation}";
+    }
+
+    private static Row Named(Row r, string name) { r.Name = name; return r; }
+    private static Row Of(TestDataTypedEntry e) => new() { Name = e.Name, Type = e.Type, Value = e.Value ?? "", Required = e.Required, EnumText = string.Join(", ", e.EnumValues ?? []) };
+
+    private async Task Go(int step)
+    {
+        _message = null; _validation = null; _asNew = false;
+        _step = step;
+        if (step == 2 && _kind is TestDataResourceKind.GraphQlVariables or TestDataResourceKind.RestRequest && _operations is null && Api is { } api)
+        {
+            var (ops, _) = await api.ResourceOperationsAsync(_kind == TestDataResourceKind.GraphQlVariables ? "graphql" : "rest");
+            _operations = ops ?? [];
+            if (_kind == TestDataResourceKind.RestRequest && Existing is null && _rows.Count == 1 && _rows[0].Name.Length == 0) _rows.Clear();
+        }
+    }
+
+    private TestDataOperationOption? Operation => _operations?.FirstOrDefault(o => $"{o.ContractId}|{o.Operation.Name}" == _operationKey);
+
+    private TestDataResourceDraft Draft(string? alias = null) => new()
+    {
+        Alias = (alias ?? _alias).Trim(), Description = _description, EnvironmentId = string.IsNullOrWhiteSpace(_environment) ? null : _environment,
+        ExpectedVersion = Existing?.Version, ChangeNote = _note, Label = Existing?.Label, AppliesTo = Existing?.AppliesTo ?? [],
+        Content = _kind switch
+        {
+            TestDataResourceKind.SingleValue => new() { Kind = _kind, Value = _value.Entry() },
+            TestDataResourceKind.KeyValue => new() { Kind = _kind, Entries = [.. _rows.Select(r => r.Entry())] },
+            TestDataResourceKind.Json => new() { Kind = _kind, Json = _json },
+            TestDataResourceKind.GraphQlVariables => new() { Kind = _kind, Json = _json, Operation = OperationRef() },
+            TestDataResourceKind.RestRequest => new()
+            {
+                Kind = _kind, Method = _method, Path = _path, Operation = OperationRef(), UseTargetAuthentication = _useAuth,
+                Parameters = [.. _rows.Select(r => new TestDataRequestParameter(r.Name.Trim(), r.In, r.Type, r.Type == TestDataPrimitive.Null ? null : r.Value, r.Required))],
+                ContentType = _body.Length > 0 ? _contentType : null, Body = _body.Length > 0 ? _body : null,
+            },
+            TestDataResourceKind.Dataset => new()
+            {
+                Kind = _kind,
+                Members = [.. _rows.Select(r => r.Reference is { Length: > 0 } reference ? new TestDataDatasetMember(r.Name.Trim(), reference, null) : new TestDataDatasetMember(r.Name.Trim(), null, r.Entry()))],
+            },
+            TestDataResourceKind.Generated => new() { Kind = _kind, Generator = Generator() },
+            _ => new() { Kind = _kind, FilePath = _filePath, MediaType = _mediaType },
+        },
+    };
+
+    private TestDataOperationRef? OperationRef() => Operation is { } o ? new(o.SnapshotId, o.ContractId, o.Operation.Name) : null;
+
+    private TestDataGeneratorDefinition Generator()
+    {
+        static decimal? D(string s) => decimal.TryParse(s, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var d) ? d : null;
+        static long? L(string s) => long.TryParse(s, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var l) ? l : null;
+        return new(_generator, TestDataGenerators.Random(_generator) ? _seed : null)
+        {
+            Min = D(_genMin), Max = D(_genMax), Start = L(_genStart), Step = L(_genStep), OffsetDays = (int?)L(_genOffset), Scale = 2,
+            Values = _genValues.Length > 0 ? [.. _genValues.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)] : null,
+            Pattern = _generator == TestDataGeneratorKind.Pattern ? _genPattern : null,
+        };
+    }
+
+    /// <summary>The shared rules, run in the browser for inline errors (the backend repeats them with contract and catalog context).</summary>
+    private TestDataResourceValidation Local() => TestDataResourceRules.Validate(Draft(), new TestDataValidationContext
+    {
+        KnownAliases = KnownAliases.ToHashSet(StringComparer.Ordinal),
+        Operation = Operation?.Operation, Types = Operation?.Types ?? [], OperationMissing = _operationKey.Length > 0 && Operation is null && _operations is not null,
+    });
+
+    private async Task ValidateAsync()
+    {
+        _message = null; _attempted = true;
+        var local = Local();
+        if (Api is { } api)
+        {
+            _busy = true;
+            var (server, error) = await api.ValidateResourceAsync(Draft());
+            _busy = false;
+            _validation = server ?? local;
+            if (error is not null) _message = error;
+        }
+        else _validation = local;
+        _step = 3;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (Api is not { } api) return;
+        _busy = true; _message = null;
+        var (result, error) = await api.SaveResourceAsync(Existing?.Alias, Draft());
+        _busy = false;
+        if (result is { Saved: true } saved) { await OnClose.InvokeAsync(saved.Resource?.Alias); return; }
+        if (result?.Validation is { Checks.Count: > 0 } v) _validation = v;
+        _message = result?.Message ?? error;
+    }
+
+    private void SaveAsNewAsync() { _asNew = true; _newAlias = $"{_alias}-copy"; }
+
+    private async Task ConfirmSaveAsNewAsync()
+    {
+        if (Api is not { } api) return;
+        _busy = true; _message = null;
+        var (result, error) = await api.SaveResourceAsync(null, Draft(_newAlias) with { ExpectedVersion = null, ChangeNote = $"Saved as new from {_alias}" });
+        _busy = false;
+        if (result is { Saved: true } saved) { await OnClose.InvokeAsync(saved.Resource?.Alias); return; }
+        _message = result?.Message ?? error;
+    }
+
+    private Task CancelAsync() => OnClose.InvokeAsync(null);
+    private Task XmlAsync() => OnXmlRequested.InvokeAsync();
+
+    private static string StateLabel(TestDataCheckState s) => s switch
+    {
+        TestDataCheckState.Passed => "Passed", TestDataCheckState.Failed => "Failed", TestDataCheckState.Warning => "Warning", _ => "Not assessed",
+    };
+
+    private bool _attempted;
+
+    /// <summary>"Required" errors wait until the first Validate; a typed value's format error shows at once.</summary>
+    private bool Shown(TestDataCheck c) => _attempted || !(c.Message.StartsWith("Name:", StringComparison.Ordinal) || c.Message.Contains("is required", StringComparison.Ordinal)
+        || c.Message.StartsWith("Enter ", StringComparison.Ordinal) || c.Message.StartsWith("Add at least", StringComparison.Ordinal) || c.Message.StartsWith("Choose", StringComparison.Ordinal)
+        || c.Message.StartsWith("Empty", StringComparison.Ordinal) || c.Message.Contains("has no value", StringComparison.Ordinal));
+
+    private RenderFragment Error(TestDataResourceValidation v, string location) => __builder =>
+    {
+        foreach (var c in v.Checks.Where(c => c.State == TestDataCheckState.Failed && c.Location == location && Shown(c)))
+        {
+            <span class="tdx-inline-error" data-testid="tdx-inline-error">@c.Message</span>
+        }
+    };
+
+    private RenderFragment ErrorsUnder(TestDataResourceValidation v, string prefix) => __builder =>
+    {
+        foreach (var c in v.Checks.Where(c => c.State == TestDataCheckState.Failed && c.Location is { } l && l.StartsWith(prefix, StringComparison.Ordinal) && Shown(c)).Take(8))
+        {
+            <span class="tdx-inline-error" data-testid="tdx-inline-error">@c.Message</span>
+        }
+    };
+
+    // ── Editors ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment Editor(TestDataResourceValidation v) => _kind switch
+    {
+        TestDataResourceKind.SingleValue => SingleEditor(v),
+        TestDataResourceKind.KeyValue => GridEditor(v, rest: false),
+        TestDataResourceKind.Json => JsonEditor(v, "json"),
+        TestDataResourceKind.GraphQlVariables => GraphQlEditor(v),
+        TestDataResourceKind.RestRequest => RestEditor(v),
+        TestDataResourceKind.Dataset => DatasetEditor(v),
+        TestDataResourceKind.Generated => GeneratorEditor(v),
+        _ => FileEditor(v),
+    };
+
+    private RenderFragment TypeSelect(Row r, string testId) => __builder =>
+    {
+        <select class="form-control" data-testid="@testId" aria-label="Type" @bind="r.Type">
+            @foreach (var t in Enum.GetValues<TestDataPrimitive>()) { <option value="@t">@TestDataResourceRules.Label(t)</option> }
+        </select>
+    };
+
+    /// <summary>Type-aware input: toggle for booleans, date/time pickers, explicit null marker, Generate for UUIDs, allowed values for enums.</summary>
+    private RenderFragment ValueInput(Row r, string testId, string label) => __builder =>
+    {
+        switch (r.Type)
+        {
+            case TestDataPrimitive.Null:
+                <span class="tdx-null" data-testid="@testId" data-null="true">null (explicit)</span>
+                break;
+            case TestDataPrimitive.Boolean:
+                <label class="tdx-toggle"><input type="checkbox" role="switch" data-testid="@testId" aria-label="@label" checked="@(r.Value == "true")"
+                       @onchange='e => r.Value = e.Value is true ? "true" : "false"' @onfocus='() => { if (r.Value is not ("true" or "false")) r.Value = "false"; }' />
+                    <span>@(r.Value == "true" ? "true" : "false")</span></label>
+                break;
+            case TestDataPrimitive.Date:
+                <input type="date" class="form-control" data-testid="@testId" aria-label="@label" value="@r.Value" @oninput='e => r.Value = e.Value?.ToString() ?? ""' />
+                break;
+            case TestDataPrimitive.Time:
+                <input type="time" step="1" class="form-control" data-testid="@testId" aria-label="@label" value="@r.Value" @oninput='e => r.Value = e.Value?.ToString() ?? ""' />
+                break;
+            case TestDataPrimitive.Enum:
+                <span class="tdx-inline">
+                    <input class="form-control" data-testid="@($"{testId}-allowed")" aria-label="Allowed values (comma-separated)" placeholder="Allowed values, comma-separated" @bind="r.EnumText" @bind:event="oninput" />
+                    <select class="form-control" data-testid="@testId" aria-label="@label" @bind="r.Value">
+                        <option value="">Choose…</option>
+                        @foreach (var a in r.EnumText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) { <option value="@a">@a</option> }
+                    </select>
+                </span>
+                break;
+            case TestDataPrimitive.Uuid:
+                <span class="tdx-inline"><input class="form-control tdx-mono" data-testid="@testId" aria-label="@label" @bind="r.Value" @bind:event="oninput" />
+                    <button type="button" class="btn-secondary" data-testid="@($"{testId}-generate")" @onclick='() => r.Value = Guid.NewGuid().ToString("D")'>Generate</button></span>
+                break;
+            case TestDataPrimitive.Json:
+                <textarea class="form-control tdx-mono" rows="3" data-testid="@testId" aria-label="@label" @bind="r.Value" @bind:event="oninput"></textarea>
+                break;
+            default:
+                <input class="form-control @(r.Type is TestDataPrimitive.String ? "" : "tdx-mono")" inputmode="@(r.Type is TestDataPrimitive.Int32 or TestDataPrimitive.Int64 ? "numeric" : r.Type is TestDataPrimitive.Decimal or TestDataPrimitive.Double ? "decimal" : null)"
+                       data-testid="@testId" aria-label="@label" placeholder="@TestDataResourceRules.Format(r.Type)" @bind="r.Value" @bind:event="oninput" />
+                break;
+        }
+    };
+
+    private RenderFragment SingleEditor(TestDataResourceValidation v) => __builder =>
+    {
+        <div class="tdx-single">
+            <label class="tdx-field">Type @TypeSelect(_value, "tdx-type")</label>
+            <div class="tdx-field"><span>Value</span>@ValueInput(_value, "tdx-value", "Value")<span class="tdx-help">@TestDataResourceRules.Format(_value.Type)</span>@Error(v, "value")</div>
+        </div>
+    };
+
+    private RenderFragment GridEditor(TestDataResourceValidation v, bool rest) => __builder =>
+    {
+        <table class="tdx-grid" data-testid="@(rest ? "tdx-params" : "tdx-rows")">
+            <caption class="visually-hidden">@(rest ? "Request parameters" : "Typed values")</caption>
+            <thead><tr><th scope="col">Name</th>@if (rest) { <th scope="col">In</th> }<th scope="col">Type</th><th scope="col">Value</th><th scope="col">Required</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+            <tbody>
+                @for (var i = 0; i < _rows.Count; i++)
+                {
+                    var index = i; var r = _rows[i];
+                    <tr data-testid="tdx-row">
+                        <td data-label="Name"><input class="form-control" data-testid="tdx-row-name" aria-label="@($"Name, row {index + 1}")" @bind="r.Name" @bind:event="oninput" /></td>
+                        @if (rest)
+                        {
+                            <td data-label="In"><select class="form-control" data-testid="tdx-row-in" aria-label="@($"Location, row {index + 1}")" @bind="r.In">
+                                @foreach (var l in TestDataResourceRules.ParameterLocations) { <option value="@l">@l</option> }</select></td>
+                        }
+                        <td data-label="Type">@TypeSelect(r, "tdx-row-type")</td>
+                        <td data-label="Value">@ValueInput(r, "tdx-row-value", $"Value, row {index + 1}")</td>
+                        <td data-label="Required"><input type="checkbox" data-testid="tdx-row-required" aria-label="@($"Required, row {index + 1}")" @bind="r.Required" /></td>
+                        <td class="tdx-row-actions">
+                            <button type="button" class="btn-secondary" aria-label="@($"Move row {index + 1} up")" disabled="@(index == 0)" @onclick="() => Move(index, -1)">↑</button>
+                            <button type="button" class="btn-secondary" aria-label="@($"Duplicate row {index + 1}")" data-testid="tdx-row-duplicate" @onclick='() => _rows.Insert(index + 1, new Row { Name = r.Name + "_copy", Type = r.Type, Value = r.Value, In = r.In, Required = r.Required, EnumText = r.EnumText })'>⧉</button>
+                            <button type="button" class="btn-secondary" aria-label="@($"Delete row {index + 1}")" data-testid="tdx-row-delete" @onclick="() => _rows.RemoveAt(index)">✕</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <button type="button" class="btn-secondary" data-testid="tdx-add-row" @onclick='() => _rows.Add(new Row { In = rest ? "query" : "" })'>Add row</button>
+        @ErrorsUnder(v, rest ? "parameters" : "entries")
+    };
+
+    private void Move(int index, int delta)
+    {
+        var target = index + delta;
+        if (target < 0 || target >= _rows.Count) return;
+        (_rows[index], _rows[target]) = (_rows[target], _rows[index]);
+    }
+
+    private RenderFragment JsonEditor(TestDataResourceValidation v, string location) => __builder =>
+    {
+        var (node, error) = TestDataResourceRules.JsonError(_json);
+        <div class="tdx-json">
+            <label class="tdx-field">@(_kind == TestDataResourceKind.GraphQlVariables ? "Variables (JSON object)" : "JSON")
+                <textarea class="form-control tdx-mono" rows="10" spellcheck="false" data-testid="tdx-json" @bind="_json" @bind:event="oninput"></textarea></label>
+            <div class="tdx-inline">
+                <button type="button" class="btn-secondary" data-testid="tdx-json-format" disabled="@(node is null)" @onclick="() => _json = node!.ToJsonString(new JsonSerializerOptions { WriteIndented = true })">Format</button>
+                @if (error is not null) { <span class="tdx-inline-error" data-testid="tdx-json-error">@error</span> } else { <span class="tdx-ok" data-testid="tdx-json-ok">Well-formed</span> }
+            </div>
+            @if (node is not null)
+            {
+                <details class="tdx-tree" data-testid="tdx-json-tree" open><summary>Structure (typed)</summary>@Tree(node, "$")</details>
+            }
+            @ErrorsUnder(v, location)
+        </div>
+    };
+
+    private static RenderFragment Tree(JsonNode? node, string name) => __builder =>
+    {
+        switch (node)
+        {
+            case JsonObject o:
+                <ul><li><span class="tdx-key">@name</span> <span class="tdx-type">object</span>@foreach (var (k, child) in o) { @Tree(child, k) }</li></ul>
+                break;
+            case JsonArray a:
+                <ul><li><span class="tdx-key">@name</span> <span class="tdx-type">array[@a.Count]</span>@for (var i = 0; i < a.Count; i++) { @Tree(a[i], $"[{i}]") }</li></ul>
+                break;
+            default:
+                <ul><li data-testid="tdx-tree-leaf" data-type="@(node?.GetValueKind().ToString() ?? "Null")"><span class="tdx-key">@name</span> <span class="tdx-type">@(node is null ? "null" : node.GetValueKind() switch { JsonValueKind.Number => "number", JsonValueKind.True or JsonValueKind.False => "boolean", JsonValueKind.String => "string", _ => "value" })</span> <span class="tdx-mono">@(node?.ToJsonString() ?? "null")</span></li></ul>
+                break;
+        }
+    };
+
+    private RenderFragment OperationPicker(string label) => __builder =>
+    {
+        if (_operations is null) { <p class="tdx-help">Loading discovered operations…</p> return; }
+        if (_operations.Count == 0)
+        {
+            <p class="tdx-help" data-testid="tdx-no-operations">No @(_kind == TestDataResourceKind.GraphQlVariables ? "GraphQL" : "REST") operations in the newest Source Analysis snapshot. You can still save; contract validity is then Not assessed.</p>
+            return;
+        }
+        <label class="tdx-field">@label
+            <select class="form-control" data-testid="tdx-operation" @bind="_operationKey">
+                <option value="">None (contract not assessed)</option>
+                @foreach (var o in _operations) { <option value="@($"{o.ContractId}|{o.Operation.Name}")">@o.Operation.Name · @o.ContractName</option> }
+            </select></label>
+    };
+
+    private RenderFragment GraphQlEditor(TestDataResourceValidation v) => __builder =>
+    {
+        @OperationPicker("Operation")
+        if (Operation is { } op)
+        {
+            <p class="tdx-help" data-testid="tdx-variable-defs">Variables: @(op.Operation.ParameterDetails.Count > 0 ? string.Join(", ", op.Operation.ParameterDetails.Select(p => $"{p.Name.TrimStart('$')}: {p.Type}")) : string.Join(", ", op.Operation.Parameters) + " (names only; types not recorded)")</p>
+            <button type="button" class="btn-secondary" data-testid="tdx-template" @onclick="() => _json = Template(op)">Insert synthetic template</button>
+        }
+        @JsonEditor(v, "variables")
+    };
+
+    /// <summary>A synthetic variables template from the declared types (never real values): required fields only, placeholders by type.</summary>
+    private static string Template(TestDataOperationOption op)
+    {
+        JsonNode? Value(string? type, int depth)
+        {
+            var t = (type ?? "").Trim().TrimEnd('!');
+            if (t.StartsWith('[')) return new JsonArray(Value(t.Trim('[', ']'), depth));
+            if (depth > 4) return null;
+            return t switch
+            {
+                "Int" => 0, "Float" => 0.0, "Boolean" => false, "String" or "ID" => "",
+                _ when op.Types.FirstOrDefault(x => x.Name == t) is { } shape => shape.Kind == "enum" ? shape.Values.FirstOrDefault() ?? ""
+                    : new JsonObject(shape.Fields.Where(f => f.Required || (f.Type ?? "").EndsWith('!')).Select(f => KeyValuePair.Create(f.Name, Value(f.Type, depth + 1)))),
+                _ => "",
+            };
+        }
+        var o = new JsonObject();
+        foreach (var p in op.Operation.ParameterDetails) o[p.Name.TrimStart('$')] = Value(p.Type, 0);
+        if (op.Operation.ParameterDetails.Count == 0) foreach (var n in op.Operation.Parameters) o[n.TrimStart('$')] = null;
+        return o.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+    }
+
+    private RenderFragment RestEditor(TestDataResourceValidation v) => __builder =>
+    {
+        @OperationPicker("Operation (optional)")
+        if (Operation is { } op)
+        {
+            <button type="button" class="btn-secondary" data-testid="tdx-use-operation" @onclick="() => UseOperation(op)">Use its method, path and parameters</button>
+        }
+        <div class="tdx-inline">
+            <label class="tdx-field">Method <select class="form-control" data-testid="tdx-method" @bind="_method">@foreach (var m in TestDataResourceRules.Methods) { <option value="@m">@m</option> }</select></label>
+            <label class="tdx-field tdx-grow">Path <input class="form-control tdx-mono" data-testid="tdx-path" @bind="_path" @bind:event="oninput" placeholder="/children/{id}" />@Error(v, "path")</label>
+        </div>
+        @GridEditor(v, rest: true)
+        <label class="tdx-check"><input type="checkbox" data-testid="tdx-use-auth" @bind="_useAuth" /> Use the target's authentication (credentials are never stored in a template)</label>
+        <div class="tdx-inline">
+            <label class="tdx-field">Body content type <select class="form-control" data-testid="tdx-content-type" @bind="_contentType">@foreach (var t in TestDataResourceRules.ContentTypes) { <option value="@t">@t</option> }</select></label>
+        </div>
+        <label class="tdx-field">Body <textarea class="form-control tdx-mono" rows="6" spellcheck="false" data-testid="tdx-body" @bind="_body" @bind:event="oninput"></textarea>@Error(v, "body")</label>
+    };
+
+    private void UseOperation(TestDataOperationOption op)
+    {
+        var parts = op.Operation.Name.Split(' ', 2);
+        if (TestDataResourceRules.Methods.Contains(parts[0])) _method = parts[0];
+        _path = op.Operation.Path ?? (parts.Length > 1 ? parts[1] : _path);
+        _rows.Clear();
+        _rows.AddRange(op.Operation.ParameterDetails.Where(p => TestDataResourceRules.ParameterLocations.Contains(p.In)).Select(p => new Row
+        {
+            Name = p.Name, In = p.In, Required = p.Required, Type = TestDataOperationCompatibility.Expected(p.Type) ?? (p.Enum is { Count: > 0 } ? TestDataPrimitive.Enum : TestDataPrimitive.String),
+            EnumText = string.Join(", ", p.Enum ?? []),
+        }));
+        if (op.Operation.RequestContentTypes.FirstOrDefault() is { } ct && TestDataResourceRules.ContentTypes.Contains(ct.Split(';')[0].Trim())) _contentType = ct.Split(';')[0].Trim();
+    }
+
+    private RenderFragment DatasetEditor(TestDataResourceValidation v) => __builder =>
+    {
+        <table class="tdx-grid" data-testid="tdx-members">
+            <caption class="visually-hidden">Dataset members</caption>
+            <thead><tr><th scope="col">Name</th><th scope="col">Source</th><th scope="col">Value or reference</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+            <tbody>
+                @for (var i = 0; i < _rows.Count; i++)
+                {
+                    var index = i; var r = _rows[i];
+                    <tr data-testid="tdx-member">
+                        <td data-label="Name"><input class="form-control" data-testid="tdx-member-name" aria-label="@($"Member name, row {index + 1}")" @bind="r.Name" @bind:event="oninput" /></td>
+                        <td data-label="Source"><select class="form-control" data-testid="tdx-member-source" aria-label="@($"Source, row {index + 1}")" value="@(r.Reference is null ? "inline" : "reference")"
+                                    @onchange='e => r.Reference = (string?)e.Value == "reference" ? "" : null'>
+                            <option value="inline">Inline value</option><option value="reference">Existing data</option></select></td>
+                        <td>
+                            @if (r.Reference is not null)
+                            {
+                                <select class="form-control" data-testid="tdx-member-reference" aria-label="@($"Referenced data, row {index + 1}")" @bind="r.Reference">
+                                    <option value="">Choose…</option>
+                                    @foreach (var a in KnownAliases.Where(a => a != _alias)) { <option value="@a">@a</option> }
+                                </select>
+                            }
+                            else { <span class="tdx-inline">@TypeSelect(r, "tdx-member-type")@ValueInput(r, "tdx-member-value", $"Value, row {index + 1}")</span> }
+                        </td>
+                        <td class="tdx-row-actions"><button type="button" class="btn-secondary" aria-label="@($"Delete member {index + 1}")" @onclick="() => _rows.RemoveAt(index)">✕</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <button type="button" class="btn-secondary" data-testid="tdx-add-member" @onclick="() => _rows.Add(new Row())">Add member</button>
+        @ErrorsUnder(v, "members")
+    };
+
+    private RenderFragment GeneratorEditor(TestDataResourceValidation v) => __builder =>
+    {
+        var g = Generator();
+        <div class="tdx-inline">
+            <label class="tdx-field">Generator <select class="form-control" data-testid="tdx-generator" @bind="_generator">@foreach (var k in Enum.GetValues<TestDataGeneratorKind>()) { <option value="@k">@k</option> }</select></label>
+            @if (TestDataGenerators.Random(_generator)) { <label class="tdx-field">Seed <input type="number" class="form-control" data-testid="tdx-seed" @bind="_seed" /></label> }
+            @if (_generator is TestDataGeneratorKind.IntegerRange or TestDataGeneratorKind.DecimalRange)
+            {
+                <label class="tdx-field">Min <input class="form-control" data-testid="tdx-gen-min" @bind="_genMin" @bind:event="oninput" /></label>
+                <label class="tdx-field">Max <input class="form-control" data-testid="tdx-gen-max" @bind="_genMax" @bind:event="oninput" /></label>
+            }
+            @if (_generator == TestDataGeneratorKind.Sequence)
+            {
+                <label class="tdx-field">Start <input class="form-control" @bind="_genStart" @bind:event="oninput" /></label>
+                <label class="tdx-field">Step <input class="form-control" @bind="_genStep" @bind:event="oninput" /></label>
+            }
+            @if (_generator == TestDataGeneratorKind.DateOffset) { <label class="tdx-field">Offset (days) <input class="form-control" @bind="_genOffset" @bind:event="oninput" /></label> }
+            @if (_generator == TestDataGeneratorKind.EnumChoice) { <label class="tdx-field">Allowed values <input class="form-control" @bind="_genValues" @bind:event="oninput" /></label> }
+            @if (_generator == TestDataGeneratorKind.Pattern) { <label class="tdx-field">Pattern (#, A, a) <input class="form-control tdx-mono" @bind="_genPattern" @bind:event="oninput" /></label> }
+        </div>
+        @ErrorsUnder(v, "generator")@Error(v, "seed")
+        @if (!v.Blocking)
+        {
+            <p class="tdx-help" data-testid="tdx-generator-preview">Preview (first 3, not stored): @string.Join(" · ", Enumerable.Range(0, 3).Select(i => TestDataGenerators.Materialize(g, i, DateTimeOffset.UtcNow)))</p>
+        }
+    };
+
+    private RenderFragment FileEditor(TestDataResourceValidation v) => __builder =>
+    {
+        <label class="tdx-field">Path inside the Test Data folder <input class="form-control tdx-mono" data-testid="tdx-file" @bind="_filePath" @bind:event="oninput" placeholder="fixtures/report.pdf" />@Error(v, "file")</label>
+        <label class="tdx-field">Media type <input class="form-control" data-testid="tdx-media" @bind="_mediaType" /></label>
+    };
+}

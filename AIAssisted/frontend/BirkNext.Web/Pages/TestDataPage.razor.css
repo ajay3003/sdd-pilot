@@ -126,3 +126,8 @@
 @media (max-width: 640px) { .td-section-link.is-advanced { margin-left: 0; } }
 .td-auto-draft { border-left: 3px solid #b45309; background: #fffbeb; padding: .5rem .75rem; margin-bottom: .75rem; border-radius: 4px; overflow-wrap: anywhere; }
 .td-auto-draft ul { margin: .25rem 0 .5rem; padding-left: 1.1rem; }
+
+/* Add data bar and the highlight of a just-saved resource. */
+.td-add-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin: 0 0 0.75rem; }
+.td-add-bar .td-sub { display: inline; }
+.td-asset.is-new > th, .td-asset.is-new > td { background: #ddf4ff; }

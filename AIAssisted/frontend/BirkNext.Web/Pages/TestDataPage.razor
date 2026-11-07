@@ -227,6 +227,15 @@
 
         @if (Section == "assets")
         {
+        <div class="td-add-bar" data-testid="td-add-bar">
+            <button type="button" class="btn-primary" data-testid="td-add-data" aria-expanded="@(_editorOpen && _editorExisting is null ? "true" : "false")" @onclick="OpenAddData">Add data</button>
+            <span class="td-sub">Values, JSON, GraphQL variables, REST request templates, datasets and generators — saved as drafts.</span>
+        </div>
+        @if (_editorOpen)
+        {
+            <TestDataResourceEditor @key="@(_editorExisting?.Alias ?? "new")" Existing="_editorExisting" KnownAliases="@(catalog.Assets.Select(a => a.Alias).ToList())"
+                                    Environments="@(_scopes.Select(s => s.Id).ToList())" OnClose="EditorClosedAsync" OnXmlRequested="OpenXmlEditor" />
+        }
         @if (catalog.Assets.Count == 0)
         {
             var empty = P.Empty(catalog);
@@ -288,7 +297,7 @@
                                 var detailId = $"td-detail-{Slug(asset.Id)}";
                                 var status = P.Status(asset);
                                 var assetUsages = usages.Where(u => u.AssetId == asset.Id).ToList();
-                                <tr class="td-asset" data-testid="td-asset" data-alias="@asset.Alias" data-kind="@asset.Kind" data-status="@status">
+                                <tr class="td-asset @(asset.Alias == _highlight ? "is-new" : "")" data-testid="td-asset" data-alias="@asset.Alias" data-kind="@asset.Kind" data-status="@status" data-new="@(asset.Alias == _highlight ? "true" : null)">
                                     <th scope="row" data-label="Name"><span class="td-alias">@asset.Alias</span>@if (asset.Label is { } label) { <span class="td-sub">@label</span> }
                                         @if (asset.ProtectionLabel is { } protection) { <span class="td-pill td-pill-neutral" data-testid="td-protected" data-protection="@asset.ProtectionKind" title="@asset.ProtectionReason">@protection@(asset.ValueModified ? " · Modified" : "")</span> }
                                         @if (asset.Ownership == TestDataOwnership.Generated && TestDataValueVersions.Changed(asset, catalog.Assets).Count > 0) { <span class="td-pill td-pill-attention" data-testid="td-mapped-changed">Mapped Test Data changed</span> }
@@ -305,7 +314,12 @@
                                         <button type="button" class="btn-secondary td-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="@detailId"
                                                 aria-label="@($"{(open ? "Hide" : "Show")} details for {asset.Alias}")" data-testid="td-toggle" @onclick="() => ToggleAsync(asset)">@(open ? "Hide details" : "Details")</button>
                                         @* Configuration-owned assets are changed in the backend configuration, so Test Data offers no Edit for them. *@
-                                        @if (asset.Ownership is not (TestDataOwnership.Configuration or TestDataOwnership.Unknown))
+                                        @if (asset.Ownership == TestDataOwnership.Authored)
+                                        {
+                                            <button type="button" class="btn-secondary" data-testid="td-edit-data" aria-label="@($"Edit data {asset.Alias}")" @onclick="() => OpenResourceEditor(asset.Alias)">Edit</button>
+                                            <button type="button" class="btn-secondary" data-testid="td-duplicate" aria-label="@($"Duplicate {asset.Alias}")" @onclick="() => DuplicateAsync(asset.Alias)">Duplicate</button>
+                                        }
+                                        else if (asset.Ownership is not (TestDataOwnership.Configuration or TestDataOwnership.Unknown))
                                         {
                                             <button type="button" class="btn-secondary" id="@($"td-edit-{Slug(asset.Id)}")" data-testid="td-edit" aria-label="@($"Edit {asset.Alias}")" @onclick="() => OpenDialog(asset, TestDataAssetDialog.Mode.Edit)">Edit</button>
                                         }
@@ -760,6 +774,49 @@
     private static string Slug(string id) => new(id.Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray());
 
     // ── Asset lifecycle dialog (Edit, View usages, Delete, Replace references) ─────────────────────────────────────────────────────────
+
+    // ── Add data / Edit data (typed resources, saved as Draft versions) ─────────────────────────────────────────────────
+
+    private bool _editorOpen;
+    private TestDataResourceView? _editorExisting;
+    private string? _highlight;
+
+    private void OpenAddData() { _editorExisting = null; _editorOpen = true; _actionStatus = null; }
+
+    private async Task OpenResourceEditor(string alias)
+    {
+        if (_api is null) return;
+        var (resource, error) = await _api.ResourceAsync(alias);
+        if (resource is null) { _actionStatus = error ?? $"{alias} could not be read."; return; }
+        _editorExisting = resource; _editorOpen = true; _actionStatus = null;
+    }
+
+    /// <summary>Back to the catalog: a saved resource is shown (filters cleared) and highlighted.</summary>
+    private async Task EditorClosedAsync(string? alias)
+    {
+        var edited = _editorExisting is not null;
+        _editorOpen = false; _editorExisting = null;
+        if (alias is null) return;
+        _highlight = alias; ClearFilters();
+        _actionStatus = edited ? $"{alias}: new version saved as draft. The approved version (if any) stays in use until you approve this one." : $"{alias} saved as draft. Approve it before a consumer uses it.";
+        await ReloadAsync(null);
+    }
+
+    private async Task DuplicateAsync(string alias)
+    {
+        if (_api is null) return;
+        var copy = $"{alias}-copy";
+        for (var n = 2; _catalog?.Assets.Any(a => a.Alias == copy) == true && n < 100; n++) copy = $"{alias}-copy-{n}";
+        var (result, error) = await _api.DuplicateResourceAsync(alias, copy);
+        if (result is { Saved: true }) { _highlight = copy; ClearFilters(); _actionStatus = $"{alias} duplicated as {copy} (draft; approval is not copied)."; await ReloadAsync(null); }
+        else _actionStatus = result?.Message ?? error;
+    }
+
+    private void OpenXmlEditor()
+    {
+        _editorOpen = false;
+        (Services.GetService(typeof(NavigationManager)) as NavigationManager)?.NavigateTo("test-data?section=fixtures&create=xml");
+    }
 
     private TestDataAssetSummary? _dialogFor;
     private TestDataAssetDialog.Mode _dialogMode;
