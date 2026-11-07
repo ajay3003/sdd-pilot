@@ -32,6 +32,20 @@ Status vocabulary:
 | DIFF-HR-2 | — | Observability impact | 74 changes do not pair across directions, 28 cite no file, 29 cite only unchanged files | Possibly identity-derived (component names) rather than file changes | Human review | HUMAN REVIEW |
 | DIFF-HR-3 | — | Impact wording | Unified rows such as "DirectRelation · Confirmed" (1,116) use the architecture evidence state "Confirmed", not a reviewed impact | May be read as confirmed impact | Label as "source dependency confirmed; impact not reviewed" | HUMAN REVIEW |
 
+## Registered follow-up gaps (2026-11-07, after review) — all OPEN
+
+None of these is implemented. They are not part of the Execution Evidence task.
+
+| Id | Area | Gap | Relation | Status |
+|---|---|---|---|---|
+| GAP-UIA-1 | Unified Impact | Explicit baseline/current source snapshot selection regardless of archive file name (repository identity is derived from the name today) | DIFF-GAP-3 | OPEN |
+| GAP-UIA-2 | Unified Impact | Selecting versions inside an imported project's context (each version is its own import id today → HTTP 409) | DIFF-GAP-4 | OPEN |
+| GAP-DLV-1 | Delivery comparison | Compare changed plan.md content and task text/references (116 reference changes and 4 plan changes are reported as "Unchanged" today) | DIFF-GAP-2 | OPEN |
+| GAP-MOVE-1 | Delivery / contracts / files | Explicit, evidence-based classification of module renames and moves (folder matching works, but it is not stated; contracts and files appear as removed + added) | DIFF-GAP-6, DIFF-GAP-8 | OPEN |
+| GAP-FILE-1 | Source Analysis file inventory | Investigate the 95 changed Markdown/Blazor/HTML files without a content fingerprint and give them an accurate coverage status (currently "not read", counted outside "changed") | DIFF-GAP-1 | OPEN |
+| GAP-TD-1 | Test Data consumers | Reusable data selection/binding inside API Quality Review, Performance Test Review and Skolenærvær (readiness and binding exist via Test Data and its API only) | Test Data implementation report | OPEN — planned inside the contract-driven API flow |
+| GAP-TD-2 | Validation | Arbitrary XSD validation of authored XML (not re-verified in this pass; the XML fixture editor is Test Pack bound) and JSON Schema validation (missing; shown as Not assessed) | Test Data implementation report | OPEN — separate, unverified/missing |
+
 ## Not run (by scope)
 
 These edge cases were not exercised on derived real data in this pass, because none occurs in the authentic pair according to the oracle:

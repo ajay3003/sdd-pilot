@@ -129,3 +129,21 @@ The same shared rules run in the browser (inline errors) and on the server, wher
 ## Local commits
 
 See `git log`. The implementation is committed separately from these documents; nothing was pushed.
+
+## Addendum — regression completion (later on 2026-11-07)
+
+The PARTIAL regression row above is the historical record of the first run, which was stopped for low memory. The remaining work was then run against the committed source:
+
+- **Source:** HEAD `e5f45387`.
+- **Build copy check:** 3,261 tracked source files compared. 2 differed only in line endings (identical content); they were aligned before the run. The test binaries were built from that content.
+- **Backend partition 6:** 2,000 passed / 0 failed / 8 skipped.
+- **Backend total over partitions 1–6:** 6,055 passed / 0 failed / 19 skipped. Partitions 1–5 are from the first run on the same code.
+- **Frontend full suite:** 8,465 / 8,465 passed.
+- **Memory:** the guard was kept, with a 1.5 GB floor and sequential runs; the lowest free memory observed was 3.2 GB.
+
+**Regression verdict: PASS.**
+
+Environment cleanup:
+- Databases `birknext_diffval_20261107` and `birknext_td_20261107` were dropped (owner `birknext`, 0 connections).
+- Deleted: content roots `api-diff` and `api-td`, the derived re-packed M2LB-language archive, the raw API outputs and the two real-data API logs.
+- Original `testdata/` hashes are unchanged.
