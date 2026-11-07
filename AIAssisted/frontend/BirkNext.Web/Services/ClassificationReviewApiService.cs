@@ -43,7 +43,7 @@ public sealed class ClassificationReviewApiService(HttpClient http) : IClassific
 
     public async Task<(ClassificationTestContext? Context, string? Error)> SaveContextAsync(string environmentId, ClassificationTestContext context, CancellationToken ct = default)
     {
-        using var response = await http.PutAsJsonAsync($"api/security-classification/context?{Env(environmentId)}", context, Json, ct);
+        using var response = await http.SendJsonForEnvironmentAsync(HttpMethod.Put, $"api/security-classification/context?{Env(environmentId)}", context, Json, environmentId, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.BadRequest) return (null, (await response.Content.ReadAsStringAsync(ct)).Trim('"'));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ClassificationTestContext>(Json, ct), null);
@@ -57,7 +57,7 @@ public sealed class ClassificationReviewApiService(HttpClient http) : IClassific
 
     public async Task<ClassificationReviewResult> RunAsync(string environmentId, ClassificationRunRequest request, CancellationToken ct = default)
     {
-        using var response = await http.PostAsJsonAsync($"api/security-classification/runs?{Env(environmentId)}", request, Json, ct);
+        using var response = await http.SendJsonForEnvironmentAsync(HttpMethod.Post, $"api/security-classification/runs?{Env(environmentId)}", request, Json, environmentId, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.BadRequest) throw new InvalidOperationException((await response.Content.ReadAsStringAsync(ct)).Trim('"'));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ClassificationReviewResult>(Json, ct))!;
@@ -66,7 +66,10 @@ public sealed class ClassificationReviewApiService(HttpClient http) : IClassific
     public async Task<ClassificationReviewResult> RunStaticAsync(string? environmentId, ClassificationRunRequest request, CancellationToken ct = default)
     {
         var query = string.IsNullOrWhiteSpace(environmentId) ? "" : "?" + Env(environmentId);
-        using var response = await http.PostAsJsonAsync($"api/security-classification/static-reviews{query}", request, Json, ct);
+        // Without an environment the review is stored under its source scope; with one it is stored under (and needs) that environment.
+        using var response = string.IsNullOrWhiteSpace(environmentId)
+            ? await http.PostAsJsonAsync($"api/security-classification/static-reviews{query}", request, Json, ct)
+            : await http.SendJsonForEnvironmentAsync(HttpMethod.Post, $"api/security-classification/static-reviews{query}", request, Json, environmentId, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.BadRequest) throw new InvalidOperationException((await response.Content.ReadAsStringAsync(ct)).Trim('"'));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ClassificationReviewResult>(Json, ct))!;
@@ -74,7 +77,7 @@ public sealed class ClassificationReviewApiService(HttpClient http) : IClassific
 
     public async Task<ClassificationReviewResult> RunRuntimeAsync(string environmentId, ClassificationRunRequest request, CancellationToken ct = default)
     {
-        using var response = await http.PostAsJsonAsync($"api/security-classification/runtime-verifications?{Env(environmentId)}", request, Json, ct);
+        using var response = await http.SendJsonForEnvironmentAsync(HttpMethod.Post, $"api/security-classification/runtime-verifications?{Env(environmentId)}", request, Json, environmentId, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
         {
             var body = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>(Json, ct);

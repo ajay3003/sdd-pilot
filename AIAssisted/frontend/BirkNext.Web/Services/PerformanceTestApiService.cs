@@ -101,8 +101,8 @@ public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTes
         try
         {
             using var response = create
-                ? await http.PostAsJsonAsync($"{Base}/definitions?{Env(environmentId)}", definition, Json, ct)
-                : await http.PutAsJsonAsync($"{Base}/definitions/{Uri.EscapeDataString(definition.Id)}?{Env(environmentId)}", definition, Json, ct);
+                ? await http.SendJsonForEnvironmentAsync(HttpMethod.Post, $"{Base}/definitions?{Env(environmentId)}", definition, Json, environmentId, ct)
+                : await http.SendJsonForEnvironmentAsync(HttpMethod.Put, $"{Base}/definitions/{Uri.EscapeDataString(definition.Id)}?{Env(environmentId)}", definition, Json, environmentId, ct);
             return response.IsSuccessStatusCode ? PerformanceApiResult<PerformanceTestDefinition>.Ok((await response.Content.ReadFromJsonAsync<PerformanceTestDefinition>(Json, ct))!)
                 : PerformanceApiResult<PerformanceTestDefinition>.Fail(await Message(response, ct));
         }
@@ -113,7 +113,7 @@ public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTes
     {
         try
         {
-            using var response = await http.PostAsJsonAsync($"{Base}/data-profiles?{Env(environmentId)}", profile, Json, ct);
+            using var response = await http.SendJsonForEnvironmentAsync(HttpMethod.Post, $"{Base}/data-profiles?{Env(environmentId)}", profile, Json, environmentId, ct);
             return response.IsSuccessStatusCode ? PerformanceApiResult<PerformanceTestDataProfile>.Ok((await response.Content.ReadFromJsonAsync<PerformanceTestDataProfile>(Json, ct))!)
                 : PerformanceApiResult<PerformanceTestDataProfile>.Fail(await Message(response, ct));
         }
@@ -200,7 +200,7 @@ public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTes
     {
         try
         {
-            using var response = await http.PostAsJsonAsync($"{Base}/runs?{Env(environmentId)}", request, Json, ct);
+            using var response = await http.SendJsonForEnvironmentAsync(HttpMethod.Post, $"{Base}/runs?{Env(environmentId)}", request, Json, environmentId, ct);
             if (response.IsSuccessStatusCode) return PerformanceApiResult<PerformanceTestRun>.Ok((await response.Content.ReadFromJsonAsync<PerformanceTestRun>(Json, ct))!);
             if (response.StatusCode == HttpStatusCode.UnprocessableEntity && await response.Content.ReadFromJsonAsync<BlockedBody>(Json, ct) is { } blocked)
                 return PerformanceApiResult<PerformanceTestRun>.Fail(blocked.Message ?? "The performance test cannot run.", blocked.Blockers ?? []);
@@ -231,7 +231,7 @@ public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTes
     {
         try
         {
-            using var response = await http.PostAsJsonAsync($"{Base}/baselines?{Env(environmentId)}", request, Json, ct);
+            using var response = await http.SendJsonForEnvironmentAsync(HttpMethod.Post, $"{Base}/baselines?{Env(environmentId)}", request, Json, environmentId, ct);
             return await response.Content.ReadFromJsonAsync<PerformanceBaselinePromotionResult>(Json, ct) ?? new(null, null, "No answer.");
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return new(null, null, BackendRequestClassifier.FromException("Performance test request", ex).UserMessage); }

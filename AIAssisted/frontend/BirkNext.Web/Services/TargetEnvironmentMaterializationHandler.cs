@@ -4,9 +4,10 @@ namespace BirkNext.Web.Services;
 
 /// <summary>
 /// Backend client operations that create or update environment-owned state (External Integrations, IQR configuration, Altinn settings,
-/// setup applies) declare the Target Environment they attach to. Backend records are keyed by environment id alone, while never-saved
-/// built-in defaults live only in memory, so such an operation must store those defaults first or a reload would orphan what it attached.
-/// Reads, previews, checks and runs do not declare it and never store anything.
+/// setup applies, M01 reviews and test context, performance definitions, data profiles, runs and baselines) declare the Target Environment
+/// they attach to. Backend records are keyed by environment id alone, while never-saved built-in defaults live only in memory, so such an
+/// operation must store those defaults first or a reload would orphan what it attached. Reads, previews and checks do not declare it and
+/// never store anything.
 /// </summary>
 public static class TargetEnvironmentPersistence
 {

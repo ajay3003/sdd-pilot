@@ -115,6 +115,42 @@ public sealed class TargetEnvironmentMaterializationTests
     }
 
     [Fact]
+    public async Task M01_reviews_and_performance_definitions_stored_for_an_unsaved_default_survive_a_reload()
+    {
+        // BQA-014: in a fresh browser an M01 review or a performance definition was stored under a default's random id that the next load
+        // replaced, so the stored result vanished from the page (still in the backend, under an id nothing used any more).
+        var storage = new FakeStorage();
+        var backend = new FakeBackend();
+        var settings = await LoadAsync(storage);
+        var development = Id(settings, "Development");
+
+        await new ClassificationReviewApiService(Client(settings, storage, backend)).RunAsync(development, new ClassificationRunRequest());
+        settings.IsMaterialized.Should().BeTrue("an M01 review is stored under the environment");
+        (await new PerformanceTestApiService(Client(settings, storage, backend)).SaveDefinitionAsync(development, new() { Name = "Baseline" }, create: true)).Error.Should().BeNull();
+
+        var reopened = Id(await LoadAsync(storage), "Development");
+        reopened.Should().Be(development);
+        backend.Records.Should().OnlyContain(r => r.Environment == development);
+        backend.Records.Select(r => r.Path).Should().BeEquivalentTo(["/api/security-classification/runs", "/api/performance-tests/definitions"]);
+    }
+
+    [Fact]
+    public async Task M01_and_performance_reads_and_readiness_store_nothing()
+    {
+        var storage = new FakeStorage();
+        var settings = await LoadAsync(storage);
+        var development = Id(settings, "Development");
+        var http = Client(settings, storage, new FakeBackend());
+
+        await new PerformanceTestApiService(http).ReadinessAsync(development, "definition");
+        await new PerformanceTestApiService(http).RunsAsync(development, null);
+        await new ClassificationReviewApiService(http).RunStaticAsync(null, new ClassificationRunRequest());
+
+        settings.IsMaterialized.Should().BeFalse("a read, a readiness check or a source-scoped static review attaches nothing to the environment");
+        storage.Writes.Should().Be(0);
+    }
+
+    [Fact]
     public async Task Previews_detection_and_undeclared_posts_never_store_the_defaults()
     {
         var storage = new FakeStorage();
