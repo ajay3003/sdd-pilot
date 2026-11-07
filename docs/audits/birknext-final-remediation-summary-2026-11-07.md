@@ -1,5 +1,7 @@
 # BirkNext Final Remediation Summary — 2026-11-07
 
+> Current authoritative status, release decisions and sign-off: `birknext-audit-reconciliation-and-signoff-2026-11-07.md`.
+
 Branch `008-traceability-first`, HEAD **`60671884`** (`606718846a1640d6cac867b0f90e50961377fecd`). Local commits only — nothing pushed or deployed.
 No external system (TT02, m2lbdev, Altinn, MU, MM, Bufdata, Azure, Azure DevOps, Microsoft sign-in) was contacted; browser runs abort every
 non-localhost request. The user's stack on :5000/:5173, their PostgreSQL data, `appsettings.Local.json` and `testdata/` were not touched. Writable
@@ -16,7 +18,7 @@ checks ran on the isolated copy (`birknext_g67`, API :5099, web :5199). Earlier 
 | G5 Frontend regression | **PASS** | **8,463 / 8,463** at `60671884`. |
 | G6 XML fixture save/reload | **PASS** | 22/22 (2026-11-07 gap closure); no XML/persistence code changed since. |
 | G7 Cross-module workflows | **PASS** | Delivery → Release Readiness: backend chain test + browser 16/16; interrupted import: 4 failure-injection tests; A–F from the gap closure. |
-| G8 Accessibility (scope) | **PASS** | axe-core 0 serious/critical on Git Sources (unconfigured and configured); keyboard focus; 390 px without horizontal scroll. |
+| G8 Accessibility (scope) | **PASS (defined scope)** | Defined scope: 18-page axe/keyboard/390 px check (2026-11-06) plus the Git Sources re-scan after its UI change (0 serious/critical). Broader WCAG assurance not verified — see the reconciliation report §7. |
 | G9 Localhost security | **PARTIAL** | HTTP_PORTS/HTTPS_PORTS binding bypass found and fixed (in-process); runtime starts of the widening variants were denied by the local permission policy; no second Windows account. |
 | G10 Tester package | **PARTIAL** | Rebuilt from `60671884` and validated from a clean copy; launcher fixes verified on it. **No clean PC available — clean-PC acceptance NOT RUN** (checklist: `birknext-tester-package-clean-pc-checklist-2026-11-07.md`). |
 
@@ -117,7 +119,7 @@ page under "Microsoft Entra administrator setup" with Copy.
 
 ## 9. Remaining risks and external dependencies
 
-- Partition 6c of the backend suite on the final source (memory) — a rerun on request.
+- ~~Partition 6c of the backend suite on the final source~~ — historical: completed in the final run (§11), G4 PASS.
 - Runtime binding variants (permission policy), second Windows account, clean PC.
 - Real Entra registration and Azure DevOps access for Git Sources.
 - Docker path of the readiness check only simulated.
