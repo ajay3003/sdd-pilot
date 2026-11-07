@@ -25,6 +25,17 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
     private static readonly ConcurrentDictionary<Guid, CancellationTokenSource> Running = new();
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
 
+    /// <summary>
+    /// The socket handler of the execution-evidence client: no redirects, no cookies. Its plaintext stream (after TLS) counts every request
+    /// head actually written (<see cref="TransmissionCountingStream"/>), because the HTTP stack resends a body-less request when the connection
+    /// closes before a response — one recorded attempt may be several wire transmissions, and the evidence says so.
+    /// </summary>
+    public static SocketsHttpHandler CreatePrimaryHandler() => new()
+    {
+        AllowAutoRedirect = false, UseCookies = false, AutomaticDecompression = System.Net.DecompressionMethods.All,
+        PlaintextStreamFilter = (context, _) => ValueTask.FromResult<Stream>(new TransmissionCountingStream(context.PlaintextStream)),
+    };
+
     public static bool Mutating(ExecutionCallDefinition d) => d.Protocol == ExecutionProtocol.GraphQl
         ? OperationType(d.GraphQlQuery) == "mutation"
         : d.Method.ToUpperInvariant() is "POST" or "PUT" or "PATCH" or "DELETE";
@@ -159,7 +170,8 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
             var slot = new EvidenceCaptureSlot { Policy = policy };
             using var message = Build(origin, d);
             message.Options.Set(EvidenceCaptureSlot.Key, slot);
-            message.Headers.TryAddWithoutValidation(CorrelationHeader, $"{runId:N}.{record.Sequence}.{n}");
+            var correlation = $"{runId:N}.{record.Sequence}.{n}";
+            message.Headers.TryAddWithoutValidation(CorrelationHeader, correlation);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(runToken);
             timeout.CancelAfter(Math.Clamp(d.TimeoutMs, 500, 120000));
             TransportResult transport; string? error = null;
@@ -188,10 +200,12 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
             else { response2 = null; lastRaw = null; }
             var request = slot.Request is { } r && d.Protocol == ExecutionProtocol.GraphQl
                 ? r with { GraphQlOperationName = d.GraphQlOperationName, GraphQlOperationType = OperationType(d.GraphQlQuery) } : slot.Request;
+            var transmissions = TransmissionCountingStream.Take(correlation);
             attempts.Add(new ExecutionAttempt
             {
                 AttemptNumber = n, StartedAt = started, CompletedAt = _clock.GetUtcNow(), Transport = request is null && transport != TransportResult.ResponseReceived ? TransportResult.NotSent : transport,
-                Request = request, Response = response2, Error = error, RetryReason = retryReason,
+                Request = request, Response = response2, RetryReason = retryReason, Transmissions = transmissions,
+                Error = transmissions > 1 ? $"{error} The HTTP stack transmitted this request {transmissions} times (it resends a request without a body when the connection closes before a response).".Trim() : error,
             });
             if (n == max || transport is TransportResult.Cancelled) break;
             retryReason = transport is TransportResult.ConnectionFailed or TransportResult.TimedOut && d.Retry.RetryOnTransportError ? $"Retry after {transport}"

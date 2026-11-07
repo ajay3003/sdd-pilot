@@ -77,6 +77,7 @@ public sealed class ExecutionEvidenceStore(AppDbContext db, TimeProvider? clock 
         var summary = JsonSerializer.Deserialize<ExecutionRunSummary>(row.SummaryJson, Json)! with
         {
             State = state, CompletedAt = _clock.GetUtcNow(), Counts = counts,
+            WireTransmissions = docs.Sum(d => d.Attempts.Sum(a => a.Transmissions)),
             CallsWithCompleteEvidence = docs.Count(d => d.Attempts.All(a => a.Transport == TransportResult.NotSent || a.Request is not null && (a.Transport != TransportResult.ResponseReceived || a.Response is not null))),
         };
         (row.State, row.CompletedAt, row.Passed, row.Failed, row.Errors, row.Attempts, row.SummaryJson) =

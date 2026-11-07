@@ -90,6 +90,9 @@ public sealed record ExecutionAttempt
     public CapturedResponse? Response { get; init; }
     public string? Error { get; init; }
     public string? RetryReason { get; init; }
+    /// <summary>How many times this attempt's request was actually written to the wire. The HTTP stack resends a request without a body when the
+    /// connection closes before a response, so this can exceed 1; 0 = not transmitted.</summary>
+    public int Transmissions { get; init; }
 }
 
 public sealed record AssertionDefinition(string Id, AssertionKind Kind, AssertionOperator Operator, string? Target = null, string? Expected = null);
@@ -161,6 +164,8 @@ public sealed record ExecutionRunSummary
     public Guid? ReplayOf { get; init; }
     /// <summary>Evidence completeness: calls whose every sent attempt has request and (when received) response evidence.</summary>
     public int CallsWithCompleteEvidence { get; init; }
+    /// <summary>Requests actually written to the wire across all attempts (more than the attempts when the HTTP stack resent a request).</summary>
+    public int WireTransmissions { get; init; }
 }
 
 public sealed record ExecutionRunDetail(ExecutionRunSummary Run, List<ExecutionCallRecord> Calls, int TotalCalls, int Skip, int Take);

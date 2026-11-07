@@ -596,10 +596,11 @@ builder.Services.AddHttpClient(BirkNext.Api.Services.PerformanceTests.Performanc
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, AutomaticDecompression = System.Net.DecompressionMethods.All });
 builder.Services.AddScoped<BirkNext.Api.Services.PerformanceTests.PerformanceTrialService>();
 // Execution Evidence: the shared run → call → attempt record. The capture handler is the last handler before the socket handler, so it
-// records exactly what is sent and received (redacted before storage). No redirects, no cookies, standard TLS; decompressed bodies captured.
+// records exactly what is sent and received (redacted before storage). No redirects, no cookies, standard TLS; decompressed bodies captured;
+// wire transmissions counted per attempt (the stack resends body-less requests on early connection close).
 builder.Services.AddTransient<BirkNext.Api.Services.ExecutionEvidence.EvidenceCaptureHandler>();
 builder.Services.AddHttpClient(BirkNext.Api.Services.ExecutionEvidence.ExecutionRunService.ClientName)
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false, AutomaticDecompression = System.Net.DecompressionMethods.All })
+    .ConfigurePrimaryHttpMessageHandler(BirkNext.Api.Services.ExecutionEvidence.ExecutionRunService.CreatePrimaryHandler)
     .AddHttpMessageHandler<BirkNext.Api.Services.ExecutionEvidence.EvidenceCaptureHandler>();
 builder.Services.AddScoped<BirkNext.Api.Services.ExecutionEvidence.ExecutionEvidenceStore>();
 builder.Services.AddSingleton<BirkNext.Api.Services.ExecutionEvidence.ExecutionRunService>();

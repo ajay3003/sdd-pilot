@@ -40,7 +40,7 @@ public sealed class ExecutionEvidenceTests : IAsyncLifetime
         services.AddLogging();
         services.AddTransient<EvidenceCaptureHandler>();
         services.AddHttpClient(ExecutionRunService.ClientName)
-            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false })
+            .ConfigurePrimaryHttpMessageHandler(ExecutionRunService.CreatePrimaryHandler)
             .AddHttpMessageHandler<EvidenceCaptureHandler>();
         services.AddSingleton<IApiEnvironmentSafetyPolicy>(ApiEnvironmentSafetyPolicy.Default);
         services.AddSingleton<ExecutionRunService>();
@@ -98,7 +98,7 @@ public sealed class ExecutionEvidenceTests : IAsyncLifetime
     {
         var start = await _services.GetRequiredService<ExecutionRunService>().StartAsync(request, "test", default);
         start.RunId.Should().NotBeNull(start.Message);
-        for (var i = 0; i < 200 && ExecutionRunService.IsRunning(start.RunId!.Value); i++) await Task.Delay(50);
+        for (var i = 0; i < 1200 && ExecutionRunService.IsRunning(start.RunId!.Value); i++) await Task.Delay(50);
         using var scope = _services.CreateScope();
         return (await scope.ServiceProvider.GetRequiredService<ExecutionEvidenceStore>().GetAsync(start.RunId!.Value, new(Take: 200), default))!;
     }
@@ -139,9 +139,10 @@ public sealed class ExecutionEvidenceTests : IAsyncLifetime
         byName["gql 200 with errors is not success"].State.Should().Be(ExecutionState.Failed);
         byName["gql 200 with errors is not success"].Attempts[0].Response!.GraphQlHasData.Should().BeTrue();
 
-        // Counts reconcile: 10 logical calls, 12 physical attempts; the server saw exactly the sent attempts, each with its correlation id.
+        // Counts reconcile: 10 logical calls, 12 physical attempts, 12 wire transmissions; the server saw exactly those, each with its correlation id.
         detail.Run.Counts.Planned.Should().Be(10);
         detail.Run.Counts.Attempts.Should().Be(12);
+        detail.Run.WireTransmissions.Should().Be(12);
         _seen.Should().HaveCount(12);
         _seen.Select(s => s.Correlation).Should().OnlyHaveUniqueItems().And.OnlyContain(x => x != null);
         detail.Run.State.Should().Be(ExecutionState.Failed);
@@ -163,7 +164,7 @@ public sealed class ExecutionEvidenceTests : IAsyncLifetime
     {
         var closed = new Uri("http://localhost:1/");
         var start = await _services.GetRequiredService<ExecutionRunService>().StartAsync(Request(Get("down", "/x", Status("200"))) with { TargetUrl = closed.ToString() }, "test", default);
-        for (var i = 0; i < 200 && ExecutionRunService.IsRunning(start.RunId!.Value); i++) await Task.Delay(50);
+        for (var i = 0; i < 1200 && ExecutionRunService.IsRunning(start.RunId!.Value); i++) await Task.Delay(50);
         using (var scope = _services.CreateScope())
         {
             var call = (await scope.ServiceProvider.GetRequiredService<ExecutionEvidenceStore>().GetAsync(start.RunId!.Value, new(), default))!.Calls.Single();
@@ -176,6 +177,64 @@ public sealed class ExecutionEvidenceTests : IAsyncLifetime
         var slow = await RunAsync(Request(Get("slow", "/slow", Status("200")) with { TimeoutMs = 500 }));
         slow.Calls.Single().State.Should().Be(ExecutionState.TimedOut);
         slow.Calls.Single().Attempts.Single().Response.Should().BeNull();
+    }
+
+    /// <summary>A raw keep-alive HTTP/1.1 server: answers 200, except /drop, where it reads the request and closes the socket without a response.</summary>
+    private static async Task<(int Port, ConcurrentQueue<string> Seen, CancellationTokenSource Stop)> RawServerAsync()
+    {
+        var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0); listener.Start();
+        var seen = new ConcurrentQueue<string>(); var stop = new CancellationTokenSource();
+        _ = Task.Run(async () =>
+        {
+            while (!stop.IsCancellationRequested)
+            {
+                System.Net.Sockets.TcpClient client;
+                try { client = await listener.AcceptTcpClientAsync(stop.Token); } catch (OperationCanceledException) { break; }
+                _ = Task.Run(async () =>
+                {
+                    using var _ = client; var stream = client.GetStream(); var buffer = new byte[8192];
+                    while (true)
+                    {
+                        var head = new StringBuilder();
+                        while (!head.ToString().Contains("\r\n\r\n", StringComparison.Ordinal))
+                        {
+                            int n; try { n = await stream.ReadAsync(buffer); } catch (IOException) { return; }
+                            if (n == 0) return;
+                            head.Append(Encoding.ASCII.GetString(buffer, 0, n));
+                        }
+                        var path = head.ToString().Split(' ')[1];
+                        seen.Enqueue(path);
+                        if (path == "/drop") { client.Client.Close(); return; }
+                        var ok = Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: keep-alive\r\n\r\n{}");
+                        await stream.WriteAsync(ok);
+                    }
+                });
+            }
+            listener.Stop();
+        });
+        await Task.Yield();
+        return (((IPEndPoint)listener.LocalEndpoint).Port, seen, stop);
+    }
+
+    [Fact]
+    public async Task A_dropped_connection_records_every_wire_transmission()
+    {
+        // Regression (EE-DEF-1): the HTTP stack resent a body-less request whose connection closed before a response — the acceptance target
+        // received it 4 times while one attempt was recorded and nothing said so. Earlier calls put connections in the pool first.
+        var (port, seen, stop) = await RawServerAsync();
+        try
+        {
+            var request = Request(Get("warm 1", "/a"), Get("warm 2", "/b"), Get("warm 3", "/c"), Get("dropped", "/drop", Status("200")) with { Retry = new(2, RetryOnTransportError: true) })
+                with { TargetUrl = $"http://localhost:{port}/" };
+            var detail = await RunAsync(request);
+            var dropped = detail.Calls.Single(c => c.Definition.Name == "dropped");
+            dropped.Attempts.Should().HaveCount(2).And.OnlyContain(a => a.Transport == TransportResult.ConnectionFailed && a.Response == null);
+            dropped.Attempts.Should().OnlyContain(a => a.Transmissions >= 1);
+            dropped.Attempts.Sum(a => a.Transmissions).Should().Be(seen.Count(p => p == "/drop"), "every transmission the server received is recorded");
+            foreach (var resent in dropped.Attempts.Where(a => a.Transmissions > 1)) resent.Error.Should().Contain("transmitted this request");
+            detail.Run.WireTransmissions.Should().Be(seen.Count);
+        }
+        finally { stop.Cancel(); }
     }
 
     [Fact]
