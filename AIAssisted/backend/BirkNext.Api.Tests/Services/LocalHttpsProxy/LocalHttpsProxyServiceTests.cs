@@ -704,6 +704,46 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task HostShutdownAfterTheShutdownBudgetIsSpent_StillStopsTheListenerWithoutThrowing()
+    {
+        // The host cancels its shutdown token once ShutdownTimeout elapses; services stopped after a slow one receive it already cancelled.
+        var port = await StartAsync(Scope());
+        await _service.StopAsync(new CancellationToken(canceled: true));
+        Assert.True(LocalHttpsProxyServer.IsLoopbackPortFree(port));
+        Assert.Equal("backend shutdown", (await _service.GetRuntimeAsync()).StopReason);
+    }
+
+    [Fact]
+    public async Task HostShutdownPastTheDeadlineWhileAStartHoldsTheGate_ReturnsAndLeavesTheSessionToDispose()
+    {
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var authority = new Mock<IProxyCertificateAuthority>();
+        authority.Setup(a => a.Status()).Returns(new ProxyCertificateStatus());
+        authority.Setup(a => a.EnsureAuthority()).Returns(() =>
+        {
+            entered.Set();
+            Assert.True(release.Wait(TimeSpan.FromSeconds(10)));
+            return _authority.EnsureAuthority();
+        });
+        var service = new LocalHttpsProxyService(Options.Create(new LocalHttpsProxyOptions { Port = 0 }),
+            Options.Create(new AuthenticatedReviewOptions { Enabled = true, Runtime = "LocalWorkstation" }),
+            authority.Object, _store, new TestConnector(_upstream), _edge.Object, _ownedLauncher.Object);
+        var start = Task.Run(() => service.StartAsync(Scope()));
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
+            await service.StopAsync(new CancellationToken(canceled: true)).WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        finally { release.Set(); }
+        var port = (await start).Port;
+        Assert.True(port > 0);
+        service.Dispose();
+        Assert.True(LocalHttpsProxyServer.IsLoopbackPortFree(port));
+        Assert.Equal("backend disposed", (await service.GetRuntimeAsync()).StopReason);
+    }
+
+    [Fact]
     public async Task DedicatedBrowserIsReusedAndOnlyOwnedHandleIsStopped()
     {
         _edge.Setup(e => e.Locate()).Returns(new EdgeInstallation("msedge.exe", null));

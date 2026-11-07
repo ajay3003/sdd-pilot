@@ -578,7 +578,17 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
     {
         _shuttingDown = true;
         await base.StopAsync(cancellationToken);
-        await _gate.WaitAsync(cancellationToken);
+        // The host's token is already cancelled when an earlier service spent the shutdown budget, and WaitAsync then throws even for a free gate.
+        // A free gate is still taken so the session stops; a gate still busy past the deadline is left to Dispose, which stops any remaining session.
+        if (!_gate.Wait(0))
+        {
+            try { await _gate.WaitAsync(cancellationToken); }
+            catch (OperationCanceledException)
+            {
+                logger?.LogWarning("ProxyShutdownDeferred: the proxy was busy past the host shutdown deadline; the session is stopped on dispose.");
+                return;
+            }
+        }
         try { if (_session is { } session) await StopSessionAsync(session, "backend shutdown"); }
         finally { _gate.Release(); }
     }
