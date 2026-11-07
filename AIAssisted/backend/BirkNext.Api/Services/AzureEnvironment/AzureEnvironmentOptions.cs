@@ -28,6 +28,16 @@ public sealed class AzureEnvironmentOptions
     public bool Configured => Enabled && !string.IsNullOrWhiteSpace(ClientId);
     public string Tenant => string.IsNullOrWhiteSpace(TenantId) ? "organizations" : TenantId.Trim();
 
+    /// <summary>A client id is the app registration's Application (client) ID: a GUID. Empty means not set.</summary>
+    public static bool IsValidClientId(string? value) => string.IsNullOrWhiteSpace(value) || Guid.TryParse(value.Trim(), out _);
+
+    /// <summary>A tenant is a Directory (tenant) ID, a verified domain, "organizations", "common" or "consumers". Empty means the home tenant.</summary>
+    public static bool IsValidTenant(string? value) => string.IsNullOrWhiteSpace(value) || TenantPattern.IsMatch(value.Trim());
+
+    private static readonly System.Text.RegularExpressions.Regex TenantPattern = new(
+        @"^(organizations|common|consumers|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+)$",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
     public static IReadOnlyList<string> Requirements() =>
     [
         "Set AzureEnvironment:Enabled to true in the BirkNext.Api configuration.",

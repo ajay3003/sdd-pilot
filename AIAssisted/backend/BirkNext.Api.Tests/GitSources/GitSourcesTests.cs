@@ -126,7 +126,7 @@ public sealed class GitSourcesTests : IDisposable
         var (service, http, _, _, _) = Create(configured: false);
         var status = await service.StatusAsync(default);
         status.State.Should().Be(GitConnectionState.NotConfigured);
-        status.Requirements.Should().Contain(r => r.Contains("AzureEnvironment:ClientId"));
+        status.Requirements.Should().Contain(r => r.Contains("Application (client) ID") && r.Contains("Microsoft sign-in setup"));
 
         var (signedIn, http2, broker, _, _) = Create();
         (await signedIn.StatusAsync(default)).Should().Match<GitConnectionStatus>(s => s.State == GitConnectionState.Connected && s.Account == "tester@bufdir.no");

@@ -27,7 +27,7 @@ public class AdminApiService
         _client = client;
     }
 
-    public async Task<SystemSettingsDto?> GetSystemSettingsAsync()
+    public virtual async Task<SystemSettingsDto?> GetSystemSettingsAsync()
     {
         try
         {
@@ -84,7 +84,7 @@ public class AdminApiService
         }
     }
 
-    public async Task<(bool Success, string Message)> SaveSettingsAsync(SaveSettingsRequest request)
+    public virtual async Task<(bool Success, string Message)> SaveSettingsAsync(SaveSettingsRequest request)
     {
         try
         {
@@ -226,6 +226,17 @@ public class SystemSettingsDto
     [JsonPropertyName("maintenance")]      public MaintenanceDto      Maintenance      { get; set; } = new();
     [JsonPropertyName("featureVisibility")] public FeatureVisibilityDto FeatureVisibility { get; set; } = new();
     [JsonPropertyName("azureDevOps")]      public AzureDevOpsInfoDto  AzureDevOps      { get; set; } = new();
+    [JsonPropertyName("microsoftSignIn")]  public MicrosoftSignInInfoDto MicrosoftSignIn { get; set; } = new();
+}
+
+/// <summary>Saved Microsoft sign-in settings (Git Sources, Azure Environment Analysis) and whether the running backend still uses older ones.</summary>
+public class MicrosoftSignInInfoDto
+{
+    [JsonPropertyName("enabled")]         public bool   Enabled         { get; set; }
+    [JsonPropertyName("clientId")]        public string ClientId        { get; set; } = "";
+    [JsonPropertyName("tenantId")]        public string TenantId        { get; set; } = "";
+    [JsonPropertyName("allowDeviceCode")] public bool   AllowDeviceCode { get; set; } = true;
+    [JsonPropertyName("restartRequired")] public bool   RestartRequired { get; set; }
 }
 
 public class AzureDevOpsInfoDto
@@ -390,6 +401,15 @@ public class SaveSettingsRequest
     [JsonPropertyName("logging")]           public SaveLoggingRequest?        Logging           { get; set; }
     [JsonPropertyName("admin")]             public SaveAdminRequest?          Admin             { get; set; }
     [JsonPropertyName("frontendQualityEngines")] public SaveFrontendQualityEngineRequest? FrontendQualityEngines { get; set; }
+    [JsonPropertyName("microsoftSignIn")] public SaveMicrosoftSignInRequest? MicrosoftSignIn { get; set; }
+}
+
+public class SaveMicrosoftSignInRequest
+{
+    [JsonPropertyName("enabled")]         public bool?   Enabled         { get; set; }
+    [JsonPropertyName("clientId")]        public string? ClientId        { get; set; }
+    [JsonPropertyName("tenantId")]        public string? TenantId        { get; set; }
+    [JsonPropertyName("allowDeviceCode")] public bool?   AllowDeviceCode { get; set; }
 }
 
 public class SaveLoggingRequest

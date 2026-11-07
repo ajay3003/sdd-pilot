@@ -110,7 +110,7 @@ else if (_settings is not null)
         else if (_gitPrerequisites > 0)
         {
             @* Nothing is failing, but an optional capability is not set up yet: never "All clear" next to a section listing what is missing. *@
-            <span class="ss-status-pill ss-status-pill-warn" data-testid="ss-config-health" data-state="setup" title="Git Sources: @_gitPrerequisites administrator prerequisite(s) not set up">
+            <span class="ss-status-pill ss-status-pill-warn" data-testid="ss-config-health" data-state="setup" title="Git Sources: @_gitPrerequisites setup step(s) not done (System Settings → Git Sources → Microsoft sign-in setup)">
                 <span class="ss-status-label">Config Health</span>
                 <span class="ss-status-value">No failures · Git Sources not set up</span>
             </span>

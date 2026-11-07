@@ -11,6 +11,21 @@ public class SystemSettingsResponse
     public MaintenanceInfo Maintenance { get; set; } = new();
     public FeatureVisibilityInfo FeatureVisibility { get; set; } = new();
     public AzureDevOpsInfo AzureDevOps { get; set; } = new();
+    public MicrosoftSignInInfo MicrosoftSignIn { get; set; } = new();
+}
+
+/// <summary>
+/// Microsoft sign-in (section <c>AzureEnvironment</c>) used by Git Sources and Azure Environment Analysis: the saved values and whether the running
+/// backend still uses different ones (the sign-in client is built at startup, so a saved change applies after a restart). No secret exists here:
+/// the client id is a public client's Application (client) ID.
+/// </summary>
+public class MicrosoftSignInInfo
+{
+    public bool Enabled { get; set; }
+    public string ClientId { get; set; } = "";
+    public string TenantId { get; set; } = "";
+    public bool AllowDeviceCode { get; set; } = true;
+    public bool RestartRequired { get; set; }
 }
 
 public class AzureDevOpsInfo
@@ -229,6 +244,15 @@ public class SaveSettingsRequest
     public SaveLoggingSettings? Logging { get; set; }
     public SaveAdminSettings? Admin { get; set; }
     public SaveFrontendQualityEngineSettings? FrontendQualityEngines { get; set; }
+    public SaveMicrosoftSignInSettings? MicrosoftSignIn { get; set; }
+}
+
+public class SaveMicrosoftSignInSettings
+{
+    public bool? Enabled { get; set; }
+    public string? ClientId { get; set; }
+    public string? TenantId { get; set; }
+    public bool? AllowDeviceCode { get; set; }
 }
 
 public class SaveLoggingSettings

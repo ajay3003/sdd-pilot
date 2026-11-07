@@ -24,6 +24,8 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
     private readonly AppDbContext _db;
     private readonly ILogger<AdminService> _logger;
     private readonly FrontendQualityEngineLegacyConfigInterpreter? _legacyInterpreter;
+    /// <summary>The Microsoft sign-in values the running backend was started with (the sign-in client is built once, at startup).</summary>
+    private readonly BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions? _signInRuntime;
 
     private static readonly HashSet<string> PlatformFeatureKeys =
         new(StringComparer.OrdinalIgnoreCase)
@@ -87,8 +89,10 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         IWebHostEnvironment env,
         AppDbContext db,
         ILogger<AdminService> logger,
-        FrontendQualityEngineLegacyConfigInterpreter? legacyInterpreter = null)
+        FrontendQualityEngineLegacyConfigInterpreter? legacyInterpreter = null,
+        Microsoft.Extensions.Options.IOptions<BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions>? signInRuntime = null)
     {
+        _signInRuntime = signInRuntime?.Value;
         _config = config;
         _env = env;
         _db = db;
@@ -216,7 +220,25 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
                 ResetNotAllowedReason = resetNotAllowedReason
             },
             FeatureVisibility = featureVisibility,
-            AzureDevOps = BuildAzureDevOpsInfo()
+            AzureDevOps = BuildAzureDevOpsInfo(),
+            MicrosoftSignIn = BuildMicrosoftSignInInfo()
+        };
+    }
+
+    internal MicrosoftSignInInfo BuildMicrosoftSignInInfo()
+    {
+        var saved = new BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions();
+        _config.GetSection(BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions.SectionName).Bind(saved);
+        var running = _signInRuntime ?? saved;
+        return new MicrosoftSignInInfo
+        {
+            Enabled = saved.Enabled,
+            ClientId = saved.ClientId?.Trim() ?? "",
+            TenantId = saved.TenantId?.Trim() ?? "",
+            AllowDeviceCode = saved.AllowDeviceCode,
+            RestartRequired = saved.Enabled != running.Enabled || saved.AllowDeviceCode != running.AllowDeviceCode
+                || !string.Equals(saved.ClientId?.Trim() ?? "", running.ClientId?.Trim() ?? "", StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(saved.Tenant, running.Tenant, StringComparison.OrdinalIgnoreCase)
         };
     }
 
@@ -376,6 +398,17 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
             return (false, $"Invalid log level '{request.Logging.MinimumLevel}'. Valid levels: {string.Join(", ", ValidLogLevels)}.");
         }
 
+        if (request.MicrosoftSignIn is { } signIn)
+        {
+            if (!BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions.IsValidClientId(signIn.ClientId))
+                return (false, "The client id must be the app registration's Application (client) ID, a GUID such as 00000000-0000-0000-0000-000000000000.");
+            if (!BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions.IsValidTenant(signIn.TenantId))
+                return (false, "The tenant must be a Directory (tenant) ID, a verified domain, \"organizations\" or \"common\" — or empty for the account's home tenant.");
+            var clientId = signIn.ClientId ?? _config[$"{BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions.SectionName}:ClientId"];
+            if (signIn.Enabled == true && string.IsNullOrWhiteSpace(clientId))
+                return (false, "Microsoft sign-in needs the app registration's Application (client) ID before it can be turned on.");
+        }
+
         return (true, "");
     }
 
@@ -444,6 +477,18 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
             root["FrontendQualityEnginePreferences"] = fqeNode;
         }
 
+        if (request.MicrosoftSignIn is { } signIn)
+        {
+            // Public client settings only (no secret exists for this sign-in); every other key in the section is kept as written.
+            var section = BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions.SectionName;
+            var azNode = root.TryGetPropertyValue(section, out var azExisting) && azExisting is JsonObject azObj ? azObj : new JsonObject();
+            if (signIn.Enabled.HasValue) azNode["Enabled"] = JsonValue.Create(signIn.Enabled.Value);
+            if (signIn.ClientId is not null) azNode["ClientId"] = JsonValue.Create(signIn.ClientId.Trim());
+            if (signIn.TenantId is not null) azNode["TenantId"] = JsonValue.Create(signIn.TenantId.Trim());
+            if (signIn.AllowDeviceCode.HasValue) azNode["AllowDeviceCode"] = JsonValue.Create(signIn.AllowDeviceCode.Value);
+            root[section] = azNode;
+        }
+
         var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(path, json);
 
@@ -451,7 +496,9 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         catch (Exception ex) { _logger.LogWarning(ex, "IConfiguration reload after settings save encountered an issue"); }
 
         _logger.LogInformation("Local settings saved to {Path}", path);
-        return (true, "Settings saved. Feature visibility changes apply immediately. Logging changes require a backend restart.");
+        return (true, request.MicrosoftSignIn is not null
+            ? "Microsoft sign-in settings saved to this installation's appsettings.Local.json. Restart BirkNext to apply them."
+            : "Settings saved. Feature visibility changes apply immediately. Logging changes require a backend restart.");
     }
 
     public async Task<(bool Success, string Message, int DeletedRows, DateTimeOffset? ResetAtUtc)> ResetLocalDatabaseAsync()

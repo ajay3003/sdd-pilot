@@ -27,23 +27,23 @@ public sealed partial class GitSourcesService : IGitImportRecorder
         {
             o.Enabled ? new("enabled", "Microsoft sign-in enabled", GitCheckState.Ok, "AzureEnvironment:Enabled is true.")
                 : new("enabled", "Microsoft sign-in enabled", GitCheckState.Missing, "AzureEnvironment:Enabled is false, so BirkNext does not sign in to Microsoft.",
-                    "Set AzureEnvironment:Enabled to true in the BirkNext.Api configuration."),
+                    "Turn on Microsoft sign-in in Microsoft sign-in setup below (saved as AzureEnvironment:Enabled)."),
             string.IsNullOrWhiteSpace(o.ClientId)
                 ? new("client-id", "App registration (client id)", GitCheckState.Missing, "No Entra app registration is configured (AzureEnvironment:ClientId).",
-                    "Register a public client app in Microsoft Entra ID (platform \"Mobile and desktop applications\") and set AzureEnvironment:ClientId.")
+                    "Register a public client app in Microsoft Entra ID (platform \"Mobile and desktop applications\") and enter its Application (client) ID in Microsoft sign-in setup below.")
                 : Guid.TryParse(o.ClientId.Trim(), out _)
                     ? new("client-id", "App registration (client id)", GitCheckState.Ok, $"Client id {o.ClientId.Trim()}.")
                     : new("client-id", "App registration (client id)", GitCheckState.Invalid, "AzureEnvironment:ClientId is not a GUID (the Application (client) ID).",
-                        "Copy the Application (client) ID from the app registration's Overview."),
-            TenantRe().IsMatch(o.Tenant)
+                        "Copy the Application (client) ID from the app registration's Overview into Microsoft sign-in setup below."),
+            AzureEnvironmentOptions.IsValidTenant(o.Tenant)
                 ? new("tenant", "Tenant / authority", GitCheckState.Ok, $"Authority {AzureEnvironmentOptions.AuthorityHost}/{o.Tenant}.")
                 : new("tenant", "Tenant / authority", GitCheckState.Invalid, $"\"{o.Tenant}\" is not a tenant id, a verified domain, \"organizations\" or \"common\".",
-                    "Set AzureEnvironment:TenantId to the Directory (tenant) ID or a verified domain, or leave it empty for the account's home tenant."),
+                    "Enter the Directory (tenant) ID or a verified domain in Microsoft sign-in setup below, or leave it empty for the account's home tenant."),
             Failure("redirect") ?? new("redirect", "Redirect URI", GitCheckState.Info, "The app registration must list http://localhost under \"Mobile and desktop applications\".",
                 "Add http://localhost as a redirect URI of the public client platform."),
             browser.Available ? new("method", "Sign-in method", GitCheckState.Ok, "Interactive sign-in in the dedicated BirkNext Edge profile (MFA and Conditional Access apply).")
                 : o.AllowDeviceCode ? new("method", "Sign-in method", GitCheckState.Ok, $"Device code (the browser cannot be opened here: {browser.UnavailableReason})")
-                : new("method", "Sign-in method", GitCheckState.Missing, browser.UnavailableReason ?? "No sign-in method is available.", "Allow device code (AzureEnvironment:AllowDeviceCode)."),
+                : new("method", "Sign-in method", GitCheckState.Missing, browser.UnavailableReason ?? "No sign-in method is available.", "Allow device-code sign-in in Microsoft sign-in setup below."),
             Failure("consent") ?? new("consent", "Delegated Azure DevOps permission", GitCheckState.Info,
                 "The app registration needs the delegated Azure DevOps permission user_impersonation; some tenants require administrator consent.",
                 "API permissions → Add → Azure DevOps → user_impersonation (delegated); grant admin consent if the tenant requires it."),
@@ -96,9 +96,6 @@ public sealed partial class GitSourcesService : IGitImportRecorder
         return (false, "Sign-in did not complete. Try again; MFA and Conditional Access are handled by Microsoft.",
             new("sign-in", "Last sign-in", GitCheckState.Failed, $"Sign-in did not complete ({e.GetType().Name})."));
     }
-
-    [GeneratedRegex(@"^(organizations|common|consumers|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+)$")]
-    private static partial Regex TenantRe();
 
     /// <summary>Device-code sign-in (the fallback when the dedicated browser cannot be opened): the code is shown in Status until it completes.</summary>
     public async Task<GitConnectionStatus> StartDeviceCodeAsync(CancellationToken ct)

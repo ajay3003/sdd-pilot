@@ -80,7 +80,7 @@ public sealed partial class GitSourcesService(
 
     public static IReadOnlyList<string> Requirements() =>
     [
-        "Git Sources signs in with BirkNext's Microsoft app registration: set AzureEnvironment:Enabled and AzureEnvironment:ClientId (a public client, redirect URI http://localhost).",
+        "Git Sources signs in with a Microsoft Entra app registration (a public client, redirect URI http://localhost): turn on Microsoft sign-in and enter its Application (client) ID in Microsoft sign-in setup below, then restart BirkNext.",
         "Give that app registration the delegated Azure DevOps permission (user_impersonation). BirkNext reads only what your own account can read.",
         "Enter your Azure DevOps organization URL below (https://dev.azure.com/{organization}).",
     ];

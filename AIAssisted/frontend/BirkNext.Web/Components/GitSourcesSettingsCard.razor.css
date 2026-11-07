@@ -14,4 +14,6 @@
 .gss-health summary { cursor: pointer; font-weight: 600; }
 .gss-orgs, .gss-links { margin-top: .75rem; display: grid; gap: .25rem; }
 .gss-org { display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; }
+.gss-check { display: flex; gap: .5rem; align-items: baseline; margin: .5rem 0; font-size: .875rem; }
+.gss-setup { margin: .75rem 0; }
 .gss-device { padding: .5rem .75rem; border-left: .25rem solid var(--clr-warning); }

@@ -185,18 +185,18 @@ public sealed class GitSourcesUiTests : BunitContext
     };
 
     [Fact]
-    public void Missing_configuration_is_an_administrator_prerequisite_not_a_failure_and_every_disabled_action_explains_itself()
+    public void Missing_configuration_is_a_setup_step_not_a_failure_and_every_disabled_action_explains_itself()
     {
         Api(NotSetUp());
         var cut = Render<GitSourcesSettingsCard>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=gss-health-summary]"));
-        cut.Find("[data-testid=gss-health-summary]").TextContent.Should().Be("Configuration health — 2 administrator prerequisites not set up");
+        cut.Find("[data-testid=gss-health-summary]").TextContent.Should().Be("Configuration health — 2 setup steps not done — see Microsoft sign-in setup");
         cut.Find("[data-testid=gss-health-summary]").GetAttribute("data-failures").Should().Be("0", "missing configuration is not a runtime failure");
         cut.Find("[data-testid=gss-last-test]").TextContent.Should().StartWith("Not available yet").And.NotContain("Not tested");
         cut.Find("[data-testid=gss-test]").HasAttribute("disabled").Should().BeTrue();
         cut.Find("[data-testid=gss-test]").GetAttribute("aria-describedby").Should().Be("gss-test-reason");
-        cut.Find("[data-testid=gss-test-reason]").TextContent.Should().Contain("administrator has set up Git Sources");
-        cut.Find("[data-testid=gss-check][data-key=client-id]").TextContent.Should().Contain("✕ App registration").And.Contain("Administrator:");
+        cut.Find("[data-testid=gss-test-reason]").TextContent.Should().Contain("Microsoft sign-in is set up");
+        cut.Find("[data-testid=gss-check][data-key=client-id]").TextContent.Should().Contain("✕ App registration").And.Contain("Set up here:");
         cut.FindAll("[data-testid=gss-sign-in]").Should().BeEmpty("signing in cannot work before the app registration exists");
     }
 
@@ -230,5 +230,87 @@ public sealed class GitSourcesUiTests : BunitContext
         var status = new GitConnectionStatus { State = GitConnectionState.Connected, OrganizationUrl = "https://dev.azure.com/bufdir", LastTest = failed };
         GitSourcesPresentation.AccessText(status).Should().StartWith("Not verified by the read-only Git test");
         GitSourcesPresentation.HealthSummary(status).Should().Be("Configuration health — all prerequisites in place");
+    }
+
+    // ── Microsoft sign-in setup: the prerequisites are editable here, saved like the other System Settings, applied after a restart ──────
+
+    private Mock<AdminApiService> Admin(MicrosoftSignInInfoDto signIn)
+    {
+        var admin = new Mock<AdminApiService>(new HttpClient()) { CallBase = false };
+        admin.Setup(a => a.GetSystemSettingsAsync()).ReturnsAsync(new SystemSettingsDto { MicrosoftSignIn = signIn });
+        Services.AddSingleton(admin.Object);
+        return admin;
+    }
+
+    [Fact]
+    public void Not_set_up_opens_the_sign_in_setup_and_saves_the_entered_values()
+    {
+        Api(NotSetUp());
+        var admin = Admin(new() { Enabled = false, ClientId = "", TenantId = "", AllowDeviceCode = true });
+        SaveSettingsRequest? sent = null;
+        admin.Setup(a => a.SaveSettingsAsync(It.IsAny<SaveSettingsRequest>())).ReturnsAsync((true, "Saved."))
+            .Callback<SaveSettingsRequest>(r =>
+            {
+                sent = r;
+                admin.Setup(a => a.GetSystemSettingsAsync()).ReturnsAsync(new SystemSettingsDto { MicrosoftSignIn = new()
+                    { Enabled = true, ClientId = "11111111-2222-3333-4444-555555555555", TenantId = "bufdir.no", AllowDeviceCode = true, RestartRequired = true } });
+            });
+        var cut = Render<GitSourcesSettingsCard>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gss-signin-setup]").HasAttribute("open").Should().BeTrue("nothing works until sign-in is set up"));
+        cut.Find("[data-testid=gss-check][data-key=enabled]").TextContent.Should().Contain("Set up here:");
+        cut.FindAll("[data-testid=gss-signin-restart]").Should().BeEmpty();
+        cut.Find("[data-testid=gss-signin-enabled]").Change(true);
+        cut.Find("[data-testid=gss-signin-client]").Input(" 11111111-2222-3333-4444-555555555555 ");
+        cut.Find("[data-testid=gss-signin-tenant]").Input("bufdir.no");
+        cut.Find("[data-testid=gss-signin-save]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gss-signin-restart]").TextContent.Should().Contain("Restart BirkNext to apply"));
+        sent!.MicrosoftSignIn.Should().BeEquivalentTo(new SaveMicrosoftSignInRequest { Enabled = true, ClientId = "11111111-2222-3333-4444-555555555555", TenantId = "bufdir.no", AllowDeviceCode = true });
+        sent.FeatureVisibility.Should().BeNull("only the sign-in section is written");
+        cut.FindAll("[data-testid=gss-signin-error]").Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(true, "", "", "Enter the Application (client) ID")]
+    [InlineData(false, "not-a-guid", "", "is a GUID")]
+    [InlineData(true, "11111111-2222-3333-4444-555555555555", "not a tenant!", "Directory (tenant) ID")]
+    public void Invalid_sign_in_setup_is_refused_before_anything_is_saved(bool enabled, string clientId, string tenant, string problem)
+    {
+        Api(NotSetUp());
+        var admin = Admin(new() { AllowDeviceCode = true });
+        var cut = Render<GitSourcesSettingsCard>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gss-signin-setup]"));
+        cut.Find("[data-testid=gss-signin-enabled]").Change(enabled);
+        cut.Find("[data-testid=gss-signin-client]").Input(clientId);
+        cut.Find("[data-testid=gss-signin-tenant]").Input(tenant);
+        cut.Find("[data-testid=gss-signin-save]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gss-signin-error]").TextContent.Should().Contain(problem));
+        admin.Verify(a => a.SaveSettingsAsync(It.IsAny<SaveSettingsRequest>()), Times.Never());
+    }
+
+    [Fact]
+    public void A_refused_save_shows_the_backend_reason_and_a_configured_installation_keeps_the_setup_closed()
+    {
+        Api(new() { State = GitConnectionState.NotConnected, SignInAvailable = true, OrganizationUrl = "https://dev.azure.com/bufdir" });
+        var admin = Admin(new() { Enabled = true, ClientId = "11111111-2222-3333-4444-555555555555", AllowDeviceCode = true });
+        admin.Setup(a => a.SaveSettingsAsync(It.IsAny<SaveSettingsRequest>())).ReturnsAsync((false, "Settings editing is turned off on this installation."));
+        var cut = Render<GitSourcesSettingsCard>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gss-signin-setup]").HasAttribute("open").Should().BeFalse("a working setup stays out of the way"));
+        cut.Find("[data-testid=gss-signin-client]").GetAttribute("value").Should().Be("11111111-2222-3333-4444-555555555555");
+        cut.Find("[data-testid=gss-signin-save]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gss-signin-error]").TextContent.Should().Be("Settings editing is turned off on this installation."));
+        cut.FindAll("[data-testid=gss-signin-restart]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Without_System_Settings_access_the_card_still_renders_without_the_setup()
+    {
+        Api(NotSetUp());
+        var cut = Render<GitSourcesSettingsCard>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gss-health-summary]"));
+        cut.FindAll("[data-testid=gss-signin-setup]").Should().BeEmpty();
     }
 }

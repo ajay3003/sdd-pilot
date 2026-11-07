@@ -33,9 +33,44 @@
                     @foreach (var d in _status.Diagnostics)
                     {
                         <li data-testid="gss-check" data-key="@d.Key" data-state="@d.State"><strong>@($"{CheckIcon(d.State)} {d.Label}")</strong>@($" — {d.Detail}")
-                            @if (d.AdminAction is { } action && d.State is not GitCheckState.Ok) { <div class="gss-muted gss-small">Administrator: @action</div> }</li>
+                            @if (d.AdminAction is { } action && d.State is not GitCheckState.Ok) { <div class="gss-muted gss-small">@GitSourcesPresentation.ActionLabel(d): @action</div> }</li>
                     }
                 </ul>
+            </details>
+        }
+        @if (_signIn is not null)
+        {
+            @* The Microsoft sign-in prerequisites are editable here (saved to this installation's appsettings.Local.json, like the other System Settings).
+               Only the app registration itself is created outside BirkNext, in Microsoft Entra ID. *@
+            <details class="gss-health gss-setup" open="@(_status.State is GitConnectionState.NotConfigured || _signIn.RestartRequired)" data-testid="gss-signin-setup">
+                <summary>Microsoft sign-in setup</summary>
+                <p class="gss-muted gss-small">Git Sources signs in through a Microsoft Entra app registration: a public client (platform "Mobile and desktop applications",
+                    redirect URI <code>http://localhost</code>, delegated Azure DevOps permission <code>user_impersonation</code>). Its Application (client) ID is not a
+                    secret; no secret, password or token is entered or stored here.</p>
+                <label class="gss-check"><input type="checkbox" checked="@_signInEnabled" @onchange="e => _signInEnabled = (bool)e.Value!" data-testid="gss-signin-enabled" />
+                    Use Microsoft sign-in for Git Sources and Azure Environment Analysis</label>
+                <div class="gss-row">
+                    <label class="gss-grow">Application (client) ID
+                        <input class="form-control" @bind="_signInClientId" @bind:event="oninput" placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off" spellcheck="false"
+                               aria-describedby="gss-signin-hint" data-testid="gss-signin-client" />
+                    </label>
+                    <label class="gss-grow">Directory (tenant) ID or domain
+                        <input class="form-control" @bind="_signInTenant" @bind:event="oninput" placeholder="Empty: your account's home tenant" autocomplete="off" spellcheck="false"
+                               data-testid="gss-signin-tenant" />
+                    </label>
+                </div>
+                <label class="gss-check"><input type="checkbox" checked="@_signInDeviceCode" @onchange="e => _signInDeviceCode = (bool)e.Value!" data-testid="gss-signin-device" />
+                    Allow device-code sign-in when the BirkNext browser cannot be opened</label>
+                <p id="gss-signin-hint" class="gss-muted gss-small">Copy the Application (client) ID and Directory (tenant) ID from the app registration's Overview in the Entra admin center.
+                    If you cannot create or consent to the app registration, ask a Microsoft Entra administrator.</p>
+                <div class="gss-row">
+                    <button type="button" class="btn-primary" disabled="@_busy" @onclick="SaveSignInAsync" data-testid="gss-signin-save">Save sign-in settings</button>
+                </div>
+                @if (_signInProblem is not null) { <p class="gss-error" role="alert" data-testid="gss-signin-error">@_signInProblem</p> }
+                @if (_signIn.RestartRequired)
+                {
+                    <p class="gss-device" role="status" data-testid="gss-signin-restart">Saved. Restart BirkNext to apply: the running backend still uses the sign-in settings it started with.</p>
+                }
             </details>
         }
         @if (_status.DeviceCode is { } deviceCode)
@@ -168,13 +203,38 @@
     private readonly HashSet<string> _selectedOrgs = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<GitSourceLink> _links = [];
 
+    // Microsoft sign-in setup: the saved values (null when System Settings cannot be read) and the form's draft.
+    private MicrosoftSignInInfoDto? _signIn;
+    private bool _signInEnabled, _signInDeviceCode = true;
+    private string? _signInClientId, _signInTenant, _signInProblem;
+
     protected override async Task OnInitializedAsync()
     {
         await RefreshAsync();
+        await LoadSignInAsync();
         foreach (var o in _status?.Organizations ?? []) _selectedOrgs.Add(o);
         if (Services.GetService(typeof(IFrontendAnalysisContextFactory)) is IFrontendAnalysisContextFactory contexts)
             try { if ((await contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id is { } env) _links = (await Git.LinksAsync(env)).Items; } catch (InvalidOperationException) { }
     }
+
+    private async Task LoadSignInAsync()
+    {
+        if (Services.GetService(typeof(AdminApiService)) is not AdminApiService admin || (await admin.GetSystemSettingsAsync())?.MicrosoftSignIn is not { } signIn) return;
+        _signIn = signIn;
+        (_signInEnabled, _signInClientId, _signInTenant, _signInDeviceCode) = (signIn.Enabled, signIn.ClientId, signIn.TenantId, signIn.AllowDeviceCode);
+    }
+
+    private Task SaveSignInAsync() => Run(async () =>
+    {
+        _signInProblem = GitSourcesPresentation.SignInSetupProblem(_signInEnabled, _signInClientId, _signInTenant);
+        if (_signInProblem is not null || Services.GetService(typeof(AdminApiService)) is not AdminApiService admin) return;
+        var (saved, message) = await admin.SaveSettingsAsync(new() { MicrosoftSignIn = new()
+        {
+            Enabled = _signInEnabled, ClientId = _signInClientId?.Trim() ?? string.Empty, TenantId = _signInTenant?.Trim() ?? string.Empty, AllowDeviceCode = _signInDeviceCode
+        } });
+        if (!saved) { _signInProblem = message; return; }
+        await LoadSignInAsync();
+    });
 
     private void ToggleOrganization(string url, bool on) { if (on) _selectedOrgs.Add(url); else _selectedOrgs.Remove(url); }
 
