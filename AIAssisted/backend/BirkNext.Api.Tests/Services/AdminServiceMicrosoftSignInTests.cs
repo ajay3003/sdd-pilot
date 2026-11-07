@@ -23,12 +23,14 @@ public sealed class AdminServiceMicrosoftSignInTests : IDisposable
     private const string ClientId = "11111111-2222-3333-4444-555555555555";
     private readonly string _root = Directory.CreateTempSubdirectory("birknext-signin-").FullName;
     private string LocalJson => Path.Combine(_root, "appsettings.Local.json");
+    private string SignInJson => Path.Combine(_root, "App_Data", "microsoft-sign-in.json");
 
     public void Dispose() => Directory.Delete(_root, recursive: true);
 
     private (AdminService Service, IConfigurationRoot Config) Create(AzureEnvironmentOptions? running = null)
     {
-        var config = new ConfigurationBuilder().AddJsonFile(LocalJson, optional: true, reloadOnChange: false).Build();
+        // Program.cs order: appsettings.Local.json, then BirkNext's own sign-in settings file.
+        var config = new ConfigurationBuilder().AddJsonFile(LocalJson, optional: true, reloadOnChange: false).AddJsonFile(SignInJson, optional: true, reloadOnChange: false).Build();
         var env = new Mock<IWebHostEnvironment>();
         env.SetupGet(e => e.ContentRootPath).Returns(_root);
         env.SetupGet(e => e.EnvironmentName).Returns("Development");
@@ -37,10 +39,11 @@ public sealed class AdminServiceMicrosoftSignInTests : IDisposable
     }
 
     [Fact]
-    public async Task Saving_writes_only_the_sign_in_values_keeps_other_keys_and_asks_for_a_restart()
+    public async Task Saving_writes_only_the_sign_in_values_to_App_Data_never_appsettings_Local_and_asks_for_a_restart()
     {
         File.WriteAllText(LocalJson, """{ "AzureEnvironment": { "MaxResources": 123 }, "FeatureVisibility": { "X": true } }""");
-        var (service, _) = Create();
+        var localBefore = File.ReadAllText(LocalJson);
+        var (service, config) = Create();
 
         var (saved, message) = await service.SaveSettingsAsync(new SaveSettingsRequest
         {
@@ -49,14 +52,16 @@ public sealed class AdminServiceMicrosoftSignInTests : IDisposable
 
         saved.Should().BeTrue(message);
         message.Should().Contain("Restart BirkNext");
-        var root = JsonNode.Parse(File.ReadAllText(LocalJson))!.AsObject();
+        File.ReadAllText(LocalJson).Should().Be(localBefore, "the installation's appsettings.Local.json is never written for sign-in settings");
+        var root = JsonNode.Parse(File.ReadAllText(SignInJson))!.AsObject();
         var section = root["AzureEnvironment"]!.AsObject();
         ((bool)section["Enabled"]!).Should().BeTrue();
         ((string)section["ClientId"]!).Should().Be(ClientId);
         ((string)section["TenantId"]!).Should().Be("bufdir.no");
         ((bool)section["AllowDeviceCode"]!).Should().BeFalse();
-        ((int)section["MaxResources"]!).Should().Be(123, "keys the form does not edit are kept");
-        ((bool)root["FeatureVisibility"]!["X"]!).Should().BeTrue();
+        section.ContainsKey("MaxResources").Should().BeFalse("only the sign-in values are in BirkNext's file");
+        config["AzureEnvironment:MaxResources"].Should().Be("123", "appsettings.Local.json keeps supplying the keys the form does not edit");
+        File.ReadAllText(SignInJson).Should().NotContainAny("secret", "password", "token");
 
         var info = service.BuildMicrosoftSignInInfo();
         info.Should().BeEquivalentTo(new MicrosoftSignInInfo { Enabled = true, ClientId = ClientId, TenantId = "bufdir.no", AllowDeviceCode = false, RestartRequired = true });
@@ -76,6 +81,8 @@ public sealed class AdminServiceMicrosoftSignInTests : IDisposable
     [InlineData(true, "not-a-guid", null, "Application (client) ID")]
     [InlineData(true, "", null, "before it can be turned on")]
     [InlineData(false, ClientId, "not a tenant!", "Directory (tenant) ID")]
+    [InlineData(false, ClientId, "common", "organizations")]
+    [InlineData(false, ClientId, "consumers", "organizations")]
     public async Task Invalid_values_are_refused_and_nothing_is_written(bool enabled, string clientId, string? tenant, string reason)
     {
         var (service, _) = Create();
@@ -89,6 +96,17 @@ public sealed class AdminServiceMicrosoftSignInTests : IDisposable
         saved.Should().BeFalse();
         message.Should().Be(error);
         File.Exists(LocalJson).Should().BeFalse();
+        File.Exists(SignInJson).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task An_unwritable_App_Data_is_reported_and_nothing_is_claimed_saved()
+    {
+        File.WriteAllText(Path.Combine(_root, "App_Data"), "a file where the folder should be");
+        var (service, _) = Create();
+        var (saved, message) = await service.SaveSettingsAsync(new SaveSettingsRequest { MicrosoftSignIn = new() { Enabled = true, ClientId = ClientId } });
+        saved.Should().BeFalse();
+        message.Should().Contain("not writable");
     }
 
     [Theory]

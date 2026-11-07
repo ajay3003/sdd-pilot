@@ -86,6 +86,13 @@ public sealed partial class GitSourcesService(
     ];
 
     /// <summary>Connection state from the in-memory token cache only: no remote call.</summary>
+    /// <summary>What a connection test depends on: the public client, the tenant and the organization (never a token).</summary>
+    private string ConfigurationKey(GitSourceSettings settings) =>
+        $"{azure.Value.ClientKey ?? "-"}|{GitSourcePolicy.NormalizeOrganizationUrl(settings.OrganizationUrl ?? settings.Organizations.FirstOrDefault()) ?? "-"}";
+
+    private bool Stale(GitSourceSettings settings, GitTestResult? lastTest) =>
+        lastTest?.ConfigurationKey is { } key && !string.Equals(key, ConfigurationKey(settings), StringComparison.OrdinalIgnoreCase);
+
     public async Task<GitConnectionStatus> StatusAsync(CancellationToken ct)
     {
         var (settings, lastTest) = store.Read();
@@ -108,7 +115,8 @@ public sealed partial class GitSourcesService(
         }
         return new()
         {
-            State = state, Account = token?.Account, OrganizationUrl = settings.OrganizationUrl, LastTest = lastTest, SignInAvailable = browser.Available, TrackedBranches = settings.TrackedBranches,
+            State = state, Account = token?.Account, OrganizationUrl = settings.OrganizationUrl, LastTest = lastTest, LastTestStale = Stale(settings, lastTest),
+            SignInAvailable = browser.Available, TrackedBranches = settings.TrackedBranches,
             Diagnostics = diagnostics, DeviceCodeAllowed = azure.Value.AllowDeviceCode, Organizations = settings.Organizations,
             Requirements = settings.OrganizationUrl is null ? [Requirements()[2]] : [],
             Message = state switch
@@ -230,7 +238,7 @@ public sealed partial class GitSourcesService(
         var ready = steps.All(s => s.State == GitTestStepState.Verified);
         var failed = steps.FirstOrDefault(s => s.State == GitTestStepState.Failed);
         var result = new GitTestResult(ready, ready ? "Ready" : $"Not ready: {failed?.Name} — {failed?.Message}", steps, _clock.GetUtcNow(),
-            org is null ? null : GitSourcePolicy.OrganizationName(org), repositoryCount);
+            org is null ? null : GitSourcePolicy.OrganizationName(org), repositoryCount) { ConfigurationKey = ConfigurationKey(settings) };
         store.Write(settings, result);
         return result;
     }

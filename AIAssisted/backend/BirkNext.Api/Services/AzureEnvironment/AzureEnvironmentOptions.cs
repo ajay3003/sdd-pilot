@@ -34,6 +34,12 @@ public sealed class AzureEnvironmentOptions
     /// <summary>A client id is the app registration's Application (client) ID: a GUID. Empty means not set.</summary>
     public static bool IsValidClientId(string? value) => string.IsNullOrWhiteSpace(value) || Guid.TryParse(value.Trim(), out _);
 
+    /// <summary>What System Settings may save as the sign-in tenant: "organizations" (any work account; also empty) or one specific tenant (a
+    /// Directory (tenant) ID or verified domain). "common"/"consumers" would admit personal Microsoft accounts, which Azure DevOps work
+    /// organizations do not use, so they are not offered.</summary>
+    public static bool IsSupportedSignInTenant(string? value) =>
+        string.IsNullOrWhiteSpace(value) || IsValidTenant(value) && value.Trim() is not ("common" or "consumers");
+
     /// <summary>A tenant is a Directory (tenant) ID, a verified domain, "organizations", "common" or "consumers". Empty means the home tenant.</summary>
     public static bool IsValidTenant(string? value) => string.IsNullOrWhiteSpace(value) || TenantPattern.IsMatch(value.Trim());
 

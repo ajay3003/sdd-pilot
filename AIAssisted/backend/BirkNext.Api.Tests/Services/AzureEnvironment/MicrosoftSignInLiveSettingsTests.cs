@@ -31,7 +31,8 @@ public sealed class MicrosoftSignInLiveSettingsTests : IDisposable
     /// <summary>The Program.cs wiring: the reloadable local file, Configure, and the live IOptions registration.</summary>
     private (AdminService Admin, ServiceProvider Provider) Create()
     {
-        var config = new ConfigurationBuilder().AddJsonFile(LocalJson, optional: true, reloadOnChange: false).Build();
+        var config = new ConfigurationBuilder().AddJsonFile(LocalJson, optional: true, reloadOnChange: false)
+            .AddJsonFile(Path.Combine(_root, "App_Data", "microsoft-sign-in.json"), optional: true, reloadOnChange: false).Build();
         var services = new ServiceCollection();
         services.Configure<AzureEnvironmentOptions>(config.GetSection(AzureEnvironmentOptions.SectionName));
         services.AddSingleton<IOptions<AzureEnvironmentOptions>, LiveAzureEnvironmentOptions>();
@@ -61,7 +62,7 @@ public sealed class MicrosoftSignInLiveSettingsTests : IDisposable
         admin.BuildMicrosoftSignInInfo().RestartRequired.Should().BeFalse();
         live.Value.Should().Match<AzureEnvironmentOptions>(o => o.Configured && o.ClientId == ClientId && o.Tenant == "bufdir.no");
         signIn.Status().State.Should().Be(AzureConnectionState.SignedOut, "the running service now sees a configured public client, ready to sign in");
-        ((bool)JsonNode.Parse(File.ReadAllText(LocalJson))!["FeatureVisibility"]!["X"]!).Should().BeTrue("other System Settings in the file are kept");
+        File.ReadAllText(LocalJson).Should().Be("""{ "FeatureVisibility": { "X": true } }""", "appsettings.Local.json is never written for sign-in settings");
 
         // Turning it off again applies as well.
         (await admin.SaveSettingsAsync(new SaveSettingsRequest { MicrosoftSignIn = new() { Enabled = false, ClientId = ClientId, TenantId = "bufdir.no", AllowDeviceCode = true } })).Success.Should().BeTrue();

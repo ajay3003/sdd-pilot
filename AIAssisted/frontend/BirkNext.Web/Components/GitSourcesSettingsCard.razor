@@ -1,47 +1,53 @@
 @using BirkNext.GitSources
 @inject IGitSourcesApiService Git
 @inject IServiceProvider Services
+@inject NavigationManager Navigation
 @inject Microsoft.JSInterop.IJSRuntime JS
 
-@* System Settings → Git Sources. Opening this section reads only the local sign-in state; Azure DevOps is contacted only by Sign in, Test Git
-   connection, Refresh repositories / branches and Track. Configured is not verified: only the explicit test verifies the chain. *@
+@* System Settings → Git Sources: six guided steps (provider & activation, Microsoft Entra application, Azure DevOps organization, authentication
+   & permissions, test connection, browse & import). Opening the section reads only local state; Microsoft and Azure DevOps are contacted only by
+   Sign in, Test Git connection and discovery/import, each started by the person. Saved is never verified: only the read-only test verifies access. *@
 <section class="settings-card settings-card-full-width gss" aria-labelledby="gss-title" data-testid="gss">
     <div class="settings-card-title" id="gss-title">Git Sources</div>
-    <p class="settings-card-note">Import projects straight from Azure DevOps Git: BirkNext signs in with Microsoft Entra ID on your behalf (MFA and Conditional Access
-        apply), reads only what your account can read and never writes to a repository. No password, PAT or token is stored.</p>
+    <p class="settings-card-note">Import projects read-only from Azure DevOps Git. You sign in with Microsoft Entra ID (MFA and Conditional Access apply);
+        BirkNext reads only what your account can read and never writes to a repository. No password, PAT, client secret or token is stored.</p>
 
-    @if (_status is null) { <p class="gss-muted" role="status">@(_error ?? "Reading the sign-in state…")</p> }
+    @if (_status is null) { <p class="gss-muted" role="status">@(_error ?? "Reading the Git Sources state…")</p> }
     else
     {
+        var steps = GitSourcesPresentation.SetupSteps(_status, _signIn?.RestartRequired == true, _links.Any(l => l.LastImport is not null), _testing);
+        <p class="gss-summary" data-testid="gss-summary">@GitSourcesPresentation.SetupSummary(_status)</p>
         <dl class="gss-facts" data-testid="gss-connection">
-            <div><dt>Provider</dt><dd>Azure DevOps</dd></div>
-            <div><dt>Authentication</dt><dd>Microsoft Entra ID (delegated)</dd></div>
             <div><dt>Status</dt><dd data-testid="gss-state" data-state="@_status.State"><strong>@StateLabel(_status.State)</strong> — @_status.Message</dd></div>
-            @if (_status.Account is not null) { <div><dt>Signed-in account</dt><dd data-testid="gss-account">@_status.Account</dd></div> }
-            @* Signed in to Microsoft is not Azure DevOps access: only the explicit read-only test verifies the organization, projects and repositories. *@
             <div><dt>Azure DevOps access</dt><dd data-testid="gss-last-test">@GitSourcesPresentation.AccessText(_status)</dd></div>
         </dl>
-        @* One guided path with exactly one next step; each step says who acts (an Entra administrator, you here, Azure DevOps) and what is verified. *@
-        <GuidedStepList Steps="@GitSourcesPresentation.SetupSteps(_status, _signIn?.RestartRequired == true)" OnAction="StepActionAsync" Busy="_busy"
-                        TestId="gss-steps" Label="Git Sources setup steps" />
-        @if (_status.State is GitConnectionState.NotConfigured || _registrationOpen)
-        {
-            <details class="gss-health gss-setup" open="@(_registrationOpen || _status.State is GitConnectionState.NotConfigured)" data-testid="gss-registration">
-                <summary>Details for the Microsoft Entra administrator (step 1)</summary>
-                <p class="gss-muted gss-small">The app registration is created once per organization, outside BirkNext. Send this to whoever registers applications in
-                    Microsoft Entra ID; they send back two IDs that you enter in step 2. BirkNext never creates the registration or grants consent itself.</p>
-                <pre class="gss-request" data-testid="gss-registration-text">@GitSourcesPresentation.RegistrationRequest</pre>
-                <div class="gss-row">
-                    <button type="button" class="btn-secondary btn-sm" @onclick="CopyRegistrationAsync" data-testid="gss-registration-copy">Copy details</button>
-                    @if (_copied) { <span class="gss-muted gss-small" role="status" data-testid="gss-registration-copied">Copied.</span> }
-                </div>
-            </details>
-        }
+
+        <ol class="gss-steps" data-testid="gss-steps" aria-label="Git Sources setup steps">
+            @foreach (var (step, n) in steps.Select((s, i) => (s, i + 1)))
+            {
+                <li class="gss-step gss-step-@step.State.ToString().ToLowerInvariant()" data-testid="gss-step" data-step="@step.Id" data-state="@step.State"
+                    aria-current="@(step.State == BirkNext.Web.Services.GuidedStepState.Current ? "step" : null)">
+                    @* The open state is owned here (the header's click toggles it); the browser's own toggle is prevented so a re-render never fights it. *@
+                    <details open="@IsOpen(step)">
+                        <summary data-testid="gss-step-summary" @onclick="() => Toggle(step.Id)" @onclick:preventDefault>
+                            <span class="gss-n" aria-hidden="true">@(step.State == BirkNext.Web.Services.GuidedStepState.Done ? "✓" : n.ToString())</span>
+                            <strong>@step.Title</strong>
+                            <SemanticStatusBadge Status="@BirkNext.Web.Services.GuidedWorkflow.Status(step.State)" QualifiedLabel="@step.StatusLabel" TestId="gss-step-status" />
+                        </summary>
+                        <div class="gss-step-body">
+                            <p class="gss-muted">@step.Explanation</p>
+                            @if (step.Evidence is { Length: > 0 } evidence) { <p class="gss-small" data-testid="gss-step-evidence">@evidence</p> }
+                            @StepBody(step.Id)
+                        </div>
+                    </details>
+                </li>
+            }
+        </ol>
+
         @if (_status.Diagnostics.Count > 0)
         {
-            @* Supporting technical detail: every check behind the steps above, open by default only when one of them failed. *@
+            @* Advanced: every check behind the steps, open by default only when one of them failed. *@
             <details class="gss-health" open="@(GitSourcesPresentation.Failures(_status).Count > 0)" data-testid="gss-diagnostics">
-                @* Missing configuration is an administrator prerequisite, not a runtime failure; failed checks are counted apart. *@
                 <summary data-testid="gss-health-summary" data-prerequisites="@GitSourcesPresentation.Prerequisites(_status).Count" data-failures="@GitSourcesPresentation.Failures(_status).Count">@GitSourcesPresentation.HealthSummary(_status)</summary>
                 <ul class="gss-list">
                     @foreach (var d in _status.Diagnostics)
@@ -52,176 +58,254 @@
                 </ul>
             </details>
         }
-        @if (_signIn is not null)
-        {
-            @* The Microsoft sign-in prerequisites are editable here (saved to this installation's appsettings.Local.json, like the other System Settings).
-               Only the app registration itself is created outside BirkNext, in Microsoft Entra ID. *@
-            <details class="gss-health gss-setup" open="@(_setupOpen || _status.State is GitConnectionState.NotConfigured || _signIn.RestartRequired)" data-testid="gss-signin-setup">
-                <summary>Microsoft sign-in setup</summary>
-                <p class="gss-muted gss-small">Git Sources signs in through a Microsoft Entra app registration: a public client (platform "Mobile and desktop applications",
-                    redirect URI <code>http://localhost</code>, delegated Azure DevOps permission <code>user_impersonation</code>). Its Application (client) ID is not a
-                    secret; no secret, password or token is entered or stored here.</p>
-                <label class="gss-check"><input type="checkbox" checked="@_signInEnabled" @onchange="e => _signInEnabled = (bool)e.Value!" data-testid="gss-signin-enabled" />
-                    Use Microsoft sign-in for Git Sources and Azure Environment Analysis</label>
-                <div class="gss-row">
-                    <label class="gss-grow">Application (client) ID
-                        <input class="form-control" @bind="_signInClientId" @bind:event="oninput" placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off" spellcheck="false"
-                               aria-describedby="gss-signin-hint" data-testid="gss-signin-client" />
-                    </label>
-                    <label class="gss-grow">Directory (tenant) ID or domain
-                        <input class="form-control" @bind="_signInTenant" @bind:event="oninput" placeholder="Empty: your account's home tenant" autocomplete="off" spellcheck="false"
-                               data-testid="gss-signin-tenant" />
-                    </label>
-                </div>
-                <label class="gss-check"><input type="checkbox" checked="@_signInDeviceCode" @onchange="e => _signInDeviceCode = (bool)e.Value!" data-testid="gss-signin-device" />
-                    Allow device-code sign-in when the BirkNext browser cannot be opened</label>
-                <p id="gss-signin-hint" class="gss-muted gss-small">Copy the Application (client) ID and Directory (tenant) ID from the app registration's Overview in the Entra admin center.
-                    If you cannot create or consent to the app registration, ask a Microsoft Entra administrator.</p>
-                <div class="gss-row">
-                    <button type="button" class="btn-primary" disabled="@_busy" @onclick="SaveSignInAsync" data-testid="gss-signin-save">Save sign-in settings</button>
-                </div>
-                @if (_signInProblem is not null) { <p class="gss-error" role="alert" data-testid="gss-signin-error">@_signInProblem</p> }
-                @if (_signIn.RestartRequired)
-                {
-                    <p class="gss-device" role="status" data-testid="gss-signin-restart">Saved. Restart BirkNext to apply: the running backend still uses the sign-in settings it started with.</p>
-                }
-            </details>
-        }
-        @if (_status.DeviceCode is { } deviceCode)
-        {
-            <p class="gss-device" role="status" data-testid="gss-device-code">Open <a href="@deviceCode.VerificationUrl" target="_blank" rel="noopener">@deviceCode.VerificationUrl</a> in any browser and enter <strong><code>@deviceCode.UserCode</code></strong> (expires @deviceCode.ExpiresOn.UtcDateTime.ToString("HH:mm") UTC).
-                <button type="button" class="btn-secondary btn-sm" @onclick="RefreshAsync">I have signed in — refresh</button></p>
-        }
-        <div class="gss-row">
-            <label class="gss-grow">Azure DevOps organization URL
-                <input class="form-control" @bind="_organization" @bind:event="oninput" placeholder="https://dev.azure.com/your-organization" data-testid="gss-org" />
-            </label>
-            <button type="button" class="btn-secondary" disabled="@_busy" @onclick="SaveAsync" data-testid="gss-save">Save</button>
-        </div>
-        <div class="gss-row">
-            @if (_status.State is GitConnectionState.NotConnected or GitConnectionState.ReconnectRequired or GitConnectionState.Failed)
-            {
-                <button type="button" class="btn-primary" disabled="@(_busy || !_status.SignInAvailable)" @onclick="SignInAsync" data-testid="gss-sign-in">@(_status.State == GitConnectionState.ReconnectRequired ? "Reconnect" : "Sign in")</button>
-            }
-            @if (_status.DeviceCodeAllowed && _status.State is GitConnectionState.NotConnected or GitConnectionState.ReconnectRequired or GitConnectionState.Failed)
-            {
-                <button type="button" class="btn-secondary" disabled="@_busy" @onclick="DeviceCodeAsync" data-testid="gss-device-sign-in">Sign in with a device code</button>
-            }
-            @if (_status.State == GitConnectionState.SigningIn) { <button type="button" class="btn-secondary" @onclick="RefreshAsync" data-testid="gss-refresh-status">I have signed in — refresh</button> }
-            <button type="button" class="btn-secondary" disabled="@(_busy || GitSourcesPresentation.TestBlockedReason(_status) is not null)" @onclick="TestAsync" data-testid="gss-test"
-                    aria-describedby="@(GitSourcesPresentation.TestBlockedReason(_status) is null ? null : "gss-test-reason")">Test Git connection</button>
-            @if (_status.State is GitConnectionState.Connected or GitConnectionState.AccessDenied)
-            {
-                <button type="button" class="btn-secondary" disabled="@_busy" @onclick="LoadOrganizationsAsync" data-testid="gss-load-orgs">Find organizations</button>
-                <button type="button" class="btn-secondary" disabled="@_busy" @onclick="LoadRepositoriesAsync" data-testid="gss-load-repos">@(_repos.Count == 0 ? "Load repositories" : "Refresh repositories")</button>
-                <button type="button" class="btn-secondary" disabled="@_busy" @onclick="DisconnectAsync" data-testid="gss-disconnect">Disconnect</button>
-            }
-        </div>
-        @* Every unavailable action says why, and who can fix it. *@
-        @if (GitSourcesPresentation.TestBlockedReason(_status) is { } testBlocked)
-        {
-            <p id="gss-test-reason" class="gss-muted gss-small" data-testid="gss-test-reason">Test Git connection: @testBlocked</p>
-        }
-        @if (_status.State is GitConnectionState.NotConnected or GitConnectionState.ReconnectRequired or GitConnectionState.Failed && GitSourcesPresentation.SignInBlockedReason(_status) is { } signInBlocked)
-        {
-            <p class="gss-muted gss-small" data-testid="gss-sign-in-reason">Sign in: @signInBlocked</p>
-        }
-        @if (_status.State == GitConnectionState.Connected) { <p class="gss-muted gss-small">Disconnect signs this BirkNext instance out of Microsoft (Azure Environment Analysis too). Settings, tracked branches, imported projects and snapshots stay.</p> }
         @if (_error is not null) { <p class="gss-error" role="alert" data-testid="gss-error">@_error</p> }
-
-        @if ((_test ?? _status.LastTest) is { } test)
-        {
-            <div class="gss-test" data-testid="gss-test-result" data-ready="@(test.Ready ? "true" : "false")">
-                <p><strong>@(test.Ready ? "✓ Ready" : "✕ Not ready")</strong> — @test.Summary</p>
-                <table class="settings-table">
-                    <thead><tr><th scope="col">Step</th><th scope="col">Result</th><th scope="col">Details</th><th scope="col">Duration</th></tr></thead>
-                    <tbody>
-                        @foreach (var s in test.Steps)
-                        {
-                            <tr data-testid="gss-test-step" data-state="@s.State"><td>@s.Name</td><td>@(s.State switch { GitTestStepState.Verified => "✓ Verified", GitTestStepState.Failed => "✕ Failed", _ => "– Skipped" })</td><td>@s.Message</td><td>@s.DurationMs ms</td></tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        }
-
-        @if (_repos.Count > 0)
-        {
-            <div class="gss-row">
-                <label>Repository
-                    <select data-testid="gss-repo" value="@_repoId" @onchange="RepositoryChangedAsync">
-                        <option value="">Choose…</option>
-                        @foreach (var r in _repos) { <option value="@r.Id" disabled="@r.IsDisabled">@r.Project / @r.Name@(r.IsDisabled ? " (disabled)" : "")</option> }
-                    </select>
-                </label>
-            </div>
-            @if (_branches.Count > 0)
-            {
-                <ul class="gss-list" data-testid="gss-branches">
-                    @foreach (var b in _branches.Take(50))
-                    {
-                        var tracked = _tracked.Any(t => t.RepositoryId == _repoId && t.Branch == b.Name);
-                        <li data-testid="gss-branch"><strong>@b.Name</strong>@(b.IsDefault ? " (default)" : "")
-                            <span class="gss-muted"> · @(b.CommitSha.Length >= 8 ? b.CommitSha[..8] : b.CommitSha)@(b.CommittedAt is { } d ? $" · {d.UtcDateTime:yyyy-MM-dd}" : "")</span>
-                            <button type="button" class="btn-secondary gss-small" @onclick="() => TrackAsync(b.Name, !tracked)">@(tracked ? "Untrack" : "Track")</button></li>
-                    }
-                </ul>
-            }
-        }
-        @if (_organizations is not null)
-        {
-            <div class="gss-orgs" data-testid="gss-orgs">
-                <strong>Organizations</strong>
-                @if (_orgProblem is not null) { <p class="gss-muted gss-small" data-testid="gss-org-problem">@_orgProblem</p> }
-                @foreach (var o in _organizations)
-                {
-                    <label class="gss-org"><input type="checkbox" checked="@_selectedOrgs.Contains(o.Url)" @onchange="e => ToggleOrganization(o.Url, (bool)e.Value!)" data-testid="gss-org" data-org="@o.Url" />
-                        @o.Name <span class="gss-muted gss-small">@o.Url@(o.Discovered ? "" : " · entered")</span></label>
-                }
-                <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="SaveOrganizationsAsync" data-testid="gss-save-orgs">Save selected organizations</button>
-            </div>
-        }
-        @if (_links.Count > 0)
-        {
-            <div class="gss-links" data-testid="gss-links">
-                <strong>Linked sources (this Target Environment)</strong>
-                <ul class="gss-list">
-                    @foreach (var l in _links)
-                    {
-                        <li data-testid="gss-link"><strong>@l.Repository</strong> <span class="gss-muted">· @l.Organization / @l.Project · @LinkRevision(l)</span>
-                            @LinkRoles(l) · @LinkLastImport(l)
-                            @if (l.LastCheck is { } check) { <span class="gss-small"> · @(check.Problem ?? (check.UpdateAvailable ? "update available" : "up to date"))</span> }</li>
-                    }
-                </ul>
-                <a href="sources" class="gss-small">Manage sources</a>
-            </div>
-        }
-        @if (_tracked.Count > 0)
-        {
-            <p class="gss-small"><strong>Tracked branches:</strong> @string.Join(" · ", _tracked.Select(t => $"{t.Repository} @ {t.Branch}"))</p>
-        }
     }
 </section>
 
 @code {
+    private RenderFragment StepBody(string id) => id switch
+    {
+        "provider" => @<div class="gss-fields">
+            <div class="gss-field"><span class="gss-label">Git provider</span><span data-testid="gss-provider">Azure DevOps</span></div>
+            <label class="gss-check"><input type="checkbox" role="switch" checked="@_signInEnabled" disabled="@(_signIn is null)" @onchange="e => _signInEnabled = (bool)e.Value!" data-testid="gss-signin-enabled" />
+                <span><strong>Enable Git Sources</strong> — enable read-only import from supported Git providers.</span></label>
+            <div class="gss-field"><span class="gss-label">Authentication method</span><span data-testid="gss-auth-method">Microsoft Entra ID — delegated interactive authentication</span></div>
+            <p class="gss-muted gss-small">Sign in as the current user. Azure DevOps access is limited to the permissions of that account. Disabling keeps imported projects, links and tracked branches.</p>
+            @SaveRow()
+        </div>,
+        "application" => @<div class="gss-fields">
+            <label class="gss-field">Application (Client) ID
+                <input class="form-control" @bind="_signInClientId" @bind:event="oninput" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off" spellcheck="false"
+                       aria-invalid="@(ClientProblem is not null ? "true" : null)" aria-describedby="gss-client-hint" data-testid="gss-signin-client" />
+            </label>
+            <p id="gss-client-hint" class="@(ClientProblem is null ? "gss-muted gss-small" : "gss-error gss-small")" data-testid="gss-client-hint">@(ClientProblem ?? "From the app registration's Overview. Not a secret; a valid GUID is confirmed by Microsoft only at sign-in.")</p>
+            <label class="gss-field">Microsoft Entra tenant
+                <select @bind="_tenantMode" data-testid="gss-tenant-mode">
+                    <option value="organizations">Organizations (any work account)</option>
+                    <option value="specific">Specific tenant</option>
+                </select>
+            </label>
+            @if (_tenantMode == "specific")
+            {
+                <label class="gss-field">Tenant ID
+                    <input class="form-control" @bind="_signInTenant" @bind:event="oninput" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx or contoso.no" autocomplete="off" spellcheck="false"
+                           aria-invalid="@(TenantProblem is not null ? "true" : null)" data-testid="gss-signin-tenant" />
+                </label>
+                @if (TenantProblem is { } tp) { <p class="gss-error gss-small" data-testid="gss-tenant-hint">@tp</p> }
+            }
+            <div class="gss-field"><span class="gss-label">Redirect URI</span><code data-testid="gss-redirect">@GitSourcesPresentation.RedirectUri</code>
+                <button type="button" class="btn-secondary btn-sm" @onclick="() => CopyAsync(GitSourcesPresentation.RedirectUri, 'r')" data-testid="gss-redirect-copy">Copy</button>
+                @if (_copied == 'r') { <span class="gss-muted gss-small" role="status">Copied.</span> }</div>
+            <p class="gss-muted gss-small">Register it under the platform "Mobile and desktop applications". Sign-in returns to a free loopback port on this PC, so no fixed port is needed.
+                Showing it here does not mean it is registered: Microsoft confirms that at sign-in.</p>
+            <label class="gss-check"><input type="checkbox" checked="@_signInDeviceCode" @onchange="e => _signInDeviceCode = (bool)e.Value!" data-testid="gss-signin-device" />
+                Allow device-code sign-in when the BirkNext browser cannot be opened</label>
+            @SaveRow()
+            <details class="gss-health gss-setup" open="@_registrationOpen" data-testid="gss-registration">
+                <summary>Microsoft Entra administrator setup</summary>
+                <p class="gss-muted gss-small">Done once per organization, outside BirkNext, by someone who may register applications. BirkNext never creates the registration or grants consent.</p>
+                <pre class="gss-request" data-testid="gss-registration-text">@GitSourcesPresentation.RegistrationRequest</pre>
+                <button type="button" class="btn-secondary btn-sm" @onclick="() => CopyAsync(GitSourcesPresentation.RegistrationRequest, 'i')" data-testid="gss-registration-copy">Copy instructions</button>
+                @if (_copied == 'i') { <span class="gss-muted gss-small" role="status" data-testid="gss-registration-copied">Copied.</span> }
+            </details>
+            <details class="gss-health"><summary>Technical details</summary>
+                <ul class="gss-list gss-small" data-testid="gss-technical">
+                    <li>Effective authority: @(_status!.Diagnostics.FirstOrDefault(d => d.Key == "tenant")?.Detail ?? "—")</li>
+                    <li>Saved in this installation's @GitSourcesPresentation.SignInSettingsLocation (non-secret; applied while BirkNext runs).</li>
+                    <li>@(_signIn?.RestartRequired == true ? "Saved values differ from the running ones: restart BirkNext to apply them." : "The running backend uses the saved values.")</li>
+                </ul></details>
+        </div>,
+        "organization" => @<div class="gss-fields">
+            <label class="gss-field">Azure DevOps organization URL
+                <input class="form-control" @bind="_organization" @bind:event="oninput" placeholder="https://dev.azure.com/your-organization" autocomplete="off" spellcheck="false"
+                       aria-invalid="@(OrgProblem is not null && !string.IsNullOrWhiteSpace(_organization) ? "true" : null)" data-testid="gss-org" />
+            </label>
+            @if (!string.IsNullOrWhiteSpace(_organization) && OrgProblem is { } op) { <p class="gss-error gss-small" data-testid="gss-org-hint">@op</p> }
+            <p class="gss-muted gss-small">Accepted: <code>https://dev.azure.com/Smidig</code>, <code>https://smidig.visualstudio.com</code>. Rejected: <code>http://…</code>, a project or repository path,
+                a user name in the URL, any other host. Saving a valid URL does not prove access.</p>
+            <div class="gss-row">
+                <button type="button" class="btn-primary" disabled="@(_busy || OrgProblem is not null)" @onclick="SaveAsync" data-testid="gss-save">Save organization</button>
+                @if (SignedIn) { <button type="button" class="btn-secondary" disabled="@_busy" @onclick="LoadOrganizationsAsync" data-testid="gss-load-orgs">Find my organizations</button> }
+            </div>
+            @if (OrgProblem is not null) { <p class="gss-muted gss-small" data-testid="gss-save-reason">Save organization: available for a valid organization URL.</p> }
+            @if (_organizations is not null)
+            {
+                <div class="gss-orgs" data-testid="gss-orgs">
+                    @if (_orgProblem is not null) { <p class="gss-muted gss-small" data-testid="gss-org-problem">@_orgProblem</p> }
+                    @foreach (var o in _organizations)
+                    {
+                        <label class="gss-org"><input type="checkbox" checked="@_selectedOrgs.Contains(o.Url)" @onchange="e => ToggleOrganization(o.Url, (bool)e.Value!)" data-testid="gss-org-option" data-org="@o.Url" />
+                            @o.Name <span class="gss-muted gss-small">@o.Url@(o.Discovered ? "" : " · entered")</span></label>
+                    }
+                    <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="SaveOrganizationsAsync" data-testid="gss-save-orgs">Save selected organizations</button>
+                </div>
+            }
+        </div>,
+        "authentication" => @<div class="gss-fields">
+            <div class="gss-field"><span class="gss-label">Azure DevOps delegated permission</span>
+                <span data-testid="gss-permission">Azure DevOps (@GitSourcesPresentation.AzureDevOpsResourceId) · delegated <code>user_impersonation</code>, requested as <code>@GitSourcePolicy.AzureDevOpsScope</code></span></div>
+            <p class="gss-small" data-testid="gss-consent">Consent: @ConsentText()</p>
+            <div class="gss-field"><span class="gss-label">Microsoft sign-in</span><strong data-testid="gss-signin-state">@GitSourcesPresentation.SignInState(_status!)</strong>
+                @if (_status!.Account is not null) { <span class="gss-muted" data-testid="gss-account"> · @_status.Account</span> }</div>
+            @if (_status.DeviceCode is { } deviceCode)
+            {
+                <p class="gss-device" role="status" data-testid="gss-device-code">Open <a href="@deviceCode.VerificationUrl" target="_blank" rel="noopener">@deviceCode.VerificationUrl</a> in any browser and enter <strong><code>@deviceCode.UserCode</code></strong> (expires @deviceCode.ExpiresOn.UtcDateTime.ToString("HH:mm") UTC).</p>
+            }
+            <div class="gss-row">
+                @if (_status.State is GitConnectionState.NotConnected or GitConnectionState.ReconnectRequired or GitConnectionState.Failed)
+                {
+                    <button type="button" class="btn-primary" disabled="@(_busy || !_status.SignInAvailable)" @onclick="SignInAsync" data-testid="gss-sign-in">@(_status.State switch { GitConnectionState.ReconnectRequired => "Sign in again", GitConnectionState.Failed => "Retry sign-in", _ => "Sign in" })</button>
+                    @if (_status.DeviceCodeAllowed) { <button type="button" class="btn-secondary" disabled="@_busy" @onclick="DeviceCodeAsync" data-testid="gss-device-sign-in">Sign in with a device code</button> }
+                }
+                @if (_status.State is GitConnectionState.SigningIn or GitConnectionState.AwaitingDeviceCode) { <button type="button" class="btn-secondary" @onclick="RefreshAsync" data-testid="gss-refresh-status">I have signed in — refresh</button> }
+                @if (SignedIn) { <button type="button" class="btn-secondary" disabled="@_busy" @onclick="DisconnectAsync" data-testid="gss-disconnect">Sign out</button> }
+            </div>
+            @if (_status.State is GitConnectionState.NotConfigured) { <p class="gss-muted gss-small" data-testid="gss-sign-in-reason">Sign in: available once steps 1 and 2 are saved.</p> }
+            else if (_status.State is GitConnectionState.NotConnected or GitConnectionState.ReconnectRequired or GitConnectionState.Failed && GitSourcesPresentation.SignInBlockedReason(_status) is { } signInBlocked)
+            {
+                <p class="gss-muted gss-small" data-testid="gss-sign-in-reason">Sign in: @signInBlocked</p>
+            }
+            @if (SignedIn) { <p class="gss-muted gss-small">Sign out removes the in-memory token (Azure Environment Analysis too). Settings, tracked branches, imported projects and snapshots stay.</p> }
+        </div>,
+        "test" => @<div class="gss-fields">
+            <div class="gss-field"><span class="gss-label">Azure DevOps connection</span><strong data-testid="gss-connection-state">@GitSourcesPresentation.ConnectionState(_status!, _testing)</strong>
+                @if (_status!.LastTest is { Ready: true } ok && !_status.LastTestStale) { <span class="gss-muted gss-small" data-testid="gss-last-success"> · last verified @ok.TestedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC</span> }</div>
+            @if (_status.LastTestStale) { <p class="gss-warning gss-small" data-testid="gss-test-stale">The client, tenant or organization changed after the last test: that result no longer proves access. Test again.</p> }
+            <div class="gss-row">
+                <button type="button" class="btn-primary" disabled="@(_busy || _testing || GitSourcesPresentation.TestBlockedReason(_status) is not null)" @onclick="TestAsync" data-testid="gss-test"
+                        aria-describedby="@(GitSourcesPresentation.TestBlockedReason(_status) is null ? null : "gss-test-reason")">@(_testing ? "Testing…" : "Test Git connection")</button>
+            </div>
+            @if (GitSourcesPresentation.TestBlockedReason(_status) is { } testBlocked) { <p id="gss-test-reason" class="gss-muted gss-small" data-testid="gss-test-reason">Test Git connection: @testBlocked</p> }
+            @if ((_test ?? _status.LastTest) is { } test)
+            {
+                <div class="gss-test" data-testid="gss-test-result" data-ready="@(test.Ready && !_status.LastTestStale ? "true" : "false")">
+                    <p><strong>@(test.Ready ? "✓ Ready" : "✕ Not ready")</strong> — @test.Summary · @test.TestedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC@(_status.LastTestStale ? " (stale)" : "")</p>
+                    <table class="settings-table">
+                        <thead><tr><th scope="col">Step</th><th scope="col">Result</th><th scope="col">Details</th><th scope="col">Duration</th></tr></thead>
+                        <tbody>
+                            @foreach (var s in test.Steps)
+                            {
+                                <tr data-testid="gss-test-step" data-state="@s.State"><td>@s.Name</td><td>@(s.State switch { GitTestStepState.Verified => "✓ Verified", GitTestStepState.Failed => "✕ Failed", _ => "– Skipped" })</td><td>@s.Message</td><td>@s.DurationMs ms</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>,
+        "import" => @<div class="gss-fields">
+            @if (!Discoverable) { <p class="gss-muted gss-small" data-testid="gss-import-reason">Projects and repositories: available after a passed connection test (step 5).</p> }
+            else
+            {
+                <div class="gss-row">
+                    <button type="button" class="btn-secondary" disabled="@_busy" @onclick="LoadProjectsAsync" data-testid="gss-load-projects">@(_projects is null ? "Discover projects" : "Refresh projects")</button>
+                </div>
+                @if (_projects is { } projects)
+                {
+                    <label class="gss-field">Project
+                        <input class="form-control" @bind="_projectFilter" @bind:event="oninput" placeholder="Search projects" data-testid="gss-project-filter" />
+                        <select value="@_projectId" @onchange="ProjectChangedAsync" data-testid="gss-project">
+                            <option value="">@(projects.Count == 0 ? "No projects you can read" : "Choose…")</option>
+                            @foreach (var p in projects.Where(p => Matches(p.Name, _projectFilter))) { <option value="@p.Id">@p.Name</option> }
+                        </select></label>
+                }
+                @if (_repos is { } repos)
+                {
+                    <label class="gss-field">Repository
+                        <input class="form-control" @bind="_repoFilter" @bind:event="oninput" placeholder="Search repositories" data-testid="gss-repo-filter" />
+                        <select value="@_repoId" @onchange="RepositoryChangedAsync" data-testid="gss-repo">
+                            <option value="">@(repos.Count == 0 ? "No repositories you can read in this project" : "Choose…")</option>
+                            @foreach (var r in repos.Where(r => Matches(r.Name, _repoFilter))) { <option value="@r.Id" disabled="@r.IsDisabled">@r.Name@(r.IsDisabled ? " (disabled)" : "")</option> }
+                        </select></label>
+                    <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="ReloadRepositoriesAsync" data-testid="gss-reload-repos">Reload repositories</button>
+                }
+                @if (_branches is { } branches && _repoId is not null)
+                {
+                    <label class="gss-field">Branch
+                        <input class="form-control" @bind="_branchFilter" @bind:event="oninput" placeholder="Search branches" data-testid="gss-branch-filter" />
+                        <select @bind="_branch" data-testid="gss-branch">
+                            @foreach (var b in branches.Where(b => Matches(b.Name, _branchFilter))) { <option value="@b.Name">@b.Name@(b.IsDefault ? " (default)" : "")</option> }
+                        </select></label>
+                    <div class="gss-row">
+                        <button type="button" class="btn-primary" disabled="@(_busy || string.IsNullOrEmpty(_branch))" @onclick="ImportSelectedAsync" data-testid="gss-import">Import selected source</button>
+                        <button type="button" class="btn-secondary" disabled="@(_busy || string.IsNullOrEmpty(_branch))" @onclick="TrackSelectedAsync" data-testid="gss-track">@(IsTracked(_repoId, _branch) ? "Untrack branch" : "Track branch")</button>
+                    </div>
+                    <p class="gss-muted gss-small">Import opens Import Project with this branch's current commit for review; nothing is written to Azure DevOps. Re-importing unchanged content reuses the existing snapshot.</p>
+                }
+            }
+            @if (_tracked.Count > 0)
+            {
+                <ul class="gss-list" data-testid="gss-tracked">
+                    @foreach (var t in _tracked)
+                    {
+                        <li data-testid="gss-tracked-branch"><strong>@t.Repository</strong> @@ @t.Branch <span class="gss-muted">· @t.Project</span>
+                            <button type="button" class="btn-secondary btn-sm" disabled="@(_busy || !Discoverable)" @onclick="() => FetchLatestAsync(t)" data-testid="gss-fetch-latest">Fetch latest branch</button></li>
+                    }
+                </ul>
+                @if (!Discoverable) { <p class="gss-muted gss-small">Fetch latest branch: available after a passed connection test.</p> }
+                <p class="gss-muted gss-small">Fetching imports the branch's newest commit as a new immutable snapshot; earlier snapshots and decisions are kept, and identical content reuses the existing snapshot.</p>
+            }
+            @if (_links.Count > 0) { <p class="gss-small" data-testid="gss-links">@_links.Count linked source@(_links.Count == 1 ? "" : "s") in this Target Environment · <a href="sources">Manage sources</a></p> }
+        </div>,
+        _ => @<span></span>,
+    };
+
+    private RenderFragment SaveRow() => @<div>
+        <div class="gss-row">
+            <button type="button" class="btn-primary" disabled="@(_busy || _signIn is null || !SignInDirty || ClientProblem is not null || TenantProblem is not null)" @onclick="SaveSignInAsync" data-testid="gss-signin-save">Save configuration</button>
+            <button type="button" class="btn-secondary" disabled="@(_busy || !SignInDirty)" @onclick="RevertSignIn" data-testid="gss-signin-revert">Revert changes</button>
+        </div>
+        @if (_signIn is null) { <p class="gss-muted gss-small" data-testid="gss-signin-unavailable">Saving needs access to System Settings on this installation.</p> }
+        else if (!SignInDirty) { <p class="gss-muted gss-small" data-testid="gss-signin-saved">Saved values are in use@(_signIn.RestartRequired ? " after a restart" : "").</p> }
+        @if (_signInProblem is not null) { <p class="gss-error" role="alert" data-testid="gss-signin-error">@_signInProblem</p> }
+        @if (_signInMessage is not null) { <p class="gss-muted gss-small" role="status" data-testid="gss-signin-message">@_signInMessage</p> }
+        @if (_signIn?.RestartRequired == true) { <p class="gss-device" role="status" data-testid="gss-signin-restart">Restart required: saved values are not yet used by the running backend. Restart BirkNext to apply.</p> }
+    </div>;
+
     private GitConnectionStatus? _status;
     private GitTestResult? _test;
-    private IReadOnlyList<GitRepository> _repos = [];
-    private IReadOnlyList<GitBranch> _branches = [];
+    private IReadOnlyList<GitProject>? _projects;
+    private IReadOnlyList<GitRepository>? _repos;
+    private IReadOnlyList<GitBranch>? _branches;
     private List<GitTrackedBranch> _tracked = [];
-    private string? _organization, _repoId, _error;
-    private bool _busy;
+    private string? _organization, _projectId, _repoId, _branch, _error, _projectFilter, _repoFilter, _branchFilter;
+    private bool _busy, _testing, _registrationOpen;
+    private char _copied;
+    private readonly HashSet<string> _toggled = [];
 
     private IReadOnlyList<GitOrganization>? _organizations;
     private string? _orgProblem;
     private readonly HashSet<string> _selectedOrgs = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<GitSourceLink> _links = [];
 
-    // Microsoft sign-in setup: the saved values (null when System Settings cannot be read) and the form's draft.
+    // Microsoft sign-in settings (steps 1-2): the saved values (null when System Settings cannot be read) and the form's draft.
     private MicrosoftSignInInfoDto? _signIn;
-    private bool _setupOpen, _registrationOpen, _copied;
     private bool _signInEnabled, _signInDeviceCode = true;
-    private string? _signInClientId, _signInTenant, _signInProblem;
+    private string? _signInClientId, _signInTenant, _signInProblem, _signInMessage;
+    private string _tenantMode = "organizations";
+
+    private bool SignedIn => _status?.State is GitConnectionState.Connected or GitConnectionState.AccessDenied;
+    private bool Discoverable => _status is { State: GitConnectionState.Connected, LastTest.Ready: true, LastTestStale: false };
+    private string? ClientProblem => GitSourcesPresentation.ClientIdProblem(_signInEnabled, _signInClientId);
+    private string? TenantProblem => GitSourcesPresentation.TenantProblem(_tenantMode == "specific", _signInTenant);
+    private string? OrgProblem => GitSourcesPresentation.OrganizationProblem(_organization);
+    private string? EffectiveTenant => _tenantMode == "specific" ? _signInTenant?.Trim() : "organizations";
+    private bool SignInDirty => _signIn is not null && (_signIn.Enabled != _signInEnabled || _signIn.AllowDeviceCode != _signInDeviceCode
+        || !string.Equals(_signIn.ClientId, _signInClientId?.Trim() ?? "", StringComparison.OrdinalIgnoreCase)
+        || !string.Equals(NormalTenant(_signIn.TenantId), EffectiveTenant ?? "", StringComparison.OrdinalIgnoreCase));
+
+    private static string NormalTenant(string? tenant) => string.IsNullOrWhiteSpace(tenant) ? "organizations" : tenant.Trim();
+    private static bool Matches(string value, string? filter) => string.IsNullOrWhiteSpace(filter) || value.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase);
+    private bool IsTracked(string? repoId, string? branch) => _tracked.Any(t => t.RepositoryId == repoId && t.Branch == branch);
+
+    /// <summary>The current or blocked step is open; any step can be opened or closed again (revisited) by the person.</summary>
+    private bool IsOpen(BirkNext.Web.Services.GuidedStep step) =>
+        _toggled.Contains(step.Id) ^ step.State is BirkNext.Web.Services.GuidedStepState.Current or BirkNext.Web.Services.GuidedStepState.Blocked;
+    private void Toggle(string id) { if (!_toggled.Add(id)) _toggled.Remove(id); }
+
+    private string ConsentText() =>
+        _status!.Diagnostics.FirstOrDefault(d => d.Key == "consent" && d.State == GitCheckState.Failed) is { } failed ? $"required — {failed.Detail} ({failed.AdminAction})"
+        : SignedIn ? "observed: the sign-in for Azure DevOps succeeded with this permission."
+        : "not observed yet. Some tenants require an administrator to consent; Microsoft asks or refuses at sign-in.";
 
     protected override async Task OnInitializedAsync()
     {
@@ -236,41 +320,37 @@
     {
         if (Services.GetService(typeof(AdminApiService)) is not AdminApiService admin || (await admin.GetSystemSettingsAsync())?.MicrosoftSignIn is not { } signIn) return;
         _signIn = signIn;
-        (_signInEnabled, _signInClientId, _signInTenant, _signInDeviceCode) = (signIn.Enabled, signIn.ClientId, signIn.TenantId, signIn.AllowDeviceCode);
+        RevertSignIn();
+    }
+
+    private void RevertSignIn()
+    {
+        if (_signIn is not { } s) return;
+        (_signInEnabled, _signInClientId, _signInDeviceCode, _signInProblem) = (s.Enabled, s.ClientId, s.AllowDeviceCode, null);
+        _tenantMode = NormalTenant(s.TenantId) == "organizations" ? "organizations" : "specific";
+        _signInTenant = _tenantMode == "specific" ? s.TenantId : null;
     }
 
     private Task SaveSignInAsync() => Run(async () =>
     {
-        _signInProblem = GitSourcesPresentation.SignInSetupProblem(_signInEnabled, _signInClientId, _signInTenant);
+        (_signInProblem, _signInMessage) = (ClientProblem ?? TenantProblem, null);
         if (_signInProblem is not null || Services.GetService(typeof(AdminApiService)) is not AdminApiService admin) return;
         var (saved, message) = await admin.SaveSettingsAsync(new() { MicrosoftSignIn = new()
         {
-            Enabled = _signInEnabled, ClientId = _signInClientId?.Trim() ?? string.Empty, TenantId = _signInTenant?.Trim() ?? string.Empty, AllowDeviceCode = _signInDeviceCode
+            Enabled = _signInEnabled, ClientId = _signInClientId?.Trim() ?? string.Empty, TenantId = EffectiveTenant ?? string.Empty, AllowDeviceCode = _signInDeviceCode
         } });
         if (!saved) { _signInProblem = message; return; }
+        _signInMessage = message;
         await LoadSignInAsync();
         // The backend applies saved sign-in settings at once: re-read the Git Sources state so the steps never show the previous configuration.
         await RefreshAsync();
     });
 
-    /// <summary>A guided step's action: the same calls as the buttons below, never a different path.</summary>
-    private Task StepActionAsync(string action) => action switch
+    private async Task CopyAsync(string text, char what)
     {
-        "copy-registration" => CopyRegistrationAsync(),
-        "open-setup" => Task.FromResult(_setupOpen = true),
-        "sign-in" => SignInAsync(),
-        "device" => DeviceCodeAsync(),
-        "test" => TestAsync(),
-        "find-orgs" => LoadOrganizationsAsync(),
-        "load-repos" => LoadRepositoriesAsync(),
-        _ => Task.CompletedTask,
-    };
-
-    private async Task CopyRegistrationAsync()
-    {
-        _registrationOpen = true;
-        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", GitSourcesPresentation.RegistrationRequest); _copied = true; }
-        catch (Exception e) when (e is Microsoft.JSInterop.JSException or InvalidOperationException) { _copied = false; }
+        if (what == 'i') _registrationOpen = true;
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", text); _copied = what; }
+        catch (Exception e) when (e is Microsoft.JSInterop.JSException or InvalidOperationException) { _copied = default; }
     }
 
     private void ToggleOrganization(string url, bool on) { if (on) _selectedOrgs.Add(url); else _selectedOrgs.Remove(url); }
@@ -289,10 +369,6 @@
         _error = error;
         if (error is null) await RefreshAsync();
     });
-
-    private static string LinkRevision(GitSourceLink l) => l.PinnedCommit is { } pin ? $"commit {pin[..Math.Min(8, pin.Length)]}" : l.Branch;
-    private static string LinkRoles(GitSourceLink l) => l.Roles.Count > 0 ? string.Join(", ", l.Roles) : "roles detected from content";
-    private static string LinkLastImport(GitSourceLink l) => l.LastImport is { } last ? $"last imported {last.CommitSha[..8]} {last.ImportedAt.UtcDateTime:yyyy-MM-dd}" : "not imported yet";
 
     private static string CheckIcon(GitCheckState state) => state switch
     {
@@ -318,7 +394,8 @@
 
     private Task SaveAsync() => Run(async () =>
     {
-        var (status, error) = await Git.SaveSettingsAsync(new() { OrganizationUrl = string.IsNullOrWhiteSpace(_organization) ? null : _organization.Trim(), TrackedBranches = _tracked });
+        if (OrgProblem is not null) return;
+        var (status, error) = await Git.SaveSettingsAsync(new() { OrganizationUrl = GitSourcePolicy.NormalizeOrganizationUrl(_organization), TrackedBranches = _tracked });
         _error = error;
         if (status is not null) { _test = null; await RefreshAsync(); }
     });
@@ -328,31 +405,78 @@
     private Task DisconnectAsync() => Run(async () =>
     {
         var (s, e) = await Git.DisconnectAsync();
-        (_status, _error, _repos, _branches, _repoId) = (s ?? _status, e, [], [], null);
+        (_status, _error, _projects, _repos, _branches, _repoId) = (s ?? _status, e, null, null, null, null);
     });
 
-    private Task TestAsync() => Run(async () =>
+    private async Task TestAsync()
     {
-        (_test, _error) = await Git.TestAsync();
-        await RefreshAsync();
+        if (_testing) return;  // one test at a time: a second click is ignored
+        _testing = true;
+        try { await Run(async () => { (_test, _error) = await Git.TestAsync(); await RefreshAsync(); }); }
+        finally { _testing = false; }
+    }
+
+    private string Organization => _status?.OrganizationUrl ?? _status?.Organizations.FirstOrDefault() ?? "";
+
+    private Task LoadProjectsAsync() => Run(async () =>
+    {
+        var all = new List<GitProject>();
+        string? continuation = null;
+        do
+        {
+            var (page, error) = await Git.ProjectsAsync(Organization, continuation);
+            if (page is null) { _error = error; return; }
+            all.AddRange(page.Items);
+            continuation = page.Next;
+        } while (continuation is not null && all.Count < 2000);
+        (_projects, _repos, _branches, _projectId, _repoId) = (all, null, null, null, null);
     });
 
-    private Task LoadRepositoriesAsync() => Run(async () => (_repos, _error) = await Git.RepositoriesAsync());
+    private Task ProjectChangedAsync(ChangeEventArgs e) => Run(async () =>
+    {
+        (_projectId, _repos, _branches, _repoId) = (e.Value?.ToString(), null, null, null);
+        if (!string.IsNullOrEmpty(_projectId)) (_repos, _error) = await Git.ProjectRepositoriesAsync(Organization, _projectId);
+    });
+
+    private Task ReloadRepositoriesAsync() => ProjectChangedAsync(new ChangeEventArgs { Value = _projectId });
 
     private Task RepositoryChangedAsync(ChangeEventArgs e) => Run(async () =>
     {
-        (_repoId, _branches) = (e.Value?.ToString(), []);
-        if (!string.IsNullOrEmpty(_repoId)) (_branches, _error) = await Git.BranchesAsync(_repoId);
+        (_repoId, _branches, _branch) = (e.Value?.ToString(), null, null);
+        if (string.IsNullOrEmpty(_repoId)) { _repoId = null; return; }
+        (_branches, _error) = await Git.BranchesInAsync(Organization, _repoId);
+        // The repository's actual default branch is preselected (never an assumed main/master).
+        _branch = _branches.FirstOrDefault(b => b.IsDefault)?.Name ?? _branches.FirstOrDefault()?.Name;
     });
 
-    private Task TrackAsync(string branch, bool track) => Run(async () =>
+    private Task TrackSelectedAsync() => Run(async () =>
     {
-        var repo = _repos.FirstOrDefault(r => r.Id == _repoId);
-        if (repo is null) return;
-        _tracked = track ? [.. _tracked, new(repo.Id, repo.Name, repo.Project, branch)] : [.. _tracked.Where(t => !(t.RepositoryId == repo.Id && t.Branch == branch))];
+        var repo = _repos?.FirstOrDefault(r => r.Id == _repoId);
+        if (repo is null || string.IsNullOrEmpty(_branch)) return;
+        var track = !IsTracked(repo.Id, _branch);
+        _tracked = track ? [.. _tracked, new(repo.Id, repo.Name, repo.Project, _branch)] : [.. _tracked.Where(t => !(t.RepositoryId == repo.Id && t.Branch == _branch))];
         var (_, error) = await Git.SaveSettingsAsync(new() { OrganizationUrl = _status?.OrganizationUrl, TrackedBranches = _tracked });
         _error = error;
     });
+
+    /// <summary>GS-14: the branch's current commit through the one import path (staged here, reviewed and committed in Import Project).</summary>
+    private void ImportSelectedAsync()
+    {
+        var repo = _repos?.FirstOrDefault(r => r.Id == _repoId);
+        if (repo is null || string.IsNullOrEmpty(_branch)) return;
+        StartImport(new GitImportRequest(repo.Id, _branch) { OrganizationUrl = Organization }, $"{repo.Name} @ {_branch}");
+    }
+
+    /// <summary>GS-15: the tracked branch's newest commit, imported as a new snapshot (identical content is reused; history is never rewritten).</summary>
+    private void FetchLatestAsync(GitTrackedBranch tracked) =>
+        StartImport(new GitImportRequest(tracked.RepositoryId, tracked.Branch) { OrganizationUrl = Organization }, $"{tracked.Repository} @ {tracked.Branch}");
+
+    private void StartImport(GitImportRequest request, string label)
+    {
+        if (Services.GetService(typeof(BirkNext.Web.Services.ProjectImport.ProjectImportSession)) is not BirkNext.Web.Services.ProjectImport.ProjectImportSession session) { _error = "Import Project is not available in this BirkNext instance."; return; }
+        _ = session.StartGitPreviewAsync(label, ct => Git.ImportAsync(request, ct), null);
+        Navigation.NavigateTo("project-import");
+    }
 
     private static string StateLabel(GitConnectionState s) => s switch
     {

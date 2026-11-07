@@ -403,8 +403,8 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         {
             if (!BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions.IsValidClientId(signIn.ClientId))
                 return (false, "The client id must be the app registration's Application (client) ID, a GUID such as 00000000-0000-0000-0000-000000000000.");
-            if (!BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions.IsValidTenant(signIn.TenantId))
-                return (false, "The tenant must be a Directory (tenant) ID, a verified domain, \"organizations\" or \"common\" — or empty for the account's home tenant.");
+            if (!BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions.IsSupportedSignInTenant(signIn.TenantId))
+                return (false, "The tenant must be \"organizations\" (any work account) or a specific Directory (tenant) ID or verified domain.");
             var clientId = signIn.ClientId ?? _config[$"{BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions.SectionName}:ClientId"];
             if (signIn.Enabled == true && string.IsNullOrWhiteSpace(clientId))
                 return (false, "Microsoft sign-in needs the app registration's Application (client) ID before it can be turned on.");
@@ -413,10 +413,21 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         return (true, "");
     }
 
+    /// <summary>
+    /// Microsoft sign-in (Git Sources, Azure Environment Analysis) settings saved from System Settings: BirkNext's own non-secret file in the
+    /// installation's writable App_Data folder, loaded after appsettings.Local.json with reload on change (Program.cs). The installation's
+    /// appsettings.Local.json is never written for these settings.
+    /// </summary>
+    public const string SignInSettingsFile = "App_Data/microsoft-sign-in.json";
+
     public async Task<(bool Success, string Message)> SaveSettingsAsync(SaveSettingsRequest request)
     {
         var (valid, error) = ValidateSettingsUpdate(request);
         if (!valid) return (false, error);
+
+        if (request.MicrosoftSignIn is { } signInOnly && request.FeatureVisibility is not { Count: > 0 } && request.Logging is null
+            && request.Admin?.ShowDiagnostics.HasValue != true && request.FrontendQualityEngines is null)
+            return await SaveMicrosoftSignInAsync(signInOnly);
 
         var path = System.IO.Path.Combine(_env.ContentRootPath, "appsettings.Local.json");
 
@@ -478,18 +489,6 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
             root["FrontendQualityEnginePreferences"] = fqeNode;
         }
 
-        if (request.MicrosoftSignIn is { } signIn)
-        {
-            // Public client settings only (no secret exists for this sign-in); every other key in the section is kept as written.
-            var section = BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions.SectionName;
-            var azNode = root.TryGetPropertyValue(section, out var azExisting) && azExisting is JsonObject azObj ? azObj : new JsonObject();
-            if (signIn.Enabled.HasValue) azNode["Enabled"] = JsonValue.Create(signIn.Enabled.Value);
-            if (signIn.ClientId is not null) azNode["ClientId"] = JsonValue.Create(signIn.ClientId.Trim());
-            if (signIn.TenantId is not null) azNode["TenantId"] = JsonValue.Create(signIn.TenantId.Trim());
-            if (signIn.AllowDeviceCode.HasValue) azNode["AllowDeviceCode"] = JsonValue.Create(signIn.AllowDeviceCode.Value);
-            root[section] = azNode;
-        }
-
         var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(path, json);
 
@@ -497,11 +496,42 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         catch (Exception ex) { _logger.LogWarning(ex, "IConfiguration reload after settings save encountered an issue"); }
 
         _logger.LogInformation("Local settings saved to {Path}", path);
-        return (true, request.MicrosoftSignIn is not null
-            ? (BuildMicrosoftSignInInfo().RestartRequired
-                ? "Microsoft sign-in settings saved to this installation's appsettings.Local.json. Restart BirkNext to apply them."
-                : "Microsoft sign-in settings saved to this installation's appsettings.Local.json and applied. No restart is needed.")
-            : "Settings saved. Feature visibility changes apply immediately. Logging changes require a backend restart.");
+        if (request.MicrosoftSignIn is { } signIn) return await SaveMicrosoftSignInAsync(signIn);
+        return (true, "Settings saved. Feature visibility changes apply immediately. Logging changes require a backend restart.");
+    }
+
+    /// <summary>Public client values only (no secret exists for this sign-in), merged into <see cref="SignInSettingsFile"/>; other keys kept.</summary>
+    private async Task<(bool Success, string Message)> SaveMicrosoftSignInAsync(SaveMicrosoftSignInSettings signIn)
+    {
+        var path = System.IO.Path.Combine(_env.ContentRootPath, SignInSettingsFile);
+        var section = BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions.SectionName;
+        JsonObject root;
+        try { root = File.Exists(path) ? JsonNode.Parse(await File.ReadAllTextAsync(path))?.AsObject() ?? new JsonObject() : new JsonObject(); }
+        catch (JsonException) { root = new JsonObject(); }
+        var azNode = root.TryGetPropertyValue(section, out var azExisting) && azExisting is JsonObject azObj ? azObj : new JsonObject();
+        if (signIn.Enabled.HasValue) azNode["Enabled"] = JsonValue.Create(signIn.Enabled.Value);
+        if (signIn.ClientId is not null) azNode["ClientId"] = JsonValue.Create(signIn.ClientId.Trim());
+        if (signIn.TenantId is not null) azNode["TenantId"] = JsonValue.Create(signIn.TenantId.Trim());
+        if (signIn.AllowDeviceCode.HasValue) azNode["AllowDeviceCode"] = JsonValue.Create(signIn.AllowDeviceCode.Value);
+        root[section] = azNode;
+        try
+        {
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
+            var temp = path + ".tmp";
+            await File.WriteAllTextAsync(temp, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            File.Move(temp, path, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning("Microsoft sign-in settings could not be saved ({ExceptionType}).", ex.GetType().Name);
+            return (false, "The Microsoft sign-in settings could not be saved: this installation's App_Data folder is not writable.");
+        }
+        try { ((IConfigurationRoot)_config).Reload(); }
+        catch (Exception ex) { _logger.LogWarning(ex, "IConfiguration reload after settings save encountered an issue"); }
+        _logger.LogInformation("Microsoft sign-in settings saved to {Path}", SignInSettingsFile);
+        return (true, BuildMicrosoftSignInInfo().RestartRequired
+            ? "Microsoft sign-in settings saved. Restart BirkNext to apply them."
+            : "Microsoft sign-in settings saved and applied. No restart is needed.");
     }
 
     public async Task<(bool Success, string Message, int DeletedRows, DateTimeOffset? ResetAtUtc)> ResetLocalDatabaseAsync()

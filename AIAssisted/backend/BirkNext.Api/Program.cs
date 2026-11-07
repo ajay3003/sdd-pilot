@@ -38,6 +38,8 @@ using Serilog.Formatting.Json;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+// Microsoft sign-in settings saved from System Settings (non-secret, BirkNext's own file in App_Data; see AdminService.SignInSettingsFile).
+builder.Configuration.AddJsonFile(BirkNext.Api.Services.AdminService.SignInSettingsFile, optional: true, reloadOnChange: true);
 
 builder.Host.UseSerilog((ctx, lc) =>
 {

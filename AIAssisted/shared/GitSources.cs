@@ -42,6 +42,8 @@ public sealed record GitConnectionStatus
     public bool DeviceCodeAllowed { get; init; }
     public GitDeviceCode? DeviceCode { get; init; }
     public IReadOnlyList<string> Organizations { get; init; } = [];
+    /// <summary>The last test ran with another client id, tenant or organization than the current ones: it no longer proves access.</summary>
+    public bool LastTestStale { get; init; }
 }
 
 public sealed record GitTrackedBranch(string RepositoryId, string Repository, string Project, string Branch);
@@ -160,7 +162,11 @@ public enum GitTestStepState { Verified, Failed, Skipped }
 public sealed record GitTestStep(string Name, GitTestStepState State, string Message, long DurationMs);
 
 /// <summary>An explicit, user-triggered connectivity test. It never imports, never creates a snapshot and never writes to the remote.</summary>
-public sealed record GitTestResult(bool Ready, string Summary, IReadOnlyList<GitTestStep> Steps, DateTimeOffset TestedAt, string? Organization, int? RepositoryCount);
+public sealed record GitTestResult(bool Ready, string Summary, IReadOnlyList<GitTestStep> Steps, DateTimeOffset TestedAt, string? Organization, int? RepositoryCount)
+{
+    /// <summary>The sign-in client, tenant and organization the test ran with (no secret): a later change makes the result stale.</summary>
+    public string? ConfigurationKey { get; init; }
+}
 
 public sealed record GitRepository(string Id, string Name, string Project, string? DefaultBranch, string? WebUrl, bool IsDisabled)
 {

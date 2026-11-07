@@ -105,7 +105,7 @@ public sealed class GitSourcesTests : IDisposable
     }
 
     private (GitSourcesService Service, Handler Http, Broker Broker, ProjectImportStagingStore Staging, ProjectImportService Imports) Create(bool configured = true, bool signedIn = true,
-        Func<HttpRequestMessage, HttpResponseMessage>? respond = null)
+        Func<HttpRequestMessage, HttpResponseMessage>? respond = null, IOptions<AzureEnvironmentOptions>? options = null)
     {
         var http = new Handler(respond ?? DevOps);
         var broker = new Broker(signedIn);
@@ -114,7 +114,7 @@ public sealed class GitSourcesTests : IDisposable
         sources.SetupGet(s => s.SourceAnalysisEnabled).Returns(true);
         var imports = new ProjectImportService(new IqrSourceStore(_db), staging, sources.Object, NullLogger<ProjectImportService>.Instance);
         var provider = new ServiceCollection().AddScoped(_ => imports).BuildServiceProvider();
-        var service = new GitSourcesService(Options.Create(new AzureEnvironmentOptions { Enabled = configured, ClientId = configured ? "client" : null }), broker, new Browser(),
+        var service = new GitSourcesService(options ?? Options.Create(new AzureEnvironmentOptions { Enabled = configured, ClientId = configured ? "client" : null }), broker, new Browser(),
             new AzureDevOpsGitClient(new HttpClient(http)), new GitSourceSettingsStore(_dir), provider.GetRequiredService<IServiceScopeFactory>(), staging,
             NullLogger<GitSourcesService>.Instance);
         return (service, http, broker, staging, imports);
@@ -133,6 +133,26 @@ public sealed class GitSourcesTests : IDisposable
         broker.SignedIn = false;
         (await signedIn.StatusAsync(default)).State.Should().Be(GitConnectionState.ReconnectRequired, "expiry is not configuration loss");
         http.Requests.Concat(http2.Requests).Should().BeEmpty("status reads the in-memory sign-in state only");
+    }
+
+    private sealed class MutableOptions(AzureEnvironmentOptions value) : IOptions<AzureEnvironmentOptions>
+    {
+        public AzureEnvironmentOptions Value { get; set; } = value;
+    }
+
+    [Fact]
+    public async Task A_test_made_with_another_client_id_is_reported_stale_and_never_as_current_access()
+    {
+        var options = new MutableOptions(new AzureEnvironmentOptions { Enabled = true, ClientId = "11111111-2222-3333-4444-555555555555" });
+        var (service, _, _, _, _) = Create(options: options);
+        service.SaveSettings(new() { OrganizationUrl = Org });
+        (await service.TestAsync(default)).Should().Match<GitTestResult>(t => t.Ready && t.ConfigurationKey != null && !t.ConfigurationKey.Contains(Token));
+        (await service.StatusAsync(default)).LastTestStale.Should().BeFalse();
+
+        options.Value = new AzureEnvironmentOptions { Enabled = true, ClientId = "99999999-2222-3333-4444-555555555555" };
+        var status = await service.StatusAsync(default);
+        status.LastTestStale.Should().BeTrue("the passed test ran with the previous app registration");
+        status.LastTest!.Ready.Should().BeTrue("the result itself is kept as history");
     }
 
     [Fact]
