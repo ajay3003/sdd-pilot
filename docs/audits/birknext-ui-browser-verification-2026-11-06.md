@@ -65,3 +65,19 @@ checked" instead of claiming none).
 
 **Observation:** one run reported a console error from an aborted engine-status fetch on Performance Test Review — caused by the harness's
 full-page navigation while the query was still in flight after 45 s (BQA-013).
+
+## Gap closure — 2026-11-07: writable browser journeys
+
+The sections above are kept unchanged. Published Release web app (rebuilt after `04845c9b`) on :5199 → isolated API :5099, Edge via
+Playwright, 1440×1000, every non-localhost request aborted.
+
+| Journey | Result | Notes |
+|---|---|---|
+| XML Fixture generate → map → edit → validate → save → reload (G6) | **PASS** 22/22 | Includes invalid edits invalidating validation, invalid XML not saveable, not-approved after reload, duplicate alias kept separate. Details in the verification audit. |
+| System Settings → Git Sources → Microsoft sign-in setup | **PASS** 18/18 + 10/10 after an API restart | Before setup: "Not configured", never "All clear", missing items say "Set up here", Test connection disabled with a reason. An invalid client ID is refused with a reason and nothing is written; the backend refuses an invalid tenant (400). After save: restart notice, values written to the isolated content root's settings file with its other sections kept, running sign-in unchanged until restart, values persist across a reload. After restart: Ready to connect, Sign in offered, no restart notice, Azure DevOps access "Not tested". Microsoft was never called. "Client ID required to enable" is covered by backend unit tests. |
+| Workflows A–F (G7) | see cross-module report | All ran with writes; no page errors in any run. |
+| M01 static review reload in a fresh browser | **PASS** after `04845c9b` | Failed before the fix (BQA-014). |
+
+**Accessibility (changed UI only):** axe-core on System Settings with the Git Sources sign-in setup expanded: 0 serious/critical; the client ID
+field shows a visible keyboard focus indicator (other new controls use the same input/button styles; not individually checked). Error and
+restart messages are text, not colour only. BQA-014 and the launcher fix changed no markup. No screen-reader session.

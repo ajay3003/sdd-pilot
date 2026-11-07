@@ -104,3 +104,55 @@ no external system (M2LB, TT02, Altinn, MU, MM, Bufdata, Azure DevOps) contacted
 | CS0114 / CS9113 | 1 / 1 | `AzureEnvironmentController.SignOut` hides `ControllerBase.SignOut()` (explicit route, harmless); an unread constructor parameter. Accepted. |
 
 No warning was suppressed; none hides a confirmed defect.
+
+## Gap closure — 2026-11-07: test execution
+
+The sections above are kept unchanged. Source: HEAD `04845c9b` for all product code (later commits `6e794e94`/`5da3c952` change only
+`scripts/start-local.ps1` and a document); the isolated worktree's content equals HEAD (blob hashes compared). Every run was sequential
+under the 1.5 GB memory guard, one test host at a time, `MaxCpuCount=1`.
+
+### Backend full regression (G4)
+
+| Partition | Passed | Skipped | Failed | Notes |
+|---|---|---|---|---|
+| 1 SourceAnalysis, Integrations, PerformanceTests | 984 | 1 | 0 | |
+| 2 TargetEnvironmentDetection, TestData, LocalHttpsProxy, AltinnTesting | 1,056 | 5 | 0 | includes the new shutdown tests |
+| 3 IntegrationJourneys, CriticalE2E, ApiQuality, AuthenticatedReview | 806 | 0 | 0 | |
+| 4 Canonical…AzureEnvironment (incl. FrontendQualityEngines) | 646 | 0 | 0 | `ReadinessStatusIntegrityTests` (BQA-012) passed |
+| 5 Topology…IntegrationQuality (incl. TestEvidence) | 515 | 0 | 1 | environment-dependent failure, below |
+| 6a Controllers | 127 | 0 | 0 | partition 6 split in three: the unsplit run was stopped by the memory guard (1.3 GB free) |
+| 6b remaining Services | 547 | 0 | 0 | |
+| 6c everything else | 1,305 | 7 | 0 | |
+| **Total** | **5,986** | **13** | **1** | 6,000 results |
+
+**Reconciliation:** `--list-tests` discovers 4,697 test methods; all 4,697 ran; no method ran in two partitions. 16 display names occur more
+than once inside one partition — theory rows whose data renders to the same display name (e.g. case variants, truncated long paths), not
+double execution. The 13 skips are the existing opt-in/conditional skips.
+
+**The one failure** — `TestEvidenceTests.RealM2lb_DiscoversItsXunitV3TestEstate_WithTheGenericProvider` (BQA-018) reads
+`%USERPROFILE%\Downloads\M2LB (2).zip`, a real archive outside the repository, and skips when it is absent. The file was replaced on
+2026-11-07 00:57 with a version that contains only 1 of the 5 test projects the test expects. No discovery code changed since `f1b7f041`,
+where it passed. Not a product regression, but not a pass either.
+
+**G4: PARTIAL** — the previously intermittent failure (BQA-012) is fixed at its root and passed; every product test passes; the single
+failure depends on a file outside the repository that changed during the run window. It becomes PASS when that test is run against the
+archive it was written for (or is changed to a fixture the repository owns).
+
+Focused runs during the fixes: proxy suite 79/79 and 5× 13/13 (BQA-012); Git Sources backend 146/146; BQA-014 frontend 241 related tests.
+
+### Frontend full regression (G5 kept)
+
+Web.Tests rebuilt from the worktree (content equal to HEAD), then the whole suite: **8,452 / 8,452 passed**, 0 skipped, 0 failed
+(8,444 at `7410e179` + 6 Git Sources UI tests + 2 Target Environment materialization tests). **G5 stays PASS.**
+
+### Launcher (G10)
+
+`scripts/tests/BirkNextPreflight.Tests.ps1`: 0 failures. Launcher behaviour on a copy of the packaged launcher (PostgreSQL pointed at an
+unused port; nothing started):
+
+| Case | Before (`04845c9b`) | After (`6e794e94`) |
+|---|---|---|
+| `-ValidateOnly`, neither Podman nor Docker on PATH | "preflight passed", exit 0 | missing runtime explained, exit 2 |
+| `-ValidateOnly`, Podman running | exit 0 | exit 0 |
+| `-ValidateOnly -SkipContainers` (pipeline smoke test) | exit 0 | exit 0 |
+| start with port 5173 owned by another program | "Startup stopped …", exit 0; owner not stopped | same message, exit 3; owner not stopped |

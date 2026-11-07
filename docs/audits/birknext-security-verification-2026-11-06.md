@@ -49,3 +49,27 @@ no external system (M2LB, TT02, Altinn, MU, MM, Bufdata, Azure DevOps) contacted
 - **No secrets:** fixtures and browser checks assert no credential markers; no credential was created, reused or transferred between engines.
 - **Warnings with a security reading:** `EF1002` (2) interpolates only EF-model table names delimited by `ISqlGenerationHelper` — no user input,
   false positive; `CA1416` (2) is guarded by `OperatingSystem.IsWindows()`; `CS0612` (8) are obsolete Playwright options in browser-auth helpers.
+
+## Gap closure — 2026-11-07: runtime security checks (G9)
+
+The sections above are kept unchanged. All checks ran on this PC against loopback only; no external system was contacted and no attack was
+made against anything outside the isolated local process. The launch code was read from the isolated content root and never printed or logged.
+
+| Check | Result | Evidence |
+|---|---|---|
+| Non-loopback binding refused at runtime (BQA-001) | **PASS** for `ASPNETCORE_URLS=http://0.0.0.0:5098` | Real API process: startup refused with the binding-guard message; no listener on 5098 at any point. |
+| Other widening variants (`--urls`, `Kestrel__Endpoints__*__Url`, `http://[::]:…`, LAN IP) | **NOT RUN** at runtime | Each start was denied by the local permission policy ("expose local services"); not retried or worked around. Covered by the in-process binding-guard tests. |
+| Listeners | **PASS** | :5000/:5173 (user) and :5099/:5199 (isolated) listen only on `127.0.0.1` and `::1`. |
+| Launch-code storage (BQA-002) | **PASS** | Folder and file: explicit protected ACL, current user + SYSTEM only, no inherited entries. |
+| Launch code not leaked | **PASS** | Absent from the isolated API log and from every response body checked. |
+| Session bootstrap | **PASS** | Wrong code → 401, no cookie; right code from a foreign web origin → 403, no cookie; right code from the frontend → cookie `HttpOnly; SameSite=Strict`; code never echoed. |
+| Anonymous access | **PASS** | REST read 401, GraphQL 401; the same read with the session 200 (control). |
+| Cross-origin / CSRF | **PASS** | State change with a valid cookie from a foreign origin 403; without the client marker 403; extension origin outside the companion routes 403. |
+| DNS rebinding | **PASS** | Request addressed to another host name 400. |
+| Session revocation | **PASS** | After `DELETE /api/local-session` the old cookie is rejected (401). |
+| Second Windows account | **NOT RUN** | No second account available; creating one or elevating was not authorized. |
+
+`g9` 13/13. **G9: PARTIAL** — the four widening variants are proven in-process only, and no cross-account read attempt was made.
+
+The Git Sources change (`73b9d9e8`) adds no secret handling: it stores only the public client ID, tenant and two switches; client ID and tenant
+are validated before they are written; the save endpoint is behind the same session/CSRF checks as every other admin write.

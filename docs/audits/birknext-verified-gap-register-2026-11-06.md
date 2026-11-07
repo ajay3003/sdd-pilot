@@ -46,3 +46,22 @@ no external system (M2LB, TT02, Altinn, MU, MM, Bufdata, Azure DevOps) contacted
 | BQA-011 (new) | **FIXED** | `8cc2139e` WCAG AA contrast (12 axe nodes on 4 pages). |
 | BQA-012 (new) | **OPEN — nondeterministic** | `ReadinessStatusIntegrityTests.AccessibilityPreferenceTrue_OverridesLegacyFalse_AndReachesDependencyProbe` is intermittent (failed in the full run at `37b918f7`, passed in the previous full run and 3/3 in isolation): `WebApplicationFactory.Dispose` → `LocalHttpsProxyService.StopAsync` waits on its gate with the host-shutdown token, which is cancelled after the test body itself ran 3 m 26 s under load; isolated runs pass in 6 s. Assertions are not weakened; needs a deterministic shutdown/timeout design. |
 | BQA-013 (new) | **OBSERVATION** | Performance Test Review's engine-status query was still in flight after 45 s of network idle wait in the local verification environment (aborted by the harness's full-page navigation; in-app navigation does not abort it). |
+
+## Gap closure — 2026-11-07
+
+The register and the 2026-11-06 status table above are kept unchanged. Status changes and new findings from the gap-closure run (code at
+`04845c9b` / `6e794e94`; see the verification audit for the method and isolation):
+
+| ID | Status 2026-11-07 | Evidence |
+|---|---|---|
+| BQA-001 | **PARTIAL** (narrowed) | A real process started with `ASPNETCORE_URLS=http://0.0.0.0:5098` refused to start and opened no listener. The `--urls`, `Kestrel__Endpoints`, `[::]` and LAN-IP variants were denied by the local permission policy; they are covered by the in-process binding-guard tests only. |
+| BQA-002 | **FIXED** (unchanged) | Runtime ACL re-checked on the isolated content root: owner + SYSTEM, protected. Separate-account read attempt not run (no second Windows account; none created). |
+| BQA-004 | **PARTIAL** (narrowed) | Writable synthetic workflows A–F executed end to end on an isolated database (cross-module report). Open: Release Readiness consuming the stored delivery snapshot; interrupted import. |
+| BQA-007 | **PARTIAL** (unchanged) | Duplicate import refused without confirmation (Workflow D); interruption/restart still not exercised. |
+| BQA-012 | **FIXED** | `e0077f15`: root cause was the proxy's `StopAsync` awaiting its gate with an already-cancelled shutdown token. Reproduced deterministically (`HostShutdownBudgetTests`), fixed, repeated 5×; `ReadinessStatusIntegrityTests` passed in the full run. |
+| BQA-014 (new) | **FIXED** | `04845c9b`: M01 Security Review results and Performance Test Review definitions/data profiles/runs/baselines created in a fresh browser were keyed to a not-yet-stored default Target Environment and vanished after a reload. Reproduced by test and in the browser; fixed; Workflow E 14/14. |
+| BQA-015 (new) | **FIXED** | `6e794e94`: the launcher's `-ValidateOnly` reported "passed" with no container runtime (exit 0; now exit 2), and a busy port stopped startup with exit 0 (now exit 3). Reproduced on a copy of the packaged launcher. |
+| BQA-016 (new) | **OPEN — P3 risk** | In the published package the launcher cannot detect the backend port ("Backend launch port could not be detected. Skipping backend port preflight."), so a program already on port 5000 is not reported before start; the backend then fails to bind after the database has started. Observed, not exercised end to end. |
+| BQA-017 (new) | **OPEN — P3 risk** | After `compose up` the launcher waits a fixed `ContainerDelaySeconds` instead of checking that PostgreSQL accepts connections; a slow first container start can make the first backend start fail. Code reading only; not reproduced. |
+| BQA-018 (new) | **OBSERVATION — environment-dependent test** | `TestEvidenceTests.RealM2lb_DiscoversItsXunitV3TestEstate_WithTheGenericProvider` reads the real archive `%USERPROFILE%\Downloads\M2LB (2).zip` (skips when absent). That file was replaced on 2026-11-07 00:57 with a version that lacks 4 of the 5 test projects the test expects, so it fails. No discovery code changed since `f1b7f041`. Not a product regression; the test depends on a file outside the repository. |
+| Git Sources | **FIXED** | `73b9d9e8`: Microsoft sign-in for Git Sources is set up in System Settings instead of by editing configuration files (requested repeatedly by the user). |
