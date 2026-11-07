@@ -42,7 +42,7 @@ public sealed class ExecutionResultsPageTests : BunitContext
         private ExecutionRunSummary Summary => new()
         {
             RunId = Run, Name = "Synthetic run", EnvironmentId = "local", EnvironmentType = "Local", TargetOrigin = "http://localhost:5/", State = ExecutionState.Failed,
-            StartedAt = DateTimeOffset.UtcNow, Counts = new(3, 2, 1, 1, 0, 0, 1, 0, 0, 0, 0, 3), CallsWithCompleteEvidence = 3, RedactionVersion = "ee-redaction-v1",
+            StartedAt = DateTimeOffset.UtcNow, Counts = new(3, 2, 1, 1, 0, 0, 1, 0, 0, 0, 0, 3), CallsWithCompleteEvidence = 3, WireTransmissions = 5, RedactionVersion = "ee-redaction-v1",
         };
         public Task<(IReadOnlyList<ExecutionRunSummary>? Runs, string? Error)> RunsAsync(CancellationToken ct = default) => Task.FromResult<(IReadOnlyList<ExecutionRunSummary>?, string?)>(([Summary], null));
         public Task<(ExecutionRunDetail? Detail, string? Error)> RunAsync(Guid runId, int skip, int take, string? state, string? protocol, string? method, string? search, string sort, CancellationToken ct = default)
@@ -78,6 +78,7 @@ public sealed class ExecutionResultsPageTests : BunitContext
         page = Open($"?run={Run}");
         page.Find("[data-testid=xr-kpi-planned] .xr-kpi-value").TextContent.Should().Be("3");
         page.Find("[data-testid=xr-kpi-attempts] .xr-kpi-value").TextContent.Should().Be("3");
+        page.Find("[data-testid=xr-kpi-attempts]").TextContent.Should().Contain("5 sent on the wire", "stack-level resends are visible, not hidden behind the attempt count");
         page.FindAll("[data-testid=xr-call-row]").Should().HaveCount(3);
         page.FindAll("[data-testid=xr-call-row]")[2].QuerySelector("[data-testid=xr-call-http]")!.TextContent.Should().Be("not sent");
         page.Find("[data-testid=xr-export]").GetAttribute("href").Should().EndWith($"/runs/{Run}/export");

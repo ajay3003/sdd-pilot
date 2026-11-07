@@ -52,7 +52,7 @@
             <p class="xr-muted" data-testid="xr-run-meta">@run.EnvironmentId (@(run.EnvironmentType ?? "unclassified")) · @run.TargetOrigin · started @run.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")@(run.CompletedAt is { } done ? $" · {(done - run.StartedAt).TotalSeconds:0.0} s" : "") · authentication: @(run.AuthenticationMode ?? "None") · redaction @run.RedactionVersion</p>
             <dl class="xr-kpis" data-testid="xr-kpis">
                 @Kpi("Logical calls", run.Counts.Planned, "planned")
-                @Kpi("Attempts", run.Counts.Attempts, "attempts")
+                @Kpi("Attempts", run.Counts.Attempts, "attempts", run.WireTransmissions > run.Counts.Attempts ? $"{run.WireTransmissions} sent on the wire" : null)
                 @Kpi("Passed", run.Counts.Passed, "passed")
                 @Kpi("Failed", run.Counts.Failed, "failed")
                 @Kpi("Errors", run.Counts.Errors + run.Counts.TimedOut, "errors")
