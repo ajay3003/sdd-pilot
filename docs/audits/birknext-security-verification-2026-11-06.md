@@ -73,3 +73,10 @@ made against anything outside the isolated local process. The launch code was re
 
 The Git Sources change (`73b9d9e8`) adds no secret handling: it stores only the public client ID, tenant and two switches; client ID and tenant
 are validated before they are written; the save endpoint is behind the same session/CSRF checks as every other admin write.
+
+## Final remediation — 2026-11-07
+
+New finding fixed (`a6ede4c2`): `ASPNETCORE_HTTP_PORTS`/`HTTPS_PORTS` listen on every interface when no URL is configured and were not
+checked by the binding guard; now refused like other non-loopback addresses (3 cases red → green, 31/31). A real-process start with
+HTTP_PORTS was denied by the local permission policy (NOT RUN). Git Sources stores only non-secret values (client id, tenant, flags) in
+`App_Data/microsoft-sign-in.json`; saves go through the existing session/CSRF-protected admin endpoint. **G9: PARTIAL.**

@@ -81,3 +81,10 @@ Playwright, 1440×1000, every non-localhost request aborted.
 **Accessibility (changed UI only):** axe-core on System Settings with the Git Sources sign-in setup expanded: 0 serious/critical; the client ID
 field shows a visible keyboard focus indicator (other new controls use the same input/button styles; not individually checked). Error and
 restart messages are text, not colour only. BQA-014 and the launcher fix changed no markup. No screen-reader session.
+
+## Final remediation — 2026-11-07
+
+Git Sources six-step setup, browser 34/34 (isolated published stack; real backend for unconfigured, incomplete, invalid input, saved
+synthetic configuration and reload; mocked API responses for signed in, test, denied, discovery, import hand-off, restart required, stale,
+expired); axe 0 serious/critical; 390 px without horizontal scroll; Microsoft/Azure DevOps never called. Defect found and fixed in the run:
+`<details>` toggle events closed steps on re-render. Release Readiness (G7) 16/16. Screenshots: scratch `shots-gs6/`, `shots-g7/`.

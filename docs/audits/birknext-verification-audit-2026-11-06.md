@@ -120,3 +120,12 @@ Accessibility regression on the changed UI (System Settings → Git Sources sign
 the client ID field (same styles as the other new controls). The other fixes changed no markup.
 
 **Overall: PARTIAL.** G6 now passes; G4, G7, G9 and G10 keep the exceptions stated above. Nothing is claimed beyond them.
+
+## Final remediation — 2026-11-07 (HEAD `60671884`)
+
+Earlier sections are unchanged. Master summary: `birknext-final-remediation-summary-2026-11-07.md`. Gates: G1, G2, G3, G5 (8,463/8,463),
+G6, G7 (Delivery → Release Readiness 16/16 in the browser + chain test; interrupted-import tests) and G8 **PASS**; G4 **PARTIAL** (Downloads
+dependency removed; 4,697 passed / 11 skipped / 0 failed in partitions 1–5, 6a, 6b at `13c7821c`; partition 6c not run — memory protection);
+G9 **PARTIAL** (HTTP_PORTS binding gap fixed in-process; runtime variants denied by permission policy; no second account); G10 **PARTIAL**
+(package rebuilt and validated; no clean PC). Git Sources: local setup VERIFIED (browser 34/34); real Microsoft sign-in and Azure DevOps
+access NOT VERIFIED (external app registration required). **Overall: PARTIAL.**

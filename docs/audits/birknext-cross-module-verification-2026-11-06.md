@@ -59,3 +59,9 @@ request was aborted (none was attempted in any run). Database state was checked 
 
 Protected data: hashes of the verification copy's `App_Data` and of the repository `testdata/` were identical before and after; the isolated
 content root's `identities.json` only gained the two synthetic identities. The user's database, stack and canonical XML fixtures were not used.
+
+## Final remediation — 2026-11-07: G7 completed
+
+Release Readiness reading the stored Delivery snapshot: backend chain test (`ReleaseReadinessDeliveryChainTests`) and browser `g7rr` 16/16 —
+registry resolves the snapshot, the interpretation records it, scope Ready from it, never Ready from a snapshot alone, frozen report and the
+earlier interpretation unchanged after a newer import. Interrupted import: `ProjectImportInterruptionTests` (4). **G7: PASS.**

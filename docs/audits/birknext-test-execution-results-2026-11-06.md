@@ -156,3 +156,11 @@ unused port; nothing started):
 | `-ValidateOnly`, Podman running | exit 0 | exit 0 |
 | `-ValidateOnly -SkipContainers` (pipeline smoke test) | exit 0 | exit 0 |
 | start with port 5173 owned by another program | "Startup stopped …", exit 0; owner not stopped | same message, exit 3; owner not stopped |
+
+## Final remediation — 2026-11-07
+
+Frontend full: **8,463 / 8,463** at `60671884`. Backend: partitions 1–5, 6a, 6b at `13c7821c` **4,697 passed, 11 skipped, 0 failed**;
+partition 6c **NOT RUN** (stopped by memory protection; not restarted without the user's go-ahead); backend suites touched afterwards pass
+(Git Sources/Azure/Admin/sign-in 181). Count reconciliation: result rows (facts + theory rows) vs `--list-tests` methods — see the summary §4.
+Preflight tests: 0 failures (7 endpoint, 8 readiness, 8 container-probe cases added). Opt-in real archives: 4 passed, 1 skipped, 1 failed
+(archive drift).

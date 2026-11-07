@@ -65,3 +65,9 @@ The register and the 2026-11-06 status table above are kept unchanged. Status ch
 | BQA-017 (new) | **OPEN — P3 risk** | After `compose up` the launcher waits a fixed `ContainerDelaySeconds` instead of checking that PostgreSQL accepts connections; a slow first container start can make the first backend start fail. Code reading only; not reproduced. |
 | BQA-018 (new) | **OBSERVATION — environment-dependent test** | `TestEvidenceTests.RealM2lb_DiscoversItsXunitV3TestEstate_WithTheGenericProvider` reads the real archive `%USERPROFILE%\Downloads\M2LB (2).zip` (skips when absent). That file was replaced on 2026-11-07 00:57 with a version that lacks 4 of the 5 test projects the test expects, so it fails. No discovery code changed since `f1b7f041`. Not a product regression; the test depends on a file outside the repository. |
 | Git Sources | **FIXED** | `73b9d9e8`: Microsoft sign-in for Git Sources is set up in System Settings instead of by editing configuration files (requested repeatedly by the user). |
+
+## Final remediation — 2026-11-07
+
+Earlier tables are unchanged. BQA-001 **PARTIAL** (HTTP_PORTS/HTTPS_PORTS bypass fixed, `a6ede4c2`); BQA-004 **CLOSED**; BQA-007 **CLOSED**
+(interruption tests, `13c7821c`); BQA-016 **FIXED** and BQA-017 **FIXED** (`4edc0885`); BQA-018 **FIXED** (`503df79c`, opt-in real archives);
+BQA-019 (new) **FIXED** — DefinitionCount grouped by project name (`503df79c`). Full register: `birknext-final-remediation-summary-2026-11-07.md` §3.
