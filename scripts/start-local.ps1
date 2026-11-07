@@ -14,7 +14,9 @@ param(
     [switch]$FrontendOnly,
     [switch]$ForceKillPorts,
 
+    # Kept so older command lines still parse; BirkNext now waits until PostgreSQL accepts connections (-DatabaseReadyTimeoutSeconds).
     [int]$ContainerDelaySeconds = 10,
+    [int]$DatabaseReadyTimeoutSeconds = 90,
     [int]$BackendDelaySeconds = 20,
     [int]$PodmanReadyRetries = 20,
     [int]$PodmanReadyDelaySeconds = 2
@@ -131,6 +133,28 @@ $script:ContainerRuntimeProbe = {
     New-ProbeResult $true $probe.ExitCode ""
 }
 
+# One readiness probe answer for Wait-DatabaseReady: BirkNext's own postgres container (compose project + service labels) and pg_isready
+# inside it, so an unrelated database answering on the port never counts as ready. No password is needed or printed.
+$script:DatabaseReadinessProbe = {
+    param($attempt)
+    Get-PostgresContainerState -Runtime $script:ReadinessRuntime -Project $env:COMPOSE_PROJECT_NAME -User $script:PostgresConfig.User -Database $script:PostgresConfig.Database `
+        -Run { param($exe, $arguments) Invoke-NativeCommand -Executable $exe -Arguments $arguments }
+}
+
+# Starting -> Waiting for database -> Ready | Timed out | Failed. Replaces the former fixed sleep after compose up.
+function Wait-BirkNextDatabase {
+    param([string]$Runtime)
+    $script:ReadinessRuntime = $Runtime
+    Info "Waiting for database: PostgreSQL in the BirkNext container (up to $DatabaseReadyTimeoutSeconds seconds)..."
+    $wait = Wait-DatabaseReady -Probe $script:DatabaseReadinessProbe -TimeoutSeconds $DatabaseReadyTimeoutSeconds -IntervalSeconds 2 `
+        -OnWaiting { param($attempt, $detail) if ($attempt % 5 -eq 0) { Info "Still waiting for database... $detail" } }
+    if ($wait.State -eq "Ready") { Ok "Database ready: $($wait.Message)"; return }
+    Fail $(if ($wait.State -eq "TimedOut") { "Database timed out: $($wait.Message)" } else { "Database failed: $($wait.Message)" })
+    Write-Host "Check the container with: $Runtime ps -a --filter label=com.docker.compose.project=$env:COMPOSE_PROJECT_NAME" -ForegroundColor Yellow
+    Write-Host "Then start BirkNext again, or raise -DatabaseReadyTimeoutSeconds on a slow first start." -ForegroundColor Yellow
+    throw "PostgreSQL is not ready ($($wait.State))."
+}
+
 function Load-EnvFile {
     param([string]$Path)
 
@@ -164,6 +188,24 @@ function Load-EnvFile {
 function Escape-PowerShellSingleQuotedString {
     param([string]$Value)
     return $Value.Replace("'", "''")
+}
+
+function Get-ProjectLaunchUrl {
+    param([string]$ProjectFile, [string]$ProfileName = "http")
+    $launchSettingsPath = Join-Path (Split-Path -Parent $ProjectFile) "Properties\launchSettings.json"
+    if (-not (Test-Path $launchSettingsPath)) { return "" }
+    try { return "$((Get-Content $launchSettingsPath -Raw | ConvertFrom-Json).profiles.$ProfileName.applicationUrl)" }
+    catch { Warn "Could not read the launch profile from $launchSettingsPath"; return "" }
+}
+
+# The packaged backend's own "Urls" setting, if its appsettings.json sets one (ASP.NET Core reads it when ASPNETCORE_URLS is not set).
+function Get-AppSettingsUrls {
+    param([string]$BackendPath)
+    $path = Join-Path $BackendPath "appsettings.json"
+    if (-not (Test-Path $path)) { return "" }
+    try { $json = Get-Content $path -Raw | ConvertFrom-Json; if ($json.PSObject.Properties["Urls"]) { return "$($json.Urls)" } }
+    catch { Warn "Could not read $path" }
+    return ""
 }
 
 function Get-ProjectLaunchPort {
@@ -443,7 +485,7 @@ function Detect-ExistingBirkNextDatabase {
                     if ([string]::IsNullOrWhiteSpace($trimmed)) { continue }
                     # Port mapping format: "0.0.0.0:5432->5432/tcp" or ":::5432->5432/tcp"
                     if ($trimmed -match ":${Port}->") {
-                        return $true
+                        return $rt
                     }
                 }
 
@@ -451,7 +493,7 @@ function Detect-ExistingBirkNextDatabase {
                 # fall back to checking by container name
                 $nameResult = Invoke-NativeCommand -Executable $rt -Arguments @("ps", "--filter", $filterArg, "--format", "{{.Names}}")
                 if ($nameResult.ExitCode -eq 0 -and $nameResult.Stdout -match "postgres") {
-                    return $true
+                    return $rt
                 }
             }
         }
@@ -460,7 +502,7 @@ function Detect-ExistingBirkNextDatabase {
         }
     }
 
-    return $false
+    return $null
 }
 
 function Test-PodmanReady {
@@ -725,7 +767,7 @@ function Start-ContainerServices {
         if ($isBirkNextContainer) {
             Info "Existing BirkNext database already running (Compose project: $env:COMPOSE_PROJECT_NAME)."
             Info "Reusing running PostgreSQL instance."
-            Ok "Database ready."
+            Wait-BirkNextDatabase -Runtime $isBirkNextContainer
             return
         }
 
@@ -802,10 +844,7 @@ function Start-ContainerServices {
         Invoke-NativeCommand -Executable "docker" -Arguments @("ps") -ShowOutput
     }
 
-    if ($ContainerDelaySeconds -gt 0) {
-        Info "Waiting $ContainerDelaySeconds seconds for containers/database to initialize..."
-        Start-Sleep -Seconds $ContainerDelaySeconds
-    }
+    Wait-BirkNextDatabase -Runtime $runtime
 }
 
 function Find-DotNetRunnable {
@@ -915,6 +954,8 @@ function Start-DotNetProcessLogged {
         $argString = "serve --directory `"$($Runnable.Path)`" --port 5173 -h `"Blazor-Environment: Development`""
     }
     elseif ($Runnable.Kind -eq "Dll") {
+        # The published backend binds exactly the address the port preflight checked (unchanged when it came from ASPNETCORE_URLS).
+        if ($Name -eq "Backend" -and $script:BackendEndpoint -and $script:BackendEndpoint.Ok) { $env:ASPNETCORE_URLS = $script:BackendEndpoint.Url }
         $argString = "`"$($Runnable.Path)`""
     }
     elseif ($Fast) {
@@ -1078,7 +1119,8 @@ Info "Backend path:    $backendPath"
 Info "Frontend path:   $frontendPath"
 Info "Runtime:         $ContainerRuntime"
 Info "Mode:            $(if ($Fast) { 'Fast' } else { 'Safe' })"
-Info "Container delay: $ContainerDelaySeconds seconds"
+Info "Database wait:   up to $DatabaseReadyTimeoutSeconds seconds (PostgreSQL readiness)"
+if ($PSBoundParameters.ContainsKey("ContainerDelaySeconds")) { Warn "-ContainerDelaySeconds is no longer used: BirkNext waits until PostgreSQL accepts connections (-DatabaseReadyTimeoutSeconds)." }
 Info "Backend delay:   $BackendDelaySeconds seconds"
 Info "Port cleanup:    $(if ($ForceKillPorts) { 'Force stale local dotnet processes' } else { 'Safe warning only' })"
 Info "Compose Project: birknext-studio-local"
@@ -1164,6 +1206,15 @@ foreach ($folder in @((Join-Path $repoRoot "logs"), (Join-Path $backendPath "App
     $writable = Test-WritableFolder $folder
     if (-not $writable.Ok) { $preflightProblems += $writable.Message }
 }
+# One backend address for display, port preflight and launch (BQA-016): the packaged backend has no launch profile, so its port was never checked.
+$script:BackendEndpoint = $null
+if ($backendRunnable.Kind -in @("Project", "Dll")) {
+    $launchUrl = if ($backendRunnable.Kind -eq "Project") { Get-ProjectLaunchUrl -ProjectFile $backendRunnable.Path } else { "" }
+    $script:BackendEndpoint = Resolve-BackendEndpoint -Kind $backendRunnable.Kind -LaunchSettingsUrl $launchUrl -EnvironmentUrls $env:ASPNETCORE_URLS -AppSettingsUrls (Get-AppSettingsUrls -BackendPath $backendPath)
+    if ($script:BackendEndpoint.Ok) { Ok $script:BackendEndpoint.Message }
+    elseif ($script:BackendEndpoint.Url) { $preflightProblems += $script:BackendEndpoint.Message }
+    else { Warn $script:BackendEndpoint.Message }
+}
 # The database runtime is a prerequisite too, so -ValidateOnly never reports "passed" on a PC without a usable Podman or Docker.
 # -SkipContainers uses an already running PostgreSQL instead.
 if (-not $SkipContainers) {
@@ -1184,7 +1235,7 @@ if ($ValidateOnly) {
     exit 0
 }
 
-$backendPort = if ($backendRunnable.Kind -eq "Project") { Get-ProjectLaunchPort -ProjectFile $backendRunnable.Path } else { $null }
+$backendPort = if ($script:BackendEndpoint -and $script:BackendEndpoint.Ok) { $script:BackendEndpoint.Port } else { $null }
 $frontendPort = if ($frontendRunnable.Kind -eq "Project") { Get-ProjectLaunchPort -ProjectFile $frontendRunnable.Path } elseif ($frontendRunnable.Kind -eq "StaticWeb") { 5173 } else { $null }
 
 if ($null -ne $backendPort) {
@@ -1284,7 +1335,7 @@ try {
     Write-Host ""
 
     if (-not $FrontendOnly) {
-        $backendUrl = if ($env:ASPNETCORE_URLS) { ($env:ASPNETCORE_URLS -split ";")[0] } else { "http://localhost:5000" }
+        $backendUrl = if ($script:BackendEndpoint -and $script:BackendEndpoint.Ok) { $script:BackendEndpoint.Url } else { "http://localhost:5000" }
         Write-Host "Backend:  $backendUrl" -ForegroundColor Green
     }
 
