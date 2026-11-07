@@ -54,6 +54,41 @@ public sealed class LocalSessionSecurityTests
         allowed.Invoking(f => f.CreateClient()).Should().NotThrow("a deliberate non-local deployment is an explicit choice");
     }
 
+    /// <summary>Every configuration source that can choose the listening address (ASPNETCORE_URLS / --urls → "urls", Kestrel endpoints, and
+    /// .NET 8 ASPNETCORE_HTTP_PORTS / HTTPS_PORTS, which listen on every interface when no URL is configured) is checked before Kestrel binds.
+    /// In-process only: the host is a TestServer, so no socket is opened.</summary>
+    [Theory]
+    [InlineData("urls", "http://[::]:5000")]
+    [InlineData("urls", "http://localhost:5000;http://192.168.1.20:5001")]
+    [InlineData("Kestrel:Endpoints:Http:Url", "http://0.0.0.0:5000")]
+    [InlineData("Kestrel:Endpoints:Http:Url", "http://[::]:5000")]
+    [InlineData("http_ports", "5000")]
+    [InlineData("https_ports", "5001")]
+    [InlineData("http_ports", "5000;5002")]
+    public void Every_binding_source_that_widens_the_listener_stops_startup(string key, string value)
+    {
+        using var widened = Host().WithWebHostBuilder(b => b.UseSetting(key, value));
+        widened.Invoking(f => f.CreateClient()).Should().Throw<InvalidOperationException>().WithMessage("*listens on localhost only*");
+    }
+
+    [Theory]
+    [InlineData("urls", "http://localhost:5000")]
+    [InlineData("urls", "http://127.0.0.1:5000;http://[::1]:5001")]
+    [InlineData("Kestrel:Endpoints:Http:Url", "http://localhost:5000")]
+    public void Loopback_binding_sources_start(string key, string value)
+    {
+        using var local = Host().WithWebHostBuilder(b => b.UseSetting(key, value));
+        local.Invoking(f => f.CreateClient()).Should().NotThrow();
+    }
+
+    [Fact]
+    public void Http_ports_are_ignored_by_kestrel_when_a_loopback_url_is_configured_so_they_do_not_stop_startup()
+    {
+        using var both = Host().WithWebHostBuilder(b => { b.UseSetting("urls", "http://localhost:5000"); b.UseSetting("http_ports", "5000"); });
+        both.Invoking(f => f.CreateClient()).Should().NotThrow("Kestrel binds the configured URL and ignores HTTP_PORTS then");
+        LoopbackBinding.PortOnlyUrls(http: "5000;5002", https: "5001").Should().Equal("http://*:5000", "http://*:5002", "https://*:5001");
+    }
+
     // ── Anonymous callers ───────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]

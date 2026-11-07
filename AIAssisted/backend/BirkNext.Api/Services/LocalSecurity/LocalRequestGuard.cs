@@ -102,6 +102,11 @@ public static class LoopbackBinding
     public static IReadOnlyList<string> Violations(string? urls) =>
         [.. (urls ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(u => !IsLoopbackUrl(u))];
 
+    /// <summary>The addresses .NET 8 binds for HTTP_PORTS / HTTPS_PORTS (ASPNETCORE_ or DOTNET_ prefixed): every interface, "scheme://*:port".</summary>
+    public static IReadOnlyList<string> PortOnlyUrls(string? http, string? https) =>
+        [.. new[] { ("http", http), ("https", https) }.SelectMany(p => (p.Item2 ?? "").Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(port => $"{p.Item1}://*:{port}"))];
+
     public static bool IsLoopbackUrl(string url)
     {
         var normalized = url.Replace("://*", "://wildcard").Replace("://+", "://wildcard");

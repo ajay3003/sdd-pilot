@@ -82,10 +82,13 @@ builder.Services.AddCors(options =>
         .AllowCredentials()));
 
 // Supported local mode listens on loopback only: a configured URL beyond loopback (ASPNETCORE_URLS, launch settings, Kestrel endpoints) stops
-// startup unless non-local hosting is chosen explicitly.
+// startup unless non-local hosting is chosen explicitly. HTTP_PORTS/HTTPS_PORTS bind every interface and apply only when no URL is configured.
 {
-    var configuredUrls = string.Join(';', new[] { builder.Configuration["urls"] }
-        .Concat(builder.Configuration.GetSection("Kestrel:Endpoints").GetChildren().Select(e => e["Url"])).Where(u => !string.IsNullOrWhiteSpace(u)));
+    var urlSources = new[] { builder.Configuration["urls"] }
+        .Concat(builder.Configuration.GetSection("Kestrel:Endpoints").GetChildren().Select(e => e["Url"])).Where(u => !string.IsNullOrWhiteSpace(u)).ToList();
+    if (urlSources.Count == 0)
+        urlSources.AddRange(BirkNext.Api.Services.LocalSecurity.LoopbackBinding.PortOnlyUrls(builder.Configuration["http_ports"], builder.Configuration["https_ports"]));
+    var configuredUrls = string.Join(';', urlSources);
     var widened = BirkNext.Api.Services.LocalSecurity.LoopbackBinding.Violations(configuredUrls);
     if (widened.Count > 0 && !builder.Configuration.GetValue<bool>(BirkNext.Api.Services.LocalSecurity.LoopbackBinding.AllowSetting))
         throw new InvalidOperationException(
