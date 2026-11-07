@@ -123,6 +123,14 @@ function Invoke-NativeCommand {
     }
 }
 
+# "<runtime> info" for Select-ContainerRuntime: the command missing from PATH, installed but not answering, or healthy. Used by preflight and startup.
+$script:ContainerRuntimeProbe = {
+    param($runtime)
+    if (-not (Command-Exists $runtime)) { return New-ProbeResult $false }
+    $probe = Invoke-NativeCommand -Executable $runtime -Arguments @("info")
+    New-ProbeResult $true $probe.ExitCode ""
+}
+
 function Load-EnvFile {
     param([string]$Path)
 
@@ -743,12 +751,7 @@ function Start-ContainerServices {
     # ─────────────────────────────────────────────────────────────────────────
 
     # One decision for the database runtime: explicit choice, BIRKNEXT_CONTAINER_RUNTIME, then whatever is installed and healthy. Never installs anything.
-    $selection = Select-ContainerRuntime -Requested $ContainerRuntime -EnvironmentChoice $env:BIRKNEXT_CONTAINER_RUNTIME -Probe {
-        param($runtime)
-        if (-not (Command-Exists $runtime)) { return New-ProbeResult $false }
-        $probe = Invoke-NativeCommand -Executable $runtime -Arguments @("info")
-        New-ProbeResult $true $probe.ExitCode ""
-    }
+    $selection = Select-ContainerRuntime -Requested $ContainerRuntime -EnvironmentChoice $env:BIRKNEXT_CONTAINER_RUNTIME -Probe $script:ContainerRuntimeProbe
     if (-not $selection.Ok) {
         Fail $selection.Message
         throw "No usable container runtime for PostgreSQL."
@@ -1161,6 +1164,12 @@ foreach ($folder in @((Join-Path $repoRoot "logs"), (Join-Path $backendPath "App
     $writable = Test-WritableFolder $folder
     if (-not $writable.Ok) { $preflightProblems += $writable.Message }
 }
+# The database runtime is a prerequisite too, so -ValidateOnly never reports "passed" on a PC without a usable Podman or Docker.
+# -SkipContainers uses an already running PostgreSQL instead.
+if (-not $SkipContainers) {
+    $runtimeCheck = Select-ContainerRuntime -Requested $ContainerRuntime -EnvironmentChoice $env:BIRKNEXT_CONTAINER_RUNTIME -Probe $script:ContainerRuntimeProbe
+    if ($runtimeCheck.Ok) { Ok $runtimeCheck.Message } else { $preflightProblems += $runtimeCheck.Message }
+}
 if ($preflightProblems.Count -gt 0) {
     Write-Host ""
     Fail "BirkNext cannot start on this PC yet:"
@@ -1207,7 +1216,8 @@ try {
 
     if (-not $canStart) {
         Warn "Startup stopped before launching backend/frontend because one or more required ports are busy."
-        return
+        # Nothing was started: a non-zero exit, so a wrapper or tester never reads this as a successful start.
+        exit 3
     }
 
     Start-ContainerServices
