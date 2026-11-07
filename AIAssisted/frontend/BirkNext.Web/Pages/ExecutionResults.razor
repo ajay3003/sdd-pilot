@@ -262,7 +262,7 @@
 
     private static RenderFragment Kpi(string label, int value, string key, string? note = null) => __builder =>
     {
-        <div class="xr-kpi" data-testid="@($"xr-kpi-{key}")"><dt>@label</dt><dd><span class="xr-kpi-value">@value</span>@if (note is not null) { <span class="xr-muted"> @note</span> }</dd></div>
+        <div class="xr-kpi" data-testid="@($"xr-kpi-{key}")"><dt>@label</dt><dd><span class="xr-kpi-value">@value</span>@if (note is not null) { <span class="xr-kpi-note" data-testid="xr-kpi-note">@note</span> }</dd></div>
     };
 
     private RenderFragment Select(string label, string testId, string? value, Action<string> set, IEnumerable<string> options, bool includeAll = true) => __builder =>

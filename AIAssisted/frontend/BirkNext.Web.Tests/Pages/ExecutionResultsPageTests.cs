@@ -78,7 +78,7 @@ public sealed class ExecutionResultsPageTests : BunitContext
         page = Open($"?run={Run}");
         page.Find("[data-testid=xr-kpi-planned] .xr-kpi-value").TextContent.Should().Be("3");
         page.Find("[data-testid=xr-kpi-attempts] .xr-kpi-value").TextContent.Should().Be("3");
-        page.Find("[data-testid=xr-kpi-attempts]").TextContent.Should().Contain("5 sent on the wire", "stack-level resends are visible, not hidden behind the attempt count");
+        page.Find("[data-testid=xr-kpi-attempts] [data-testid=xr-kpi-note]").TextContent.Should().Be("5 sent on the wire", "stack-level resends are visible, not hidden behind the attempt count");
         page.FindAll("[data-testid=xr-call-row]").Should().HaveCount(3);
         page.FindAll("[data-testid=xr-call-row]")[2].QuerySelector("[data-testid=xr-call-http]")!.TextContent.Should().Be("not sent");
         page.Find("[data-testid=xr-export]").GetAttribute("href").Should().EndWith($"/runs/{Run}/export");

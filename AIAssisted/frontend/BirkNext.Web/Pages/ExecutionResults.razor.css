@@ -11,6 +11,7 @@
 .xr-kpi dt { font-size: 0.75rem; color: var(--clr-text-muted, #57606a); }
 .xr-kpi dd { margin: 0; }
 .xr-kpi-value { font-size: 1.3rem; font-weight: 600; }
+.xr-kpi-note { margin-left: 0.35rem; font-size: 0.85rem; color: var(--clr-text-muted, #57606a); }
 .xr-filters { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: end; }
 .xr-filters label { display: grid; gap: 0.15rem; font-size: 0.8rem; font-weight: 600; min-width: 9rem; }
 .xr-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
