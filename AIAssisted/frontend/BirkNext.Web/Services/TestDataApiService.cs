@@ -65,6 +65,22 @@ public interface ITestDataApiService
     Task<(TestDataResetResult? Result, string? Error)> ResetAsync(int generatedFixturesRemoved, CancellationToken ct = default) =>
         Task.FromResult<(TestDataResetResult?, string?)>((null, Unavailable));
 
+    // Added data (typed resources): saved as Draft versions; never approved, bound or executed by these calls.
+    Task<(IReadOnlyList<TestDataResourceView>? Resources, string? Error)> ResourcesAsync(CancellationToken ct = default) =>
+        Task.FromResult<(IReadOnlyList<TestDataResourceView>?, string?)>((null, Unavailable));
+    Task<(TestDataResourceView? Resource, string? Error)> ResourceAsync(string alias, CancellationToken ct = default) => Task.FromResult<(TestDataResourceView?, string?)>((null, Unavailable));
+    Task<(TestDataResourceValidation? Validation, string? Error)> ValidateResourceAsync(TestDataResourceDraft draft, CancellationToken ct = default) =>
+        Task.FromResult<(TestDataResourceValidation?, string?)>((null, Unavailable));
+    /// <summary>Creates (<paramref name="alias"/> null) or saves a new version (PUT, with the version the editor started from).</summary>
+    Task<(TestDataResourceSaveResult? Result, string? Error)> SaveResourceAsync(string? alias, TestDataResourceDraft draft, CancellationToken ct = default) =>
+        Task.FromResult<(TestDataResourceSaveResult?, string?)>((null, Unavailable));
+    Task<(TestDataResourceSaveResult? Result, string? Error)> DuplicateResourceAsync(string alias, string newAlias, CancellationToken ct = default) =>
+        Task.FromResult<(TestDataResourceSaveResult?, string?)>((null, Unavailable));
+    Task<(IReadOnlyList<TestDataOperationOption>? Operations, string? Error)> ResourceOperationsAsync(string kind, CancellationToken ct = default) =>
+        Task.FromResult<(IReadOnlyList<TestDataOperationOption>?, string?)>((null, Unavailable));
+    Task<(TestDataResourceReadiness? Readiness, string? Error)> ResourceReadinessAsync(string alias, TestDataOperationRef operation, CancellationToken ct = default) =>
+        Task.FromResult<(TestDataResourceReadiness?, string?)>((null, Unavailable));
+
     const string Unavailable = "This Test Data action is not available in this host.";
 }
 
@@ -196,6 +212,28 @@ public sealed class TestDataApiService(HttpClient http) : ITestDataApiService
 
     public Task<(TestDataResetResult? Result, string? Error)> ResetAsync(int generatedFixturesRemoved, CancellationToken ct = default) =>
         SendAsync<TestDataResetResult>(HttpMethod.Post, $"api/test-data/reset?generatedFixturesRemoved={generatedFixturesRemoved}", new { }, ct);
+
+    public Task<(IReadOnlyList<TestDataResourceView>? Resources, string? Error)> ResourcesAsync(CancellationToken ct = default) =>
+        SendAsync<IReadOnlyList<TestDataResourceView>>(HttpMethod.Get, "api/test-data/resources", null, ct);
+
+    public Task<(TestDataResourceView? Resource, string? Error)> ResourceAsync(string alias, CancellationToken ct = default) =>
+        SendAsync<TestDataResourceView>(HttpMethod.Get, $"api/test-data/resources/{Uri.EscapeDataString(alias)}", null, ct);
+
+    public Task<(TestDataResourceValidation? Validation, string? Error)> ValidateResourceAsync(TestDataResourceDraft draft, CancellationToken ct = default) =>
+        SendAsync<TestDataResourceValidation>(HttpMethod.Post, "api/test-data/resources/validate", draft, ct);
+
+    public Task<(TestDataResourceSaveResult? Result, string? Error)> SaveResourceAsync(string? alias, TestDataResourceDraft draft, CancellationToken ct = default) =>
+        alias is null ? SendAsync<TestDataResourceSaveResult>(HttpMethod.Post, "api/test-data/resources", draft, ct)
+            : SendAsync<TestDataResourceSaveResult>(HttpMethod.Put, $"api/test-data/resources/{Uri.EscapeDataString(alias)}", draft, ct);
+
+    public Task<(TestDataResourceSaveResult? Result, string? Error)> DuplicateResourceAsync(string alias, string newAlias, CancellationToken ct = default) =>
+        SendAsync<TestDataResourceSaveResult>(HttpMethod.Post, $"api/test-data/resources/{Uri.EscapeDataString(alias)}/duplicate", new { alias = newAlias }, ct);
+
+    public Task<(IReadOnlyList<TestDataOperationOption>? Operations, string? Error)> ResourceOperationsAsync(string kind, CancellationToken ct = default) =>
+        SendAsync<IReadOnlyList<TestDataOperationOption>>(HttpMethod.Get, $"api/test-data/resources/operations?kind={Uri.EscapeDataString(kind)}", null, ct);
+
+    public Task<(TestDataResourceReadiness? Readiness, string? Error)> ResourceReadinessAsync(string alias, TestDataOperationRef operation, CancellationToken ct = default) =>
+        SendAsync<TestDataResourceReadiness>(HttpMethod.Post, $"api/test-data/resources/{Uri.EscapeDataString(alias)}/readiness", operation, ct);
 
     /// <summary>A typed call whose body is returned also on a refusal (409/422 carry the outcome); the error is the outcome's message or the status.</summary>
     private async Task<(T? Body, string? Error)> SendAsync<T>(HttpMethod method, string path, object? payload, CancellationToken ct) where T : class

@@ -11,7 +11,8 @@ namespace BirkNext.Api.Services.TestData;
 /// </summary>
 public sealed class TestDataCatalogService(TestDataSchemaValidationService validation, TestDataCatalog catalog, TestDataRegistryStore registry,
     TestDataCandidateService candidates, IReviewSourceEvidenceProvider sources, TimeProvider time, TestDataLifecycleService? lifecycle = null,
-    IEnumerable<ITestDataConsumerDeclarations>? consumers = null, CanonicalFixtureStore? canonicalFixtures = null, IEnumerable<ITestDataCanonicalFixtures>? canonical = null)
+    IEnumerable<ITestDataConsumerDeclarations>? consumers = null, CanonicalFixtureStore? canonicalFixtures = null, IEnumerable<ITestDataCanonicalFixtures>? canonical = null,
+    TestDataResourceService? resources = null)
 {
     /// <summary>The page view: summaries enriched with consumer counts and contract status (drift against the latest snapshot of the repository).</summary>
     public async Task<TestDataCatalogView> ViewAsync(CancellationToken ct)
@@ -260,6 +261,11 @@ public sealed class TestDataCatalogService(TestDataSchemaValidationService valid
         if (usage.RequirementId is not null && requirement is null) return (null, "Unknown requirement.");
         var environment = usage.EnvironmentId ?? requirement?.EnvironmentId;
         if (!TestDataCatalogRules.InScope(asset, environment)) return (null, $"{asset.Alias} is scoped to {asset.Environment}, not {environment}.");
+        // Added REST templates / GraphQL variables are checked against the operation's current contract: a contract that changed since the data was
+        // authored (missing required parameter, type mismatch, operation gone) blocks the binding instead of producing a request that cannot work.
+        if (resources is not null && asset.SourceId == AuthoredTestDataProvider.ProviderId && asset.SchemaRef?.Split('#', 2) is [var contractId, var operation]
+            && await resources.ReadinessAsync(asset.Alias, new(null, contractId, operation), ct) is { Ready: false } readiness)
+            return (null, $"{asset.Alias} cannot be bound for {operation}: {string.Join(" ", readiness.Blockers)}");
         var stored = registry.Bind(usage with
         {
             Id = $"use-{Guid.NewGuid():N}"[..16], AssetFingerprint = TestDataCatalogRules.Version(asset), EnvironmentId = environment,

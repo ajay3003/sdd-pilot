@@ -143,6 +143,7 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
         TestDataOwnership.Configuration => "Supplied by the backend's configuration; change it there. BirkNext never edits explicit configuration.",
         TestDataOwnership.Registered => "A registered asset records metadata and structure only; its value is supplied by a configured value source under the same alias.",
         TestDataOwnership.Generated => "An XML/JSON payload is never changed in place. Regenerate it as a new draft from Test Data → Create XML fixture; the approved version stays unchanged.",
+        TestDataOwnership.Authored => "Added data is edited with Edit data, which saves a new version; earlier versions and the approved one stay unchanged.",
         _ => "This asset's value cannot be edited in Test Data.",
     };
 
@@ -234,7 +235,7 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
         var removed = asset.Ownership switch
         {
             TestDataOwnership.Registered => registry.RemoveAsset(asset.Alias),
-            TestDataOwnership.SessionEntered => EditorOf(asset)?.Remove(asset) == true,
+            TestDataOwnership.SessionEntered or TestDataOwnership.Authored => EditorOf(asset)?.Remove(asset) == true,
             _ => false,
         };
         if (!removed)

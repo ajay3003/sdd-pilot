@@ -89,8 +89,9 @@ public sealed class TestDataCatalog(IEnumerable<ITestDataProvider> providers, Ti
         var approved = versions.LastOrDefault(v => approvedFingerprint is not null && ApprovalFingerprint(v) == approvedFingerprint)
             ?? versions.LastOrDefault(v => v.Approval == TestDataApproval.Approved);
         var latest = versions[^1];
-        if (approved is null || ReferenceEquals(approved, latest) || approved.Version >= latest.Version) return latest with { Versions = versions };
-        return approved with { Versions = versions, Draft = latest };
+        // A version is a complete asset from the provider, without the catalog's SourceId: keep the provider identity on the version returned.
+        if (approved is null || ReferenceEquals(approved, latest) || approved.Version >= latest.Version) return latest with { Versions = versions, SourceId = asset.SourceId };
+        return approved with { Versions = versions, Draft = latest with { SourceId = asset.SourceId }, SourceId = asset.SourceId };
     }
 
     /// <summary>A specific version of an asset (null = the current one).</summary>

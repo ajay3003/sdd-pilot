@@ -716,6 +716,13 @@ builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataProvider>(
 // Test Data registry: registered asset metadata, lifecycle decisions, consumer requirements and usage references (workstation-local JSON, no values).
 builder.Services.AddSingleton<BirkNext.Api.Services.TestData.TestDataRegistryStore>();
 builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataProvider>(sp => new BirkNext.Api.Services.TestData.RegisteredTestDataProvider(sp.GetRequiredService<BirkNext.Api.Services.TestData.TestDataRegistryStore>()));
+// Added data (Test Data → Add data): typed synthetic resources with append-only versions (authored.json next to the registry), one more provider
+// of the same catalog — approval, deprecation, matching and Delete/Reset go through the existing Test Data paths.
+builder.Services.AddSingleton<BirkNext.Api.Services.TestData.AuthoredTestDataStore>();
+builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataProvider>(sp => new BirkNext.Api.Services.TestData.AuthoredTestDataProvider(sp.GetRequiredService<BirkNext.Api.Services.TestData.AuthoredTestDataStore>()));
+builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataAssetEditor>(sp => new BirkNext.Api.Services.TestData.AuthoredTestDataEditor(sp.GetRequiredService<BirkNext.Api.Services.TestData.AuthoredTestDataStore>()));
+builder.Services.AddScoped(sp => new BirkNext.Api.Services.TestData.TestDataResourceService(sp.GetRequiredService<BirkNext.Api.Services.TestData.AuthoredTestDataStore>(),
+    sp.GetRequiredService<BirkNext.Api.Services.TestData.TestDataCatalog>(), sp.GetService<BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider>()));
 // Canonical fixtures Test Packs declare (protected by stable asset id once they resolve to exactly one registered fixture).
 builder.Services.AddSingleton<BirkNext.Api.Services.TestData.ITestDataCanonicalFixtures, BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerCanonicalFixtures>();
 // Consumers that declare the Test Data they consume: their requirements and deterministic bindings are persisted (usage by stable asset id).

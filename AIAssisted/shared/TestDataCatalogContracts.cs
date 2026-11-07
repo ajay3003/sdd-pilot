@@ -259,7 +259,7 @@ public sealed record TestDataXmlBindResult(string? Xml, IReadOnlyList<string> Pr
 /// session-entered, registered (manual, source candidate, observed) and generated assets are local data.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum TestDataOwnership { Unknown, ProtectedDefault, Configuration, SessionEntered, Registered, Generated }
+public enum TestDataOwnership { Unknown, ProtectedDefault, Configuration, SessionEntered, Registered, Generated, Authored }
 
 /// <summary>Persisted protection kinds. Protected ≠ approved: approval says an asset/version may be used; protection says it is baseline data that
 /// Delete and Maintenance reset never remove (its current content is kept — reset never restores factory values).</summary>
@@ -274,7 +274,8 @@ public static class TestDataProtectionKinds
 public static class TestDataOwnerships
 {
     /// <summary>Local Test Data that Delete may remove and Maintenance reset removes.</summary>
-    public static bool Deletable(TestDataOwnership ownership) => ownership is TestDataOwnership.SessionEntered or TestDataOwnership.Registered or TestDataOwnership.Generated;
+    public static bool Deletable(TestDataOwnership ownership) => ownership is TestDataOwnership.SessionEntered or TestDataOwnership.Registered or TestDataOwnership.Generated
+        or TestDataOwnership.Authored;
 
     public static string Label(TestDataOwnership ownership) => ownership switch
     {
@@ -283,6 +284,7 @@ public static class TestDataOwnerships
         TestDataOwnership.SessionEntered => "Entered for this session",
         TestDataOwnership.Registered => "Registered in Test Data",
         TestDataOwnership.Generated => "Generated fixture",
+        TestDataOwnership.Authored => "Added in Test Data",
         _ => "Unknown owner",
     };
 

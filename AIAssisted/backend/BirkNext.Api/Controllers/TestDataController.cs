@@ -193,4 +193,55 @@ public sealed class TestDataController(TestDataSchemaValidationService catalog, 
     [HttpPost("reset")]
     public async Task<ActionResult<TestDataResetResult>> Reset([FromServices] TestDataLifecycleService lifecycle, [FromQuery] int generatedFixturesRemoved, CancellationToken ct) =>
         Ok(await lifecycle.ResetAsync(Math.Max(0, generatedFixturesRemoved), ct));
+
+    // ── Added data (typed resources authored in Test Data): saved as Draft versions; never approved, bound or executed here ─────────
+
+    [HttpGet("resources")]
+    public ActionResult<IReadOnlyList<TestDataResourceView>> Resources([FromServices] TestDataResourceService resources) => Ok(resources.List());
+
+    [HttpGet("resources/{alias}")]
+    public ActionResult<TestDataResourceView> Resource([FromServices] TestDataResourceService resources, string alias) =>
+        resources.Get(alias) is { } view ? Ok(view) : NotFound();
+
+    /// <summary>Validates a draft with the same rules as Save (syntax, type, contract, references, sensitive data) without saving.</summary>
+    [HttpPost("resources/validate")]
+    [RequestSizeLimit(TestDataResourceRules.MaxPayloadBytes + 64 * 1024)]
+    public async Task<ActionResult<TestDataResourceValidation>> ValidateResource([FromServices] TestDataResourceService resources, [FromBody] TestDataResourceDraft draft, CancellationToken ct) =>
+        Ok(await resources.ValidateAsync(draft, ct));
+
+    [HttpPost("resources")]
+    [RequestSizeLimit(TestDataResourceRules.MaxPayloadBytes + 64 * 1024)]
+    public async Task<ActionResult<TestDataResourceSaveResult>> CreateResource([FromServices] TestDataResourceService resources, [FromBody] TestDataResourceDraft draft, CancellationToken ct)
+    {
+        var result = await resources.CreateAsync(draft, ct);
+        return result.Saved ? Ok(result) : UnprocessableEntity(result);
+    }
+
+    /// <summary>Saves a new version; <see cref="TestDataResourceDraft.ExpectedVersion"/> must be the current one (409 otherwise).</summary>
+    [HttpPut("resources/{alias}")]
+    [RequestSizeLimit(TestDataResourceRules.MaxPayloadBytes + 64 * 1024)]
+    public async Task<ActionResult<TestDataResourceSaveResult>> UpdateResource([FromServices] TestDataResourceService resources, string alias, [FromBody] TestDataResourceDraft draft, CancellationToken ct)
+    {
+        var result = await resources.UpdateAsync(alias, draft, ct);
+        return result.Saved || result.Message == "Nothing changed." ? Ok(result) : result.Conflict ? Conflict(result) : result.Resource is null && result.Message == "Not found." ? NotFound(result) : UnprocessableEntity(result);
+    }
+
+    public sealed record DuplicateResourceRequest(string Alias);
+
+    [HttpPost("resources/{alias}/duplicate")]
+    public async Task<ActionResult<TestDataResourceSaveResult>> DuplicateResource([FromServices] TestDataResourceService resources, string alias, [FromBody] DuplicateResourceRequest request, CancellationToken ct)
+    {
+        var result = await resources.DuplicateAsync(alias, request.Alias ?? "", ct);
+        return result.Saved ? Ok(result) : result.Message == "Not found." ? NotFound(result) : UnprocessableEntity(result);
+    }
+
+    /// <summary>Discovered REST (<c>kind=rest</c>) or GraphQL (<c>kind=graphql</c>) operations with declared parameters, for template editors.</summary>
+    [HttpGet("resources/operations")]
+    public async Task<ActionResult<IReadOnlyList<TestDataOperationOption>>> ResourceOperations([FromServices] TestDataResourceService resources, [FromQuery] string kind,
+        [FromQuery] Guid? snapshotId, CancellationToken ct) => Ok(await resources.OperationsAsync(kind ?? "rest", snapshotId, ct));
+
+    /// <summary>Readiness of a resource for one operation (contract checks of its current version + approval). Nothing is executed.</summary>
+    [HttpPost("resources/{alias}/readiness")]
+    public async Task<ActionResult<TestDataResourceReadiness>> ResourceReadiness([FromServices] TestDataResourceService resources, string alias, [FromBody] TestDataOperationRef operation, CancellationToken ct) =>
+        await resources.ReadinessAsync(alias, operation, ct) is { } readiness ? Ok(readiness) : NotFound();
 }
