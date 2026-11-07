@@ -70,8 +70,10 @@ public sealed class IntegrationTopologyApiService(HttpClient http) : IIntegratio
         {
             using var response = await http.PostAsJsonAsync(path, new TopologyRequest([.. observations]), Json, ct);
             if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<T>(Json, ct), null);
+            // What the backend's IntegrationConfigurationWriteHandler actually accepts; local trusted execution does not grant configuration writes.
             return (null, response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
-                ? "Discovering interfaces needs the integration-configuration permission (or local trusted execution)."
+                ? "Discovering interfaces changes integration configuration, which this session may not do. It needs the IntegrationConfiguration.Write "
+                  + "permission from Microsoft Entra ID, or a local development backend with local configuration writes enabled."
                 : $"{Title}: the backend answered HTTP {(int)response.StatusCode}.");
         }
         catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e))
