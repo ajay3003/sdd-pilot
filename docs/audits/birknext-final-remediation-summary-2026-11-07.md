@@ -12,7 +12,7 @@ checks ran on the isolated copy (`birknext_g67`, API :5099, web :5199). Earlier 
 | G1 Source baseline | **PASS** | HEAD recorded per batch; build worktree content compared to HEAD by blob hash before each build/test batch. |
 | G2 Backend build | **PASS** | Release publish of the API at `60671884`, 0 errors (package build). |
 | G3 Frontend build | **PASS** | Release publish of the web app at `60671884`, 0 errors; the packaged bundle is byte-identical to the browser-verified one. |
-| G4 Backend regression | **PARTIAL** | Downloads dependency removed; partitions 1–5 + 6a/6b at `13c7821c`: **4,697 passed, 11 skipped, 0 failed**. Partition 6c was **NOT RUN** (stopped by Claude Code's low-memory protection while idle; not restarted without the user's go-ahead). Backend changed afterwards (Git Sources); the affected suites pass (181). |
+| G4 Backend regression | **PASS** | Complete run at final HEAD `ffb75ab1` (all six partitions incl. 6c): **6,011 passed, 0 failed, 19 skipped** (opt-in external tests); 4,716 of 4,716 discovered methods executed — see §11. (Earlier the same day: PARTIAL, partition 6c interrupted by memory protection.) |
 | G5 Frontend regression | **PASS** | **8,463 / 8,463** at `60671884`. |
 | G6 XML fixture save/reload | **PASS** | 22/22 (2026-11-07 gap closure); no XML/persistence code changed since. |
 | G7 Cross-module workflows | **PASS** | Delivery → Release Readiness: backend chain test + browser 16/16; interrupted import: 4 failure-injection tests; A–F from the gap closure. |
@@ -20,8 +20,8 @@ checks ran on the isolated copy (`birknext_g67`, API :5099, web :5199). Earlier 
 | G9 Localhost security | **PARTIAL** | HTTP_PORTS/HTTPS_PORTS binding bypass found and fixed (in-process); runtime starts of the widening variants were denied by the local permission policy; no second Windows account. |
 | G10 Tester package | **PARTIAL** | Rebuilt from `60671884` and validated from a clean copy; launcher fixes verified on it. **No clean PC available — clean-PC acceptance NOT RUN** (checklist: `birknext-tester-package-clean-pc-checklist-2026-11-07.md`). |
 
-**Overall: PARTIAL** — G4 (one partition not run on final source), G9 (permission/second account) and G10 (clean PC) need resources this
-session did not have. No gate is claimed beyond its evidence.
+**Overall: PARTIAL** — G9 (permission/second account) and G10 (clean PC) need resources this session did not have; G4 passed on the final
+source (§11). No gate is claimed beyond its evidence.
 
 ## 2. Defects fixed in this pass (each reproduced first)
 
@@ -126,3 +126,25 @@ page under "Microsoft Entra administrator setup" with Copy.
 
 `503df79c` G4 fixture/gate · `a6ede4c2` BQA-001 HTTP_PORTS · `4edc0885` BQA-016/017 launcher · `13c7821c` G7 tests · `dce2277a` Git Sources
 live settings + guided steps · `60671884` Git Sources six-step setup · this report.
+
+## 11. G4 complete run on the final source (user-requested, 2026-11-07)
+
+Source: HEAD `ffb75ab1` before and after the run; the build worktree's 3,482 tracked source files (`AIAssisted/`, `scripts/`, docs excluded)
+byte-identical to HEAD (blob hashes); backend tests rebuilt from it. Existing memory-safe partitions, foreground, one test host at a time,
+1.5 GB floor — never reached (lowest free 3.3 GB); no safeguard disabled.
+
+| Partition | Passed | Skipped | Failed | Peak memory |
+|---|---|---|---|---|
+| 1 | 983 | 2 | 0 | 3.7 GB |
+| 2 | 1,056 | 5 | 0 | 3.0 GB |
+| 3 | 806 | 0 | 0 | 0.6 GB |
+| 4 | 649 | 1 | 0 | 1.2 GB |
+| 5 | 520 | 3 | 0 | 0.8 GB |
+| 6a / 6b / 6c | 138 / 550 / 1,309 | 0 / 0 / 8 | 0 | 0.8 / 0.4 / 2.1 GB |
+| **Total** | **6,011** | **19** | **0** | |
+
+Reconciliation: 6,030 result rows (facts + theory rows) = 6,011 + 19 + 0; `--list-tests` discovers 4,716 methods, all 4,716 executed, none
+discovered-but-not-run, none in two partitions; 16 identical full names are theory rows within one partition. The 19 skips are opt-in
+external tests, each reported as Skipped with its reason: 7 real-archive acceptance tests (`BIRKNEXT_REAL_ARCHIVE_DIR` / generated-documentation
+archive), 5 live M2LB dev tests (network), 6 real ZAP container tests, 1 real headless Edge test — excluded by the no-external-systems rule,
+not failures. Frontend 8,463/8,463 at `60671884` still applies (only documentation changed since). **G4: PASS.**

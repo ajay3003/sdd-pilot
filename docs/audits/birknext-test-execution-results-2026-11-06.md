@@ -164,3 +164,9 @@ partition 6c **NOT RUN** (stopped by memory protection; not restarted without th
 (Git Sources/Azure/Admin/sign-in 181). Count reconciliation: result rows (facts + theory rows) vs `--list-tests` methods — see the summary §4.
 Preflight tests: 0 failures (7 endpoint, 8 readiness, 8 container-probe cases added). Opt-in real archives: 4 passed, 1 skipped, 1 failed
 (archive drift).
+
+## G4 complete run — final HEAD `ffb75ab1` (2026-11-07)
+
+All six partitions (6 split in 6a/6b/6c) on source byte-identical to HEAD: **6,011 passed, 0 failed, 19 skipped** (opt-in external tests:
+real archives 7, live M2LB dev 5, real ZAP 6, real headless Edge 1). 6,030 result rows; 4,716 of 4,716 discovered methods executed; none in two
+partitions. Memory floor never reached. **G4: PASS.** Details: `birknext-final-remediation-summary-2026-11-07.md` §11.

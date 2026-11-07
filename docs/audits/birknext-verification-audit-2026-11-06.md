@@ -129,3 +129,9 @@ dependency removed; 4,697 passed / 11 skipped / 0 failed in partitions 1–5, 6a
 G9 **PARTIAL** (HTTP_PORTS binding gap fixed in-process; runtime variants denied by permission policy; no second account); G10 **PARTIAL**
 (package rebuilt and validated; no clean PC). Git Sources: local setup VERIFIED (browser 34/34); real Microsoft sign-in and Azure DevOps
 access NOT VERIFIED (external app registration required). **Overall: PARTIAL.**
+
+## G4 — complete backend run on the final source (2026-11-07)
+
+HEAD `ffb75ab1`: 6,011 passed, 0 failed, 19 skipped (opt-in external tests), all 4,716 discovered methods executed once. **G4: PASS.**
+Gates now: G1–G8 PASS; G9 PARTIAL (runtime binding variants denied by permission policy; no second Windows account); G10 PARTIAL (no clean PC).
+**Overall: PARTIAL.**
