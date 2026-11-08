@@ -119,6 +119,20 @@ public sealed class ContractTestingController(ContractRegistryService registry, 
     public async Task<ActionResult<ContractTestRevisionDiff>> CompareRevisions(Guid id, [FromQuery] int from, [FromQuery] int to, CancellationToken ct) =>
         await tests.CompareAsync(id, from, to, ct) is { } diff ? Ok(diff) : NotFound();
 
+    /// <summary>A reviewable update proposal to the latest contract version (nothing is saved).</summary>
+    [HttpGet("tests/{id:guid}/migration")]
+    public async Task<ActionResult<ContractTestMigrationProposal>> Migration(Guid id, CancellationToken ct) =>
+        await tests.MigrationAsync(id, ct) is { } proposal ? Ok(proposal) : NotFound();
+
+    public sealed record ApplyMigrationRequest(int ExpectedRevision);
+
+    [HttpPost("tests/{id:guid}/migration")]
+    public async Task<ActionResult<ContractTestSaveResult>> ApplyMigration(Guid id, [FromBody] ApplyMigrationRequest request, CancellationToken ct)
+    {
+        var result = await tests.ApplyMigrationAsync(id, request.ExpectedRevision, ct);
+        return result.Saved ? Ok(result) : result.Test is null ? NotFound() : result.Conflict ? Conflict(result) : UnprocessableEntity(result);
+    }
+
     public sealed record RevertRequest(int Revision, int ExpectedRevision);
 
     [HttpPost("tests/{id:guid}/revert")]

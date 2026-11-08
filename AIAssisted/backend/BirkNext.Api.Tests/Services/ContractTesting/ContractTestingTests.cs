@@ -384,12 +384,15 @@ public sealed class ContractTestingTests : IAsyncLifetime
         // A new contract version: the impact per test, readiness follows it, and regeneration surfaces the newly required value.
         (await registry.ImportAsync(new() { ContractKey = key, FileName = "v2.json", Content = V2Json }, default)).Version.Should().Be(2);
         var impacted = (await tests.ListAsync(key, Local, default)).ToDictionary(v => (v.Test.Operation, v.Test.Kind));
-        impacted[("GET /admin/reports", ContractTestKind.Positive)].Impact!.Level.Should().Be(ContractTestImpactLevel.Broken);
-        impacted[("GET /children", ContractTestKind.Positive)].Impact!.Level.Should().Be(ContractTestImpactLevel.NeedsUpdate);
-        impacted[("GET /children", ContractTestKind.Positive)].Impact!.Reasons.Should().Contain(r => r.Contains("school"));
-        impacted[("POST /children", ContractTestKind.Positive)].Impact!.Level.Should().Be(ContractTestImpactLevel.NeedsUpdate);
-        impacted[("POST /children", ContractTestKind.Positive)].Impact!.Reasons.Should().Contain(r => r.Contains("NewChild.birthYear"));
-        impacted[("GET /children/{id}", ContractTestKind.Positive)].Impact!.Level.Should().Be(ContractTestImpactLevel.Review, "Child lost a property the response schema documented");
+        impacted[("GET /admin/reports", ContractTestKind.Positive)].Impact!.Level.Should().Be(ContractTestImpactLevel.Definite);
+        impacted[("GET /children", ContractTestKind.Positive)].Impact!.Level.Should().Be(ContractTestImpactLevel.Definite);
+        impacted[("GET /children", ContractTestKind.Positive)].Impact!.Reasons.Should().Contain(r => r.StartsWith("Definite") && r.Contains("input school is not sent"));
+        impacted[("POST /children", ContractTestKind.Positive)].Impact!.Level.Should().Be(ContractTestImpactLevel.Definite);
+        impacted[("POST /children", ContractTestKind.Positive)].Impact!.Reasons.Should().Contain(r => r.Contains("NewChild.birthYear") && r.Contains("does not send birthYear"));
+        impacted[("GET /children/{id}", ContractTestKind.Positive)].Impact!.Level.Should().Be(ContractTestImpactLevel.NoEvidence, "only an optional, unasserted response field was removed");
+        impacted[("GET /children", ContractTestKind.MissingRequiredInput)].Impact!.Level.Should().Be(ContractTestImpactLevel.NoEvidence, "status is still required and 400 still documented: the negative test stays valid");
+        impacted[("GET /children", ContractTestKind.MissingRequiredInput)].Impact!.Reasons.Should().Contain(r => r.Contains("stays invalid"));
+        impacted[("POST /children", ContractTestKind.MissingRequiredInput)].Impact!.Level.Should().Be(ContractTestImpactLevel.NoEvidence);
         impacted[("POST /children", ContractTestKind.Positive)].Readiness.State.Should().Be(ContractTestReadinessState.NotReady);
         impacted[("GET /admin/reports", ContractTestKind.Positive)].Readiness.State.Should().Be(ContractTestReadinessState.Blocked);
 
@@ -397,6 +400,17 @@ public sealed class ContractTestingTests : IAsyncLifetime
         diff.Changes.Select(c => c.ContractChange).Should().Contain([ContractChangeClass.OperationRemoved, ContractChangeClass.ParameterAddedRequired, ContractChangeClass.FieldAddedRequired, ContractChangeClass.FieldRemoved]);
         diff.Impacts.Should().HaveCount(6);
 
+        var getChildren = impacted[("GET /children", ContractTestKind.Positive)].Test;
+        var proposal = (await tests.MigrationAsync(getChildren.Id, default))!;
+        proposal.Proposed.ContractVersion.Should().Be(2);
+        proposal.Proposed.Template.Query.Should().ContainKey("school");
+        proposal.Differences.Should().Contain(d => d.StartsWith("Query:")).And.Contain(d => d.StartsWith("Contract version: v1 → v2"));
+        proposal.Notes.Should().Contain(n => n.Contains("lacks school"));
+        (await tests.GetAsync(getChildren.Id, Local, default))!.Test.ContractVersion.Should().Be(1, "a proposal changes nothing until it is applied");
+        var applied = await tests.ApplyMigrationAsync(getChildren.Id, getChildren.Revision, default);
+        applied.Saved.Should().BeTrue(applied.Message);
+        applied.Test!.ContractVersion.Should().Be(2);
+        (await tests.RevisionAsync(getChildren.Id, getChildren.Revision, default))!.ContractVersion.Should().Be(1, "the old revision stays bound to v1");
         var regenerated = await tests.RegenerateAsync(impacted[("POST /children", ContractTestKind.Positive)].Test.Id, default);
         regenerated.Test!.ContractVersion.Should().Be(2);
         regenerated.Test.Binding.Should().Be(new ContractTestDataBinding("children-complete", 1), "the pinned Test Data is kept");
@@ -463,11 +477,13 @@ public sealed class ContractTestingTests : IAsyncLifetime
 
         (await registry.ImportAsync(new() { ContractKey = key, FileName = "children-v2.graphql", Content = GraphQlV2 }, default)).Version.Should().Be(2);
         var impact = (await tests.ListAsync(key, Local, default)).Where(v => v.Test.Kind == ContractTestKind.Positive).ToDictionary(v => v.Test.Operation, v => v.Impact!);
-        impact["query forbiddenReport"].Level.Should().Be(ContractTestImpactLevel.Broken);
-        impact["mutation createChild"].Level.Should().Be(ContractTestImpactLevel.NeedsUpdate);
+        impact["query forbiddenReport"].Level.Should().Be(ContractTestImpactLevel.Definite);
+        impact["mutation createChild"].Level.Should().Be(ContractTestImpactLevel.Definite);
         impact["mutation createChild"].Reasons.Should().Contain(r => r.Contains("NewChildInput.birthYear"));
-        impact["query children"].Level.Should().Be(ContractTestImpactLevel.NeedsUpdate, "an enum value of the argument type was removed");
-        impact["query child"].Level.Should().Be(ContractTestImpactLevel.Review, "the result type lost a field");
+        impact["query children"].Level.Should().Be(ContractTestImpactLevel.Definite, "its document selects Child.age, which v2 removed");
+        impact["query children"].Reasons.Should().Contain(r => r.StartsWith("No evidence") && r.Contains("Status.INACTIVE") && r.Contains("does not use it"), "the bound status ACTIVE is still allowed");
+        impact["query child"].Level.Should().Be(ContractTestImpactLevel.Definite, "the query document selects the removed age");
+        impact["query child"].Reasons.Should().Contain(r => r.Contains("the query document selects it"));
     }
 
     [Fact]

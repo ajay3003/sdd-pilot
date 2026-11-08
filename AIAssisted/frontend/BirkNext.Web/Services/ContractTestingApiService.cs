@@ -34,6 +34,8 @@ public interface IContractTestingApiService
     Task<(IReadOnlyList<ContractTestRevisionInfo>? Revisions, string? Error)> RevisionsAsync(Guid testId, CancellationToken ct = default);
     Task<(ContractTestRevisionDiff? Diff, string? Error)> CompareRevisionsAsync(Guid testId, int from, int to, CancellationToken ct = default);
     Task<(ContractTestSaveResult? Result, string? Error)> RevertTestAsync(Guid testId, int revision, int expectedRevision, CancellationToken ct = default);
+    Task<(ContractTestMigrationProposal? Proposal, string? Error)> MigrationAsync(Guid testId, CancellationToken ct = default);
+    Task<(ContractTestSaveResult? Result, string? Error)> ApplyMigrationAsync(Guid testId, int expectedRevision, CancellationToken ct = default);
 }
 
 public sealed record ContractBindingResponse(ContractEndpointBinding? Binding, List<ContractServerProposal> Proposals);
@@ -127,6 +129,12 @@ public sealed class ContractTestingApiService(HttpClient http) : IContractTestin
 
     public Task<(ContractTestSaveResult? Result, string? Error)> RevertTestAsync(Guid testId, int revision, int expectedRevision, CancellationToken ct = default) =>
         SendAsync<ContractTestSaveResult>(HttpMethod.Post, $"{Base}/tests/{testId}/revert", new { revision, expectedRevision }, ct, readErrorBody: true);
+
+    public Task<(ContractTestMigrationProposal? Proposal, string? Error)> MigrationAsync(Guid testId, CancellationToken ct = default) =>
+        SendAsync<ContractTestMigrationProposal>(HttpMethod.Get, $"{Base}/tests/{testId}/migration", null, ct);
+
+    public Task<(ContractTestSaveResult? Result, string? Error)> ApplyMigrationAsync(Guid testId, int expectedRevision, CancellationToken ct = default) =>
+        SendAsync<ContractTestSaveResult>(HttpMethod.Post, $"{Base}/tests/{testId}/migration", new { expectedRevision }, ct, readErrorBody: true);
 
     /// <summary>One request. A refusal's message (<c>{ "message": … }</c>) is shown as is; with <paramref name="readErrorBody"/> the typed body of a 422 is returned too.</summary>
     private async Task<(T? Body, string? Error)> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct, bool readErrorBody = false)

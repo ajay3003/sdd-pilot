@@ -504,6 +504,8 @@ public sealed record ContractOperation(string Name, string Kind, string? Path, L
     public bool HasExamples { get; init; }
     /// <summary>True when the analyzer recorded the detail properties (absent for older snapshots).</summary>
     public bool Detailed { get; init; }
+    /// <summary>OpenAPI <c>deprecated: true</c> / GraphQL <c>@deprecated</c> root field.</summary>
+    public bool Deprecated { get; init; }
 }
 
 public sealed record SourceContract
@@ -617,7 +619,7 @@ public enum SourceEvidenceChangeKind { Added, Removed, Changed }
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ContractChangeClass { None, OperationAdded, OperationRemoved, FieldAddedOptional, FieldAddedRequired, FieldRemoved, TypeChanged, RequirednessChanged, TypeAdded, TypeRemoved,
     CardinalityChanged, RestrictionChanged, NamespaceChanged, ImportChanged, VersionChanged, EnumValueAdded, EnumValueRemoved, OrderChanged,
-    ParameterAddedRequired, ParameterAddedOptional, ParameterRemoved, ParameterChanged, RequestBodyChanged, ResponseChanged }
+    ParameterAddedRequired, ParameterAddedOptional, ParameterRemoved, ParameterChanged, RequestBodyChanged, ResponseChanged, SecurityChanged, Deprecated, ServersChanged }
 
 public sealed record SourceEvidenceChange(SourceEvidenceDomain Domain, SourceEvidenceChangeKind Kind, string Area, string Key, string Name, string Detail,
     ContractChangeClass ContractChange = ContractChangeClass.None, ContractCompatibilityConcern? CompatibilityConcern = null);
@@ -755,7 +757,13 @@ public static class SourceEvidenceDiff
                 Add(SourceEvidenceChangeKind.Changed, op, $"response:{code}:schema", $"response {code} schema: {schema} → {op.ResponseSchemas[code]}", ContractChangeClass.ResponseChanged);
             if (was.ResultType != op.ResultType)
                 Add(SourceEvidenceChangeKind.Changed, op, "result", $"result type: {was.ResultType ?? "(none)"} → {op.ResultType ?? "(none)"}", ContractChangeClass.ResponseChanged);
+            if (!was.Security.Order(StringComparer.Ordinal).SequenceEqual(op.Security.Order(StringComparer.Ordinal)))
+                Add(SourceEvidenceChangeKind.Changed, op, "security", $"security: {(was.Security.Count == 0 ? "none" : string.Join(", ", was.Security))} → {(op.Security.Count == 0 ? "none" : string.Join(", ", op.Security))}", ContractChangeClass.SecurityChanged);
+            if (!was.Deprecated && op.Deprecated) Add(SourceEvidenceChangeKind.Changed, op, "deprecated", "deprecated", ContractChangeClass.Deprecated);
         }
+        if (!before.Servers.SequenceEqual(after.Servers, StringComparer.Ordinal) && (before.Servers.Count > 0 || after.Servers.Count > 0))
+            changes.Add(new(SourceEvidenceDomain.Contracts, SourceEvidenceChangeKind.Changed, "Servers", $"{after.Id}|servers", after.Name,
+                $"declared servers: {(before.Servers.Count == 0 ? "none" : string.Join(", ", before.Servers))} → {(after.Servers.Count == 0 ? "none" : string.Join(", ", after.Servers))}", ContractChangeClass.ServersChanged));
         return changes;
     }
 

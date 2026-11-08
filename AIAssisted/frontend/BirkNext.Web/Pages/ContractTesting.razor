@@ -407,11 +407,30 @@
 
     private static string ImpactLabel(ContractTestImpactLevel l) => l switch
     {
-        ContractTestImpactLevel.Broken => "Broken by change",
-        ContractTestImpactLevel.NeedsUpdate => "Needs update",
-        ContractTestImpactLevel.Review => "Review",
-        _ => "Unaffected",
+        ContractTestImpactLevel.Definite => "Definite impact",
+        ContractTestImpactLevel.Potential => "Potential impact",
+        ContractTestImpactLevel.NeedsReview => "Needs human review",
+        _ => "No evidence of impact",
     };
+
+    private ContractTestMigrationProposal? _proposal;
+
+    private async Task ProposalAsync(Guid testId)
+    {
+        if (Api is not { } api) return;
+        (_proposal, _error) = await api.MigrationAsync(testId);
+    }
+
+    /// <summary>Applies the reviewed proposal as a new revision; the old revision and its executions stay bound to the old contract version.</summary>
+    private async Task ApplyProposalAsync(ContractTestDefinition test)
+    {
+        if (Api is not { } api) return;
+        _busy = true; _error = null; _message = null;
+        var (result, error) = await api.ApplyMigrationAsync(test.Id, test.Revision);
+        _busy = false;
+        if (result is { Saved: true }) { _proposal = null; _message = result.Message; await ReloadAsync(); }
+        else _error = result?.Message ?? error;
+    }
 
     private RenderFragment OperationsView(ApiContractDetail d) => @<section class="ct-card" aria-labelledby="ct-ops-h" data-testid="ct-operations">
         <div class="ct-row">
@@ -499,9 +518,19 @@
         </ul>
         @if (view.Impact is { } impact)
         {
-            <p data-testid="ct-detail-impact"><strong>@ImpactLabel(impact.Level)</strong> (v@(impact.FromVersion) → v@(impact.ToVersion)): @string.Join(" ", impact.Reasons)</p>
-            @if (impact.Level is ContractTestImpactLevel.NeedsUpdate or ContractTestImpactLevel.Review)
-            { <button class="btn btn-secondary" data-testid="ct-regenerate" disabled="@_busy" @onclick="() => RegenerateAsync(test.Id)">Regenerate from v@(impact.ToVersion)</button> }
+            <p data-testid="ct-detail-impact"><strong>@ImpactLabel(impact.Level)</strong> of contract v@(impact.ToVersion) on this test (bound to v@(impact.FromVersion)).</p>
+            <ul class="ct-checks" data-testid="ct-impact-reasons">@foreach (var r in impact.Reasons) { <li>@r</li> }</ul>
+            <button class="btn btn-secondary" data-testid="ct-proposal" disabled="@_busy" @onclick="() => ProposalAsync(test.Id)">Review update proposal for v@(impact.ToVersion)</button>
+            @if (_proposal is { } p && p.TestId == test.Id)
+            {
+                <div class="ct-detail" data-testid="ct-proposal-panel">
+                    <strong>Proposed update v@(p.FromVersion) → v@(p.ToVersion) — not saved</strong>
+                    @if (p.Differences.Count > 0) { <ul class="ct-checks" data-testid="ct-proposal-diff">@foreach (var d in p.Differences) { <li>@d</li> }</ul> }
+                    <ul class="ct-checks ct-muted" data-testid="ct-proposal-notes">@foreach (var n in p.Notes) { <li>@n</li> }</ul>
+                    @if (p.Proposed.ContractVersion != test.ContractVersion)
+                    { <button class="btn btn-primary" data-testid="ct-proposal-apply" disabled="@_busy" @onclick="() => ApplyProposalAsync(test)">Apply as revision @(test.Revision + 1)</button> }
+                </div>
+            }
         }
 
         <h5>Values the test needs</h5>

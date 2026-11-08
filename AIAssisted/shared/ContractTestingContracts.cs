@@ -121,7 +121,15 @@ public enum ContractTestReadinessState { Ready, NotReady, Blocked }
 public sealed record ContractTestReadiness(ContractTestReadinessState State, List<ContractReadinessItem> Items, List<string> MissingValues);
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ContractTestImpactLevel { Unaffected, Review, NeedsUpdate, Broken }
+/// <summary>What a newer contract version means for a test, by evidence: NoEvidence (nothing the test sends, asserts or binds changed),
+/// NeedsReview (a change whose effect cannot be decided from the contract: security, servers, deprecation, a changed parameter a negative test
+/// targets), Potential (the test may now fail: a response it relies on changed, a value it sends is no longer declared), Definite (the test cannot
+/// pass as it is: its operation is gone, it lacks a newly required input, it asserts or selects something removed, its expected code is gone).</summary>
+public enum ContractTestImpactLevel { NoEvidence, NeedsReview, Potential, Definite }
+
+/// <summary>A reviewable update of a test to the latest contract version: the proposed definition (not saved) and how it differs from the current
+/// one. Applying it creates a new revision; the old revision and its executions stay bound to the old contract version.</summary>
+public sealed record ContractTestMigrationProposal(Guid TestId, int FromVersion, int ToVersion, ContractTestDefinition Proposed, List<string> Differences, List<string> Notes);
 
 /// <summary>What a newer contract version means for one test (from the test's version to the latest).</summary>
 public sealed record ContractTestImpact(Guid TestId, string TestName, string Operation, int FromVersion, int ToVersion, ContractTestImpactLevel Level, List<string> Reasons);

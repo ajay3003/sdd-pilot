@@ -213,7 +213,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         if (await registry.DocumentAsync(key, from, ct) is not { } before || await registry.DocumentAsync(key, to, ct) is not { } after) return null;
         var impacts = new List<ContractTestImpact>();
         foreach (var t in (await ListDefinitionsAsync(key, ct)).Where(t => t.ContractVersion == from))
-            impacts.Add(ContractTestRules.Impact(t, before, after, to));
+            impacts.Add(ContractTestRules.Impact(t, before, after, to, BoundStrings(t)));
         return new(key, from, to, ContractRegistryService.Changes(before, after), impacts);
     }
 
@@ -226,7 +226,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         async Task<SourceContract?> Doc(int v) { if (!docs.TryGetValue(v, out var d)) docs[v] = d = await registry.DocumentAsync(test.ContractKey, v, ct); return d; }
         var current = await Doc(test.ContractVersion);
         var newest = latest == test.ContractVersion ? current : await Doc(latest);
-        var impact = current is not null && newest is not null && latest != test.ContractVersion ? ContractTestRules.Impact(test, current, newest, latest) : null;
+        var impact = current is not null && newest is not null && latest != test.ContractVersion ? ContractTestRules.Impact(test, current, newest, latest, BoundStrings(test)) : null;
         var op = (newest ?? current)?.Operations.FirstOrDefault(o => o.Name == test.Operation) ?? current?.Operations.FirstOrDefault(o => o.Name == test.Operation);
         var binding = environment is { EnvironmentId.Length: > 0 } ? await BindingAsync(test.ContractKey, environment.EnvironmentId, ct) : null;
         var readiness = Readiness(test, latest, impact, op, environment, binding);
@@ -248,10 +248,12 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         if (impact is null) items.Add(new("Contract", ReadinessItemState.Ok, $"Generated from v{test.ContractVersion}, the latest version."));
         else items.Add(impact.Level switch
         {
-            ContractTestImpactLevel.Broken => new("Contract", ReadinessItemState.Blocked, $"v{latest} removed {test.Operation}. {string.Join(" ", impact.Reasons)}"),
-            ContractTestImpactLevel.NeedsUpdate => new("Contract", ReadinessItemState.Missing, $"v{latest} changed {test.Operation}: {string.Join(" ", impact.Reasons)} Regenerate the test from v{latest}."),
-            ContractTestImpactLevel.Review => new("Contract", ReadinessItemState.Warning, $"v{latest} changed the response: {string.Join(" ", impact.Reasons)}"),
-            _ => new("Contract", ReadinessItemState.Ok, $"v{latest} does not affect this test (generated from v{test.ContractVersion}). {string.Join(" ", impact.Reasons)}"),
+            ContractTestImpactLevel.Definite when impact.Reasons.Any(r => r.Contains("no longer exists", StringComparison.Ordinal)) =>
+                new("Contract", ReadinessItemState.Blocked, $"v{latest} removed {test.Operation}. Delete or retire the test."),
+            ContractTestImpactLevel.Definite => new("Contract", ReadinessItemState.Missing, $"Contract v{latest} breaks this test (it is bound to v{test.ContractVersion}): {string.Join(" ", impact.Reasons.Where(r => r.StartsWith("Definite", StringComparison.Ordinal)))} Review the update proposal."),
+            ContractTestImpactLevel.Potential => new("Contract", ReadinessItemState.Warning, $"Contract v{latest} may affect this test (bound to v{test.ContractVersion}): {string.Join(" ", impact.Reasons.Where(r => r.StartsWith("Potential", StringComparison.Ordinal)))}"),
+            ContractTestImpactLevel.NeedsReview => new("Contract", ReadinessItemState.Warning, $"Contract v{latest} needs a human review for this test: {string.Join(" ", impact.Reasons.Where(r => r.StartsWith("Needs", StringComparison.Ordinal)))}"),
+            _ => new("Contract", ReadinessItemState.Ok, $"No evidence that v{latest} affects this test (bound to v{test.ContractVersion})."),
         });
         // Test Data
         if (test.Inputs.Count == 0) items.Add(new("Test Data", ReadinessItemState.Ok, "The operation needs no input values."));
@@ -424,9 +426,69 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             : await LoadAsync(id, ct) is { } current && current.Revision == revision ? current : null;
 
     /// <summary>What differs between two revisions, field by field (assertions by id).</summary>
-    public async Task<ContractTestRevisionDiff?> CompareAsync(Guid id, int from, int to, CancellationToken ct)
+    public async Task<ContractTestRevisionDiff?> CompareAsync(Guid id, int from, int to, CancellationToken ct) =>
+        await RevisionAsync(id, from, ct) is { } a && await RevisionAsync(id, to, ct) is { } b ? new(id, from, to, Differences(a, b)) : null;
+
+    /// <summary>
+    /// A reviewable update of a test to the latest contract version: the definition regenerated from it (same id, name, kind, variant, description
+    /// and Test Data pin), keeping the tester's own assertions unless they check something the new version removed. Nothing is saved.
+    /// </summary>
+    public async Task<ContractTestMigrationProposal?> MigrationAsync(Guid id, CancellationToken ct)
     {
-        if (await RevisionAsync(id, from, ct) is not { } a || await RevisionAsync(id, to, ct) is not { } b) return null;
+        if (await LoadAsync(id, ct) is not { } test) return null;
+        var latest = await registry.LatestVersionAsync(test.ContractKey, ct) ?? 0;
+        var notes = new List<string>();
+        if (latest == test.ContractVersion) return new(id, test.ContractVersion, latest, test, [], ["The test is already bound to the latest contract version."]);
+        if (await registry.RawAsync(test.ContractKey, latest, ct) is not { } raw || raw.Document.Operations.FirstOrDefault(o => o.Name == test.Operation) is not { } op)
+            return new(id, test.ContractVersion, latest, test, [], [$"{test.Operation} does not exist in v{latest}: there is nothing to migrate to; retire or delete the test."]);
+        var now = _clock.GetUtcNow();
+        var generated = ContractTestRules.GenerateAny(raw.Document, test.ContractKey, latest, op, now);
+        var fresh = generated.FirstOrDefault(t => t.Kind == test.Kind && test.Variant.Length == 0);
+        if (fresh is null && generated.FirstOrDefault(t => t.Kind == ContractTestKind.Positive) is { } positive)
+        {
+            OpenApiSchemaValidator? validator = null;
+            if (raw.Document.Type == SourceContractType.OpenApi && raw.Text.Length > 0)
+                try { validator = OpenApiSchemaValidator.Parse(raw.Text) is { } root ? new OpenApiSchemaValidator(root) : null; } catch (Exception ex) when (ex is JsonException or FormatException) { }
+            fresh = ContractNegativeRules.Propose(raw.Document, validator, positive, op, now).FirstOrDefault(t => t.Kind == test.Kind && t.Variant == test.Variant);
+        }
+        if (fresh is null) return new(id, test.ContractVersion, latest, test, [], [$"v{latest} no longer gives {test.Operation} a {test.Kind} test{(test.Variant.Length > 0 ? $" for {test.Variant}" : "")}; edit the test by hand or retire it."]);
+        var generatedIds = fresh.Template.Assertions.Select(a => a.Id).ToHashSet(StringComparer.Ordinal);
+        var removedFields = SourceEvidenceDiff.ContractChanges((await registry.DocumentAsync(test.ContractKey, test.ContractVersion, ct))!, raw.Document)
+            .Where(c => c.ContractChange == ContractChangeClass.FieldRemoved).Select(c => c.Key.Split('|').Last().Split('.').Last()).ToHashSet(StringComparer.Ordinal);
+        var kept = new List<AssertionDefinition>();
+        foreach (var a in test.Template.Assertions.Where(a => !generatedIds.Contains(a.Id)))
+        {
+            if (a.Target is { } target && removedFields.Any(f => target.EndsWith($".{f}", StringComparison.Ordinal))) notes.Add($"Assertion {a.Id} ({a.Target}) is dropped: v{latest} removed that field.");
+            else { kept.Add(a); notes.Add($"Your assertion {a.Id} is kept."); }
+        }
+        var proposed = fresh with
+        {
+            Id = test.Id, Name = test.Name, Description = test.Description, Binding = test.Binding, Revision = test.Revision + 1, CreatedAt = test.CreatedAt, ReviewState = ContractTestReviewState.Draft,
+            Template = fresh.Template with { Assertions = [.. fresh.Template.Assertions, .. kept] }, Variant = test.Variant, WithoutAuthentication = test.WithoutAuthentication,
+        };
+        var (values, _) = BoundValues(proposed);
+        var (missing, _) = ContractTestRules.Missing(proposed, values.Keys.ToHashSet(StringComparer.Ordinal));
+        if (missing.Count > 0) notes.Add($"The pinned Test Data {(proposed.Binding is { } b ? $"{b.Alias}@v{b.Version}" : "(none)")} lacks {string.Join(", ", missing)}: pin a dataset that provides them after applying.");
+        notes.Add("Applying creates a new revision bound to v" + latest + "; earlier revisions and their executions stay bound to v" + test.ContractVersion + ".");
+        return new(id, test.ContractVersion, latest, proposed, Differences(test, proposed), notes);
+    }
+
+    /// <summary>Applies the reviewed migration proposal as a new revision (optimistic concurrency); never done automatically.</summary>
+    public async Task<ContractTestSaveResult> ApplyMigrationAsync(Guid id, int expectedRevision, CancellationToken ct)
+    {
+        if (await db.ContractTests.FirstOrDefaultAsync(t => t.Id == id, ct) is not { } row) return new(false, false, null, "Not found.", []);
+        var current = JsonSerializer.Deserialize<ContractTestDefinition>(row.DocumentJson, ExecutionEvidenceStore.Json)!;
+        if (expectedRevision != current.Revision) return new(false, true, current, $"The test was changed elsewhere (now revision {current.Revision}).", []);
+        var proposal = await MigrationAsync(id, ct);
+        if (proposal is null || proposal.Proposed.ContractVersion == current.ContractVersion)
+            return new(false, false, current, proposal?.Notes.FirstOrDefault() ?? "Nothing to migrate.", []);
+        var migrated = proposal.Proposed with { UpdatedAt = _clock.GetUtcNow() };
+        await PersistAsync(row, migrated, $"Migrated from v{proposal.FromVersion} to v{proposal.ToVersion} (reviewed proposal).", ct);
+        return new(true, false, migrated, $"Saved as revision {migrated.Revision}, bound to v{proposal.ToVersion}.", []);
+    }
+
+    private static List<string> Differences(ContractTestDefinition a, ContractTestDefinition b)
+    {
         var differences = new List<string>();
         void Field(string name, object? x, object? y)
         {
@@ -445,7 +507,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         foreach (var added in assertionsB.Keys.Except(assertionsA.Keys)) differences.Add($"Assertion added: {Describe(assertionsB[added])}");
         foreach (var removed in assertionsA.Keys.Except(assertionsB.Keys)) differences.Add($"Assertion removed: {Describe(assertionsA[removed])}");
         foreach (var both in assertionsA.Keys.Intersect(assertionsB.Keys).Where(k => assertionsA[k] != assertionsB[k])) differences.Add($"Assertion changed: {Describe(assertionsA[both])} → {Describe(assertionsB[both])}");
-        return new(id, from, to, differences);
+        return differences;
         static string Clip(string s) => s.Length > 120 ? s[..120] + "…" : s;
         static string Describe(AssertionDefinition x) => $"{x.Id} {x.Kind} {x.Operator}{(x.Target is null ? "" : " " + x.Target)}{(x.Expected is null ? "" : " " + x.Expected)}";
     }
@@ -513,6 +575,9 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         Id = Guid.NewGuid(), TestId = t.Id, Revision = t.Revision, DocumentJson = JsonSerializer.Serialize(t, ExecutionEvidenceStore.Json), ChangeNote = note.Length > 500 ? note[..500] : note,
         CreatedAt = _clock.GetUtcNow(),
     };
+
+    /// <summary>The bound values as text (for impact: which value a changed enum or parameter receives).</summary>
+    private Dictionary<string, string?> BoundStrings(ContractTestDefinition test) => BoundValues(test).Values.ToDictionary(v => v.Key, v => v.Value.Value, StringComparer.Ordinal);
 
     /// <summary>The bound dataset's values at the pinned version (never the latest unless that is the pinned one).</summary>
     private (Dictionary<string, TestDataTypedEntry> Values, string? Problem) BoundValues(ContractTestDefinition test)

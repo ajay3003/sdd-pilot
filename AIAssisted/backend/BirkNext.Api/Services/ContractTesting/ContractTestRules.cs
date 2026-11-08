@@ -282,48 +282,153 @@ public static partial class ContractTestRules
         ([.. test.Inputs.Where(i => i.Required && !provided.Contains(i.Name)).Select(i => i.Name)], [.. test.Inputs.Where(i => !i.Required && !provided.Contains(i.Name)).Select(i => i.Name)]);
 
     /// <summary>
-    /// What the change from <paramref name="before"/> to <paramref name="after"/> means for one test. Removed operation → Broken. A required
-    /// parameter added, a parameter or request body changed, or a required request field added/changed → NeedsUpdate. A changed success response
-    /// or response type → Review (assertions may no longer hold). Only optional additions or unrelated changes → Unaffected.
+    /// What the change from <paramref name="before"/> to <paramref name="after"/> means for one test, by evidence about what the test sends, asserts
+    /// and binds (see <see cref="ContractTestImpactLevel"/>). Each reason names the affected input, assertion, selection or binding. A negative
+    /// test stays valid while the value it omits or breaks is still constrained and its expected code is still documented. Nothing is changed.
     /// </summary>
-    public static ContractTestImpact Impact(ContractTestDefinition test, SourceContract before, SourceContract after, int toVersion)
+    public static ContractTestImpact Impact(ContractTestDefinition test, SourceContract before, SourceContract after, int toVersion, IReadOnlyDictionary<string, string?>? boundValues = null)
     {
         ContractTestImpact Result(ContractTestImpactLevel level, List<string> reasons) => new(test.Id, test.Name, test.Operation, test.ContractVersion, toVersion, level, reasons);
-        if (test.ContractVersion == toVersion) return Result(ContractTestImpactLevel.Unaffected, [$"Generated from the latest version (v{toVersion})."]);
+        if (test.ContractVersion == toVersion) return Result(ContractTestImpactLevel.NoEvidence, [$"Generated from the latest version (v{toVersion})."]);
         var op = after.Operations.FirstOrDefault(o => o.Name == test.Operation);
-        if (op is null) return Result(ContractTestImpactLevel.Broken, [$"{test.Operation} no longer exists in v{toVersion}."]);
+        if (op is null) return Result(ContractTestImpactLevel.Definite, [$"Operation: {test.Operation} no longer exists in v{toVersion}."]);
         var old = before.Operations.FirstOrDefault(o => o.Name == test.Operation);
+        var negative = test.Kind != ContractTestKind.Positive;
         var reasons = new List<string>();
-        var level = ContractTestImpactLevel.Unaffected;
-        void Raise(ContractTestImpactLevel l, string why) { reasons.Add(why); if (l > level) level = l; }
+        var level = ContractTestImpactLevel.NoEvidence;
+        void Raise(ContractTestImpactLevel l, string why) { reasons.Add($"{Name(l)}: {why}"); if (l > level) level = l; }
+        var t = test.Template;
+        var sent = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var name in Placeholders(string.Join('\n', new[] { t.Path, t.Body, t.GraphQlVariablesJson }.Concat(t.Query.Values).Concat(t.Headers.Values)))) sent.Add(name);
+        foreach (var k in t.Query.Keys.Concat(t.Headers.Keys)) sent.Add(k);
+        if (t.Body is { } body && JsonNode.Parse(IsWholePlaceholder(body) ? "{}" : body) is JsonObject bodyObject) foreach (var (k, _) in bodyObject) sent.Add(k);
+
+        // Expected outcome of a negative test: its documented code must still be documented, and the value it breaks still constrained.
+        if (negative && t.Assertions.FirstOrDefault(a => a.Kind == AssertionKind.StatusCode) is { Expected: { } codes } && t.Protocol == ExecutionProtocol.Rest)
+            foreach (var code in codes.Split(',', StringSplitOptions.TrimEntries).Where(c => old?.ResponseCodes.Contains(c) == true && !op.ResponseCodes.Contains(c)))
+                Raise(ContractTestImpactLevel.Definite, $"assertion status expects HTTP {code}, which v{toVersion} no longer documents.");
+        if (test.Kind == ContractTestKind.MissingRequiredInput && test.Variant.Length == 0 && old is not null)
+        {
+            var omitted = old.ParameterDetails.Where(p => p.Required && !sent.Contains(p.Name)).Select(p => p.Name).FirstOrDefault();
+            if (omitted is not null && op.ParameterDetails.FirstOrDefault(p => p.Name == omitted) is { Required: false })
+                Raise(ContractTestImpactLevel.Definite, $"input {omitted} is no longer required, so omitting it is no longer invalid.");
+        }
+
         foreach (var c in SourceEvidenceDiff.OperationDetailChanges(before, after).Where(c => c.Key.Split('|') is [_, var name, ..] && name == test.Operation))
         {
             var detail = c.Detail[(test.Operation.Length + 2)..];
+            var subject = c.Key.Split('|').Last();
+            var parameter = subject.StartsWith("param:", StringComparison.Ordinal) ? subject[6..].Split(':')[0].Split('.').Last() : null;
             switch (c.ContractChange)
             {
-                case ContractChangeClass.ParameterAddedOptional: Raise(ContractTestImpactLevel.Unaffected, $"Non-breaking: {detail}."); break;
-                case ContractChangeClass.ResponseChanged: Raise(ContractTestImpactLevel.Review, $"{char.ToUpperInvariant(detail[0])}{detail[1..]} — check the expected outcome."); break;
-                default: Raise(ContractTestImpactLevel.NeedsUpdate, $"{char.ToUpperInvariant(detail[0])}{detail[1..]}."); break;
+                case ContractChangeClass.ParameterAddedOptional:
+                    Raise(ContractTestImpactLevel.NoEvidence, $"{detail} (optional; not needed)."); break;
+                case ContractChangeClass.ParameterAddedRequired when negative:
+                    Raise(ContractTestImpactLevel.NoEvidence, $"{detail}; the request was invalid on purpose and stays invalid."); break;
+                case ContractChangeClass.ParameterAddedRequired when parameter is not null && sent.Contains(parameter):
+                    Raise(ContractTestImpactLevel.NoEvidence, $"{detail}; the test already sends {parameter}."); break;
+                case ContractChangeClass.ParameterAddedRequired:
+                    Raise(ContractTestImpactLevel.Definite, $"{detail}; input {parameter} is not sent by the test{(boundValues?.ContainsKey(parameter ?? "") == true ? " (the bound Test Data has a value for it)" : " and the bound Test Data has no value for it")}."); break;
+                case ContractChangeClass.ParameterRemoved when parameter is not null && sent.Contains(parameter):
+                    Raise(ContractTestImpactLevel.Potential, $"{detail}; the test still sends {parameter}."); break;
+                case ContractChangeClass.ParameterRemoved:
+                    Raise(ContractTestImpactLevel.NoEvidence, $"{detail}; the test does not send it."); break;
+                case ContractChangeClass.ParameterChanged when negative && test.Variant == parameter:
+                    Raise(ContractTestImpactLevel.NeedsReview, $"{detail}; this negative test targets {parameter} — check that its invalid value is still invalid."); break;
+                case ContractChangeClass.ParameterChanged when parameter is not null && sent.Contains(parameter):
+                    Raise(ContractTestImpactLevel.Potential, $"{detail}; the test sends {parameter}{(boundValues?.TryGetValue(parameter, out var bv) == true && bv is not null ? $" (bound value {bv})" : "")}."); break;
+                case ContractChangeClass.ParameterChanged:
+                    Raise(ContractTestImpactLevel.NoEvidence, $"{detail}; the test does not send it."); break;
+                case ContractChangeClass.RequestBodyChanged:
+                    Raise(negative ? ContractTestImpactLevel.NeedsReview : ContractTestImpactLevel.Potential, $"{detail}."); break;
+                case ContractChangeClass.ResponseChanged when !negative && subject.StartsWith("response:", StringComparison.Ordinal) && c.Kind == SourceEvidenceChangeKind.Removed
+                    && t.Assertions.Any(a => a.Kind == AssertionKind.StatusCode && (a.Expected ?? "").Split(',', StringSplitOptions.TrimEntries).All(x => !op.ResponseCodes.Contains(x))):
+                    Raise(ContractTestImpactLevel.Definite, $"{detail}; assertion status expects only codes v{toVersion} no longer documents."); break;
+                case ContractChangeClass.ResponseChanged:
+                    Raise(negative ? ContractTestImpactLevel.NoEvidence : ContractTestImpactLevel.Potential, $"{detail}{(negative ? " (not what this negative test checks)" : " — the response the test checks may differ")}."); break;
+                case ContractChangeClass.SecurityChanged:
+                    Raise(ContractTestImpactLevel.NeedsReview, $"{detail} — check the authentication binding of this contract."); break;
+                case ContractChangeClass.Deprecated:
+                    Raise(ContractTestImpactLevel.NeedsReview, $"{test.Operation} is deprecated in v{toVersion}."); break;
+                default:
+                    Raise(ContractTestImpactLevel.NeedsReview, $"{detail}."); break;
             }
         }
-        // Request types: the REST body schema, or the GraphQL argument types (input objects, enums). Response types: success schemas or the GraphQL result type.
+        if (!before.Servers.SequenceEqual(after.Servers, StringComparer.Ordinal) && (before.Servers.Count > 0 || after.Servers.Count > 0))
+            Raise(ContractTestImpactLevel.NeedsReview, "the declared servers changed — check the endpoint binding (base path) of this contract.");
+
+        // Types: request types (REST body schema, GraphQL argument types) and response types (success schemas, GraphQL result type).
         var requestTypes = new[] { TypeName(old?.RequestSchema), TypeName(op.RequestSchema) }
             .Concat((old?.ParameterDetails ?? []).Concat(op.ParameterDetails).Where(p => p.In == "argument").Select(p => TypeName(p.Type)))
-            .Where(t => t is not null).ToHashSet(StringComparer.Ordinal);
+            .Where(x => x is not null).ToHashSet(StringComparer.Ordinal);
         var responseTypes = (old?.ResponseSchemas.Values.AsEnumerable() ?? []).Concat(op.ResponseSchemas.Values).Append(old?.ResultType).Append(op.ResultType)
-            .Select(TypeName).Where(t => t is not null).ToHashSet(StringComparer.Ordinal);
-        foreach (var c in SourceEvidenceDiff.ContractChanges(before, after).Where(c => c.Area is "Field" or "Enum value" or "Type"))
+            .Select(TypeName).Where(x => x is not null).ToHashSet(StringComparer.Ordinal);
+        var selected = t.Protocol == ExecutionProtocol.GraphQl ? Selections(t.GraphQlQuery) : [];
+        foreach (var c in SourceEvidenceDiff.ContractChanges(before, after).Where(c => c.Area is "Field" or "Enum value"))
         {
-            var typeName = c.Key.Split('|').Last().Split('.')[0];
+            var key = c.Key.Split('|').Last();
+            var typeName = key.Split('.')[0];
+            var member = key.Contains('.') ? key[(key.IndexOf('.') + 1)..] : "";
+            var wasRequired = before.Types.FirstOrDefault(x => x.Name == typeName)?.Fields.FirstOrDefault(f => f.Name == member)?.Required == true;
             if (requestTypes.Contains(typeName))
-                Raise(c.ContractChange is ContractChangeClass.FieldAddedOptional or ContractChangeClass.EnumValueAdded ? ContractTestImpactLevel.Unaffected : ContractTestImpactLevel.NeedsUpdate,
-                    $"Request type {c.Detail} ({Label(c.ContractChange)}).");
-            else if (responseTypes.Contains(typeName))
-                Raise(c.ContractChange is ContractChangeClass.FieldAddedOptional or ContractChangeClass.EnumValueAdded or ContractChangeClass.FieldAddedRequired ? ContractTestImpactLevel.Unaffected : ContractTestImpactLevel.Review,
-                    $"Response type {c.Detail} ({Label(c.ContractChange)}).");
+            {
+                switch (c.ContractChange)
+                {
+                    case ContractChangeClass.FieldAddedOptional or ContractChangeClass.EnumValueAdded: Raise(ContractTestImpactLevel.NoEvidence, $"request type {c.Detail} ({Label(c.ContractChange)})."); break;
+                    case ContractChangeClass.FieldAddedRequired when negative: Raise(ContractTestImpactLevel.NoEvidence, $"request type {c.Detail} is new and required; the request was invalid on purpose and stays invalid."); break;
+                    case ContractChangeClass.FieldAddedRequired when sent.Contains(member): Raise(ContractTestImpactLevel.NoEvidence, $"request type {c.Detail} is new and required; the test already sends {member}."); break;
+                    case ContractChangeClass.FieldAddedRequired: Raise(ContractTestImpactLevel.Definite, $"request type {c.Detail} is new and required; the test does not send {member}."); break;
+                    case ContractChangeClass.EnumValueRemoved:
+                        var removedValue = member;
+                        var hit = boundValues?.Where(v => v.Value == removedValue).Select(v => v.Key).FirstOrDefault();
+                        Raise(hit is not null ? ContractTestImpactLevel.Definite : ContractTestImpactLevel.NoEvidence,
+                            hit is not null ? $"enum value {c.Detail} was removed and the bound Test Data sends it as {hit}." : $"enum value {c.Detail} was removed; the bound Test Data does not use it.");
+                        break;
+                    default:
+                        Raise(sent.Contains(member) ? (negative ? ContractTestImpactLevel.NeedsReview : ContractTestImpactLevel.Potential) : ContractTestImpactLevel.NoEvidence,
+                            $"request type {c.Detail} ({Label(c.ContractChange)}){(sent.Contains(member) ? $"; the test sends {member}" : "; the test does not send it")}.");
+                        break;
+                }
+            }
+            else if (responseTypes.Contains(typeName) && !negative)
+            {
+                var asserted = t.Assertions.Where(a => a.Target is { } target && (target.EndsWith($".{member}", StringComparison.Ordinal) || target.Contains($".{member}.", StringComparison.Ordinal))).Select(a => a.Id).ToList();
+                var isSelected = selected.Contains(member);
+                if (c.ContractChange == ContractChangeClass.FieldRemoved && (asserted.Count > 0 || isSelected))
+                    Raise(ContractTestImpactLevel.Definite, $"response type {c.Detail} was removed; {(isSelected ? "the query document selects it" : $"assertion {string.Join(", ", asserted)} checks it")}.");
+                else if (c.ContractChange is ContractChangeClass.FieldRemoved or ContractChangeClass.TypeChanged or ContractChangeClass.RequirednessChanged or ContractChangeClass.EnumValueRemoved)
+                    Raise(asserted.Count > 0 || isSelected || wasRequired ? ContractTestImpactLevel.Potential : ContractTestImpactLevel.NoEvidence,
+                        $"response type {c.Detail} ({Label(c.ContractChange)}){(asserted.Count > 0 ? $"; assertion {string.Join(", ", asserted)} checks it" : wasRequired ? "; it was required" : "; not asserted and optional")}.");
+                else Raise(ContractTestImpactLevel.NoEvidence, $"response type {c.Detail} ({Label(c.ContractChange)}).");
+            }
         }
-        if (reasons.Count == 0) reasons.Add($"No change to {test.Operation} or its types between v{test.ContractVersion} and v{toVersion}.");
+        if (reasons.Count == 0) reasons.Add($"{Name(ContractTestImpactLevel.NoEvidence)}: no change to {test.Operation} or its types between v{test.ContractVersion} and v{toVersion}.");
         return Result(level, reasons);
+    }
+
+    public static string Name(ContractTestImpactLevel level) => level switch
+    {
+        ContractTestImpactLevel.Definite => "Definite impact",
+        ContractTestImpactLevel.Potential => "Potential impact",
+        ContractTestImpactLevel.NeedsReview => "Needs human review",
+        _ => "No evidence of impact",
+    };
+
+    /// <summary>Field names selected anywhere in a GraphQL document (best effort; empty when it does not parse).</summary>
+    private static HashSet<string> Selections(string? query)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        try
+        {
+            void Walk(HotChocolate.Language.SelectionSetNode? set)
+            {
+                foreach (var f in set?.Selections.OfType<HotChocolate.Language.FieldNode>() ?? []) { names.Add(f.Name.Value); Walk(f.SelectionSet); }
+                foreach (var i in set?.Selections.OfType<HotChocolate.Language.InlineFragmentNode>() ?? []) Walk(i.SelectionSet);
+            }
+            foreach (var op in HotChocolate.Language.Utf8GraphQLParser.Parse(query ?? "").Definitions.OfType<HotChocolate.Language.OperationDefinitionNode>()) Walk(op.SelectionSet);
+        }
+        catch (HotChocolate.Language.SyntaxException) { }
+        return names;
     }
 
     public static string Label(ContractChangeClass c) => c switch

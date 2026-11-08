@@ -422,7 +422,7 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
                             .Select(c => TypeOf(c.Value["schema"])).FirstOrDefault(t => t is not null) ?? TypeOf(r.Response["schema"])))
                         .Where(r => r.Type is not null).GroupBy(r => r.Code, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First().Type!, StringComparer.Ordinal),
                     Security = op.Has("security") ? Security(op) : rootSecurity,
-                    HasExamples = parameters.Any(p => p.HasExample) || op["requestBody"]?.Has("examples") == true, Detailed = true,
+                    HasExamples = parameters.Any(p => p.HasExample) || op["requestBody"]?.Has("examples") == true, Detailed = true, Deprecated = op.Str("deprecated") == "true",
                 });
             }
         }
@@ -723,7 +723,7 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
                 {
                     OperationId = f.Name, Summary = f.Description is { } d ? SourceEvidenceRedaction.SafePath(d.Length > 160 ? d[..160] : d) : null,
                     ParameterDetails = [.. f.Arguments.Select(a => new ContractParameter(a.Name, "argument", a.Type?.Kind == "NON_NULL", TypeText(a.Type)) { HasExample = a.DefaultValue is not null, Default = DeclaredValue(a.Name, a.DefaultValue?.ToString()) })],
-                    ResultType = TypeText(f.Type), Detailed = true,
+                    ResultType = TypeText(f.Type), Detailed = true, Deprecated = f.IsDeprecated,
                 }));
         return Base(file, SourceContractType.GraphQlSchema, format) with { Operations = ops.Take(MaxOperations).ToList(), Types = types, ParseSupport = DomainSupport.Supported };
     }

@@ -74,7 +74,7 @@ public sealed class ContractTestingPageTests : BunitContext
         }, new(Bind ? ContractTestReadinessState.Ready : ContractTestReadinessState.NotReady,
             [new("Contract", ReadinessItemState.Ok, "Generated from v1."), Bind ? new("Test Data", ReadinessItemState.Ok, "children-complete@v1 provides every required value.") : new("Test Data", ReadinessItemState.Missing, "Select a dataset that provides id.")],
             Bind ? [] : ["id"]),
-            new(GetTest, "GET /children/{id} — succeeds with valid data", "GET /children/{id}", 1, 2, ContractTestImpactLevel.Review, ["Response type Child.age (field removed) — check the expected outcome."]),
+            new(GetTest, "GET /children/{id} — succeeds with valid data", "GET /children/{id}", 1, 2, ContractTestImpactLevel.Potential, ["Potential impact: response type Child.age (field removed); it was required."]),
             Bind ? new(Run, Call, ExecutionState.Passed, 200, DateTimeOffset.UtcNow, "contract-test:x@r2", "children-api@v1#GET /children/{id}", ["children-complete@v1"]) : null);
 
         private static ContractTestView Post => new(new ContractTestDefinition
@@ -113,8 +113,8 @@ public sealed class ContractTestingPageTests : BunitContext
             return Task.FromResult<(ContractVersionDiff?, string?)>((new(key, from, to,
                 [new(SourceEvidenceDomain.Contracts, SourceEvidenceChangeKind.Removed, "Operation", "children-api|GET /admin/reports", "Children API", "GET /admin/reports", ContractChangeClass.OperationRemoved),
                  new(SourceEvidenceDomain.Contracts, SourceEvidenceChangeKind.Added, "Operation detail", "children-api|GET /children|param:query.school", "Children API", "GET /children: required query parameter school added", ContractChangeClass.ParameterAddedRequired)],
-                [new(GetTest, "GET /children/{id} — succeeds with valid data", "GET /children/{id}", 1, 2, ContractTestImpactLevel.Review, ["Response type Child.age (field removed)."]),
-                 new(Guid.NewGuid(), "GET /admin/reports — succeeds with valid data", "GET /admin/reports", 1, 2, ContractTestImpactLevel.Broken, ["GET /admin/reports no longer exists in v2."])]), null));
+                [new(GetTest, "GET /children/{id} — succeeds with valid data", "GET /children/{id}", 1, 2, ContractTestImpactLevel.Potential, ["Potential impact: response type Child.age (field removed)."]),
+                 new(Guid.NewGuid(), "GET /admin/reports — succeeds with valid data", "GET /admin/reports", 1, 2, ContractTestImpactLevel.Definite, ["Definite impact: Operation: GET /admin/reports no longer exists in v2."])]), null));
         }
         public Task<(int Created, IReadOnlyList<string> Skipped, string? Error)> GenerateAsync(string key, int? version, IReadOnlyList<string>? operations, CancellationToken ct = default)
         {
@@ -153,6 +153,15 @@ public sealed class ContractTestingPageTests : BunitContext
         public List<ContractTestEdit> Edits { get; } = [];
         public bool ConflictNext { get; set; }
         public (int Revision, int Expected)? Reverted { get; private set; }
+        public (Guid Id, int Expected)? Migrated { get; private set; }
+        public Task<(ContractTestMigrationProposal? Proposal, string? Error)> MigrationAsync(Guid testId, CancellationToken ct = default) =>
+            Task.FromResult<(ContractTestMigrationProposal?, string?)>((new(testId, 1, 2, Get.Test with { ContractVersion = 2, Revision = 3 }, ["Contract version: v1 → v2"],
+                ["Applying creates a new revision bound to v2; earlier revisions and their executions stay bound to v1."]), null));
+        public Task<(ContractTestSaveResult? Result, string? Error)> ApplyMigrationAsync(Guid testId, int expectedRevision, CancellationToken ct = default)
+        {
+            Migrated = (testId, expectedRevision);
+            return Task.FromResult<(ContractTestSaveResult?, string?)>((new(true, false, Get.Test with { ContractVersion = 2, Revision = 3 }, "Saved as revision 3, bound to v2.", []), null));
+        }
         public Task<(ContractTestSaveResult? Result, string? Error)> UpdateTestAsync(Guid testId, ContractTestEdit edit, CancellationToken ct = default)
         {
             Edits.Add(edit);
@@ -272,8 +281,13 @@ public sealed class ContractTestingPageTests : BunitContext
         var row = page.FindAll("[data-testid=ct-test-row]").Single(r => r.GetAttribute("data-op") == "GET /children/{id}");
         row.QuerySelector("[data-testid=ct-readiness]")!.TextContent.Should().Be("Not ready");
         row.QuerySelector("[data-testid=ct-missing]")!.TextContent.Should().Be("Missing: id");
-        row.QuerySelector("[data-testid=ct-impact]")!.TextContent.Should().Be("Review in v2");
-        page.Find("[data-testid=ct-detail-impact]").TextContent.Should().Contain("Child.age");
+        row.QuerySelector("[data-testid=ct-impact]")!.TextContent.Should().Be("Potential impact in v2");
+        page.Find("[data-testid=ct-impact-reasons]").TextContent.Should().Contain("Child.age");
+        page.Find("[data-testid=ct-proposal]").Click();
+        page.WaitForAssertion(() => page.Find("[data-testid=ct-proposal-diff]").TextContent.Should().Contain("Contract version: v1 → v2"));
+        page.Find("[data-testid=ct-proposal-notes]").TextContent.Should().Contain("stay bound to v1");
+        page.Find("[data-testid=ct-proposal-apply]").Click();
+        page.WaitForAssertion(() => _api.Migrated.Should().Be((GetTest, 2)));
 
         var options = page.FindAll("[data-testid=ct-option]");
         options.Select(o => o.GetAttribute("data-alias")).Should().Equal("children-complete", "children-no-id", "children-draft");
@@ -399,7 +413,7 @@ public sealed class ContractTestingPageTests : BunitContext
         _api.Log.Should().Contain("diff 1 2");
         page.FindAll("[data-testid=ct-change-row]").Select(r => r.GetAttribute("data-class")).Should().Equal("OperationRemoved", "ParameterAddedRequired");
         page.FindAll("[data-testid=ct-change-row]")[1].TextContent.Should().Contain("Required parameter added").And.Contain("Potentially breaking");
-        page.FindAll("[data-testid=ct-impact-row]").Select(r => r.GetAttribute("data-level")).Should().Equal("Broken", "Review");
+        page.FindAll("[data-testid=ct-impact-row]").Select(r => r.GetAttribute("data-level")).Should().Equal("Definite", "Potential");
     }
 
     [Fact]

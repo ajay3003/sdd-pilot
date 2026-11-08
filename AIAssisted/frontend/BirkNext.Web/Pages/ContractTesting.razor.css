@@ -34,9 +34,9 @@
 .ct-state-notready, .ct-item-missing, .ct-item-warning { background: #fff8c5; color: #7d4e00; border-color: #eac54f; }
 .ct-state-blocked, .ct-item-blocked, .ct-run-failed, .ct-run-error, .ct-run-timedout { background: #ffebe9; color: #a40e26; border-color: #ffcecb; }
 .ct-impact { display: inline-block; margin-left: 0.35rem; border-radius: 4px; padding: 0 0.35rem; font-size: 0.75rem; font-weight: 600; }
-.ct-impact-broken { background: #ffebe9; color: #a40e26; }
-.ct-impact-needsupdate, .ct-impact-review { background: #fff8c5; color: #7d4e00; }
-.ct-impact-unaffected { background: #dafbe1; color: #116329; }
+.ct-impact-definite { background: #ffebe9; color: #a40e26; }
+.ct-impact-potential, .ct-impact-needsreview { background: #fff8c5; color: #7d4e00; }
+.ct-impact-noevidence { background: #dafbe1; color: #116329; }
 .ct-detail { display: grid; gap: 0.5rem; border-top: 1px solid var(--clr-border, #d0d7de); padding-top: 0.75rem; min-width: 0; }
 .ct-detail h4, .ct-detail h5 { margin: 0.25rem 0 0; }
 .ct-detail p { margin: 0; }
