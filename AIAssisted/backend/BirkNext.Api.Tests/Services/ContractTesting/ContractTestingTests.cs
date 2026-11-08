@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using BirkNext.Api.Data;
 using BirkNext.Api.Services.ApiQuality;
@@ -216,8 +217,45 @@ public sealed class ContractTestingTests : IAsyncLifetime
                 else await Send(400, """{"error":"name and a numeric age are required"}""");
                 break;
             case "/admin/reports": await Send(401, """{"error":"unauthorized"}"""); break;
+            case "/graphql": await Send(200, GraphQlAnswer(body)); break;
             default: await Send(404, """{"error":"no route"}"""); break;
         }
+    }
+
+    public const string GraphQlV1 = """
+        "A registered child"
+        type Child { id: ID! name: String! age: Int status: Status }
+        enum Status { ACTIVE INACTIVE }
+        input NewChildInput { name: String! age: Int! nickname: String }
+        type Query { child(id: ID!): Child children(status: Status): [Child!]! forbiddenReport: String }
+        type Mutation { createChild(input: NewChildInput!): Child! }
+        """;
+
+    /// <summary>v2: NewChildInput gains a required birthYear, Status loses INACTIVE, Child loses age, forbiddenReport is removed.</summary>
+    public const string GraphQlV2 = """
+        type Child { id: ID! name: String! status: Status }
+        enum Status { ACTIVE }
+        input NewChildInput { name: String! age: Int! nickname: String birthYear: Int! }
+        type Query { child(id: ID!): Child children(status: Status): [Child!]! }
+        type Mutation { createChild(input: NewChildInput!): Child! }
+        """;
+
+    /// <summary>A minimal synthetic GraphQL server: validates required variables the way a real server does (errors with HTTP 200).</summary>
+    private static string GraphQlAnswer(string body)
+    {
+        var request = JsonNode.Parse(body)!.AsObject();
+        var query = request["query"]?.GetValue<string>() ?? "";
+        var variables = request["variables"] as JsonObject ?? [];
+        static string Error(string message, string? code = null) =>
+            new JsonObject { ["errors"] = new JsonArray(new JsonObject { ["message"] = message, ["extensions"] = code is null ? null : new JsonObject { ["code"] = code } }) }.ToJsonString();
+        if (query.Contains("forbiddenReport", StringComparison.Ordinal)) return """{"data":{"forbiddenReport":null},"errors":[{"message":"Forbidden","path":["forbiddenReport"],"extensions":{"code":"FORBIDDEN"}}]}""";
+        if (query.StartsWith("mutation", StringComparison.Ordinal))
+            return variables["input"] is JsonObject input && input["name"] is JsonValue && input["age"] is JsonValue age && age.GetValueKind() == JsonValueKind.Number
+                ? """{"data":{"createChild":{"id":"8","name":"Testbarn","age":7,"status":"ACTIVE"}}}""" : Error("Variable \"$input\" got invalid value; field \"name\" or \"age\" of required type was not provided.", "BAD_USER_INPUT");
+        if (query.Contains("child(id:", StringComparison.Ordinal))
+            return variables["id"] is JsonValue ? """{"data":{"child":{"id":"7","name":"Testbarn","age":7,"status":"ACTIVE"}}}""" : Error("Variable \"$id\" of required type \"ID!\" was not provided.");
+        if (query.Contains("children", StringComparison.Ordinal)) return """{"data":{"children":[{"id":"7","name":"Testbarn","age":7,"status":"ACTIVE"}]}}""";
+        return Error("Unknown operation.");
     }
 
     private T Scoped<T>(IServiceScope scope) where T : notnull => scope.ServiceProvider.GetRequiredService<T>();
@@ -365,6 +403,91 @@ public sealed class ContractTestingTests : IAsyncLifetime
         afterRegen.Readiness.State.Should().Be(ContractTestReadinessState.NotReady);
         afterRegen.Readiness.MissingValues.Should().Equal("birthYear");
         (await tests.RegenerateAsync(impacted[("GET /admin/reports", ContractTestKind.Positive)].Test.Id, default)).Error.Should().Contain("does not exist in v2");
+    }
+
+    [Fact]
+    public async Task The_GraphQL_workflow_reuses_the_registry_tests_Test_Data_and_evidence_with_GraphQL_semantics()
+    {
+        using var scope = _services.CreateScope();
+        var registry = Scoped<ContractRegistryService>(scope);
+        var tests = Scoped<ContractTestService>(scope);
+        var imported = await registry.ImportAsync(new() { Name = "Synthetic Children GraphQL", FileName = "children.graphql", Content = GraphQlV1 }, default);
+        imported.Imported.Should().BeTrue(imported.Message);
+        const string key = "synthetic-children-graphql";
+        var detail = (await registry.GetAsync(key, null, default))!;
+        detail.Contract.Protocol.Should().Be(ApiContractProtocol.GraphQl);
+        detail.Document.Operations.Select(o => o.Name).Should().BeEquivalentTo(["query child", "query children", "query forbiddenReport", "mutation createChild"]);
+        detail.Document.Operations.Single(o => o.Name == "query child").ParameterDetails.Single().Should().Match<ContractParameter>(p => p.Type == "ID!" && p.Required);
+        (await registry.ImportAsync(new() { ContractKey = key, FileName = "rest.yaml", Content = V1Yaml }, default)).Problems.Should().ContainSingle(p => p.Contains("GraphQL contract"));
+        (await registry.ImportAsync(new() { FileName = "ops.graphql", Content = "query Child($id: ID!) { child(id: $id) { id } }" }, default)).Problems.Should().ContainSingle(p => p.Contains("operations document"));
+
+        var (created, skipped) = await tests.GenerateAsync(key, null, null, default);
+        created.Select(t => (t.Operation, t.Kind)).Should().BeEquivalentTo(new[]
+        {
+            ("query child", ContractTestKind.Positive), ("query child", ContractTestKind.MissingRequiredInput), ("query children", ContractTestKind.Positive),
+            ("query forbiddenReport", ContractTestKind.Positive), ("mutation createChild", ContractTestKind.Positive), ("mutation createChild", ContractTestKind.MissingRequiredInput),
+        }, "a nullable argument (children's status) gives no negative test");
+        var child = created.Single(t => t.Operation == "query child" && t.Kind == ContractTestKind.Positive);
+        child.Template.GraphQlQuery.Should().Be("query Child($id: ID!) { child(id: $id) { id name age status } }");
+        child.Template.Assertions.Select(a => (a.Kind, a.Target)).Should().Contain([(AssertionKind.GraphQlErrorCount, null), (AssertionKind.GraphQlDataPath, "child.id"), (AssertionKind.GraphQlDataPath, "child.name")]);
+        var create = created.Single(t => t.Operation == "mutation createChild" && t.Kind == ContractTestKind.Positive);
+        create.Inputs.Select(i => (i.Name, i.Required)).Should().BeEquivalentTo([("name", true), ("age", true), ("nickname", false)], "input object fields are the inputs; nullability decides required");
+        created.Single(t => t.Operation == "mutation createChild" && t.Kind == ContractTestKind.MissingRequiredInput).Template.GraphQlVariablesJson.Should().Be("""{"input":{"age":"{{dataset.age}}","nickname":"{{dataset.nickname}}"}}""");
+
+        Dataset("gql-children", new("id", TestDataPrimitive.String, "7"), new("name", TestDataPrimitive.String, "Testbarn"), new("age", TestDataPrimitive.Int32, "7"),
+            new("status", TestDataPrimitive.Enum, "ACTIVE") { EnumValues = ["ACTIVE", "INACTIVE"] });
+        foreach (var t in created) (await tests.BindAsync(t.Id, new("gql-children", 1), default)).Error.Should().BeNull();
+        var views = await tests.ListAsync(key, Local, default);
+        views.Should().OnlyContain(v => v.Readiness.State == ContractTestReadinessState.Ready, string.Join("; ", views.SelectMany(v => v.Readiness.Items.Where(i => i.State != ReadinessItemState.Ok)).Select(i => i.Text)));
+
+        var unconfirmed = await WaitAsync((await tests.RunAsync(new() { TestIds = [.. created.Select(t => t.Id)], Environment = Local }, default)).Run!.RunId!.Value);
+        unconfirmed.Calls.Where(c => c.Definition.GraphQlQuery!.StartsWith("mutation", StringComparison.Ordinal)).Should().OnlyContain(c => c.State == ExecutionState.Blocked, "a mutation changes data");
+        _seen.Should().NotContain(s => s.Body.Contains("mutation", StringComparison.Ordinal));
+
+        var run = await WaitAsync((await tests.RunAsync(new() { TestIds = [.. created.Select(t => t.Id)], Environment = Local, ConfirmMutatingCalls = true }, default)).Run!.RunId!.Value);
+        string State(string op, ContractTestKind kind) => run.Calls.Single(c => c.Definition.Name == created.Single(t => t.Operation == op && t.Kind == kind).Name).State.ToString();
+        State("query child", ContractTestKind.Positive).Should().Be("Passed");
+        State("query child", ContractTestKind.MissingRequiredInput).Should().Be("Passed", "the server's GraphQL error for the missing variable is the expected outcome");
+        State("query children", ContractTestKind.Positive).Should().Be("Passed");
+        State("mutation createChild", ContractTestKind.Positive).Should().Be("Passed");
+        State("mutation createChild", ContractTestKind.MissingRequiredInput).Should().Be("Passed");
+        var forbidden = run.Calls.Single(c => c.Definition.Name.StartsWith("query forbiddenReport", StringComparison.Ordinal));
+        forbidden.State.Should().Be(ExecutionState.Failed, "HTTP 200 with GraphQL errors is not a pass");
+        forbidden.Attempts[^1].Response!.StatusCode.Should().Be(200);
+        forbidden.Attempts[^1].Response!.GraphQlErrorCodes.Should().Equal("FORBIDDEN");
+        var mutation = run.Calls.Single(c => c.Definition.Name == create.Name);
+        mutation.Definition.OperationRef.Should().Be("synthetic-children-graphql@v1#mutation createChild");
+        mutation.Definition.TestDataRefs.Should().Equal("gql-children@v1");
+        _seen.Should().Contain(s => s.Body.Contains("\"input\":{\"name\":\"Testbarn\",\"age\":7}", StringComparison.Ordinal), "typed values; the optional nickname without a value is left out");
+
+        (await registry.ImportAsync(new() { ContractKey = key, FileName = "children-v2.graphql", Content = GraphQlV2 }, default)).Version.Should().Be(2);
+        var impact = (await tests.ListAsync(key, Local, default)).Where(v => v.Test.Kind == ContractTestKind.Positive).ToDictionary(v => v.Test.Operation, v => v.Impact!);
+        impact["query forbiddenReport"].Level.Should().Be(ContractTestImpactLevel.Broken);
+        impact["mutation createChild"].Level.Should().Be(ContractTestImpactLevel.NeedsUpdate);
+        impact["mutation createChild"].Reasons.Should().Contain(r => r.Contains("NewChildInput.birthYear"));
+        impact["query children"].Level.Should().Be(ContractTestImpactLevel.NeedsUpdate, "an enum value of the argument type was removed");
+        impact["query child"].Level.Should().Be(ContractTestImpactLevel.Review, "the result type lost a field");
+    }
+
+    [Fact]
+    public async Task A_GraphQL_introspection_result_imports_through_the_same_mapping_as_SDL()
+    {
+        const string introspection = """
+            { "data": { "__schema": { "queryType": { "name": "Query" }, "mutationType": null, "subscriptionType": null, "directives": [],
+              "types": [
+                { "kind": "OBJECT", "name": "Query", "description": null, "fields": [
+                  { "name": "ping", "description": null, "args": [ { "name": "echo", "description": null, "defaultValue": null,
+                      "type": { "kind": "NON_NULL", "name": null, "ofType": { "kind": "SCALAR", "name": "String", "ofType": null } } } ],
+                    "type": { "kind": "SCALAR", "name": "String", "ofType": null }, "isDeprecated": false, "deprecationReason": null } ],
+                  "inputFields": null, "interfaces": [], "enumValues": null, "possibleTypes": null },
+                { "kind": "SCALAR", "name": "String", "description": null, "fields": null, "inputFields": null, "interfaces": null, "enumValues": null, "possibleTypes": null } ] } } }
+            """;
+        using var scope = _services.CreateScope();
+        var result = await Scoped<ContractRegistryService>(scope).ImportAsync(new() { Name = "Ping", FileName = "schema.json", Content = introspection }, default);
+        result.Imported.Should().BeTrue(result.Message);
+        var detail = (await Scoped<ContractRegistryService>(scope).GetAsync(result.Key!, null, default))!;
+        detail.Versions.Single().Format.Should().Be("introspection");
+        detail.Document.Operations.Single().Should().Match<ContractOperation>(o => o.Name == "query ping" && o.ParameterDetails.Single().Type == "String!" && o.ResultType == "String");
     }
 
     [Theory]

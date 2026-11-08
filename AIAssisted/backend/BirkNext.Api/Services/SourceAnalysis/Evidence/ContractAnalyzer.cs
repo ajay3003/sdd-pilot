@@ -666,26 +666,9 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
             };
         if (typeSystem.Count == 0) return null;
         var schema = GraphQlSdlSchema.FromSdl(file.Content, out var error);
+        if (schema is not null) return GraphQlSchemaContract(file, schema, "graphql");
         var types = new List<ContractTypeShape>();
         var ops = new List<ContractOperation>();
-        if (schema is not null)
-        {
-            foreach (var t in schema.Types.Where(t => !t.Name.StartsWith("__", StringComparison.Ordinal)).Take(MaxTypes))
-            {
-                var fields = t.Kind == "INPUT_OBJECT" ? t.InputFields ?? [] : t.Fields;
-                types.Add(new ContractTypeShape(t.Name, t.Kind.ToLowerInvariant(), fields.Select(f => new ContractField(f.Name, TypeText(f.Type), f.Type?.Kind == "NON_NULL")).ToList())
-                    { Values = [.. (t.EnumValues ?? []).Take(100).Select(v => v.Name)] });
-            }
-            foreach (var (root, kind) in new[] { (schema.QueryTypeName, "query"), (schema.MutationTypeName, "mutation"), (schema.SubscriptionTypeName, "subscription") })
-                if (root is not null && schema.Types.FirstOrDefault(t => t.Name == root) is { } rootType)
-                    ops.AddRange(rootType.Fields.Select(f => new ContractOperation($"{kind} {f.Name}", kind, null, f.Arguments.Select(a => a.Name).ToList())
-                    {
-                        OperationId = f.Name, Summary = f.Description is { } d ? SourceEvidenceRedaction.SafePath(d.Length > 160 ? d[..160] : d) : null,
-                        ParameterDetails = [.. f.Arguments.Select(a => new ContractParameter(a.Name, "argument", a.Type?.Kind == "NON_NULL", TypeText(a.Type)) { HasExample = a.DefaultValue is not null, Default = DeclaredValue(a.Name, a.DefaultValue?.ToString()) })],
-                        ResultType = TypeText(f.Type), Detailed = true,
-                    }));
-        }
-        else
         {
             // No query root (e.g. a schema split across files or client-side extensions only): list the declared types, Partial.
             foreach (var d in typeSystem.OfType<ComplexTypeDefinitionNodeBase>().Take(MaxTypes))
@@ -696,9 +679,45 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
         }
         return Base(file, SourceContractType.GraphQlSchema, "graphql") with
         {
-            Operations = ops.Take(MaxOperations).ToList(), Types = types, ParseSupport = schema is null ? DomainSupport.Partial : DomainSupport.Supported,
-            Limitations = schema is null ? [$"Partial schema document: {SourceEvidenceRedaction.SafePath(error ?? "no query root")}"] : [],
+            Operations = ops.Take(MaxOperations).ToList(), Types = types, ParseSupport = DomainSupport.Partial,
+            Limitations = [$"Partial schema document: {SourceEvidenceRedaction.SafePath(error ?? "no query root")}"],
         };
+    }
+
+    /// <summary>
+    /// A complete GraphQL schema (from SDL or an introspection result — both arrive as the same normalized schema) as a contract: every named type
+    /// with its fields (input objects: input fields; NON_NULL = required) and enum values, and one operation per root field ("query child",
+    /// "mutation createChild") with its arguments and result type. The single mapping for Source Analysis and the contract registry.
+    /// </summary>
+    private static SourceContract GraphQlSchemaContract(EvidenceFile file, GraphQlNormalizedContract schema, string format)
+    {
+        var types = new List<ContractTypeShape>();
+        var ops = new List<ContractOperation>();
+        foreach (var t in schema.Types.Where(t => !t.Name.StartsWith("__", StringComparison.Ordinal)).Take(MaxTypes))
+        {
+            var fields = t.Kind == "INPUT_OBJECT" ? t.InputFields ?? [] : t.Fields;
+            types.Add(new ContractTypeShape(t.Name, t.Kind.ToLowerInvariant(), fields.Select(f => new ContractField(f.Name, TypeText(f.Type), f.Type?.Kind == "NON_NULL")).ToList())
+                { Values = [.. (t.EnumValues ?? []).Take(100).Select(v => v.Name)] });
+        }
+        foreach (var (root, kind) in new[] { (schema.QueryTypeName, "query"), (schema.MutationTypeName, "mutation"), (schema.SubscriptionTypeName, "subscription") })
+            if (root is not null && schema.Types.FirstOrDefault(t => t.Name == root) is { } rootType)
+                ops.AddRange(rootType.Fields.Select(f => new ContractOperation($"{kind} {f.Name}", kind, null, f.Arguments.Select(a => a.Name).ToList())
+                {
+                    OperationId = f.Name, Summary = f.Description is { } d ? SourceEvidenceRedaction.SafePath(d.Length > 160 ? d[..160] : d) : null,
+                    ParameterDetails = [.. f.Arguments.Select(a => new ContractParameter(a.Name, "argument", a.Type?.Kind == "NON_NULL", TypeText(a.Type)) { HasExample = a.DefaultValue is not null, Default = DeclaredValue(a.Name, a.DefaultValue?.ToString()) })],
+                    ResultType = TypeText(f.Type), Detailed = true,
+                }));
+        return Base(file, SourceContractType.GraphQlSchema, format) with { Operations = ops.Take(MaxOperations).ToList(), Types = types, ParseSupport = DomainSupport.Supported };
+    }
+
+    /// <summary>A GraphQL introspection result (<c>{"data":{"__schema":…}}</c> or <c>{"__schema":…}</c>) as a contract, through the same mapping as SDL.
+    /// Null when it is not an introspection result.</summary>
+    internal static SourceContract? ReadGraphQlIntrospection(string path, string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var wrapped = doc.RootElement.TryGetProperty("__schema", out _) ? $"{{\"data\":{json}}}" : json;
+        var result = new GraphQlExtractor(NullLogger<GraphQlExtractor>.Instance).Extract(wrapped);
+        return result.Contract is { } schema ? GraphQlSchemaContract(new EvidenceFile(path, json, SourceFileRole.Contract, "GraphQL"), schema, "introspection") : null;
     }
 
     private static string TypeText(GraphQlTypeRef? type) => type is null ? "" : type.Kind switch

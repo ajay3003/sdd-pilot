@@ -31,6 +31,25 @@ public sealed class ContractTestingPageTests : BunitContext
         public ContractTestEnvironment? Environment { get; private set; }
         public bool HasContract { get; set; } = true;
         public bool Bind { get; set; }
+        public bool GraphQl { get; set; }
+
+        private static readonly ApiContractSummary GqlSummary = new(Guid.NewGuid(), "children-graphql", "Children GraphQL", ApiContractProtocol.GraphQl, 1, 2, 1, DateTimeOffset.UtcNow);
+        private static readonly SourceContract GqlDocument = new()
+        {
+            Id = "children-graphql", Name = "Children GraphQL", Type = SourceContractType.GraphQlSchema,
+            Operations =
+            [
+                new("query child", "query", null, ["id"]) { OperationId = "child", ParameterDetails = [new("id", "argument", true, "ID!")], ResultType = "Child", Detailed = true },
+                new("mutation createChild", "mutation", null, ["input"]) { OperationId = "createChild", ParameterDetails = [new("input", "argument", true, "NewChildInput!")], ResultType = "Child!", Detailed = true },
+            ],
+        };
+        private static readonly ContractTestView GqlTest = new(new ContractTestDefinition
+        {
+            Id = Guid.NewGuid(), ContractKey = "children-graphql", ContractVersion = 1, Operation = "mutation createChild", Name = "mutation createChild — returns data without GraphQL errors",
+            Template = new() { Protocol = ExecutionProtocol.GraphQl, Method = "POST", Path = "/graphql", GraphQlQuery = "mutation CreateChild($input: NewChildInput!) { createChild(input: $input) { id name } }",
+                GraphQlVariablesJson = """{"input":{"name":"{{dataset.name}}"}}""", ExpectedOutcome = "HTTP 200 with data and no GraphQL errors" },
+            Inputs = [new("name", "input input", true, "String!")], Rationale = "An HTTP 200 that carries GraphQL errors fails.",
+        }, new(ContractTestReadinessState.NotReady, [new("Test Data", ReadinessItemState.Missing, "Select a dataset that provides name.")], ["name"]), null, null);
 
         private static readonly ApiContractSummary Summary = new(Guid.NewGuid(), "children-api", "Children API", ApiContractProtocol.Rest, 2, 3, 2, DateTimeOffset.UtcNow);
         private static SourceContract Document(int v) => new()
@@ -64,11 +83,12 @@ public sealed class ContractTestingPageTests : BunitContext
         }, new(ContractTestReadinessState.Blocked, [new("Target Environment", ReadinessItemState.Blocked, "Production is refused.")], []), null, null);
 
         public Task<(IReadOnlyList<ApiContractSummary>? Contracts, string? Error)> ContractsAsync(CancellationToken ct = default) =>
-            Task.FromResult<(IReadOnlyList<ApiContractSummary>?, string?)>((HasContract ? [Summary] : [], null));
+            Task.FromResult<(IReadOnlyList<ApiContractSummary>?, string?)>((HasContract ? [GraphQl ? GqlSummary : Summary] : [], null));
         public Task<(ApiContractDetail? Detail, string? Error)> ContractAsync(string key, int? version, CancellationToken ct = default)
         {
             Log.Add($"contract {key} {version}");
             var v = version ?? 2;
+            if (GraphQl) return Task.FromResult<(ApiContractDetail?, string?)>((new(GqlSummary, [Info(1) with { Format = "graphql" }], 1, GqlDocument), null));
             return Task.FromResult<(ApiContractDetail?, string?)>((new(Summary, [Info(2), Info(1)], v, Document(v)), null));
         }
         public Task<(ContractImportResult? Result, string? Error)> ImportAsync(ContractImportRequest request, CancellationToken ct = default)
@@ -93,7 +113,7 @@ public sealed class ContractTestingPageTests : BunitContext
         public Task<(IReadOnlyList<ContractTestView>? Tests, string? Error)> TestsAsync(string key, ContractTestEnvironment? environment, CancellationToken ct = default)
         {
             Environment = environment;
-            return Task.FromResult<(IReadOnlyList<ContractTestView>?, string?)>(([Get, Post], null));
+            return Task.FromResult<(IReadOnlyList<ContractTestView>?, string?)>((GraphQl ? [GqlTest] : [Get, Post], null));
         }
         public Task<(IReadOnlyList<ContractDatasetOption>? Options, string? Error)> DatasetsAsync(Guid testId, string? environmentId, CancellationToken ct = default) =>
             Task.FromResult<(IReadOnlyList<ContractDatasetOption>?, string?)>(([
@@ -231,6 +251,22 @@ public sealed class ContractTestingPageTests : BunitContext
         page.Find("[data-testid=ct-run]").HasAttribute("disabled").Should().BeTrue();
         _api.Environment.Should().BeNull();
     }
+
+    [Fact]
+    public void A_GraphQL_contract_shows_root_fields_result_types_and_the_query_document_with_variables()
+    {
+        _api.GraphQl = true;
+        var page = Open("?contract=children-graphql");
+        page.Find("[data-testid=ct-contract-link]").ParentElement!.TextContent.Should().Contain("GraphQL · v1");
+        var rows = page.FindAll("[data-testid=ct-op-row]");
+        rows.Select(r => r.GetAttribute("data-op")).Should().Equal("query child", "mutation createChild");
+        rows[0].TextContent.Should().Contain("id").And.Contain("argument · ID! · required").And.Contain("returns Child");
+        page = Open($"?contract=children-graphql&view=tests&test={GqlTestId}");
+        page.Find("[data-testid=ct-test-row]").TextContent.Should().Contain("changes data", "a mutation needs the data-changing confirmation");
+        page.Find("[data-testid=ct-template]").TextContent.Should().Contain("mutation CreateChild($input: NewChildInput!)").And.Contain("variables {\"input\":{\"name\":\"{{dataset.name}}\"}}");
+    }
+
+    private Guid GqlTestId => _api.TestsAsync("children-graphql", null).Result.Tests![0].Test.Id;
 
     [Fact]
     public void Changes_compare_versions_and_rank_the_impact_on_tests()

@@ -38,8 +38,9 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         var now = _clock.GetUtcNow();
         foreach (var op in doc.Operations.Where(o => operations is not { Count: > 0 } || operations.Contains(o.Name)))
         {
-            if (!ContractTestRules.IsRest(op)) { skipped.Add($"{op.Name}: not a REST operation."); continue; }
-            foreach (var test in ContractTestRules.Generate(doc, key, v, op, now))
+            if (!ContractTestRules.IsRest(op) && !ContractTestRules.IsGraphQl(op))
+            { skipped.Add(op.Kind == "subscription" ? $"{op.Name}: subscriptions need a streaming transport, which contract test runs do not support." : $"{op.Name}: not a REST operation or GraphQL query/mutation."); continue; }
+            foreach (var test in ContractTestRules.GenerateAny(doc, key, v, op, now))
             {
                 if (existing.Contains((test.Operation, test.Kind.ToString()))) { skipped.Add($"{test.Name}: already exists."); continue; }
                 db.ContractTests.Add(Row(contract.Id, test));
@@ -125,7 +126,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         var latest = await registry.LatestVersionAsync(test.ContractKey, ct) ?? 0;
         if (await registry.DocumentAsync(test.ContractKey, latest, ct) is not { } doc || doc.Operations.FirstOrDefault(o => o.Name == test.Operation) is not { } op)
             return (null, $"{test.Operation} does not exist in v{latest}; delete the test or generate one for another operation.");
-        var fresh = ContractTestRules.Generate(doc, test.ContractKey, latest, op, _clock.GetUtcNow()).FirstOrDefault(t => t.Kind == test.Kind);
+        var fresh = ContractTestRules.GenerateAny(doc, test.ContractKey, latest, op, _clock.GetUtcNow()).FirstOrDefault(t => t.Kind == test.Kind);
         if (fresh is null) return (null, $"v{latest} no longer gives {test.Operation} a {test.Kind} test (no required value to omit).");
         test = fresh with { Id = test.Id, Name = test.Name, Binding = test.Binding, Revision = test.Revision + 1, CreatedAt = test.CreatedAt };
         Update(row, test);
@@ -255,7 +256,9 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         // Authentication: runs are anonymous; an operation that declares security is not run without it.
         if (op?.Security is { Count: > 0 } security)
             items.Add(new("Authentication", ReadinessItemState.Blocked, $"The operation requires {string.Join(", ", security)}. Contract test runs cannot use the Target Environment's credential yet, so it is not run anonymously."));
-        else items.Add(new("Authentication", ReadinessItemState.Ok, "The contract declares no security requirement for this operation."));
+        else items.Add(new("Authentication", ReadinessItemState.Ok, test.Template.Protocol == ExecutionProtocol.GraphQl
+            ? "A GraphQL schema does not declare authentication; the run is anonymous, and an authentication error from the API shows as a failed test."
+            : "The contract declares no security requirement for this operation."));
         if (ExecutionRunService.Mutating(test.Template))
             items.Add(new("Changes data", ReadinessItemState.Warning, $"{test.Template.Method} can change data: it runs only when you confirm data-changing calls for the run."));
         var state = items.Any(i => i.State == ReadinessItemState.Blocked) ? ContractTestReadinessState.Blocked

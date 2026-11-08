@@ -24,9 +24,96 @@ public static partial class ContractTestRules
     private static string P(string name) => Placeholder(name);
 
     /// <summary>"Child" from "Child", "[Child]" or "#/components/schemas/Child"; null for primitives.</summary>
-    public static string? TypeName(string? schema) => schema is null ? null : schema.Trim('[', ']').Split('/').Last() is var n && n.Length > 0 && !n.Contains(':') && n is not ("string" or "integer" or "number" or "boolean" or "object" or "array") ? n : null;
+    public static string? TypeName(string? schema) => schema is null ? null : schema.Replace("!", "").Trim('[', ']').Split('/').Last() is var n && n.Length > 0 && !n.Contains(':') && n is not ("string" or "integer" or "number" or "boolean" or "object" or "array") ? n : null;
 
     public static bool IsRest(ContractOperation op) => Verbs.Contains(op.Kind.ToUpperInvariant()) && op.Path is { Length: > 0 };
+    public static bool IsGraphQl(ContractOperation op) => op.Kind is "query" or "mutation";
+
+    /// <summary>Draft tests for one operation of either protocol (empty for subscriptions and other kinds).</summary>
+    public static List<ContractTestDefinition> GenerateAny(SourceContract contract, string key, int version, ContractOperation op, DateTimeOffset now) =>
+        IsRest(op) ? Generate(contract, key, version, op, now) : IsGraphQl(op) ? GenerateGraphQl(contract, key, version, op, now) : [];
+
+    public const string GraphQlEndpoint = "/graphql";
+    private static readonly string[] BuiltInScalars = ["String", "Int", "Float", "Boolean", "ID"];
+
+    /// <summary>
+    /// Draft tests for one GraphQL root field. The document declares one variable per argument with its exact type (nullability and lists kept);
+    /// an input-object argument becomes a nested variables object whose fields are the test's inputs; the selection set holds the result type's
+    /// leaf fields (scalars and enums). Positive: HTTP 200, no GraphQL errors, data present for the field and its non-null leaf fields — a 200 with
+    /// errors fails. Negative (when a required argument or input field exists): the value is left out and GraphQL errors are expected (HTTP 200,
+    /// or 400 under GraphQL-over-HTTP). Mutations are data-changing and run only when confirmed.
+    /// </summary>
+    public static List<ContractTestDefinition> GenerateGraphQl(SourceContract contract, string key, int version, ContractOperation op, DateTimeOffset now)
+    {
+        if (!IsGraphQl(op)) return [];
+        var field = op.OperationId ?? op.Name.Split(' ').Last();
+        var operationName = char.ToUpperInvariant(field[0]) + field[1..];
+        var inputs = new List<ContractTestInput>();
+        var variables = new JsonObject();
+        foreach (var a in op.ParameterDetails)
+        {
+            var shape = TypeName(a.Type) is { } named ? contract.Types.FirstOrDefault(t => t.Name == named) : null;
+            if (shape is { Kind: "input_object" } && !(a.Type ?? "").TrimStart().StartsWith('['))
+            {
+                var o = new JsonObject();
+                foreach (var f in shape.Fields.Take(50)) { o[f.Name] = P(f.Name); inputs.Add(new(f.Name, $"input {a.Name}", f.Required, f.Type)); }
+                variables[a.Name] = o;
+            }
+            else { variables[a.Name] = P(a.Name); inputs.Add(new(a.Name, "variable", a.Required, a.Type)); }
+        }
+        inputs = [.. inputs.GroupBy(i => i.Name, StringComparer.Ordinal).Select(g => g.OrderByDescending(i => i.Required).First())];
+        var resultShape = TypeName(op.ResultType) is { } rn ? contract.Types.FirstOrDefault(t => t.Name == rn && t.Kind is "object" or "interface") : null;
+        bool Leaf(ContractField f) => TypeName(f.Type) is not { } n || BuiltInScalars.Contains(n) || contract.Types.FirstOrDefault(t => t.Name == n) is not { } ft || ft.Kind is "enum" or "scalar";
+        var leaves = resultShape?.Fields.Where(Leaf).Take(20).ToList() ?? [];
+        var selection = resultShape is null ? "" : leaves.Count > 0 ? $" {{ {string.Join(" ", leaves.Select(f => f.Name))} }}" : " { __typename }";
+        var declarations = op.ParameterDetails.Count == 0 ? "" : $"({string.Join(", ", op.ParameterDetails.Select(a => $"${a.Name}: {a.Type}"))})";
+        var arguments = op.ParameterDetails.Count == 0 ? "" : $"({string.Join(", ", op.ParameterDetails.Select(a => $"{a.Name}: ${a.Name}"))})";
+        var document = $"{op.Kind} {operationName}{declarations} {{ {field}{arguments}{selection} }}";
+
+        var assertions = new List<AssertionDefinition>
+        {
+            new("status", AssertionKind.StatusCode, AssertionOperator.Equals, null, "200"),
+            new("no-errors", AssertionKind.GraphQlErrorCount, AssertionOperator.Equals, null, "0"),
+            new("data", AssertionKind.GraphQlDataPath, AssertionOperator.Exists, field),
+        };
+        if (resultShape is not null && !(op.ResultType ?? "").TrimStart().StartsWith('['))
+            foreach (var f in leaves.Where(f => f.Required).Take(10)) assertions.Add(new($"data-{f.Name}", AssertionKind.GraphQlDataPath, AssertionOperator.Exists, $"{field}.{f.Name}"));
+        var template = new ExecutionCallDefinition
+        {
+            Name = op.Name, Protocol = ExecutionProtocol.GraphQl, Method = "POST", Path = GraphQlEndpoint, GraphQlQuery = document, GraphQlOperationName = operationName,
+            GraphQlVariablesJson = variables.Count == 0 ? null : variables.ToJsonString(), Assertions = assertions, TimeoutMs = 15000,
+            ExpectedOutcome = "HTTP 200 with data and no GraphQL errors",
+        };
+        var positive = new ContractTestDefinition
+        {
+            Id = Guid.NewGuid(), ContractKey = key, ContractVersion = version, Operation = op.Name, Name = $"{op.Name} — returns data without GraphQL errors", Kind = ContractTestKind.Positive,
+            Template = template, Inputs = inputs, CreatedAt = now, UpdatedAt = now,
+            Rationale = $"Sends {op.Kind} {field} with every required variable from the bound Test Data and expects HTTP 200, no GraphQL errors and data for {field}"
+                + (assertions.Count > 3 ? $" with its non-null fields ({string.Join(", ", leaves.Where(f => f.Required).Take(10).Select(f => f.Name))})." : ".")
+                + " An HTTP 200 that carries GraphQL errors fails.",
+        };
+        var result = new List<ContractTestDefinition> { positive };
+        var omit = inputs.FirstOrDefault(i => i.Required);
+        if (omit is not null)
+        {
+            var negativeVariables = JsonNode.Parse(variables.ToJsonString())!.AsObject();
+            if (omit.In == "variable") negativeVariables.Remove(omit.Name);
+            else if (negativeVariables[omit.In["input ".Length..]] is JsonObject nested) nested.Remove(omit.Name);
+            result.Add(new ContractTestDefinition
+            {
+                Id = Guid.NewGuid(), ContractKey = key, ContractVersion = version, Operation = op.Name, Name = $"{op.Name} — reports a GraphQL error without {omit.Name}",
+                Kind = ContractTestKind.MissingRequiredInput, CreatedAt = now, UpdatedAt = now, Inputs = [.. inputs.Where(i => i.Name != omit.Name)],
+                Template = template with
+                {
+                    GraphQlVariablesJson = negativeVariables.ToJsonString(),
+                    Assertions = [new("status", AssertionKind.StatusCode, AssertionOperator.In, null, "200,400"), new("errors", AssertionKind.GraphQlErrorCount, AssertionOperator.GreaterThan, null, "0")],
+                    ExpectedOutcome = "GraphQL errors (HTTP 200 or 400)",
+                },
+                Rationale = $"The schema makes {omit.Name} ({omit.Type}) non-null; the request leaves it out and expects GraphQL errors. GraphQL servers answer this with HTTP 200 and an errors array, or HTTP 400, so both are accepted — the errors are what is asserted.",
+            });
+        }
+        return result;
+    }
 
     /// <summary>
     /// Draft tests for one REST operation: a positive test (every required value from Test Data; the documented success codes; the required
@@ -158,21 +245,26 @@ public static partial class ContractTestRules
                 body = values.TryGetValue(name, out var e) ? (t.ContentType ?? "").Contains("json", StringComparison.OrdinalIgnoreCase) ? TestDataResourceRules.ToJson(e)?.ToJsonString() ?? "null" : e.Value
                     : optional.Contains(name) ? null : Replace(body, false);
             }
-            else if ((t.ContentType ?? "").Contains("json", StringComparison.OrdinalIgnoreCase) && JsonNode.Parse(body) is JsonObject o)
-            {
-                foreach (var (k, v) in o.ToList())
-                {
-                    if (v is not JsonValue jv || jv.GetValueKind() != JsonValueKind.String || WholePlaceholder().Match(jv.GetValue<string>()) is not { Success: true } m) continue;
-                    var name = m.Groups[1].Value;
-                    if (values.TryGetValue(name, out var e)) o[k] = TestDataResourceRules.ToJson(e);
-                    else if (optional.Contains(name)) o.Remove(k);
-                    else if (!missing.Contains(name)) missing.Add(name);
-                }
-                body = o.ToJsonString();
-            }
+            else if ((t.ContentType ?? "").Contains("json", StringComparison.OrdinalIgnoreCase) && JsonNode.Parse(body) is JsonObject o) { Fill(o); body = o.ToJsonString(); }
             else body = Replace(body, false);
         }
-        return missing.Count > 0 ? (null, missing) : (t with { Path = path, Query = query, Headers = headers, Body = body }, missing);
+        string? variables = t.GraphQlVariablesJson;
+        if (variables is not null && JsonNode.Parse(variables) is JsonObject vars) { Fill(vars); variables = vars.ToJsonString(); }
+        return missing.Count > 0 ? (null, missing) : (t with { Path = path, Query = query, Headers = headers, Body = body, GraphQlVariablesJson = variables }, missing);
+
+        // Whole-placeholder JSON values take the Test Data value's exact JSON type, at any depth (GraphQL input objects are nested).
+        void Fill(JsonObject o)
+        {
+            foreach (var (k, v) in o.ToList())
+            {
+                if (v is JsonObject nested) { Fill(nested); continue; }
+                if (v is not JsonValue jv || jv.GetValueKind() != JsonValueKind.String || WholePlaceholder().Match(jv.GetValue<string>()) is not { Success: true } m) continue;
+                var name = m.Groups[1].Value;
+                if (values.TryGetValue(name, out var e)) o[k] = TestDataResourceRules.ToJson(e);
+                else if (optional.Contains(name)) o.Remove(k);
+                else if (!missing.Contains(name)) missing.Add(name);
+            }
+        }
     }
 
     /// <summary>Which of a test's inputs a set of value names covers: missing required and missing optional names.</summary>
@@ -204,8 +296,12 @@ public static partial class ContractTestRules
                 default: Raise(ContractTestImpactLevel.NeedsUpdate, $"{char.ToUpperInvariant(detail[0])}{detail[1..]}."); break;
             }
         }
-        var requestTypes = new[] { TypeName(old?.RequestSchema), TypeName(op.RequestSchema) }.Where(t => t is not null).ToHashSet(StringComparer.Ordinal);
-        var responseTypes = (old?.ResponseSchemas.Values.AsEnumerable() ?? []).Concat(op.ResponseSchemas.Values).Select(TypeName).Where(t => t is not null).ToHashSet(StringComparer.Ordinal);
+        // Request types: the REST body schema, or the GraphQL argument types (input objects, enums). Response types: success schemas or the GraphQL result type.
+        var requestTypes = new[] { TypeName(old?.RequestSchema), TypeName(op.RequestSchema) }
+            .Concat((old?.ParameterDetails ?? []).Concat(op.ParameterDetails).Where(p => p.In == "argument").Select(p => TypeName(p.Type)))
+            .Where(t => t is not null).ToHashSet(StringComparer.Ordinal);
+        var responseTypes = (old?.ResponseSchemas.Values.AsEnumerable() ?? []).Concat(op.ResponseSchemas.Values).Append(old?.ResultType).Append(op.ResultType)
+            .Select(TypeName).Where(t => t is not null).ToHashSet(StringComparer.Ordinal);
         foreach (var c in SourceEvidenceDiff.ContractChanges(before, after).Where(c => c.Area is "Field" or "Enum value" or "Type"))
         {
             var typeName = c.Key.Split('|').Last().Split('.')[0];

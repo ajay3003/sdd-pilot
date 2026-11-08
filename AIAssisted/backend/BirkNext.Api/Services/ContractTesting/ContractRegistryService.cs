@@ -14,8 +14,9 @@ using Microsoft.EntityFrameworkCore;
 namespace BirkNext.Api.Services.ContractTesting;
 
 /// <summary>
-/// The contract registry: OpenAPI documents (JSON or YAML, OpenAPI 3 or Swagger 2) imported by upload or from a URL become immutable versions of
-/// a contract, parsed by the same reader Source Analysis uses into the shared <see cref="SourceContract"/> model. An identical document is not
+/// The contract registry: OpenAPI documents (JSON or YAML, OpenAPI 3 or Swagger 2) and GraphQL schemas (SDL or an introspection result) imported
+/// by upload or from a URL become immutable versions of a contract, parsed by the readers Source Analysis uses into the shared
+/// <see cref="SourceContract"/> model. A contract keeps one protocol across its versions. An identical document is not
 /// stored again; a changed one is the next version. Importing never executes anything against the API it describes.
 /// </summary>
 public sealed partial class ContractRegistryService(AppDbContext db, IContractSourceFetcher fetcher, TimeProvider? clock = null)
@@ -44,12 +45,33 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
         if (Encoding.UTF8.GetByteCount(content) > MaxDocumentBytes) return Fail($"The document is larger than {MaxDocumentBytes / (1024 * 1024)} MB.");
 
         var json = content.TrimStart().StartsWith('{');
-        var format = json ? "json" : "yaml";
-        if (!LooksLikeOpenApi(content, json)) return Fail("Not an OpenAPI 3 or Swagger 2 document (no 'openapi' or 'swagger' version field).");
+        string format;
+        ApiContractProtocol protocol;
         SourceContract? parsed;
-        try { parsed = ContractAnalyzer.ReadOpenApiDocument(json ? "contract.json" : "contract.yaml", content); }
-        catch (Exception ex) when (ex is JsonException or FormatException or InvalidOperationException) { return Fail($"The document could not be parsed ({ex.GetType().Name})."); }
-        if (parsed is null) return Fail("The document could not be read as OpenAPI.");
+        try
+        {
+            if (LooksLikeOpenApi(content, json))
+            {
+                (protocol, format) = (ApiContractProtocol.Rest, json ? "json" : "yaml");
+                parsed = ContractAnalyzer.ReadOpenApiDocument(json ? "contract.json" : "contract.yaml", content);
+            }
+            else if (json && IsIntrospection(content))
+            {
+                (protocol, format) = (ApiContractProtocol.GraphQl, "introspection");
+                parsed = ContractAnalyzer.ReadGraphQlIntrospection("schema.json", content);
+            }
+            else if (!json)
+            {
+                (protocol, format) = (ApiContractProtocol.GraphQl, "graphql");
+                parsed = ContractAnalyzer.ReadGraphQl("schema.graphql", content);
+                if (parsed?.Type == SourceContractType.GraphQlOperations) return Fail("This is a GraphQL operations document, not a schema. Import the schema (SDL or an introspection result).");
+                if (parsed is { ParseSupport: not DomainSupport.Supported }) return Fail("Not a complete GraphQL schema: " + string.Join(" ", parsed.Limitations));
+            }
+            else return Fail("Not an OpenAPI 3 / Swagger 2 document or a GraphQL schema (SDL or an introspection result).");
+        }
+        catch (Exception ex) when (ex is JsonException or FormatException or InvalidOperationException or HotChocolate.Language.SyntaxException)
+        { return Fail($"The document could not be parsed ({ex.GetType().Name})."); }
+        if (parsed is null) return Fail(protocol == ApiContractProtocol.Rest ? "The document could not be read as OpenAPI." : "The document could not be read as a GraphQL schema.");
         if (parsed.Operations.Count == 0) problems.Add("The document declares no operations.");
 
         var sha = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content))).ToLowerInvariant();
@@ -59,6 +81,8 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
         {
             contract = await db.ApiContracts.FirstOrDefaultAsync(c => c.Key == request.ContractKey, ct);
             if (contract is null) return Fail($"Contract {request.ContractKey} does not exist.");
+            if (contract.Protocol != protocol.ToString())
+                return Fail($"{contract.Name} is a {(contract.Protocol == nameof(ApiContractProtocol.Rest) ? "REST (OpenAPI)" : "GraphQL")} contract; a {(protocol == ApiContractProtocol.Rest ? "REST" : "GraphQL")} document cannot be its next version.");
         }
         else
         {
@@ -71,7 +95,8 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
                     return new(false, true, existing.Key, latest, $"This document is already version {latest} of {existing.Name}; nothing was stored.", problems);
             }
             var name = Trim(string.IsNullOrWhiteSpace(request.Name) ? parsed.Name : request.Name.Trim(), 200);
-            contract = new ApiContractRow { Id = Guid.NewGuid(), Key = await UniqueKeyAsync(name, ct), Name = name, Protocol = nameof(ApiContractProtocol.Rest), CreatedAt = now, UpdatedAt = now };
+            if (protocol == ApiContractProtocol.GraphQl && string.IsNullOrWhiteSpace(request.Name) && parsed.Name is "schema" or "contract") name = "GraphQL schema";
+            contract = new ApiContractRow { Id = Guid.NewGuid(), Key = await UniqueKeyAsync(name, ct), Name = name, Protocol = protocol.ToString(), CreatedAt = now, UpdatedAt = now };
             db.ApiContracts.Add(contract);
         }
         var last = await db.ApiContractVersions.AsNoTracking().Where(v => v.ContractId == contract.Id).OrderByDescending(v => v.Version).FirstOrDefaultAsync(ct);
@@ -153,6 +178,18 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
             catch (JsonException) { return false; }
         }
         return content.Split('\n').Any(l => l.StartsWith("openapi:", StringComparison.Ordinal) || l.StartsWith("swagger:", StringComparison.Ordinal) || l.StartsWith("\"openapi\":", StringComparison.Ordinal));
+    }
+
+    /// <summary>A GraphQL introspection result: <c>{"data":{"__schema":…}}</c> or <c>{"__schema":…}</c>.</summary>
+    private static bool IsIntrospection(string content)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(content);
+            var root = doc.RootElement;
+            return root.ValueKind == JsonValueKind.Object && (root.TryGetProperty("__schema", out _) || root.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object && data.TryGetProperty("__schema", out _));
+        }
+        catch (JsonException) { return false; }
     }
 
     /// <summary>Scheme, host, port and path; the query (which may carry a token) is dropped.</summary>

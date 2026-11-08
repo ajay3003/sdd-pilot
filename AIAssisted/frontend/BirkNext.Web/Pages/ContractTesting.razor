@@ -9,11 +9,11 @@
 
 <PageTitle>Contract Testing</PageTitle>
 
-@* Contract Testing (API Quality Review): import an OpenAPI contract into the registry (immutable versions), explore its operations, generate draft
+@* Contract Testing (API Quality Review): import an OpenAPI contract or a GraphQL schema into the registry (immutable versions), explore its operations, generate draft
    tests, bind Test Data pinned by version, check readiness and run through Execution Evidence. Opening anything here never sends a request;
    only "Run selected" does, and only for tests that are Ready. State lives in the URL. *@
 <div class="ct" data-testid="ct-page" aria-busy="@(_loading ? "true" : "false")">
-    <PageHeader Title="Contract Testing" Description="Import an OpenAPI contract, generate tests from its operations, bind Test Data and run them. What was sent and received is saved in Execution Results." />
+    <PageHeader Title="Contract Testing" Description="Import an OpenAPI contract or a GraphQL schema, generate tests from its operations, bind Test Data and run them. What was sent and received is saved in Execution Results." />
     <p class="ct-back"><a href="api-quality-review">← API Quality Review</a> · <a href="execution-results">Execution Results</a> · <a href="test-data">Test Data</a></p>
 
     <section class="ct-card ct-env" aria-label="Target Environment" data-testid="ct-env">
@@ -34,14 +34,14 @@
             <section class="ct-card" aria-labelledby="ct-contracts-h" data-testid="ct-contracts">
                 <h2 id="ct-contracts-h">Contracts</h2>
                 @if (_contracts is null) { <p class="ct-muted">Loading…</p> }
-                else if (_contracts.Count == 0) { <p class="ct-muted" data-testid="ct-contracts-empty">No contracts yet. Import an OpenAPI document below.</p> }
+                else if (_contracts.Count == 0) { <p class="ct-muted" data-testid="ct-contracts-empty">No contracts yet. Import an OpenAPI document or a GraphQL schema below.</p> }
                 else
                 {
                     <ul class="ct-list">
                         @foreach (var c in _contracts)
                         {
                             <li class="@(c.Key == ContractKey ? "ct-selected" : null)"><a href="@Link(contract: c.Key, version: null, view: "operations", test: null)" data-testid="ct-contract-link" aria-current="@(c.Key == ContractKey ? "page" : null)">@c.Name</a>
-                                <span class="ct-muted">v@(c.LatestVersion) · @c.OperationCount operations · @c.TestCount tests</span></li>
+                                <span class="ct-muted">@(c.Protocol == ApiContractProtocol.GraphQl ? "GraphQL" : "REST") · v@(c.LatestVersion) · @c.OperationCount operations · @c.TestCount tests</span></li>
                         }
                     </ul>
                 }
@@ -51,7 +51,7 @@
                 <h2 id="ct-import-h">Import a contract</h2>
                 <fieldset class="ct-radios">
                     <legend class="visually-hidden">Source</legend>
-                    <label><input type="radio" name="ct-src" checked="@(!_importByUrl)" @onchange="() => _importByUrl = false" data-testid="ct-import-file-mode" /> File (JSON or YAML)</label>
+                    <label><input type="radio" name="ct-src" checked="@(!_importByUrl)" @onchange="() => _importByUrl = false" data-testid="ct-import-file-mode" /> File</label>
                     <label><input type="radio" name="ct-src" checked="@_importByUrl" @onchange="() => _importByUrl = true" data-testid="ct-import-url-mode" /> URL</label>
                 </fieldset>
                 @if (_importByUrl)
@@ -61,8 +61,13 @@
                 }
                 else
                 {
-                    <label class="ct-field">OpenAPI file <InputFile OnChange="PickFile" accept=".json,.yaml,.yml" data-testid="ct-import-file" /></label>
+                    <label class="ct-field">Contract file <InputFile OnChange="PickFile" accept=".json,.yaml,.yml,.graphql,.graphqls,.gql" data-testid="ct-import-file" /></label>
+                    <p class="ct-muted">OpenAPI 3 or Swagger 2 (JSON or YAML), or a GraphQL schema (SDL or an introspection result as JSON).</p>
                     @if (_importFileName is not null) { <p class="ct-muted" data-testid="ct-import-picked">@_importFileName (@(_importContent?.Length ?? 0) characters)</p> }
+                }
+                @if (string.IsNullOrEmpty(_importTarget))
+                {
+                    <label class="ct-field">Name <span class="ct-muted">(optional; default: the document's title)</span><input data-testid="ct-import-name" @bind="_importName" @bind:event="oninput" maxlength="200" /></label>
                 }
                 <label class="ct-field">Add as
                     <select data-testid="ct-import-target" @bind="_importTarget">
@@ -129,7 +134,7 @@
     private IContractTestingApiService? Api => Services.GetService(typeof(IContractTestingApiService)) as IContractTestingApiService;
 
     private bool _loading = true, _busy, _importByUrl, _confirmMutating;
-    private string? _error, _message, _importUrl, _importFileName, _importContent, _importTarget, _basePath, _environmentName;
+    private string? _error, _message, _importUrl, _importFileName, _importContent, _importTarget, _importName, _basePath, _environmentName;
     private Guid? _runId;
     private IReadOnlyList<ApiContractSummary>? _contracts;
     private ApiContractDetail? _detail;
@@ -214,7 +219,7 @@
         _busy = true; _error = null; _message = null;
         var request = new ContractImportRequest
         {
-            ContractKey = string.IsNullOrEmpty(_importTarget) ? null : _importTarget,
+            ContractKey = string.IsNullOrEmpty(_importTarget) ? null : _importTarget, Name = string.IsNullOrEmpty(_importTarget) && !string.IsNullOrWhiteSpace(_importName) ? _importName.Trim() : null,
             FileName = _importFileName ?? "", Content = _importByUrl ? null : _importContent, Url = _importByUrl ? _importUrl?.Trim() : null,
         };
         var (result, error) = await api.ImportAsync(request);
@@ -222,7 +227,7 @@
         if (result is { Imported: true } or { Unchanged: true })
         {
             _message = result.Message;
-            _importContent = null; _importFileName = null; _importUrl = null;
+            _importContent = null; _importFileName = null; _importUrl = null; _importName = null;
             Go(Link(contract: result.Key, version: null, view: "operations", test: null));
         }
         else _error = result?.Message ?? error;
@@ -284,6 +289,10 @@
         else _error = result?.NotRun is { Count: > 0 } notRun ? "Nothing was run. " + string.Join(" ", notRun) : error ?? "Nothing was run.";
     }
 
+    /// <summary>The same rule the backend run service applies: a mutating REST method or a GraphQL mutation document.</summary>
+    private static bool ExecutionRunService_Mutating(ContractTestDefinition t) => t.Template.Protocol == ExecutionProtocol.GraphQl
+        ? (t.Template.GraphQlQuery ?? "").TrimStart().StartsWith("mutation", StringComparison.Ordinal) : t.Template.Method.ToUpperInvariant() is "POST" or "PUT" or "PATCH" or "DELETE";
+
     private void Toggle(Guid id, bool on) { if (on) _selected.Add(id); else _selected.Remove(id); }
 
     private void CompareFrom(ChangeEventArgs e)
@@ -331,7 +340,7 @@
                                 <th scope="row"><code>@op.Name</code>@if (op.Summary is { } s) { <div class="ct-muted">@s</div> }@if (op.OperationId is { } id) { <div class="ct-muted">operationId @id</div> }</th>
                                 <td>@if (op.ParameterDetails.Count == 0) { <span class="ct-muted">none</span> } else { @foreach (var p in op.ParameterDetails) { <div>@p.Name <span class="ct-muted">@p.In@(p.Type is null ? "" : " · " + p.Type)@(p.Required ? " · required" : "")</span></div> } }</td>
                                 <td>@if (op.RequestContentTypes.Count == 0) { <span class="ct-muted">none</span> } else { <span>@(op.RequestSchema ?? "body")</span> <span class="ct-muted">@string.Join(", ", op.RequestContentTypes)@(op.RequestBodyRequired ? " · required" : "")</span> }</td>
-                                <td>@string.Join(", ", op.ResponseCodes.Select(c => op.ResponseSchemas.TryGetValue(c, out var schema) ? $"{c} {schema}" : c))</td>
+                                <td>@(op.ResultType is { } result ? $"returns {result}" : string.Join(", ", op.ResponseCodes.Select(c => op.ResponseSchemas.TryGetValue(c, out var schema) ? $"{c} {schema}" : c)))</td>
                                 <td>@(op.Security.Count == 0 ? "none" : string.Join(", ", op.Security))</td>
                                 <td>@count</td>
                                 <td><button class="btn btn-secondary btn-sm" data-testid="ct-generate-op" disabled="@_busy" @onclick="() => GenerateAsync([op.Name])" aria-label="@($"Generate tests for {op.Name}")">Generate</button></td>
@@ -368,7 +377,7 @@
                             var test = t.Test;
                             <tr data-testid="ct-test-row" data-kind="@test.Kind" data-op="@test.Operation" data-state="@t.Readiness.State" class="@(test.Id == TestId ? "ct-selected" : null)">
                                 <td><input type="checkbox" data-testid="ct-test-select" aria-label="@($"Select {test.Name}")" checked="@_selected.Contains(test.Id)" @onchange="e => Toggle(test.Id, (bool)e.Value!)" /></td>
-                                <th scope="row"><a href="@Link(view: "tests", test: test.Id)" data-testid="ct-test-link">@test.Name</a><div class="ct-muted">@(test.Kind == ContractTestKind.Positive ? "Positive" : "Negative: missing required value") · revision @test.Revision</div></th>
+                                <th scope="row"><a href="@Link(view: "tests", test: test.Id)" data-testid="ct-test-link">@test.Name</a><div class="ct-muted">@(test.Kind == ContractTestKind.Positive ? "Positive" : "Negative: missing required value")@(ExecutionRunService_Mutating(test) ? " · changes data" : "") · revision @test.Revision</div></th>
                                 <td><span class="ct-state ct-state-@t.Readiness.State.ToString().ToLowerInvariant()" data-testid="ct-readiness">@ReadinessLabel(t.Readiness.State)</span>
                                     @if (t.Readiness.MissingValues.Count > 0) { <div class="ct-muted" data-testid="ct-missing">Missing: @string.Join(", ", t.Readiness.MissingValues)</div> }</td>
                                 <td>v@(test.ContractVersion)@if (t.Impact is { } impact) { <span class="ct-impact ct-impact-@impact.Level.ToString().ToLowerInvariant()" data-testid="ct-impact">@ImpactLabel(impact.Level) in v@(impact.ToVersion)</span> }</td>
@@ -437,7 +446,16 @@
         }
 
         <h5>Request template</h5>
-        <pre class="ct-pre" data-testid="ct-template">@test.Template.Method @test.Template.Path@(test.Template.Query.Count > 0 ? "?" + string.Join("&", test.Template.Query.Select(q => $"{q.Key}={q.Value}")) : "")@(test.Template.Body is { } body ? "\n\n" + body : "")</pre>
+        @if (test.Template.Protocol == ExecutionProtocol.GraphQl)
+        {
+            <pre class="ct-pre" data-testid="ct-template">POST @test.Template.Path
+
+@test.Template.GraphQlQuery@(test.Template.GraphQlVariablesJson is { } vars ? "\n\nvariables " + vars : "")</pre>
+        }
+        else
+        {
+            <pre class="ct-pre" data-testid="ct-template">@test.Template.Method @test.Template.Path@(test.Template.Query.Count > 0 ? "?" + string.Join("&", test.Template.Query.Select(q => $"{q.Key}={q.Value}")) : "")@(test.Template.Body is { } body ? "\n\n" + body : "")</pre>
+        }
         <p class="ct-muted">Expects @test.Template.ExpectedOutcome. Placeholders are filled from the pinned Test Data when the test runs; nothing is stored resolved.</p>
         <button class="btn btn-link ct-danger" data-testid="ct-delete" disabled="@_busy" @onclick="() => DeleteAsync(test.Id)">Delete test</button>
     </article>;
