@@ -84,7 +84,12 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
                 _ => $"The document could not be parsed ({ex.GetType().Name}: {ex.Message.Split('.')[0]}).",
             });
         }
-        if (format == "yaml" && YamlLimitations(content) is { Count: > 0 } yamlLimits) parsed = parsed is null ? null : parsed with { Limitations = [.. parsed.Limitations, .. yamlLimits] };
+        if (format == "yaml" && YamlLimitations(content) is { Count: > 0 } yamlLimits)
+        {
+            // Nothing readable plus unsupported or malformed YAML is a refusal, not an empty contract.
+            if (parsed is null || parsed.Operations.Count == 0) return Fail("The YAML could not be read: " + string.Join(" ", yamlLimits));
+            parsed = parsed with { Limitations = [.. parsed.Limitations, .. yamlLimits] };
+        }
         if (parsed is null) return Fail(protocol == ApiContractProtocol.Rest ? "The document could not be read as OpenAPI." : "The document could not be read as a GraphQL schema.");
         if (parsed.Operations.Count == 0) problems.Add("The document declares no operations.");
 
@@ -209,6 +214,14 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
         var limits = new List<string>();
         if (Regex.IsMatch(content, @"(^|\s)&[A-Za-z0-9_-]+\s|:\s+\*[A-Za-z0-9_-]+", RegexOptions.Multiline)) limits.Add("YAML anchors/aliases are not resolved by the YAML subset reader.");
         if (Regex.IsMatch(content, @"\s!!?[A-Za-z]", RegexOptions.Multiline)) limits.Add("YAML tags are not interpreted by the YAML subset reader.");
+        var lines = content.Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i].TrimEnd('\r');
+            if (line.TrimStart().StartsWith('#') || !Regex.IsMatch(line, @"(:|^\s*-)\s+[\[{]")) continue;
+            if (line.Count(c => c == '[') != line.Count(c => c == ']') || line.Count(c => c == '{') != line.Count(c => c == '}'))
+            { limits.Add($"A YAML flow collection is not closed on line {i + 1}."); break; }
+        }
         return limits;
     }
 

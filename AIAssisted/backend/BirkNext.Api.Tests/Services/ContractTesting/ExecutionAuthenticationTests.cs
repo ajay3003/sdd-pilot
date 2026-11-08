@@ -94,6 +94,9 @@ public sealed class ExecutionAuthenticationTests : IAsyncLifetime
             await c.Response.OutputStream.WriteAsync(bytes);
             c.Response.Close();
         }
+        if (path == "/oauth/huge") { await Send(200, "{\"access_token\":\"" + new string('a', ExecutionCredentialResolver.MaxTokenResponseBytes) + "\"}"); return; }
+        if (path == "/oauth/unsafe") { await Send(200, "{\"access_token\":\"abc\\r\\nX-Injected: 1\",\"expires_in\":60}"); return; }
+        if (path == "/oauth/redirect") { c.Response.StatusCode = 302; c.Response.RedirectLocation = _server.Url("/oauth/token"); c.Response.Close(); return; }
         if (path == "/oauth/token")
         {
             Interlocked.Increment(ref _tokenRequests);
@@ -203,6 +206,23 @@ public sealed class ExecutionAuthenticationTests : IAsyncLifetime
         resolver.Prepare(request with { ContextFingerprint = "stale" }, origin).Problem.Should().Contain("No attended session");
         resolver.Prepare(request, new Uri("https://evil.example.test/")).Problem.Should().Contain("only HTTPS hosts approved");
         resolver.Prepare(request with { ContextFingerprint = null }, origin).Problem.Should().Contain("proxy identity");
+    }
+
+    [Theory]
+    [InlineData("/oauth/huge", "larger than 64 KB")]
+    [InlineData("/oauth/unsafe", "not a usable bearer token")]
+    [InlineData("/oauth/redirect", "HTTP 302")]
+    public async Task An_oversized_unsafe_or_redirected_token_answer_is_never_used(string tokenPath, string reason)
+    {
+        _credentials.Save(new() { EnvironmentId = "local-synthetic", Kind = ExecutionAuthenticationKind.ClientCredentials, TokenUrl = _server.Url(tokenPath), ClientId = "synthetic-client", Secret = ClientSecret },
+            DateTimeOffset.UtcNow).Error.Should().BeNull();
+        ExecutionCredentialResolver.Forget("local-synthetic");
+        var (_, detail, _) = await RunAsync(Run(ExecutionAuthenticationKind.ClientCredentials, "/secure/children/7"));
+        var call = detail!.Calls.Single();
+        call.State.Should().Be(ExecutionState.Blocked);
+        call.Attempts.Single().Error.Should().Contain(reason);
+        _seen.Should().NotContain(s => s.Path.StartsWith("/secure/", StringComparison.Ordinal));
+        _seen.Should().NotContain(s => s.Path == "/oauth/token", "a redirect from the token endpoint is not followed");
     }
 
     [Theory]

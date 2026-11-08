@@ -141,6 +141,7 @@ public sealed class ExecutionCredentialResolver(TransientAuthenticatedApiContext
     TimeProvider? clock = null, ILogger<ExecutionCredentialResolver>? logger = null)
 {
     public const string TokenClientName = "api-service-token";
+    public const int MaxTokenResponseBytes = 64 * 1024;
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
     private static readonly ConcurrentDictionary<string, (string Token, DateTimeOffset ExpiresAt)> Tokens = new();
 
@@ -235,9 +236,18 @@ public sealed class ExecutionCredentialResolver(TransientAuthenticatedApiContext
             timeout.CancelAfter(TimeSpan.FromSeconds(15));
             using var response = await http.CreateClient(TokenClientName).PostAsync(view.TokenUrl, new FormUrlEncodedContent(form), timeout.Token);
             if (!response.IsSuccessStatusCode) return (null, $"The token endpoint refused the client credentials (HTTP {(int)response.StatusCode}).");
-            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
-            if (!doc.RootElement.TryGetProperty("access_token", out var at) || at.GetString() is not { Length: > 0 } token)
+            // A token response is small: read at most MaxTokenResponseBytes, never an unbounded body.
+            await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token);
+            var buffer = new byte[MaxTokenResponseBytes + 1];
+            var read = 0;
+            for (int n; read < buffer.Length && (n = await stream.ReadAsync(buffer.AsMemory(read), timeout.Token)) > 0;) read += n;
+            if (read > MaxTokenResponseBytes) return (null, $"The token endpoint's answer is larger than {MaxTokenResponseBytes / 1024} KB.");
+            using var doc = JsonDocument.Parse(buffer.AsMemory(0, read), new JsonDocumentOptions { MaxDepth = 16 });
+            if (doc.RootElement.ValueKind != JsonValueKind.Object || !doc.RootElement.TryGetProperty("access_token", out var at) || at.ValueKind != JsonValueKind.String
+                || at.GetString() is not { Length: > 0 } token)
                 return (null, "The token endpoint answered without an access_token.");
+            if (token.Length > 16 * 1024 || token.Any(c => c is < '!' or > '~'))
+                return (null, "The token endpoint's access_token is not a usable bearer token.");
             var lifetime = doc.RootElement.TryGetProperty("expires_in", out var ei) && ei.TryGetInt32(out var seconds) ? Math.Clamp(seconds, 1, 86400) : 300;
             Tokens[cacheKey] = (token, _clock.GetUtcNow().AddSeconds(lifetime));
             logger?.LogInformation("Unattended API token obtained for {Reference}; valid {Seconds} s.", cacheKey, lifetime);

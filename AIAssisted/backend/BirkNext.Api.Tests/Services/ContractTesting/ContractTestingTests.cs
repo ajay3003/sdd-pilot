@@ -546,6 +546,22 @@ public sealed class ContractTestingTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Hostile_contract_documents_and_URLs_are_refused_with_a_reason_and_never_fetched()
+    {
+        using var scope = _services.CreateScope();
+        var registry = Scoped<ContractRegistryService>(scope);
+        var huge = V1Yaml + "\n# " + new string('x', ContractRegistryService.MaxDocumentBytes);
+        (await registry.ImportAsync(new() { FileName = "huge.yaml", Content = huge }, default)).Message.Should().Contain("larger than 5 MB");
+        var deepJson = "{\"openapi\":\"3.0.3\",\"x\":" + new string('[', 200) + new string(']', 200) + "}";
+        (await registry.ImportAsync(new() { FileName = "deep.json", Content = deepJson }, default)).Message.Should().Contain("JSON is not valid");
+        (await registry.ImportAsync(new() { FileName = "bad.yaml", Content = "openapi: 3.0.3\npaths: [unterminated" }, default)).Message.Should().Contain("not closed on line 2");
+        foreach (var url in new[] { "file:///C:/Windows/win.ini", "http://user:pass@localhost/openapi.json", "http://198.51.100.7/openapi.json", "gopher://localhost/x" })
+            (await registry.ImportAsync(new() { FileName = "", Url = url }, default)).Imported.Should().BeFalse(url);
+        _seen.Should().BeEmpty("no refused source is ever requested");
+        (await registry.ListAsync(default)).Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Coverage_counts_only_execution_evidence_of_the_exact_contract_version()
     {
         using var scope = _services.CreateScope();

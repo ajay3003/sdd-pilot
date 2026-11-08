@@ -87,7 +87,10 @@ public sealed partial class ContractCallValidator(ContractRegistryService regist
         if (d.Protocol == ExecutionProtocol.GraphQl)
         {
             if (!parsed) return Report("Response", contractRef, null, [new("Syntax", "$", "", "json", "The GraphQL response is not JSON.")], [], "data shape");
-            return Report("Response", contractRef, $"{contractRef}#{operation}", GraphQlContractValidator.ValidateResponse(doc, d.GraphQlQuery, json), [], "data shape");
+            // Depth-capped parts are "not evaluated", never violations.
+            var gql = GraphQlContractValidator.ValidateResponse(doc, d.GraphQlQuery, json);
+            return Report("Response", contractRef, $"{contractRef}#{operation}", [.. gql.Where(f => f.Tier != "Unsupported")],
+                gql.Where(f => f.Tier == "Unsupported").Select(f => $"response nesting > {GraphQlContractValidator.MaxNesting * 2}"), "data shape");
         }
         if (validator is null)
         {

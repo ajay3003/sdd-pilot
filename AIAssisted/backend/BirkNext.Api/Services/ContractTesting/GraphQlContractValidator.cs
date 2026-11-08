@@ -65,8 +65,14 @@ public static class GraphQlContractValidator
         return (findings, unsupported);
     }
 
+    /// <summary>Nesting beyond this is not evaluated (reported as unsupported), so a hostile document cannot exhaust the stack.</summary>
+    public const int MaxNesting = 32;
+
+    private static int Nesting(string path) => path.Count(c => c is '.' or '[');
+
     private static void Selections(SelectionSetNode? selections, string? type, string path, SourceContract schema, List<ContractValidationFinding> findings, List<string> unsupported)
     {
+        if (Nesting(path) > MaxNesting) { if (!unsupported.Contains($"selection nesting > {MaxNesting}")) unsupported.Add($"selection nesting > {MaxNesting}"); return; }
         var named = Named(type);
         var shape = named is null ? null : schema.Types.FirstOrDefault(t => t.Name == named);
         var leaf = named is null || Scalars.Contains(named) || shape is null || shape.Kind is "enum" or "scalar";
@@ -130,6 +136,11 @@ public static class GraphQlContractValidator
 
     private static void Value(JsonNode? value, string? type, SelectionSetNode? selections, string path, string errorPath, SourceContract schema, HashSet<string?> errorPaths, List<ContractValidationFinding> findings)
     {
+        if (Nesting(path) > MaxNesting * 2)
+        {
+            if (!findings.Any(f => f.Keyword == "depth")) findings.Add(new("Unsupported", path, "", "depth", $"Response nesting beyond {MaxNesting * 2} levels is not evaluated."));
+            return;
+        }
         var t = (type ?? "").Trim();
         var nonNull = t.EndsWith('!');
         if (nonNull) t = t[..^1];

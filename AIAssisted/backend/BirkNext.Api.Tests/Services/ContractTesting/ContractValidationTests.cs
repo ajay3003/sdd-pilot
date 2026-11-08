@@ -193,4 +193,23 @@ public sealed class ContractValidationTests
             .Should().BeEmpty("a null in a non-null position is consistent when the errors array reports that path");
         GraphQlContractValidator.ValidateResponse(GraphQlSchema, query, JsonNode.Parse("""{"hello":1}""")).Should().ContainSingle(f => f.Keyword == "envelope");
     }
+
+    [Fact]
+    public void Hostile_nesting_is_capped_as_not_evaluated_never_as_a_violation_or_a_crash()
+    {
+        var levels = GraphQlContractValidator.MaxNesting + 10;
+        var query = "query C($id: ID!) { child(id: $id) { " + string.Concat(Enumerable.Repeat("friends { ", levels)) + "id" + new string('}', levels) + " } }";
+        var request = GraphQlContractValidator.ValidateRequest(GraphQlSchema, query, """{"id":"7"}""");
+        request.Findings.Should().BeEmpty();
+        request.Unsupported.Should().ContainSingle(u => u.Contains("selection nesting"));
+
+        var deep = "{\"id\":\"1\"}";
+        for (var i = 0; i < GraphQlContractValidator.MaxNesting * 2 + 10; i++) deep = "{\"id\":\"1\",\"friends\":[" + deep + "]}";
+        var response = GraphQlContractValidator.ValidateResponse(GraphQlSchema, query, JsonNode.Parse("{\"data\":{\"child\":" + deep + "}}", null, new() { MaxDepth = 1000 }));
+        response.Should().OnlyContain(f => f.Tier == "Unsupported" && f.Keyword == "depth");
+
+        var yaml = "openapi: 3.0.3\n" + string.Concat(Enumerable.Range(0, 200).Select(i => new string(' ', i * 2) + "k:\n")) + new string(' ', 400) + "v: 1\n";
+        var parse = () => OpenApiSchemaValidator.Parse(yaml);
+        parse.Should().Throw<FormatException>().WithMessage("*nested too deeply*");
+    }
 }
