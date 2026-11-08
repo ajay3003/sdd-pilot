@@ -47,7 +47,7 @@ public sealed class SourceIngestionOwnershipTests
             ["Services/DependencyReview/DependencyReviewService.cs"] = "test-only RunAsync(archives) harness through the same evidence bridge; not exposed over HTTP",
             ["Services/ProjectImport/ProjectCompatibilityDiagnosticService.cs"] = "creates synthetic in-memory ZIP fixtures only; every fixture is still read by the canonical bounded archive reader",
             ["Services/MarkdownDiagnosticsService.cs"] = "creates synthetic in-memory Markdown ZIP fixtures only; every fixture is still read by the canonical bounded archive reader",
-            ["Services/ExecutionEvidence/ExecutionEvidenceStore.cs"] = "writes the redacted execution-evidence export ZIP (ZipArchiveMode.Create); never reads an archive",
+            ["Services/ExecutionEvidence/ExecutionEvidenceManagement.cs"] = "writes the redacted execution-evidence export ZIP of selected runs (ZipArchiveMode.Create); never reads an archive",
         };
         Sources().Where(f => f.Text.Contains("new ZipArchive(", StringComparison.Ordinal)).Select(f => f.Rel)
             .Should().BeEquivalentTo(allowed.Keys, "source bytes come from Source Analysis; no review opens archives of its own");
