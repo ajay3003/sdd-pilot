@@ -166,6 +166,19 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
     private async Task<ExecutionCallRecord> RunCallAsync(HttpClient client, Guid runId, Uri origin, ExecutionCallRecord record, ExecutionCallDefinition d, ExecutionRunRequest run, CancellationToken runToken)
     {
         var policy = run.CapturePolicy;
+        var reports = new List<ContractValidationReport>();
+        using var validationScope = d.ContractCheck == ContractCheckMode.None ? null : scopes.CreateScope();
+        var validator = validationScope?.ServiceProvider.GetService<IExecutionContractValidator>();
+        if (validator is not null && await validator.RequestAsync(d, runToken) is { } requestReport)
+        {
+            reports.Add(requestReport);
+            if (d.ContractCheck == ContractCheckMode.Enforce && requestReport.State == ContractValidationState.Invalid)
+                return record with
+                {
+                    State = ExecutionState.Blocked, CompletedAt = _clock.GetUtcNow(), ContractValidation = reports,
+                    Reason = $"Not sent: the request violates the contract. {requestReport.Summary} {string.Join(" ", requestReport.Findings.Take(3).Select(f => $"{f.InstancePath}: {f.Message}"))}".Trim(),
+                };
+        }
         var attempts = new List<ExecutionAttempt>();
         byte[]? lastRaw = null;
         string? retryReason = null;
@@ -233,11 +246,20 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
             if (d.Retry.DelayMs > 0) { try { await Task.Delay(Math.Clamp(d.Retry.DelayMs, 0, 10000), runToken); } catch (OperationCanceledException) { break; } }
         }
         var last = attempts[^1];
-        var results = ExecutionAssertions.Evaluate(d.Assertions, last.Response, lastRaw, d.Protocol);
+        ContractValidationReport? responseReport = null;
+        if (validator is not null && last.Response is { } received) { responseReport = await validator.ResponseAsync(d, received, lastRaw, runToken); if (responseReport is not null) reports.Add(responseReport); }
+        var results = ExecutionAssertions.Evaluate([.. d.Assertions.Where(a => a.Kind != AssertionKind.ContractSchema)], last.Response, lastRaw, d.Protocol);
+        foreach (var a in d.Assertions.Where(a => a.Kind == AssertionKind.ContractSchema))
+            results.Add(responseReport is null
+                ? new(a.Id, a.Kind, a.Operator, a.Target, a.Expected, null, AssertionOutcome.NotAssessed, last.Response is null ? "No response was received." : "The call has no contract reference to validate against.")
+                : new(a.Id, a.Kind, a.Operator, a.Target, a.Expected ?? "valid", responseReport.State == ContractValidationState.Valid && responseReport.Unsupported.Count > 0 ? "valid (partially evaluated)" : responseReport.State.ToString().ToLowerInvariant(),
+                    responseReport.State == ContractValidationState.Invalid ? AssertionOutcome.Failed
+                    : responseReport.State == ContractValidationState.Valid && responseReport.Unsupported.Count == 0 ? AssertionOutcome.Passed : AssertionOutcome.NotAssessed,
+                    responseReport.Summary));
         var state = ExecutionAssertions.Verdict(last, results);
         return record with
         {
-            Attempts = attempts, Assertions = results, State = state, CompletedAt = _clock.GetUtcNow(),
+            Attempts = attempts, Assertions = results, State = state, CompletedAt = _clock.GetUtcNow(), ContractValidation = reports,
             Reason = state switch
             {
                 ExecutionState.NotAssessed when d.Assertions.Count == 0 => "No assertions are configured, so the result is not assessed (never a pass by default).",
@@ -268,6 +290,16 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
         foreach (var (k, v) in d.Headers) if (!ExecutionEvidenceRedaction.IsSensitiveHeader(k)) message.Headers.TryAddWithoutValidation(k, v);
         return message;
     }
+}
+
+/// <summary>
+/// Contract checks of a call (implemented by Contract Testing). Request: before sending; with <see cref="ContractCheckMode.Enforce"/> an invalid
+/// request is not sent. Response: after the last attempt. Null = the call has no checkable contract reference.
+/// </summary>
+public interface IExecutionContractValidator
+{
+    Task<ContractValidationReport?> RequestAsync(ExecutionCallDefinition definition, CancellationToken ct);
+    Task<ContractValidationReport?> ResponseAsync(ExecutionCallDefinition definition, CapturedResponse response, byte[]? raw, CancellationToken ct);
 }
 
 /// <summary>On start: runs left Running by a previous process become Interrupted. Never resends anything.</summary>

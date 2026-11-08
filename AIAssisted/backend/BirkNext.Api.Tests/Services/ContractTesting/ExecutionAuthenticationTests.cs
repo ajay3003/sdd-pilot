@@ -67,6 +67,7 @@ public sealed class ExecutionAuthenticationTests : IAsyncLifetime
         services.AddSingleton(new TestDataCatalog([new AuthoredTestDataProvider(authored)], null, registry));
         services.AddScoped<ContractRegistryService>();
         services.AddScoped<ContractTestService>();
+        services.AddScoped<IExecutionContractValidator, ContractCallValidator>();
         _services = services.BuildServiceProvider();
         ExecutionCredentialResolver.Forget("local-synthetic");
         return Task.CompletedTask;

@@ -624,6 +624,7 @@ builder.Services.AddHostedService<BirkNext.Api.Services.ExecutionEvidence.Execut
 // Contract-Driven Testing: the contract registry (immutable versions) and contract tests, which run through ExecutionRunService above.
 builder.Services.AddScoped<BirkNext.Api.Services.ContractTesting.ContractRegistryService>();
 builder.Services.AddScoped<BirkNext.Api.Services.ContractTesting.ContractTestService>();
+builder.Services.AddScoped<BirkNext.Api.Services.ExecutionEvidence.IExecutionContractValidator, BirkNext.Api.Services.ContractTesting.ContractCallValidator>();
 // Resource Stability: provider-based observation of approved components (Podman container stats; .NET runtime counters of BirkNext's own process).
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.Resources.IResourceObservationProvider, BirkNext.Api.Services.PerformanceTests.Resources.PodmanResourceObservationProvider>();
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.Resources.IResourceObservationProvider, BirkNext.Api.Services.PerformanceTests.Resources.DotNetRuntimeSelfObservationProvider>();

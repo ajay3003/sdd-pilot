@@ -79,6 +79,16 @@ public static class ExecutionAssertions
                     var header = response.Headers.FirstOrDefault(h => h.Name.Equals(a.Target, StringComparison.OrdinalIgnoreCase));
                     results.Add(Compare(a, header?.Value, header is not null, R, $"Header {a.Target}"));
                     break;
+                case AssertionKind.BodyText:
+                    var bodyText = raw is null ? null : Encoding.UTF8.GetString(raw);
+                    results.Add(Compare(a, bodyText, bodyText is not null, R, "Response body"));
+                    break;
+                case AssertionKind.XPath:
+                    results.Add(XPath(a, raw, R));
+                    break;
+                case AssertionKind.ContractSchema:
+                    results.Add(R(null, AssertionOutcome.NotAssessed, "Contract validation is evaluated by the run service."));
+                    break;
                 case AssertionKind.JsonPath or AssertionKind.GraphQlDataPath:
                     if (invalid || json is null) { results.Add(R(null, a.Operator == AssertionOperator.NotExists && !invalid ? AssertionOutcome.Passed : AssertionOutcome.Failed,
                         invalid ? "The response body is not valid JSON." : "The response has no JSON body.")); break; }
@@ -118,6 +128,28 @@ public static class ExecutionAssertions
             _ => (present && Num(actual, out var x2) && Num(expected, out var y2) && x2 > y2, $"{what}: must be > {expected}, actual {(present ? actual : "absent")}."),
         };
         return R(present ? actual : null, ok ? AssertionOutcome.Passed : AssertionOutcome.Failed, why);
+    }
+
+    /// <summary>XPath 1.0 over an XML body (DTDs prohibited, no external resolution). Present = a non-empty node set or value.</summary>
+    private static AssertionResult XPath(AssertionDefinition a, byte[]? raw, Func<string?, AssertionOutcome, string, AssertionResult> R)
+    {
+        if (raw is null || raw.Length == 0) return R(null, a.Operator == AssertionOperator.NotExists ? AssertionOutcome.Passed : AssertionOutcome.Failed, "The response has no XML body.");
+        try
+        {
+            using var reader = System.Xml.XmlReader.Create(new MemoryStream(raw), new System.Xml.XmlReaderSettings { DtdProcessing = System.Xml.DtdProcessing.Prohibit, XmlResolver = null, MaxCharactersInDocument = 4 * 1024 * 1024 });
+            var navigator = new System.Xml.XPath.XPathDocument(reader).CreateNavigator();
+            var result = navigator.Evaluate(a.Target ?? "");
+            string? actual = result switch
+            {
+                System.Xml.XPath.XPathNodeIterator nodes => nodes.MoveNext() ? nodes.Current?.Value : null,
+                bool b => b ? "true" : "false",
+                double d => d.ToString(CultureInfo.InvariantCulture),
+                var other => other?.ToString(),
+            };
+            return Compare(a, actual, actual is not null && actual.Length > 0 || result is bool or double, R, $"XPath {a.Target}");
+        }
+        catch (Exception ex) when (ex is System.Xml.XmlException or System.Xml.XPath.XPathException)
+        { return R(null, AssertionOutcome.Failed, $"Not evaluated: {ex.GetType().Name} ({ex.Message.Split('.')[0]})."); }
     }
 
     /// <summary>Final verdict of a call from its last attempt and assertion results.</summary>

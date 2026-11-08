@@ -31,7 +31,10 @@ public sealed class ExecutionResultsPageTests : BunitContext
                         Response = new() { StatusCode = 200, DurationMs = 7, Body = new() { ContentType = "application/json", ByteCount = 30, Text = """{"name":"Kari","password":"••••••"}""",
                             Completeness = CaptureCompleteness.ExactRedacted, RedactedFields = 1, Sha256 = "abc" } } },
                 ],
-                Assertions = [new("s", AssertionKind.StatusCode, AssertionOperator.Equals, null, "200", "200", AssertionOutcome.Passed, "HTTP status: expected 200, actual 200.")] },
+                Assertions = [new("s", AssertionKind.StatusCode, AssertionOperator.Equals, null, "200", "200", AssertionOutcome.Passed, "HTTP status: expected 200, actual 200.")],
+                ContractValidation = [new("Request", ContractValidationState.Valid, "children-api@v1", "#/paths/~1children~1{id}/get", "The request matches the contract (parameters and body).", [], []),
+                    new("Response", ContractValidationState.Invalid, "children-api@v1", "#/paths/~1children~1{id}/get/responses/200/content/application~1json/schema", "1 contract violation(s) in the response (response 200).",
+                        [new("Type", "$.age", "#/components/schemas/Child/properties/age/type", "type", "Expected integer, got string.")], ["discriminator"])] },
             new() { CallId = Gql, Sequence = 2, State = ExecutionState.Failed, Definition = new() { Name = "gql partial", Protocol = ExecutionProtocol.GraphQl, Path = "/graphql", GraphQlQuery = "query p { a }" },
                 Attempts = [new() { AttemptNumber = 1, Transport = TransportResult.ResponseReceived, Request = new() { Method = "POST", Url = "http://localhost:5/graphql", GraphQlOperationType = "query" },
                     Response = new() { StatusCode = 200, GraphQlHasData = true, GraphQlErrorCount = 1, GraphQlErrorMessages = ["School unavailable"], GraphQlErrorPaths = ["school"] } }],
@@ -68,6 +71,17 @@ public sealed class ExecutionResultsPageTests : BunitContext
         var page = Render<ExecutionResults>();
         page.WaitForAssertion(() => page.Find("[data-testid=xr-page]").GetAttribute("aria-busy").Should().Be("false"));
         return page;
+    }
+
+    [Fact]
+    public void The_Contract_tab_shows_request_and_response_validation_with_source_paths_and_unevaluated_keywords()
+    {
+        var page = Open($"?run={Run}&call={Ok}&tab=contract");
+        var reports = page.FindAll("[data-testid=xr-contract-report]");
+        reports.Select(r => (r.GetAttribute("data-direction"), r.GetAttribute("data-state"))).Should().Equal(("Request", "Valid"), ("Response", "Invalid"));
+        page.Find("[data-testid=xr-contract-findings]").TextContent.Should().Contain("$.age").And.Contain("Expected integer, got string.").And.Contain("#/components/schemas/Child/properties/age/type");
+        page.Find("[data-testid=xr-contract-unsupported]").TextContent.Should().Be("Not evaluated: discriminator");
+        _api.Starts.Should().Be(0);
     }
 
     [Fact]
@@ -142,7 +156,7 @@ public sealed class ExecutionResultsPageTests : BunitContext
         {
             var page = Open($"?run={Run}&call={Ok}&tab=evidence");
             page.FindAll("[role=tab]").Select(t => (t.GetAttribute("data-testid"), t.GetAttribute("tabindex"))).Should().Equal(
-                ("xr-tab-request", "-1"), ("xr-tab-response", "-1"), ("xr-tab-assertions", "-1"), ("xr-tab-attempts", "-1"), ("xr-tab-evidence", "0"));
+                ("xr-tab-request", "-1"), ("xr-tab-response", "-1"), ("xr-tab-assertions", "-1"), ("xr-tab-attempts", "-1"), ("xr-tab-contract", "-1"), ("xr-tab-evidence", "0"));
         }
         finally { (System.Globalization.CultureInfo.CurrentCulture, System.Globalization.CultureInfo.DefaultThreadCurrentCulture) = (culture, fallback); }
     }

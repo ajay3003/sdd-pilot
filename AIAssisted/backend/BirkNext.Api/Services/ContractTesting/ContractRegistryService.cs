@@ -137,6 +137,11 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
         await db.ApiContracts.AsNoTracking().Where(c => c.Key == key).Join(db.ApiContractVersions.AsNoTracking().Where(v => v.Version == version), c => c.Id, v => v.ContractId, (c, v) => v)
             .FirstOrDefaultAsync(ct) is { } row ? Document(row) : null;
 
+    /// <summary>The stored document text and parsed contract of one version (for contract validation).</summary>
+    public async Task<(string Text, SourceContract Document)?> RawAsync(string key, int version, CancellationToken ct) =>
+        await db.ApiContracts.AsNoTracking().Where(c => c.Key == key).Join(db.ApiContractVersions.AsNoTracking().Where(v => v.Version == version), c => c.Id, v => v.ContractId, (c, v) => v)
+            .FirstOrDefaultAsync(ct) is { } row ? (row.DocumentText, Document(row)) : null;
+
     public async Task<int?> LatestVersionAsync(string key, CancellationToken ct) =>
         await db.ApiContracts.AsNoTracking().Where(c => c.Key == key).Join(db.ApiContractVersions.AsNoTracking(), c => c.Id, v => v.ContractId, (c, v) => (int?)v.Version).MaxAsync(ct);
 

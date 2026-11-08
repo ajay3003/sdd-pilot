@@ -154,12 +154,33 @@
                                 <p class="xr-muted">Equal stored evidence does not prove equal domain state.</p>
                             }
                             break;
+                        case "contract":
+                            @if (call.ContractValidation.Count == 0) { <p class="xr-muted" data-testid="xr-contract-none">No contract check for this call (it is not linked to a contract operation, or checks are off).</p> }
+                            @foreach (var report in call.ContractValidation)
+                            {
+                                <div class="xr-panel" data-testid="xr-contract-report" data-direction="@report.Direction" data-state="@report.State">
+                                    <h3 class="xr-h3">@report.Direction · <span class="xr-pill @(report.State == ContractValidationState.Valid ? "xr-ok" : report.State == ContractValidationState.Invalid ? "xr-bad" : "xr-neutral")">@report.State</span></h3>
+                                    <p class="xr-muted">@report.Summary</p>
+                                    <p class="xr-muted xr-mono">@report.ContractRef@(report.SchemaRef is { } sr ? $" · {sr}" : "")</p>
+                                    @if (report.Findings.Count > 0)
+                                    {
+                                        <table class="xr-table" data-testid="xr-contract-findings">
+                                            <thead><tr><th scope="col">Tier</th><th scope="col">Where</th><th scope="col">Finding</th><th scope="col">Contract</th></tr></thead>
+                                            <tbody>@foreach (var f in report.Findings) { <tr><td>@f.Tier</td><td class="xr-mono">@f.InstancePath</td><td>@f.Message</td><td class="xr-mono">@f.SchemaPath</td></tr> }</tbody>
+                                        </table>
+                                    }
+                                    @if (report.Unsupported.Count > 0) { <p class="xr-muted" data-testid="xr-contract-unsupported">Not evaluated: @string.Join(", ", report.Unsupported)</p> }
+                                </div>
+                            }
+                            break;
                         case "evidence":
                             <dl class="xr-facts" data-testid="xr-evidence">
                                 <div><dt>Operation</dt><dd>@(call.Definition.OperationRef ?? "not linked to a contract operation")</dd></div>
                                 <div><dt>Test data</dt><dd data-testid="xr-test-data">@(call.Definition.TestDataRefs.Count > 0 ? string.Join(", ", call.Definition.TestDataRefs) : "none")</dd></div>
                                 <div><dt>Source snapshot</dt><dd>@(run.SourceSnapshotId?.ToString() ?? "not recorded")</dd></div>
                                 <div><dt>Environment</dt><dd>@run.EnvironmentId · @run.TargetOrigin</dd></div>
+                                <div><dt>Authentication</dt><dd data-testid="xr-auth">@(run.AuthenticationMode ?? "None")@(run.AuthenticationReference is { Length: > 0 } ar && ar != "none" ? $" · {ar}" : "")</dd></div>
+                                <div><dt>Test revision</dt><dd data-testid="xr-definition">@(call.Definition.DefinitionVersion ?? "—")</dd></div>
                                 <div><dt>Capture policy</dt><dd>@run.CapturePolicy · @run.RedactionVersion</dd></div>
                                 <div><dt>Response body hash</dt><dd class="xr-mono">@(last?.Response?.Body?.Sha256 ?? "—")</dd></div>
                                 <div><dt>Capture</dt><dd data-testid="xr-capture">request @(last?.Request?.Body?.Completeness.ToString() ?? (last?.Request is null ? "not sent" : "no body")) · response @(last?.Response?.Body?.Completeness.ToString() ?? "none")</dd></div>
@@ -189,7 +210,7 @@
     [SupplyParameterFromQuery(Name = "page")] public int? PageQuery { get; set; }
 
     private const int PageSize = 25;
-    private static readonly (string Key, string Label)[] Tabs = [("request", "Request"), ("response", "Response"), ("assertions", "Assertions"), ("attempts", "Attempts"), ("evidence", "Evidence")];
+    private static readonly (string Key, string Label)[] Tabs = [("request", "Request"), ("response", "Response"), ("assertions", "Assertions"), ("attempts", "Attempts"), ("contract", "Contract"), ("evidence", "Evidence")];
     private string Tab => Tabs.Any(t => t.Key == TabQuery) ? TabQuery! : "request";
     private string Sort => SortQuery is "duration" or "status" ? SortQuery : "sequence";
     private int Page => Math.Max(1, PageQuery ?? 1);

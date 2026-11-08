@@ -75,6 +75,7 @@ public static partial class ContractTestRules
             new("status", AssertionKind.StatusCode, AssertionOperator.Equals, null, "200"),
             new("no-errors", AssertionKind.GraphQlErrorCount, AssertionOperator.Equals, null, "0"),
             new("data", AssertionKind.GraphQlDataPath, AssertionOperator.Exists, field),
+            new("contract", AssertionKind.ContractSchema, AssertionOperator.Equals, null, "valid"),
         };
         if (resultShape is not null && !(op.ResultType ?? "").TrimStart().StartsWith('['))
             foreach (var f in leaves.Where(f => f.Required).Take(10)) assertions.Add(new($"data-{f.Name}", AssertionKind.GraphQlDataPath, AssertionOperator.Exists, $"{field}.{f.Name}"));
@@ -82,7 +83,7 @@ public static partial class ContractTestRules
         {
             Name = op.Name, Protocol = ExecutionProtocol.GraphQl, Method = "POST", Path = GraphQlEndpoint, GraphQlQuery = document, GraphQlOperationName = operationName,
             GraphQlVariablesJson = variables.Count == 0 ? null : variables.ToJsonString(), Assertions = assertions, TimeoutMs = 15000,
-            ExpectedOutcome = "HTTP 200 with data and no GraphQL errors",
+            ExpectedOutcome = "HTTP 200 with data and no GraphQL errors", ContractCheck = ContractCheckMode.Enforce,
         };
         var positive = new ContractTestDefinition
         {
@@ -105,7 +106,7 @@ public static partial class ContractTestRules
                 Kind = ContractTestKind.MissingRequiredInput, CreatedAt = now, UpdatedAt = now, Inputs = [.. inputs.Where(i => i.Name != omit.Name)],
                 Template = template with
                 {
-                    GraphQlVariablesJson = negativeVariables.ToJsonString(),
+                    GraphQlVariablesJson = negativeVariables.ToJsonString(), ContractCheck = ContractCheckMode.Record,
                     Assertions = [new("status", AssertionKind.StatusCode, AssertionOperator.In, null, "200,400"), new("errors", AssertionKind.GraphQlErrorCount, AssertionOperator.GreaterThan, null, "0")],
                     ExpectedOutcome = "GraphQL errors (HTTP 200 or 400)",
                 },
@@ -158,6 +159,7 @@ public static partial class ContractTestRules
         var assertions = new List<AssertionDefinition>
         {
             new("status", AssertionKind.StatusCode, AssertionOperator.In, null, success.Count > 0 ? string.Join(',', success) : "200,201,202,204"),
+            new("contract", AssertionKind.ContractSchema, AssertionOperator.Equals, null, "valid"),
         };
         var responseType = success.Select(c => op.ResponseSchemas.TryGetValue(c, out var s) ? s : null).FirstOrDefault(s => s is not null);
         if (responseType is { } rt && !rt.StartsWith('[') && TypeName(rt) is { } rn && contract.Types.FirstOrDefault(t => t.Name == rn) is { } shape)
@@ -168,6 +170,7 @@ public static partial class ContractTestRules
         {
             Name = $"{op.Name}", Protocol = ExecutionProtocol.Rest, Method = method, Path = path, Query = query, Headers = headers, ContentType = body is null ? null : contentType,
             Body = body, Assertions = assertions, TimeoutMs = 15000, ExpectedOutcome = success.Count > 0 ? $"HTTP {string.Join(" or ", success)}" : "A 2xx response",
+            ContractCheck = ContractCheckMode.Enforce,
         };
         var positive = new ContractTestDefinition
         {
@@ -196,7 +199,7 @@ public static partial class ContractTestRules
                 Inputs = [.. inputs.Where(i => i.Name != omit.Name)],
                 Template = template with
                 {
-                    Query = negativeQuery, Body = negativeBody,
+                    Query = negativeQuery, Body = negativeBody, ContractCheck = ContractCheckMode.Record,
                     Assertions = [new("status", AssertionKind.StatusCode, AssertionOperator.In, null, expected)], ExpectedOutcome = $"HTTP {expected.Replace(",", " or ", StringComparison.Ordinal)}",
                 },
                 Rationale = $"The contract requires {omit.In} value {omit.Name}; the request leaves it out and expects a client error (HTTP {expected.Replace(",", " or ", StringComparison.Ordinal)})"

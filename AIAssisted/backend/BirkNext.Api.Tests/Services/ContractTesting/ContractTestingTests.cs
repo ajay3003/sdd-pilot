@@ -178,6 +178,7 @@ public sealed class ContractTestingTests : IAsyncLifetime
         services.AddSingleton(_catalog);
         services.AddScoped<ContractRegistryService>();
         services.AddScoped<ContractTestService>();
+        services.AddScoped<IExecutionContractValidator, ContractCallValidator>();
         _services = services.BuildServiceProvider();
         return Task.CompletedTask;
     }
@@ -488,6 +489,44 @@ public sealed class ContractTestingTests : IAsyncLifetime
         var detail = (await Scoped<ContractRegistryService>(scope).GetAsync(result.Key!, null, default))!;
         detail.Versions.Single().Format.Should().Be("introspection");
         detail.Document.Operations.Single().Should().Match<ContractOperation>(o => o.Name == "query ping" && o.ParameterDetails.Single().Type == "String!" && o.ResultType == "String");
+    }
+
+    [Fact]
+    public async Task Contract_validation_fails_an_invalid_response_and_never_sends_an_invalid_enforced_request()
+    {
+        const string strict = """
+            { "openapi": "3.0.3", "info": { "title": "Strict Children API", "version": "1" }, "paths": {
+              "/children/{id}": { "get": { "parameters": [ { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } ],
+                "responses": { "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Child" } } } } } } },
+              "/children": { "post": { "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NewChild" } } } },
+                "responses": { "201": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Child" } } } }, "400": { "description": "bad" } } } } },
+              "components": { "schemas": {
+                "Child": { "type": "object", "required": ["id", "name", "age"], "properties": { "id": { "type": "integer" }, "name": { "type": "string" }, "age": { "type": "integer" } } },
+                "NewChild": { "type": "object", "required": ["name", "age"], "properties": { "name": { "type": "string" }, "age": { "type": "integer", "minimum": 0 } } } } } }
+            """;
+        using var scope = _services.CreateScope();
+        (await Scoped<ContractRegistryService>(scope).ImportAsync(new() { FileName = "strict.json", Content = strict }, default)).Imported.Should().BeTrue();
+        var tests = Scoped<ContractTestService>(scope);
+        var (created, _) = await tests.GenerateAsync("strict-children-api", null, null, default);
+        var get = created.Single(t => t.Operation == "GET /children/{id}");
+        var post = created.Single(t => t.Operation == "POST /children" && t.Kind == ContractTestKind.Positive);
+        Dataset("strict-ok", new("id", TestDataPrimitive.Int32, "7"), new("name", TestDataPrimitive.String, "Testbarn"), new("age", TestDataPrimitive.Int32, "7"));
+        Dataset("strict-bad", new("name", TestDataPrimitive.String, "Testbarn"), new("age", TestDataPrimitive.Int32, "-3"));
+        (await tests.BindAsync(get.Id, new("strict-ok", 1), default)).Error.Should().BeNull();
+        (await tests.BindAsync(post.Id, new("strict-bad", 1), default)).Error.Should().BeNull();
+
+        var run = await WaitAsync((await tests.RunAsync(new() { TestIds = [get.Id, post.Id], Environment = Local, ConfirmMutatingCalls = true }, default)).Run!.RunId!.Value);
+        var getCall = run.Calls.Single(c => c.Definition.Method == "GET");
+        getCall.State.Should().Be(ExecutionState.Failed, "the synthetic API omits the required age");
+        getCall.Assertions.Single(a => a.Kind == AssertionKind.ContractSchema).Outcome.Should().Be(AssertionOutcome.Failed);
+        getCall.Assertions.Single(a => a.Kind == AssertionKind.StatusCode).Outcome.Should().Be(AssertionOutcome.Passed, "schema validity and the other assertions are judged separately");
+        getCall.ContractValidation.Select(r => (r.Direction, r.State)).Should().Equal(("Request", ContractValidationState.Valid), ("Response", ContractValidationState.Invalid));
+        getCall.ContractValidation[1].Findings.Should().ContainSingle(f => f.InstancePath == "$.age" && f.Keyword == "required" && f.SchemaPath == "#/components/schemas/Child/required");
+        var postCall = run.Calls.Single(c => c.Definition.Method == "POST");
+        postCall.State.Should().Be(ExecutionState.Blocked);
+        postCall.Attempts.Should().BeEmpty("an invalid request is not sent under Enforce");
+        postCall.Reason.Should().Contain("violates the contract").And.Contain("$.body.age");
+        _seen.Should().NotContain(s => s.Method == "POST");
     }
 
     [Theory]

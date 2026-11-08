@@ -27,7 +27,30 @@ public enum CaptureCompleteness { ExactRedacted, Truncated, MetadataOnly, Empty,
 public enum CapturePolicy { MetadataOnly, BoundedBody, FullPermittedBody }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum AssertionKind { StatusCode, Header, JsonPath, ResponseTime, GraphQlErrorCount, GraphQlErrorCode, GraphQlErrorPath, GraphQlDataPath, GraphQlHasData }
+public enum AssertionKind { StatusCode, Header, JsonPath, ResponseTime, GraphQlErrorCount, GraphQlErrorCode, GraphQlErrorPath, GraphQlDataPath, GraphQlHasData,
+    /// <summary>The response matches the contract (REST: the documented schema of its status; GraphQL: the schema's data shape). Expected: "valid".</summary>
+    ContractSchema,
+    /// <summary>The response body text (Equals / Contains / NotEquals).</summary>
+    BodyText,
+    /// <summary>An XPath 1.0 expression over an XML response (DTDs prohibited). Target = the expression.</summary>
+    XPath }
+
+/// <summary>Contract checks of one call. Enforce: an invalid request is not sent. Record: validated and recorded only (deliberately invalid
+/// negative tests). None: no contract check.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ContractCheckMode { None, Enforce, Record }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ContractValidationState { Valid, Invalid, NotAssessed }
+
+/// <summary>One finding. Tier: Syntax, Type, Schema or Operation (kept apart, never merged into one "valid"). InstancePath points into the
+/// request/response ($.items[0].age); SchemaPath into the contract (#/components/schemas/Child/properties/age).</summary>
+public sealed record ContractValidationFinding(string Tier, string InstancePath, string SchemaPath, string Keyword, string Message);
+
+/// <summary>The contract check of a request or response against the exact contract version of the call. Unsupported lists schema keywords
+/// met but not evaluated, so a pass is never claimed for them.</summary>
+public sealed record ContractValidationReport(string Direction, ContractValidationState State, string? ContractRef, string? SchemaRef, string Summary,
+    List<ContractValidationFinding> Findings, List<string> Unsupported);
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum AssertionOperator { Equals, NotEquals, Exists, NotExists, Contains, LessThan, GreaterThan, In }
@@ -151,6 +174,8 @@ public sealed record ExecutionCallDefinition
     public string? OperationRef { get; init; }
     public string? DefinitionVersion { get; init; }
     public string? ExpectedOutcome { get; init; }
+    /// <summary>Contract validation of the request (before sending) and the response, against <see cref="OperationRef"/>'s contract version.</summary>
+    public ContractCheckMode ContractCheck { get; init; }
 }
 
 public sealed record ExecutionCallRecord
@@ -162,6 +187,8 @@ public sealed record ExecutionCallRecord
     public string? Reason { get; init; }
     public List<ExecutionAttempt> Attempts { get; init; } = [];
     public List<AssertionResult> Assertions { get; init; } = [];
+    /// <summary>Request and response contract checks (findings with source paths); empty when the call had no contract check.</summary>
+    public List<ContractValidationReport> ContractValidation { get; init; } = [];
     public DateTimeOffset? StartedAt { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
 }
