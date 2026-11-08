@@ -286,9 +286,9 @@ public sealed class ExecutionEvidenceTests : IAsyncLifetime
     {
         var detail = await RunAsync(Request(Get("child 1", "/children/1", Status("200"))));
         using var scope = _services.CreateScope();
-        var zip = (await scope.ServiceProvider.GetRequiredService<ExecutionEvidenceStore>().ExportAsync(detail.Run.RunId, default))!;
+        var zip = (await new ExecutionEvidenceManagement(scope.ServiceProvider.GetRequiredService<AppDbContext>()).ExportAsync([detail.Run.RunId], "test", default)).Zip!;
         using var archive = new ZipArchive(new MemoryStream(zip));
-        archive.Entries.Select(e => e.FullName).Should().BeEquivalentTo(["manifest.json", "calls/0001.json", "hashes.json"]);
+        archive.Entries.Select(e => e.FullName).Should().BeEquivalentTo(["manifest.json", $"runs/{detail.Run.RunId:N}/manifest.json", $"runs/{detail.Run.RunId:N}/calls/0001.json", "hashes.json"]);
         var hashes = JsonSerializer.Deserialize<Dictionary<string, string>>(new StreamReader(archive.GetEntry("hashes.json")!.Open()).ReadToEnd())!;
         foreach (var entry in archive.Entries.Where(e => e.FullName != "hashes.json"))
         {

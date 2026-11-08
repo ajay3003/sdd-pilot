@@ -16,6 +16,8 @@ public class AppDbContext : DbContext
     public DbSet<IntegrationJourneyRunRecord> IntegrationJourneyRuns => Set<IntegrationJourneyRunRecord>();
     public DbSet<ExecutionRunRow> ExecutionRuns => Set<ExecutionRunRow>();
     public DbSet<ExecutionCallRow> ExecutionCalls => Set<ExecutionCallRow>();
+    public DbSet<ExecutionEvidenceAuditRow> ExecutionEvidenceAudit => Set<ExecutionEvidenceAuditRow>();
+    public DbSet<ExecutionRetentionSettingsRow> ExecutionRetentionSettings => Set<ExecutionRetentionSettingsRow>();
     public DbSet<ApiContractRow> ApiContracts => Set<ApiContractRow>();
     public DbSet<ApiContractVersionRow> ApiContractVersions => Set<ApiContractVersionRow>();
     public DbSet<ContractTestRow> ContractTests => Set<ContractTestRow>();
@@ -1081,7 +1083,27 @@ public class AppDbContext : DbContext
             entity.Property(r => r.Name).HasMaxLength(300).IsRequired();
             entity.Property(r => r.State).HasMaxLength(40).IsRequired();
             entity.Property(r => r.SummaryJson).HasColumnType("text").IsRequired();
+            entity.Property(r => r.Protected).HasDefaultValue(false);
             entity.HasIndex(r => new { r.EnvironmentId, r.StartedAt });
+            entity.HasIndex(r => r.StartedAt);
+        });
+        modelBuilder.Entity<ExecutionEvidenceAuditRow>(entity =>
+        {
+            entity.ToTable("execution_evidence_audit");
+            entity.HasKey(a => a.Id);
+            entity.Property(a => a.Action).HasMaxLength(40).IsRequired();
+            entity.Property(a => a.Scope).HasMaxLength(300).IsRequired();
+            entity.Property(a => a.Initiator).HasMaxLength(200).IsRequired();
+            entity.Property(a => a.Detail).HasMaxLength(2000);
+            entity.HasIndex(a => a.At);
+        });
+        modelBuilder.Entity<ExecutionRetentionSettingsRow>(entity =>
+        {
+            entity.ToTable("execution_retention_settings");
+            entity.HasKey(s => s.Id);
+            entity.Property(s => s.Id).ValueGeneratedNever();
+            entity.Property(s => s.Mode).HasMaxLength(20).IsRequired();
+            entity.Property(s => s.UpdatedBy).HasMaxLength(200).IsRequired();
         });
         modelBuilder.Entity<ExecutionCallRow>(entity =>
         {

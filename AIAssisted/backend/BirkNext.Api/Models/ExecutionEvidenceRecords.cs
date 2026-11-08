@@ -15,6 +15,33 @@ public sealed class ExecutionRunRow
     public int Errors { get; set; }
     public int Attempts { get; set; }
     public string SummaryJson { get; set; } = "";
+    /// <summary>Kept by bulk deletion and retention; removed only by an explicit unprotect.</summary>
+    public bool Protected { get; set; }
+    public DateTimeOffset? ProtectedAt { get; set; }
+}
+
+/// <summary>Audit trail of evidence management (who removed or exported what, and how much). Holds counts and references, never content.</summary>
+public sealed class ExecutionEvidenceAuditRow
+{
+    public Guid Id { get; init; }
+    public DateTimeOffset At { get; init; }
+    public string Action { get; init; } = "";
+    public string Scope { get; init; } = "";
+    public int Runs { get; init; }
+    public int Calls { get; init; }
+    public long Bytes { get; init; }
+    public string Initiator { get; init; } = "";
+    public string? Detail { get; init; }
+}
+
+/// <summary>The one retention setting of execution evidence (row id 1). Absent = Disabled.</summary>
+public sealed class ExecutionRetentionSettingsRow
+{
+    public int Id { get; init; }
+    public string Mode { get; set; } = "Disabled";
+    public int? Days { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public string UpdatedBy { get; set; } = "";
 }
 
 /// <summary>One logical call of a run: searchable columns plus the redacted call document (definition, attempts, captures, assertions).</summary>

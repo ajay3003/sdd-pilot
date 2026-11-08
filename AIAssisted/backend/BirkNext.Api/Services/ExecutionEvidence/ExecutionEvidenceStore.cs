@@ -1,6 +1,3 @@
-using System.IO.Compression;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using BirkNext.Api.Data;
@@ -9,6 +6,9 @@ using BirkNext.ExecutionEvidence;
 using Microsoft.EntityFrameworkCore;
 
 namespace BirkNext.Api.Services.ExecutionEvidence;
+
+public sealed record ExecutionRunQuery(string? EnvironmentId = null, int Take = 50, ExecutionState? State = null, string? Search = null, DateTimeOffset? From = null,
+    DateTimeOffset? To = null, bool? Protected = null);
 
 public sealed record ExecutionCallQuery(int Skip = 0, int Take = 50, ExecutionState? State = null, ExecutionProtocol? Protocol = null, string? Method = null,
     string? Search = null, string Sort = "sequence");
@@ -117,9 +117,18 @@ public sealed class ExecutionEvidenceStore(AppDbContext db, TimeProvider? clock 
         return running.Count;
     }
 
-    public async Task<IReadOnlyList<ExecutionRunSummary>> ListAsync(string? environmentId, int take, CancellationToken ct) =>
-        (await db.ExecutionRuns.AsNoTracking().Where(r => environmentId == null || r.EnvironmentId == environmentId).OrderByDescending(r => r.StartedAt)
-            .Take(Math.Clamp(take, 1, 200)).Select(r => r.SummaryJson).ToListAsync(ct)).Select(s => JsonSerializer.Deserialize<ExecutionRunSummary>(s, Json)!).ToList();
+    /// <summary>Run history, newest first, filtered by environment, state, name, start date range and protection. Read-only.</summary>
+    public async Task<IReadOnlyList<ExecutionRunSummary>> ListAsync(ExecutionRunQuery q, CancellationToken ct)
+    {
+        var query = db.ExecutionRuns.AsNoTracking().Where(r => q.EnvironmentId == null || r.EnvironmentId == q.EnvironmentId);
+        if (q.State is { } state) query = query.Where(r => r.State == state.ToString());
+        if (!string.IsNullOrWhiteSpace(q.Search)) { var term = q.Search.Trim().ToLower(); query = query.Where(r => r.Name.ToLower().Contains(term)); }
+        if (q.From is { } from) query = query.Where(r => r.StartedAt >= from);
+        if (q.To is { } to) query = query.Where(r => r.StartedAt <= to);
+        if (q.Protected is { } protect) query = query.Where(r => r.Protected == protect);
+        return (await query.OrderByDescending(r => r.StartedAt).Take(Math.Clamp(q.Take, 1, 500)).Select(r => new { r.SummaryJson, r.Protected }).ToListAsync(ct))
+            .Select(r => JsonSerializer.Deserialize<ExecutionRunSummary>(r.SummaryJson, Json)! with { Protected = r.Protected }).ToList();
+    }
 
     public async Task<ExecutionRunDetail?> GetAsync(Guid runId, ExecutionCallQuery q, CancellationToken ct)
     {
@@ -138,7 +147,7 @@ public sealed class ExecutionEvidenceStore(AppDbContext db, TimeProvider? clock 
         };
         var total = await query.CountAsync(ct);
         var rows = await query.Skip(Math.Max(0, q.Skip)).Take(Math.Clamp(q.Take, 1, 200)).Select(c => c.DocumentJson).ToListAsync(ct);
-        return new(JsonSerializer.Deserialize<ExecutionRunSummary>(run.SummaryJson, Json)!, [.. rows.Select(r => JsonSerializer.Deserialize<ExecutionCallRecord>(r, Json)!)], total, q.Skip, q.Take);
+        return new(JsonSerializer.Deserialize<ExecutionRunSummary>(run.SummaryJson, Json)! with { Protected = run.Protected }, [.. rows.Select(r => JsonSerializer.Deserialize<ExecutionCallRecord>(r, Json)!)], total, q.Skip, q.Take);
     }
 
     public async Task<ExecutionCallRecord?> CallAsync(Guid runId, Guid callId, CancellationToken ct) =>
@@ -153,18 +162,6 @@ public sealed class ExecutionEvidenceStore(AppDbContext db, TimeProvider? clock 
             .Join(db.ExecutionRuns.AsNoTracking(), c => c.RunId, r => r.Id, (c, r) => new { c.RunId, r.StartedAt, c.Sequence, c.DocumentJson })
             .OrderByDescending(x => x.StartedAt).ThenByDescending(x => x.Sequence).FirstOrDefaultAsync(ct);
         return hit is null ? null : (hit.RunId, hit.StartedAt, JsonSerializer.Deserialize<ExecutionCallRecord>(hit.DocumentJson, Json)!);
-    }
-
-    /// <summary>Deletes a finished run and its calls (owner action). A running run cannot be deleted.</summary>
-    public async Task<(bool Deleted, string? Error)> DeleteAsync(Guid runId, CancellationToken ct)
-    {
-        var run = await db.ExecutionRuns.FirstOrDefaultAsync(r => r.Id == runId, ct);
-        if (run is null) return (false, "Not found.");
-        if (run.State == nameof(ExecutionState.Running)) return (false, "A running run cannot be deleted; cancel it first.");
-        db.ExecutionCalls.RemoveRange(db.ExecutionCalls.Where(c => c.RunId == runId));
-        db.ExecutionRuns.Remove(run);
-        await db.SaveChangesAsync(ct);
-        return (true, null);
     }
 
     /// <summary>Differences between two stored attempts (redacted evidence only); equal payloads never prove equal domain state.</summary>
@@ -187,39 +184,6 @@ public sealed class ExecutionEvidenceStore(AppDbContext db, TimeProvider? clock 
         foreach (var h in hb.Except(ha)) diffs.Add($"Response header added: {h}");
         foreach (var h in ha.Except(hb)) diffs.Add($"Response header removed: {h}");
         return new(runA, callA, attemptA, runB, callB, attemptB, diffs);
-    }
-
-    /// <summary>
-    /// A portable export (ZIP): manifest.json (run summary + redaction version + omission notice), calls/NNNN.json (each stored call document)
-    /// and hashes.json (SHA-256 of every file). Built only from the stored, already redacted documents — never from the filesystem.
-    /// </summary>
-    public async Task<byte[]?> ExportAsync(Guid runId, CancellationToken ct)
-    {
-        var run = await db.ExecutionRuns.AsNoTracking().FirstOrDefaultAsync(r => r.Id == runId, ct);
-        if (run is null) return null;
-        var calls = await db.ExecutionCalls.AsNoTracking().Where(c => c.RunId == runId).OrderBy(c => c.Sequence).ToListAsync(ct);
-        using var ms = new MemoryStream();
-        var hashes = new Dictionary<string, string>(StringComparer.Ordinal);
-        using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, true))
-        {
-            void Add(string name, string text)
-            {
-                var bytes = Encoding.UTF8.GetBytes(text);
-                hashes[name] = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-                using var s = zip.CreateEntry(name, CompressionLevel.Optimal).Open(); s.Write(bytes);
-            }
-            Add("manifest.json", JsonSerializer.Serialize(new
-            {
-                run = JsonSerializer.Deserialize<ExecutionRunSummary>(run.SummaryJson, Json), exportedAt = _clock.GetUtcNow(), calls = calls.Count,
-                redactionVersion = ExecutionEvidenceRedaction.Version,
-                notice = "Every request and response was redacted before it was stored; bodies marked Truncated, MetadataOnly, Empty or Unavailable are not complete. " +
-                         "Credentials, cookies and API keys are never stored. Equal payloads do not prove equal domain state.",
-            }, Json));
-            foreach (var c in calls) Add($"calls/{c.Sequence:D4}.json", c.DocumentJson);
-            var hashesJson = JsonSerializer.Serialize(hashes, Json);
-            using var h = zip.CreateEntry("hashes.json").Open(); h.Write(Encoding.UTF8.GetBytes(hashesJson));
-        }
-        return ms.ToArray();
     }
 
     private static string Trim(string s, int max) => s.Length > max ? s[..max] : s;

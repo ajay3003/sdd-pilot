@@ -21,7 +21,9 @@ public enum TransportResult { ResponseReceived, ConnectionFailed, TimedOut, Canc
 
 /// <summary>How complete a captured body is. Never "original": every persisted body has passed the redaction policy first.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum CaptureCompleteness { ExactRedacted, Truncated, MetadataOnly, Empty, Unavailable }
+public enum CaptureCompleteness { ExactRedacted, Truncated, MetadataOnly, Empty, Unavailable,
+    /// <summary>The stored body was removed later by its owner; size and SHA-256 of what was stored are kept.</summary>
+    Removed }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum CapturePolicy { MetadataOnly, BoundedBody, FullPermittedBody }
@@ -274,6 +276,56 @@ public sealed record ExecutionRunSummary
     public bool StopOnFirstFailure { get; init; }
     /// <summary>The chain definition revision the run executed ("contract-chain:{id}@r{rev}"), when it is a chained run.</summary>
     public string? ChainRef { get; init; }
+    /// <summary>Protected runs are never deleted by bulk deletion or retention; deleting one needs its protection removed first.</summary>
+    public bool Protected { get; init; }
+}
+
+/// <summary>
+/// Local storage of execution evidence. Everything lives in PostgreSQL (AppDbContext tables execution_runs and execution_calls; request and response
+/// bodies inside the call documents, bounded by the capture policy); no evidence files exist and exports are generated on demand, never stored.
+/// <see cref="StoredBytes"/> is measured (UTF-8 bytes of the stored JSON); <see cref="DatabaseTableBytes"/> is the tables' size on disk as PostgreSQL
+/// reports it (with indexes and TOAST), null when not available.
+/// </summary>
+public sealed record ExecutionStorageUsage(int Runs, int LogicalCalls, int Attempts, long StoredBytes, long? DatabaseTableBytes, int ProtectedRuns,
+    DateTimeOffset? Oldest, DateTimeOffset? Newest, int RetentionCandidates, long RetentionCandidateBytes, string Location, string Note);
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum RetentionMode { Disabled, Days }
+
+/// <summary>Retention of execution evidence. Default Disabled: nothing is ever deleted automatically; with Days, runs older than the period are
+/// candidates that a person previews and then deletes. Protected and running runs are never candidates.</summary>
+public sealed record ExecutionRetentionSettings(RetentionMode Mode, int? Days, DateTimeOffset? UpdatedAt = null, string? UpdatedBy = null);
+
+/// <summary>A dry run: exactly which runs applying retention now would delete, what they hold, and what is kept.</summary>
+public sealed record ExecutionRetentionPreview(ExecutionRetentionSettings Settings, DateTimeOffset? Cutoff, int Runs, int Calls, long Bytes, int ProtectedKept, int RunningKept,
+    List<Guid> RunIds, string Explanation);
+
+/// <summary>Bulk deletion: the listed runs, or every eligible (finished, unprotected) run of an environment. <see cref="Confirm"/> must equal the
+/// number of runs the person was shown; a different number means the set changed and nothing is deleted.</summary>
+public sealed record ExecutionDeletionRequest
+{
+    public List<Guid> RunIds { get; init; } = [];
+    public string? EnvironmentId { get; init; }
+    public bool AllEligible { get; init; }
+    public int Confirm { get; init; }
+}
+
+public sealed record ExecutionDeletionSkip(Guid RunId, string Reason);
+
+public sealed record ExecutionDeletionResult(int Deleted, int Calls, long Bytes, List<ExecutionDeletionSkip> Skipped, string Message);
+
+/// <summary>One entry of the evidence audit trail (deletion, body removal, protection, retention change or apply, export). Never evidence content.</summary>
+public sealed record ExecutionAuditEntry(Guid Id, DateTimeOffset At, string Action, string Scope, int Runs, int Calls, long Bytes, string Initiator, string? Detail);
+
+/// <summary>Stored bodies re-hashed against the SHA-256 recorded when they were captured; removed bodies are counted, not checked.</summary>
+public sealed record ExecutionIntegrityReport(Guid RunId, int Calls, int BodiesChecked, int BodiesRemoved, List<string> Mismatches)
+{
+    public bool Intact => Mismatches.Count == 0;
+}
+
+public sealed record ExecutionExportRequest
+{
+    public List<Guid> RunIds { get; init; } = [];
 }
 
 public sealed record ExecutionRunDetail(ExecutionRunSummary Run, List<ExecutionCallRecord> Calls, int TotalCalls, int Skip, int Take);

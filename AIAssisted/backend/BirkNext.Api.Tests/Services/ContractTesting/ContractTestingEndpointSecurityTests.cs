@@ -63,8 +63,14 @@ public sealed class ContractTestingEndpointSecurityTests
         Executes(Actions.Single(a => Describe(a) == "POST chains/{id:guid}/runs")).Should().BeTrue();
         Protected(Actions.Single(a => Describe(a) == "DELETE chains/{id:guid}")).Should().BeTrue();
         var evidence = typeof(ExecutionEvidenceController).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-            .Where(m => m.GetCustomAttribute<HttpPostAttribute>() is not null).ToList();
-        evidence.Should().NotBeEmpty();
-        evidence.Where(m => !Executes(m)).Should().BeEmpty("every POST of Execution Evidence starts or stops sending requests");
+            .Where(m => m.GetCustomAttributes<HttpMethodAttribute>().Any()).ToDictionary(Describe);
+        Executes(evidence["POST runs"]).Should().BeTrue();
+        Executes(evidence["POST runs/{runId:guid}/cancel"]).Should().BeTrue();
+        // Evidence management: everything that deletes, protects or changes retention needs the configuration-write permission; reads and exports do not execute.
+        foreach (var endpoint in new[] { "DELETE runs/{runId:guid}", "POST runs/delete", "PUT runs/{runId:guid}/protection", "DELETE runs/{runId:guid}/calls/{callId:guid}/bodies",
+                     "PUT retention", "POST retention/apply" })
+            Protected(evidence[endpoint]).Should().BeTrue(endpoint);
+        evidence.Values.Where(m => m.GetCustomAttribute<HttpGetAttribute>() is not null && (Protected(m) || Executes(m))).Should().BeEmpty("reading never needs write or execute permission");
+        Executes(evidence["POST runs/export"]).Should().BeFalse("an export never runs anything");
     }
 }
