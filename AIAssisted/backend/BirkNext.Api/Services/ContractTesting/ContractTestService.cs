@@ -30,6 +30,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
     public async Task<(List<ContractTestDefinition> Created, List<string> Skipped)> GenerateAsync(string key, int? version, IReadOnlyCollection<string>? operations, CancellationToken ct)
     {
         if (await db.ApiContracts.AsNoTracking().FirstOrDefaultAsync(c => c.Key == key, ct) is not { } contract) return ([], [$"Contract {key} does not exist."]);
+        if (contract.Lifecycle == nameof(ContractLifecycle.Archived)) return ([], [$"{contract.Name} is archived: it is read-only."]);
         var v = version ?? await registry.LatestVersionAsync(key, ct) ?? 0;
         if (await registry.DocumentAsync(key, v, ct) is not { } doc) return ([], [$"Version {v} of {key} does not exist."]);
         var existing = (await db.ContractTests.AsNoTracking().Where(t => t.ContractId == contract.Id).Select(t => new { t.Operation, t.Kind }).ToListAsync(ct))
@@ -59,6 +60,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
     public async Task<(List<ContractTestDefinition> Created, List<string> Skipped)> ProposeNegativesAsync(string key, string operation, CancellationToken ct)
     {
         if (await db.ApiContracts.AsNoTracking().FirstOrDefaultAsync(c => c.Key == key, ct) is not { } contract) return ([], [$"Contract {key} does not exist."]);
+        if (contract.Lifecycle == nameof(ContractLifecycle.Archived)) return ([], [$"{contract.Name} is archived: it is read-only."]);
         var version = await registry.LatestVersionAsync(key, ct) ?? 0;
         if (await registry.RawAsync(key, version, ct) is not { } raw || raw.Document.Operations.FirstOrDefault(o => o.Name == operation) is not { } op) return ([], [$"{operation} is not in v{version}."]);
         var existing = (await db.ContractTests.AsNoTracking().Where(t => t.ContractId == contract.Id && t.Operation == operation).Select(t => t.DocumentJson).ToListAsync(ct))
@@ -95,6 +97,64 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
 
     public async Task<ContractTestView?> GetAsync(Guid id, ContractTestEnvironment? environment, CancellationToken ct) =>
         await LoadAsync(id, ct) is { } t ? await ViewAsync(t, await registry.LatestVersionAsync(t.ContractKey, ct) ?? 0, [], environment, ct) : null;
+
+    /// <summary>
+    /// Evidence-backed coverage of one contract version. Each metric states its numerator, denominator, scope and how many items were not assessed
+    /// (no execution evidence). Only calls whose Execution Evidence names this exact contract version count; nothing is inferred from test existence alone
+    /// except the "operations with tests" metric, which says so.
+    /// </summary>
+    public async Task<ContractCoverageReport?> CoverageAsync(string key, int? version, CancellationToken ct)
+    {
+        if (await db.ApiContracts.AsNoTracking().FirstOrDefaultAsync(c => c.Key == key, ct) is not { } contract) return null;
+        var v = version ?? await registry.LatestVersionAsync(key, ct) ?? 0;
+        if (await registry.DocumentAsync(key, v, ct) is not { } doc) return null;
+        var protocol = Enum.Parse<ApiContractProtocol>(contract.Protocol);
+        var ops = doc.Operations.Where(o => o.Kind != "subscription").ToList();
+        var names = ops.Select(o => o.Name).ToHashSet(StringComparer.Ordinal);
+        var reference = ContractIdentity.ContractRef(key, v);
+        var tests = (await db.ContractTests.AsNoTracking().Where(t => t.ContractId == contract.Id).Select(t => t.DocumentJson).ToListAsync(ct))
+            .Select(d => JsonSerializer.Deserialize<ContractTestDefinition>(d, ExecutionEvidenceStore.Json)!).Where(t => t.ContractVersion == v && names.Contains(t.Operation)).ToList();
+        var marker = $"\"operationRef\":\"{reference}#";
+        var calls = (await db.ExecutionCalls.AsNoTracking().Where(c => c.DocumentJson.Contains(marker)).Select(c => c.DocumentJson).ToListAsync(ct))
+            .Select(d => JsonSerializer.Deserialize<ExecutionCallRecord>(d, ExecutionEvidenceStore.Json)!)
+            .Where(c => c.Definition.OperationRef?.StartsWith(reference + "#", StringComparison.Ordinal) == true).ToList();
+        static string Op(ExecutionCallRecord c) => c.Definition.OperationRef![(c.Definition.OperationRef!.IndexOf('#') + 1)..];
+        var executed = calls.Where(c => c.Attempts.Any(a => a.Response is not null)).ToList();
+        // The latest executed call per test (by definition prefix), or per operation for calls without a definition reference.
+        var latest = executed.GroupBy(c => c.Definition.DefinitionVersion is { } d && d.LastIndexOf("@r", StringComparison.Ordinal) is var i and > 0 ? d[..i] : Op(c))
+            .Select(g => g.OrderByDescending(c => c.CompletedAt ?? c.StartedAt).First()).ToList();
+        var testedOps = tests.Select(t => t.Operation).ToHashSet(StringComparer.Ordinal);
+        var executedOps = executed.Select(Op).Where(names.Contains).ToHashSet(StringComparer.Ordinal);
+        var passingOps = latest.GroupBy(Op).Where(g => names.Contains(g.Key) && g.All(c => c.State == ExecutionState.Passed)).Select(g => g.Key).ToHashSet(StringComparer.Ordinal);
+        var negativeOps = tests.Where(t => t.Kind != ContractTestKind.Positive).Select(t => t.Operation).ToHashSet(StringComparer.Ordinal);
+        string scope = $"{ops.Count} operation(s) of {reference}" + (doc.Operations.Count > ops.Count ? " (subscriptions excluded)" : "");
+        const string Evidence = "Execution Evidence (calls naming this contract version)";
+        var metrics = new List<ContractCoverageMetric>
+        {
+            new("operations-with-tests", "Operations with a stored test", testedOps.Count, ops.Count, scope, 0, "Stored contract tests bound to this version",
+                "A stored test is not evidence that the operation works."),
+            new("operations-executed", "Operations executed", executedOps.Count, ops.Count, scope, ops.Count - executedOps.Count, Evidence),
+            new("operations-passing", "Operations whose latest results all passed", passingOps.Count, ops.Count, scope, ops.Count - executedOps.Count, Evidence),
+            new("operations-with-negative-tests", "Operations with a negative test", negativeOps.Count, ops.Count, scope, 0, "Stored contract tests bound to this version"),
+        };
+        if (protocol == ApiContractProtocol.Rest)
+        {
+            var documented = ops.SelectMany(o => o.ResponseCodes.Where(c => c.Length == 3 && c.All(char.IsDigit)).Select(c => (Op: o.Name, Code: int.Parse(c)))).ToList();
+            var observed = executed.Select(c => (Op: Op(c), Code: c.Attempts.LastOrDefault(a => a.Response is not null)?.Response?.StatusCode ?? 0)).ToHashSet();
+            var hit = documented.Count(observed.Contains);
+            var unassessed = documented.Count(d => !executedOps.Contains(d.Op));
+            metrics.Add(new("documented-responses-observed", "Documented response codes observed", hit, documented.Count, $"{documented.Count} explicit response code(s) of {reference}",
+                unassessed, Evidence, "Ranges (2XX) and \"default\" are not counted; unassessed = codes of operations never executed."));
+        }
+        var responseReports = latest.Select(c => c.ContractValidation.FirstOrDefault(r => r.Direction == "Response")).ToList();
+        metrics.Add(new("responses-valid", "Latest responses valid against the contract", responseReports.Count(r => r is { State: ContractValidationState.Valid, Unsupported.Count: 0 }),
+            latest.Count, $"{latest.Count} latest executed call(s)", responseReports.Count(r => r is null or { State: ContractValidationState.NotAssessed } or { Unsupported.Count: > 0 }),
+            Evidence, "Not assessed includes responses checked with unsupported schema keywords."));
+        var assertions = latest.SelectMany(c => c.Assertions).ToList();
+        metrics.Add(new("assertions-passed", "Assertions passed (latest results)", assertions.Count(a => a.Outcome == AssertionOutcome.Passed), assertions.Count,
+            $"{assertions.Count} assertion(s) in {latest.Count} latest executed call(s)", assertions.Count(a => a.Outcome == AssertionOutcome.NotAssessed), Evidence));
+        return new(key, v, protocol, metrics, _clock.GetUtcNow());
+    }
 
     public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
     {
@@ -230,6 +290,13 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         var op = (newest ?? current)?.Operations.FirstOrDefault(o => o.Name == test.Operation) ?? current?.Operations.FirstOrDefault(o => o.Name == test.Operation);
         var binding = environment is { EnvironmentId.Length: > 0 } ? await BindingAsync(test.ContractKey, environment.EnvironmentId, ct) : null;
         var readiness = Readiness(test, latest, impact, op, environment, binding);
+        if (await registry.LifecycleAsync(test.ContractKey, ct) is { } lifecycle and not ContractLifecycle.Active)
+        {
+            var item = lifecycle == ContractLifecycle.Archived ? new ContractReadinessItem("Contract", ReadinessItemState.Blocked, "The contract is archived: its tests are kept but not run.")
+                : new ContractReadinessItem("Contract", ReadinessItemState.Warning, "The contract is deprecated.");
+            var items = readiness.Items.Prepend(item).ToList();
+            readiness = readiness with { Items = items, State = items.Any(i => i.State == ReadinessItemState.Blocked) ? ContractTestReadinessState.Blocked : readiness.State };
+        }
         ContractTestLastResult? last = null;
         if (await evidence.LatestByDefinitionAsync(ContractIdentity.DefinitionPrefix(test.Id), ct) is { } hit)
             last = new(hit.RunId, hit.Call.CallId, hit.Call.State, hit.Call.Attempts.LastOrDefault()?.Response?.StatusCode, hit.Call.CompletedAt ?? hit.StartedAt,

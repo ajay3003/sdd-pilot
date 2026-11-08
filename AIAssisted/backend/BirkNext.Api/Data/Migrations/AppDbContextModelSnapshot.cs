@@ -214,6 +214,13 @@ namespace BirkNext.Api.Data.Migrations
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)");
 
+                    b.Property<string>("Lifecycle")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Active");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -256,6 +263,9 @@ namespace BirkNext.Api.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<bool>("Hidden")
+                        .HasColumnType("boolean");
 
                     b.Property<DateTimeOffset>("ImportedAt")
                         .HasColumnType("timestamp with time zone");

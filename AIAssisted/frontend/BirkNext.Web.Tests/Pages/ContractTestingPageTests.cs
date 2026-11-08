@@ -154,6 +154,19 @@ public sealed class ContractTestingPageTests : BunitContext
         public bool ConflictNext { get; set; }
         public (int Revision, int Expected)? Reverted { get; private set; }
         public (Guid Id, int Expected)? Migrated { get; private set; }
+        public ContractLifecycle? LifecycleSet { get; private set; }
+        public (int Version, string Confirm)? DeletedVersion { get; private set; }
+        public Task<(ContractCoverageReport? Report, string? Error)> CoverageAsync(string key, int? version, CancellationToken ct = default) =>
+            Task.FromResult<(ContractCoverageReport?, string?)>((new(key, version ?? 2, ApiContractProtocol.Rest,
+                [new("operations-executed", "Operations executed", 1, 3, "3 operation(s) of children-api@v2", 2, "Execution Evidence (calls naming this contract version)"),
+                 new("responses-valid", "Latest responses valid against the contract", 1, 1, "1 latest executed call(s)", 0, "Execution Evidence (calls naming this contract version)", "note")], DateTimeOffset.UtcNow), null));
+        public Task<(ContractRetention? Retention, string? Error)> RetentionAsync(string key, CancellationToken ct = default) =>
+            Task.FromResult<(ContractRetention?, string?)>((new(key, ContractLifecycle.Active,
+                [new(2, false, true, 0, 0, false, false, ["latest version"]), new(1, false, false, 0, 0, false, true, [])], false, "Archive by default."), null));
+        public Task<string?> SetLifecycleAsync(string key, ContractLifecycle lifecycle, CancellationToken ct = default) { LifecycleSet = lifecycle; return Task.FromResult<string?>(null); }
+        public Task<string?> SetHiddenAsync(string key, int version, bool hidden, CancellationToken ct = default) => Task.FromResult<string?>(null);
+        public Task<string?> DeleteVersionAsync(string key, int version, string confirm, CancellationToken ct = default) { DeletedVersion = (version, confirm); return Task.FromResult<string?>(null); }
+        public Task<string?> DeleteContractAsync(string key, string confirm, CancellationToken ct = default) => Task.FromResult<string?>("referenced");
         public Task<(ContractTestMigrationProposal? Proposal, string? Error)> MigrationAsync(Guid testId, CancellationToken ct = default) =>
             Task.FromResult<(ContractTestMigrationProposal?, string?)>((new(testId, 1, 2, Get.Test with { ContractVersion = 2, Revision = 3 }, ["Contract version: v1 → v2"],
                 ["Applying creates a new revision bound to v2; earlier revisions and their executions stay bound to v1."]), null));
@@ -426,8 +439,41 @@ public sealed class ContractTestingPageTests : BunitContext
         {
             CultureInfo.CurrentCulture = culture; CultureInfo.DefaultThreadCurrentCulture = culture;
             var page = Open("?contract=children-api&view=tests");
-            page.FindAll("[role=tab]").Select(t => t.GetAttribute("tabindex")).Should().Equal("-1", "0", "-1");
+            page.FindAll("[role=tab]").Select(t => t.GetAttribute("tabindex")).Should().Equal("-1", "0", "-1", "-1", "-1");
         }
         finally { CultureInfo.CurrentCulture = current; CultureInfo.DefaultThreadCurrentCulture = defaultCulture; }
+    }
+
+    [Fact]
+    public void Coverage_shows_numerator_denominator_scope_and_not_assessed_per_metric()
+    {
+        var page = Open("?contract=children-api&view=coverage");
+        var rows = page.FindAll("[data-testid=ct-coverage-row]");
+        rows.Select(r => r.GetAttribute("data-metric")).Should().Equal("operations-executed", "responses-valid");
+        rows[0].QuerySelector("[data-testid=ct-coverage-value]")!.TextContent.Should().Be("1 / 3 (33%)");
+        rows[0].TextContent.Should().Contain("3 operation(s) of children-api@v2").And.Contain("Execution Evidence");
+        page.Find("[data-testid=ct-coverage]").TextContent.Should().Contain("never counted as covered");
+    }
+
+    [Fact]
+    public void Lifecycle_archives_and_deletes_only_an_unreferenced_version_after_typing_the_key()
+    {
+        var page = Open("?contract=children-api&view=lifecycle");
+        page.FindAll("[data-testid=ct-retention-row]").Select(r => r.GetAttribute("data-deletable")).Should().Equal("false", "true");
+        page.Find("[data-testid=ct-retention-row][data-version='2']").TextContent.Should().Contain("latest version");
+        page.FindAll("[data-testid=ct-delete-version]").Should().HaveCount(1, "only the unreferenced version offers deletion");
+        page.Find("[data-testid=ct-delete-contract-refused]").TextContent.Should().Contain("only be archived");
+
+        page.Find("[data-testid=ct-lifecycle-archived]").Click();
+        page.WaitForAssertion(() => _api.LifecycleSet.Should().Be(ContractLifecycle.Archived));
+
+        page = Open("?contract=children-api&view=lifecycle");
+        page.Find("[data-testid=ct-delete-version]").Click();
+        page.Find("[data-testid=ct-confirm-delete]").HasAttribute("disabled").Should().BeTrue();
+        page.Find("[data-testid=ct-confirm-key]").Input("children");
+        page.Find("[data-testid=ct-confirm-delete]").HasAttribute("disabled").Should().BeTrue("a partial key does not confirm");
+        page.Find("[data-testid=ct-confirm-key]").Input("children-api");
+        page.Find("[data-testid=ct-confirm-delete]").Click();
+        page.WaitForAssertion(() => _api.DeletedVersion.Should().Be((1, "children-api")));
     }
 }

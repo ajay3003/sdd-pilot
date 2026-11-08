@@ -9,6 +9,8 @@ public sealed class ApiContractRow
     public string Protocol { get; init; } = "";
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset UpdatedAt { get; set; }
+    /// <summary>Active, Deprecated or Archived (ContractLifecycle).</summary>
+    public string Lifecycle { get; set; } = "Active";
 }
 
 /// <summary>One imported version of a contract. Never updated: a changed document is a new version; an identical one is not stored again.</summary>
@@ -30,6 +32,7 @@ public sealed class ApiContractVersionRow
     /// <summary>Source-backed versions: the Source Analysis snapshot and the contract file path inside it (provenance; the snapshot is never changed).</summary>
     public Guid? SourceSnapshotId { get; init; }
     public string? SourcePath { get; init; }
+    public bool Hidden { get; set; }
 }
 
 /// <summary>A contract test definition (ContractTestDefinition as JSON) with its searchable columns.</summary>

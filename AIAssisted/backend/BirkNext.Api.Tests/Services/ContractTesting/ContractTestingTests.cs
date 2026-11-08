@@ -546,6 +546,88 @@ public sealed class ContractTestingTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Coverage_counts_only_execution_evidence_of_the_exact_contract_version()
+    {
+        using var scope = _services.CreateScope();
+        (await Scoped<ContractRegistryService>(scope).ImportAsync(new() { FileName = "children.yaml", Content = V1Yaml }, default)).Imported.Should().BeTrue();
+        var tests = Scoped<ContractTestService>(scope);
+        var before = (await tests.CoverageAsync("synthetic-children-api", null, default))!.Metrics.ToDictionary(m => m.Id);
+        before["operations-executed"].Should().Match<ContractCoverageMetric>(m => m.Numerator == 0 && m.Denominator == 4 && m.NotAssessed == 4);
+        before["documented-responses-observed"].Should().Match<ContractCoverageMetric>(m => m.Numerator == 0 && m.Denominator == 7 && m.NotAssessed == 7);
+
+        var test = (await tests.GenerateAsync("synthetic-children-api", null, ["GET /children/{id}"], default)).Created.Single();
+        Dataset("cov-data", new TestDataTypedEntry("id", TestDataPrimitive.Int32, "7"));
+        (await tests.BindAsync(test.Id, new("cov-data", 1), default)).Error.Should().BeNull();
+        var withTest = (await tests.CoverageAsync("synthetic-children-api", 1, default))!.Metrics.ToDictionary(m => m.Id);
+        withTest["operations-with-tests"].Numerator.Should().Be(1);
+        withTest["operations-executed"].Numerator.Should().Be(0, "a stored test is not execution evidence");
+
+        var run = await WaitAsync((await tests.RunAsync(new() { TestIds = [test.Id], Environment = Local }, default)).Run!.RunId!.Value);
+        run.Calls.Single().State.Should().Be(ExecutionState.Passed);
+        var report = (await tests.CoverageAsync("synthetic-children-api", 1, default))!;
+        report.Version.Should().Be(1);
+        var m = report.Metrics.ToDictionary(x => x.Id);
+        m["operations-executed"].Should().Match<ContractCoverageMetric>(x => x.Numerator == 1 && x.Denominator == 4 && x.NotAssessed == 3 && x.Scope.Contains("synthetic-children-api@v1"));
+        m["operations-passing"].Numerator.Should().Be(1);
+        m["documented-responses-observed"].Should().Match<ContractCoverageMetric>(x => x.Numerator == 1 && x.Denominator == 7 && x.NotAssessed == 5);
+        m["responses-valid"].Should().Match<ContractCoverageMetric>(x => x.Numerator == 1 && x.Denominator == 1 && x.NotAssessed == 0);
+        m["assertions-passed"].Numerator.Should().Be(m["assertions-passed"].Denominator).And.BeGreaterThan(0);
+
+        (await Scoped<ContractRegistryService>(scope).ImportAsync(new() { ContractKey = "synthetic-children-api", FileName = "children-v2.json", Content = V2Json }, default)).Imported.Should().BeTrue();
+        (await tests.CoverageAsync("synthetic-children-api", 2, default))!.Metrics.Single(x => x.Id == "operations-executed").Numerator
+            .Should().Be(0, "evidence of v1 never counts for v2");
+    }
+
+    [Fact]
+    public async Task Retention_archives_by_default_and_deletes_only_unreferenced_versions_after_confirmation()
+    {
+        using var scope = _services.CreateScope();
+        var registry = Scoped<ContractRegistryService>(scope);
+        var tests = Scoped<ContractTestService>(scope);
+        const string key = "synthetic-children-api";
+        (await registry.ImportAsync(new() { FileName = "children.yaml", Content = V1Yaml }, default)).Imported.Should().BeTrue();
+        var test = (await tests.GenerateAsync(key, null, ["GET /children/{id}"], default)).Created.Single();
+        Dataset("ret-data", new TestDataTypedEntry("id", TestDataPrimitive.Int32, "7"));
+        await tests.BindAsync(test.Id, new("ret-data", 1), default);
+        await WaitAsync((await tests.RunAsync(new() { TestIds = [test.Id], Environment = Local }, default)).Run!.RunId!.Value);
+        (await registry.ImportAsync(new() { ContractKey = key, FileName = "children-v2.json", Content = V2Json }, default)).Imported.Should().BeTrue();
+        (await registry.ImportAsync(new() { ContractKey = key, FileName = "children-v3.yaml", Content = V1Yaml.Replace("version: \"1.0\"", "version: \"3.0\"") }, default)).Imported.Should().BeTrue();
+
+        var retention = (await registry.RetentionAsync(key, default))!;
+        retention.Lifecycle.Should().Be(ContractLifecycle.Active);
+        var v = retention.Versions.ToDictionary(x => x.Version);
+        v[1].Deletable.Should().BeFalse();
+        v[1].References.Should().Contain(r => r.Contains("test revision")).And.Contain(r => r.Contains("execution record"));
+        v[2].Deletable.Should().BeTrue();
+        v[3].Should().Match<ContractVersionRetention>(x => x.Latest && !x.Deletable);
+        retention.ContractDeletable.Should().BeFalse();
+
+        (await registry.SetHiddenAsync(key, 3, true, default)).Should().Contain("latest");
+        (await registry.SetHiddenAsync(key, 2, true, default)).Should().BeNull();
+        (await registry.GetAsync(key, null, default))!.Versions.Single(x => x.Version == 2).Hidden.Should().BeTrue();
+        (await registry.DeleteVersionAsync(key, 2, "synthetic", default)).Should().Contain("Confirm");
+        (await registry.DeleteVersionAsync(key, 1, key, default)).Should().Contain("is kept");
+        (await registry.DeleteContractAsync(key, key, default)).Should().Contain("archive it instead");
+        (await registry.DeleteVersionAsync(key, 2, key, default)).Should().BeNull();
+        (await registry.RetentionAsync(key, default))!.Versions.Select(x => x.Version).Should().Equal(3, 1);
+        (await tests.RevisionsAsync(test.Id, default)).Should().NotBeEmpty("referenced history is never deleted");
+
+        (await registry.SetLifecycleAsync(key, ContractLifecycle.Deprecated, default)).Should().BeNull();
+        (await tests.GetAsync(test.Id, Local, default))!.Readiness.Items.Should().Contain(i => i.Area == "Contract" && i.State == ReadinessItemState.Warning);
+        (await registry.SetLifecycleAsync(key, ContractLifecycle.Archived, default)).Should().BeNull();
+        (await registry.ListAsync(default)).Single(c => c.Key == key).Lifecycle.Should().Be(ContractLifecycle.Archived);
+        (await tests.GetAsync(test.Id, Local, default))!.Readiness.State.Should().Be(ContractTestReadinessState.Blocked);
+        (await tests.RunAsync(new() { TestIds = [test.Id], Environment = Local }, default)).Run.Should().BeNull("an archived contract's tests never run");
+        (await tests.GenerateAsync(key, null, null, default)).Skipped.Should().ContainSingle(s => s.Contains("archived"));
+        (await registry.ImportAsync(new() { ContractKey = key, FileName = "children-v4.json", Content = V2Json.Replace("\"2.0\"", "\"4.0\"") }, default)).Imported.Should().BeFalse();
+
+        (await registry.ImportAsync(new() { FileName = "disposable.yaml", Content = V1Yaml.Replace("Synthetic Children API", "Disposable API") }, default)).Imported.Should().BeTrue();
+        (await registry.RetentionAsync("disposable-api", default))!.ContractDeletable.Should().BeTrue();
+        (await registry.DeleteContractAsync("disposable-api", "disposable-api", default)).Should().BeNull();
+        (await registry.ListAsync(default)).Should().NotContain(c => c.Key == "disposable-api");
+    }
+
+    [Fact]
     public async Task Tests_are_edited_as_immutable_revisions_and_history_keeps_what_each_run_used()
     {
         using var scope = _services.CreateScope();

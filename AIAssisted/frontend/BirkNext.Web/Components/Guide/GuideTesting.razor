@@ -156,6 +156,12 @@
     </ReviewDisclosure>
 </section>
 
+<section id="contract-testing" class="ug-section ug-topic" data-topic="contract-testing" aria-labelledby="contract-testing-title">
+    <h2 id="contract-testing-title" class="ug-section-title" tabindex="-1">Contract Testing</h2>
+    <p class="ug-lead"><a href="/api-quality-review/contracts">Contract Testing</a> stores OpenAPI/Swagger contracts and GraphQL schemas as immutable versions, generates draft tests from their operations, and runs Ready tests through Execution Evidence against the active Target Environment. <strong>Opening, comparing or editing never sends a request.</strong></p>
+    <p>Tests are edited as revisions (history, compare, revert); every run records the exact revision and contract version. <strong>Changes</strong> classifies each test as Definite, Potential, No evidence or Needs human review, with an update proposal you apply explicitly. <strong>Coverage</strong> counts only execution evidence of that exact version and shows numerator, denominator, scope and what was not assessed. <strong>Lifecycle &amp; retention</strong> archives or deprecates a contract; a version is deleted only when nothing references it and you type the contract key.</p>
+</section>
+
 <section id="execution-results" class="ug-section ug-topic" data-topic="execution-results" aria-labelledby="execution-results-title">
     <h2 id="execution-results-title" class="ug-section-title" tabindex="-1">Execution Results</h2>
     <p class="ug-lead"><a href="/execution-results">Execution Results</a> shows what an authorized REST or GraphQL run actually sent and received: one row per logical call, every physical attempt (retries are attempts, not extra tests), the captured request and response, and each assertion. <strong>Opening a result never executes anything.</strong></p>

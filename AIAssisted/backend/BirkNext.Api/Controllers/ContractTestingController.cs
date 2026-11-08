@@ -1,7 +1,9 @@
+using BirkNext.Api.Services.ActiveEventTesting;
 using BirkNext.Api.Services.ContractTesting;
 using BirkNext.Api.Services.ExecutionEvidence;
 using BirkNext.ContractTesting;
 using BirkNext.ExecutionEvidence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BirkNext.Api.Controllers;
@@ -40,6 +42,41 @@ public sealed class ContractTestingController(ContractRegistryService registry, 
     [HttpGet("contracts/{key}")]
     public async Task<ActionResult<ApiContractDetail>> Get(string key, [FromQuery] int? version, CancellationToken ct) =>
         await registry.GetAsync(key, version, ct) is { } detail ? Ok(detail) : NotFound();
+
+    [HttpGet("contracts/{key}/coverage")]
+    public async Task<ActionResult<ContractCoverageReport>> Coverage(string key, [FromQuery] int? version, CancellationToken ct) =>
+        await tests.CoverageAsync(key, version, ct) is { } report ? Ok(report) : NotFound();
+
+    [HttpGet("contracts/{key}/retention")]
+    public async Task<ActionResult<ContractRetention>> Retention(string key, CancellationToken ct) =>
+        await registry.RetentionAsync(key, ct) is { } retention ? Ok(retention) : NotFound();
+
+    public sealed record LifecycleRequest(ContractLifecycle Lifecycle);
+    public sealed record HiddenRequest(bool Hidden);
+
+    [HttpPut("contracts/{key}/lifecycle")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public async Task<IActionResult> SetLifecycle(string key, [FromBody] LifecycleRequest request, CancellationToken ct) =>
+        Refusal(await registry.SetLifecycleAsync(key, request.Lifecycle, ct));
+
+    [HttpPut("contracts/{key}/versions/{version:int}/hidden")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public async Task<IActionResult> SetHidden(string key, int version, [FromBody] HiddenRequest request, CancellationToken ct) =>
+        Refusal(await registry.SetHiddenAsync(key, version, request.Hidden, ct));
+
+    /// <summary>Deletes an unreferenced version; <paramref name="confirm"/> must be the contract key. Referenced versions are refused (archive instead).</summary>
+    [HttpDelete("contracts/{key}/versions/{version:int}")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public async Task<IActionResult> DeleteVersion(string key, int version, [FromQuery] string? confirm, CancellationToken ct) =>
+        Refusal(await registry.DeleteVersionAsync(key, version, confirm, ct));
+
+    [HttpDelete("contracts/{key}")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public async Task<IActionResult> DeleteContract(string key, [FromQuery] string? confirm, CancellationToken ct) =>
+        Refusal(await registry.DeleteContractAsync(key, confirm, ct));
+
+    private IActionResult Refusal(string? error) =>
+        error is null ? NoContent() : error == "Not found." ? NotFound() : UnprocessableEntity(new { message = error });
 
     [HttpGet("contracts/{key}/diff")]
     public async Task<ActionResult<ContractVersionDiff>> Diff(string key, [FromQuery] int from, [FromQuery] int to, CancellationToken ct) =>
@@ -170,6 +207,7 @@ public sealed class ContractTestingController(ContractRegistryService registry, 
 
     [HttpPut("credentials")]
     [RequestSizeLimit(64 * 1024)]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     public IActionResult SaveCredential([FromServices] ApiServiceCredentialStore store, [FromBody] ApiServiceCredentialSave save)
     {
         var (view, error) = store.Save(save, DateTimeOffset.UtcNow);
@@ -179,6 +217,7 @@ public sealed class ContractTestingController(ContractRegistryService registry, 
     }
 
     [HttpDelete("credentials/{environmentId}")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     public IActionResult DeleteCredential([FromServices] ApiServiceCredentialStore store, string environmentId)
     {
         ExecutionCredentialResolver.Forget(environmentId);

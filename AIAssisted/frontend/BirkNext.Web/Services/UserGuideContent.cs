@@ -71,6 +71,7 @@ public static class UserGuideContent
         new("skolenaervaer", "Skolenærvær Testing", Testing, "skolenaervaer altinn mu mm bufdata rapportmottak journey reporter child"),
         new("test-coverage-review", "Test Coverage & Overlap", Testing, "test coverage overlap duplicate journeys qa scope"),
         new("code-risk-review", "Code Risk Review", Testing, "code risk deterministic rules findings"),
+        new("contract-testing", "Contract Testing", Testing, "contract openapi swagger graphql schema version test revision assertion impact coverage archive retention"),
         new("execution-results", "Execution Results", Testing, "execution evidence run call attempt request response assertion graphql retry redacted export"),
         new("pipeline", "Pipeline Review", Testing, "pipeline ci cd definitions needs refresh"),
 

@@ -28,7 +28,10 @@ public static class ContractIdentity
 }
 
 public sealed record ApiContractSummary(Guid Id, string Key, string Name, ApiContractProtocol Protocol, int LatestVersion, int OperationCount, int TestCount,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt)
+{
+    public ContractLifecycle Lifecycle { get; init; }
+}
 
 /// <summary>One immutable version: what was imported (fingerprint, source, format) and how far it could be read.</summary>
 public sealed record ApiContractVersionInfo(int Version, string Sha256, ContractVersionSource Source, string SourceLabel, string Format, DateTimeOffset ImportedAt,
@@ -39,6 +42,8 @@ public sealed record ApiContractVersionInfo(int Version, string Sha256, Contract
     public string? SourcePath { get; init; }
     /// <summary>False for source-backed versions: the snapshot keeps the parsed contract, not the document text, so full schema validation is not available.</summary>
     public bool HasDocument { get; init; } = true;
+    /// <summary>Hidden versions are kept (and still referenced by their tests and evidence) but not offered for new work.</summary>
+    public bool Hidden { get; init; }
 }
 
 /// <summary>A REST or GraphQL contract a Source Analysis snapshot found, and whether the store already has it.</summary>
@@ -202,3 +207,19 @@ public sealed record ContractEndpointBindingSave(string EnvironmentId, string? B
 
 /// <summary>A base path the contract's declared servers suggest (path only — a declared host is never used).</summary>
 public sealed record ContractServerProposal(string Server, string BasePath);
+
+/// <summary>Active: normal. Deprecated: still usable, flagged. Archived: kept with all versions, tests and evidence, but read-only (no import,
+/// generation or runs). Archiving never deletes anything.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ContractLifecycle { Active, Deprecated, Archived }
+
+/// <summary>Why a version is kept: tests (any revision), execution evidence, a source snapshot it was imported from, or being the latest version.
+/// Only a version with no reference may be deleted, after an explicit confirmation.</summary>
+public sealed record ContractVersionRetention(int Version, bool Hidden, bool Latest, int TestRevisions, int EvidenceCalls, bool SourceBacked, bool Deletable, List<string> References);
+
+public sealed record ContractRetention(string Key, ContractLifecycle Lifecycle, List<ContractVersionRetention> Versions, bool ContractDeletable, string Policy);
+
+/// <summary>One coverage figure, always with what it counts over and where the numbers come from. NotAssessed counts items that could not be judged.</summary>
+public sealed record ContractCoverageMetric(string Id, string Label, int Numerator, int Denominator, string Scope, int NotAssessed, string EvidenceSource, string? Note = null);
+
+public sealed record ContractCoverageReport(string Key, int Version, ApiContractProtocol Protocol, List<ContractCoverageMetric> Metrics, DateTimeOffset ComputedAt);

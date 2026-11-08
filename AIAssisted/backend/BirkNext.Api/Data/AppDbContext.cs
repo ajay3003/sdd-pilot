@@ -1106,6 +1106,7 @@ public class AppDbContext : DbContext
             entity.Property(c => c.Name).HasMaxLength(200).IsRequired();
             entity.Property(c => c.Protocol).HasMaxLength(20).IsRequired();
             entity.HasIndex(c => c.Key).IsUnique();
+            entity.Property(c => c.Lifecycle).HasMaxLength(20).IsRequired().HasDefaultValue("Active");
         });
         modelBuilder.Entity<ApiContractVersionRow>(entity =>
         {

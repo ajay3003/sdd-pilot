@@ -42,7 +42,8 @@
                         @foreach (var c in _contracts)
                         {
                             <li class="@(c.Key == ContractKey ? "ct-selected" : null)"><a href="@Link(contract: c.Key, version: null, view: "operations", test: null)" data-testid="ct-contract-link" aria-current="@(c.Key == ContractKey ? "page" : null)">@c.Name</a>
-                                <span class="ct-muted">@(c.Protocol == ApiContractProtocol.GraphQl ? "GraphQL" : "REST") · v@(c.LatestVersion) · @c.OperationCount operations · @c.TestCount tests</span></li>
+                                <span class="ct-muted">@(c.Protocol == ApiContractProtocol.GraphQl ? "GraphQL" : "REST") · v@(c.LatestVersion) · @c.OperationCount operations · @c.TestCount tests</span>
+                                @if (c.Lifecycle != ContractLifecycle.Active) { <span class="ct-pill" data-testid="ct-contract-lifecycle">@c.Lifecycle</span> }</li>
                         }
                     </ul>
                 }
@@ -117,7 +118,7 @@
                     <div class="ct-facts">
                         <label class="ct-inline">Version
                             <select data-testid="ct-version" value="@d.Version" @onchange="e => Go(Link(version: int.Parse(e.Value!.ToString()!)))">
-                                @foreach (var v in d.Versions) { <option value="@v.Version">v@(v.Version)@(v.Version == d.Contract.LatestVersion ? " (latest)" : "")</option> }
+                                @foreach (var v in d.Versions.Where(v => !v.Hidden || v.Version == d.Version)) { <option value="@v.Version">v@(v.Version)@(v.Version == d.Contract.LatestVersion ? " (latest)" : "")@(v.Hidden ? " (hidden)" : "")</option> }
                             </select>
                         </label>
                         @if (info is not null)
@@ -128,6 +129,8 @@
                         }
                     </div>
                     @if (info?.Limitations is { Count: > 0 } limits) { <p class="ct-muted" data-testid="ct-limitations">@string.Join(" ", limits)</p> }
+                    @if (d.Contract.Lifecycle == ContractLifecycle.Archived) { <p class="ct-error" data-testid="ct-archived">Archived: read-only. Versions, tests and results are kept; nothing can be imported, generated or run until it is made active again.</p> }
+                    else if (d.Contract.Lifecycle == ContractLifecycle.Deprecated) { <p class="ct-message" data-testid="ct-deprecated">Deprecated: tests still run, with a readiness warning.</p> }
                     <ContractEndpointPanel ContractKey="@d.Contract.Key" Protocol="@d.Contract.Protocol" EnvironmentId="@_environment?.EnvironmentId" Changed="ReloadAsync" />
 
                     <div role="tablist" aria-label="Contract views" class="ct-tabs">
@@ -141,6 +144,8 @@
 
                 @if (View == "operations") { @OperationsView(d) }
                 else if (View == "tests") { @TestsView(d) }
+                else if (View == "coverage") { @CoverageView(d) }
+                else if (View == "lifecycle") { @LifecycleView(d) }
                 else { @ChangesView(d) }
             }
         </main>
@@ -154,7 +159,7 @@
     [SupplyParameterFromQuery(Name = "test")] public Guid? TestId { get; set; }
     [SupplyParameterFromQuery(Name = "from")] public int? FromQuery { get; set; }
 
-    private static readonly (string Key, string Label)[] Views = [("operations", "Operations"), ("tests", "Tests"), ("changes", "Changes")];
+    private static readonly (string Key, string Label)[] Views = [("operations", "Operations"), ("tests", "Tests"), ("changes", "Changes"), ("coverage", "Coverage"), ("lifecycle", "Lifecycle & retention")];
     private string View => Views.Any(v => v.Key == ViewQuery) ? ViewQuery! : "operations";
     private IContractTestingApiService? Api => Services.GetService(typeof(IContractTestingApiService)) as IContractTestingApiService;
 
@@ -167,6 +172,11 @@
     private IReadOnlyList<ContractTestView>? _tests;
     private IReadOnlyList<ContractDatasetOption>? _options;
     private ContractVersionDiff? _diff;
+    private ContractCoverageReport? _coverage;
+    private ContractRetention? _retention;
+    private string? _confirmKey;
+    private int? _deleteVersion;
+    private bool _deleteContract;
     private ContractTestEnvironment? _environment;
     private readonly HashSet<Guid> _selected = [];
 
@@ -195,7 +205,7 @@
         _loading = true; _error = null;
         if (Api is not { } api) { _error = "Contract Testing is not available in this host."; _loading = false; return; }
         (_contracts, _error) = await api.ContractsAsync();
-        _detail = null; _tests = null; _options = null; _diff = null;
+        _detail = null; _tests = null; _options = null; _diff = null; _coverage = null; _retention = null;
         if (ContractKey is { } key && _error is null)
         {
             (_detail, _error) = await api.ContractAsync(key, VersionQuery);
@@ -205,6 +215,8 @@
                 _error ??= testsError;
                 _selected.RemoveWhere(id => _tests?.All(t => t.Test.Id != id) != false);
                 if (TestId is { } id && _tests?.Any(t => t.Test.Id == id) == true) (_options, _error) = await api.DatasetsAsync(id, _environment?.EnvironmentId);
+                if (View == "coverage") (_coverage, _error) = await api.CoverageAsync(key, _detail.Version);
+                if (View == "lifecycle") (_retention, _error) = await api.RetentionAsync(key);
                 if (View == "changes" && _detail.Versions.Count > 1)
                 {
                     var to = _detail.Version;
@@ -630,6 +642,117 @@
             }
         }
     </section>;
+
+    private RenderFragment CoverageView(ApiContractDetail d) => __builder =>
+    {
+        <section class="ct-card" aria-labelledby="ct-coverage-h" data-testid="ct-coverage">
+            <h3 id="ct-coverage-h">Coverage of v@(d.Version)</h3>
+            <p class="ct-muted">Counted from Execution Evidence of calls that name this exact contract version. Not assessed = no execution evidence for that item; it is never counted as covered.</p>
+            @if (_coverage is null) { <p class="ct-muted">@(_loading ? "Loading…" : "No coverage available.")</p> }
+            else
+            {
+                <div class="ct-scroll">
+                    <table class="ct-table" data-testid="ct-coverage-table">
+                        <thead><tr><th scope="col">Metric</th><th scope="col">Covered</th><th scope="col">Not assessed</th><th scope="col">Scope</th><th scope="col">Evidence</th></tr></thead>
+                        <tbody>
+                            @foreach (var m in _coverage.Metrics)
+                            {
+                                <tr data-testid="ct-coverage-row" data-metric="@m.Id">
+                                    <th scope="row">@m.Label@if (m.Note is not null) { <div class="ct-muted">@m.Note</div> }</th>
+                                    <td data-testid="ct-coverage-value">@m.Numerator / @m.Denominator@(m.Denominator > 0 ? $" ({100.0 * m.Numerator / m.Denominator:0}%)" : "")</td>
+                                    <td>@m.NotAssessed</td><td>@m.Scope</td><td>@m.EvidenceSource</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="ct-muted">Contract @ContractIdentity.ContractRef(_coverage.Key, _coverage.Version) · computed @_coverage.ComputedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</p>
+            }
+        </section>
+    };
+
+    private RenderFragment LifecycleView(ApiContractDetail d) => __builder =>
+    {
+        <section class="ct-card" aria-labelledby="ct-lifecycle-h" data-testid="ct-lifecycle">
+            <h3 id="ct-lifecycle-h">Lifecycle &amp; retention</h3>
+            @if (_retention is null) { <p class="ct-muted">@(_loading ? "Loading…" : "Not available.")</p> }
+            else
+            {
+                var r = _retention;
+                <p class="ct-muted" data-testid="ct-retention-policy">@r.Policy</p>
+                <p class="ct-row ct-runbar">
+                    <span>State: <strong data-testid="ct-lifecycle-state">@r.Lifecycle</strong></span>
+                    @foreach (var target in Enum.GetValues<ContractLifecycle>().Where(l => l != r.Lifecycle))
+                    {
+                        <button class="btn btn-secondary" data-testid="ct-lifecycle-@target.ToString().ToLowerInvariant()" disabled="@_busy" @onclick="() => SetLifecycleAsync(d.Contract.Key, target)">@(target switch { ContractLifecycle.Archived => "Archive", ContractLifecycle.Deprecated => "Deprecate", _ => "Make active" })</button>
+                    }
+                </p>
+                <div class="ct-scroll">
+                    <table class="ct-table" data-testid="ct-retention-table">
+                        <thead><tr><th scope="col">Version</th><th scope="col">Referenced by</th><th scope="col">Actions</th></tr></thead>
+                        <tbody>
+                            @foreach (var v in r.Versions)
+                            {
+                                <tr data-testid="ct-retention-row" data-version="@v.Version" data-deletable="@(v.Deletable ? "true" : "false")">
+                                    <th scope="row">v@(v.Version)@(v.Hidden ? " (hidden)" : "")</th>
+                                    <td>@(v.References.Count == 0 ? "Nothing" : string.Join(", ", v.References))</td>
+                                    <td>
+                                        @if (!v.Latest) { <button class="btn btn-link btn-sm" data-testid="ct-hide" disabled="@_busy" @onclick="() => SetHiddenAsync(d.Contract.Key, v.Version, !v.Hidden)">@(v.Hidden ? "Show" : "Hide")</button> }
+                                        @if (v.Deletable) { <button class="btn btn-link btn-sm ct-danger" data-testid="ct-delete-version" disabled="@_busy" @onclick="() => { _deleteVersion = v.Version; _deleteContract = false; _confirmKey = null; }">Delete…</button> }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (r.ContractDeletable) { <button class="btn btn-link ct-danger" data-testid="ct-delete-contract" disabled="@_busy" @onclick="() => { _deleteContract = true; _deleteVersion = null; _confirmKey = null; }">Delete this contract…</button> }
+                else { <p class="ct-muted" data-testid="ct-delete-contract-refused">The contract is referenced by tests, execution evidence or a source snapshot, so it can only be archived.</p> }
+                @if (_deleteVersion is not null || _deleteContract)
+                {
+                    <div class="ct-detail" role="group" aria-labelledby="ct-confirm-h" data-testid="ct-confirm">
+                        <strong id="ct-confirm-h">@(_deleteContract ? $"Delete contract {d.Contract.Key} permanently?" : $"Delete v{_deleteVersion} of {d.Contract.Key} permanently?")</strong>
+                        <label class="ct-field">Type the contract key to confirm <input data-testid="ct-confirm-key" @bind="_confirmKey" @bind:event="oninput" autocomplete="off" /></label>
+                        <p class="ct-row ct-runbar">
+                            <button class="btn btn-danger" data-testid="ct-confirm-delete" disabled="@(_busy || _confirmKey != d.Contract.Key)" @onclick="() => DeleteAsync(d.Contract.Key)">Delete</button>
+                            <button class="btn btn-secondary" data-testid="ct-confirm-cancel" @onclick="() => { _deleteVersion = null; _deleteContract = false; _confirmKey = null; }">Cancel</button>
+                        </p>
+                    </div>
+                }
+            }
+        </section>
+    };
+
+    private async Task SetLifecycleAsync(string key, ContractLifecycle lifecycle)
+    {
+        if (Api is not { } api) return;
+        _busy = true; _message = null;
+        _error = await api.SetLifecycleAsync(key, lifecycle);
+        _busy = false;
+        if (_error is null) { _message = lifecycle switch { ContractLifecycle.Archived => "Archived. Everything is kept and read-only.", ContractLifecycle.Deprecated => "Deprecated.", _ => "Active again." }; await ReloadAsync(); }
+    }
+
+    private async Task SetHiddenAsync(string key, int version, bool hidden)
+    {
+        if (Api is not { } api) return;
+        _busy = true; _message = null;
+        _error = await api.SetHiddenAsync(key, version, hidden);
+        _busy = false;
+        if (_error is null) await ReloadAsync();
+    }
+
+    private async Task DeleteAsync(string key)
+    {
+        if (Api is not { } api || _confirmKey is not { } confirm) return;
+        _busy = true; _message = null;
+        _error = _deleteContract ? await api.DeleteContractAsync(key, confirm) : await api.DeleteVersionAsync(key, _deleteVersion!.Value, confirm);
+        _busy = false;
+        if (_error is not null) return;
+        var deletedContract = _deleteContract;
+        _message = deletedContract ? $"Contract {key} deleted." : $"v{_deleteVersion} deleted.";
+        _deleteVersion = null; _deleteContract = false; _confirmKey = null;
+        if (deletedContract) Go(Link(contract: null, version: null, view: null, test: null));
+        else Go(Link(version: null));
+    }
 
     private static string ChangeLabel(ContractChangeClass c) => c switch
     {

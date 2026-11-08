@@ -36,6 +36,12 @@ public interface IContractTestingApiService
     Task<(ContractTestSaveResult? Result, string? Error)> RevertTestAsync(Guid testId, int revision, int expectedRevision, CancellationToken ct = default);
     Task<(ContractTestMigrationProposal? Proposal, string? Error)> MigrationAsync(Guid testId, CancellationToken ct = default);
     Task<(ContractTestSaveResult? Result, string? Error)> ApplyMigrationAsync(Guid testId, int expectedRevision, CancellationToken ct = default);
+    Task<(ContractCoverageReport? Report, string? Error)> CoverageAsync(string key, int? version, CancellationToken ct = default);
+    Task<(ContractRetention? Retention, string? Error)> RetentionAsync(string key, CancellationToken ct = default);
+    Task<string?> SetLifecycleAsync(string key, ContractLifecycle lifecycle, CancellationToken ct = default);
+    Task<string?> SetHiddenAsync(string key, int version, bool hidden, CancellationToken ct = default);
+    Task<string?> DeleteVersionAsync(string key, int version, string confirm, CancellationToken ct = default);
+    Task<string?> DeleteContractAsync(string key, string confirm, CancellationToken ct = default);
 }
 
 public sealed record ContractBindingResponse(ContractEndpointBinding? Binding, List<ContractServerProposal> Proposals);
@@ -136,6 +142,24 @@ public sealed class ContractTestingApiService(HttpClient http) : IContractTestin
     public Task<(ContractTestSaveResult? Result, string? Error)> ApplyMigrationAsync(Guid testId, int expectedRevision, CancellationToken ct = default) =>
         SendAsync<ContractTestSaveResult>(HttpMethod.Post, $"{Base}/tests/{testId}/migration", new { expectedRevision }, ct, readErrorBody: true);
 
+    public Task<(ContractCoverageReport? Report, string? Error)> CoverageAsync(string key, int? version, CancellationToken ct = default) =>
+        SendAsync<ContractCoverageReport>(HttpMethod.Get, $"{Base}/contracts/{Uri.EscapeDataString(key)}/coverage{(version is { } v ? $"?version={v}" : "")}", null, ct);
+
+    public Task<(ContractRetention? Retention, string? Error)> RetentionAsync(string key, CancellationToken ct = default) =>
+        SendAsync<ContractRetention>(HttpMethod.Get, $"{Base}/contracts/{Uri.EscapeDataString(key)}/retention", null, ct);
+
+    public async Task<string?> SetLifecycleAsync(string key, ContractLifecycle lifecycle, CancellationToken ct = default) =>
+        (await SendAsync<JsonElement?>(HttpMethod.Put, $"{Base}/contracts/{Uri.EscapeDataString(key)}/lifecycle", new { lifecycle }, ct)).Error;
+
+    public async Task<string?> SetHiddenAsync(string key, int version, bool hidden, CancellationToken ct = default) =>
+        (await SendAsync<JsonElement?>(HttpMethod.Put, $"{Base}/contracts/{Uri.EscapeDataString(key)}/versions/{version}/hidden", new { hidden }, ct)).Error;
+
+    public async Task<string?> DeleteVersionAsync(string key, int version, string confirm, CancellationToken ct = default) =>
+        (await SendAsync<JsonElement?>(HttpMethod.Delete, $"{Base}/contracts/{Uri.EscapeDataString(key)}/versions/{version}?confirm={Uri.EscapeDataString(confirm)}", null, ct)).Error;
+
+    public async Task<string?> DeleteContractAsync(string key, string confirm, CancellationToken ct = default) =>
+        (await SendAsync<JsonElement?>(HttpMethod.Delete, $"{Base}/contracts/{Uri.EscapeDataString(key)}?confirm={Uri.EscapeDataString(confirm)}", null, ct)).Error;
+
     /// <summary>One request. A refusal's message (<c>{ "message": … }</c>) is shown as is; with <paramref name="readErrorBody"/> the typed body of a 422 is returned too.</summary>
     private async Task<(T? Body, string? Error)> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct, bool readErrorBody = false)
     {
@@ -156,6 +180,8 @@ public sealed class ContractTestingApiService(HttpClient http) : IContractTestin
                 if (readErrorBody) typed = JsonSerializer.Deserialize<T>(text, Json);
             }
             catch (JsonException) { }
+            if (message is null && response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+                message = $"{Title}: you do not have permission to change contract configuration (HTTP {(int)response.StatusCode}).";
             return (typed, message ?? $"{Title}: the request was refused (HTTP {(int)response.StatusCode}).");
         }
         catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e))

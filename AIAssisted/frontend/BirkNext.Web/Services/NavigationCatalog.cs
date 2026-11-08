@@ -179,6 +179,8 @@ public static class NavigationCatalog
             new("test-coverage-review", "Test Coverage & Overlap Review", "nav-icon-task-alignment", Always),
             new("code-risk-review", "Code Risk Review", "nav-icon-constitution-compliance", Always, ReviewId: "code-risk-review"),
             new("test-data", "Test Data", "nav-icon-task-alignment", Always, Hint: "approved typed test data: values, payloads, files, entity references, data sets, expected results"),
+            new("api-quality-review/contracts", "Contract Testing", "nav-icon-task-alignment", Always, Hint: "stored REST/GraphQL contracts: versions, tests, readiness, runs, impact and coverage",
+                Aliases: ["Contract-Driven Testing", "Contracts"]),
             new("execution-results", "Execution Results", "nav-icon-task-alignment", Always, Hint: "saved REST/GraphQL runs: what was actually sent and received, attempts, assertions"),
             new("frontend-quality-review", "Frontend Quality Review", "nav-icon-constitution-compliance", f => f.FrontendQualityReview, ReviewId: "frontend-quality-review", Aliases: ["FQR"]),
             new("api-quality-review", "API Quality Review", "nav-icon-constitution-compliance", f => f.ApiQualityReview, ReviewId: "api-quality-review", Aliases: ["AQR", "API & Integration Quality"]),

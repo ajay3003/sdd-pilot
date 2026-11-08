@@ -278,7 +278,7 @@ public sealed class NavMenuLayoutTests : BunitContext
     [InlineData("document-review", new[] { "specification-explorer", "constitution-explorer", "data-model-explorer", "plan-explorer", "task-explorer", "quality/document", "task-alignment", "documentation-drift" })]
     [InlineData("traceability", new[] { "artifact-traceability", "impact-analysis", "correlation-review", "release-readiness", "snapshots" })]
     [InlineData("source-review", new[] { "source-analysis", "schema-studio", "generated-documentation-explorer", "generated-documentation-health", "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
-    [InlineData("quality-testing", new[] { "test-coverage-review", "code-risk-review", "test-data", "execution-results", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "performance-test-review", "critical-e2e-regression" })]
+    [InlineData("quality-testing", new[] { "test-coverage-review", "code-risk-review", "test-data", "api-quality-review/contracts", "execution-results", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "performance-test-review", "critical-e2e-regression" })]
     [InlineData("extensions", new[] { "security-classification-review", "extensions/skolenaervaer" })]
     [InlineData("admin", new[] { "user-guide", "admin/system-settings" })]
     public void Rows_AreOrderedFromPrerequisiteToConsumer(string section, string[] routes)

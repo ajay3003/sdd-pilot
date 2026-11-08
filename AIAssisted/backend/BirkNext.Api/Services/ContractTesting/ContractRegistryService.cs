@@ -95,6 +95,7 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
         {
             contract = await db.ApiContracts.FirstOrDefaultAsync(c => c.Key == request.ContractKey, ct);
             if (contract is null) return Fail($"Contract {request.ContractKey} does not exist.");
+            if (contract.Lifecycle == nameof(ContractLifecycle.Archived)) return Fail($"{contract.Name} is archived: it is read-only. Make it active again to add a version.");
             if (contract.Protocol != protocol.ToString())
                 return Fail($"{contract.Name} is a {(contract.Protocol == nameof(ApiContractProtocol.Rest) ? "REST (OpenAPI)" : "GraphQL")} contract; a {(protocol == ApiContractProtocol.Rest ? "REST" : "GraphQL")} document cannot be its next version.");
         }
@@ -172,6 +173,7 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
         if (!string.IsNullOrWhiteSpace(request.ContractKey))
         {
             if (await db.ApiContracts.FirstOrDefaultAsync(c => c.Key == request.ContractKey, ct) is not { } existing) return Fail($"Contract {request.ContractKey} does not exist.");
+            if (existing.Lifecycle == nameof(ContractLifecycle.Archived)) return Fail($"{existing.Name} is archived: it is read-only.");
             if (existing.Protocol != protocol.ToString()) return Fail($"{existing.Name} is a {existing.Protocol} contract; this source contract is {protocol}.");
             contract = existing;
         }
@@ -209,6 +211,90 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
         if (Regex.IsMatch(content, @"\s!!?[A-Za-z]", RegexOptions.Multiline)) limits.Add("YAML tags are not interpreted by the YAML subset reader.");
         return limits;
     }
+
+    // ── Lifecycle and retention ─────────────────────────────────────────────────────────────────────────────────────────
+
+    public const string RetentionPolicy = "Archive by default: an archived contract keeps every version, test and execution result. A version is deleted only when "
+        + "nothing references it (no test revision, no execution evidence, not imported from a source snapshot, not the latest version) and the deletion is confirmed by typing the contract key.";
+
+    public async Task<string?> SetLifecycleAsync(string key, ContractLifecycle lifecycle, CancellationToken ct)
+    {
+        if (await db.ApiContracts.FirstOrDefaultAsync(c => c.Key == key, ct) is not { } contract) return "Not found.";
+        contract.Lifecycle = lifecycle.ToString();
+        contract.UpdatedAt = _clock.GetUtcNow();
+        await db.SaveChangesAsync(ct);
+        return null;
+    }
+
+    public async Task<string?> SetHiddenAsync(string key, int version, bool hidden, CancellationToken ct)
+    {
+        if (await db.ApiContracts.AsNoTracking().FirstOrDefaultAsync(c => c.Key == key, ct) is not { } contract) return "Not found.";
+        var rows = await db.ApiContractVersions.Where(v => v.ContractId == contract.Id).ToListAsync(ct);
+        if (rows.FirstOrDefault(v => v.Version == version) is not { } row) return "Not found.";
+        if (hidden && version == rows.Max(v => v.Version)) return "The latest version cannot be hidden.";
+        row.Hidden = hidden;
+        await db.SaveChangesAsync(ct);
+        return null;
+    }
+
+    /// <summary>Each version's references (computed from the stored tests, their revisions and the execution evidence) and whether it may be deleted.</summary>
+    public async Task<ContractRetention?> RetentionAsync(string key, CancellationToken ct)
+    {
+        if (await db.ApiContracts.AsNoTracking().FirstOrDefaultAsync(c => c.Key == key, ct) is not { } contract) return null;
+        var versions = await db.ApiContractVersions.AsNoTracking().Where(v => v.ContractId == contract.Id).OrderByDescending(v => v.Version).ToListAsync(ct);
+        var testIds = await db.ContractTests.AsNoTracking().Where(t => t.ContractId == contract.Id).Select(t => t.Id).ToListAsync(ct);
+        var docs = (await db.ContractTests.AsNoTracking().Where(t => t.ContractId == contract.Id).Select(t => t.DocumentJson).ToListAsync(ct))
+            .Concat(await db.ContractTestRevisions.AsNoTracking().Where(r => testIds.Contains(r.TestId)).Select(r => r.DocumentJson).ToListAsync(ct))
+            .Select(d => JsonSerializer.Deserialize<ContractTestDefinition>(d, ExecutionEvidenceStore.Json)!).ToList();
+        var latest = versions.Count == 0 ? 0 : versions.Max(v => v.Version);
+        var result = new List<ContractVersionRetention>();
+        foreach (var v in versions)
+        {
+            var reference = ContractIdentity.ContractRef(key, v.Version);
+            var operationRef = $"\"operationRef\":\"{reference}#";
+            var evidence = await db.ExecutionCalls.AsNoTracking().CountAsync(c => c.DocumentJson.Contains(operationRef), ct)
+                + await db.ExecutionRuns.AsNoTracking().CountAsync(r => r.SummaryJson.Contains($"\"{reference}\""), ct);
+            var tests = docs.Count(d => d.ContractVersion == v.Version);
+            var refs = new List<string>();
+            if (v.Version == latest) refs.Add("latest version");
+            if (tests > 0) refs.Add($"{tests} test revision(s)");
+            if (evidence > 0) refs.Add($"{evidence} execution record(s)");
+            if (v.SourceSnapshotId is { } snapshot) refs.Add($"imported from source snapshot {snapshot:N}");
+            result.Add(new(v.Version, v.Hidden, v.Version == latest, tests, evidence, v.SourceSnapshotId is not null, refs.Count == 0, refs));
+        }
+        var lifecycle = Enum.TryParse<ContractLifecycle>(contract.Lifecycle, out var l) ? l : ContractLifecycle.Active;
+        var contractDeletable = testIds.Count == 0 && result.All(r => r.TestRevisions == 0 && r.EvidenceCalls == 0 && !r.SourceBacked);
+        return new(key, lifecycle, result, contractDeletable, RetentionPolicy);
+    }
+
+    /// <summary>Deletes one unreferenced version after confirmation (the contract key typed back). Referenced history is never deleted.</summary>
+    public async Task<string?> DeleteVersionAsync(string key, int version, string? confirm, CancellationToken ct)
+    {
+        if (!string.Equals(confirm, key, StringComparison.Ordinal)) return "Confirm the deletion by typing the contract key.";
+        if (await RetentionAsync(key, ct) is not { } retention || retention.Versions.FirstOrDefault(v => v.Version == version) is not { } info) return "Not found.";
+        if (!info.Deletable) return $"Version {version} is kept: {string.Join(", ", info.References)}.";
+        var contractId = await db.ApiContracts.Where(c => c.Key == key).Select(c => c.Id).FirstAsync(ct);
+        db.ApiContractVersions.Remove(await db.ApiContractVersions.FirstAsync(v => v.ContractId == contractId && v.Version == version, ct));
+        await db.SaveChangesAsync(ct);
+        return null;
+    }
+
+    /// <summary>Deletes a whole contract only when no test, evidence or source snapshot references it, after confirmation. Otherwise archive it.</summary>
+    public async Task<string?> DeleteContractAsync(string key, string? confirm, CancellationToken ct)
+    {
+        if (!string.Equals(confirm, key, StringComparison.Ordinal)) return "Confirm the deletion by typing the contract key.";
+        if (await RetentionAsync(key, ct) is not { } retention) return "Not found.";
+        if (!retention.ContractDeletable) return "The contract is referenced by tests, execution evidence or a source snapshot; archive it instead.";
+        var contract = await db.ApiContracts.FirstAsync(c => c.Key == key, ct);
+        db.ApiContractVersions.RemoveRange(db.ApiContractVersions.Where(v => v.ContractId == contract.Id));
+        db.ContractEndpointBindings.RemoveRange(db.ContractEndpointBindings.Where(b => b.ContractId == contract.Id));
+        db.ApiContracts.Remove(contract);
+        await db.SaveChangesAsync(ct);
+        return null;
+    }
+
+    public async Task<ContractLifecycle?> LifecycleAsync(string key, CancellationToken ct) =>
+        await db.ApiContracts.AsNoTracking().Where(c => c.Key == key).Select(c => c.Lifecycle).FirstOrDefaultAsync(ct) is { } value && Enum.TryParse<ContractLifecycle>(value, out var l) ? l : null;
 
     public async Task<IReadOnlyList<ApiContractSummary>> ListAsync(CancellationToken ct)
     {
@@ -248,14 +334,15 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
     {
         var latest = await db.ApiContractVersions.AsNoTracking().Where(v => v.ContractId == c.Id).OrderByDescending(v => v.Version).Select(v => new { v.Version, v.OperationCount }).FirstOrDefaultAsync(ct);
         var tests = await db.ContractTests.AsNoTracking().CountAsync(t => t.ContractId == c.Id, ct);
-        return new(c.Id, c.Key, c.Name, Enum.Parse<ApiContractProtocol>(c.Protocol), latest?.Version ?? 0, latest?.OperationCount ?? 0, tests, c.UpdatedAt);
+        return new(c.Id, c.Key, c.Name, Enum.Parse<ApiContractProtocol>(c.Protocol), latest?.Version ?? 0, latest?.OperationCount ?? 0, tests, c.UpdatedAt)
+            { Lifecycle = Enum.TryParse<ContractLifecycle>(c.Lifecycle, out var lifecycle) ? lifecycle : ContractLifecycle.Active };
     }
 
     private static ApiContractVersionInfo Info(ApiContractVersionRow v)
     {
         var doc = Document(v);
         return new(v.Version, v.Sha256, Enum.Parse<ContractVersionSource>(v.Source), v.SourceLabel, v.Format, v.ImportedAt, v.OperationCount, doc.Version, doc.ParseSupport, doc.Limitations)
-            { SourceSnapshotId = v.SourceSnapshotId, SourcePath = v.SourcePath, HasDocument = v.DocumentText.Length > 0 };
+            { SourceSnapshotId = v.SourceSnapshotId, SourcePath = v.SourcePath, HasDocument = v.DocumentText.Length > 0, Hidden = v.Hidden };
     }
 
     private static SourceContract Document(ApiContractVersionRow v) => JsonSerializer.Deserialize<SourceContract>(v.ContractJson, ExecutionEvidenceStore.Json)!;
