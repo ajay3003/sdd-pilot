@@ -76,6 +76,9 @@ public sealed class ExecutionEvidenceTests : IAsyncLifetime
             case "/badjson": await Send(200, "application/json", "{not json"); break;
             case "/flaky": await Send(Interlocked.Increment(ref _flaky) <= 2 ? 503 : 200, "application/json", """{"ok":true}"""); break;
             case "/slow": await Task.Delay(2000); await Send(200, "application/json", "{}"); break;
+            case "/slow-post": await Task.Delay(1500); await Send(201, "application/json", "{}"); break;
+            case "/always-503": await Send(503, "application/json", """{"error":"busy"}"""); break;
+            case "/redirect": c.Response.StatusCode = 302; c.Response.RedirectLocation = "http://127.0.0.2:9/elsewhere"; c.Response.Close(); break;
             case "/graphql":
                 if (body.Contains("forbidden", StringComparison.Ordinal)) await Send(200, "application/json", """{"data":null,"errors":[{"message":"Forbidden","path":["child"],"extensions":{"code":"FORBIDDEN"}}]}""");
                 else if (body.Contains("partial", StringComparison.Ordinal)) await Send(200, "application/json", """{"data":{"child":{"id":"1"},"school":null},"errors":[{"message":"School unavailable","path":["school"]}]}""");
@@ -157,6 +160,36 @@ public sealed class ExecutionEvidenceTests : IAsyncLifetime
         var sentGql = _seen.First(s => s.Body.Contains("forbidden", StringComparison.Ordinal)).Body;
         byName["gql expected forbidden"].Attempts[0].Request!.Body!.Text.Should().Be(sentGql);
         byName["gql expected forbidden"].Attempts[0].Request!.GraphQlOperationType.Should().Be("query");
+    }
+
+    [Fact]
+    public async Task Data_changing_calls_are_never_retried_automatically_and_an_unanswered_one_has_an_unknown_outcome()
+    {
+        var retry = new RetryPolicy(3, [503], RetryOnTransportError: true);
+        var detail = await RunAsync(Request(
+            new ExecutionCallDefinition { Name = "slow create", Method = "POST", Path = "/slow-post", ContentType = "application/json", Body = """{"name":"x"}""", TimeoutMs = 600, Retry = retry },
+            new ExecutionCallDefinition { Name = "busy create", Method = "POST", Path = "/always-503", ContentType = "application/json", Body = """{"name":"x"}""", Retry = retry, Assertions = [Status("201")] },
+            Get("busy read", "/always-503", Status("200")) with { Retry = retry }) with { ConfirmMutatingCalls = true });
+        var slow = detail.Calls.Single(c => c.Definition.Name == "slow create");
+        slow.State.Should().Be(ExecutionState.TimedOut);
+        slow.Attempts.Should().ContainSingle().Which.Error.Should().Contain("Outcome unknown").And.Contain("Not retried: POST");
+        var busy = detail.Calls.Single(c => c.Definition.Name == "busy create");
+        busy.Attempts.Should().ContainSingle().Which.Error.Should().Contain("Not retried: POST");
+        detail.Calls.Single(c => c.Definition.Name == "busy read").Attempts.Should().HaveCount(3, "an idempotent GET follows its retry policy");
+        await Task.Delay(1200);
+        _seen.Count(s => s.Path == "/slow-post").Should().Be(1);
+        _seen.Count(s => s.Path == "/always-503" && s.Method == "POST").Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_redirect_is_recorded_and_never_followed()
+    {
+        var detail = await RunAsync(Request(Get("moved", "/redirect", Status("200"))));
+        var call = detail.Calls.Single();
+        call.Attempts.Single().Response!.StatusCode.Should().Be(302);
+        call.Attempts.Single().Response!.Headers.Should().Contain(h => h.Name == "Location");
+        call.State.Should().Be(ExecutionState.Failed);
+        _seen.Should().ContainSingle(s => s.Path == "/redirect").And.NotContain(s => s.Path == "/elsewhere");
     }
 
     [Fact]

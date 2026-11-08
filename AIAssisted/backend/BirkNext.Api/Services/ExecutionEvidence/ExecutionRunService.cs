@@ -49,6 +49,12 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
         PlaintextStreamFilter = (context, _) => ValueTask.FromResult<Stream>(new TransmissionCountingStream(context.PlaintextStream)),
     };
 
+    /// <summary>Calls that may be retried automatically: GET, HEAD, OPTIONS, PUT, DELETE (idempotent by HTTP) and GraphQL queries. POST, PATCH and
+    /// GraphQL mutations are never resent by BirkNext, whatever the retry policy says.</summary>
+    public static bool Idempotent(ExecutionCallDefinition d) => d.Protocol == ExecutionProtocol.GraphQl
+        ? OperationType(d.GraphQlQuery) == "query"
+        : d.Method.ToUpperInvariant() is "GET" or "HEAD" or "OPTIONS" or "PUT" or "DELETE";
+
     public static bool Mutating(ExecutionCallDefinition d) => d.Protocol == ExecutionProtocol.GraphQl
         ? OperationType(d.GraphQlQuery) == "mutation"
         : d.Method.ToUpperInvariant() is "POST" or "PUT" or "PATCH" or "DELETE";
@@ -309,16 +315,20 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
             var request = slot.Request is { } r && d.Protocol == ExecutionProtocol.GraphQl
                 ? r with { GraphQlOperationName = d.GraphQlOperationName, GraphQlOperationType = OperationType(d.GraphQlQuery) } : slot.Request;
             var transmissions = TransmissionCountingStream.Take(correlation);
+            if (transmissions > 1) error = $"{error} The HTTP stack transmitted this request {transmissions} times (it resends a request without a body when the connection closes before a response).".Trim();
+            // A data-changing request that reached the network without an answer may or may not have been applied: say so, never guess.
+            if (!Idempotent(d) && transmissions > 0 && transport is TransportResult.TimedOut or TransportResult.ConnectionFailed)
+                error = $"{error} Outcome unknown: the request was sent but no response arrived, so it may or may not have changed data; it is not sent again.".Trim();
+            var wanted = n < max && transport is not TransportResult.Cancelled
+                && (transport is TransportResult.ConnectionFailed or TransportResult.TimedOut && d.Retry.RetryOnTransportError || response2 is not null && d.Retry.RetryOnStatus?.Contains(response2.StatusCode) == true);
+            if (wanted && !Idempotent(d)) error = $"{error} Not retried: {(d.Protocol == ExecutionProtocol.GraphQl ? "a GraphQL mutation" : d.Method.ToUpperInvariant())} can change data and is never resent automatically.".Trim();
             attempts.Add(new ExecutionAttempt
             {
                 AttemptNumber = n, StartedAt = started, CompletedAt = _clock.GetUtcNow(), Transport = request is null && transport != TransportResult.ResponseReceived ? TransportResult.NotSent : transport,
-                Request = request, Response = response2, RetryReason = retryReason, Transmissions = transmissions, AuthenticationSession = session,
-                Error = transmissions > 1 ? $"{error} The HTTP stack transmitted this request {transmissions} times (it resends a request without a body when the connection closes before a response).".Trim() : error,
+                Request = request, Response = response2, RetryReason = retryReason, Transmissions = transmissions, AuthenticationSession = session, Error = error,
             });
-            if (n == max || transport is TransportResult.Cancelled) break;
-            retryReason = transport is TransportResult.ConnectionFailed or TransportResult.TimedOut && d.Retry.RetryOnTransportError ? $"Retry after {transport}"
-                : response2 is not null && d.Retry.RetryOnStatus?.Contains(response2.StatusCode) == true ? $"Retry after HTTP {response2.StatusCode}" : null;
-            if (retryReason is null) break;
+            if (!wanted || !Idempotent(d)) break;
+            retryReason = transport is TransportResult.ConnectionFailed or TransportResult.TimedOut ? $"Retry after {transport}" : $"Retry after HTTP {response2!.StatusCode}";
             if (d.Retry.DelayMs > 0) { try { await Task.Delay(Math.Clamp(d.Retry.DelayMs, 0, 10000), runToken); } catch (OperationCanceledException) { break; } }
         }
         var last = attempts[^1];
