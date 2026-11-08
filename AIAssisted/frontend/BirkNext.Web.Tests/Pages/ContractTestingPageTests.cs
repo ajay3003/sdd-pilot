@@ -141,12 +141,24 @@ public sealed class ContractTestingPageTests : BunitContext
         var page = Open("");
         page.Find("[data-testid=ct-contracts-empty]").TextContent.Should().Contain("No contracts yet");
         page.Find("[data-testid=ct-import-url-mode]").Change(true);
-        page.Find("[data-testid=ct-import-url]").Change("http://localhost:5288/openapi.json");
+        page.Find("[data-testid=ct-import-url]").Input("http://localhost:5288/openapi.json");
         page.Find("[data-testid=ct-import-submit]").Click();
         page.WaitForAssertion(() => _api.Imported.Should().NotBeNull());
         _api.Imported!.Url.Should().Be("http://localhost:5288/openapi.json");
         _api.Imported.Content.Should().BeNull();
         Services.GetRequiredService<NavigationManager>().Uri.Should().Contain("contract=children-api").And.Contain("view=operations");
+    }
+
+    /// <summary>CDT-DEF-1 (browser acceptance CT-03): typing a URL did not enable Import until the field lost focus (bound on change).</summary>
+    [Fact]
+    public void Typing_a_URL_enables_Import_without_leaving_the_field()
+    {
+        _api.HasContract = false;
+        var page = Open("");
+        page.Find("[data-testid=ct-import-url-mode]").Change(true);
+        page.Find("[data-testid=ct-import-submit]").HasAttribute("disabled").Should().BeTrue();
+        page.Find("[data-testid=ct-import-url]").Input("http://localhost:5288/openapi.json");
+        page.Find("[data-testid=ct-import-submit]").HasAttribute("disabled").Should().BeFalse("the button reflects what is typed, not what was last committed on blur");
     }
 
     [Fact]
@@ -196,7 +208,7 @@ public sealed class ContractTestingPageTests : BunitContext
         var page = Open("?contract=children-api&view=tests");
         page.Find("[data-testid=ct-run]").HasAttribute("disabled").Should().BeTrue("nothing is selected");
         page.Find("[data-testid=ct-select-ready]").Change(true);
-        page.Find("[data-testid=ct-base-path]").Change("/api");
+        page.Find("[data-testid=ct-base-path]").Input("/api");
         page.Find("[data-testid=ct-run]").Click();
         page.WaitForAssertion(() => _api.Ran.Should().NotBeNull());
         _api.Ran!.TestIds.Should().Equal(GetTest);

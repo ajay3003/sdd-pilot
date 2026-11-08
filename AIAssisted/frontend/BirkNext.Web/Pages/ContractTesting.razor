@@ -21,7 +21,7 @@
         else
         {
             <p><strong>Runs against</strong> <span data-testid="ct-env-name">@_environmentName</span> <span class="ct-pill">@_environment.EnvironmentType</span> <code>@_environment.TargetUrl</code></p>
-            <label class="ct-inline">API base path <input data-testid="ct-base-path" @bind="_basePath" placeholder="/ (none)" aria-describedby="ct-base-help" /></label>
+            <label class="ct-inline">API base path <input data-testid="ct-base-path" @bind="_basePath" @bind:event="oninput" placeholder="/ (none)" aria-describedby="ct-base-help" /></label>
             <span id="ct-base-help" class="ct-muted">A path inside this environment (for example /api). Hosts are never accepted.</span>
         }
     </section>
@@ -56,7 +56,7 @@
                 </fieldset>
                 @if (_importByUrl)
                 {
-                    <label class="ct-field">Document URL <input data-testid="ct-import-url" @bind="_importUrl" placeholder="http://localhost:5288/openapi.json" /></label>
+                    <label class="ct-field">Document URL <input data-testid="ct-import-url" @bind="_importUrl" @bind:event="oninput" placeholder="http://localhost:5288/openapi.json" /></label>
                     <p class="ct-muted">Fetched once without credentials; link-local and cloud-metadata addresses are refused.</p>
                 }
                 else
