@@ -120,3 +120,30 @@ suites 568 and 548 (+1 skipped); frontend AQR/navigation/Execution Results 499.
 - TLS and HTTP/2 targets were not exercised.
 - Real OpenAPI documents or GraphQL schemas of real systems were not used (synthetic only; no external calls).
 - The remaining unsupported functionality is listed in the implementation report (§ 11, GAP-CDT-1 … 12).
+
+## 7. Cleanup (approved 2026-11-08)
+
+Verified before deleting: database `birknext_cdt_20261108` (owner `birknext`, 0 connections, holding only this task's 2 synthetic contracts and 3 runs);
+scratch folders `api-cdt` (the isolated content root) and `pub-api-cdt` (its publish source; the same build); no process used any of them (isolated
+ports 5099/5199/5288 free); the only references were this task's own scratch scripts.
+
+Deleted: the database `birknext_cdt_20261108`, the scratch folders `api-cdt` and `pub-api-cdt`. 27 other BirkNext databases remain.
+
+Kept: the acceptance scripts (`cdtval/accept.cjs`, `cdtval/gql-accept.cjs`, the synthetic target and contract files), the results JSON
+(`results-main.json`, `results-after-restart.json`, `results-graphql.json`), the 11 screenshots (synthetic data only) and these reports.
+
+Not touched: `api-gaps` and `webpub` (earlier scratch folders whose binaries the mis-targeted publish replaced; they need separate verification
+and approval), `testdata/`, `appsettings.Local.json`, the user's stack on ports 5000/5173, every other database.
+
+## 8. Next phase (not started)
+
+Order set by the user for the remaining gaps (each capability is to be audited first and built on existing services, without competing engines
+or stores):
+
+1. Authenticated REST and GraphQL execution with the existing attended/unattended authentication and target safety controls (GAP-CDT-1, GAP-EE-2).
+2. Contract-based JSON request/response validation (GAP-CDT-2).
+3. Editable, versioned test definitions with configurable assertions (GAP-CDT-3).
+4. Source Analysis contract snapshot integration (GAP-CDT-7).
+5. A shared contract source for API Quality Review (GAP-CDT-9, GAP-CDT-10).
+6. Configurable REST base URL and GraphQL endpoint (GAP-CDT-4).
+7. The remaining generation, impact, navigation and retention gaps (GAP-CDT-5, -6, -8, -11, -12).
