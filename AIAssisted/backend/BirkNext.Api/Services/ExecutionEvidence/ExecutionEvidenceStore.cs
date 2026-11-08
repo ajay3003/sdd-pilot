@@ -41,6 +41,7 @@ public sealed class ExecutionEvidenceStore(AppDbContext db, TimeProvider? clock 
             Id = c.CallId, RunId = Guid.Empty, Sequence = c.Sequence, Name = Trim(c.Definition.Name, 300), Protocol = c.Definition.Protocol.ToString(),
             Method = c.Definition.Protocol == ExecutionProtocol.GraphQl ? "POST" : c.Definition.Method.ToUpperInvariant(), State = c.State.ToString(),
             HttpStatus = last?.Response?.StatusCode, DurationMs = last?.Response?.DurationMs, AttemptCount = c.Attempts.Count, DocumentJson = JsonSerializer.Serialize(c, Json),
+            DefinitionRef = c.Definition.DefinitionVersion is { Length: > 0 and <= 200 } d ? d : null,
         };
     }
 
@@ -54,7 +55,7 @@ public sealed class ExecutionEvidenceStore(AppDbContext db, TimeProvider? clock 
             SummaryJson = JsonSerializer.Serialize(run, Json),
         });
         foreach (var c in calls) { var r = Row(c); db.ExecutionCalls.Add(new ExecutionCallRow { Id = r.Id, RunId = runId, Sequence = r.Sequence, Name = r.Name, Protocol = r.Protocol,
-            Method = r.Method, State = r.State, HttpStatus = r.HttpStatus, DurationMs = r.DurationMs, AttemptCount = r.AttemptCount, DocumentJson = r.DocumentJson }); }
+            Method = r.Method, State = r.State, HttpStatus = r.HttpStatus, DurationMs = r.DurationMs, AttemptCount = r.AttemptCount, DocumentJson = r.DocumentJson, DefinitionRef = r.DefinitionRef }); }
         await db.SaveChangesAsync(ct);
         return run;
     }
@@ -140,6 +141,16 @@ public sealed class ExecutionEvidenceStore(AppDbContext db, TimeProvider? clock 
     public async Task<ExecutionCallRecord?> CallAsync(Guid runId, Guid callId, CancellationToken ct) =>
         await db.ExecutionCalls.AsNoTracking().Where(c => c.RunId == runId && c.Id == callId).Select(c => c.DocumentJson).FirstOrDefaultAsync(ct) is { } doc
             ? JsonSerializer.Deserialize<ExecutionCallRecord>(doc, Json) : null;
+
+    /// <summary>The newest call whose definition reference starts with <paramref name="definitionPrefix"/> (any revision of one definition),
+    /// with its run id and start time. Read-only; null when that definition never ran.</summary>
+    public async Task<(Guid RunId, DateTimeOffset StartedAt, ExecutionCallRecord Call)?> LatestByDefinitionAsync(string definitionPrefix, CancellationToken ct)
+    {
+        var hit = await db.ExecutionCalls.AsNoTracking().Where(c => c.DefinitionRef != null && c.DefinitionRef.StartsWith(definitionPrefix))
+            .Join(db.ExecutionRuns.AsNoTracking(), c => c.RunId, r => r.Id, (c, r) => new { c.RunId, r.StartedAt, c.Sequence, c.DocumentJson })
+            .OrderByDescending(x => x.StartedAt).ThenByDescending(x => x.Sequence).FirstOrDefaultAsync(ct);
+        return hit is null ? null : (hit.RunId, hit.StartedAt, JsonSerializer.Deserialize<ExecutionCallRecord>(hit.DocumentJson, Json)!);
+    }
 
     /// <summary>Deletes a finished run and its calls (owner action). A running run cannot be deleted.</summary>
     public async Task<(bool Deleted, string? Error)> DeleteAsync(Guid runId, CancellationToken ct)

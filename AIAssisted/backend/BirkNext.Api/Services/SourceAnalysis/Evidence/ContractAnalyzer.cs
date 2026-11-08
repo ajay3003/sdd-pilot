@@ -237,6 +237,19 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
             else tree = MiniYaml.Parse(file.Content);
             if (tree is not null) context.DeclaredConfiguration.AddRange(OpenApiConfigurationReader.Read(file.Path, tree));
         }
+        return OpenApiDocument(file, extractor);
+    }
+
+    /// <summary>
+    /// One OpenAPI 3 / Swagger 2 document (JSON or YAML) read exactly as a contract file of a source upload: JSON OpenAPI 3 through the runtime
+    /// extractor (component types with their required fields), everything else through the generic tree reader (Partial). The single OpenAPI
+    /// contract reader of Source Analysis and the contract registry. Local only: nothing is fetched. Throws <see cref="JsonException"/> on bad JSON.
+    /// </summary>
+    internal static SourceContract? ReadOpenApiDocument(string path, string content) =>
+        OpenApiDocument(new EvidenceFile(path, content, SourceFileRole.Contract, "OpenAPI"), new OpenApiExtractor(NullLogger<OpenApiExtractor>.Instance));
+
+    private static SourceContract? OpenApiDocument(EvidenceFile file, OpenApiExtractor extractor)
+    {
         if (file.Path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
         {
             var result = extractor.Extract(file.Content);
@@ -386,6 +399,10 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
                     Summary = op.Str("summary") is { } summary ? Safe(summary.Length > 160 ? summary[..160] : summary) : null,
                     Tags = [.. op.Strings("tags").Take(10).Select(Safe)], ParameterDetails = parameters, RequestContentTypes = contentTypes, RequestBodyRequired = bodyRequired,
                     RequestSchema = requestSchema, ResponseCodes = [.. (op["responses"]?.Entries ?? []).Select(e => Safe(e.Key))],
+                    ResponseSchemas = (op["responses"]?.Entries ?? []).Select(e => (Code: Safe(e.Key), Response: Deref(e.Value)))
+                        .Select(r => (r.Code, Type: (r.Response["content"]?.Entries ?? []).Where(c => c.Key.Contains("json", StringComparison.OrdinalIgnoreCase))
+                            .Select(c => TypeOf(c.Value["schema"])).FirstOrDefault(t => t is not null) ?? TypeOf(r.Response["schema"])))
+                        .Where(r => r.Type is not null).GroupBy(r => r.Code, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First().Type!, StringComparer.Ordinal),
                     Security = op.Has("security") ? Security(op) : rootSecurity,
                     HasExamples = parameters.Any(p => p.HasExample) || op["requestBody"]?.Has("examples") == true, Detailed = true,
                 });

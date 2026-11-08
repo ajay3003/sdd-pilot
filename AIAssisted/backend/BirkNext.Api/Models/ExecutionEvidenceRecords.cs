@@ -31,4 +31,6 @@ public sealed class ExecutionCallRow
     public long? DurationMs { get; set; }
     public int AttemptCount { get; set; }
     public string DocumentJson { get; set; } = "";
+    /// <summary>The definition this call ran (e.g. a contract test revision, "contract-test:{id}@r2"), for "latest result of a test" lookups.</summary>
+    public string? DefinitionRef { get; init; }
 }

@@ -16,6 +16,9 @@ public class AppDbContext : DbContext
     public DbSet<IntegrationJourneyRunRecord> IntegrationJourneyRuns => Set<IntegrationJourneyRunRecord>();
     public DbSet<ExecutionRunRow> ExecutionRuns => Set<ExecutionRunRow>();
     public DbSet<ExecutionCallRow> ExecutionCalls => Set<ExecutionCallRow>();
+    public DbSet<ApiContractRow> ApiContracts => Set<ApiContractRow>();
+    public DbSet<ApiContractVersionRow> ApiContractVersions => Set<ApiContractVersionRow>();
+    public DbSet<ContractTestRow> ContractTests => Set<ContractTestRow>();
     public DbSet<ImpactAnalysisRunRecord> ImpactAnalysisRuns => Set<ImpactAnalysisRunRecord>();
     public DbSet<ReviewedCandidate> ReviewedCandidates => Set<ReviewedCandidate>();
     public DbSet<CandidateLink> CandidateLinks => Set<CandidateLink>();
@@ -1088,6 +1091,41 @@ public class AppDbContext : DbContext
             entity.Property(c => c.DocumentJson).HasColumnType("text").IsRequired();
             entity.HasIndex(c => new { c.RunId, c.Sequence }).IsUnique();
             entity.HasIndex(c => new { c.RunId, c.State });
+            entity.Property(c => c.DefinitionRef).HasMaxLength(200);
+            entity.HasIndex(c => c.DefinitionRef);
+        });
+
+        // Contract registry (immutable versions) and the contract tests generated from it. Results stay in execution_calls.
+        modelBuilder.Entity<ApiContractRow>(entity =>
+        {
+            entity.ToTable("api_contracts");
+            entity.HasKey(c => c.Id);
+            entity.Property(c => c.Key).HasMaxLength(80).IsRequired();
+            entity.Property(c => c.Name).HasMaxLength(200).IsRequired();
+            entity.Property(c => c.Protocol).HasMaxLength(20).IsRequired();
+            entity.HasIndex(c => c.Key).IsUnique();
+        });
+        modelBuilder.Entity<ApiContractVersionRow>(entity =>
+        {
+            entity.ToTable("api_contract_versions");
+            entity.HasKey(v => v.Id);
+            entity.Property(v => v.Sha256).HasMaxLength(64).IsRequired();
+            entity.Property(v => v.Source).HasMaxLength(20).IsRequired();
+            entity.Property(v => v.SourceLabel).HasMaxLength(500).IsRequired();
+            entity.Property(v => v.Format).HasMaxLength(20).IsRequired();
+            entity.Property(v => v.DocumentText).HasColumnType("text").IsRequired();
+            entity.Property(v => v.ContractJson).HasColumnType("text").IsRequired();
+            entity.HasIndex(v => new { v.ContractId, v.Version }).IsUnique();
+        });
+        modelBuilder.Entity<ContractTestRow>(entity =>
+        {
+            entity.ToTable("contract_tests");
+            entity.HasKey(t => t.Id);
+            entity.Property(t => t.Operation).HasMaxLength(500).IsRequired();
+            entity.Property(t => t.Name).HasMaxLength(300).IsRequired();
+            entity.Property(t => t.Kind).HasMaxLength(40).IsRequired();
+            entity.Property(t => t.DocumentJson).HasColumnType("text").IsRequired();
+            entity.HasIndex(t => new { t.ContractId, t.Operation });
         });
 
         modelBuilder.Entity<IqrSourceSnapshotRecord>(entity =>

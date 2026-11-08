@@ -495,6 +495,8 @@ public sealed record ContractOperation(string Name, string Kind, string? Path, L
     public string? RequestSchema { get; init; }
     /// <summary>Documented response codes ("200", "404", "default").</summary>
     public List<string> ResponseCodes { get; init; } = [];
+    /// <summary>Response code → declared JSON body schema/type name ("Child", "[Child]", "object"), when the response declares one.</summary>
+    public Dictionary<string, string> ResponseSchemas { get; init; } = [];
     /// <summary>Security requirement scheme names (bearer, oauth2 …) — names only, never credentials.</summary>
     public List<string> Security { get; init; } = [];
     /// <summary>GraphQL: the field's result type ("Person!", "[Child]").</summary>
@@ -611,7 +613,8 @@ public enum SourceEvidenceChangeKind { Added, Removed, Changed }
 /// <summary>Contract-specific change classes; only a compatibility rule may call one breaking.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ContractChangeClass { None, OperationAdded, OperationRemoved, FieldAddedOptional, FieldAddedRequired, FieldRemoved, TypeChanged, RequirednessChanged, TypeAdded, TypeRemoved,
-    CardinalityChanged, RestrictionChanged, NamespaceChanged, ImportChanged, VersionChanged, EnumValueAdded, EnumValueRemoved, OrderChanged }
+    CardinalityChanged, RestrictionChanged, NamespaceChanged, ImportChanged, VersionChanged, EnumValueAdded, EnumValueRemoved, OrderChanged,
+    ParameterAddedRequired, ParameterAddedOptional, ParameterRemoved, ParameterChanged, RequestBodyChanged, ResponseChanged }
 
 public sealed record SourceEvidenceChange(SourceEvidenceDomain Domain, SourceEvidenceChangeKind Kind, string Area, string Key, string Name, string Detail,
     ContractChangeClass ContractChange = ContractChangeClass.None, ContractCompatibilityConcern? CompatibilityConcern = null);
@@ -706,6 +709,50 @@ public static class SourceEvidenceDiff
             foreach (var value in old.Values.Except(type.Values, StringComparer.Ordinal)) Add(SourceEvidenceChangeKind.Removed, "Enum value", $"{type.Name}.{value}", $"{type.Name}.{value}", ContractChangeClass.EnumValueRemoved);
         }
         foreach (var gone in before.Types.Where(t => after.Types.All(a => a.Name != t.Name))) Add(SourceEvidenceChangeKind.Removed, "Type", gone.Name, gone.Name, ContractChangeClass.TypeRemoved);
+        return changes;
+    }
+
+    /// <summary>
+    /// Changes inside operations present in both versions (OpenAPI/GraphQL detail recorded by the analyzer): parameters added, removed or changed
+    /// (type, requiredness, location), request body (requiredness, schema, media types) and success responses (codes removed, schema changed).
+    /// Operations without recorded detail (older snapshots) are not compared. Complements <see cref="ContractChanges"/>, which it does not change.
+    /// </summary>
+    public static List<SourceEvidenceChange> OperationDetailChanges(SourceContract before, SourceContract after)
+    {
+        var changes = new List<SourceEvidenceChange>();
+        void Add(SourceEvidenceChangeKind kind, ContractOperation op, string key, string detail, ContractChangeClass cls) =>
+            changes.Add(new(SourceEvidenceDomain.Contracts, kind, "Operation detail", $"{after.Id}|{op.Name}|{key}", after.Name, $"{op.Name}: {detail}", cls));
+        var previous = before.Operations.GroupBy(o => o.Name, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        foreach (var op in after.Operations)
+        {
+            if (!previous.TryGetValue(op.Name, out var was) || !was.Detailed || !op.Detailed) continue;
+            var oldParams = was.ParameterDetails.GroupBy(p => (p.In, p.Name)).ToDictionary(g => g.Key, g => g.First());
+            var newParams = op.ParameterDetails.GroupBy(p => (p.In, p.Name)).ToDictionary(g => g.Key, g => g.First());
+            foreach (var (key, p) in newParams.Where(n => !oldParams.ContainsKey(n.Key)))
+                Add(SourceEvidenceChangeKind.Added, op, $"param:{key.In}.{key.Name}", $"{(p.Required ? "required" : "optional")} {p.In} parameter {p.Name} added",
+                    p.Required ? ContractChangeClass.ParameterAddedRequired : ContractChangeClass.ParameterAddedOptional);
+            foreach (var (key, _) in oldParams.Where(o => !newParams.ContainsKey(o.Key)))
+                Add(SourceEvidenceChangeKind.Removed, op, $"param:{key.In}.{key.Name}", $"{key.In} parameter {key.Name} removed", ContractChangeClass.ParameterRemoved);
+            foreach (var (key, p) in newParams.Where(n => oldParams.ContainsKey(n.Key)))
+            {
+                var o = oldParams[key];
+                if (o.Type != p.Type) Add(SourceEvidenceChangeKind.Changed, op, $"param:{key.In}.{key.Name}", $"{key.In} parameter {key.Name}: {o.Type ?? "(untyped)"} → {p.Type ?? "(untyped)"}", ContractChangeClass.ParameterChanged);
+                if (o.Required != p.Required) Add(SourceEvidenceChangeKind.Changed, op, $"param:{key.In}.{key.Name}:required", $"{key.In} parameter {key.Name}: {(o.Required ? "required" : "optional")} → {(p.Required ? "required" : "optional")}", ContractChangeClass.ParameterChanged);
+                if (!(o.Enum ?? []).SequenceEqual(p.Enum ?? [])) Add(SourceEvidenceChangeKind.Changed, op, $"param:{key.In}.{key.Name}:enum", $"{key.In} parameter {key.Name}: allowed values changed", ContractChangeClass.ParameterChanged);
+            }
+            if (was.RequestBodyRequired != op.RequestBodyRequired)
+                Add(SourceEvidenceChangeKind.Changed, op, "body:required", $"request body {(op.RequestBodyRequired ? "became required" : "became optional")}", ContractChangeClass.RequestBodyChanged);
+            if (was.RequestSchema != op.RequestSchema)
+                Add(SourceEvidenceChangeKind.Changed, op, "body:schema", $"request body schema: {was.RequestSchema ?? "(none)"} → {op.RequestSchema ?? "(none)"}", ContractChangeClass.RequestBodyChanged);
+            if (!was.RequestContentTypes.Order(StringComparer.Ordinal).SequenceEqual(op.RequestContentTypes.Order(StringComparer.Ordinal)))
+                Add(SourceEvidenceChangeKind.Changed, op, "body:media", $"request media types: {string.Join(", ", was.RequestContentTypes)} → {string.Join(", ", op.RequestContentTypes)}", ContractChangeClass.RequestBodyChanged);
+            foreach (var code in was.ResponseCodes.Where(c => c.StartsWith('2') && !op.ResponseCodes.Contains(c)))
+                Add(SourceEvidenceChangeKind.Removed, op, $"response:{code}", $"success response {code} removed", ContractChangeClass.ResponseChanged);
+            foreach (var (code, schema) in was.ResponseSchemas.Where(r => op.ResponseSchemas.TryGetValue(r.Key, out var now) && now != r.Value))
+                Add(SourceEvidenceChangeKind.Changed, op, $"response:{code}:schema", $"response {code} schema: {schema} → {op.ResponseSchemas[code]}", ContractChangeClass.ResponseChanged);
+            if (was.ResultType != op.ResultType)
+                Add(SourceEvidenceChangeKind.Changed, op, "result", $"result type: {was.ResultType ?? "(none)"} → {op.ResultType ?? "(none)"}", ContractChangeClass.ResponseChanged);
+        }
         return changes;
     }
 
