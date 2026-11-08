@@ -21,6 +21,11 @@ public interface ILocalHttpsProxyApiService
     /// <summary>Cookie attributes observed in the running proxy session (never values).</summary>
     Task<IReadOnlyList<BirkNext.RuntimeSecurity.CookieObservation>> ObservedCookieAttributesAsync(LocalHttpsProxySessionRequest request) =>
         Task.FromResult<IReadOnlyList<BirkNext.RuntimeSecurity.CookieObservation>>([]);
+    /// <summary>The attended session of an environment (metadata only: generation, expiry, identity reference). Never the credential.</summary>
+    Task<AttendedSessionView> AttendedSessionAsync(LocalHttpsProxySessionRequest request) =>
+        Task.FromResult(new AttendedSessionView(false, null, null, null, 0, null, "Attended sessions are not available in this host."));
+    /// <summary>Ends the attended session (wipes the in-memory credential); the proxy keeps running and a new sign-in starts the next generation.</summary>
+    Task<AttendedSessionView> EndAttendedSessionAsync(LocalHttpsProxySessionRequest request) => AttendedSessionAsync(request);
 }
 
 public sealed class LocalHttpsProxyApiService(HttpClient http) : ILocalHttpsProxyApiService
@@ -45,6 +50,8 @@ public sealed class LocalHttpsProxyApiService(HttpClient http) : ILocalHttpsProx
     public Task<AuthenticatedApiExecutionResult> ExecuteGraphQlAsync(AuthenticatedGraphQlRequest request) => PostAsync<AuthenticatedApiExecutionResult>("api/local-https-proxy/execute/graphql", request);
     public async Task<IReadOnlyList<BirkNext.RuntimeSecurity.CookieObservation>> ObservedCookieAttributesAsync(LocalHttpsProxySessionRequest request) =>
         await PostAsync<List<BirkNext.RuntimeSecurity.CookieObservation>>("api/local-https-proxy/observed-cookie-attributes", request);
+    public Task<AttendedSessionView> AttendedSessionAsync(LocalHttpsProxySessionRequest request) => PostAsync<AttendedSessionView>("api/local-https-proxy/attended-session", request);
+    public Task<AttendedSessionView> EndAttendedSessionAsync(LocalHttpsProxySessionRequest request) => PostAsync<AttendedSessionView>("api/local-https-proxy/attended-session/end", request);
 }
 
 /// <summary>

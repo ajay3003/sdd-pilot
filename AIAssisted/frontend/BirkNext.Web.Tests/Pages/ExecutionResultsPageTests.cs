@@ -42,12 +42,59 @@ public sealed class ExecutionResultsPageTests : BunitContext
                               new("e", AssertionKind.GraphQlErrorCount, AssertionOperator.Equals, null, "0", "1", AssertionOutcome.Failed, "GraphQL error count: expected 0, actual 1.")] },
             new() { CallId = Blocked, Sequence = 3, State = ExecutionState.Blocked, Reason = "Mutating call not confirmed.", Definition = new() { Name = "create", Method = "POST", Path = "/children" } },
         ];
+        public bool RunProtected { get; set; }
+        public ExecutionRunFilter? LastFilter { get; private set; }
+        public List<(Guid Run, bool Protected)> Protections { get; } = [];
+        public List<ExecutionDeletionRequest> Deletions { get; } = [];
+        public List<IReadOnlyList<Guid>> Exports { get; } = [];
+        public List<(Guid Run, Guid Call)> BodyRemovals { get; } = [];
+        public List<ExecutionRetentionSettings> RetentionSaves { get; } = [];
+        public List<int> RetentionApplies { get; } = [];
+        private ExecutionRetentionSettings _retention = new(RetentionMode.Disabled, null);
+        public Task<(ExecutionStorageUsage? Usage, string? Error)> StorageAsync(string? environmentId = null, CancellationToken ct = default) =>
+            Task.FromResult<(ExecutionStorageUsage?, string?)>((new(2, 5, 6, 48_000, 262_144, RunProtected ? 1 : 0, DateTimeOffset.UtcNow.AddDays(-40), DateTimeOffset.UtcNow, 1, 20_000,
+                "PostgreSQL (BirkNext database): execution_runs and execution_calls.", "Stored bytes are measured. No evidence files exist."), null));
+        public Task<(ExecutionIntegrityReport? Report, string? Error)> IntegrityAsync(Guid runId, CancellationToken ct = default) =>
+            Task.FromResult<(ExecutionIntegrityReport?, string?)>((new(runId, 3, 4, 0, []), null));
+        public Task<string?> ProtectAsync(Guid runId, bool isProtected, CancellationToken ct = default) { Protections.Add((runId, isProtected)); RunProtected = isProtected; return Task.FromResult<string?>(null); }
+        public Task<(ExecutionDeletionResult? Result, string? Error)> DeleteRunsAsync(ExecutionDeletionRequest request, CancellationToken ct = default)
+        {
+            Deletions.Add(request);
+            return Task.FromResult<(ExecutionDeletionResult?, string?)>((new(request.AllEligible ? 1 : request.RunIds.Count - (RunProtected ? 1 : 0), 3, 4_000,
+                RunProtected ? [new(Run, "Protected: remove the protection first.")] : [], "Deleted 1 run(s) with 3 call(s) (4,000 bytes of stored evidence)."), null));
+        }
+        public Task<(ExecutionRetentionPreview? Preview, string? Error)> DeletionPreviewAsync(string environmentId, CancellationToken ct = default) =>
+            Task.FromResult<(ExecutionRetentionPreview?, string?)>((new(_retention, null, 1, 3, 4_000, RunProtected ? 1 : 0, 0, [Run], $"Every finished, unprotected run of {environmentId}."), null));
+        public Task<(int Removed, string? Error)> RemoveBodiesAsync(Guid runId, Guid callId, CancellationToken ct = default) { BodyRemovals.Add((runId, callId)); return Task.FromResult((2, (string?)null)); }
+        public Task<(ExecutionRetentionSettings? Settings, string? Error)> RetentionAsync(CancellationToken ct = default) => Task.FromResult<(ExecutionRetentionSettings?, string?)>((_retention, null));
+        public Task<(ExecutionRetentionSettings? Settings, string? Error)> SaveRetentionAsync(ExecutionRetentionSettings settings, CancellationToken ct = default)
+        {
+            RetentionSaves.Add(settings);
+            _retention = settings with { UpdatedAt = DateTimeOffset.UtcNow, UpdatedBy = "Local session" };
+            return Task.FromResult<(ExecutionRetentionSettings?, string?)>((_retention, null));
+        }
+        public Task<(ExecutionRetentionPreview? Preview, string? Error)> RetentionPreviewAsync(CancellationToken ct = default) =>
+            Task.FromResult<(ExecutionRetentionPreview?, string?)>((new(_retention, DateTimeOffset.UtcNow.AddDays(-30), 1, 3, 20_000, 1, 0, [Guid.NewGuid()], "Runs started before the cutoff that are finished and not protected. Nothing is deleted until you apply it."), null));
+        public Task<(ExecutionDeletionResult? Result, string? Error)> ApplyRetentionAsync(int confirm, CancellationToken ct = default)
+        {
+            RetentionApplies.Add(confirm);
+            return Task.FromResult<(ExecutionDeletionResult?, string?)>((new(1, 3, 20_000, [], "Deleted 1 run(s) with 3 call(s) (20,000 bytes of stored evidence)."), null));
+        }
+        public Task<(IReadOnlyList<ExecutionAuditEntry>? Entries, string? Error)> AuditAsync(CancellationToken ct = default) =>
+            Task.FromResult<(IReadOnlyList<ExecutionAuditEntry>?, string?)>(([new(Guid.NewGuid(), DateTimeOffset.UtcNow, "Exported", "run x", 1, 3, 4_000, "Local session", null)], null));
+        public Task<(byte[]? Zip, string? Error)> ExportAsync(IReadOnlyList<Guid> runIds, CancellationToken ct = default) { Exports.Add(runIds); return Task.FromResult<(byte[]?, string?)>(([80, 75, 3, 4], null)); }
         private ExecutionRunSummary Summary => new()
         {
             RunId = Run, Name = "Synthetic run", EnvironmentId = "local", EnvironmentType = "Local", TargetOrigin = "http://localhost:5/", State = ExecutionState.Failed,
             StartedAt = DateTimeOffset.UtcNow, Counts = new(3, 2, 1, 1, 0, 0, 1, 0, 0, 0, 0, 3), CallsWithCompleteEvidence = 3, WireTransmissions = 5, RedactionVersion = "ee-redaction-v1",
+            Protected = RunProtected, Definitions = 2, DatasetRows = 1, AuthenticationSessions = ["attended-session:local#g1", "attended-session:local#g2"], ReauthenticationWaitSeconds = 120,
+            AuthenticationMode = "Attended: the tester's own session (Local HTTPS proxy)",
         };
-        public Task<(IReadOnlyList<ExecutionRunSummary>? Runs, string? Error)> RunsAsync(CancellationToken ct = default) => Task.FromResult<(IReadOnlyList<ExecutionRunSummary>?, string?)>(([Summary], null));
+        public Task<(IReadOnlyList<ExecutionRunSummary>? Runs, string? Error)> RunsAsync(ExecutionRunFilter? filter = null, CancellationToken ct = default)
+        {
+            LastFilter = filter;
+            return Task.FromResult<(IReadOnlyList<ExecutionRunSummary>?, string?)>(([Summary, Summary with { RunId = Guid.NewGuid(), Name = "Second run", Protected = false }], null));
+        }
         public Task<(ExecutionRunDetail? Detail, string? Error)> RunAsync(Guid runId, int skip, int take, string? state, string? protocol, string? method, string? search, string sort, CancellationToken ct = default)
         {
             Queries.Add($"{state}|{protocol}|{method}|{search}|{sort}|{skip}");
@@ -85,10 +132,108 @@ public sealed class ExecutionResultsPageTests : BunitContext
     }
 
     [Fact]
+    public void Storage_is_measured_and_retention_is_disabled_until_set_previewed_and_applied_with_a_typed_count()
+    {
+        var page = Open("");
+        page.Find("[data-testid=xr-kpi-stored] .xr-kpi-value").TextContent.Should().Be("46.9 KB");
+        page.Find("[data-testid=xr-kpi-tables] .xr-kpi-value").TextContent.Should().Be("256.0 KB");
+        page.Find("[data-testid=xr-storage-location]").TextContent.Should().Contain("PostgreSQL").And.Contain("No evidence files exist");
+        page.Find("[data-testid=xr-retention-preview]").HasAttribute("disabled").Should().BeTrue("retention is disabled by default");
+        page.Find("[data-testid=xr-retention-mode]").Change("Days");
+        page.Find("[data-testid=xr-retention-preset]").Change("30");
+        page.Find("[data-testid=xr-retention-save]").Click();
+        page.WaitForAssertion(() => _api.RetentionSaves.Should().ContainSingle().Which.Should().Be(new ExecutionRetentionSettings(RetentionMode.Days, 30)));
+        page.Find("[data-testid=xr-retention-preview]").Click();
+        page.WaitForAssertion(() => page.Find("[data-testid=xr-retention-counts]").TextContent.Should().Contain("1 run(s), 3 call(s)").And.Contain("Kept: 1 protected"));
+        _api.RetentionApplies.Should().BeEmpty("a preview deletes nothing");
+        page.Find("[data-testid=xr-retention-apply]").HasAttribute("disabled").Should().BeTrue();
+        page.Find("[data-testid=xr-retention-typed]").Input("1");
+        page.Find("[data-testid=xr-retention-apply]").Click();
+        page.WaitForAssertion(() => _api.RetentionApplies.Should().Equal(1));
+        page.Find("[data-testid=xr-message]").TextContent.Should().Contain("Deleted 1 run(s)");
+        page.Find("[data-testid=xr-audit-entry]").TextContent.Should().Contain("Exported");
+        _api.Starts.Should().Be(0);
+    }
+
+    [Fact]
+    public void History_filters_live_in_the_url_and_selected_runs_are_exported_or_deleted_only_after_typing_their_number()
+    {
+        JSInterop.SetupVoid("downloadBase64File", _ => true);
+        var page = Open("?hq=synthetic&hstate=Failed&hfrom=2026-11-01&hprot=true");
+        _api.LastFilter.Should().Be(new ExecutionRunFilter("synthetic", "Failed", new DateOnly(2026, 11, 1), null, true));
+        page.Find("[data-testid=xr-run-protected]").HasAttribute("checked").Should().BeTrue();
+        page.Find("[data-testid=xr-select-all]").Change(true);
+        page.Find("[data-testid=xr-selected-count]").TextContent.Should().Be("2 selected");
+        page.Find("[data-testid=xr-export-selected]").Click();
+        page.WaitForAssertion(() => _api.Exports.Should().ContainSingle().Which.Should().HaveCount(2));
+        JSInterop.VerifyInvoke("downloadBase64File");
+
+        page.Find("[data-testid=xr-delete-selected]").Click();
+        var confirm = page.Find("[data-testid=xr-delete-confirm-button]");
+        confirm.HasAttribute("disabled").Should().BeTrue();
+        page.Find("[data-testid=xr-delete-typed]").Input("3");
+        page.Find("[data-testid=xr-delete-confirm-button]").HasAttribute("disabled").Should().BeTrue("the number must be the number shown");
+        page.Find("[data-testid=xr-delete-typed]").Input("2");
+        page.Find("[data-testid=xr-delete-confirm-button]").Click();
+        page.WaitForAssertion(() => _api.Deletions.Should().ContainSingle().Which.Should().Match<ExecutionDeletionRequest>(r => r.RunIds.Count == 2 && r.Confirm == 2 && !r.AllEligible));
+    }
+
+    [Fact]
+    public void Deleting_all_eligible_runs_shows_what_is_kept_and_a_protected_run_cannot_be_deleted_from_its_page()
+    {
+        var page = Open("");
+        page.Find("[data-testid=xr-delete-eligible]").Click();
+        page.WaitForAssertion(() => page.Find("[data-testid=xr-eligible-preview]").TextContent.Should().Contain("1 finished, unprotected run(s) with 3 call(s)"));
+        page.Find("[data-testid=xr-delete-typed]").Input("1");
+        page.Find("[data-testid=xr-delete-confirm-button]").Click();
+        page.WaitForAssertion(() => _api.Deletions.Should().ContainSingle().Which.Should().Match<ExecutionDeletionRequest>(r => r.AllEligible && r.EnvironmentId == "local" && r.Confirm == 1));
+
+        _api.RunProtected = true;
+        page = Open($"?run={Run}");
+        page.Find("[data-testid=xr-run-protected-pill]").Should().NotBeNull();
+        page.Find("[data-testid=xr-delete-run]").HasAttribute("disabled").Should().BeTrue();
+        page.Find("[data-testid=xr-protect]").Click();
+        page.WaitForAssertion(() => _api.Protections.Should().Equal((Run, false)));
+        page.Find("[data-testid=xr-verify]").Click();
+        page.WaitForAssertion(() => page.Find("[data-testid=xr-integrity]").GetAttribute("data-intact").Should().Be("true"));
+        page.Find("[data-testid=xr-run-identity]").TextContent.Should().Contain("2 definition(s)").And.Contain("1 dataset row(s)").And.Contain("attended-session:local#g1, attended-session:local#g2")
+            .And.Contain("waits up to 120 s");
+    }
+
+    [Fact]
+    public void A_call_shows_its_authentication_outcome_row_values_and_outputs_and_bodies_are_removed_only_after_confirming()
+    {
+        _api.Calls[0] = _api.Calls[0] with
+        {
+            Authentication = CallAuthenticationOutcome.Authenticated,
+            Definition = _api.Calls[0].Definition with
+            {
+                DatasetRow = "children@v3#r-007", StepId = "read", DependsOn = ["create"],
+                ResolvedValues = [new("age", "Int32", "row r-007 of children@v3", "7"), new("steps.create.childId", "Integer", "step create → childId", "8")],
+            },
+            Outputs = [new("name", OutputSource.JsonBody, "$.name", "String", true, "Kari", null)],
+            Attempts = [.. _api.Calls[0].Attempts.Select(a => a with { AuthenticationSession = "attended-session:local#g2" })],
+        };
+        var page = Open($"?run={Run}");
+        page.FindAll("[data-testid=xr-call-auth]")[0].TextContent.Should().Be("Authenticated");
+        page.FindAll("[data-testid=xr-call-row-ref]")[0].TextContent.Should().Be("step read");
+        page = Open($"?run={Run}&call={Ok}&tab=evidence");
+        page.Find("[data-testid=xr-call-auth-outcome]").TextContent.Should().Be("Authenticated · attended-session:local#g2");
+        page.Find("[data-testid=xr-dataset-row]").TextContent.Should().Be("children@v3#r-007");
+        page.Find("[data-testid=xr-step]").TextContent.Should().Be("read · depends on create");
+        page.FindAll("[data-testid=xr-resolved-row]").Select(r => r.TextContent).Should().HaveCount(2).And.Contain(t => t.Contains("Int32") && t.Contains("row r-007 of children@v3"));
+        page.Find("[data-testid=xr-output]").GetAttribute("data-found").Should().Be("true");
+        page.Find("[data-testid=xr-remove-bodies]").Click();
+        _api.BodyRemovals.Should().BeEmpty("the first click asks for confirmation");
+        page.Find("[data-testid=xr-remove-bodies]").Click();
+        page.WaitForAssertion(() => _api.BodyRemovals.Should().Equal((Run, Ok)));
+    }
+
+    [Fact]
     public void History_lists_saved_runs_and_opening_one_shows_its_counts_without_executing()
     {
         var page = Open("");
-        page.Find("[data-testid=xr-run-row]").GetAttribute("data-state").Should().Be("Failed");
+        page.FindAll("[data-testid=xr-run-row]")[0].GetAttribute("data-state").Should().Be("Failed");
         page = Open($"?run={Run}");
         page.Find("[data-testid=xr-kpi-planned] .xr-kpi-value").TextContent.Should().Be("3");
         page.Find("[data-testid=xr-kpi-attempts] .xr-kpi-value").TextContent.Should().Be("3");

@@ -411,6 +411,24 @@ public sealed class ContractTestingPageTests : BunitContext
     }
 
     [Fact]
+    public void The_attended_session_shows_its_generation_and_expiry_and_can_be_ended_without_showing_a_credential()
+    {
+        var proxy = new Mock<ILocalHttpsProxyApiService>();
+        var expires = DateTimeOffset.UtcNow.AddMinutes(9);
+        proxy.Setup(p => p.AttendedSessionAsync(It.IsAny<BirkNext.LocalHttpsProxy.LocalHttpsProxySessionRequest>()))
+            .ReturnsAsync(new BirkNext.LocalHttpsProxy.AttendedSessionView(true, "api.synthetic.test", DateTimeOffset.UtcNow, expires, 2, "0a1b2c3d4e5f", "Attended session active (generation 2)."));
+        proxy.Setup(p => p.EndAttendedSessionAsync(It.IsAny<BirkNext.LocalHttpsProxy.LocalHttpsProxySessionRequest>()))
+            .ReturnsAsync(new BirkNext.LocalHttpsProxy.AttendedSessionView(false, null, null, null, 0, null, "The attended session was ended."));
+        Services.AddSingleton(proxy.Object);
+        var page = Open("?contract=children-api&view=tests");
+        page.Find("[data-testid=ct-attended]").GetAttribute("data-active").Should().Be("true");
+        page.Find("[data-testid=ct-attended-status]").TextContent.Should().Contain("generation 2").And.Contain(expires.ToLocalTime().ToString("HH:mm:ss"));
+        page.Find("[data-testid=ct-attended-end]").Click();
+        page.WaitForAssertion(() => page.Find("[data-testid=ct-attended]").GetAttribute("data-active").Should().Be("false"));
+        proxy.Verify(p => p.EndAttendedSessionAsync(It.Is<BirkNext.LocalHttpsProxy.LocalHttpsProxySessionRequest>(r => r.ProfileId.Length > 0 && r.ContextFingerprint.Length > 0)), Times.Once);
+    }
+
+    [Fact]
     public void Without_a_Target_Environment_tests_can_be_prepared_but_not_run()
     {
         _context.ActiveProfile = new FrontendAnalysisProfile();

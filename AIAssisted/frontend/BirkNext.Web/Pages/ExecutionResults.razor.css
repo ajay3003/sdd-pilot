@@ -47,3 +47,13 @@
     .xr-table td, .xr-table th { border: 0; padding: 0.1rem 0; }
     .xr-compact th { width: auto; }
 }
+.xr-message { color: var(--clr-success-text, #14532d); background: var(--clr-success-bg, #ecfdf3); border-radius: 6px; padding: 0.4rem 0.6rem; }
+.xr-scroll { max-width: 100%; overflow-x: auto; }
+.xr-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.xr-bulk { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.5rem 0; }
+.xr-confirm { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; padding: 0.5rem 0.75rem; margin: 0.5rem 0; }
+.xr-confirm p { flex-basis: 100%; margin: 0; }
+.xr-narrow { max-width: 7rem; }
+.xr-small { padding: 0.1rem 0.5rem; font-size: 0.8rem; }
+.xr-details { margin-top: 0.6rem; }
+.xr-details > summary { cursor: pointer; font-weight: 600; }

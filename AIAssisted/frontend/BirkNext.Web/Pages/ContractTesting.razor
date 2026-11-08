@@ -24,6 +24,15 @@
             <p><strong>Runs against</strong> <span data-testid="ct-env-name">@_environmentName</span> <span class="ct-pill">@_environment.EnvironmentType</span> <code>@_environment.TargetUrl</code></p>
             <label class="ct-inline">Base path override for this run <input data-testid="ct-base-path" @bind="_basePath" @bind:event="oninput" placeholder="(use the contract's binding)" aria-describedby="ct-base-help" /></label>
             <span id="ct-base-help" class="ct-muted">Optional. A path inside this environment (for example /api); hosts are never accepted. The contract's own endpoint and authentication are set below.</span>
+            @if (_attended is { } session)
+            {
+                <p class="ct-attended" data-testid="ct-attended" data-active="@(session.Active ? "true" : "false")">
+                    <strong>Attended session</strong> <span class="ct-muted">(your own sign-in, observed by the Local HTTPS proxy; memory only)</span>:
+                    <span data-testid="ct-attended-status">@(session.Active ? $"active · generation {session.Generation} · expires {session.ExpiresAt?.ToLocalTime():HH:mm:ss}" : "none — sign in to the application through the proxy to start one")</span>
+                    <button type="button" class="btn btn-secondary" data-testid="ct-attended-refresh" disabled="@_busy" @onclick="RefreshAttendedAsync">Check</button>
+                    @if (session.Active) { <button type="button" class="btn btn-secondary" data-testid="ct-attended-end" disabled="@_busy" @onclick="EndAttendedAsync">End attended session</button> }
+                </p>
+            }
         }
     </section>
 
@@ -185,7 +194,30 @@
     private int? _deleteVersion;
     private bool _deleteContract;
     private ContractTestEnvironment? _environment;
+    private BirkNext.LocalHttpsProxy.AttendedSessionView? _attended;
     private readonly HashSet<Guid> _selected = [];
+
+    private BirkNext.Web.Services.ILocalHttpsProxyApiService? Proxy => Services.GetService(typeof(BirkNext.Web.Services.ILocalHttpsProxyApiService)) as BirkNext.Web.Services.ILocalHttpsProxyApiService;
+
+    private BirkNext.LocalHttpsProxy.LocalHttpsProxySessionRequest? AttendedRequest =>
+        _environment is { ProfileId.Length: > 0, ContextFingerprint.Length: > 0 } e ? new("", e.ProfileId!, e.ContextFingerprint!) : null;
+
+    /// <summary>Reads the attended session's metadata (never the credential). A host without the proxy shows nothing.</summary>
+    private async Task RefreshAttendedAsync()
+    {
+        if (Proxy is not { } proxy || AttendedRequest is not { } request) return;
+        try { _attended = await proxy.AttendedSessionAsync(request); }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _attended = null; }
+    }
+
+    private async Task EndAttendedAsync()
+    {
+        if (Proxy is not { } proxy || AttendedRequest is not { } request) return;
+        _busy = true;
+        try { _attended = await proxy.EndAttendedSessionAsync(request); _message = _attended.Message; }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "The attended session could not be ended: the proxy service did not answer."; }
+        _busy = false;
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -205,6 +237,7 @@
             }
         }
         catch (Exception) { _environment = null; }
+        await RefreshAttendedAsync();
     }
 
     protected override async Task OnParametersSetAsync()

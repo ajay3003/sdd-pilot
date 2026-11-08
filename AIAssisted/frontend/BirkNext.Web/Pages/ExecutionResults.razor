@@ -4,6 +4,7 @@
 @using BirkNext.ExecutionEvidence
 @inject IServiceProvider Services
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>Execution Results</PageTitle>
 
@@ -14,29 +15,50 @@
     <PageHeader Title="Execution Results" Description="What was actually sent and received in authorized REST and GraphQL runs — redacted before storage, never re-executed by opening it." />
 
     @if (_error is not null) { <p class="xr-error" role="alert" data-testid="xr-error">@_error</p> }
+    @if (_message is not null) { <p class="xr-message" role="status" data-testid="xr-message">@_message</p> }
 
     @if (RunId is null)
     {
+        @StorageView()
         <section class="xr-card" aria-labelledby="xr-runs-heading" data-testid="xr-runs">
             <h2 id="xr-runs-heading">Run history</h2>
+            <div class="xr-filters" role="group" aria-label="Filter runs">
+                <label>Search <input type="search" class="form-control" data-testid="xr-run-search" value="@HistorySearch" @onchange="e => GoHistory(search: e.Value?.ToString() ?? string.Empty)" placeholder="Run name" /></label>
+                @Select("Outcome", "xr-run-filter-state", HistoryState, v => GoHistory(state: v), Enum.GetNames<ExecutionState>())
+                <label>From <input type="date" class="form-control" data-testid="xr-run-from" value="@HistoryFrom" @onchange="e => GoHistory(from: e.Value?.ToString() ?? string.Empty)" /></label>
+                <label>To <input type="date" class="form-control" data-testid="xr-run-to" value="@HistoryTo" @onchange="e => GoHistory(to: e.Value?.ToString() ?? string.Empty)" /></label>
+                <label class="xr-check"><input type="checkbox" data-testid="xr-run-protected" checked="@HistoryProtected" @onchange="e => GoHistory(protectedOnly: e.Value is true)" /> Protected only</label>
+            </div>
             @if (_runs is null) { <p class="xr-muted">Loading…</p> }
-            else if (_runs.Count == 0) { <p class="xr-muted" data-testid="xr-runs-empty">No runs yet. Runs are started from a review (for example API Quality Review); their evidence appears here.</p> }
+            else if (_runs.Count == 0) { <p class="xr-muted" data-testid="xr-runs-empty">@(HasHistoryFilter ? "No run matches the filters." : "No runs yet. Runs are started from Contract Testing or a review (for example API Quality Review); their evidence appears here.")</p> }
             else
             {
-                <table class="xr-table" data-testid="xr-runs-table">
-                    <caption class="visually-hidden">Saved execution runs, newest first</caption>
-                    <thead><tr><th scope="col">Run</th><th scope="col">Outcome</th><th scope="col">Calls</th><th scope="col">Attempts</th><th scope="col">Environment</th><th scope="col">Started</th></tr></thead>
-                    <tbody>
-                        @foreach (var r in _runs)
-                        {
-                            <tr data-testid="xr-run-row" data-run="@r.RunId" data-state="@r.State">
-                                <th scope="row"><a href="@Href(run: r.RunId)" data-testid="xr-run-open">@r.Name</a></th>
-                                <td><span class="xr-pill xr-@Tone(r.State)">@Label(r.State)</span></td>
-                                <td>@r.Counts.Planned</td><td>@r.Counts.Attempts</td><td>@r.EnvironmentId</td><td>@r.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+                <div class="xr-bulk" role="group" aria-label="Selected runs" data-testid="xr-bulk">
+                    <span data-testid="xr-selected-count">@_selectedRuns.Count selected</span>
+                    <button type="button" class="btn-secondary" data-testid="xr-export-selected" disabled="@(_selectedRuns.Count == 0 || _busy)" @onclick="ExportSelectedAsync">Export selected</button>
+                    <button type="button" class="btn-secondary" data-testid="xr-delete-selected" disabled="@(_selectedRuns.Count == 0 || _busy)" @onclick="() => AskDelete(DeleteScope.Selected)">Delete selected…</button>
+                    <button type="button" class="btn-secondary" data-testid="xr-delete-eligible" disabled="@(_busy)" @onclick="AskDeleteEligibleAsync">Delete all eligible runs of an environment…</button>
+                </div>
+                @DeleteConfirmation()
+                <div class="xr-scroll">
+                    <table class="xr-table" data-testid="xr-runs-table">
+                        <caption class="visually-hidden">Saved execution runs, newest first</caption>
+                        <thead><tr><th scope="col"><input type="checkbox" aria-label="Select every listed run" data-testid="xr-select-all" checked="@(_runs.Count > 0 && _runs.All(r => _selectedRuns.Contains(r.RunId)))" @onchange="e => SelectAll(e.Value is true)" /></th>
+                            <th scope="col">Run</th><th scope="col">Outcome</th><th scope="col">Calls</th><th scope="col">Attempts</th><th scope="col">Environment</th><th scope="col">Started</th><th scope="col">Protected</th></tr></thead>
+                        <tbody>
+                            @foreach (var r in _runs)
+                            {
+                                <tr data-testid="xr-run-row" data-run="@r.RunId" data-state="@r.State" data-protected="@(r.Protected ? "true" : "false")">
+                                    <td><input type="checkbox" aria-label="@($"Select {r.Name}")" data-testid="xr-run-select" checked="@_selectedRuns.Contains(r.RunId)" @onchange="e => Toggle(r.RunId, e.Value is true)" /></td>
+                                    <th scope="row"><a href="@Href(run: r.RunId)" data-testid="xr-run-open">@r.Name</a></th>
+                                    <td><span class="xr-pill xr-@Tone(r.State)">@Label(r.State)</span></td>
+                                    <td>@r.Counts.Planned@(r.DatasetRows > 0 ? $" ({r.DatasetRows} rows)" : "")</td><td>@r.Counts.Attempts</td><td>@r.EnvironmentId</td><td>@r.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                    <td><button type="button" class="btn-secondary xr-small" data-testid="xr-run-protect" aria-pressed="@(r.Protected ? "true" : "false")" disabled="@_busy" @onclick="() => ProtectAsync(r.RunId, !r.Protected)">@(r.Protected ? "Protected" : "Protect")</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
             }
         </section>
     }
@@ -46,10 +68,25 @@
         <nav class="xr-crumbs" aria-label="Breadcrumb"><a href="@Href(clearRun: true)" data-testid="xr-back-runs">All runs</a> / @if (CallId is not null) { <a href="@Href(clearCall: true)" data-testid="xr-back-calls">@run.Name</a><span> / call</span> } else { <span>@run.Name</span> }</nav>
         <section class="xr-card" aria-labelledby="xr-run-heading" data-testid="xr-run" data-state="@run.State">
             <div class="xr-head">
-                <h2 id="xr-run-heading">@run.Name <span class="xr-pill xr-@Tone(run.State)" data-testid="xr-run-state">@Label(run.State)</span></h2>
-                <a class="btn-secondary" href="@Api!.ExportUrl(run.RunId)" data-testid="xr-export" download>Export redacted evidence</a>
+                <h2 id="xr-run-heading">@run.Name <span class="xr-pill xr-@Tone(run.State)" data-testid="xr-run-state">@Label(run.State)</span>@if (run.Protected) { <span class="xr-pill xr-info" data-testid="xr-run-protected-pill">Protected</span> }</h2>
+                <div class="xr-actions">
+                    <a class="btn-secondary" href="@Api!.ExportUrl(run.RunId)" data-testid="xr-export" download>Export redacted evidence</a>
+                    <button type="button" class="btn-secondary" data-testid="xr-verify" disabled="@_busy" @onclick="VerifyAsync">Verify stored evidence</button>
+                    <button type="button" class="btn-secondary" data-testid="xr-protect" disabled="@_busy" @onclick="() => ProtectAsync(run.RunId, !run.Protected)">@(run.Protected ? "Remove protection" : "Protect")</button>
+                    <button type="button" class="btn-secondary" data-testid="xr-delete-run" disabled="@(_busy || run.Protected)" title="@(run.Protected ? "Protected runs are not deleted; remove the protection first." : null)" @onclick="() => AskDelete(DeleteScope.Run)">Delete run…</button>
+                </div>
             </div>
+            @if (_scope == DeleteScope.Run) { @DeleteConfirmation() }
+            @if (_integrity is { } integrity)
+            {
+                <p class="@(integrity.Intact ? "xr-message" : "xr-error")" role="status" data-testid="xr-integrity" data-intact="@(integrity.Intact ? "true" : "false")">
+                    @(integrity.Intact ? $"Intact: {integrity.BodiesChecked} stored body(ies) match their recorded SHA-256" : $"{integrity.Mismatches.Count} stored body(ies) do not match their recorded SHA-256: {string.Join(" ", integrity.Mismatches)}")@(integrity.BodiesRemoved > 0 ? $"; {integrity.BodiesRemoved} removed by their owner" : "").
+                </p>
+            }
             <p class="xr-muted" data-testid="xr-run-meta">@run.EnvironmentId (@(run.EnvironmentType ?? "unclassified")) · @run.TargetOrigin · started @run.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")@(run.CompletedAt is { } done ? $" · {(done - run.StartedAt).TotalSeconds:0.0} s" : "") · authentication: @(run.AuthenticationMode ?? "None") · redaction @run.RedactionVersion</p>
+            <p class="xr-muted" data-testid="xr-run-identity">
+                @run.Definitions definition(s) · @(run.DatasetRows > 0 ? $"{run.DatasetRows} dataset row(s) · " : "")@(run.ChainRef is { } chain ? $"chain {chain} · " : "")@(run.ContractRefs.Count > 0 ? $"contracts {string.Join(", ", run.ContractRefs)} · " : "")@(run.StopOnFirstFailure ? "stops at the first failure · " : "")sessions: <span data-testid="xr-auth-sessions">@(run.AuthenticationSessions.Count == 0 ? "none" : string.Join(", ", run.AuthenticationSessions))</span>@(run.ReauthenticationWaitSeconds > 0 ? $" · waits up to {run.ReauthenticationWaitSeconds} s for a new sign-in" : "")
+            </p>
             <dl class="xr-kpis" data-testid="xr-kpis">
                 @Kpi("Logical calls", run.Counts.Planned, "planned")
                 @Kpi("Attempts", run.Counts.Attempts, "attempts", run.WireTransmissions > run.Counts.Attempts ? $"{run.WireTransmissions} sent on the wire" : null)
@@ -75,7 +112,7 @@
                 </div>
                 <table class="xr-table" data-testid="xr-calls-table">
                     <caption class="visually-hidden">Logical calls of the run</caption>
-                    <thead><tr><th scope="col">#</th><th scope="col">Type</th><th scope="col">Call</th><th scope="col">Status</th><th scope="col">HTTP</th><th scope="col">Duration</th><th scope="col">Attempts</th></tr></thead>
+                    <thead><tr><th scope="col">#</th><th scope="col">Type</th><th scope="col">Call</th><th scope="col">Status</th><th scope="col">HTTP</th><th scope="col">Duration</th><th scope="col">Attempts</th><th scope="col">Auth</th><th scope="col">Row / step</th></tr></thead>
                     <tbody>
                         @foreach (var c in d.Calls)
                         {
@@ -88,6 +125,8 @@
                                 <td data-testid="xr-call-http">@(last?.Response?.StatusCode.ToString() ?? (last is null ? "not sent" : last.Transport.ToString()))</td>
                                 <td>@(last?.Response is { } r ? $"{r.DurationMs} ms" : "—")</td>
                                 <td data-testid="xr-call-attempts">@c.Attempts.Count</td>
+                                <td data-testid="xr-call-auth">@AuthLabel(c.Authentication)</td>
+                                <td class="xr-mono" data-testid="xr-call-row-ref">@(c.Definition.StepId is { } step ? $"step {step}" : c.Definition.DatasetRow?.Split('#').LastOrDefault() ?? "—")</td>
                             </tr>
                         }
                     </tbody>
@@ -180,12 +219,40 @@
                                 <div><dt>Source snapshot</dt><dd>@(run.SourceSnapshotId?.ToString() ?? "not recorded")</dd></div>
                                 <div><dt>Environment</dt><dd>@run.EnvironmentId · @run.TargetOrigin</dd></div>
                                 <div><dt>Authentication</dt><dd data-testid="xr-auth">@(run.AuthenticationMode ?? "None")@(run.AuthenticationReference is { Length: > 0 } ar && ar != "none" ? $" · {ar}" : "")</dd></div>
+                                <div><dt>Authentication outcome</dt><dd data-testid="xr-call-auth-outcome">@AuthLabel(call.Authentication)@(call.Attempts.Select(a => a.AuthenticationSession).OfType<string>().Distinct().ToList() is { Count: > 0 } sessions ? $" · {string.Join(", ", sessions)}" : "")</dd></div>
+                                <div><dt>Dataset row</dt><dd data-testid="xr-dataset-row">@(call.Definition.DatasetRow ?? "not data-driven")</dd></div>
+                                @if (call.Definition.StepId is { } stepId) { <div><dt>Chain step</dt><dd data-testid="xr-step">@stepId@(call.Definition.DependsOn.Count > 0 ? $" · depends on {string.Join(", ", call.Definition.DependsOn)}" : "")</dd></div> }
                                 <div><dt>Test revision</dt><dd data-testid="xr-definition">@(call.Definition.DefinitionVersion ?? "—")</dd></div>
                                 <div><dt>Capture policy</dt><dd>@run.CapturePolicy · @run.RedactionVersion</dd></div>
                                 <div><dt>Response body hash</dt><dd class="xr-mono">@(last?.Response?.Body?.Sha256 ?? "—")</dd></div>
                                 <div><dt>Capture</dt><dd data-testid="xr-capture">request @(last?.Request?.Body?.Completeness.ToString() ?? (last?.Request is null ? "not sent" : "no body")) · response @(last?.Response?.Body?.Completeness.ToString() ?? "none")</dd></div>
                                 <div><dt>Timing</dt><dd>Client elapsed time only; DNS/connect/TLS/first byte: not captured</dd></div>
                             </dl>
+                            @if (call.Definition.ResolvedValues.Count > 0)
+                            {
+                                <h3 class="xr-h3">Values used</h3>
+                                <table class="xr-table xr-compact" data-testid="xr-resolved">
+                                    <caption class="visually-hidden">Input values resolved for this call, with type and source</caption>
+                                    <thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Source</th><th scope="col">Value (redacted preview)</th></tr></thead>
+                                    <tbody>@foreach (var v in call.Definition.ResolvedValues) { <tr data-testid="xr-resolved-row"><td class="xr-mono">@v.Name</td><td>@v.Type</td><td>@v.Source</td><td class="xr-mono">@v.Preview</td></tr> }</tbody>
+                                </table>
+                            }
+                            @if (call.Outputs.Count > 0)
+                            {
+                                <h3 class="xr-h3">Outputs for later steps</h3>
+                                <table class="xr-table xr-compact" data-testid="xr-outputs">
+                                    <caption class="visually-hidden">Outputs extracted from the response</caption>
+                                    <thead><tr><th scope="col">Output</th><th scope="col">From</th><th scope="col">Type</th><th scope="col">Value or problem</th></tr></thead>
+                                    <tbody>@foreach (var o in call.Outputs) { <tr data-testid="xr-output" data-found="@(o.Found ? "true" : "false")"><td class="xr-mono">@o.Name</td><td>@o.Source @o.Path</td><td>@o.Type</td><td class="xr-mono">@(o.Found ? o.Preview : o.Problem)</td></tr> }</tbody>
+                                </table>
+                            }
+                            @if (call.Attempts.Any(a => a.Request?.Body?.Text is not null || a.Response?.Body?.Text is not null))
+                            {
+                                <p>
+                                    <button type="button" class="btn-secondary" data-testid="xr-remove-bodies" disabled="@(_busy || run.Protected)" @onclick="RemoveBodiesAsync">@(_confirmBodies ? "Confirm: remove the stored bodies of this call" : "Remove stored bodies…")</button>
+                                    <span class="xr-muted">Status, headers, sizes, hashes, assertions and outputs stay; the run's other calls are not changed.</span>
+                                </p>
+                            }
                             break;
                         default:
                             if (last?.Request is { } req) { @RequestView(req, call.Definition) }
@@ -216,8 +283,25 @@
     private int Page => Math.Max(1, PageQuery ?? 1);
     private IExecutionEvidenceApiService? Api => Services.GetService(typeof(IExecutionEvidenceApiService)) as IExecutionEvidenceApiService;
 
-    private bool _loading = true;
-    private string? _error;
+    [SupplyParameterFromQuery(Name = "hq")] public string? HistorySearch { get; set; }
+    [SupplyParameterFromQuery(Name = "hstate")] public string? HistoryState { get; set; }
+    [SupplyParameterFromQuery(Name = "hfrom")] public string? HistoryFrom { get; set; }
+    [SupplyParameterFromQuery(Name = "hto")] public string? HistoryTo { get; set; }
+    [SupplyParameterFromQuery(Name = "hprot")] public bool HistoryProtected { get; set; }
+
+    private enum DeleteScope { None, Selected, Eligible, Run }
+
+    private bool _loading = true, _busy, _confirmBodies;
+    private string? _error, _message, _typedConfirm, _eligibleEnvironment;
+    private DeleteScope _scope;
+    private readonly HashSet<Guid> _selectedRuns = [];
+    private ExecutionStorageUsage? _usage;
+    private ExecutionRetentionSettings? _retention;
+    private ExecutionRetentionPreview? _retentionPreview, _eligible;
+    private IReadOnlyList<ExecutionAuditEntry>? _audit;
+    private ExecutionIntegrityReport? _integrity;
+    private RetentionMode _retentionMode;
+    private int? _retentionDays;
     private IReadOnlyList<ExecutionRunSummary>? _runs;
     private ExecutionRunDetail? _detail;
     private ExecutionCallRecord? _call;
@@ -226,9 +310,15 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        _loading = true; _error = null; _comparison = null;
+        _loading = true; _error = null; _comparison = null; _integrity = null; _confirmBodies = false;
         if (Api is not { } api) { _error = "Execution Results are not available in this host."; _loading = false; return; }
-        if (RunId is not { } runId) { (_runs, _error) = await api.RunsAsync(); _detail = null; _call = null; }
+        if (RunId is not { } runId)
+        {
+            (_runs, _error) = await api.RunsAsync(new(HistorySearch, HistoryState, DateOnly.TryParse(HistoryFrom, out var f) ? f : null, DateOnly.TryParse(HistoryTo, out var t) ? t : null, HistoryProtected));
+            _selectedRuns.RemoveWhere(id => _runs?.All(r => r.RunId != id) != false);
+            _detail = null; _call = null;
+            await LoadStorageAsync(api);
+        }
         else
         {
             (_detail, _error) = await api.RunAsync(runId, (Page - 1) * PageSize, PageSize, State, Protocol, Method, Search, Sort);
@@ -263,6 +353,245 @@
     }
 
     private void Pick(int attempt) { if (!_picked.Remove(attempt)) _picked.Add(attempt); _comparison = null; }
+
+    private bool HasHistoryFilter => !string.IsNullOrEmpty(HistorySearch) || !string.IsNullOrEmpty(HistoryState) || !string.IsNullOrEmpty(HistoryFrom) || !string.IsNullOrEmpty(HistoryTo) || HistoryProtected;
+
+    private void GoHistory(string? search = null, string? state = null, string? from = null, string? to = null, bool? protectedOnly = null)
+    {
+        var q = new List<string>();
+        void Add(string key, string? value) { if (!string.IsNullOrEmpty(value)) q.Add($"{key}={Uri.EscapeDataString(value)}"); }
+        Add("hq", search ?? HistorySearch); Add("hstate", state ?? HistoryState); Add("hfrom", from ?? HistoryFrom); Add("hto", to ?? HistoryTo);
+        if (protectedOnly ?? HistoryProtected) q.Add("hprot=true");
+        Nav.NavigateTo("execution-results" + (q.Count > 0 ? "?" + string.Join('&', q) : ""));
+    }
+
+    private async Task LoadStorageAsync(IExecutionEvidenceApiService api)
+    {
+        (_usage, var usageError) = await api.StorageAsync();
+        (_retention, var retentionError) = await api.RetentionAsync();
+        (_audit, _) = await api.AuditAsync();
+        _error ??= usageError ?? retentionError;
+        if (_retention is { } r) { _retentionMode = r.Mode; _retentionDays = r.Days; }
+    }
+
+    private void Toggle(Guid id, bool on) { if (on) _selectedRuns.Add(id); else _selectedRuns.Remove(id); }
+    private void SelectAll(bool on) { if (on) foreach (var r in _runs ?? []) _selectedRuns.Add(r.RunId); else _selectedRuns.Clear(); }
+
+    private static string AuthLabel(CallAuthenticationOutcome o) => o switch
+    {
+        CallAuthenticationOutcome.Authenticated => "Authenticated",
+        CallAuthenticationOutcome.AnonymousByDesign => "Anonymous by design",
+        CallAuthenticationOutcome.BlockedForAuthentication => "Blocked for authentication",
+        CallAuthenticationOutcome.FailedAuthentication => "Failed authentication",
+        CallAuthenticationOutcome.AuthorizationDenied => "Authorization denied",
+        _ => "—",
+    };
+
+    private static string Bytes(long n) => n < 1024 ? $"{n} B" : n < 1024 * 1024 ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{n / 1024.0:0.0} KB")
+        : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{n / (1024.0 * 1024):0.0} MB");
+
+    private async Task ProtectAsync(Guid runId, bool protect)
+    {
+        if (Api is not { } api) return;
+        _busy = true; _message = null;
+        _error = await api.ProtectAsync(runId, protect);
+        _busy = false;
+        if (_error is null)
+        {
+            _message = protect ? "Protected: the run is kept by bulk deletion and retention." : "Protection removed.";
+            await OnParametersSetAsync();
+        }
+    }
+
+    private async Task VerifyAsync()
+    {
+        if (Api is null || RunId is not { } run) return;
+        _busy = true;
+        (_integrity, _error) = await Api.IntegrityAsync(run);
+        _busy = false;
+    }
+
+    private void AskDelete(DeleteScope scope) { _scope = scope; _typedConfirm = null; _message = null; }
+
+    private async Task AskDeleteEligibleAsync()
+    {
+        if (Api is null) return;
+        _eligibleEnvironment ??= _runs?.Select(r => r.EnvironmentId).FirstOrDefault();
+        _scope = DeleteScope.Eligible; _typedConfirm = null; _message = null;
+        await LoadEligibleAsync();
+    }
+
+    private async Task LoadEligibleAsync()
+    {
+        if (Api is null || string.IsNullOrEmpty(_eligibleEnvironment)) { _eligible = null; return; }
+        (_eligible, _error) = await Api.DeletionPreviewAsync(_eligibleEnvironment);
+    }
+
+    private async Task SetEligibleEnvironmentAsync(string? environment) { _eligibleEnvironment = environment; _typedConfirm = null; await LoadEligibleAsync(); }
+
+    private int ConfirmCount => _scope switch { DeleteScope.Selected => _selectedRuns.Count, DeleteScope.Eligible => _eligible?.Runs ?? 0, DeleteScope.Run => 1, _ => 0 };
+
+    /// <summary>The number to type: what the person sees is what is deleted; a different number deletes nothing.</summary>
+    private RenderFragment DeleteConfirmation() => __builder =>
+    {
+        if (_scope == DeleteScope.None) return;
+        <div class="xr-confirm" role="group" aria-label="Confirm deletion" data-testid="xr-delete-confirm">
+            @if (_scope == DeleteScope.Eligible)
+            {
+                <label>Environment
+                    <select class="form-control" data-testid="xr-eligible-env" value="@_eligibleEnvironment" @onchange="e => SetEligibleEnvironmentAsync(e.Value?.ToString())">
+                        @foreach (var env in (_runs ?? []).Select(r => r.EnvironmentId).Distinct().Order()) { <option value="@env">@env</option> }
+                    </select>
+                </label>
+                @if (_eligible is { } p) { <p data-testid="xr-eligible-preview">@p.Runs finished, unprotected run(s) with @p.Calls call(s), @Bytes(p.Bytes) of stored evidence. Kept: @p.ProtectedKept protected, @p.RunningKept running.</p> }
+            }
+            else if (_scope == DeleteScope.Selected) { <p>Delete @_selectedRuns.Count selected run(s) and all their calls, attempts, bodies and assertions. Protected and running runs are skipped and listed.</p> }
+            else { <p>Delete this run and all its calls, attempts, bodies and assertions. Other runs are not changed.</p> }
+            <label>Type <strong>@ConfirmCount</strong> to confirm <input class="form-control xr-narrow" data-testid="xr-delete-typed" value="@_typedConfirm" @oninput="e => _typedConfirm = e.Value?.ToString()" /></label>
+            <button type="button" class="btn-danger" data-testid="xr-delete-confirm-button" disabled="@(_busy || ConfirmCount == 0 || _typedConfirm != ConfirmCount.ToString(System.Globalization.CultureInfo.InvariantCulture))" @onclick="DeleteAsync">Delete</button>
+            <button type="button" class="btn-secondary" data-testid="xr-delete-cancel" @onclick="() => _scope = DeleteScope.None">Cancel</button>
+        </div>
+    };
+
+    private async Task DeleteAsync()
+    {
+        if (Api is not { } api) return;
+        _busy = true; _error = null; _message = null;
+        var request = _scope switch
+        {
+            DeleteScope.Eligible => new ExecutionDeletionRequest { EnvironmentId = _eligibleEnvironment, AllEligible = true, Confirm = ConfirmCount },
+            DeleteScope.Run => new ExecutionDeletionRequest { RunIds = [RunId!.Value], Confirm = 1 },
+            _ => new ExecutionDeletionRequest { RunIds = [.. _selectedRuns], Confirm = _selectedRuns.Count },
+        };
+        var (result, error) = await api.DeleteRunsAsync(request);
+        _busy = false;
+        if (result is null) { _error = error; return; }
+        var scope = _scope;
+        _scope = DeleteScope.None;
+        _message = result.Message + (result.Skipped.Count > 0 ? " Not deleted: " + string.Join(" ", result.Skipped.Select(s => $"{_runs?.FirstOrDefault(r => r.RunId == s.RunId)?.Name ?? s.RunId.ToString()} — {s.Reason}")) : "");
+        if (scope == DeleteScope.Run && result.Deleted == 1) { Nav.NavigateTo("execution-results"); return; }
+        _selectedRuns.Clear();
+        await OnParametersSetAsync();
+    }
+
+    private async Task ExportSelectedAsync()
+    {
+        if (Api is not { } api) return;
+        _busy = true; _error = null;
+        var (zip, error) = await api.ExportAsync([.. _selectedRuns]);
+        _busy = false;
+        if (zip is null) { _error = error; return; }
+        await JS.InvokeVoidAsync("downloadBase64File", $"execution-evidence-{_selectedRuns.Count}-runs.zip", Convert.ToBase64String(zip), "application/zip");
+        _message = $"Exported {_selectedRuns.Count} run(s) from stored evidence; nothing was executed.";
+    }
+
+    private async Task RemoveBodiesAsync()
+    {
+        if (Api is null || RunId is not { } run || _call is not { } call) return;
+        if (!_confirmBodies) { _confirmBodies = true; return; }
+        _busy = true;
+        var (removed, error) = await Api.RemoveBodiesAsync(run, call.CallId);
+        _busy = false; _confirmBodies = false;
+        if (error is not null) { _error = error; return; }
+        _message = $"{removed} stored body(ies) removed; size and SHA-256 are kept.";
+        (_call, _error) = await Api.CallAsync(run, call.CallId);
+    }
+
+    private void SetRetentionMode(string? value) => _retentionMode = Enum.TryParse<RetentionMode>(value, out var mode) ? mode : RetentionMode.Disabled;
+
+    private async Task SaveRetentionAsync()
+    {
+        if (Api is not { } api) return;
+        _busy = true; _message = null;
+        (_retention, _error) = await api.SaveRetentionAsync(new(_retentionMode, _retentionMode == RetentionMode.Days ? _retentionDays : null));
+        _busy = false; _retentionPreview = null;
+        if (_error is null) { _message = _retentionMode == RetentionMode.Days ? $"Retention set to {_retentionDays} days. Nothing is deleted until you preview and apply it." : "Retention disabled."; await LoadStorageAsync(api); }
+    }
+
+    private async Task PreviewRetentionAsync()
+    {
+        if (Api is null) return;
+        (_retentionPreview, _error) = await Api.RetentionPreviewAsync();
+        _typedConfirm = null;
+    }
+
+    private async Task ApplyRetentionAsync()
+    {
+        if (Api is not { } api || _retentionPreview is not { } preview) return;
+        _busy = true;
+        var (result, error) = await api.ApplyRetentionAsync(preview.Runs);
+        _busy = false; _retentionPreview = null; _typedConfirm = null;
+        if (result is null) { _error = error; return; }
+        _message = result.Message;
+        await OnParametersSetAsync();
+    }
+
+    private RenderFragment StorageView() => __builder =>
+    {
+        <section class="xr-card" aria-labelledby="xr-storage-heading" data-testid="xr-storage">
+            <h2 id="xr-storage-heading">Stored evidence</h2>
+            @if (_usage is { } u)
+            {
+                <dl class="xr-kpis">
+                    @Kpi("Runs", u.Runs, "runs")
+                    @Kpi("Logical calls", u.LogicalCalls, "calls")
+                    @Kpi("Attempts", u.Attempts, "attempts")
+                    @KpiText("Stored (measured)", Bytes(u.StoredBytes), "stored")
+                    @KpiText("Database tables", u.DatabaseTableBytes is { } t ? Bytes(t) : "Not available", "tables")
+                    @Kpi("Protected runs", u.ProtectedRuns, "protected")
+                    @Kpi("Retention candidates", u.RetentionCandidates, "candidates", u.RetentionCandidates > 0 ? Bytes(u.RetentionCandidateBytes) : null)
+                </dl>
+                <p class="xr-muted" data-testid="xr-storage-location">@u.Location @u.Note@(u.Oldest is { } o && u.Newest is { } n ? $" Oldest run {o.ToLocalTime():yyyy-MM-dd HH:mm}, newest {n.ToLocalTime():yyyy-MM-dd HH:mm}." : "")</p>
+            }
+            <details class="xr-details" data-testid="xr-retention">
+                <summary>Retention</summary>
+                <p class="xr-muted">Default: disabled — nothing is deleted automatically. With a period, older finished runs become candidates; you preview them and apply it yourself. Protected and running runs are always kept.</p>
+                <div class="xr-filters">
+                    <label>Retention
+                        <select class="form-control" data-testid="xr-retention-mode" value="@_retentionMode" @onchange="e => SetRetentionMode(e.Value?.ToString())">
+                            <option value="@RetentionMode.Disabled">Disabled</option><option value="@RetentionMode.Days">Keep for a number of days</option>
+                        </select>
+                    </label>
+                    @if (_retentionMode == RetentionMode.Days)
+                    {
+                        <label>Days
+                            <select class="form-control" data-testid="xr-retention-preset" value="@(_retentionDays is 7 or 30 or 90 ? _retentionDays.ToString() : "")" @onchange="e => _retentionDays = int.TryParse(e.Value?.ToString(), out var d) ? d : _retentionDays">
+                                <option value="">Custom</option><option value="7">7</option><option value="30">30</option><option value="90">90</option>
+                            </select>
+                        </label>
+                        <label>Custom days <input type="number" min="1" max="3650" class="form-control xr-narrow" data-testid="xr-retention-days" @bind="_retentionDays" /></label>
+                    }
+                    <button type="button" class="btn-secondary" data-testid="xr-retention-save" disabled="@_busy" @onclick="SaveRetentionAsync">Save retention</button>
+                    <button type="button" class="btn-secondary" data-testid="xr-retention-preview" disabled="@(_busy || _retention?.Mode != RetentionMode.Days)" @onclick="PreviewRetentionAsync">Preview (dry run)</button>
+                </div>
+                @if (_retention is { UpdatedAt: { } at } saved) { <p class="xr-muted" data-testid="xr-retention-current">Saved: @(saved.Mode == RetentionMode.Days ? $"{saved.Days} days" : "disabled") · @at.ToLocalTime().ToString("yyyy-MM-dd HH:mm") by @saved.UpdatedBy</p> }
+                @if (_retentionPreview is { } p)
+                {
+                    <div class="xr-confirm" data-testid="xr-retention-result">
+                        <p>@p.Explanation</p>
+                        <p data-testid="xr-retention-counts">@p.Runs run(s), @p.Calls call(s), @Bytes(p.Bytes) would be deleted. Kept: @p.ProtectedKept protected, @p.RunningKept running.</p>
+                        @if (p.Runs > 0)
+                        {
+                            <label>Type <strong>@p.Runs</strong> to apply <input class="form-control xr-narrow" data-testid="xr-retention-typed" value="@_typedConfirm" @oninput="e => _typedConfirm = e.Value?.ToString()" /></label>
+                            <button type="button" class="btn-danger" data-testid="xr-retention-apply" disabled="@(_busy || _typedConfirm != p.Runs.ToString(System.Globalization.CultureInfo.InvariantCulture))" @onclick="ApplyRetentionAsync">Apply retention</button>
+                        }
+                    </div>
+                }
+            </details>
+            @if (_audit is { Count: > 0 } audit)
+            {
+                <details class="xr-details" data-testid="xr-audit">
+                    <summary>Audit trail</summary>
+                    <ul class="xr-list">@foreach (var a in audit) { <li data-testid="xr-audit-entry">@a.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @a.Action · @a.Scope · @a.Runs run(s), @a.Calls call(s), @Bytes(a.Bytes) · @a.Initiator</li> }</ul>
+                </details>
+            }
+        </section>
+    };
+
+    private static RenderFragment KpiText(string label, string value, string key) => __builder =>
+    {
+        <div class="xr-kpi" data-testid="@($"xr-kpi-{key}")"><dt>@label</dt><dd><span class="xr-kpi-value">@value</span></dd></div>
+    };
 
     private async Task CompareAsync()
     {
