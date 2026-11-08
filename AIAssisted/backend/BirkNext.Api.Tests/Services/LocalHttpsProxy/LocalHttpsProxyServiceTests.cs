@@ -257,6 +257,36 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task WhenTheUpstreamClosesAnIdleKeepAliveConnectionTheBrowserSideIsClosedTooInsteadOfHanging()
+    {
+        // Regression (found by the execution-lifecycle browser acceptance): the target closed an idle keep-alive connection, the proxy kept
+        // the browser's side open, and the browser's next request on it was written to a dead upstream and never answered (the app hung).
+        _upstream.KeepAliveThenClose = true;
+        var port = await StartAsync(Scope());
+        using var client = await ProxyClient.ConnectAsync(port, $"{ApiHost}:443");
+        await using var ssl = new SslStream(client.Stream, false, (_, _, _, _) => true);
+        await ssl.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = ApiHost, ApplicationProtocols = [SslApplicationProtocol.Http11] });
+        await ssl.WriteAsync(Encoding.ASCII.GetBytes($"GET /api/first HTTP/1.1\r\nHost: {ApiHost}\r\n\r\n"));
+        await ssl.FlushAsync();
+        var buffer = new byte[4096];
+        var first = "";
+        while (!first.EndsWith("{\"ok\":true}", StringComparison.Ordinal)) first += Encoding.ASCII.GetString(buffer, 0, await ssl.ReadAsync(buffer));
+        Assert.StartsWith("HTTP/1.1 200", first);
+        await Task.Delay(600);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        int read;
+        try
+        {
+            await ssl.WriteAsync(Encoding.ASCII.GetBytes($"GET /api/second HTTP/1.1\r\nHost: {ApiHost}\r\n\r\n"), deadline.Token);
+            await ssl.FlushAsync(deadline.Token);
+            read = await ssl.ReadAsync(buffer, deadline.Token);
+        }
+        catch (IOException) { read = 0; }
+        Assert.False(deadline.IsCancellationRequested, "the browser's connection must be closed, not left waiting for an answer that never comes");
+        Assert.Equal(0, read);
+    }
+
+    [Fact]
     public async Task BearerOnDeniedRequestIsNotPromoted()
     {
         _upstream.NextStatus = 401;
@@ -1249,6 +1279,8 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
         public int PlainPort => ((IPEndPoint)_plain.LocalEndpoint).Port;
         public volatile int NextStatus = 200;
         public volatile string NextContentType = "application/json";
+        /// <summary>Answers keep-alive (no "Connection: close") and then closes the idle socket, like a server's keep-alive timeout.</summary>
+        public volatile bool KeepAliveThenClose;
         public IReadOnlyList<string?> AuthorizationHeaders { get { lock (_authorization) return _authorization.ToList(); } }
         public IReadOnlyList<byte[]> PlainPayloads { get { lock (_plainPayloads) return _plainPayloads.ToList(); } }
         public IReadOnlyList<string> RequestBodies { get { lock (_requestBodies) return _requestBodies.ToList(); } }
@@ -1287,8 +1319,10 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
                                 var status = NextStatus;
                                 var contentType = NextContentType;
                                 var body = "{\"ok\":true}";
-                                await ssl.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {status} {(status == 200 ? "OK" : "Denied")}\r\nContent-Type: {contentType}\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}"), _cts.Token);
+                                var connection = KeepAliveThenClose ? "keep-alive" : "close";
+                                await ssl.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {status} {(status == 200 ? "OK" : "Denied")}\r\nContent-Type: {contentType}\r\nContent-Length: {body.Length}\r\nConnection: {connection}\r\n\r\n{body}"), _cts.Token);
                                 await ssl.FlushAsync(_cts.Token);
+                                if (KeepAliveThenClose) await Task.Delay(150, _cts.Token);
                                 break;
                             }
                         }

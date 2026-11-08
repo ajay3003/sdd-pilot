@@ -363,6 +363,9 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
         using var serverReader = new BufferedNetworkReader(server);
         var pending = Channel.CreateUnbounded<PendingRequest>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
         var responses = PumpResponsesAsync(client, serverReader, pending.Reader, host, port, cts.Token);
+        // When the upstream side ends (an idle keep-alive closed by the target, "Connection: close", an error), the browser's side is closed
+        // too, so the browser opens a new connection instead of writing its next request into a dead upstream and waiting forever.
+        _ = responses.ContinueWith(_ => { try { cts.Cancel(); } catch (ObjectDisposedException) { } }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         try
         {
             while (!cts.IsCancellationRequested)
