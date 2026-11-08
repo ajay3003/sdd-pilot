@@ -39,8 +39,17 @@ public sealed class ContractSource
 /// </summary>
 public sealed class NormalizedOperation
 {
+    /// <summary>The document's <c>operationId</c> when it is present and unique in the document; otherwise <see cref="Key"/>.</summary>
     [JsonPropertyName("id")]
     public string Id { get; set; } = "";
+
+    /// <summary>Stable, collision-free identity within one document: <c>"METHOD /path-template"</c> (method upper-case, path as written).</summary>
+    [JsonPropertyName("key")]
+    public string Key { get; set; } = "";
+
+    /// <summary>The <c>operationId</c> exactly as the document declares it; null when absent.</summary>
+    [JsonPropertyName("operation_id")]
+    public string? OperationId { get; set; }
 
     [JsonPropertyName("method")]
     public string Method { get; set; } = "GET";

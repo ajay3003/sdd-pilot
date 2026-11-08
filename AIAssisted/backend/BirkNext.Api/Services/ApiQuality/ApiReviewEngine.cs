@@ -24,8 +24,11 @@ public interface IApiReviewEngine
 /// engine never sees a token. Endpoint paths come from the request (Endpoint Discovery / configuration / contract) — nothing is guessed.
 /// </summary>
 public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedReviewGateway gateway, IOpenApiExtractor openApi, IGraphQlExtractor graphQl, ILogger<ApiReviewEngine> logger,
-    IGraphQlSchemaArtifactStore? schemaArtifacts = null, IApiEnvironmentSafetyPolicy? safetyPolicy = null) : IApiReviewEngine
+    IGraphQlSchemaArtifactStore? schemaArtifacts = null, IApiEnvironmentSafetyPolicy? safetyPolicy = null, IContractSourceFetcher? contractFetcher = null) : IApiReviewEngine
 {
+    // Contract URLs (OpenAPI, GraphQL schema) are fetched under the one contract-source policy (CI-DEF-3), never with the probe client directly.
+    private readonly IContractSourceFetcher contracts = contractFetcher ?? new ContractSourceFetcher(publicClient);
+
     public const string TypenameProbe = "query { __typename }";
     public const string InvalidFieldProbe = "query { __birkNextUnknownFieldProbe }";
     private const string UnknownRouteSegment = "birknext-unknown-route-probe-7f3a";
@@ -375,14 +378,16 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
     private async Task<(OpenApiReviewResult? Review, NormalizedContract? Contract, ApiReviewContractSummary Summary)> ReviewOpenApiAsync(ApiReviewTarget target, CancellationToken ct)
     {
         var source = target.ContractSource!;
-        try
         {
-            using var response = await publicClient.GetAsync(source, HttpCompletionOption.ResponseHeadersRead, ct);
-            if (!response.IsSuccessStatusCode)
-                return (null, null, new ApiReviewContractSummary { Kind = "OpenAPI", Source = source, Available = false, Status = response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden ? ApiReviewCheckResult.Blocked : ApiReviewCheckResult.Fail, Note = $"Contract fetch returned HTTP {(int)response.StatusCode}." });
-            var body = await ResponseBodyReader.ReadAsync(response, ct, maxInspected: 10 * 1024 * 1024);
-            if (body.Text is not { } json)
-                return (null, null, new ApiReviewContractSummary { Kind = "OpenAPI", Source = source, Available = false, Status = ApiReviewCheckResult.NotTested, Note = $"Contract could not be read: {body.Evidence.Reason}" });
+            var fetched = await contracts.FetchAsync(source, ct);
+            if (fetched.Status == ContractFetchStatus.Refused)
+                return (null, null, new ApiReviewContractSummary { Kind = "OpenAPI", Source = source, Available = false, Status = ApiReviewCheckResult.Blocked, Note = $"Contract URL refused by the contract-source policy: {fetched.Problem}" });
+            if (fetched.Status == ContractFetchStatus.HttpError)
+                return (null, null, new ApiReviewContractSummary { Kind = "OpenAPI", Source = source, Available = false, Status = fetched.HttpStatus is 401 or 403 ? ApiReviewCheckResult.Blocked : ApiReviewCheckResult.Fail, Note = fetched.Problem });
+            if (fetched.Status == ContractFetchStatus.Unreachable)
+                return (null, null, new ApiReviewContractSummary { Kind = "OpenAPI", Source = source, Available = false, Status = ApiReviewCheckResult.NotTested, Note = $"Contract not reachable: {fetched.Problem}" });
+            if (fetched.Text is not { } json)
+                return (null, null, new ApiReviewContractSummary { Kind = "OpenAPI", Source = source, Available = false, Status = ApiReviewCheckResult.NotTested, Note = $"Contract could not be read: {fetched.Problem}" });
             var review = OpenApiDocumentReview.Review(json, source, target.TargetId);
             var extraction = review.Valid && review.Version is { } v && v.StartsWith("3.", StringComparison.Ordinal) ? openApi.Extract(json) : null;
             var summary = new ApiReviewContractSummary
@@ -392,10 +397,6 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
                 Note = review.Valid ? (extraction is { Success: true } ? $"{review.Operations.Count} operations, {extraction.Contract!.Schemas.Count} schemas parsed for live validation." : $"{review.Operations.Count} operations; response schemas not parsed ({extraction?.ErrorMessage ?? "Swagger 2.0 documents are reviewed for documentation quality only"}).") : review.Error ?? "Invalid document.",
             };
             return (review, extraction is { Success: true } ? extraction.Contract : null, summary);
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
-        {
-            return (null, null, new ApiReviewContractSummary { Kind = "OpenAPI", Source = source, Available = false, Status = ApiReviewCheckResult.NotTested, Note = $"Contract not reachable ({ex.GetType().Name})." });
         }
     }
 
@@ -962,18 +963,11 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
     private async Task<(GraphQlNormalizedContract? Schema, string? Detail)> FetchSchemaArtifactAsync(ApiReviewTarget target, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(target.ContractSource)) return (null, null);
-        try
         {
-            using var response = await publicClient.GetAsync(target.ContractSource, HttpCompletionOption.ResponseHeadersRead, ct);
-            if (!response.IsSuccessStatusCode)
+            var fetched = await contracts.FetchAsync(target.ContractSource, ct);
+            if (fetched.Text is not { } text)
             {
-                logger.LogInformation("GraphQL schema artifact {Source} returned HTTP {Status}; compatibility falls back to Not assessed.", target.ContractSource, (int)response.StatusCode);
-                return (null, null);
-            }
-            var body = await ResponseBodyReader.ReadAsync(response, ct, maxInspected: 10 * 1024 * 1024);
-            if (body.Text is not { } text)
-            {
-                logger.LogInformation("GraphQL schema artifact {Source} could not be read ({Decoding}); compatibility falls back to Not assessed.", target.ContractSource, body.Evidence.Decoding);
+                logger.LogInformation("GraphQL schema artifact {Source}: {Status} ({Problem}); compatibility falls back to Not assessed.", target.ContractSource, fetched.Status, fetched.Problem);
                 return (null, null);
             }
             var schema = text.TrimStart().StartsWith('{')
@@ -981,11 +975,6 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
                 : GraphQlSdlSchema.FromSdl(text, out _);
             logger.LogInformation("GraphQL schema artifact {Source}: {Outcome}.", target.ContractSource, schema is null ? "unreadable" : "parsed");
             return schema is null ? (null, null) : (schema, $"Configured schema artifact {target.ContractSource}");
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
-        {
-            logger.LogInformation("GraphQL schema artifact {Source} not reachable ({Error}).", target.ContractSource, ex.GetType().Name);
-            return (null, null);
         }
     }
 

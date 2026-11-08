@@ -513,6 +513,15 @@ builder.Services.AddHttpClient<IApiReviewEngine, ApiReviewEngine>(client =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-ApiReview/2.0");
 }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { UseCookies = false, AllowAutoRedirect = false, AutomaticDecompression = System.Net.DecompressionMethods.None, PooledConnectionLifetime = TimeSpan.FromMinutes(5) });
 
+// The one contract-URL fetch (OpenAPI / GraphQL schema documents): anonymous GET under ContractSourcePolicy, re-validated on every redirect hop
+// and at connect time after DNS resolution (CI-DEF-3).
+builder.Services.AddHttpClient<BirkNext.Api.Services.ContractAnalysis.IContractSourceFetcher, BirkNext.Api.Services.ContractAnalysis.ContractSourceFetcher>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-ContractFetch/1.0");
+    client.DefaultRequestHeaders.TryAddWithoutValidation(BirkNext.LocalHttpsProxy.NetworkEvidencePolicy.ProvenanceHeader, "BirkNextDiagnostic");
+}).ConfigurePrimaryHttpMessageHandler(BirkNext.Api.Services.ContractAnalysis.ContractSourcePolicy.CreateHandler);
+
 // Contract Analysis — messaging schema discovery
 builder.Services.AddScoped<BirkNext.Api.Services.ContractAnalysis.IMessageSchemaDiscoveryService, BirkNext.Api.Services.ContractAnalysis.MessageSchemaDiscoveryService>();
 
@@ -521,7 +530,7 @@ builder.Services.AddHttpClient<IOpenApiSourceFetcher, OpenApiSourceFetcher>(clie
 {
     client.Timeout = TimeSpan.FromSeconds(30);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-ContractAnalysis/1.0");
-});
+}).ConfigurePrimaryHttpMessageHandler(BirkNext.Api.Services.ContractAnalysis.ContractSourcePolicy.CreateHandler);
 builder.Services.AddScoped<IOpenApiExtractor, OpenApiExtractor>();
 
 // Contract Analysis - GraphQL (Phase 4)
@@ -529,7 +538,7 @@ builder.Services.AddHttpClient<IGraphQlSourceFetcher, GraphQlSourceFetcher>(clie
 {
     client.Timeout = TimeSpan.FromSeconds(30);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-ContractAnalysis-GraphQL/1.0");
-});
+}).ConfigurePrimaryHttpMessageHandler(BirkNext.Api.Services.ContractAnalysis.ContractSourcePolicy.CreateHandler);
 builder.Services.AddScoped<IGraphQlExtractor, GraphQlExtractor>();
 
 builder.Services.AddScoped<IContractComparer, ContractComparer>();

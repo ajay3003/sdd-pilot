@@ -44,30 +44,34 @@ public sealed class OpenApiExtractor : IOpenApiExtractor
 
             var contract = new NormalizedContract { Name = title };
 
-            // Extract paths (operations)
-            if (root.TryGetProperty("paths", out var pathsEl))
-            {
-                foreach (var pathProp in pathsEl.EnumerateObject())
-                {
-                    ExtractOperations(pathProp.Value, pathProp.Name, contract.Operations, root);
-                }
-            }
-
-            // Extract schemas from components
-            var schemaMap = new Dictionary<string, NormalizedSchema>(StringComparer.OrdinalIgnoreCase);
+            // Component schemas first, so request and response schemas that are "$ref"s resolve to them (CI-DEF-1).
+            var schemaMap = new Dictionary<string, NormalizedSchema>(StringComparer.Ordinal);
             if (root.TryGetProperty("components", out var compEl) &&
-                compEl.TryGetProperty("schemas", out var schemasEl))
+                compEl.TryGetProperty("schemas", out var schemasEl) && schemasEl.ValueKind == JsonValueKind.Object)
             {
                 foreach (var schemaProp in schemasEl.EnumerateObject())
                 {
+                    if (schemaProp.Value.ValueKind != JsonValueKind.Object) continue;
                     var schema = ExtractSchema(schemaProp.Value, schemaProp.Name, schemaMap);
                     if (schema != null)
                         contract.Schemas.Add(schema);
                 }
             }
 
-            // Resolve $ref references
-            ResolveReferences(contract.Schemas, schemaMap);
+            // Extract paths (operations)
+            if (root.TryGetProperty("paths", out var pathsEl))
+            {
+                foreach (var pathProp in pathsEl.EnumerateObject())
+                {
+                    ExtractOperations(pathProp.Value, pathProp.Name, contract.Operations, root, schemaMap);
+                }
+            }
+
+            // Identity (CI-DEF-2): the operationId when it identifies exactly one operation, otherwise the method + path key.
+            var duplicated = contract.Operations.Where(o => o.OperationId is { Length: > 0 }).GroupBy(o => o.OperationId!, StringComparer.Ordinal)
+                .Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet(StringComparer.Ordinal);
+            foreach (var operation in contract.Operations)
+                operation.Id = operation.OperationId is { Length: > 0 } declared && !duplicated.Contains(declared) ? declared : operation.Key;
 
             return OpenApiExtractionResult.SuccessResult(contract);
         }
@@ -83,7 +87,7 @@ public sealed class OpenApiExtractor : IOpenApiExtractor
         }
     }
 
-    private void ExtractOperations(JsonElement pathElement, string path, List<NormalizedOperation> operations, JsonElement root)
+    private void ExtractOperations(JsonElement pathElement, string path, List<NormalizedOperation> operations, JsonElement root, Dictionary<string, NormalizedSchema> schemaMap)
     {
         var pathPointer = "#/paths/" + Escape(path);
         var pathLevel = ExtractParameters(pathElement, pathPointer, root);
@@ -93,13 +97,10 @@ public sealed class OpenApiExtractor : IOpenApiExtractor
         {
             if (pathElement.TryGetProperty(method, out var opEl))
             {
-                var operationId = method.ToUpper();
-                if (opEl.TryGetProperty("operationId", out var opIdEl))
-                    operationId = opIdEl.GetString() ?? operationId;
-
                 var operation = new NormalizedOperation
                 {
-                    Id = operationId,
+                    OperationId = opEl.TryGetProperty("operationId", out var opIdEl) && opIdEl.ValueKind == JsonValueKind.String ? opIdEl.GetString() : null,
+                    Key = $"{method.ToUpperInvariant()} {path}",
                     Method = method.ToUpper(),
                     Path = path
                 };
@@ -111,7 +112,7 @@ public sealed class OpenApiExtractor : IOpenApiExtractor
                     if (contentEl.TryGetProperty("application/json", out var jsonContentEl) &&
                         jsonContentEl.TryGetProperty("schema", out var schemaEl))
                     {
-                        operation.RequestSchema = ParseSchema(schemaEl, new Dictionary<string, NormalizedSchema>());
+                        operation.RequestSchema = ParseSchema(schemaEl, schemaMap);
                         operation.RequestBody = ExtractRequestBody(schemaEl, $"{pathPointer}/{method}/requestBody/content/application~1json/schema", root,
                             reqBodyEl.TryGetProperty("required", out var bodyRequired) && bodyRequired.ValueKind == JsonValueKind.True);
                     }
@@ -131,7 +132,7 @@ public sealed class OpenApiExtractor : IOpenApiExtractor
                             respContentEl.TryGetProperty("application/json", out var respJsonEl) &&
                             respJsonEl.TryGetProperty("schema", out var respSchemaEl))
                         {
-                            var schema = ParseSchema(respSchemaEl, new Dictionary<string, NormalizedSchema>());
+                            var schema = ParseSchema(respSchemaEl, schemaMap);
                             if (schema != null)
                                 operation.ResponseSchemas[respProp.Name] = schema;
                             if (respSchemaEl.TryGetProperty("$ref", out var respRef) && respRef.GetString() is { } respPointer
@@ -381,14 +382,8 @@ public sealed class OpenApiExtractor : IOpenApiExtractor
             return null;
         }
 
-        return ExtractSchema(schemaEl, "", schemaMap);
-    }
-
-    private void ResolveReferences(List<NormalizedSchema> schemas, Dictionary<string, NormalizedSchema> schemaMap)
-    {
-        // Resolve local $refs in schema properties
-        // For Phase 3, we use a simple approach: if needed, expand inline
-        // This prevents infinite recursion with depth bounds
+        // Inline schemas are not registered: only component schemas are reachable by "$ref".
+        return ExtractSchema(schemaEl, "", []);
     }
 }
 

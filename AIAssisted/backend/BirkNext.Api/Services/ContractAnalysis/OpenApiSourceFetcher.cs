@@ -31,17 +31,12 @@ public sealed class OpenApiSourceFetcher : IOpenApiSourceFetcher
 
         try
         {
-            // Validate URL format and SSRF rules
-            if (!Uri.TryCreate(sourceUrl, UriKind.Absolute, out var uri))
+            // The one contract-source policy (CI-DEF-3): http(s) without credentials, no link-local / metadata / multicast address.
+            if (!Uri.TryCreate(sourceUrl, UriKind.Absolute, out _))
                 return OpenApiSourceResult.InvalidUrl("Invalid URL format");
-
-            // Verify HTTPS only (with exceptions for localhost in dev)
-            if (uri.Scheme != "https" && !IsLocalhost(uri))
-                return OpenApiSourceResult.InvalidUrl("Only HTTPS URLs are supported in production");
-
-            // SSRF protection: block private ranges
-            if (IsPrivateIp(uri.Host))
-                return OpenApiSourceResult.BlockedByPolicy($"Private IP range not allowed: {uri.Host}");
+            var (uri, problem) = ContractSourcePolicy.Validate(sourceUrl);
+            if (uri is null)
+                return OpenApiSourceResult.BlockedByPolicy(problem!);
 
             // Redact sensitive query parameters from logging
             var safeUrl = RedactSensitiveUrl(sourceUrl);
@@ -95,25 +90,7 @@ public sealed class OpenApiSourceFetcher : IOpenApiSourceFetcher
         }
     }
 
-    private static bool IsLocalhost(Uri uri)
-    {
-        if (uri.IsLoopback) return true;
-        return uri.Host == "localhost" || uri.Host == "127.0.0.1" || uri.Host == "::1";
-    }
 
-    private static bool IsPrivateIp(string host)
-    {
-        // Block private/reserved ranges
-        var blockedPatterns = new[]
-        {
-            "127.", "169.254", "10.", "172.16.", "172.17.", "172.18.", "172.19.",
-            "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
-            "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.",
-            "192.168.", "::", "fc", "fd"
-        };
-
-        return blockedPatterns.Any(pattern => host.StartsWith(pattern, StringComparison.OrdinalIgnoreCase));
-    }
 
     private static string RedactSensitiveUrl(string url)
     {
