@@ -191,7 +191,7 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
             message.Options.Set(EvidenceCaptureSlot.Key, slot);
             var correlation = $"{runId:N}.{record.Sequence}.{n}";
             message.Headers.TryAddWithoutValidation(CorrelationHeader, correlation);
-            if (ExecutionCredentialResolver.Effective(run) != ExecutionAuthenticationKind.None)
+            if (ExecutionCredentialResolver.Effective(run) != ExecutionAuthenticationKind.None && !d.WithoutAuthentication)
             {
                 // Re-validated per attempt: the attended session may have expired, an unattended token is refreshed when due.
                 (IReadOnlyList<string> headers, string? authProblem) = credentials is null

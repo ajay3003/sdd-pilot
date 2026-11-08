@@ -176,6 +176,8 @@ public sealed record ExecutionCallDefinition
     public string? ExpectedOutcome { get; init; }
     /// <summary>Contract validation of the request (before sending) and the response, against <see cref="OperationRef"/>'s contract version.</summary>
     public ContractCheckMode ContractCheck { get; init; }
+    /// <summary>Sent without the run's credential on purpose (a negative "missing authentication" test). Never the reverse: a call cannot add a credential.</summary>
+    public bool WithoutAuthentication { get; init; }
 }
 
 public sealed record ExecutionCallRecord

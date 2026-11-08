@@ -163,6 +163,24 @@ public sealed class ExecutionAuthenticationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_missing_authentication_negative_runs_in_the_same_run_without_the_credential()
+    {
+        SaveClientCredentials();
+        var request = Run(ExecutionAuthenticationKind.ClientCredentials, "/secure/children/7", "/secure/children/8");
+        request = request with
+        {
+            Calls = [request.Calls[0], request.Calls[1] with { WithoutAuthentication = true, Assertions = [new("status", AssertionKind.StatusCode, AssertionOperator.Equals, null, "401")] }],
+        };
+        var (start, detail, json) = await RunAsync(request);
+        start.Blockers.Should().BeEmpty();
+        detail!.Calls.Should().OnlyContain(c => c.State == ExecutionState.Passed);
+        _seen.Should().ContainSingle(s => s.Path == "/secure/children/7" && s.Authorization == $"Bearer {AccessToken}");
+        _seen.Should().ContainSingle(s => s.Path == "/secure/children/8" && s.Authorization == null, "the flagged call never carries the run's credential");
+        detail.Calls[1].Attempts[0].Request!.Headers.Should().NotContain(h => h.Name == "Authorization");
+        json.Should().NotContain(AccessToken);
+    }
+
+    [Fact]
     public async Task A_refused_token_request_blocks_the_call_without_sending_it()
     {
         SaveClientCredentials("wrong-secret-value-000");

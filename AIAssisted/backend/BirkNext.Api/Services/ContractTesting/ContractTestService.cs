@@ -245,13 +245,15 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             var (call, missing) = ContractTestRules.Materialize(test, values);
             if (call is null) { notRun.Add($"{test.Name}: missing {string.Join(", ", missing)}."); continue; }
             var binding = await BindingAsync(test.ContractKey, request.Environment.EnvironmentId, ct);
-            kinds.Add(test.WithoutAuthentication ? ExecutionAuthenticationKind.None : binding?.Authentication ?? ExecutionAuthenticationKind.None);
+            // A missing-authentication negative is sent without the credential inside the same run; it never decides the run's authentication.
+            if (!test.WithoutAuthentication) kinds.Add(binding?.Authentication ?? ExecutionAuthenticationKind.None);
             var basePath = (request.BasePath ?? binding?.BasePath ?? "").Trim().TrimEnd('/');
             var path = call.Protocol == ExecutionProtocol.GraphQl && (request.GraphQlPath ?? binding?.GraphQlPath) is { Length: > 0 } endpoint ? endpoint.Trim() : basePath + call.Path;
             calls.Add(call with
             {
                 Path = path, Name = test.Name, OperationRef = ContractIdentity.OperationRef(test.ContractKey, test.ContractVersion, test.Operation),
                 TestDataRefs = test.Binding is { } b ? [$"{b.Alias}@v{b.Version}"] : [], DefinitionVersion = ContractIdentity.DefinitionRef(test.Id, test.Revision),
+                WithoutAuthentication = test.WithoutAuthentication,
             });
             contractRefs.Add(ContractIdentity.ContractRef(test.ContractKey, test.ContractVersion));
         }
@@ -263,7 +265,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             Name = string.IsNullOrWhiteSpace(request.Name) ? $"Contract tests · {string.Join(", ", contractRefs.Order(StringComparer.Ordinal))}" : request.Name.Trim(),
             EnvironmentId = e.EnvironmentId, TargetUrl = e.TargetUrl, EnvironmentType = e.EnvironmentType, IsProduction = e.IsProduction, ProfileId = e.ProfileId,
             ContextFingerprint = e.ContextFingerprint, Calls = calls, ContractRefs = [.. contractRefs.Order(StringComparer.Ordinal)], ConfirmMutatingCalls = request.ConfirmMutatingCalls,
-            CapturePolicy = CapturePolicy.BoundedBody, Authentication = kinds.Single(),
+            CapturePolicy = CapturePolicy.BoundedBody, Authentication = kinds.SingleOrDefault(),
         }, "Local session", ct);
         return new(started, notRun);
     }
