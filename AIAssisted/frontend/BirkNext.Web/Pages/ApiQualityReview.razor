@@ -384,6 +384,9 @@
                 <ReviewDisclosure Text="Contract/schema details" CollapseText="Hide contract/schema details" Hint="@ContractHint(contracts)" TestId="aqr-contracts-disclosure" Class="aqr-detail-disclosure">
                     <ApiReviewContractPanel Contracts="contracts" />
                 </ReviewDisclosure>
+                <ReviewDisclosure Text="Stored contract versions" CollapseText="Hide stored contract versions" Hint="@(_contractRefs.Count == 0 ? "Use a version from the contract store" : $"{_contractRefs.Count} service(s) use a stored version")" TestId="aqr-stored-disclosure" Class="aqr-detail-disclosure" @bind-Expanded="_storedContractsExpanded">
+                    @if (_storedContractsExpanded) { <BirkNext.Web.Components.ApiReviewStoredContractPicker Targets="@(_targets.Where(t => _selected.Contains(t.TargetId)).ToList())" ContractRefs="_contractRefs" Changed="StateHasChanged" /> }
+                </ReviewDisclosure>
                 @{ var restSelected = _targets.Where(t => t.ApiType == ApiReviewTargetType.Rest && _selected.Contains(t.TargetId)).ToList(); }
                 <ReviewDisclosure Text="Runtime observations" CollapseText="Hide runtime observations" Hint="@RuntimeObservationsHint(restSelected)" TestId="aqr-runtime-observations" Class="aqr-detail-disclosure" @bind-Expanded="_runtimeObservationsExpanded">
                     @if (_runtimeObservationsExpanded)
@@ -1267,6 +1270,11 @@
         }
     }
 
+    /// <summary>Stored contract versions chosen per service (contract store); applied to the targets of the next review only.</summary>
+    private readonly Dictionary<string, string> _contractRefs = new(StringComparer.Ordinal);
+    private bool _storedContractsExpanded;
+    private List<ApiReviewTarget> WithStoredContracts() => [.. _targets.Select(t => _contractRefs.TryGetValue(t.TargetId, out var reference) ? t with { ContractRef = reference } : t)];
+
     private void ToggleTarget(string id, bool selected) { if (selected) _selected.Add(id); else _selected.Remove(id); }
 
     private void OnToggleTarget((string TargetId, bool Include) change)
@@ -1359,7 +1367,7 @@
         var context = _context;
         var identity = context.ReviewIdentity ?? ReviewAuthenticationIdentity.ForContext(context);
         // The resolved mode is fixed for the run; it never changes during it.
-        var request = BuildRequest(context, identity, _targets, _selected, _history) with { AuthenticationMode = _authentication?.Effective ?? BirkNext.RuntimeAuthentication.RuntimeAuthenticationMode.Auto };
+        var request = BuildRequest(context, identity, WithStoredContracts(), _selected, _history) with { AuthenticationMode = _authentication?.Effective ?? BirkNext.RuntimeAuthentication.RuntimeAuthenticationMode.Auto };
         RuntimeReviews.MarkApiQualityRunning(context);
         StateHasChanged();
         try
@@ -1398,7 +1406,7 @@
     {
         if (_context is null || _context.ActiveTargetError is not null || _selected.Count == 0) return null;
         var identity = _context.ReviewIdentity ?? ReviewAuthenticationIdentity.ForContext(_context);
-        return BuildRequest(_context, identity, _targets, _selected, _history);
+        return BuildRequest(_context, identity, WithStoredContracts(), _selected, _history);
     }
 
     /// <summary>
@@ -1839,7 +1847,7 @@
                         <tr data-testid="aqr-contract-status-row" data-target-id="@t.Target.TargetId">
                             <td><strong>@ApiReviewPresentation.DisplayName(t.Target)</strong> <span class="aqr-muted">@(rest ? "REST" : "GraphQL")</span></td>
                             <td data-testid="aqr-contract-source">
-                                @if (rest) { @(c?.Source is { Length: > 0 } || t.Target.ContractSource is not null ? "Published OpenAPI" : "No contract configured") }
+                                @if (rest) { @(c?.Source is { } stored && stored.StartsWith("Stored contract ", StringComparison.Ordinal) ? stored : c?.Source is { Length: > 0 } || t.Target.ContractSource is not null ? "Published OpenAPI" : "No contract configured") }
                                 else if (t.GraphQlCompatibility is { } compat) { @ApiReviewGraphQlCompatibilityPresentation.SchemaSourceLabel(compat) }
                                 else { <span>Runtime introspection</span> }
                             </td>

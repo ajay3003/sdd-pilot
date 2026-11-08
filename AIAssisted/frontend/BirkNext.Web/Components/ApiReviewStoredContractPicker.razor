@@ -1,0 +1,63 @@
+@using BirkNext.ApiReview
+@using BirkNext.ContractTesting
+@namespace BirkNext.Web.Components
+
+@* API Quality Review: choose a stored contract version (the contract store Contract Testing uses) per selected service. A choice replaces the
+   configured contract URL for that service in the next review; nothing is chosen automatically. *@
+<div class="arsc" data-testid="aqr-stored-contracts">
+    @if (_contracts is null) { <p class="arsc-muted">Loading stored contracts…</p> }
+    else if (_contracts.Count == 0) { <p class="arsc-muted" data-testid="aqr-stored-none">No stored contracts yet. Import one in <a href="api-quality-review/contracts">Contract tests</a>.</p> }
+    else if (Targets.Count == 0) { <p class="arsc-muted">Select a service to choose its stored contract.</p> }
+    else
+    {
+        <table class="arsc-table">
+            <caption class="visually-hidden">Stored contract per selected service</caption>
+            <thead><tr><th scope="col">Service</th><th scope="col">Contract used by the review</th></tr></thead>
+            <tbody>
+                @foreach (var t in Targets)
+                {
+                    var protocol = t.ApiType == ApiReviewTargetType.GraphQl ? ApiContractProtocol.GraphQl : ApiContractProtocol.Rest;
+                    <tr data-testid="aqr-stored-row" data-target-id="@t.TargetId">
+                        <th scope="row">@(t.ServiceName ?? t.TargetId) <span class="arsc-muted">@(protocol == ApiContractProtocol.Rest ? "REST" : "GraphQL")</span></th>
+                        <td>
+                            <select aria-label="@($"Contract for {t.ServiceName ?? t.TargetId}")" data-testid="aqr-stored-select" value="@(ContractRefs.GetValueOrDefault(t.TargetId) ?? "")"
+                                    @onchange="e => Choose(t.TargetId, e.Value?.ToString())">
+                                <option value="">@(protocol == ApiContractProtocol.Rest ? (t.ContractSource is null ? "No contract (structural review only)" : "Published OpenAPI URL") : "Runtime introspection / fallback schema")</option>
+                                @foreach (var c in _contracts.Where(c => c.Protocol == protocol))
+                                {
+                                    @for (var v = c.LatestVersion; v >= 1; v--)
+                                    {
+                                        var reference = ContractIdentity.ContractRef(c.Key, v);
+                                        <option value="@reference">@c.Name @($"v{v}")@(v == c.LatestVersion ? " (latest)" : "")</option>
+                                    }
+                                }
+                            </select>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <p class="arsc-muted">A stored version is reviewed exactly as stored: its identity is shown in the result, and it is never replaced by a fetched document.</p>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<ApiReviewTarget> Targets { get; set; } = [];
+    [Parameter] public Dictionary<string, string> ContractRefs { get; set; } = new(StringComparer.Ordinal);
+    [Parameter] public EventCallback Changed { get; set; }
+    [Inject] private IServiceProvider Services { get; set; } = default!;
+    private IReadOnlyList<ApiContractSummary>? _contracts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Services.GetService(typeof(BirkNext.Web.Services.IContractTestingApiService)) is not BirkNext.Web.Services.IContractTestingApiService api) { _contracts = []; return; }
+        var (contracts, _) = await api.ContractsAsync();
+        _contracts = contracts ?? [];
+    }
+
+    private async Task Choose(string targetId, string? reference)
+    {
+        if (string.IsNullOrEmpty(reference)) ContractRefs.Remove(targetId); else ContractRefs[targetId] = reference;
+        await Changed.InvokeAsync();
+    }
+}

@@ -106,6 +106,9 @@ public sealed record ApiReviewTarget
     public bool AuthRequired { get; init; }
     /// <summary>OpenAPI document URL (REST) when known from configuration.</summary>
     public string? ContractSource { get; init; }
+    /// <summary>A stored contract version from the contract store ("key@vN"). When set it is the contract (REST) or schema (GraphQL) the review uses,
+    /// instead of <see cref="ContractSource"/>; the review never replaces it silently.</summary>
+    public string? ContractRef { get; init; }
     public DateTimeOffset? DiscoveredAt { get; init; }
     public ObservedEndpointConfidence Confidence { get; init; } = ObservedEndpointConfidence.Candidate;
     public List<ApiReviewOperation> Operations { get; init; } = [];

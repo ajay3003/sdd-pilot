@@ -24,7 +24,8 @@ public interface IApiReviewEngine
 /// engine never sees a token. Endpoint paths come from the request (Endpoint Discovery / configuration / contract) — nothing is guessed.
 /// </summary>
 public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedReviewGateway gateway, IOpenApiExtractor openApi, IGraphQlExtractor graphQl, ILogger<ApiReviewEngine> logger,
-    IGraphQlSchemaArtifactStore? schemaArtifacts = null, IApiEnvironmentSafetyPolicy? safetyPolicy = null, IContractSourceFetcher? contractFetcher = null) : IApiReviewEngine
+    IGraphQlSchemaArtifactStore? schemaArtifacts = null, IApiEnvironmentSafetyPolicy? safetyPolicy = null, IContractSourceFetcher? contractFetcher = null,
+    IStoredContractSource? storedContracts = null) : IApiReviewEngine
 {
     // Contract URLs (OpenAPI, GraphQL schema) are fetched under the one contract-source policy (CI-DEF-3), never with the probe client directly.
     private readonly IContractSourceFetcher contracts = contractFetcher ?? new ContractSourceFetcher(publicClient);
@@ -188,7 +189,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         OpenApiReviewResult? contractReview = null;
         NormalizedContract? contract = null;
         ApiReviewContractSummary? contractSummary = null;
-        if (!string.IsNullOrWhiteSpace(target.ContractSource))
+        if (!string.IsNullOrWhiteSpace(target.ContractRef) || !string.IsNullOrWhiteSpace(target.ContractSource))
         {
             (contractReview, contract, contractSummary) = await ReviewOpenApiAsync(target, ct);
             if (contractReview is not null) { checks.AddRange(contractReview.Checks); targetFindings.AddRange(contractReview.Findings); }
@@ -377,6 +378,18 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
 
     private async Task<(OpenApiReviewResult? Review, NormalizedContract? Contract, ApiReviewContractSummary Summary)> ReviewOpenApiAsync(ApiReviewTarget target, CancellationToken ct)
     {
+        if (target.ContractRef is { Length: > 0 } reference)
+        {
+            // A stored contract version selected for this target: used as is (no fetch), and its identity is the contract source shown.
+            var label = $"Stored contract {reference}";
+            var stored = storedContracts is null ? null : await storedContracts.GetAsync(reference, ct);
+            if (stored is null) return (null, null, new ApiReviewContractSummary { Kind = "OpenAPI", Source = label, Available = false, Status = ApiReviewCheckResult.Fail, Note = $"Stored contract {reference} was not found." });
+            if (stored.Protocol != "Rest") return (null, null, new ApiReviewContractSummary { Kind = "OpenAPI", Source = label, Available = false, Status = ApiReviewCheckResult.Fail, Note = $"{reference} is a GraphQL schema, not an OpenAPI contract." });
+            if (stored.Json is not { } storedJson)
+                return (null, null, new ApiReviewContractSummary { Kind = "OpenAPI", Source = label, Available = false, Status = ApiReviewCheckResult.NotTested,
+                    Note = $"{reference} was imported from a Source Analysis snapshot without the document text; the contract review needs the document." });
+            return ReviewDocument(storedJson, label, target);
+        }
         var source = target.ContractSource!;
         {
             var fetched = await contracts.FetchAsync(source, ct);
@@ -388,15 +401,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
                 return (null, null, new ApiReviewContractSummary { Kind = "OpenAPI", Source = source, Available = false, Status = ApiReviewCheckResult.NotTested, Note = $"Contract not reachable: {fetched.Problem}" });
             if (fetched.Text is not { } json)
                 return (null, null, new ApiReviewContractSummary { Kind = "OpenAPI", Source = source, Available = false, Status = ApiReviewCheckResult.NotTested, Note = $"Contract could not be read: {fetched.Problem}" });
-            var review = OpenApiDocumentReview.Review(json, source, target.TargetId);
-            var extraction = review.Valid && review.Version is { } v && v.StartsWith("3.", StringComparison.Ordinal) ? openApi.Extract(json) : null;
-            var summary = new ApiReviewContractSummary
-            {
-                Kind = "OpenAPI", Source = source, Available = review.Valid, Status = review.Valid ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Fail, Version = review.Version, Title = review.Title,
-                OperationCount = review.Operations.Count, TypeCount = extraction?.Contract?.Schemas.Count ?? 0, Hash = review.Hash,
-                Note = review.Valid ? (extraction is { Success: true } ? $"{review.Operations.Count} operations, {extraction.Contract!.Schemas.Count} schemas parsed for live validation." : $"{review.Operations.Count} operations; response schemas not parsed ({extraction?.ErrorMessage ?? "Swagger 2.0 documents are reviewed for documentation quality only"}).") : review.Error ?? "Invalid document.",
-            };
-            return (review, extraction is { Success: true } ? extraction.Contract : null, summary);
+            return ReviewDocument(json, source, target);
         }
     }
 
@@ -956,12 +961,35 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         return compatibility;
     }
 
+    /// <summary>The OpenAPI review and runtime extraction of one document (fetched or stored); <paramref name="source"/> is the identity shown.</summary>
+    private (OpenApiReviewResult? Review, NormalizedContract? Contract, ApiReviewContractSummary Summary) ReviewDocument(string json, string source, ApiReviewTarget target)
+    {
+            var review = OpenApiDocumentReview.Review(json, source, target.TargetId);
+            var extraction = review.Valid && review.Version is { } v && v.StartsWith("3.", StringComparison.Ordinal) ? openApi.Extract(json) : null;
+            var summary = new ApiReviewContractSummary
+            {
+                Kind = "OpenAPI", Source = source, Available = review.Valid, Status = review.Valid ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Fail, Version = review.Version, Title = review.Title,
+                OperationCount = review.Operations.Count, TypeCount = extraction?.Contract?.Schemas.Count ?? 0, Hash = review.Hash,
+                Note = review.Valid ? (extraction is { Success: true } ? $"{review.Operations.Count} operations, {extraction.Contract!.Schemas.Count} schemas parsed for live validation." : $"{review.Operations.Count} operations; response schemas not parsed ({extraction?.ErrorMessage ?? "Swagger 2.0 documents are reviewed for documentation quality only"}).") : review.Error ?? "Invalid document.",
+            };
+            return (review, extraction is { Success: true } ? extraction.Contract : null, summary);
+    }
+
     /// <summary>
     /// A schema URL in <see cref="ApiReviewTarget.ContractSource"/>: SDL or an introspection result, fetched read-only. Null when none is
     /// configured or it cannot be read.
     /// </summary>
     private async Task<(GraphQlNormalizedContract? Schema, string? Detail)> FetchSchemaArtifactAsync(ApiReviewTarget target, CancellationToken ct)
     {
+        if (target.ContractRef is { Length: > 0 } reference && storedContracts is not null)
+        {
+            var stored = await storedContracts.GetAsync(reference, ct);
+            if (stored is not { Protocol: "GraphQl", Text.Length: > 0 }) { logger.LogInformation("Stored GraphQL schema {Reference} is not available; compatibility falls back to Not assessed.", reference); return (null, null); }
+            var storedSchema = stored.Text.TrimStart().StartsWith('{')
+                ? graphQl.Extract(stored.Text.Contains("\"data\"", StringComparison.Ordinal) ? stored.Text : $"{{\"data\":{stored.Text}}}") is { Success: true, Contract: { } c } ? c : null
+                : GraphQlSdlSchema.FromSdl(stored.Text, out _);
+            return storedSchema is null ? (null, null) : (storedSchema, $"Stored contract {reference}");
+        }
         if (string.IsNullOrWhiteSpace(target.ContractSource)) return (null, null);
         {
             var fetched = await contracts.FetchAsync(target.ContractSource, ct);
