@@ -144,6 +144,7 @@
 
                 @if (View == "operations") { @OperationsView(d) }
                 else if (View == "tests") { @TestsView(d) }
+                else if (View == "chains") { @ChainsView(d) }
                 else if (View == "coverage") { @CoverageView(d) }
                 else if (View == "lifecycle") { @LifecycleView(d) }
                 else { @ChangesView(d) }
@@ -159,11 +160,17 @@
     [SupplyParameterFromQuery(Name = "test")] public Guid? TestId { get; set; }
     [SupplyParameterFromQuery(Name = "from")] public int? FromQuery { get; set; }
 
-    private static readonly (string Key, string Label)[] Views = [("operations", "Operations"), ("tests", "Tests"), ("changes", "Changes"), ("coverage", "Coverage"), ("lifecycle", "Lifecycle & retention")];
+    private static readonly (string Key, string Label)[] Views = [("operations", "Operations"), ("tests", "Tests"), ("chains", "Chains"), ("changes", "Changes"), ("coverage", "Coverage"), ("lifecycle", "Lifecycle & retention")];
     private string View => Views.Any(v => v.Key == ViewQuery) ? ViewQuery! : "operations";
     private IContractTestingApiService? Api => Services.GetService(typeof(IContractTestingApiService)) as IContractTestingApiService;
 
-    private bool _loading = true, _busy, _importByUrl, _importFromSource, _confirmMutating;
+    private bool _loading = true, _busy, _importByUrl, _importFromSource, _confirmMutating, _stopOnFailure;
+    private string _rowIds = "";
+    private int? _maxExecutions;
+    private int _reauthWait;
+    private IReadOnlyList<ContractTestChain>? _chains;
+    private ChainEdit? _chainEdit;
+    private List<string> _chainProblems = [];
     private IReadOnlyList<SourceContractCandidate>? _sourceContracts;
     private string? _error, _message, _importUrl, _importFileName, _importContent, _importTarget, _importName, _basePath, _environmentName;
     private Guid? _runId;
@@ -216,6 +223,7 @@
                 _selected.RemoveWhere(id => _tests?.All(t => t.Test.Id != id) != false);
                 if (TestId is { } id && _tests?.Any(t => t.Test.Id == id) == true) (_options, _error) = await api.DatasetsAsync(id, _environment?.EnvironmentId);
                 if (View == "coverage") (_coverage, _error) = await api.CoverageAsync(key, _detail.Version);
+                if (View == "chains") (_chains, _error) = await api.ChainsAsync();
                 if (View == "lifecycle") (_retention, _error) = await api.RetentionAsync(key);
                 if (View == "changes" && _detail.Versions.Count > 1)
                 {
@@ -384,6 +392,8 @@
         var (result, error) = await api.RunAsync(new ContractTestRunRequest
         {
             TestIds = [.. _selected], Environment = _environment, ConfirmMutatingCalls = _confirmMutating, BasePath = string.IsNullOrWhiteSpace(_basePath) ? null : _basePath.Trim(),
+            StopOnFirstFailure = _stopOnFailure, MaxExecutions = _maxExecutions, ReauthenticationWaitSeconds = Math.Clamp(_reauthWait, 0, 900),
+            RowIds = [.. _rowIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)],
         });
         _busy = false;
         if (result?.Run is { RunId: { } runId } run)
@@ -477,6 +487,218 @@
         }
     </section>;
 
+    /// <summary>Run options shared by test runs and chain runs: rows, execution limit, stop policy and the attended re-sign-in wait.</summary>
+    private RenderFragment RunOptions() => @<details class="ct-run-options" data-testid="ct-run-options">
+        <summary>Run options</summary>
+        <div class="ct-row">
+            <label class="ct-inline"><input type="checkbox" data-testid="ct-stop-on-failure" @bind="_stopOnFailure" /> Stop at the first failure (the remaining calls are skipped, never sent)</label>
+            <label class="ct-inline">Only these dataset rows <input class="form-control" data-testid="ct-row-ids" placeholder="all rows (e.g. r-001, r-007)" @bind="_rowIds" @bind:event="oninput" /></label>
+            <label class="ct-inline">At most <input type="number" min="1" max="500" class="form-control ct-narrow" data-testid="ct-max-executions" @bind="_maxExecutions" /> executions</label>
+            <label class="ct-inline">If the attended session expires, wait up to <input type="number" min="0" max="900" class="form-control ct-narrow" data-testid="ct-reauth-wait" @bind="_reauthWait" /> s for a new sign-in</label>
+        </div>
+        <p class="ct-muted">A data-driven test runs once per dataset row; rows beyond the limit are listed as not run. A run never falls back to sending without authentication.</p>
+    </details>;
+
+    // ── Chains ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private sealed class OutputEdit { public string Name { get; set; } = ""; public OutputSource Source { get; set; } = OutputSource.JsonBody; public string Path { get; set; } = "$."; public string Type { get; set; } = ""; }
+    private sealed class InputEdit { public string Input { get; set; } = ""; public string FromStep { get; set; } = ""; public string Output { get; set; } = ""; }
+    private sealed class StepEdit
+    {
+        public string StepId { get; set; } = "";
+        public Guid? TestId { get; set; }
+        public string RowId { get; set; } = "";
+        public List<OutputEdit> Outputs { get; } = [];
+        public List<InputEdit> Inputs { get; } = [];
+    }
+    private sealed class ChainEdit
+    {
+        public Guid? Id { get; init; }
+        public int? Revision { get; init; }
+        public string Name { get; set; } = "";
+        public List<StepEdit> Steps { get; } = [];
+    }
+
+    private void NewChain() { _chainEdit = new() { Name = "" }; _chainEdit.Steps.Add(new() { StepId = "step1" }); _chainProblems = []; }
+
+    private void EditChain(ContractTestChain chain)
+    {
+        _chainProblems = [];
+        _chainEdit = new() { Id = chain.Id, Revision = chain.Revision, Name = chain.Name };
+        foreach (var s in chain.Steps)
+        {
+            var step = new StepEdit { StepId = s.StepId, TestId = s.TestId, RowId = s.RowId ?? "" };
+            step.Outputs.AddRange(s.Extract.Select(e => new OutputEdit { Name = e.Name, Source = e.Source, Path = e.Path, Type = e.Type ?? "" }));
+            step.Inputs.AddRange(s.Inputs.Select(i => new InputEdit { Input = i.Input, FromStep = i.FromStep, Output = i.Output }));
+            _chainEdit.Steps.Add(step);
+        }
+    }
+
+    private async Task SaveChainAsync()
+    {
+        if (Api is not { } api || _chainEdit is not { } edit) return;
+        _busy = true; _error = null; _message = null;
+        var save = new ContractChainSave
+        {
+            Name = edit.Name, ExpectedRevision = edit.Revision,
+            Steps = [.. edit.Steps.Select(s => new ContractChainStep
+            {
+                StepId = s.StepId.Trim(), TestId = s.TestId ?? Guid.Empty, RowId = string.IsNullOrWhiteSpace(s.RowId) ? null : s.RowId.Trim(),
+                Extract = [.. s.Outputs.Select(o => new OutputExtraction(o.Name.Trim(), o.Source, o.Path.Trim(), string.IsNullOrEmpty(o.Type) ? null : o.Type))],
+                Inputs = [.. s.Inputs.Select(i => new ContractChainInput(i.Input, i.FromStep, i.Output))],
+            })],
+        };
+        var (result, error) = await api.SaveChainAsync(edit.Id, save);
+        _busy = false;
+        if (result?.Chain is { } saved && result.Problems.Count == 0) { _chainEdit = null; _chainProblems = []; _message = $"Chain {saved.Name} saved as revision {saved.Revision}."; (_chains, _error) = await api.ChainsAsync(); }
+        else { _chainProblems = result?.Problems ?? []; _error = _chainProblems.Count == 0 ? error ?? "The chain was not saved." : null; }
+    }
+
+    private async Task DeleteChainAsync(ContractTestChain chain)
+    {
+        if (Api is not { } api) return;
+        _busy = true; _error = await api.DeleteChainAsync(chain.Id); _busy = false;
+        if (_error is null) { _message = $"Chain {chain.Name} deleted. Its runs stay in Execution Results."; (_chains, _error) = await api.ChainsAsync(); }
+    }
+
+    private async Task RunChainAsync(ContractTestChain chain)
+    {
+        if (Api is not { } api || _environment is null) return;
+        _busy = true; _error = null; _message = null; _runId = null;
+        var (result, error) = await api.RunChainAsync(chain.Id, new ContractChainRunRequest
+        {
+            Environment = _environment, ConfirmMutatingCalls = _confirmMutating, BasePath = string.IsNullOrWhiteSpace(_basePath) ? null : _basePath.Trim(),
+            StopOnFirstFailure = _stopOnFailure, ReauthenticationWaitSeconds = Math.Clamp(_reauthWait, 0, 900),
+        });
+        _busy = false;
+        if (result?.Run is { RunId: { } runId } run) { _runId = runId; _message = run.Message ?? "Chain run started."; }
+        else _error = result?.NotRun is { Count: > 0 } notRun ? "The chain was not run. " + string.Join(" ", notRun) : error ?? "The chain was not run.";
+    }
+
+    private static void SetInputSource(InputEdit input, string? value)
+    {
+        var parts = (value ?? "").Split('.', 2);
+        input.FromStep = parts[0];
+        input.Output = parts.Length > 1 ? parts[1] : "";
+    }
+
+    private string TestName(Guid id) => _tests?.FirstOrDefault(t => t.Test.Id == id)?.Test.Name ?? $"test {id.ToString()[..8]} (another contract)";
+
+    private RenderFragment ChainsView(ApiContractDetail d) => __builder =>
+    {
+        <section class="ct-card" aria-labelledby="ct-chains-h" data-testid="ct-chains">
+            <h3 id="ct-chains-h">Chains</h3>
+            <p class="ct-muted">A chain runs existing tests in dependency order and passes outputs (an id, a code) from one call to the next. A step whose dependency did not pass is blocked and never sent; outputs are never invented.</p>
+            @if (_chains is { Count: > 0 } chains)
+            {
+                <div class="ct-row ct-runbar">
+                    <label class="ct-inline"><input type="checkbox" data-testid="ct-chain-confirm" @bind="_confirmMutating" /> Confirm data-changing calls for chain runs</label>
+                    @if (_runId is { } runId) { <a data-testid="ct-run-link" href="@($"execution-results?run={runId}")">Open the run in Execution Results →</a> }
+                </div>
+                @RunOptions()
+                <div class="ct-scroll">
+                    <table class="ct-table" data-testid="ct-chain-table">
+                        <caption class="visually-hidden">Chains</caption>
+                        <thead><tr><th scope="col">Chain</th><th scope="col">Steps</th><th scope="col">Revision</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                        <tbody>
+                            @foreach (var c in chains)
+                            {
+                                <tr data-testid="ct-chain-row">
+                                    <td>@c.Name</td>
+                                    <td>@string.Join(" → ", c.Steps.Select(s => s.StepId))</td>
+                                    <td>r@(c.Revision)</td>
+                                    <td class="ct-actions">
+                                        <button class="btn btn-primary" data-testid="ct-chain-run" disabled="@(_busy || _environment is null)" @onclick="() => RunChainAsync(c)">Run</button>
+                                        <button class="btn btn-secondary" data-testid="ct-chain-edit" @onclick="() => EditChain(c)">Edit</button>
+                                        <button class="btn btn-secondary" data-testid="ct-chain-delete" disabled="@_busy" @onclick="() => DeleteChainAsync(c)">Delete</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else { <p class="ct-muted" data-testid="ct-chains-empty">No chains yet.</p> }
+            @if (_chainEdit is null) { <button class="btn btn-secondary" data-testid="ct-chain-new" disabled="@(_tests is not { Count: > 0 })" @onclick="NewChain">New chain</button> }
+            else { @ChainEditor(_chainEdit) }
+        </section>
+    };
+
+    private RenderFragment ChainEditor(ChainEdit edit) => __builder =>
+    {
+        <div class="ct-chain-editor" data-testid="ct-chain-editor">
+            <label class="ct-field">Chain name <input class="form-control" data-testid="ct-chain-name" @bind="edit.Name" @bind:event="oninput" /></label>
+            @for (var i = 0; i < edit.Steps.Count; i++)
+            {
+                var index = i; var step = edit.Steps[i];
+                var test = step.TestId is { } tid ? _tests?.FirstOrDefault(t => t.Test.Id == tid)?.Test : null;
+                var earlier = edit.Steps.Take(index).ToList();
+                <fieldset class="ct-chain-step" data-testid="ct-chain-step">
+                    <legend>Step @(index + 1)</legend>
+                    <div class="ct-row">
+                        <label class="ct-inline">Step id <input class="form-control ct-narrow" data-testid="ct-step-id" @bind="step.StepId" @bind:event="oninput" /></label>
+                        <label class="ct-inline">Test
+                            <select class="form-control" data-testid="ct-step-test" value="@(step.TestId?.ToString() ?? "")" @onchange="e => step.TestId = Guid.TryParse(e.Value?.ToString(), out var g) ? g : null">
+                                <option value="">Choose…</option>
+                                @if (step.TestId is { } chosen && _tests?.All(t => t.Test.Id != chosen) != false) { <option value="@chosen">@TestName(chosen)</option> }
+                                @foreach (var t in _tests ?? []) { <option value="@t.Test.Id">@t.Test.Name</option> }
+                            </select>
+                        </label>
+                        <label class="ct-inline">Dataset row <input class="form-control ct-narrow" data-testid="ct-step-row" placeholder="first row" @bind="step.RowId" @bind:event="oninput" /></label>
+                        <button type="button" class="btn btn-secondary" aria-label="@($"Remove step {index + 1}")" @onclick="() => edit.Steps.RemoveAt(index)">Remove step</button>
+                    </div>
+                    <h4 class="ct-subhead">Outputs for later steps</h4>
+                    @foreach (var o in step.Outputs.ToList())
+                    {
+                        <div class="ct-row" data-testid="ct-step-output">
+                            <input class="form-control ct-narrow" aria-label="Output name" data-testid="ct-output-name" placeholder="childId" @bind="o.Name" @bind:event="oninput" />
+                            <select class="form-control" aria-label="Read from" data-testid="ct-output-source" @bind="o.Source">
+                                <option value="@OutputSource.JsonBody">Response body (JSON path)</option><option value="@OutputSource.GraphQlData">GraphQL data path</option><option value="@OutputSource.Header">Response header</option>
+                            </select>
+                            <input class="form-control" aria-label="Path or header name" data-testid="ct-output-path" @bind="o.Path" @bind:event="oninput" />
+                            <select class="form-control" aria-label="Expected type" data-testid="ct-output-type" @bind="o.Type">
+                                <option value="">Any type</option>
+                                @foreach (var t in new[] { "String", "Integer", "Number", "Boolean", "Object", "Array" }) { <option value="@t">@t</option> }
+                            </select>
+                            <button type="button" class="btn btn-secondary" aria-label="Remove output" @onclick="() => step.Outputs.Remove(o)">✕</button>
+                        </div>
+                    }
+                    <button type="button" class="btn btn-secondary" data-testid="ct-add-output" @onclick="() => step.Outputs.Add(new OutputEdit())">Add output</button>
+                    @if (index > 0)
+                    {
+                        <h4 class="ct-subhead">Inputs from earlier steps</h4>
+                        @foreach (var input in step.Inputs.ToList())
+                        {
+                            <div class="ct-row" data-testid="ct-step-input">
+                                <select class="form-control" aria-label="Test input" data-testid="ct-input-name" @bind="input.Input">
+                                    <option value="">Input…</option>
+                                    @foreach (var name in test?.Inputs.Select(x => x.Name) ?? []) { <option value="@name">@name</option> }
+                                </select>
+                                <span>←</span>
+                                <select class="form-control" aria-label="From output" data-testid="ct-input-from" value="@($"{input.FromStep}.{input.Output}")"
+                                        @onchange="e => SetInputSource(input, e.Value?.ToString())">
+                                    <option value=".">Output…</option>
+                                    @foreach (var s in earlier) { foreach (var o in s.Outputs) { <option value="@($"{s.StepId}.{o.Name}")">@s.StepId → @o.Name</option> } }
+                                </select>
+                                <button type="button" class="btn btn-secondary" aria-label="Remove input" @onclick="() => step.Inputs.Remove(input)">✕</button>
+                            </div>
+                        }
+                        <button type="button" class="btn btn-secondary" data-testid="ct-add-input" @onclick="() => step.Inputs.Add(new InputEdit())">Add input</button>
+                    }
+                </fieldset>
+            }
+            <div class="ct-row">
+                <button type="button" class="btn btn-secondary" data-testid="ct-add-step" @onclick='() => edit.Steps.Add(new StepEdit { StepId = $"step{edit.Steps.Count + 1}" })'>Add step</button>
+                <button type="button" class="btn btn-primary" data-testid="ct-chain-save" disabled="@(_busy || string.IsNullOrWhiteSpace(edit.Name))" @onclick="SaveChainAsync">Save chain</button>
+                <button type="button" class="btn btn-secondary" data-testid="ct-chain-cancel" @onclick="() => { _chainEdit = null; _chainProblems = []; }">Cancel</button>
+            </div>
+            @if (_chainProblems.Count > 0)
+            {
+                <ul class="ct-error" role="alert" data-testid="ct-chain-problems">@foreach (var p in _chainProblems) { <li>@p</li> }</ul>
+            }
+        </div>
+    };
+
     private RenderFragment TestsView(ApiContractDetail d) => @<section class="ct-card" aria-labelledby="ct-tests-h" data-testid="ct-tests">
         <h3 id="ct-tests-h">Tests</h3>
         @if (_tests is null || _tests.Count == 0)
@@ -492,6 +714,7 @@
                 <button class="btn btn-primary" data-testid="ct-run" disabled="@(_busy || _environment is null || _selected.Count == 0)" @onclick="RunAsync">Run selected (@_selected.Count)</button>
                 @if (_runId is { } runId) { <a data-testid="ct-run-link" href="@($"execution-results?run={runId}")">Open the run in Execution Results →</a> }
             </div>
+            @RunOptions()
             <div class="ct-scroll">
                 <table class="ct-table" data-testid="ct-test-table">
                     <caption class="visually-hidden">Contract tests with readiness, contract impact and the latest result</caption>

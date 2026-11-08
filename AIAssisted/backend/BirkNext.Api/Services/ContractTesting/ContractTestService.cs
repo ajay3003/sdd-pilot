@@ -744,4 +744,185 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         row.Operation = t.Operation; row.Name = t.Name.Length > 300 ? t.Name[..300] : t.Name; row.Revision = t.Revision; row.UpdatedAt = t.UpdatedAt;
         row.DocumentJson = JsonSerializer.Serialize(t, ExecutionEvidenceStore.Json);
     }
+
+    // ── Chains ──────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    public const int MaxChainSteps = 50;
+
+    private static ContractTestChain Chain(ContractTestChainRow row) => JsonSerializer.Deserialize<ContractTestChain>(row.DocumentJson, ExecutionEvidenceStore.Json)!;
+
+    /// <summary>The current revision of every chain.</summary>
+    public async Task<IReadOnlyList<ContractTestChain>> ChainsAsync(CancellationToken ct) =>
+        [.. (await db.ContractTestChains.AsNoTracking().ToListAsync(ct)).GroupBy(r => r.ChainId).Select(g => Chain(g.MaxBy(r => r.Revision)!)).OrderBy(c => c.Name, StringComparer.Ordinal)];
+
+    /// <summary>A chain at a revision (null = the current one).</summary>
+    public async Task<ContractTestChain?> ChainAsync(Guid id, int? revision, CancellationToken ct)
+    {
+        var rows = db.ContractTestChains.AsNoTracking().Where(r => r.ChainId == id);
+        var row = revision is { } rev ? await rows.FirstOrDefaultAsync(r => r.Revision == rev, ct) : await rows.OrderByDescending(r => r.Revision).FirstOrDefaultAsync(ct);
+        return row is null ? null : Chain(row);
+    }
+
+    /// <summary>Creates a chain or saves the next revision of one. Refused with every problem found (unknown tests, outputs or inputs, sensitive
+    /// outputs, cycles); a stale expected revision is a conflict.</summary>
+    public async Task<ContractChainSaveResult> SaveChainAsync(Guid? id, ContractChainSave save, CancellationToken ct)
+    {
+        var problems = new List<string>();
+        if (string.IsNullOrWhiteSpace(save.Name) || save.Name.Trim().Length > 200) problems.Add("Name the chain (max 200 characters).");
+        problems.AddRange(await ChainProblemsAsync(save.Steps, ct));
+        ContractTestChain? current = null;
+        if (id is { } existing)
+        {
+            current = await ChainAsync(existing, null, ct);
+            if (current is null) return new(null, ["Not found."]);
+            if (save.ExpectedRevision != current.Revision) return new(current, [$"The chain changed meanwhile (now r{current.Revision}); reload it."], Conflict: true);
+        }
+        if (problems.Count > 0) return new(null, problems);
+        var now = _clock.GetUtcNow();
+        var chain = new ContractTestChain
+        {
+            Id = current?.Id ?? Guid.NewGuid(), Name = save.Name.Trim(), Description = save.Description?.Trim(), Revision = (current?.Revision ?? 0) + 1,
+            Steps = save.Steps, CreatedAt = current?.CreatedAt ?? now, UpdatedAt = now,
+        };
+        db.ContractTestChains.Add(new ContractTestChainRow { Id = Guid.NewGuid(), ChainId = chain.Id, Revision = chain.Revision, Name = chain.Name,
+            DocumentJson = JsonSerializer.Serialize(chain, ExecutionEvidenceStore.Json), CreatedAt = now });
+        await db.SaveChangesAsync(ct);
+        return new(chain, []);
+    }
+
+    /// <summary>Deletes a chain with all its revisions. Runs keep their own copy of every step they executed.</summary>
+    public async Task<bool> DeleteChainAsync(Guid id, CancellationToken ct)
+    {
+        var rows = await db.ContractTestChains.Where(r => r.ChainId == id).ToListAsync(ct);
+        if (rows.Count == 0) return false;
+        db.ContractTestChains.RemoveRange(rows);
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    private async Task<List<string>> ChainProblemsAsync(List<ContractChainStep> steps, CancellationToken ct)
+    {
+        var problems = new List<string>();
+        if (steps.Count is 0 or > MaxChainSteps) { problems.Add($"A chain has 1 to {MaxChainSteps} steps."); return problems; }
+        foreach (var dup in steps.GroupBy(s => s.StepId, StringComparer.Ordinal).Where(g => g.Count() > 1)) problems.Add($"Step id {dup.Key} is used twice.");
+        var outputs = steps.GroupBy(s => s.StepId ?? "", StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.SelectMany(s => s.Extract.Select(e => e.Name)).ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal);
+        foreach (var step in steps)
+        {
+            if (!ExecutionOutputs.StepId().IsMatch(step.StepId ?? "")) problems.Add($"Step id \"{step.StepId}\": letters, digits, '_' or '-' (max 64).");
+            if (await LoadAsync(step.TestId, ct) is not { } test) { problems.Add($"{step.StepId}: the test does not exist."); continue; }
+            if (step.RowId is { } rowId && BoundVariants(test).All(v => v.RowId != rowId)) problems.Add($"{step.StepId}: the bound dataset has no row {rowId}.");
+            if (step.Extract.Count > ExecutionOutputs.MaxExtractions) problems.Add($"{step.StepId}: at most {ExecutionOutputs.MaxExtractions} outputs.");
+            problems.AddRange(step.Extract.Select(ExecutionOutputs.DefinitionProblem).OfType<string>().Select(p => $"{step.StepId}: {p}"));
+            foreach (var dup in step.Extract.GroupBy(e => e.Name, StringComparer.Ordinal).Where(g => g.Count() > 1)) problems.Add($"{step.StepId}: output {dup.Key} is defined twice.");
+            foreach (var input in step.Inputs)
+            {
+                if (test.Inputs.All(i => i.Name != input.Input)) problems.Add($"{step.StepId}: the test has no input {input.Input}.");
+                if (input.FromStep == step.StepId) problems.Add($"{step.StepId}: a step cannot use its own output.");
+                else if (!outputs.TryGetValue(input.FromStep, out var provided)) problems.Add($"{step.StepId}: step {input.FromStep} does not exist.");
+                else if (!provided.Contains(input.Output)) problems.Add($"{step.StepId}: step {input.FromStep} provides no output {input.Output}.");
+            }
+            foreach (var dep in step.DependsOn.Where(d => d == step.StepId || !outputs.ContainsKey(d))) problems.Add($"{step.StepId}: dependency {dep} is not another step of the chain.");
+        }
+        if (problems.Count == 0 && Cycle(steps) is { } cycle) problems.Add($"The steps depend on each other in a cycle: {string.Join(" → ", cycle)}.");
+        return problems;
+    }
+
+    private static IEnumerable<string> Dependencies(ContractChainStep s) => s.DependsOn.Concat(s.Inputs.Select(i => i.FromStep)).Distinct(StringComparer.Ordinal);
+
+    /// <summary>The first dependency cycle found (as a path that returns to its start), or null.</summary>
+    internal static List<string>? Cycle(IReadOnlyList<ContractChainStep> steps)
+    {
+        var map = steps.ToDictionary(s => s.StepId, StringComparer.Ordinal);
+        var state = new Dictionary<string, int>(StringComparer.Ordinal);
+        var path = new List<string>();
+        List<string>? Visit(string id)
+        {
+            if (state.TryGetValue(id, out var s)) return s == 1 ? [.. path.Skip(path.IndexOf(id)), id] : null;
+            state[id] = 1; path.Add(id);
+            foreach (var dep in map.TryGetValue(id, out var step) ? Dependencies(step) : [])
+                if (Visit(dep) is { } found) return found;
+            path.RemoveAt(path.Count - 1); state[id] = 2;
+            return null;
+        }
+        return steps.Select(s => Visit(s.StepId)).FirstOrDefault(c => c is not null);
+    }
+
+    /// <summary>Dependency order, keeping the authored order wherever dependencies allow it (the steps are known to be acyclic).</summary>
+    internal static List<ContractChainStep> Order(IReadOnlyList<ContractChainStep> steps)
+    {
+        var done = new HashSet<string>(StringComparer.Ordinal);
+        var ordered = new List<ContractChainStep>();
+        while (ordered.Count < steps.Count)
+        {
+            var next = steps.First(s => !done.Contains(s.StepId) && Dependencies(s).All(done.Contains));
+            ordered.Add(next); done.Add(next.StepId);
+        }
+        return ordered;
+    }
+
+    /// <summary>
+    /// Runs the current revision of a chain as one Execution Evidence run, steps in dependency order. Every step must be ready (contract,
+    /// environment, authentication, its own Test Data except the inputs taken from earlier steps); otherwise nothing is run. Step outputs are
+    /// resolved by the run at send time; a step whose dependency did not pass is Blocked and never sent.
+    /// </summary>
+    public async Task<ContractTestRunResult> RunChainAsync(Guid id, ContractChainRunRequest request, CancellationToken ct)
+    {
+        if (await ChainAsync(id, null, ct) is not { } chain) return new(null, ["Not found."]);
+        if (PathProblem(request.BasePath, "The API base path") is { } baseProblem) return new(null, [baseProblem]);
+        if (PathProblem(request.GraphQlPath, "The GraphQL endpoint path") is { } gqlProblem) return new(null, [gqlProblem]);
+        if (await ChainProblemsAsync(chain.Steps, ct) is { Count: > 0 } invalid) return new(null, invalid);
+        var notRun = new List<string>();
+        var calls = new List<ExecutionCallDefinition>();
+        var contractRefs = new HashSet<string>(StringComparer.Ordinal);
+        var kinds = new HashSet<ExecutionAuthenticationKind>();
+        foreach (var step in Order(chain.Steps))
+        {
+            var test = (await LoadAsync(step.TestId, ct))!;
+            var latest = await registry.LatestVersionAsync(test.ContractKey, ct) ?? 0;
+            var view = await ViewAsync(test, latest, [], request.Environment, ct);
+            var refusals = view.Readiness.Items.Where(i => i.State == ReadinessItemState.Blocked || i.State == ReadinessItemState.Missing && i.Area != "Test Data").Select(i => i.Text).ToList();
+            if (refusals.Count > 0) { notRun.Add($"{step.StepId} ({test.Name}): {string.Join(" ", refusals)}"); continue; }
+            var variants = BoundVariants(test);
+            var (rowId, values, rowNames) = step.RowId is { } wanted ? variants.First(v => v.RowId == wanted) : variants[0];
+            // Inputs taken from earlier steps become step placeholders the run resolves at send time.
+            string? Map(string? text) => text is null ? null : step.Inputs.Aggregate(text, (t, i) => t.Replace($"{{{{dataset.{i.Input}}}}}", $"{{{{steps.{i.FromStep}.{i.Output}}}}}", StringComparison.Ordinal));
+            var mapped = test with
+            {
+                Template = test.Template with
+                {
+                    Path = Map(test.Template.Path)!, Body = Map(test.Template.Body), GraphQlVariablesJson = Map(test.Template.GraphQlVariablesJson),
+                    Query = test.Template.Query.ToDictionary(q => q.Key, q => Map(q.Value)!, StringComparer.Ordinal),
+                    Headers = test.Template.Headers.ToDictionary(h => h.Key, h => Map(h.Value)!, StringComparer.OrdinalIgnoreCase),
+                },
+            };
+            var (call, missing) = ContractTestRules.Materialize(mapped, values);
+            if (call is null) { notRun.Add($"{step.StepId} ({test.Name}): missing {string.Join(", ", missing)}."); continue; }
+            var binding = await BindingAsync(test.ContractKey, request.Environment.EnvironmentId, ct);
+            if (!test.WithoutAuthentication) kinds.Add(binding?.Authentication ?? ExecutionAuthenticationKind.None);
+            var basePath = (request.BasePath ?? binding?.BasePath ?? "").Trim().TrimEnd('/');
+            var path = call.Protocol == ExecutionProtocol.GraphQl && (request.GraphQlPath ?? binding?.GraphQlPath) is { Length: > 0 } endpoint ? endpoint.Trim() : basePath + call.Path;
+            var source = test.Binding is { } bound ? $"{bound.Alias}@v{bound.Version}" : "";
+            calls.Add(call with
+            {
+                Path = path, Name = $"{step.StepId}: {test.Name}", OperationRef = ContractIdentity.OperationRef(test.ContractKey, test.ContractVersion, test.Operation),
+                TestDataRefs = test.Binding is { } b ? [$"{b.Alias}@v{b.Version}"] : [], DefinitionVersion = ContractIdentity.DefinitionRef(test.Id, test.Revision),
+                WithoutAuthentication = test.WithoutAuthentication, DatasetRow = rowId is null ? null : $"{source}#{rowId}",
+                ResolvedValues = ContractTestRules.Resolved(mapped, values, name => rowNames.Contains(name) ? $"row {rowId} of {source}" : $"member of {source}"),
+                StepId = step.StepId, DependsOn = [.. Dependencies(step)], Extract = step.Extract,
+            });
+            contractRefs.Add(ContractIdentity.ContractRef(test.ContractKey, test.ContractVersion));
+        }
+        if (notRun.Count > 0) return new(null, [.. notRun, "The chain was not run: every step must be ready, because later steps depend on earlier ones."]);
+        if (kinds.Count > 1) return new(null, ["The chain's steps use different authentication in this environment; a chain runs with one authentication."]);
+        var e = request.Environment;
+        var started = await runs.StartAsync(new ExecutionRunRequest
+        {
+            Name = string.IsNullOrWhiteSpace(request.Name) ? $"Chain · {chain.Name}" : request.Name.Trim(),
+            EnvironmentId = e.EnvironmentId, TargetUrl = e.TargetUrl, EnvironmentType = e.EnvironmentType, IsProduction = e.IsProduction, ProfileId = e.ProfileId,
+            ContextFingerprint = e.ContextFingerprint, Calls = calls, ContractRefs = [.. contractRefs.Order(StringComparer.Ordinal)], ConfirmMutatingCalls = request.ConfirmMutatingCalls,
+            CapturePolicy = CapturePolicy.BoundedBody, Authentication = kinds.SingleOrDefault(), ReauthenticationWaitSeconds = request.ReauthenticationWaitSeconds,
+            StopOnFirstFailure = request.StopOnFirstFailure, ChainRef = ContractIdentity.ChainRef(chain.Id, chain.Revision),
+        }, "Local session", ct);
+        return new(started, []);
+    }
 }

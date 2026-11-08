@@ -224,6 +224,41 @@ public sealed class ContractTestingController(ContractRegistryService registry, 
         return store.Delete(environmentId) ? NoContent() : NotFound();
     }
 
+    [HttpGet("chains")]
+    public async Task<ActionResult<IReadOnlyList<ContractTestChain>>> Chains(CancellationToken ct) => Ok(await tests.ChainsAsync(ct));
+
+    [HttpGet("chains/{id:guid}")]
+    public async Task<ActionResult<ContractTestChain>> Chain(Guid id, [FromQuery] int? revision, CancellationToken ct) =>
+        await tests.ChainAsync(id, revision, ct) is { } chain ? Ok(chain) : NotFound();
+
+    [HttpPost("chains")]
+    [RequestSizeLimit(512 * 1024)]
+    public async Task<ActionResult<ContractChainSaveResult>> CreateChain([FromBody] ContractChainSave save, CancellationToken ct)
+    {
+        var result = await tests.SaveChainAsync(null, save, ct);
+        return result.Chain is null ? UnprocessableEntity(result) : Ok(result);
+    }
+
+    [HttpPut("chains/{id:guid}")]
+    [RequestSizeLimit(512 * 1024)]
+    public async Task<ActionResult<ContractChainSaveResult>> SaveChain(Guid id, [FromBody] ContractChainSave save, CancellationToken ct)
+    {
+        var result = await tests.SaveChainAsync(id, save, ct);
+        return result.Conflict ? Conflict(result) : result.Problems is ["Not found."] ? NotFound() : result.Chain is null ? UnprocessableEntity(result) : Ok(result);
+    }
+
+    [HttpDelete("chains/{id:guid}")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public async Task<IActionResult> DeleteChain(Guid id, CancellationToken ct) => await tests.DeleteChainAsync(id, ct) ? NoContent() : NotFound();
+
+    [HttpPost("chains/{id:guid}/runs")]
+    [Authorize(Policy = BirkNextPermissions.ActiveEventExecutePolicy)]
+    public async Task<ActionResult<ContractTestRunResult>> RunChain(Guid id, [FromBody] ContractChainRunRequest request, CancellationToken ct)
+    {
+        var result = await tests.RunChainAsync(id, request, ct);
+        return result.Run?.RunId is null ? UnprocessableEntity(result) : Ok(result);
+    }
+
     [HttpPost("runs")]
     [Authorize(Policy = BirkNextPermissions.ActiveEventExecutePolicy)]
     public async Task<ActionResult<ContractTestRunResult>> Run([FromBody] ContractTestRunRequest request, CancellationToken ct)

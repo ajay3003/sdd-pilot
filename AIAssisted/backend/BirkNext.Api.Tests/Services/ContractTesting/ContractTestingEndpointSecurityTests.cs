@@ -60,6 +60,8 @@ public sealed class ContractTestingEndpointSecurityTests
     {
         static bool Executes(MethodInfo m) => m.GetCustomAttributes<AuthorizeAttribute>().Any(a => a.Policy == BirkNextPermissions.ActiveEventExecutePolicy);
         Executes(Actions.Single(a => Describe(a) == "POST runs")).Should().BeTrue();
+        Executes(Actions.Single(a => Describe(a) == "POST chains/{id:guid}/runs")).Should().BeTrue();
+        Protected(Actions.Single(a => Describe(a) == "DELETE chains/{id:guid}")).Should().BeTrue();
         var evidence = typeof(ExecutionEvidenceController).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .Where(m => m.GetCustomAttribute<HttpPostAttribute>() is not null).ToList();
         evidence.Should().NotBeEmpty();

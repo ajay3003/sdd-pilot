@@ -25,6 +25,14 @@
 .ct-tab:focus-visible { outline: 2px solid var(--clr-primary, #0969da); outline-offset: 1px; }
 .ct-row { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; justify-content: space-between; margin: 0; }
 .ct-runbar { justify-content: flex-start; }
+.ct-narrow { max-width: 9rem; }
+.ct-run-options { margin: 0.5rem 0; font-size: 0.85rem; }
+.ct-run-options .ct-row { flex-wrap: wrap; }
+.ct-actions { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.ct-subhead { font-size: 0.9rem; margin: 0.6rem 0 0.25rem; }
+.ct-chain-editor { display: grid; gap: 0.6rem; margin-top: 0.75rem; }
+.ct-chain-step { border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; padding: 0.5rem 0.75rem; min-width: 0; }
+.ct-chain-step .ct-row { flex-wrap: wrap; align-items: center; }
 .ct-scroll { overflow-x: auto; min-width: 0; }
 .ct-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .ct-table th, .ct-table td { padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--clr-border, #d0d7de); text-align: left; vertical-align: top; overflow-wrap: anywhere; }

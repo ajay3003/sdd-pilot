@@ -25,6 +25,60 @@ public static class ContractIdentity
     /// <summary>"contract-test:{id}@r3" — Execution Evidence <see cref="ExecutionCallDefinition.DefinitionVersion"/> of one test revision.</summary>
     public static string DefinitionRef(Guid testId, int revision) => $"{DefinitionPrefix(testId)}{revision}";
     public static string DefinitionPrefix(Guid testId) => $"contract-test:{testId:N}@r";
+    /// <summary>"contract-chain:{id}@r2" — Execution Evidence <see cref="ExecutionRunSummary.ChainRef"/> of one chain revision.</summary>
+    public static string ChainRef(Guid chainId, int revision) => $"contract-chain:{chainId:N}@r{revision}";
+}
+
+/// <summary>A chain step input taken from an earlier step's output: the test input <see cref="Input"/> receives output <see cref="Output"/> of step
+/// <see cref="FromStep"/> (typed, at send time).</summary>
+public sealed record ContractChainInput(string Input, string FromStep, string Output);
+
+/// <summary>
+/// One step of a chain: an existing contract test (its current revision), optionally a dataset row, the outputs it provides to later steps,
+/// the inputs it takes from earlier steps and any further explicit dependencies. A step runs only when every step it depends on passed.
+/// </summary>
+public sealed record ContractChainStep
+{
+    public string StepId { get; init; } = "";
+    public Guid TestId { get; init; }
+    public string? RowId { get; init; }
+    public List<OutputExtraction> Extract { get; init; } = [];
+    public List<ContractChainInput> Inputs { get; init; } = [];
+    public List<string> DependsOn { get; init; } = [];
+}
+
+/// <summary>A chain of contract tests (REST and/or GraphQL) run in dependency order as one Execution Evidence run. Every save is a new immutable revision.</summary>
+public sealed record ContractTestChain
+{
+    public Guid Id { get; init; }
+    public string Name { get; init; } = "";
+    public string? Description { get; init; }
+    public int Revision { get; init; } = 1;
+    public List<ContractChainStep> Steps { get; init; } = [];
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset UpdatedAt { get; init; }
+}
+
+public sealed record ContractChainSave
+{
+    public string Name { get; init; } = "";
+    public string? Description { get; init; }
+    public List<ContractChainStep> Steps { get; init; } = [];
+    /// <summary>The revision the editor started from (null = create); a mismatch is a conflict.</summary>
+    public int? ExpectedRevision { get; init; }
+}
+
+public sealed record ContractChainSaveResult(ContractTestChain? Chain, List<string> Problems, bool Conflict = false);
+
+public sealed record ContractChainRunRequest
+{
+    public ContractTestEnvironment Environment { get; init; } = new();
+    public bool ConfirmMutatingCalls { get; init; }
+    public string? Name { get; init; }
+    public string? BasePath { get; init; }
+    public string? GraphQlPath { get; init; }
+    public int ReauthenticationWaitSeconds { get; init; }
+    public bool StopOnFirstFailure { get; init; }
 }
 
 public sealed record ApiContractSummary(Guid Id, string Key, string Name, ApiContractProtocol Protocol, int LatestVersion, int OperationCount, int TestCount,

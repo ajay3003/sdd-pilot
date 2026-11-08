@@ -547,6 +547,38 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("contract_endpoint_bindings", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.ContractTestChainRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ChainId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DocumentJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChainId", "Revision")
+                        .IsUnique();
+
+                    b.ToTable("contract_test_chains", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.ContractTestRevisionRow", b =>
                 {
                     b.Property<Guid>("Id")

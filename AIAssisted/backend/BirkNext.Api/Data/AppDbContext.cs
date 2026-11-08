@@ -21,6 +21,7 @@ public class AppDbContext : DbContext
     public DbSet<ContractTestRow> ContractTests => Set<ContractTestRow>();
     public DbSet<ContractEndpointBindingRow> ContractEndpointBindings => Set<ContractEndpointBindingRow>();
     public DbSet<ContractTestRevisionRow> ContractTestRevisions => Set<ContractTestRevisionRow>();
+    public DbSet<ContractTestChainRow> ContractTestChains => Set<ContractTestChainRow>();
     public DbSet<ImpactAnalysisRunRecord> ImpactAnalysisRuns => Set<ImpactAnalysisRunRecord>();
     public DbSet<ReviewedCandidate> ReviewedCandidates => Set<ReviewedCandidate>();
     public DbSet<CandidateLink> CandidateLinks => Set<CandidateLink>();
@@ -1141,6 +1142,14 @@ public class AppDbContext : DbContext
             entity.Property(b => b.GraphQlPath).HasMaxLength(300);
             entity.Property(b => b.Authentication).HasMaxLength(40).IsRequired();
             entity.HasIndex(b => new { b.ContractId, b.EnvironmentId }).IsUnique();
+        });
+        modelBuilder.Entity<ContractTestChainRow>(entity =>
+        {
+            entity.ToTable("contract_test_chains");
+            entity.HasKey(c => c.Id);
+            entity.Property(c => c.Name).HasMaxLength(200).IsRequired();
+            entity.Property(c => c.DocumentJson).HasColumnType("text").IsRequired();
+            entity.HasIndex(c => new { c.ChainId, c.Revision }).IsUnique();
         });
         modelBuilder.Entity<ContractTestRevisionRow>(entity =>
         {

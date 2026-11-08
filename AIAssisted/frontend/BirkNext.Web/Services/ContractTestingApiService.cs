@@ -42,6 +42,11 @@ public interface IContractTestingApiService
     Task<string?> SetHiddenAsync(string key, int version, bool hidden, CancellationToken ct = default);
     Task<string?> DeleteVersionAsync(string key, int version, string confirm, CancellationToken ct = default);
     Task<string?> DeleteContractAsync(string key, string confirm, CancellationToken ct = default);
+    Task<(IReadOnlyList<ContractTestChain>? Chains, string? Error)> ChainsAsync(CancellationToken ct = default);
+    /// <summary>Creates (null id) or saves the next revision of a chain; the result lists every problem when it is refused.</summary>
+    Task<(ContractChainSaveResult? Result, string? Error)> SaveChainAsync(Guid? id, ContractChainSave save, CancellationToken ct = default);
+    Task<string?> DeleteChainAsync(Guid id, CancellationToken ct = default);
+    Task<(ContractTestRunResult? Result, string? Error)> RunChainAsync(Guid id, ContractChainRunRequest request, CancellationToken ct = default);
 }
 
 public sealed record ContractBindingResponse(ContractEndpointBinding? Binding, List<ContractServerProposal> Proposals);
@@ -159,6 +164,18 @@ public sealed class ContractTestingApiService(HttpClient http) : IContractTestin
 
     public async Task<string?> DeleteContractAsync(string key, string confirm, CancellationToken ct = default) =>
         (await SendAsync<JsonElement?>(HttpMethod.Delete, $"{Base}/contracts/{Uri.EscapeDataString(key)}?confirm={Uri.EscapeDataString(confirm)}", null, ct)).Error;
+
+    public Task<(IReadOnlyList<ContractTestChain>? Chains, string? Error)> ChainsAsync(CancellationToken ct = default) =>
+        SendAsync<IReadOnlyList<ContractTestChain>>(HttpMethod.Get, $"{Base}/chains", null, ct);
+
+    public Task<(ContractChainSaveResult? Result, string? Error)> SaveChainAsync(Guid? id, ContractChainSave save, CancellationToken ct = default) =>
+        SendAsync<ContractChainSaveResult>(id is null ? HttpMethod.Post : HttpMethod.Put, id is null ? $"{Base}/chains" : $"{Base}/chains/{id}", save, ct, readErrorBody: true);
+
+    public async Task<string?> DeleteChainAsync(Guid id, CancellationToken ct = default) =>
+        (await SendAsync<JsonElement?>(HttpMethod.Delete, $"{Base}/chains/{id}", null, ct)).Error;
+
+    public Task<(ContractTestRunResult? Result, string? Error)> RunChainAsync(Guid id, ContractChainRunRequest request, CancellationToken ct = default) =>
+        SendAsync<ContractTestRunResult>(HttpMethod.Post, $"{Base}/chains/{id}/runs", request, ct, readErrorBody: true);
 
     /// <summary>One request. A refusal's message (<c>{ "message": … }</c>) is shown as is; with <paramref name="readErrorBody"/> the typed body of a 422 is returned too.</summary>
     private async Task<(T? Body, string? Error)> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct, bool readErrorBody = false)

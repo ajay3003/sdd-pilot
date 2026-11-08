@@ -156,6 +156,18 @@ public sealed record ExecutionAttempt
 
 public sealed record AssertionDefinition(string Id, AssertionKind Kind, AssertionOperator Operator, string? Target = null, string? Expected = null);
 
+/// <summary>Where a chained call's output is read: a JSON path into the response body, a path into the GraphQL <c>data</c> object, or a
+/// (non-sensitive) response header name.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum OutputSource { JsonBody, GraphQlData, Header }
+
+/// <summary>An output a later step may use: <see cref="Name"/> is referenced as <c>{{steps.&lt;step&gt;.&lt;name&gt;}}</c>. <see cref="Type"/> is the
+/// expected JSON kind (String, Integer, Number, Boolean, Object, Array) or null for any.</summary>
+public sealed record OutputExtraction(string Name, OutputSource Source, string Path, string? Type = null);
+
+/// <summary>An output as extracted from a received response: found or not (with the reason), its kind and a redacted, bounded preview.</summary>
+public sealed record ExtractedOutput(string Name, OutputSource Source, string Path, string? Type, bool Found, string? Preview, string? Problem);
+
 /// <summary>
 /// One input value as it was resolved for a call: its name, exact Test Data type, where it came from ("row r-007 of children@v3", "member of
 /// children@v3", "step create → childId") and a redacted, bounded preview. Recorded so the evidence shows which value and type were sent.
@@ -199,6 +211,10 @@ public sealed record ExecutionCallDefinition
     public string? DatasetRow { get; init; }
     /// <summary>The input values resolved for this call (typed, with their source); previews are redacted and bounded.</summary>
     public List<ResolvedValue> ResolvedValues { get; init; } = [];
+    /// <summary>Chained runs: this call's step id (unique in the run), the steps it depends on (all earlier in the run) and the outputs it provides.</summary>
+    public string? StepId { get; init; }
+    public List<string> DependsOn { get; init; } = [];
+    public List<OutputExtraction> Extract { get; init; } = [];
 }
 
 public sealed record ExecutionCallRecord
@@ -215,6 +231,8 @@ public sealed record ExecutionCallRecord
     public DateTimeOffset? StartedAt { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
     public CallAuthenticationOutcome Authentication { get; init; }
+    /// <summary>Outputs extracted from the response (chained steps); a required output that is missing fails the call.</summary>
+    public List<ExtractedOutput> Outputs { get; init; } = [];
 }
 
 public sealed record ExecutionRunCounts(int Planned, int Executed, int Passed, int Failed, int Errors, int Skipped, int Blocked, int Cancelled, int TimedOut,
@@ -254,6 +272,8 @@ public sealed record ExecutionRunSummary
     public int DatasetRows { get; init; }
     /// <summary>The run stops at the first failed, erroneous or blocked call; the remaining calls are Skipped (never sent).</summary>
     public bool StopOnFirstFailure { get; init; }
+    /// <summary>The chain definition revision the run executed ("contract-chain:{id}@r{rev}"), when it is a chained run.</summary>
+    public string? ChainRef { get; init; }
 }
 
 public sealed record ExecutionRunDetail(ExecutionRunSummary Run, List<ExecutionCallRecord> Calls, int TotalCalls, int Skip, int Take);
@@ -284,6 +304,8 @@ public sealed record ExecutionRunRequest
     public int ReauthenticationWaitSeconds { get; init; }
     /// <summary>Stop at the first failed, erroneous or blocked call; the remaining calls are Skipped and never sent. Default: continue.</summary>
     public bool StopOnFirstFailure { get; init; }
+    /// <summary>The chain definition revision, for a chained run (see <see cref="ExecutionRunSummary.ChainRef"/>).</summary>
+    public string? ChainRef { get; init; }
 }
 
 public sealed record ExecutionRunStartResult(Guid? RunId, ExecutionState State, string? Message, List<string> Blockers);

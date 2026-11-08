@@ -210,6 +210,7 @@ public sealed class ContractTestingTests : IAsyncLifetime
         {
             case "/openapi.yaml": await Send(200, V1Yaml, "application/yaml"); break;
             case "/children/7": await Send(200, """{"id":7,"name":"Testbarn"}"""); break;
+            case "/children/8": await Send(200, """{"id":8,"name":"Testbarn"}"""); break;
             case "/children" when c.Request.HttpMethod == "GET":
                 if (query["status"] is "active" or "inactive") await Send(200, """[{"id":7,"name":"Testbarn"}]"""); else await Send(400, """{"error":"status is required"}""");
                 break;
@@ -907,5 +908,133 @@ public sealed class ContractTestingTests : IAsyncLifetime
         view.Readiness.Items.Should().Contain(i => i.Area == "Test Data" && i.Text.Contains("in at least one of its 2 rows: age"));
         (await tests.RunAsync(new() { TestIds = [post.Id], Environment = Local, ConfirmMutatingCalls = true }, default)).Run.Should().BeNull();
         _seen.Should().BeEmpty();
+    }
+
+    private async Task<(ContractTestService Tests, ContractTestDefinition Post, ContractTestDefinition Get)> ChainSetupAsync(IServiceScope scope)
+    {
+        (await Scoped<ContractRegistryService>(scope).ImportAsync(new() { FileName = "children.yaml", Content = V1Yaml }, default)).Imported.Should().BeTrue();
+        var tests = Scoped<ContractTestService>(scope);
+        var created = (await tests.GenerateAsync("synthetic-children-api", null, ["POST /children", "GET /children/{id}"], default)).Created;
+        var post = created.Single(t => t.Operation == "POST /children" && t.Kind == ContractTestKind.Positive);
+        var get = created.Single(t => t.Operation == "GET /children/{id}" && t.Kind == ContractTestKind.Positive);
+        Dataset("chain-new-child", new("name", TestDataPrimitive.String, "Testbarn"), new("age", TestDataPrimitive.Int32, "7"));
+        (await tests.BindAsync(post.Id, new("chain-new-child", 1), default)).Error.Should().BeNull();
+        return (tests, post, get);
+    }
+
+    private static ContractChainSave CreateThenRead(Guid post, Guid get, string path = "$.id") => new()
+    {
+        Name = "Create then read",
+        Steps =
+        [
+            new() { StepId = "create", TestId = post, Extract = [new("childId", OutputSource.JsonBody, path, "Integer")] },
+            new() { StepId = "read", TestId = get, Inputs = [new("id", "create", "childId")] },
+        ],
+    };
+
+    [Fact]
+    public async Task A_chain_passes_a_typed_output_of_one_call_to_the_next_and_records_the_dependency()
+    {
+        using var scope = _services.CreateScope();
+        var (tests, post, get) = await ChainSetupAsync(scope);
+        var saved = await tests.SaveChainAsync(null, CreateThenRead(post.Id, get.Id), default);
+        saved.Problems.Should().BeEmpty();
+        var started = await tests.RunChainAsync(saved.Chain!.Id, new() { Environment = Local, ConfirmMutatingCalls = true }, default);
+        started.NotRun.Should().BeEmpty();
+        var run = await WaitAsync(started.Run!.RunId!.Value);
+        run.Run.ChainRef.Should().Be(ContractIdentity.ChainRef(saved.Chain.Id, 1));
+        run.Calls.Should().HaveCount(2).And.OnlyContain(c => c.State == ExecutionState.Passed, string.Join("; ", run.Calls.Select(c => $"{c.Definition.Name}: {c.State} {c.Reason}")));
+        var create = run.Calls.Single(c => c.Definition.StepId == "create");
+        create.Outputs.Should().ContainSingle().Which.Should().Be(new ExtractedOutput("childId", OutputSource.JsonBody, "$.id", "Integer", true, "8", null));
+        var read = run.Calls.Single(c => c.Definition.StepId == "read");
+        read.Definition.DependsOn.Should().Equal("create");
+        read.Definition.Path.Should().Be("/children/{{steps.create.childId}}", "the stored definition keeps the dependency; the request shows what was sent");
+        read.Attempts.Single().Request!.Url.Should().EndWith("/children/8");
+        read.Definition.ResolvedValues.Should().ContainEquivalentOf(new ResolvedValue("steps.create.childId", "Integer", "step create → childId", "8"));
+        _seen.Select(s => (s.Method, s.PathAndQuery)).Should().Equal(("POST", "/children"), ("GET", "/children/8"));
+    }
+
+    [Fact]
+    public async Task A_failed_or_blocked_upstream_step_blocks_its_dependents_and_no_output_is_invented()
+    {
+        using var scope = _services.CreateScope();
+        var (tests, post, get) = await ChainSetupAsync(scope);
+        var chain = (await tests.SaveChainAsync(null, CreateThenRead(post.Id, get.Id), default)).Chain!;
+        // Mutations not confirmed: the create step is Blocked, so the read step is Blocked too; nothing is sent.
+        var unconfirmed = await WaitAsync((await tests.RunChainAsync(chain.Id, new() { Environment = Local }, default)).Run!.RunId!.Value);
+        unconfirmed.Calls.Should().OnlyContain(c => c.State == ExecutionState.Blocked);
+        unconfirmed.Calls.Single(c => c.Definition.StepId == "read").Reason.Should().Contain("depends on step create, which ended Blocked");
+        _seen.Should().BeEmpty();
+
+        // An output path that is not in the response fails the step (never an empty value), and its dependent is not sent.
+        var broken = (await tests.SaveChainAsync(chain.Id, CreateThenRead(post.Id, get.Id, "$.missing") with { ExpectedRevision = 1 }, default)).Chain!;
+        broken.Revision.Should().Be(2);
+        var run = await WaitAsync((await tests.RunChainAsync(chain.Id, new() { Environment = Local, ConfirmMutatingCalls = true }, default)).Run!.RunId!.Value);
+        run.Run.ChainRef.Should().EndWith("@r2");
+        var create = run.Calls.Single(c => c.Definition.StepId == "create");
+        create.State.Should().Be(ExecutionState.Failed);
+        create.Reason.Should().Contain("Output childId could not be extracted");
+        run.Calls.Single(c => c.Definition.StepId == "read").State.Should().Be(ExecutionState.Blocked);
+        _seen.Should().ContainSingle(s => s.Method == "POST").And.NotContain(s => s.Method == "GET");
+
+        (await tests.SaveChainAsync(chain.Id, CreateThenRead(post.Id, get.Id) with { ExpectedRevision = 1 }, default)).Conflict.Should().BeTrue("r2 exists");
+        (await tests.ChainAsync(chain.Id, 1, default))!.Steps[0].Extract[0].Path.Should().Be("$.id", "earlier revisions are immutable");
+    }
+
+    [Fact]
+    public async Task Chains_with_cycles_unknown_outputs_or_credential_outputs_are_refused()
+    {
+        using var scope = _services.CreateScope();
+        var (tests, post, get) = await ChainSetupAsync(scope);
+        var cycle = new ContractChainSave
+        {
+            Name = "Cycle",
+            Steps =
+            [
+                new() { StepId = "a", TestId = post.Id, Extract = [new("x", OutputSource.JsonBody, "$.id")], DependsOn = ["b"] },
+                new() { StepId = "b", TestId = get.Id, Extract = [new("y", OutputSource.JsonBody, "$.id")], Inputs = [new("id", "a", "x")] },
+            ],
+        };
+        (await tests.SaveChainAsync(null, cycle, default)).Problems.Should().ContainSingle(p => p.Contains("cycle: a → b → a"));
+        var bad = new ContractChainSave
+        {
+            Name = "Bad",
+            Steps =
+            [
+                new() { StepId = "a", TestId = post.Id, Extract = [new("accessToken", OutputSource.JsonBody, "$.token"), new("auth", OutputSource.Header, "Authorization")] },
+                new() { StepId = "b", TestId = get.Id, Inputs = [new("id", "a", "nope"), new("unknownInput", "a", "accessToken")] },
+            ],
+        };
+        var problems = (await tests.SaveChainAsync(null, bad, default)).Problems;
+        problems.Should().Contain(p => p.Contains("never extracted")).And.Contain(p => p.Contains("provides no output nope")).And.Contain(p => p.Contains("no input unknownInput"));
+        (await tests.ChainsAsync(default)).Should().BeEmpty("nothing invalid is saved");
+    }
+
+    [Fact]
+    public async Task A_GraphQL_chain_hands_the_created_id_to_the_next_query_as_its_declared_type()
+    {
+        using var scope = _services.CreateScope();
+        (await Scoped<ContractRegistryService>(scope).ImportAsync(new() { Name = "Chain GraphQL", FileName = "g.graphql", Content = GraphQlV1 }, default)).Imported.Should().BeTrue();
+        var tests = Scoped<ContractTestService>(scope);
+        var created = (await tests.GenerateAsync("chain-graphql", null, ["mutation createChild", "query child"], default)).Created;
+        var create = created.Single(t => t.Operation == "mutation createChild" && t.Kind == ContractTestKind.Positive);
+        var child = created.Single(t => t.Operation == "query child" && t.Kind == ContractTestKind.Positive);
+        Dataset("chain-gql-child", new("name", TestDataPrimitive.String, "Testbarn"), new("age", TestDataPrimitive.Int32, "7"));
+        (await tests.BindAsync(create.Id, new("chain-gql-child", 1), default)).Error.Should().BeNull();
+        var chain = (await tests.SaveChainAsync(null, new ContractChainSave
+        {
+            Name = "GraphQL create then read",
+            Steps =
+            [
+                new() { StepId = "create", TestId = create.Id, Extract = [new("childId", OutputSource.GraphQlData, "createChild.id", "String")] },
+                new() { StepId = "read", TestId = child.Id, Inputs = [new("id", "create", "childId")] },
+            ],
+        }, default)).Chain!;
+        _seen.Clear();
+        var run = await WaitAsync((await tests.RunChainAsync(chain.Id, new() { Environment = Local, ConfirmMutatingCalls = true }, default)).Run!.RunId!.Value);
+        run.Calls.Should().OnlyContain(c => c.State == ExecutionState.Passed, string.Join("; ", run.Calls.Select(c => $"{c.Definition.Name}: {c.State} {c.Reason}")));
+        var query = JsonNode.Parse(_seen.Last().Body)!["variables"]!["id"]!;
+        query.GetValueKind().Should().Be(JsonValueKind.String, "a GraphQL ID extracted as a string is sent as a string");
+        query.GetValue<string>().Should().Be("8");
     }
 }

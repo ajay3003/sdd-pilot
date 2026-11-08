@@ -36,6 +36,17 @@ public sealed class ApiContractVersionRow
 }
 
 /// <summary>A contract test definition (ContractTestDefinition as JSON) with its searchable columns.</summary>
+/// <summary>One immutable revision of a chain (the latest revision is the current chain; evidence names the revision it ran).</summary>
+public sealed class ContractTestChainRow
+{
+    public Guid Id { get; init; }
+    public Guid ChainId { get; init; }
+    public int Revision { get; init; }
+    public string Name { get; init; } = "";
+    public string DocumentJson { get; init; } = "";
+    public DateTimeOffset CreatedAt { get; init; }
+}
+
 public sealed class ContractTestRow
 {
     public Guid Id { get; init; }

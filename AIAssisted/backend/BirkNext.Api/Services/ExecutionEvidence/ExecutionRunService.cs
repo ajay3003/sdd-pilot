@@ -76,7 +76,24 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
             return "GraphQL variables must be a JSON object.";
         if (Mutating(d) && !request.ConfirmMutatingCalls)
             return "This call can change data (mutating method or GraphQL mutation). It runs only when mutating calls are explicitly confirmed for the run.";
+        if (d.Extract.Count > ExecutionOutputs.MaxExtractions) return $"A call provides at most {ExecutionOutputs.MaxExtractions} outputs.";
+        if (d.Extract.Select(ExecutionOutputs.DefinitionProblem).FirstOrDefault(p => p is not null) is { } outputProblem) return outputProblem;
+        if (d.Extract.GroupBy(e => e.Name, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1) is { } dup) return $"Output {dup.Key} is defined twice.";
+        if (d.StepId is { } step && !ExecutionOutputs.StepId().IsMatch(step)) return "A step id is letters, digits, '_' or '-' (max 64).";
         return null;
+    }
+
+    /// <summary>
+    /// Why a chained call may not run in this order (null = it may): every step it depends on — explicitly or through an output placeholder —
+    /// must be an earlier call of the run with a unique step id. A later or unknown step (which includes every cycle) is refused.
+    /// </summary>
+    private static string? OrderBlock(ExecutionCallDefinition d, IReadOnlyList<ExecutionCallDefinition> earlier)
+    {
+        var known = earlier.Select(e => e.StepId).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        if (d.StepId is { } id && known.Contains(id)) return $"Step id {id} is used twice in the run.";
+        var unknown = d.DependsOn.Concat(ExecutionOutputs.ReferencedSteps(d)).Where(s => !known.Contains(s)).Distinct(StringComparer.Ordinal).ToList();
+        return unknown.Count == 0 ? null
+            : $"It depends on step(s) {string.Join(", ", unknown)} that do not run before it (unknown, later, or a cycle); it is never sent with a guessed value.";
     }
 
     private static JsonNode? TryJson(string text) { try { return JsonNode.Parse(text); } catch (JsonException) { return null; } }
@@ -107,7 +124,7 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
         var runId = Guid.NewGuid();
         var calls = request.Calls.Select((d, i) =>
         {
-            var why = blockers.Count > 0 ? string.Join(" ", blockers) : CallBlock(d, request);
+            var why = blockers.Count > 0 ? string.Join(" ", blockers) : CallBlock(d, request) ?? OrderBlock(d, request.Calls.Take(i).ToList());
             return new ExecutionCallRecord { CallId = Guid.NewGuid(), Sequence = i + 1, Definition = Sanitize(d), State = why is null ? ExecutionState.Planned : ExecutionState.Blocked, Reason = why };
         }).ToList();
         var summary = new ExecutionRunSummary
@@ -116,7 +133,7 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
             EnvironmentType = decision.EnvironmentType, TargetOrigin = origin?.ToString() ?? "", State = calls.All(c => c.State == ExecutionState.Blocked) ? ExecutionState.Blocked : ExecutionState.Running,
             StartedAt = now, CapturePolicy = request.CapturePolicy, RedactionVersion = ExecutionEvidenceRedaction.Version, Initiator = initiator,
             AuthenticationMode = auth.Mode, AuthenticationReference = auth.Reference,
-            SourceSnapshotId = request.SourceSnapshotId, ContractRefs = request.ContractRefs,
+            SourceSnapshotId = request.SourceSnapshotId, ContractRefs = request.ContractRefs, ChainRef = request.ChainRef,
             ReauthenticationWaitSeconds = authKind == ExecutionAuthenticationKind.AttendedSession ? Math.Clamp(request.ReauthenticationWaitSeconds, 0, MaxReauthenticationWaitSeconds) : 0,
             StopOnFirstFailure = request.StopOnFirstFailure,
         };
@@ -155,6 +172,10 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
             var authentication = new RunAuthentication(ExecutionCredentialResolver.Effective(request) == ExecutionAuthenticationKind.AttendedSession
                 ? Math.Clamp(request.ReauthenticationWaitSeconds, 0, MaxReauthenticationWaitSeconds) : 0);
             string? stopped = null;
+            // Chained runs: the final state and the extracted values (memory only) of every step that ran, for its dependents.
+            var stepStates = new Dictionary<string, ExecutionState>(StringComparer.Ordinal);
+            var stepOutputs = new Dictionary<string, Dictionary<string, JsonNode?>>(StringComparer.Ordinal);
+            foreach (var planned in calls.Where(c => c.State != ExecutionState.Planned && c.Definition.StepId is not null)) stepStates[planned.Definition.StepId!] = planned.State;
             foreach (var planned in calls)
             {
                 if (planned.State != ExecutionState.Planned) continue;
@@ -168,10 +189,37 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
                     await store.SaveCallAsync(runId, planned with { State = ExecutionState.Skipped, Reason = stopped }, CancellationToken.None);
                     continue;
                 }
-                var record = planned with { State = ExecutionState.Running, StartedAt = _clock.GetUtcNow() };
+                var original = originals[planned.Sequence - 1];
+                var step = planned.Definition.StepId;
+                // A dependent step runs only when every step it depends on passed; its step outputs are resolved now, never guessed.
+                var dependencies = planned.Definition.DependsOn.Concat(ExecutionOutputs.ReferencedSteps(original)).Distinct(StringComparer.Ordinal).ToList();
+                if (dependencies.FirstOrDefault(s => !stepStates.TryGetValue(s, out var st) || st != ExecutionState.Passed) is { } upstream)
+                {
+                    var upstreamState = stepStates.TryGetValue(upstream, out var us) ? us.ToString() : "without a result";
+                    await store.SaveCallAsync(runId, planned with { State = ExecutionState.Blocked, CompletedAt = _clock.GetUtcNow(),
+                        Reason = $"Not sent: it depends on step {upstream}, which ended {upstreamState}." }, CancellationToken.None);
+                    if (step is not null) stepStates[step] = ExecutionState.Blocked;
+                    if (request.StopOnFirstFailure) stopped = $"Not sent: the run stops at the first failure, and call {planned.Sequence} ({planned.Definition.Name}) was blocked by its dependency.";
+                    continue;
+                }
+                var (resolved, missingOutputs, used) = ExecutionOutputs.Resolve(original, stepOutputs);
+                if (missingOutputs.Count > 0)
+                {
+                    await store.SaveCallAsync(runId, planned with { State = ExecutionState.Blocked, CompletedAt = _clock.GetUtcNow(),
+                        Reason = $"Not sent: output(s) {string.Join(", ", missingOutputs)} of an earlier step are not available; nothing is substituted for them." }, CancellationToken.None);
+                    if (step is not null) stepStates[step] = ExecutionState.Blocked;
+                    continue;
+                }
+                var record = planned with
+                {
+                    State = ExecutionState.Running, StartedAt = _clock.GetUtcNow(),
+                    Definition = used.Count == 0 ? planned.Definition : planned.Definition with { ResolvedValues = [.. planned.Definition.ResolvedValues.Where(v => used.All(u => u.Name != v.Name)), .. used] },
+                };
                 await store.SaveCallAsync(runId, record, CancellationToken.None);
-                record = await RunCallAsync(client, store, authentication, runId, origin, record, originals[record.Sequence - 1], request, runToken);
+                var outputs = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
+                record = await RunCallAsync(client, store, authentication, runId, origin, record, resolved, request, runToken, outputs);
                 await store.SaveCallAsync(runId, record, CancellationToken.None);
+                if (step is not null) { stepStates[step] = record.State; if (record.State == ExecutionState.Passed) stepOutputs[step] = outputs; }
                 if (request.StopOnFirstFailure && record.State is ExecutionState.Failed or ExecutionState.Error or ExecutionState.TimedOut or ExecutionState.Blocked)
                     stopped = $"Not sent: the run stops at the first failure, and call {record.Sequence} ({record.Definition.Name}) ended {record.State}.";
             }
@@ -187,7 +235,7 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
     }
 
     private async Task<ExecutionCallRecord> RunCallAsync(HttpClient client, ExecutionEvidenceStore store, RunAuthentication authentication, Guid runId, Uri origin, ExecutionCallRecord record,
-        ExecutionCallDefinition d, ExecutionRunRequest run, CancellationToken runToken)
+        ExecutionCallDefinition d, ExecutionRunRequest run, CancellationToken runToken, Dictionary<string, JsonNode?>? outputValues = null)
     {
         var authenticated = ExecutionCredentialResolver.Effective(run) != ExecutionAuthenticationKind.None && !d.WithoutAuthentication;
         var authBlocked = false;
@@ -285,11 +333,21 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
                     : responseReport.State == ContractValidationState.Valid && responseReport.Unsupported.Count == 0 ? AssertionOutcome.Passed : AssertionOutcome.NotAssessed,
                     responseReport.Summary));
         var state = ExecutionAssertions.Verdict(last, results);
+        // Outputs are extracted only from a call that passed: a failed step's values are never handed to its dependents.
+        List<ExtractedOutput> extracted = [];
+        string? outputProblem = null;
+        if (d.Extract.Count > 0 && state == ExecutionState.Passed)
+        {
+            var (found, values) = ExecutionOutputs.Extract(d.Extract, last.Response, lastRaw);
+            extracted = found;
+            foreach (var (name, value) in values) outputValues?.TryAdd(name, value);
+            if (found.FirstOrDefault(o => !o.Found) is { } miss) { state = ExecutionState.Failed; outputProblem = $"Output {miss.Name} could not be extracted: {miss.Problem}."; }
+        }
         return record with
         {
-            Attempts = attempts, Assertions = results, State = state, CompletedAt = _clock.GetUtcNow(), ContractValidation = reports,
+            Attempts = attempts, Assertions = results, State = state, CompletedAt = _clock.GetUtcNow(), ContractValidation = reports, Outputs = extracted,
             Authentication = AuthenticationOutcome(run, d, attempts, authBlocked),
-            Reason = state switch
+            Reason = outputProblem ?? state switch
             {
                 ExecutionState.NotAssessed when d.Assertions.Count == 0 => "No assertions are configured, so the result is not assessed (never a pass by default).",
                 ExecutionState.NotAssessed => "Some assertions could not be evaluated.",

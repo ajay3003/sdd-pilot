@@ -167,6 +167,26 @@ public sealed class ContractTestingPageTests : BunitContext
         public Task<string?> SetHiddenAsync(string key, int version, bool hidden, CancellationToken ct = default) => Task.FromResult<string?>(null);
         public Task<string?> DeleteVersionAsync(string key, int version, string confirm, CancellationToken ct = default) { DeletedVersion = (version, confirm); return Task.FromResult<string?>(null); }
         public Task<string?> DeleteContractAsync(string key, string confirm, CancellationToken ct = default) => Task.FromResult<string?>("referenced");
+        public List<ContractTestChain> Chains { get; } = [];
+        public ContractChainSave? SavedChain { get; private set; }
+        public ContractChainRunRequest? ChainRun { get; private set; }
+        public Task<(IReadOnlyList<ContractTestChain>? Chains, string? Error)> ChainsAsync(CancellationToken ct = default) =>
+            Task.FromResult<(IReadOnlyList<ContractTestChain>?, string?)>((Chains.ToList(), null));
+        public Task<(ContractChainSaveResult? Result, string? Error)> SaveChainAsync(Guid? id, ContractChainSave save, CancellationToken ct = default)
+        {
+            SavedChain = save;
+            if (save.Steps.Any(s => s.Inputs.Any(i => i.Output.Length == 0)))
+                return Task.FromResult<(ContractChainSaveResult?, string?)>((new(null, ["read: step create provides no output ."]), "refused"));
+            var chain = new ContractTestChain { Id = Guid.NewGuid(), Name = save.Name, Revision = 1, Steps = save.Steps };
+            Chains.Add(chain);
+            return Task.FromResult<(ContractChainSaveResult?, string?)>((new(chain, []), null));
+        }
+        public Task<string?> DeleteChainAsync(Guid id, CancellationToken ct = default) { Chains.RemoveAll(c => c.Id == id); return Task.FromResult<string?>(null); }
+        public Task<(ContractTestRunResult? Result, string? Error)> RunChainAsync(Guid id, ContractChainRunRequest request, CancellationToken ct = default)
+        {
+            ChainRun = request;
+            return Task.FromResult<(ContractTestRunResult?, string?)>((new(new(Run, ExecutionState.Running, "Run started: 2 call(s) will be sent.", []), []), null));
+        }
         public Task<(ContractTestMigrationProposal? Proposal, string? Error)> MigrationAsync(Guid testId, CancellationToken ct = default) =>
             Task.FromResult<(ContractTestMigrationProposal?, string?)>((new(testId, 1, 2, Get.Test with { ContractVersion = 2, Revision = 3 }, ["Contract version: v1 → v2"],
                 ["Applying creates a new revision bound to v2; earlier revisions and their executions stay bound to v1."]), null));
@@ -334,6 +354,63 @@ public sealed class ContractTestingPageTests : BunitContext
     }
 
     [Fact]
+    public void Run_options_send_the_rows_limit_stop_policy_and_re_sign_in_wait()
+    {
+        _api.Bind = true;
+        var page = Open("?contract=children-api&view=tests");
+        page.Find("[data-testid=ct-select-ready]").Change(true);
+        page.Find("[data-testid=ct-stop-on-failure]").Change(true);
+        page.Find("[data-testid=ct-row-ids]").Input("r-001, r-007");
+        page.Find("[data-testid=ct-max-executions]").Change("40");
+        page.Find("[data-testid=ct-reauth-wait]").Change("120");
+        page.Find("[data-testid=ct-run]").Click();
+        page.WaitForAssertion(() => _api.Ran.Should().NotBeNull());
+        _api.Ran!.StopOnFirstFailure.Should().BeTrue();
+        _api.Ran.RowIds.Should().Equal("r-001", "r-007");
+        _api.Ran.MaxExecutions.Should().Be(40);
+        _api.Ran.ReauthenticationWaitSeconds.Should().Be(120);
+    }
+
+    [Fact]
+    public void A_chain_is_built_from_tests_with_an_output_feeding_a_later_input_and_run_only_on_request()
+    {
+        _api.Bind = true;
+        var page = Open("?contract=children-api&view=chains");
+        page.Find("[data-testid=ct-chains-empty]").Should().NotBeNull();
+        _api.ChainRun.Should().BeNull("opening the view runs nothing");
+        page.Find("[data-testid=ct-chain-new]").Click();
+        page.Find("[data-testid=ct-chain-name]").Input("Create then read");
+        page.Find("[data-testid=ct-step-id]").Input("create");
+        page.Find("[data-testid=ct-step-test]").Change(PostTest.ToString());
+        page.Find("[data-testid=ct-add-output]").Click();
+        page.Find("[data-testid=ct-output-name]").Input("childId");
+        page.Find("[data-testid=ct-output-path]").Input("$.id");
+        page.Find("[data-testid=ct-output-type]").Change("Integer");
+        page.Find("[data-testid=ct-add-step]").Click();
+        page.FindAll("[data-testid=ct-step-id]")[1].Input("read");
+        page.FindAll("[data-testid=ct-step-test]")[1].Change(GetTest.ToString());
+        page.Find("[data-testid=ct-add-input]").Click();
+        page.Find("[data-testid=ct-input-name]").Change("id");
+
+        // Saving without choosing the output shows the backend's refusal, nothing is lost.
+        page.Find("[data-testid=ct-chain-save]").Click();
+        page.WaitForAssertion(() => page.Find("[data-testid=ct-chain-problems]").TextContent.Should().Contain("provides no output"));
+        page.Find("[data-testid=ct-input-from]").Change("create.childId");
+        page.Find("[data-testid=ct-chain-save]").Click();
+        page.WaitForAssertion(() => page.FindAll("[data-testid=ct-chain-row]").Should().ContainSingle());
+        var saved = _api.SavedChain!;
+        saved.Steps.Select(s => (s.StepId, s.TestId)).Should().Equal(("create", PostTest), ("read", GetTest));
+        saved.Steps[0].Extract.Should().Equal(new OutputExtraction("childId", OutputSource.JsonBody, "$.id", "Integer"));
+        saved.Steps[1].Inputs.Should().Equal(new ContractChainInput("id", "create", "childId"));
+
+        page.Find("[data-testid=ct-chain-confirm]").Change(true);
+        page.Find("[data-testid=ct-chain-run]").Click();
+        page.WaitForAssertion(() => _api.ChainRun.Should().NotBeNull());
+        _api.ChainRun!.ConfirmMutatingCalls.Should().BeTrue();
+        page.Find("[data-testid=ct-run-link]").GetAttribute("href").Should().Be($"execution-results?run={Run}");
+    }
+
+    [Fact]
     public void Without_a_Target_Environment_tests_can_be_prepared_but_not_run()
     {
         _context.ActiveProfile = new FrontendAnalysisProfile();
@@ -439,7 +516,7 @@ public sealed class ContractTestingPageTests : BunitContext
         {
             CultureInfo.CurrentCulture = culture; CultureInfo.DefaultThreadCurrentCulture = culture;
             var page = Open("?contract=children-api&view=tests");
-            page.FindAll("[role=tab]").Select(t => t.GetAttribute("tabindex")).Should().Equal("-1", "0", "-1", "-1", "-1");
+            page.FindAll("[role=tab]").Select(t => t.GetAttribute("tabindex")).Should().Equal("-1", "0", "-1", "-1", "-1", "-1");
         }
         finally { CultureInfo.CurrentCulture = current; CultureInfo.DefaultThreadCurrentCulture = defaultCulture; }
     }
