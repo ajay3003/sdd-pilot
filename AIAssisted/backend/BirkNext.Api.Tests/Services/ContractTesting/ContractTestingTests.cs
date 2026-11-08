@@ -582,6 +582,68 @@ public sealed class ContractTestingTests : IAsyncLifetime
         (await tests.RunAsync(new() { TestIds = [test.Id], Environment = Local }, default)).Run.Should().BeNull("a retired test never runs");
     }
 
+    [Fact]
+    public async Task Negative_proposals_cover_many_variants_with_contract_derived_or_unconfigured_expectations()
+    {
+        const string doc = """
+            { "openapi": "3.0.3", "info": { "title": "Negative Children API", "version": "1" }, "paths": {
+              "/children": { "post": { "security": [ { "bearer": [] } ],
+                "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NewChild" } } } },
+                "responses": { "201": { "description": "created" }, "400": { "description": "bad" }, "415": { "description": "media" } } } } },
+              "components": { "securitySchemes": { "bearer": { "type": "http", "scheme": "bearer" } }, "schemas": {
+                "NewChild": { "type": "object", "required": ["name", "age"], "properties": {
+                  "name": { "type": "string", "maxLength": 20 }, "age": { "type": "integer", "minimum": 0, "maximum": 18 },
+                  "status": { "type": "string", "enum": ["ACTIVE", "INACTIVE"], "nullable": true } } } } } }
+            """;
+        using var scope = _services.CreateScope();
+        (await Scoped<ContractRegistryService>(scope).ImportAsync(new() { FileName = "neg.json", Content = doc }, default)).Imported.Should().BeTrue();
+        var tests = Scoped<ContractTestService>(scope);
+        var (proposals, _) = await tests.ProposeNegativesAsync("negative-children-api", "POST /children", default);
+        proposals.Select(p => (p.Kind, p.Variant)).Should().Contain(new[]
+        {
+            (ContractTestKind.InvalidType, "age"), (ContractTestKind.InvalidType, "name"), (ContractTestKind.InvalidEnum, "status"), (ContractTestKind.NullNotAllowed, "name"),
+            (ContractTestKind.EmptyValue, "name"), (ContractTestKind.BoundaryViolation, "age"), (ContractTestKind.BoundaryViolation, "name"), (ContractTestKind.InvalidContentType, ""),
+            (ContractTestKind.InvalidShape, ""), (ContractTestKind.MissingAuthentication, ""), (ContractTestKind.UnsupportedMethod, "GET"),
+        });
+        proposals.Should().NotContain(p => p.Kind == ContractTestKind.NullNotAllowed && p.Variant == "status", "status is nullable");
+        proposals.Should().OnlyContain(p => p.ReviewState == ContractTestReviewState.Draft && p.Template.ContractCheck == ContractCheckMode.Record);
+        var typeAge = proposals.Single(p => p.Kind == ContractTestKind.InvalidType && p.Variant == "age");
+        typeAge.Template.Body.Should().Contain("\"age\":\"not-a-number\"").And.Contain("{{dataset.name}}");
+        typeAge.Template.Assertions.Should().ContainSingle(a => a.Kind == AssertionKind.StatusCode && a.Expected == "400", "only the documented 400 (422 is not documented)");
+        proposals.Single(p => p.Kind == ContractTestKind.BoundaryViolation && p.Variant == "age").Template.Body.Should().Contain("\"age\":19");
+        proposals.Single(p => p.Kind == ContractTestKind.InvalidContentType).Template.Assertions.Single().Expected.Should().Be("415,400");
+        var noAuth = proposals.Single(p => p.Kind == ContractTestKind.MissingAuthentication);
+        noAuth.WithoutAuthentication.Should().BeTrue();
+        noAuth.Template.Assertions.Should().BeEmpty("401/403 are not documented: the outcome is not inferred");
+        noAuth.Template.ExpectedOutcome.Should().StartWith("Needs configuration");
+        (await tests.ProposeNegativesAsync("negative-children-api", "POST /children", default)).Created.Should().BeEmpty("a second request never duplicates proposals");
+
+        Dataset("neg-data", new("name", TestDataPrimitive.String, "Testbarn"), new("age", TestDataPrimitive.Int32, "7"));
+        foreach (var p in new[] { typeAge, noAuth }) (await tests.BindAsync(p.Id, new("neg-data", 1), default)).Error.Should().BeNull();
+        var views = (await tests.ListAsync("negative-children-api", Local, default)).ToDictionary(v => v.Test.Id);
+        views[noAuth.Id].Readiness.Items.Should().Contain(i => i.Area == "Expected outcome" && i.State == ReadinessItemState.Missing);
+        views[noAuth.Id].Readiness.State.Should().Be(ContractTestReadinessState.NotReady);
+        views[typeAge.Id].Readiness.Items.Should().Contain(i => i.Area == "Authentication" && i.State == ReadinessItemState.Blocked, "the variant still needs the operation's authentication");
+
+        _seen.Clear();
+        (await Scoped<ContractRegistryService>(scope).ImportAsync(new() { Name = "Negative GraphQL", FileName = "g.graphql", Content = GraphQlV1 }, default)).Imported.Should().BeTrue();
+        var (gqlProposals, _) = await tests.ProposeNegativesAsync("negative-graphql", "mutation createChild", default);
+        gqlProposals.Select(p => (p.Kind, p.Variant)).Should().Contain(new[]
+        {
+            (ContractTestKind.NullNotAllowed, "name"), (ContractTestKind.NullNotAllowed, "age"), (ContractTestKind.InvalidType, "age"), (ContractTestKind.UnknownInputField, "input"), (ContractTestKind.InvalidSelection, ""),
+        });
+        var gqlType = gqlProposals.Single(p => p.Kind == ContractTestKind.InvalidType && p.Variant == "age");
+        gqlType.Template.GraphQlVariablesJson.Should().Contain("\"age\":\"not-a-number\"");
+        gqlType.Template.Assertions.Should().Contain(a => a.Kind == AssertionKind.GraphQlErrorCount && a.Operator == AssertionOperator.GreaterThan);
+        Dataset("neg-gql", new("name", TestDataPrimitive.String, "Testbarn"), new("age", TestDataPrimitive.Int32, "7"));
+        (await tests.BindAsync(gqlType.Id, new("neg-gql", 1), default)).Error.Should().BeNull();
+        var run = await WaitAsync((await tests.RunAsync(new() { TestIds = [gqlType.Id], Environment = Local, ConfirmMutatingCalls = true }, default)).Run!.RunId!.Value);
+        var call = run.Calls.Single();
+        call.State.Should().Be(ExecutionState.Passed, "the server rejected the wrong type with a GraphQL error, as expected");
+        call.ContractValidation.Should().Contain(r => r.Direction == "Request" && r.State == ContractValidationState.Invalid, "the deliberately invalid request is recorded, not blocked");
+        _seen.Should().ContainSingle(s => s.Body.Contains("not-a-number"));
+    }
+
     [Theory]
     [InlineData("//evil.example.test")]
     [InlineData("http://evil.example.test/api")]

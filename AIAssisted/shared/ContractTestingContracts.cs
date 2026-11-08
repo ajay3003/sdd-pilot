@@ -50,7 +50,13 @@ public sealed record ContractImportRequest
 public sealed record ContractImportResult(bool Imported, bool Unchanged, string? Key, int? Version, string Message, List<string> Problems);
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ContractTestKind { Positive, MissingRequiredInput }
+public enum ContractTestKind
+{
+    Positive, MissingRequiredInput,
+    // Negative proposals (generated on request, never run automatically)
+    InvalidType, InvalidEnum, NullNotAllowed, EmptyValue, BoundaryViolation, InvalidContentType, InvalidShape, MissingAuthentication, UnsupportedMethod,
+    UnknownInputField, InvalidListShape, InvalidSelection,
+}
 
 /// <summary>A value the test needs: where it goes and whether the contract requires it. Values come only from the bound Test Data.</summary>
 public sealed record ContractTestInput(string Name, string In, bool Required, string? Type);
@@ -79,6 +85,10 @@ public sealed record ContractTestDefinition
     public string? Description { get; init; }
     /// <summary>Generated tests start as Draft. Retired tests are kept with their history but never run.</summary>
     public ContractTestReviewState ReviewState { get; init; } = ContractTestReviewState.Draft;
+    /// <summary>Which input or aspect a negative variant targets ("age", "status:max"); empty for the operation-level tests.</summary>
+    public string Variant { get; init; } = "";
+    /// <summary>A MissingAuthentication proposal is sent without the contract's authentication (never another credential).</summary>
+    public bool WithoutAuthentication { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset UpdatedAt { get; init; }
 }

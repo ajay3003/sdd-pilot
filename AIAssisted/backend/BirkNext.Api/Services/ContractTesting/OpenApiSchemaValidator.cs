@@ -112,6 +112,9 @@ public sealed class OpenApiSchemaValidator
             : new(true, true, key, schema, $"{basePointer}/content/{Escape(type!)}/schema", type, null);
     }
 
+    /// <summary>A schema with its local <c>$ref</c> chain followed (null when absent or unresolvable).</summary>
+    public JsonObject? Resolve(JsonNode? schema) => (Deref(schema, out _) ?? schema) as JsonObject;
+
     /// <summary>The schema of one declared parameter (operation-level wins over path-level; Swagger 2 parameters carry their type inline).</summary>
     public (JsonNode Schema, string Pointer)? ParameterSchema(string method, string pathTemplate, string name, string location)
     {

@@ -111,6 +111,11 @@ public sealed class ContractTestingPageTests : BunitContext
             Log.Add($"generate {version} {(operations is null ? "all" : string.Join(",", operations))}");
             return Task.FromResult<(int, IReadOnlyList<string>, string?)>((4, [], null));
         }
+        public Task<(int Created, IReadOnlyList<string> Skipped, string? Error)> ProposeNegativesAsync(string key, string operation, CancellationToken ct = default)
+        {
+            Log.Add($"propose {operation}");
+            return Task.FromResult<(int, IReadOnlyList<string>, string?)>((7, [], null));
+        }
         public Task<(IReadOnlyList<ContractTestView>? Tests, string? Error)> TestsAsync(string key, ContractTestEnvironment? environment, CancellationToken ct = default)
         {
             Environment = environment;
@@ -225,6 +230,10 @@ public sealed class ContractTestingPageTests : BunitContext
         rows[2].TextContent.Should().Contain("bearer (bearer)");
         page.Find("[data-testid=ct-version-source]").TextContent.Should().Contain("From URL");
         page.Find("[data-testid=ct-limitations]").TextContent.Should().Contain("subset reader");
+        page.FindAll("[data-testid=ct-propose-op]")[1].Click();
+        page.WaitForAssertion(() => _api.Log.Should().Contain("propose POST /children"));
+        page.WaitForAssertion(() => page.Find("[data-testid=ct-message]").TextContent.Should().Contain("7 negative proposal(s)").And.Contain("Nothing was run"));
+        page = Open("?contract=children-api");
         page.Find("[data-testid=ct-generate-all]").Click();
         page.WaitForAssertion(() => _api.Log.Should().Contain("generate 2 all"));
         Services.GetRequiredService<NavigationManager>().Uri.Should().Contain("view=tests");

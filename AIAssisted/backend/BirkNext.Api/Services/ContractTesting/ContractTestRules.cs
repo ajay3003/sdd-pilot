@@ -191,7 +191,8 @@ public static partial class ContractTestRules
             if (omit.In == "body" && JsonNode.Parse(body!) is JsonObject bo) { bo.Remove(omit.Name); negativeBody = bo.ToJsonString(); }
             var negativeQuery = new Dictionary<string, string>(query, StringComparer.Ordinal);
             if (omit.In == "query") negativeQuery.Remove(omit.Name);
-            var expected = clientErrors.Count > 0 ? string.Join(',', clientErrors) : "400,422";
+            // The expected codes come from the contract only; when it documents neither 400 nor 422 the test needs configuration (no inference).
+            var expected = clientErrors.Count > 0 ? string.Join(',', clientErrors) : null;
             result.Add(new ContractTestDefinition
             {
                 Id = Guid.NewGuid(), ContractKey = key, ContractVersion = version, Operation = op.Name, Name = $"{op.Name} — rejects a request without {omit.Name}",
@@ -200,10 +201,11 @@ public static partial class ContractTestRules
                 Template = template with
                 {
                     Query = negativeQuery, Body = negativeBody, ContractCheck = ContractCheckMode.Record,
-                    Assertions = [new("status", AssertionKind.StatusCode, AssertionOperator.In, null, expected)], ExpectedOutcome = $"HTTP {expected.Replace(",", " or ", StringComparison.Ordinal)}",
+                    Assertions = expected is null ? [] : [new("status", AssertionKind.StatusCode, AssertionOperator.In, null, expected)],
+                    ExpectedOutcome = expected is null ? "Needs configuration: the contract documents neither 400 nor 422 for this operation." : $"HTTP {expected.Replace(",", " or ", StringComparison.Ordinal)}",
                 },
-                Rationale = $"The contract requires {omit.In} value {omit.Name}; the request leaves it out and expects a client error (HTTP {expected.Replace(",", " or ", StringComparison.Ordinal)})"
-                    + (clientErrors.Count == 0 ? ". The contract documents neither 400 nor 422, so both are accepted." : "."),
+                Rationale = $"The contract requires {omit.In} value {omit.Name}; the request leaves it out"
+                    + (expected is null ? ". The contract documents neither 400 nor 422, so the expected outcome needs configuration (it is not inferred)." : $" and expects a client error (HTTP {expected.Replace(",", " or ", StringComparison.Ordinal)})."),
             });
         }
         return result;

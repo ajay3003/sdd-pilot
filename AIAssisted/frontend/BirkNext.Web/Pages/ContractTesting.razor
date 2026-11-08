@@ -257,6 +257,38 @@
         Go(Link(view: "tests", test: null));
     }
 
+    /// <summary>Negative proposals for one operation: saved as Drafts; nothing runs.</summary>
+    private async Task ProposeAsync(string operation)
+    {
+        if (Api is not { } api || _detail is null) return;
+        _busy = true; _error = null; _message = null;
+        var (created, skipped, error) = await api.ProposeNegativesAsync(_detail.Contract.Key, operation);
+        _busy = false;
+        if (error is not null) { _error = error; return; }
+        _message = created > 0 ? $"{created} negative proposal(s) for {operation} saved as Drafts. Nothing was run; proposals without a documented expected outcome need configuration."
+            : $"No new proposals for {operation}{(skipped.Count > 0 ? " (they already exist)" : "")}.";
+        Go(Link(view: "tests", test: null));
+    }
+
+    private static string KindLabel(ContractTestKind kind) => kind switch
+    {
+        ContractTestKind.Positive => "Positive",
+        ContractTestKind.MissingRequiredInput => "Negative: missing required value",
+        ContractTestKind.InvalidType => "Negative: wrong type",
+        ContractTestKind.InvalidEnum => "Negative: value outside the enum",
+        ContractTestKind.NullNotAllowed => "Negative: null where not allowed",
+        ContractTestKind.EmptyValue => "Negative: empty value",
+        ContractTestKind.BoundaryViolation => "Negative: boundary violation",
+        ContractTestKind.InvalidContentType => "Negative: wrong content type",
+        ContractTestKind.InvalidShape => "Negative: wrong body shape",
+        ContractTestKind.MissingAuthentication => "Negative: without authentication",
+        ContractTestKind.UnsupportedMethod => "Negative: unsupported method",
+        ContractTestKind.UnknownInputField => "Negative: unknown input field",
+        ContractTestKind.InvalidListShape => "Negative: list expected",
+        ContractTestKind.InvalidSelection => "Negative: invalid field selection",
+        _ => kind.ToString(),
+    };
+
     private async Task BindAsync(Guid testId, ContractDatasetOption option)
     {
         if (Api is not { } api || option.ApprovedVersion is not { } version) return;
@@ -355,7 +387,8 @@
                                 <td>@(op.ResultType is { } result ? $"returns {result}" : string.Join(", ", op.ResponseCodes.Select(c => op.ResponseSchemas.TryGetValue(c, out var schema) ? $"{c} {schema}" : c)))</td>
                                 <td>@(op.Security.Count == 0 ? "none" : string.Join(", ", op.Security))</td>
                                 <td>@count</td>
-                                <td><button class="btn btn-secondary btn-sm" data-testid="ct-generate-op" disabled="@_busy" @onclick="() => GenerateAsync([op.Name])" aria-label="@($"Generate tests for {op.Name}")">Generate</button></td>
+                                <td><button class="btn btn-secondary btn-sm" data-testid="ct-generate-op" disabled="@_busy" @onclick="() => GenerateAsync([op.Name])" aria-label="@($"Generate tests for {op.Name}")">Generate</button>
+                                    <button class="btn btn-link btn-sm" data-testid="ct-propose-op" disabled="@_busy" @onclick="() => ProposeAsync(op.Name)" aria-label="@($"Propose negative tests for {op.Name}")">Propose negatives</button></td>
                             </tr>
                         }
                     </tbody>
@@ -389,7 +422,7 @@
                             var test = t.Test;
                             <tr data-testid="ct-test-row" data-kind="@test.Kind" data-op="@test.Operation" data-state="@t.Readiness.State" class="@(test.Id == TestId ? "ct-selected" : null)">
                                 <td><input type="checkbox" data-testid="ct-test-select" aria-label="@($"Select {test.Name}")" checked="@_selected.Contains(test.Id)" @onchange="e => Toggle(test.Id, (bool)e.Value!)" /></td>
-                                <th scope="row"><a href="@Link(view: "tests", test: test.Id)" data-testid="ct-test-link">@test.Name</a><div class="ct-muted">@test.ReviewState · @(test.Kind == ContractTestKind.Positive ? "Positive" : "Negative: missing required value")@(ExecutionRunService_Mutating(test) ? " · changes data" : "") · revision @test.Revision</div></th>
+                                <th scope="row"><a href="@Link(view: "tests", test: test.Id)" data-testid="ct-test-link">@test.Name</a><div class="ct-muted">@test.ReviewState · @KindLabel(test.Kind)@(ExecutionRunService_Mutating(test) ? " · changes data" : "") · revision @test.Revision</div></th>
                                 <td><span class="ct-state ct-state-@t.Readiness.State.ToString().ToLowerInvariant()" data-testid="ct-readiness">@ReadinessLabel(t.Readiness.State)</span>
                                     @if (t.Readiness.MissingValues.Count > 0) { <div class="ct-muted" data-testid="ct-missing">Missing: @string.Join(", ", t.Readiness.MissingValues)</div> }</td>
                                 <td>v@(test.ContractVersion)@if (t.Impact is { } impact) { <span class="ct-impact ct-impact-@impact.Level.ToString().ToLowerInvariant()" data-testid="ct-impact">@ImpactLabel(impact.Level) in v@(impact.ToVersion)</span> }</td>

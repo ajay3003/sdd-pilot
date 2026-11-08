@@ -43,6 +43,17 @@ public sealed class ContractTestingController(ContractRegistryService registry, 
         return created.Count == 0 && skipped.Any(s => s.Contains("does not exist", StringComparison.Ordinal)) ? NotFound(new { skipped }) : Ok(new { created, skipped });
     }
 
+    public sealed record ProposeRequest(string Operation);
+
+    /// <summary>Negative proposals for one operation (saved as Drafts, never run).</summary>
+    [HttpPost("contracts/{key}/tests/negatives")]
+    public async Task<IActionResult> ProposeNegatives(string key, [FromBody] ProposeRequest request, CancellationToken ct)
+    {
+        var (created, skipped) = await tests.ProposeNegativesAsync(key, request.Operation, ct);
+        return created.Count == 0 && skipped.Any(s => s.Contains("does not exist", StringComparison.Ordinal) || s.Contains("is not in", StringComparison.Ordinal))
+            ? NotFound(new { skipped }) : Ok(new { created, skipped });
+    }
+
     /// <summary>Tests with readiness for the Target Environment given in the body (POST because the environment is not a URL concern).</summary>
     [HttpPost("contracts/{key}/tests/query")]
     public async Task<ActionResult<IReadOnlyList<ContractTestView>>> Tests(string key, [FromBody] ContractTestEnvironment? environment, CancellationToken ct) =>

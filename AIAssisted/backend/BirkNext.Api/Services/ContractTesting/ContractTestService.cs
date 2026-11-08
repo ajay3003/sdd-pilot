@@ -52,6 +52,35 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         return (created, skipped);
     }
 
+    /// <summary>
+    /// Negative proposals for one operation (from its positive test, which is generated first when missing). Saved as Drafts; a proposal that already
+    /// exists for the same operation, kind and input is skipped. Nothing is run.
+    /// </summary>
+    public async Task<(List<ContractTestDefinition> Created, List<string> Skipped)> ProposeNegativesAsync(string key, string operation, CancellationToken ct)
+    {
+        if (await db.ApiContracts.AsNoTracking().FirstOrDefaultAsync(c => c.Key == key, ct) is not { } contract) return ([], [$"Contract {key} does not exist."]);
+        var version = await registry.LatestVersionAsync(key, ct) ?? 0;
+        if (await registry.RawAsync(key, version, ct) is not { } raw || raw.Document.Operations.FirstOrDefault(o => o.Name == operation) is not { } op) return ([], [$"{operation} is not in v{version}."]);
+        var existing = (await db.ContractTests.AsNoTracking().Where(t => t.ContractId == contract.Id && t.Operation == operation).Select(t => t.DocumentJson).ToListAsync(ct))
+            .Select(d => JsonSerializer.Deserialize<ContractTestDefinition>(d, ExecutionEvidenceStore.Json)!).ToList();
+        var positive = existing.FirstOrDefault(t => t.Kind == ContractTestKind.Positive && t.ContractVersion == version)
+            ?? ContractTestRules.GenerateAny(raw.Document, key, version, op, _clock.GetUtcNow()).FirstOrDefault(t => t.Kind == ContractTestKind.Positive);
+        if (positive is null) return ([], [$"{operation}: no test can be generated for this operation."]);
+        OpenApiSchemaValidator? validator = null;
+        if (raw.Document.Type == SourceContractType.OpenApi && raw.Text.Length > 0)
+            try { validator = OpenApiSchemaValidator.Parse(raw.Text) is { } root ? new OpenApiSchemaValidator(root) : null; } catch (Exception ex) when (ex is JsonException or FormatException) { }
+        var created = new List<ContractTestDefinition>(); var skipped = new List<string>();
+        foreach (var proposal in ContractNegativeRules.Propose(raw.Document, validator, positive, op, _clock.GetUtcNow()))
+        {
+            if (existing.Any(t => t.Kind == proposal.Kind && t.Variant == proposal.Variant)) { skipped.Add($"{proposal.Name}: already exists."); continue; }
+            db.ContractTests.Add(Row(contract.Id, proposal));
+            db.ContractTestRevisions.Add(RevisionRow(proposal, $"Proposed from contract v{version}."));
+            created.Add(proposal);
+        }
+        await db.SaveChangesAsync(ct);
+        return (created, skipped);
+    }
+
     public async Task<IReadOnlyList<ContractTestView>> ListAsync(string key, ContractTestEnvironment? environment, CancellationToken ct)
     {
         if (await db.ApiContracts.AsNoTracking().FirstOrDefaultAsync(c => c.Key == key, ct) is not { } contract) return [];
@@ -156,7 +185,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             var (call, missing) = ContractTestRules.Materialize(test, values);
             if (call is null) { notRun.Add($"{test.Name}: missing {string.Join(", ", missing)}."); continue; }
             var binding = await BindingAsync(test.ContractKey, request.Environment.EnvironmentId, ct);
-            kinds.Add(binding?.Authentication ?? ExecutionAuthenticationKind.None);
+            kinds.Add(test.WithoutAuthentication ? ExecutionAuthenticationKind.None : binding?.Authentication ?? ExecutionAuthenticationKind.None);
             var basePath = (request.BasePath ?? binding?.BasePath ?? "").Trim().TrimEnd('/');
             var path = call.Protocol == ExecutionProtocol.GraphQl && (request.GraphQlPath ?? binding?.GraphQlPath) is { Length: > 0 } endpoint ? endpoint.Trim() : basePath + call.Path;
             calls.Add(call with
@@ -260,7 +289,11 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             items.Add(decision.ActiveTestingAllowed ? new("Target Environment", ReadinessItemState.Ok, $"{decision.EnvironmentType ?? environment.EnvironmentType}: active testing allowed.")
                 : new("Target Environment", ReadinessItemState.Blocked, decision.Reason));
         }
-        items.Add(AuthenticationItem(test, op, environment, binding?.Authentication ?? ExecutionAuthenticationKind.None));
+        if (test.WithoutAuthentication)
+            items.Add(new("Authentication", ReadinessItemState.Ok, "Sent without any credential on purpose (a missing-authentication test); run it separately from authenticated tests."));
+        else items.Add(AuthenticationItem(test, op, environment, binding?.Authentication ?? ExecutionAuthenticationKind.None));
+        if (test.Template.Assertions.Count == 0)
+            items.Add(new("Expected outcome", ReadinessItemState.Missing, $"{test.Template.ExpectedOutcome ?? "No assertion is configured."} Edit the test and add the expected status or assertions; without them the result would be Not assessed."));
         if (ExecutionRunService.Mutating(test.Template))
             items.Add(new("Changes data", ReadinessItemState.Warning, $"{test.Template.Method} can change data: it runs only when you confirm data-changing calls for the run."));
         var state = items.Any(i => i.State == ReadinessItemState.Blocked) ? ContractTestReadinessState.Blocked
