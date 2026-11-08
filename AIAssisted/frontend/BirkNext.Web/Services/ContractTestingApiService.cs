@@ -13,6 +13,8 @@ public interface IContractTestingApiService
     Task<(IReadOnlyList<ApiContractSummary>? Contracts, string? Error)> ContractsAsync(CancellationToken ct = default);
     Task<(ApiContractDetail? Detail, string? Error)> ContractAsync(string key, int? version, CancellationToken ct = default);
     Task<(ContractImportResult? Result, string? Error)> ImportAsync(ContractImportRequest request, CancellationToken ct = default);
+    Task<(IReadOnlyList<SourceContractCandidate>? Candidates, string? Error)> SourceContractsAsync(CancellationToken ct = default);
+    Task<(ContractImportResult? Result, string? Error)> ImportFromSourceAsync(SourceContractImportRequest request, CancellationToken ct = default);
     Task<(ContractVersionDiff? Diff, string? Error)> DiffAsync(string key, int from, int to, CancellationToken ct = default);
     Task<(int Created, IReadOnlyList<string> Skipped, string? Error)> GenerateAsync(string key, int? version, IReadOnlyList<string>? operations, CancellationToken ct = default);
     Task<(int Created, IReadOnlyList<string> Skipped, string? Error)> ProposeNegativesAsync(string key, string operation, CancellationToken ct = default);
@@ -50,6 +52,12 @@ public sealed class ContractTestingApiService(HttpClient http) : IContractTestin
 
     public Task<(ContractImportResult? Result, string? Error)> ImportAsync(ContractImportRequest request, CancellationToken ct = default) =>
         SendAsync<ContractImportResult>(HttpMethod.Post, $"{Base}/contracts", request, ct, readErrorBody: true);
+
+    public Task<(IReadOnlyList<SourceContractCandidate>? Candidates, string? Error)> SourceContractsAsync(CancellationToken ct = default) =>
+        SendAsync<IReadOnlyList<SourceContractCandidate>>(HttpMethod.Get, $"{Base}/source-contracts", null, ct);
+
+    public Task<(ContractImportResult? Result, string? Error)> ImportFromSourceAsync(SourceContractImportRequest request, CancellationToken ct = default) =>
+        SendAsync<ContractImportResult>(HttpMethod.Post, $"{Base}/contracts/from-source", request, ct, readErrorBody: true);
 
     public Task<(ContractVersionDiff? Diff, string? Error)> DiffAsync(string key, int from, int to, CancellationToken ct = default) =>
         SendAsync<ContractVersionDiff>(HttpMethod.Get, $"{Base}/contracts/{Uri.EscapeDataString(key)}/diff?from={from}&to={to}", null, ct);

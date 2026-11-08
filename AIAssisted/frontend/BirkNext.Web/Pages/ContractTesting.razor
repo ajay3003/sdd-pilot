@@ -52,10 +52,30 @@
                 <h2 id="ct-import-h">Import a contract</h2>
                 <fieldset class="ct-radios">
                     <legend class="visually-hidden">Source</legend>
-                    <label><input type="radio" name="ct-src" checked="@(!_importByUrl)" @onchange="() => _importByUrl = false" data-testid="ct-import-file-mode" /> File</label>
-                    <label><input type="radio" name="ct-src" checked="@_importByUrl" @onchange="() => _importByUrl = true" data-testid="ct-import-url-mode" /> URL</label>
+                    <label><input type="radio" name="ct-src" checked="@(!_importByUrl && !_importFromSource)" @onchange="FileMode" data-testid="ct-import-file-mode" /> File</label>
+                    <label><input type="radio" name="ct-src" checked="@(_importByUrl && !_importFromSource)" @onchange="UrlMode" data-testid="ct-import-url-mode" /> URL</label>
+                    <label><input type="radio" name="ct-src" checked="@_importFromSource" @onchange="LoadSourceContractsAsync" data-testid="ct-import-source-mode" /> From Source Analysis</label>
                 </fieldset>
-                @if (_importByUrl)
+                @if (_importFromSource)
+                {
+                    @if (_sourceContracts is null) { <p class="ct-muted">Loading…</p> }
+                    else if (_sourceContracts.Count == 0) { <p class="ct-muted" data-testid="ct-source-none">No OpenAPI or GraphQL schema contract was found in Source Analysis snapshots.</p> }
+                    else
+                    {
+                        <ul class="ct-list" data-testid="ct-source-list">
+                            @foreach (var c in _sourceContracts)
+                            {
+                                <li data-testid="ct-source-contract" data-file="@c.File">
+                                    <span><strong>@c.Name</strong> <span class="ct-pill">@(c.Type == "OpenApi" ? "REST" : "GraphQL")</span></span>
+                                    <span class="ct-muted">@SourceFacts(c)</span>
+                                    @if (c.ImportedAs is { } done) { <span class="ct-muted" data-testid="ct-source-imported">Imported as @done</span> }
+                                    else { <button class="btn btn-secondary btn-sm" data-testid="ct-source-import" disabled="@_busy" @onclick="() => ImportSourceAsync(c)">Import</button> }
+                                </li>
+                            }
+                        </ul>
+                    }
+                }
+                else if (_importByUrl)
                 {
                     <label class="ct-field">Document URL <input data-testid="ct-import-url" @bind="_importUrl" @bind:event="oninput" placeholder="http://localhost:5288/openapi.json" /></label>
                     <p class="ct-muted">Fetched once without credentials; link-local and cloud-metadata addresses are refused.</p>
@@ -76,7 +96,10 @@
                         @foreach (var c in _contracts ?? []) { <option value="@c.Key">the next version of @c.Name</option> }
                     </select>
                 </label>
-                <button class="btn btn-primary" data-testid="ct-import-submit" disabled="@(_busy || (_importByUrl ? string.IsNullOrWhiteSpace(_importUrl) : _importContent is null))" @onclick="ImportAsync">Import</button>
+                @if (!_importFromSource)
+                {
+                    <button class="btn btn-primary" data-testid="ct-import-submit" disabled="@(_busy || (_importByUrl ? string.IsNullOrWhiteSpace(_importUrl) : _importContent is null))" @onclick="ImportAsync">Import</button>
+                }
             </section>
         </aside>
 
@@ -99,7 +122,7 @@
                         </label>
                         @if (info is not null)
                         {
-                            <span data-testid="ct-version-source">@(info.Source == ContractVersionSource.Url ? "From URL" : "Uploaded") · @info.SourceLabel · @info.Format.ToUpperInvariant() · @info.ImportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                            <span data-testid="ct-version-source">@(info.Source switch { ContractVersionSource.Url => "From URL", ContractVersionSource.SourceSnapshot => "From Source Analysis", _ => "Uploaded" }) · @info.SourceLabel · @info.Format.ToUpperInvariant() · @info.ImportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
                             <span class="ct-muted" title="SHA-256 of the imported document">#@info.Sha256[..12]</span>
                             <span class="ct-pill" data-testid="ct-parse">@(info.ParseSupport == DomainSupport.Supported ? "Fully read" : "Partly read")</span>
                         }
@@ -135,7 +158,8 @@
     private string View => Views.Any(v => v.Key == ViewQuery) ? ViewQuery! : "operations";
     private IContractTestingApiService? Api => Services.GetService(typeof(IContractTestingApiService)) as IContractTestingApiService;
 
-    private bool _loading = true, _busy, _importByUrl, _confirmMutating;
+    private bool _loading = true, _busy, _importByUrl, _importFromSource, _confirmMutating;
+    private IReadOnlyList<SourceContractCandidate>? _sourceContracts;
     private string? _error, _message, _importUrl, _importFileName, _importContent, _importTarget, _importName, _basePath, _environmentName;
     private Guid? _runId;
     private IReadOnlyList<ApiContractSummary>? _contracts;
@@ -242,6 +266,31 @@
             _importContent = null; _importFileName = null; _importUrl = null; _importName = null;
             Go(Link(contract: result.Key, version: null, view: "operations", test: null));
         }
+        else _error = result?.Message ?? error;
+    }
+
+    private void FileMode() { _importByUrl = false; _importFromSource = false; }
+    private void UrlMode() { _importByUrl = true; _importFromSource = false; }
+
+    private static string SourceFacts(SourceContractCandidate c) =>
+        $"{c.File} · {c.OperationCount} operations · {c.Archive} · {c.AnalyzedAt.ToLocalTime():yyyy-MM-dd HH:mm}" + (c.Commit is { Length: > 0 } commit && commit != "Unknown" ? $" · {commit}" : "");
+
+    private async Task LoadSourceContractsAsync()
+    {
+        _importFromSource = true; _importByUrl = false; _sourceContracts = null;
+        if (Api is not { } api) return;
+        (_sourceContracts, _error) = await api.SourceContractsAsync();
+    }
+
+    /// <summary>Imports a contract Source Analysis already holds (no re-upload), as a new contract or the selected contract's next version.</summary>
+    private async Task ImportSourceAsync(SourceContractCandidate candidate)
+    {
+        if (Api is not { } api) return;
+        _busy = true; _error = null; _message = null;
+        var (result, error) = await api.ImportFromSourceAsync(new(candidate.SnapshotId, candidate.ContractId, string.IsNullOrEmpty(_importTarget) ? null : _importTarget,
+            string.IsNullOrWhiteSpace(_importName) ? null : _importName.Trim()));
+        _busy = false;
+        if (result is { Imported: true } or { Unchanged: true }) { _message = result.Message; _importFromSource = false; Go(Link(contract: result.Key, version: null, view: "operations", test: null)); }
         else _error = result?.Message ?? error;
     }
 

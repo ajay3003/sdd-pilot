@@ -97,6 +97,16 @@ public sealed class ContractTestingPageTests : BunitContext
             Imported = request; HasContract = true;
             return Task.FromResult<(ContractImportResult?, string?)>((new(true, false, "children-api", 1, "Imported Children API as version 1 (3 operations).", []), null));
         }
+        public SourceContractImportRequest? SourceImport { get; private set; }
+        public Task<(IReadOnlyList<SourceContractCandidate>? Candidates, string? Error)> SourceContractsAsync(CancellationToken ct = default) =>
+            Task.FromResult<(IReadOnlyList<SourceContractCandidate>?, string?)>(([
+                new(Guid.Parse("11111111-1111-1111-1111-111111111111"), DateTimeOffset.UtcNow, "children-source.zip", "c0ffee1", "openapi:api/children.yaml", "Children API", "OpenApi", "api/children.yaml", 4, null),
+                new(Guid.Parse("22222222-2222-2222-2222-222222222222"), DateTimeOffset.UtcNow, "children-source.zip", "c0ffee0", "graphql:schema.graphql", "Schema", "GraphQlSchema", "schema.graphql", 3, "schema@v1")], null));
+        public Task<(ContractImportResult? Result, string? Error)> ImportFromSourceAsync(SourceContractImportRequest request, CancellationToken ct = default)
+        {
+            SourceImport = request; HasContract = true;
+            return Task.FromResult<(ContractImportResult?, string?)>((new(true, false, "children-api", 1, "Imported Children API from source snapshot as version 1 (4 operations).", []), null));
+        }
         public Task<(ContractVersionDiff? Diff, string? Error)> DiffAsync(string key, int from, int to, CancellationToken ct = default)
         {
             Log.Add($"diff {from} {to}");
@@ -217,6 +227,19 @@ public sealed class ContractTestingPageTests : BunitContext
         page.Find("[data-testid=ct-import-submit]").HasAttribute("disabled").Should().BeTrue();
         page.Find("[data-testid=ct-import-url]").Input("http://localhost:5288/openapi.json");
         page.Find("[data-testid=ct-import-submit]").HasAttribute("disabled").Should().BeFalse("the button reflects what is typed, not what was last committed on blur");
+    }
+
+    [Fact]
+    public void A_contract_Source_Analysis_already_holds_is_imported_without_re_upload()
+    {
+        _api.HasContract = false;
+        var page = Open("");
+        page.Find("[data-testid=ct-import-source-mode]").Change(true);
+        page.WaitForAssertion(() => page.FindAll("[data-testid=ct-source-contract]").Should().HaveCount(2));
+        page.Find("[data-testid=ct-source-imported]").TextContent.Should().Be("Imported as schema@v1");
+        page.Find("[data-testid=ct-source-import]").Click();
+        page.WaitForAssertion(() => _api.SourceImport.Should().Be(new SourceContractImportRequest(Guid.Parse("11111111-1111-1111-1111-111111111111"), "openapi:api/children.yaml", null, null)));
+        Services.GetRequiredService<NavigationManager>().Uri.Should().Contain("contract=children-api");
     }
 
     [Fact]

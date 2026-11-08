@@ -278,6 +278,13 @@ namespace BirkNext.Api.Data.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<string>("SourcePath")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid?>("SourceSnapshotId")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("Version")
                         .HasColumnType("integer");
 
@@ -285,6 +292,8 @@ namespace BirkNext.Api.Data.Migrations
 
                     b.HasIndex("ContractId", "Version")
                         .IsUnique();
+
+                    b.HasIndex("SourceSnapshotId", "SourcePath");
 
                     b.ToTable("api_contract_versions", (string)null);
                 });

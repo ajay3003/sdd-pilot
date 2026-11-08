@@ -26,6 +26,17 @@ public sealed class ContractTestingController(ContractRegistryService registry, 
     [HttpGet("contracts")]
     public async Task<ActionResult<IReadOnlyList<ApiContractSummary>>> List(CancellationToken ct) => Ok(await registry.ListAsync(ct));
 
+    /// <summary>OpenAPI / GraphQL schema contracts found by Source Analysis, with the store version each was imported as (reading only).</summary>
+    [HttpGet("source-contracts")]
+    public async Task<ActionResult<IReadOnlyList<SourceContractCandidate>>> SourceContracts(CancellationToken ct) => Ok(await registry.SourceCandidatesAsync(ct));
+
+    [HttpPost("contracts/from-source")]
+    public async Task<ActionResult<ContractImportResult>> ImportFromSource([FromBody] SourceContractImportRequest request, CancellationToken ct)
+    {
+        var result = await registry.ImportFromSourceAsync(request, ct);
+        return result.Imported || result.Unchanged ? Ok(result) : UnprocessableEntity(result);
+    }
+
     [HttpGet("contracts/{key}")]
     public async Task<ActionResult<ApiContractDetail>> Get(string key, [FromQuery] int? version, CancellationToken ct) =>
         await registry.GetAsync(key, version, ct) is { } detail ? Ok(detail) : NotFound();

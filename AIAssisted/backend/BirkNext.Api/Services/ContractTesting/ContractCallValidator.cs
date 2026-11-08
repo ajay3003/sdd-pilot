@@ -29,7 +29,7 @@ public sealed partial class ContractCallValidator(ContractRegistryService regist
             var (gqlFindings, gqlUnsupported) = GraphQlContractValidator.ValidateRequest(doc, d.GraphQlQuery, d.GraphQlVariablesJson);
             return Report("Request", contractRef, $"{contractRef}#{operation}", gqlFindings, gqlUnsupported, "document and variables");
         }
-        if (validator is null) return new("Request", ContractValidationState.NotAssessed, contractRef, null, "The contract version has no stored document to validate against.", [], []);
+        if (validator is null) return Structural("Request", doc, contractRef, doc.Operations.FirstOrDefault(o => o.Name == operation)?.RequestSchema, d.Body, d.Body is null);
         var findings = new List<ContractValidationFinding>();
         var unsupported = new HashSet<string>(StringComparer.Ordinal);
         var (method, template) = Split(operation);
@@ -89,7 +89,14 @@ public sealed partial class ContractCallValidator(ContractRegistryService regist
             if (!parsed) return Report("Response", contractRef, null, [new("Syntax", "$", "", "json", "The GraphQL response is not JSON.")], [], "data shape");
             return Report("Response", contractRef, $"{contractRef}#{operation}", GraphQlContractValidator.ValidateResponse(doc, d.GraphQlQuery, json), [], "data shape");
         }
-        if (validator is null) return new("Response", ContractValidationState.NotAssessed, contractRef, null, "The contract version has no stored document to validate against.", [], []);
+        if (validator is null)
+        {
+            var op = doc.Operations.FirstOrDefault(o => o.Name == operation);
+            var code = response.StatusCode.ToString(CultureInfo.InvariantCulture);
+            if (op is not null && op.ResponseCodes.Count > 0 && !op.ResponseCodes.Contains(code) && !op.ResponseCodes.Contains($"{code[0]}XX") && !op.ResponseCodes.Contains("default"))
+                return Report("Response", contractRef, null, [new("Operation", "$.status", "", "responses", $"HTTP {code} is not a documented response ({string.Join(", ", op.ResponseCodes)}).")], [], "status");
+            return Structural("Response", doc, contractRef, op?.ResponseSchemas.TryGetValue(code, out var schemaName) == true ? schemaName : null, text, text.Trim().Length == 0);
+        }
         var (method, template) = Split(operation);
         var contentType = response.Headers.FirstOrDefault(h => h.Name.Equals("Content-Type", StringComparison.OrdinalIgnoreCase))?.Value;
         var lookup = validator.ResponseSchema(method, template, response.StatusCode, contentType);
@@ -103,6 +110,55 @@ public sealed partial class ContractCallValidator(ContractRegistryService regist
         else if (!parsed) findings.Add(new("Syntax", "$", lookup.Pointer!, "json", "The response body is not valid JSON."));
         else findings.AddRange(validator.Validate(json, lookup.Schema, lookup.Pointer!, ValidationDirection.Response, unsupported));
         return Report("Response", contractRef, lookup.Pointer, findings, unsupported, lookup.StatusKey is null ? "status" : $"response {lookup.StatusKey}");
+    }
+
+    /// <summary>
+    /// Structural validation for versions without a stored document (imported from a Source Analysis snapshot): required properties and the
+    /// primitive / nested / list types recorded on the contract's types. Constraints, enums and composition are not available and are listed as
+    /// not evaluated, so such a check never counts as a full pass.
+    /// </summary>
+    private static ContractValidationReport Structural(string direction, SourceContract doc, string contractRef, string? typeName, string? body, bool empty)
+    {
+        const string limitation = "constraints, enums and composition (source-backed version without the document text)";
+        if (typeName is null) return new(direction, ContractValidationState.NotAssessed, contractRef, null, $"The contract records no {direction.ToLowerInvariant()} schema for this case.", [], [limitation]);
+        if (empty) return Report(direction, contractRef, typeName, [new("Schema", "$", typeName, "body", $"A {typeName} body is documented, but the {direction.ToLowerInvariant()} has none.")], [limitation], "structure");
+        JsonNode? json;
+        try { json = JsonNode.Parse(body!); }
+        catch (JsonException) { return Report(direction, contractRef, typeName, [new("Syntax", "$", typeName, "json", "The body is not valid JSON.")], [limitation], "structure"); }
+        var findings = new List<ContractValidationFinding>();
+        Shape(json, typeName, "$", doc, findings, 0);
+        return Report(direction, contractRef, typeName, findings, [limitation], "structure");
+    }
+
+    private static void Shape(JsonNode? value, string type, string path, SourceContract doc, List<ContractValidationFinding> findings, int depth)
+    {
+        if (depth > 32 || value is null) return;
+        var t = type.Trim();
+        if (t.StartsWith('['))
+        {
+            if (value is not JsonArray list) { findings.Add(new("Type", path, type, "type", $"Expected a list of {t.Trim('[', ']')}.")); return; }
+            for (var i = 0; i < list.Count; i++) Shape(list[i], t.Trim('[', ']'), $"{path}[{i}]", doc, findings, depth + 1);
+            return;
+        }
+        var primitive = t.Split(':')[0];
+        var kind = value.GetValueKind();
+        var mismatch = primitive switch
+        {
+            "string" => kind != JsonValueKind.String,
+            "integer" => kind != JsonValueKind.Number || JsonNumber.Of(value) % 1 != 0,
+            "number" => kind != JsonValueKind.Number,
+            "boolean" => kind is not (JsonValueKind.True or JsonValueKind.False),
+            "array" => kind != JsonValueKind.Array,
+            _ => false,
+        };
+        if (mismatch) { findings.Add(new("Type", path, type, "type", $"Expected {primitive}, got {kind.ToString().ToLowerInvariant()}.")); return; }
+        if (doc.Types.FirstOrDefault(x => x.Name == t) is not { } shape) return;
+        if (value is not JsonObject o) { findings.Add(new("Type", path, t, "type", $"Expected an object ({t}).")); return; }
+        foreach (var field in shape.Fields)
+        {
+            if (!o.TryGetPropertyValue(field.Name, out var child)) { if (field.Required) findings.Add(new("Schema", $"{path}.{field.Name}", $"{t}.{field.Name}", "required", $"Required property {field.Name} is missing.")); continue; }
+            Shape(child, field.Type, $"{path}.{field.Name}", doc, findings, depth + 1);
+        }
     }
 
     private static ContractValidationReport Report(string direction, string contractRef, string? schemaRef, List<ContractValidationFinding> findings, IEnumerable<string> unsupported, string what)

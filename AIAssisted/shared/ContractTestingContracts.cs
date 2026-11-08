@@ -13,7 +13,7 @@ namespace BirkNext.ContractTesting;
 public enum ApiContractProtocol { Rest, GraphQl }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ContractVersionSource { Upload, Url }
+public enum ContractVersionSource { Upload, Url, SourceSnapshot }
 
 /// <summary>Stable identities. An operation is <c>"METHOD /path-template"</c> (REST) inside one contract; a reference pins the contract version.</summary>
 public static class ContractIdentity
@@ -32,7 +32,20 @@ public sealed record ApiContractSummary(Guid Id, string Key, string Name, ApiCon
 
 /// <summary>One immutable version: what was imported (fingerprint, source, format) and how far it could be read.</summary>
 public sealed record ApiContractVersionInfo(int Version, string Sha256, ContractVersionSource Source, string SourceLabel, string Format, DateTimeOffset ImportedAt,
-    int OperationCount, string? DocumentVersion, DomainSupport ParseSupport, List<string> Limitations);
+    int OperationCount, string? DocumentVersion, DomainSupport ParseSupport, List<string> Limitations)
+{
+    /// <summary>Source-backed versions: the Source Analysis snapshot and the contract file inside it.</summary>
+    public Guid? SourceSnapshotId { get; init; }
+    public string? SourcePath { get; init; }
+    /// <summary>False for source-backed versions: the snapshot keeps the parsed contract, not the document text, so full schema validation is not available.</summary>
+    public bool HasDocument { get; init; } = true;
+}
+
+/// <summary>A REST or GraphQL contract a Source Analysis snapshot found, and whether the store already has it.</summary>
+public sealed record SourceContractCandidate(Guid SnapshotId, DateTimeOffset AnalyzedAt, string Archive, string? Commit, string ContractId, string Name, string Type, string File,
+    int OperationCount, string? ImportedAs);
+
+public sealed record SourceContractImportRequest(Guid SnapshotId, string SourceContractId, string? ContractKey, string? Name);
 
 public sealed record ApiContractDetail(ApiContractSummary Contract, List<ApiContractVersionInfo> Versions, int Version, SourceContract Document);
 

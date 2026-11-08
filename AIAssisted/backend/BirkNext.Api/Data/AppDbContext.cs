@@ -1118,6 +1118,8 @@ public class AppDbContext : DbContext
             entity.Property(v => v.DocumentText).HasColumnType("text").IsRequired();
             entity.Property(v => v.ContractJson).HasColumnType("text").IsRequired();
             entity.HasIndex(v => new { v.ContractId, v.Version }).IsUnique();
+            entity.Property(v => v.SourcePath).HasMaxLength(500);
+            entity.HasIndex(v => new { v.SourceSnapshotId, v.SourcePath });
         });
         modelBuilder.Entity<ContractTestRow>(entity =>
         {

@@ -27,6 +27,9 @@ public sealed class ApiContractVersionRow
     public string ContractJson { get; init; } = "";
     public int OperationCount { get; init; }
     public DateTimeOffset ImportedAt { get; init; }
+    /// <summary>Source-backed versions: the Source Analysis snapshot and the contract file path inside it (provenance; the snapshot is never changed).</summary>
+    public Guid? SourceSnapshotId { get; init; }
+    public string? SourcePath { get; init; }
 }
 
 /// <summary>A contract test definition (ContractTestDefinition as JSON) with its searchable columns.</summary>

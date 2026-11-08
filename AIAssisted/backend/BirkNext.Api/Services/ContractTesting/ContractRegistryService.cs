@@ -19,7 +19,7 @@ namespace BirkNext.Api.Services.ContractTesting;
 /// <see cref="SourceContract"/> model. A contract keeps one protocol across its versions. An identical document is not
 /// stored again; a changed one is the next version. Importing never executes anything against the API it describes.
 /// </summary>
-public sealed partial class ContractRegistryService(AppDbContext db, IContractSourceFetcher fetcher, TimeProvider? clock = null)
+public sealed partial class ContractRegistryService(AppDbContext db, IContractSourceFetcher fetcher, TimeProvider? clock = null, BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider? sources = null)
 {
     public const int MaxDocumentBytes = 5 * 1024 * 1024;
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
@@ -45,6 +45,12 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
         if (Encoding.UTF8.GetByteCount(content) > MaxDocumentBytes) return Fail($"The document is larger than {MaxDocumentBytes / (1024 * 1024)} MB.");
 
         var json = content.TrimStart().StartsWith('{');
+        if (json)
+        {
+            // Malformed JSON is reported with its position before any format detection.
+            try { using var probe = JsonDocument.Parse(content, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true, MaxDepth = 128 }); }
+            catch (JsonException je) { return Fail($"The JSON is not valid at line {(je.LineNumber ?? 0) + 1}, position {(je.BytePositionInLine ?? 0) + 1}."); }
+        }
         string format;
         ApiContractProtocol protocol;
         SourceContract? parsed;
@@ -70,7 +76,15 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
             else return Fail("Not an OpenAPI 3 / Swagger 2 document or a GraphQL schema (SDL or an introspection result).");
         }
         catch (Exception ex) when (ex is JsonException or FormatException or InvalidOperationException or HotChocolate.Language.SyntaxException)
-        { return Fail($"The document could not be parsed ({ex.GetType().Name})."); }
+        {
+            return Fail(ex switch
+            {
+                JsonException je => $"The JSON is not valid at line {(je.LineNumber ?? 0) + 1}, position {(je.BytePositionInLine ?? 0) + 1}.",
+                HotChocolate.Language.SyntaxException se => $"The GraphQL schema is not valid: {se.Message}",
+                _ => $"The document could not be parsed ({ex.GetType().Name}: {ex.Message.Split('.')[0]}).",
+            });
+        }
+        if (format == "yaml" && YamlLimitations(content) is { Count: > 0 } yamlLimits) parsed = parsed is null ? null : parsed with { Limitations = [.. parsed.Limitations, .. yamlLimits] };
         if (parsed is null) return Fail(protocol == ApiContractProtocol.Rest ? "The document could not be read as OpenAPI." : "The document could not be read as a GraphQL schema.");
         if (parsed.Operations.Count == 0) problems.Add("The document declares no operations.");
 
@@ -113,6 +127,87 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
         return new(true, false, contract.Key, version, version == 1 ? $"Imported {contract.Name} as version 1 ({parsed.Operations.Count} operations)." : $"Imported version {version} of {contract.Name} ({parsed.Operations.Count} operations).", problems);
 
         ContractImportResult Fail(string message) => new(false, false, null, null, message, [message]);
+    }
+
+    /// <summary>
+    /// REST (OpenAPI) and GraphQL schema contracts that Source Analysis snapshots found, newest snapshots first, with the store version each one
+    /// was already imported as. Reading only; nothing is imported.
+    /// </summary>
+    public async Task<IReadOnlyList<SourceContractCandidate>> SourceCandidatesAsync(CancellationToken ct)
+    {
+        if (sources is null || !sources.SourceAnalysisEnabled) return [];
+        var imported = await db.ApiContractVersions.AsNoTracking().Where(v => v.SourceSnapshotId != null)
+            .Join(db.ApiContracts.AsNoTracking(), v => v.ContractId, c => c.Id, (v, c) => new { v.SourceSnapshotId, v.SourcePath, c.Key, v.Version }).ToListAsync(ct);
+        var result = new List<SourceContractCandidate>();
+        foreach (var snapshot in (await sources.ListAsync(string.Empty, ct)).Take(20))
+            foreach (var c in snapshot.EvidenceDomains?.Contracts.Contracts.Where(c => c.Type is SourceContractType.OpenApi or SourceContractType.GraphQlSchema) ?? [])
+            {
+                var hit = imported.FirstOrDefault(i => i.SourceSnapshotId == snapshot.Id && i.SourcePath == c.Id);
+                result.Add(new(snapshot.Id, snapshot.AnalyzedAt, snapshot.Archive.FileName, snapshot.Commit, c.Id, c.Name, c.Type.ToString(), c.File, c.Operations.Count,
+                    hit is null ? null : ContractIdentity.ContractRef(hit.Key, hit.Version)));
+            }
+        return result;
+    }
+
+    /// <summary>
+    /// Imports a contract a Source Analysis snapshot already holds (no re-upload): the snapshot's parsed contract becomes an immutable version with
+    /// its provenance (snapshot, source path, archive). The snapshot is never changed. Identical evidence is not stored again. The snapshot keeps
+    /// the parsed contract, not the document text, so such versions get structural (type-based) validation, not full schema validation.
+    /// </summary>
+    public async Task<ContractImportResult> ImportFromSourceAsync(SourceContractImportRequest request, CancellationToken ct)
+    {
+        ContractImportResult Fail(string message) => new(false, false, null, null, message, [message]);
+        if (sources is null || !sources.SourceAnalysisEnabled) return Fail("Source Analysis is not available.");
+        if (await sources.ResolveAsync(string.Empty, request.SnapshotId, ct) is not { } snapshot) return Fail("The source snapshot does not exist.");
+        if (snapshot.EvidenceDomains?.Contracts.Contracts.FirstOrDefault(c => c.Id == request.SourceContractId) is not { } source) return Fail("The snapshot has no such contract.");
+        if (source.Type is not (SourceContractType.OpenApi or SourceContractType.GraphQlSchema)) return Fail("Only OpenAPI and GraphQL schema contracts can be imported for contract testing.");
+        var protocol = source.Type == SourceContractType.OpenApi ? ApiContractProtocol.Rest : ApiContractProtocol.GraphQl;
+        var evidenceJson = JsonSerializer.Serialize(source, ExecutionEvidenceStore.Json);
+        var sha = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(evidenceJson))).ToLowerInvariant();
+        if (await db.ApiContractVersions.AsNoTracking().Where(v => v.SourceSnapshotId == snapshot.Id && v.SourcePath == source.Id)
+                .Join(db.ApiContracts.AsNoTracking(), v => v.ContractId, c => c.Id, (v, c) => new { c.Key, v.Version }).FirstOrDefaultAsync(ct) is { } already)
+            return new(false, true, already.Key, already.Version, $"Already imported from this snapshot as {ContractIdentity.ContractRef(already.Key, already.Version)}; nothing was stored.", []);
+        var now = _clock.GetUtcNow();
+        ApiContractRow contract;
+        if (!string.IsNullOrWhiteSpace(request.ContractKey))
+        {
+            if (await db.ApiContracts.FirstOrDefaultAsync(c => c.Key == request.ContractKey, ct) is not { } existing) return Fail($"Contract {request.ContractKey} does not exist.");
+            if (existing.Protocol != protocol.ToString()) return Fail($"{existing.Name} is a {existing.Protocol} contract; this source contract is {protocol}.");
+            contract = existing;
+        }
+        else
+        {
+            var name = Trim(string.IsNullOrWhiteSpace(request.Name) ? source.Name : request.Name.Trim(), 200);
+            contract = new ApiContractRow { Id = Guid.NewGuid(), Key = await UniqueKeyAsync(name, ct), Name = name, Protocol = protocol.ToString(), CreatedAt = now, UpdatedAt = now };
+            db.ApiContracts.Add(contract);
+        }
+        var last = await db.ApiContractVersions.AsNoTracking().Where(v => v.ContractId == contract.Id).OrderByDescending(v => v.Version).FirstOrDefaultAsync(ct);
+        if (last?.Sha256 == sha) return new(false, true, contract.Key, last.Version, $"Unchanged: the source evidence is identical to version {last.Version}; nothing was stored.", []);
+        var version = (last?.Version ?? 0) + 1;
+        var stored = source with
+        {
+            Id = contract.Key,
+            Limitations = [.. source.Limitations, "Imported from a Source Analysis snapshot: the snapshot keeps the parsed contract, not the document text, so responses get structural (type-based) validation, not full schema validation."],
+        };
+        db.ApiContractVersions.Add(new ApiContractVersionRow
+        {
+            Id = Guid.NewGuid(), ContractId = contract.Id, Version = version, Sha256 = sha, Source = nameof(ContractVersionSource.SourceSnapshot),
+            SourceLabel = Trim($"{snapshot.Archive.FileName} · {source.File} · snapshot {snapshot.Id:N}" + (snapshot.Commit is { Length: > 0 } commit && commit != "Unknown" ? $" · {commit}" : ""), 500),
+            Format = source.Format, DocumentText = "", ContractJson = JsonSerializer.Serialize(stored, ExecutionEvidenceStore.Json), OperationCount = source.Operations.Count, ImportedAt = now,
+            SourceSnapshotId = snapshot.Id, SourcePath = Trim(source.Id, 500),
+        });
+        contract.UpdatedAt = now;
+        await db.SaveChangesAsync(ct);
+        return new(true, false, contract.Key, version, $"Imported {source.Name} from source snapshot {snapshot.AnalyzedAt:yyyy-MM-dd HH:mm} as version {version} ({source.Operations.Count} operations).", []);
+    }
+
+    /// <summary>YAML features the subset reader does not read (anchors/aliases, tags): named so a partial read is never silent.</summary>
+    private static List<string> YamlLimitations(string content)
+    {
+        var limits = new List<string>();
+        if (Regex.IsMatch(content, @"(^|\s)&[A-Za-z0-9_-]+\s|:\s+\*[A-Za-z0-9_-]+", RegexOptions.Multiline)) limits.Add("YAML anchors/aliases are not resolved by the YAML subset reader.");
+        if (Regex.IsMatch(content, @"\s!!?[A-Za-z]", RegexOptions.Multiline)) limits.Add("YAML tags are not interpreted by the YAML subset reader.");
+        return limits;
     }
 
     public async Task<IReadOnlyList<ApiContractSummary>> ListAsync(CancellationToken ct)
@@ -159,7 +254,8 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
     private static ApiContractVersionInfo Info(ApiContractVersionRow v)
     {
         var doc = Document(v);
-        return new(v.Version, v.Sha256, Enum.Parse<ContractVersionSource>(v.Source), v.SourceLabel, v.Format, v.ImportedAt, v.OperationCount, doc.Version, doc.ParseSupport, doc.Limitations);
+        return new(v.Version, v.Sha256, Enum.Parse<ContractVersionSource>(v.Source), v.SourceLabel, v.Format, v.ImportedAt, v.OperationCount, doc.Version, doc.ParseSupport, doc.Limitations)
+            { SourceSnapshotId = v.SourceSnapshotId, SourcePath = v.SourcePath, HasDocument = v.DocumentText.Length > 0 };
     }
 
     private static SourceContract Document(ApiContractVersionRow v) => JsonSerializer.Deserialize<SourceContract>(v.ContractJson, ExecutionEvidenceStore.Json)!;
