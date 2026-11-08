@@ -140,6 +140,10 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
     public async Task<ContractTestRunResult> RunAsync(ContractTestRunRequest request, CancellationToken ct)
     {
         var notRun = new List<string>();
+        var basePath = (request.BasePath ?? "").Trim().TrimEnd('/');
+        if (basePath.Length > 0 && (!basePath.StartsWith('/') || basePath.StartsWith("//", StringComparison.Ordinal) || basePath.Contains("://", StringComparison.Ordinal)
+            || basePath.IndexOfAny(['\\', '?', '#']) >= 0))
+            return new(null, ["The API base path is a path inside the Target Environment (starts with a single '/', no host, query or fragment)."]);
         var calls = new List<ExecutionCallDefinition>();
         var contractRefs = new HashSet<string>(StringComparer.Ordinal);
         foreach (var id in request.TestIds.Distinct())
@@ -154,7 +158,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             if (call is null) { notRun.Add($"{test.Name}: missing {string.Join(", ", missing)}."); continue; }
             calls.Add(call with
             {
-                Name = test.Name, OperationRef = ContractIdentity.OperationRef(test.ContractKey, test.ContractVersion, test.Operation),
+                Path = basePath + call.Path, Name = test.Name, OperationRef = ContractIdentity.OperationRef(test.ContractKey, test.ContractVersion, test.Operation),
                 TestDataRefs = test.Binding is { } b ? [$"{b.Alias}@v{b.Version}"] : [], DefinitionVersion = ContractIdentity.DefinitionRef(test.Id, test.Revision),
             });
             contractRefs.Add(ContractIdentity.ContractRef(test.ContractKey, test.ContractVersion));

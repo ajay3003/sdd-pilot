@@ -367,6 +367,37 @@ public sealed class ContractTestingTests : IAsyncLifetime
         (await tests.RegenerateAsync(impacted[("GET /admin/reports", ContractTestKind.Positive)].Test.Id, default)).Error.Should().Contain("does not exist in v2");
     }
 
+    [Theory]
+    [InlineData("//evil.example.test")]
+    [InlineData("http://evil.example.test/api")]
+    [InlineData("api")]
+    [InlineData("/api?x=1")]
+    [InlineData("/api\\x")]
+    public async Task A_base_path_is_only_ever_a_path_inside_the_Target_Environment(string basePath)
+    {
+        using var scope = _services.CreateScope();
+        (await Scoped<ContractRegistryService>(scope).ImportAsync(new() { FileName = "children.yaml", Content = V1Yaml }, default)).Imported.Should().BeTrue();
+        var (created, _) = await Scoped<ContractTestService>(scope).GenerateAsync("synthetic-children-api", null, ["GET /admin/reports"], default);
+        var result = await Scoped<ContractTestService>(scope).RunAsync(new() { TestIds = [created[0].Id], Environment = Local, BasePath = basePath }, default);
+        result.Run.Should().BeNull();
+        result.NotRun.Should().ContainSingle().Which.Should().Contain("path inside the Target Environment");
+        _seen.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_valid_base_path_prefixes_every_call_path()
+    {
+        using var scope = _services.CreateScope();
+        (await Scoped<ContractRegistryService>(scope).ImportAsync(new() { FileName = "children.yaml", Content = V1Yaml }, default)).Imported.Should().BeTrue();
+        var (created, _) = await Scoped<ContractTestService>(scope).GenerateAsync("synthetic-children-api", null, ["GET /children/{id}"], default);
+        Dataset("ids", new TestDataTypedEntry("id", TestDataPrimitive.Int32, "7"));
+        (await Scoped<ContractTestService>(scope).BindAsync(created[0].Id, new("ids", 1), default)).Error.Should().BeNull();
+        var result = await Scoped<ContractTestService>(scope).RunAsync(new() { TestIds = [created[0].Id], Environment = Local, BasePath = "/api/" }, default);
+        var run = await WaitAsync(result.Run!.RunId!.Value);
+        run.Calls.Single().Definition.Path.Should().Be("/api/children/7");
+        _seen.Should().ContainSingle(s => s.PathAndQuery == "/api/children/7");
+    }
+
     [Fact]
     public void Materialize_keeps_types_escapes_path_values_and_drops_only_optional_inputs()
     {

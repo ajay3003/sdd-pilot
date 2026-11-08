@@ -354,6 +354,10 @@ if (entra.Configured)
 var executionEvidenceClient = builder.Services.AddHttpClient<IExecutionEvidenceApiService, ExecutionEvidenceApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
     executionEvidenceClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
+// Contract-Driven Testing: contract registry, contract tests and their runs (which go through Execution Evidence on the backend).
+var contractTestingClient = builder.Services.AddHttpClient<IContractTestingApiService, ContractTestingApiService>(client => client.BaseAddress = backendBase);
+if (entra.Configured)
+    contractTestingClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
 // IQR -> Integration journeys: one shared client for every journey pack; runs/history use the same execution permission and token pipeline.
 var journeysClient = builder.Services.AddHttpClient<IIntegrationJourneysApiService, IntegrationJourneysApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)

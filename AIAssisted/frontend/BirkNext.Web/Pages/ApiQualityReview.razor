@@ -32,6 +32,8 @@
             <button type="button" class="btn-secondary" @onclick="RunReview" disabled="@(!Eligibility.Enabled || _running)" data-testid="aqr-run">@(_running ? "Reviewing…" : "Run review again")</button>
             <ExportMenu Options="ExportOptions" TestId="aqr-export" />
         }
+        @* Contract-driven tests live beside the review: import a contract, generate tests, bind Test Data, run with evidence. *@
+        <a class="btn-secondary" href="api-quality-review/contracts" data-testid="aqr-contract-testing">Contract tests</a>
     </PageHeader>
 
     @{

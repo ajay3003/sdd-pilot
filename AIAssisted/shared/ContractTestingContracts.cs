@@ -122,6 +122,8 @@ public sealed record ContractTestRunRequest
     public ContractTestEnvironment Environment { get; init; } = new();
     public bool ConfirmMutatingCalls { get; init; }
     public string? Name { get; init; }
+    /// <summary>Optional path prefix of the API inside the Target Environment ("/api/v1"): relative only, never a host.</summary>
+    public string? BasePath { get; init; }
 }
 
 public sealed record ContractTestRunResult(ExecutionRunStartResult? Run, List<string> NotRun);

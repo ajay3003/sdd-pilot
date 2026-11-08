@@ -1,0 +1,505 @@
+@page "/api-quality-review/contracts"
+@using BirkNext.ContractTesting
+@using BirkNext.ExecutionEvidence
+@using BirkNext.SourceDomains
+@using BirkNext.Web.Models
+@inject IServiceProvider Services
+@inject IFrontendAnalysisContextFactory ContextFactory
+@inject NavigationManager Nav
+
+<PageTitle>Contract Testing</PageTitle>
+
+@* Contract Testing (API Quality Review): import an OpenAPI contract into the registry (immutable versions), explore its operations, generate draft
+   tests, bind Test Data pinned by version, check readiness and run through Execution Evidence. Opening anything here never sends a request;
+   only "Run selected" does, and only for tests that are Ready. State lives in the URL. *@
+<div class="ct" data-testid="ct-page" aria-busy="@(_loading ? "true" : "false")">
+    <PageHeader Title="Contract Testing" Description="Import an OpenAPI contract, generate tests from its operations, bind Test Data and run them. What was sent and received is saved in Execution Results." />
+    <p class="ct-back"><a href="api-quality-review">← API Quality Review</a> · <a href="execution-results">Execution Results</a> · <a href="test-data">Test Data</a></p>
+
+    <section class="ct-card ct-env" aria-label="Target Environment" data-testid="ct-env">
+        @if (_environment is null) { <p class="ct-muted" data-testid="ct-env-missing">No Target Environment is active. Tests can be explored and prepared; select a Target Environment to run them.</p> }
+        else
+        {
+            <p><strong>Runs against</strong> <span data-testid="ct-env-name">@_environmentName</span> <span class="ct-pill">@_environment.EnvironmentType</span> <code>@_environment.TargetUrl</code></p>
+            <label class="ct-inline">API base path <input data-testid="ct-base-path" @bind="_basePath" placeholder="/ (none)" aria-describedby="ct-base-help" /></label>
+            <span id="ct-base-help" class="ct-muted">A path inside this environment (for example /api). Hosts are never accepted.</span>
+        }
+    </section>
+
+    @if (_error is not null) { <p class="ct-error" role="alert" data-testid="ct-error">@_error</p> }
+    @if (_message is not null) { <p class="ct-message" role="status" data-testid="ct-message">@_message</p> }
+
+    <div class="ct-layout">
+        <aside class="ct-side">
+            <section class="ct-card" aria-labelledby="ct-contracts-h" data-testid="ct-contracts">
+                <h2 id="ct-contracts-h">Contracts</h2>
+                @if (_contracts is null) { <p class="ct-muted">Loading…</p> }
+                else if (_contracts.Count == 0) { <p class="ct-muted" data-testid="ct-contracts-empty">No contracts yet. Import an OpenAPI document below.</p> }
+                else
+                {
+                    <ul class="ct-list">
+                        @foreach (var c in _contracts)
+                        {
+                            <li class="@(c.Key == ContractKey ? "ct-selected" : null)"><a href="@Link(contract: c.Key, version: null, view: "operations", test: null)" data-testid="ct-contract-link" aria-current="@(c.Key == ContractKey ? "page" : null)">@c.Name</a>
+                                <span class="ct-muted">v@(c.LatestVersion) · @c.OperationCount operations · @c.TestCount tests</span></li>
+                        }
+                    </ul>
+                }
+            </section>
+
+            <section class="ct-card" aria-labelledby="ct-import-h" data-testid="ct-import">
+                <h2 id="ct-import-h">Import a contract</h2>
+                <fieldset class="ct-radios">
+                    <legend class="visually-hidden">Source</legend>
+                    <label><input type="radio" name="ct-src" checked="@(!_importByUrl)" @onchange="() => _importByUrl = false" data-testid="ct-import-file-mode" /> File (JSON or YAML)</label>
+                    <label><input type="radio" name="ct-src" checked="@_importByUrl" @onchange="() => _importByUrl = true" data-testid="ct-import-url-mode" /> URL</label>
+                </fieldset>
+                @if (_importByUrl)
+                {
+                    <label class="ct-field">Document URL <input data-testid="ct-import-url" @bind="_importUrl" placeholder="http://localhost:5288/openapi.json" /></label>
+                    <p class="ct-muted">Fetched once without credentials; link-local and cloud-metadata addresses are refused.</p>
+                }
+                else
+                {
+                    <label class="ct-field">OpenAPI file <InputFile OnChange="PickFile" accept=".json,.yaml,.yml" data-testid="ct-import-file" /></label>
+                    @if (_importFileName is not null) { <p class="ct-muted" data-testid="ct-import-picked">@_importFileName (@(_importContent?.Length ?? 0) characters)</p> }
+                }
+                <label class="ct-field">Add as
+                    <select data-testid="ct-import-target" @bind="_importTarget">
+                        <option value="">a new contract</option>
+                        @foreach (var c in _contracts ?? []) { <option value="@c.Key">the next version of @c.Name</option> }
+                    </select>
+                </label>
+                <button class="btn btn-primary" data-testid="ct-import-submit" disabled="@(_busy || (_importByUrl ? string.IsNullOrWhiteSpace(_importUrl) : _importContent is null))" @onclick="ImportAsync">Import</button>
+            </section>
+        </aside>
+
+        <main class="ct-main">
+            @if (_detail is null)
+            {
+                <section class="ct-card"><p class="ct-muted" data-testid="ct-no-contract">@(ContractKey is null ? "Select or import a contract." : _loading ? "Loading…" : "Contract not found.")</p></section>
+            }
+            else
+            {
+                var d = _detail;
+                var info = d.Versions.FirstOrDefault(v => v.Version == d.Version);
+                <section class="ct-card" aria-labelledby="ct-detail-h" data-testid="ct-detail">
+                    <h2 id="ct-detail-h">@d.Contract.Name <span class="ct-muted">@d.Contract.Key</span></h2>
+                    <div class="ct-facts">
+                        <label class="ct-inline">Version
+                            <select data-testid="ct-version" value="@d.Version" @onchange="e => Go(Link(version: int.Parse(e.Value!.ToString()!)))">
+                                @foreach (var v in d.Versions) { <option value="@v.Version">v@(v.Version)@(v.Version == d.Contract.LatestVersion ? " (latest)" : "")</option> }
+                            </select>
+                        </label>
+                        @if (info is not null)
+                        {
+                            <span data-testid="ct-version-source">@(info.Source == ContractVersionSource.Url ? "From URL" : "Uploaded") · @info.SourceLabel · @info.Format.ToUpperInvariant() · @info.ImportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                            <span class="ct-muted" title="SHA-256 of the imported document">#@info.Sha256[..12]</span>
+                            <span class="ct-pill" data-testid="ct-parse">@(info.ParseSupport == DomainSupport.Supported ? "Fully read" : "Partly read")</span>
+                        }
+                    </div>
+                    @if (info?.Limitations is { Count: > 0 } limits) { <p class="ct-muted" data-testid="ct-limitations">@string.Join(" ", limits)</p> }
+
+                    <div role="tablist" aria-label="Contract views" class="ct-tabs">
+                        @foreach (var (key, label) in Views)
+                        {
+                            <a role="tab" href="@Link(view: key, test: null)" aria-selected="@(View == key ? "true" : "false")" tabindex="@(View == key ? "0" : "-1")"
+                               data-testid="ct-tab-@key" class="ct-tab @(View == key ? "ct-tab-on" : null)">@label@(key == "tests" && _tests is not null ? $" ({_tests.Count})" : "")</a>
+                        }
+                    </div>
+                </section>
+
+                @if (View == "operations") { @OperationsView(d) }
+                else if (View == "tests") { @TestsView(d) }
+                else { @ChangesView(d) }
+            }
+        </main>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "contract")] public string? ContractKey { get; set; }
+    [SupplyParameterFromQuery(Name = "v")] public int? VersionQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "view")] public string? ViewQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "test")] public Guid? TestId { get; set; }
+    [SupplyParameterFromQuery(Name = "from")] public int? FromQuery { get; set; }
+
+    private static readonly (string Key, string Label)[] Views = [("operations", "Operations"), ("tests", "Tests"), ("changes", "Changes")];
+    private string View => Views.Any(v => v.Key == ViewQuery) ? ViewQuery! : "operations";
+    private IContractTestingApiService? Api => Services.GetService(typeof(IContractTestingApiService)) as IContractTestingApiService;
+
+    private bool _loading = true, _busy, _importByUrl, _confirmMutating;
+    private string? _error, _message, _importUrl, _importFileName, _importContent, _importTarget, _basePath, _environmentName;
+    private Guid? _runId;
+    private IReadOnlyList<ApiContractSummary>? _contracts;
+    private ApiContractDetail? _detail;
+    private IReadOnlyList<ContractTestView>? _tests;
+    private IReadOnlyList<ContractDatasetOption>? _options;
+    private ContractVersionDiff? _diff;
+    private ContractTestEnvironment? _environment;
+    private readonly HashSet<Guid> _selected = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var context = await ContextFactory.GetActiveContextAsync();
+            if (context.ActiveProfileOrNull is { } profile && !string.IsNullOrWhiteSpace(context.TargetUrl))
+            {
+                _environmentName = profile.Name;
+                _environment = new ContractTestEnvironment
+                {
+                    EnvironmentId = profile.Id, TargetUrl = context.TargetUrl, EnvironmentType = profile.EnvironmentType.ToString(), IsProduction = profile.EnvironmentType == FrontendEnvironmentType.Production,
+                };
+            }
+        }
+        catch (Exception) { _environment = null; }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true; _error = null;
+        if (Api is not { } api) { _error = "Contract Testing is not available in this host."; _loading = false; return; }
+        (_contracts, _error) = await api.ContractsAsync();
+        _detail = null; _tests = null; _options = null; _diff = null;
+        if (ContractKey is { } key && _error is null)
+        {
+            (_detail, _error) = await api.ContractAsync(key, VersionQuery);
+            if (_detail is not null)
+            {
+                (_tests, var testsError) = await api.TestsAsync(key, _environment);
+                _error ??= testsError;
+                _selected.RemoveWhere(id => _tests?.All(t => t.Test.Id != id) != false);
+                if (TestId is { } id && _tests?.Any(t => t.Test.Id == id) == true) (_options, _error) = await api.DatasetsAsync(id, _environment?.EnvironmentId);
+                if (View == "changes" && _detail.Versions.Count > 1)
+                {
+                    var to = _detail.Version;
+                    var from = FromQuery is { } f && f != to ? f : _detail.Versions.Where(v => v.Version < to).Select(v => (int?)v.Version).Max() ?? _detail.Versions.Min(v => v.Version);
+                    if (from != to) (_diff, _error) = await api.DiffAsync(key, Math.Min(from, to), Math.Max(from, to));
+                }
+            }
+        }
+        _loading = false;
+    }
+
+    private string Link(string? contract = "\0", int? version = -1, string? view = "\0", Guid? test = null, int? from = null)
+    {
+        var q = new List<string>();
+        var c = contract == "\0" ? ContractKey : contract;
+        if (c is not null) q.Add($"contract={Uri.EscapeDataString(c)}");
+        var v = version == -1 ? VersionQuery : version;
+        if (v is not null) q.Add($"v={v}");
+        var w = view == "\0" ? ViewQuery : view;
+        if (w is not null) q.Add($"view={w}");
+        if (test is not null) q.Add($"test={test}");
+        if (from is not null) q.Add($"from={from}");
+        return "api-quality-review/contracts" + (q.Count > 0 ? "?" + string.Join('&', q) : "");
+    }
+
+    private void Go(string link) => Nav.NavigateTo(link);
+    private async Task ReloadAsync() => await OnParametersSetAsync();
+
+    private async Task PickFile(InputFileChangeEventArgs e)
+    {
+        _error = null;
+        if (e.File.Size > 5 * 1024 * 1024) { _error = "The file is larger than 5 MB."; return; }
+        using var reader = new StreamReader(e.File.OpenReadStream(5 * 1024 * 1024));
+        _importContent = await reader.ReadToEndAsync();
+        _importFileName = e.File.Name;
+    }
+
+    private async Task ImportAsync()
+    {
+        if (Api is not { } api) return;
+        _busy = true; _error = null; _message = null;
+        var request = new ContractImportRequest
+        {
+            ContractKey = string.IsNullOrEmpty(_importTarget) ? null : _importTarget,
+            FileName = _importFileName ?? "", Content = _importByUrl ? null : _importContent, Url = _importByUrl ? _importUrl?.Trim() : null,
+        };
+        var (result, error) = await api.ImportAsync(request);
+        _busy = false;
+        if (result is { Imported: true } or { Unchanged: true })
+        {
+            _message = result.Message;
+            _importContent = null; _importFileName = null; _importUrl = null;
+            Go(Link(contract: result.Key, version: null, view: "operations", test: null));
+        }
+        else _error = result?.Message ?? error;
+    }
+
+    private async Task GenerateAsync(IReadOnlyList<string>? operations)
+    {
+        if (Api is not { } api || _detail is null) return;
+        _busy = true; _error = null; _message = null;
+        var (created, skipped, error) = await api.GenerateAsync(_detail.Contract.Key, _detail.Version, operations);
+        _busy = false;
+        if (error is not null) { _error = error; return; }
+        _message = created > 0 ? $"{created} draft test(s) generated from v{_detail.Version}." + (skipped.Count > 0 ? $" {skipped.Count} skipped (already generated or not REST)." : "")
+            : "No new tests: " + (skipped.Count > 0 ? "every operation already has its tests." : "no REST operation.");
+        Go(Link(view: "tests", test: null));
+    }
+
+    private async Task BindAsync(Guid testId, ContractDatasetOption option)
+    {
+        if (Api is not { } api || option.ApprovedVersion is not { } version) return;
+        _busy = true; _error = null; _message = null;
+        _error = await api.BindAsync(testId, new(option.Alias, version));
+        _busy = false;
+        if (_error is null) { _message = $"Bound to {option.Alias}@v{version}. Runs use exactly this version."; await ReloadAsync(); }
+    }
+
+    private async Task RegenerateAsync(Guid testId)
+    {
+        if (Api is not { } api) return;
+        _busy = true; _message = null;
+        _error = await api.RegenerateAsync(testId);
+        _busy = false;
+        if (_error is null) { _message = "Regenerated from the latest contract version. The Test Data binding was kept."; await ReloadAsync(); }
+    }
+
+    private async Task DeleteAsync(Guid testId)
+    {
+        if (Api is not { } api) return;
+        _busy = true; _message = null;
+        _error = await api.DeleteAsync(testId);
+        _busy = false;
+        if (_error is null) { _message = "Test deleted. Its earlier results stay in Execution Results."; Go(Link(test: null)); }
+    }
+
+    private async Task RunAsync()
+    {
+        if (Api is not { } api || _environment is null || _selected.Count == 0) return;
+        _busy = true; _error = null; _message = null; _runId = null;
+        var (result, error) = await api.RunAsync(new ContractTestRunRequest
+        {
+            TestIds = [.. _selected], Environment = _environment, ConfirmMutatingCalls = _confirmMutating, BasePath = string.IsNullOrWhiteSpace(_basePath) ? null : _basePath.Trim(),
+        });
+        _busy = false;
+        if (result?.Run is { RunId: { } runId } run)
+        {
+            _runId = runId;
+            _message = (run.Message ?? "Run started.") + (result.NotRun.Count > 0 ? $" Not run: {string.Join(" ", result.NotRun)}" : "");
+        }
+        else _error = result?.NotRun is { Count: > 0 } notRun ? "Nothing was run. " + string.Join(" ", notRun) : error ?? "Nothing was run.";
+    }
+
+    private void Toggle(Guid id, bool on) { if (on) _selected.Add(id); else _selected.Remove(id); }
+
+    private void CompareFrom(ChangeEventArgs e)
+    {
+        if (_diff is not null && int.TryParse(e.Value?.ToString(), out var from)) Go(Link(view: "changes", version: _diff.ToVersion, from: from));
+    }
+
+    private void SelectReady(ChangeEventArgs e)
+    {
+        foreach (var t in (_tests ?? []).Where(t => t.Readiness.State == ContractTestReadinessState.Ready)) Toggle(t.Test.Id, e.Value is true);
+    }
+
+    private static string ReadinessLabel(ContractTestReadinessState s) => s switch
+    {
+        ContractTestReadinessState.Ready => "Ready",
+        ContractTestReadinessState.Blocked => "Blocked",
+        _ => "Not ready",
+    };
+
+    private static string ImpactLabel(ContractTestImpactLevel l) => l switch
+    {
+        ContractTestImpactLevel.Broken => "Broken by change",
+        ContractTestImpactLevel.NeedsUpdate => "Needs update",
+        ContractTestImpactLevel.Review => "Review",
+        _ => "Unaffected",
+    };
+
+    private RenderFragment OperationsView(ApiContractDetail d) => @<section class="ct-card" aria-labelledby="ct-ops-h" data-testid="ct-operations">
+        <div class="ct-row">
+            <h3 id="ct-ops-h">Operations in v@(d.Version)</h3>
+            <button class="btn btn-secondary" data-testid="ct-generate-all" disabled="@_busy" @onclick="() => GenerateAsync(null)">Generate tests for all operations</button>
+        </div>
+        @if (d.Document.Operations.Count == 0) { <p class="ct-muted">This version declares no operations.</p> }
+        else
+        {
+            <div class="ct-scroll">
+                <table class="ct-table" data-testid="ct-op-table">
+                    <caption class="visually-hidden">Operations, with the values they need and their documented responses</caption>
+                    <thead><tr><th scope="col">Operation</th><th scope="col">Inputs</th><th scope="col">Request body</th><th scope="col">Responses</th><th scope="col">Security</th><th scope="col">Tests</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                    <tbody>
+                        @foreach (var op in d.Document.Operations)
+                        {
+                            var count = _tests?.Count(t => t.Test.Operation == op.Name) ?? 0;
+                            <tr data-testid="ct-op-row" data-op="@op.Name">
+                                <th scope="row"><code>@op.Name</code>@if (op.Summary is { } s) { <div class="ct-muted">@s</div> }@if (op.OperationId is { } id) { <div class="ct-muted">operationId @id</div> }</th>
+                                <td>@if (op.ParameterDetails.Count == 0) { <span class="ct-muted">none</span> } else { @foreach (var p in op.ParameterDetails) { <div>@p.Name <span class="ct-muted">@p.In@(p.Type is null ? "" : " · " + p.Type)@(p.Required ? " · required" : "")</span></div> } }</td>
+                                <td>@if (op.RequestContentTypes.Count == 0) { <span class="ct-muted">none</span> } else { <span>@(op.RequestSchema ?? "body")</span> <span class="ct-muted">@string.Join(", ", op.RequestContentTypes)@(op.RequestBodyRequired ? " · required" : "")</span> }</td>
+                                <td>@string.Join(", ", op.ResponseCodes.Select(c => op.ResponseSchemas.TryGetValue(c, out var schema) ? $"{c} {schema}" : c))</td>
+                                <td>@(op.Security.Count == 0 ? "none" : string.Join(", ", op.Security))</td>
+                                <td>@count</td>
+                                <td><button class="btn btn-secondary btn-sm" data-testid="ct-generate-op" disabled="@_busy" @onclick="() => GenerateAsync([op.Name])" aria-label="@($"Generate tests for {op.Name}")">Generate</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>;
+
+    private RenderFragment TestsView(ApiContractDetail d) => @<section class="ct-card" aria-labelledby="ct-tests-h" data-testid="ct-tests">
+        <h3 id="ct-tests-h">Tests</h3>
+        @if (_tests is null || _tests.Count == 0)
+        {
+            <p class="ct-muted" data-testid="ct-tests-empty">No tests yet. Generate draft tests from the Operations view.</p>
+        }
+        else
+        {
+            <div class="ct-row ct-runbar" data-testid="ct-runbar">
+                <label class="ct-inline"><input type="checkbox" data-testid="ct-select-ready" checked="@(_tests.Where(t => t.Readiness.State == ContractTestReadinessState.Ready).All(t => _selected.Contains(t.Test.Id)) && _selected.Count > 0)"
+                    @onchange="SelectReady" /> Select every ready test</label>
+                <label class="ct-inline"><input type="checkbox" data-testid="ct-confirm-mutating" @bind="_confirmMutating" /> Confirm data-changing calls (POST, PUT, PATCH, DELETE) for this run</label>
+                <button class="btn btn-primary" data-testid="ct-run" disabled="@(_busy || _environment is null || _selected.Count == 0)" @onclick="RunAsync">Run selected (@_selected.Count)</button>
+                @if (_runId is { } runId) { <a data-testid="ct-run-link" href="@($"execution-results?run={runId}")">Open the run in Execution Results →</a> }
+            </div>
+            <div class="ct-scroll">
+                <table class="ct-table" data-testid="ct-test-table">
+                    <caption class="visually-hidden">Contract tests with readiness, contract impact and the latest result</caption>
+                    <thead><tr><th scope="col"><span class="visually-hidden">Select</span></th><th scope="col">Test</th><th scope="col">Readiness</th><th scope="col">Contract</th><th scope="col">Test Data</th><th scope="col">Latest result</th></tr></thead>
+                    <tbody>
+                        @foreach (var t in _tests)
+                        {
+                            var test = t.Test;
+                            <tr data-testid="ct-test-row" data-kind="@test.Kind" data-op="@test.Operation" data-state="@t.Readiness.State" class="@(test.Id == TestId ? "ct-selected" : null)">
+                                <td><input type="checkbox" data-testid="ct-test-select" aria-label="@($"Select {test.Name}")" checked="@_selected.Contains(test.Id)" @onchange="e => Toggle(test.Id, (bool)e.Value!)" /></td>
+                                <th scope="row"><a href="@Link(view: "tests", test: test.Id)" data-testid="ct-test-link">@test.Name</a><div class="ct-muted">@(test.Kind == ContractTestKind.Positive ? "Positive" : "Negative: missing required value") · revision @test.Revision</div></th>
+                                <td><span class="ct-state ct-state-@t.Readiness.State.ToString().ToLowerInvariant()" data-testid="ct-readiness">@ReadinessLabel(t.Readiness.State)</span>
+                                    @if (t.Readiness.MissingValues.Count > 0) { <div class="ct-muted" data-testid="ct-missing">Missing: @string.Join(", ", t.Readiness.MissingValues)</div> }</td>
+                                <td>v@(test.ContractVersion)@if (t.Impact is { } impact) { <span class="ct-impact ct-impact-@impact.Level.ToString().ToLowerInvariant()" data-testid="ct-impact">@ImpactLabel(impact.Level) in v@(impact.ToVersion)</span> }</td>
+                                <td>@(test.Binding is { } b ? $"{b.Alias}@v{b.Version}" : test.Inputs.Count == 0 ? "not needed" : "not bound")</td>
+                                <td>@if (t.Last is { } last) { <a data-testid="ct-last" href="@($"execution-results?run={last.RunId}&call={last.CallId}")"><span class="ct-state ct-run-@last.State.ToString().ToLowerInvariant()">@last.State</span>@(last.HttpStatus is { } code ? $" HTTP {code}" : "")</a> <span class="ct-muted">@last.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span> }
+                                    else { <span class="ct-muted">never run</span> }</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (TestId is { } id && _tests.FirstOrDefault(t => t.Test.Id == id) is { } selected) { @TestDetail(selected) }
+        }
+    </section>;
+
+    private RenderFragment TestDetail(ContractTestView view) => @<article class="ct-detail" aria-labelledby="ct-test-h" data-testid="ct-test-detail">
+        @{ var test = view.Test; }
+        <h4 id="ct-test-h">@test.Name</h4>
+        <p data-testid="ct-rationale">@test.Rationale</p>
+        <h5>Readiness: <span data-testid="ct-detail-readiness">@ReadinessLabel(view.Readiness.State)</span></h5>
+        <ul class="ct-checks" data-testid="ct-readiness-items">
+            @foreach (var item in view.Readiness.Items) { <li data-state="@item.State"><span class="ct-state ct-item-@item.State.ToString().ToLowerInvariant()">@item.State</span> <strong>@item.Area</strong>: @item.Text</li> }
+        </ul>
+        @if (view.Impact is { } impact)
+        {
+            <p data-testid="ct-detail-impact"><strong>@ImpactLabel(impact.Level)</strong> (v@(impact.FromVersion) → v@(impact.ToVersion)): @string.Join(" ", impact.Reasons)</p>
+            @if (impact.Level is ContractTestImpactLevel.NeedsUpdate or ContractTestImpactLevel.Review)
+            { <button class="btn btn-secondary" data-testid="ct-regenerate" disabled="@_busy" @onclick="() => RegenerateAsync(test.Id)">Regenerate from v@(impact.ToVersion)</button> }
+        }
+
+        <h5>Values the test needs</h5>
+        @if (test.Inputs.Count == 0) { <p class="ct-muted">None.</p> }
+        else
+        {
+            <table class="ct-table" data-testid="ct-inputs">
+                <thead><tr><th scope="col">Name</th><th scope="col">Where</th><th scope="col">Required</th><th scope="col">Type</th></tr></thead>
+                <tbody>@foreach (var i in test.Inputs) { <tr><td>@i.Name</td><td>@i.In</td><td>@(i.Required ? "required" : "optional")</td><td>@i.Type</td></tr> }</tbody>
+            </table>
+        }
+
+        <h5>Test Data</h5>
+        <p data-testid="ct-binding">@(test.Binding is { } b ? $"Pinned to {b.Alias}@v{b.Version}." : "No dataset selected.")</p>
+        @if (test.Inputs.Count > 0)
+        {
+            @if (_options is null || _options.Count == 0)
+            {
+                <p class="ct-muted" data-testid="ct-no-datasets">No dataset or key-value collection in Test Data yet. <a href="test-data">Add data in Test Data</a> with the values above, approve it, and pick it here.</p>
+            }
+            else
+            {
+                <ul class="ct-picker" aria-label="Datasets" data-testid="ct-picker">
+                    @foreach (var o in _options)
+                    {
+                        <li data-testid="ct-option" data-alias="@o.Alias" data-compatible="@(o.Compatible ? "true" : "false")">
+                            <div><strong>@o.Alias</strong>@if (o.Label is { } label && label != o.Alias) { <span class="ct-muted ct-note">@label</span> } <span class="ct-pill">@o.Kind</span>
+                                <span class="ct-pill">@(o.ApprovedVersion is { } av ? $"approved v{av}" : "not approved")</span>@if (o.Environment is { } env) { <span class="ct-pill">@env</span> }</div>
+                            <div class="ct-muted">Provides: @(o.Provides.Count == 0 ? "nothing" : string.Join(", ", o.Provides))</div>
+                            @if (o.MissingRequired.Count > 0) { <div class="ct-missing" data-testid="ct-option-missing">Missing required: @string.Join(", ", o.MissingRequired)</div> }
+                            @if (o.MissingOptional.Count > 0) { <div class="ct-muted">Optional, left out when missing: @string.Join(", ", o.MissingOptional)</div> }
+                            @if (o.Problem is { } problem) { <div class="ct-missing">@problem</div> }
+                            <button class="btn btn-secondary btn-sm" data-testid="ct-option-use" disabled="@(_busy || o.ApprovedVersion is null)" @onclick="() => BindAsync(test.Id, o)">Use @o.Alias@(o.ApprovedVersion is { } v ? $"@v{v}" : "")</button>
+                        </li>
+                    }
+                </ul>
+            }
+        }
+
+        <h5>Request template</h5>
+        <pre class="ct-pre" data-testid="ct-template">@test.Template.Method @test.Template.Path@(test.Template.Query.Count > 0 ? "?" + string.Join("&", test.Template.Query.Select(q => $"{q.Key}={q.Value}")) : "")@(test.Template.Body is { } body ? "\n\n" + body : "")</pre>
+        <p class="ct-muted">Expects @test.Template.ExpectedOutcome. Placeholders are filled from the pinned Test Data when the test runs; nothing is stored resolved.</p>
+        <button class="btn btn-link ct-danger" data-testid="ct-delete" disabled="@_busy" @onclick="() => DeleteAsync(test.Id)">Delete test</button>
+    </article>;
+
+    private RenderFragment ChangesView(ApiContractDetail d) => @<section class="ct-card" aria-labelledby="ct-changes-h" data-testid="ct-changes">
+        <h3 id="ct-changes-h">Changes between versions</h3>
+        @if (d.Versions.Count < 2) { <p class="ct-muted" data-testid="ct-changes-single">Only one version. Import a newer document as the next version of this contract to compare.</p> }
+        else if (_diff is null) { <p class="ct-muted">Select two versions.</p> }
+        else
+        {
+            <p class="ct-row">
+                <label class="ct-inline">Compare
+                    <select data-testid="ct-diff-from" value="@_diff.FromVersion" @onchange="CompareFrom">
+                        @foreach (var v in d.Versions.Where(v => v.Version != _diff.ToVersion)) { <option value="@v.Version">v@(v.Version)</option> }
+                    </select>
+                </label>
+                <span>with v@(_diff.ToVersion)</span>
+            </p>
+            <h4>@_diff.Changes.Count change(s)</h4>
+            @if (_diff.Changes.Count > 0)
+            {
+                <div class="ct-scroll">
+                    <table class="ct-table" data-testid="ct-change-table">
+                        <thead><tr><th scope="col">Change</th><th scope="col">Kind</th><th scope="col">For consumers</th></tr></thead>
+                        <tbody>
+                            @foreach (var c in _diff.Changes)
+                            {
+                                <tr data-testid="ct-change-row" data-class="@c.ContractChange"><td>@c.Detail</td><td>@ChangeLabel(c.ContractChange)</td><td>@ChangeSeverity(c.ContractChange)</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            <h4>Impact on tests generated from v@(_diff.FromVersion)</h4>
+            @if (_diff.Impacts.Count == 0) { <p class="ct-muted" data-testid="ct-no-impacts">No test was generated from v@(_diff.FromVersion).</p> }
+            else
+            {
+                <table class="ct-table" data-testid="ct-impact-table">
+                    <thead><tr><th scope="col">Test</th><th scope="col">Impact</th><th scope="col">Why</th></tr></thead>
+                    <tbody>
+                        @foreach (var i in _diff.Impacts.OrderByDescending(i => i.Level))
+                        {
+                            <tr data-testid="ct-impact-row" data-level="@i.Level"><th scope="row"><a href="@Link(view: "tests", version: null, test: i.TestId)">@i.TestName</a></th><td><span class="ct-impact ct-impact-@i.Level.ToString().ToLowerInvariant()">@ImpactLabel(i.Level)</span></td><td>@string.Join(" ", i.Reasons)</td></tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        }
+    </section>;
+
+    private static string ChangeLabel(ContractChangeClass c) => c switch
+    {
+        ContractChangeClass.OperationAdded => "Operation added", ContractChangeClass.OperationRemoved => "Operation removed",
+        ContractChangeClass.FieldAddedRequired => "Required field added", ContractChangeClass.FieldAddedOptional => "Optional field added", ContractChangeClass.FieldRemoved => "Field removed",
+        ContractChangeClass.TypeChanged => "Type changed", ContractChangeClass.RequirednessChanged => "Requiredness changed", ContractChangeClass.TypeAdded => "Type added", ContractChangeClass.TypeRemoved => "Type removed",
+        ContractChangeClass.EnumValueAdded => "Enum value added", ContractChangeClass.EnumValueRemoved => "Enum value removed",
+        ContractChangeClass.ParameterAddedRequired => "Required parameter added", ContractChangeClass.ParameterAddedOptional => "Optional parameter added",
+        ContractChangeClass.ParameterRemoved => "Parameter removed", ContractChangeClass.ParameterChanged => "Parameter changed",
+        ContractChangeClass.RequestBodyChanged => "Request body changed", ContractChangeClass.ResponseChanged => "Response changed",
+        _ => c.ToString(),
+    };
+
+    private static string ChangeSeverity(ContractChangeClass c) => c is ContractChangeClass.OperationAdded or ContractChangeClass.FieldAddedOptional or ContractChangeClass.TypeAdded
+        or ContractChangeClass.EnumValueAdded or ContractChangeClass.ParameterAddedOptional or ContractChangeClass.None ? "Compatible" : "Potentially breaking";
+}
