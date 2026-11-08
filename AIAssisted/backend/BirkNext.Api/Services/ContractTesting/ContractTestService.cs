@@ -44,6 +44,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             {
                 if (existing.Contains((test.Operation, test.Kind.ToString()))) { skipped.Add($"{test.Name}: already exists."); continue; }
                 db.ContractTests.Add(Row(contract.Id, test));
+                db.ContractTestRevisions.Add(RevisionRow(test, $"Generated from v{v}."));
                 created.Add(test);
             }
         }
@@ -110,8 +111,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             return (null, $"Only the approved version of {bind.Alias} can be pinned{(asset?.Approval == TestDataApproval.Approved ? $" (v{asset.Version})" : " — it has none")}.");
         if (asset.Deprecated) return (null, $"{bind.Alias} is deprecated.");
         test = test with { Binding = new(bind.Alias, bind.Version), Revision = test.Revision + 1, UpdatedAt = _clock.GetUtcNow() };
-        Update(row, test);
-        await db.SaveChangesAsync(ct);
+        await PersistAsync(row, test, $"Test Data pinned to {bind.Alias}@v{bind.Version}.", ct);
         return (test, null);
     }
 
@@ -128,9 +128,8 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             return (null, $"{test.Operation} does not exist in v{latest}; delete the test or generate one for another operation.");
         var fresh = ContractTestRules.GenerateAny(doc, test.ContractKey, latest, op, _clock.GetUtcNow()).FirstOrDefault(t => t.Kind == test.Kind);
         if (fresh is null) return (null, $"v{latest} no longer gives {test.Operation} a {test.Kind} test (no required value to omit).");
-        test = fresh with { Id = test.Id, Name = test.Name, Binding = test.Binding, Revision = test.Revision + 1, CreatedAt = test.CreatedAt };
-        Update(row, test);
-        await db.SaveChangesAsync(ct);
+        test = fresh with { Id = test.Id, Name = test.Name, Description = test.Description, Binding = test.Binding, Revision = test.Revision + 1, CreatedAt = test.CreatedAt };
+        await PersistAsync(row, test, $"Regenerated from contract v{latest}.", ct);
         return (test, null);
     }
 
@@ -214,6 +213,8 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
     {
         var items = new List<ContractReadinessItem>();
         var missingValues = new List<string>();
+        if (test.ReviewState == ContractTestReviewState.Retired) items.Add(new("Review", ReadinessItemState.Blocked, "Retired: kept with its history, never run. Change the review state to run it again."));
+        else if (test.ReviewState == ContractTestReviewState.Draft) items.Add(new("Review", ReadinessItemState.Warning, "Draft: generated or edited and not reviewed yet."));
         // Contract
         if (impact is null) items.Add(new("Contract", ReadinessItemState.Ok, $"Generated from v{test.ContractVersion}, the latest version."));
         else items.Add(impact.Level switch
@@ -337,6 +338,148 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
     public static List<ContractServerProposal> ServerProposals(SourceContract doc) =>
         [.. doc.Servers.Select(s => new ContractServerProposal(s, (Uri.TryCreate(s, UriKind.Absolute, out var u) ? u.AbsolutePath : s.Split('?')[0]).TrimEnd('/')))
             .Where(p => PathProblem(p.BasePath, "") is null).DistinctBy(p => p.BasePath)];
+
+    // ── Editing and revisions ──────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Saves an edit as a new revision. Conflict when the test changed since <see cref="ContractTestEdit.ExpectedRevision"/>; nothing is saved
+    /// when the edited content is invalid. Earlier revisions and every execution that used them stay exactly as they were.</summary>
+    public async Task<ContractTestSaveResult> UpdateAsync(Guid id, ContractTestEdit edit, CancellationToken ct)
+    {
+        if (await db.ContractTests.FirstOrDefaultAsync(t => t.Id == id, ct) is not { } row) return new(false, false, null, "Not found.", []);
+        var current = JsonSerializer.Deserialize<ContractTestDefinition>(row.DocumentJson, ExecutionEvidenceStore.Json)!;
+        if (edit.ExpectedRevision != current.Revision)
+            return new(false, true, current, $"The test was changed elsewhere (now revision {current.Revision}). Reload it and apply your change again.", []);
+        var template = edit.Template with { Name = edit.Name.Trim(), OperationRef = null, TestDataRefs = [], DefinitionVersion = null };
+        var problems = TemplateProblems(edit.Name, template);
+        if (problems.Count > 0) return new(false, false, current, "Fix the problems before saving.", problems);
+        var updated = current with
+        {
+            Name = edit.Name.Trim(), Description = string.IsNullOrWhiteSpace(edit.Description) ? null : edit.Description.Trim(), Template = template, ReviewState = edit.ReviewState,
+            Inputs = Inputs(template, current.Inputs), Revision = current.Revision + 1, UpdatedAt = _clock.GetUtcNow(),
+        };
+        if (JsonSerializer.Serialize(updated with { Revision = current.Revision, UpdatedAt = current.UpdatedAt }, ExecutionEvidenceStore.Json) == JsonSerializer.Serialize(current, ExecutionEvidenceStore.Json))
+            return new(false, false, current, "Nothing changed.", []);
+        await PersistAsync(row, updated, string.IsNullOrWhiteSpace(edit.ChangeNote) ? "Edited." : edit.ChangeNote.Trim(), ct);
+        return new(true, false, updated, $"Saved as revision {updated.Revision}.", []);
+    }
+
+    /// <summary>A copy as a new Draft test (revision 1) with the same content, contract version and Test Data pin.</summary>
+    public async Task<(ContractTestDefinition? Test, string? Error)> DuplicateAsync(Guid id, CancellationToken ct)
+    {
+        if (await db.ContractTests.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct) is not { } row) return (null, "Not found.");
+        var source = JsonSerializer.Deserialize<ContractTestDefinition>(row.DocumentJson, ExecutionEvidenceStore.Json)!;
+        var now = _clock.GetUtcNow();
+        var copy = source with { Id = Guid.NewGuid(), Name = $"Copy of {source.Name}", Revision = 1, ReviewState = ContractTestReviewState.Draft, CreatedAt = now, UpdatedAt = now };
+        db.ContractTests.Add(Row(row.ContractId, copy));
+        db.ContractTestRevisions.Add(RevisionRow(copy, $"Duplicated from {source.Name} r{source.Revision}."));
+        await db.SaveChangesAsync(ct);
+        return (copy, null);
+    }
+
+    public async Task<IReadOnlyList<ContractTestRevisionInfo>> RevisionsAsync(Guid id, CancellationToken ct)
+    {
+        var rows = await db.ContractTestRevisions.AsNoTracking().Where(r => r.TestId == id).OrderByDescending(r => r.Revision).ToListAsync(ct);
+        if (rows.Count == 0 && await LoadAsync(id, ct) is { } legacy)
+            return [new(legacy.Revision, legacy.UpdatedAt, "Current (recorded before revision history existed).", legacy.Name, legacy.ReviewState, legacy.ContractVersion, legacy.Binding is { } lb ? $"{lb.Alias}@v{lb.Version}" : null)];
+        return [.. rows.Select(r => { var d = JsonSerializer.Deserialize<ContractTestDefinition>(r.DocumentJson, ExecutionEvidenceStore.Json)!;
+            return new ContractTestRevisionInfo(r.Revision, r.CreatedAt, r.ChangeNote, d.Name, d.ReviewState, d.ContractVersion, d.Binding is { } b ? $"{b.Alias}@v{b.Version}" : null); })];
+    }
+
+    public async Task<ContractTestDefinition?> RevisionAsync(Guid id, int revision, CancellationToken ct) =>
+        await db.ContractTestRevisions.AsNoTracking().Where(r => r.TestId == id && r.Revision == revision).Select(r => r.DocumentJson).FirstOrDefaultAsync(ct) is { } doc
+            ? JsonSerializer.Deserialize<ContractTestDefinition>(doc, ExecutionEvidenceStore.Json)
+            : await LoadAsync(id, ct) is { } current && current.Revision == revision ? current : null;
+
+    /// <summary>What differs between two revisions, field by field (assertions by id).</summary>
+    public async Task<ContractTestRevisionDiff?> CompareAsync(Guid id, int from, int to, CancellationToken ct)
+    {
+        if (await RevisionAsync(id, from, ct) is not { } a || await RevisionAsync(id, to, ct) is not { } b) return null;
+        var differences = new List<string>();
+        void Field(string name, object? x, object? y)
+        {
+            var (sx, sy) = (x is string s1 ? s1 : JsonSerializer.Serialize(x, ExecutionEvidenceStore.Json), y is string s2 ? s2 : JsonSerializer.Serialize(y, ExecutionEvidenceStore.Json));
+            if (sx != sy) differences.Add($"{name}: {Clip(sx)} → {Clip(sy)}");
+        }
+        Field("Name", a.Name, b.Name); Field("Description", a.Description ?? "", b.Description ?? ""); Field("Review state", a.ReviewState.ToString(), b.ReviewState.ToString());
+        Field("Contract version", $"v{a.ContractVersion}", $"v{b.ContractVersion}"); Field("Test Data", a.Binding is { } x1 ? $"{x1.Alias}@v{x1.Version}" : "none", b.Binding is { } y1 ? $"{y1.Alias}@v{y1.Version}" : "none");
+        Field("Method", a.Template.Method, b.Template.Method); Field("Path", a.Template.Path, b.Template.Path); Field("Query", a.Template.Query, b.Template.Query);
+        Field("Headers", a.Template.Headers, b.Template.Headers); Field("Content type", a.Template.ContentType ?? "", b.Template.ContentType ?? ""); Field("Body", a.Template.Body ?? "", b.Template.Body ?? "");
+        Field("GraphQL document", a.Template.GraphQlQuery ?? "", b.Template.GraphQlQuery ?? ""); Field("GraphQL variables", a.Template.GraphQlVariablesJson ?? "", b.Template.GraphQlVariablesJson ?? "");
+        Field("Timeout (ms)", a.Template.TimeoutMs.ToString(System.Globalization.CultureInfo.InvariantCulture), b.Template.TimeoutMs.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Field("Retry", a.Template.Retry, b.Template.Retry); Field("Contract check", a.Template.ContractCheck.ToString(), b.Template.ContractCheck.ToString());
+        var assertionsA = a.Template.Assertions.ToDictionary(x => x.Id, StringComparer.Ordinal);
+        var assertionsB = b.Template.Assertions.ToDictionary(x => x.Id, StringComparer.Ordinal);
+        foreach (var added in assertionsB.Keys.Except(assertionsA.Keys)) differences.Add($"Assertion added: {Describe(assertionsB[added])}");
+        foreach (var removed in assertionsA.Keys.Except(assertionsB.Keys)) differences.Add($"Assertion removed: {Describe(assertionsA[removed])}");
+        foreach (var both in assertionsA.Keys.Intersect(assertionsB.Keys).Where(k => assertionsA[k] != assertionsB[k])) differences.Add($"Assertion changed: {Describe(assertionsA[both])} → {Describe(assertionsB[both])}");
+        return new(id, from, to, differences);
+        static string Clip(string s) => s.Length > 120 ? s[..120] + "…" : s;
+        static string Describe(AssertionDefinition x) => $"{x.Id} {x.Kind} {x.Operator}{(x.Target is null ? "" : " " + x.Target)}{(x.Expected is null ? "" : " " + x.Expected)}";
+    }
+
+    /// <summary>Revert = a new revision whose content is an earlier revision's (history is never rewritten).</summary>
+    public async Task<ContractTestSaveResult> RevertAsync(Guid id, int revision, int expectedRevision, CancellationToken ct)
+    {
+        if (await db.ContractTests.FirstOrDefaultAsync(t => t.Id == id, ct) is not { } row) return new(false, false, null, "Not found.", []);
+        var current = JsonSerializer.Deserialize<ContractTestDefinition>(row.DocumentJson, ExecutionEvidenceStore.Json)!;
+        if (expectedRevision != current.Revision) return new(false, true, current, $"The test was changed elsewhere (now revision {current.Revision}).", []);
+        if (await RevisionAsync(id, revision, ct) is not { } old) return new(false, false, current, $"Revision {revision} does not exist.", []);
+        var reverted = old with { Revision = current.Revision + 1, UpdatedAt = _clock.GetUtcNow(), CreatedAt = current.CreatedAt };
+        await PersistAsync(row, reverted, $"Reverted to revision {revision}.", ct);
+        return new(true, false, reverted, $"Saved as revision {reverted.Revision} with the content of revision {revision}.", []);
+    }
+
+    /// <summary>What a saved template must satisfy: the run service's own call rules (relative path, no credential headers, supported method, GraphQL
+    /// document present, variables an object), plus well-formed JSON, assertions, timeout and retry, and no literal credential values.</summary>
+    public static List<string> TemplateProblems(string name, ExecutionCallDefinition t)
+    {
+        var problems = new List<string>();
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 300) problems.Add("Name: 1–300 characters.");
+        if (ExecutionRunService.CallBlock(t, new ExecutionRunRequest { ConfirmMutatingCalls = true }) is { } block) problems.Add(block);
+        if (t.Query.Keys.Any(string.IsNullOrWhiteSpace) || t.Headers.Keys.Any(string.IsNullOrWhiteSpace)) problems.Add("Every query parameter and header needs a name.");
+        foreach (var (where, text) in new[] { ("Body", t.Body), ("GraphQL variables", t.GraphQlVariablesJson) }.Concat(t.Query.Select(q => ($"Query {q.Key}", (string?)q.Value))).Concat(t.Headers.Select(h => ($"Header {h.Key}", (string?)h.Value))))
+            if (text is { Length: > 0 } && ExecutionEvidenceRedaction.Text(text).Masked > 0) problems.Add($"{where} contains a credential-like value. Credentials come from the authentication binding, never the test.");
+        if (t.Protocol == ExecutionProtocol.Rest && t.Body is { Length: > 0 } body && (t.ContentType ?? "").Contains("json", StringComparison.OrdinalIgnoreCase) && !ContractTestRules.IsWholePlaceholder(body))
+            try { System.Text.Json.Nodes.JsonNode.Parse(body); } catch (JsonException ex) { problems.Add($"Body is not valid JSON ({ex.Message.Split('.')[0]})."); }
+        if (t.Protocol == ExecutionProtocol.GraphQl)
+            try { HotChocolate.Language.Utf8GraphQLParser.Parse(t.GraphQlQuery ?? ""); } catch (HotChocolate.Language.SyntaxException ex) { problems.Add($"GraphQL document: {ex.Message}"); }
+        if (t.TimeoutMs is < 500 or > 120000) problems.Add("Timeout: 500–120000 ms.");
+        if (t.Retry.MaxAttempts is < 1 or > 5 || t.Retry.DelayMs is < 0 or > 10000 || t.Retry.RetryOnStatus?.Any(c => c is < 100 or > 599) == true) problems.Add("Retry: 1–5 attempts, delay 0–10000 ms, status codes 100–599.");
+        foreach (var dup in t.Assertions.GroupBy(a => a.Id, StringComparer.Ordinal).Where(g => g.Count() > 1 || string.IsNullOrWhiteSpace(g.Key))) problems.Add($"Assertion ids must be unique and non-empty ({dup.Key}).");
+        foreach (var a in t.Assertions)
+        {
+            if (a.Kind is AssertionKind.Header or AssertionKind.JsonPath or AssertionKind.GraphQlDataPath or AssertionKind.XPath && string.IsNullOrWhiteSpace(a.Target)) problems.Add($"Assertion {a.Id}: {a.Kind} needs a target.");
+            if (a.Operator is not (AssertionOperator.Exists or AssertionOperator.NotExists) && a.Expected is null) problems.Add($"Assertion {a.Id}: {a.Operator} needs an expected value.");
+        }
+        return problems;
+    }
+
+    /// <summary>The inputs a template needs: every placeholder it uses (kept with its earlier location/type/requiredness when known).</summary>
+    private static List<ContractTestInput> Inputs(ExecutionCallDefinition t, IReadOnlyList<ContractTestInput> previous)
+    {
+        var names = ContractTestRules.Placeholders(string.Join('\n', new[] { t.Path, t.Body, t.GraphQlVariablesJson }.Concat(t.Query.Values).Concat(t.Headers.Values)));
+        return [.. names.Select(n => previous.FirstOrDefault(p => p.Name == n) ?? new ContractTestInput(n, "template", true, null))];
+    }
+
+    private async Task PersistAsync(ContractTestRow row, ContractTestDefinition test, string note, CancellationToken ct)
+    {
+        // Tests created before revision history existed: record their current content once, so the history starts complete.
+        var previousRevision = test.Revision - 1;
+        if (previousRevision >= 1 && !await db.ContractTestRevisions.AnyAsync(r => r.TestId == row.Id, ct))
+        {
+            var before = JsonSerializer.Deserialize<ContractTestDefinition>(row.DocumentJson, ExecutionEvidenceStore.Json)!;
+            db.ContractTestRevisions.Add(RevisionRow(before, "Recorded before revision history existed."));
+        }
+        Update(row, test);
+        db.ContractTestRevisions.Add(RevisionRow(test, note));
+        await db.SaveChangesAsync(ct);
+    }
+
+    private ContractTestRevisionRow RevisionRow(ContractTestDefinition t, string note) => new()
+    {
+        Id = Guid.NewGuid(), TestId = t.Id, Revision = t.Revision, DocumentJson = JsonSerializer.Serialize(t, ExecutionEvidenceStore.Json), ChangeNote = note.Length > 500 ? note[..500] : note,
+        CreatedAt = _clock.GetUtcNow(),
+    };
 
     /// <summary>The bound dataset's values at the pinned version (never the latest unless that is the pinned one).</summary>
     private (Dictionary<string, TestDataTypedEntry> Values, string? Problem) BoundValues(ContractTestDefinition test)

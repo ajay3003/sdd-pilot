@@ -20,6 +20,7 @@ public class AppDbContext : DbContext
     public DbSet<ApiContractVersionRow> ApiContractVersions => Set<ApiContractVersionRow>();
     public DbSet<ContractTestRow> ContractTests => Set<ContractTestRow>();
     public DbSet<ContractEndpointBindingRow> ContractEndpointBindings => Set<ContractEndpointBindingRow>();
+    public DbSet<ContractTestRevisionRow> ContractTestRevisions => Set<ContractTestRevisionRow>();
     public DbSet<ImpactAnalysisRunRecord> ImpactAnalysisRuns => Set<ImpactAnalysisRunRecord>();
     public DbSet<ReviewedCandidate> ReviewedCandidates => Set<ReviewedCandidate>();
     public DbSet<CandidateLink> CandidateLinks => Set<CandidateLink>();
@@ -1137,6 +1138,14 @@ public class AppDbContext : DbContext
             entity.Property(b => b.GraphQlPath).HasMaxLength(300);
             entity.Property(b => b.Authentication).HasMaxLength(40).IsRequired();
             entity.HasIndex(b => new { b.ContractId, b.EnvironmentId }).IsUnique();
+        });
+        modelBuilder.Entity<ContractTestRevisionRow>(entity =>
+        {
+            entity.ToTable("contract_test_revisions");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.DocumentJson).HasColumnType("text").IsRequired();
+            entity.Property(r => r.ChangeNote).HasMaxLength(500);
+            entity.HasIndex(r => new { r.TestId, r.Revision }).IsUnique();
         });
 
         modelBuilder.Entity<IqrSourceSnapshotRecord>(entity =>

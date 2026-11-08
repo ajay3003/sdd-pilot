@@ -1,0 +1,21 @@
+.cte { display: grid; gap: 0.5rem; min-width: 0; }
+.cte-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.cte-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); gap: 0.5rem 0.75rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; padding: 0.6rem; min-width: 0; }
+.cte-field { display: grid; gap: 0.2rem; font-size: 0.85rem; font-weight: 600; min-width: 0; }
+.cte-field input, .cte-field select, .cte-field textarea { font-weight: normal; max-width: 100%; min-width: 0; }
+.cte-wide { grid-column: 1 / -1; }
+.cte-mono { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Consolas, monospace); font-size: 0.8rem; }
+.cte-assertions { display: grid; gap: 0.35rem; border: 1px dashed var(--clr-border, #d0d7de); border-radius: 6px; padding: 0.5rem; margin: 0; min-width: 0; }
+.cte-assertions legend { font-size: 0.8rem; font-weight: 600; padding: 0 0.25rem; }
+.cte-assertion { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr)); gap: 0.3rem; align-items: center; }
+.cte-assertion input, .cte-assertion select { min-width: 0; max-width: 100%; }
+.cte-history { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.cte-history th, .cte-history td { padding: 0.3rem 0.45rem; border-bottom: 1px solid var(--clr-border, #d0d7de); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.cte-muted { margin: 0; color: var(--clr-text-muted, #57606a); font-size: 0.85rem; }
+.cte-error { margin: 0; padding: 0.35rem 0.5rem 0.35rem 1.25rem; border-left: 3px solid var(--clr-danger, #cf222e); background: #ffebe9; font-size: 0.85rem; }
+.cte-message { margin: 0; padding: 0.35rem 0.5rem; border-left: 3px solid var(--clr-primary, #0969da); background: #ddf4ff; font-size: 0.85rem; }
+@media (max-width: 640px) {
+    .cte-history thead { display: none; }
+    .cte-history tr { display: grid; gap: 0.1rem; padding: 0.35rem 0; border-bottom: 1px solid var(--clr-border, #d0d7de); }
+    .cte-history td { border: 0; padding: 0; }
+}

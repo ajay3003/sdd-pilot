@@ -70,6 +70,42 @@ public sealed class ContractTestingController(ContractRegistryService registry, 
         return test is not null ? Ok(test) : error == "Not found." ? NotFound() : UnprocessableEntity(new { message = error });
     }
 
+    /// <summary>Saves an edit as a new revision (409 when the test changed since the editor's revision; 422 when the content is invalid).</summary>
+    [HttpPut("tests/{id:guid}")]
+    [RequestSizeLimit(512 * 1024)]
+    public async Task<ActionResult<ContractTestSaveResult>> Edit(Guid id, [FromBody] ContractTestEdit edit, CancellationToken ct)
+    {
+        var result = await tests.UpdateAsync(id, edit, ct);
+        return result.Saved ? Ok(result) : result.Test is null ? NotFound() : result.Conflict ? Conflict(result) : UnprocessableEntity(result);
+    }
+
+    [HttpPost("tests/{id:guid}/duplicate")]
+    public async Task<IActionResult> Duplicate(Guid id, CancellationToken ct)
+    {
+        var (test, error) = await tests.DuplicateAsync(id, ct);
+        return test is not null ? Ok(test) : NotFound(new { message = error });
+    }
+
+    [HttpGet("tests/{id:guid}/revisions")]
+    public async Task<ActionResult<IReadOnlyList<ContractTestRevisionInfo>>> Revisions(Guid id, CancellationToken ct) => Ok(await tests.RevisionsAsync(id, ct));
+
+    [HttpGet("tests/{id:guid}/revisions/{revision:int}")]
+    public async Task<ActionResult<ContractTestDefinition>> Revision(Guid id, int revision, CancellationToken ct) =>
+        await tests.RevisionAsync(id, revision, ct) is { } test ? Ok(test) : NotFound();
+
+    [HttpGet("tests/{id:guid}/compare")]
+    public async Task<ActionResult<ContractTestRevisionDiff>> CompareRevisions(Guid id, [FromQuery] int from, [FromQuery] int to, CancellationToken ct) =>
+        await tests.CompareAsync(id, from, to, ct) is { } diff ? Ok(diff) : NotFound();
+
+    public sealed record RevertRequest(int Revision, int ExpectedRevision);
+
+    [HttpPost("tests/{id:guid}/revert")]
+    public async Task<ActionResult<ContractTestSaveResult>> Revert(Guid id, [FromBody] RevertRequest request, CancellationToken ct)
+    {
+        var result = await tests.RevertAsync(id, request.Revision, request.ExpectedRevision, ct);
+        return result.Saved ? Ok(result) : result.Test is null ? NotFound() : result.Conflict ? Conflict(result) : UnprocessableEntity(result);
+    }
+
     [HttpDelete("tests/{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct) => await tests.DeleteAsync(id, ct) ? NoContent() : NotFound();
 

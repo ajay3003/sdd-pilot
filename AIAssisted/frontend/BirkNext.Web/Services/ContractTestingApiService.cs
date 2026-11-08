@@ -26,6 +26,11 @@ public interface IContractTestingApiService
     Task<(ApiServiceCredentialView? Credential, string? Error)> CredentialAsync(string environmentId, CancellationToken ct = default);
     Task<string?> SaveCredentialAsync(ApiServiceCredentialSave save, CancellationToken ct = default);
     Task<string?> DeleteCredentialAsync(string environmentId, CancellationToken ct = default);
+    Task<(ContractTestSaveResult? Result, string? Error)> UpdateTestAsync(Guid testId, ContractTestEdit edit, CancellationToken ct = default);
+    Task<(ContractTestDefinition? Test, string? Error)> DuplicateTestAsync(Guid testId, CancellationToken ct = default);
+    Task<(IReadOnlyList<ContractTestRevisionInfo>? Revisions, string? Error)> RevisionsAsync(Guid testId, CancellationToken ct = default);
+    Task<(ContractTestRevisionDiff? Diff, string? Error)> CompareRevisionsAsync(Guid testId, int from, int to, CancellationToken ct = default);
+    Task<(ContractTestSaveResult? Result, string? Error)> RevertTestAsync(Guid testId, int revision, int expectedRevision, CancellationToken ct = default);
 }
 
 public sealed record ContractBindingResponse(ContractEndpointBinding? Binding, List<ContractServerProposal> Proposals);
@@ -92,6 +97,21 @@ public sealed class ContractTestingApiService(HttpClient http) : IContractTestin
 
     public async Task<string?> DeleteCredentialAsync(string environmentId, CancellationToken ct = default) =>
         (await SendAsync<JsonElement?>(HttpMethod.Delete, $"{Base}/credentials/{Uri.EscapeDataString(environmentId)}", null, ct)).Error;
+
+    public Task<(ContractTestSaveResult? Result, string? Error)> UpdateTestAsync(Guid testId, ContractTestEdit edit, CancellationToken ct = default) =>
+        SendAsync<ContractTestSaveResult>(HttpMethod.Put, $"{Base}/tests/{testId}", edit, ct, readErrorBody: true);
+
+    public Task<(ContractTestDefinition? Test, string? Error)> DuplicateTestAsync(Guid testId, CancellationToken ct = default) =>
+        SendAsync<ContractTestDefinition>(HttpMethod.Post, $"{Base}/tests/{testId}/duplicate", new { }, ct);
+
+    public Task<(IReadOnlyList<ContractTestRevisionInfo>? Revisions, string? Error)> RevisionsAsync(Guid testId, CancellationToken ct = default) =>
+        SendAsync<IReadOnlyList<ContractTestRevisionInfo>>(HttpMethod.Get, $"{Base}/tests/{testId}/revisions", null, ct);
+
+    public Task<(ContractTestRevisionDiff? Diff, string? Error)> CompareRevisionsAsync(Guid testId, int from, int to, CancellationToken ct = default) =>
+        SendAsync<ContractTestRevisionDiff>(HttpMethod.Get, $"{Base}/tests/{testId}/compare?from={from}&to={to}", null, ct);
+
+    public Task<(ContractTestSaveResult? Result, string? Error)> RevertTestAsync(Guid testId, int revision, int expectedRevision, CancellationToken ct = default) =>
+        SendAsync<ContractTestSaveResult>(HttpMethod.Post, $"{Base}/tests/{testId}/revert", new { revision, expectedRevision }, ct, readErrorBody: true);
 
     /// <summary>One request. A refusal's message (<c>{ "message": … }</c>) is shown as is; with <paramref name="readErrorBody"/> the typed body of a 422 is returned too.</summary>
     private async Task<(T? Body, string? Error)> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct, bool readErrorBody = false)

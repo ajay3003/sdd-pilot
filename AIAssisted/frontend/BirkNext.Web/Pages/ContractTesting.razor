@@ -207,6 +207,13 @@
     }
 
     private void Go(string link) => Nav.NavigateTo(link);
+
+    /// <summary>After an edit, revert or duplicate: reload the open test, or open the new one.</summary>
+    private async Task OpenTestAsync(Guid id)
+    {
+        if (id == TestId) await ReloadAsync();
+        else Go(Link(view: "tests", test: id));
+    }
     private async Task ReloadAsync() => await OnParametersSetAsync();
 
     private async Task PickFile(InputFileChangeEventArgs e)
@@ -382,7 +389,7 @@
                             var test = t.Test;
                             <tr data-testid="ct-test-row" data-kind="@test.Kind" data-op="@test.Operation" data-state="@t.Readiness.State" class="@(test.Id == TestId ? "ct-selected" : null)">
                                 <td><input type="checkbox" data-testid="ct-test-select" aria-label="@($"Select {test.Name}")" checked="@_selected.Contains(test.Id)" @onchange="e => Toggle(test.Id, (bool)e.Value!)" /></td>
-                                <th scope="row"><a href="@Link(view: "tests", test: test.Id)" data-testid="ct-test-link">@test.Name</a><div class="ct-muted">@(test.Kind == ContractTestKind.Positive ? "Positive" : "Negative: missing required value")@(ExecutionRunService_Mutating(test) ? " · changes data" : "") · revision @test.Revision</div></th>
+                                <th scope="row"><a href="@Link(view: "tests", test: test.Id)" data-testid="ct-test-link">@test.Name</a><div class="ct-muted">@test.ReviewState · @(test.Kind == ContractTestKind.Positive ? "Positive" : "Negative: missing required value")@(ExecutionRunService_Mutating(test) ? " · changes data" : "") · revision @test.Revision</div></th>
                                 <td><span class="ct-state ct-state-@t.Readiness.State.ToString().ToLowerInvariant()" data-testid="ct-readiness">@ReadinessLabel(t.Readiness.State)</span>
                                     @if (t.Readiness.MissingValues.Count > 0) { <div class="ct-muted" data-testid="ct-missing">Missing: @string.Join(", ", t.Readiness.MissingValues)</div> }</td>
                                 <td>v@(test.ContractVersion)@if (t.Impact is { } impact) { <span class="ct-impact ct-impact-@impact.Level.ToString().ToLowerInvariant()" data-testid="ct-impact">@ImpactLabel(impact.Level) in v@(impact.ToVersion)</span> }</td>
@@ -400,8 +407,10 @@
 
     private RenderFragment TestDetail(ContractTestView view) => @<article class="ct-detail" aria-labelledby="ct-test-h" data-testid="ct-test-detail">
         @{ var test = view.Test; }
-        <h4 id="ct-test-h">@test.Name</h4>
+        <h4 id="ct-test-h">@test.Name <span class="ct-pill" data-testid="ct-review-state">@test.ReviewState · r@(test.Revision)</span></h4>
+        @if (test.Description is { Length: > 0 } description) { <p data-testid="ct-description">@description</p> }
         <p data-testid="ct-rationale">@test.Rationale</p>
+        <ContractTestEditor Test="@test" Saved="OpenTestAsync" />
         <h5>Readiness: <span data-testid="ct-detail-readiness">@ReadinessLabel(view.Readiness.State)</span></h5>
         <ul class="ct-checks" data-testid="ct-readiness-items">
             @foreach (var item in view.Readiness.Items) { <li data-state="@item.State"><span class="ct-state ct-item-@item.State.ToString().ToLowerInvariant()">@item.State</span> <strong>@item.Area</strong>: @item.Text</li> }

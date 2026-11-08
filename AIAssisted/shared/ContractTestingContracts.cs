@@ -75,6 +75,10 @@ public sealed record ContractTestDefinition
     public ContractTestDataBinding? Binding { get; init; }
     /// <summary>Why the generator produced it and what it expects, in plain words.</summary>
     public string Rationale { get; init; } = "";
+    /// <summary>The tester's own description (free text).</summary>
+    public string? Description { get; init; }
+    /// <summary>Generated tests start as Draft. Retired tests are kept with their history but never run.</summary>
+    public ContractTestReviewState ReviewState { get; init; } = ContractTestReviewState.Draft;
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset UpdatedAt { get; init; }
 }
@@ -133,6 +137,28 @@ public sealed record ContractTestRunResult(ExecutionRunStartResult? Run, List<st
 public sealed record ContractVersionDiff(string Key, int FromVersion, int ToVersion, List<SourceEvidenceChange> Changes, List<ContractTestImpact> Impacts);
 
 public sealed record ContractTestBindRequest(string Alias, int Version);
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ContractTestReviewState { Draft, Reviewed, Approved, Retired }
+
+/// <summary>An edit of a test: the whole editable content. <see cref="ExpectedRevision"/> is the revision the editor started from; a mismatch is a
+/// conflict and nothing is saved. Every successful edit is a new immutable revision.</summary>
+public sealed record ContractTestEdit
+{
+    public int ExpectedRevision { get; init; }
+    public string Name { get; init; } = "";
+    public string? Description { get; init; }
+    public ExecutionCallDefinition Template { get; init; } = new();
+    public ContractTestReviewState ReviewState { get; init; }
+    public string? ChangeNote { get; init; }
+}
+
+public sealed record ContractTestSaveResult(bool Saved, bool Conflict, ContractTestDefinition? Test, string? Message, List<string> Problems);
+
+public sealed record ContractTestRevisionInfo(int Revision, DateTimeOffset CreatedAt, string? ChangeNote, string Name, ContractTestReviewState ReviewState, int ContractVersion,
+    string? Binding);
+
+public sealed record ContractTestRevisionDiff(Guid TestId, int From, int To, List<string> Differences);
 
 /// <summary>
 /// How one contract is reached and authenticated in one Target Environment. The Target Environment's origin stays authoritative: the binding adds

@@ -68,7 +68,8 @@ public sealed class ContractTestingPageTests : BunitContext
         private ContractTestView Get => new(new ContractTestDefinition
         {
             Id = GetTest, ContractKey = "children-api", ContractVersion = 1, Operation = "GET /children/{id}", Name = "GET /children/{id} — succeeds with valid data", Kind = ContractTestKind.Positive,
-            Template = new() { Method = "GET", Path = "/children/{{dataset.id}}", ExpectedOutcome = "HTTP 200" }, Inputs = [new("id", "path", true, "integer")],
+            Template = new() { Method = "GET", Path = "/children/{{dataset.id}}", ExpectedOutcome = "HTTP 200", Assertions = [new("status", AssertionKind.StatusCode, AssertionOperator.In, null, "200")] },
+            Inputs = [new("id", "path", true, "integer")], Revision = 2,
             Binding = Bind ? new("children-complete", 1) : null, Rationale = "Sends every required value from the bound Test Data and expects HTTP 200.",
         }, new(Bind ? ContractTestReadinessState.Ready : ContractTestReadinessState.NotReady,
             [new("Contract", ReadinessItemState.Ok, "Generated from v1."), Bind ? new("Test Data", ReadinessItemState.Ok, "children-complete@v1 provides every required value.") : new("Test Data", ReadinessItemState.Missing, "Select a dataset that provides id.")],
@@ -134,6 +135,28 @@ public sealed class ContractTestingPageTests : BunitContext
             Task.FromResult<(ApiServiceCredentialView?, string?)>((Credentials.LastOrDefault() is { } c ? new(environmentId, c.Kind, $"api-credential:{environmentId}:{c.Kind}:v{Credentials.Count}", c.TokenUrl, c.ClientId, c.Scope, c.HeaderName, true, Credentials.Count, DateTimeOffset.UtcNow) : null, null));
         public Task<string?> SaveCredentialAsync(ApiServiceCredentialSave save, CancellationToken ct = default) { Credentials.Add(save); return Task.FromResult<string?>(null); }
         public Task<string?> DeleteCredentialAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<string?>(null);
+        public List<ContractTestEdit> Edits { get; } = [];
+        public bool ConflictNext { get; set; }
+        public (int Revision, int Expected)? Reverted { get; private set; }
+        public Task<(ContractTestSaveResult? Result, string? Error)> UpdateTestAsync(Guid testId, ContractTestEdit edit, CancellationToken ct = default)
+        {
+            Edits.Add(edit);
+            return Task.FromResult<(ContractTestSaveResult?, string?)>(ConflictNext
+                ? (new(false, true, Get.Test, "The test was changed elsewhere (now revision 3). Reload it and apply your change again.", []), "conflict")
+                : (new(true, false, Get.Test with { Revision = edit.ExpectedRevision + 1, Name = edit.Name }, $"Saved as revision {edit.ExpectedRevision + 1}.", []), null));
+        }
+        public Task<(ContractTestDefinition? Test, string? Error)> DuplicateTestAsync(Guid testId, CancellationToken ct = default) =>
+            Task.FromResult<(ContractTestDefinition?, string?)>((Get.Test with { Id = Guid.NewGuid(), Name = "Copy", Revision = 1 }, null));
+        public Task<(IReadOnlyList<ContractTestRevisionInfo>? Revisions, string? Error)> RevisionsAsync(Guid testId, CancellationToken ct = default) =>
+            Task.FromResult<(IReadOnlyList<ContractTestRevisionInfo>?, string?)>(([new(2, DateTimeOffset.UtcNow, "Name assertion", "Edited", ContractTestReviewState.Reviewed, 1, null),
+                new(1, DateTimeOffset.UtcNow, "Generated from v1.", "GET /children/{id} — succeeds with valid data", ContractTestReviewState.Draft, 1, null)], null));
+        public Task<(ContractTestRevisionDiff? Diff, string? Error)> CompareRevisionsAsync(Guid testId, int from, int to, CancellationToken ct = default) =>
+            Task.FromResult<(ContractTestRevisionDiff?, string?)>((new(testId, from, to, ["Name: GET /children/{id} — succeeds with valid data → Edited", "Assertion added: name JsonPath Equals $.name Testbarn"]), null));
+        public Task<(ContractTestSaveResult? Result, string? Error)> RevertTestAsync(Guid testId, int revision, int expectedRevision, CancellationToken ct = default)
+        {
+            Reverted = (revision, expectedRevision);
+            return Task.FromResult<(ContractTestSaveResult?, string?)>((new(true, false, Get.Test with { Revision = expectedRevision + 1 }, $"Saved as revision {expectedRevision + 1} with the content of revision {revision}.", []), null));
+        }
         public Task<(ContractTestRunResult? Result, string? Error)> RunAsync(ContractTestRunRequest request, CancellationToken ct = default)
         {
             Ran = request;
@@ -298,6 +321,43 @@ public sealed class ContractTestingPageTests : BunitContext
         page.WaitForAssertion(() => page.Find("[data-testid=cep-credential-state]").TextContent.Should().Contain("api-credential:local-synthetic:ClientCredentials:v1").And.Contain("encrypted"));
         page.Find("[data-testid=cep-secret]").GetAttribute("value").Should().BeNullOrEmpty("the secret is write-only and cleared after saving");
         page.Markup.Should().NotContain("synthetic-secret-value");
+    }
+
+    [Fact]
+    public void Editing_saves_a_new_revision_with_assertions_and_shows_conflicts_history_compare_and_revert()
+    {
+        var page = Open($"?contract=children-api&view=tests&test={GetTest}");
+        page.Find("[data-testid=ct-review-state]").TextContent.Should().Be("Draft · r2");
+        page.Find("[data-testid=cte-edit]").Click();
+        page.Find("[data-testid=cte-name]").Input("Child 7 is Testbarn");
+        page.Find("[data-testid=cte-assertion-add]").Click();
+        var rows = page.FindAll("[data-testid=cte-assertion]");
+        rows.Should().HaveCount(2);
+        rows[1].QuerySelector("[data-testid=cte-assertion-kind]")!.Change(AssertionKind.BodyText.ToString());
+        page.FindAll("[data-testid=cte-assertion]")[1].QuerySelector("[data-testid=cte-assertion-operator]")!.Change(AssertionOperator.Contains.ToString());
+        page.FindAll("[data-testid=cte-assertion]")[1].QuerySelector("[data-testid=cte-assertion-expected]")!.Input("Testbarn");
+        page.Find("[data-testid=cte-note]").Input("Body check");
+        page.Find("[data-testid=cte-save]").TextContent.Should().Be("Save as revision 3");
+        page.Find("[data-testid=cte-save]").Click();
+        page.WaitForAssertion(() => _api.Edits.Should().ContainSingle());
+        var edit = _api.Edits[0];
+        edit.ExpectedRevision.Should().Be(2, "optimistic concurrency on the revision the editor started from");
+        edit.Name.Should().Be("Child 7 is Testbarn");
+        edit.ChangeNote.Should().Be("Body check");
+        edit.Template.Assertions.Should().Contain(a => a.Kind == AssertionKind.BodyText && a.Operator == AssertionOperator.Contains && a.Expected == "Testbarn");
+
+        _api.ConflictNext = true;
+        page.Find("[data-testid=cte-edit]").Click();
+        page.Find("[data-testid=cte-save]").Click();
+        page.WaitForAssertion(() => page.Find("[data-testid=cte-error]").TextContent.Should().Contain("changed elsewhere"));
+
+        page.Find("[data-testid=cte-history]").Click();
+        page.WaitForAssertion(() => page.FindAll("[data-testid=cte-revision]").Should().HaveCount(2));
+        page.Find("[data-testid=cte-compare]").Click();
+        page.WaitForAssertion(() => page.Find("[data-testid=cte-diff]").TextContent.Should().Contain("Assertion added: name JsonPath"));
+        page.Find("[data-testid=cte-revert]").Click();
+        page.WaitForAssertion(() => _api.Reverted.Should().Be((1, 2)));
+        _api.Ran.Should().BeNull("editing never runs anything");
     }
 
     [Fact]

@@ -1,0 +1,220 @@
+@using BirkNext.ContractTesting
+@using BirkNext.ExecutionEvidence
+@namespace BirkNext.Web.Components
+
+@* Edit a contract test. Every save is a new immutable revision (optimistic concurrency on the revision the editor started from); executions keep
+   the exact revision they ran. History lists the revisions; compare shows what differs; revert creates a new revision with an older content;
+   duplicate creates a new Draft test. Nothing here runs a request. *@
+<section class="cte" data-testid="cte" aria-label="Edit and history">
+    @if (_error is not null) { <p class="cte-error" role="alert" data-testid="cte-error">@_error</p> }
+    @if (_problems.Count > 0) { <ul class="cte-error" data-testid="cte-problems">@foreach (var p in _problems) { <li>@p</li> }</ul> }
+    @if (_message is not null) { <p class="cte-message" role="status" data-testid="cte-message">@_message</p> }
+    <div class="cte-actions">
+        <button type="button" class="btn btn-secondary btn-sm" data-testid="cte-edit" disabled="@_busy" @onclick="StartEdit">@(_editing ? "Cancel editing" : "Edit test")</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-testid="cte-history" disabled="@_busy" @onclick="ToggleHistoryAsync">@(_revisions is null ? "History" : "Hide history")</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-testid="cte-duplicate" disabled="@_busy" @onclick="DuplicateAsync">Duplicate</button>
+    </div>
+
+    @if (_editing)
+    {
+        <div class="cte-form" data-testid="cte-form">
+            <label class="cte-field">Name <input data-testid="cte-name" @bind="_name" @bind:event="oninput" maxlength="300" /></label>
+            <label class="cte-field">Review state
+                <select data-testid="cte-review" @bind="_review">
+                    @foreach (var s in Enum.GetValues<ContractTestReviewState>()) { <option value="@s">@s</option> }
+                </select>
+            </label>
+            <label class="cte-field cte-wide">Description <textarea rows="2" data-testid="cte-description" @bind="_description" @bind:event="oninput"></textarea></label>
+            @if (Test.Template.Protocol == ExecutionProtocol.GraphQl)
+            {
+                <label class="cte-field cte-wide">GraphQL document <textarea rows="5" class="cte-mono" data-testid="cte-graphql" @bind="_graphQl" @bind:event="oninput"></textarea></label>
+                <label class="cte-field cte-wide">Variables (JSON, values may be {{dataset.name}}) <textarea rows="3" class="cte-mono" data-testid="cte-variables" @bind="_variables" @bind:event="oninput"></textarea></label>
+            }
+            else
+            {
+                <label class="cte-field">Method
+                    <select data-testid="cte-method" @bind="_method">@foreach (var m in Methods) { <option value="@m">@m</option> }</select>
+                </label>
+                <label class="cte-field">Path <input class="cte-mono" data-testid="cte-path" @bind="_path" @bind:event="oninput" /></label>
+                <label class="cte-field cte-wide">Query parameters (one name=value per line) <textarea rows="2" class="cte-mono" data-testid="cte-query" @bind="_query" @bind:event="oninput"></textarea></label>
+                <label class="cte-field cte-wide">Headers (one name=value per line; never credentials) <textarea rows="2" class="cte-mono" data-testid="cte-headers" @bind="_headers" @bind:event="oninput"></textarea></label>
+                <label class="cte-field">Content type <input class="cte-mono" data-testid="cte-content-type" @bind="_contentType" @bind:event="oninput" /></label>
+                <label class="cte-field cte-wide">Body <textarea rows="4" class="cte-mono" data-testid="cte-body" @bind="_body" @bind:event="oninput"></textarea></label>
+            }
+            <label class="cte-field">Timeout (ms) <input type="number" min="500" max="120000" data-testid="cte-timeout" @bind="_timeout" @bind:event="oninput" /></label>
+            <label class="cte-field">Attempts (1–5) <input type="number" min="1" max="5" data-testid="cte-attempts" @bind="_attempts" @bind:event="oninput" /></label>
+            <label class="cte-field">Retry on status (comma-separated) <input data-testid="cte-retry-status" @bind="_retryStatus" @bind:event="oninput" placeholder="503" /></label>
+            <label class="cte-field">Contract check
+                <select data-testid="cte-contract-check" @bind="_contractCheck">
+                    <option value="@ContractCheckMode.Enforce">Enforce (an invalid request is not sent)</option>
+                    <option value="@ContractCheckMode.Record">Record only (deliberately invalid requests)</option>
+                    <option value="@ContractCheckMode.None">None</option>
+                </select>
+            </label>
+
+            <fieldset class="cte-wide cte-assertions" data-testid="cte-assertions">
+                <legend>Assertions — every one is evaluated and stored with its verdict; none means Not assessed, never a pass</legend>
+                @for (var i = 0; i < _assertions.Count; i++)
+                {
+                    var row = _assertions[i];
+                    var index = i;
+                    <div class="cte-assertion" data-testid="cte-assertion">
+                        <select aria-label="Kind" data-testid="cte-assertion-kind" @bind="row.Kind">@foreach (var k in Enum.GetValues<AssertionKind>()) { <option value="@k">@k</option> }</select>
+                        <select aria-label="Operator" data-testid="cte-assertion-operator" @bind="row.Operator">@foreach (var o in Enum.GetValues<AssertionOperator>()) { <option value="@o">@o</option> }</select>
+                        <input aria-label="Target (path, header or XPath)" placeholder="target" data-testid="cte-assertion-target" @bind="row.Target" @bind:event="oninput" />
+                        <input aria-label="Expected" placeholder="expected" data-testid="cte-assertion-expected" @bind="row.Expected" @bind:event="oninput" />
+                        <button type="button" class="btn btn-link btn-sm" aria-label="@($"Remove assertion {row.Id}")" data-testid="cte-assertion-remove" @onclick="() => _assertions.RemoveAt(index)">Remove</button>
+                    </div>
+                }
+                <button type="button" class="btn btn-link btn-sm" data-testid="cte-assertion-add" @onclick="AddAssertion">Add assertion</button>
+            </fieldset>
+            <label class="cte-field cte-wide">Change note <input data-testid="cte-note" @bind="_note" @bind:event="oninput" maxlength="500" /></label>
+            <button type="button" class="btn btn-primary" data-testid="cte-save" disabled="@_busy" @onclick="SaveAsync">Save as revision @(Test.Revision + 1)</button>
+        </div>
+    }
+
+    @if (_revisions is not null)
+    {
+        <table class="cte-history" data-testid="cte-revisions">
+            <caption class="visually-hidden">Revisions, newest first</caption>
+            <thead><tr><th scope="col">Revision</th><th scope="col">Saved</th><th scope="col">Note</th><th scope="col">State</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+            <tbody>
+                @foreach (var r in _revisions)
+                {
+                    <tr data-testid="cte-revision" data-revision="@r.Revision">
+                        <td>r@(r.Revision)@(r.Revision == Test.Revision ? " (current)" : "")</td><td>@r.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td><td>@r.ChangeNote</td><td>@r.ReviewState · v@(r.ContractVersion)@(r.Binding is { } b ? $" · {b}" : "")</td>
+                        <td>@if (r.Revision != Test.Revision)
+                            {
+                                <button type="button" class="btn btn-link btn-sm" data-testid="cte-compare" @onclick="() => CompareAsync(r.Revision)">Compare with current</button>
+                                <button type="button" class="btn btn-link btn-sm" data-testid="cte-revert" disabled="@_busy" @onclick="() => RevertAsync(r.Revision)">Revert to this</button>
+                            }</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (_diff is { } diff)
+        {
+            <div data-testid="cte-diff"><strong>r@(diff.From) → r@(diff.To)</strong>
+                @if (diff.Differences.Count == 0) { <p class="cte-muted">No differences.</p> }
+                else { <ul>@foreach (var d in diff.Differences) { <li>@d</li> }</ul> }
+            </div>
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ContractTestDefinition Test { get; set; } = default!;
+    /// <summary>Raised after a new revision or a duplicate was saved, with the test to open.</summary>
+    [Parameter] public EventCallback<Guid> Saved { get; set; }
+    [Inject] private IContractTestingApiService Api { get; set; } = default!;
+    private static readonly string[] Methods = ["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"];
+
+    private sealed class AssertionRow
+    {
+        public string Id { get; set; } = "";
+        public AssertionKind Kind { get; set; }
+        public AssertionOperator Operator { get; set; }
+        public string? Target { get; set; }
+        public string? Expected { get; set; }
+    }
+
+    private bool _busy, _editing;
+    private string? _error, _message, _name, _description, _graphQl, _variables, _method, _path, _query, _headers, _contentType, _body, _retryStatus, _note;
+    private int _timeout, _attempts;
+    private ContractTestReviewState _review;
+    private ContractCheckMode _contractCheck;
+    private List<AssertionRow> _assertions = [];
+    private List<string> _problems = [];
+    private IReadOnlyList<ContractTestRevisionInfo>? _revisions;
+    private ContractTestRevisionDiff? _diff;
+    private Guid _loadedFor;
+
+    protected override void OnParametersSet()
+    {
+        if (Test.Id == _loadedFor) return;
+        _loadedFor = Test.Id; _editing = false; _revisions = null; _diff = null; _problems = []; _error = null; _message = null;
+    }
+
+    private void StartEdit()
+    {
+        _editing = !_editing; _problems = []; _message = null;
+        if (!_editing) return;
+        var t = Test.Template;
+        (_name, _description, _review) = (Test.Name, Test.Description, Test.ReviewState);
+        (_graphQl, _variables, _method, _path, _contentType, _body) = (t.GraphQlQuery, t.GraphQlVariablesJson, t.Method, t.Path, t.ContentType, t.Body);
+        _query = string.Join("\n", t.Query.Select(q => $"{q.Key}={q.Value}"));
+        _headers = string.Join("\n", t.Headers.Select(h => $"{h.Key}={h.Value}"));
+        (_timeout, _attempts, _retryStatus, _contractCheck) = (t.TimeoutMs, t.Retry.MaxAttempts, string.Join(",", t.Retry.RetryOnStatus ?? []), t.ContractCheck);
+        _assertions = [.. t.Assertions.Select(a => new AssertionRow { Id = a.Id, Kind = a.Kind, Operator = a.Operator, Target = a.Target, Expected = a.Expected })];
+        _note = null;
+    }
+
+    private void AddAssertion()
+    {
+        var n = 1;
+        while (_assertions.Any(a => a.Id == $"a{n}")) n++;
+        _assertions.Add(new AssertionRow { Id = $"a{n}", Kind = AssertionKind.StatusCode, Operator = AssertionOperator.Equals, Expected = "200" });
+    }
+
+    private static Dictionary<string, string> Pairs(string? text, StringComparer comparer)
+    {
+        var result = new Dictionary<string, string>(comparer);
+        foreach (var line in (text ?? "").Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0))
+        {
+            var eq = line.IndexOf('=');
+            result[eq < 0 ? line : line[..eq].Trim()] = eq < 0 ? "" : line[(eq + 1)..].Trim();
+        }
+        return result;
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true; _error = null; _message = null; _problems = [];
+        var t = Test.Template;
+        var statuses = (_retryStatus ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(s => int.TryParse(s, out var c) ? c : -1).ToList();
+        var template = t with
+        {
+            Method = t.Protocol == ExecutionProtocol.GraphQl ? "POST" : _method ?? t.Method, Path = t.Protocol == ExecutionProtocol.GraphQl ? t.Path : _path ?? "",
+            Query = t.Protocol == ExecutionProtocol.GraphQl ? t.Query : Pairs(_query, StringComparer.Ordinal),
+            Headers = t.Protocol == ExecutionProtocol.GraphQl ? t.Headers : Pairs(_headers, StringComparer.OrdinalIgnoreCase),
+            ContentType = string.IsNullOrWhiteSpace(_contentType) ? null : _contentType.Trim(), Body = string.IsNullOrEmpty(_body) ? null : _body,
+            GraphQlQuery = _graphQl, GraphQlVariablesJson = string.IsNullOrWhiteSpace(_variables) ? null : _variables, TimeoutMs = _timeout,
+            Retry = new RetryPolicy(_attempts, statuses.Count > 0 ? statuses : null, t.Retry.RetryOnTransportError, t.Retry.DelayMs), ContractCheck = _contractCheck,
+            Assertions = [.. _assertions.Select(a => new AssertionDefinition(a.Id, a.Kind, a.Operator, string.IsNullOrWhiteSpace(a.Target) ? null : a.Target.Trim(), string.IsNullOrEmpty(a.Expected) ? null : a.Expected))],
+        };
+        var (result, error) = await Api.UpdateTestAsync(Test.Id, new ContractTestEdit
+        {
+            ExpectedRevision = Test.Revision, Name = _name ?? "", Description = _description, Template = template, ReviewState = _review, ChangeNote = _note,
+        });
+        _busy = false;
+        if (result is { Saved: true, Test: { } saved }) { _editing = false; _revisions = null; _message = result.Message; await Saved.InvokeAsync(saved.Id); return; }
+        _problems = result?.Problems ?? [];
+        _error = result?.Message ?? error;
+    }
+
+    private async Task ToggleHistoryAsync()
+    {
+        if (_revisions is not null) { _revisions = null; _diff = null; return; }
+        (_revisions, _error) = await Api.RevisionsAsync(Test.Id);
+    }
+
+    private async Task CompareAsync(int revision) => (_diff, _error) = await Api.CompareRevisionsAsync(Test.Id, revision, Test.Revision);
+
+    private async Task RevertAsync(int revision)
+    {
+        _busy = true; _error = null; _message = null;
+        var (result, error) = await Api.RevertTestAsync(Test.Id, revision, Test.Revision);
+        _busy = false;
+        if (result is { Saved: true, Test: { } saved }) { _revisions = null; _diff = null; _message = result.Message; await Saved.InvokeAsync(saved.Id); }
+        else _error = result?.Message ?? error;
+    }
+
+    private async Task DuplicateAsync()
+    {
+        _busy = true; _error = null;
+        var (copy, error) = await Api.DuplicateTestAsync(Test.Id);
+        _busy = false;
+        if (copy is not null) { _message = $"Duplicated as \"{copy.Name}\" (Draft, revision 1)."; await Saved.InvokeAsync(copy.Id); }
+        else _error = error;
+    }
+}

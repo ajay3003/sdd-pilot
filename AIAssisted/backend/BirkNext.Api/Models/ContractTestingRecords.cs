@@ -54,3 +54,14 @@ public sealed class ContractEndpointBindingRow
     public string Authentication { get; set; } = "None";
     public DateTimeOffset UpdatedAt { get; set; }
 }
+
+/// <summary>One immutable revision of a contract test (the full ContractTestDefinition as JSON). Never updated or deleted with the test's edits.</summary>
+public sealed class ContractTestRevisionRow
+{
+    public Guid Id { get; init; }
+    public Guid TestId { get; init; }
+    public int Revision { get; init; }
+    public string DocumentJson { get; init; } = "";
+    public string? ChangeNote { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
+}

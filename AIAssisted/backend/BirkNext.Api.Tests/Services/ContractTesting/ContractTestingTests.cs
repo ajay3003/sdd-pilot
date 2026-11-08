@@ -529,6 +529,59 @@ public sealed class ContractTestingTests : IAsyncLifetime
         _seen.Should().NotContain(s => s.Method == "POST");
     }
 
+    [Fact]
+    public async Task Tests_are_edited_as_immutable_revisions_and_history_keeps_what_each_run_used()
+    {
+        using var scope = _services.CreateScope();
+        (await Scoped<ContractRegistryService>(scope).ImportAsync(new() { FileName = "children.yaml", Content = V1Yaml }, default)).Imported.Should().BeTrue();
+        var tests = Scoped<ContractTestService>(scope);
+        var test = (await tests.GenerateAsync("synthetic-children-api", null, ["GET /children/{id}"], default)).Created.Single();
+        test.Revision.Should().Be(1);
+        test.ReviewState.Should().Be(ContractTestReviewState.Draft);
+
+        var edited = test.Template with
+        {
+            TimeoutMs = 5000,
+            Assertions = [.. test.Template.Assertions, new("name", AssertionKind.JsonPath, AssertionOperator.Equals, "$.name", "Testbarn"), new("body", AssertionKind.BodyText, AssertionOperator.Contains, null, "Testbarn")],
+        };
+        var saved = await tests.UpdateAsync(test.Id, new() { ExpectedRevision = 1, Name = "Child 7 is Testbarn", Description = "Checks the name.", Template = edited, ReviewState = ContractTestReviewState.Reviewed, ChangeNote = "Name assertion" }, default);
+        saved.Saved.Should().BeTrue(string.Join("; ", saved.Problems)); saved.Test!.Revision.Should().Be(2);
+        (await tests.UpdateAsync(test.Id, new() { ExpectedRevision = 1, Name = "Stale edit", Template = edited }, default)).Conflict.Should().BeTrue("a concurrent edit from revision 1 never overwrites revision 2");
+        var bad = await tests.UpdateAsync(test.Id, new() { ExpectedRevision = 2, Name = "x", Template = edited with { Headers = new(StringComparer.OrdinalIgnoreCase) { ["Authorization"] = "Bearer abcdefghijklmnop" }, TimeoutMs = 10 } }, default);
+        bad.Saved.Should().BeFalse();
+        bad.Problems.Should().Contain(p => p.Contains("credential header")).And.Contain(p => p.Contains("Timeout"));
+        (await tests.UpdateAsync(test.Id, new() { ExpectedRevision = 2, Name = "x", Template = edited with { Query = new() { ["token"] = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl" } } }, default))
+            .Problems.Should().Contain(p => p.Contains("credential-like value"));
+
+        Dataset("rev-data", new TestDataTypedEntry("id", TestDataPrimitive.Int32, "7"));
+        (await tests.BindAsync(test.Id, new("rev-data", 1), default)).Test!.Revision.Should().Be(3);
+        var run = await WaitAsync((await tests.RunAsync(new() { TestIds = [test.Id], Environment = Local }, default)).Run!.RunId!.Value);
+        var call = run.Calls.Single();
+        call.State.Should().Be(ExecutionState.Passed, string.Join("; ", call.Assertions.Select(a => $"{a.Id}:{a.Outcome} {a.Explanation}")));
+        call.Definition.DefinitionVersion.Should().Be(ContractIdentity.DefinitionRef(test.Id, 3));
+        call.Assertions.Select(a => a.Id).Should().Contain(["name", "body", "contract"]);
+
+        var r4 = await tests.UpdateAsync(test.Id, new() { ExpectedRevision = 3, Name = "Child 7 renamed", Template = edited with { Assertions = [new("status", AssertionKind.StatusCode, AssertionOperator.Equals, null, "200")] } }, default);
+        r4.Test!.Revision.Should().Be(4);
+        using (var evidenceScope = _services.CreateScope())
+        {
+            var historic = await Scoped<ExecutionEvidenceStore>(evidenceScope).CallAsync(run.Run.RunId, call.CallId, default);
+            historic!.Definition.Assertions.Select(a => a.Id).Should().Contain(["name", "body"], "an edit never changes a historical execution");
+        }
+        (await tests.RevisionsAsync(test.Id, default)).Select(r => r.Revision).Should().Equal(4, 3, 2, 1);
+        var diff = (await tests.CompareAsync(test.Id, 1, 4, default))!.Differences;
+        diff.Should().Contain(d => d.StartsWith("Name:")).And.Contain(d => d.StartsWith("Test Data: none → rev-data@v1")).And.Contain(d => d.StartsWith("Assertion removed: contract"));
+        var reverted = await tests.RevertAsync(test.Id, 2, 4, default);
+        reverted.Test!.Should().Match<ContractTestDefinition>(t => t.Revision == 5 && t.Name == "Child 7 is Testbarn" && t.ReviewState == ContractTestReviewState.Reviewed);
+        (await tests.RevisionAsync(test.Id, 4, default))!.Name.Should().Be("Child 7 renamed", "revert adds a revision; it never rewrites one");
+        var (copy, _) = await tests.DuplicateAsync(test.Id, default);
+        copy!.Should().Match<ContractTestDefinition>(c => c.Id != test.Id && c.Revision == 1 && c.ReviewState == ContractTestReviewState.Draft && c.Name == "Copy of Child 7 is Testbarn");
+
+        await tests.UpdateAsync(test.Id, new() { ExpectedRevision = 5, Name = reverted.Test.Name, Template = reverted.Test.Template, ReviewState = ContractTestReviewState.Retired }, default);
+        (await tests.GetAsync(test.Id, Local, default))!.Readiness.State.Should().Be(ContractTestReadinessState.Blocked);
+        (await tests.RunAsync(new() { TestIds = [test.Id], Environment = Local }, default)).Run.Should().BeNull("a retired test never runs");
+    }
+
     [Theory]
     [InlineData("//evil.example.test")]
     [InlineData("http://evil.example.test/api")]

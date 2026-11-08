@@ -270,6 +270,11 @@ public static partial class ContractTestRules
         }
     }
 
+    public static bool IsWholePlaceholder(string text) => WholePlaceholder().IsMatch(text.Trim());
+
+    /// <summary>Every <c>{{dataset.name}}</c> name used in a text, in order of first use.</summary>
+    public static List<string> Placeholders(string? text) => [.. AnyPlaceholder().Matches(text ?? "").Select(m => m.Groups[1].Value).Distinct(StringComparer.Ordinal)];
+
     /// <summary>Which of a test's inputs a set of value names covers: missing required and missing optional names.</summary>
     public static (List<string> Required, List<string> Optional) Missing(ContractTestDefinition test, IReadOnlyCollection<string> provided) =>
         ([.. test.Inputs.Where(i => i.Required && !provided.Contains(i.Name)).Select(i => i.Name)], [.. test.Inputs.Where(i => !i.Required && !provided.Contains(i.Name)).Select(i => i.Name)]);
