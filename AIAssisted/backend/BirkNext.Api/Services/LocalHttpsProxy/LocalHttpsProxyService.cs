@@ -730,7 +730,7 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
             { _lastRejection = "the observed token belongs to a different tenant than this environment expects"; return; }
             var expiresAt = now + options.CredentialLifetime;
             if (metadata.ExpiresAt is { } bound && bound < expiresAt) expiresAt = bound;
-            ((ITransientCredentialSink)store).Store(Scope.ProfileId, Scope.ContextFingerprint, exchange.Host, Hosts, token, expiresAt, metadata.Format);
+            ((ITransientCredentialSink)store).Store(Scope.ProfileId, Scope.ContextFingerprint, exchange.Host, Hosts, token, expiresAt, metadata.Format, metadata.Identity);
             Interlocked.Exchange(ref _credentialExpiresAtTicks, expiresAt.UtcTicks);
             _lastRejection = null;
             logger?.LogInformation("Authenticated API context established for environment {ProfileId} from approved host {Host} ({Format}); expires {ExpiresAt:u}. The credential is held in memory only.",

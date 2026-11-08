@@ -4,7 +4,9 @@ using System.Text.Json;
 namespace BirkNext.Api.Services.LocalHttpsProxy;
 
 /// <summary>Non-secret metadata derived from an observed Bearer token. Never contains the token or arbitrary claim values.</summary>
-public sealed record BearerTokenMetadata(bool IsJwt, DateTimeOffset? ExpiresAt, DateTimeOffset? IssuedAt, string? IssuerHost, string? TenantId, bool HasAudience)
+/// <param name="Identity">A one-way, non-reversible reference to the signed-in identity (SHA-256 of issuer + subject, 12 hex characters), so a renewed
+/// session can be recognised as the same account. Never the subject itself; null when the token carries no subject.</param>
+public sealed record BearerTokenMetadata(bool IsJwt, DateTimeOffset? ExpiresAt, DateTimeOffset? IssuedAt, string? IssuerHost, string? TenantId, bool HasAudience, string? Identity = null)
 {
     public string Format => IsJwt ? "JWT" : "Opaque";
 }
@@ -42,7 +44,15 @@ public static class BearerTokenInspector
             }
             if (root.TryGetProperty("tid", out var tid) && tid.ValueKind == JsonValueKind.String && Guid.TryParse(tid.GetString(), out var tidGuid)) tenant = tidGuid.ToString("D");
             var hasAudience = root.TryGetProperty("aud", out var aud) && aud.ValueKind is JsonValueKind.String or JsonValueKind.Array;
-            return new(true, exp, iat, issuerHost, tenant, hasAudience);
+            string? identity = null;
+            foreach (var claim in new[] { "sub", "oid" })
+                if (root.TryGetProperty(claim, out var s) && s.ValueKind == JsonValueKind.String && s.GetString() is { Length: > 0 } subject)
+                {
+                    var issText = root.TryGetProperty("iss", out var i2) && i2.ValueKind == JsonValueKind.String ? i2.GetString() : "";
+                    identity = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes($"{issText}|{claim}|{subject}")))[..12].ToLowerInvariant();
+                    break;
+                }
+            return new(true, exp, iat, issuerHost, tenant, hasAudience, identity);
         }
         catch (Exception ex) when (ex is JsonException or FormatException or ArgumentException)
         {

@@ -181,7 +181,9 @@ public sealed class ContractTestingApiService(HttpClient http) : IContractTestin
             }
             catch (JsonException) { }
             if (message is null && response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
-                message = $"{Title}: you do not have permission to change contract configuration (HTTP {(int)response.StatusCode}).";
+                message = path.EndsWith("/runs", StringComparison.Ordinal)
+                    ? $"{Title}: you do not have permission to run tests against a target (HTTP {(int)response.StatusCode})."
+                    : $"{Title}: you do not have permission to change contract configuration (HTTP {(int)response.StatusCode}).";
             return (typed, message ?? $"{Title}: the request was refused (HTTP {(int)response.StatusCode}).");
         }
         catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e))

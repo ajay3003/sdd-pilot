@@ -209,6 +209,27 @@ public sealed class ExecutionAuthenticationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Concurrent_calls_share_one_token_request_and_a_run_records_one_session_for_all_its_calls()
+    {
+        SaveClientCredentials();
+        var resolver = _services.GetRequiredService<ExecutionCredentialResolver>();
+        var request = Run(ExecutionAuthenticationKind.ClientCredentials);
+        // Twenty callers ask at the same time while no token is cached: one token request, one acquisition, the same session for everyone.
+        var applied = await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => Task.Run(async () =>
+        {
+            using var message = new HttpRequestMessage(HttpMethod.Get, _server.Url("/secure/children/7"));
+            return await resolver.ApplyAsync(request, message, default);
+        })));
+        _tokenRequests.Should().Be(1, "no refresh race: concurrent callers wait for the one token request");
+        applied.Should().OnlyContain(a => a.Problem == null && a.Session!.EndsWith("#t1", StringComparison.Ordinal));
+        var (_, run, json) = await RunAsync(Run(ExecutionAuthenticationKind.ClientCredentials, [.. Enumerable.Range(1, 25).Select(i => "/secure/children/7")]));
+        _tokenRequests.Should().Be(1, "25 calls reuse the cached token: 25 calls are not 25 logins");
+        run!.Run.AuthenticationSessions.Should().ContainSingle().Which.Should().EndWith("#t1");
+        run.Calls.Should().OnlyContain(c => c.Authentication == CallAuthenticationOutcome.Authenticated);
+        json.Should().NotContain(AccessToken);
+    }
+
+    [Fact]
     public async Task The_attended_session_applies_only_to_its_own_profile_and_approved_HTTPS_hosts()
     {
         var resolver = _services.GetRequiredService<ExecutionCredentialResolver>();
@@ -217,8 +238,9 @@ public sealed class ExecutionAuthenticationTests : IAsyncLifetime
         var origin = new Uri("https://api.example.test/");
         resolver.Prepare(request, origin).Problem.Should().BeNull();
         using var message = new HttpRequestMessage(HttpMethod.Get, "https://api.example.test/children/7");
-        var (headers, problem) = await resolver.ApplyAsync(request, message, default);
-        problem.Should().BeNull(); headers.Should().Equal("Authorization");
+        var applied = await resolver.ApplyAsync(request, message, default);
+        applied.Problem.Should().BeNull(); applied.Headers.Should().Equal("Authorization");
+        applied.Session.Should().Be("attended-session:dev#g1");
         message.Headers.Authorization!.Parameter.Should().Be(AccessToken);
         resolver.Prepare(request with { ProfileId = "other" }, origin).Problem.Should().Contain("another Target Environment");
         resolver.Prepare(request with { ContextFingerprint = "stale" }, origin).Problem.Should().Contain("No attended session");

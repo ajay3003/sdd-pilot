@@ -265,7 +265,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             Name = string.IsNullOrWhiteSpace(request.Name) ? $"Contract tests · {string.Join(", ", contractRefs.Order(StringComparer.Ordinal))}" : request.Name.Trim(),
             EnvironmentId = e.EnvironmentId, TargetUrl = e.TargetUrl, EnvironmentType = e.EnvironmentType, IsProduction = e.IsProduction, ProfileId = e.ProfileId,
             ContextFingerprint = e.ContextFingerprint, Calls = calls, ContractRefs = [.. contractRefs.Order(StringComparer.Ordinal)], ConfirmMutatingCalls = request.ConfirmMutatingCalls,
-            CapturePolicy = CapturePolicy.BoundedBody, Authentication = kinds.SingleOrDefault(),
+            CapturePolicy = CapturePolicy.BoundedBody, Authentication = kinds.SingleOrDefault(), ReauthenticationWaitSeconds = request.ReauthenticationWaitSeconds,
         }, "Local session", ct);
         return new(started, notRun);
     }

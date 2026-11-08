@@ -148,6 +148,12 @@ public sealed record LocalHttpsProxyScopeRequest(string ProfileId, string Contex
 
 public sealed record LocalHttpsProxySessionRequest(string SessionId, string ProfileId, string ContextFingerprint);
 
+/// <summary>
+/// The attended session (the credential the proxy observed from the tester's own sign-in) as BirkNext may show it: where and when it was
+/// observed, when it expires, which generation it is (renewals increase it) and a non-reversible identity reference. Never the credential.
+/// </summary>
+public sealed record AttendedSessionView(bool Active, string? ObservedHost, DateTimeOffset? ObservedAt, DateTimeOffset? ExpiresAt, int Generation, string? Identity, string Message);
+
 /// <summary>Certificate trust changes are explicit user actions; <see cref="Confirmed"/> must be true.</summary>
 public sealed record LocalHttpsProxyCertificateRequest(bool Confirmed);
 

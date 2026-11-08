@@ -79,6 +79,7 @@ public sealed class ExecutionEvidenceStore(AppDbContext db, TimeProvider? clock 
         {
             State = state, CompletedAt = _clock.GetUtcNow(), Counts = counts,
             WireTransmissions = docs.Sum(d => d.Attempts.Sum(a => a.Transmissions)),
+            AuthenticationSessions = [.. docs.OrderBy(d => d.Sequence).SelectMany(d => d.Attempts).Select(a => a.AuthenticationSession).OfType<string>().Distinct(StringComparer.Ordinal)],
             CallsWithCompleteEvidence = docs.Count(d => d.Attempts.All(a => a.Transport == TransportResult.NotSent || a.Request is not null && (a.Transport != TransportResult.ResponseReceived || a.Response is not null))),
         };
         (row.State, row.CompletedAt, row.Passed, row.Failed, row.Errors, row.Attempts, row.SummaryJson) =

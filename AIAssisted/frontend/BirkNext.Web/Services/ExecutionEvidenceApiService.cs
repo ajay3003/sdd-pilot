@@ -45,6 +45,8 @@ public sealed class ExecutionEvidenceApiService(HttpClient http) : IExecutionEvi
         try
         {
             using var response = await http.PostAsJsonAsync("api/execution-evidence/runs", request, Json, ct);
+            if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+                return (null, $"{Title}: you do not have permission to run tests against a target (HTTP {(int)response.StatusCode}).");
             var result = await response.Content.ReadFromJsonAsync<ExecutionRunStartResult>(Json, ct);
             return (result, response.IsSuccessStatusCode ? null : result?.Message ?? $"The run was refused ({(int)response.StatusCode}).");
         }

@@ -32,6 +32,34 @@ public sealed class LocalHttpsProxyController(ILocalHttpsProxyService proxy, IAu
     [HttpPost("stop")]
     public Task<IActionResult> Stop(LocalHttpsProxySessionRequest request) => Run(async () => Ok(await proxy.StopAsync(request)));
 
+    /// <summary>The attended session of the environment (metadata only). Needs the environment's current context fingerprint.</summary>
+    [HttpPost("attended-session")]
+    public IActionResult AttendedSession([FromServices] ITransientAuthenticatedApiContextStore store, LocalHttpsProxySessionRequest request)
+    {
+        Response.Headers.CacheControl = "no-store";
+        return Ok(Describe(store, request));
+    }
+
+    /// <summary>
+    /// Ends the attended session ("sign out of BirkNext's use of it"): the in-memory credential is wiped; the proxy keeps running and a new
+    /// sign-in through it starts the next generation. Runs that need it then wait or are Blocked for authentication — never sent anonymously.
+    /// </summary>
+    [HttpPost("attended-session/end")]
+    public IActionResult EndAttendedSession([FromServices] ITransientAuthenticatedApiContextStore store, LocalHttpsProxySessionRequest request)
+    {
+        Response.Headers.CacheControl = "no-store";
+        if (string.IsNullOrWhiteSpace(request.ProfileId) || string.IsNullOrWhiteSpace(request.ContextFingerprint)) return BadRequest(new { message = "The environment and its context are required." });
+        // Only a caller that knows the environment's current context ends its session.
+        if (store.Describe(request.ProfileId, request.ContextFingerprint) is null) return Ok(Describe(store, request));
+        store.Invalidate(request.ProfileId);
+        return Ok(new AttendedSessionView(false, null, null, null, 0, null, "The attended session was ended. Sign in through the proxy again to start a new one."));
+    }
+
+    private static AttendedSessionView Describe(ITransientAuthenticatedApiContextStore store, LocalHttpsProxySessionRequest request) =>
+        string.IsNullOrWhiteSpace(request.ProfileId) || string.IsNullOrWhiteSpace(request.ContextFingerprint) || store.Describe(request.ProfileId, request.ContextFingerprint) is not { } d
+            ? new(false, null, null, null, 0, null, "No attended session: sign in to the application through the Local HTTPS proxy.")
+            : new(true, d.ObservedHost, d.ObservedAt, d.ExpiresAt, d.Generation, d.Identity, $"Attended session active (generation {d.Generation}); expires {d.ExpiresAt:HH:mm:ss} UTC.");
+
     /// <summary>Adds the BirkNext DEV inspection root to the current user's trusted roots. Requires explicit confirmation; Windows asks again.</summary>
     [HttpPost("certificate/install")]
     public Task<IActionResult> InstallCertificate(LocalHttpsProxyCertificateRequest request) => Run(async () => Ok(await proxy.InstallCertificateAsync(request)));

@@ -68,6 +68,15 @@ public sealed record CapturedHeader(string Name, string Value, bool Redacted = f
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ExecutionAuthenticationKind { None, AttendedSession, ClientCredentials, ApiKey }
 
+/// <summary>
+/// What authentication did for one logical call. NotApplicable: the run is anonymous. Authenticated: the run's credential was applied and the
+/// target did not reject it. AnonymousByDesign: a negative test sent without the credential on purpose. BlockedForAuthentication: not sent because
+/// the credential could not be applied (expired session not renewed in time, identity changed, token refused) — never sent anonymously instead.
+/// FailedAuthentication: sent with the credential and the target answered 401 (or GraphQL UNAUTHENTICATED). AuthorizationDenied: 403 (or FORBIDDEN).
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CallAuthenticationOutcome { NotApplicable, Authenticated, AnonymousByDesign, BlockedForAuthentication, FailedAuthentication, AuthorizationDenied }
+
 /// <summary>An unattended API service credential as the UI reads it: configuration only — the secret is write-only.</summary>
 public sealed record ApiServiceCredentialView(string EnvironmentId, ExecutionAuthenticationKind Kind, string Reference, string? TokenUrl, string? ClientId, string? Scope,
     string? HeaderName, bool SecretStored, int Version, DateTimeOffset UpdatedAt);
@@ -141,6 +150,8 @@ public sealed record ExecutionAttempt
     /// <summary>How many times this attempt's request was actually written to the wire. The HTTP stack resends a request without a body when the
     /// connection closes before a response, so this can exceed 1; 0 = not transmitted.</summary>
     public int Transmissions { get; init; }
+    /// <summary>Which credential instance was applied ("attended-session:{env}#g2", "api-credential:{env}:ClientCredentials:v1#t3") — never a value.</summary>
+    public string? AuthenticationSession { get; init; }
 }
 
 public sealed record AssertionDefinition(string Id, AssertionKind Kind, AssertionOperator Operator, string? Target = null, string? Expected = null);
@@ -193,6 +204,7 @@ public sealed record ExecutionCallRecord
     public List<ContractValidationReport> ContractValidation { get; init; } = [];
     public DateTimeOffset? StartedAt { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
+    public CallAuthenticationOutcome Authentication { get; init; }
 }
 
 public sealed record ExecutionRunCounts(int Planned, int Executed, int Passed, int Failed, int Errors, int Skipped, int Blocked, int Cancelled, int TimedOut,
@@ -222,6 +234,10 @@ public sealed record ExecutionRunSummary
     public int CallsWithCompleteEvidence { get; init; }
     /// <summary>Requests actually written to the wire across all attempts (more than the attempts when the HTTP stack resent a request).</summary>
     public int WireTransmissions { get; init; }
+    /// <summary>The credential instances used by the run, in first-use order (a renewal adds the next generation; one entry = one session for every call).</summary>
+    public List<string> AuthenticationSessions { get; init; } = [];
+    /// <summary>How long the run would wait for an expired attended session to be renewed by signing in again (0 = no wait).</summary>
+    public int ReauthenticationWaitSeconds { get; init; }
 }
 
 public sealed record ExecutionRunDetail(ExecutionRunSummary Run, List<ExecutionCallRecord> Calls, int TotalCalls, int Skip, int Take);
@@ -247,6 +263,9 @@ public sealed record ExecutionRunRequest
     public string? ContextFingerprint { get; init; }
     /// <summary>A mutating call (POST/PUT/PATCH/DELETE or a GraphQL mutation) runs only when the person confirmed it for this run.</summary>
     public bool ConfirmMutatingCalls { get; init; }
+    /// <summary>Attended runs: when the session expires mid-run, wait up to this long (0–900 s, once per run) for the tester to sign in again;
+    /// the waiting call is then sent with the renewed credential of the same identity. 0 = the remaining calls are Blocked for authentication.</summary>
+    public int ReauthenticationWaitSeconds { get; init; }
 }
 
 public sealed record ExecutionRunStartResult(Guid? RunId, ExecutionState State, string? Message, List<string> Blockers);

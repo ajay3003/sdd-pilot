@@ -225,6 +225,7 @@ public sealed class ContractTestingController(ContractRegistryService registry, 
     }
 
     [HttpPost("runs")]
+    [Authorize(Policy = BirkNextPermissions.ActiveEventExecutePolicy)]
     public async Task<ActionResult<ContractTestRunResult>> Run([FromBody] ContractTestRunRequest request, CancellationToken ct)
     {
         var result = await tests.RunAsync(request, ct);

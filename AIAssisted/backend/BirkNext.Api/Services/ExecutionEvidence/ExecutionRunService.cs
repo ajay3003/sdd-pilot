@@ -24,6 +24,17 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
     public const string ClientName = "execution-evidence";
     public const string CorrelationHeader = "X-BirkNext-Execution-Id";
     public const int MaxCalls = 500;
+    public const int MaxReauthenticationWaitSeconds = 900;
+
+    /// <summary>
+    /// Authentication state shared by the calls of one run: the attended identity the run started with (a renewed session must be the same
+    /// account) and the one-time budget for waiting on a renewed session.
+    /// </summary>
+    private sealed class RunAuthentication(int waitSeconds)
+    {
+        public string? Identity;
+        public int WaitSecondsLeft = waitSeconds;
+    }
     private static readonly ConcurrentDictionary<Guid, CancellationTokenSource> Running = new();
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
 
@@ -106,6 +117,7 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
             StartedAt = now, CapturePolicy = request.CapturePolicy, RedactionVersion = ExecutionEvidenceRedaction.Version, Initiator = initiator,
             AuthenticationMode = auth.Mode, AuthenticationReference = auth.Reference,
             SourceSnapshotId = request.SourceSnapshotId, ContractRefs = request.ContractRefs,
+            ReauthenticationWaitSeconds = authKind == ExecutionAuthenticationKind.AttendedSession ? Math.Clamp(request.ReauthenticationWaitSeconds, 0, MaxReauthenticationWaitSeconds) : 0,
         };
         using (var scope = scopes.CreateScope())
         {
@@ -139,6 +151,8 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
             using var scope = scopes.CreateScope();
             var store = scope.ServiceProvider.GetRequiredService<ExecutionEvidenceStore>();
             var client = http.CreateClient(ClientName);
+            var authentication = new RunAuthentication(ExecutionCredentialResolver.Effective(request) == ExecutionAuthenticationKind.AttendedSession
+                ? Math.Clamp(request.ReauthenticationWaitSeconds, 0, MaxReauthenticationWaitSeconds) : 0);
             foreach (var planned in calls)
             {
                 if (planned.State != ExecutionState.Planned) continue;
@@ -149,7 +163,7 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
                 }
                 var record = planned with { State = ExecutionState.Running, StartedAt = _clock.GetUtcNow() };
                 await store.SaveCallAsync(runId, record, CancellationToken.None);
-                record = await RunCallAsync(client, runId, origin, record, originals[record.Sequence - 1], request, runToken);
+                record = await RunCallAsync(client, store, authentication, runId, origin, record, originals[record.Sequence - 1], request, runToken);
                 await store.SaveCallAsync(runId, record, CancellationToken.None);
             }
             await store.CompleteAsync(runId, null, CancellationToken.None);
@@ -163,8 +177,11 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
         finally { if (Running.TryRemove(runId, out var cts)) cts.Dispose(); }
     }
 
-    private async Task<ExecutionCallRecord> RunCallAsync(HttpClient client, Guid runId, Uri origin, ExecutionCallRecord record, ExecutionCallDefinition d, ExecutionRunRequest run, CancellationToken runToken)
+    private async Task<ExecutionCallRecord> RunCallAsync(HttpClient client, ExecutionEvidenceStore store, RunAuthentication authentication, Guid runId, Uri origin, ExecutionCallRecord record,
+        ExecutionCallDefinition d, ExecutionRunRequest run, CancellationToken runToken)
     {
+        var authenticated = ExecutionCredentialResolver.Effective(run) != ExecutionAuthenticationKind.None && !d.WithoutAuthentication;
+        var authBlocked = false;
         var policy = run.CapturePolicy;
         var reports = new List<ContractValidationReport>();
         using var validationScope = d.ContractCheck == ContractCheckMode.None ? null : scopes.CreateScope();
@@ -191,18 +208,20 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
             message.Options.Set(EvidenceCaptureSlot.Key, slot);
             var correlation = $"{runId:N}.{record.Sequence}.{n}";
             message.Headers.TryAddWithoutValidation(CorrelationHeader, correlation);
-            if (ExecutionCredentialResolver.Effective(run) != ExecutionAuthenticationKind.None && !d.WithoutAuthentication)
+            string? session = null;
+            if (authenticated)
             {
                 // Re-validated per attempt: the attended session may have expired, an unattended token is refreshed when due.
-                (IReadOnlyList<string> headers, string? authProblem) = credentials is null
-                    ? (Array.Empty<string>(), "Authenticated execution is not available in this BirkNext instance.") : await credentials.ApplyAsync(run, message, runToken);
-                if (authProblem is not null)
+                var applied = await ApplyCredentialAsync(message, store, authentication, runId, record, run, runToken);
+                if (applied.Problem is not null)
                 {
-                    attempts.Add(new ExecutionAttempt { AttemptNumber = n, StartedAt = started, CompletedAt = _clock.GetUtcNow(), Transport = TransportResult.NotSent, RetryReason = retryReason,
-                        Error = $"Not sent: {authProblem}" });
+                    authBlocked = !runToken.IsCancellationRequested;
+                    attempts.Add(new ExecutionAttempt { AttemptNumber = n, StartedAt = started, CompletedAt = _clock.GetUtcNow(), Transport = runToken.IsCancellationRequested ? TransportResult.Cancelled : TransportResult.NotSent,
+                        RetryReason = retryReason, Error = runToken.IsCancellationRequested ? "The run was cancelled while waiting for authentication; not sent." : $"Not sent: {applied.Problem}" });
                     break;
                 }
-                slot.CredentialHeaders = headers;
+                slot.CredentialHeaders = applied.Headers;
+                session = applied.Session;
             }
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(runToken);
             timeout.CancelAfter(Math.Clamp(d.TimeoutMs, 500, 120000));
@@ -236,7 +255,7 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
             attempts.Add(new ExecutionAttempt
             {
                 AttemptNumber = n, StartedAt = started, CompletedAt = _clock.GetUtcNow(), Transport = request is null && transport != TransportResult.ResponseReceived ? TransportResult.NotSent : transport,
-                Request = request, Response = response2, RetryReason = retryReason, Transmissions = transmissions,
+                Request = request, Response = response2, RetryReason = retryReason, Transmissions = transmissions, AuthenticationSession = session,
                 Error = transmissions > 1 ? $"{error} The HTTP stack transmitted this request {transmissions} times (it resends a request without a body when the connection closes before a response).".Trim() : error,
             });
             if (n == max || transport is TransportResult.Cancelled) break;
@@ -260,6 +279,7 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
         return record with
         {
             Attempts = attempts, Assertions = results, State = state, CompletedAt = _clock.GetUtcNow(), ContractValidation = reports,
+            Authentication = AuthenticationOutcome(run, d, attempts, authBlocked),
             Reason = state switch
             {
                 ExecutionState.NotAssessed when d.Assertions.Count == 0 => "No assertions are configured, so the result is not assessed (never a pass by default).",
@@ -269,6 +289,59 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
                 _ => last.Error,
             },
         };
+    }
+
+    /// <summary>
+    /// Applies the run's credential to one attempt. An attended session that expired mid-run is waited for (once per run, up to the run's
+    /// budget) while the call shows that it waits; the renewed credential must belong to the identity the run started with. Never falls back
+    /// to sending without the credential.
+    /// </summary>
+    private async Task<ExecutionCredentialResolver.Applied> ApplyCredentialAsync(HttpRequestMessage message, ExecutionEvidenceStore store, RunAuthentication authentication, Guid runId,
+        ExecutionCallRecord record, ExecutionRunRequest run, CancellationToken runToken)
+    {
+        if (credentials is null) return new([], "Authenticated execution is not available in this BirkNext instance.");
+        var applied = await credentials.ApplyAsync(run, message, runToken);
+        if (applied.Problem is not null && applied.SessionUnavailable && authentication.WaitSecondsLeft > 0)
+        {
+            var until = _clock.GetUtcNow().AddSeconds(authentication.WaitSecondsLeft);
+            await store.SaveCallAsync(runId, record with { Reason = $"Waiting for the attended session to be renewed: sign in to the application again (until {until:HH:mm:ss} UTC). Nothing is sent without it." }, CancellationToken.None);
+            logger?.LogInformation("Execution run {RunId} waits up to {Seconds} s for a renewed attended session.", runId, authentication.WaitSecondsLeft);
+            while (applied.Problem is not null && applied.SessionUnavailable && _clock.GetUtcNow() < until && !runToken.IsCancellationRequested)
+            {
+                try { await Task.Delay(TimeSpan.FromMilliseconds(500), runToken); } catch (OperationCanceledException) { break; }
+                applied = await credentials.ApplyAsync(run, message, runToken);
+            }
+            authentication.WaitSecondsLeft = Math.Max(0, (int)(until - _clock.GetUtcNow()).TotalSeconds);
+            if (applied.Problem is not null && applied.SessionUnavailable && !runToken.IsCancellationRequested)
+            {
+                authentication.WaitSecondsLeft = 0;
+                applied = applied with { Problem = "The attended session expired and was not renewed in time; the remaining authenticated calls are not sent." };
+            }
+        }
+        if (applied.Problem is null && applied.Identity is { } identity)
+        {
+            if (authentication.Identity is null) authentication.Identity = identity;
+            else if (!string.Equals(authentication.Identity, identity, StringComparison.Ordinal))
+            {
+                message.Headers.Authorization = null;
+                return new([], "The attended session now belongs to a different account than the one this run started with; not sent with that account's credential.");
+            }
+        }
+        return applied;
+    }
+
+    /// <summary>The per-call authentication outcome (see <see cref="CallAuthenticationOutcome"/>). GraphQL reports authentication in errors with HTTP 200.</summary>
+    internal static CallAuthenticationOutcome AuthenticationOutcome(ExecutionRunRequest run, ExecutionCallDefinition d, IReadOnlyList<ExecutionAttempt> attempts, bool authBlocked)
+    {
+        if (ExecutionCredentialResolver.Effective(run) == ExecutionAuthenticationKind.None) return CallAuthenticationOutcome.NotApplicable;
+        if (d.WithoutAuthentication) return CallAuthenticationOutcome.AnonymousByDesign;
+        if (authBlocked) return CallAuthenticationOutcome.BlockedForAuthentication;
+        var last = attempts.LastOrDefault(a => a.AuthenticationSession is not null);
+        if (last is null) return CallAuthenticationOutcome.NotApplicable;
+        var codes = last.Response?.GraphQlErrorCodes ?? [];
+        return last.Response?.StatusCode == 401 || codes.Contains("UNAUTHENTICATED", StringComparer.OrdinalIgnoreCase) ? CallAuthenticationOutcome.FailedAuthentication
+            : last.Response?.StatusCode == 403 || codes.Contains("FORBIDDEN", StringComparer.OrdinalIgnoreCase) ? CallAuthenticationOutcome.AuthorizationDenied
+            : CallAuthenticationOutcome.Authenticated;
     }
 
     private static HttpRequestMessage Build(Uri origin, ExecutionCallDefinition d)

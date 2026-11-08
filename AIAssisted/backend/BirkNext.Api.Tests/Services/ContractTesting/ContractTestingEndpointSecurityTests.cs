@@ -54,4 +54,15 @@ public sealed class ContractTestingEndpointSecurityTests
         var run = Actions.Single(a => Describe(a) == "POST runs").GetParameters().Single(p => p.GetCustomAttribute<FromBodyAttribute>() is not null).ParameterType;
         run.GetProperties().Select(p => p.Name).Should().NotContain(["Url", "Method", "Headers", "Body", "TargetUrl"]);
     }
+
+    [Fact]
+    public void Starting_or_cancelling_a_run_needs_the_execute_permission()
+    {
+        static bool Executes(MethodInfo m) => m.GetCustomAttributes<AuthorizeAttribute>().Any(a => a.Policy == BirkNextPermissions.ActiveEventExecutePolicy);
+        Executes(Actions.Single(a => Describe(a) == "POST runs")).Should().BeTrue();
+        var evidence = typeof(ExecutionEvidenceController).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(m => m.GetCustomAttribute<HttpPostAttribute>() is not null).ToList();
+        evidence.Should().NotBeEmpty();
+        evidence.Where(m => !Executes(m)).Should().BeEmpty("every POST of Execution Evidence starts or stops sending requests");
+    }
 }

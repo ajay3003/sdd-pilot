@@ -1,5 +1,7 @@
+using BirkNext.Api.Services.ActiveEventTesting;
 using BirkNext.Api.Services.ExecutionEvidence;
 using BirkNext.ExecutionEvidence;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BirkNext.Api.Controllers;
@@ -12,7 +14,9 @@ namespace BirkNext.Api.Controllers;
 [Route("api/execution-evidence")]
 public sealed class ExecutionEvidenceController(ExecutionEvidenceStore store) : ControllerBase
 {
+    /// <summary>Starting (or cancelling) a run sends requests to a target: it needs the execute permission (or the Development loopback grant).</summary>
     [HttpPost("runs")]
+    [Authorize(Policy = BirkNextPermissions.ActiveEventExecutePolicy)]
     [RequestSizeLimit(4 * 1024 * 1024)]
     public async Task<ActionResult<ExecutionRunStartResult>> Start([FromServices] ExecutionRunService runs, [FromBody] ExecutionRunRequest request, CancellationToken ct)
     {
@@ -21,6 +25,7 @@ public sealed class ExecutionEvidenceController(ExecutionEvidenceStore store) : 
     }
 
     [HttpPost("runs/{runId:guid}/cancel")]
+    [Authorize(Policy = BirkNextPermissions.ActiveEventExecutePolicy)]
     public IActionResult Cancel(Guid runId) => ExecutionRunService.Cancel(runId) ? Accepted() : NotFound(new { message = "The run is not running in this BirkNext instance." });
 
     [HttpGet("runs")]

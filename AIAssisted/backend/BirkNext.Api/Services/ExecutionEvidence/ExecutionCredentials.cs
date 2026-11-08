@@ -143,9 +143,19 @@ public sealed class ExecutionCredentialResolver(TransientAuthenticatedApiContext
     public const string TokenClientName = "api-service-token";
     public const int MaxTokenResponseBytes = 64 * 1024;
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
-    private static readonly ConcurrentDictionary<string, (string Token, DateTimeOffset ExpiresAt)> Tokens = new();
+    private static readonly ConcurrentDictionary<string, (string Token, DateTimeOffset ExpiresAt, int Acquisition)> Tokens = new();
+    // One token request at a time per credential: concurrent calls of a run (or of parallel runs) wait for it instead of each requesting a token.
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> TokenGates = new();
+    private static readonly ConcurrentDictionary<string, int> Acquisitions = new();
 
     public sealed record Prepared(string Mode, string Reference, string? Problem);
+
+    /// <summary>
+    /// The outcome of applying a run's credential to one attempt. <see cref="Session"/> names the credential instance used without its value
+    /// ("attended-session:{env}#g2" = the second credential observed for the environment; "api-credential:…:v1#t3" = the third token obtained
+    /// for that configuration). <see cref="Identity"/> is the non-reversible identity reference of an attended session.
+    /// </summary>
+    public sealed record Applied(IReadOnlyList<string> Headers, string? Problem, string? Session = null, string? Identity = null, bool SessionUnavailable = false);
 
     public static string Label(ExecutionAuthenticationKind kind) => kind switch
     {
@@ -192,40 +202,65 @@ public sealed class ExecutionCredentialResolver(TransientAuthenticatedApiContext
         }
     }
 
-    /// <summary>Applies the run's credential to one attempt. Returns the header names set (for redaction) or the reason it could not be applied.</summary>
-    public async Task<(IReadOnlyList<string> Headers, string? Problem)> ApplyAsync(ExecutionRunRequest r, HttpRequestMessage message, CancellationToken ct)
+    /// <summary>Applies the run's credential to one attempt: the header names set (for redaction) and the credential instance used, or the reason
+    /// it could not be applied. <see cref="Applied.SessionUnavailable"/> marks an attended session that is missing or expired (renewable by signing in).</summary>
+    public async Task<Applied> ApplyAsync(ExecutionRunRequest r, HttpRequestMessage message, CancellationToken ct)
     {
         var kind = Effective(r);
-        if (kind == ExecutionAuthenticationKind.None) return ([], null);
-        if (Prepare(r, new Uri(message.RequestUri!.GetLeftPart(UriPartial.Authority))) is { Problem: { } problem }) return ([], problem);
+        if (kind == ExecutionAuthenticationKind.None) return new([], null);
+        if (Prepare(r, new Uri(message.RequestUri!.GetLeftPart(UriPartial.Authority))) is { Problem: { } problem })
+            return new([], problem, SessionUnavailable: kind == ExecutionAuthenticationKind.AttendedSession && attended is not null
+                && r.ProfileId is { Length: > 0 } && r.ContextFingerprint is { Length: > 0 } && attended.Describe(r.ProfileId, r.ContextFingerprint) is null);
         switch (kind)
         {
             case ExecutionAuthenticationKind.AttendedSession:
-                return ((ITransientCredentialSink)attended!).TryApply(r.ProfileId!, r.ContextFingerprint!, message)
-                    ? (["Authorization"], null) : ([], "The attended session expired or no longer covers this host.");
+                return ((ITransientCredentialSink)attended!).TryApply(r.ProfileId!, r.ContextFingerprint!, message, out var stamp) && stamp is not null
+                    ? new(["Authorization"], null, $"attended-session:{r.EnvironmentId}#g{stamp.Generation}", stamp.Identity)
+                    : new([], "The attended session expired or no longer covers this host.", SessionUnavailable: true);
             case ExecutionAuthenticationKind.ApiKey:
             {
                 var view = service!.Get(r.EnvironmentId)!;
-                if (service.ReadSecret(r.EnvironmentId) is not { } key) return ([], "The API key cannot be decrypted on this machine; save it again.");
+                if (service.ReadSecret(r.EnvironmentId) is not { } key) return new([], "The API key cannot be decrypted on this machine; save it again.");
                 message.Headers.TryAddWithoutValidation(view.HeaderName!, key);
-                return ([view.HeaderName!], null);
+                return new([view.HeaderName!], null, view.Reference);
             }
             default:
             {
-                var (token, tokenProblem) = await TokenAsync(r.EnvironmentId, ct);
-                if (token is null) return ([], tokenProblem);
+                var (token, tokenProblem, acquisition) = await TokenAsync(r.EnvironmentId, ct);
+                if (token is null) return new([], tokenProblem);
                 message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-                return (["Authorization"], null);
+                return new(["Authorization"], null, $"{service!.Get(r.EnvironmentId)!.Reference}#t{acquisition}");
             }
         }
     }
 
-    /// <summary>OAuth2 client-credentials token for the environment (RFC 6749 § 4.4), memory-only, reused until 30 s before expiry.</summary>
-    private async Task<(string? Token, string? Problem)> TokenAsync(string environmentId, CancellationToken ct)
+    /// <summary>OAuth2 client-credentials token for the environment (RFC 6749 § 4.4), memory-only, reused until 30 s before expiry. Single-flight per
+    /// credential: concurrent callers wait for one token request (no refresh race). The acquisition number counts token requests that succeeded.</summary>
+    private async Task<(string? Token, string? Problem, int Acquisition)> TokenAsync(string environmentId, CancellationToken ct)
     {
         var view = service!.Get(environmentId)!;
         var cacheKey = view.Reference;
-        if (Tokens.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > _clock.GetUtcNow().AddSeconds(30)) return (cached.Token, null);
+        if (Fresh(cacheKey) is { } hit) return (hit.Token, null, hit.Acquisition);
+        var gate = TokenGates.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+        try
+        {
+            if (Fresh(cacheKey) is { } renewed) return (renewed.Token, null, renewed.Acquisition);
+            var (token, problem) = await RequestTokenAsync(view, environmentId, ct);
+            return token is null ? (null, problem, 0) : (token, null, Tokens[cacheKey].Acquisition);
+        }
+        finally { gate.Release(); }
+    }
+
+    private (string Token, int Acquisition)? Fresh(string cacheKey) =>
+        Tokens.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > _clock.GetUtcNow().AddSeconds(30) ? (cached.Token, cached.Acquisition) : null;
+
+    /// <summary>How many tokens were obtained for a credential reference since the backend started (diagnostics and tests).</summary>
+    public static int TokenAcquisitions(string reference) => Acquisitions.TryGetValue(reference, out var n) ? n : 0;
+
+    private async Task<(string? Token, string? Problem)> RequestTokenAsync(ApiServiceCredentialView view, string environmentId, CancellationToken ct)
+    {
+        var cacheKey = view.Reference;
         if (ApiServiceCredentialStore.TokenEndpointProblem(view.TokenUrl) is { } endpointProblem) return (null, endpointProblem);
         if (service.ReadSecret(environmentId) is not { } secret) return (null, "The client secret cannot be decrypted on this machine; save it again.");
         var form = new Dictionary<string, string> { ["grant_type"] = "client_credentials", ["client_id"] = view.ClientId!, ["client_secret"] = secret };
@@ -249,7 +284,7 @@ public sealed class ExecutionCredentialResolver(TransientAuthenticatedApiContext
             if (token.Length > 16 * 1024 || token.Any(c => c is < '!' or > '~'))
                 return (null, "The token endpoint's access_token is not a usable bearer token.");
             var lifetime = doc.RootElement.TryGetProperty("expires_in", out var ei) && ei.TryGetInt32(out var seconds) ? Math.Clamp(seconds, 1, 86400) : 300;
-            Tokens[cacheKey] = (token, _clock.GetUtcNow().AddSeconds(lifetime));
+            Tokens[cacheKey] = (token, _clock.GetUtcNow().AddSeconds(lifetime), Acquisitions.AddOrUpdate(cacheKey, 1, (_, n) => n + 1));
             logger?.LogInformation("Unattended API token obtained for {Reference}; valid {Seconds} s.", cacheKey, lifetime);
             return (token, null);
         }
@@ -261,5 +296,6 @@ public sealed class ExecutionCredentialResolver(TransientAuthenticatedApiContext
     public static void Forget(string environmentId)
     {
         foreach (var key in Tokens.Keys.Where(k => k.StartsWith($"api-credential:{environmentId}:", StringComparison.Ordinal))) Tokens.TryRemove(key, out _);
+        foreach (var key in Acquisitions.Keys.Where(k => k.StartsWith($"api-credential:{environmentId}:", StringComparison.Ordinal))) Acquisitions.TryRemove(key, out _);
     }
 }

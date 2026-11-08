@@ -166,6 +166,8 @@ public sealed record ContractTestRunRequest
     public string? BasePath { get; init; }
     /// <summary>Optional GraphQL endpoint path override ("/api/graphql"); otherwise the contract's binding, else "/graphql".</summary>
     public string? GraphQlPath { get; init; }
+    /// <summary>Attended runs: how long to wait for a renewed sign-in when the session expires mid-run (see <see cref="ExecutionRunRequest.ReauthenticationWaitSeconds"/>).</summary>
+    public int ReauthenticationWaitSeconds { get; init; }
 }
 
 public sealed record ContractTestRunResult(ExecutionRunStartResult? Run, List<string> NotRun);
