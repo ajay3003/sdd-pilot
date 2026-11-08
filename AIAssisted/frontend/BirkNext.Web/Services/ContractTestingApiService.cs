@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using BirkNext.ContractTesting;
+using BirkNext.ExecutionEvidence;
 
 namespace BirkNext.Web.Services;
 
@@ -20,7 +21,14 @@ public interface IContractTestingApiService
     Task<string?> RegenerateAsync(Guid testId, CancellationToken ct = default);
     Task<string?> DeleteAsync(Guid testId, CancellationToken ct = default);
     Task<(ContractTestRunResult? Result, string? Error)> RunAsync(ContractTestRunRequest request, CancellationToken ct = default);
+    Task<(ContractBindingResponse? Binding, string? Error)> BindingAsync(string key, string environmentId, CancellationToken ct = default);
+    Task<string?> SaveBindingAsync(string key, ContractEndpointBindingSave save, CancellationToken ct = default);
+    Task<(ApiServiceCredentialView? Credential, string? Error)> CredentialAsync(string environmentId, CancellationToken ct = default);
+    Task<string?> SaveCredentialAsync(ApiServiceCredentialSave save, CancellationToken ct = default);
+    Task<string?> DeleteCredentialAsync(string environmentId, CancellationToken ct = default);
 }
+
+public sealed record ContractBindingResponse(ContractEndpointBinding? Binding, List<ContractServerProposal> Proposals);
 
 public sealed class ContractTestingApiService(HttpClient http) : IContractTestingApiService
 {
@@ -65,6 +73,25 @@ public sealed class ContractTestingApiService(HttpClient http) : IContractTestin
 
     public Task<(ContractTestRunResult? Result, string? Error)> RunAsync(ContractTestRunRequest request, CancellationToken ct = default) =>
         SendAsync<ContractTestRunResult>(HttpMethod.Post, $"{Base}/runs", request, ct, readErrorBody: true);
+
+    public Task<(ContractBindingResponse? Binding, string? Error)> BindingAsync(string key, string environmentId, CancellationToken ct = default) =>
+        SendAsync<ContractBindingResponse>(HttpMethod.Get, $"{Base}/contracts/{Uri.EscapeDataString(key)}/binding?environmentId={Uri.EscapeDataString(environmentId)}", null, ct);
+
+    public async Task<string?> SaveBindingAsync(string key, ContractEndpointBindingSave save, CancellationToken ct = default) =>
+        (await SendAsync<JsonElement?>(HttpMethod.Put, $"{Base}/contracts/{Uri.EscapeDataString(key)}/binding", save, ct)).Error;
+
+    /// <summary>The environment's unattended credential (configuration only). A 404 means none is configured, which is not an error.</summary>
+    public async Task<(ApiServiceCredentialView? Credential, string? Error)> CredentialAsync(string environmentId, CancellationToken ct = default)
+    {
+        var (view, error) = await SendAsync<ApiServiceCredentialView>(HttpMethod.Get, $"{Base}/credentials/{Uri.EscapeDataString(environmentId)}", null, ct);
+        return error is not null && error.Contains("HTTP 404", StringComparison.Ordinal) ? (null, null) : (view, error);
+    }
+
+    public async Task<string?> SaveCredentialAsync(ApiServiceCredentialSave save, CancellationToken ct = default) =>
+        (await SendAsync<JsonElement?>(HttpMethod.Put, $"{Base}/credentials", save, ct)).Error;
+
+    public async Task<string?> DeleteCredentialAsync(string environmentId, CancellationToken ct = default) =>
+        (await SendAsync<JsonElement?>(HttpMethod.Delete, $"{Base}/credentials/{Uri.EscapeDataString(environmentId)}", null, ct)).Error;
 
     /// <summary>One request. A refusal's message (<c>{ "message": … }</c>) is shown as is; with <paramref name="readErrorBody"/> the typed body of a 422 is returned too.</summary>
     private async Task<(T? Body, string? Error)> SendAsync<T>(HttpMethod method, string path, object? body, CancellationToken ct, bool readErrorBody = false)

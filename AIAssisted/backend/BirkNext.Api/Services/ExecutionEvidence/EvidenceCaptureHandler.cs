@@ -19,6 +19,8 @@ public sealed class EvidenceCaptureSlot
     public bool ResponseReadTruncated { get; set; }
     public long ResponseBytes { get; set; }
     public long ElapsedMs { get; set; }
+    /// <summary>Header names the credential resolver set on this attempt: always recorded as redacted, whatever their name.</summary>
+    public IReadOnlyCollection<string> CredentialHeaders { get; set; } = [];
 }
 
 /// <summary>
@@ -40,7 +42,8 @@ public sealed class EvidenceCaptureHandler : DelegatingHandler
         var sentHeaders = request.Headers.Concat(request.Content?.Headers ?? Enumerable.Empty<KeyValuePair<string, IEnumerable<string>>>());
         slot.Request = new CapturedRequest
         {
-            Method = request.Method.Method, Url = ExecutionEvidenceRedaction.Url(request.RequestUri!), Headers = ExecutionEvidenceRedaction.Headers(sentHeaders),
+            Method = request.Method.Method, Url = ExecutionEvidenceRedaction.Url(request.RequestUri!),
+            Headers = [.. ExecutionEvidenceRedaction.Headers(sentHeaders).Select(h => slot.CredentialHeaders.Contains(h.Name, StringComparer.OrdinalIgnoreCase) ? h with { Value = ExecutionEvidenceRedaction.Mask, Redacted = true } : h)],
             Body = request.Content is null ? null : ExecutionEvidenceRedaction.Body(requestBytes, requestBytes?.LongLength ?? 0, request.Content.Headers.ContentType?.ToString(),
                 slot.Policy, slot.StoredTextLimit, readTruncated: false),
             CapturedAt = DateTimeOffset.UtcNow,

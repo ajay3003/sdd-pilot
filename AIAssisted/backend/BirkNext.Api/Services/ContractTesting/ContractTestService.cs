@@ -20,7 +20,7 @@ namespace BirkNext.Api.Services.ContractTesting;
 /// mutating-call confirmation and evidence capture as every execution run. Results are read back from Execution Evidence by definition reference.
 /// </summary>
 public sealed class ContractTestService(AppDbContext db, ContractRegistryService registry, ExecutionEvidenceStore evidence, ExecutionRunService runs,
-    IApiEnvironmentSafetyPolicy safety, AuthoredTestDataStore authored, TestDataCatalog catalog, TimeProvider? clock = null)
+    IApiEnvironmentSafetyPolicy safety, AuthoredTestDataStore authored, TestDataCatalog catalog, TimeProvider? clock = null, ExecutionCredentialResolver? credentials = null)
 {
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
     private static readonly string[] DatasetKinds = [nameof(TestDataResourceKind.Dataset), nameof(TestDataResourceKind.KeyValue)];
@@ -141,12 +141,11 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
     public async Task<ContractTestRunResult> RunAsync(ContractTestRunRequest request, CancellationToken ct)
     {
         var notRun = new List<string>();
-        var basePath = (request.BasePath ?? "").Trim().TrimEnd('/');
-        if (basePath.Length > 0 && (!basePath.StartsWith('/') || basePath.StartsWith("//", StringComparison.Ordinal) || basePath.Contains("://", StringComparison.Ordinal)
-            || basePath.IndexOfAny(['\\', '?', '#']) >= 0))
-            return new(null, ["The API base path is a path inside the Target Environment (starts with a single '/', no host, query or fragment)."]);
+        if (PathProblem(request.BasePath, "The API base path") is { } baseProblem) return new(null, [baseProblem]);
+        if (PathProblem(request.GraphQlPath, "The GraphQL endpoint path") is { } gqlProblem) return new(null, [gqlProblem]);
         var calls = new List<ExecutionCallDefinition>();
         var contractRefs = new HashSet<string>(StringComparer.Ordinal);
+        var kinds = new HashSet<ExecutionAuthenticationKind>();
         foreach (var id in request.TestIds.Distinct())
         {
             if (await LoadAsync(id, ct) is not { } test) { notRun.Add($"{id}: not found."); continue; }
@@ -157,21 +156,26 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             var (values, _) = BoundValues(test);
             var (call, missing) = ContractTestRules.Materialize(test, values);
             if (call is null) { notRun.Add($"{test.Name}: missing {string.Join(", ", missing)}."); continue; }
+            var binding = await BindingAsync(test.ContractKey, request.Environment.EnvironmentId, ct);
+            kinds.Add(binding?.Authentication ?? ExecutionAuthenticationKind.None);
+            var basePath = (request.BasePath ?? binding?.BasePath ?? "").Trim().TrimEnd('/');
+            var path = call.Protocol == ExecutionProtocol.GraphQl && (request.GraphQlPath ?? binding?.GraphQlPath) is { Length: > 0 } endpoint ? endpoint.Trim() : basePath + call.Path;
             calls.Add(call with
             {
-                Path = basePath + call.Path, Name = test.Name, OperationRef = ContractIdentity.OperationRef(test.ContractKey, test.ContractVersion, test.Operation),
+                Path = path, Name = test.Name, OperationRef = ContractIdentity.OperationRef(test.ContractKey, test.ContractVersion, test.Operation),
                 TestDataRefs = test.Binding is { } b ? [$"{b.Alias}@v{b.Version}"] : [], DefinitionVersion = ContractIdentity.DefinitionRef(test.Id, test.Revision),
             });
             contractRefs.Add(ContractIdentity.ContractRef(test.ContractKey, test.ContractVersion));
         }
         if (calls.Count == 0) return new(null, notRun.Count > 0 ? notRun : ["Select at least one test."]);
+        if (kinds.Count > 1) return new(null, [.. notRun, "The selected tests use different authentication in this environment; run the tests of one authentication at a time."]);
         var e = request.Environment;
         var started = await runs.StartAsync(new ExecutionRunRequest
         {
             Name = string.IsNullOrWhiteSpace(request.Name) ? $"Contract tests · {string.Join(", ", contractRefs.Order(StringComparer.Ordinal))}" : request.Name.Trim(),
             EnvironmentId = e.EnvironmentId, TargetUrl = e.TargetUrl, EnvironmentType = e.EnvironmentType, IsProduction = e.IsProduction, ProfileId = e.ProfileId,
             ContextFingerprint = e.ContextFingerprint, Calls = calls, ContractRefs = [.. contractRefs.Order(StringComparer.Ordinal)], ConfirmMutatingCalls = request.ConfirmMutatingCalls,
-            CapturePolicy = CapturePolicy.BoundedBody,
+            CapturePolicy = CapturePolicy.BoundedBody, Authentication = kinds.Single(),
         }, "Local session", ct);
         return new(started, notRun);
     }
@@ -196,7 +200,8 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         var newest = latest == test.ContractVersion ? current : await Doc(latest);
         var impact = current is not null && newest is not null && latest != test.ContractVersion ? ContractTestRules.Impact(test, current, newest, latest) : null;
         var op = (newest ?? current)?.Operations.FirstOrDefault(o => o.Name == test.Operation) ?? current?.Operations.FirstOrDefault(o => o.Name == test.Operation);
-        var readiness = Readiness(test, latest, impact, op, environment);
+        var binding = environment is { EnvironmentId.Length: > 0 } ? await BindingAsync(test.ContractKey, environment.EnvironmentId, ct) : null;
+        var readiness = Readiness(test, latest, impact, op, environment, binding);
         ContractTestLastResult? last = null;
         if (await evidence.LatestByDefinitionAsync(ContractIdentity.DefinitionPrefix(test.Id), ct) is { } hit)
             last = new(hit.RunId, hit.Call.CallId, hit.Call.State, hit.Call.Attempts.LastOrDefault()?.Response?.StatusCode, hit.Call.CompletedAt ?? hit.StartedAt,
@@ -204,7 +209,8 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         return new(test, readiness, impact, last);
     }
 
-    private ContractTestReadiness Readiness(ContractTestDefinition test, int latest, ContractTestImpact? impact, ContractOperation? op, ContractTestEnvironment? environment)
+    private ContractTestReadiness Readiness(ContractTestDefinition test, int latest, ContractTestImpact? impact, ContractOperation? op, ContractTestEnvironment? environment,
+        ContractEndpointBinding? binding)
     {
         var items = new List<ContractReadinessItem>();
         var missingValues = new List<string>();
@@ -253,18 +259,84 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             items.Add(decision.ActiveTestingAllowed ? new("Target Environment", ReadinessItemState.Ok, $"{decision.EnvironmentType ?? environment.EnvironmentType}: active testing allowed.")
                 : new("Target Environment", ReadinessItemState.Blocked, decision.Reason));
         }
-        // Authentication: runs are anonymous; an operation that declares security is not run without it.
-        if (op?.Security is { Count: > 0 } security)
-            items.Add(new("Authentication", ReadinessItemState.Blocked, $"The operation requires {string.Join(", ", security)}. Contract test runs cannot use the Target Environment's credential yet, so it is not run anonymously."));
-        else items.Add(new("Authentication", ReadinessItemState.Ok, test.Template.Protocol == ExecutionProtocol.GraphQl
-            ? "A GraphQL schema does not declare authentication; the run is anonymous, and an authentication error from the API shows as a failed test."
-            : "The contract declares no security requirement for this operation."));
+        items.Add(AuthenticationItem(test, op, environment, binding?.Authentication ?? ExecutionAuthenticationKind.None));
         if (ExecutionRunService.Mutating(test.Template))
             items.Add(new("Changes data", ReadinessItemState.Warning, $"{test.Template.Method} can change data: it runs only when you confirm data-changing calls for the run."));
         var state = items.Any(i => i.State == ReadinessItemState.Blocked) ? ContractTestReadinessState.Blocked
             : items.Any(i => i.State == ReadinessItemState.Missing) ? ContractTestReadinessState.NotReady : ContractTestReadinessState.Ready;
         return new(state, items, missingValues);
     }
+
+    /// <summary>
+    /// Authentication readiness for the operation's actual requirement: the contract's security schemes (bearer / OAuth2 / OpenID Connect need a
+    /// bearer credential — the attended session or unattended client credentials; apiKey needs an API key; Basic is not supported) against the
+    /// authentication bound for this contract in this environment, then whether that credential is usable now. GraphQL schemas declare no
+    /// security, so the bound authentication is used as configured.
+    /// </summary>
+    private ContractReadinessItem AuthenticationItem(ContractTestDefinition test, ContractOperation? op, ContractTestEnvironment? environment, ExecutionAuthenticationKind kind)
+    {
+        var schemes = (op?.Security ?? []).Select(s => s.Contains('(') ? s[(s.LastIndexOf('(') + 1)..].TrimEnd(')').Trim().ToLowerInvariant() : s.ToLowerInvariant()).ToList();
+        if (schemes.Count > 0)
+        {
+            var bearer = schemes.Any(s => s is "bearer" or "oauth2" or "openidconnect" or "jwt");
+            var apiKey = schemes.Contains("apikey");
+            if (kind == ExecutionAuthenticationKind.None)
+                return new("Authentication", ReadinessItemState.Blocked, $"The operation requires {string.Join(", ", op!.Security)}. Choose its authentication for this contract in this environment; it is never sent anonymously instead.");
+            if (schemes.All(s => s == "basic"))
+                return new("Authentication", ReadinessItemState.Blocked, "The operation requires HTTP Basic authentication, which contract test runs do not support.");
+            var fits = kind is ExecutionAuthenticationKind.AttendedSession or ExecutionAuthenticationKind.ClientCredentials ? bearer : apiKey;
+            if (!fits)
+                return new("Authentication", ReadinessItemState.Blocked, $"The operation requires {string.Join(", ", op!.Security)}; {ExecutionCredentialResolver.Label(kind)} does not provide that.");
+        }
+        if (kind == ExecutionAuthenticationKind.None)
+            return new("Authentication", ReadinessItemState.Ok, test.Template.Protocol == ExecutionProtocol.GraphQl
+                ? "No authentication selected; the run is anonymous (a GraphQL schema does not declare authentication), and an authentication error from the API shows as a failed test."
+                : "The contract declares no security requirement for this operation; the run is anonymous.");
+        if (environment is null || !Uri.TryCreate(environment.TargetUrl, UriKind.Absolute, out var target))
+            return new("Authentication", ReadinessItemState.Missing, $"{ExecutionCredentialResolver.Label(kind)}: select a Target Environment to check it.");
+        var prepared = credentials?.Prepare(new ExecutionRunRequest
+        {
+            EnvironmentId = environment.EnvironmentId, EnvironmentType = environment.EnvironmentType, TargetUrl = environment.TargetUrl, ProfileId = environment.ProfileId,
+            ContextFingerprint = environment.ContextFingerprint, Authentication = kind,
+        }, new Uri(target.GetLeftPart(UriPartial.Authority)));
+        return prepared is null ? new("Authentication", ReadinessItemState.Blocked, "Authenticated execution is not available in this BirkNext instance.")
+            : prepared.Problem is { } problem ? new("Authentication", ReadinessItemState.Blocked, $"{prepared.Mode}: {problem}")
+            : new("Authentication", ReadinessItemState.Ok, $"{prepared.Mode} ({prepared.Reference}).");
+    }
+
+    /// <summary>A path inside the Target Environment: one leading '/', no host, scheme, query, fragment or backslash. Null = fine (or not given).</summary>
+    public static string? PathProblem(string? path, string what)
+    {
+        var p = (path ?? "").Trim();
+        if (p.Length == 0) return null;
+        return !p.StartsWith('/') || p.StartsWith("//", StringComparison.Ordinal) || p.Contains("://", StringComparison.Ordinal) || p.IndexOfAny(['\\', '?', '#']) >= 0 || p.Length > 300
+            ? $"{what} is a path inside the Target Environment (starts with a single '/', no host, query or fragment)." : null;
+    }
+
+    public async Task<ContractEndpointBinding?> BindingAsync(string key, string environmentId, CancellationToken ct) =>
+        await db.ContractEndpointBindings.AsNoTracking().Where(b => b.EnvironmentId == environmentId)
+            .Join(db.ApiContracts.AsNoTracking().Where(c => c.Key == key), b => b.ContractId, c => c.Id, (b, c) => b).FirstOrDefaultAsync(ct) is { } row
+            ? new(key, row.EnvironmentId, row.BasePath, row.GraphQlPath, Enum.Parse<ExecutionAuthenticationKind>(row.Authentication), row.UpdatedAt) : null;
+
+    public async Task<(ContractEndpointBinding? Binding, string? Error)> SaveBindingAsync(string key, ContractEndpointBindingSave save, CancellationToken ct)
+    {
+        if (await db.ApiContracts.AsNoTracking().FirstOrDefaultAsync(c => c.Key == key, ct) is not { } contract) return (null, "Not found.");
+        if (string.IsNullOrWhiteSpace(save.EnvironmentId)) return (null, "Select a Target Environment.");
+        if ((PathProblem(save.BasePath, "The API base path") ?? PathProblem(save.GraphQlPath, "The GraphQL endpoint path")) is { } problem) return (null, problem);
+        var row = await db.ContractEndpointBindings.FirstOrDefaultAsync(b => b.ContractId == contract.Id && b.EnvironmentId == save.EnvironmentId, ct);
+        if (row is null) { row = new ContractEndpointBindingRow { Id = Guid.NewGuid(), ContractId = contract.Id, EnvironmentId = save.EnvironmentId }; db.ContractEndpointBindings.Add(row); }
+        row.BasePath = string.IsNullOrWhiteSpace(save.BasePath) ? null : save.BasePath.Trim().TrimEnd('/');
+        row.GraphQlPath = string.IsNullOrWhiteSpace(save.GraphQlPath) ? null : save.GraphQlPath.Trim();
+        row.Authentication = save.Authentication.ToString();
+        row.UpdatedAt = _clock.GetUtcNow();
+        await db.SaveChangesAsync(ct);
+        return (await BindingAsync(key, save.EnvironmentId, ct), null);
+    }
+
+    /// <summary>Base paths the contract's declared servers suggest: the path part only (a declared host is metadata, never a runtime target).</summary>
+    public static List<ContractServerProposal> ServerProposals(SourceContract doc) =>
+        [.. doc.Servers.Select(s => new ContractServerProposal(s, (Uri.TryCreate(s, UriKind.Absolute, out var u) ? u.AbsolutePath : s.Split('?')[0]).TrimEnd('/')))
+            .Where(p => PathProblem(p.BasePath, "") is null).DistinctBy(p => p.BasePath)];
 
     /// <summary>The bound dataset's values at the pinned version (never the latest unless that is the pinned one).</summary>
     private (Dictionary<string, TestDataTypedEntry> Values, string? Problem) BoundValues(ContractTestDefinition test)

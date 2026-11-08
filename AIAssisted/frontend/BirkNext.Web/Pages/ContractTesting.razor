@@ -3,6 +3,7 @@
 @using BirkNext.ExecutionEvidence
 @using BirkNext.SourceDomains
 @using BirkNext.Web.Models
+@using BirkNext.Web.Components
 @inject IServiceProvider Services
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject NavigationManager Nav
@@ -21,8 +22,8 @@
         else
         {
             <p><strong>Runs against</strong> <span data-testid="ct-env-name">@_environmentName</span> <span class="ct-pill">@_environment.EnvironmentType</span> <code>@_environment.TargetUrl</code></p>
-            <label class="ct-inline">API base path <input data-testid="ct-base-path" @bind="_basePath" @bind:event="oninput" placeholder="/ (none)" aria-describedby="ct-base-help" /></label>
-            <span id="ct-base-help" class="ct-muted">A path inside this environment (for example /api). Hosts are never accepted.</span>
+            <label class="ct-inline">Base path override for this run <input data-testid="ct-base-path" @bind="_basePath" @bind:event="oninput" placeholder="(use the contract's binding)" aria-describedby="ct-base-help" /></label>
+            <span id="ct-base-help" class="ct-muted">Optional. A path inside this environment (for example /api); hosts are never accepted. The contract's own endpoint and authentication are set below.</span>
         }
     </section>
 
@@ -104,6 +105,7 @@
                         }
                     </div>
                     @if (info?.Limitations is { Count: > 0 } limits) { <p class="ct-muted" data-testid="ct-limitations">@string.Join(" ", limits)</p> }
+                    <ContractEndpointPanel ContractKey="@d.Contract.Key" Protocol="@d.Contract.Protocol" EnvironmentId="@_environment?.EnvironmentId" Changed="ReloadAsync" />
 
                     <div role="tablist" aria-label="Contract views" class="ct-tabs">
                         @foreach (var (key, label) in Views)
@@ -152,9 +154,12 @@
             if (context.ActiveProfileOrNull is { } profile && !string.IsNullOrWhiteSpace(context.TargetUrl))
             {
                 _environmentName = profile.Name;
+                // The non-secret proxy identity (profile + context fingerprint) lets the backend find the attended session; it never carries a token.
+                var identity = ReviewAuthenticationIdentity.ForContext(context);
                 _environment = new ContractTestEnvironment
                 {
                     EnvironmentId = profile.Id, TargetUrl = context.TargetUrl, EnvironmentType = profile.EnvironmentType.ToString(), IsProduction = profile.EnvironmentType == FrontendEnvironmentType.Production,
+                    ProfileId = identity.ProfileId, ContextFingerprint = identity.ContextFingerprint,
                 };
             }
         }

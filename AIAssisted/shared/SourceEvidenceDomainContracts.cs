@@ -523,6 +523,9 @@ public sealed record SourceContract
     public List<SourceContractCodeReference> CodeReferences { get; init; } = [];
     public List<ContractOperation> Operations { get; init; } = [];
     public List<ContractTypeShape> Types { get; init; } = [];
+    /// <summary>Declared servers (OpenAPI 3 <c>servers[].url</c> with variable defaults applied; Swagger 2 <c>schemes://host/basePath</c>). Metadata only:
+    /// never a runtime host by itself.</summary>
+    public List<string> Servers { get; init; } = [];
     public XmlSchemaEvidence? XmlSchema { get; init; }
     public ArchitectureEvidenceState EvidenceState { get; init; } = ArchitectureEvidenceState.Confirmed;
     public DomainSupport ParseSupport { get; init; } = DomainSupport.Supported;

@@ -1,0 +1,13 @@
+.cep { border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.85rem; min-width: 0; }
+.cep summary { cursor: pointer; font-weight: 600; }
+.cep[open] { display: grid; gap: 0.5rem; }
+.cep-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: 0.5rem 1rem; }
+.cep-field { display: grid; gap: 0.2rem; font-weight: 600; }
+.cep-field input, .cep-field select { font-weight: normal; max-width: 100%; min-width: 0; }
+.cep-proposals { display: flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; }
+.cep-credential { display: grid; gap: 0.4rem; border: 1px dashed var(--clr-border, #d0d7de); border-radius: 6px; padding: 0.5rem 0.75rem; margin: 0; min-width: 0; }
+.cep-credential legend { font-weight: 600; padding: 0 0.25rem; }
+.cep-muted { margin: 0; font-weight: normal; color: var(--clr-text-muted, #57606a); overflow-wrap: anywhere; }
+.cep-error { margin: 0; padding: 0.35rem 0.5rem; border-left: 3px solid var(--clr-danger, #cf222e); background: #ffebe9; }
+.cep-message { margin: 0; padding: 0.35rem 0.5rem; border-left: 3px solid var(--clr-primary, #0969da); background: #ddf4ff; }
+.cep-danger { color: var(--clr-danger, #cf222e); }

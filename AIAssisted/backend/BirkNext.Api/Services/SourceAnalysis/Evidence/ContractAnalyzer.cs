@@ -260,7 +260,7 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
                 return Base(file, SourceContractType.OpenApi, "json") with
                 {
                     Name = SourceEvidenceRedaction.SafePath(c.Name), Version = version is null ? null : SourceEvidenceRedaction.SafePath(version),
-                    Operations = OpenApiOperations(JsonTree(doc.RootElement, 1)).Take(MaxOperations).ToList(),
+                    Operations = OpenApiOperations(JsonTree(doc.RootElement, 1)).Take(MaxOperations).ToList(), Servers = DeclaredServers(JsonTree(doc.RootElement, 1)),
                     Types = c.Schemas.Take(MaxTypes).Select(s => new ContractTypeShape(SourceEvidenceRedaction.SafePath(s.Name), s.Type,
                         s.Properties.Select(p => new ContractField(SourceEvidenceRedaction.SafePath(p.Name), SourceEvidenceRedaction.SafePath(p.Type), p.Required || s.Required.Contains(p.Name))).ToList())).ToList(),
                     ParseSupport = DomainSupport.Supported,
@@ -289,9 +289,27 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
         {
             Name = SourceEvidenceRedaction.SafePath(root["info"]?.Str("title") ?? System.IO.Path.GetFileNameWithoutExtension(file.Path)),
             Version = root["info"]?.Str("version") is { } v ? SourceEvidenceRedaction.SafePath(v) : null,
-            Operations = operations.Take(MaxOperations).ToList(), Types = types, ParseSupport = DomainSupport.Partial,
+            Operations = operations.Take(MaxOperations).ToList(), Types = types, ParseSupport = DomainSupport.Partial, Servers = DeclaredServers(root),
             Limitations = [root.Has("swagger") ? "Swagger 2 document read generically." : "YAML OpenAPI read by the subset reader; $ref chains are not resolved."],
         };
+    }
+
+    /// <summary>OpenAPI 3 <c>servers[].url</c> (server variables replaced by their defaults) and Swagger 2 <c>schemes://host/basePath</c>. Metadata only.</summary>
+    private static List<string> DeclaredServers(YamlNode root)
+    {
+        var result = new List<string>();
+        foreach (var server in root.List("servers").Take(10))
+        {
+            if (server.Str("url") is not { Length: > 0 } url) continue;
+            foreach (var (name, variable) in server["variables"]?.Entries ?? []) if (variable.Str("default") is { } value) url = url.Replace("{" + name + "}", value, StringComparison.Ordinal);
+            result.Add(SourceEvidenceRedaction.SafePath(url));
+        }
+        if (root.Has("swagger"))
+        {
+            var basePath = root.Str("basePath") ?? "/";
+            result.AddRange(root.Str("host") is { } host ? root.Strings("schemes").DefaultIfEmpty("https").Select(scheme => SourceEvidenceRedaction.SafePath($"{scheme}://{host}{basePath}")) : [SourceEvidenceRedaction.SafePath(basePath)]);
+        }
+        return result;
     }
 
     /// <summary>The declared operations of one OpenAPI/Swagger document (JSON or YAML) — the same walker Source Analysis uses (tests, tooling).</summary>

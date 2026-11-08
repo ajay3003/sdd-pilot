@@ -490,6 +490,44 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("code_links", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.ContractEndpointBindingRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Authentication")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("BasePath")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<Guid>("ContractId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("GraphQlPath")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractId", "EnvironmentId")
+                        .IsUnique();
+
+                    b.ToTable("contract_endpoint_bindings", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.ContractTestRow", b =>
                 {
                     b.Property<Guid>("Id")

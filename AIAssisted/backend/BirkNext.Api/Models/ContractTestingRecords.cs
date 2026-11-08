@@ -42,3 +42,15 @@ public sealed class ContractTestRow
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset UpdatedAt { get; set; }
 }
+
+/// <summary>A contract's endpoint path(s) and authentication in one Target Environment (the environment's origin stays authoritative).</summary>
+public sealed class ContractEndpointBindingRow
+{
+    public Guid Id { get; init; }
+    public Guid ContractId { get; init; }
+    public string EnvironmentId { get; init; } = "";
+    public string? BasePath { get; set; }
+    public string? GraphQlPath { get; set; }
+    public string Authentication { get; set; } = "None";
+    public DateTimeOffset UpdatedAt { get; set; }
+}

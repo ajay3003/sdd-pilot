@@ -15,9 +15,11 @@ namespace BirkNext.Api.Services.ExecutionEvidence;
 /// the API Quality Review environment safety policy (Local/Development/QA/Test only; production claims, production host markers and blocked
 /// hosts refused; loopback allowed), paths relative to the target only, no credentials in call definitions, mutating calls only with an
 /// explicit confirmation, subscriptions refused (no streaming transport). Nothing runs on page load, import or when a result is opened.
+/// Authentication (attended session or the environment's unattended API credential) is resolved by <see cref="ExecutionCredentialResolver"/>
+/// before anything is sent and applied per attempt inside the backend; a run whose credential cannot be used is Blocked, never sent anonymously.
 /// </summary>
 public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClientFactory http, IApiEnvironmentSafetyPolicy safety, TimeProvider? clock = null,
-    ILogger<ExecutionRunService>? logger = null)
+    ILogger<ExecutionRunService>? logger = null, ExecutionCredentialResolver? credentials = null)
 {
     public const string ClientName = "execution-evidence";
     public const string CorrelationHeader = "X-BirkNext-Execution-Id";
@@ -63,8 +65,6 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
             return "GraphQL variables must be a JSON object.";
         if (Mutating(d) && !request.ConfirmMutatingCalls)
             return "This call can change data (mutating method or GraphQL mutation). It runs only when mutating calls are explicitly confirmed for the run.";
-        if (request.UseTargetAuthentication)
-            return "Running with the Target Environment's captured credential is not available for execution evidence runs yet; the call was not sent without it.";
         return null;
     }
 
@@ -85,6 +85,11 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
             Identity = new(AuthenticatedTestingMethod.ManagedEdgeCdp, request.ProfileId, request.ContextFingerprint),
         });
         if (!decision.ActiveTestingAllowed) blockers.Add(decision.Reason);
+        var authKind = ExecutionCredentialResolver.Effective(request);
+        var auth = origin is null ? new ExecutionCredentialResolver.Prepared(ExecutionCredentialResolver.Label(authKind), "", null)
+            : credentials?.Prepare(request, origin) ?? (authKind == ExecutionAuthenticationKind.None ? new("None", "none", null)
+                : new(ExecutionCredentialResolver.Label(authKind), "", "Authenticated execution is not available in this BirkNext instance."));
+        if (auth.Problem is { } authProblem) blockers.Add(authProblem);
         if (request.Calls.Count is 0 or > MaxCalls || string.IsNullOrWhiteSpace(request.EnvironmentId)) return new(null, ExecutionState.Blocked, string.Join(" ", blockers), blockers);
 
         var now = _clock.GetUtcNow();
@@ -99,7 +104,7 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
             RunId = runId, Name = string.IsNullOrWhiteSpace(request.Name) ? $"Run {now:yyyy-MM-dd HH:mm}" : request.Name.Trim(), EnvironmentId = request.EnvironmentId,
             EnvironmentType = decision.EnvironmentType, TargetOrigin = origin?.ToString() ?? "", State = calls.All(c => c.State == ExecutionState.Blocked) ? ExecutionState.Blocked : ExecutionState.Running,
             StartedAt = now, CapturePolicy = request.CapturePolicy, RedactionVersion = ExecutionEvidenceRedaction.Version, Initiator = initiator,
-            AuthenticationMode = request.UseTargetAuthentication ? "Target Environment credential (requested; not available)" : "None",
+            AuthenticationMode = auth.Mode, AuthenticationReference = auth.Reference,
             SourceSnapshotId = request.SourceSnapshotId, ContractRefs = request.ContractRefs,
         };
         using (var scope = scopes.CreateScope())
@@ -112,7 +117,7 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
         Running[runId] = cts;
         // The originals are sent; only the redacted definitions are persisted.
         var originals = request.Calls.ToList();
-        _ = Task.Run(() => ExecuteAsync(runId, origin!, calls, originals, request.CapturePolicy, cts.Token));
+        _ = Task.Run(() => ExecuteAsync(runId, origin!, calls, originals, request, cts.Token));
         return new(runId, ExecutionState.Running, $"Run started: {calls.Count(c => c.State == ExecutionState.Planned)} call(s) will be sent, {calls.Count(c => c.State == ExecutionState.Blocked)} blocked.", blockers);
     }
 
@@ -127,7 +132,7 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
         GraphQlVariablesJson = d.GraphQlVariablesJson is null ? null : ExecutionEvidenceRedaction.Body(Encoding.UTF8.GetBytes(d.GraphQlVariablesJson), d.GraphQlVariablesJson.Length, "application/json", CapturePolicy.FullPermittedBody, 64 * 1024, false).Text,
     };
 
-    private async Task ExecuteAsync(Guid runId, Uri origin, List<ExecutionCallRecord> calls, List<ExecutionCallDefinition> originals, CapturePolicy policy, CancellationToken runToken)
+    private async Task ExecuteAsync(Guid runId, Uri origin, List<ExecutionCallRecord> calls, List<ExecutionCallDefinition> originals, ExecutionRunRequest request, CancellationToken runToken)
     {
         try
         {
@@ -144,7 +149,7 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
                 }
                 var record = planned with { State = ExecutionState.Running, StartedAt = _clock.GetUtcNow() };
                 await store.SaveCallAsync(runId, record, CancellationToken.None);
-                record = await RunCallAsync(client, runId, origin, record, originals[record.Sequence - 1], policy, runToken);
+                record = await RunCallAsync(client, runId, origin, record, originals[record.Sequence - 1], request, runToken);
                 await store.SaveCallAsync(runId, record, CancellationToken.None);
             }
             await store.CompleteAsync(runId, null, CancellationToken.None);
@@ -158,8 +163,9 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
         finally { if (Running.TryRemove(runId, out var cts)) cts.Dispose(); }
     }
 
-    private async Task<ExecutionCallRecord> RunCallAsync(HttpClient client, Guid runId, Uri origin, ExecutionCallRecord record, ExecutionCallDefinition d, CapturePolicy policy, CancellationToken runToken)
+    private async Task<ExecutionCallRecord> RunCallAsync(HttpClient client, Guid runId, Uri origin, ExecutionCallRecord record, ExecutionCallDefinition d, ExecutionRunRequest run, CancellationToken runToken)
     {
+        var policy = run.CapturePolicy;
         var attempts = new List<ExecutionAttempt>();
         byte[]? lastRaw = null;
         string? retryReason = null;
@@ -172,6 +178,19 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
             message.Options.Set(EvidenceCaptureSlot.Key, slot);
             var correlation = $"{runId:N}.{record.Sequence}.{n}";
             message.Headers.TryAddWithoutValidation(CorrelationHeader, correlation);
+            if (ExecutionCredentialResolver.Effective(run) != ExecutionAuthenticationKind.None)
+            {
+                // Re-validated per attempt: the attended session may have expired, an unattended token is refreshed when due.
+                (IReadOnlyList<string> headers, string? authProblem) = credentials is null
+                    ? (Array.Empty<string>(), "Authenticated execution is not available in this BirkNext instance.") : await credentials.ApplyAsync(run, message, runToken);
+                if (authProblem is not null)
+                {
+                    attempts.Add(new ExecutionAttempt { AttemptNumber = n, StartedAt = started, CompletedAt = _clock.GetUtcNow(), Transport = TransportResult.NotSent, RetryReason = retryReason,
+                        Error = $"Not sent: {authProblem}" });
+                    break;
+                }
+                slot.CredentialHeaders = headers;
+            }
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(runToken);
             timeout.CancelAfter(Math.Clamp(d.TimeoutMs, 500, 120000));
             TransportResult transport; string? error = null;

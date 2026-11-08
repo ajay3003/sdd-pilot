@@ -124,6 +124,8 @@ public sealed record ContractTestRunRequest
     public string? Name { get; init; }
     /// <summary>Optional path prefix of the API inside the Target Environment ("/api/v1"): relative only, never a host.</summary>
     public string? BasePath { get; init; }
+    /// <summary>Optional GraphQL endpoint path override ("/api/graphql"); otherwise the contract's binding, else "/graphql".</summary>
+    public string? GraphQlPath { get; init; }
 }
 
 public sealed record ContractTestRunResult(ExecutionRunStartResult? Run, List<string> NotRun);
@@ -131,3 +133,15 @@ public sealed record ContractTestRunResult(ExecutionRunStartResult? Run, List<st
 public sealed record ContractVersionDiff(string Key, int FromVersion, int ToVersion, List<SourceEvidenceChange> Changes, List<ContractTestImpact> Impacts);
 
 public sealed record ContractTestBindRequest(string Alias, int Version);
+
+/// <summary>
+/// How one contract is reached and authenticated in one Target Environment. The Target Environment's origin stays authoritative: the binding adds
+/// only a path inside it (REST base path, GraphQL endpoint path) and the authentication the tests of this contract use there.
+/// </summary>
+public sealed record ContractEndpointBinding(string ContractKey, string EnvironmentId, string? BasePath, string? GraphQlPath, ExecutionAuthenticationKind Authentication,
+    DateTimeOffset UpdatedAt);
+
+public sealed record ContractEndpointBindingSave(string EnvironmentId, string? BasePath, string? GraphQlPath, ExecutionAuthenticationKind Authentication);
+
+/// <summary>A base path the contract's declared servers suggest (path only — a declared host is never used).</summary>
+public sealed record ContractServerProposal(string Server, string BasePath);

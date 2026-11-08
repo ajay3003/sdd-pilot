@@ -19,6 +19,7 @@ public class AppDbContext : DbContext
     public DbSet<ApiContractRow> ApiContracts => Set<ApiContractRow>();
     public DbSet<ApiContractVersionRow> ApiContractVersions => Set<ApiContractVersionRow>();
     public DbSet<ContractTestRow> ContractTests => Set<ContractTestRow>();
+    public DbSet<ContractEndpointBindingRow> ContractEndpointBindings => Set<ContractEndpointBindingRow>();
     public DbSet<ImpactAnalysisRunRecord> ImpactAnalysisRuns => Set<ImpactAnalysisRunRecord>();
     public DbSet<ReviewedCandidate> ReviewedCandidates => Set<ReviewedCandidate>();
     public DbSet<CandidateLink> CandidateLinks => Set<CandidateLink>();
@@ -1126,6 +1127,16 @@ public class AppDbContext : DbContext
             entity.Property(t => t.Kind).HasMaxLength(40).IsRequired();
             entity.Property(t => t.DocumentJson).HasColumnType("text").IsRequired();
             entity.HasIndex(t => new { t.ContractId, t.Operation });
+        });
+        modelBuilder.Entity<ContractEndpointBindingRow>(entity =>
+        {
+            entity.ToTable("contract_endpoint_bindings");
+            entity.HasKey(b => b.Id);
+            entity.Property(b => b.EnvironmentId).HasMaxLength(200).IsRequired();
+            entity.Property(b => b.BasePath).HasMaxLength(300);
+            entity.Property(b => b.GraphQlPath).HasMaxLength(300);
+            entity.Property(b => b.Authentication).HasMaxLength(40).IsRequired();
+            entity.HasIndex(b => new { b.ContractId, b.EnvironmentId }).IsUnique();
         });
 
         modelBuilder.Entity<IqrSourceSnapshotRecord>(entity =>

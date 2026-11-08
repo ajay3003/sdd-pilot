@@ -37,6 +37,31 @@ public enum AssertionOutcome { Passed, Failed, NotAssessed }
 
 public sealed record CapturedHeader(string Name, string Value, bool Redacted = false);
 
+/// <summary>
+/// How a run authenticates. AttendedSession: the credential the Local HTTPS proxy observed from the tester's own sign-in (delegated, memory only,
+/// HTTPS + approved hosts of the Target Environment). ClientCredentials / ApiKey: the Target Environment's unattended API service credential
+/// (encrypted at rest, applied in the backend only). Attended and unattended are never substituted for each other.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ExecutionAuthenticationKind { None, AttendedSession, ClientCredentials, ApiKey }
+
+/// <summary>An unattended API service credential as the UI reads it: configuration only — the secret is write-only.</summary>
+public sealed record ApiServiceCredentialView(string EnvironmentId, ExecutionAuthenticationKind Kind, string Reference, string? TokenUrl, string? ClientId, string? Scope,
+    string? HeaderName, bool SecretStored, int Version, DateTimeOffset UpdatedAt);
+
+/// <summary>Save request. <see cref="Secret"/> (client secret or API key) is required on create and when the kind changes; empty keeps the stored one.</summary>
+public sealed record ApiServiceCredentialSave
+{
+    public string EnvironmentId { get; init; } = "";
+    public ExecutionAuthenticationKind Kind { get; init; }
+    public string? TokenUrl { get; init; }
+    public string? ClientId { get; init; }
+    public string? Scope { get; init; }
+    public string? HeaderName { get; init; }
+    public string? Secret { get; init; }
+    public override string ToString() => $"ApiServiceCredentialSave({EnvironmentId}, {Kind}, secret redacted)";
+}
+
 /// <summary>A body after redaction. <see cref="ByteCount"/> is the size actually transmitted/received; <see cref="Sha256"/> hashes the stored
 /// (redacted) text so an export can be verified; <see cref="Note"/> says what was omitted and why.</summary>
 public sealed record CapturedBody
@@ -159,6 +184,8 @@ public sealed record ExecutionRunSummary
     public string RedactionVersion { get; init; } = "";
     public string Initiator { get; init; } = "";
     public string? AuthenticationMode { get; init; }
+    /// <summary>Which credential configuration was used ("attended-session:{environment}", "api-credential:{environment}:ClientCredentials:v3") — never a value.</summary>
+    public string? AuthenticationReference { get; init; }
     public Guid? SourceSnapshotId { get; init; }
     public List<string> ContractRefs { get; init; } = [];
     public Guid? ReplayOf { get; init; }
@@ -179,8 +206,10 @@ public sealed record ExecutionRunRequest
     public CapturePolicy CapturePolicy { get; init; } = CapturePolicy.BoundedBody;
     public Guid? SourceSnapshotId { get; init; }
     public List<string> ContractRefs { get; init; } = [];
-    /// <summary>Use the Target Environment's captured API credential (never a stored token).</summary>
+    /// <summary>Legacy flag: the attended session credential. <see cref="Authentication"/> is authoritative when set.</summary>
     public bool UseTargetAuthentication { get; init; }
+    /// <summary>How the run authenticates; credentials are resolved and applied in the backend only, never part of the request or the evidence.</summary>
+    public ExecutionAuthenticationKind Authentication { get; init; }
     /// <summary>The selected Target Environment's URL and classification. Inputs to the backend safety policy, never the decision.</summary>
     public string TargetUrl { get; init; } = "";
     public string EnvironmentType { get; init; } = "";

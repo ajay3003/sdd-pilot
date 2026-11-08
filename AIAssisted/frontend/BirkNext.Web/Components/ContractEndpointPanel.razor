@@ -1,0 +1,144 @@
+@using BirkNext.ContractTesting
+@using BirkNext.ExecutionEvidence
+@namespace BirkNext.Web.Components
+
+@* Endpoint and authentication of one contract in the active Target Environment. The environment's origin stays authoritative: only paths inside it
+   are bound. Authentication: none, the attended session (the tester's own sign-in through the Local HTTPS proxy) or the environment's unattended
+   API credential (client credentials or API key; the secret is write-only and never shown again). Saving changes configuration only. *@
+<details class="cep" data-testid="cep" open="@Open">
+    <summary data-testid="cep-summary">Endpoint &amp; authentication <span class="cep-muted">@Summary()</span></summary>
+    @if (_error is not null) { <p class="cep-error" role="alert" data-testid="cep-error">@_error</p> }
+    @if (_message is not null) { <p class="cep-message" role="status" data-testid="cep-message">@_message</p> }
+    @if (EnvironmentId is null) { <p class="cep-muted">Select a Target Environment to bind this contract.</p> }
+    else
+    {
+        <div class="cep-grid">
+            @if (Protocol == ApiContractProtocol.Rest)
+            {
+                <label class="cep-field">API base path
+                    <input data-testid="cep-base-path" @bind="_basePath" @bind:event="oninput" placeholder="/ (none)" />
+                </label>
+                @if (_proposals.Count > 0)
+                {
+                    <div class="cep-proposals" data-testid="cep-proposals"><span class="cep-muted">From the contract's servers (path only):</span>
+                        @foreach (var p in _proposals.Where(p => p.BasePath.Length > 0))
+                        { <button type="button" class="btn btn-link btn-sm" data-testid="cep-proposal" title="@p.Server" @onclick="() => _basePath = p.BasePath">@p.BasePath</button> }
+                    </div>
+                }
+            }
+            else
+            {
+                <label class="cep-field">GraphQL endpoint path
+                    <input data-testid="cep-graphql-path" @bind="_graphQlPath" @bind:event="oninput" placeholder="/graphql" />
+                </label>
+            }
+            <label class="cep-field">Authentication
+                <select data-testid="cep-auth" @bind="_authentication">
+                    <option value="@ExecutionAuthenticationKind.None">None (anonymous)</option>
+                    <option value="@ExecutionAuthenticationKind.AttendedSession">Attended — my session through the Local HTTPS proxy</option>
+                    <option value="@ExecutionAuthenticationKind.ClientCredentials">Unattended — OAuth2 client credentials</option>
+                    <option value="@ExecutionAuthenticationKind.ApiKey">Unattended — API key</option>
+                </select>
+            </label>
+        </div>
+        <button type="button" class="btn btn-secondary" data-testid="cep-save" disabled="@_busy" @onclick="SaveBindingAsync">Save endpoint &amp; authentication</button>
+
+        @if (_authentication is ExecutionAuthenticationKind.ClientCredentials or ExecutionAuthenticationKind.ApiKey)
+        {
+            <fieldset class="cep-credential" data-testid="cep-credential">
+                <legend>Unattended credential of this Target Environment</legend>
+                <p class="cep-muted" data-testid="cep-credential-state">@(_credential is null ? "None configured." : $"{(_credential.Kind == ExecutionAuthenticationKind.ApiKey ? "API key" : "Client credentials")} · {_credential.Reference} · saved {_credential.UpdatedAt.ToLocalTime():yyyy-MM-dd HH:mm} · secret stored encrypted")</p>
+                @if (_authentication == ExecutionAuthenticationKind.ClientCredentials)
+                {
+                    <label class="cep-field">Token endpoint <input data-testid="cep-token-url" @bind="_tokenUrl" @bind:event="oninput" placeholder="https://login.example.test/oauth2/token" /></label>
+                    <label class="cep-field">Client id <input data-testid="cep-client-id" @bind="_clientId" @bind:event="oninput" /></label>
+                    <label class="cep-field">Scope <input data-testid="cep-scope" @bind="_scope" @bind:event="oninput" /></label>
+                    <label class="cep-field">Client secret <input type="password" autocomplete="new-password" data-testid="cep-secret" @bind="_secret" @bind:event="oninput" placeholder="@(_credential?.Kind == _authentication ? "unchanged" : "")" /></label>
+                }
+                else
+                {
+                    <label class="cep-field">Header name <input data-testid="cep-header" @bind="_headerName" @bind:event="oninput" placeholder="X-Api-Key" /></label>
+                    <label class="cep-field">API key <input type="password" autocomplete="new-password" data-testid="cep-secret" @bind="_secret" @bind:event="oninput" placeholder="@(_credential?.Kind == _authentication ? "unchanged" : "")" /></label>
+                }
+                <p class="cep-muted">Stored encrypted on this BirkNext backend, applied by the backend only and never shown again or written to evidence.</p>
+                <button type="button" class="btn btn-secondary" data-testid="cep-credential-save" disabled="@_busy" @onclick="SaveCredentialAsync">Save credential</button>
+                @if (_credential is not null) { <button type="button" class="btn btn-link cep-danger" data-testid="cep-credential-delete" disabled="@_busy" @onclick="DeleteCredentialAsync">Remove credential</button> }
+            </fieldset>
+        }
+        else if (_authentication == ExecutionAuthenticationKind.AttendedSession)
+        {
+            <p class="cep-muted" data-testid="cep-attended-note">Uses the credential the Local HTTPS proxy observed while you used the application yourself (memory only; HTTPS hosts approved for this environment). Readiness shows whether a session is available now.</p>
+        }
+    }
+</details>
+
+@code {
+    [Parameter, EditorRequired] public string ContractKey { get; set; } = "";
+    [Parameter] public ApiContractProtocol Protocol { get; set; }
+    [Parameter] public string? EnvironmentId { get; set; }
+    [Parameter] public bool Open { get; set; }
+    /// <summary>Raised after the binding or credential changed, so readiness is re-evaluated.</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+    [Inject] private IContractTestingApiService Api { get; set; } = default!;
+
+    private bool _busy;
+    private string? _error, _message, _basePath, _graphQlPath, _tokenUrl, _clientId, _scope, _headerName, _secret, _loadedFor;
+    private ExecutionAuthenticationKind _authentication;
+    private List<ContractServerProposal> _proposals = [];
+    private ContractEndpointBinding? _binding;
+    private ApiServiceCredentialView? _credential;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = $"{ContractKey}|{EnvironmentId}";
+        if (key == _loadedFor || EnvironmentId is null) return;
+        _loadedFor = key; _error = null; _message = null;
+        var (response, error) = await Api.BindingAsync(ContractKey, EnvironmentId);
+        _error = error;
+        _binding = response?.Binding; _proposals = response?.Proposals ?? [];
+        (_basePath, _graphQlPath, _authentication) = (_binding?.BasePath, _binding?.GraphQlPath, _binding?.Authentication ?? ExecutionAuthenticationKind.None);
+        (_credential, var credentialError) = await Api.CredentialAsync(EnvironmentId);
+        _error ??= credentialError;
+        (_tokenUrl, _clientId, _scope, _headerName, _secret) = (_credential?.TokenUrl, _credential?.ClientId, _credential?.Scope, _credential?.HeaderName, null);
+    }
+
+    private string Summary() => _binding is null ? "· not set (anonymous, no base path)"
+        : $"· {(_binding.Authentication switch { ExecutionAuthenticationKind.AttendedSession => "attended session", ExecutionAuthenticationKind.ClientCredentials => "client credentials", ExecutionAuthenticationKind.ApiKey => "API key", _ => "anonymous" })}"
+          + (Protocol == ApiContractProtocol.GraphQl ? $" · {_binding.GraphQlPath ?? "/graphql"}" : $" · {(string.IsNullOrEmpty(_binding.BasePath) ? "no base path" : _binding.BasePath)}");
+
+    private async Task SaveBindingAsync()
+    {
+        if (EnvironmentId is null) return;
+        _busy = true; _error = null; _message = null;
+        _error = await Api.SaveBindingAsync(ContractKey, new(EnvironmentId, _basePath, _graphQlPath, _authentication));
+        _busy = false;
+        if (_error is null)
+        {
+            _binding = new(ContractKey, EnvironmentId, string.IsNullOrWhiteSpace(_basePath) ? null : _basePath.Trim(), string.IsNullOrWhiteSpace(_graphQlPath) ? null : _graphQlPath.Trim(), _authentication, DateTimeOffset.UtcNow);
+            _message = "Saved. Readiness was checked again.";
+            await Changed.InvokeAsync();
+        }
+    }
+
+    private async Task SaveCredentialAsync()
+    {
+        if (EnvironmentId is null) return;
+        _busy = true; _error = null; _message = null;
+        _error = await Api.SaveCredentialAsync(new ApiServiceCredentialSave
+        {
+            EnvironmentId = EnvironmentId, Kind = _authentication, TokenUrl = _tokenUrl, ClientId = _clientId, Scope = _scope, HeaderName = _headerName, Secret = _secret,
+        });
+        _secret = null;
+        if (_error is null) { (_credential, _) = await Api.CredentialAsync(EnvironmentId); _message = "Credential saved (encrypted). The secret is not shown again."; await Changed.InvokeAsync(); }
+        _busy = false;
+    }
+
+    private async Task DeleteCredentialAsync()
+    {
+        if (EnvironmentId is null) return;
+        _busy = true; _message = null;
+        _error = await Api.DeleteCredentialAsync(EnvironmentId);
+        if (_error is null) { _credential = null; _message = "Credential removed."; await Changed.InvokeAsync(); }
+        _busy = false;
+    }
+}

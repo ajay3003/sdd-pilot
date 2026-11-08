@@ -124,6 +124,16 @@ public sealed class ContractTestingPageTests : BunitContext
         public Task<string?> BindAsync(Guid testId, ContractTestBindRequest request, CancellationToken ct = default) { Bound = request; Bind = true; return Task.FromResult<string?>(null); }
         public Task<string?> RegenerateAsync(Guid testId, CancellationToken ct = default) { Log.Add($"regenerate {testId}"); return Task.FromResult<string?>(null); }
         public Task<string?> DeleteAsync(Guid testId, CancellationToken ct = default) => Task.FromResult<string?>(null);
+        public List<ContractEndpointBindingSave> Bindings { get; } = [];
+        public List<ApiServiceCredentialSave> Credentials { get; } = [];
+        public Task<(ContractBindingResponse? Binding, string? Error)> BindingAsync(string key, string environmentId, CancellationToken ct = default) =>
+            Task.FromResult<(ContractBindingResponse?, string?)>((new(Bindings.LastOrDefault() is { } b ? new(key, b.EnvironmentId, b.BasePath, b.GraphQlPath, b.Authentication, DateTimeOffset.UtcNow) : null,
+                [new("https://api.example.test/v1", "/v1")]), null));
+        public Task<string?> SaveBindingAsync(string key, ContractEndpointBindingSave save, CancellationToken ct = default) { Bindings.Add(save); return Task.FromResult<string?>(null); }
+        public Task<(ApiServiceCredentialView? Credential, string? Error)> CredentialAsync(string environmentId, CancellationToken ct = default) =>
+            Task.FromResult<(ApiServiceCredentialView?, string?)>((Credentials.LastOrDefault() is { } c ? new(environmentId, c.Kind, $"api-credential:{environmentId}:{c.Kind}:v{Credentials.Count}", c.TokenUrl, c.ClientId, c.Scope, c.HeaderName, true, Credentials.Count, DateTimeOffset.UtcNow) : null, null));
+        public Task<string?> SaveCredentialAsync(ApiServiceCredentialSave save, CancellationToken ct = default) { Credentials.Add(save); return Task.FromResult<string?>(null); }
+        public Task<string?> DeleteCredentialAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<string?>(null);
         public Task<(ContractTestRunResult? Result, string? Error)> RunAsync(ContractTestRunRequest request, CancellationToken ct = default)
         {
             Ran = request;
@@ -202,7 +212,8 @@ public sealed class ContractTestingPageTests : BunitContext
     public void Tests_show_readiness_with_missing_values_and_the_picker_pins_the_approved_version()
     {
         var page = Open($"?contract=children-api&view=tests&test={GetTest}");
-        _api.Environment.Should().BeEquivalentTo(new ContractTestEnvironment { EnvironmentId = "local-synthetic", TargetUrl = "http://localhost:5288/", EnvironmentType = "Local" });
+        _api.Environment.Should().BeEquivalentTo(new { EnvironmentId = "local-synthetic", TargetUrl = "http://localhost:5288/", EnvironmentType = "Local", ProfileId = "local-synthetic" });
+        _api.Environment!.ContextFingerprint.Should().NotBeNullOrEmpty("the non-secret proxy identity lets the backend find an attended session");
         var row = page.FindAll("[data-testid=ct-test-row]").Single(r => r.GetAttribute("data-op") == "GET /children/{id}");
         row.QuerySelector("[data-testid=ct-readiness]")!.TextContent.Should().Be("Not ready");
         row.QuerySelector("[data-testid=ct-missing]")!.TextContent.Should().Be("Missing: id");
@@ -267,6 +278,27 @@ public sealed class ContractTestingPageTests : BunitContext
     }
 
     private Guid GqlTestId => _api.TestsAsync("children-graphql", null).Result.Tests![0].Test.Id;
+
+    [Fact]
+    public void The_endpoint_panel_binds_a_server_path_and_authentication_and_saves_an_unattended_secret_write_only()
+    {
+        var page = Open("?contract=children-api");
+        page.Find("[data-testid=cep-proposal]").TextContent.Should().Be("/v1");
+        page.Find("[data-testid=cep-proposal]").Click();
+        page.Find("[data-testid=cep-auth]").Change(ExecutionAuthenticationKind.ClientCredentials.ToString());
+        page.Find("[data-testid=cep-save]").Click();
+        page.WaitForAssertion(() => _api.Bindings.Should().ContainSingle().Which.Should().Be(new ContractEndpointBindingSave("local-synthetic", "/v1", null, ExecutionAuthenticationKind.ClientCredentials)));
+        page.Find("[data-testid=cep-credential-state]").TextContent.Should().Be("None configured.");
+        page.Find("[data-testid=cep-token-url]").Input("http://localhost:5288/oauth/token");
+        page.Find("[data-testid=cep-client-id]").Input("synthetic-client");
+        page.Find("[data-testid=cep-secret]").Input("synthetic-secret-value");
+        page.Find("[data-testid=cep-credential-save]").Click();
+        page.WaitForAssertion(() => _api.Credentials.Should().ContainSingle());
+        _api.Credentials[0].Secret.Should().Be("synthetic-secret-value");
+        page.WaitForAssertion(() => page.Find("[data-testid=cep-credential-state]").TextContent.Should().Contain("api-credential:local-synthetic:ClientCredentials:v1").And.Contain("encrypted"));
+        page.Find("[data-testid=cep-secret]").GetAttribute("value").Should().BeNullOrEmpty("the secret is write-only and cleared after saving");
+        page.Markup.Should().NotContain("synthetic-secret-value");
+    }
 
     [Fact]
     public void Changes_compare_versions_and_rank_the_impact_on_tests()
