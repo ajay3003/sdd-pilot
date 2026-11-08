@@ -179,11 +179,13 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             assets.TryGetValue(r.Alias, out var asset);
             var approved = asset?.Approval == TestDataApproval.Approved ? asset.Version : null;
             var version = approved is { } a ? r.Versions.FirstOrDefault(x => x.Version == a) ?? r.Current : r.Current;
-            var (values, problem) = Values(version.Content, r.Alias);
-            var (missingRequired, missingOptional) = ContractTestRules.Missing(test, values.Keys.ToHashSet(StringComparer.Ordinal));
+            var (_, problem) = Values(version.Content, r.Alias);
+            var provided = Provided(version.Content, r.Alias);
+            var (missingRequired, missingOptional) = ContractTestRules.Missing(test, provided);
             problem ??= approved is null ? "No approved version: approve it in Test Data first." : asset?.Deprecated == true ? "Deprecated." : null;
             options.Add(new(r.Alias, version.Label, TestDataResourceRules.Label(r.Current.Content.Kind), approved, r.Current.Version,
-                problem is null && missingRequired.Count == 0, [.. values.Keys.Order(StringComparer.Ordinal)], missingRequired, missingOptional, r.Current.EnvironmentId, problem));
+                problem is null && missingRequired.Count == 0, [.. provided.Order(StringComparer.Ordinal)], missingRequired, missingOptional, r.Current.EnvironmentId, problem,
+                version.Content.Kind == TestDataResourceKind.Dataset ? version.Content.Rows.Count : 0));
         }
         return [.. options.OrderByDescending(o => o.Compatible).ThenBy(o => o.MissingRequired.Count).ThenBy(o => o.Alias, StringComparer.Ordinal)];
     }
@@ -232,6 +234,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         if (PathProblem(request.BasePath, "The API base path") is { } baseProblem) return new(null, [baseProblem]);
         if (PathProblem(request.GraphQlPath, "The GraphQL endpoint path") is { } gqlProblem) return new(null, [gqlProblem]);
         var calls = new List<ExecutionCallDefinition>();
+        var limit = Math.Clamp(request.MaxExecutions ?? ExecutionRunService.MaxCalls, 1, ExecutionRunService.MaxCalls);
         var contractRefs = new HashSet<string>(StringComparer.Ordinal);
         var kinds = new HashSet<ExecutionAuthenticationKind>();
         foreach (var id in request.TestIds.Distinct())
@@ -241,20 +244,31 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             var view = await ViewAsync(test, latest, [], request.Environment, ct);
             if (view.Readiness.State != ContractTestReadinessState.Ready)
             { notRun.Add($"{test.Name}: {string.Join(" ", view.Readiness.Items.Where(i => i.State is ReadinessItemState.Missing or ReadinessItemState.Blocked).Select(i => i.Text))}"); continue; }
-            var (values, _) = BoundValues(test);
-            var (call, missing) = ContractTestRules.Materialize(test, values);
-            if (call is null) { notRun.Add($"{test.Name}: missing {string.Join(", ", missing)}."); continue; }
             var binding = await BindingAsync(test.ContractKey, request.Environment.EnvironmentId, ct);
+            var basePath = (request.BasePath ?? binding?.BasePath ?? "").Trim().TrimEnd('/');
+            var added = false;
+            // A data-driven test runs once per dataset row (selected rows only, when the run names them); each row is its own logical call.
+            foreach (var (rowId, values, rowNames) in BoundVariants(test))
+            {
+                if (rowId is not null && request.RowIds.Count > 0 && !request.RowIds.Contains(rowId, StringComparer.Ordinal)) continue;
+                var label = rowId is null ? test.Name : $"{test.Name} · {rowId}";
+                var (call, missing) = ContractTestRules.Materialize(test, values);
+                if (call is null) { notRun.Add($"{label}: missing {string.Join(", ", missing)}."); continue; }
+                if (calls.Count >= limit) { notRun.Add($"{label}: over the run's limit of {limit} executions; not run."); continue; }
+                var path = call.Protocol == ExecutionProtocol.GraphQl && (request.GraphQlPath ?? binding?.GraphQlPath) is { Length: > 0 } endpoint ? endpoint.Trim() : basePath + call.Path;
+                var source = test.Binding is { } bound ? $"{bound.Alias}@v{bound.Version}" : "";
+                calls.Add(call with
+                {
+                    Path = path, Name = label, OperationRef = ContractIdentity.OperationRef(test.ContractKey, test.ContractVersion, test.Operation),
+                    TestDataRefs = test.Binding is { } b ? [$"{b.Alias}@v{b.Version}"] : [], DefinitionVersion = ContractIdentity.DefinitionRef(test.Id, test.Revision),
+                    WithoutAuthentication = test.WithoutAuthentication, DatasetRow = rowId is null ? null : $"{source}#{rowId}",
+                    ResolvedValues = ContractTestRules.Resolved(test, values, name => rowNames.Contains(name) ? $"row {rowId} of {source}" : $"member of {source}"),
+                });
+                added = true;
+            }
+            if (!added) continue;
             // A missing-authentication negative is sent without the credential inside the same run; it never decides the run's authentication.
             if (!test.WithoutAuthentication) kinds.Add(binding?.Authentication ?? ExecutionAuthenticationKind.None);
-            var basePath = (request.BasePath ?? binding?.BasePath ?? "").Trim().TrimEnd('/');
-            var path = call.Protocol == ExecutionProtocol.GraphQl && (request.GraphQlPath ?? binding?.GraphQlPath) is { Length: > 0 } endpoint ? endpoint.Trim() : basePath + call.Path;
-            calls.Add(call with
-            {
-                Path = path, Name = test.Name, OperationRef = ContractIdentity.OperationRef(test.ContractKey, test.ContractVersion, test.Operation),
-                TestDataRefs = test.Binding is { } b ? [$"{b.Alias}@v{b.Version}"] : [], DefinitionVersion = ContractIdentity.DefinitionRef(test.Id, test.Revision),
-                WithoutAuthentication = test.WithoutAuthentication,
-            });
             contractRefs.Add(ContractIdentity.ContractRef(test.ContractKey, test.ContractVersion));
         }
         if (calls.Count == 0) return new(null, notRun.Count > 0 ? notRun : ["Select at least one test."]);
@@ -266,6 +280,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             EnvironmentId = e.EnvironmentId, TargetUrl = e.TargetUrl, EnvironmentType = e.EnvironmentType, IsProduction = e.IsProduction, ProfileId = e.ProfileId,
             ContextFingerprint = e.ContextFingerprint, Calls = calls, ContractRefs = [.. contractRefs.Order(StringComparer.Ordinal)], ConfirmMutatingCalls = request.ConfirmMutatingCalls,
             CapturePolicy = CapturePolicy.BoundedBody, Authentication = kinds.SingleOrDefault(), ReauthenticationWaitSeconds = request.ReauthenticationWaitSeconds,
+            StopOnFirstFailure = request.StopOnFirstFailure,
         }, "Local session", ct);
         return new(started, notRun);
     }
@@ -333,18 +348,21 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         }
         else
         {
-            var (values, problem) = BoundValues(test);
+            var (_, problem) = BoundValues(test);
+            var variants = BoundVariants(test);
+            var provided = variants.Select(v => v.Values.Keys.ToHashSet(StringComparer.Ordinal)).Aggregate((a, x) => { a.IntersectWith(x); return a; });
+            var rows = variants.Count > 1 || variants[0].RowId is not null;
             var asset = catalog.Assets().FirstOrDefault(a => a.Alias == b.Alias && a.SourceId == AuthoredTestDataProvider.ProviderId);
             if (problem is not null) items.Add(new("Test Data", ReadinessItemState.Blocked, problem));
             else if (asset?.Deprecated == true) items.Add(new("Test Data", ReadinessItemState.Blocked, $"{b.Alias} is deprecated."));
             else
             {
-                var (required, _) = ContractTestRules.Missing(test, values.Keys.ToHashSet(StringComparer.Ordinal));
+                var (required, _) = ContractTestRules.Missing(test, provided);
                 missingValues.AddRange(required);
-                if (required.Count > 0) items.Add(new("Test Data", ReadinessItemState.Missing, $"{b.Alias}@v{b.Version} lacks required value(s): {string.Join(", ", required)}."));
+                if (required.Count > 0) items.Add(new("Test Data", ReadinessItemState.Missing, $"{b.Alias}@v{b.Version} lacks required value(s){(rows ? $" in at least one of its {variants.Count} rows" : "")}: {string.Join(", ", required)}."));
                 else if (asset?.Approval == TestDataApproval.Approved && asset.Version != b.Version)
                     items.Add(new("Test Data", ReadinessItemState.Warning, $"Pinned to {b.Alias}@v{b.Version}; v{asset.Version} is now the approved version. Runs keep using v{b.Version} until you pin again."));
-                else items.Add(new("Test Data", ReadinessItemState.Ok, $"{b.Alias}@v{b.Version} provides every required value."));
+                else items.Add(new("Test Data", ReadinessItemState.Ok, $"{b.Alias}@v{b.Version} provides every required value{(rows ? $" in each of its {variants.Count} rows" : "")}."));
             }
         }
         // Target Environment (backend safety policy — never relaxed here)
@@ -655,6 +673,36 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         if (authored.Find(b.Alias) is not { } r) return (new(StringComparer.Ordinal), $"{b.Alias} no longer exists in Test Data.");
         if (r.Versions.FirstOrDefault(v => v.Version == b.Version) is not { } version) return (new(StringComparer.Ordinal), $"{b.Alias} has no version {b.Version}.");
         return Values(version.Content, b.Alias);
+    }
+
+    /// <summary>
+    /// The executions of a bound test: one per dataset row (members overlaid by the row's values; RowNames = the names the row supplied), or one
+    /// made of the members when the dataset has no rows. A row value that does not match its type is absent (reported missing), never coerced.
+    /// </summary>
+    private List<(string? RowId, Dictionary<string, TestDataTypedEntry> Values, HashSet<string> RowNames)> BoundVariants(ContractTestDefinition test)
+    {
+        var (members, _) = BoundValues(test);
+        if (test.Binding is not { } b || authored.Find(b.Alias)?.Versions.FirstOrDefault(v => v.Version == b.Version)?.Content is not { Kind: TestDataResourceKind.Dataset, Rows.Count: > 0 } content)
+            return [(null, members, [])];
+        return [.. content.Rows.Select(row =>
+        {
+            var values = new Dictionary<string, TestDataTypedEntry>(members, StringComparer.Ordinal);
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var e in row.Values.Where(e => TestDataResourceRules.TypeError(e.Type, e.Value, e.EnumValues) is null)) { values[e.Name] = e; names.Add(e.Name); }
+            foreach (var e in row.Values.Where(e => TestDataResourceRules.TypeError(e.Type, e.Value, e.EnumValues) is not null)) values.Remove(e.Name);
+            return ((string?)row.Id, values, names);
+        })];
+    }
+
+    /// <summary>Names every execution of a dataset can supply: the members plus the columns present in every row.</summary>
+    private HashSet<string> Provided(TestDataResourceContent content, string alias)
+    {
+        var members = Values(content, alias).Values.Keys.ToHashSet(StringComparer.Ordinal);
+        if (content.Kind != TestDataResourceKind.Dataset || content.Rows.Count == 0) return members;
+        var common = content.Rows.Select(r => r.Values.Where(e => TestDataResourceRules.TypeError(e.Type, e.Value, e.EnumValues) is null).Select(e => e.Name).ToHashSet(StringComparer.Ordinal))
+            .Aggregate((a, x) => { a.IntersectWith(x); return a; });
+        members.UnionWith(common);
+        return members;
     }
 
     /// <summary>Name → typed value of a dataset (inline members, members referencing an added single value at its pinned or approved version) or a

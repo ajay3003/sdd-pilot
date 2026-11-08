@@ -156,6 +156,12 @@ public sealed record ExecutionAttempt
 
 public sealed record AssertionDefinition(string Id, AssertionKind Kind, AssertionOperator Operator, string? Target = null, string? Expected = null);
 
+/// <summary>
+/// One input value as it was resolved for a call: its name, exact Test Data type, where it came from ("row r-007 of children@v3", "member of
+/// children@v3", "step create → childId") and a redacted, bounded preview. Recorded so the evidence shows which value and type were sent.
+/// </summary>
+public sealed record ResolvedValue(string Name, string Type, string Source, string? Preview);
+
 public sealed record AssertionResult(string Id, AssertionKind Kind, AssertionOperator Operator, string? Target, string? Expected, string? Actual, AssertionOutcome Outcome, string Explanation);
 
 /// <summary>Bounded retry: which outcomes are retried, how often, how long to wait. Each retry is a new physical attempt of the same call.</summary>
@@ -189,6 +195,10 @@ public sealed record ExecutionCallDefinition
     public ContractCheckMode ContractCheck { get; init; }
     /// <summary>Sent without the run's credential on purpose (a negative "missing authentication" test). Never the reverse: a call cannot add a credential.</summary>
     public bool WithoutAuthentication { get; init; }
+    /// <summary>The dataset row this logical call executes ("alias@vN#rowId"); null when the test is not data-driven.</summary>
+    public string? DatasetRow { get; init; }
+    /// <summary>The input values resolved for this call (typed, with their source); previews are redacted and bounded.</summary>
+    public List<ResolvedValue> ResolvedValues { get; init; } = [];
 }
 
 public sealed record ExecutionCallRecord
@@ -238,6 +248,12 @@ public sealed record ExecutionRunSummary
     public List<string> AuthenticationSessions { get; init; } = [];
     /// <summary>How long the run would wait for an expired attended session to be renewed by signing in again (0 = no wait).</summary>
     public int ReauthenticationWaitSeconds { get; init; }
+    /// <summary>Distinct test definitions (revisions) the run executed; with <see cref="DatasetRows"/> this tells definitions, variants and logical calls apart.</summary>
+    public int Definitions { get; init; }
+    /// <summary>Logical calls that executed one dataset row each.</summary>
+    public int DatasetRows { get; init; }
+    /// <summary>The run stops at the first failed, erroneous or blocked call; the remaining calls are Skipped (never sent).</summary>
+    public bool StopOnFirstFailure { get; init; }
 }
 
 public sealed record ExecutionRunDetail(ExecutionRunSummary Run, List<ExecutionCallRecord> Calls, int TotalCalls, int Skip, int Take);
@@ -266,6 +282,8 @@ public sealed record ExecutionRunRequest
     /// <summary>Attended runs: when the session expires mid-run, wait up to this long (0–900 s, once per run) for the tester to sign in again;
     /// the waiting call is then sent with the renewed credential of the same identity. 0 = the remaining calls are Blocked for authentication.</summary>
     public int ReauthenticationWaitSeconds { get; init; }
+    /// <summary>Stop at the first failed, erroneous or blocked call; the remaining calls are Skipped and never sent. Default: continue.</summary>
+    public bool StopOnFirstFailure { get; init; }
 }
 
 public sealed record ExecutionRunStartResult(Guid? RunId, ExecutionState State, string? Message, List<string> Blockers);

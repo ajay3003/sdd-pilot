@@ -84,6 +84,36 @@ public sealed class TestDataResourceEditorTests : BunitContext
     }
 
     [Fact]
+    public void Dataset_rows_are_imported_from_CSV_typed_per_column_and_saved_as_typed_rows()
+    {
+        var c = Editor();
+        Choose(c, TestDataResourceKind.Dataset);
+        c.Find("[data-testid=tdx-alias]").Input("children-rows");
+        c.Find("[data-testid=tdx-csv]").Input("id,name,age\nr-1,Barn 1,7\nr-2,\"Barn, 2\",null\n");
+        c.Find("[data-testid=tdx-csv-import]").Click();
+        c.Find("[data-testid=tdx-csv-message]").TextContent.Should().Contain("2 row(s) and 2 column(s)");
+        c.FindAll("[data-testid=tdx-row]").Should().HaveCount(2);
+        c.FindAll("[data-testid=tdx-col-type]").Select(s => s.GetAttribute("value")).Should().Equal("String", "Int32");
+
+        // An added empty row is refused (a row needs a value), so nothing incomplete is saved.
+        c.Find("[data-testid=tdx-add-row]").Click();
+        c.FindAll("[data-testid=tdx-row-id]")[2].GetAttribute("value").Should().Be("r-003");
+        c.Find("[data-testid=tdx-validate]").Click();
+        c.WaitForAssertion(() => c.Find("[data-testid=tdx-save]").HasAttribute("disabled").Should().BeTrue());
+        c.Find("[data-testid=tdx-back]").Click();
+        c.FindAll("[aria-label='Delete row 3']").Single().Click();
+        c.Find("[data-testid=tdx-validate]").Click();
+        c.WaitForAssertion(() => c.Find("[data-testid=tdx-save]").HasAttribute("disabled").Should().BeFalse());
+        c.Find("[data-testid=tdx-save]").Click();
+        c.WaitForAssertion(() => _closed.Should().Be("children-rows"));
+        var rows = _api.Saved.Single().Draft.Content.Rows;
+        rows.Select(r => r.Id).Should().Equal("r-1", "r-2");
+        rows[0].Values.Should().Equal(new TestDataTypedEntry("name", TestDataPrimitive.String, "Barn 1"), new TestDataTypedEntry("age", TestDataPrimitive.Int32, "7"));
+        rows[1].Values.Should().Equal(new TestDataTypedEntry("name", TestDataPrimitive.String, "Barn, 2"), new TestDataTypedEntry("age", TestDataPrimitive.Null, null));
+        _api.Saved.Single().Draft.Content.Members.Should().BeEmpty("the untouched empty member line is not a member");
+    }
+
+    [Fact]
     public void Booleans_use_a_toggle_and_null_is_an_explicit_marker()
     {
         var c = Editor();

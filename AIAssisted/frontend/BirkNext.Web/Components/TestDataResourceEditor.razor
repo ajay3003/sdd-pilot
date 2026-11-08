@@ -125,6 +125,16 @@
             { EnumValues = Type == TestDataPrimitive.Enum ? [.. EnumText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)] : null };
     }
 
+    /// <summary>A dataset row column: name and the one type every cell of it has.</summary>
+    private sealed class Column { public string Name { get; set; } = ""; public TestDataPrimitive Type { get; set; } = TestDataPrimitive.String; }
+    /// <summary>A dataset row being edited; cells align with the columns ("" = the row has no value for it, "null" = explicit null).</summary>
+    private sealed class DataRow { public string Id { get; set; } = ""; public List<string> Cells { get; } = []; }
+
+    private readonly List<Column> _columns = [];
+    private readonly List<DataRow> _dataRows = [];
+    private string _csv = "";
+    private string? _csvMessage;
+
     private int _step = 1;
     private TestDataResourceKind _kind = TestDataResourceKind.SingleValue;
     private string _alias = "", _description = "", _environment = "", _note = "", _newAlias = "";
@@ -160,6 +170,14 @@
         {
             _rows.Clear();
             _rows.AddRange(c.Members.Select(m => m.Inline is { } i ? Named(Of(i), m.Name) : new Row { Name = m.Name, Reference = m.Reference }));
+            foreach (var name in c.Rows.SelectMany(r => r.Values).Select(e => e.Name).Distinct(StringComparer.Ordinal))
+                _columns.Add(new() { Name = name, Type = c.Rows.SelectMany(r => r.Values).FirstOrDefault(e => e.Name == name && e.Type != TestDataPrimitive.Null)?.Type ?? TestDataPrimitive.String });
+            foreach (var row in c.Rows)
+            {
+                var edited = new DataRow { Id = row.Id };
+                edited.Cells.AddRange(_columns.Select(col => row.Values.FirstOrDefault(e => e.Name == col.Name) is { } e ? e.Type == TestDataPrimitive.Null ? "null" : e.Value ?? "" : ""));
+                _dataRows.Add(edited);
+            }
         }
         if (c.Json is { } json) _json = json;
         if (c.Generator is { } g)
@@ -208,7 +226,12 @@
             TestDataResourceKind.Dataset => new()
             {
                 Kind = _kind,
-                Members = [.. _rows.Select(r => r.Reference is { Length: > 0 } reference ? new TestDataDatasetMember(r.Name.Trim(), reference, null) : new TestDataDatasetMember(r.Name.Trim(), null, r.Entry()))],
+                // An untouched empty member line is not a member (a dataset may consist of rows only).
+                Members = [.. _rows.Where(r => !(r.Name.Trim().Length == 0 && r.Reference is null && r.Value.Length == 0))
+                    .Select(r => r.Reference is { Length: > 0 } reference ? new TestDataDatasetMember(r.Name.Trim(), reference, null) : new TestDataDatasetMember(r.Name.Trim(), null, r.Entry()))],
+                Rows = [.. _dataRows.Select(r => new TestDataDatasetRow(r.Id.Trim(), [.. _columns.Select((col, i) => (col, cell: i < r.Cells.Count ? r.Cells[i] : ""))
+                    .Where(x => x.cell.Length > 0 && x.col.Name.Trim().Length > 0)
+                    .Select(x => x.cell.Trim() == "null" ? new TestDataTypedEntry(x.col.Name.Trim(), TestDataPrimitive.Null, null) : new TestDataTypedEntry(x.col.Name.Trim(), x.col.Type, x.cell))]))],
             },
             TestDataResourceKind.Generated => new() { Kind = _kind, Generator = Generator() },
             _ => new() { Kind = _kind, FilePath = _filePath, MediaType = _mediaType },
@@ -562,7 +585,140 @@
         </table>
         <button type="button" class="btn-secondary" data-testid="tdx-add-member" @onclick="() => _rows.Add(new Row())">Add member</button>
         @ErrorsUnder(v, "members")
+        <h4 class="tdx-subhead">Rows (data-driven)</h4>
+        <p class="tdx-help">A test bound to this dataset runs once per row. Members above are shared by every row; a row value with the same name wins.
+            Leave a cell empty when the row has no value; type <code>null</code> for an explicit null.</p>
+        <div class="tdx-rows-scroll">
+            <table class="tdx-rows" data-testid="tdx-rows">
+                <caption class="visually-hidden">Dataset rows</caption>
+                <thead>
+                    <tr>
+                        <th scope="col">Row id</th>
+                        @for (var c = 0; c < _columns.Count; c++)
+                        {
+                            var ci = c; var col = _columns[c];
+                            <th scope="col" data-testid="tdx-column">
+                                <input class="form-control" data-testid="tdx-col-name" aria-label="@($"Column {ci + 1} name")" @bind="col.Name" @bind:event="oninput" />
+                                <select class="form-control" data-testid="tdx-col-type" aria-label="@($"Column {ci + 1} type")" @bind="col.Type">
+                                    @foreach (var t in Enum.GetValues<TestDataPrimitive>().Where(t => t != TestDataPrimitive.Null)) { <option value="@t">@TestDataResourceRules.Label(t)</option> }
+                                </select>
+                                <button type="button" class="btn-secondary" aria-label="@($"Delete column {ci + 1}")" @onclick="() => RemoveColumn(ci)">✕</button>
+                            </th>
+                        }
+                        <th scope="col"><span class="visually-hidden">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var r = 0; r < _dataRows.Count; r++)
+                    {
+                        var ri = r; var row = _dataRows[r];
+                        <tr data-testid="tdx-row">
+                            <td><input class="form-control" data-testid="tdx-row-id" aria-label="@($"Row {ri + 1} id")" @bind="row.Id" @bind:event="oninput" /></td>
+                            @for (var c = 0; c < _columns.Count; c++)
+                            {
+                                var ci = c;
+                                <td><input class="form-control" data-testid="tdx-cell" aria-label="@($"Row {ri + 1}, {_columns[ci].Name}")" value="@(ci < row.Cells.Count ? row.Cells[ci] : "")"
+                                           @oninput="e => SetCell(row, ci, e.Value?.ToString() ?? string.Empty)" /></td>
+                            }
+                            <td class="tdx-row-actions"><button type="button" class="btn-secondary" aria-label="@($"Delete row {ri + 1}")" @onclick="() => _dataRows.RemoveAt(ri)">✕</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="tdx-inline">
+            <button type="button" class="btn-secondary" data-testid="tdx-add-column" @onclick="AddColumn">Add column</button>
+            <button type="button" class="btn-secondary" data-testid="tdx-add-row" @onclick="AddRow">Add row</button>
+            <span class="tdx-help" data-testid="tdx-row-count">@_dataRows.Count row(s), at most @TestDataResourceRules.MaxDatasetRows</span>
+        </div>
+        @ErrorsUnder(v, "rows")
+        <details class="tdx-csv">
+            <summary>Paste rows as CSV</summary>
+            <label class="tdx-field">First line: column names (an <code>id</code> column becomes the row id). Replaces the rows above.
+                <textarea class="form-control tdx-mono" rows="5" data-testid="tdx-csv" @bind="_csv" @bind:event="oninput"></textarea></label>
+            <button type="button" class="btn-secondary" data-testid="tdx-csv-import" @onclick="ImportCsv">Import rows</button>
+            @if (_csvMessage is not null) { <p class="tdx-help" role="status" data-testid="tdx-csv-message">@_csvMessage</p> }
+        </details>
     };
+
+    private static void SetCell(DataRow row, int index, string value)
+    {
+        while (row.Cells.Count <= index) row.Cells.Add("");
+        row.Cells[index] = value;
+    }
+
+    private void AddColumn()
+    {
+        _columns.Add(new() { Name = $"column{_columns.Count + 1}" });
+        foreach (var r in _dataRows) r.Cells.Add("");
+    }
+
+    private void RemoveColumn(int index)
+    {
+        _columns.RemoveAt(index);
+        foreach (var r in _dataRows.Where(r => index < r.Cells.Count)) r.Cells.RemoveAt(index);
+    }
+
+    private void AddRow()
+    {
+        var row = new DataRow { Id = NextRowId() };
+        row.Cells.AddRange(_columns.Select(_ => ""));
+        _dataRows.Add(row);
+    }
+
+    private string NextRowId()
+    {
+        for (var n = _dataRows.Count + 1; ; n++) { var id = $"r-{n:D3}"; if (_dataRows.All(r => r.Id != id)) return id; }
+    }
+
+    /// <summary>Replaces the rows with pasted CSV (RFC 4180 quoting). Column types are guessed from the values (integer, decimal, boolean, else text)
+    /// and shown for review before saving; nothing is saved by importing.</summary>
+    private void ImportCsv()
+    {
+        var lines = _csv.Replace("\r", "").Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(CsvFields).ToList();
+        if (lines.Count < 2) { _csvMessage = "Paste a header line and at least one row."; return; }
+        var header = lines[0];
+        var idIndex = header.FindIndex(h => h.Trim().Equals("id", StringComparison.OrdinalIgnoreCase));
+        var columns = Enumerable.Range(0, header.Count).Where(i => i != idIndex).ToList();
+        _columns.Clear(); _dataRows.Clear();
+        foreach (var i in columns)
+        {
+            var values = lines.Skip(1).Select(l => i < l.Count ? l[i].Trim() : "").Where(v => v.Length > 0 && v != "null").ToList();
+            var type = values.Count > 0 && values.All(v => long.TryParse(v, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out _)) ? TestDataPrimitive.Int32
+                : values.Count > 0 && values.All(v => decimal.TryParse(v, NumberStyles.Number, CultureInfo.InvariantCulture, out _)) ? TestDataPrimitive.Decimal
+                : values.Count > 0 && values.All(v => v is "true" or "false") ? TestDataPrimitive.Boolean : TestDataPrimitive.String;
+            _columns.Add(new() { Name = header[i].Trim(), Type = type });
+        }
+        foreach (var line in lines.Skip(1))
+        {
+            var row = new DataRow { Id = idIndex >= 0 && idIndex < line.Count && line[idIndex].Trim().Length > 0 ? line[idIndex].Trim() : NextRowId() };
+            row.Cells.AddRange(columns.Select(i => i < line.Count ? line[i].Trim() : ""));
+            _dataRows.Add(row);
+        }
+        _csvMessage = $"{_dataRows.Count} row(s) and {_columns.Count} column(s) imported. Check each column's type, then Validate.";
+    }
+
+    private static List<string> CsvFields(string line)
+    {
+        var fields = new List<string>();
+        var current = new System.Text.StringBuilder();
+        var quoted = false;
+        for (var i = 0; i < line.Length; i++)
+        {
+            var ch = line[i];
+            if (quoted)
+            {
+                if (ch == '"' && i + 1 < line.Length && line[i + 1] == '"') { current.Append('"'); i++; }
+                else if (ch == '"') quoted = false;
+                else current.Append(ch);
+            }
+            else if (ch == '"') quoted = true;
+            else if (ch == ',') { fields.Add(current.ToString()); current.Clear(); }
+            else current.Append(ch);
+        }
+        fields.Add(current.ToString());
+        return fields;
+    }
 
     private RenderFragment GeneratorEditor(TestDataResourceValidation v) => __builder =>
     {

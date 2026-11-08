@@ -37,6 +37,12 @@ public sealed record TestDataOperationRef(Guid? SnapshotId, string ContractId, s
 /// <summary>A dataset member: a reference to another resource (alias, optionally pinned "alias@vN") or an inline typed value.</summary>
 public sealed record TestDataDatasetMember(string Name, string? Reference, TestDataTypedEntry? Inline);
 
+/// <summary>
+/// One row of a data-driven dataset: a stable id (kept across versions so evidence can name it) and typed values. A test bound to the dataset
+/// runs once per row; a row value overrides the dataset member of the same name, members are shared by every row.
+/// </summary>
+public sealed record TestDataDatasetRow(string Id, List<TestDataTypedEntry> Values);
+
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TestDataGeneratorKind { Uuid, Sequence, DateOffset, Timestamp, IntegerRange, DecimalRange, EnumChoice, FakeName, FakeEmail, FakeAddress, Pattern }
 
@@ -71,6 +77,8 @@ public sealed record TestDataResourceContent
     /// <summary>A REST template never stores credentials: authentication comes from the Target Environment's configured authentication.</summary>
     public bool UseTargetAuthentication { get; init; }
     public List<TestDataDatasetMember> Members { get; init; } = [];
+    /// <summary>Dataset rows (data-driven execution); empty = one record made of the members.</summary>
+    public List<TestDataDatasetRow> Rows { get; init; } = [];
     public TestDataGeneratorDefinition? Generator { get; init; }
     public string? FilePath { get; init; }
     public string? MediaType { get; init; }
@@ -156,6 +164,7 @@ public sealed record TestDataValidationContext
 public static partial class TestDataResourceRules
 {
     public const int MaxPayloadBytes = 256 * 1024;
+    public const int MaxDatasetRows = 1000;
     public const int MaxJsonDepth = 32;
     public static readonly string[] Methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
     public static readonly string[] ParameterLocations = ["path", "query", "header", "cookie"];
@@ -446,7 +455,22 @@ public static partial class TestDataResourceRules
 
         void Dataset()
         {
-            if (c.Members.Count == 0) Add(TestDataCheckTiers.Syntax, TestDataCheckState.Failed, "Add at least one member.", "members");
+            if (c.Members.Count == 0 && c.Rows.Count == 0) Add(TestDataCheckTiers.Syntax, TestDataCheckState.Failed, "Add at least one member or row.", "members");
+            if (c.Rows.Count > MaxDatasetRows) Add(TestDataCheckTiers.Size, TestDataCheckState.Failed, $"{c.Rows.Count} rows; a dataset has at most {MaxDatasetRows}.", "rows");
+            foreach (var dup in c.Rows.GroupBy(r => r.Id, StringComparer.Ordinal).Where(g => g.Count() > 1))
+                Add(TestDataCheckTiers.Syntax, TestDataCheckState.Failed, $"Duplicate row id \"{dup.Key}\": row ids are unique (evidence names rows by id).", "rows");
+            var columnTypes = new Dictionary<string, TestDataPrimitive>(StringComparer.Ordinal);
+            for (var i = 0; i < c.Rows.Count; i++)
+            {
+                var row = c.Rows[i];
+                if (!EntryName().IsMatch(row.Id ?? "")) Add(TestDataCheckTiers.Syntax, TestDataCheckState.Failed, $"Row {i + 1}: an id is required (letters, digits, '_', '-', '.').", $"rows[{i}]");
+                if (row.Values.Count == 0) Add(TestDataCheckTiers.Syntax, TestDataCheckState.Failed, $"Row {row.Id}: add at least one value.", $"rows[{i}]");
+                Rows(row.Values.Select(e => (e.Name, (TestDataTypedEntry?)e)).ToList(), $"rows[{i}]");
+                foreach (var e in row.Values.Where(e => e.Type != TestDataPrimitive.Null))
+                    if (columnTypes.TryGetValue(e.Name, out var t) && t != e.Type)
+                        Add(TestDataCheckTiers.Type, TestDataCheckState.Failed, $"Row {row.Id}: \"{e.Name}\" is {e.Type} but {t} in an earlier row; a column has one type.", $"rows[{i}]");
+                    else columnTypes.TryAdd(e.Name, e.Type);
+            }
             Rows(c.Members.Select(m => (m.Name, m.Inline is null ? null : m.Inline with { Name = m.Name })).ToList(), "members");
             for (var i = 0; i < c.Members.Count; i++)
             {

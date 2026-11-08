@@ -263,6 +263,7 @@ public static partial class ContractTestRules
             foreach (var (k, v) in o.ToList())
             {
                 if (v is JsonObject nested) { Fill(nested); continue; }
+                if (v is JsonArray list) { FillArray(list); continue; }
                 if (v is not JsonValue jv || jv.GetValueKind() != JsonValueKind.String || WholePlaceholder().Match(jv.GetValue<string>()) is not { Success: true } m) continue;
                 var name = m.Groups[1].Value;
                 if (values.TryGetValue(name, out var e)) o[k] = TestDataResourceRules.ToJson(e);
@@ -270,9 +271,45 @@ public static partial class ContractTestRules
                 else if (!missing.Contains(name)) missing.Add(name);
             }
         }
+
+        // Lists: each element keeps its own type; an unresolved optional element is left out, never sent as "" or null.
+        void FillArray(JsonArray a)
+        {
+            for (var i = a.Count - 1; i >= 0; i--)
+            {
+                switch (a[i])
+                {
+                    case JsonObject nested: Fill(nested); continue;
+                    case JsonArray inner: FillArray(inner); continue;
+                    case JsonValue jv when jv.GetValueKind() == JsonValueKind.String && WholePlaceholder().Match(jv.GetValue<string>()) is { Success: true } m:
+                        var name = m.Groups[1].Value;
+                        if (values.TryGetValue(name, out var e)) a[i] = TestDataResourceRules.ToJson(e);
+                        else if (optional.Contains(name)) a.RemoveAt(i);
+                        else if (!missing.Contains(name)) missing.Add(name);
+                        continue;
+                }
+            }
+        }
     }
 
     public static bool IsWholePlaceholder(string text) => WholePlaceholder().IsMatch(text.Trim());
+
+    /// <summary>
+    /// The values a call actually uses (every placeholder of its template that resolved), typed, with their source and a redacted preview of at
+    /// most 120 characters. Evidence keeps this so it can be checked that the right value and type were sent.
+    /// </summary>
+    public static List<ResolvedValue> Resolved(ContractTestDefinition test, IReadOnlyDictionary<string, TestDataTypedEntry> values, Func<string, string> source)
+    {
+        var t = test.Template;
+        var used = Placeholders(t.Path).Concat(t.Query.Values.SelectMany(Placeholders)).Concat(t.Headers.Values.SelectMany(Placeholders))
+            .Concat(Placeholders(t.Body)).Concat(Placeholders(t.GraphQlVariablesJson)).Distinct(StringComparer.Ordinal);
+        return [.. used.Where(values.ContainsKey).Select(name =>
+        {
+            var e = values[name];
+            var text = e.Type == TestDataPrimitive.Null ? "null" : ExecutionEvidenceRedaction.Text(e.Value ?? "").Text;
+            return new ResolvedValue(name, e.Type.ToString(), source(name), text.Length > 120 ? text[..120] + "…" : text);
+        })];
+    }
 
     /// <summary>Every <c>{{dataset.name}}</c> name used in a text, in order of first use.</summary>
     public static List<string> Placeholders(string? text) => [.. AnyPlaceholder().Matches(text ?? "").Select(m => m.Groups[1].Value).Distinct(StringComparer.Ordinal)];

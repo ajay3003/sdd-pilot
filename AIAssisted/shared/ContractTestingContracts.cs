@@ -113,7 +113,7 @@ public sealed record ContractTestDefinition
 
 /// <summary>A dataset offered by the picker for one test: its approved version, what it provides and which required values it lacks.</summary>
 public sealed record ContractDatasetOption(string Alias, string? Label, string Kind, int? ApprovedVersion, int LatestVersion, bool Compatible,
-    List<string> Provides, List<string> MissingRequired, List<string> MissingOptional, string? Environment, string? Problem);
+    List<string> Provides, List<string> MissingRequired, List<string> MissingOptional, string? Environment, string? Problem, int Rows = 0);
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ReadinessItemState { Ok, Warning, Missing, Blocked }
@@ -168,6 +168,12 @@ public sealed record ContractTestRunRequest
     public string? GraphQlPath { get; init; }
     /// <summary>Attended runs: how long to wait for a renewed sign-in when the session expires mid-run (see <see cref="ExecutionRunRequest.ReauthenticationWaitSeconds"/>).</summary>
     public int ReauthenticationWaitSeconds { get; init; }
+    /// <summary>Data-driven tests: run only these dataset row ids (empty = every row).</summary>
+    public List<string> RowIds { get; init; } = [];
+    /// <summary>At most this many logical calls (rows × tests); the rest is listed as not run, never silently dropped. Null = the run limit.</summary>
+    public int? MaxExecutions { get; init; }
+    /// <summary>Stop at the first failed, erroneous or blocked call (see <see cref="ExecutionRunRequest.StopOnFirstFailure"/>).</summary>
+    public bool StopOnFirstFailure { get; init; }
 }
 
 public sealed record ContractTestRunResult(ExecutionRunStartResult? Run, List<string> NotRun);

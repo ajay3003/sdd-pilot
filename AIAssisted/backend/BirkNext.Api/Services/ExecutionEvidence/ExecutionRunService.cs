@@ -118,6 +118,7 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
             AuthenticationMode = auth.Mode, AuthenticationReference = auth.Reference,
             SourceSnapshotId = request.SourceSnapshotId, ContractRefs = request.ContractRefs,
             ReauthenticationWaitSeconds = authKind == ExecutionAuthenticationKind.AttendedSession ? Math.Clamp(request.ReauthenticationWaitSeconds, 0, MaxReauthenticationWaitSeconds) : 0,
+            StopOnFirstFailure = request.StopOnFirstFailure,
         };
         using (var scope = scopes.CreateScope())
         {
@@ -153,6 +154,7 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
             var client = http.CreateClient(ClientName);
             var authentication = new RunAuthentication(ExecutionCredentialResolver.Effective(request) == ExecutionAuthenticationKind.AttendedSession
                 ? Math.Clamp(request.ReauthenticationWaitSeconds, 0, MaxReauthenticationWaitSeconds) : 0);
+            string? stopped = null;
             foreach (var planned in calls)
             {
                 if (planned.State != ExecutionState.Planned) continue;
@@ -161,10 +163,17 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
                     await store.SaveCallAsync(runId, planned with { State = ExecutionState.Cancelled, Reason = "The run was cancelled before this call was sent." }, CancellationToken.None);
                     continue;
                 }
+                if (stopped is not null)
+                {
+                    await store.SaveCallAsync(runId, planned with { State = ExecutionState.Skipped, Reason = stopped }, CancellationToken.None);
+                    continue;
+                }
                 var record = planned with { State = ExecutionState.Running, StartedAt = _clock.GetUtcNow() };
                 await store.SaveCallAsync(runId, record, CancellationToken.None);
                 record = await RunCallAsync(client, store, authentication, runId, origin, record, originals[record.Sequence - 1], request, runToken);
                 await store.SaveCallAsync(runId, record, CancellationToken.None);
+                if (request.StopOnFirstFailure && record.State is ExecutionState.Failed or ExecutionState.Error or ExecutionState.TimedOut or ExecutionState.Blocked)
+                    stopped = $"Not sent: the run stops at the first failure, and call {record.Sequence} ({record.Definition.Name}) ended {record.State}.";
             }
             await store.CompleteAsync(runId, null, CancellationToken.None);
         }

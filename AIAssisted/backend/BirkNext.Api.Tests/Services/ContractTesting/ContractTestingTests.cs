@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -820,5 +821,91 @@ public sealed class ContractTestingTests : IAsyncLifetime
         var (none, gaps) = ContractTestRules.Materialize(tests[0], new Dictionary<string, TestDataTypedEntry> { ["code"] = values["code"] });
         none.Should().BeNull("a required value is never replaced by a default");
         gaps.Should().BeEquivalentTo(["name", "age"]);
+    }
+
+    private void DatasetRows(string alias, params TestDataDatasetRow[] rows)
+    {
+        var (outcome, _) = _authored.Create(new TestDataResourceDraft { Alias = alias, Label = alias, Content = new() { Kind = TestDataResourceKind.Dataset, Rows = [.. rows] } });
+        outcome.Should().Be(AuthoredTestDataStore.Outcome.Saved);
+        var asset = _catalog.Assets().Single(a => a.Alias == alias);
+        _registry.SetLifecycle(new TestDataLifecycleRecord { AssetId = asset.Id, ApprovedFingerprint = TestDataCatalog.ApprovalFingerprint(asset), ApprovedAt = DateTimeOffset.UtcNow });
+    }
+
+    private static TestDataDatasetRow ChildRow(int i) => new($"r-{i:D3}",
+        [new("name", TestDataPrimitive.String, $"Barn {i}"), i == 13 ? new("age", TestDataPrimitive.Null, null) : new("age", TestDataPrimitive.Int32, (i % 18).ToString(CultureInfo.InvariantCulture))]);
+
+    [Fact]
+    public async Task A_data_driven_test_runs_once_per_row_and_sends_each_rows_own_typed_values()
+    {
+        using var scope = _services.CreateScope();
+        (await Scoped<ContractRegistryService>(scope).ImportAsync(new() { FileName = "children.yaml", Content = V1Yaml }, default)).Imported.Should().BeTrue();
+        var tests = Scoped<ContractTestService>(scope);
+        var post = (await tests.GenerateAsync("synthetic-children-api", null, ["POST /children"], default)).Created.Single(t => t.Kind == ContractTestKind.Positive);
+        DatasetRows("children-rows", [.. Enumerable.Range(1, 25).Select(ChildRow)]);
+        (await tests.DatasetOptionsAsync(post.Id, "local-synthetic", default)).Single(o => o.Alias == "children-rows").Should()
+            .Match<ContractDatasetOption>(o => o.Compatible && o.Rows == 25);
+        (await tests.BindAsync(post.Id, new("children-rows", 1), default)).Error.Should().BeNull();
+        var view = (await tests.ListAsync("synthetic-children-api", Local, default)).Single(v => v.Test.Id == post.Id);
+        view.Readiness.Items.Should().Contain(i => i.Area == "Test Data" && i.Text.Contains("in each of its 25 rows"));
+
+        var run = await WaitAsync((await tests.RunAsync(new() { TestIds = [post.Id], Environment = Local, ConfirmMutatingCalls = true }, default)).Run!.RunId!.Value);
+        run.Calls.Should().HaveCount(25);
+        run.Run.Definitions.Should().Be(1);
+        run.Run.DatasetRows.Should().Be(25);
+        run.Calls.Select(c => c.Definition.DatasetRow).Should().OnlyHaveUniqueItems().And.Contain("children-rows@v1#r-001").And.Contain("children-rows@v1#r-025");
+        // Oracle: the body the server received for each row carries that row's values with their JSON types.
+        var posts = _seen.Where(s => s.Method == "POST").Select(s => JsonNode.Parse(s.Body)!.AsObject()).ToList();
+        posts.Should().HaveCount(24, "r-013 (age = null) violates the enforced contract and is never sent");
+        posts.Should().NotContain(b => b["name"]!.GetValue<string>() == "Barn 13");
+        for (var i = 1; i <= 25; i++)
+        {
+            if (i == 13) continue;
+            var body = posts.Single(b => b["name"]!.GetValue<string>() == $"Barn {i}");
+            body["age"]!.GetValueKind().Should().Be(JsonValueKind.Number);
+            body["age"]!.GetValue<int>().Should().Be(i % 18);
+        }
+        var first = run.Calls.Single(c => c.Definition.DatasetRow == "children-rows@v1#r-001");
+        first.State.Should().Be(ExecutionState.Passed);
+        first.Definition.ResolvedValues.Should().ContainEquivalentOf(new ResolvedValue("age", "Int32", "row r-001 of children-rows@v1", "1"));
+        first.Definition.ResolvedValues.Should().ContainEquivalentOf(new ResolvedValue("name", "String", "row r-001 of children-rows@v1", "Barn 1"));
+        var invalid = run.Calls.Single(c => c.Definition.DatasetRow == "children-rows@v1#r-013");
+        invalid.State.Should().Be(ExecutionState.Blocked);
+        invalid.Reason.Should().Contain("violates the contract");
+        invalid.Definition.ResolvedValues.Should().ContainEquivalentOf(new ResolvedValue("age", "Null", "row r-013 of children-rows@v1", "null"));
+        run.Run.Counts.Passed.Should().Be(24);
+
+        // Selected rows only; and a row limit lists what was not run instead of dropping it.
+        _seen.Clear();
+        var selected = await WaitAsync((await tests.RunAsync(new() { TestIds = [post.Id], Environment = Local, ConfirmMutatingCalls = true, RowIds = ["r-002", "r-020"] }, default)).Run!.RunId!.Value);
+        selected.Calls.Select(c => c.Definition.DatasetRow).Should().Equal("children-rows@v1#r-002", "children-rows@v1#r-020");
+        _seen.Should().HaveCount(2);
+        var limited = await tests.RunAsync(new() { TestIds = [post.Id], Environment = Local, ConfirmMutatingCalls = true, MaxExecutions = 5 }, default);
+        limited.NotRun.Should().HaveCount(20).And.OnlyContain(n => n.Contains("over the run's limit of 5"));
+        (await WaitAsync(limited.Run!.RunId!.Value)).Calls.Should().HaveCount(5);
+
+        // Stop on the first failure: r-013 is blocked by the contract check, r-014..r-025 are Skipped and never sent.
+        _seen.Clear();
+        var stop = await WaitAsync((await tests.RunAsync(new() { TestIds = [post.Id], Environment = Local, ConfirmMutatingCalls = true, StopOnFirstFailure = true }, default)).Run!.RunId!.Value);
+        stop.Run.StopOnFirstFailure.Should().BeTrue();
+        stop.Calls.Take(12).Should().OnlyContain(c => c.State == ExecutionState.Passed);
+        stop.Calls[12].State.Should().Be(ExecutionState.Blocked);
+        stop.Calls.Skip(13).Should().OnlyContain(c => c.State == ExecutionState.Skipped && c.Attempts.Count == 0 && c.Reason!.Contains("stops at the first failure"));
+        _seen.Should().HaveCount(12);
+    }
+
+    [Fact]
+    public async Task A_row_without_a_required_value_makes_the_test_not_ready_instead_of_sending_a_default()
+    {
+        using var scope = _services.CreateScope();
+        (await Scoped<ContractRegistryService>(scope).ImportAsync(new() { FileName = "children.yaml", Content = V1Yaml }, default)).Imported.Should().BeTrue();
+        var tests = Scoped<ContractTestService>(scope);
+        var post = (await tests.GenerateAsync("synthetic-children-api", null, ["POST /children"], default)).Created.Single(t => t.Kind == ContractTestKind.Positive);
+        DatasetRows("children-gap", ChildRow(1), new TestDataDatasetRow("r-x", [new("name", TestDataPrimitive.String, "Uten alder")]));
+        (await tests.BindAsync(post.Id, new("children-gap", 1), default)).Error.Should().BeNull();
+        var view = (await tests.ListAsync("synthetic-children-api", Local, default)).Single(v => v.Test.Id == post.Id);
+        view.Readiness.State.Should().Be(ContractTestReadinessState.NotReady);
+        view.Readiness.Items.Should().Contain(i => i.Area == "Test Data" && i.Text.Contains("in at least one of its 2 rows: age"));
+        (await tests.RunAsync(new() { TestIds = [post.Id], Environment = Local, ConfirmMutatingCalls = true }, default)).Run.Should().BeNull();
+        _seen.Should().BeEmpty();
     }
 }
