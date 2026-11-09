@@ -168,6 +168,12 @@
     <p>Everything is redacted before it is stored (authentication headers, cookies, API keys, sensitive fields, token patterns and 11-digit numbers); a body may be Truncated or Metadata only, and is never called the original. A call without assertions is <strong>Not assessed</strong>; HTTP 200 with GraphQL errors is not a success by itself, and an expected 404 can pass. Blocked calls were refused before sending and have no request.</p>
 </section>
 
+<section id="integration-suites" class="ug-section ug-topic" data-topic="integration-suites" aria-labelledby="integration-suites-title">
+    <h2 id="integration-suites-title" class="ug-section-title" tabindex="-1">Generate Integration Test Suite</h2>
+    <p class="ug-lead"><a href="/integration-suites">Generate Integration Test Suite</a> builds a <strong>draft</strong> suite from an analysed source snapshot: you choose the snapshot and a scope (for example Skolenærvær / M2LB), and BirkNext imports the contracts into Contract Testing, generates tests, drafts synthetic test data, maps the integration flow, reuses the existing M01 Kode 6/7 review and lists exactly what remains before a real run.</p>
+    <p>Every item is in one of three groups: <strong>can run now</strong>, <strong>generated but waiting for a prerequisite</strong> (for example an approved synthetic Kode 7 person in Person, or an authorised Altinn configuration) or <strong>needs a domain decision</strong> (for example whether Kode 6/7 data counts in aggregate Bufdata figures). Generating never sends anything; running selected ready tests needs an active Target Environment and your explicit authorisation for each run. Regenerating with the same evidence reuses the suite; a newer snapshot becomes a new revision with the changes listed.</p>
+</section>
+
 <section id="parquet-viewer" class="ug-section ug-topic" data-topic="parquet-viewer" aria-labelledby="parquet-viewer-title">
     <h2 id="parquet-viewer-title" class="ug-section-title" tabindex="-1">Parquet Data Explorer</h2>
     <p class="ug-lead"><a href="/parquet-viewer">Parquet Data Explorer</a> opens a local .parquet file (up to 64 MB) read-only: Overview (file metadata), Schema (physical and logical types, nested groups), Data (bounded pages and typed filters), Profile, Validation, Compare and Evidence. <strong>Your file is never changed</strong>; BirkNext reads a temporary copy that expires after two hours.</p>

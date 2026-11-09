@@ -622,6 +622,8 @@ builder.Services.Configure<BirkNext.Api.Services.BlobStorage.BlobStorageOptions>
 builder.Services.AddScoped<BirkNext.Api.Services.BlobStorage.BlobExplorerService>();
 // Implementation-gap detection: SDD tasks/gates/decisions × source snapshot × recorded executions; evaluated at Project Import, reviewable.
 builder.Services.AddScoped<BirkNext.Api.Services.ImplementationGaps.ImplementationGapService>();
+// Integration suites: draft-only orchestration over Contract Registry/Testing, Test Data, the journey pack, topology and Security Classification.
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationSuites.IntegrationSuiteService>();
 // Authentication of execution runs: the attended Local HTTPS proxy credential or the environment's unattended API service credential (encrypted
 // at rest with Data Protection; tokens memory-only). The token client fetches only configured token endpoints, under the contract-source policy.
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.ExecutionEvidence.ApiServiceCredentialStore(

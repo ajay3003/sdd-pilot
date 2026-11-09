@@ -1,0 +1,437 @@
+@page "/integration-suites"
+@using BirkNext.Integrations
+@using BirkNext.IntegrationSuites
+@using BirkNext.ContractTesting
+@using BirkNext.Web.Models
+@inject IIntegrationSuiteApiService Api
+@inject IFrontendAnalysisContextFactory ContextFactory
+
+<PageTitle>Generate Integration Test Suite · BirkNext</PageTitle>
+
+@* Thin orchestration over existing owners: contracts and tests (Contract Testing), Test Data drafts, the Skolenærvær journey pack, the M01 Kode 6/7
+   review, topology and Execution Evidence. The page shows what the backend generated and stored; it never computes a pass, never runs anything on
+   generation, and keeps three outcomes apart: can run now / waiting for a named prerequisite / needs a domain decision. *@
+<div class="its" data-testid="its-page">
+    <header class="its-head">
+        <h1>Generate Integration Test Suite</h1>
+        <p class="its-note">Choose an analysed source snapshot and a scope. BirkNext finds existing contracts, tests, test data and Kode 6/7 coverage, links them to the
+            integration flow, fills in what the evidence supports and lists exactly what remains before a real run. Generating is draft-only and sends nothing.</p>
+    </header>
+
+    @if (_error is { } error) { <p class="sd-reason" role="alert" data-testid="its-error">@error</p> }
+    @if (_message is { } message) { <p class="its-note" role="status" data-testid="its-message">@message</p> }
+
+    <section class="its-card" aria-labelledby="its-source-title" data-testid="its-source">
+        <h2 id="its-source-title">1 · Source and scope</h2>
+        @if (_snapshots is null) { <p class="its-note">Loading snapshots…</p> }
+        else if (_snapshots.Count == 0) { <p class="its-note" data-testid="its-no-snapshots">No analysed source snapshot yet. <a href="/project-import">Import the project</a> first.</p> }
+        else
+        {
+            <div class="its-form">
+                <label>Source snapshot
+                    <select @bind="SelectedSnapshot" data-testid="its-snapshot">
+                        <option value="">Choose a snapshot…</option>
+                        @foreach (var s in _snapshots)
+                        {
+                            <option value="@s.Id.ToString("D")">@($"{s.Archive.FileName} · {s.AnalyzedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC · {s.Status}")</option>
+                        }
+                    </select>
+                </label>
+                <label>Scope
+                    <select @bind="_scopeId" data-testid="its-scope">
+                        @foreach (var sc in _scopes ?? []) { <option value="@sc.ScopeId">@sc.DisplayName</option> }
+                    </select>
+                </label>
+                @if (_scopeId == "api")
+                {
+                    <label>Modules (top-level folders, comma-separated) <input @bind="_modules" data-testid="its-modules" /></label>
+                }
+                <label class="its-check"><input type="checkbox" @bind="_negatives" /> Include negative proposals</label>
+                <label class="its-check"><input type="checkbox" @bind="_security" /> Include Kode 6/7 security scenarios</label>
+                <label class="its-check"><input type="checkbox" @bind="_testData" /> Generate synthetic test data drafts</label>
+            </div>
+            @if (Picked is { } p)
+            {
+                <dl class="its-facts" data-testid="its-snapshot-facts">
+                    <div><dt>Archive</dt><dd>@p.Archive.FileName</dd></div>
+                    <div><dt>SHA-256</dt><dd><code>@(p.Archive.Sha256.Length >= 16 ? p.Archive.Sha256[..16] + "…" : p.Archive.Sha256)</code></dd></div>
+                    <div><dt>Snapshot</dt><dd><code>@p.Id.ToString("D")[..8]</code></dd></div>
+                    <div><dt>Analysed</dt><dd>@Utc(p.AnalyzedAt)</dd></div>
+                    <div><dt>Project import</dt><dd>@(p.ProjectImportId ?? "source-only upload")</dd></div>
+                </dl>
+            }
+            @if (ScopeDef is { } scopeDef)
+            {
+                <p class="its-note" data-testid="its-scope-description">@scopeDef.Description</p>
+            }
+            <button type="button" class="btn btn-primary" disabled="@(_busy || Picked is null)" @onclick="GenerateAsync" data-testid="its-generate">Generate suite</button>
+        }
+    </section>
+
+    @if (_suites is { Count: > 0 })
+    {
+        <section class="its-card" aria-labelledby="its-history-title">
+            <h2 id="its-history-title">Generated suites</h2>
+            <div class="its-scroll" tabindex="0" role="region" aria-label="Generated suites">
+                <table class="its-table" data-testid="its-history">
+                    <thead><tr><th scope="col">Suite</th><th scope="col">Revision</th><th scope="col">Archive</th><th scope="col">Generated</th><th scope="col">Status</th><th scope="col">Tests</th><th scope="col">Open review</th><th scope="col"></th></tr></thead>
+                    <tbody>@foreach (var s in _suites)
+                    {
+                        <tr data-testid="its-history-row"><th scope="row">@s.ScopeName</th><td>r@(s.Revision)</td><td>@s.ArchiveFileName</td><td>@Utc(s.GeneratedAt)</td><td>@Label(s.Status)</td><td>@s.Tests</td><td>@s.ReviewOpen</td>
+                            <td><button type="button" class="btn btn-secondary btn-sm" @onclick="() => OpenAsync(s.Id)">Open</button></td></tr>
+                    }</tbody>
+                </table>
+            </div>
+        </section>
+    }
+
+    @if (_suite is { } suite)
+    {
+        <section class="its-card its-summary" aria-labelledby="its-suite-title" data-testid="its-suite">
+            <h2 id="its-suite-title">@suite.Scope.DisplayName · revision @suite.Revision</h2>
+            <div class="its-badges">
+                <span class="its-badge" data-status="@suite.Status" data-testid="its-status">@Label(suite.Status)</span>
+                <span class="its-badge" data-testid="its-outcome">@Outcome(suite.Outcome)</span>
+            </div>
+            <p class="its-note" data-testid="its-status-reason">@suite.StatusReason</p>
+            <div class="its-triage" data-testid="its-triage">
+                <div><strong data-testid="its-can-run">@CountTriage(suite, SuiteTriage.CanRunNow)</strong> can be generated and run now</div>
+                <div><strong data-testid="its-waiting">@CountTriage(suite, SuiteTriage.WaitingForPrerequisite)</strong> generated, waiting for a prerequisite</div>
+                <div><strong data-testid="its-decision">@CountTriage(suite, SuiteTriage.NeedsDomainDecision)</strong> need a domain decision</div>
+                <div><strong>@CountTriage(suite, SuiteTriage.NotSupported)</strong> not supported</div>
+            </div>
+            @if (suite.Drift.Count > 0)
+            {
+                <ul class="its-list" data-testid="its-drift" aria-label="Changes since the previous revision">@foreach (var d in suite.Drift) { <li>@d</li> }</ul>
+            }
+        </section>
+
+        <nav class="its-tabs" role="tablist" aria-label="Suite views">
+            @foreach (var t in Tabs)
+            {
+                <button type="button" role="tab" class="its-tab" aria-selected="@(_tab == t ? "true" : "false")" @onclick="() => _tab = t" data-testid="@($"its-tab-{Slug(t)}")">@t</button>
+            }
+        </nav>
+
+        @switch (_tab)
+        {
+            case "Readiness":
+                <section class="its-card" data-testid="its-readiness" aria-label="Readiness">
+                    <ul class="its-dimensions">@foreach (var d in suite.Readiness)
+                    {
+                        <li data-testid="its-dimension" data-state="@d.State"><span class="its-dim-name">@d.Name</span><span class="its-badge" data-state="@d.State">@Label(d.State)</span><span class="its-dim-detail">@d.Detail</span></li>
+                    }</ul>
+                    <h3>Source snapshot</h3>
+                    <dl class="its-facts">
+                        <div><dt>Archive</dt><dd>@suite.Snapshot.ArchiveFileName</dd></div>
+                        <div><dt>SHA-256</dt><dd><code>@Short(suite.Snapshot.ArchiveSha256)</code></dd></div>
+                        <div><dt>Evidence domains</dt><dd>@string.Join(", ", suite.Snapshot.EvidenceDomains)</dd></div>
+                        <div><dt>Modules</dt><dd>@string.Join(", ", suite.Snapshot.Modules)</dd></div>
+                    </dl>
+                    @if (suite.Snapshot.MissingSourceAreas.Count > 0)
+                    {
+                        <ul class="its-list" data-testid="its-missing-areas">@foreach (var m in suite.Snapshot.MissingSourceAreas) { <li>@m</li> }</ul>
+                    }
+                    @if (suite.Limitations.Count > 0)
+                    {
+                        <h3>Limitations</h3>
+                        <ul class="its-list">@foreach (var l in suite.Limitations) { <li>@l</li> }</ul>
+                    }
+                </section>
+                break;
+            case "Flow":
+                <section class="its-card" data-testid="its-flow" aria-label="Integration flow">
+                    <ol class="its-stages">@foreach (var st in suite.Stages.OrderBy(s => s.Order))
+                    {
+                        <li data-testid="its-stage" data-stage="@st.StageId" data-coverage="@st.Coverage">
+                            <div class="its-stage-head"><strong>@st.Label</strong> <span class="its-muted">@st.Component</span>
+                                <span class="its-badge" data-state="@st.Readiness">@Coverage(st.Coverage)</span> <span class="its-badge">@Triage(st.Triage)</span></div>
+                            <div class="its-muted">@st.ExecutorObserver</div>
+                            @if (st.Blockers.Count > 0) { <ul class="its-list">@foreach (var b in st.Blockers) { <li>@b</li> }</ul> }
+                        </li>
+                    }</ol>
+                    @if (suite.Topology.Count > 0)
+                    {
+                        <h3>Topology mapping</h3>
+                        <div class="its-scroll" tabindex="0" role="region" aria-label="Topology mapping">
+                            <table class="its-table" data-testid="its-topology">
+                                <thead><tr><th scope="col">From</th><th scope="col">To</th><th scope="col">Relationship</th><th scope="col">Mapping</th><th scope="col">Confidence</th></tr></thead>
+                                <tbody>@foreach (var m in suite.Topology) { <tr><td>@m.From</td><td>@m.To</td><td>@m.Relationship</td><td>@m.Class@(m.RequiresReview ? " · review" : "")</td><td>@m.Confidence</td></tr> }</tbody>
+                            </table>
+                        </div>
+                    }
+                </section>
+                break;
+            case "Configuration":
+                <section class="its-card" data-testid="its-configuration" aria-label="Configuration">
+                    @if (suite.Configuration.Count == 0) { <p class="its-note">No configuration values were found in the source.</p> }
+                    else
+                    {
+                        <div class="its-scroll" tabindex="0" role="region" aria-label="Configuration values">
+                            <table class="its-table">
+                                <thead><tr><th scope="col">Field</th><th scope="col">Value</th><th scope="col">Origin</th><th scope="col">Binding</th><th scope="col">Evidence</th></tr></thead>
+                                <tbody>@foreach (var c in suite.Configuration)
+                                {
+                                    <tr data-testid="its-config" data-origin="@c.Origin"><th scope="row">@c.Field</th><td>@(c.Value ?? "unresolved")</td><td>@c.Origin@(c.NeedsReview ? " · review" : "")</td><td>@c.Binding</td>
+                                        <td>@string.Join(", ", c.Evidence.Take(2).Select(Ref))</td></tr>
+                                }</tbody>
+                            </table>
+                        </div>
+                    }
+                </section>
+                break;
+            case "Test data":
+                <section class="its-card" data-testid="its-test-data" aria-label="Test data">
+                    <p class="its-note">Generated values are synthetic drafts in Test Data (never approved automatically). Identity fields are never synthesised.</p>
+                    <ul class="its-items">@foreach (var d in suite.TestData)
+                    {
+                        <li data-testid="its-data-item" data-state="@d.State"><strong>@d.Role</strong> <span class="its-badge">@d.State</span> @(d.Asset is { } a ? $"· {a}" : "")
+                            <div class="its-muted">@d.Purpose</div>
+                            @if (d.Prerequisite is { } pre) { <div class="its-prereq" data-testid="its-data-prereq">@pre</div> }
+                            @if (d.Values.Count > 0) { <div class="its-muted">@string.Join(" · ", d.Values.Take(6).Select(v => $"{v.Name} = {v.Value} ({v.Rule})"))</div> }
+                        </li>
+                    }</ul>
+                </section>
+                break;
+            case "Tests":
+                <section class="its-card" data-testid="its-tests" aria-label="Tests">
+                    <div class="its-scroll" tabindex="0" role="region" aria-label="Contract tests">
+                        <table class="its-table">
+                            <thead><tr><th scope="col">Operation</th><th scope="col">Kind</th><th scope="col">Contract</th><th scope="col">Readiness</th><th scope="col">Triage</th><th scope="col">Run</th></tr></thead>
+                            <tbody>@foreach (var t in suite.Tests)
+                            {
+                                <tr data-testid="its-test" data-triage="@t.Triage"><th scope="row">@t.Operation</th><td>@t.Kind@(t.Variant is { } v ? $" · {v}" : "")@(t.Mutating ? " · mutating" : "")</td>
+                                    <td><a href="@($"/api-quality-review/contracts?test={t.TestId:D}")">@t.ContractRef</a></td>
+                                    <td><span>@t.Readiness</span>@if (t.ReadinessGaps.Count > 0) { <div class="its-muted">@string.Join("; ", t.ReadinessGaps.Take(3))</div> }</td>
+                                    <td>@Triage(t.Triage)</td>
+                                    <td><input type="checkbox" aria-label="@($"Select {t.Operation} {t.Kind}")" checked="@_selected.Contains(t.TestId)" disabled="@(t.Triage != SuiteTriage.CanRunNow)"
+                                               @onchange="e => Toggle(t.TestId, e.Value is true)" data-testid="its-select" /></td></tr>
+                            }</tbody>
+                        </table>
+                    </div>
+                    @if (suite.Unsupported.Count > 0)
+                    {
+                        <h3>Not supported</h3>
+                        <ul class="its-list">@foreach (var u in suite.Unsupported) { <li>@u.Operation (@u.ContractRef): @u.Reason</li> }</ul>
+                    }
+                </section>
+                break;
+            case "XML":
+                <section class="its-card" data-testid="its-xml" aria-label="XML schemas">
+                    @if (suite.XmlSchemas.Count == 0) { <p class="its-note">No XML schema in the scope's modules.</p> }
+                    else
+                    {
+                        <p class="its-note">Minimum-valid XML fixtures are generated in Schema Studio from the exact snapshot (dependency closure resolved there).</p>
+                        <ul class="its-items">@foreach (var x in suite.XmlSchemas)
+                        {
+                            <li data-testid="its-xsd" data-resolved="@(x.DependenciesResolved ? "true" : "false")"><strong>@x.File</strong> <span class="its-badge">@x.State</span>
+                                <div class="its-muted">@(x.TargetNamespace ?? "no target namespace") · roots: @string.Join(", ", x.RootElements)</div>
+                                @if (x.Unresolved.Count > 0) { <div class="its-prereq">Unresolved: @string.Join(", ", x.Unresolved)</div> }
+                                <a href="@($"/schema-studio?snapshot={suite.Snapshot.SnapshotId:D}&contract={Uri.EscapeDataString(x.File)}")">Open in Schema Studio</a>
+                            </li>
+                        }</ul>
+                    }
+                </section>
+                break;
+            case "Kode 6/7":
+                <section class="its-card" data-testid="its-security" aria-label="Kode 6/7 security scenarios">
+                    <p class="its-note">Reuses the existing M01 graded-access review (Kode 6/7); BirkNext does not build a second Kode 6/7 module. Synthetic persons only.</p>
+                    @foreach (var group in TriageOrder)
+                    {
+                        var rows = suite.Security.Where(s => s.Triage == group).ToList();
+                        if (rows.Count == 0) continue;
+                        <h3 data-testid="@($"its-sec-group-{group}")">@Triage(group) (@rows.Count)</h3>
+                        <ul class="its-items">@foreach (var s in rows)
+                        {
+                            <li data-testid="its-sec" data-id="@s.ScenarioId" data-triage="@s.Triage"><strong>@s.ScenarioId</strong> @s.Title <span class="its-badge">@Label(s.Readiness)</span>
+                                @if (s.Reuses is { } reuse) { <div class="its-muted">Reuses @reuse@(s.ExistingState is { } es ? $" · {es}" : "")</div> }
+                                @if (s.OpenQuestion is { } q) { <div class="its-prereq" data-testid="its-sec-question">@q</div> }
+                                @if (s.Prerequisites.Count > 0) { <ul class="its-list">@foreach (var pr in s.Prerequisites) { <li>@pr</li> }</ul> }
+                            </li>
+                        }</ul>
+                    }
+                    <a href="/security-classification-review">Open M01 – Gradert tilgang (Kode 6/7)</a>
+                </section>
+                break;
+            case "Review":
+                <section class="its-card" data-testid="its-review" aria-label="Review">
+                    @if (suite.Review.Count == 0) { <p class="its-note">Nothing needs review.</p> }
+                    <ul class="its-items">@foreach (var r in suite.Review)
+                    {
+                        <li data-testid="its-review-item" data-key="@r.Key"><strong>@r.Area</strong> · @r.Question
+                            <div class="its-muted">@r.Why</div>
+                            @if (r.Decision is { } dec) { <div data-testid="its-review-decision">@dec by @r.DecidedBy @(r.DecidedAt is { } at ? Utc(at) : "")</div> }
+                            else
+                            {
+                                <div class="its-actions">
+                                    @foreach (var choice in new[] { "Acceptable", "IssueFound", "NeedsEvidence", "NotApplicable" })
+                                    {
+                                        <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => ReviewAsync(r.Key, choice)" data-testid="@($"its-review-{choice}")">@choice</button>
+                                    }
+                                </div>
+                            }
+                        </li>
+                    }</ul>
+                </section>
+                break;
+            case "Execution":
+                <section class="its-card" data-testid="its-execution" aria-label="Execution">
+                    @if (_environment is null)
+                    {
+                        <p class="its-note" data-testid="its-no-environment">No active Target Environment with a target URL. Choose one in <a href="@($"/{NavigationCatalog.TargetEnvironmentsRoute}")">Target Environments</a> before running.</p>
+                    }
+                    else
+                    {
+                        <p class="its-note">Target: <strong>@_environmentName</strong> (@_environment.EnvironmentType) · @_environment.TargetUrl</p>
+                        <p class="its-note">@_selected.Count test(s) selected on the Tests tab. Only tests that can run now are selectable; nothing else is sent.</p>
+                        <label class="its-check"><input type="checkbox" @bind="_confirmMutating" data-testid="its-confirm-mutating" /> I confirm mutating calls in this environment</label>
+                        <label class="its-check"><input type="checkbox" @bind="_authorized" data-testid="its-authorize" /> I authorise this run against the target above</label>
+                        <button type="button" class="btn btn-primary" disabled="@(_busy || !_authorized || _selected.Count == 0)" @onclick="ExecuteAsync" data-testid="its-run">Run selected tests</button>
+                    }
+                    @if (suite.Runs.Count > 0)
+                    {
+                        <h3>Runs</h3>
+                        <ul class="its-items">@foreach (var run in suite.Runs)
+                        {
+                            <li data-testid="its-run-link"><a href="@($"/execution-results?run={run.RunId:D}")">@Utc(run.StartedAt)</a> · @run.State · @run.Initiator</li>
+                        }</ul>
+                    }
+                </section>
+                break;
+        }
+    }
+</div>
+
+@code {
+    private static readonly string[] Tabs = ["Readiness", "Flow", "Configuration", "Test data", "Tests", "XML", "Kode 6/7", "Review", "Execution"];
+    private static readonly SuiteTriage[] TriageOrder = [SuiteTriage.CanRunNow, SuiteTriage.WaitingForPrerequisite, SuiteTriage.NeedsDomainDecision, SuiteTriage.NotSupported];
+
+    private List<IqrSourceSnapshotSummary>? _snapshots;
+    private List<IntegrationSuiteScope>? _scopes;
+    private List<IntegrationSuiteSummary>? _suites;
+    private IntegrationSuite? _suite;
+    private string _snapshotId = "";
+    private string _scopeId = "skolenaervaer";
+    private string _modules = "";
+    private bool _negatives = true, _security = true, _testData = true;
+    private bool _busy, _authorized, _confirmMutating;
+    private string? _error, _message;
+    private string _tab = Tabs[0];
+    private readonly HashSet<Guid> _selected = [];
+    private ContractTestEnvironment? _environment;
+    private string? _environmentName;
+
+    private string SelectedSnapshot { get => _snapshotId; set => _snapshotId = value ?? ""; }
+    private IqrSourceSnapshotSummary? Picked => Guid.TryParse(_snapshotId, out var id) ? _snapshots?.FirstOrDefault(s => s.Id == id) : null;
+    private IntegrationSuiteScope? ScopeDef => _scopes?.FirstOrDefault(s => s.ScopeId == _scopeId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var (snapshots, e1) = await Api.SnapshotsAsync();
+        var (scopes, e2) = await Api.ScopesAsync();
+        var (suites, e3) = await Api.ListAsync();
+        _snapshots = snapshots ?? []; _scopes = scopes ?? []; _suites = suites ?? [];
+        _error = e1 ?? e2 ?? e3;
+        if (_scopes.Count > 0 && _scopes.All(s => s.ScopeId != _scopeId)) _scopeId = _scopes[0].ScopeId;
+        try
+        {
+            var context = await ContextFactory.GetActiveContextAsync();
+            if (context.ActiveProfileOrNull is { } profile && !string.IsNullOrWhiteSpace(context.TargetUrl))
+            {
+                var identity = ReviewAuthenticationIdentity.ForContext(context);
+                _environmentName = profile.Name;
+                _environment = new()
+                {
+                    EnvironmentId = profile.Id, TargetUrl = context.TargetUrl, EnvironmentType = profile.EnvironmentType.ToString(), IsProduction = profile.EnvironmentType == FrontendEnvironmentType.Production,
+                    ProfileId = identity.ProfileId, ContextFingerprint = identity.ContextFingerprint,
+                };
+            }
+        }
+        catch (Exception) { _environment = null; }
+    }
+
+    private async Task GenerateAsync()
+    {
+        if (Picked is not { } snapshot) return;
+        _busy = true; _error = null; _message = null;
+        var request = new IntegrationSuiteGenerateRequest
+        {
+            SnapshotId = snapshot.Id, ScopeId = _scopeId, IncludeNegatives = _negatives, IncludeSecurity = _security, GenerateTestData = _testData,
+            Modules = [.. _modules.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)],
+        };
+        var (result, error) = await Api.GenerateAsync(request);
+        if (error is not null || result?.Error is not null) _error = error ?? result!.Error;
+        else if (result?.Suite is { } suite)
+        {
+            _suite = suite; _tab = Tabs[0]; _selected.Clear();
+            _message = result.Reused ? $"Nothing changed since revision {suite.Revision}; the existing suite is shown (no duplicates were created)." : $"Revision {suite.Revision} generated as a draft. Nothing was sent.";
+            _suites = (await Api.ListAsync()).Suites ?? _suites;
+        }
+        _busy = false;
+    }
+
+    private async Task OpenAsync(Guid id)
+    {
+        _busy = true; _error = null; _message = null;
+        (_suite, _error) = await Api.GetAsync(id);
+        _selected.Clear(); _tab = Tabs[0];
+        _busy = false;
+    }
+
+    private async Task ReviewAsync(string key, string decision)
+    {
+        if (_suite is not { } suite) return;
+        _busy = true; _error = await Api.ReviewAsync(suite.Id, new IntegrationSuiteReviewRequest(key, decision, null));
+        if (_error is null) (_suite, _error) = await Api.GetAsync(suite.Id);
+        _busy = false;
+    }
+
+    private async Task ExecuteAsync()
+    {
+        if (_suite is not { } suite || _environment is not { } env || !_authorized) return;
+        _busy = true; _error = null; _message = null;
+        var (result, error) = await Api.ExecuteAsync(suite.Id, new IntegrationSuiteExecuteRequest
+        {
+            TestIds = [.. _selected], EnvironmentId = env.EnvironmentId, TargetUrl = env.TargetUrl, EnvironmentType = env.EnvironmentType, IsProduction = env.IsProduction,
+            ProfileId = env.ProfileId, ContextFingerprint = env.ContextFingerprint, ConfirmMutatingCalls = _confirmMutating, Authorized = true,
+        });
+        if (error is not null) _error = error;
+        else if (result is not null)
+        {
+            _message = result.NotRun.Count > 0 ? $"{result.Message} Not run: {result.NotRun.Count}." : result.Message;
+            if (result.RunId is not null) (_suite, _) = await Api.GetAsync(suite.Id);
+        }
+        _authorized = false; // authorisation is per run
+        _busy = false;
+    }
+
+    private void Toggle(Guid id, bool on) { if (on) _selected.Add(id); else _selected.Remove(id); }
+
+    private static int CountTriage(IntegrationSuite s, SuiteTriage t) => s.Tests.Count(x => x.Triage == t) + s.Security.Count(x => x.Triage == t) + s.Stages.Count(x => x.Triage == t);
+
+    private static string Label(SuiteStatus s) => s switch
+    {
+        SuiteStatus.ReadyToExecute => "Ready to execute", SuiteStatus.PartiallyExecutable => "Partially executable", SuiteStatus.NeedsReview => "Needs review", _ => s.ToString(),
+    };
+    private static string Label(SuiteItemReadiness r) => r switch
+    {
+        SuiteItemReadiness.NeedsReview => "Needs review", SuiteItemReadiness.PartiallyExecutable => "Partially executable", SuiteItemReadiness.NotSupported => "Not supported",
+        SuiteItemReadiness.NotAssessed => "Not assessed", _ => r.ToString(),
+    };
+    private static string Outcome(SuiteExecutionOutcome o) => o switch
+    {
+        SuiteExecutionOutcome.NotExecuted => "Not executed", SuiteExecutionOutcome.PartiallyVerified => "Partially verified", _ => o.ToString(),
+    };
+    private static string Triage(SuiteTriage t) => t switch
+    {
+        SuiteTriage.CanRunNow => "Can run now", SuiteTriage.WaitingForPrerequisite => "Waiting for prerequisite", SuiteTriage.NeedsDomainDecision => "Needs domain decision", _ => "Not supported",
+    };
+    private static string Coverage(SuiteStageCoverage c) => c switch
+    {
+        SuiteStageCoverage.ExecutableAndObservable => "Executable + observable", _ => c.ToString(),
+    };
+    private static string Ref(SuiteSourceRef r) => r.Line is { } l ? $"{r.Path}:{l}" : r.Path;
+    private static string Short(string sha) => sha.Length >= 16 ? sha[..16] + "…" : sha;
+    private static string Utc(DateTimeOffset t) => t.UtcDateTime.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture) + " UTC";
+    private static string Slug(string t) => new string([.. t.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-')]);
+}

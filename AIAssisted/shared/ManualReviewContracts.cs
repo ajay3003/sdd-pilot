@@ -13,7 +13,9 @@ public static class ManualReviewModules
     public const string SecurityClassification = "security-classification";
     /// <summary>Implementation-gap findings (subject = stable finding id; scope = the evaluation scope, e.g. "import:{id}").</summary>
     public const string ImplementationGaps = "implementation-gaps";
-    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal) { ApiQuality, SecurityClassification, ImplementationGaps };
+    /// <summary>Integration suite review items (subject = review item key; scope = the suite key).</summary>
+    public const string IntegrationSuites = "integration-suites";
+    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal) { ApiQuality, SecurityClassification, ImplementationGaps, IntegrationSuites };
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

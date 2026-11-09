@@ -55,6 +55,33 @@ public sealed class ParquetInspectionRecord
     public string DocumentJson { get; set; } = "";
 }
 
+/// <summary>One revision of a generated integration suite: a manifest of references (never copies of contracts, tests, data or evidence).</summary>
+public sealed class IntegrationSuiteRecord
+{
+    public Guid Id { get; init; }
+    public string SuiteKey { get; init; } = "";
+    public int Revision { get; init; }
+    public Guid SnapshotId { get; init; }
+    public string ScopeId { get; init; } = "";
+    public string? EnvironmentId { get; init; }
+    public DateTimeOffset GeneratedAt { get; init; }
+    public string Fingerprint { get; init; } = "";
+    public string DefinitionJson { get; init; } = "";
+}
+
+/// <summary>Link from a suite to an execution run it started (the run and its calls stay in Execution Evidence).</summary>
+public sealed class IntegrationSuiteRunRecord
+{
+    public Guid Id { get; init; }
+    public string SuiteKey { get; init; } = "";
+    public Guid SuiteId { get; init; }
+    public Guid RunId { get; init; }
+    public string Kind { get; init; } = "";
+    public DateTimeOffset StartedAt { get; init; }
+    public string Initiator { get; init; } = "";
+    public string TestIdsJson { get; init; } = "[]";
+}
+
 /// <summary>One implementation-gap evaluation: the extracted SDD inputs (never document text) and the report, per scope (e.g. a project import).</summary>
 public sealed class ImplementationGapEvaluationRecord
 {

@@ -366,6 +366,10 @@ if (entra.Configured)
 var implementationGapClient = builder.Services.AddHttpClient<IImplementationGapApiService, ImplementationGapApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
     implementationGapClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
+// Generated integration suites: draft-only generation over existing owners (contracts, tests, Test Data, journeys, M01 Kode 6/7), authorised runs.
+var integrationSuiteClient = builder.Services.AddHttpClient<IIntegrationSuiteApiService, IntegrationSuiteApiService>(client => client.BaseAddress = backendBase);
+if (entra.Configured)
+    integrationSuiteClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
 // Parquet Data Explorer: temporary read-only sessions of uploaded files, bounded rows, full-scan profile/validation, comparison, evidence.
 var parquetClient = builder.Services.AddHttpClient<IParquetApiService, ParquetApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)

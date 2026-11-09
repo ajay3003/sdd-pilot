@@ -22,6 +22,8 @@ public class AppDbContext : DbContext
     public DbSet<ParquetInspectionRecord> ParquetInspections => Set<ParquetInspectionRecord>();
     public DbSet<BlobObservationRecord> BlobObservations => Set<BlobObservationRecord>();
     public DbSet<ImplementationGapEvaluationRecord> ImplementationGapEvaluations => Set<ImplementationGapEvaluationRecord>();
+    public DbSet<IntegrationSuiteRecord> IntegrationSuites => Set<IntegrationSuiteRecord>();
+    public DbSet<IntegrationSuiteRunRecord> IntegrationSuiteRuns => Set<IntegrationSuiteRunRecord>();
     public DbSet<ApiContractRow> ApiContracts => Set<ApiContractRow>();
     public DbSet<ApiContractVersionRow> ApiContractVersions => Set<ApiContractVersionRow>();
     public DbSet<ContractTestRow> ContractTests => Set<ContractTestRow>();
@@ -1108,6 +1110,27 @@ public class AppDbContext : DbContext
             entity.Property(r => r.BlobName).HasMaxLength(400).IsRequired();
             entity.Property(r => r.DocumentJson).HasColumnType("text").IsRequired();
             entity.HasIndex(r => new { r.EnvironmentId, r.ObservedAt });
+        });
+        modelBuilder.Entity<IntegrationSuiteRecord>(entity =>
+        {
+            entity.ToTable("integration_suites");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.SuiteKey).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.ScopeId).HasMaxLength(100).IsRequired();
+            entity.Property(r => r.EnvironmentId).HasMaxLength(200);
+            entity.Property(r => r.Fingerprint).HasMaxLength(64).IsRequired();
+            entity.Property(r => r.DefinitionJson).HasColumnType("text").IsRequired();
+            entity.HasIndex(r => new { r.SuiteKey, r.Revision }).IsUnique();
+        });
+        modelBuilder.Entity<IntegrationSuiteRunRecord>(entity =>
+        {
+            entity.ToTable("integration_suite_runs");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.SuiteKey).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.Kind).HasMaxLength(50).IsRequired();
+            entity.Property(r => r.Initiator).HasMaxLength(120).IsRequired();
+            entity.Property(r => r.TestIdsJson).HasColumnType("text").IsRequired();
+            entity.HasIndex(r => new { r.SuiteKey, r.StartedAt });
         });
         modelBuilder.Entity<ImplementationGapEvaluationRecord>(entity =>
         {
