@@ -19,6 +19,7 @@ public class AppDbContext : DbContext
     public DbSet<ExecutionEvidenceAuditRow> ExecutionEvidenceAudit => Set<ExecutionEvidenceAuditRow>();
     public DbSet<ExecutionRetentionSettingsRow> ExecutionRetentionSettings => Set<ExecutionRetentionSettingsRow>();
     public DbSet<MessageObservationSetRecord> MessageObservationSets => Set<MessageObservationSetRecord>();
+    public DbSet<ParquetInspectionRecord> ParquetInspections => Set<ParquetInspectionRecord>();
     public DbSet<ApiContractRow> ApiContracts => Set<ApiContractRow>();
     public DbSet<ApiContractVersionRow> ApiContractVersions => Set<ApiContractVersionRow>();
     public DbSet<ContractTestRow> ContractTests => Set<ContractTestRow>();
@@ -1087,6 +1088,15 @@ public class AppDbContext : DbContext
             entity.Property(r => r.Protected).HasDefaultValue(false);
             entity.HasIndex(r => new { r.EnvironmentId, r.StartedAt });
             entity.HasIndex(r => r.StartedAt);
+        });
+        modelBuilder.Entity<ParquetInspectionRecord>(entity =>
+        {
+            entity.ToTable("parquet_inspections");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.EnvironmentId).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.FileName).HasMaxLength(300).IsRequired();
+            entity.Property(r => r.DocumentJson).HasColumnType("text").IsRequired();
+            entity.HasIndex(r => new { r.EnvironmentId, r.SavedAt });
         });
         modelBuilder.Entity<MessageObservationSetRecord>(entity =>
         {

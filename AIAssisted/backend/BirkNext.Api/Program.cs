@@ -615,6 +615,8 @@ builder.Services.AddScoped<BirkNext.Api.Services.ExecutionEvidence.ExecutionEvid
 builder.Services.AddScoped<BirkNext.Api.Services.ExecutionEvidence.ExecutionEvidenceManagement>();
 // Imported, sanitized message evidence (Service Bus peek exports, Wolverine envelope exports): files only, never a connection.
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.Messaging.MessageObservationService>();
+// Parquet data explorer: temporary read-only sessions of uploaded files + durable evidence without row values.
+builder.Services.AddScoped<BirkNext.Api.Services.Parquet.ParquetInspectionService>();
 // Authentication of execution runs: the attended Local HTTPS proxy credential or the environment's unattended API service credential (encrypted
 // at rest with Data Protection; tokens memory-only). The token client fetches only configured token endpoints, under the contract-source policy.
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.ExecutionEvidence.ApiServiceCredentialStore(

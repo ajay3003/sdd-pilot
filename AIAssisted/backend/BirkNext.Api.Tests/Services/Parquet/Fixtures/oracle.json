@@ -1,0 +1,149 @@
+{
+  "writer": "birknext-fixture-writer 1 (independent oracle; standard-library Python)",
+  "hashes": {
+    "children_v1.parquet": "92701dee62afffabff6991cfbec4d87f76de4e81664ebed8570ed608cb0c9f82",
+    "children_v2.parquet": "5a5e4f02f9bb22638adf8c43a6014e708ac2c494c7834d0c72d2cb66d7803c3b",
+    "nested_schema.parquet": "859f137404513d2c3e96d20ca23834db5b69c4c5673fcc55773bc2a0d563a952",
+    "zstd_declared.parquet": "24f411a714ce7284fe15fab34ae9f38ce2ca5ceb712d46bd60f8956ad204e3e8",
+    "bad_magic.parquet": "2b62746016ad7f19a533cfae69073e9e43f2e77415f3cda4b4f1d2fa498f57ae",
+    "truncated.parquet": "d7349b3f31cc5531e6b0bc273ae2cb90bd12839c2df7739004dba89c858a928e",
+    "bad_footer_length.parquet": "7c0e01620fd54a397345cc7d149b461ae360206eb9ce7323f90398c1ef34952d",
+    "empty.parquet": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "children_v1": {
+    "rows": 1000,
+    "rowGroups": [
+      400,
+      400,
+      200
+    ],
+    "codec": "SNAPPY",
+    "columns": [
+      "id",
+      "name",
+      "age",
+      "status",
+      "birth_date",
+      "registered_at",
+      "amount",
+      "score",
+      "flag"
+    ],
+    "nullCounts": {
+      "id": 0,
+      "name": 58,
+      "age": 43,
+      "status": 34,
+      "birth_date": 0,
+      "registered_at": 0,
+      "amount": 0,
+      "score": 32,
+      "flag": 0
+    },
+    "statusValues": [
+      "ACTIVE",
+      "INACTIVE",
+      "MOVED"
+    ],
+    "statusCounts": {
+      "ACTIVE": 320,
+      "INACTIVE": 322,
+      "MOVED": 324
+    },
+    "ageMin": 0,
+    "ageMax": 18,
+    "ageOver15": 149,
+    "row1": {
+      "id": 1,
+      "name": "Synthetic child 1",
+      "age": 3,
+      "status": "ACTIVE",
+      "birth_date": 16132,
+      "registered_at": 1700000060000000,
+      "amount": 256787,
+      "score": 22.321,
+      "flag": false
+    },
+    "row401": {
+      "id": 401,
+      "name": "Synthetic child 401",
+      "age": 4,
+      "status": "ACTIVE",
+      "birth_date": 19744,
+      "registered_at": 1700024060000000,
+      "amount": 813894,
+      "score": 94.361,
+      "flag": false
+    },
+    "row1000": {
+      "id": 1000,
+      "name": "Synthetic child 1000",
+      "age": 17,
+      "status": "MOVED",
+      "birth_date": 15659,
+      "registered_at": 1700060000000000,
+      "amount": 210647,
+      "score": 20.971,
+      "flag": false
+    },
+    "amountRow1": "2567.87",
+    "birthDateRow1": "2014-03-03",
+    "registeredAtRow1": "2023-11-14T22:14:20Z",
+    "distinctIds": 1000
+  },
+  "children_v2": {
+    "rows": 1005,
+    "rowGroups": [
+      600,
+      405
+    ],
+    "codec": "GZIP",
+    "pageVersion": 2,
+    "columns": [
+      "id",
+      "name",
+      "age",
+      "status",
+      "birth_date",
+      "registered_at",
+      "amount",
+      "score",
+      "school"
+    ]
+  },
+  "diff_v1_v2_by_id": {
+    "schemaAdded": [
+      "school"
+    ],
+    "schemaRemoved": [
+      "flag"
+    ],
+    "added": 15,
+    "removed": 10,
+    "changed": 19,
+    "unchanged": 971,
+    "changedIdsFirst5": [
+      1,
+      51,
+      101,
+      151,
+      201
+    ]
+  },
+  "nested_schema": {
+    "groups": [
+      "address"
+    ],
+    "readableColumns": [
+      "id",
+      "name"
+    ]
+  },
+  "refusals": {
+    "zstd_declared.parquet": "ZSTD",
+    "bad_magic.parquet": "magic",
+    "truncated.parquet": "footer",
+    "bad_footer_length.parquet": "footer",
+    "empty.parquet": "empty"
+  }
+}

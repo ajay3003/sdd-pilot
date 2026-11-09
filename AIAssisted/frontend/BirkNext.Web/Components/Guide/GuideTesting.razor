@@ -168,6 +168,12 @@
     <p>Everything is redacted before it is stored (authentication headers, cookies, API keys, sensitive fields, token patterns and 11-digit numbers); a body may be Truncated or Metadata only, and is never called the original. A call without assertions is <strong>Not assessed</strong>; HTTP 200 with GraphQL errors is not a success by itself, and an expected 404 can pass. Blocked calls were refused before sending and have no request.</p>
 </section>
 
+<section id="parquet-viewer" class="ug-section ug-topic" data-topic="parquet-viewer" aria-labelledby="parquet-viewer-title">
+    <h2 id="parquet-viewer-title" class="ug-section-title" tabindex="-1">Parquet Data Explorer</h2>
+    <p class="ug-lead"><a href="/parquet-viewer">Parquet Data Explorer</a> opens a local .parquet file (up to 64 MB) read-only: Overview (file metadata), Schema (physical and logical types, nested groups), Data (bounded pages and typed filters), Profile, Validation, Compare and Evidence. <strong>Your file is never changed</strong>; BirkNext reads a temporary copy that expires after two hours.</p>
+    <p>Overview statistics are the file's own metadata. A filter applies to the shown page unless you choose to scan the whole file, and the page says which. Profile and rule validation are explicit full scans with exact counts; failing rules list row numbers, never values. Compare needs a key column for record differences; without one it compares schema and row counts only. Repeated (list/map) columns, ZSTD/LZ4/BROTLI codecs and DELTA encodings are shown but not read. Saved evidence keeps metadata, the schema fingerprint, rule results and comparison counts — never row values — and can name the test run it belongs to.</p>
+</section>
+
 <section id="pipeline" class="ug-section ug-topic" data-topic="pipeline" aria-labelledby="pipeline-title">
     <h2 id="pipeline-title" class="ug-section-title" tabindex="-1">Pipeline Review</h2>
     <p class="ug-lead"><a href="/pipeline-review">Pipeline Review</a> interprets CI/CD definitions captured by Source Analysis — Overview, Flow, Gaps, Tests, Environments, Dependencies and Changes. A detected definition does not mean the pipeline executed, passed or deployed.</p>

@@ -358,6 +358,10 @@ if (entra.Configured)
 var messageObservationsClient = builder.Services.AddHttpClient<IMessageObservationApiService, MessageObservationApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
     messageObservationsClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
+// Parquet Data Explorer: temporary read-only sessions of uploaded files, bounded rows, full-scan profile/validation, comparison, evidence.
+var parquetClient = builder.Services.AddHttpClient<IParquetApiService, ParquetApiService>(client => client.BaseAddress = backendBase);
+if (entra.Configured)
+    parquetClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
 // Contract-Driven Testing: contract registry, contract tests and their runs (which go through Execution Evidence on the backend).
 var contractTestingClient = builder.Services.AddHttpClient<IContractTestingApiService, ContractTestingApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)

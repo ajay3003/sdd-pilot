@@ -1698,6 +1698,36 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("observed_operations", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.ParquetInspectionRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DocumentJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTimeOffset>("SavedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvironmentId", "SavedAt");
+
+                    b.ToTable("parquet_inspections", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.PerformanceBaselineRecord", b =>
                 {
                     b.Property<string>("Id")

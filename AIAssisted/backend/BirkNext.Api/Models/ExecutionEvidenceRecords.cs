@@ -45,6 +45,16 @@ public sealed class MessageObservationSetRecord
     public string DocumentJson { get; set; } = "";
 }
 
+/// <summary>Saved Parquet inspection evidence: metadata, fingerprints, rule results and comparison counts — never row values.</summary>
+public sealed class ParquetInspectionRecord
+{
+    public Guid Id { get; init; }
+    public string EnvironmentId { get; init; } = "";
+    public string FileName { get; set; } = "";
+    public DateTimeOffset SavedAt { get; init; }
+    public string DocumentJson { get; set; } = "";
+}
+
 /// <summary>The one retention setting of execution evidence (row id 1). Absent = Disabled.</summary>
 public sealed class ExecutionRetentionSettingsRow
 {
