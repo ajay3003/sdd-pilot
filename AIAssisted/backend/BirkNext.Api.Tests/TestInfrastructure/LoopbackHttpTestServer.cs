@@ -39,7 +39,7 @@ public sealed class LoopbackHttpTestServer : IAsyncDisposable
 
     /// <summary>
     /// Binds a free port and starts accepting. Binding is the check (no "find a free port, bind later" race): a port in use
-    /// fails <see cref="HttpListener.Start"/> and the next candidate is tried. Accepting starts synchronously — no warm-up delay.
+    /// fails <see cref="HttpListener.Start"/> and the next candidate is tried. Accepting starts at once on the thread pool — no warm-up delay.
     /// </summary>
     public void Start()
     {
@@ -63,7 +63,10 @@ public sealed class LoopbackHttpTestServer : IAsyncDisposable
             }
             _listener = listener;
             Port = port;
-            _loop = AcceptAsync(listener);
+            // On the thread pool, never on the caller's synchronization context: the server stands in for a remote system, so it must keep
+            // answering while the test framework's workers are blocked (xUnit runs async continuations on MaxParallelThreads workers, and a
+            // synchronous WebApplicationFactory host start holds one for seconds). The listener is already bound, so nothing is missed.
+            _loop = Task.Run(() => AcceptAsync(listener));
             return;
         }
         throw new InvalidOperationException("No free loopback port could be bound for the test server.", last);

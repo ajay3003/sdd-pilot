@@ -6,10 +6,16 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
+using BirkNext.Api.Data;
+using BirkNext.Api.Services.ApiQuality;
 using BirkNext.Api.Services.AuthenticatedReview;
+using BirkNext.Api.Services.ExecutionEvidence;
 using BirkNext.Api.Services.LocalHttpsProxy;
 using BirkNext.Api.Services.ManagedEdge;
+using BirkNext.ExecutionEvidence;
 using BirkNext.LocalHttpsProxy;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Moq;
 
@@ -254,6 +260,88 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
         Assert.Contains(_log.Messages, m => m.Contains("Authenticated API context established"));
         var statusProperties = typeof(LocalHttpsProxyStatus).GetProperties().Select(p => p.Name);
         Assert.DoesNotContain(statusProperties, p => p.Contains("Token", StringComparison.OrdinalIgnoreCase) || p.Contains("Bearer", StringComparison.OrdinalIgnoreCase) || p.Contains("Cookie", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task ACredentialObservedByTheProxyAuthenticatesEveryCallOfARunAndTheTargetReceivedExactlyWhatTheEvidenceRecords()
+    {
+        // Joins what the other tests cover separately (proxy → store here, store → run in ExecutionAuthenticationLifecycleTests): the credential a
+        // run sends is the one the real proxy observed on a successful approved request, never one a test placed in the store. The target's own
+        // record of what arrived is the oracle (execution-lifecycle acceptance LC-21, LC-23, LC-24, LC-29, reconciled there with a browser sign-in).
+        _authority.Install();
+        var port = await StartAsync(Scope());
+        var token = Jwt(_now.AddHours(1));
+        Assert.StartsWith("HTTP/1.1 200", await ProxyClient.InterceptedRequestAsync(port, ApiHost, $"GET /api/me HTTP/1.1\r\nHost: {ApiHost}\r\nAuthorization: Bearer {token}\r\n\r\n"));
+        await WaitForAsync(() => _store.IsAuthenticatedApiContextAvailable("dev", Fp));
+        var signInRequests = _upstream.AuthorizationHeaders.Count;
+
+        await using var runner = Runner();
+        var detail = await RunToEndAsync(runner, AttendedRun(12));
+
+        Assert.Equal(ExecutionState.Passed, detail.Run.State);
+        var received = _upstream.AuthorizationHeaders.Skip(signInRequests).ToList();
+        Assert.Equal(12, received.Count);
+        Assert.All(received, header => Assert.Equal("Bearer " + token, header));
+        Assert.Equal(received.Count, detail.Run.WireTransmissions);
+        Assert.Equal(["attended-session:dev#g1"], detail.Run.AuthenticationSessions);
+        Assert.All(detail.Calls, call => Assert.Equal(CallAuthenticationOutcome.Authenticated, call.Authentication));
+        var evidence = JsonSerializer.Serialize(detail, ExecutionEvidenceStore.Json);
+        Assert.DoesNotContain(token, evidence);
+        Assert.DoesNotContain("eyJ", evidence);
+
+        // Ending the proxy session wipes the observed credential: the next run is refused before anything is sent.
+        await _service.StopAsync(Session());
+        var refused = await runner.GetRequiredService<ExecutionRunService>().StartAsync(AttendedRun(3), "test", default);
+        Assert.Equal(ExecutionState.Blocked, refused.State);
+        Assert.Equal(signInRequests + 12, _upstream.AuthorizationHeaders.Count);
+    }
+
+    /// <summary>The production run service and capture pipeline over the same store; its connections go to the fake TLS origin of this fixture.</summary>
+    private ServiceProvider Runner()
+    {
+        var services = new ServiceCollection();
+        var db = $"proxy-run-{Guid.NewGuid():N}";
+        services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(db));
+        services.AddLogging();
+        services.AddScoped<ExecutionEvidenceStore>();
+        services.AddTransient<EvidenceCaptureHandler>();
+        services.AddHttpClient(ExecutionRunService.ClientName).ConfigurePrimaryHttpMessageHandler(() =>
+        {
+            var handler = ExecutionRunService.CreatePrimaryHandler();
+            handler.UseProxy = false;
+            handler.ConnectCallback = async (_, ct) =>
+            {
+                var tcp = new TcpClient();
+                await tcp.ConnectAsync(IPAddress.Loopback, _upstream.TlsPort, ct);
+                return tcp.GetStream();
+            };
+            handler.SslOptions.RemoteCertificateValidationCallback = (_, certificate, _, _) => certificate?.Subject == $"CN={ApiHost}";
+            return handler;
+        }).AddHttpMessageHandler<EvidenceCaptureHandler>();
+        services.AddSingleton<IApiEnvironmentSafetyPolicy>(ApiEnvironmentSafetyPolicy.Default);
+        services.AddSingleton(_store);
+        services.AddSingleton(sp => new ExecutionCredentialResolver(_store, null, sp.GetRequiredService<IHttpClientFactory>()));
+        services.AddSingleton<ExecutionRunService>();
+        return services.BuildServiceProvider();
+    }
+
+    private ExecutionRunRequest AttendedRun(int calls) => new()
+    {
+        Name = "Proxy-observed attended session", EnvironmentId = "dev", ProfileId = "dev", ContextFingerprint = Fp, TargetUrl = $"https://{ApiHost}/",
+        EnvironmentType = "Development", Authentication = ExecutionAuthenticationKind.AttendedSession,
+        Calls = [.. Enumerable.Range(1, calls).Select(i => new ExecutionCallDefinition
+        {
+            Name = $"call {i}", Method = "GET", Path = $"/api/children/{i}", Assertions = [new("status", AssertionKind.StatusCode, AssertionOperator.Equals, null, "200")],
+        })],
+    };
+
+    private static async Task<ExecutionRunDetail> RunToEndAsync(ServiceProvider runner, ExecutionRunRequest request)
+    {
+        var start = await runner.GetRequiredService<ExecutionRunService>().StartAsync(request, "test", default);
+        Assert.True(start.RunId.HasValue, string.Join(" ", start.Blockers));
+        for (var i = 0; i < 600 && ExecutionRunService.IsRunning(start.RunId!.Value); i++) await Task.Delay(50);
+        using var scope = runner.CreateScope();
+        return (await scope.ServiceProvider.GetRequiredService<ExecutionEvidenceStore>().GetAsync(start.RunId!.Value, new(Take: 200), default))!;
     }
 
     [Fact]
@@ -1290,8 +1378,10 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
             var upstream = new FakeUpstream();
             upstream._tls.Start();
             upstream._plain.Start();
-            _ = upstream.AcceptTlsAsync();
-            _ = upstream.AcceptPlainAsync();
+            // On the thread pool, not the caller's synchronization context: a simulated remote must answer while xUnit's workers are blocked
+            // (see LoopbackHttpTestServer).
+            _ = Task.Run(upstream.AcceptTlsAsync);
+            _ = Task.Run(upstream.AcceptPlainAsync);
             return Task.FromResult(upstream);
         }
 

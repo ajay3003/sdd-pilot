@@ -134,6 +134,66 @@ public sealed class LoopbackHttpTestServerTests
     }
 
     [Fact]
+    public async Task KeepsServing_WhileEveryThreadOfTheContextThatStartedItIsBlocked()
+    {
+        // Regression (partition-6 timeouts, docs/audits/birknext-backend-test-stall-root-cause-2026-11-09.md): the server was started on an xUnit
+        // worker and its accept loop continued on xUnit's limited-concurrency synchronization context. While every worker was blocked in a
+        // synchronous WebApplicationFactory host start, no request was accepted (seen: 51 s), so a client under test timed out against a
+        // server that never answered. A server that stands in for a remote system must not depend on the test framework's threads.
+        using var context = new SingleThreadContext();
+        var started = new TaskCompletionSource<LoopbackHttpTestServer>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var release = new ManualResetEventSlim();
+        context.Post(_ =>
+        {
+            var s = new LoopbackHttpTestServer(Ok);
+            s.Start();
+            started.SetResult(s);
+            release.Wait(); // the context's only thread is now blocked, as an xUnit worker is inside WebApplicationFactory.EnsureServer()
+        }, null);
+        var server = await started.Task.WaitAsync(Bound);
+        try
+        {
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            Assert.Equal("ok", await client.GetStringAsync(server.Url("/")));
+        }
+        finally
+        {
+            release.Set();
+            await server.StopAsync().WaitAsync(Bound);
+        }
+    }
+
+    /// <summary>A synchronization context with exactly one thread, like xUnit's MaxConcurrencySyncContext with every other worker busy.</summary>
+    private sealed class SingleThreadContext : SynchronizationContext, IDisposable
+    {
+        private readonly System.Collections.Concurrent.BlockingCollection<(SendOrPostCallback Callback, object? State)> _work = new();
+        private readonly Thread _thread;
+
+        public SingleThreadContext()
+        {
+            _thread = new Thread(() =>
+            {
+                SetSynchronizationContext(this);
+                foreach (var (callback, state) in _work.GetConsumingEnumerable()) callback(state);
+            }) { IsBackground = true, Name = "single-thread-context" };
+            _thread.Start();
+        }
+
+        public override void Post(SendOrPostCallback d, object? state)
+        {
+            // After Dispose nothing runs here any more; a late post is dropped instead of throwing on a foreign thread.
+            try { _work.Add((d, state)); }
+            catch (InvalidOperationException) when (_work.IsAddingCompleted) { }
+        }
+
+        public void Dispose()
+        {
+            _work.CompleteAdding();
+            _thread.Join(Bound);
+        }
+    }
+
+    [Fact]
     public void Start_Twice_IsRejected()
     {
         var server = new LoopbackHttpTestServer(Ok);

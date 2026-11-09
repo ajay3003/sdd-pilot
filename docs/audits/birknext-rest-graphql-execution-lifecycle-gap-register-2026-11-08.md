@@ -101,9 +101,18 @@ defect** — under the stall the product behaves correctly (calls Blocked/TimedO
 separate task: run timer-sensitive loopback tests in their own non-parallel collection or partition, or find the stalling unit test with a
 diagnostic dump during the window.
 
+### Update 2026-11-09 — root cause found and fixed
+
+The record above is kept as it was. Root cause (stack evidence): the shared loopback test server ran its accept loop on xUnit's limited-concurrency
+synchronization context; synchronous `WebApplicationFactory` host starts blocked every worker of it (up to 51.9 s), so the simulated target
+could not answer and the client's 15 s timeout fired. Fixed in the test infrastructure (servers accept on the thread pool) with a regression
+test that failed before the fix. Full backend suite after the fix: 6192 passed, 0 failed, 19 skipped. See
+`docs/audits/birknext-backend-test-stall-root-cause-2026-11-09.md` (also records one unrelated Podman Testcontainers port-bind flake).
+
 ## Open items
 
-1. Partition-6 timeouts (above) — investigation recorded, not fixed.
+1. Partition-6 timeouts (above) — **resolved 2026-11-09** (root cause and fix in the report named above); a separate Podman Testcontainers
+   port-allocation flake was seen once in four reruns and stays open.
 2. YAML / Swagger 2 structural parsing (from phase 2) — open.
 3. AQR stored-contract selection in the browser (from phase 2) — not run.
 4. Expected-audience check, Basic authentication, safe concurrency, chain × rows, XML extraction, scheduled retention, per-project retention/quotas

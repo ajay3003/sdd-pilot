@@ -111,7 +111,8 @@ public sealed class RealAxeIntegrationTests : IAsyncLifetime
             _listener.Start();
             Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
             _cts = new CancellationTokenSource();
-            _loop = AcceptAsync(_cts.Token);
+            // On the thread pool: the page server must answer while xUnit's workers are blocked (see LoopbackHttpTestServer).
+            _loop = Task.Run(() => AcceptAsync(_cts.Token));
             return Task.CompletedTask;
         }
 

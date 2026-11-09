@@ -89,7 +89,8 @@ public sealed class RealLighthouseIntegrationTests : IAsyncLifetime
         public Task StartAsync()
         {
             _listener = new(IPAddress.Loopback, 0); _listener.Start();
-            Port = ((IPEndPoint)_listener.LocalEndpoint).Port; _cts = new(); _loop = AcceptAsync(_cts.Token);
+            Port = ((IPEndPoint)_listener.LocalEndpoint).Port; _cts = new();
+            _loop = Task.Run(() => AcceptAsync(_cts.Token)); // thread pool: answers while xUnit's workers are blocked (see LoopbackHttpTestServer)
             return Task.CompletedTask;
         }
         private async Task AcceptAsync(CancellationToken ct)
