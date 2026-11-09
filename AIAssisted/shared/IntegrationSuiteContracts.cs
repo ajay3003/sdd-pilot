@@ -203,6 +203,8 @@ public sealed record SuiteSecurityScenario
     public SuiteTriage Triage { get; init; }
     public List<string> Prerequisites { get; init; } = [];
     public string? OpenQuestion { get; init; }
+    /// <summary>The stable review key whose recorded decision answers <see cref="OpenQuestion"/> (e.g. <c>security:intake-rule</c>).</summary>
+    public string? ReviewKey { get; init; }
     public List<SuiteSourceRef> Evidence { get; init; } = [];
     public List<string> References { get; init; } = [];
 }

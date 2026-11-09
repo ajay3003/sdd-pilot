@@ -199,6 +199,8 @@ public sealed class IntegrationSuiteTests : IAsyncLifetime
         next.Revision.Should().Be(2);
         next.Drift.Should().Contain(d => d.Contains("v1 → v2") && d.Contains("stay on v1"), string.Join(" | ", next.Drift.Concat(first.Suite.Contracts.Concat(next.Contracts).Select(c => $"{c.SourceFile} {c.ContractKey} v{c.ContractVersion} {c.ImportOutcome}")))).And.Contain(d => d.StartsWith("Source snapshot changed", StringComparison.Ordinal));
         next.Tests.Where(t => t.Operation == "GET /health").Should().OnlyContain(t => t.ContractRef.EndsWith("@v1", StringComparison.Ordinal), "an approved test is never silently rebound to v2");
+        next.Unsupported.Should().NotContain(u => u.Reason.Contains("already exists"), "regenerating an existing test is not an unsupported operation");
+        next.Tests.Select(t => $"{t.ContractRef}|{t.Operation}|{t.Kind}|{t.Variant}|{t.TestId:D}").Should().BeInAscendingOrder(StringComparer.Ordinal, "a stable order keeps the fingerprint stable");
         (await With(s => s.GetAsync(first.Suite.Id, default)))!.Revision.Should().Be(1, "history is kept");
     }
 
@@ -273,6 +275,14 @@ public sealed class IntegrationSuiteTests : IAsyncLifetime
         suite.Readiness.Single(d => d.Name == "Correlation").State.Should().Be(SuiteItemReadiness.Blocked);
         suite.Security.Should().Contain(s => s.ScenarioId == "K67-05" && s.Triage == SuiteTriage.NeedsDomainDecision && s.OpenQuestion!.Contains("aggregate"));
         suite.Security.Should().Contain(s => s.ScenarioId == "K67-03" && s.Triage == SuiteTriage.NotSupported);
+
+        // The review item of a Kode 6/7 question has the stable key the composer reads the decision from (never a per-process hash), so
+        // answering it resolves the question on the next generation.
+        var question = suite.Review.Single(r => r.Key == "security:bufdata-aggregate");
+        question.Question.Should().Contain("aggregate");
+        (await With(s => s.ReviewAsync(suite.Id, new(question.Key, "Acceptable", "Domain owner: excluded entirely"), "Tester", default))).Error.Should().BeNull();
+        var answered = (await Generate(new() { SnapshotId = snap, ScopeId = IntegrationSuiteComposer.SkoleNaervaerScope })).Suite!;
+        answered.Security.Single(s => s.ScenarioId == "K67-05").Should().Match<SuiteSecurityScenario>(s => s.OpenQuestion == null && s.Basis == SuiteScenarioBasis.ReviewedBusinessRule && s.Triage != SuiteTriage.NeedsDomainDecision);
     }
 
     [Fact]
@@ -318,6 +328,9 @@ public sealed class IntegrationSuiteTests : IAsyncLifetime
         error.Should().BeNull();
         decision!.Current.Should().BeTrue();
         (await With(s => s.GetAsync(suite.Id, default)))!.Review.Single(r => r.Key == item.Key).Should().Match<SuiteReviewItem>(r => r.Decision == "Acceptable" && r.DecidedBy == "Tester");
+        var again = await Generate(Api(snap));
+        again.Reused.Should().BeTrue("a review decision is an overlay: regenerating the same evidence afterwards reuses the revision");
+        again.Suite!.Review.Single(r => r.Key == item.Key).Decision.Should().Be("Acceptable");
         (await Generate(Api(snap) with { IncludeNegatives = false })).Suite!.Review.Should().NotContain(r => r.Decision == "Acceptable", "other option sets are other suites");
         (await With(s => s.ReviewAsync(suite.Id, new("nope", "Acceptable", null), "Tester", default))).Error.Should().Contain("not found");
     }

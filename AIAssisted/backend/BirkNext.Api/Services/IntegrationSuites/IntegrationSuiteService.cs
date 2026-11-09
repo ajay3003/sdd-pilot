@@ -107,7 +107,9 @@ public sealed class IntegrationSuiteService(
             });
             if (import.Key is not { } key || import.Version is not { } version) { limitations.Add($"{source.File}: {import.Message}"); continue; }
             var (_, skipped) = await contractTests.GenerateAsync(key, version, null, ct);
-            unsupported.AddRange(skipped.Select(s => new SuiteUnsupportedOperation(ContractIdentity.ContractRef(key, version), s.Split(':')[0], s)));
+            // Only operations Contract Testing cannot test are unsupported; "already exists" is the idempotent regeneration of an existing test.
+            unsupported.AddRange(skipped.Where(s => !s.EndsWith(": already exists.", StringComparison.Ordinal))
+                .Select(s => new SuiteUnsupportedOperation(ContractIdentity.ContractRef(key, version), s.Split(':')[0], s)));
             if (request.IncludeNegatives)
                 foreach (var op in source.Operations.Where(o => o.Kind is not "subscription"))
                 {
@@ -125,6 +127,10 @@ public sealed class IntegrationSuiteService(
             }
             config.AddRange(Configuration(source, key, version));
         }
+
+        // Stable order (the registry lists tests in storage order, which differs between runs): the same evidence must give the same suite.
+        testRefs.Sort((a, b) => string.CompareOrdinal($"{a.ContractRef}|{a.Operation}|{a.Kind}|{a.Variant}|{a.TestId:D}", $"{b.ContractRef}|{b.Operation}|{b.Kind}|{b.Variant}|{b.TestId:D}"));
+        testData.Sort((a, b) => string.CompareOrdinal(a.Role, b.Role));
 
         // 2. Journey-pack Test Data requirements resolved through the shared catalog (never generated identities).
         var pack = scope.JourneyPackId is { } packId ? packs.Find(packId) : null;
@@ -158,9 +164,12 @@ public sealed class IntegrationSuiteService(
         if (request.IncludeSecurity && scope.IncludesSecurityClassification)
         {
             SecurityClassificationConsumerAssessment? consumer = null;
-            if (security is not null && request.EnvironmentId is { Length: > 0 } env)
-                consumer = (await security.AssessAsync(env, ct)).FirstOrDefault(c => c.ConsumerId == scope.JourneyPackId);
-            else limitations.Add("Kode 6/7: no Target Environment selected, so the shared Security Classification review state is not read.");
+            // The consumer's requirements are product-defined: they exist without an environment (state Not assessed until an M01 review runs);
+            // a Target Environment adds that environment's review runs and approved context.
+            if (security is not null)
+                consumer = (await security.AssessAsync(request.EnvironmentId ?? "", ct)).FirstOrDefault(c => c.ConsumerId == scope.JourneyPackId);
+            if (request.EnvironmentId is not { Length: > 0 })
+                limitations.Add("Kode 6/7: no Target Environment selected — M01 requirements are listed with their environment-independent state; review runs of an environment are not read.");
             bool Level(int n) => catalog.Resolve([new TestDataRequirement { Role = $"level-{n}", Kind = TestDataKind.EntityReference, Capabilities = [$"classification-level-{n}"] }]).Satisfied;
             var stageReady = stages.ToDictionary(s => s.StageId, s => s);
             securityScenarios = IntegrationSuiteComposer.Security(new IntegrationSuiteComposer.SecurityInputs(consumer, Level(3), Level(2), Level(1),
@@ -189,7 +198,8 @@ public sealed class IntegrationSuiteService(
             body.Snapshot.SnapshotId, Contracts = contractRefs.Select(c => (c.SourceContractId, c.ContractKey, c.ContractVersion)),
             Tests = testRefs.Select(x => (x.TestId, x.Revision, x.Readiness, x.TestDataBinding)), Data = testData.Select(d => (d.Role, d.Asset, d.Approved)),
             Xml = xml.Select(x => (x.File, x.DependenciesResolved)), Topology = mappings.Select(m => (m.Key, m.Class)), Stages = stages.Select(s => (s.StageId, s.Coverage, s.Readiness)),
-            Security = securityScenarios.Select(s => (s.ScenarioId, s.Readiness, s.ExistingState)), Config = config.Select(c => (c.Key, c.Value)), Review = review.Select(r => (r.Key, r.Decision)), status,
+            Security = securityScenarios.Select(s => (s.ScenarioId, s.Readiness, s.ExistingState)), Config = config.Select(c => (c.Key, c.Value)), // Review decisions are overlays read live (ReadAsync), so they and the status they drive are not part of the definition.
+            Review = review.Select(r => r.Key),
         });
         var latest = await db.IntegrationSuites.AsNoTracking().Where(s => s.SuiteKey == suiteKey).OrderByDescending(s => s.Revision).FirstOrDefaultAsync(ct);
         if (latest is not null && latest.Fingerprint == fingerprint)
@@ -483,8 +493,9 @@ public sealed class IntegrationSuiteService(
             items.Add(new() { Key = $"xsd:{x.File}", Area = "Schema", Question = $"Provide the missing schema dependencies of {x.File}", Why = string.Join("; ", x.Unresolved) });
         foreach (var m in mappings.Where(m => m.RequiresReview))
             items.Add(new() { Key = m.Key, Area = "Topology", Question = $"Confirm {m.From} → {m.To} ({m.Relationship}, {m.Class})", Why = "Uncertain routes never enable execution before approval.", Evidence = m.Evidence });
-        foreach (var s in security.Where(s => s.OpenQuestion is not null).GroupBy(s => s.OpenQuestion))
-            items.Add(new() { Key = $"security:{(s.Key ?? "").GetHashCode(StringComparison.Ordinal):x8}", Area = "Security (Kode 6/7)", Question = s.Key!, Why = $"Needed by {string.Join(", ", s.Select(x => x.ScenarioId))}; no approved rule is recorded." });
+        // Keyed by the scenario's stable review key: the same key the composer reads the decision from, so deciding the item answers the question.
+        foreach (var s in security.Where(s => s.OpenQuestion is not null && s.ReviewKey is not null).GroupBy(s => s.ReviewKey!))
+            items.Add(new() { Key = s.Key, Area = "Security (Kode 6/7)", Question = s.First().OpenQuestion!, Why = $"Needed by {string.Join(", ", s.Select(x => x.ScenarioId))}; no approved rule is recorded." });
         _ = contracts;
         return items;
     }
@@ -567,6 +578,8 @@ public sealed class IntegrationSuiteService(
                 string.Join(", ", calls.GroupBy(c => c.State).OrderBy(g => g.Key).Select(g => $"{g.Count()} {g.Key.ToString().ToLowerInvariant()}")) + $" of {calls.Count}",
                 JsonSerializer.Deserialize<List<Guid>>(link.TestIdsJson, Json) ?? []));
         }
+        // Calls still planned, queued or running have no result yet: they never count as executed.
+        callStates.RemoveAll(c => c.State is ExecutionState.Planned or ExecutionState.Queued or ExecutionState.Running);
         var outcome = callStates.Count == 0 ? SuiteExecutionOutcome.NotExecuted
             : callStates.Any(c => c.State is ExecutionState.Failed or ExecutionState.Error) ? SuiteExecutionOutcome.Failed
             // VERIFIED only when every stage is fully covered and every executed call passed with an assertion; a partial chain is at most partial.
@@ -575,7 +588,12 @@ public sealed class IntegrationSuiteService(
                 ? SuiteExecutionOutcome.Verified
             : callStates.Any(c => c.State == ExecutionState.Passed && c.Assertions > 0) ? SuiteExecutionOutcome.PartiallyVerified
             : SuiteExecutionOutcome.Executed;
-        return suite with { Review = review, Runs = runs, Outcome = outcome };
+        // Decisions recorded after generation are overlaid here, so the review dimension and the status follow them without a new revision.
+        var open = review.Count(r => r.Decision is null);
+        var readiness = suite.Readiness.Select(d => d.Name == "Review"
+            ? d with { State = open == 0 ? SuiteItemReadiness.Ready : SuiteItemReadiness.NeedsReview, Detail = $"{open} open review item(s)" } : d).ToList();
+        var (status, reason) = IntegrationSuiteComposer.Status(readiness, review, suite.Stages);
+        return suite with { Review = review, Runs = runs, Outcome = outcome, Readiness = readiness, Status = status, StatusReason = reason };
     }
 
     private async Task<Dictionary<string, (string Decision, string By, DateTimeOffset At)>> DecisionsAsync(string suiteKey, CancellationToken ct) =>

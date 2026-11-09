@@ -6,14 +6,15 @@
 .its-card h2 { font-size: 1.125rem; margin: 0; }
 .its-card h3 { font-size: 1rem; margin: .5rem 0 0; }
 .its-form { display: flex; flex-wrap: wrap; gap: .75rem 1rem; align-items: end; }
-.its-form label { display: grid; gap: .25rem; min-width: 0; max-width: 100%; }
-.its-form select, .its-form input:not([type=checkbox]) { max-width: 100%; }
+.its-form label { display: grid; gap: .25rem; min-width: 0; max-width: 100%; flex: 1 1 16rem; }
+.its-form .its-check { flex: 0 1 auto; }
+.its-form select, .its-form input:not([type=checkbox]) { width: 100%; max-width: 100%; min-width: 0; }
 .its-check { display: flex !important; gap: .375rem; align-items: center; }
 .its-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .5rem 1rem; margin: 0; }
 .its-facts dt { font-size: .75rem; color: var(--clr-text-muted, #4b5563); }
 .its-facts dd { margin: 0; overflow-wrap: anywhere; }
 .its-badges { display: flex; flex-wrap: wrap; gap: .5rem; }
-.its-badge { display: inline-block; border: 1px solid var(--clr-border, #d1d5db); border-radius: 999px; padding: 0 .5rem; font-size: .8125rem; white-space: nowrap; }
+.its-badge { display: inline-block; border: 1px solid var(--clr-border, #d1d5db); border-radius: 999px; padding: 0 .5rem; font-size: .8125rem; max-width: 100%; overflow-wrap: anywhere; }
 .its-badge[data-state="Ready"], .its-badge[data-status="ReadyToExecute"] { border-color: #15803d; background: #f0fdf4; color: #14532d; }
 .its-badge[data-state="Blocked"], .its-badge[data-status="Blocked"] { border-color: #b91c1c; background: #fef2f2; color: #7f1d1d; }
 .its-badge[data-state="NeedsReview"], .its-badge[data-status="NeedsReview"] { border-color: #b45309; background: #fffbeb; color: #78350f; }
@@ -37,3 +38,5 @@
 .its-prereq { border-left: 3px solid #b45309; padding-left: .5rem; font-size: .875rem; }
 .its-actions { display: flex; flex-wrap: wrap; gap: .375rem; margin-top: .25rem; }
 @media (max-width: 40rem) { .its-dimensions li { grid-template-columns: 1fr; } }
+.its-items, .its-items > li, .its-stages > li { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.its-items strong, .its-items .its-muted, .its-items a { overflow-wrap: anywhere; word-break: break-word; }

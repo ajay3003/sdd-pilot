@@ -172,7 +172,7 @@ public static partial class IntegrationSuiteComposer
             return new SuiteSecurityScenario
             {
                 ScenarioId = id, Title = title, Basis = decided is "Acceptable" ? SuiteScenarioBasis.ReviewedBusinessRule : SuiteScenarioBasis.Candidate, Levels = [.. levels],
-                Readiness = readiness, Triage = triage, Prerequisites = prereq, OpenQuestion = question, Reuses = reuses, Evidence = [.. i.SourceRuleEvidence], References = [.. refs ?? []],
+                Readiness = readiness, Triage = triage, Prerequisites = prereq, OpenQuestion = question, ReviewKey = reviewKey, Reuses = reuses, Evidence = [.. i.SourceRuleEvidence], References = [.. refs ?? []],
             };
         }
 
