@@ -29,7 +29,13 @@
             {
                 <div class="drp-result" data-status="@result.Status" role="@(result.Status is "Completed" ? "status" : "alert")" data-testid="reset-result">
                     <p class="drp-result-title">@ResultTitle(result)</p>
-                    <p class="drp-muted">@result.Message</p>
+                    <p class="drp-muted" data-testid="reset-requested">Requested: @ModeTitle(result.Mode)</p>
+                    <p class="drp-muted" data-testid="reset-message">@result.Message</p>
+                    @if (result.Status is not ("Completed" or "PartiallyCompleted"))
+                    {
+                        <p class="drp-muted" data-testid="reset-changed">Changed: @(result.DeletedRows > 0 || result.Domains.Any(d => d.Status == "Removed") ? "see the domains below" : "nothing — no data was removed")</p>
+                        <p class="drp-muted" data-testid="reset-next">Next: @NextStep(result)</p>
+                    }
                     @if (result.Domains.Count > 0)
                     {
                         <ul class="drp-domains" data-testid="reset-domains">
@@ -140,6 +146,19 @@
     private DataResetResult? _result, _lastDelivery;
 
     private static string SeverityOf(DataResetMode mode) => Scopes.Single(s => s.Mode == mode).Severity;
+
+    private static string ModeTitle(DataResetMode mode) => Scopes.FirstOrDefault(s => s.Mode == mode)?.Title ?? mode.ToString();
+
+    /// <summary>What the tester can do after a reset that did not complete (the backend message says why).</summary>
+    private static string NextStep(DataResetResult r) => r.Status switch
+    {
+        "Blocked" when r.Message.Contains("schema", StringComparison.OrdinalIgnoreCase) => "restart BirkNext so it applies its database migrations, then reset again.",
+        "Blocked" when r.Message.Contains("in progress", StringComparison.OrdinalIgnoreCase) => "wait for the running reset to finish, then reload this page.",
+        "Blocked" => "wait for the running test or operation to finish, then reset again.",
+        "Refused" when r.Message.Contains("permission", StringComparison.OrdinalIgnoreCase) => "ask an administrator of this installation.",
+        "Refused" => "check the reason above; reset is only available for a local, non-production installation.",
+        _ => "try again; if it fails again, give the reference to whoever maintains this installation (it is in the server log).",
+    };
 
     private bool CanRun => !_busy && _mode is not null && _plan is { Allowed: true } plan && plan.Mode == _mode
         && (plan.ConfirmationPhrase is { } phrase ? string.Equals(_typed, phrase, StringComparison.Ordinal) : _acknowledged);

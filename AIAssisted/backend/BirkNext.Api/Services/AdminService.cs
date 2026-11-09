@@ -563,6 +563,15 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
             if (activeCdc || activePerformance)
                 return (false, "Reset is blocked while a CDC or performance test is running.", 0, null);
 
+            // The reset deletes from every table of this build's model. A database whose schema is behind the build (a pending migration, or a
+            // build whose model has a table its migrations never created) would fail half way through; refuse before anything is deleted.
+            if (await SchemaMismatchAsync() is { } mismatch)
+            {
+                _logger.LogWarning("Local database reset refused: {Mismatch}", mismatch);
+                return (false, $"Reset blocked: the database schema does not match this BirkNext build ({mismatch}). Nothing was deleted. "
+                    + "Restart BirkNext so it applies its database migrations (or rebuild it if the build is newer than its migrations), then reset again.", 0, null);
+            }
+
             var orderedTables = OrderTablesForDelete(tables);
             var sql = _db.GetService<ISqlGenerationHelper>();
             var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -583,13 +592,41 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Local database reset failed");
-            return (false, "Reset failed. See server logs for details.", 0, null);
+            // The transaction was not committed, so it is rolled back: nothing was deleted. The reference ties the message to the server log.
+            var reference = Guid.NewGuid().ToString("N")[..8];
+            _logger.LogError(ex, "Local database reset failed (reference {Reference}); the transaction was rolled back", reference);
+            var what = ex is System.Data.Common.DbException or DbUpdateException ? "the database operation could not be completed" : "an unexpected error occurred";
+            return (false, $"Reset failed: {what}. Nothing was deleted (the change was rolled back). Reference: {reference} (server log).", 0, null);
         }
         finally
         {
             ResetGate.Release();
         }
+    }
+
+    /// <summary>
+    /// Why this build's model and the database disagree, or null when they match: pending migrations, or model tables that do not exist in
+    /// the database (PostgreSQL). Non-relational providers (tests) have no schema to compare.
+    /// </summary>
+    private async Task<string?> SchemaMismatchAsync()
+    {
+        if (!_db.Database.IsRelational()) return null;
+        var pending = (await _db.Database.GetPendingMigrationsAsync()).ToList();
+        if (pending.Count > 0) return $"{pending.Count} pending migration(s), e.g. {pending[0]}";
+        if (_db.Database.ProviderName?.Contains("Npgsql", StringComparison.Ordinal) != true) return null;
+        var existing = new HashSet<string>(StringComparer.Ordinal);
+        var connection = _db.Database.GetDbConnection();
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = _db.Database.CurrentTransaction?.GetDbTransaction();
+            command.CommandText = "SELECT table_schema || '.' || table_name FROM information_schema.tables WHERE table_schema = ANY(current_schemas(false))";
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync()) existing.Add(reader.GetString(0));
+        }
+        var defaultSchema = _db.Model.GetDefaultSchema() ?? "public";
+        var missing = _db.Model.GetRelationalModel().Tables.Where(t => !PreservedConfigurationTables.Contains(t.Name))
+            .Where(t => !existing.Contains($"{t.Schema ?? defaultSchema}.{t.Name}")).Select(t => t.Name).OrderBy(n => n, StringComparer.Ordinal).ToList();
+        return missing.Count == 0 ? null : $"{missing.Count} table(s) missing in the database: {string.Join(", ", missing.Take(5))}{(missing.Count > 5 ? ", …" : "")}";
     }
 
     /// <summary>The reset guard every scope uses (policy, Local database, non-production host); null when a reset may run.</summary>

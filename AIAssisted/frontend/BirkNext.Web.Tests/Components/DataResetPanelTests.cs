@@ -171,4 +171,65 @@ public sealed class DataResetPanelTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=reset-plan-error]").TextContent.Should().Contain("nothing was reset"));
         RunEnabled(cut).Should().BeFalse();
     }
+
+    [Fact]
+    public void A_schema_blocked_reset_says_what_was_requested_that_nothing_changed_and_what_to_do_next()
+    {
+        _api.Setup(a => a.ResetDataAsync(DataResetMode.FullPreserveProtected, "CONFIRM")).ReturnsAsync(new DataResetResult
+        {
+            Mode = DataResetMode.FullPreserveProtected, Status = "Blocked",
+            Message = "Reset blocked: the database schema does not match this BirkNext build (1 table(s) missing in the database: integration_suites). Nothing was deleted.",
+        });
+        var cut = RenderPanel();
+        cut.Find("[data-testid=reset-open]").Click();
+        cut.Find("[data-testid=reset-scope-FullPreserveProtected] input").Change(true);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=reset-confirm-ack]"));
+        cut.Find("[data-testid=reset-confirm-ack]").Change(true);
+        cut.Find("[data-testid=reset-run]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=reset-result]").TextContent.Should().Contain("Reset blocked"));
+        cut.Find("[data-testid=reset-requested]").TextContent.Should().Contain("Reset everything except protected data");
+        cut.Find("[data-testid=reset-message]").TextContent.Should().Contain("integration_suites").And.NotContain("See server logs");
+        cut.Find("[data-testid=reset-changed]").TextContent.Should().Contain("nothing");
+        cut.Find("[data-testid=reset-next]").TextContent.Should().Contain("restart BirkNext");
+        Services.GetRequiredService<NavigationManager>().Uri.Should().NotContain("reset=");
+    }
+
+    private sealed class StubHandler(Func<HttpResponseMessage> respond) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) => Task.FromResult(respond());
+    }
+
+    private static AdminApiService Client(Func<HttpResponseMessage> respond) => new(new HttpClient(new StubHandler(respond)) { BaseAddress = new Uri("http://localhost:5000/") });
+
+    [Theory]
+    [InlineData(System.Net.HttpStatusCode.Forbidden)]
+    [InlineData(System.Net.HttpStatusCode.Unauthorized)]
+    public async Task Permission_denied_is_reported_as_insufficient_permissions_with_nothing_changed(System.Net.HttpStatusCode status)
+    {
+        var result = await Client(() => new HttpResponseMessage(status)).ResetDataAsync(DataResetMode.FullPreserveProtected, "CONFIRM");
+        result.Status.Should().Be("Refused");
+        result.Success.Should().BeFalse();
+        result.Message.Should().StartWith("Reset blocked: insufficient permissions").And.Contain("Nothing was changed");
+    }
+
+    [Fact]
+    public async Task A_backend_failure_result_is_passed_through_and_a_non_result_response_never_leaks_internals()
+    {
+        var failed = await Client(() => new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError)
+        {
+            Content = System.Net.Http.Json.JsonContent.Create(new DataResetResult { Status = "Failed", Message = "Reset failed: the database operation could not be completed. Nothing was deleted (the change was rolled back). Reference: 0123abcd (server log)." }),
+        }).ResetDataAsync(DataResetMode.FullPreserveProtected, "CONFIRM");
+        failed.Status.Should().Be("Failed");
+        failed.Message.Should().Contain("Reference: 0123abcd");
+
+        var proxy = await Client(() => new HttpResponseMessage(System.Net.HttpStatusCode.BadGateway) { Content = new StringContent("<html>Npgsql stack trace</html>") })
+            .ResetDataAsync(DataResetMode.FullPreserveProtected, "CONFIRM");
+        proxy.Status.Should().Be("Failed");
+        proxy.Message.Should().Contain("HTTP 502").And.NotContain("Npgsql").And.NotContain("html");
+
+        var down = await Client(() => throw new HttpRequestException("No connection could be made 127.0.0.1:5000 secret-detail")).ResetDataAsync(DataResetMode.FullPreserveProtected, "CONFIRM");
+        down.Status.Should().Be("Failed");
+        down.Message.Should().Contain("could not be reached").And.NotContain("secret-detail");
+    }
 }

@@ -167,7 +167,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
             var identityFloors = await SyntheticIdentityFloorsAsync(ct);
             var (success, message, deleted, at) = await admin.ResetLocalDatabaseAsync();
             if (!success)
-                return new() { Status = message.StartsWith("Reset failed", StringComparison.Ordinal) ? "Failed" : "Refused", Message = message, PreservedDomains = [.. Preserved] };
+                return new() { Status = message.StartsWith("Reset failed", StringComparison.Ordinal) ? "Failed" : message.StartsWith("Reset blocked", StringComparison.Ordinal) ? "Blocked" : "Refused", Message = message, PreservedDomains = [.. Preserved] };
 
             var warnings = new List<string>();
             var domains = new List<BirkNext.Maintenance.DataResetDomainResult> { new("Application database", "Removed", $"{deleted} records") };

@@ -108,15 +108,22 @@ public class AdminApiService
     /// <summary>Runs one confirmed reset scope. Refused (400), blocked (409) and failed (500) resets come back with their status, never as success.</summary>
     public virtual async Task<BirkNext.Maintenance.DataResetResult> ResetDataAsync(BirkNext.Maintenance.DataResetMode mode, string confirmation)
     {
-        try
+        HttpResponseMessage response;
+        try { response = await _client.PostAsJsonAsync("api/admin/data-reset", new BirkNext.Maintenance.DataResetRequest(mode, confirmation)); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            var response = await _client.PostAsJsonAsync("api/admin/data-reset", new BirkNext.Maintenance.DataResetRequest(mode, confirmation));
-            return await response.Content.ReadFromJsonAsync<BirkNext.Maintenance.DataResetResult>()
-                ?? new() { Mode = mode, Status = "Failed", Message = $"Reset failed (HTTP {(int)response.StatusCode})." };
+            return new() { Mode = mode, Status = "Failed", Message = "Reset failed: the BirkNext backend could not be reached. Nothing is reported as reset; check that the backend is running and try again." };
         }
-        catch (Exception ex)
+        using (response)
         {
-            return new() { Mode = mode, Status = "Failed", Message = $"Reset request failed: {ex.Message}. Nothing is reported as reset." };
+            if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+                return new() { Mode = mode, Status = "Refused", Message = "Reset blocked: insufficient permissions. Nothing was changed. Sign in with an account that may administer this installation." };
+            try
+            {
+                if (await response.Content.ReadFromJsonAsync<BirkNext.Maintenance.DataResetResult>() is { } result) return result;
+            }
+            catch (Exception ex) when (ex is System.Text.Json.JsonException or NotSupportedException) { } // not a reset result (e.g. a proxy error page)
+            return new() { Mode = mode, Status = "Failed", Message = $"Reset failed (HTTP {(int)response.StatusCode}): the backend did not return a reset result. Nothing is reported as reset." };
         }
     }
 
