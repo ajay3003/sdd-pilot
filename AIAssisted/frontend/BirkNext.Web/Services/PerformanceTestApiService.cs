@@ -63,6 +63,21 @@ public interface IPerformanceTestApiService
     Task<List<PerformanceBaseline>> BaselinesAsync(string environmentId, string? definitionId, CancellationToken ct = default);
     Task<PerformanceBaselinePromotionResult> PromoteAsync(string environmentId, PerformanceBaselinePromotion request, CancellationToken ct = default);
     Task<PerformanceRunComparison?> CompareAsync(string environmentId, Guid current, Guid? reference, string? baselineId, CancellationToken ct = default);
+    /// <summary>Proposes a run as the next baseline (inert until approved).</summary>
+    Task<PerformanceBaselineDecisionResult> ProposeBaselineAsync(string environmentId, PerformanceBaselineProposal request, CancellationToken ct = default) =>
+        Task.FromResult(new PerformanceBaselineDecisionResult(null, null, "Baseline approval is not available."));
+    Task<PerformanceBaselineDecisionResult> ApproveBaselineAsync(string environmentId, string baselineId, string? note, CancellationToken ct = default) =>
+        Task.FromResult(new PerformanceBaselineDecisionResult(null, null, "Baseline approval is not available."));
+    Task<PerformanceBaselineDecisionResult> RejectBaselineAsync(string environmentId, string baselineId, string reason, CancellationToken ct = default) =>
+        Task.FromResult(new PerformanceBaselineDecisionResult(null, null, "Baseline approval is not available."));
+    /// <summary>Regression of runs against an approved baseline (read-only, nothing stored).</summary>
+    Task<PerformanceApiResult<PerformanceRegressionReport>> RegressionAsync(string environmentId, string baselineId, IReadOnlyCollection<Guid> runs, CancellationToken ct = default) =>
+        Task.FromResult(PerformanceApiResult<PerformanceRegressionReport>.Fail("Regression analysis is not available."));
+    Task<PerformanceApiResult<byte[]>> RegressionExportAsync(string environmentId, string baselineId, IReadOnlyCollection<Guid> runs, CancellationToken ct = default) =>
+        Task.FromResult(PerformanceApiResult<byte[]>.Fail("Export is not available."));
+    Task<PerformanceTrend?> TrendsAsync(string environmentId, string definitionId, string? baselineId, CancellationToken ct = default) => Task.FromResult<PerformanceTrend?>(null);
+    /// <summary>Deletes one finished run; null = deleted, otherwise why not (e.g. the run of a baseline is protected).</summary>
+    Task<string?> DeleteRunAsync(string environmentId, Guid runId, CancellationToken ct = default) => Task.FromResult<string?>("Deleting runs is not available.");
     /// <summary>Source Analysis snapshots holding API contracts (for an explicit choice; none is selected automatically).</summary>
     Task<List<ScenarioSourceSnapshot>> ScenarioSourcesAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<List<ScenarioSourceSnapshot>>([]);
     /// <summary>Send validation request: each enabled step once (no load); bounded, redacted request/response samples. Nothing is stored.</summary>
@@ -235,6 +250,65 @@ public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTes
             return await response.Content.ReadFromJsonAsync<PerformanceBaselinePromotionResult>(Json, ct) ?? new(null, null, "No answer.");
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return new(null, null, BackendRequestClassifier.FromException("Performance test request", ex).UserMessage); }
+    }
+
+    public Task<PerformanceBaselineDecisionResult> ProposeBaselineAsync(string environmentId, PerformanceBaselineProposal request, CancellationToken ct = default) =>
+        Decide($"{Base}/baselines/proposals?{Env(environmentId)}", request, environmentId, ct);
+
+    public Task<PerformanceBaselineDecisionResult> ApproveBaselineAsync(string environmentId, string baselineId, string? note, CancellationToken ct = default) =>
+        Decide($"{Base}/baselines/{Uri.EscapeDataString(baselineId)}/approve?{Env(environmentId)}", new PerformanceBaselineDecision { Reason = note }, environmentId, ct);
+
+    public Task<PerformanceBaselineDecisionResult> RejectBaselineAsync(string environmentId, string baselineId, string reason, CancellationToken ct = default) =>
+        Decide($"{Base}/baselines/{Uri.EscapeDataString(baselineId)}/reject?{Env(environmentId)}", new PerformanceBaselineDecision { Reason = reason }, environmentId, ct);
+
+    private async Task<PerformanceBaselineDecisionResult> Decide<TBody>(string url, TBody body, string environmentId, CancellationToken ct)
+    {
+        try
+        {
+            using var response = await http.SendJsonForEnvironmentAsync(HttpMethod.Post, url, body, Json, environmentId, ct);
+            if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized)
+                return new(null, null, "You do not have permission to decide baselines (configuration write permission).");
+            return await response.Content.ReadFromJsonAsync<PerformanceBaselineDecisionResult>(Json, ct) ?? new(null, null, "No answer.");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return new(null, null, BackendRequestClassifier.FromException("Performance test request", ex).UserMessage); }
+    }
+
+    private static string RegressionQuery(string environmentId, string baselineId, IReadOnlyCollection<Guid> runs) =>
+        $"{Env(environmentId)}&baselineId={Uri.EscapeDataString(baselineId)}{(runs.Count == 0 ? "" : "&runs=" + string.Join(",", runs))}";
+
+    public async Task<PerformanceApiResult<PerformanceRegressionReport>> RegressionAsync(string environmentId, string baselineId, IReadOnlyCollection<Guid> runs, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.GetAsync($"{Base}/regression?{RegressionQuery(environmentId, baselineId, runs)}", ct);
+            return response.IsSuccessStatusCode ? PerformanceApiResult<PerformanceRegressionReport>.Ok((await response.Content.ReadFromJsonAsync<PerformanceRegressionReport>(Json, ct))!)
+                : PerformanceApiResult<PerformanceRegressionReport>.Fail(await Message(response, ct));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return PerformanceApiResult<PerformanceRegressionReport>.Fail(BackendRequestClassifier.FromException("Performance test request", ex).UserMessage); }
+    }
+
+    public async Task<PerformanceApiResult<byte[]>> RegressionExportAsync(string environmentId, string baselineId, IReadOnlyCollection<Guid> runs, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.GetAsync($"{Base}/regression/export?{RegressionQuery(environmentId, baselineId, runs)}", ct);
+            return response.IsSuccessStatusCode ? PerformanceApiResult<byte[]>.Ok(await response.Content.ReadAsByteArrayAsync(ct)) : PerformanceApiResult<byte[]>.Fail(await Message(response, ct));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { return PerformanceApiResult<byte[]>.Fail(BackendRequestClassifier.FromException("Performance test request", ex).UserMessage); }
+    }
+
+    public Task<PerformanceTrend?> TrendsAsync(string environmentId, string definitionId, string? baselineId, CancellationToken ct = default) =>
+        Get<PerformanceTrend>($"{Base}/trends?{Env(environmentId)}&definitionId={Uri.EscapeDataString(definitionId)}{(baselineId is null ? "" : "&baselineId=" + Uri.EscapeDataString(baselineId))}", ct);
+
+    public async Task<string?> DeleteRunAsync(string environmentId, Guid runId, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.SendJsonForEnvironmentAsync(HttpMethod.Post, $"{Base}/runs/{runId}/delete?{Env(environmentId)}", new PerformanceRunDeletion { Confirm = 1 }, Json, environmentId, ct);
+            if (response.IsSuccessStatusCode) return null;
+            return response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized ? "You do not have permission to delete runs." : await Message(response, ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { return BackendRequestClassifier.FromException("Performance test request", ex).UserMessage; }
     }
 
     public Task<PerformanceRunComparison?> CompareAsync(string environmentId, Guid current, Guid? reference, string? baselineId, CancellationToken ct = default) =>

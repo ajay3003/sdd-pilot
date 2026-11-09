@@ -1,0 +1,211 @@
+@using System.Globalization
+@using BirkNext.PerformanceTests
+@inject BirkNext.Web.Services.IPerformanceTestApiService Api
+@inject IJSRuntime JS
+
+@* Regression of one or more runs against an approved baseline, and the definition's trend. The backend evaluates; this panel only shows:
+   comparability first, then the per-metric table (tolerance from the definition, never a default), thresholds beside it, and how it was derived. *@
+<section class="prg" aria-labelledby="prg-h" data-testid="pt-regression">
+    <h3 id="prg-h">Regression against an approved baseline</h3>
+    @if (Approved.Count == 0)
+    {
+        <p class="sd-muted" data-testid="pt-regression-no-baseline">No approved baseline yet. Propose a completed run in History and approve it; proposals are never used for comparison.</p>
+    }
+    else
+    {
+        <div class="sd-filterbar prg-controls">
+            <label>Baseline <select @bind="_baselineId" data-testid="pt-regression-baseline">
+                @foreach (var b in Approved) { <option value="@b.BaselineId">@b.Name · v@(b.Version) (@b.Status)</option> }
+            </select></label>
+            <fieldset class="prg-runs" data-testid="pt-regression-runs">
+                <legend>Runs to judge (several comparable runs can confirm a regression)</legend>
+                @foreach (var candidate in Candidates)
+                {
+                    var id = candidate.RunId;
+                    <label class="sd-check"><input type="checkbox" checked="@_selected.Contains(id)" @onchange="e => Toggle(id, e.Value is true)" data-testid="pt-regression-run" />
+                        @Short(id) · @Utc(candidate.FinishedAt ?? candidate.CreatedAt)@(candidate.VersionLabel is { } v ? $" · {v}" : "")</label>
+                }
+                @if (Candidates.Count == 0) { <p class="sd-muted">No completed run besides the baseline's own run.</p> }
+            </fieldset>
+            <button type="button" class="btn-secondary" @onclick="EvaluateAsync" disabled="@(_busy || _selected.Count == 0)" data-testid="pt-regression-go">Evaluate</button>
+            @if (_report is not null) { <button type="button" class="btn-secondary" @onclick="ExportAsync" disabled="@_busy" data-testid="pt-regression-export">Export report</button> }
+        </div>
+        @if (_error is { } error) { <p class="sd-reason" role="alert" data-testid="pt-regression-error">@error</p> }
+        @if (_report is { } r)
+        {
+            <div class="sd-panel prg-result" data-testid="pt-regression-result" data-verdict="@r.Verdict" data-comparability="@r.Comparability.Level">
+                <p class="prg-verdict"><span class="sd-pill sd-pill-@Tone(r.Verdict)" data-testid="pt-regression-verdict">@Label(r.Verdict)</span> @r.VerdictReason</p>
+                <p><span class="sd-pill sd-pill-@Tone(r.Comparability.Level)" data-testid="pt-regression-comparability">@Label(r.Comparability.Level)</span> @r.Comparability.Summary</p>
+                @if (r.Exploratory)
+                {
+                    <p class="sd-reason" data-testid="pt-regression-exploratory">Exploratory comparison: the runs do not measure the same thing, so the differences below are not a pass or fail.</p>
+                }
+                @if (r.Comparability.Differences.Count > 0)
+                {
+                    <div class="sd-scroll" tabindex="0" role="region" aria-label="Comparability differences">
+                        <table data-testid="pt-regression-differences">
+                            <thead><tr><th scope="col">What differs</th><th scope="col">Baseline run</th><th scope="col">Current run</th><th scope="col">Effect</th></tr></thead>
+                            <tbody>@foreach (var d in r.Comparability.Differences)
+                            {
+                                <tr data-severity="@d.Severity"><th scope="row">@d.Dimension</th><td>@d.Reference</td><td>@d.Current</td><td>@(d.Severity == ComparabilitySeverity.Warning ? "Warning: " : d.Severity == ComparabilitySeverity.Missing ? "Missing: " : "Not comparable: ")@d.Explanation</td></tr>
+                            }</tbody>
+                        </table>
+                    </div>
+                }
+                <div class="sd-scroll" tabindex="0" role="region" aria-label="Regression by metric">
+                    <table data-testid="pt-regression-metrics">
+                        <thead><tr><th scope="col">Metric</th><th scope="col">Baseline</th><th scope="col">Current</th><th scope="col">Abs Δ</th><th scope="col">% Δ</th><th scope="col">Tolerance</th><th scope="col">Runs beyond</th><th scope="col">Verdict</th></tr></thead>
+                        <tbody>@foreach (var m in r.Metrics)
+                        {
+                            <tr data-testid="pt-regression-metric" data-key="@m.Key" data-verdict="@m.Verdict">
+                                <th scope="row">@m.Label<span class="sd-context">@m.Aggregation</span></th>
+                                <td>@Value(m.Baseline, m.Unit)</td><td>@Value(m.Current, m.Unit)@(m.Runs > 1 && m.CurrentMin is { } lo && m.CurrentMax is { } hi ? $" ({Num(lo)}–{Num(hi)})" : "")</td>
+                                <td>@(m.AbsoluteDelta is { } a ? Signed(a) + " " + m.Unit : "—")</td><td>@(m.RelativePercent is { } p ? Signed(p) + " %" : "—")</td>
+                                <td>@(m.Tolerance ?? "none")</td><td>@(m.Tolerance is null ? "—" : $"{m.RunsBeyondTolerance} of {m.Runs}")</td>
+                                <td><span class="sd-pill sd-pill-@Tone(m.Verdict)">@Label(m.Verdict)</span><span class="sd-context">@m.Reason</span></td>
+                            </tr>
+                        }</tbody>
+                    </table>
+                </div>
+                <h4>Thresholds (absolute expectations, judged per run)</h4>
+                <ul class="sd-list" data-testid="pt-regression-thresholds">
+                    @foreach (var t in r.Thresholds) { <li>Run @Short(t.RunId): @t.Verdict@(t.Failed > 0 ? $" · {t.Failed} failed" : "")@(t.Warnings > 0 ? $" · {t.Warnings} warnings" : "")</li> }
+                </ul>
+                <details data-testid="pt-regression-derivation"><summary>How this verdict was derived</summary>
+                    <ul class="sd-list">@foreach (var line in r.Derivation) { <li>@line</li> }</ul>
+                    @if (r.Limitations.Count > 0) { <h4>Limitations</h4><ul class="sd-list">@foreach (var line in r.Limitations) { <li>@line</li> }</ul> }
+                </details>
+            </div>
+        }
+    }
+
+    <h3>Trend</h3>
+    @if (_trend is not { Points.Count: > 0 } trend)
+    {
+        <p class="sd-muted" data-testid="pt-trend-empty">@(_trendLoaded ? "No finished runs for this definition yet." : "Loading the trend…")</p>
+    }
+    else
+    {
+        <label class="sd-check"><input type="checkbox" @bind="_showExcluded" data-testid="pt-trend-show-excluded" /> Show runs that are not comparable with the baseline (@trend.ExcludedPoints)</label>
+        @Sparkline(trend)
+        <div class="sd-scroll" tabindex="0" role="region" aria-label="Performance trend">
+            <table data-testid="pt-trend">
+                <thead><tr><th scope="col">Run</th><th scope="col">Finished</th><th scope="col">Version</th><th scope="col">Comparability</th><th scope="col">P50</th><th scope="col">P95</th><th scope="col">P99</th><th scope="col">Throughput</th><th scope="col">Error rate</th><th scope="col">Thresholds</th></tr></thead>
+                <tbody>@foreach (var p in VisiblePoints(trend))
+                {
+                    <tr data-testid="pt-trend-point" data-baseline="@(p.IsBaselineRun ? "true" : "false")" data-comparability="@p.Comparability">
+                        <th scope="row">@Short(p.RunId)@(p.IsBaselineRun ? " (baseline)" : "")<span class="sd-context">definition v@(p.DefinitionVersion)</span></th>
+                        <td>@Utc(p.FinishedAt)</td><td>@(p.VersionLabel ?? "—")</td><td>@(p.Comparability is { } c ? Label(c) : "no baseline")</td>
+                        <td>@Value(p.Values.GetValueOrDefault("p50"), "ms")</td><td>@Value(p.Values.GetValueOrDefault("p95"), "ms")</td><td>@Value(p.Values.GetValueOrDefault("p99"), "ms")</td>
+                        <td>@Value(p.Values.GetValueOrDefault("throughput"), "req/s")</td><td>@Value(p.Values.GetValueOrDefault("errorRate"), "%")</td><td>@p.ThresholdVerdict</td>
+                    </tr>
+                }</tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+    [Parameter, EditorRequired] public string DefinitionId { get; set; } = "";
+    [Parameter] public List<PerformanceTestRun> Runs { get; set; } = [];
+    [Parameter] public List<PerformanceBaseline> Baselines { get; set; } = [];
+
+    private string? _baselineId;
+    private readonly HashSet<Guid> _selected = [];
+    private PerformanceRegressionReport? _report;
+    private PerformanceTrend? _trend;
+    private bool _busy, _trendLoaded, _showExcluded;
+    private string? _error, _trendKey;
+
+    private List<PerformanceBaseline> Approved => Baselines.Where(b => b.Status is PerformanceBaselineStatus.Active or PerformanceBaselineStatus.Superseded or PerformanceBaselineStatus.Historical)
+        .OrderBy(b => b.Status == PerformanceBaselineStatus.Active ? 0 : 1).ThenByDescending(b => b.Version).ToList();
+
+    private PerformanceBaseline? Selected => Approved.FirstOrDefault(b => b.BaselineId == _baselineId);
+
+    private List<PerformanceTestRun> Candidates => Runs.Where(r => r.State == PerformanceRunState.Completed && r.RunId != Selected?.RunId)
+        .OrderByDescending(r => r.FinishedAt ?? r.CreatedAt).Take(10).ToList();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_baselineId is null || Approved.All(b => b.BaselineId != _baselineId)) _baselineId = Approved.FirstOrDefault()?.BaselineId;
+        if (_selected.Count == 0 && Candidates.FirstOrDefault() is { } latest) _selected.Add(latest.RunId);
+        var key = $"{DefinitionId}|{_baselineId}|{Runs.Count}";
+        if (_trendKey != key)
+        {
+            _trendKey = key;
+            _trend = await Api.TrendsAsync(EnvironmentId, DefinitionId, _baselineId);
+            _trendLoaded = true;
+        }
+    }
+
+    private void Toggle(Guid id, bool on) { if (on) _selected.Add(id); else _selected.Remove(id); }
+
+    private async Task EvaluateAsync()
+    {
+        if (_baselineId is null) return;
+        _busy = true; _error = null;
+        var result = await Api.RegressionAsync(EnvironmentId, _baselineId, [.. _selected]);
+        _report = result.Value; _error = result.Error;
+        _busy = false;
+    }
+
+    private async Task ExportAsync()
+    {
+        if (_baselineId is null) return;
+        _busy = true;
+        var result = await Api.RegressionExportAsync(EnvironmentId, _baselineId, [.. _selected]);
+        if (result.Value is { } bytes)
+            await JS.InvokeVoidAsync("downloadBase64File", $"performance-regression-{DateTime.UtcNow:yyyyMMdd-HHmmss}.json", Convert.ToBase64String(bytes), "application/json");
+        else _error = result.Error;
+        _busy = false;
+    }
+
+    private IEnumerable<PerformanceTrendPoint> VisiblePoints(PerformanceTrend t) =>
+        t.Points.Where(p => _showExcluded || p.Comparability is null or ComparabilityLevel.Comparable or ComparabilityLevel.ComparableWithWarnings).Reverse();
+
+    /// <summary>P95 over the comparable runs, oldest to newest, with the baseline's P95 as a horizontal line. Text equivalent: the table below.</summary>
+    private RenderFragment Sparkline(PerformanceTrend t)
+    {
+        var points = t.Points.Where(p => p.Comparability is null or ComparabilityLevel.Comparable or ComparabilityLevel.ComparableWithWarnings)
+            .Select(p => (p.RunId, Value: p.Values.GetValueOrDefault("p95"))).Where(p => p.Value is not null).ToList();
+        var baseline = t.Points.FirstOrDefault(p => p.IsBaselineRun)?.Values.GetValueOrDefault("p95");
+        if (points.Count < 2) return @<span></span>;
+        var max = Math.Max(points.Max(p => p.Value!.Value), baseline ?? 0) * 1.1;
+        string X(int i) => (10 + i * 280.0 / (points.Count - 1)).ToString("0.#", CultureInfo.InvariantCulture);
+        string Y(double v) => (70 - v / max * 60).ToString("0.#", CultureInfo.InvariantCulture);
+        var line = string.Join(" ", points.Select((p, i) => $"{X(i)},{Y(p.Value!.Value)}"));
+        return @<svg class="prg-spark" viewBox="0 0 300 80" role="img" aria-label="@($"P95 of {points.Count} comparable runs from {Num(points[0].Value!.Value)} ms to {Num(points[^1].Value!.Value)} ms{(baseline is { } b ? $"; baseline {Num(b)} ms" : "")}")" data-testid="pt-trend-sparkline">
+            @if (baseline is { } bl) { <line x1="10" x2="290" y1="@Y(bl)" y2="@Y(bl)" class="prg-spark-baseline" /> }
+            <polyline points="@line" class="prg-spark-line" />
+        </svg>;
+    }
+
+    private static string Short(Guid id) => id.ToString("N")[..8];
+    private static string Utc(DateTimeOffset? t) => t is { } v ? v.ToUniversalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) + " UTC" : "—";
+    private static string Num(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+    private static string Signed(double v) => (v > 0 ? "+" : "") + Num(v);
+    private static string Value(double? v, string unit) => v is { } x ? $"{Num(x)} {unit}" : "not reported";
+
+    private static string Label(RegressionVerdict v) => v switch
+    {
+        RegressionVerdict.ConfirmedRegression => "Confirmed regression", RegressionVerdict.PotentialRegression => "Potential regression",
+        RegressionVerdict.NotAssessed => "Not assessed", _ => v.ToString(),
+    };
+
+    private static string Label(ComparabilityLevel l) => l switch
+    {
+        ComparabilityLevel.ComparableWithWarnings => "Comparable with warnings", ComparabilityLevel.NotComparable => "Not comparable",
+        ComparabilityLevel.InsufficientEvidence => "Insufficient evidence", _ => "Comparable",
+    };
+
+    private static string Tone(RegressionVerdict v) => v switch
+    {
+        RegressionVerdict.ConfirmedRegression => "attention", RegressionVerdict.PotentialRegression => "partial", RegressionVerdict.Improved or RegressionVerdict.Stable => "complete", _ => "muted",
+    };
+
+    private static string Tone(ComparabilityLevel l) => l switch
+    {
+        ComparabilityLevel.Comparable => "complete", ComparabilityLevel.ComparableWithWarnings => "partial", _ => "attention",
+    };
+}

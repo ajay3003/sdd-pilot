@@ -58,8 +58,9 @@ public enum MetricChangeDirection { Improved, Unchanged, Worse, NotAvailable }
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum PerformanceDriftState { Improved, Stable, DegradedWithinTolerance, Regression, NotComparable, NotAssessed }
 
+/// <summary>Active/Superseded/Historical are approved baselines. Proposed = awaiting approval (never used for comparison); Rejected = refused (kept).</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum PerformanceBaselineStatus { Active, Superseded, Historical }
+public enum PerformanceBaselineStatus { Active, Superseded, Historical, Proposed, Rejected }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum PerformanceComparisonKind { OriginalBaseline, RunVsActiveBaseline, RunVsHistoricalBaseline, RunVsRun }
@@ -760,6 +761,23 @@ public sealed record PerformanceBaseline
     public DateTimeOffset? SupersededAt { get; init; }
     public string? SupersededByBaselineId { get; init; }
     public PerformanceBaselineStatus Status { get; init; } = PerformanceBaselineStatus.Active;
+    /// <summary>Null = a baseline created before the approval workflow (treated as approved, labelled legacy).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public BaselineApprovalState? Approval { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? ProposedBy { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? ApprovedBy { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? ApprovedAt { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? DecisionNote { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? RejectedBy { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? RejectedAt { get; init; }
+    /// <summary>The eligibility review at proposal time (and the explicitly accepted warnings).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<BaselineEligibilityCheck>? Eligibility { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool AcceptedWarnings { get; init; }
+    /// <summary>Identity of the source run, recorded at proposal: what a comparison needs to know without re-reading it.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? VersionLabel { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public int DefinitionVersion { get; init; }
+
+    public BaselineApprovalState ApprovalOrLegacy() => Approval ?? (Status is PerformanceBaselineStatus.Proposed ? BaselineApprovalState.Proposed
+        : Status is PerformanceBaselineStatus.Rejected ? BaselineApprovalState.Rejected : BaselineApprovalState.Approved);
 }
 
 public sealed record PerformanceRunComparison

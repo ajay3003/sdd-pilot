@@ -1,5 +1,7 @@
+using BirkNext.Api.Services.ActiveEventTesting;
 using BirkNext.Api.Services.PerformanceTests;
 using BirkNext.PerformanceTests;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BirkNext.Api.Controllers;
@@ -246,6 +248,7 @@ public sealed class PerformanceTestsController(PerformanceTestStore store, Perfo
     public async Task<ActionResult<object>> Cleanup(CancellationToken ct) => Ok(new { removed = await execution.CleanupOrphansAsync(true, ct) });
 
     [HttpPost("runs")]
+    [Authorize(Policy = BirkNextPermissions.ActiveEventExecutePolicy)]
     public async Task<IActionResult> Run([FromQuery] string environmentId, [FromBody] PerformanceRunRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
@@ -268,6 +271,7 @@ public sealed class PerformanceTestsController(PerformanceTestStore store, Perfo
         await execution.CurrentRunAsync(store, runId, ct) is { } run && run.EnvironmentId == environmentId ? Ok(run) : NotFound();
 
     [HttpPost("runs/{runId:guid}/cancel")]
+    [Authorize(Policy = BirkNextPermissions.ActiveEventExecutePolicy)]
     public async Task<ActionResult<PerformanceTestRun>> Cancel([FromQuery] string environmentId, Guid runId, CancellationToken ct)
     {
         if (await store.RunAsync(runId, ct) is not { } run || run.EnvironmentId != environmentId) return NotFound();
@@ -279,15 +283,133 @@ public sealed class PerformanceTestsController(PerformanceTestStore store, Perfo
         Ok(await store.BaselinesAsync(environmentId, definitionId, ct));
 
     [HttpPost("baselines")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     public async Task<ActionResult<PerformanceBaselinePromotionResult>> Promote([FromQuery] string environmentId, [FromBody] PerformanceBaselinePromotion request, CancellationToken ct)
     {
-        var result = await store.PromoteAsync(environmentId, request, Now, ct);
+        var result = await store.PromoteAsync(environmentId, request, Now, ct, Initiator);
         return result.Error is null ? Ok(result) : UnprocessableEntity(result);
     }
 
     [HttpPost("baselines/{baselineId}/archive")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     public async Task<ActionResult<PerformanceBaseline>> Archive([FromQuery] string environmentId, string baselineId, CancellationToken ct) =>
         await store.ArchiveBaselineAsync(environmentId, baselineId, Now, ct) is { } b ? Ok(b) : NotFound();
+
+    private string Initiator => User.Identity?.IsAuthenticated == true && User.Identity.Name is { Length: > 0 } name ? name : "Local session";
+
+    /// <summary>Proposes a run as the next baseline (eligibility review recorded). Never used for comparison until approved.</summary>
+    [HttpPost("baselines/proposals")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public async Task<ActionResult<PerformanceBaselineDecisionResult>> Propose([FromQuery] string environmentId, [FromBody] PerformanceBaselineProposal request, CancellationToken ct)
+    {
+        var result = await store.ProposeAsync(environmentId, request, Initiator, Now, ct);
+        return result.Error is null ? Ok(result) : UnprocessableEntity(result);
+    }
+
+    [HttpPost("baselines/{baselineId}/approve")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public async Task<ActionResult<PerformanceBaselineDecisionResult>> Approve([FromQuery] string environmentId, string baselineId, [FromBody] PerformanceBaselineDecision decision, CancellationToken ct)
+    {
+        var result = await store.ApproveAsync(environmentId, baselineId, decision, Initiator, Now, ct);
+        return result.Error is null ? Ok(result) : UnprocessableEntity(result);
+    }
+
+    [HttpPost("baselines/{baselineId}/reject")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public async Task<ActionResult<PerformanceBaselineDecisionResult>> Reject([FromQuery] string environmentId, string baselineId, [FromBody] PerformanceBaselineDecision decision, CancellationToken ct)
+    {
+        var result = await store.RejectAsync(environmentId, baselineId, decision, Initiator, Now, ct);
+        return result.Error is null ? Ok(result) : UnprocessableEntity(result);
+    }
+
+    /// <summary>Deletes one finished run (explicit confirmation). The source run of any proposed or approved baseline is protected.</summary>
+    [HttpPost("runs/{runId:guid}/delete")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public async Task<IActionResult> DeleteRun([FromQuery] string environmentId, Guid runId, [FromBody] PerformanceRunDeletion request, CancellationToken ct) =>
+        await store.DeleteRunAsync(environmentId, runId, request, ct) is { } error ? UnprocessableEntity(new { message = error }) : NoContent();
+
+    /// <summary>
+    /// Regression of one or more runs against an approved baseline: comparability, per-metric tolerance verdicts (Confirmed needs repeated
+    /// comparable runs), thresholds beside it. Read-only; nothing is stored. Default current run: the latest completed run after the baseline's run.
+    /// </summary>
+    [HttpGet("regression")]
+    public async Task<ActionResult<PerformanceRegressionReport>> Regression([FromQuery] string environmentId, [FromQuery] string baselineId, [FromQuery] string? runs, CancellationToken ct)
+    {
+        var resolved = await ResolveRegressionAsync(environmentId, baselineId, runs, ct);
+        return resolved.Error is { } error ? UnprocessableEntity(new { message = error }) : Ok(resolved.Report);
+    }
+
+    /// <summary>The same regression as a sanitized, self-describing export (metrics, units, rules and limitations; never request content).</summary>
+    [HttpGet("regression/export")]
+    public async Task<IActionResult> RegressionExport([FromQuery] string environmentId, [FromQuery] string baselineId, [FromQuery] string? runs, CancellationToken ct)
+    {
+        var resolved = await ResolveRegressionAsync(environmentId, baselineId, runs, ct);
+        if (resolved.Error is { } error) return UnprocessableEntity(new { message = error });
+        var definition = await store.DefinitionAsync(environmentId, resolved.BaselineRun!.DefinitionId, ct);
+        var export = new
+        {
+            kind = "birknext.performance.regression", schemaVersion = 1, generatedAt = Now,
+            definition = new { id = resolved.BaselineRun.DefinitionId, name = definition?.Name ?? resolved.BaselineRun.DefinitionSnapshot.Name, environmentId,
+                environmentType = resolved.BaselineRun.EnvironmentType, targetOrigin = resolved.BaselineRun.TargetOrigin },
+            baseline = resolved.Baseline,
+            baselineRun = Summary(resolved.BaselineRun),
+            currentRuns = resolved.Current!.Select(Summary),
+            report = resolved.Report,
+            units = PerformanceRegressionRules.RegressionKeys.ToDictionary(k => k, PerformanceRegressionRules.Unit),
+            completeness = "Metrics only (summary percentiles per run). Request and response content is not part of a load-test result.",
+        };
+        var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(export, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web) { WriteIndented = true });
+        return File(bytes, "application/json", $"performance-regression-{resolved.Baseline!.BaselineId[..8]}-{Now:yyyyMMdd-HHmmss}.json");
+    }
+
+    /// <summary>Persisted runs of a definition over time, each marked with its comparability against the (selected or active) baseline.</summary>
+    [HttpGet("trends")]
+    public async Task<ActionResult<PerformanceTrend>> Trends([FromQuery] string environmentId, [FromQuery] string definitionId, [FromQuery] string? baselineId, CancellationToken ct)
+    {
+        var runs = await store.RunsAsync(environmentId, definitionId, 200, ct);
+        var baselines = await store.BaselinesAsync(environmentId, definitionId, ct);
+        var baseline = baselineId is null ? baselines.FirstOrDefault(b => b.Status == PerformanceBaselineStatus.Active) : baselines.FirstOrDefault(b => b.BaselineId == baselineId);
+        if (baselineId is not null && baseline is null) return NotFound();
+        var baselineRun = baseline is null ? null : runs.FirstOrDefault(r => r.RunId == baseline.RunId) ?? await store.RunAsync(baseline.RunId, ct);
+        return Ok(PerformanceRegressionRules.Trend(definitionId, baseline, baselineRun, runs));
+    }
+
+    private static object Summary(PerformanceTestRun r) => new
+    {
+        r.RunId, r.DefinitionId, r.DefinitionVersion, r.ComparisonFingerprint, r.State, r.StartedAt, r.FinishedAt, r.VersionLabel, r.ProviderId, r.ProviderVersion, r.ImageDigest,
+        r.TargetOrigin, r.EnvironmentType, r.MetricsSource, Workload = r.DefinitionSnapshot.Workload, TestDataProfileId = r.DefinitionSnapshot.Scenario.TestDataProfileId,
+        Authentication = r.DefinitionSnapshot.AuthenticationReference is null ? "none" : "configured", r.Metrics, r.ThresholdResults, r.Verdict,
+    };
+
+    private sealed record ResolvedRegression(PerformanceRegressionReport? Report, PerformanceBaseline? Baseline, PerformanceTestRun? BaselineRun, List<PerformanceTestRun>? Current, string? Error);
+
+    private async Task<ResolvedRegression> ResolveRegressionAsync(string environmentId, string baselineId, string? runs, CancellationToken ct)
+    {
+        if (await store.BaselineAsync(baselineId, ct) is not { } baseline || baseline.EnvironmentId != environmentId) return new(null, null, null, null, "The baseline does not exist in this environment.");
+        if (baseline.Status is PerformanceBaselineStatus.Proposed or PerformanceBaselineStatus.Rejected)
+            return new(null, null, null, null, $"A {baseline.Status.ToString().ToLowerInvariant()} baseline is not a reference: approve it first.");
+        if (await store.RunAsync(baseline.RunId, ct) is not { } baselineRun) return new(null, null, null, null, "The baseline's run is missing.");
+        List<PerformanceTestRun> current = [];
+        if (!string.IsNullOrWhiteSpace(runs))
+        {
+            foreach (var part in runs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().Take(20))
+            {
+                if (!Guid.TryParse(part, out var id) || await store.RunAsync(id, ct) is not { } run || run.EnvironmentId != environmentId)
+                    return new(null, null, null, null, $"Run {part} does not exist in this environment.");
+                if (run.RunId == baselineRun.RunId) return new(null, null, null, null, "A baseline is not compared with its own run.");
+                current.Add(run);
+            }
+        }
+        else
+        {
+            var latest = (await store.RunsAsync(environmentId, baselineRun.DefinitionId, 200, ct))
+                .FirstOrDefault(r => r.RunId != baselineRun.RunId && r.State == PerformanceRunState.Completed && (r.CreatedAt > baselineRun.CreatedAt));
+            if (latest is null) return new(null, null, null, null, "No completed run after the baseline's run to compare.");
+            current.Add(latest);
+        }
+        var report = PerformanceRegressionRules.Evaluate(baseline, baselineRun, current, current[^1].DefinitionSnapshot.DriftPolicies);
+        return new(report, baseline, baselineRun, current, null);
+    }
 
     /// <summary>Compares a run with another run or a (historical/active) baseline. Ad-hoc: never stored on the run; the run's original drift stays as recorded.</summary>
     [HttpGet("compare")]

@@ -92,6 +92,35 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
             Baselines = [b];
             return Task.FromResult(new PerformanceBaselinePromotionResult(b, null, null));
         }
+        public Task<PerformanceBaselineDecisionResult> ProposeBaselineAsync(string environmentId, PerformanceBaselineProposal request, CancellationToken ct = default)
+        {
+            Calls.Add($"propose:{request.Reason}:{request.AcceptWarnings}");
+            var b = new PerformanceBaseline { BaselineId = "prop-1", RunId = request.RunId, Version = 1, DefinitionId = "def-1", Status = PerformanceBaselineStatus.Proposed,
+                Approval = BaselineApprovalState.Proposed, ProposedBy = "tester-a", ComparisonFingerprint = "cf" };
+            Baselines = [.. Baselines, b];
+            return Task.FromResult(new PerformanceBaselineDecisionResult(b, null, null));
+        }
+        public Task<PerformanceBaselineDecisionResult> ApproveBaselineAsync(string environmentId, string baselineId, string? note, CancellationToken ct = default)
+        {
+            Calls.Add("approve:" + baselineId);
+            var b = Baselines.Single(x => x.BaselineId == baselineId) with { Status = PerformanceBaselineStatus.Active, Approval = BaselineApprovalState.Approved, ApprovedBy = "lead-b" };
+            Baselines = [.. Baselines.Where(x => x.BaselineId != baselineId), b];
+            return Task.FromResult(new PerformanceBaselineDecisionResult(b, null, null));
+        }
+        public Task<PerformanceBaselineDecisionResult> RejectBaselineAsync(string environmentId, string baselineId, string reason, CancellationToken ct = default)
+        {
+            Calls.Add($"reject:{baselineId}:{reason}");
+            var b = Baselines.Single(x => x.BaselineId == baselineId) with { Status = PerformanceBaselineStatus.Rejected, Approval = BaselineApprovalState.Rejected, RejectedBy = "lead-b", DecisionNote = reason };
+            Baselines = [.. Baselines.Where(x => x.BaselineId != baselineId), b];
+            return Task.FromResult(new PerformanceBaselineDecisionResult(b, null, null));
+        }
+        public string? DeleteError { get; set; }
+        public Task<string?> DeleteRunAsync(string environmentId, Guid runId, CancellationToken ct = default)
+        {
+            Calls.Add("delete:" + runId);
+            if (DeleteError is null) Runs = [.. Runs.Where(r => r.RunId != runId)];
+            return Task.FromResult(DeleteError);
+        }
         public List<(Guid Current, Guid? Reference, string? Baseline)> Compared { get; } = [];
         public Task<PerformanceRunComparison?> CompareAsync(string environmentId, Guid current, Guid? reference, string? baselineId, CancellationToken ct = default) =>
             Compare(current, reference, baselineId) ? null! : Task.FromResult<PerformanceRunComparison?>(new PerformanceRunComparison
@@ -527,6 +556,37 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-baseline-row]").GetAttribute("data-status").Should().Be("Active"));
         cut.Find("[data-testid=pt-history-filter]").Change("Cancelled");
         cut.FindAll("[data-testid=pt-history-row]").Should().ContainSingle().Which.GetAttribute("data-state").Should().Be("Cancelled");
+    }
+
+    [Fact]
+    public void History_ProposalShowsEligibility_IsApprovedOrRejectedWithAReason_AndAProtectedRunExplainsWhy()
+    {
+        Register();
+        var completed = Run(PerformanceRunState.Completed, PerformanceQualityVerdict.Fail);
+        _api.Runs = [completed];
+        var cut = Page();
+        Tab(cut, "history");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=pt-history-row]").Should().ContainSingle());
+        cut.Find("[data-testid=pt-promote-open]").Click();
+        cut.Find("[data-testid=pt-promote-eligibility]").TextContent.Should().Contain("Required thresholds met").And.Contain("A required threshold failed");
+        cut.Find("[data-testid=pt-promote-accept]").Change(true);
+        cut.Find("[data-testid=pt-propose-confirm]").Click();
+        _api.Calls.Should().Contain(c => c.StartsWith("propose:") && c.EndsWith(":True"), "the accepted warnings are sent explicitly");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-baseline-approval]").TextContent.Should().Contain("Proposed by tester-a"));
+
+        cut.Find("[data-testid=pt-baseline-reject]").Click();
+        cut.Find("[data-testid=pt-baseline-reject-confirm]").Click();
+        cut.Find("[data-testid=pt-baseline-decision-error]").TextContent.Should().Contain("reason");
+        cut.Find("[data-testid=pt-baseline-approve]").Click();
+        _api.Calls.Should().Contain("approve:prop-1");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-baseline-approval]").TextContent.Should().Contain("Approved by lead-b"));
+
+        _api.DeleteError = "Protected: the run is the source of Baseline v1 (v1, Active). A baseline always keeps its run.";
+        cut.Find("[data-testid=pt-run-delete]").Click();
+        cut.Find("[data-testid=pt-run-delete]").TextContent.Should().Be("Confirm delete", "the first click only asks");
+        _api.Calls.Should().NotContain(c => c.StartsWith("delete:"));
+        cut.Find("[data-testid=pt-run-delete]").Click();
+        cut.Find("[data-testid=pt-run-delete-error]").TextContent.Should().Contain("Protected");
     }
 
     [Fact]

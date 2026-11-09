@@ -188,10 +188,81 @@ public sealed class PerformanceTestStore(AppDbContext db)
     }
 
     /// <summary>
-    /// Explicit promotion of a run to the scope's new Active baseline. Only a Completed run with complete metrics qualifies; a run whose required
-    /// thresholds failed needs <see cref="PerformanceBaselinePromotion.AcceptThresholdFailures"/>. The previous Active baseline is superseded (kept).
+    /// Proposes a completed run as the scope's next baseline. The eligibility review is recorded; a blocking failure refuses the proposal, a
+    /// non-blocking one (failed required thresholds, too few samples for P95, dropped iterations) needs explicit acceptance. A proposal is never used
+    /// for comparison and does not touch the Active baseline until it is approved.
     /// </summary>
-    public async Task<PerformanceBaselinePromotionResult> PromoteAsync(string environmentId, PerformanceBaselinePromotion request, DateTimeOffset now, CancellationToken ct = default)
+    public async Task<PerformanceBaselineDecisionResult> ProposeAsync(string environmentId, PerformanceBaselineProposal request, string initiator, DateTimeOffset now, CancellationToken ct = default)
+    {
+        var run = await RunAsync(request.RunId, ct);
+        if (run is null || run.EnvironmentId != environmentId) return new(null, null, "The run does not exist in this environment.");
+        var checks = PerformanceRegressionRules.Eligibility(run);
+        if (PerformanceRegressionRules.EligibilityProblem(checks, request.AcceptWarnings) is { } problem) return new(null, null, problem);
+        return await Persistence.ScopedWriteLock.RunAsync(db, ScopeKey(environmentId, run), async () =>
+        {
+            var scope = await ScopeRowsAsync(environmentId, run, ct);
+            var version = scope.Count == 0 ? 1 : scope.Max(r => r.Version) + 1;
+            var baseline = new PerformanceBaseline
+            {
+                EnvironmentId = environmentId, ProjectId = run.ProjectId, DefinitionId = run.DefinitionId, ComparisonFingerprint = run.ComparisonFingerprint, RunId = run.RunId,
+                Version = version, Name = string.IsNullOrWhiteSpace(request.Name) ? $"Baseline v{version}" : request.Name.Trim(), Reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim(),
+                CreatedAt = now, EffectiveFrom = now, Status = PerformanceBaselineStatus.Proposed, Approval = BaselineApprovalState.Proposed, ProposedBy = initiator,
+                Eligibility = checks, AcceptedWarnings = checks.Any(c => !c.Blocking && !c.Passed), VersionLabel = run.VersionLabel, DefinitionVersion = run.DefinitionVersion,
+            };
+            db.PerformanceBaselines.Add(Row(baseline));
+            await db.SaveChangesAsync(ct);
+            return new PerformanceBaselineDecisionResult(baseline, null, null);
+        }, ct);
+    }
+
+    /// <summary>
+    /// Approves a proposal: it becomes the scope's Active baseline and the previous Active one is superseded (kept). Approved baselines are
+    /// immutable — only their status moves on (Superseded, Historical); a new reference is a new baseline record.
+    /// </summary>
+    public async Task<PerformanceBaselineDecisionResult> ApproveAsync(string environmentId, string baselineId, PerformanceBaselineDecision decision, string approver, DateTimeOffset now, CancellationToken ct = default)
+    {
+        var proposed = await BaselineAsync(baselineId, ct);
+        if (proposed is null || proposed.EnvironmentId != environmentId) return new(null, null, "The baseline does not exist in this environment.");
+        if (proposed.Status != PerformanceBaselineStatus.Proposed) return new(null, null, $"Only a proposed baseline can be approved; this one is {proposed.Status}.");
+        var run = await RunAsync(proposed.RunId, ct);
+        if (run is null) return new(null, null, "The run this proposal refers to no longer exists.");
+        if (PerformanceRegressionRules.EligibilityProblem(PerformanceRegressionRules.Eligibility(run), proposed.AcceptedWarnings) is { } problem) return new(null, null, problem);
+        return await Persistence.ScopedWriteLock.RunAsync(db, ScopeKey(environmentId, run), async () =>
+        {
+            var scope = await ScopeRowsAsync(environmentId, run, ct);
+            var row = scope.FirstOrDefault(r => r.Id == baselineId && r.Status == nameof(PerformanceBaselineStatus.Proposed));
+            if (row is null) return new PerformanceBaselineDecisionResult(null, null, "The proposal was decided meanwhile.");
+            var approved = proposed with
+            {
+                Status = PerformanceBaselineStatus.Active, Approval = BaselineApprovalState.Approved, ApprovedBy = approver, ApprovedAt = now, EffectiveFrom = now,
+                DecisionNote = string.IsNullOrWhiteSpace(decision.Reason) ? null : decision.Reason.Trim(),
+            };
+            var superseded = Supersede(scope, approved.BaselineId, now);
+            row.Status = approved.Status.ToString(); row.DocumentJson = JsonSerializer.Serialize(approved, Json);
+            await db.SaveChangesAsync(ct);
+            return new PerformanceBaselineDecisionResult(approved, superseded, null);
+        }, ct);
+    }
+
+    /// <summary>Rejects a proposal (kept, with who and why). Never affects the Active baseline.</summary>
+    public async Task<PerformanceBaselineDecisionResult> RejectAsync(string environmentId, string baselineId, PerformanceBaselineDecision decision, string by, DateTimeOffset now, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(decision.Reason)) return new(null, null, "Give a reason for the rejection.");
+        var row = await db.PerformanceBaselines.FirstOrDefaultAsync(r => r.Id == baselineId && r.EnvironmentId == environmentId, ct);
+        if (row is null) return new(null, null, "The baseline does not exist in this environment.");
+        var baseline = JsonSerializer.Deserialize<PerformanceBaseline>(row.DocumentJson, Json)!;
+        if (baseline.Status != PerformanceBaselineStatus.Proposed) return new(null, null, $"Only a proposed baseline can be rejected; this one is {baseline.Status}.");
+        var rejected = baseline with { Status = PerformanceBaselineStatus.Rejected, Approval = BaselineApprovalState.Rejected, RejectedBy = by, RejectedAt = now, DecisionNote = decision.Reason.Trim() };
+        row.Status = rejected.Status.ToString(); row.DocumentJson = JsonSerializer.Serialize(rejected, Json);
+        await db.SaveChangesAsync(ct);
+        return new(rejected, null, null);
+    }
+
+    /// <summary>
+    /// One-step promotion (propose and approve by the same person), kept for existing clients. Same eligibility review; failed required thresholds need
+    /// <see cref="PerformanceBaselinePromotion.AcceptThresholdFailures"/>; other non-blocking findings are recorded as accepted.
+    /// </summary>
+    public async Task<PerformanceBaselinePromotionResult> PromoteAsync(string environmentId, PerformanceBaselinePromotion request, DateTimeOffset now, CancellationToken ct = default, string initiator = "Local session")
     {
         var run = await RunAsync(request.RunId, ct);
         if (run is null || run.EnvironmentId != environmentId) return new(null, null, "The run does not exist in this environment.");
@@ -200,44 +271,70 @@ public sealed class PerformanceTestStore(AppDbContext db)
         if (run.Metrics is null || run.MetricsPartial) return new(null, null, "The run has no complete metrics.");
         if (run.Verdict == PerformanceQualityVerdict.Fail && !request.AcceptThresholdFailures)
             return new(null, null, "Required thresholds failed in this run. Confirm explicitly to use it as the baseline anyway.");
-        // Reading the scope, superseding the active baseline and adding the new one are one serialised step per scope: two concurrent promotions can
-        // never leave two Active baselines (or two with the same version).
-        return await Persistence.ScopedWriteLock.RunAsync(db, $"performance-baseline|{environmentId}|{run.DefinitionId}|{run.ComparisonFingerprint}", async () =>
-        {
-        var scope = await db.PerformanceBaselines.Where(r => r.EnvironmentId == environmentId && r.DefinitionId == run.DefinitionId && r.ComparisonFingerprint == run.ComparisonFingerprint).ToListAsync(ct);
-        var version = scope.Count == 0 ? 1 : scope.Max(r => r.Version) + 1;
-        var baseline = new PerformanceBaseline
-        {
-            EnvironmentId = environmentId, ProjectId = run.ProjectId, DefinitionId = run.DefinitionId, ComparisonFingerprint = run.ComparisonFingerprint, RunId = run.RunId,
-            Version = version, Name = string.IsNullOrWhiteSpace(request.Name) ? $"Baseline v{version}" : request.Name.Trim(), Reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim(),
-            CreatedAt = now, EffectiveFrom = now, Status = PerformanceBaselineStatus.Active,
-        };
-        PerformanceBaseline? superseded = null;
-        foreach (var row in scope.Where(r => r.Status == nameof(PerformanceBaselineStatus.Active)))
-        {
-            var old = JsonSerializer.Deserialize<PerformanceBaseline>(row.DocumentJson, Json)! with
-                { Status = PerformanceBaselineStatus.Superseded, SupersededAt = now, SupersededByBaselineId = baseline.BaselineId };
-            row.Status = old.Status.ToString(); row.DocumentJson = JsonSerializer.Serialize(old, Json);
-            superseded = old;
-        }
-        db.PerformanceBaselines.Add(new PerformanceBaselineRecord
-        {
-            Id = baseline.BaselineId, EnvironmentId = environmentId, DefinitionId = baseline.DefinitionId, ComparisonFingerprint = baseline.ComparisonFingerprint,
-            Status = baseline.Status.ToString(), Version = version, CreatedAt = now, DocumentJson = JsonSerializer.Serialize(baseline, Json),
-        });
-        await db.SaveChangesAsync(ct);
-        return new PerformanceBaselinePromotionResult(baseline, superseded, null);
-        }, ct);
+        var proposed = await ProposeAsync(environmentId, new PerformanceBaselineProposal { RunId = request.RunId, Name = request.Name, Reason = request.Reason, AcceptWarnings = true }, initiator, now, ct);
+        if (proposed.Baseline is null) return new(null, null, proposed.Error);
+        var approved = await ApproveAsync(environmentId, proposed.Baseline.BaselineId, new() { Reason = "Proposed and approved in one step." }, initiator, now, ct);
+        return new(approved.Baseline, approved.Superseded, approved.Error);
     }
 
-    /// <summary>Archives (Historical) a baseline — never deletes it; runs that referenced it keep the reference.</summary>
+    /// <summary>Archives (Historical) an approved baseline — never deletes it; runs that referenced it keep the reference.</summary>
     public async Task<PerformanceBaseline?> ArchiveBaselineAsync(string environmentId, string baselineId, DateTimeOffset now, CancellationToken ct = default)
     {
         var row = await db.PerformanceBaselines.FirstOrDefaultAsync(r => r.Id == baselineId && r.EnvironmentId == environmentId, ct);
         if (row is null) return null;
-        var baseline = JsonSerializer.Deserialize<PerformanceBaseline>(row.DocumentJson, Json)! with { Status = PerformanceBaselineStatus.Historical, SupersededAt = now };
+        var current = JsonSerializer.Deserialize<PerformanceBaseline>(row.DocumentJson, Json)!;
+        if (current.Status is PerformanceBaselineStatus.Proposed or PerformanceBaselineStatus.Rejected) return null;
+        var baseline = current with { Status = PerformanceBaselineStatus.Historical, SupersededAt = now };
         row.Status = baseline.Status.ToString(); row.DocumentJson = JsonSerializer.Serialize(baseline, Json);
         await db.SaveChangesAsync(ct);
         return baseline;
     }
+
+    /// <summary>
+    /// Deletes one finished run after an explicit confirmation. A run that is the source of a proposed or approved baseline (active, superseded or
+    /// historical) is protected: a baseline is a reference to its run's evidence, so the run is never removed underneath it.
+    /// </summary>
+    public async Task<string?> DeleteRunAsync(string environmentId, Guid runId, PerformanceRunDeletion request, CancellationToken ct = default)
+    {
+        if (request.Confirm != 1) return "Confirm the deletion of exactly one run.";
+        var row = await db.PerformanceTestRuns.FirstOrDefaultAsync(r => r.Id == runId && r.EnvironmentId == environmentId, ct);
+        if (row is null) return "The run does not exist in this environment.";
+        if (JsonSerializer.Deserialize<PerformanceTestRun>(row.DocumentJson, Json)!.IsActive) return "The run is still active; cancel it first.";
+        var references = (await db.PerformanceBaselines.AsNoTracking().Where(b => b.EnvironmentId == environmentId && b.Status != nameof(PerformanceBaselineStatus.Rejected)).ToListAsync(ct))
+            .Select(b => JsonSerializer.Deserialize<PerformanceBaseline>(b.DocumentJson, Json)!).Where(b => b.RunId == runId).ToList();
+        if (references.Count > 0)
+            return $"Protected: the run is the source of {string.Join(", ", references.Select(b => $"{b.Name} (v{b.Version}, {b.Status})"))}. A baseline always keeps its run.";
+        db.PerformanceTestRuns.Remove(row);
+        await db.SaveChangesAsync(ct);
+        return null;
+    }
+
+    private static string ScopeKey(string environmentId, PerformanceTestRun run) => $"performance-baseline|{environmentId}|{run.DefinitionId}|{run.ComparisonFingerprint}";
+
+    /// <summary>The scope's rows as stored now: rows tracked by an earlier call on this context are dropped first (EF would otherwise return their
+    /// stale values, and a concurrent writer's Active baseline would not be superseded).</summary>
+    private Task<List<PerformanceBaselineRecord>> ScopeRowsAsync(string environmentId, PerformanceTestRun run, CancellationToken ct)
+    {
+        db.ChangeTracker.Clear();
+        return db.PerformanceBaselines.Where(r => r.EnvironmentId == environmentId && r.DefinitionId == run.DefinitionId && r.ComparisonFingerprint == run.ComparisonFingerprint).ToListAsync(ct);
+    }
+
+    private static PerformanceBaseline? Supersede(List<PerformanceBaselineRecord> scope, string byBaselineId, DateTimeOffset now)
+    {
+        PerformanceBaseline? superseded = null;
+        foreach (var row in scope.Where(r => r.Status == nameof(PerformanceBaselineStatus.Active)))
+        {
+            var old = JsonSerializer.Deserialize<PerformanceBaseline>(row.DocumentJson, Json)! with
+                { Status = PerformanceBaselineStatus.Superseded, SupersededAt = now, SupersededByBaselineId = byBaselineId };
+            row.Status = old.Status.ToString(); row.DocumentJson = JsonSerializer.Serialize(old, Json);
+            superseded = old;
+        }
+        return superseded;
+    }
+
+    private static PerformanceBaselineRecord Row(PerformanceBaseline b) => new()
+    {
+        Id = b.BaselineId, EnvironmentId = b.EnvironmentId, DefinitionId = b.DefinitionId, ComparisonFingerprint = b.ComparisonFingerprint,
+        Status = b.Status.ToString(), Version = b.Version, CreatedAt = b.CreatedAt, DocumentJson = JsonSerializer.Serialize(b, Json),
+    };
 }

@@ -350,6 +350,9 @@
     private string? _promoteReason;
     private bool _promoteAcceptFailures;
     private string? _promoteError;
+    private string? _decisionError, _rejectReason, _rejectingBaselineId;
+    private Guid? _deleteRunId;
+    private string? _deleteError;
     private System.Threading.Timer? _poll;
     private PerformanceTargetDrift? _targetDrift;
 
@@ -777,6 +780,56 @@
         _promoteRunId = null; _promoteReason = null; _promoteAcceptFailures = false; _promoteError = null;
         _baselines = await Api.BaselinesAsync(_profile.Id, _draft.Id);
     }
+
+    /// <summary>Proposes the run as the next baseline: recorded with its eligibility review, never used for comparison until approved.</summary>
+    private async Task ProposeAsync()
+    {
+        if (_promoteRunId is not { } runId) return;
+        var result = await Api.ProposeBaselineAsync(_profile!.Id, new PerformanceBaselineProposal { RunId = runId, Reason = _promoteReason, AcceptWarnings = _promoteAcceptFailures });
+        if (result.Error is not null) { _promoteError = result.Error; return; }
+        _message = $"Run {P.Short(runId)} is proposed as baseline v{result.Baseline!.Version}; it is used for comparison once it is approved.";
+        _promoteRunId = null; _promoteReason = null; _promoteAcceptFailures = false; _promoteError = null;
+        _baselines = await Api.BaselinesAsync(_profile.Id, _draft.Id);
+    }
+
+    private async Task ApproveBaselineAsync(PerformanceBaseline b)
+    {
+        var result = await Api.ApproveBaselineAsync(_profile!.Id, b.BaselineId, null);
+        _decisionError = result.Error;
+        if (result.Baseline is { } approved)
+            _message = $"Baseline v{approved.Version} is approved and active{(result.Superseded is { } s ? $"; v{s.Version} is superseded and kept" : "")}.";
+        _baselines = await Api.BaselinesAsync(_profile.Id, _draft.Id);
+    }
+
+    private async Task RejectBaselineAsync(PerformanceBaseline b)
+    {
+        if (string.IsNullOrWhiteSpace(_rejectReason)) { _decisionError = "Give a reason for the rejection."; return; }
+        var result = await Api.RejectBaselineAsync(_profile!.Id, b.BaselineId, _rejectReason);
+        _decisionError = result.Error;
+        if (result.Error is null) { _rejectingBaselineId = null; _rejectReason = null; _message = $"Proposal v{b.Version} is rejected (kept with the reason)."; }
+        _baselines = await Api.BaselinesAsync(_profile.Id, _draft.Id);
+    }
+
+    /// <summary>First click asks, the second deletes. The run of a proposed or approved baseline is protected by the backend.</summary>
+    private async Task DeleteRunAsync(PerformanceTestRun run)
+    {
+        if (_deleteRunId != run.RunId) { _deleteRunId = run.RunId; _deleteError = null; return; }
+        _deleteError = await Api.DeleteRunAsync(_profile!.Id, run.RunId);
+        if (_deleteError is null)
+        {
+            _message = $"Run {P.Short(run.RunId)} is deleted.";
+            _deleteRunId = null;
+            _runs = await Api.RunsAsync(_profile.Id, _draft.Id);
+            if (_selectedRun?.RunId == run.RunId) _selectedRun = null;
+        }
+    }
+
+    private static string ApprovalText(PerformanceBaseline b) => b.ApprovalOrLegacy() switch
+    {
+        BaselineApprovalState.Proposed => $"Proposed{(b.ProposedBy is { } by ? " by " + by : "")}",
+        BaselineApprovalState.Rejected => $"Rejected{(b.RejectedBy is { } by ? " by " + by : "")}: {b.DecisionNote}",
+        _ => b.Approval is null ? "Approved (before the approval workflow)" : $"Approved{(b.ApprovedBy is { } by ? " by " + by : "")}{(b.ApprovedAt is { } at ? " · " + P.Utc(at) : "")}",
+    };
 
     private async Task CompareAsync()
     {
@@ -1754,6 +1807,7 @@
                 @if (c.Drift is { } d) { @DriftView(d, "pt-compare-drift") } else { @DeltaTable(c.Deltas) }
                 @if (c.ResourceDrift is not null) { <BirkNext.Web.Components.PerformanceResourceResults Drift="c.ResourceDrift" Mode="drift" /> }
             }
+            <BirkNext.Web.Components.PerformanceRegressionPanel EnvironmentId="@_profile!.Id" DefinitionId="@_draft.Id" Runs="_runs" Baselines="_baselines" />
         }
     </section>;
 
@@ -1792,7 +1846,11 @@
                                     <button type="button" class="sd-link" @onclick="() => { _compareCurrent = r.RunId.ToString(); _tab = Tab.Compare; }">Compare</button>
                                     @if (r.State == PerformanceRunState.Completed && r.Metrics is not null && !r.MetricsPartial && baseline is null)
                                     {
-                                        <button type="button" class="sd-link" @onclick="() => { _promoteRunId = r.RunId; _promoteError = null; }" data-testid="pt-promote-open">Promote to baseline</button>
+                                        <button type="button" class="sd-link" @onclick="() => { _promoteRunId = r.RunId; _promoteError = null; }" data-testid="pt-promote-open">Propose as baseline</button>
+                                    }
+                                    @if (!r.IsActive)
+                                    {
+                                        <button type="button" class="sd-link" @onclick="() => DeleteRunAsync(r)" data-testid="pt-run-delete">@(_deleteRunId == r.RunId ? "Confirm delete" : "Delete")</button>
                                     }
                                 </td>
                             </tr>
@@ -1801,29 +1859,38 @@
                 </table>
             </div>
         }
+        @if (_deleteError is { } de) { <p class="sd-reason" role="alert" data-testid="pt-run-delete-error">@de</p> }
         @if (_promoteRunId is { } promote && _runs.FirstOrDefault(r => r.RunId == promote) is { } candidate)
         {
             <div class="sd-panel" data-testid="pt-promote">
-                <h3>Promote run @P.Short(promote) to baseline</h3>
+                <h3>Propose run @P.Short(promote) as baseline</h3>
+                <ul class="sd-list" data-testid="pt-promote-eligibility">
+                    @foreach (var check in PerformanceRegressionRules.Eligibility(candidate))
+                    {
+                        <li data-passed="@(check.Passed ? "true" : "false")">@(check.Passed ? "✓" : check.Blocking ? "✗" : "!") @check.Label — @check.Detail</li>
+                    }
+                </ul>
                 <p>Current baseline: @(ActiveBaseline is { } cur ? $"v{cur.Version} (run {P.Short(cur.RunId)})" : "none")</p>
                 @if (ActiveBaseline is { } current && _runs.FirstOrDefault(r => r.RunId == current.RunId) is { } currentRun) { @DeltaTable(PerformanceTestRules.Deltas(currentRun.Metrics, candidate.Metrics)) }
                 <label>Reason (optional) <input @bind="_promoteReason" maxlength="300" placeholder="e.g. infrastructure upgraded" data-testid="pt-promote-reason" /></label>
-                @if (candidate.Verdict == PerformanceQualityVerdict.Fail)
+                @if (PerformanceRegressionRules.Eligibility(candidate).Any(c => !c.Blocking && !c.Passed))
                 {
-                    <label class="sd-check"><input type="checkbox" @bind="_promoteAcceptFailures" /> Required thresholds failed in this run — use it as the baseline anyway</label>
+                    <label class="sd-check"><input type="checkbox" @bind="_promoteAcceptFailures" data-testid="pt-promote-accept" /> Accept the warnings above and use this run as the reference anyway (recorded with the baseline)</label>
                 }
                 @if (_promoteError is { } pe) { <p class="sd-reason" role="alert">@pe</p> }
-                <button type="button" class="btn-primary" @onclick="PromoteAsync" data-testid="pt-promote-confirm">Set as new baseline</button>
+                <button type="button" class="btn-primary" @onclick="ProposeAsync" data-testid="pt-propose-confirm">Propose for approval</button>
+                <button type="button" class="btn-secondary" @onclick="PromoteAsync" data-testid="pt-promote-confirm">Propose and approve now</button>
                 <button type="button" class="btn-secondary" @onclick="() => _promoteRunId = null">Cancel</button>
             </div>
         }
         <h3>Baselines</h3>
+        @if (_decisionError is { } decisionError) { <p class="sd-reason" role="alert" data-testid="pt-baseline-decision-error">@decisionError</p> }
         @if (_baselines.Count == 0) { <p class="sd-muted">No baseline selected yet.</p> }
         else
         {
             <div class="sd-scroll" tabindex="0" role="region" aria-label="Baseline history">
                 <table data-testid="pt-baselines">
-                    <thead><tr><th scope="col">Version</th><th scope="col">Run</th><th scope="col">Effective</th><th scope="col">P95</th><th scope="col">P99</th><th scope="col">RPS</th><th scope="col">Error rate</th><th scope="col">Reason</th><th scope="col">Status</th></tr></thead>
+                    <thead><tr><th scope="col">Version</th><th scope="col">Run</th><th scope="col">Effective</th><th scope="col">P95</th><th scope="col">P99</th><th scope="col">RPS</th><th scope="col">Error rate</th><th scope="col">Reason</th><th scope="col">Status</th><th scope="col">Approval</th></tr></thead>
                     <tbody>
                         @foreach (var b in _baselines)
                         {
@@ -1831,7 +1898,24 @@
                             <tr data-testid="pt-baseline-row" data-status="@b.Status"><th scope="row">v@(b.Version)</th><td>@P.Short(b.RunId)</td><td>@P.Utc(b.EffectiveFrom) – @(b.SupersededAt is null ? "now" : P.Utc(b.SupersededAt))</td>
                                 <td>@PerformanceTestRules.Format(br?.Metrics?.Latency.P95Ms, PerformanceMetric.LatencyP95Ms)</td><td>@PerformanceTestRules.Format(br?.Metrics?.Latency.P99Ms, PerformanceMetric.LatencyP99Ms)</td>
                                 <td>@PerformanceTestRules.Format(br?.Metrics?.RequestsPerSecond, PerformanceMetric.ThroughputRps)</td><td>@PerformanceTestRules.Format(br?.Metrics?.ErrorRatePercent, PerformanceMetric.ErrorRatePercent)</td>
-                                <td>@(b.Reason ?? "—")</td><td>@b.Status</td></tr>
+                                <td>@(b.Reason ?? "—")</td><td>@b.Status</td>
+                                <td data-testid="pt-baseline-approval">@ApprovalText(b)
+                                    @if (b.Status == PerformanceBaselineStatus.Proposed)
+                                    {
+                                        <span class="pt-baseline-decide">
+                                            <button type="button" class="sd-link" @onclick="() => ApproveBaselineAsync(b)" data-testid="pt-baseline-approve">Approve</button>
+                                            @if (_rejectingBaselineId == b.BaselineId)
+                                            {
+                                                <label>Reason <input @bind="_rejectReason" maxlength="300" data-testid="pt-baseline-reject-reason" /></label>
+                                                <button type="button" class="sd-link" @onclick="() => RejectBaselineAsync(b)" data-testid="pt-baseline-reject-confirm">Reject</button>
+                                            }
+                                            else
+                                            {
+                                                <button type="button" class="sd-link" @onclick="() => { _rejectingBaselineId = b.BaselineId; _decisionError = null; }" data-testid="pt-baseline-reject">Reject…</button>
+                                            }
+                                        </span>
+                                    }
+                                </td></tr>
                         }
                     </tbody>
                 </table>

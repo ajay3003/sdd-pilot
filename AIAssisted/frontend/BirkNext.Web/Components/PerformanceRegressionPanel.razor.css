@@ -1,0 +1,11 @@
+/* Regression + trend panel (Performance Test Review → Compare). */
+.prg { margin-top: 1.5rem; }
+.prg-controls { flex-wrap: wrap; align-items: flex-start; gap: .75rem; }
+.prg-runs { border: 1px solid var(--clr-border, #d1d5db); border-radius: .375rem; padding: .5rem .75rem; min-width: 0; max-width: 100%; }
+.prg-runs legend { font-size: .875rem; padding: 0 .25rem; }
+.prg-runs label { display: flex; gap: .375rem; align-items: center; overflow-wrap: anywhere; }
+.prg-result { margin-top: .75rem; }
+.prg-verdict { font-weight: 600; }
+.prg-spark { width: 100%; max-width: 30rem; height: 5rem; display: block; margin: .5rem 0; }
+.prg-spark-line { fill: none; stroke: var(--clr-primary, #1d4ed8); stroke-width: 2; }
+.prg-spark-baseline { stroke: #6b7280; stroke-width: 1; stroke-dasharray: 4 3; }

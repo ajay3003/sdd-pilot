@@ -921,6 +921,75 @@ public sealed class PerformanceTestReviewTests
         (await h.Store().PromoteAsync("pay-qa", new PerformanceBaselinePromotion { RunId = thresholdFailed.RunId, AcceptThresholdFailures = true }, DateTimeOffset.UtcNow)).Baseline.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task BaselineApproval_ProposalIsInertUntilApproved_ApprovedIsImmutable_RejectedIsKeptWithAReason()
+    {
+        await using var h = new Harness();
+        var d = await h.SeedAsync();
+        var run1 = await h.RunToEndAsync(d.Id);
+        var proposed = await h.Store().ProposeAsync("pay-qa", new PerformanceBaselineProposal { RunId = run1.RunId, Reason = "first reference" }, "tester-a", DateTimeOffset.UtcNow);
+        proposed.Baseline!.Should().Match<PerformanceBaseline>(b => b.Status == PerformanceBaselineStatus.Proposed && b.ProposedBy == "tester-a" && b.Eligibility!.Count > 0);
+        (await h.Store().ActiveBaselineAsync("pay-qa", d.Id, run1.ComparisonFingerprint)).Should().BeNull("a proposal is never used for comparison");
+
+        var approved = await h.Store().ApproveAsync("pay-qa", proposed.Baseline.BaselineId, new() { Reason = "looks representative" }, "lead-b", DateTimeOffset.UtcNow);
+        approved.Baseline!.Should().Match<PerformanceBaseline>(b => b.Status == PerformanceBaselineStatus.Active && b.Approval == BaselineApprovalState.Approved && b.ApprovedBy == "lead-b");
+        (await h.Store().ApproveAsync("pay-qa", proposed.Baseline.BaselineId, new(), "lead-b", DateTimeOffset.UtcNow)).Error.Should().Contain("Only a proposed baseline");
+
+        var run2 = await h.RunToEndAsync(d.Id);
+        var second = await h.Store().ProposeAsync("pay-qa", new PerformanceBaselineProposal { RunId = run2.RunId }, "tester-a", DateTimeOffset.UtcNow);
+        (await h.Store().RejectAsync("pay-qa", second.Baseline!.BaselineId, new(), "lead-b", DateTimeOffset.UtcNow)).Error.Should().Contain("reason");
+        var rejected = await h.Store().RejectAsync("pay-qa", second.Baseline.BaselineId, new() { Reason = "warm caches" }, "lead-b", DateTimeOffset.UtcNow);
+        rejected.Baseline!.Should().Match<PerformanceBaseline>(b => b.Status == PerformanceBaselineStatus.Rejected && b.RejectedBy == "lead-b" && b.DecisionNote == "warm caches");
+        (await h.Store().ActiveBaselineAsync("pay-qa", d.Id, run1.ComparisonFingerprint))!.BaselineId.Should().Be(approved.Baseline.BaselineId, "a rejection never touches the Active baseline");
+
+        var run3 = await h.RunToEndAsync(d.Id);
+        var third = await h.Store().ProposeAsync("pay-qa", new PerformanceBaselineProposal { RunId = run3.RunId }, "tester-a", DateTimeOffset.UtcNow);
+        var newer = await h.Store().ApproveAsync("pay-qa", third.Baseline!.BaselineId, new(), "lead-b", DateTimeOffset.UtcNow);
+        newer.Superseded!.BaselineId.Should().Be(approved.Baseline.BaselineId);
+        var old = (await h.Store().BaselineAsync(approved.Baseline.BaselineId))!;
+        old.Should().Match<PerformanceBaseline>(b => b.Status == PerformanceBaselineStatus.Superseded && b.RunId == run1.RunId && b.ApprovedBy == "lead-b" && b.Reason == "first reference",
+            "superseding moves the status only; the approved reference is unchanged");
+        (await h.Store().BaselinesAsync("pay-qa", d.Id)).Select(b => b.Version).Should().BeEquivalentTo([1, 2, 3]);
+    }
+
+    [Fact]
+    public async Task RunDeletion_NeedsConfirmation_AndNeverRemovesTheRunOfAProposedOrApprovedBaseline()
+    {
+        await using var h = new Harness();
+        var d = await h.SeedAsync();
+        var source = await h.RunToEndAsync(d.Id);
+        var other = await h.RunToEndAsync(d.Id);
+        var proposed = await h.Store().ProposeAsync("pay-qa", new PerformanceBaselineProposal { RunId = source.RunId }, "tester-a", DateTimeOffset.UtcNow);
+        (await h.Store().DeleteRunAsync("pay-qa", source.RunId, new() { Confirm = 1 })).Should().StartWith("Protected").And.Contain("Proposed");
+        await h.Store().ApproveAsync("pay-qa", proposed.Baseline!.BaselineId, new(), "lead-b", DateTimeOffset.UtcNow);
+        await h.Store().ArchiveBaselineAsync("pay-qa", proposed.Baseline.BaselineId, DateTimeOffset.UtcNow);
+        (await h.Store().DeleteRunAsync("pay-qa", source.RunId, new() { Confirm = 1 })).Should().StartWith("Protected").And.Contain("Historical", "an archived baseline still keeps its run");
+
+        (await h.Store().DeleteRunAsync("pay-qa", other.RunId, new() { Confirm = 0 })).Should().Contain("Confirm");
+        (await h.Store().DeleteRunAsync("pay-qa", other.RunId, new() { Confirm = 1 })).Should().BeNull();
+        (await h.Store().RunAsync(other.RunId)).Should().BeNull();
+        (await h.Store().RunAsync(source.RunId)).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Regression_AgainstAnApprovedBaseline_UsesTheDefinitionsTolerances_AndRepeatedRunsConfirm()
+    {
+        await using var h = new Harness();
+        var d = await h.SeedAsync(Definition(x => x with { DriftPolicies = [new PerformanceDriftPolicy { Metric = PerformanceMetric.LatencyP95Ms, AllowedRelativeChangePercent = 20 }] }));
+        var reference = await h.RunToEndAsync(d.Id);
+        var baseline = (await h.Store().PromoteAsync("pay-qa", new PerformanceBaselinePromotion { RunId = reference.RunId }, DateTimeOffset.UtcNow, default, "lead-b")).Baseline!;
+        baseline.Should().Match<PerformanceBaseline>(b => b.Approval == BaselineApprovalState.Approved && b.ApprovedBy == "lead-b" && b.ProposedBy == "lead-b");
+        h.Runner.SummaryJson = Summary(p95: 600);
+        var slower = new List<PerformanceTestRun>();
+        for (var i = 0; i < 3; i++) slower.Add(await h.RunToEndAsync(d.Id));
+
+        var one = PerformanceRegressionRules.Evaluate(baseline, reference, [slower[0]], slower[0].DefinitionSnapshot.DriftPolicies);
+        var three = PerformanceRegressionRules.Evaluate(baseline, reference, slower, slower[0].DefinitionSnapshot.DriftPolicies);
+        one.Metrics.Single(m => m.Key == "p95").Verdict.Should().Be(RegressionVerdict.PotentialRegression);
+        three.Metrics.Single(m => m.Key == "p95").Verdict.Should().Be(RegressionVerdict.ConfirmedRegression);
+        three.Comparability.Level.Should().Be(ComparabilityLevel.Comparable);
+    }
+
     private static PerformanceTestRun Completed(double p95, double rps = 50, double errors = 0.2, PerformanceWorkload? workload = null, string environment = "pay-qa") => new()
     {
         EnvironmentId = environment, TargetOrigin = "https://paymenthub-qa.example.test", ComparisonFingerprint = workload is null ? "same" : "other", State = PerformanceRunState.Completed,
