@@ -9,10 +9,10 @@ namespace BirkNext.Web.Services;
 /// </summary>
 public static class TopologyWorkflow
 {
-    public const string OverviewTab = "overview", MapTab = "map", GapsTab = "gaps", InventoryTab = "inventory", MessagesTab = "messages";
+    public const string OverviewTab = "overview", MapTab = "map", GapsTab = "gaps", InventoryTab = "inventory", MessagesTab = "messages", StorageTab = "storage";
 
     public static readonly IReadOnlyList<(string Key, string Label)> Tabs =
-        [(OverviewTab, "Overview"), (MapTab, "Topology Map"), (GapsTab, "Evidence & Gaps"), (InventoryTab, "Technical Inventory"), (MessagesTab, "Messages")];
+        [(OverviewTab, "Overview"), (MapTab, "Topology Map"), (GapsTab, "Evidence & Gaps"), (InventoryTab, "Technical Inventory"), (MessagesTab, "Messages"), (StorageTab, "Storage")];
 
     public static string ResolveTab(string? tab) => Tabs.Any(t => string.Equals(t.Key, tab, StringComparison.OrdinalIgnoreCase)) ? tab!.ToLowerInvariant() : OverviewTab;
 

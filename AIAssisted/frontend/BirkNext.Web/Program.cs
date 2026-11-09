@@ -358,6 +358,10 @@ if (entra.Configured)
 var messageObservationsClient = builder.Services.AddHttpClient<IMessageObservationApiService, MessageObservationApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
     messageObservationsClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
+// Blob Storage explorer (read-only): configured stores, listing, bounded previews, expectation checks, observations without content.
+var blobStorageClient = builder.Services.AddHttpClient<IBlobStorageApiService, BlobStorageApiService>(client => client.BaseAddress = backendBase);
+if (entra.Configured)
+    blobStorageClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
 // Parquet Data Explorer: temporary read-only sessions of uploaded files, bounded rows, full-scan profile/validation, comparison, evidence.
 var parquetClient = builder.Services.AddHttpClient<IParquetApiService, ParquetApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)

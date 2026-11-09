@@ -617,6 +617,9 @@ builder.Services.AddScoped<BirkNext.Api.Services.ExecutionEvidence.ExecutionEvid
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.Messaging.MessageObservationService>();
 // Parquet data explorer: temporary read-only sessions of uploaded files + durable evidence without row values.
 builder.Services.AddScoped<BirkNext.Api.Services.Parquet.ParquetInspectionService>();
+// Read-only Blob Storage explorer: stores configured per environment under "BlobStorage" (none by default); synthetic local stores in Development only.
+builder.Services.Configure<BirkNext.Api.Services.BlobStorage.BlobStorageOptions>(builder.Configuration.GetSection(BirkNext.Api.Services.BlobStorage.BlobStorageOptions.Section));
+builder.Services.AddScoped<BirkNext.Api.Services.BlobStorage.BlobExplorerService>();
 // Authentication of execution runs: the attended Local HTTPS proxy credential or the environment's unattended API service credential (encrypted
 // at rest with Data Protection; tokens memory-only). The token client fetches only configured token endpoints, under the contract-source policy.
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.ExecutionEvidence.ApiServiceCredentialStore(

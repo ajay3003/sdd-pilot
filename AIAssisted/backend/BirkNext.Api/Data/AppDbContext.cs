@@ -20,6 +20,7 @@ public class AppDbContext : DbContext
     public DbSet<ExecutionRetentionSettingsRow> ExecutionRetentionSettings => Set<ExecutionRetentionSettingsRow>();
     public DbSet<MessageObservationSetRecord> MessageObservationSets => Set<MessageObservationSetRecord>();
     public DbSet<ParquetInspectionRecord> ParquetInspections => Set<ParquetInspectionRecord>();
+    public DbSet<BlobObservationRecord> BlobObservations => Set<BlobObservationRecord>();
     public DbSet<ApiContractRow> ApiContracts => Set<ApiContractRow>();
     public DbSet<ApiContractVersionRow> ApiContractVersions => Set<ApiContractVersionRow>();
     public DbSet<ContractTestRow> ContractTests => Set<ContractTestRow>();
@@ -1097,6 +1098,15 @@ public class AppDbContext : DbContext
             entity.Property(r => r.FileName).HasMaxLength(300).IsRequired();
             entity.Property(r => r.DocumentJson).HasColumnType("text").IsRequired();
             entity.HasIndex(r => new { r.EnvironmentId, r.SavedAt });
+        });
+        modelBuilder.Entity<BlobObservationRecord>(entity =>
+        {
+            entity.ToTable("blob_observations");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.EnvironmentId).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.BlobName).HasMaxLength(400).IsRequired();
+            entity.Property(r => r.DocumentJson).HasColumnType("text").IsRequired();
+            entity.HasIndex(r => new { r.EnvironmentId, r.ObservedAt });
         });
         modelBuilder.Entity<MessageObservationSetRecord>(entity =>
         {

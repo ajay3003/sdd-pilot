@@ -369,6 +369,36 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("azure_environment_snapshots", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.BlobObservationRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BlobName")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
+
+                    b.Property<string>("DocumentJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("ObservedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvironmentId", "ObservedAt");
+
+                    b.ToTable("blob_observations", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.CandidateLink", b =>
                 {
                     b.Property<Guid>("Id")

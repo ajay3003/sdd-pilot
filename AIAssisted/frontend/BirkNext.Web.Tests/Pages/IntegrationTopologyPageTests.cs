@@ -459,7 +459,7 @@ public sealed class IntegrationTopologyPageTests : BunitContext
         _api.Coverage = BindingCoverage();
         var page = Render<IntegrationTopologyPage>();
         page.WaitForAssertion(() => page.Find("[data-testid=it-tabs]"));
-        page.FindAll("[data-testid=it-tabs] a").Select(a => a.TextContent.Trim()).Should().Equal("Overview", "Topology Map", "Evidence & Gaps", "Technical Inventory", "Messages");
+        page.FindAll("[data-testid=it-tabs] a").Select(a => a.TextContent.Trim()).Should().Equal("Overview", "Topology Map", "Evidence & Gaps", "Technical Inventory", "Messages", "Storage");
         page.Find("[data-testid=it-tab-overview]").GetAttribute("aria-current").Should().Be("page");
         Hidden(page, "overview").Should().Be("shown");
         Hidden(page, "gaps").Should().Be("hidden");

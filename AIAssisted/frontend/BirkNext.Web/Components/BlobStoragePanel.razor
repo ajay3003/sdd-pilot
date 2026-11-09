@@ -1,0 +1,286 @@
+@using BirkNext.BlobStorage
+@inject BirkNext.Web.Services.IBlobStorageApiService Api
+
+@* Blob Storage for one environment (read-only). Stores are configured per environment; a synthetic local store is labelled as not Azure wherever
+   it appears. Browse → properties → bounded preview → check an expected artifact → save an observation (identity, checks and a hash, never content).
+   Nothing here can upload, overwrite, delete, lease, snapshot, change tiers or metadata, or generate a SAS. *@
+<section class="bs" aria-labelledby="bs-h" data-testid="bs-panel">
+    <h2 id="bs-h">Storage · Blob artifacts</h2>
+    <p class="bs-note">Read-only. Find the files an integration produced, look at them safely, and check them against what a test expects. Correlation with a
+        test execution needs that execution's id in the blob's metadata or name — a matching time is never treated as proof.</p>
+
+    @if (_error is { } error) { <p class="sd-reason" role="alert" data-testid="bs-error">@error</p> }
+    @if (_stores is null) { <p class="bs-note" data-testid="bs-loading">Loading storage…</p> }
+    else if (_stores.Count == 0)
+    {
+        <p class="bs-note" data-testid="bs-none">No Blob store is configured for this environment. A store is added under <code>BlobStorage:Stores</code> in the API's settings
+            (an Azure account URL with BirkNext's Azure identity, read-only — or, in Development, a synthetic local folder).</p>
+    }
+    else
+    {
+        <div class="bs-stores" role="group" aria-label="Stores">
+            @foreach (var s in _stores)
+            {
+                <button type="button" class="bs-store" aria-pressed="@(_store?.Id == s.Id ? "true" : "false")" @onclick="() => SelectStoreAsync(s)" disabled="@(s.Readiness != BlobStoreReadiness.Ready)" data-testid="bs-store">
+                    <strong>@s.Name</strong>
+                    <span class="bs-pill bs-pill-@(s.Kind == BlobStoreKind.SyntheticLocal ? "synthetic" : "azure")" data-testid="bs-store-kind">@(s.Kind == BlobStoreKind.SyntheticLocal ? "Synthetic local — not Azure" : "Azure storage account")</span>
+                    <span class="bs-context" data-testid="bs-store-readiness">@Readiness(s.Readiness) · @s.Detail</span>
+                </button>
+            }
+        </div>
+    }
+
+    @if (_store is { } store)
+    {
+        <div class="bs-browse">
+            <label>Container
+                <select @onchange="ContainerChangedAsync" data-testid="bs-container">
+                    <option value="">Choose a container</option>
+                    @foreach (var c in _containers ?? []) { <option value="@c.Name" selected="@(c.Name == _container)">@c.Name</option> }
+                </select>
+            </label>
+            @if (_container is not null)
+            {
+                <nav class="bs-crumbs" aria-label="Folder" data-testid="bs-crumbs">
+                    <button type="button" class="sd-link" @onclick="() => OpenPrefixAsync(null)">@_container</button>
+                    @foreach (var (label, prefix) in Crumbs()) { <span aria-hidden="true">/</span><button type="button" class="sd-link" @onclick="() => OpenPrefixAsync(prefix)">@label</button> }
+                </nav>
+            }
+        </div>
+
+        @if (_listing is { } listing)
+        {
+            <p class="bs-note" data-testid="bs-scope">@listing.Scope · listed @Utc(listing.ListedAt)</p>
+            <div class="bs-scroll" tabindex="0" role="region" aria-label="Blobs">
+                <table class="bs-table" data-testid="bs-blobs">
+                    <thead><tr><th scope="col">Name</th><th scope="col">Size</th><th scope="col">Content type</th><th scope="col">Last modified</th><th scope="col">Tier</th></tr></thead>
+                    <tbody>
+                        @foreach (var item in listing.Items)
+                        {
+                            <tr data-testid="bs-blob" class="@(_name == item.Name ? "bs-selected" : "")">
+                                <th scope="row">
+                                    @if (item.IsPrefix) { <button type="button" class="sd-link" @onclick="() => OpenPrefixAsync(item.Name)" data-testid="bs-folder">📁 @Short(item.Name)</button> }
+                                    else { <button type="button" class="sd-link" @onclick="() => OpenBlobAsync(item.Name)" data-testid="bs-blob-open">@Short(item.Name)</button> }
+                                </th>
+                                <td>@(item.Size is { } size ? Bytes(size) : "")</td><td>@item.ContentType</td><td>@(item.LastModified is { } m ? Utc(m) : "")</td><td>@item.AccessTier</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (listing.ContinuationToken is { } next) { <button type="button" class="btn-secondary" @onclick="() => MoreAsync(next)" data-testid="bs-more">Load more</button> }
+        }
+
+        @if (_properties is { } p)
+        {
+            <article class="bs-detail" aria-labelledby="bs-blob-h" data-testid="bs-detail">
+                <h3 id="bs-blob-h" tabindex="-1">@p.Name</h3>
+                <dl class="bs-meta" data-testid="bs-properties">
+                    <div><dt>Size</dt><dd>@Bytes(p.Size)</dd></div><div><dt>Content type</dt><dd>@(p.ContentType ?? "—")</dd></div>
+                    <div><dt>Last modified</dt><dd>@(p.LastModified is { } lm ? Utc(lm) : "—")</dd></div><div><dt>ETag</dt><dd>@(p.ETag ?? "—")</dd></div>
+                    <div><dt>Blob type</dt><dd>@(p.BlobType ?? "—")</dd></div><div><dt>Tier</dt><dd>@(p.AccessTier ?? "—")</dd></div>
+                </dl>
+                @if (p.Metadata.Count > 0)
+                {
+                    <details open data-testid="bs-metadata"><summary>Metadata (@p.Metadata.Count, sensitive values masked)</summary>
+                        <dl class="bs-meta">@foreach (var (mk, mv) in p.Metadata) { <div><dt>@mk</dt><dd>@mv</dd></div> }</dl></details>
+                }
+                @if (_preview is { } pv)
+                {
+                    <section class="bs-preview" aria-label="Preview" data-testid="bs-preview" data-kind="@pv.Kind">
+                        <p class="bs-note"><strong>@pv.Kind preview</strong> · @Bytes(pv.BytesRead) read@(pv.Complete ? " (whole blob)" : " (first part only)")
+                            · syntax: <span data-testid="bs-syntax">@(pv.SyntaxValid switch { true => "valid", false => "invalid", null => "not judged" })</span>
+                            @if (pv.RedactedValues > 0) { <span> · @pv.RedactedValues value(s) masked</span> }
+                            @if (pv.RecordsRead is { } rr) { <span> · @rr record(s) in what was read</span> }
+                            @if (pv.ParquetRows is { } pr) { <span> · @pr rows (file metadata)</span> }</p>
+                        @if (pv.Columns.Count > 0) { <p class="bs-note" data-testid="bs-columns">Fields: @string.Join(", ", pv.Columns)</p> }
+                        @if (pv.Text is { } text) { <pre class="bs-pre" data-testid="bs-text">@text</pre> }
+                        @if (pv.Rows is { Count: > 0 } rows)
+                        {
+                            <div class="bs-scroll" tabindex="0" role="region" aria-label="Parquet rows">
+                                <table class="bs-table" data-testid="bs-rows"><thead><tr>@foreach (var c in pv.Columns) { <th scope="col">@c</th> }</tr></thead>
+                                    <tbody>@foreach (var r in rows) { <tr>@foreach (var cell in r) { <td>@(cell ?? "null")</td> }</tr> }</tbody></table>
+                            </div>
+                        }
+                        @if (pv.Diagnostics.Count > 0) { <ul class="bs-note-list" data-testid="bs-diagnostics">@foreach (var d in pv.Diagnostics) { <li>@d</li> }</ul> }
+                    </section>
+                }
+            </article>
+        }
+
+        <details class="bs-check" data-testid="bs-check" open="@(_container is not null)">
+            <summary>Check an expected artifact</summary>
+            <div class="bs-form">
+                <label>Path (exact name, or a folder ending in “/” for the newest blob in it)<input @bind="_path" data-testid="bs-check-path" /></label>
+                <label>Format
+                    <select @bind="_format" data-testid="bs-check-format"><option value="">Any</option>@foreach (var k in Enum.GetValues<BlobPreviewKind>()) { <option value="@k">@k</option> }</select>
+                </label>
+                <label>Required fields (comma separated)<input @bind="_fields" data-testid="bs-check-fields" /></label>
+                <label>Expected records<input type="number" min="0" @bind="_records" data-testid="bs-check-records" /></label>
+                <label>Execution run id (optional)<input @bind="_run" placeholder="00000000-0000-0000-0000-000000000000" data-testid="bs-check-run" /></label>
+                <div class="bs-actions">
+                    <button type="button" class="btn-primary" @onclick="() => CheckAsync(false)" disabled="@(_busy || _container is null || string.IsNullOrWhiteSpace(_path))" data-testid="bs-check-go">Check</button>
+                    <button type="button" class="btn-secondary" @onclick="() => CheckAsync(true)" disabled="@(_busy || _validation is null)" data-testid="bs-check-save">Save observation</button>
+                </div>
+                @if (_checkError is { } ce) { <p class="sd-reason" role="alert" data-testid="bs-check-error">@ce</p> }
+            </div>
+            @if (_validation is { } v)
+            {
+                <ol class="bs-levels" data-testid="bs-checks">
+                    @foreach (var c in v.Checks)
+                    {
+                        <li data-testid="bs-check-row" data-level="@c.Level" data-outcome="@c.Outcome"><span class="bs-pill bs-pill-@Tone(c.Outcome)">@Outcome(c.Outcome)</span> <strong>@c.Level</strong> — @c.Detail</li>
+                    }
+                </ol>
+                <p data-testid="bs-correlation"><strong>Test execution:</strong> @(v.Correlation == BlobCorrelationState.Confirmed ? "Confirmed" : "Not correlated") — @v.CorrelationDetail
+                    @if (v.CorrelatedRunId is { } runId) { <a href="@($"execution-results?run={runId:D}")" data-testid="bs-correlation-link">Open the run in Execution Results</a> }</p>
+            }
+        </details>
+    }
+
+    @if (_observations is { Count: > 0 } observations)
+    {
+        <section aria-labelledby="bs-obs-h" data-testid="bs-observations">
+            <h3 id="bs-obs-h">Saved observations</h3>
+            <div class="bs-scroll" tabindex="0" role="region" aria-label="Saved observations">
+                <table class="bs-table">
+                    <thead><tr><th scope="col">Blob</th><th scope="col">Store</th><th scope="col">Observed</th><th scope="col">Checks</th><th scope="col">Test execution</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                    <tbody>
+                        @foreach (var o in observations)
+                        {
+                            <tr data-testid="bs-observation">
+                                <th scope="row">@o.Container/@o.BlobName<span class="bs-context">SHA-256 @(o.Sha256OfBytesRead?[..12] ?? "—")…@(o.WholeBlobRead ? "" : " (first part)")</span></th>
+                                <td>@o.StoreId@(o.StoreKind == BlobStoreKind.SyntheticLocal ? " (synthetic)" : "")</td><td>@Utc(o.ObservedAt) by @o.ObservedBy</td>
+                                <td>@(o.Validation is { } ov ? $"{ov.Checks.Count(c => c.Outcome == BlobCheckOutcome.Pass)}/{ov.Checks.Count} passed" : "—")</td>
+                                <td>@(o.Validation?.Correlation == BlobCorrelationState.Confirmed ? "Confirmed" : "Not correlated")</td>
+                                <td><button type="button" class="sd-link" @onclick="() => DeleteAsync(o.Id)" data-testid="bs-observation-delete">@(_deleteId == o.Id ? "Confirm delete (the blob is not touched)" : "Delete")</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+
+    private List<BlobStoreView>? _stores;
+    private BlobStoreView? _store;
+    private List<BlobContainerView>? _containers;
+    private string? _container, _prefix, _name, _error, _checkError, _loadedFor;
+    private BlobListing? _listing;
+    private BlobProperties? _properties;
+    private BlobPreview? _preview;
+    private BlobValidation? _validation;
+    private List<BlobObservation>? _observations;
+    private string _path = "", _fields = "", _run = "", _format = "";
+    private long? _records;
+    private Guid? _deleteId;
+    private bool _busy;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == EnvironmentId) return;
+        _loadedFor = EnvironmentId;
+        _store = null; _containers = null; _container = null; _listing = null; _properties = null; _preview = null; _validation = null;
+        (_stores, _error) = await Api.StoresAsync(EnvironmentId);
+        _stores ??= [];
+        if (_stores.Count(s => s.Readiness == BlobStoreReadiness.Ready) == 1) await SelectStoreAsync(_stores.First(s => s.Readiness == BlobStoreReadiness.Ready));
+        await LoadObservationsAsync();
+    }
+
+    private async Task LoadObservationsAsync() => (_observations, _) = await Api.ObservationsAsync(EnvironmentId);
+
+    private async Task SelectStoreAsync(BlobStoreView store)
+    {
+        _store = store; _container = null; _listing = null; _properties = null; _preview = null; _validation = null;
+        (_containers, _error) = await Api.ContainersAsync(EnvironmentId, store.Id);
+        if (_containers is { Count: 1 }) { _container = _containers[0].Name; await OpenPrefixAsync(null); }
+    }
+
+    private async Task ContainerChangedAsync(ChangeEventArgs e)
+    {
+        _container = e.Value as string is { Length: > 0 } c ? c : null;
+        _listing = null; _properties = null; _preview = null; _validation = null;
+        if (_container is not null) await OpenPrefixAsync(null);
+    }
+
+    private async Task OpenPrefixAsync(string? prefix)
+    {
+        if (_store is null || _container is null) return;
+        _prefix = prefix; _properties = null; _preview = null;
+        (_listing, _error) = await Api.ListAsync(EnvironmentId, _store.Id, _container, prefix, null);
+        if (string.IsNullOrEmpty(_path) || _path.EndsWith('/')) _path = prefix ?? "";
+    }
+
+    private async Task MoreAsync(string continuation)
+    {
+        if (_store is null || _container is null || _listing is null) return;
+        var (more, error) = await Api.ListAsync(EnvironmentId, _store.Id, _container, _prefix, continuation);
+        _error = error;
+        if (more is not null) _listing = more with { Items = [.. _listing.Items, .. more.Items] };
+    }
+
+    private async Task OpenBlobAsync(string name)
+    {
+        if (_store is null || _container is null) return;
+        _name = name; _path = name; _validation = null;
+        (_properties, _error) = await Api.PropertiesAsync(EnvironmentId, _store.Id, _container, name);
+        if (_properties is null) { _preview = null; return; }
+        var (preview, previewError) = await Api.PreviewAsync(EnvironmentId, _store.Id, _container, name);
+        _preview = preview; _error = previewError;
+        _format = preview?.Kind.ToString() ?? "";
+    }
+
+    private async Task CheckAsync(bool save)
+    {
+        if (_store is null || _container is null) return;
+        if (!string.IsNullOrWhiteSpace(_run) && !Guid.TryParse(_run.Trim(), out _)) { _checkError = "The execution run id is not a valid id."; return; }
+        _busy = true; _checkError = null;
+        try
+        {
+            var expectation = new BlobExpectation
+            {
+                Container = _container, Path = _path.Trim(), Format = Enum.TryParse<BlobPreviewKind>(_format, out var f) ? f : null, ExpectedRecords = _records,
+                RequiredFields = [.. _fields.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)],
+                RunId = Guid.TryParse(_run.Trim(), out var run) ? run : null,
+            };
+            var request = new BlobValidateRequest(EnvironmentId, _store.Id, expectation, save);
+            if (save)
+            {
+                var (saved, error) = await Api.SaveAsync(request);
+                _checkError = error;
+                if (saved is not null) { _validation = saved.Validation; await LoadObservationsAsync(); }
+            }
+            else (_validation, _checkError) = await Api.ValidateAsync(request);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task DeleteAsync(Guid id)
+    {
+        if (_deleteId != id) { _deleteId = id; return; }
+        _deleteId = null;
+        _error = await Api.DeleteObservationAsync(EnvironmentId, id);
+        await LoadObservationsAsync();
+    }
+
+    private IEnumerable<(string Label, string Prefix)> Crumbs()
+    {
+        if (string.IsNullOrEmpty(_prefix)) yield break;
+        var parts = _prefix.TrimEnd('/').Split('/');
+        for (var i = 0; i < parts.Length; i++) yield return (parts[i], string.Join('/', parts[..(i + 1)]) + "/");
+    }
+
+    private string Short(string name) => _prefix is { Length: > 0 } p && name.StartsWith(p, StringComparison.Ordinal) ? name[p.Length..] : name;
+    private static string Bytes(long n) => n < 1024 ? $"{n} B" : n < 1024 * 1024 ? $"{n / 1024.0:0.#} KB" : $"{n / (1024.0 * 1024):0.#} MB";
+    private static string Utc(DateTimeOffset t) => t.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture) + " UTC";
+    private static string Readiness(BlobStoreReadiness r) => r switch
+    {
+        BlobStoreReadiness.NotConfigured => "Not configured", BlobStoreReadiness.PermissionDenied => "Permission denied", _ => r.ToString(),
+    };
+    private static string Outcome(BlobCheckOutcome o) => o == BlobCheckOutcome.NotAssessed ? "Not assessed" : o.ToString();
+    private static string Tone(BlobCheckOutcome o) => o switch { BlobCheckOutcome.Pass => "ok", BlobCheckOutcome.Fail => "bad", _ => "muted" };
+}

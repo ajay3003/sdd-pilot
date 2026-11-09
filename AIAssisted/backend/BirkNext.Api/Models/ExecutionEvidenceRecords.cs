@@ -55,6 +55,16 @@ public sealed class ParquetInspectionRecord
     public string DocumentJson { get; set; } = "";
 }
 
+/// <summary>Saved Blob observation: store, blob identity, properties, redacted metadata, check results, correlation and a hash of the bytes read — never content.</summary>
+public sealed class BlobObservationRecord
+{
+    public Guid Id { get; init; }
+    public string EnvironmentId { get; init; } = "";
+    public string BlobName { get; set; } = "";
+    public DateTimeOffset ObservedAt { get; init; }
+    public string DocumentJson { get; set; } = "";
+}
+
 /// <summary>The one retention setting of execution evidence (row id 1). Absent = Disabled.</summary>
 public sealed class ExecutionRetentionSettingsRow
 {
