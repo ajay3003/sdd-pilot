@@ -699,6 +699,28 @@ public sealed class ContractTestingTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Negative_proposals_for_a_whole_body_input_replace_the_body_instead_of_failing()
+    {
+        // Regression (found on the real M2LB archive): a request body without an object schema is templated as one placeholder
+        // ({{dataset.body}}); proposing negatives parsed that template as a JSON object and threw, failing Generate Suite and Propose negatives.
+        const string doc = """
+            { "openapi": "3.0.3", "info": { "title": "Whole Body API", "version": "1" }, "paths": {
+              "/notes": { "post": {
+                "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "string", "maxLength": 10 } } } },
+                "responses": { "202": { "description": "accepted" }, "400": { "description": "bad" } } } } } }
+            """;
+        using var scope = _services.CreateScope();
+        (await Scoped<ContractRegistryService>(scope).ImportAsync(new() { FileName = "whole.json", Content = doc }, default)).Imported.Should().BeTrue();
+        var tests = Scoped<ContractTestService>(scope);
+        var (proposals, _) = await tests.ProposeNegativesAsync("whole-body-api", "POST /notes", default);
+        proposals.Should().NotBeEmpty();
+        proposals.Single(p => p.Kind == ContractTestKind.NullNotAllowed && p.Variant == "body").Template.Body.Should().Be("null", "the whole body is replaced by the literal");
+        proposals.Where(p => p.Kind == ContractTestKind.InvalidType && p.Variant == "body").Should().OnlyContain(p => p.Template.Body == "12345");
+        proposals.Should().OnlyContain(p => p.Template.Body == null || !p.Template.Body.Contains("{{dataset.body}}") || p.Kind == ContractTestKind.InvalidContentType || p.Kind == ContractTestKind.MissingAuthentication,
+            "a variant of the body input never keeps the unresolved placeholder");
+    }
+
+    [Fact]
     public async Task Negative_proposals_cover_many_variants_with_contract_derived_or_unconfigured_expectations()
     {
         const string doc = """

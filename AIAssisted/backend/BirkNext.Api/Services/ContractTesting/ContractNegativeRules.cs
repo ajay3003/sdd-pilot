@@ -176,7 +176,9 @@ public static class ContractNegativeRules
             case "header": return t with { Headers = t.Headers.ToDictionary(h => h.Key, h => h.Value == placeholder ? text : h.Value, StringComparer.OrdinalIgnoreCase) };
             case "path": return t with { Path = t.Path.Replace(placeholder, Uri.EscapeDataString(text), StringComparison.Ordinal) };
             default:
-                if (t.Body is null || JsonNode.Parse(t.Body) is not JsonObject body) return t;
+                // A body without an object schema is templated as one whole-body placeholder: the variant replaces the whole body.
+                if (t.Body == placeholder) return t with { Body = value?.ToJsonString() ?? "null" };
+                if (t.Body is null || !t.Body.TrimStart().StartsWith('{') || JsonNode.Parse(t.Body) is not JsonObject body) return t;
                 body[input.Name] = value?.DeepClone();
                 return t with { Body = body.ToJsonString() };
         }
