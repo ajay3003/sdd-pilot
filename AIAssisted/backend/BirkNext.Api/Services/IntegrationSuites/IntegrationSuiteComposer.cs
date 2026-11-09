@@ -149,7 +149,7 @@ public static partial class IntegrationSuiteComposer
                 ScenarioId = $"M01:{r.Key}", Title = r.Title, Basis = r.DomainSpecific ? SuiteScenarioBasis.SpecificationDerived : SuiteScenarioBasis.ExistingCapability,
                 Reuses = $"{r.Owner} · {r.Key}", ExistingState = SecurityClassificationAssessments.Label(r.State), ReviewRunId = i.Consumer!.RunId,
                 Readiness = ready, Triage = ready switch { SuiteItemReadiness.Ready => SuiteTriage.CanRunNow, SuiteItemReadiness.NeedsReview => SuiteTriage.NeedsDomainDecision, _ => SuiteTriage.WaitingForPrerequisite },
-                Prerequisites = r.State is SecurityRequirementState.Verified ? [] : [r.RuntimeTest.Length > 0 ? r.RuntimeTest : r.SharedEvidence],
+                Prerequisites = (r.State is SecurityRequirementState.Verified) ? [] : [r.RuntimeTest.Length > 0 ? r.RuntimeTest : r.SharedEvidence],
             });
         }
 
