@@ -23,7 +23,7 @@ public sealed record ProjectImportPreviewResult(ProjectImportPreview? Preview, S
 /// Source Analysis keeps owning snapshot identity, currentness and evidence; this service never stores documents and never merges the two.
 /// </summary>
 public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStagingStore staging, IReviewSourceEvidenceProvider sources, ILogger<ProjectImportService> logger,
-    BirkNext.Api.Services.GitSources.IGitImportRecorder? gitImports = null)
+    BirkNext.Api.Services.GitSources.IGitImportRecorder? gitImports = null, BirkNext.Api.Services.ImplementationGaps.ImplementationGapService? gaps = null)
 {
     /// <summary>The import identity: derived from the exact archive bytes, so the same archive always has the same identity.</summary>
     public static string ImportIdFor(string sha256) => "import-" + sha256[..Math.Min(16, sha256.Length)];
@@ -108,7 +108,11 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
             // A Git import is recorded on its repository links (revision → snapshot) once the source part is settled; a ZIP import has no revision.
             if (provenance.Git is { } git && !source.CanRetry) gitImports?.Record(git, source.SnapshotId, provenance.ImportId);
             var settled = !source.CanRetry;
-            var result = new ProjectImportCommitResult { StagingId = stagingId, Provenance = provenance, Source = source, StagedUntil = settled ? null : staged.ExpiresAt };
+            var gapEvaluationId = settled ? await ImplementationGapsAsync(staged, source, ct) : null;
+            var result = new ProjectImportCommitResult
+            {
+                StagingId = stagingId, Provenance = provenance, Source = source, StagedUntil = settled ? null : staged.ExpiresAt, ImplementationGapEvaluationId = gapEvaluationId,
+            };
             if (settled) staging.MarkCommitted(staged, result);
             return result;
         }
@@ -121,6 +125,27 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
     }
 
     public bool Discard(Guid stagingId) => staging.Remove(stagingId);
+
+    /// <summary>Implementation-gap evaluation of this import's SDD documents against its snapshot, while the document text is still in memory (only the
+    /// extracted inputs are stored). Runs only when the archive holds a tasks document; never fails the import.</summary>
+    private async Task<Guid?> ImplementationGapsAsync(StagedProjectImport staged, ProjectImportSourceResult source, CancellationToken ct)
+    {
+        var documents = staged.Workspace.DocumentFiles ?? [];
+        if (gaps is null || !documents.Any(d => Path.GetFileName(d.Path).Equals("tasks.md", StringComparison.OrdinalIgnoreCase))) return null;
+        try
+        {
+            var evaluation = await gaps.EvaluateDocumentsAsync(BirkNext.Api.Services.ImplementationGaps.ImplementationGapService.ImportScope(staged.ImportId), staged.ImportId,
+                documents.Select(d => new BirkNext.Api.Services.ImplementationGaps.ImplementationGapExtractor.Document(d.Path, d.Content)),
+                [.. (staged.Workspace.SkippedDocuments ?? []).Select(s => $"{s.Path} ({s.Reason})")], source.SnapshotId, ct);
+            return evaluation.Id;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            logger.LogError("Implementation-gap evaluation failed for a project import. Exception type {ExceptionType}", ex.GetType().Name);
+            return null;
+        }
+    }
 
     private async Task<ProjectImportSourceResult> SourceAsync(StagedProjectImport staged, ProjectImportProvenance provenance, CancellationToken ct,
         Func<ProjectImportCommitEvent, Task>? reportProgress)

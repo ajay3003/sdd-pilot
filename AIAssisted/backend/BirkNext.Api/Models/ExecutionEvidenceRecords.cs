@@ -55,6 +55,18 @@ public sealed class ParquetInspectionRecord
     public string DocumentJson { get; set; } = "";
 }
 
+/// <summary>One implementation-gap evaluation: the extracted SDD inputs (never document text) and the report, per scope (e.g. a project import).</summary>
+public sealed class ImplementationGapEvaluationRecord
+{
+    public Guid Id { get; init; }
+    public string ScopeKey { get; init; } = "";
+    public string? ProjectImportId { get; init; }
+    public Guid? SnapshotId { get; init; }
+    public DateTimeOffset EvaluatedAt { get; init; }
+    public string InputsJson { get; init; } = "";
+    public string ReportJson { get; init; } = "";
+}
+
 /// <summary>Saved Blob observation: store, blob identity, properties, redacted metadata, check results, correlation and a hash of the bytes read — never content.</summary>
 public sealed class BlobObservationRecord
 {

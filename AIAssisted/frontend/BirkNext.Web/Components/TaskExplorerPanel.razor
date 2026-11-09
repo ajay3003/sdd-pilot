@@ -1387,6 +1387,8 @@
     [Parameter] public AlignmentReport? Report { get; set; }
     [Parameter] public EventCallback<string> OnTextChanged { get; set; }
     [Parameter] public string? InitialView { get; set; }
+    /// <summary>Task id to open on load (deep link from Implementation gaps).</summary>
+    [Parameter] public string? InitialTask { get; set; }
     /// <summary>Implementation and test evidence from the SDD lifecycle graph, per linked requirement. Not assessed by default.</summary>
     [Parameter] public TaskEvidenceIndex Evidence { get; set; } = TaskEvidenceIndex.NotAssessed;
 
@@ -1699,6 +1701,8 @@
             _isChangesView = false;
             _coverage = BuildImplementationCoverage(_tree);
             RefreshFlatCache();
+            // A deep link (?task=T119, e.g. from an implementation-gap finding) opens that task's details once per parsed document.
+            if (InitialTask is { Length: > 0 } initialTask) NavigateToTask(initialTask);
         }
         else
         {

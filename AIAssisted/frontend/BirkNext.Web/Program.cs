@@ -362,6 +362,10 @@ if (entra.Configured)
 var blobStorageClient = builder.Services.AddHttpClient<IBlobStorageApiService, BlobStorageApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
     blobStorageClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
+// Implementation gaps: evaluations made at Project Import (SDD tasks/gates/decisions × source snapshot), re-evaluation with recorded executions, review.
+var implementationGapClient = builder.Services.AddHttpClient<IImplementationGapApiService, ImplementationGapApiService>(client => client.BaseAddress = backendBase);
+if (entra.Configured)
+    implementationGapClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
 // Parquet Data Explorer: temporary read-only sessions of uploaded files, bounded rows, full-scan profile/validation, comparison, evidence.
 var parquetClient = builder.Services.AddHttpClient<IParquetApiService, ParquetApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)

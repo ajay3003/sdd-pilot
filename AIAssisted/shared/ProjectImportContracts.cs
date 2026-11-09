@@ -133,6 +133,8 @@ public sealed record ProjectImportCommitResult
     public ProjectImportProvenance Provenance { get; init; } = new();
     public ProjectImportSourceResult Source { get; init; } = new();
     public DateTimeOffset? StagedUntil { get; init; }
+    /// <summary>The implementation-gap evaluation made from this import's SDD documents and snapshot; null when it has no tasks document or failed.</summary>
+    public Guid? ImplementationGapEvaluationId { get; init; }
 }
 
 /// <summary>

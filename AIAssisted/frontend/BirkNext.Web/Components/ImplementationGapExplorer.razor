@@ -1,0 +1,371 @@
+@using BirkNext.ImplementationGaps
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+@inject NavigationManager Navigation
+
+@* Implementation gaps of the current project import: what the SDD documents specify and plan (tasks, gates, decisions, contracts) against what the
+   imported source snapshot contains and what test executions were recorded. Task state, implementation evidence and verification evidence stay
+   separate columns; readiness is derived from evidence with explicit numerators — never a percentage score. Nothing here approves a decision or
+   marks a task done. *@
+@if (Api is not null && Artifacts is not null)
+{
+<section class="ig" aria-labelledby="ig-h" data-testid="ig-panel">
+    <div class="ig-head">
+        <h2 id="ig-h">@(ReadinessOnly ? "Feature delivery readiness (source evidence)" : "Implementation gaps")</h2>
+        @if (_evaluation is { } head)
+        {
+            <p class="ig-context" data-testid="ig-context">
+                <span>@(head.ArchiveName ?? "No source archive")</span>
+                @if (head.ArchiveSha256 is { Length: >= 12 } sha) { <span title="@sha">SHA-256 @sha[..12]…</span> }
+                <span>@(head.SnapshotId is { } sid ? $"snapshot {sid.ToString()[..8]}" : "no source snapshot")</span>
+                <span>evaluated @head.EvaluatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'")</span>
+                <span>@head.TaskCount tasks (@head.CompletedTaskCount checked)</span>
+                <span data-testid="ig-executions">@(head.ExecutionSources.Count == 0 ? "no recorded test executions" : "executions: " + string.Join(", ", head.ExecutionSources))</span>
+            </p>
+        }
+    </div>
+
+    @if (_error is { } error) { <p class="sd-reason" role="alert" data-testid="ig-error">@error</p> }
+    @if (_loading) { <p class="ig-note" data-testid="ig-loading">Loading implementation evidence…</p> }
+    else if (_evaluation is null)
+    {
+        <p class="ig-note" data-testid="ig-none">No implementation-gap evaluation exists for this project yet. One is made when a project archive with a <code>tasks.md</code> is imported
+            (Import Project). @if (_summaries.Count > 0) { <span>Other evaluations exist; choose one below.</span> }</p>
+    }
+
+    @if (_summaries.Count > 1 && !ReadinessOnly)
+    {
+        <label class="ig-picker">Evaluation
+            <select @onchange="PickAsync" data-testid="ig-evaluation">
+                @foreach (var s in _summaries) { <option value="@s.Id" selected="@(_evaluation?.Id == s.Id)">@s.EvaluatedAt.ToString("yyyy-MM-dd HH:mm") · @(s.ArchiveName ?? s.ScopeKey) · @s.Findings findings</option> }
+            </select>
+        </label>
+    }
+
+    @if (_evaluation is { } e)
+    {
+        <div class="ig-filters" role="group" aria-label="Filters">
+            <label>Module
+                <select @bind="_module" @bind:after="ResetPaging" data-testid="ig-filter-module">
+                    <option value="">All modules</option>
+                    @foreach (var m in Modules(e)) { <option value="@m">@m</option> }
+                </select>
+            </label>
+            <label>Feature
+                <select @bind="_feature" @bind:after="ResetPaging" data-testid="ig-filter-feature">
+                    <option value="">All features</option>
+                    @foreach (var f in FeaturesIn(e)) { <option value="@f.FeatureId">@f.Name</option> }
+                </select>
+            </label>
+            @if (!ReadinessOnly)
+            {
+                <label>Severity
+                    <select @bind="_severity" @bind:after="ResetPaging" data-testid="ig-filter-severity">
+                        <option value="">Any severity</option>
+                        @foreach (var s in Enum.GetValues<GapFindingSeverity>()) { <option value="@s">@s</option> }
+                    </select>
+                </label>
+                <label>Finding type
+                    <select @bind="_type" @bind:after="ResetPaging" data-testid="ig-filter-type">
+                        <option value="">Any type</option>
+                        @foreach (var t in e.Findings.Select(f => f.Type).Distinct().Order()) { <option value="@t">@TypeLabel(t)</option> }
+                    </select>
+                </label>
+                <label class="ig-check"><input type="checkbox" @bind="_reviewOnly" @bind:after="ResetPaging" data-testid="ig-filter-review" /> Needs human review</label>
+            }
+        </div>
+
+        <h3 class="ig-sub">Feature readiness</h3>
+        <p class="ig-note">Derived from source evidence: an unresolved mandatory gate blocks; a checked task is not code; a declared package is not behaviour; a test definition is not an execution.</p>
+        <ul class="ig-features" data-testid="ig-features">
+            @foreach (var f in FeaturesIn(e).Where(f => _feature.Length == 0 || f.FeatureId == _feature).Take(_featureLimit))
+            {
+                var tasks = e.Tasks.Where(t => t.Source.Path == f.DocumentPath && f.TaskIds.Contains(t.TaskId)).ToList();
+                <li class="ig-feature" data-testid="ig-feature" data-readiness="@f.Readiness" id="@($"ig-feature-{Slug(f.FeatureId)}")">
+                    <div class="ig-feature-head">
+                        <span class="ig-pill ig-r-@f.Readiness" data-testid="ig-readiness">@ReadinessLabel(f.Readiness)</span>
+                        <strong data-testid="ig-feature-name">@f.Name</strong>
+                    </div>
+                    <dl class="ig-facts">
+                        <div><dt>Basis</dt><dd>@f.Basis</dd></div>
+                        <div><dt>Contract</dt><dd data-testid="ig-contract">@(f.Contracts.Count == 0 ? "none named" : string.Join(", ", f.Contracts.Select(c => c.Path)))</dd></div>
+                        <div><dt>Tasks</dt><dd data-testid="ig-tasks">@Compact(f.TaskIds)</dd></div>
+                        <div><dt>Architecture gate</dt><dd data-testid="ig-gates">@if (f.GateIds.Count == 0) { <span>none</span> } else { @foreach (var g in f.GateIds) { var gate = e.Gates.First(x => x.GateId == g); <a class="ig-chip ig-g-@gate.Status" href="@($"{Here}#ig-gate-{Slug(g)}")">@g · @gate.Status</a> } }</dd></div>
+                        <div><dt>Dependency evidence</dt><dd>@f.DependencyEvidence</dd></div>
+                        <div><dt>Source implementation</dt><dd data-testid="ig-source">@f.SourceImplementation</dd></div>
+                        <div><dt>Tests</dt><dd data-testid="ig-tests">@f.Tests</dd></div>
+                        <div><dt>Runtime execution</dt><dd data-testid="ig-runtime">@f.RuntimeExecution</dd></div>
+                        @if (f.RequirementIds.Count > 0) { <div><dt>Requirements</dt><dd>@string.Join(", ", f.RequirementIds)</dd></div> }
+                    </dl>
+                    <p class="ig-why" data-testid="ig-why">@f.Explanation</p>
+                    <details class="ig-more">
+                        <summary>Tasks — task state, implementation and verification</summary>
+                        <div class="ig-scroll" tabindex="0" role="region" aria-label="@($"Tasks of {f.Name}")">
+                            <table class="ig-table" data-testid="ig-task-table">
+                                <thead><tr><th scope="col">Task</th><th scope="col">Task state</th><th scope="col">Implementation evidence</th><th scope="col">Verification evidence</th><th scope="col">Expected artifacts</th></tr></thead>
+                                <tbody>
+                                    @foreach (var t in tasks)
+                                    {
+                                        <tr data-testid="ig-task-row" data-task="@t.TaskId">
+                                            <th scope="row"><a href="@TaskLink(t.TaskId, t.Source.Path)">@t.TaskId</a><span class="ig-context">@t.Source.Path:@t.Source.Line</span></th>
+                                            <td>@TaskStateLabel(t.TaskState)@(t.NotApplicableReason is { } na ? " · not applicable" : "")</td>
+                                            <td data-testid="ig-task-impl">@ImplLabel(t.Implementation)@(t.ScopeAbsentFromArchive ? " — not evidenced in supplied archive" : "")</td>
+                                            <td data-testid="ig-task-verification">@VerificationLabel(t.Verification)</td>
+                                            <td>@foreach (var a in t.Artifacts) { <span class="ig-artifact ig-rel-@a.Relationship" title="@a.Detail">@a.Kind @Short(a.Expected) · @a.Relationship</span> }</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+                    <details class="ig-more">
+                        <summary>Evidence dimensions</summary>
+                        <div class="ig-scroll" tabindex="0" role="region" aria-label="@($"Evidence dimensions of {f.Name}")">
+                        <table class="ig-table" data-testid="ig-dimensions">
+                            <thead><tr><th scope="col">Dimension</th><th scope="col">Evidence</th><th scope="col">Basis</th></tr></thead>
+                            <tbody>
+                                @foreach (var d in f.Dimensions)
+                                {
+                                    <tr><th scope="row">@d.Name</th><td>@(d.Denominator is { } den ? $"{d.Numerator} of {den}" : "Not assessed")@(d.Excluded > 0 ? $" ({d.Excluded} excluded)" : "")</td><td>@d.Basis</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                        </div>
+                    </details>
+                </li>
+            }
+        </ul>
+        @if (FeaturesIn(e).Count(f => _feature.Length == 0 || f.FeatureId == _feature) > _featureLimit)
+        {
+            <button type="button" class="btn-secondary" @onclick="() => _featureLimit += 12" data-testid="ig-features-more">Show more features</button>
+        }
+        @if (ReadinessOnly)
+        {
+            <p class="ig-note"><a href="/implementation-review#ig-h" data-testid="ig-open-explorer">Open the implementation gaps and their evidence</a></p>
+        }
+        else
+        {
+            <h3 class="ig-sub" id="ig-gates-h">Gates</h3>
+            <ul class="ig-gates" aria-labelledby="ig-gates-h" data-testid="ig-gate-list">
+                @foreach (var g in e.Gates.Where(g => _module.Length == 0 || g.Evidence.Any(r => Module(r.Path) == _module)))
+                {
+                    <li id="@($"ig-gate-{Slug(g.GateId)}")" data-testid="ig-gate" data-status="@g.Status"><span class="ig-chip ig-g-@g.Status">@g.Status</span> <strong>@g.Label</strong>
+                        @if (g.BlockedTaskIds.Count > 0) { <span> · blocks @Compact(g.BlockedTaskIds)</span> }
+                        <span class="ig-context">@g.Reason</span></li>
+                }
+            </ul>
+
+            <h3 class="ig-sub">Findings <span class="ig-count" data-testid="ig-finding-count">@Findings(e).Count</span></h3>
+            <ul class="ig-findings" data-testid="ig-findings">
+                @foreach (var f in Findings(e).Take(_findingLimit))
+                {
+                    var taskDoc = f.Sources.FirstOrDefault(s => s.Path.EndsWith("tasks.md", StringComparison.OrdinalIgnoreCase))?.Path;
+                    <li class="ig-finding" data-testid="ig-finding" data-type="@f.Type" data-id="@f.Id" data-review="@f.ReviewStatus">
+                        <div class="ig-feature-head">
+                            <span class="ig-pill ig-s-@f.Severity">@f.Severity</span>
+                            <strong data-testid="ig-finding-title">@f.Title</strong>
+                        </div>
+                        <p class="ig-context">@TypeLabel(f.Type) · rule @f.Rule.Id · confidence @f.Confidence@(f.NeedsHumanReview ? " · needs human review" : "") · <span data-testid="ig-finding-review">@ReviewLabel(f)</span></p>
+                        <p class="ig-why"><strong>Expected:</strong> @f.Expected</p>
+                        @if (f.MissingEvidence.Count > 0) { <ul class="ig-missing" data-testid="ig-missing">@foreach (var m in f.MissingEvidence.Take(6)) { <li>@m</li> }</ul> }
+                        <details class="ig-more">
+                            <summary>Evidence and guidance</summary>
+                            <dl class="ig-facts">
+                                <div><dt>Actual evidence</dt><dd>@(f.ActualEvidence.Count == 0 ? "none found" : string.Join("; ", f.ActualEvidence.Take(8).Select(Ref)))</dd></div>
+                                <div><dt>Sources</dt><dd data-testid="ig-sources">@string.Join("; ", f.Sources.Take(8).Select(Ref))</dd></div>
+                                <div><dt>Detection rule</dt><dd>@f.Rule.Id — @f.Rule.Description</dd></div>
+                                <div><dt>Resolution</dt><dd>@f.Guidance</dd></div>
+                                <div><dt>Snapshot</dt><dd>@(f.SnapshotId?.ToString() ?? "none") · evaluated @f.EvaluatedAt.ToString("yyyy-MM-dd HH:mm 'UTC'") · @f.Id</dd></div>
+                            </dl>
+                        </details>
+                        <div class="ig-actions">
+                            @if (f.TaskId is { } tid) { <a href="@TaskLink(tid, taskDoc)" data-testid="ig-open-task">Open task</a> }
+                            @if (taskDoc is not null) { <a href="@($"/specification-explorer?document={Uri.EscapeDataString(SpecPath(taskDoc))}")" data-testid="ig-open-spec">Open specification</a> }
+                            @if (f.SnapshotId is { } snap) { <a href="@($"/source-analysis?snapshot={snap:D}")" data-testid="ig-open-source">View source inventory</a> }
+                            @if (f.GateId is { } gid) { <a href="@($"{Here}#ig-gate-{Slug(gid)}")" data-testid="ig-open-gate">View dependency</a> }
+                            else if (f.FeatureId is { } fid && e.Features.FirstOrDefault(x => x.FeatureId == fid) is { GateIds.Count: > 0 } ff) { <a href="@($"{Here}#ig-gate-{Slug(ff.GateIds[0])}")" data-testid="ig-open-gate">View dependency</a> }
+                            <button type="button" class="sd-link" @onclick="() => _reviewing = _reviewing == f.Id ? null : f.Id" aria-expanded="@(_reviewing == f.Id ? "true" : "false")" data-testid="ig-review">Review finding</button>
+                        </div>
+                        @if (_reviewing == f.Id)
+                        {
+                            <div class="ig-review-form" data-testid="ig-review-form">
+                                <label>Decision
+                                    <select @bind="_decision" data-testid="ig-review-decision">
+                                        <option value="IssueFound">Confirmed gap (issue found)</option>
+                                        <option value="Acceptable">Not a gap (acceptable)</option>
+                                        <option value="NeedsEvidence">Needs more evidence</option>
+                                        <option value="NotApplicable">Not applicable / out of scope</option>
+                                        <option value="RiskAccepted">Known gap, risk accepted</option>
+                                    </select>
+                                </label>
+                                <label>Note<input @bind="_note" maxlength="2000" data-testid="ig-review-note" /></label>
+                                <button type="button" class="btn-primary" disabled="@_busy" @onclick="() => ReviewAsync(f.Id)" data-testid="ig-review-save">Save review</button>
+                            </div>
+                        }
+                    </li>
+                }
+            </ul>
+            @if (Findings(e).Count > _findingLimit)
+            {
+                <button type="button" class="btn-secondary" @onclick="() => _findingLimit += 25" data-testid="ig-findings-more">Show more findings</button>
+            }
+            <div class="ig-actions">
+                <button type="button" class="btn-secondary" disabled="@_busy" @onclick="ReevaluateAsync" data-testid="ig-reevaluate">
+                    Re-evaluate with recorded test executions (@ExecutionCount)
+                </button>
+            </div>
+            @if (e.Limitations.Count > 0) { <details class="ig-more"><summary>Limitations (@e.Limitations.Count)</summary><ul>@foreach (var l in e.Limitations) { <li>@l</li> }</ul></details> }
+        }
+    }
+</section>
+}
+
+@code {
+    /// <summary>Feature readiness only (Quality Review), with a link to the full explorer.</summary>
+    [Parameter] public bool ReadinessOnly { get; set; }
+
+    private GapEvaluation? _evaluation;
+    private List<GapEvaluationSummary> _summaries = [];
+    private string? _error, _reviewing, _note;
+    private string _decision = "IssueFound";
+    private string _module = "", _feature = "", _severity = "", _type = "";
+    private bool _reviewOnly, _loading = true, _busy;
+    private int _featureLimit = 12, _findingLimit = 25;
+
+    // Resolved optionally: hosts that render without the API client (tests, offline) show nothing rather than failing.
+    private IImplementationGapApiService? Api => Services.GetService(typeof(IImplementationGapApiService)) as IImplementationGapApiService;
+    private IWorkspaceSessionService? Artifacts => Services.GetService(typeof(IWorkspaceSessionService)) as IWorkspaceSessionService;
+
+    private string Here => Navigation.ToAbsoluteUri(Navigation.Uri).GetLeftPart(UriPartial.Path);
+    private int ExecutionCount => Artifacts is null ? 0 : ImplementationGapApiService.ExecutionsFrom(Artifacts.SddLifecycle.TestExecutions).Count;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Api is null || Artifacts is null) { _loading = false; return; }
+        try
+        {
+            var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(Navigation.ToAbsoluteUri(Navigation.Uri).Query);
+            Guid? requested = query.TryGetValue("gapEvaluation", out var g) && Guid.TryParse(g, out var id) ? id : null;
+            var importId = Artifacts!.SddLifecycle.CurrentProjectImportId;
+            (var list, _error) = await Api!.ListAsync(importId is null ? null : ImplementationGapApiService.ImportScope(importId));
+            _summaries = list ?? [];
+            var pick = requested ?? _summaries.FirstOrDefault()?.Id;
+            if (pick is { } p) await LoadAsync(p);
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task LoadAsync(Guid id)
+    {
+        (_evaluation, var error) = await Api!.GetAsync(id);
+        _error = error;
+        if (_evaluation is { } e && _module.Length == 0)
+            _module = e.Features.Where(f => f.FeatureId.StartsWith("gate:", StringComparison.Ordinal)).Select(f => Module(f.DocumentPath)).FirstOrDefault() ?? "";
+        ResetPaging();
+    }
+
+    private async Task PickAsync(ChangeEventArgs args)
+    {
+        if (Guid.TryParse(args.Value?.ToString(), out var id)) await LoadAsync(id);
+    }
+
+    private async Task ReevaluateAsync()
+    {
+        if (_evaluation is null || Api is null || Artifacts is null) return;
+        _busy = true;
+        try
+        {
+            var (next, error) = await Api!.ReevaluateAsync(_evaluation.Id, new GapReevaluateRequest { Executions = ImplementationGapApiService.ExecutionsFrom(Artifacts!.SddLifecycle.TestExecutions) });
+            _error = error;
+            if (next is not null)
+            {
+                _evaluation = next;
+                _summaries = [new(next.Id, next.ScopeKey, next.ProjectImportId, next.SnapshotId, next.ArchiveName, next.EvaluatedAt, next.TaskCount, next.Findings.Count, next.Features.Count), .. _summaries];
+            }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task ReviewAsync(string findingId)
+    {
+        if (_evaluation is null || Api is null) return;
+        _busy = true;
+        try
+        {
+            _error = await Api!.ReviewAsync(_evaluation.Id, new GapReviewRequest { FindingId = findingId, Decision = _decision, Note = _note });
+            if (_error is null) { _reviewing = null; _note = null; await LoadAsync(_evaluation.Id); }
+        }
+        finally { _busy = false; }
+    }
+
+    private void ResetPaging() { _featureLimit = 12; _findingLimit = 25; }
+
+    private static string Module(string path) => path.Contains('/') ? path[..path.IndexOf('/')] : path;
+    private static IEnumerable<string> Modules(GapEvaluation e) =>
+        e.Tasks.Select(t => Module(t.Source.Path)).Concat(e.Findings.SelectMany(f => f.Sources.Take(1)).Select(s => Module(s.Path))).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal);
+
+    /// <summary>Decision-gated features first (the work a decision governs), then user stories; filtered by module.</summary>
+    private List<GapFeatureAssessment> FeaturesIn(GapEvaluation e) =>
+        [.. e.Features.Where(f => _module.Length == 0 || Module(f.DocumentPath) == _module)
+            .OrderBy(f => f.FeatureId.StartsWith("gate:", StringComparison.Ordinal) ? 0 : 1).ThenBy(f => f.Readiness).ThenBy(f => f.Name, StringComparer.Ordinal)];
+
+    private List<GapFinding> Findings(GapEvaluation e) =>
+        [.. e.Findings.Where(f => (_module.Length == 0 || f.Sources.Take(1).Any(s => Module(s.Path) == _module))
+            && (_feature.Length == 0 || f.FeatureId == _feature || (f.TaskId is { } t && e.Features.FirstOrDefault(x => x.FeatureId == _feature) is { } ff && ff.TaskIds.Contains(t)))
+            && (_severity.Length == 0 || f.Severity.ToString() == _severity) && (_type.Length == 0 || f.Type.ToString() == _type)
+            && (!_reviewOnly || (f.NeedsHumanReview && f.ReviewStatus == "Not reviewed")))];
+
+    private static string TaskLink(string taskId, string? document) =>
+        $"/task-explorer?task={Uri.EscapeDataString(taskId)}" + (document is null ? "" : $"&document={Uri.EscapeDataString(document)}");
+
+    private static string SpecPath(string tasksPath) => tasksPath[..(tasksPath.LastIndexOf('/') + 1)] + "spec.md";
+    private static string Slug(string s) => new([.. s.Select(c => char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : '-')]);
+    private static string Short(string s) => s.Contains('/') ? s[(s.LastIndexOf('/') + 1)..] : s;
+    private static string Ref(GapSourceRef r) => r.Line is { } l ? $"{r.Path}:{l}" : r.Path;
+    /// <summary>T105, T119, T120, T121, T122 → "T105, T119–T122" (runs of three or more consecutive ids collapse; same rule as the engine).</summary>
+    public static string Compact(IEnumerable<string> ids)
+    {
+        var nums = ids.Select(i => (Id: i, N: int.TryParse(i.TrimStart('T'), out var n) ? n : -1)).OrderBy(x => x.N).ToList();
+        var parts = new List<string>();
+        for (var i = 0; i < nums.Count;)
+        {
+            var j = i;
+            while (j + 1 < nums.Count && nums[j].N >= 0 && nums[j + 1].N == nums[j].N + 1) j++;
+            parts.Add(j - i >= 2 ? $"{nums[i].Id}–{nums[j].Id}" : string.Join(", ", nums.Skip(i).Take(j - i + 1).Select(x => x.Id)));
+            i = j + 1;
+        }
+        return string.Join(", ", parts);
+    }
+
+    private static string ReviewLabel(GapFinding f) => f.ReviewStatus == "Not reviewed" ? "not reviewed" : $"reviewed: {f.ReviewStatus}{(f.ReviewedBy is { } by ? $" by {by}" : "")}";
+
+    public static string ReadinessLabel(GapReadiness r) => r switch
+    {
+        GapReadiness.Blocked => "Blocked", GapReadiness.NotImplemented => "Not implemented", GapReadiness.PartiallyImplemented => "Partially implemented",
+        GapReadiness.ImplementedButNotVerified => "Implemented, not verified", GapReadiness.Verified => "Verified", _ => "Not assessed",
+    };
+
+    private static string TaskStateLabel(GapTaskState s) => s switch { GapTaskState.NotStarted => "Not started", GapTaskState.InProgress => "In progress", GapTaskState.Completed => "Completed", _ => "Unknown" };
+
+    private static string ImplLabel(GapImplementationEvidence s) => s switch
+    {
+        GapImplementationEvidence.NoMatchingSource => "No matching source", GapImplementationEvidence.CandidateImplementation => "Candidate implementation",
+        GapImplementationEvidence.PartialImplementation => "Partial implementation", GapImplementationEvidence.ConfirmedSourceImplementation => "Confirmed source implementation", _ => "Not assessed",
+    };
+
+    private static string VerificationLabel(GapVerificationEvidence s) => s switch
+    {
+        GapVerificationEvidence.TestNotFound => "Test not found", GapVerificationEvidence.TestDefined => "Test defined", GapVerificationEvidence.TestExecuted => "Test executed",
+        GapVerificationEvidence.TestPassed => "Test passed", GapVerificationEvidence.RuntimeVerified => "Runtime verified", GapVerificationEvidence.NotApplicable => "Not applicable", _ => "Not assessed",
+    };
+
+    private static string TypeLabel(GapFindingType t) => t switch
+    {
+        GapFindingType.TaskFileMissing => "Missing file", GapFindingType.TaskTypeMissing => "Missing type", GapFindingType.CompletedTaskWithoutImplementation => "Task complete, code missing",
+        GapFindingType.OpenTaskWithImplementation => "Code present, task unchecked", GapFindingType.PackageMissing => "Missing package", GapFindingType.PackageWithoutBehaviour => "Package without behaviour",
+        GapFindingType.TestMissing => "Missing test", GapFindingType.TestNotExecuted => "Test not executed", GapFindingType.ImplementationWithoutTask => "Code without task",
+        GapFindingType.BlockedByGate => "Blocked by gate", GapFindingType.DecisionNotApproved => "Decision not approved", GapFindingType.IntegrationNotImplemented => "Specified, not implemented",
+        GapFindingType.NoRuntimeVerification => "No runtime verification", GapFindingType.ArtifactMovedOrRenamed => "Moved or renamed?", GapFindingType.MultipleCandidates => "Several candidates",
+        GapFindingType.InventoryIncomplete => "Inventory incomplete", GapFindingType.ImplementationScopeNotInArchive => "Not in supplied archive", _ => t.ToString(),
+    };
+}

@@ -525,4 +525,13 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
         done.Should().Be(health.CompletedTasks);
         (done + open).Should().Be(health.TotalTasks, "marked done + open == total");
     }
+
+    [Fact]
+    public void A_deep_link_opens_the_named_tasks_details()
+    {
+        // ?task=T005 (e.g. "Open task" from an implementation-gap finding) selects that task once the document is parsed.
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.ParsedTasks, TaskExplorerService.Parse(Fixture)).Add(x => x.InitialTask, "T005"));
+        var details = cut.Find(".te-details");
+        details.TextContent.Should().Contain("T005").And.Contain("Search by name");
+    }
 }

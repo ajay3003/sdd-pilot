@@ -32,6 +32,7 @@
                     PreviousRevisions="@_previousRevisions"
                     CurrentRevision="@_currentRevision"
                     InitialView="@_initialView"
+                    InitialTask="@_initialTask"
                     OnTextChanged="ImportFromPanel" />
             </div>
         }
@@ -43,6 +44,7 @@
     private ArtifactExplorerHost? _host;
     private string _text = string.Empty;
     private string? _initialView;
+    private string? _initialTask;
     private string? _analysisError;
     private TaskTree? _parsed;
     private TaskSemanticModel? _semanticModel;
@@ -58,8 +60,11 @@
         if (_workspace is not null) _workspace.ReviewContextRebuildNeeded += OnLifecycleChanged;
         RefreshEvidence();
         var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
-        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("view", out var view))
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        if (query.TryGetValue("view", out var view))
             _initialView = view;
+        if (query.TryGetValue("task", out var task) && System.Text.RegularExpressions.Regex.IsMatch(task.ToString(), @"^T\d{2,4}[a-zA-Z]?$"))
+            _initialTask = task.ToString();
     }
 
     /// <summary>Reads evidence per requirement from the lifecycle projection; "not assessed" whenever it cannot be read.</summary>

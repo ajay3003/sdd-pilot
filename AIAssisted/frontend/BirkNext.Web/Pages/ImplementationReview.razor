@@ -48,6 +48,9 @@
         <p class="notice">Specification evidence is not available. Source and other reviews remain independent of SDD.</p>
     }
     <p class="notice" role="status" data-testid="ier-source-linkage" data-state="@Linkage.State">@LinkageText</p>
+    @* Task/plan/decision expectations against the imported source snapshot (made at Project Import): what is specified, planned, implemented,
+       tested, verified, blocked or not assessed — per task and per feature. *@
+    <BirkNext.Web.Components.ImplementationGapExplorer />
     @if (Context?.Specification.AcceptanceScenarios is { Count: > 0 } scenarios)
     {
         @* Test design context: scenarios organised under user stories are not requirement coverage unless they carry the requirement ID. *@

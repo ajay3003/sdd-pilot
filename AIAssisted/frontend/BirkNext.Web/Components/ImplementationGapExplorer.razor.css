@@ -1,0 +1,42 @@
+/* Implementation gaps: compact feature cards and finding cards; tables scroll inside their region; no permanent split layout. */
+/* contain: inline-size — host pages give tables a large min-width; without containment the task table widens the whole page at 390px. */
+.ig { display: grid; gap: .75rem; min-width: 0; max-width: 100%; contain: inline-size; }
+.ig > *, .ig-feature > *, .ig-finding > * { min-width: 0; }
+.ig-head { display: grid; gap: .25rem; }
+.ig-head h2 { margin: 0; }
+.ig-sub { margin: .5rem 0 0; font-size: 1rem; }
+.ig-note, .ig-context { color: var(--clr-text-muted, #4b5563); font-size: .875rem; margin: 0; }
+.ig-context { display: flex; flex-wrap: wrap; gap: .25rem .75rem; overflow-wrap: anywhere; }
+.ig-picker, .ig-filters label { display: grid; gap: .25rem; font-size: .875rem; }
+.ig-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .5rem .75rem; align-items: end; }
+.ig-filters select { min-width: 0; max-width: 100%; }
+.ig-check { display: flex !important; gap: .375rem; align-items: center; }
+.ig-features, .ig-findings, .ig-gates { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.ig-features { grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr)); }
+.ig-feature, .ig-finding { border: 1px solid var(--clr-border, #e2e8f0); border-radius: .5rem; padding: .625rem .75rem; display: grid; gap: .375rem; background: var(--clr-surface, #fff); }
+.ig-feature-head { display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; overflow-wrap: anywhere; }
+.ig-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .25rem .75rem; margin: 0; font-size: .875rem; }
+.ig-facts dt { font-size: .75rem; color: var(--clr-text-muted, #4b5563); }
+.ig-facts dd { margin: 0; overflow-wrap: anywhere; }
+.ig-why { margin: 0; font-size: .875rem; overflow-wrap: anywhere; }
+.ig-missing { margin: 0; padding-left: 1.25rem; font-size: .8125rem; color: var(--clr-text-muted, #4b5563); overflow-wrap: anywhere; }
+.ig-more summary { cursor: pointer; font-size: .875rem; }
+.ig-scroll { overflow-x: auto; max-width: 100%; contain: inline-size; }
+.ig-more { min-width: 0; max-width: 100%; }
+/* min-width: 0 overrides host pages' unscoped table{min-width:820px}; wide tables scroll inside .ig-scroll instead. */
+.ig-table { border-collapse: collapse; width: 100%; min-width: 0; font-size: .8125rem; }
+.ig-table th, .ig-table td { text-align: left; padding: .3rem .45rem; border-bottom: 1px solid var(--clr-border, #e2e8f0); vertical-align: top; }
+.ig-table .ig-context { display: block; font-size: .75rem; }
+.ig-actions { display: flex; flex-wrap: wrap; gap: .25rem .75rem; align-items: center; font-size: .875rem; }
+.ig-review-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .5rem .75rem; align-items: end; }
+.ig-review-form label { display: grid; gap: .25rem; font-size: .875rem; }
+.ig-count { font-weight: 400; color: var(--clr-text-muted, #4b5563); font-size: .875rem; }
+.ig-pill, .ig-chip { display: inline-block; border: 1px solid #94a3b8; border-radius: 999px; padding: 0 .5rem; font-size: .8125rem; white-space: nowrap; background: #f8fafc; color: #1f2937; text-decoration: none; }
+/* Gate chips can carry a whole gate label (gates without a decision record): they wrap, never widen the page. */
+.ig-chip { white-space: normal; overflow-wrap: anywhere; max-width: 100%; border-radius: .75rem; }
+.ig-artifact { display: inline-block; margin: 0 .25rem .125rem 0; font-size: .75rem; border-radius: .25rem; padding: 0 .3rem; background: #f1f5f9; overflow-wrap: anywhere; }
+.ig-r-Blocked, .ig-r-NotImplemented, .ig-s-High, .ig-g-Rejected, .ig-rel-Missing { border-color: #b91c1c; background: #fef2f2; color: #7f1d1d; }
+.ig-r-PartiallyImplemented, .ig-r-ImplementedButNotVerified, .ig-s-Medium, .ig-g-Pending, .ig-g-Unknown, .ig-rel-Candidate, .ig-rel-Ambiguous { border-color: #b45309; background: #fffbeb; color: #78350f; }
+.ig-r-Verified, .ig-g-Approved, .ig-rel-Confirmed { border-color: #15803d; background: #f0fdf4; color: #14532d; }
+.ig-gates li { font-size: .875rem; display: grid; gap: .125rem; }
+@media (max-width: 40rem) { .ig-features { grid-template-columns: 1fr; } }

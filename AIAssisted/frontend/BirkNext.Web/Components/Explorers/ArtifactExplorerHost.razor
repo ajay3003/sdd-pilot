@@ -544,6 +544,28 @@
         }
         if (Explorer.ExplorerSourceUnavailable) { _sourceRemoved = true; Explorer.SelectSource(null); }
         await LoadAsync();
+        // ?document=<archive path> (e.g. from an implementation-gap finding) opens that exact candidate, as a person would: choose its module (when
+        // several modules have documents), then the document. Nothing is selected when the path matches none or several candidates.
+        if (Services.GetService(typeof(NavigationManager)) is NavigationManager nav
+            && Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(nav.Uri).Query).TryGetValue("document", out var document)
+            && document.ToString() is { Length: > 0 } path && _state is not null)
+        {
+            List<ExplorerArtifact> Matches() => [.. (_state?.Artifacts ?? []).Where(a => DocumentPathMatches(a.SourcePath, path))];
+            var matches = Matches();
+            if (matches.Count == 1 && _state.ModuleRequired) { await SelectModuleAsync(matches[0].Module); matches = Matches(); }
+            // Another module is focused: switch to the module the path names (its first folder), as choosing it in the module list would.
+            else if (matches.Count == 0 && _state.Modules?.FirstOrDefault(m => path.StartsWith(m.Module + "/", StringComparison.OrdinalIgnoreCase)) is { } module
+                     && _state.Module != module.Module) { await SelectModuleAsync(module.Module); matches = Matches(); }
+            if (matches.Count == 1 && _state?.Selected?.Id != matches[0].Id) await SelectAsync(matches[0].Id);
+        }
+    }
+
+    private static bool DocumentPathMatches(string? sourcePath, string path)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath)) return false;
+        var a = sourcePath.Replace('\\', '/').TrimStart('/');
+        var b = path.Replace('\\', '/').TrimStart('/');
+        return a.Equals(b, StringComparison.OrdinalIgnoreCase) || a.EndsWith("/" + b, StringComparison.OrdinalIgnoreCase) || b.EndsWith("/" + a, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>A view choice only matters with several imported sources, and never over a selected Demo Project (built-in demos stay a separate category).</summary>

@@ -1166,6 +1166,42 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("impact_analysis_runs", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.ImplementationGapEvaluationRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("EvaluatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("InputsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ProjectImportId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ReportJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ScopeKey")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<Guid?>("SnapshotId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ScopeKey", "EvaluatedAt");
+
+                    b.ToTable("implementation_gap_evaluations", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.IntegrationContractArtifactRecord", b =>
                 {
                     b.Property<string>("EnvironmentId")

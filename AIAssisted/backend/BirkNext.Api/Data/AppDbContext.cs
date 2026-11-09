@@ -21,6 +21,7 @@ public class AppDbContext : DbContext
     public DbSet<MessageObservationSetRecord> MessageObservationSets => Set<MessageObservationSetRecord>();
     public DbSet<ParquetInspectionRecord> ParquetInspections => Set<ParquetInspectionRecord>();
     public DbSet<BlobObservationRecord> BlobObservations => Set<BlobObservationRecord>();
+    public DbSet<ImplementationGapEvaluationRecord> ImplementationGapEvaluations => Set<ImplementationGapEvaluationRecord>();
     public DbSet<ApiContractRow> ApiContracts => Set<ApiContractRow>();
     public DbSet<ApiContractVersionRow> ApiContractVersions => Set<ApiContractVersionRow>();
     public DbSet<ContractTestRow> ContractTests => Set<ContractTestRow>();
@@ -1107,6 +1108,16 @@ public class AppDbContext : DbContext
             entity.Property(r => r.BlobName).HasMaxLength(400).IsRequired();
             entity.Property(r => r.DocumentJson).HasColumnType("text").IsRequired();
             entity.HasIndex(r => new { r.EnvironmentId, r.ObservedAt });
+        });
+        modelBuilder.Entity<ImplementationGapEvaluationRecord>(entity =>
+        {
+            entity.ToTable("implementation_gap_evaluations");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.ScopeKey).HasMaxLength(300).IsRequired();
+            entity.Property(r => r.ProjectImportId).HasMaxLength(100);
+            entity.Property(r => r.InputsJson).HasColumnType("text").IsRequired();
+            entity.Property(r => r.ReportJson).HasColumnType("text").IsRequired();
+            entity.HasIndex(r => new { r.ScopeKey, r.EvaluatedAt });
         });
         modelBuilder.Entity<MessageObservationSetRecord>(entity =>
         {

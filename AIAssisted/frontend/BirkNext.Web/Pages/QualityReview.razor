@@ -62,6 +62,9 @@
         </div>
     }
 
+    @* Source-backed feature readiness (implementation evidence), kept apart from the documentation readiness this review assesses. *@
+    <div data-testid="qr-feature-readiness"><BirkNext.Web.Components.ImplementationGapExplorer ReadinessOnly="true" /></div>
+
     @if (sharedEvidence is not null)
     {
         <section class="qr-sdd-evidence" aria-labelledby="sdd-evidence-title" data-testid="qr-shared-evidence">
