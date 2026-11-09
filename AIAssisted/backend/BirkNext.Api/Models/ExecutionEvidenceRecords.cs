@@ -34,6 +34,17 @@ public sealed class ExecutionEvidenceAuditRow
     public string? Detail { get; init; }
 }
 
+/// <summary>An imported, sanitized message observation set (Service Bus peek export or Wolverine envelope export). Content was redacted before it
+/// was stored; the document never holds an unredacted body or an envelope body.</summary>
+public sealed class MessageObservationSetRecord
+{
+    public Guid Id { get; init; }
+    public string EnvironmentId { get; init; } = "";
+    public string Name { get; set; } = "";
+    public DateTimeOffset ImportedAt { get; init; }
+    public string DocumentJson { get; set; } = "";
+}
+
 /// <summary>The one retention setting of execution evidence (row id 1). Absent = Disabled.</summary>
 public sealed class ExecutionRetentionSettingsRow
 {

@@ -1,0 +1,206 @@
+@using BirkNext.Messaging
+@inject BirkNext.Web.Services.IMessageObservationApiService Api
+
+@* Imported message evidence for one environment. Read-only: BirkNext never connects to a namespace or an envelope store and offers no message
+   operation. Layers stay apart: configuration and runtime counts are on the other tabs; this panel shows message content (sanitized), application
+   processing (Wolverine envelope rows) and correlation with test executions (exact ids only). *@
+<section class="mo" aria-labelledby="mo-h" data-testid="mo-panel">
+    <h2 id="mo-h">Messages · Service Bus and Wolverine evidence</h2>
+    <p class="mo-note">Import what someone exported with their own read access: a Service Bus peek export (non-settling) or rows of Wolverine's inbox, outbox
+        and dead-letter tables. Content is redacted before it is stored. No message can be received, completed, resubmitted, replayed or purged from here.</p>
+
+    <details class="mo-import" data-testid="mo-import">
+        <summary>Import observations</summary>
+        <div class="mo-import-body">
+            <label>File (JSON, ≤ 5 MB) <InputFile OnChange="PickAsync" accept=".json,application/json" data-testid="mo-file" /></label>
+            <fieldset class="mo-policy">
+                <legend>Message bodies</legend>
+                <label class="sd-check"><input type="radio" name="mo-policy" checked="@(_policy == MessageBodyPolicy.MetadataOnly)" @onchange="() => _policy = MessageBodyPolicy.MetadataOnly" data-testid="mo-policy-metadata" /> Metadata only (size and SHA-256; recommended when the content's classification is unknown)</label>
+                <label class="sd-check"><input type="radio" name="mo-policy" checked="@(_policy == MessageBodyPolicy.SanitizedPreview)" @onchange="() => _policy = MessageBodyPolicy.SanitizedPreview" data-testid="mo-policy-preview" /> Sanitized preview (JSON, XML or text; sensitive fields, identity numbers and e-mail addresses masked; at most 2 048 characters)</label>
+            </fieldset>
+            <button type="button" class="btn-primary" @onclick="ImportAsync" disabled="@(_file is null || _busy)" data-testid="mo-import-go">Import</button>
+            @if (_importError is { } ie) { <p class="sd-reason" role="alert" data-testid="mo-import-error">@ie</p> }
+        </div>
+    </details>
+
+    @if (_error is { } error) { <p class="sd-reason" role="alert" data-testid="mo-error">@error</p> }
+    else if (_sets is null) { <p class="mo-note" data-testid="mo-loading">Loading message observations…</p> }
+    else if (_sets.Count == 0) { <p class="mo-note" data-testid="mo-empty">No message observations for this environment yet.</p> }
+    else
+    {
+        <div class="mo-scroll" tabindex="0" role="region" aria-label="Observation sets">
+            <table class="mo-table" data-testid="mo-sets">
+                <thead><tr><th scope="col">Observation set</th><th scope="col">Source</th><th scope="col">Observed</th><th scope="col">Messages</th><th scope="col">Dead-lettered</th><th scope="col">Envelope rows</th><th scope="col">Redacted</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                <tbody>
+                    @foreach (var s in _sets)
+                    {
+                        <tr data-testid="mo-set" class="@(_view?.Set.Id == s.Id ? "mo-selected" : "")">
+                            <th scope="row"><button type="button" class="sd-link" @onclick="() => OpenAsync(s.Id)" data-testid="mo-set-open">@s.Name</button><span class="mo-context">imported @Utc(s.ImportedAt) by @s.ImportedBy</span></th>
+                            <td>@(s.Source == MessageObservationSource.ServiceBusPeekExport ? "Service Bus peek export" : "Wolverine envelope export")</td>
+                            <td>@(s.ObservedAt is { } o ? Utc(o) : "not stated")</td><td>@s.Messages</td><td>@s.DeadLettered</td><td>@s.Envelopes</td><td>@s.RedactedFields</td>
+                            <td><button type="button" class="sd-link" @onclick="() => DeleteAsync(s.Id)" data-testid="mo-set-delete">@(_deleteId == s.Id ? "Confirm delete" : "Delete")</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (_view is { } view)
+    {
+        <section class="mo-detail" aria-labelledby="mo-set-h" data-testid="mo-view">
+            <h3 id="mo-set-h" tabindex="-1">@view.Set.Name</h3>
+            @if (view.EnvelopeStores is { } stores)
+            {
+                <dl class="mo-stores" data-testid="mo-stores">
+                    <div><dt>Inbox pending</dt><dd>@stores.InboxPending</dd></div><div><dt>Inbox handled</dt><dd>@stores.InboxHandled</dd></div>
+                    <div><dt>Outbox pending</dt><dd>@stores.OutboxPending</dd></div><div><dt>Dead letters</dt><dd>@stores.DeadLetters</dd></div><div><dt>Retried</dt><dd>@stores.Retried</dd></div>
+                </dl>
+                <p class="mo-note">@stores.Explanation</p>
+            }
+            @if (view.Messages.Count > 0)
+            {
+                <div class="mo-filter" role="group" aria-label="Show messages">
+                    @foreach (var f in Filters)
+                    {
+                        <button type="button" class="mo-chip" aria-pressed="@(_filter == f ? "true" : "false")" @onclick="() => _filter = f" data-testid="@($"mo-filter-{f.ToLowerInvariant()}")">@f (@Count(view, f))</button>
+                    }
+                </div>
+                <div class="mo-scroll" tabindex="0" role="region" aria-label="Messages">
+                    <table class="mo-table" data-testid="mo-messages">
+                        <thead><tr><th scope="col">Message</th><th scope="col">Entity</th><th scope="col">Enqueued</th><th scope="col">Deliveries</th><th scope="col">Processing</th><th scope="col">Test execution</th></tr></thead>
+                        <tbody>
+                            @foreach (var m in Visible(view))
+                            {
+                                <tr data-testid="mo-message" data-processing="@m.Processing" data-correlation="@m.Correlation.State" class="@(_selected == m.Message.MessageId ? "mo-selected" : "")">
+                                    <th scope="row"><button type="button" class="sd-link" @onclick="() => _selected = m.Message.MessageId" data-testid="mo-message-open">@Id(m.Message.MessageId)</button><span class="mo-context">@(m.Message.MessageType ?? m.Message.Subject)</span></th>
+                                    <td>@m.Message.Entity.Display</td><td>@(m.Message.EnqueuedAt is { } e ? Utc(e) : "—")</td><td>@(m.Message.DeliveryCount?.ToString() ?? "—")</td>
+                                    <td><span class="mo-pill mo-pill-@Tone(m.Processing)">@Label(m.Processing)</span></td>
+                                    <td>@(m.Correlation.State == MessageCorrelationState.Confirmed ? $"Run {m.Correlation.RunId?.ToString("N")[..8]} · call {m.Correlation.CallSequence}" : m.Correlation.State == MessageCorrelationState.Ambiguous ? "Ambiguous" : "Not correlated")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (view.Messages.FirstOrDefault(m => m.Message.MessageId == _selected) is { } sel)
+                {
+                    <article class="mo-message" aria-labelledby="mo-msg-h" data-testid="mo-message-detail">
+                        <h4 id="mo-msg-h">Message @Id(sel.Message.MessageId)</h4>
+                        <p><span class="mo-pill mo-pill-@Tone(sel.Processing)" data-testid="mo-processing">@Label(sel.Processing)</span> @sel.ProcessingReason</p>
+                        <p data-testid="mo-correlation"><strong>Test execution:</strong> @sel.Correlation.Rationale
+                            @if (sel.Correlation is { State: MessageCorrelationState.Confirmed, RunId: { } runId })
+                            {
+                                <a href="@($"execution-results?run={runId:D}")" data-testid="mo-correlation-link">Open the run in Execution Results</a>
+                            }
+                        </p>
+                        <dl class="mo-meta">
+                            <div><dt>Correlation id</dt><dd>@(sel.Message.CorrelationId ?? "—")</dd></div>
+                            <div><dt>Subject</dt><dd>@(sel.Message.Subject ?? "—")</dd></div>
+                            <div><dt>Content type</dt><dd>@(sel.Message.ContentType ?? "—")</dd></div>
+                            <div><dt>Sequence</dt><dd>@(sel.Message.SequenceNumber?.ToString() ?? "—")</dd></div>
+                            <div><dt>Session</dt><dd>@(sel.Message.SessionId ?? "—")</dd></div>
+                            <div><dt>Body</dt><dd>@sel.Message.BodyBytes bytes · SHA-256 @(sel.Message.BodySha256?[..12] ?? "—")…</dd></div>
+                            @if (sel.Message.DeadLetterReason is { } reason) { <div><dt>Dead-letter reason</dt><dd>@reason</dd></div> }
+                            @if (sel.Message.DeadLetterDescription is { } description) { <div><dt>Description</dt><dd>@description</dd></div> }
+                        </dl>
+                        @if (sel.Message.Properties.Count > 0)
+                        {
+                            <details><summary>Application properties (@sel.Message.Properties.Count)</summary>
+                                <dl class="mo-meta">@foreach (var (k, v) in sel.Message.Properties) { <div><dt>@k</dt><dd>@v</dd></div> }</dl>
+                            </details>
+                        }
+                        <h5>Timeline</h5>
+                        <ol class="mo-timeline" data-testid="mo-timeline">
+                            @foreach (var t in sel.Timeline) { <li><strong>@t.Event</strong> <span class="mo-context">@(t.At is { } at ? Utc(at) : "time not recorded") · @t.Source</span> @t.Detail</li> }
+                        </ol>
+                        @if (sel.Message.BodyPreview is { } preview)
+                        {
+                            <details data-testid="mo-preview"><summary>Sanitized body preview@(sel.Message.BodyTruncated ? " (truncated)" : "") · @sel.Message.RedactedFields value(s) masked</summary>
+                                <pre class="mo-pre">@preview</pre></details>
+                        }
+                        else { <p class="mo-note" data-testid="mo-no-preview">No body text kept (metadata only).</p> }
+                    </article>
+                }
+            }
+            <ul class="mo-note-list">@foreach (var l in view.Limitations) { <li>@l</li> }@foreach (var w in view.Set.Warnings) { <li>@w</li> }</ul>
+        </section>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+
+    private static readonly string[] Filters = ["All", "Dead-lettered", "Failed", "Pending", "Correlated"];
+    private List<MessageObservationSummary>? _sets;
+    private MessageObservationView? _view;
+    private IBrowserFile? _file;
+    private MessageBodyPolicy _policy = MessageBodyPolicy.MetadataOnly;
+    private string? _error, _importError, _selected, _loadedFor;
+    private string _filter = "All";
+    private Guid? _deleteId;
+    private bool _busy;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == EnvironmentId) return;
+        _loadedFor = EnvironmentId; _view = null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => (_sets, _error) = await Api.ListAsync(EnvironmentId);
+
+    private void PickAsync(InputFileChangeEventArgs e) { _file = e.File; _importError = null; }
+
+    private async Task ImportAsync()
+    {
+        if (_file is null) return;
+        _busy = true; _importError = null;
+        try
+        {
+            if (_file.Size > MessagingObservationRules.MaxFileBytes) { _importError = "The file exceeds 5 MB."; return; }
+            using var reader = new StreamReader(_file.OpenReadStream(MessagingObservationRules.MaxFileBytes));
+            var content = await reader.ReadToEndAsync();
+            var (set, error) = await Api.ImportAsync(new MessageObservationImport { EnvironmentId = EnvironmentId, FileName = _file.Name, Content = content, BodyPolicy = _policy });
+            _importError = error;
+            if (set is not null) { await LoadAsync(); await OpenAsync(set.Id); _file = null; }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task OpenAsync(Guid id)
+    {
+        var (view, error) = await Api.GetAsync(EnvironmentId, id);
+        _view = view; _error = error; _selected = view?.Messages.FirstOrDefault()?.Message.MessageId; _filter = "All";
+    }
+
+    private async Task DeleteAsync(Guid id)
+    {
+        if (_deleteId != id) { _deleteId = id; return; }
+        _deleteId = null;
+        _error = await Api.DeleteAsync(EnvironmentId, id);
+        if (_view?.Set.Id == id) _view = null;
+        await LoadAsync();
+    }
+
+    private IEnumerable<MessageAssessment> Visible(MessageObservationView v) => v.Messages.Where(m => Matches(m, _filter));
+    private static int Count(MessageObservationView v, string f) => v.Messages.Count(m => Matches(m, f));
+    private static bool Matches(MessageAssessment m, string f) => f switch
+    {
+        "Dead-lettered" => m.Processing == MessageProcessingState.DeadLettered,
+        "Failed" => m.Processing == MessageProcessingState.Failed,
+        "Pending" => m.Processing == MessageProcessingState.Pending,
+        "Correlated" => m.Correlation.State == MessageCorrelationState.Confirmed,
+        _ => true,
+    };
+
+    private static string Id(string id) => id.Length > 16 ? id[..16] + "…" : id;
+    private static string Utc(DateTimeOffset t) => t.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture) + " UTC";
+    private static string Label(MessageProcessingState s) => s switch
+    {
+        MessageProcessingState.DeadLettered => "Dead-lettered", MessageProcessingState.NotObserved => "Not observed", _ => s.ToString(),
+    };
+    private static string Tone(MessageProcessingState s) => s switch
+    {
+        MessageProcessingState.Succeeded => "ok", MessageProcessingState.Failed or MessageProcessingState.DeadLettered => "bad", MessageProcessingState.Pending => "warn", _ => "muted",
+    };
+}

@@ -118,6 +118,7 @@
 
     <Compile Include="../../shared/PerformanceTestContracts.cs" Link="Models/PerformanceTestContracts.cs" />
     <Compile Include="../../shared/PerformanceBaselineRegression.cs" Link="Models/PerformanceBaselineRegression.cs" />
+    <Compile Include="../../shared/MessagingObservationContracts.cs" Link="Models/MessagingObservationContracts.cs" />
     <Compile Include="../../shared/PerformanceLocalExecutionContracts.cs" Link="Models/PerformanceLocalExecutionContracts.cs" />
     <Compile Include="../../shared/PerformanceResourceContracts.cs" Link="Models/PerformanceResourceContracts.cs" />
     <Compile Include="../../shared/TestEvidenceContracts.cs" Link="Models/TestEvidenceContracts.cs" />

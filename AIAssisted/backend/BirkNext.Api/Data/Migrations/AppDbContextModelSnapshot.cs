@@ -1555,6 +1555,36 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("manual_review_decisions", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.MessageObservationSetRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("DocumentJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("ImportedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvironmentId", "ImportedAt");
+
+                    b.ToTable("message_observation_sets", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.ObservedOperationRecord", b =>
                 {
                     b.Property<Guid>("Id")

@@ -1,0 +1,28 @@
+/* Message observations (Integration Topology → Messages). Compact master–detail; tables scroll inside their region. */
+.mo { display: grid; gap: .75rem; min-width: 0; max-width: 100%; }
+/* Grid items default to min-width:auto and would grow to their table's width; keep every child shrinkable so tables scroll inside their region. */
+.mo > *, .mo-detail > * { min-width: 0; }
+.mo-note, .mo-context { color: var(--clr-text-muted, #4b5563); font-size: .875rem; }
+.mo-context { display: block; }
+.mo-import-body { display: grid; gap: .5rem; padding: .5rem 0; }
+.mo-policy { border: 1px solid var(--clr-border, #d1d5db); border-radius: .375rem; padding: .5rem .75rem; min-width: 0; }
+.mo-scroll { overflow-x: auto; max-width: 100%; min-width: 0; position: relative; }
+.mo-detail { display: grid; gap: .5rem; min-width: 0; }
+.mo-table { border-collapse: collapse; width: 100%; font-size: .875rem; }
+.mo-table th, .mo-table td { text-align: left; padding: .375rem .5rem; border-bottom: 1px solid var(--clr-border, #e5e7eb); vertical-align: top; }
+.mo-selected { background: var(--clr-info-bg-light, #eff6ff); }
+.mo-filter { display: flex; flex-wrap: wrap; gap: .375rem; }
+.mo-chip { border: 1px solid var(--clr-border, #d1d5db); border-radius: 999px; padding: .125rem .625rem; background: #fff; }
+.mo-chip[aria-pressed="true"] { background: #1d4ed8; color: #fff; border-color: #1d4ed8; }
+.mo-pill { display: inline-block; border: 1px solid; border-radius: 999px; padding: 0 .5rem; font-size: .8125rem; white-space: nowrap; }
+.mo-pill-ok { border-color: #15803d; background: #f0fdf4; color: #14532d; }
+.mo-pill-bad { border-color: #b91c1c; background: #fef2f2; color: #7f1d1d; }
+.mo-pill-warn { border-color: #b45309; background: #fffbeb; color: #78350f; }
+.mo-pill-muted { border-color: #94a3b8; background: #f8fafc; color: #374151; }
+.mo-stores, .mo-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .25rem .75rem; margin: 0; }
+.mo-stores dt, .mo-meta dt { font-size: .75rem; color: var(--clr-text-muted, #4b5563); }
+.mo-stores dd, .mo-meta dd { margin: 0; overflow-wrap: anywhere; }
+.mo-message { border: 1px solid var(--clr-border, #d1d5db); border-radius: .5rem; padding: .75rem; min-width: 0; }
+.mo-timeline { padding-left: 1.25rem; }
+.mo-pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 20rem; overflow: auto; background: #f8fafc; padding: .5rem; font-size: .8125rem; }
+.mo-note-list { font-size: .8125rem; color: var(--clr-text-muted, #4b5563); padding-left: 1.25rem; }

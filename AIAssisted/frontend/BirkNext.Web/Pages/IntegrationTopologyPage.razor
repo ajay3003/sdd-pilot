@@ -425,6 +425,10 @@
         </details>
         <p class="it-note">Configured ≠ discovered ≠ observed. A resolved connection is supported by source evidence; it is not observed, healthy or contract-compatible unless runtime evidence says so. An expected relationship never creates a connection, and runtime observations mark interfaces, never connections.</p>
         </div>
+
+        <div class="it-panel" data-testid="it-panel-messages" hidden="@(CurrentTab != W.MessagesTab)">
+            @if (_profile is not null && CurrentTab == W.MessagesTab) { <BirkNext.Web.Components.MessageObservationsPanel EnvironmentId="@_profile.Id" /> }
+        </div>
     }
 </div>
 

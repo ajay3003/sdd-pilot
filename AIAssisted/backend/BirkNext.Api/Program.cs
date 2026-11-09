@@ -613,6 +613,8 @@ builder.Services.AddHttpClient(BirkNext.Api.Services.ExecutionEvidence.Execution
     .AddHttpMessageHandler<BirkNext.Api.Services.ExecutionEvidence.EvidenceCaptureHandler>();
 builder.Services.AddScoped<BirkNext.Api.Services.ExecutionEvidence.ExecutionEvidenceStore>();
 builder.Services.AddScoped<BirkNext.Api.Services.ExecutionEvidence.ExecutionEvidenceManagement>();
+// Imported, sanitized message evidence (Service Bus peek exports, Wolverine envelope exports): files only, never a connection.
+builder.Services.AddScoped<BirkNext.Api.Services.Integrations.Messaging.MessageObservationService>();
 // Authentication of execution runs: the attended Local HTTPS proxy credential or the environment's unattended API service credential (encrypted
 // at rest with Data Protection; tokens memory-only). The token client fetches only configured token endpoints, under the contract-source policy.
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.ExecutionEvidence.ApiServiceCredentialStore(

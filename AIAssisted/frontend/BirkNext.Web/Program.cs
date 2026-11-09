@@ -354,6 +354,10 @@ if (entra.Configured)
 var executionEvidenceClient = builder.Services.AddHttpClient<IExecutionEvidenceApiService, ExecutionEvidenceApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
     executionEvidenceClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
+// Message observations: imported, sanitized Service Bus peek / Wolverine envelope exports (read-only; nothing connects to a namespace).
+var messageObservationsClient = builder.Services.AddHttpClient<IMessageObservationApiService, MessageObservationApiService>(client => client.BaseAddress = backendBase);
+if (entra.Configured)
+    messageObservationsClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
 // Contract-Driven Testing: contract registry, contract tests and their runs (which go through Execution Evidence on the backend).
 var contractTestingClient = builder.Services.AddHttpClient<IContractTestingApiService, ContractTestingApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
