@@ -71,3 +71,7 @@
 .ct-pill[data-state="Unresolved"], .ct-pill[data-state="Failed"] { border-color: #b91c1c; background: #fef2f2; color: #7f1d1d; }
 tr[data-certainty="NeedsReview"] > * { background: #fffbeb; }
 tr[data-certainty="Unresolved"] > * { background: #fef2f2; }
+/* Narrow screens: form controls and headings never widen the page. */
+.ct-field, .ct-radios { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.ct-field input, .ct-field select, .ct-field textarea { max-width: 100%; min-width: 0; box-sizing: border-box; }
+.ct-radios label, .ct-muted, h2, h3 { overflow-wrap: anywhere; }

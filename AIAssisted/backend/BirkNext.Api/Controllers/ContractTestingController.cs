@@ -213,8 +213,9 @@ public sealed class ContractTestingController(ContractRegistryService registry, 
 
     /// <summary>The Target Environment's unattended API service credential: configuration only; the secret is write-only and never returned.</summary>
     [HttpGet("credentials/{environmentId}")]
+    /// No credential configured is a normal state, not an error: 204 (a 404 made every page visit log a browser console error).
     public ActionResult<ApiServiceCredentialView> Credential([FromServices] ApiServiceCredentialStore store, string environmentId) =>
-        store.Get(environmentId) is { } view ? Ok(view) : NotFound();
+        store.Get(environmentId) is { } view ? Ok(view) : NoContent();
 
     [HttpPut("credentials")]
     [RequestSizeLimit(64 * 1024)]

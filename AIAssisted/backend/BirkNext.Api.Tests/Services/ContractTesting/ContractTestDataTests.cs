@@ -207,6 +207,27 @@ public sealed class ContractTestDataTests : IAsyncLifetime
         if (expected == GeneratedValueCertainty.Unresolved) value.Entry.Should().BeNull();
     }
 
+    [Fact]
+    public void A_pattern_that_only_admits_an_identity_shaped_value_is_never_satisfied_by_the_generator()
+    {
+        // Found on the real M2LB archive (Person: a field with pattern ^\\d{11}$): Test Data refused the generated set as a possible national id.
+        var doc = new BirkNext.SourceDomains.SourceContract { Type = BirkNext.SourceDomains.SourceContractType.OpenApi };
+        const string text = """
+            { "openapi": "3.0.3", "info": { "title": "t", "version": "1" }, "paths": { "/p": { "get": {
+              "parameters": [ { "name": "ident", "in": "query", "required": true, "schema": { "type": "string", "pattern": "^\\d{11}$" } },
+                              { "name": "sessionId", "in": "query", "required": true, "schema": { "type": "string" } } ],
+              "responses": { "200": { "description": "ok" } } } } } }
+            """;
+        var parsed = BirkNext.Api.Services.SourceAnalysis.Evidence.ContractAnalyzer.ReadOpenApiDocument("t.json", text)!;
+        var raw = new OpenApiSchemaValidator(OpenApiSchemaValidator.Parse(text)!);
+        var op = parsed.Operations.Single();
+        var test = ContractTestRules.GenerateAny(parsed, "t", 1, op, DateTimeOffset.UnixEpoch).Single(t => t.Kind == ContractTestKind.Positive);
+        var values = ContractTestDataRules.Generate(parsed, raw, test, op, 1);
+        values.Single(v => v.Meta.Name == "ident").Should().Match<ContractTestDataRules.Generated>(v => v.Entry == null && v.Meta.Certainty == GeneratedValueCertainty.Unresolved);
+        values.Single(v => v.Meta.Name == "sessionId").Entry.Should().BeNull("a credential-like name is never generated (aligned with Test Data's rule)");
+        _ = doc;
+    }
+
     // ── Service: persist, validate, approve, bind, execute ───────────────────────────────────────────────────────────────
 
     [Fact]

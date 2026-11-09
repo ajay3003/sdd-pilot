@@ -278,6 +278,9 @@ public static partial class ContractTestDataRules
             if (ok) { value = generated; rule += $" matching pattern {Short(pattern)}"; }
             else { certainty = GeneratedValueCertainty.NeedsReview; reasons.Add($"{path}: pattern {Short(pattern)} is not satisfied by a generated value; enter a matching value."); }
         }
+        // An 11-digit value has the shape of a national identity number (fødselsnummer / D-number), whatever the field is called: never generated.
+        if (ElevenDigitsRe().IsMatch(value))
+            return Gen.None($"{path}: an 11-digit value has the shape of a national identity number — needs an approved synthetic identity from Test Data (never generated).");
         return new(JsonValue.Create(value), true, GeneratedValueOrigin.SyntheticRule, certainty, rule, reasons, format);
     }
 
@@ -323,6 +326,8 @@ public static partial class ContractTestDataRules
         if (integer) value = Math.Ceiling(value);
         if (min is { } lo && value < lo || max is { } hi && value > hi)
             return new(JsonValue.Create(value), true, GeneratedValueOrigin.SyntheticRule, GeneratedValueCertainty.NeedsReview, rule, ["No value satisfies the declared bounds together; enter one."]);
+        if (integer && Math.Abs(value) is >= 10_000_000_000m and < 100_000_000_000m)
+            return new(null, false, GeneratedValueOrigin.SyntheticRule, GeneratedValueCertainty.Unresolved, "not generated", ["An 11-digit number has the shape of a national identity number — never generated; enter a value."]);
         JsonNode node = integer ? (value is >= int.MinValue and <= int.MaxValue ? JsonValue.Create((int)value) : JsonValue.Create((long)value)) : JsonValue.Create(value);
         return new(node, true, GeneratedValueOrigin.SyntheticRule, GeneratedValueCertainty.Certain, rule, [], schema["format"]?.ToString());
     }
@@ -428,7 +433,8 @@ public static partial class ContractTestDataRules
 
     [GeneratedRegex(@"(fodsels|fødsels|personnummer|personnr|^fnr$|\bfnr\b|ssn|nationalid|national_id|duf|birkid|birk_id|dnummer|d-nummer|personident|personid$)", RegexOptions.IgnoreCase)]
     private static partial Regex IdentityRe();
-    [GeneratedRegex(@"(password|passord|secret|token|api[-_]?key|credential|authorization|^cookie$|client[-_]?secret|private[-_]?key)", RegexOptions.IgnoreCase)]
+    // Aligned with Test Data's own credential-name rule (TestDataResourceRules), so a generated set is never refused for a credential-like name.
+    [GeneratedRegex(@"(password|passwd|passord|secret|token|api[-_]?key|credential|authorization|cookie|session[-_]?id|connection[-_]?string|client[-_]?secret|private[-_]?key|bearer)", RegexOptions.IgnoreCase)]
     private static partial Regex CredentialRe();
     [GeneratedRegex(@"(adressebeskyttelse|addressprotection|address_protection|gradering|kode[-_ ]?[67]|strengt[-_ ]?fortrolig|confidentiality|classificationlevel|classification_level)", RegexOptions.IgnoreCase)]
     private static partial Regex ClassificationRe();
@@ -440,6 +446,8 @@ public static partial class ContractTestDataRules
     private static partial Regex SimplePatternRe();
     [GeneratedRegex(@"[^a-z0-9]+")]
     private static partial Regex SlugRe();
+    [GeneratedRegex(@"(?<!\d)\d{11}(?!\d)")]
+    private static partial Regex ElevenDigitsRe();
 
     private static string Slug(string s) => SlugRe().Replace(s.ToLowerInvariant(), "-").Trim('-');
     private static string Short(string s) => s.Length > 40 ? s[..40] + "…" : s;

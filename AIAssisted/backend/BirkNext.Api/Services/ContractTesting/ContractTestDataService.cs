@@ -67,7 +67,16 @@ public sealed class ContractTestDataService(ContractRegistryService registry, Co
         if (positive.Inputs.Count == 0) return result with { State = ContractTestDataState.NoInputs, Summary = "The operation needs no input values." };
         if (group.All(t => t.Binding is not null))
             // Only an approved version can be pinned (ContractTestService.BindAsync), so a bound operation's dataset is approved.
-            return result with { State = ContractTestDataState.AlreadyBound, Approved = true, Dataset = positive.Binding is { } pb ? $"{pb.Alias}@v{pb.Version}" : null, Summary = "Every test of this operation already uses a dataset (kept)." };
+        {
+            // The pinned values, so a tester sees what the tests use without regenerating anything.
+            var pinned = positive.Binding is { } pb ? authored.Find(pb.Alias)?.Versions.FirstOrDefault(x => x.Version == pb.Version) : null;
+            var shown = pinned?.Content.Kind == TestDataResourceKind.KeyValue
+                ? pinned.Content.Entries.Select(e => new ContractGeneratedValue(e.Name, positive.Inputs.FirstOrDefault(i => i.Name == e.Name)?.In ?? "", positive.Inputs.FirstOrDefault(i => i.Name == e.Name)?.Required ?? false,
+                    e.Type, e.Value is { Length: > 160 } long_ ? long_[..160] + "…" : e.Value, GeneratedValueOrigin.ExistingTestData, GeneratedValueCertainty.Certain, $"pinned {positive.Binding!.Alias}@v{positive.Binding.Version}")).ToList()
+                : [];
+            return result with { State = ContractTestDataState.AlreadyBound, Approved = true, Dataset = positive.Binding is { } b2 ? $"{b2.Alias}@v{b2.Version}" : null, Values = shown,
+                Summary = "Every test of this operation already uses a dataset (kept)." };
+        }
 
         // 1. Values: generated from the contract, or the existing set (never overwritten: it may hold a tester's reviewed values).
         var generated = ContractTestDataRules.Generate(doc, schema, positive, op, request.Seed);
@@ -127,7 +136,12 @@ public sealed class ContractTestDataService(ContractRegistryService registry, Co
             }, ct);
             if (saved.Saved) created = true;
             else if (authored.Find(alias) is null)
-                return result with { State = ContractTestDataState.Failed, Values = values, Validation = validation, Findings = findings, Summary = $"Not saved in Test Data: {saved.Message}" };
+                return result with
+                {
+                    State = ContractTestDataState.Failed, Values = values, Validation = validation,
+                    Findings = [.. findings, .. saved.Validation.Checks.Where(c => c.State == TestDataCheckState.Failed).Select(c => $"Test Data check: {c.Message}")],
+                    Summary = $"Not saved in Test Data: {string.Join(" ", saved.Validation.Checks.Where(c => c.State == TestDataCheckState.Failed).Select(c => c.Message).DefaultIfEmpty(saved.Message ?? "refused"))}",
+                };
             existing = authored.Find(alias);
         }
         var dataset = existing is null ? null : $"{alias}@v{existing.Current.Version}";
