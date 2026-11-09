@@ -2763,6 +2763,40 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("setup_library_versions", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.SourceContractDocumentRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CapturedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("SnapshotId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SnapshotId", "Path")
+                        .IsUnique();
+
+                    b.ToTable("source_contract_documents", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.SourceRepositoryAssociationRecord", b =>
                 {
                     b.Property<Guid>("Id")

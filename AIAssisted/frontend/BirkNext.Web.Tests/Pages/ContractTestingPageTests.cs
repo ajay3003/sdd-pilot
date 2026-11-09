@@ -121,6 +121,21 @@ public sealed class ContractTestingPageTests : BunitContext
             Log.Add($"generate {version} {(operations is null ? "all" : string.Join(",", operations))}");
             return Task.FromResult<(int, IReadOnlyList<string>, string?)>((4, [], null));
         }
+        public Task<(ContractTestDataReport? Report, string? Error)> GenerateTestDataAsync(string key, int? version, IReadOnlyList<string>? operations, CancellationToken ct = default)
+        {
+            Log.Add($"data {version}");
+            return Task.FromResult<(ContractTestDataReport?, string?)>((new ContractTestDataReport(key, version ?? 2, 20261109,
+            [
+                new() { Operation = "POST /children", ContractRef = $"{key}@v2", State = ContractTestDataState.Bound, Dataset = "gen-children-api-v2-post-children@v1", Approved = true, Created = true,
+                    Validation = "Valid", Summary = "gen-children-api-v2-post-children@v1 generated from the contract, validated (Valid), approved and pinned to 3 test(s).",
+                    Values = [new("age", "body", true, BirkNext.TestData.TestDataPrimitive.Int32, "1", GeneratedValueOrigin.SyntheticRule, GeneratedValueCertainty.Certain, "lowest valid value (declared minimum)")] },
+                new() { Operation = "GET /children/{id}", ContractRef = $"{key}@v2", State = ContractTestDataState.NeedsReview, Dataset = "gen-children-api-v2-get-children-id@v1",
+                    Validation = "Valid", Summary = "Confirm id in gen-children-api-v2-get-children-id@v1, then approve and pin it.",
+                    Values = [new("id", "path", true, BirkNext.TestData.TestDataPrimitive.Int32, "42", GeneratedValueOrigin.SyntheticRule, GeneratedValueCertainty.NeedsReview, "seeded integer 1–99",
+                        "Path parameter: id must identify an existing record in the target.")] },
+                new() { Operation = "GET /admin/reports", ContractRef = $"{key}@v2", State = ContractTestDataState.NoInputs, Summary = "The operation needs no input values." },
+            ]), null));
+        }
         public Task<(int Created, IReadOnlyList<string> Skipped, string? Error)> ProposeNegativesAsync(string key, string operation, CancellationToken ct = default)
         {
             Log.Add($"propose {operation}");
@@ -302,6 +317,26 @@ public sealed class ContractTestingPageTests : BunitContext
         page.Find("[data-testid=ct-generate-all]").Click();
         page.WaitForAssertion(() => _api.Log.Should().Contain("generate 2 all"));
         Services.GetRequiredService<NavigationManager>().Uri.Should().Contain("view=tests");
+        _api.Ran.Should().BeNull("generating never runs anything");
+    }
+
+    [Fact]
+    public void Generate_tests_also_generates_test_data_and_names_only_the_values_a_human_must_supply()
+    {
+        var page = Open("?contract=children-api");
+        page.Find("[data-testid=ct-generate-all]").Click();
+        page.WaitForAssertion(() => _api.Log.Should().ContainInOrder("generate 2 all", "data 2"));
+        page = Open("?contract=children-api&view=tests");
+        page.Find("[data-testid=ct-generate-data]").Click();
+        page.WaitForAssertion(() => page.Find("[data-testid=ct-data-report]"));
+        page.Find("[data-testid=ct-message]").TextContent.Should().Contain("1 operation(s) bound automatically").And.Contain("1 need a value or a review");
+        var ops = page.FindAll("[data-testid=ct-data-op]");
+        ops.Should().HaveCount(2, "operations without inputs are not listed");
+        ops[0].GetAttribute("data-state").Should().Be("Bound");
+        ops[0].QuerySelector("details")!.HasAttribute("open").Should().BeFalse("bound data needs no attention");
+        ops[1].QuerySelector("details")!.HasAttribute("open").Should().BeTrue("only what needs a human is expanded");
+        ops[1].QuerySelector("[data-testid=ct-data-value]")!.GetAttribute("data-certainty").Should().Be("NeedsReview");
+        ops[1].TextContent.Should().Contain("must identify an existing record");
         _api.Ran.Should().BeNull("generating never runs anything");
     }
 

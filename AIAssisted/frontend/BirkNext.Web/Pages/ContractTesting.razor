@@ -352,12 +352,73 @@
         if (Api is not { } api || _detail is null) return;
         _busy = true; _error = null; _message = null;
         var (created, skipped, error) = await api.GenerateAsync(_detail.Contract.Key, _detail.Version, operations);
-        _busy = false;
-        if (error is not null) { _error = error; return; }
+        if (error is not null) { _busy = false; _error = error; return; }
         _message = created > 0 ? $"{created} draft test(s) generated from v{_detail.Version}." + (skipped.Count > 0 ? $" {skipped.Count} skipped (already generated or not REST)." : "")
             : "No new tests: " + (skipped.Count > 0 ? "every operation already has its tests." : "no REST operation.");
+        // The tests' input values come with them: generated from the contract, validated, and pinned when certain (never on page load).
+        await GenerateDataAsync(operations, keepMessage: true);
+        _busy = false;
         Go(Link(view: "tests", test: null));
     }
+
+    private ContractTestDataReport? _dataReport;
+
+    /// <summary>Typed synthetic test data for the tests of this version; reports per operation what was bound and what needs a human.</summary>
+    private async Task GenerateDataAsync(IReadOnlyList<string>? operations, bool keepMessage = false)
+    {
+        if (Api is not { } api || _detail is null) return;
+        _busy = true;
+        if (!keepMessage) { _error = null; _message = null; }
+        var (report, error) = await api.GenerateTestDataAsync(_detail.Contract.Key, _detail.Version, operations);
+        _busy = false;
+        if (report is null) { _error = error; return; }
+        _dataReport = report;
+        var review = report.Operations.Count(o => o.State is ContractTestDataState.NeedsReview or ContractTestDataState.Unresolved);
+        var dataMessage = $"Test data: {report.Bound} operation(s) bound automatically" + (review > 0 ? $", {review} need a value or a review (listed below)." : ".");
+        _message = keepMessage && _message is not null ? $"{_message} {dataMessage}" : dataMessage;
+        if (!keepMessage) await ReloadAsync();
+    }
+
+    private static string DataStateLabel(ContractTestDataState s) => s switch
+    {
+        ContractTestDataState.Bound => "Bound", ContractTestDataState.AlreadyBound => "Already bound", ContractTestDataState.NoInputs => "No inputs",
+        ContractTestDataState.NeedsReview => "Needs review", ContractTestDataState.Unresolved => "Needs a value", ContractTestDataState.NotSupported => "Not supported", _ => "Failed",
+    };
+
+    private RenderFragment DataReport(ContractTestDataReport r) => @<section class="ct-card ct-data" aria-labelledby="ct-data-h" data-testid="ct-data-report">
+        <h3 id="ct-data-h">Generated test data · v@(r.Version)</h3>
+        <p class="ct-muted">Values come from the contract (enums, constants, defaults, types, formats and bounds) and are checked by the same contract validator runs use.
+            Only fully certain, valid data is approved and pinned automatically; identifiers of existing records, identities and credentials are never invented.</p>
+        <ul class="ct-data-list">
+            @foreach (var o in r.Operations.Where(o => o.State != ContractTestDataState.NoInputs))
+            {
+                var open = o.State is ContractTestDataState.NeedsReview or ContractTestDataState.Unresolved or ContractTestDataState.Failed;
+                <li data-testid="ct-data-op" data-state="@o.State">
+                    <details open="@open">
+                        <summary><strong>@o.Operation</strong> <span class="ct-pill" data-state="@o.State">@DataStateLabel(o.State)</span>
+                            @if (o.Dataset is { } ds) { <code class="ct-muted">@ds</code> } <span class="ct-muted">· validation @o.Validation</span></summary>
+                        <p class="ct-muted" data-testid="ct-data-summary">@o.Summary</p>
+                        @if (o.Values.Count > 0)
+                        {
+                            <div class="ct-scroll">
+                                <table class="ct-table" data-testid="ct-data-values">
+                                    <caption class="visually-hidden">Generated values of @o.Operation</caption>
+                                    <thead><tr><th scope="col">Input</th><th scope="col">Type</th><th scope="col">Value</th><th scope="col">Source</th><th scope="col">Status</th></tr></thead>
+                                    <tbody>@foreach (var v in o.Values)
+                                    {
+                                        <tr data-testid="ct-data-value" data-certainty="@v.Certainty"><th scope="row">@v.Name<span class="ct-muted"> · @v.In@(v.Required ? "" : " · optional")</span></th>
+                                            <td>@(v.Type?.ToString() ?? "—")</td><td><code>@(v.Preview ?? "—")</code></td><td>@v.Origin<div class="ct-muted">@v.Rule</div></td>
+                                            <td>@v.Certainty@if (v.Reason is { } why) { <div class="ct-muted">@why</div> }</td></tr>
+                                    }</tbody>
+                                </table>
+                            </div>
+                        }
+                        @if (o.Findings.Count > 0) { <ul class="ct-muted">@foreach (var f in o.Findings) { <li>@f</li> }</ul> }
+                    </details>
+                </li>
+            }
+        </ul>
+    </section>;
 
     /// <summary>Negative proposals for one operation: saved as Drafts; nothing runs.</summary>
     private async Task ProposeAsync(string operation)
@@ -733,7 +794,14 @@
     };
 
     private RenderFragment TestsView(ApiContractDetail d) => @<section class="ct-card" aria-labelledby="ct-tests-h" data-testid="ct-tests">
-        <h3 id="ct-tests-h">Tests</h3>
+        <div class="ct-row">
+            <h3 id="ct-tests-h">Tests</h3>
+            @if (_tests is { Count: > 0 })
+            {
+                <button class="btn btn-secondary" data-testid="ct-generate-data" disabled="@_busy" @onclick="() => GenerateDataAsync(null)">Generate test data</button>
+            }
+        </div>
+        @if (_dataReport is { } dataReport && dataReport.ContractKey == d.Contract.Key && dataReport.Version == d.Version) { @DataReport(dataReport) }
         @if (_tests is null || _tests.Count == 0)
         {
             <p class="ct-muted" data-testid="ct-tests-empty">No tests yet. Generate draft tests from the Operations view.</p>

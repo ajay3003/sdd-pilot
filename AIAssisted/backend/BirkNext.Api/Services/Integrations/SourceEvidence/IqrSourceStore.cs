@@ -4,6 +4,7 @@ using System.Text;
 using BirkNext.Api.Data;
 using BirkNext.Api.Models;
 using BirkNext.Integrations;
+using BirkNext.SourceDomains;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -272,6 +273,27 @@ public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? log
                 OmittedFiles = xsdFiles.Length - selected.Count,
                 PackageJson = JsonSerializer.Serialize(selected, Json),
             });
+            // The OpenAPI / GraphQL schema documents the contract analyzer found, so a contract imported into the Contract Registry from this
+            // snapshot is validated (and its test data generated) against its full schema, not only structurally. Bounded like the XSDs.
+            const int maxContractFiles = 100;
+            const long maxContractBytes = 20L * 1024 * 1024;
+            var contractPaths = (snapshot.EvidenceDomains?.Contracts?.Contracts ?? [])
+                .Where(c => c.Type is SourceContractType.OpenApi or SourceContractType.GraphQlSchema).Select(c => c.File.Replace('\\', '/'))
+                .ToHashSet(StringComparer.Ordinal);
+            long contractBytes = 0;
+            var contractCount = 0;
+            foreach (var file in (workspace.EvidenceFiles ?? []).Concat(workspace.ConfigurationFiles ?? []).Where(f => contractPaths.Contains(f.Path.Replace('\\', '/'))).OrderBy(f => f.Path, StringComparer.Ordinal))
+            {
+                var bytesCount = Encoding.UTF8.GetByteCount(file.Content);
+                if (contractCount >= maxContractFiles || bytesCount > IqrSourceArchiveReader.MaxFileBytes || contractBytes + bytesCount > maxContractBytes) continue;
+                db.SourceContractDocuments.Add(new SourceContractDocumentRecord
+                {
+                    Id = Guid.NewGuid(), SnapshotId = snapshot.Id, Path = file.Path.Replace('\\', '/'), Text = file.Content, CapturedAt = snapshot.AnalyzedAt,
+                    Sha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(file.Content))).ToLowerInvariant(),
+                });
+                contractBytes += bytesCount;
+                contractCount++;
+            }
         }
         try { await db.SaveChangesAsync(ct); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }

@@ -112,6 +112,8 @@ public sealed class IntegrationSuiteTests : IAsyncLifetime
         services.AddScoped<ManualReviewDecisionStore>();
         services.AddSingleton<IIntegrationJourneyPackRegistry>(new IntegrationJourneyPackRegistry([new FakeSkolePack()]));
         services.AddSingleton(new IntegrationJourneyRunner([new FakeAltinnExecutor()], [new FakeTelemetryObserver()], TimeProvider.System));
+        services.AddSingleton(registryStore);
+        services.AddScoped<ContractTestDataService>();
         services.AddScoped<IntegrationSuiteService>();
         _services = services.BuildServiceProvider();
         return Task.CompletedTask;
@@ -217,35 +219,21 @@ public sealed class IntegrationSuiteTests : IAsyncLifetime
     // ── ATG-06 synthetic Test Data ───────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Synthetic_test_data_comes_only_from_declared_constraints_is_seeded_unapproved_and_never_overwritten()
+    public async Task Test_data_comes_from_the_contract_is_validated_and_bound_only_when_certain_and_never_overwritten()
     {
         var snap = await Snapshot(OpenApiV1);
         var suite = (await Generate(Api(snap))).Suite!;
-        var item = suite.TestData.Single(d => d.Role.Contains("GET /children"));
-        item.Generated.Should().BeTrue();
-        item.Approved.Should().BeFalse("generated values are drafts until a tester approves them");
-        item.Values.Single(v => v.Name == "status").Should().Match<SuiteGeneratedValue>(v => v.Value == "active" && v.Rule == "first declared enum value");
+        var item = suite.TestData.Single(d => d.Role.EndsWith("GET /children", StringComparison.Ordinal));
+        item.Should().Match<SuiteTestDataItem>(d => d.Generated && d.Approved && d.State == "Bound" && d.Prerequisite == null,
+            "every required value is contract-derived and the request validates against the retained document: approved and pinned without a tester");
+        item.Values.Single(v => v.Name == "status").Should().Match<SuiteGeneratedValue>(v => v.Value == "active" && v.Constraint == "ContractConstraint · Certain");
         item.Values.Single(v => v.Name == "fromDate").Value.Should().MatchRegex(@"^2026-\d\d-\d\d$");
-        item.Values.Should().NotContain(v => v.Name == "fodselsnummer");
-        item.Prerequisite.Should().Contain("fodselsnummer: person identity");
-        suite.Review.Should().Contain(r => r.Area == "Test Data" && r.Question.Contains(item.Asset!));
+        item.Values.Single(v => v.Name == "fodselsnummer").Should().Match<SuiteGeneratedValue>(v => v.Value == "—" && v.Constraint.EndsWith("Unresolved"), "an identity is never generated");
+        suite.Tests.Where(t => t.Operation == "GET /children").Should().OnlyContain(t => t.TestDataBinding == item.Asset, "positive and negative tests share the pinned set");
+        suite.Review.Should().NotContain(r => r.Area == "Test Data" && r.Question.Contains(item.Asset!), "nothing to approve by hand");
 
-        var (again, _) = IntegrationSuiteComposer.Synthesize([new ContractParameter("fromDate", "query", true, "string(date)")], 20261109);
-        var (again2, _) = IntegrationSuiteComposer.Synthesize([new ContractParameter("fromDate", "query", true, "string(date)")], 20261109);
-        again.Single().Value.Should().Be(again2.Single().Value, "seeded: the same seed gives the same value");
         var regenerated = (await Generate(Api(snap) with { Seed = 1 })).Suite!;
-        regenerated.TestData.Single(d => d.Role.Contains("GET /children")).State.Should().Be("Existing draft kept (not overwritten)");
-    }
-
-    [Theory]
-    [InlineData("Authorization", "header", "string")]
-    [InlineData("fnr", "query", "string")]
-    [InlineData("duf_nummer", "query", "string")]
-    [InlineData("birkId", "path", "string")]
-    public void Credentials_and_identities_are_never_synthesised(string name, string location, string type)
-    {
-        var (values, _) = IntegrationSuiteComposer.Synthesize([new ContractParameter(name, location, true, type)], 7);
-        values.Should().BeEmpty();
+        regenerated.TestData.Single(d => d.Role.EndsWith("GET /children", StringComparison.Ordinal)).State.Should().Be("AlreadyBound", "a bound set is kept; another seed never replaces it");
     }
 
     // ── XSD / journey stages / Kode 6/7 ──────────────────────────────────────────────────────────────────────────────────────
@@ -275,6 +263,9 @@ public sealed class IntegrationSuiteTests : IAsyncLifetime
         suite.Readiness.Single(d => d.Name == "Correlation").State.Should().Be(SuiteItemReadiness.Blocked);
         suite.Security.Should().Contain(s => s.ScenarioId == "K67-05" && s.Triage == SuiteTriage.NeedsDomainDecision && s.OpenQuestion!.Contains("aggregate"));
         suite.Security.Should().Contain(s => s.ScenarioId == "K67-03" && s.Triage == SuiteTriage.NotSupported);
+        // Kode 6 and Kode 7 children are separate approved-Test-Data roles; none is approved here, so both are named prerequisites (never generated).
+        suite.TestData.Should().ContainSingle(d => d.Role == "kode67:Kode 6 synthetic child" && d.State == "Unresolved" && d.Prerequisite!.Contains("classification-level-3"));
+        suite.TestData.Should().ContainSingle(d => d.Role == "kode67:Kode 7 synthetic child" && d.State == "Unresolved" && d.Prerequisite!.Contains("classification-level-2"));
 
         // The review item of a Kode 6/7 question has the stable key the composer reads the decision from (never a per-process hash), so
         // answering it resolves the question on the next generation.
@@ -353,10 +344,10 @@ public sealed class IntegrationSuiteTests : IAsyncLifetime
         _ledger.Should().ContainSingle().Which.Should().Be(("GET", "/health"), "exactly the authorised call reached the target");
         var read = (await With(s => s.GetAsync(suite.Id, default)))!;
         var calls = (await _services.CreateScope().ServiceProvider.GetRequiredService<ExecutionEvidenceStore>().GetAsync(result.RunId.Value, new ExecutionCallQuery(0, 50), default))!.Calls;
-        // The source-backed contract cannot evaluate every schema keyword, so the engine reports NotAssessed — never a pass by default.
-        read.Runs.Should().ContainSingle(r => r.RunId == result.RunId && r.State == "1 notassessed of 1",
+        // The snapshot retains the contract's document text, so the response is validated against the full schema and can pass.
+        read.Runs.Should().ContainSingle(r => r.RunId == result.RunId && r.State == "1 passed of 1",
             string.Join(" | ", calls.SelectMany(c => c.Assertions).Select(a => $"{a.Kind} {a.Target} {a.Outcome} {a.Explanation}")));
-        read.Outcome.Should().Be(SuiteExecutionOutcome.Executed, "an executed call whose assertions are not all assessed is not verification");
+        read.Outcome.Should().Be(SuiteExecutionOutcome.PartiallyVerified, "one passing asserted call does not verify the stages that never ran");
     }
 
     private async Task WaitForRunAsync(Guid runId)

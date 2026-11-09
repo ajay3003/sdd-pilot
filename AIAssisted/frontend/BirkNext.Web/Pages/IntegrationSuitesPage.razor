@@ -188,7 +188,7 @@
                         <li data-testid="its-data-item" data-state="@d.State"><strong>@d.Role</strong> <span class="its-badge">@d.State</span> @(d.Asset is { } a ? $"· {a}" : "")
                             <div class="its-muted">@d.Purpose</div>
                             @if (d.Prerequisite is { } pre) { <div class="its-prereq" data-testid="its-data-prereq">@pre</div> }
-                            @if (d.Values.Count > 0) { <div class="its-muted">@string.Join(" · ", d.Values.Take(6).Select(v => $"{v.Name} = {v.Value} ({v.Rule})"))</div> }
+                            @if (d.Values.Count > 0) { <div class="its-muted">@string.Join(" · ", d.Values.Take(8).Select(v => $"{v.Name} = {v.Value} ({v.Constraint})"))</div> }
                         </li>
                     }</ul>
                 </section>

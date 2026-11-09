@@ -18,6 +18,9 @@ public interface IContractTestingApiService
     Task<(ContractVersionDiff? Diff, string? Error)> DiffAsync(string key, int from, int to, CancellationToken ct = default);
     Task<(int Created, IReadOnlyList<string> Skipped, string? Error)> GenerateAsync(string key, int? version, IReadOnlyList<string>? operations, CancellationToken ct = default);
     Task<(int Created, IReadOnlyList<string> Skipped, string? Error)> ProposeNegativesAsync(string key, string operation, CancellationToken ct = default);
+    /// <summary>Typed synthetic test data for the contract's tests: validated, kept in Test Data, approved and pinned only when certain.</summary>
+    Task<(ContractTestDataReport? Report, string? Error)> GenerateTestDataAsync(string key, int? version, IReadOnlyList<string>? operations, CancellationToken ct = default) =>
+        Task.FromResult<(ContractTestDataReport?, string?)>((null, "Automatic test data is not available in this host."));
     Task<(IReadOnlyList<ContractTestView>? Tests, string? Error)> TestsAsync(string key, ContractTestEnvironment? environment, CancellationToken ct = default);
     Task<(IReadOnlyList<ContractDatasetOption>? Options, string? Error)> DatasetsAsync(Guid testId, string? environmentId, CancellationToken ct = default);
     Task<string?> BindAsync(Guid testId, ContractTestBindRequest request, CancellationToken ct = default);
@@ -82,6 +85,9 @@ public sealed class ContractTestingApiService(HttpClient http) : IContractTestin
         var (body, error) = await SendAsync<GenerateResponse>(HttpMethod.Post, $"{Base}/contracts/{Uri.EscapeDataString(key)}/tests", new { version, operations }, ct);
         return (body?.Created.Count ?? 0, body?.Skipped ?? [], error);
     }
+
+    public Task<(ContractTestDataReport? Report, string? Error)> GenerateTestDataAsync(string key, int? version, IReadOnlyList<string>? operations, CancellationToken ct = default) =>
+        SendAsync<ContractTestDataReport>(HttpMethod.Post, $"{Base}/contracts/{Uri.EscapeDataString(key)}/test-data", new ContractTestDataRequest(version, operations?.ToList()), ct);
 
     public async Task<(int Created, IReadOnlyList<string> Skipped, string? Error)> ProposeNegativesAsync(string key, string operation, CancellationToken ct = default)
     {

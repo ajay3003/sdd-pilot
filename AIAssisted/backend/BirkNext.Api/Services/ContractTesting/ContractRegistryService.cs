@@ -169,7 +169,11 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
         if (source.Type is not (SourceContractType.OpenApi or SourceContractType.GraphQlSchema)) return Fail("Only OpenAPI and GraphQL schema contracts can be imported for contract testing.");
         var protocol = source.Type == SourceContractType.OpenApi ? ApiContractProtocol.Rest : ApiContractProtocol.GraphQl;
         var evidenceJson = JsonSerializer.Serialize(source, ExecutionEvidenceStore.Json);
-        var sha = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(evidenceJson))).ToLowerInvariant();
+        // The snapshot's retained document text (snapshots analysed before retention have none): with it the version is validated against its
+        // full schema; the fingerprint then also covers the text, so the first import with text is a new version of a text-less one.
+        var path = source.File.Replace('\\', '/');
+        var document = await db.SourceContractDocuments.AsNoTracking().Where(d => d.SnapshotId == snapshot.Id && d.Path == path).Select(d => new { d.Text, d.Sha256 }).FirstOrDefaultAsync(ct);
+        var sha = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(document is null ? evidenceJson : evidenceJson + "\n" + document.Sha256))).ToLowerInvariant();
         if (await db.ApiContractVersions.AsNoTracking().Where(v => v.SourceSnapshotId == snapshot.Id && v.SourcePath == source.Id)
                 .Join(db.ApiContracts.AsNoTracking(), v => v.ContractId, c => c.Id, (v, c) => new { c.Key, v.Version }).FirstOrDefaultAsync(ct) is { } already)
             return new(false, true, already.Key, already.Version, $"Already imported from this snapshot as {ContractIdentity.ContractRef(already.Key, already.Version)}; nothing was stored.", []);
@@ -194,13 +198,15 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
         var stored = source with
         {
             Id = contract.Key,
-            Limitations = [.. source.Limitations, "Imported from a Source Analysis snapshot: the snapshot keeps the parsed contract, not the document text, so responses get structural (type-based) validation, not full schema validation."],
+            Limitations = [.. source.Limitations, document is null
+                ? "Imported from a Source Analysis snapshot: the snapshot keeps the parsed contract, not the document text, so responses get structural (type-based) validation, not full schema validation."
+                : "Imported from a Source Analysis snapshot with its retained document text: requests and responses are validated against the full schema."],
         };
         db.ApiContractVersions.Add(new ApiContractVersionRow
         {
             Id = Guid.NewGuid(), ContractId = contract.Id, Version = version, Sha256 = sha, Source = nameof(ContractVersionSource.SourceSnapshot),
             SourceLabel = Trim($"{snapshot.Archive.FileName} · {source.File} · snapshot {snapshot.Id:N}" + (snapshot.Commit is { Length: > 0 } commit && commit != "Unknown" ? $" · {commit}" : ""), 500),
-            Format = source.Format, DocumentText = "", ContractJson = JsonSerializer.Serialize(stored, ExecutionEvidenceStore.Json), OperationCount = source.Operations.Count, ImportedAt = now,
+            Format = source.Format, DocumentText = document?.Text ?? "", ContractJson = JsonSerializer.Serialize(stored, ExecutionEvidenceStore.Json), OperationCount = source.Operations.Count, ImportedAt = now,
             SourceSnapshotId = snapshot.Id, SourcePath = Trim(source.Id, 500),
         });
         contract.UpdatedAt = now;

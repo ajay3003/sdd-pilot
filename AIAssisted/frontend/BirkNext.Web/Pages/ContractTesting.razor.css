@@ -63,3 +63,11 @@
     .ct-table tr { display: grid; gap: 0.15rem; padding: 0.4rem 0; border-bottom: 1px solid var(--clr-border, #d0d7de); }
     .ct-table td, .ct-table th { border: 0; padding: 0.1rem 0; }
 }
+.ct-data-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.4rem; min-width: 0; }
+.ct-data-list > li { border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; padding: 0.4rem 0.6rem; min-width: 0; overflow-wrap: anywhere; }
+.ct-data-list summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: baseline; }
+.ct-pill[data-state="Bound"], .ct-pill[data-state="AlreadyBound"] { border-color: #15803d; background: #f0fdf4; color: #14532d; }
+.ct-pill[data-state="NeedsReview"] { border-color: #b45309; background: #fffbeb; color: #78350f; }
+.ct-pill[data-state="Unresolved"], .ct-pill[data-state="Failed"] { border-color: #b91c1c; background: #fef2f2; color: #7f1d1d; }
+tr[data-certainty="NeedsReview"] > * { background: #fffbeb; }
+tr[data-certainty="Unresolved"] > * { background: #fef2f2; }

@@ -10,6 +10,7 @@ public class AppDbContext : DbContext
     public DbSet<Scenario> Scenarios => Set<Scenario>();
     public DbSet<IqrSourceSnapshotRecord> IqrSourceSnapshots => Set<IqrSourceSnapshotRecord>();
     public DbSet<SourceSchemaArtifactRecord> SourceSchemaArtifacts => Set<SourceSchemaArtifactRecord>();
+    public DbSet<SourceContractDocumentRecord> SourceContractDocuments => Set<SourceContractDocumentRecord>();
     public DbSet<ActiveCdcRunRecord> ActiveCdcRuns => Set<ActiveCdcRunRecord>();
     public DbSet<ActiveEventRunRecord> ActiveEventRuns => Set<ActiveEventRunRecord>();
     public DbSet<ActiveEventSyntheticIdentityRecord> ActiveEventSyntheticIdentities => Set<ActiveEventSyntheticIdentityRecord>();
@@ -78,6 +79,16 @@ public class AppDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<SourceContractDocumentRecord>(entity =>
+        {
+            entity.ToTable("source_contract_documents");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Path).HasMaxLength(500).IsRequired();
+            entity.Property(x => x.Sha256).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.Text).HasColumnType("text").IsRequired();
+            entity.HasIndex(x => new { x.SnapshotId, x.Path }).IsUnique();
+        });
+
         modelBuilder.Entity<SourceSchemaArtifactRecord>(entity =>
         {
             entity.ToTable("source_schema_artifacts");

@@ -209,11 +209,15 @@ public sealed class TestDataCatalogService(TestDataSchemaValidationService valid
     public string? Approve(string assetId) =>
         catalog.Assets().FirstOrDefault(a => a.Id == assetId || a.AssetId == assetId) is { } asset ? Approve(asset, asset) : "Unknown asset.";
 
-    private string? Approve(TestDataAsset asset, TestDataAsset version)
+    private string? Approve(TestDataAsset asset, TestDataAsset version) => Approve(registry, asset, version, time.GetUtcNow());
+
+    /// <summary>The one approval rule (also used by automatic contract test data, which approves only fully contract-derived, schema-valid
+    /// values): the approval fingerprint of exactly this version is recorded in the lifecycle registry.</summary>
+    public static string? Approve(TestDataRegistryStore registry, TestDataAsset asset, TestDataAsset version, DateTimeOffset now)
     {
         if (asset.Deprecated) return "A deprecated asset is not approved for new usage.";
         var current = registry.Lifecycle(asset.Id) ?? new TestDataLifecycleRecord { AssetId = asset.Id };
-        return registry.SetLifecycle(current with { ApprovedFingerprint = TestDataCatalog.ApprovalFingerprint(version), ApprovedAt = time.GetUtcNow() })
+        return registry.SetLifecycle(current with { ApprovedFingerprint = TestDataCatalog.ApprovalFingerprint(version), ApprovedAt = now })
             ? null : "The approval could not be stored (the Test Data registry file could not be written); nothing was approved. Try again.";
     }
 

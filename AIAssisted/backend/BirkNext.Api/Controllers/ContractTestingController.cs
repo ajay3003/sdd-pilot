@@ -91,6 +91,17 @@ public sealed class ContractTestingController(ContractRegistryService registry, 
         return created.Count == 0 && skipped.Any(s => s.Contains("does not exist", StringComparison.Ordinal)) ? NotFound(new { skipped }) : Ok(new { created, skipped });
     }
 
+    /// <summary>
+    /// Typed synthetic test data for the contract's tests (one key-value set per operation in Test Data), validated against the contract and
+    /// approved and pinned automatically only when every required value is contract-derived and certain; otherwise the fields needing a human are
+    /// named. Writes Test Data and bindings; never sends a request.
+    /// </summary>
+    [HttpPost("contracts/{key}/test-data")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public async Task<ActionResult<ContractTestDataReport>> GenerateTestData(string key, [FromBody] ContractTestDataRequest? request,
+        [FromServices] ContractTestDataService data, CancellationToken ct) =>
+        await data.GenerateAsync(key, request ?? new ContractTestDataRequest(), ct) is { } report ? Ok(report) : NotFound();
+
     public sealed record ProposeRequest(string Operation);
 
     /// <summary>Negative proposals for one operation (saved as Drafts, never run).</summary>
