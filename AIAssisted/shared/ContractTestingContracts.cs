@@ -57,7 +57,25 @@ public sealed record ContractTestChain
     public List<ContractChainStep> Steps { get; init; } = [];
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset UpdatedAt { get; init; }
+    /// <summary>Approved (default; every authored chain) or Draft (accepted from a suggestion): a draft is never run until a person approves it.</summary>
+    public ContractChainState State { get; init; }
+    /// <summary>The suggestion a draft came from (stable id), so the same suggestion is not offered twice.</summary>
+    public string? SuggestionId { get; init; }
 }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ContractChainState { Approved, Draft }
+
+/// <summary>One step of a suggested chain: the operation, its existing positive test (if any), what it provides and what it takes.</summary>
+public sealed record ChainSuggestionStep(string StepId, string Operation, Guid? TestId, bool Mutating, List<OutputExtraction> Extract, List<ContractChainInput> Inputs);
+
+/// <summary>
+/// An evidence-backed chain proposal: the operations, how data flows between them (a typed response field of a create/list operation feeding the
+/// path parameter of a later operation on the same resource), the evidence, confidence, what is missing and whether a step changes data. A
+/// suggestion is never run; accepting it creates a Draft chain.
+/// </summary>
+public sealed record ChainSuggestion(string Id, string Purpose, List<ChainSuggestionStep> Steps, List<string> Evidence, string Confidence, List<string> Missing, bool Mutating,
+    bool Ready, string? AcceptedChainId);
 
 public sealed record ContractChainSave
 {
@@ -66,6 +84,8 @@ public sealed record ContractChainSave
     public List<ContractChainStep> Steps { get; init; } = [];
     /// <summary>The revision the editor started from (null = create); a mismatch is a conflict.</summary>
     public int? ExpectedRevision { get; init; }
+    public ContractChainState State { get; init; }
+    public string? SuggestionId { get; init; }
 }
 
 public sealed record ContractChainSaveResult(ContractTestChain? Chain, List<string> Problems, bool Conflict = false);
@@ -384,13 +404,46 @@ public sealed record ContractCoverageMetric(string Id, string Label, int Numerat
 
     /// <summary>Nothing to count over (0/0), or an execution figure with no executed item: not assessed, never 0 % and never covered.</summary>
     [JsonIgnore]
-    public bool Assessed => Denominator > 0 && (Group == CoverageGroup.Definition || NotAssessed < Denominator);
+    public bool Assessed => Denominator > 0 && (Group is CoverageGroup.Definition or CoverageGroup.Negative || NotAssessed < Denominator);
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum CoverageGroup { Definition, Execution }
+public enum CoverageGroup { Definition, Execution, Verification, Negative, ResponseCode }
 
-public sealed record ContractCoverageReport(string Key, int Version, ApiContractProtocol Protocol, List<ContractCoverageMetric> Metrics, DateTimeOffset ComputedAt);
+public sealed record ContractCoverageReport(string Key, int Version, ApiContractProtocol Protocol, List<ContractCoverageMetric> Metrics, DateTimeOffset ComputedAt)
+{
+    /// <summary>The latest completed execution attributed to this exact version (null: never executed).</summary>
+    public DateTimeOffset? LatestExecutionAt { get; init; }
+    /// <summary>Assertions of the latest executed calls that failed (passed and not assessed are in the assertions metric).</summary>
+    public int AssertionsFailed { get; init; }
+}
+
+/// <summary>One contract's current coverage (its latest version) inside a project, with its readiness blockers and its older versions' execution kept apart.</summary>
+public sealed record ProjectCoverageContract(string Key, string Name, ApiContractProtocol Protocol, string? Module, int Version, ContractCoverageReport Coverage)
+{
+    public int Tests { get; init; }
+    public int TestsOnOlderVersions { get; init; }
+    public int ReadyTests { get; init; }
+    public int BlockedTests { get; init; }
+    public List<string> BlockerAreas { get; init; } = [];
+    public bool ReadinessAssessed { get; init; }
+    public ContractLifecycle Lifecycle { get; init; }
+    /// <summary>Older versions with execution evidence: never merged into the current denominator.</summary>
+    public List<HistoricalCoverage> History { get; init; } = [];
+}
+
+public sealed record HistoricalCoverage(int Version, int Operations, int Executed, int Passing, DateTimeOffset? LatestExecutionAt);
+
+/// <summary>A total over a project: the sum of exact per-contract numerators and denominators of one metric (never an average of percentages).</summary>
+public sealed record ProjectCoverageTotal(string Id, string Label, CoverageGroup Group, int Numerator, int Denominator, int NotAssessed)
+{
+    [JsonIgnore]
+    public bool Assessed => Denominator > 0 && (Group is CoverageGroup.Definition or CoverageGroup.Negative || NotAssessed < Denominator);
+}
+
+/// <summary>Project-wide Contract Testing coverage: each contract's latest version once (no double counting across snapshots), totals per metric.</summary>
+public sealed record ProjectCoverageReport(string ProjectKey, string DisplayName, List<string> Keys, Guid? LatestSnapshotId, List<ProjectCoverageContract> Contracts,
+    List<ProjectCoverageTotal> Totals, DateTimeOffset ComputedAt, List<string> Limitations);
 
 // ── Bulk environment and authentication configuration ────────────────────────────────────────────────────────────────
 

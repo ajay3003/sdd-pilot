@@ -95,6 +95,12 @@ public sealed class ContractTestingController(ContractRegistryService registry, 
         request.Items.Count > ContractBulkBindingService.MaxContracts ? UnprocessableEntity(new { message = $"At most {ContractBulkBindingService.MaxContracts} contracts." })
             : Ok(await bulk.ApplyAsync(request, User.Identity?.Name ?? "local user", ct));
 
+    /// <summary>Project-wide coverage (each contract once at its latest version; history apart). The body is the optional Target Environment for readiness.</summary>
+    [HttpPost("projects/{projectKey}/coverage")]
+    public async Task<ActionResult<ProjectCoverageReport>> ProjectCoverage(string projectKey, [FromBody] ContractTestEnvironment? environment,
+        [FromServices] ContractProjectCoverageService coverage, CancellationToken ct) =>
+        await coverage.CoverageAsync(projectKey, string.IsNullOrWhiteSpace(environment?.EnvironmentId) ? null : environment, ct) is { } report ? Ok(report) : NotFound();
+
     [HttpGet("contracts/{key}")]
     public async Task<ActionResult<ApiContractDetail>> Get(string key, [FromQuery] int? version, CancellationToken ct) =>
         await registry.GetAsync(key, version, ct) is { } detail ? Ok(detail) : NotFound();
@@ -290,6 +296,27 @@ public sealed class ContractTestingController(ContractRegistryService registry, 
     {
         ExecutionCredentialResolver.Forget(environmentId);
         return store.Delete(environmentId) ? NoContent() : NotFound();
+    }
+
+    /// <summary>Chain suggestions from the contract's evidence (body: optional Target Environment for step readiness). Reading only.</summary>
+    [HttpPost("contracts/{key}/chain-suggestions/query")]
+    public async Task<ActionResult<IReadOnlyList<ChainSuggestion>>> ChainSuggestions(string key, [FromBody] ContractTestEnvironment? environment,
+        [FromServices] ContractChainSuggestionService suggestions, CancellationToken ct) =>
+        await suggestions.SuggestAsync(key, string.IsNullOrWhiteSpace(environment?.EnvironmentId) ? null : environment, ct) is { } list ? Ok(list) : NotFound();
+
+    /// <summary>Accepts a suggestion as a Draft chain (never run until approved).</summary>
+    [HttpPost("contracts/{key}/chain-suggestions/{id}/accept")]
+    public async Task<ActionResult<ContractChainSaveResult>> AcceptChainSuggestion(string key, string id, [FromServices] ContractChainSuggestionService suggestions, CancellationToken ct)
+    {
+        var result = await suggestions.AcceptAsync(key, id, ct);
+        return result.Chain is null ? UnprocessableEntity(result) : Ok(result);
+    }
+
+    [HttpPost("contracts/{key}/chain-suggestions/{id}/reject")]
+    public async Task<IActionResult> RejectChainSuggestion(string key, string id, [FromServices] ContractChainSuggestionService suggestions, CancellationToken ct)
+    {
+        await suggestions.RejectAsync(key, id, User.Identity?.Name ?? "local user", ct);
+        return NoContent();
     }
 
     [HttpGet("chains")]

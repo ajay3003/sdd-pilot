@@ -642,6 +642,10 @@ builder.Services.AddScoped<BirkNext.Api.Services.ContractTesting.ContractTestDat
 builder.Services.AddScoped<BirkNext.Api.Services.ContractTesting.ContractBulkImportService>();
 // Bulk environment/authentication binding for many contracts of one project (preview → approve → apply; nothing sent).
 builder.Services.AddScoped<BirkNext.Api.Services.ContractTesting.ContractBulkBindingService>();
+// Project-wide contract coverage: an aggregation of the per-contract coverage (no second evidence store).
+builder.Services.AddScoped<BirkNext.Api.Services.ContractTesting.ContractProjectCoverageService>();
+// Evidence-backed chain suggestions (accepted as Draft chains; never run automatically).
+builder.Services.AddScoped<BirkNext.Api.Services.ContractTesting.ContractChainSuggestionService>();
 builder.Services.AddScoped<BirkNext.Api.Services.ExecutionEvidence.IExecutionContractValidator, BirkNext.Api.Services.ContractTesting.ContractCallValidator>();
 builder.Services.AddScoped<BirkNext.Api.Services.ApiQuality.IStoredContractSource, BirkNext.Api.Services.ContractTesting.StoredContractSource>();
 // Resource Stability: provider-based observation of approved components (Podman container stats; .NET runtime counters of BirkNext's own process).

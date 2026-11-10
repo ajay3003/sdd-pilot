@@ -137,12 +137,19 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         {
             new("operations-with-tests", "Operations with a stored test", testedOps.Count, ops.Count, scope, 0, Defined,
                 "A stored test is not evidence that the operation works.") { Group = CoverageGroup.Definition },
-            new("operations-with-negative-tests", "Operations with a negative test", negativeOps.Count, ops.Count, scope, 0, Defined) { Group = CoverageGroup.Definition },
+            new("operations-with-negative-tests", "Operations with a negative test", negativeOps.Count, ops.Count, scope, 0, Defined) { Group = CoverageGroup.Negative },
             new("operations-with-test-data", "Operations whose positive tests have their Test Data", dataReadyOps.Count, ops.Count, scope, 0, Defined + " and their pinned Test Data",
                 "Pinned, approved data (or no required value). Data that needs review or a value is not counted.") { Group = CoverageGroup.Definition },
             new("operations-executed", "Operations executed", executedOps.Count, ops.Count, scope, ops.Count - executedOps.Count, Evidence),
-            new("operations-passing", "Operations whose latest results all passed", passingOps.Count, ops.Count, scope, ops.Count - executedOps.Count, Evidence),
+            new("operations-passing", "Operations whose latest results all passed", passingOps.Count, ops.Count, scope, ops.Count - executedOps.Count, Evidence) { Group = CoverageGroup.Verification },
         };
+        // Verified: every latest result of the operation passed AND each of those calls had assertions, all assessed and passed. A pass without an
+        // assessed assertion is executed, not verified.
+        var verifiedOps = latest.GroupBy(Op).Where(g => names.Contains(g.Key) && g.All(c => c.State == ExecutionState.Passed && c.Assertions.Count > 0
+            && c.Assertions.All(a => a.Outcome == AssertionOutcome.Passed))).Select(g => g.Key).ToHashSet(StringComparer.Ordinal);
+        var executedUnassessed = executedOps.Count(o => !verifiedOps.Contains(o) && latest.Where(c => Op(c) == o).Any(c => c.Assertions.Count == 0 || c.Assertions.Any(a => a.Outcome == AssertionOutcome.NotAssessed)));
+        metrics.Add(new("operations-verified", "Operations verified (passed with assessed assertions)", verifiedOps.Count, ops.Count, scope, ops.Count - executedOps.Count + executedUnassessed, Evidence,
+            "Not assessed includes executed operations whose latest call had no assessed assertion.") { Group = CoverageGroup.Verification });
         if (protocol == ApiContractProtocol.Rest)
         {
             var documented = ops.SelectMany(o => o.ResponseCodes.Where(c => c.Length == 3 && c.All(char.IsDigit)).Select(c => (Op: o.Name, Code: int.Parse(c)))).ToList();
@@ -150,16 +157,20 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             var hit = documented.Count(observed.Contains);
             var unassessed = documented.Count(d => !executedOps.Contains(d.Op));
             metrics.Add(new("documented-responses-observed", "Documented response codes observed", hit, documented.Count, $"{documented.Count} explicit response code(s) of {reference}",
-                unassessed, Evidence, "Ranges (2XX) and \"default\" are not counted; unassessed = codes of operations never executed."));
+                unassessed, Evidence, "Ranges (2XX) and \"default\" are not counted; unassessed = codes of operations never executed.") { Group = CoverageGroup.ResponseCode });
         }
         var responseReports = latest.Select(c => c.ContractValidation.FirstOrDefault(r => r.Direction == "Response")).ToList();
         metrics.Add(new("responses-valid", "Latest responses valid against the contract", responseReports.Count(r => r is { State: ContractValidationState.Valid, Unsupported.Count: 0 }),
             latest.Count, $"{latest.Count} latest executed call(s)", responseReports.Count(r => r is null or { State: ContractValidationState.NotAssessed } or { Unsupported.Count: > 0 }),
-            Evidence, "Not assessed includes responses checked with unsupported schema keywords."));
+            Evidence, "Not assessed includes responses checked with unsupported schema keywords.") { Group = CoverageGroup.Verification });
         var assertions = latest.SelectMany(c => c.Assertions).ToList();
         metrics.Add(new("assertions-passed", "Assertions passed (latest results)", assertions.Count(a => a.Outcome == AssertionOutcome.Passed), assertions.Count,
-            $"{assertions.Count} assertion(s) in {latest.Count} latest executed call(s)", assertions.Count(a => a.Outcome == AssertionOutcome.NotAssessed), Evidence));
-        return new(key, v, protocol, metrics, _clock.GetUtcNow());
+            $"{assertions.Count} assertion(s) in {latest.Count} latest executed call(s)", assertions.Count(a => a.Outcome == AssertionOutcome.NotAssessed), Evidence) { Group = CoverageGroup.Verification });
+        return new(key, v, protocol, metrics, _clock.GetUtcNow())
+        {
+            LatestExecutionAt = executed.Count == 0 ? null : executed.Max(c => c.CompletedAt ?? c.StartedAt),
+            AssertionsFailed = assertions.Count(a => a.Outcome == AssertionOutcome.Failed),
+        };
     }
 
     public async Task<bool> DeleteAsync(Guid id, CancellationToken ct)
@@ -797,7 +808,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         var chain = new ContractTestChain
         {
             Id = current?.Id ?? Guid.NewGuid(), Name = save.Name.Trim(), Description = save.Description?.Trim(), Revision = (current?.Revision ?? 0) + 1,
-            Steps = save.Steps, CreatedAt = current?.CreatedAt ?? now, UpdatedAt = now,
+            Steps = save.Steps, CreatedAt = current?.CreatedAt ?? now, UpdatedAt = now, State = save.State, SuggestionId = save.SuggestionId ?? current?.SuggestionId,
         };
         db.ContractTestChains.Add(new ContractTestChainRow { Id = Guid.NewGuid(), ChainId = chain.Id, Revision = chain.Revision, Name = chain.Name,
             DocumentJson = JsonSerializer.Serialize(chain, ExecutionEvidenceStore.Json), CreatedAt = now });
@@ -883,6 +894,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
     public async Task<ContractTestRunResult> RunChainAsync(Guid id, ContractChainRunRequest request, CancellationToken ct)
     {
         if (await ChainAsync(id, null, ct) is not { } chain) return new(null, ["Not found."]);
+        if (chain.State == ContractChainState.Draft) return new(null, [$"{chain.Name} is a draft (from a suggestion): review and approve it before it can run."]);
         if (PathProblem(request.BasePath, "The API base path") is { } baseProblem) return new(null, [baseProblem]);
         if (PathProblem(request.GraphQlPath, "The GraphQL endpoint path") is { } gqlProblem) return new(null, [gqlProblem]);
         if (await ChainProblemsAsync(chain.Steps, ct) is { Count: > 0 } invalid) return new(null, invalid);
