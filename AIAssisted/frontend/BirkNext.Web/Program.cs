@@ -354,6 +354,10 @@ if (entra.Configured)
 var executionEvidenceClient = builder.Services.AddHttpClient<IExecutionEvidenceApiService, ExecutionEvidenceApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
     executionEvidenceClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
+// Test Execution & Evidence: read-only unified projection over the evidence owners.
+var executionExplorerClient = builder.Services.AddHttpClient<IExecutionExplorerApiService, ExecutionExplorerApiService>(client => client.BaseAddress = backendBase);
+if (entra.Configured)
+    executionExplorerClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
 // Message observations: imported, sanitized Service Bus peek / Wolverine envelope exports (read-only; nothing connects to a namespace).
 var messageObservationsClient = builder.Services.AddHttpClient<IMessageObservationApiService, MessageObservationApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)

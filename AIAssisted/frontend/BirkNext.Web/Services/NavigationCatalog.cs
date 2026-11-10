@@ -184,7 +184,7 @@ public static class NavigationCatalog
             new("integration-suites", "Integration Test Suites", "nav-icon-task-alignment", Always, WrapLabel: true,
                 Hint: "from an analysed source snapshot: contracts, tests, test data, flow, Kode 6/7 scenarios, readiness and what remains before a run",
                 Aliases: ["Integration Suites", "Generate Suite", "ATG"]),
-            new("execution-results", "Execution Results", "nav-icon-task-alignment", Always, Hint: "saved REST/GraphQL runs: what was actually sent and received, attempts, assertions"),
+            new("execution-results", "Test Execution & Evidence", "nav-icon-task-alignment", Always, Hint: "actual results of every test module: runs, outcomes, request/response, timelines, traceability, retention"),
             new("parquet-viewer", "Parquet Quality Review", "nav-icon-task-alignment", Always, Hint: "validate a Parquet file against its source contract: schema, generated rules, coverage, profile, baseline, evidence",
                 Aliases: ["Parquet"]),
             new("frontend-quality-review", "Frontend Quality Review", "nav-icon-constitution-compliance", f => f.FrontendQualityReview, ReviewId: "frontend-quality-review", Aliases: ["FQR"]),

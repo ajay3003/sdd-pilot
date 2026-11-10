@@ -2,70 +2,129 @@
 @using System.Text.Json
 @using System.Text.Json.Nodes
 @using BirkNext.ExecutionEvidence
+@using BirkNext.ExecutionExplorer
 @inject IServiceProvider Services
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
-<PageTitle>Execution Results</PageTitle>
+<PageTitle>Test Execution &amp; Evidence</PageTitle>
 
-@* Execution Results: saved REST/GraphQL runs — what BirkNext actually sent and received (redacted before storage), each logical call with its
-   physical attempts and assertion outcomes. Opening a result never executes anything; there is no replay here. State lives in the URL so
-   returning from a call keeps the run's filters. *@
+@* Test Execution & Evidence: actual execution results across the BirkNext test modules (a read-only projection over their own stores), kept apart
+   from static assessments. Four areas: Overview · Runs & Results · Evidence & Traceability · Storage & Retention. A REST/GraphQL run opens the
+   call explorer (?run=, ?call=): what was actually sent and received, redacted before storage. Opening anything never executes, re-sends or
+   changes a result; execution stays in the owning module. State lives in the URL. *@
 <div class="xr" data-testid="xr-page" aria-busy="@(_loading ? "true" : "false")">
-    <PageHeader Title="Execution Results" Description="What was actually sent and received in authorized REST and GraphQL runs — redacted before storage, never re-executed by opening it." />
+    <header class="xr-hero" data-testid="xr-header">
+        <div class="xr-hero-text">
+            <h1>Test Execution &amp; Evidence</h1>
+            <p class="xr-muted">Actual execution results, verification outcomes and traceable evidence.</p>
+        </div>
+        @if (RunId is null && ExplorerSourceQuery is null)
+        {
+            <div class="xr-hero-actions">
+                <a class="btn-secondary" href="@AreaHref("runs")" data-testid="xr-view-runs">View runs</a>
+                <a class="btn-secondary" href="api-quality-review/contracts" data-testid="xr-open-tests">Open tests</a>
+            </div>
+        }
+    </header>
 
     @if (_error is not null) { <p class="xr-error" role="alert" data-testid="xr-error">@_error</p> }
     @if (_message is not null) { <p class="xr-message" role="status" data-testid="xr-message">@_message</p> }
 
-    @if (RunId is null)
+    @if (RunId is null && ExplorerSourceQuery is { } detailSource && ExplorerIdQuery is { Length: > 0 } detailId)
     {
-        @StorageView()
-        <section class="xr-card" aria-labelledby="xr-runs-heading" data-testid="xr-runs">
-            <h2 id="xr-runs-heading">Run history</h2>
-            <div class="xr-filters" role="group" aria-label="Filter runs">
-                <label>Search <input type="search" class="form-control" data-testid="xr-run-search" value="@HistorySearch" @onchange="e => GoHistory(search: e.Value?.ToString() ?? string.Empty)" placeholder="Run name" /></label>
-                @Select("Outcome", "xr-run-filter-state", HistoryState, v => GoHistory(state: v), Enum.GetNames<ExecutionState>())
-                <label>From <input type="date" class="form-control" data-testid="xr-run-from" value="@HistoryFrom" @onchange="e => GoHistory(from: e.Value?.ToString() ?? string.Empty)" /></label>
-                <label>To <input type="date" class="form-control" data-testid="xr-run-to" value="@HistoryTo" @onchange="e => GoHistory(to: e.Value?.ToString() ?? string.Empty)" /></label>
-                <label class="xr-check"><input type="checkbox" data-testid="xr-run-protected" checked="@HistoryProtected" @onchange="e => GoHistory(protectedOnly: e.Value is true)" /> Protected only</label>
+        @UnifiedDetail(detailSource, detailId)
+    }
+    else if (RunId is null)
+    {
+        @if (Area != "storage")
+        {
+            <div class="xr-scope" role="group" aria-label="Scope" data-testid="xr-scope">
+                <label>Project
+                    <select class="form-control" data-testid="xr-scope-project" value="@(ProjectQuery ?? "")" @onchange='e => GoArea(project: e.Value?.ToString() ?? "")'>
+                        <option value="">All projects in this workspace</option>
+                        @foreach (var p in _overview?.Projects ?? []) { <option value="@p">@p</option> }
+                    </select>
+                </label>
+                <label>Environment
+                    <select class="form-control" data-testid="xr-scope-env" value="@(EnvQuery ?? "")" @onchange='e => GoArea(env: e.Value?.ToString() ?? "")'>
+                        <option value="">All Target Environments</option>
+                        @foreach (var env in _overview?.Environments ?? []) { <option value="@env">@env</option> }
+                    </select>
+                </label>
+                <label>Time range
+                    <select class="form-control" data-testid="xr-scope-range" value="@(RangeQuery ?? "")" @onchange='e => GoArea(range: e.Value?.ToString() ?? "")'>
+                        <option value="">Any time</option><option value="1">Last 24 hours</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option>
+                    </select>
+                </label>
+                @if (!string.IsNullOrEmpty(ProjectQuery))
+                {
+                    <label class="xr-check xr-inline"><input type="checkbox" data-testid="xr-scope-unattributed" checked="@UnattributedQuery" @onchange="e => GoArea(unattributed: e.Value is true)" /> Include runs without a recorded project</label>
+                }
+                <p class="xr-muted xr-scope-note" data-testid="xr-scope-note">@ScopeNote</p>
             </div>
-            @if (_runs is null) { <p class="xr-muted">Loading…</p> }
-            else if (_runs.Count == 0) { <p class="xr-muted" data-testid="xr-runs-empty">@(HasHistoryFilter ? "No run matches the filters." : "No runs yet. Runs are started from Contract Testing or a review (for example API Quality Review); their evidence appears here.")</p> }
-            else
+        }
+        <nav class="xr-areas" aria-label="Test Execution & Evidence areas" data-testid="xr-areas">
+            @foreach (var (key, label, hint) in Areas)
             {
-                <div class="xr-bulk" role="group" aria-label="Selected runs" data-testid="xr-bulk">
-                    <span data-testid="xr-selected-count">@_selectedRuns.Count selected</span>
-                    <button type="button" class="btn-secondary" data-testid="xr-export-selected" disabled="@(_selectedRuns.Count == 0 || _busy)" @onclick="ExportSelectedAsync">Export selected</button>
-                    <button type="button" class="btn-secondary" data-testid="xr-delete-selected" disabled="@(_selectedRuns.Count == 0 || _busy)" @onclick="() => AskDelete(DeleteScope.Selected)">Delete selected…</button>
-                    <button type="button" class="btn-secondary" data-testid="xr-delete-eligible" disabled="@(_busy)" @onclick="AskDeleteEligibleAsync">Delete all eligible runs of an environment…</button>
-                </div>
-                @DeleteConfirmation()
-                <div class="xr-scroll">
-                    <table class="xr-table" data-testid="xr-runs-table">
-                        <caption class="visually-hidden">Saved execution runs, newest first</caption>
-                        <thead><tr><th scope="col"><input type="checkbox" aria-label="Select every listed run" data-testid="xr-select-all" checked="@(_runs.Count > 0 && _runs.All(r => _selectedRuns.Contains(r.RunId)))" @onchange="e => SelectAll(e.Value is true)" /></th>
-                            <th scope="col">Run</th><th scope="col">Outcome</th><th scope="col">Calls</th><th scope="col">Attempts</th><th scope="col">Environment</th><th scope="col">Started</th><th scope="col">Protected</th></tr></thead>
-                        <tbody>
-                            @foreach (var r in _runs)
-                            {
-                                <tr data-testid="xr-run-row" data-run="@r.RunId" data-state="@r.State" data-protected="@(r.Protected ? "true" : "false")">
-                                    <td><input type="checkbox" aria-label="@($"Select {r.Name}")" data-testid="xr-run-select" checked="@_selectedRuns.Contains(r.RunId)" @onchange="e => Toggle(r.RunId, e.Value is true)" /></td>
-                                    <th scope="row"><a href="@Href(run: r.RunId)" data-testid="xr-run-open">@r.Name</a></th>
-                                    <td><span class="xr-pill xr-@Tone(r.State)">@Label(r.State)</span></td>
-                                    <td>@r.Counts.Planned@(r.DatasetRows > 0 ? $" ({r.DatasetRows} rows)" : "")</td><td>@r.Counts.Attempts</td><td>@r.EnvironmentId</td><td>@r.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
-                                    <td><button type="button" class="btn-secondary xr-small" data-testid="xr-run-protect" aria-pressed="@(r.Protected ? "true" : "false")" disabled="@_busy" @onclick="() => ProtectAsync(r.RunId, !r.Protected)">@(r.Protected ? "Protected" : "Protect")</button></td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
+                <a href="@AreaHref(key)" class="xr-area @(Area == key ? "is-active" : "")" aria-current="@(Area == key ? "page" : null)" data-testid="@($"xr-area-{key}")">
+                    <span class="xr-area-label">@label</span><span class="xr-area-hint">@hint</span></a>
             }
-        </section>
+        </nav>
+        @if (Area == "runs") { @RunsArea() }
+        else if (Area == "evidence") { @EvidenceArea() }
+        else if (Area == "overview") { @OverviewArea() }
+        else
+        {
+            <p class="xr-muted xr-area-intro" data-testid="xr-storage-intro">Low-frequency operations on stored REST/GraphQL execution evidence: storage, protection, export, deletion and retention. Stored size is the JSON evidence BirkNext measured; database tables are PostgreSQL's allocation (indexes, TOAST, free space) — not evidence.</p>
+            @StorageView()
+            <section class="xr-card" aria-labelledby="xr-runs-heading" data-testid="xr-runs">
+                <h2 id="xr-runs-heading">Run history</h2>
+                <div class="xr-filters" role="group" aria-label="Filter runs">
+                    <label>Search <input type="search" class="form-control" data-testid="xr-run-search" value="@HistorySearch" @onchange="e => GoHistory(search: e.Value?.ToString() ?? string.Empty)" placeholder="Run name" /></label>
+                    @Select("Outcome", "xr-run-filter-state", HistoryState, v => GoHistory(state: v), Enum.GetNames<ExecutionState>())
+                    <label>From <input type="date" class="form-control" data-testid="xr-run-from" value="@HistoryFrom" @onchange="e => GoHistory(from: e.Value?.ToString() ?? string.Empty)" /></label>
+                    <label>To <input type="date" class="form-control" data-testid="xr-run-to" value="@HistoryTo" @onchange="e => GoHistory(to: e.Value?.ToString() ?? string.Empty)" /></label>
+                    <label class="xr-check"><input type="checkbox" data-testid="xr-run-protected" checked="@HistoryProtected" @onchange="e => GoHistory(protectedOnly: e.Value is true)" /> Protected only</label>
+                </div>
+                @if (_runs is null) { <p class="xr-muted">Loading…</p> }
+                else if (_runs.Count == 0) { <p class="xr-muted" data-testid="xr-runs-empty">@(HasHistoryFilter ? "No run matches the filters." : "No runs yet. Runs are started from Contract Testing or a review (for example API Quality Review); their evidence appears here.")</p> }
+                else
+                {
+                    <div class="xr-bulk" role="group" aria-label="Selected runs" data-testid="xr-bulk">
+                        <span data-testid="xr-selected-count">@_selectedRuns.Count selected</span>
+                        <button type="button" class="btn-secondary" data-testid="xr-export-selected" disabled="@(_selectedRuns.Count == 0 || _busy)" @onclick="ExportSelectedAsync">Export selected</button>
+                        <button type="button" class="btn-secondary" data-testid="xr-delete-selected" disabled="@(_selectedRuns.Count == 0 || _busy)" @onclick="() => AskDelete(DeleteScope.Selected)">Delete selected…</button>
+                        <button type="button" class="btn-secondary" data-testid="xr-delete-eligible" disabled="@(_busy)" @onclick="AskDeleteEligibleAsync">Delete all eligible runs of an environment…</button>
+                    </div>
+                    @DeleteConfirmation()
+                    <div class="xr-scroll">
+                        <table class="xr-table" data-testid="xr-runs-table">
+                            <caption class="visually-hidden">Saved execution runs, newest first</caption>
+                            <thead><tr><th scope="col"><input type="checkbox" aria-label="Select every listed run" data-testid="xr-select-all" checked="@(_runs.Count > 0 && _runs.All(r => _selectedRuns.Contains(r.RunId)))" @onchange="e => SelectAll(e.Value is true)" /></th>
+                                <th scope="col">Run</th><th scope="col">Outcome</th><th scope="col">Calls</th><th scope="col">Attempts</th><th scope="col">Environment</th><th scope="col">Started</th><th scope="col">Protected</th></tr></thead>
+                            <tbody>
+                                @foreach (var r in _runs)
+                                {
+                                    <tr data-testid="xr-run-row" data-run="@r.RunId" data-state="@r.State" data-protected="@(r.Protected ? "true" : "false")">
+                                        <td><input type="checkbox" aria-label="@($"Select {r.Name}")" data-testid="xr-run-select" checked="@_selectedRuns.Contains(r.RunId)" @onchange="e => Toggle(r.RunId, e.Value is true)" /></td>
+                                        <th scope="row"><a href="@Href(run: r.RunId)" data-testid="xr-run-open">@r.Name</a></th>
+                                        <td><span class="xr-pill xr-@Tone(r.State)">@Label(r.State)</span></td>
+                                        <td>@r.Counts.Planned@(r.DatasetRows > 0 ? $" ({r.DatasetRows} rows)" : "")</td><td>@r.Counts.Attempts</td><td>@r.EnvironmentId</td><td>@r.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                        <td><button type="button" class="btn-secondary xr-small" data-testid="xr-run-protect" aria-pressed="@(r.Protected ? "true" : "false")" disabled="@_busy" @onclick="() => ProtectAsync(r.RunId, !r.Protected)">@(r.Protected ? "Protected" : "Protect")</button></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+        }
     }
     else if (_detail is { } d)
     {
         var run = d.Run;
-        <nav class="xr-crumbs" aria-label="Breadcrumb"><a href="@Href(clearRun: true)" data-testid="xr-back-runs">All runs</a> / @if (CallId is not null) { <a href="@Href(clearCall: true)" data-testid="xr-back-calls">@run.Name</a><span> / call</span> } else { <span>@run.Name</span> }</nav>
+        <nav class="xr-crumbs" aria-label="Breadcrumb"><a href="@Href(clearRun: true)" data-testid="xr-back-runs">Runs &amp; Results</a> / @if (CallId is not null) { <a href="@Href(clearCall: true)" data-testid="xr-back-calls">@run.Name</a><span> / call</span> } else { <span>@run.Name</span> }</nav>
         <section class="xr-card" aria-labelledby="xr-run-heading" data-testid="xr-run" data-state="@run.State">
             <div class="xr-head">
                 <h2 id="xr-run-heading">@run.Name <span class="xr-pill xr-@Tone(run.State)" data-testid="xr-run-state">@Label(run.State)</span>@if (run.Protected) { <span class="xr-pill xr-info" data-testid="xr-run-protected-pill">Protected</span> }</h2>
@@ -311,8 +370,13 @@
     protected override async Task OnParametersSetAsync()
     {
         _loading = true; _error = null; _comparison = null; _integrity = null; _confirmBodies = false;
-        if (Api is not { } api) { _error = "Execution Results are not available in this host."; _loading = false; return; }
-        if (RunId is not { } runId)
+        if (Api is not { } api) { _error = "Test Execution & Evidence is not available in this host."; _loading = false; return; }
+        if (RunId is null && Area != "storage")
+        {
+            _detail = null; _call = null;
+            await LoadExplorerAsync();
+        }
+        else if (RunId is not { } runId)
         {
             (_runs, _error) = await api.RunsAsync(new(HistorySearch, HistoryState, DateOnly.TryParse(HistoryFrom, out var f) ? f : null, DateOnly.TryParse(HistoryTo, out var t) ? t : null, HistoryProtected));
             _selectedRuns.RemoveWhere(id => _runs?.All(r => r.RunId != id) != false);
@@ -342,7 +406,7 @@
     private string Href(Guid? run = null, Guid? call = null, bool clearRun = false, bool clearCall = false, string? state = null, string? protocol = null, string? method = null,
         string? search = null, string? sort = null, int? page = null, string? tab = null)
     {
-        if (clearRun) return "execution-results";
+        if (clearRun) return "execution-results?area=runs";
         var q = new List<string> { $"run={run ?? RunId}" };
         // Filters stay in the URL, so "back to calls" restores them.
         void Add(string key, string? value) { if (!string.IsNullOrEmpty(value)) q.Add($"{key}={Uri.EscapeDataString(value)}"); }
@@ -358,11 +422,11 @@
 
     private void GoHistory(string? search = null, string? state = null, string? from = null, string? to = null, bool? protectedOnly = null)
     {
-        var q = new List<string>();
+        var q = new List<string> { "area=storage" };
         void Add(string key, string? value) { if (!string.IsNullOrEmpty(value)) q.Add($"{key}={Uri.EscapeDataString(value)}"); }
         Add("hq", search ?? HistorySearch); Add("hstate", state ?? HistoryState); Add("hfrom", from ?? HistoryFrom); Add("hto", to ?? HistoryTo);
         if (protectedOnly ?? HistoryProtected) q.Add("hprot=true");
-        Nav.NavigateTo("execution-results" + (q.Count > 0 ? "?" + string.Join('&', q) : ""));
+        Nav.NavigateTo("execution-results?" + string.Join('&', q));
     }
 
     private async Task LoadStorageAsync(IExecutionEvidenceApiService api)
@@ -469,7 +533,7 @@
         var scope = _scope;
         _scope = DeleteScope.None;
         _message = result.Message + (result.Skipped.Count > 0 ? " Not deleted: " + string.Join(" ", result.Skipped.Select(s => $"{_runs?.FirstOrDefault(r => r.RunId == s.RunId)?.Name ?? s.RunId.ToString()} — {s.Reason}")) : "");
-        if (scope == DeleteScope.Run && result.Deleted == 1) { Nav.NavigateTo("execution-results"); return; }
+        if (scope == DeleteScope.Run && result.Deleted == 1) { Nav.NavigateTo("execution-results?area=storage"); return; }
         _selectedRuns.Clear();
         await OnParametersSetAsync();
     }
@@ -674,4 +738,354 @@
         <h3 class="xr-h3">Body received</h3>
         @Body(resp.Body, "xr-response-body")
     };
+}
+
+@code {
+    // ── Test Execution & Evidence fragments (markup only; state and loading in ExecutionResults.razor.cs) ─────────────────────────────────────
+
+    private RenderFragment OutcomeBadge(ExplorerOutcome o, string? testId = null) => __builder =>
+    {
+        <span class="xr-pill xr-@OutcomeTone(o)" data-testid="@(testId ?? "xr-outcome")" data-outcome="@o"><span aria-hidden="true">@OutcomeGlyph(o)</span> @OutcomeLabel(o)</span>
+    };
+
+    private RenderFragment Metric(string key, string label, string value, string? note = null, string? tone = null) => __builder =>
+    {
+        <div class="xr-metric @(tone is null ? "" : $"xr-metric-{tone}")" data-testid="@($"xr-metric-{key}")"><dt>@label</dt><dd><span class="xr-metric-value">@value</span>@if (note is not null) { <span class="xr-metric-note">@note</span> }</dd></div>
+    };
+
+    private RenderFragment ProviderNotes(IReadOnlyList<ExplorerProviderStatus> providers, IReadOnlyList<string> limitations) => __builder =>
+    {
+        var down = providers.Where(p => p.State == ProviderState.Unavailable).ToList();
+        if (down.Count > 0)
+        {
+            <p class="xr-error" role="alert" data-testid="xr-provider-unavailable">Not shown because their store could not be read: @string.Join(", ", down.Select(p => SourceLabel(p.Source))). The other results are complete.</p>
+        }
+        foreach (var l in limitations) { <p class="xr-muted" data-testid="xr-limitation">@l</p> }
+    };
+
+    private RenderFragment OverviewArea() => __builder =>
+    {
+        if (_explorerError is not null && _overview is null) { <p class="xr-error" role="alert" data-testid="xr-explorer-error">@_explorerError</p> return; }
+        if (_overview is not { } o) { <p class="xr-muted">Loading…</p> return; }
+        <section class="xr-card" aria-labelledby="xr-overview-heading" data-testid="xr-overview">
+            <h2 id="xr-overview-heading" class="visually-hidden">Execution overview</h2>
+            @if (o.TotalRuns == 0 && o.StaticAssessments == 0)
+            {
+                <div class="xr-empty" data-testid="xr-empty">
+                    <h3>No execution results yet.</h3>
+                    <p>Actual test results appear here after an authorized execution.</p>
+                    <ul class="xr-empty-links" data-testid="xr-empty-links">
+                        <li><a href="api-quality-review/contracts" data-testid="xr-go-contract-testing">Contract Testing</a></li>
+                        <li><a href="integration-suites?area=generate" data-testid="xr-go-integration-suites">Generate Integration Test Suite</a></li>
+                        <li><a href="performance-test-review" data-testid="xr-go-performance">Performance Test Review</a></li>
+                        <li><a href="parquet-viewer" data-testid="xr-go-parquet">Parquet Quality Review</a></li>
+                    </ul>
+                </div>
+            }
+            else
+            {
+                <dl class="xr-metrics" data-testid="xr-primary-metrics">
+                    @Metric("total", "Total runs", o.TotalRuns.ToString(), o.RunningRuns > 0 ? $"{o.RunningRuns} running" : null)
+                    @Metric("passed", "Passed", o.PassedRuns.ToString(), null, "ok")
+                    @Metric("failed", "Failed", o.FailedRuns.ToString(), null, o.FailedRuns > 0 ? "bad" : null)
+                    @Metric("partial", "Partially verified", o.PartialRuns.ToString(), null, o.PartialRuns > 0 ? "warn" : null)
+                    @Metric("notassessed", "Not assessed", o.NotAssessedRuns.ToString(), o.BlockedRuns > 0 ? $"{o.BlockedRuns} blocked" : null)
+                    @Metric("tests", "Tests executed", o.TestsExecuted.ToString(), "passed + failed")
+                    @Metric("latest", "Latest execution", o.Latest is { } l ? Ago(l.StartedAt) : "–", o.Latest is { } l2 ? OutcomeLabel(l2.Outcome) : null)
+                </dl>
+                @if (_overviewUsage is { } u)
+                {
+                    <dl class="xr-metrics xr-metrics-secondary" data-testid="xr-secondary-metrics" aria-label="REST and GraphQL execution evidence">
+                        @Metric("calls", "Logical calls", u.LogicalCalls.ToString())
+                        @Metric("attempts", "Attempts", u.Attempts.ToString())
+                        @Metric("stored", "Stored evidence", Bytes(u.StoredBytes), "measured JSON")
+                        @Metric("protected", "Protected runs", u.ProtectedRuns.ToString())
+                        @Metric("candidates", "Retention candidates", u.RetentionCandidates.ToString())
+                    </dl>
+                }
+                @if (o.StaticAssessments > 0) { <p class="xr-muted" data-testid="xr-static-count">@o.StaticAssessments assessment(s) (static reviews and data-file validations) are kept apart: they are not executions and are not counted above.</p> }
+            }
+        </section>
+        @if (o.Attention.Count > 0)
+        {
+            <section class="xr-card" aria-labelledby="xr-attention-heading" data-testid="xr-attention">
+                <h2 id="xr-attention-heading">Needs attention</h2>
+                <ul class="xr-runlist">@foreach (var r in o.Attention) { @RunCard(r) }</ul>
+            </section>
+        }
+        @if (o.Coverage.Count > 0) { @CoverageTable(o.Coverage) }
+        @ProviderNotes(o.Providers, o.Limitations)
+    };
+
+    private RenderFragment CoverageTable(IReadOnlyList<ExplorerCoverageRow> rows) => __builder =>
+    {
+        <section class="xr-card" aria-labelledby="xr-coverage-heading" data-testid="xr-coverage">
+            <h2 id="xr-coverage-heading">Results by kind</h2>
+            <p class="xr-muted">Each kind has its own denominator; there is no single score across unrelated test types.</p>
+            <div class="xr-scroll">
+                <table class="xr-table">
+                    <caption class="visually-hidden">Results per kind of evidence with explicit denominators</caption>
+                    <thead><tr><th scope="col">Kind</th><th scope="col">Passed</th><th scope="col">Failed</th><th scope="col">Partial</th><th scope="col">Not assessed</th><th scope="col">Blocked</th><th scope="col">What is missing</th></tr></thead>
+                    <tbody>
+                        @foreach (var c in rows)
+                        {
+                            <tr data-testid="xr-coverage-row" data-category="@c.Category">
+                                <th scope="row">@CategoryLabel(c.Category)<span class="xr-denominator">@c.Denominator</span></th>
+                                <td>@c.Passed</td><td>@c.Failed</td><td>@c.Partial</td><td>@c.NotAssessed</td><td>@c.Blocked</td><td>@(c.Missing ?? "–")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    };
+
+    private RenderFragment RunCard(ExplorerRun r) => __builder =>
+    {
+        <li class="xr-runcard" data-testid="xr-urun" data-source="@r.Source" data-outcome="@r.Outcome" data-id="@r.SourceRunId">
+            <div class="xr-runcard-main">
+                <a href="@DetailHref(r)" data-testid="xr-urun-open" class="xr-runcard-name">@r.Name</a>
+                <span class="xr-runcard-meta">@SourceLabel(r.Source) · @Ago(r.StartedAt) · @Duration(r.DurationMs) · @(r.EnvironmentId.Length > 0 ? r.EnvironmentId : "no environment")@(r.ProjectKey is { } pk ? $" · {pk}" : "")</span>
+            </div>
+            <div class="xr-runcard-side">
+                @OutcomeBadge(r.Outcome)
+                <span class="xr-runcard-counts" data-testid="xr-urun-counts" title="@($"{r.Total} {r.CountLabel}")">@r.Passed ✓ · @r.Failed ✕ · @r.NotAssessed – <span class="xr-muted">of @r.Total @r.CountLabel</span></span>
+            </div>
+        </li>
+    };
+
+    private RenderFragment Chip(string label, bool on, string href, string testId, string value) => __builder =>
+    {
+        <a class="xr-chip @(on ? "is-on" : "")" href="@href" aria-pressed="@(on ? "true" : "false")" role="button" data-testid="@testId" data-value="@value">@label</a>
+    };
+
+    private RenderFragment RunsArea() => __builder =>
+    {
+        <section class="xr-card" aria-labelledby="xr-uruns-heading" data-testid="xr-uruns">
+            <div class="xr-head"><h2 id="xr-uruns-heading">Runs &amp; Results</h2>
+                <span class="xr-muted" data-testid="xr-uruns-total" role="status">@(_page is { } pg ? $"{pg.Total} result(s)" : "")</span></div>
+            <div class="xr-filters" role="group" aria-label="Filter results">
+                <label>Search <input type="search" class="form-control" data-testid="xr-urun-search" value="@RunSearchQuery" placeholder="Name, ID, suite or contract" @onchange='e => GoRuns(search: e.Value?.ToString() ?? "")' /></label>
+                <label>Evidence
+                    <select class="form-control" data-testid="xr-urun-evidence" value="@(RunEvidenceQuery ?? "")" @onchange='e => GoRuns(evidence: e.Value?.ToString() ?? "")'>
+                        <option value="">Any</option>@foreach (var ev in Enum.GetValues<EvidenceCompleteness>()) { <option value="@ev">@ev</option> }
+                    </select>
+                </label>
+                <label class="xr-check xr-inline"><input type="checkbox" data-testid="xr-urun-protected" checked="@RunProtectedQuery" @onchange="e => GoRuns(prot: e.Value is true)" /> Protected only</label>
+                <label class="xr-check xr-inline"><input type="checkbox" data-testid="xr-urun-static" checked="@StaticQuery" @onchange="e => GoRuns(includeStatic: e.Value is true)" /> Include static assessments</label>
+            </div>
+            <div class="xr-chips" role="group" aria-label="Type" data-testid="xr-urun-types">
+                @foreach (var s in Enum.GetValues<ExplorerSource>()) { @Chip(SourceLabel(s), RunSources.Contains(s), Query(area: "runs", sources: ToggleCsv(RunSources, s), page: 1), "xr-chip-source", s.ToString()) }
+            </div>
+            <div class="xr-chips" role="group" aria-label="Outcome" data-testid="xr-urun-outcomes">
+                @foreach (var o in OutcomeChips)
+                { @Chip(OutcomeLabel(o), RunOutcomes.Contains(o), Query(area: "runs", outcomes: ToggleCsv(RunOutcomes, o), page: 1), "xr-chip-outcome", o.ToString()) }
+            </div>
+            @if (_explorerError is not null) { <p class="xr-error" role="alert" data-testid="xr-explorer-error">@_explorerError</p> }
+            else if (_page is null) { <p class="xr-muted">Loading…</p> }
+            else if (_page.Runs.Count == 0)
+            {
+                <p class="xr-muted" data-testid="xr-uruns-empty">@(_page.Total == 0 && string.IsNullOrEmpty(RunSearchQuery) && RunSources.Count == 0 && RunOutcomes.Count == 0 ? "No execution results in this scope yet." : "No result matches the filters.")</p>
+            }
+            else
+            {
+                <div class="xr-scroll">
+                    <table class="xr-table xr-results" data-testid="xr-uruns-table">
+                        <caption class="visually-hidden">Execution results, newest first</caption>
+                        <thead><tr><th scope="col">Run</th><th scope="col">Type</th><th scope="col">Started</th><th scope="col">Duration</th><th scope="col">Outcome</th>
+                            <th scope="col">Tests</th><th scope="col">Passed</th><th scope="col">Failed</th><th scope="col">Not assessed</th><th scope="col">Environment</th><th scope="col">Evidence</th></tr></thead>
+                        <tbody>
+                            @foreach (var r in _page.Runs)
+                            {
+                                <tr data-testid="xr-urun" data-source="@r.Source" data-outcome="@r.Outcome" data-id="@r.SourceRunId" data-protected="@(r.Protected ? "true" : "false")">
+                                    <th scope="row"><a href="@DetailHref(r)" data-testid="xr-urun-open">@r.Name</a><span class="xr-subline">@r.DisplayId@(r.ProjectKey is { } pk ? $" · {pk}" : "")@(r.Protected ? " · protected" : "")</span></th>
+                                    <td>@SourceLabel(r.Source)@if (!IsExecution(r)) { <span class="xr-subline" data-testid="xr-urun-assessment">assessment</span> }</td>
+                                    <td>@Ago(r.StartedAt)</td><td>@Duration(r.DurationMs)</td><td>@OutcomeBadge(r.Outcome)</td>
+                                    <td>@r.Total <span class="xr-subline">@r.CountLabel</span></td><td>@r.Passed</td><td>@r.Failed</td><td>@r.NotAssessed</td><td>@r.EnvironmentId</td><td>@r.Evidence</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <nav class="xr-pager" aria-label="Pages" data-testid="xr-upager">
+                    <a class="btn-secondary @(RunPage <= 1 ? "is-disabled" : "")" aria-disabled="@(RunPage <= 1 ? "true" : "false")" href="@(RunPage <= 1 ? null : Query(area: "runs", page: RunPage - 1))" data-testid="xr-uprev">Previous</a>
+                    <span data-testid="xr-upage">Page @RunPage of @Math.Max(1, (int)Math.Ceiling(_page.Total / (double)RunPageSize))</span>
+                    <a class="btn-secondary @(RunPage * RunPageSize >= _page.Total ? "is-disabled" : "")" aria-disabled="@(RunPage * RunPageSize >= _page.Total ? "true" : "false")" href="@(RunPage * RunPageSize >= _page.Total ? null : Query(area: "runs", page: RunPage + 1))" data-testid="xr-unext">Next</a>
+                </nav>
+            }
+            @if (_page is { } p2) { @ProviderNotes(p2.Providers, p2.Limitations) }
+        </section>
+    };
+
+    private static readonly ExplorerOutcome[] OutcomeChips = [ExplorerOutcome.Passed, ExplorerOutcome.Failed, ExplorerOutcome.Partial, ExplorerOutcome.NotAssessed, ExplorerOutcome.Blocked,
+        ExplorerOutcome.UnknownOutcome, ExplorerOutcome.TimedOut, ExplorerOutcome.Cancelled, ExplorerOutcome.Interrupted, ExplorerOutcome.Running];
+
+    private static bool IsExecution(ExplorerRun r) => r.Category is not (ExplorerCategory.StaticAssessment or ExplorerCategory.DataValidation);
+
+    private RenderFragment EvidenceArea() => __builder =>
+    {
+        <section class="xr-card" aria-labelledby="xr-trace-heading" data-testid="xr-trace-area">
+            <h2 id="xr-trace-heading">Evidence &amp; Traceability</h2>
+            <p class="xr-muted">Each result links only to references its owner recorded: contract and test versions, Test Data versions, source snapshots, suites, stages, requirements. Nothing is inferred from names or timing.</p>
+            @if (_page is { Runs.Count: > 0 } pg)
+            {
+                <ul class="xr-runlist" data-testid="xr-trace-runs">
+                    @foreach (var r in pg.Runs)
+                    {
+                        <li class="xr-runcard" data-testid="xr-trace-run" data-source="@r.Source">
+                            <div class="xr-runcard-main"><span class="xr-runcard-name">@r.Name</span>
+                                <span class="xr-runcard-meta">@SourceLabel(r.Source) · @Ago(r.StartedAt)@(r.SuiteRef is { } s ? $" · {s}" : "")@(r.ContractRefs.Count > 0 ? $" · {string.Join(", ", r.ContractRefs.Take(3))}" : "")</span></div>
+                            <div class="xr-runcard-side">@OutcomeBadge(r.Outcome)
+                                <a class="btn-secondary xr-small" href="@DetailHref(r, "trace")" data-testid="xr-trace-open">Trace</a>
+                                @if (r.Capabilities.Contains(ExplorerCapability.Timeline)) { <a class="btn-secondary xr-small" href="@DetailHref(r, "timeline")" data-testid="xr-timeline-open">Timeline</a> }</div>
+                        </li>
+                    }
+                </ul>
+            }
+            else if (_page is not null) { <p class="xr-muted" data-testid="xr-trace-empty">No results in this scope to trace yet.</p> }
+        </section>
+        @if (_overview is { Coverage.Count: > 0 } o) { @CoverageTable(o.Coverage) }
+    };
+
+    private RenderFragment UnifiedDetail(ExplorerSource source, string id) => __builder =>
+    {
+        <nav class="xr-crumbs" aria-label="Breadcrumb"><a href="@AreaHref("runs")" data-testid="xr-back-uruns">Runs &amp; Results</a> / <span>@(_unified?.Run.Name ?? id)</span></nav>
+        if (_unified is not { } d)
+        {
+            if (_explorerError is not null) { <p class="xr-error" role="alert" data-testid="xr-explorer-error">@_explorerError</p> }
+            else { <p class="xr-muted">Loading…</p> }
+            return;
+        }
+        var r = d.Run;
+        <section class="xr-card" aria-labelledby="xr-udetail-heading" data-testid="xr-udetail" data-source="@r.Source" data-outcome="@r.Outcome">
+            <div class="xr-head">
+                <h2 id="xr-udetail-heading">@r.Name @OutcomeBadge(r.Outcome, "xr-udetail-outcome")@if (r.Protected) { <span class="xr-pill xr-info">Protected</span> }</h2>
+                <div class="xr-actions">
+                    @if (d.ExecutionRunId is { } runId) { <a class="btn-primary" href="@($"execution-results?run={runId}")" data-testid="xr-open-calls">Calls, request &amp; response</a> }
+                    @if (Explorer is { } ex) { <a class="btn-secondary" href="@ex.ReportUrl(r.Source, r.SourceRunId)" download data-testid="xr-report">Download report</a> }
+                    <a class="btn-secondary" href="@r.OwnerHref" data-testid="xr-owner">Open in @r.OwnerLabel</a>
+                </div>
+            </div>
+            <p class="xr-muted" data-testid="xr-udetail-meta">@SourceLabel(r.Source) (@CategoryLabel(r.Category)@(IsExecution(r) ? "" : " — an assessment, not an execution")) · owner status <strong>@r.SourceStatus</strong> · started @Ago(r.StartedAt) · @Duration(r.DurationMs) · environment @(r.EnvironmentId.Length > 0 ? r.EnvironmentId : "not recorded") · project @(r.ProjectKey ?? "not recorded")@(r.SuiteRef is { } sr ? $" · {sr}" : "")</p>
+            @if (r.OutcomeReason is { Length: > 0 } why) { <p data-testid="xr-udetail-reason">@why</p> }
+            <dl class="xr-metrics">
+                @Metric("u-total", Cap(r.CountLabel), r.Total.ToString())
+                @Metric("u-passed", "Passed", r.Passed.ToString(), null, "ok")
+                @Metric("u-failed", "Failed", r.Failed.ToString(), null, r.Failed > 0 ? "bad" : null)
+                @Metric("u-notassessed", "Not assessed", r.NotAssessed.ToString())
+                @Metric("u-evidence", "Evidence", r.Evidence.ToString())
+            </dl>
+            <div class="xr-tabs" role="tablist" aria-label="Result details">
+                @foreach (var (key, label) in DetailTabs(d))
+                {
+                    <a role="tab" href="@UnifiedDetailHref(key)" aria-selected="@(DetailTab == key ? "true" : "false")" class="xr-tab @(DetailTab == key ? "is-active" : "")" data-testid="@($"xr-dtab-{key}")">@label</a>
+                }
+            </div>
+            <div role="tabpanel" class="xr-panel" data-testid="xr-dpanel" data-tab="@DetailTab">
+                @if (DetailTab == "items")
+                {
+                    <ol class="xr-items" data-testid="xr-items">
+                        @foreach (var item in d.Items)
+                        {
+                            <li data-testid="xr-item" data-outcome="@item.Outcome"><strong>@item.Name</strong> <span class="xr-pill xr-neutral">@item.Kind</span> <span class="xr-pill xr-@ItemTone(item.Outcome)">@item.Outcome</span>
+                                @if (item.DurationMs is { } ms) { <span class="xr-muted"> · @Duration(ms)</span> }
+                                @if (item.Detail is { Length: > 0 } det) { <span class="xr-subline">@det</span> }</li>
+                        }
+                    </ol>
+                }
+                else if (DetailTab == "timeline")
+                {
+                    <ol class="xr-tl" data-testid="xr-timeline">
+                        @foreach (var t in d.Timeline)
+                        {
+                            <li data-testid="xr-tl-event" data-observed="@(t.At is null ? "false" : "true")" data-outcome="@t.Outcome">
+                                <span class="xr-tl-time">@(t.At is { } at ? at.ToLocalTime().ToString("HH:mm:ss.fff") : "not observed")</span>
+                                <span class="xr-tl-stage">@t.Stage</span><span>@t.Action</span><span class="xr-pill xr-@ItemTone(t.Outcome)">@t.Outcome</span>
+                                <span class="xr-subline">@(t.EvidenceRef is { } er ? $"evidence {er} · " : "")correlation: @t.Correlation</span>
+                            </li>
+                        }
+                    </ol>
+                }
+                else if (DetailTab == "trace")
+                {
+                    @if (d.Traceability.Count == 0) { <p class="xr-muted" data-testid="xr-trace-none">The owner recorded no references for this result.</p> }
+                    else
+                    {
+                        <table class="xr-table" data-testid="xr-trace">
+                            <caption class="visually-hidden">Recorded references of this result</caption>
+                            <thead><tr><th scope="col">Kind</th><th scope="col">Reference</th><th scope="col">Relationship</th></tr></thead>
+                            <tbody>@foreach (var t in d.Traceability) { <tr data-testid="xr-trace-row" data-kind="@t.Kind"><td>@t.Kind</td><td class="xr-mono">@if (t.Href is { } h) { <a href="@h">@t.Reference</a> } else { @t.Reference }</td><td>@t.Relationship</td></tr> }</tbody>
+                        </table>
+                    }
+                }
+                else if (DetailTab == "technical")
+                {
+                    <dl class="xr-facts" data-testid="xr-technical">
+                        <div><dt>Owner</dt><dd>@r.OwnerLabel (@r.Source)</dd></div>
+                        <div><dt>Owner reference</dt><dd class="xr-mono">@r.SourceRunId</dd></div>
+                        @foreach (var m in d.Metrics) { <div data-testid="xr-technical-metric"><dt>@m.Label</dt><dd>@m.Value</dd></div> }
+                    </dl>
+                }
+                else
+                {
+                    @if (d.Metrics.Count > 0)
+                    {
+                        <dl class="xr-facts" data-testid="xr-summary-metrics">@foreach (var m in d.Metrics.Take(6)) { <div><dt>@m.Label</dt><dd>@m.Value</dd></div> }</dl>
+                    }
+                    @if (d.Run.Capabilities.Contains(ExplorerCapability.Compare)) { @ComparePanel(d) }
+                }
+            </div>
+            @if (d.Limitations.Count > 0)
+            {
+                <details class="xr-details" data-testid="xr-udetail-limitations" open="@(r.Outcome is not ExplorerOutcome.Passed)"><summary>Limitations (@d.Limitations.Count)</summary>
+                    <ul class="xr-list">@foreach (var l in d.Limitations) { <li>@l</li> }</ul></details>
+            }
+        </section>
+    };
+
+    private RenderFragment ComparePanel(ExplorerRunDetail d) => __builder =>
+    {
+        <div class="xr-compare" data-testid="xr-ucompare">
+            <h3 class="xr-h3">Compare with an earlier run</h3>
+            @if (_compareCandidates is not { Count: > 0 } candidates) { <p class="xr-muted" data-testid="xr-ucompare-none">No other run of the same definition in this environment.</p> }
+            else
+            {
+                <ul class="xr-chips" data-testid="xr-ucompare-candidates">
+                    @foreach (var c in candidates) { <li><a class="xr-chip @(CompareQuery == c.SourceRunId ? "is-on" : "")" href="@DetailHref(d.Run, "summary", c.SourceRunId)" data-testid="xr-ucompare-pick">@Ago(c.StartedAt) · @OutcomeLabel(c.Outcome)</a></li> }
+                </ul>
+            }
+            @if (_compareResult is { } cmp)
+            {
+                if (!cmp.Comparable) { <p class="xr-error" data-testid="xr-ucompare-refused">Not comparable: @string.Join(" ", cmp.Reasons)</p> }
+                else
+                {
+                    <table class="xr-table" data-testid="xr-ucompare-table">
+                        <caption class="visually-hidden">Changes from the earlier run to this one</caption>
+                        <thead><tr><th scope="col">Test</th><th scope="col">Earlier</th><th scope="col">This run</th><th scope="col">Change</th><th scope="col">Detail</th></tr></thead>
+                        <tbody>@foreach (var row in cmp.Rows) { <tr data-testid="xr-ucompare-row" data-change="@row.Change"><td>@row.Name</td><td>@(row.Baseline ?? "–")</td><td>@(row.Current ?? "–")</td><td>@row.Change</td><td>@(row.Detail ?? "")</td></tr> }</tbody>
+                    </table>
+                }
+                foreach (var l in cmp.Limitations) { <p class="xr-muted">@l</p> }
+            }
+        </div>
+    };
+
+    private static IEnumerable<(string Key, string Label)> DetailTabs(ExplorerRunDetail d)
+    {
+        yield return ("summary", "Summary");
+        if (d.Items.Count > 0) yield return ("items", d.ItemsLabel);
+        if (d.Timeline.Count > 0) yield return ("timeline", "Timeline");
+        if (d.Traceability.Count > 0) yield return ("trace", "Traceability");
+        yield return ("technical", "Technical details");
+    }
+
+    private static string ItemTone(string outcome) => outcome switch
+    {
+        "Passed" or "Pass" or "Succeeded" or "Verified" or "Valid" or "ResponseReceived" => "ok",
+        "Failed" or "Fail" or "Error" or "UnexpectedResult" or "TimedOut" or "UnknownOutcome" or "WrongCorrelation" or "IssueDetected" or "ConnectionFailed" => "bad",
+        "Blocked" or "Partial" or "Warning" or "Inconclusive" or "NotObservable" => "warn",
+        _ => "neutral",
+    };
+
+    private static string Cap(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
 }

@@ -134,7 +134,7 @@ public sealed class ExecutionResultsPageTests : BunitContext
     [Fact]
     public void Storage_is_measured_and_retention_is_disabled_until_set_previewed_and_applied_with_a_typed_count()
     {
-        var page = Open("");
+        var page = Open("?area=storage");
         page.Find("[data-testid=xr-kpi-stored] .xr-kpi-value").TextContent.Should().Be("46.9 KB");
         page.Find("[data-testid=xr-kpi-tables] .xr-kpi-value").TextContent.Should().Be("256.0 KB");
         page.Find("[data-testid=xr-storage-location]").TextContent.Should().Contain("PostgreSQL").And.Contain("No evidence files exist");
@@ -181,7 +181,7 @@ public sealed class ExecutionResultsPageTests : BunitContext
     [Fact]
     public void Deleting_all_eligible_runs_shows_what_is_kept_and_a_protected_run_cannot_be_deleted_from_its_page()
     {
-        var page = Open("");
+        var page = Open("?area=storage");
         page.Find("[data-testid=xr-delete-eligible]").Click();
         page.WaitForAssertion(() => page.Find("[data-testid=xr-eligible-preview]").TextContent.Should().Contain("1 finished, unprotected run(s) with 3 call(s)"));
         page.Find("[data-testid=xr-delete-typed]").Input("1");
@@ -232,7 +232,7 @@ public sealed class ExecutionResultsPageTests : BunitContext
     [Fact]
     public void History_lists_saved_runs_and_opening_one_shows_its_counts_without_executing()
     {
-        var page = Open("");
+        var page = Open("?area=storage");
         page.FindAll("[data-testid=xr-run-row]")[0].GetAttribute("data-state").Should().Be("Failed");
         page = Open($"?run={Run}");
         page.Find("[data-testid=xr-kpi-planned] .xr-kpi-value").TextContent.Should().Be("3");

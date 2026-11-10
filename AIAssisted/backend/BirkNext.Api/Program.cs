@@ -613,6 +613,15 @@ builder.Services.AddHttpClient(BirkNext.Api.Services.ExecutionEvidence.Execution
     .AddHttpMessageHandler<BirkNext.Api.Services.ExecutionEvidence.EvidenceCaptureHandler>();
 builder.Services.AddScoped<BirkNext.Api.Services.ExecutionEvidence.ExecutionEvidenceStore>();
 builder.Services.AddScoped<BirkNext.Api.Services.ExecutionEvidence.ExecutionEvidenceManagement>();
+// Test Execution & Evidence: read-only providers over the existing evidence owners (no second store, no execution).
+builder.Services.AddScoped<BirkNext.Api.Services.ExecutionExplorer.ExecutionEvidenceExplorerProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.ExecutionExplorer.IExplorerProvider>(sp => sp.GetRequiredService<BirkNext.Api.Services.ExecutionExplorer.ExecutionEvidenceExplorerProvider>());
+builder.Services.AddScoped<BirkNext.Api.Services.ExecutionExplorer.IExplorerProvider, BirkNext.Api.Services.ExecutionExplorer.JourneyExplorerProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.ExecutionExplorer.IExplorerProvider, BirkNext.Api.Services.ExecutionExplorer.BrowserE2EExplorerProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.ExecutionExplorer.IExplorerProvider, BirkNext.Api.Services.ExecutionExplorer.PerformanceExplorerProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.ExecutionExplorer.IExplorerProvider, BirkNext.Api.Services.ExecutionExplorer.ParquetExplorerProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.ExecutionExplorer.IExplorerProvider, BirkNext.Api.Services.ExecutionExplorer.SecurityReviewExplorerProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.ExecutionExplorer.ExecutionExplorerService>();
 // Imported, sanitized message evidence (Service Bus peek exports, Wolverine envelope exports): files only, never a connection.
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.Messaging.MessageObservationService>();
 // Parquet data explorer: temporary read-only sessions of uploaded files + durable evidence without row values.

@@ -36,7 +36,7 @@ public interface IExecutionEvidenceApiService
 
 public sealed class ExecutionEvidenceApiService(HttpClient http) : IExecutionEvidenceApiService
 {
-    public const string Title = "Execution Results";
+    public const string Title = "Test Execution & Evidence";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
 
     public Task<(IReadOnlyList<ExecutionRunSummary>? Runs, string? Error)> RunsAsync(ExecutionRunFilter? filter = null, CancellationToken ct = default)

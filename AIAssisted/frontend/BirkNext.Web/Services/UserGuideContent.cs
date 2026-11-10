@@ -72,7 +72,7 @@ public static class UserGuideContent
         new("test-coverage-review", "Test Coverage & Overlap", Testing, "test coverage overlap duplicate journeys qa scope"),
         new("code-risk-review", "Code Risk Review", Testing, "code risk deterministic rules findings"),
         new("contract-testing", "Contract Testing", Testing, "contract openapi swagger graphql schema version test revision assertion impact coverage archive retention"),
-        new("execution-results", "Execution Results", Testing, "execution evidence run call attempt request response assertion graphql retry redacted export"),
+        new("execution-results", "Test Execution & Evidence", Testing, "execution evidence results runs outcome passed failed not assessed partial run call attempt request response assertion graphql retry redacted export timeline traceability compare report retention journey performance parquet static assessment"),
         new("pipeline", "Pipeline Review", Testing, "pipeline ci cd definitions needs refresh"),
 
         new("documentation-drift", "Documentation Drift", Governance, "drift compare changes overview authored generated lineage consistent difference conflict", "drift-statuses"),
