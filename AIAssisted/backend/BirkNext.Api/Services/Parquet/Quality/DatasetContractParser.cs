@@ -63,9 +63,15 @@ public static partial class DatasetContractParser
             }
             if (currentHeading is not null && currentHeading.Contains("Manifest", StringComparison.OrdinalIgnoreCase) && (l.TrimStart().StartsWith('"') || l.TrimStart().StartsWith('{')))
                 foreach (Match m in JsonKey().Matches(l)) if (!manifestFields.Contains(m.Groups["k"].Value)) manifestFields.Add(m.Groups["k"].Value);
-            if (currentHeading is not null && currentHeading.Contains("Determinism", StringComparison.OrdinalIgnoreCase) && l.Trim().Length > 0 && !l.TrimStart().StartsWith('|'))
-                foreach (var (sentence, n) in Sentences(l, i + 1))
-                    shared.Add(new DatasetContractRequirement { Id = $"L{n}", Category = "Determinism", Text = sentence, Line = n, Machine = DeterminismMachine(sentence), Reason = DeterminismMachine(sentence) ? null : "Producer behaviour (re-running the export); not checkable from one file." });
+        }
+        for (var i = 0; i < lines.Count; i++)
+        {
+            if (Heading().Match(lines[i]) is not { Success: true } dh || !dh.Groups["t"].Value.Contains("Determinism", StringComparison.OrdinalIgnoreCase)) continue;
+            var end = i + 1;
+            while (end < lines.Count && !Heading().IsMatch(lines[end])) end++;
+            foreach (var (sentence, n) in ParagraphSentences(lines, i + 1, end))
+                shared.Add(new DatasetContractRequirement { Id = $"L{n}" + (shared.Count(r => r.Line == n) is var dc and > 0 ? $".{dc + 1}" : ""), Category = "Determinism", Text = sentence, Line = n,
+                    Machine = DeterminismMachine(sentence), Reason = DeterminismMachine(sentence) ? null : "Producer behaviour (re-running the export); not checkable from one file." });
         }
         if (manifestFields.Count > 0)
             shared.Add(new DatasetContractRequirement { Id = "manifest", Category = "Delivery manifest", Text = $"A _manifest.json with {string.Join(", ", manifestFields)} describes the file (period, contract version, SHA-256, row count, bytes).", Line = headingLine, Machine = true });
@@ -81,7 +87,9 @@ public static partial class DatasetContractParser
         foreach (var (rPath, rText) in related ?? [])
         {
             var rLines = Lines(rText);
-            for (var i = 0; i < rLines.Count; i++)
+            // Only the block that is about this contract (a line naming the version transition or a container, plus its indented sub-lines):
+            // the same words renamed for another artifact (e.g. a database table) are not a statement about the Parquet file.
+            foreach (var i in ScopedLines(rLines, version, containers))
                 foreach (var (from, to) in Arrows(rLines[i]))
                 {
                     if (to == version) { predecessor ??= from; continue; }
@@ -100,6 +108,9 @@ public static partial class DatasetContractParser
             while (end < lines.Count && !Heading().IsMatch(lines[end])) end++;
             var header = Enumerable.Range(i + 1, end - i - 1).FirstOrDefault(j => IsColumnHeader(Cells(lines[j])), -1);
             if (header < 0) continue;
+            // A Parquet dataset section names a .parquet path or types its columns as Parquet types; other column tables (e.g. database
+            // entities in a data-model document) are not Parquet contracts.
+            if (dataPath is null && !Cells(lines[header]).Any(c => c.Contains("Parquet", StringComparison.OrdinalIgnoreCase))) continue;
             var container = dataPath?.Split('/')[0];
             var key = container ?? Slug(title);
             var columns = new List<DatasetContractColumn>();
@@ -129,16 +140,12 @@ public static partial class DatasetContractParser
                 requirements.Add(new DatasetContractRequirement { Id = $"col-{col.Name}", Category = "Schema", Text = $"Column {col.Name}: {col.DocumentedType}, {(col.Nullable ? "nullable" : "not null")}{(col.AllowedValues.Count > 0 ? $", values {string.Join(", ", col.AllowedValues)}" : col.Format is { } f ? $", format {f}" : "")}.", Line = col.Line, Machine = true });
             var sortKeys = new List<string>();
             // Prose of the section (outside the table): every sentence is a requirement; recognised ones are machine-checkable.
-            for (var k = i + 1; k < end; k++)
+            // Markdown wraps prose: sentences are read from whole paragraphs, each attributed to the line it starts on.
+            foreach (var (sentence, n) in ParagraphSentences(lines, i + 1, end))
             {
-                var l = lines[k];
-                if (l.TrimStart().StartsWith('|') || l.Trim().Length == 0 || Heading().IsMatch(l)) continue;
-                foreach (var (sentence, n) in Sentences(l, k + 1))
-                {
-                    var (category, machine, reason) = Classify(sentence, columns);
-                    if (SortedBy().Match(sentence) is { Success: true } sm) sortKeys = Backticks(sm.Value).Where(b => columns.Any(c => c.Name == b)).ToList();
-                    requirements.Add(new DatasetContractRequirement { Id = $"L{n}" + (requirements.Count(r => r.Line == n) is var cnt and > 0 ? $".{cnt + 1}" : ""), Category = category, Text = sentence, Line = n, Machine = machine, Reason = reason });
-                }
+                var (category, machine, reason) = Classify(sentence, columns);
+                if (SortedBy().Match(sentence) is { Success: true } sm) sortKeys = Backticks(sm.Value).Where(b => columns.Any(c => c.Name == b)).ToList();
+                requirements.Add(new DatasetContractRequirement { Id = $"L{n}" + (requirements.Count(r => r.Line == n) is var cnt and > 0 ? $".{cnt + 1}" : ""), Category = category, Text = sentence, Line = n, Machine = machine, Reason = reason });
             }
             foreach (var col in columns.Where(c => c.Nullable && OnlyFor().Match(c.Content) is { Success: true }))
                 requirements.Add(new DatasetContractRequirement { Id = $"col-{col.Name}-condition", Category = "Conditional", Text = $"{col.Name}: {col.Content}", Line = col.Line, Machine = true });
@@ -230,6 +237,63 @@ public static partial class DatasetContractParser
     private static IEnumerable<(string From, string To)> Arrows(string line)
     {
         foreach (Match m in Arrow().Matches(line)) yield return (m.Groups["a"].Value, m.Groups["b"].Value);
+    }
+
+    /// <summary>Indices of the lines that belong to a block about this contract: a starting line that names the version transition
+    /// (<c>`x` → `version`</c>) or a container of the contract, and the following lines indented deeper than it.</summary>
+    internal static IEnumerable<int> ScopedLines(List<string> lines, string version, IReadOnlyCollection<string> containers)
+    {
+        static int Indent(string l) => l.Length - l.TrimStart().Length;
+        for (var i = 0; i < lines.Count; i++)
+        {
+            var l = lines[i];
+            var starts = (version.Length > 0 && Arrows(l).Any(a => a.To == version)) || containers.Any(c => l.Contains('`' + c, StringComparison.Ordinal));
+            if (!starts) continue;
+            yield return i;
+            var indent = Indent(l);
+            var j = i + 1;
+            for (; j < lines.Count && (lines[j].Trim().Length == 0 || Indent(lines[j]) > indent); j++)
+                if (lines[j].Trim().Length > 0) yield return j;
+            i = j - 1;
+        }
+    }
+
+    /// <summary>Sentences of the prose paragraphs in [from, to): consecutive non-blank lines outside tables, code fences and list-item starts
+    /// form one paragraph (Markdown soft wraps); each sentence carries the 1-based line it starts on.</summary>
+    internal static IEnumerable<(string Sentence, int Line)> ParagraphSentences(List<string> lines, int from, int to)
+    {
+        var fence = false;
+        var parts = new List<(string Text, int Line)>();
+        IEnumerable<(string, int)> Flush()
+        {
+            if (parts.Count == 0) yield break;
+            var sb = new StringBuilder();
+            var starts = new List<(int Offset, int Line)>();
+            foreach (var (t, n) in parts) { if (sb.Length > 0) sb.Append(' '); starts.Add((sb.Length, n)); sb.Append(t); }
+            parts.Clear();
+            var text = sb.ToString();
+            var offset = 0;
+            foreach (var raw in SentenceSplit().Split(text))
+            {
+                var at = text.IndexOf(raw, offset, StringComparison.Ordinal);
+                offset = at < 0 ? offset : at + raw.Length;
+                var t = raw.Trim();
+                if (t.Length < 12) continue;
+                var line = starts.LastOrDefault(s => s.Offset <= Math.Max(0, at)).Line;
+                yield return (t, line == 0 ? starts[0].Line : line);
+            }
+        }
+        for (var k = from; k < to && k < lines.Count; k++)
+        {
+            var l = lines[k];
+            var trimmed = l.Trim();
+            if (trimmed.StartsWith("```", StringComparison.Ordinal)) { foreach (var x in Flush()) yield return x; fence = !fence; continue; }
+            if (fence) continue;
+            if (trimmed.Length == 0 || trimmed.StartsWith('|') || Heading().IsMatch(l)) { foreach (var x in Flush()) yield return x; continue; }
+            if (trimmed.StartsWith("- ", StringComparison.Ordinal) || trimmed.StartsWith("* ", StringComparison.Ordinal) || trimmed.StartsWith('>')) foreach (var x in Flush()) yield return x;
+            parts.Add((trimmed.TrimStart('-', '*', '>', ' '), k + 1));
+        }
+        foreach (var x in Flush()) yield return x;
     }
 
     private static IEnumerable<(string Sentence, int Line)> Sentences(string line, int lineNo)

@@ -139,6 +139,19 @@ public sealed class ParquetQualityTests : IDisposable
     }
 
     [Fact]
+    public void Renames_of_another_artifact_and_non_parquet_tables_are_not_contract_evidence()
+    {
+        // Shapes taken from the real M2LB documents: a term inventory renames the same words for a database table (not the Parquet file), and a
+        // data-model document has a column table for a database entity.
+        const string inventory = "| Table | Columns |\n|---|---|\n| `dekningsoppsummering` → `dekning_summary` | `kategori`→`category`, `maal`→`measure`, `antall`→`count` |\n";
+        var c = DatasetContractParser.Parse(ContractPath, ContractText, "sha", [("wire.md", WireText), ("inventory.md", inventory)]).Single();
+        c.Renames.Where(r => r.Kind == "column").Select(r => r.From).Should().Equal(["periode"], "only renames stated for this contract (its version transition or container) count");
+        c.Renames.Should().Contain(r => r.From == "MOTTATT" && r.Source == "wire.md", "the wire-changes block names the version transition");
+        const string dataModel = "# Data model (Parquet export uses these rows)\n\n## DekningSummaryRow\n\n| Column | Type | Null | Content |\n|---|---|---|---|\n| `category` | text | no | Category |\n";
+        DatasetContractParser.Parse("data-model.md", dataModel, "sha").Should().BeEmpty("a database entity table is not a Parquet dataset contract");
+    }
+
+    [Fact]
     public async Task Generated_rules_are_classified_and_business_rules_wait_for_review()
     {
         var o = await OpenAsync("q_valid.parquet");

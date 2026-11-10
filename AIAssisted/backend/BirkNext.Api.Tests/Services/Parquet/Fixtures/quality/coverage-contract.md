@@ -14,7 +14,8 @@
 
 ## Coverage — `synthetic-coverage/period=YYYY-MM/data.parquet`
 
-Long format, sorted by `category`, `measure`, `reason_code`.
+Long format, sorted by
+`category`, `measure`, `reason_code`.
 Never present: a child's fødselsnummer or any other personal identification number.
 Protected children (Kode 6/7) are left out of every figure.
 
@@ -26,7 +27,9 @@ Protected children (Kode 6/7) are left out of every figure.
 | `reason_code` | UTF8 | yes | Only for `REJECTED_UNATTRIBUTED` |
 | `count` | INT32 | no | Count |
 
-Rules: `RECEIVED + REJECTED_ONLY + MISSING = EXPECTED` for each `category`, and the two categories add up to `TOTAL`. `RECEIVED_NOT_EXPECTED` and `REJECTED_UNATTRIBUTED` appear only with `category = TOTAL`. Never a single percentage.
+Rules: `RECEIVED + REJECTED_ONLY + MISSING = EXPECTED` for each `category`, and the two categories add up
+to `TOTAL`. `RECEIVED_NOT_EXPECTED` and `REJECTED_UNATTRIBUTED` appear only with
+`category = TOTAL`. Never a single percentage.
 
 ## Manifest — `_manifest.json` (written last)
 
@@ -42,4 +45,5 @@ Rules: `RECEIVED + REJECTED_ONLY + MISSING = EXPECTED` for each `category`, and 
 
 ## Determinism
 
-The file bytes are a pure function of the rows: one row group, fixed compression (Snappy), no wall-clock metadata.
+The file bytes are a pure function of the rows: one row group,
+fixed compression (Snappy), no wall-clock metadata.

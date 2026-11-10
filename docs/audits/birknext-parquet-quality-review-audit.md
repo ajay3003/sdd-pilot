@@ -31,7 +31,10 @@ columns incl. DECIMAL and LIST/STRUCT), the coverage table (`period`, `category`
 (`RECEIVED + REJECTED_ONLY + MISSING = EXPECTED` per category; the two categories add up to `TOTAL`; `RECEIVED_NOT_EXPECTED` /
 `REJECTED_UNATTRIBUTED` only with `TOTAL`), sort order, manifest structure and determinism (one row group, Snappy). The header records the
 2026-10-20 renaming from `1.0.0-utkast` (Norwegian names) and `specs/002-translate-source-english/wire-changes.md` §3 lists the value renames
-(`TOTALT`→`TOTAL`, `FORVENTET`→`EXPECTED`, …) and `periode`→`period`. **No document maps `kategori`, `maal`, `aarsakskode` or `antall`.**
+(`TOTALT`→`TOTAL`, `FORVENTET`→`EXPECTED`, …) and `periode`→`period`. **No document maps `kategori`, `maal`, `aarsakskode` or `antall` for
+the Parquet file.** (`specs/002-translate-source-english/domain-term-inventory.md` renames the same words for the *database tables*
+`dekningsoppsummering` → `dekning_summary`; browser acceptance round 3 showed the first parser version wrongly applying them to the Parquet
+contract — fixed: renames count only inside the block that names the contract's version transition or container.)
 The writer (`ParquetWriters.cs`) confirms the English column names.
 
 ## 3. Fixture, verified independently
