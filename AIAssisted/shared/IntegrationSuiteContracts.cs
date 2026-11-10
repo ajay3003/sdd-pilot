@@ -73,7 +73,11 @@ public sealed record IntegrationSuiteScope
 }
 
 /// <summary>An ordered stage of the scope's integration chain, mapped to the journey pack's step ids that realise it.</summary>
-public sealed record SuiteStageTemplate(string StageId, string Label, string Component, IReadOnlyList<string> JourneySteps);
+public sealed record SuiteStageTemplate(string StageId, string Label, string Component, IReadOnlyList<string> JourneySteps)
+{
+    /// <summary>How the stage's source is recognised in a multi-source (composite) suite; null = the stage has no source requirement.</summary>
+    public StageSourceRequirement? Source { get; init; }
+}
 
 public sealed record IntegrationSuiteGenerateRequest
 {
@@ -88,6 +92,10 @@ public sealed record IntegrationSuiteGenerateRequest
     public bool GenerateTestData { get; init; } = true;
     /// <summary>Seed of the synthetic Test Data generator: the same seed gives the same values.</summary>
     public int Seed { get; init; } = 20261109;
+    /// <summary>A Composite Source Context (several snapshots, possibly of different projects): replaces <see cref="SnapshotId"/> as the source.</summary>
+    public Guid? CompositeContextId { get; init; }
+    /// <summary>Explicitly allow a composite draft while mandatory stages lack an approved source (labelled partial, never Ready).</summary>
+    public bool AllowPartial { get; init; }
 }
 
 public sealed record SuiteContractRef
@@ -101,6 +109,10 @@ public sealed record SuiteContractRef
     public string ImportOutcome { get; init; } = "";
     public List<string> Servers { get; init; } = [];
     public int Operations { get; init; }
+    /// <summary>Composite suites: the snapshot and project the contract came from, and the stages it serves.</summary>
+    public Guid? SnapshotId { get; init; }
+    public string? ProjectKey { get; init; }
+    public List<string> Stages { get; init; } = [];
 }
 
 public sealed record SuiteTestRef
@@ -256,10 +268,16 @@ public sealed record IntegrationSuite
     /// <summary>Changes since the previous revision (contract versions, tests, schemas) — drift is shown, never silently rebound.</summary>
     public List<string> Drift { get; init; } = [];
     public List<string> Limitations { get; init; } = [];
+    /// <summary>Set when the suite was generated from a Composite Source Context (multi-source E2E).</summary>
+    public SuiteComposite? Composite { get; init; }
 }
 
 public sealed record IntegrationSuiteSummary(Guid Id, string SuiteKey, int Revision, string ScopeId, string ScopeName, Guid SnapshotId, string ArchiveFileName,
-    DateTimeOffset GeneratedAt, SuiteStatus Status, int Tests, int Stages, int ReviewOpen);
+    DateTimeOffset GeneratedAt, SuiteStatus Status, int Tests, int Stages, int ReviewOpen)
+{
+    public Guid? CompositeContextId { get; init; }
+    public int Sources { get; init; } = 1;
+}
 
 public sealed record IntegrationSuiteGenerateResult(IntegrationSuite? Suite, bool Reused, string? Error);
 

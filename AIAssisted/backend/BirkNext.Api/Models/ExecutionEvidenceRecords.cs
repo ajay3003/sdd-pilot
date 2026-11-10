@@ -96,6 +96,22 @@ public sealed class IntegrationSuiteRunRecord
     public DateTimeOffset StartedAt { get; init; }
     public string Initiator { get; init; } = "";
     public string TestIdsJson { get; init; } = "[]";
+    /// <summary>Composite runs: the plan, kind and source versions the run executed (JSON), so it reopens with stage meaning; null for flat runs.</summary>
+    public string? PlanJson { get; init; }
+}
+
+/// <summary>One immutable revision of a Composite Source Context: references to existing Source Analysis snapshots (never their content).</summary>
+public sealed class CompositeSourceContextRecord
+{
+    public Guid Id { get; init; }
+    public string ContextKey { get; init; } = "";
+    public int Revision { get; init; }
+    public string ScopeId { get; init; } = "";
+    public string OwningProject { get; init; } = "";
+    public string Fingerprint { get; init; } = "";
+    public DateTimeOffset CreatedAt { get; init; }
+    public string CreatedBy { get; init; } = "";
+    public string DefinitionJson { get; init; } = "";
 }
 
 /// <summary>One implementation-gap evaluation: the extracted SDD inputs (never document text) and the report, per scope (e.g. a project import).</summary>

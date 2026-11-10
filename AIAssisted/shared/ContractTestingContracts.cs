@@ -45,6 +45,17 @@ public sealed record ContractChainStep
     public List<OutputExtraction> Extract { get; init; } = [];
     public List<ContractChainInput> Inputs { get; init; } = [];
     public List<string> DependsOn { get; init; } = [];
+    /// <summary>Bounded observation of an asynchronous outcome: a read-only step is re-sent while it answers one of <see cref="ChainObservation.OnStatus"/>
+    /// (e.g. 404 = not there yet). Only for idempotent calls; null = sent once.</summary>
+    public ChainObservation? Observe { get; init; }
+}
+
+/// <summary>How long a read-only chain step waits for an asynchronous outcome: at most <see cref="Attempts"/> sends, <see cref="DelayMs"/> apart.</summary>
+public sealed record ChainObservation(int Attempts, int DelayMs, List<int> OnStatus)
+{
+    /// <summary>The execution engine sends a call at most 5 times (its own bound; not raised here).</summary>
+    public const int MaxAttempts = 5;
+    public const int MaxDelayMs = 10000;
 }
 
 /// <summary>A chain of contract tests (REST and/or GraphQL) run in dependency order as one Execution Evidence run. Every save is a new immutable revision.</summary>
@@ -99,6 +110,8 @@ public sealed record ContractChainRunRequest
     public string? GraphQlPath { get; init; }
     public int ReauthenticationWaitSeconds { get; init; }
     public bool StopOnFirstFailure { get; init; }
+    /// <summary>Run only these steps (a subflow); every dependency of a chosen step must be chosen too. Null = every step.</summary>
+    public List<string>? StepIds { get; init; }
 }
 
 public sealed record ApiContractSummary(Guid Id, string Key, string Name, ApiContractProtocol Protocol, int LatestVersion, int OperationCount, int TestCount,

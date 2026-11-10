@@ -26,6 +26,7 @@ public class AppDbContext : DbContext
     public DbSet<ImplementationGapEvaluationRecord> ImplementationGapEvaluations => Set<ImplementationGapEvaluationRecord>();
     public DbSet<IntegrationSuiteRecord> IntegrationSuites => Set<IntegrationSuiteRecord>();
     public DbSet<IntegrationSuiteRunRecord> IntegrationSuiteRuns => Set<IntegrationSuiteRunRecord>();
+    public DbSet<CompositeSourceContextRecord> CompositeSourceContexts => Set<CompositeSourceContextRecord>();
     public DbSet<ApiContractRow> ApiContracts => Set<ApiContractRow>();
     public DbSet<ApiContractVersionRow> ApiContractVersions => Set<ApiContractVersionRow>();
     public DbSet<ContractTestRow> ContractTests => Set<ContractTestRow>();
@@ -1156,7 +1157,20 @@ public class AppDbContext : DbContext
             entity.Property(r => r.Kind).HasMaxLength(50).IsRequired();
             entity.Property(r => r.Initiator).HasMaxLength(120).IsRequired();
             entity.Property(r => r.TestIdsJson).HasColumnType("text").IsRequired();
+            entity.Property(r => r.PlanJson).HasColumnType("text");
             entity.HasIndex(r => new { r.SuiteKey, r.StartedAt });
+        });
+        modelBuilder.Entity<CompositeSourceContextRecord>(entity =>
+        {
+            entity.ToTable("composite_source_contexts");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.ContextKey).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.ScopeId).HasMaxLength(100).IsRequired();
+            entity.Property(r => r.OwningProject).HasMaxLength(120).IsRequired();
+            entity.Property(r => r.Fingerprint).HasMaxLength(64).IsRequired();
+            entity.Property(r => r.CreatedBy).HasMaxLength(120).IsRequired();
+            entity.Property(r => r.DefinitionJson).HasColumnType("text").IsRequired();
+            entity.HasIndex(r => new { r.ContextKey, r.Revision }).IsUnique();
         });
         modelBuilder.Entity<ImplementationGapEvaluationRecord>(entity =>
         {

@@ -848,6 +848,14 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
                 else if (!provided.Contains(input.Output)) problems.Add($"{step.StepId}: step {input.FromStep} provides no output {input.Output}.");
             }
             foreach (var dep in step.DependsOn.Where(d => d == step.StepId || !outputs.ContainsKey(d))) problems.Add($"{step.StepId}: dependency {dep} is not another step of the chain.");
+            if (step.Observe is { } observe)
+            {
+                if (observe.Attempts is < 1 or > ChainObservation.MaxAttempts) problems.Add($"{step.StepId}: observation attempts are 1 to {ChainObservation.MaxAttempts}.");
+                if (observe.DelayMs is < 0 or > ChainObservation.MaxDelayMs) problems.Add($"{step.StepId}: observation delay is 0 to {ChainObservation.MaxDelayMs} ms.");
+                if (observe.OnStatus.Count == 0 || observe.OnStatus.Any(s => s is < 400 or > 599)) problems.Add($"{step.StepId}: observation waits on 4xx/5xx statuses only.");
+                if (!(test.Template.Protocol == ExecutionProtocol.Rest && test.Template.Method.ToUpperInvariant() is "GET" or "HEAD"))
+                    problems.Add($"{step.StepId}: only a read-only (GET) step can observe; a data-changing request is never re-sent.");
+            }
         }
         if (problems.Count == 0 && Cycle(steps) is { } cycle) problems.Add($"The steps depend on each other in a cycle: {string.Join(" → ", cycle)}.");
         return problems;
@@ -898,11 +906,20 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         if (PathProblem(request.BasePath, "The API base path") is { } baseProblem) return new(null, [baseProblem]);
         if (PathProblem(request.GraphQlPath, "The GraphQL endpoint path") is { } gqlProblem) return new(null, [gqlProblem]);
         if (await ChainProblemsAsync(chain.Steps, ct) is { Count: > 0 } invalid) return new(null, invalid);
+        var chosen = chain.Steps;
+        if (request.StepIds is { Count: > 0 } wantedSteps)
+        {
+            var unknown = wantedSteps.Where(s => chain.Steps.All(c => c.StepId != s)).ToList();
+            if (unknown.Count > 0) return new(null, [$"Unknown step(s): {string.Join(", ", unknown)}."]);
+            chosen = [.. chain.Steps.Where(s => wantedSteps.Contains(s.StepId))];
+            var outside = chosen.SelectMany(s => Dependencies(s).Where(d => !wantedSteps.Contains(d)).Select(d => $"{s.StepId} needs {d}")).ToList();
+            if (outside.Count > 0) return new(null, [$"A subflow must include the steps it depends on: {string.Join("; ", outside)}."]);
+        }
         var notRun = new List<string>();
         var calls = new List<ExecutionCallDefinition>();
         var contractRefs = new HashSet<string>(StringComparer.Ordinal);
         var kinds = new HashSet<ExecutionAuthenticationKind>();
-        foreach (var step in Order(chain.Steps))
+        foreach (var step in Order(chosen))
         {
             var test = (await LoadAsync(step.TestId, ct))!;
             var latest = await registry.LatestVersionAsync(test.ContractKey, ct) ?? 0;
@@ -936,6 +953,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
                 WithoutAuthentication = test.WithoutAuthentication, DatasetRow = rowId is null ? null : $"{source}#{rowId}",
                 ResolvedValues = ContractTestRules.Resolved(mapped, values, name => rowNames.Contains(name) ? $"row {rowId} of {source}" : $"member of {source}"),
                 StepId = step.StepId, DependsOn = [.. Dependencies(step)], Extract = step.Extract,
+                Retry = step.Observe is { } o ? new RetryPolicy(o.Attempts, [.. o.OnStatus], false, o.DelayMs) : call.Retry,
             });
             contractRefs.Add(ContractIdentity.ContractRef(test.ContractKey, test.ContractVersion));
         }

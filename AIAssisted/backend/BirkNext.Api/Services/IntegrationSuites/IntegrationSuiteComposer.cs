@@ -19,6 +19,10 @@ public static partial class IntegrationSuiteComposer
     public const string SkoleNaervaerScope = "skolenaervaer";
     public const string ApiScope = "api";
 
+    // Declared before Scopes: static initializers run in textual order.
+    private static readonly List<string> MuAndMmWords = ["Meldingsutveksler", "Meldingsutveksleren", "MeldingsutvekslerReceiver", "Meldingsutvekslermottak"];
+    private static readonly List<string> SkoleWords = ["SkoleService", "Skoletjenesten", "Skolenaervaersrapport"];
+
     /// <summary>Built-in scopes. Skolenærvær stages map onto the Skolenærvær journey pack's own step ids — the pack is reused, never copied.</summary>
     public static IReadOnlyList<IntegrationSuiteScope> Scopes { get; } =
     [
@@ -30,13 +34,24 @@ public static partial class IntegrationSuiteComposer
             JourneyPackId = "skolenaervaer", JourneyIds = ["rapportmottak", "periodeavslutning"], IncludesSecurityClassification = true,
             Stages =
             [
-                new("altinn", "Altinn submission", "Altinn", ["altinn-auth", "altinn-instance", "altinn-data", "altinn-validate", "altinn-submit", "altinn-receipt"]),
-                new("mu", "MU reception", "MU", ["mu-receive", "mu-queue"]),
-                new("mm", "MM routing and validation", "MM", ["mm-retrieve", "mm-decrypt", "mm-xsd", "mm-map"]),
-                new("skole-intake", "Skoletjenesten ingestion", "Skolenærværsrapport", ["report-receive", "report-state"]),
-                new("person-tjeneste", "Person/Tjeneste dependencies", "Person", ["report-person"]),
-                new("period-lock", "Period lock", "Skolenærværsrapport", ["period-close", "dataset-prepare", "publish"]),
-                new("bufdata", "Bufdata delivery", "Bufdata", ["broker", "bufdata-activity", "bufdata-processed", "dataset-verify", "dataset-pii"]),
+                new("altinn", "Altinn submission", "Altinn", ["altinn-auth", "altinn-instance", "altinn-data", "altinn-validate", "altinn-submit", "altinn-receipt"])
+                { Source = new() { Tokens = ["Altinn"], ExcludedTokens = MuAndMmWords, ReferenceSource = "Altinn app reference (Skolenærvær Test Pack)", ChannelToNext = TransitionChannel.Webhook,
+                    CorrelationFields = ["submissionId", "instanceId", "instanceGuid", "meldingId", "messageId"] } },
+                new("mu", "MU reception", "MU", ["mu-receive", "mu-queue"])
+                { Source = new() { Tokens = ["Meldingsutveksler", "Meldingsutveksleren"], ExcludedTokens = ["MeldingsutvekslerReceiver", "Meldingsutvekslermottak", "Receiver", "Mottak"],
+                    ChannelToNext = TransitionChannel.Message, CorrelationFields = ["messageId", "meldingId", "submissionId"] } },
+                new("mm", "MM routing and validation", "MM", ["mm-retrieve", "mm-decrypt", "mm-xsd", "mm-map"])
+                { Source = new() { Tokens = ["MeldingsutvekslerReceiver", "Meldingsutvekslermottak"], ChannelToNext = TransitionChannel.HttpApi,
+                    CorrelationFields = ["meldingId", "messageId", "rapportId", "reportId"] } },
+                new("skole-intake", "Skoletjenesten ingestion", "Skolenærværsrapport", ["report-receive", "report-state"])
+                { Source = new() { Tokens = SkoleWords, ChannelToNext = TransitionChannel.HttpApi, CorrelationFields = ["rapportId", "reportId", "barnId", "childId"] } },
+                new("person-tjeneste", "Person/Tjeneste dependencies", "Person", ["report-person"])
+                { Source = new() { Tokens = ["Person", "Tjeneste", "TjenesteService"], ExcludedTokens = ["Adapter", "BiRK"], ChannelToNext = TransitionChannel.Internal } },
+                new("period-lock", "Period lock", "Skolenærværsrapport", ["period-close", "dataset-prepare", "publish"])
+                { Source = new() { Tokens = SkoleWords, ChannelToNext = TransitionChannel.Message, ActionWords = ["lock", "close", "lukk", "avslutt", "las"],
+                    CorrelationFields = ["period", "periode", "reportId", "rapportId"] } },
+                new("bufdata", "Bufdata delivery", "Bufdata", ["broker", "bufdata-activity", "bufdata-processed", "dataset-verify", "dataset-pii"])
+                { Source = new() { Tokens = ["Bufdata"], DatasetContractEvidence = true, ChannelToNext = TransitionChannel.Dataset } },
             ],
         },
         new()

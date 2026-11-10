@@ -555,6 +555,55 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("code_links", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.CompositeSourceContextRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContextKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("DefinitionJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("OwningProject")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ScopeId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContextKey", "Revision")
+                        .IsUnique();
+
+                    b.ToTable("composite_source_contexts", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.ContractEndpointBindingRow", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1651,6 +1700,9 @@ namespace BirkNext.Api.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
+
+                    b.Property<string>("PlanJson")
+                        .HasColumnType("text");
 
                     b.Property<Guid>("RunId")
                         .HasColumnType("uuid");

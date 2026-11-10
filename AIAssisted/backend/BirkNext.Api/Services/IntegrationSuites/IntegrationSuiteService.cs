@@ -30,12 +30,12 @@ namespace BirkNext.Api.Services.IntegrationSuites;
 /// the journey pack with the runner's real executor/observer coverage, and reuses the M01 Security Classification consumer for Kode 6/7.
 /// The suite stores references only. Generation never sends a request; execution is a separate authorised call through Contract Testing.
 /// </summary>
-public sealed class IntegrationSuiteService(
+public sealed partial class IntegrationSuiteService(
     AppDbContext db, IqrSourceStore sources, ContractRegistryService registry, ContractTestService contractTests, TestDataCatalog catalog,
     IIntegrationJourneyPackRegistry packs, IntegrationJourneyRunner runner,
     ManualReviewDecisionStore reviews, ExecutionEvidenceStore evidence, ILogger<IntegrationSuiteService> logger,
     SecurityClassificationConsumerService? security = null, BirkNext.Api.Services.IntegrationTopology.IntegrationTopologyService? topology = null,
-    TimeProvider? clock = null, ContractTestDataService? contractData = null)
+    TimeProvider? clock = null, ContractTestDataService? contractData = null, Composite.CompositeContextService? composites = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private DateTimeOffset Now => (clock ?? TimeProvider.System).GetUtcNow();
@@ -60,6 +60,7 @@ public sealed class IntegrationSuiteService(
     public async Task<IntegrationSuiteGenerateResult> GenerateAsync(IntegrationSuiteGenerateRequest request, string initiator, CancellationToken ct)
     {
         if (IntegrationSuiteComposer.Scope(request.ScopeId) is not { } scope) return new(null, false, $"Unknown integration scope '{request.ScopeId}'.");
+        if (request.CompositeContextId is { } contextId) return await GenerateCompositeAsync(request, contextId, scope, initiator, ct);
         if (request.SnapshotId == Guid.Empty) return new(null, false, "Choose an analysed source snapshot: a suite is never generated without one.");
         var snapshot = await sources.FindSourceAnalysisAsync(request.SnapshotId, ct);
         if (snapshot is null) return new(null, false, "The source snapshot was not found. Import or re-analyse the project, then choose its snapshot explicitly.");
@@ -71,15 +72,18 @@ public sealed class IntegrationSuiteService(
         var suiteKey = SuiteKeyFor(request, ProjectOf(snapshot));
         var gate = Gates.GetOrAdd(suiteKey, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct);
-        try { return await GenerateLockedAsync(request, initiator, snapshot, scope, modules, suiteKey, ct); }
+        try { return await GenerateLockedAsync(request, initiator, [new SourceInput(snapshot.Id, snapshot, modules, [], null)], scope, suiteKey, null, ct); }
         finally { gate.Release(); }
     }
 
-    private async Task<IntegrationSuiteGenerateResult> GenerateLockedAsync(IntegrationSuiteGenerateRequest request, string initiator, IqrSourceSnapshot snapshot,
-        IntegrationSuiteScope scope, List<string> modules, string suiteKey, CancellationToken ct)
+    /// <summary>One source of a generation: a snapshot (loaded on demand, one at a time) and its in-scope folders; composite sources also carry
+    /// the stages they serve per folder and their approval.</summary>
+    private sealed record SourceInput(Guid SnapshotId, IqrSourceSnapshot? Snapshot, List<string> Modules, Dictionary<string, List<string>> StagesByModule, string? Approval);
+
+    private async Task<IntegrationSuiteGenerateResult> GenerateLockedAsync(IntegrationSuiteGenerateRequest request, string initiator, IReadOnlyList<SourceInput> inputs,
+        IntegrationSuiteScope scope, string suiteKey, CompositeSourceContext? context, CancellationToken ct)
     {
         var limitations = new List<string>();
-        var provenance = Provenance(snapshot, scope);
 
         // 1. Contracts → Contract Registry (idempotent import) → tests (idempotent generation).
         var contractRefs = new List<SuiteContractRef>();
@@ -87,16 +91,185 @@ public sealed class IntegrationSuiteService(
         var unsupported = new List<SuiteUnsupportedOperation>();
         var config = new List<SuiteConfigurationValue>();
         var testData = new List<SuiteTestDataItem>();
+        // A later snapshot of the same project continues the contracts the previous revision used (same file and type) as their next
+        // version, so existing tests stay pinned to the old version and the change shows up as drift instead of as a second contract.
+        var earlier = await EarlierContractsAsync(suiteKey, ct);
+        var gen = new ContractGeneration(contractRefs, testRefs, unsupported, config, testData, limitations);
+        // Sources are processed one at a time (a full snapshot is large): provenance, contracts, XSDs and Kode 6/7 source facts per source.
+        var provenances = new List<SuiteSnapshotProvenance>();
+        var xml = new List<SuiteXmlSchemaRef>();
+        var securityEvidence = new List<SuiteSourceRef>();
+        var bindings = new List<SuiteSourceBinding>();
+        foreach (var input in inputs)
+        {
+            var snapshot = input.Snapshot ?? await sources.FindSourceAnalysisAsync(input.SnapshotId, ct);
+            if (snapshot is null) { limitations.Add($"Snapshot {input.SnapshotId:D} is no longer stored; its stages have no source in this revision."); continue; }
+            provenances.Add(Provenance(snapshot, scope with { Modules = input.Modules }));
+            var added = await AddSourceContractsAsync(gen, snapshot, input.Modules, request, earlier, ct);
+            if (input.StagesByModule.Count > 0)
+                for (var i = contractRefs.Count - added.Count; i < contractRefs.Count; i++)
+                {
+                    var top = contractRefs[i].SourceFile.Replace('\\', '/').Split('/')[0];
+                    contractRefs[i] = contractRefs[i] with { Stages = input.StagesByModule.TryGetValue(top, out var st) ? st : [] };
+                }
+            xml.AddRange(await XmlSchemasAsync(snapshot.Id, input.Modules, limitations, ct));
+            securityEvidence.AddRange(SecurityEvidence(snapshot, input.Modules));
+            bindings.Add(new SuiteSourceBinding
+            {
+                SnapshotId = snapshot.Id, ProjectKey = ContractRegistryService.ProjectKeyOf(snapshot), ArchiveFileName = snapshot.Archive.FileName, ArchiveSha256 = snapshot.Archive.Sha256,
+                AnalyzedAt = snapshot.AnalyzedAt, Approval = input.Approval ?? "Selected", Modules = [.. input.Modules],
+                Stages = [.. input.StagesByModule.Values.SelectMany(v => v).Distinct(StringComparer.Ordinal)],
+            });
+        }
+        if (provenances.Count == 0) return new(null, false, "None of the context's snapshots is stored any more; re-import the sources.");
+        var provenance = provenances[0];
+
+        // Stable order (the registry lists tests in storage order, which differs between runs): the same evidence must give the same suite.
+        testRefs.Sort((a, b) => string.CompareOrdinal($"{a.ContractRef}|{a.Operation}|{a.Kind}|{a.Variant}|{a.TestId:D}", $"{b.ContractRef}|{b.Operation}|{b.Kind}|{b.Variant}|{b.TestId:D}"));
+        testData.Sort((a, b) => string.CompareOrdinal(a.Role, b.Role));
+
+        // 2. Journey-pack Test Data requirements resolved through the shared catalog (never generated identities).
+        var pack = scope.JourneyPackId is { } packId ? packs.Find(packId) : null;
+        if (pack is not null)
+            foreach (var journey in pack.Journeys.Where(j => scope.JourneyIds.Contains(j.JourneyId)))
+            {
+                var requirements = pack.TestDataRequirements(journey);
+                if (requirements.Count == 0) continue;
+                var resolution = catalog.Resolve(requirements);
+                foreach (var role in resolution.Roles)
+                    testData.Add(new SuiteTestDataItem
+                    {
+                        Role = $"{journey.JourneyId}:{role.Role}", Purpose = role.Optional ? "optional journey input" : "journey input", Asset = role.AssetAlias,
+                        Approved = role.State is TestDataResolutionState.Resolved or TestDataResolutionState.Selected, State = role.State.ToString(),
+                        Prerequisite = role.State is TestDataResolutionState.Resolved or TestDataResolutionState.Selected ? null : role.Reason,
+                    });
+            }
+
+        // 3. XSDs of the scope (each snapshot's retained schema artifact, analysed by the shared XSD capability) — collected per source above.
+
+        // 4. Topology candidates (environment-scoped provider graph; nothing merged by name).
+        var mappings = await TopologyAsync(request.EnvironmentId, scope, limitations, ct);
+
+        // 5. Stages with the runner's registered executor/observer coverage.
+        var stages = Stages(scope, pack, request.EnvironmentId, testRefs, mappings);
+        if (context is not null) // composite: a stage's contract tests are those of the contracts its approved sources provide for it (never a name match)
+            stages = [.. stages.Select(s => s with { ContractTests = [.. testRefs.Where(t => contractRefs.Any(c => c.Stages.Contains(s.StageId) && c.ContractKey is { } k && c.ContractVersion is { } v
+                && t.ContractRef == ContractIdentity.ContractRef(k, v))).Select(t => t.TestId.ToString("D"))] })];
+
+        // 6. Kode 6/7 — reuse the shared Security Classification consumer (no second module).
+        var decisions = await DecisionsAsync(suiteKey, ct);
+        var securityScenarios = new List<SuiteSecurityScenario>();
+        if (request.IncludeSecurity && scope.IncludesSecurityClassification)
+        {
+            SecurityClassificationConsumerAssessment? consumer = null;
+            // The consumer's requirements are product-defined: they exist without an environment (state Not assessed until an M01 review runs);
+            // a Target Environment adds that environment's review runs and approved context.
+            if (security is not null)
+                consumer = (await security.AssessAsync(request.EnvironmentId ?? "", ct)).FirstOrDefault(c => c.ConsumerId == scope.JourneyPackId);
+            if (request.EnvironmentId is not { Length: > 0 })
+                limitations.Add("Kode 6/7: no Target Environment selected — M01 requirements are listed with their environment-independent state; review runs of an environment are not read.");
+            bool Level(int n) => catalog.Resolve([new TestDataRequirement { Role = $"level-{n}", Kind = TestDataKind.EntityReference, Capabilities = [$"classification-level-{n}"] }]).Satisfied;
+            // The protected synthetic children the Kode 6/7 scenarios need: approved Test Data only (resolved by capability, pinned by version) —
+            // never generated, and Kode 6 and Kode 7 are separate roles (different authorization semantics).
+            foreach (var (level, label) in new[] { (3, "Kode 6 synthetic child"), (2, "Kode 7 synthetic child") })
+            {
+                var role = catalog.Resolve([new TestDataRequirement { Role = label, Kind = TestDataKind.EntityReference, Capabilities = [$"classification-level-{level}"] }]).Roles.FirstOrDefault();
+                var resolved = role?.State is TestDataResolutionState.Resolved or TestDataResolutionState.Selected;
+                testData.Add(new SuiteTestDataItem
+                {
+                    Role = $"kode67:{label}", Purpose = $"Kode 6/7 scenarios (Test Data capability classification-level-{level})", Asset = role?.AssetAlias, Approved = resolved,
+                    State = resolved ? "Resolved (approved Test Data)" : "Unresolved",
+                    Prerequisite = resolved ? null : $"An approved synthetic {label.Replace(" synthetic child", "")} child (capability classification-level-{level}) registered in the target Person service — never generated.",
+                });
+            }
+            var stageReady = stages.ToDictionary(s => s.StageId, s => s);
+            securityScenarios = IntegrationSuiteComposer.Security(new IntegrationSuiteComposer.SecurityInputs(consumer, Level(3), Level(2), Level(1),
+                AltinnSubmissionExecutable: stageReady.TryGetValue("altinn", out var a) && a.Coverage is SuiteStageCoverage.Executable or SuiteStageCoverage.ExecutableAndObservable,
+                MuMmObservable: stageReady.TryGetValue("mm", out var m) && m.Coverage is SuiteStageCoverage.Observable or SuiteStageCoverage.ExecutableAndObservable,
+                IntakeObservedPerMessage: false, // message telemetry is aggregate unless correlated: never a per-message observation by itself
+                BufdataVerifierRegistered: stageReady.TryGetValue("bufdata", out var b) && b.Coverage is not SuiteStageCoverage.Unsupported,
+                SourceRuleEvidence: [.. securityEvidence.Take(8)], Decisions: decisions.ToDictionary(d => d.Key, d => (string?)d.Value.Decision)));
+        }
+
+        // 7. Review queue and readiness.
+        var review = Review(contractRefs, config, testData, xml, mappings, securityScenarios, request.EnvironmentId)
+            .Select(r => decisions.TryGetValue(r.Key, out var d) ? r with { Decision = d.Decision, DecidedBy = d.By, DecidedAt = d.At } : r).ToList();
+        var readiness = Readiness(provenance, contractRefs, testRefs, xml, testData, mappings, stages, request.EnvironmentId, securityScenarios, review);
+        var (status, reason) = IntegrationSuiteComposer.Status(readiness, review, stages);
+
+        var composite = context is null ? null : await CompositeSectionAsync(context, scope, bindings, contractRefs, testRefs, stages, securityScenarios, review, request, suiteKey, limitations, ct);
+        if (composite is not null) (status, reason) = CompositeStatus(composite, status, reason);
+        var body = new IntegrationSuite
+        {
+            Composite = composite,
+            SuiteKey = suiteKey, Snapshot = provenance, Scope = scope, EnvironmentId = request.EnvironmentId, Contracts = contractRefs, Tests = testRefs,
+            Unsupported = unsupported, Configuration = config, TestData = testData, XmlSchemas = xml, Topology = mappings, Stages = stages, Security = securityScenarios,
+            Review = review, Readiness = readiness, Status = status, StatusReason = reason, Limitations = limitations,
+        };
+        // Identity of the generated definition: the references and verdicts — not status prose, so an unchanged regeneration is the same revision.
+        var fingerprint = IntegrationSuiteComposer.Fingerprint(new
+        {
+            body.Snapshot.SnapshotId, Contracts = contractRefs.Select(c => (c.SourceContractId, c.ContractKey, c.ContractVersion)),
+            Tests = testRefs.Select(x => (x.TestId, x.Revision, x.Readiness, x.TestDataBinding)), Data = testData.Select(d => (d.Role, d.Asset, d.Approved)),
+            Xml = xml.Select(x => (x.File, x.DependenciesResolved)), Topology = mappings.Select(m => (m.Key, m.Class)), Stages = stages.Select(s => (s.StageId, s.Coverage, s.Readiness)),
+            Security = securityScenarios.Select(s => (s.ScenarioId, s.Readiness, s.ExistingState)), Config = config.Select(c => (c.Key, c.Value)), // Review decisions are overlays read live (ReadAsync), so they and the status they drive are not part of the definition.
+            Review = review.Select(r => r.Key),
+            Composite = composite is null ? null : new
+            {
+                composite.ContextId, composite.ContextRevision, composite.PartialDraft, Sources = composite.Sources.Select(s => (s.SnapshotId, string.Join(",", s.Stages))),
+                Plan = composite.Plan.Steps.Select(s => (s.StepId, s.TestId, s.FromStep, s.FromField, s.Parameter)), composite.Plan.ChainId,
+                Stages = composite.Stages.Select(s => (s.StageId, s.Readiness, s.Coverage)),
+            },
+        });
+        var latest = await db.IntegrationSuites.AsNoTracking().Where(s => s.SuiteKey == suiteKey).OrderByDescending(s => s.Revision).FirstOrDefaultAsync(ct);
+        if (latest is not null && latest.Fingerprint == fingerprint)
+            return new(await ReadAsync(latest, ct), true, null); // unchanged: no new revision, no duplicate definitions
+        var previous = latest is null ? null : JsonSerializer.Deserialize<IntegrationSuite>(latest.DefinitionJson, Json);
+        var suite = body with
+        {
+            Id = Guid.NewGuid(), Revision = (latest?.Revision ?? 0) + 1, Fingerprint = fingerprint, GeneratedAt = Now, GeneratedBy = initiator,
+            Drift = previous is null ? [] : Drift(previous, body),
+        };
+        db.IntegrationSuites.Add(new IntegrationSuiteRecord
+        {
+            Id = suite.Id, SuiteKey = suiteKey, Revision = suite.Revision, SnapshotId = provenance.SnapshotId, ScopeId = scope.ScopeId, EnvironmentId = request.EnvironmentId,
+            GeneratedAt = suite.GeneratedAt, Fingerprint = fingerprint, DefinitionJson = JsonSerializer.Serialize(suite, Json),
+        });
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException)
+        {
+            // A concurrent generation saved this revision first (unique suite key + revision): return it instead of a second copy.
+            db.ChangeTracker.Clear();
+            var winner = await db.IntegrationSuites.AsNoTracking().FirstOrDefaultAsync(s => s.SuiteKey == suiteKey && s.Revision == suite.Revision, ct);
+            if (winner is null) throw;
+            return new(await ReadAsync(winner, ct), true, null);
+        }
+        logger.LogInformation("Integration suite generated. Scope {Scope}; revision {Revision}; tests {Tests}; stages {Stages}", scope.ScopeId, suite.Revision, testRefs.Count, stages.Count);
+        return new(suite, false, null);
+    }
+
+    /// <summary>The accumulators of one generation (contracts, tests, unsupported operations, configuration, Test Data, limitations).</summary>
+    private sealed record ContractGeneration(List<SuiteContractRef> Contracts, List<SuiteTestRef> Tests, List<SuiteUnsupportedOperation> Unsupported,
+        List<SuiteConfigurationValue> Configuration, List<SuiteTestDataItem> TestData, List<string> Limitations);
+
+    private async Task<List<SuiteContractRef>> EarlierContractsAsync(string suiteKey, CancellationToken ct) =>
+        await db.IntegrationSuites.AsNoTracking().Where(s => s.SuiteKey == suiteKey).OrderByDescending(s => s.Revision).Select(s => s.DefinitionJson).FirstOrDefaultAsync(ct) is { } earlierJson
+            ? JsonSerializer.Deserialize<IntegrationSuite>(earlierJson, Json)?.Contracts ?? [] : [];
+
+    /// <summary>Imports one snapshot's in-scope REST/GraphQL contracts into the Contract Registry (idempotent, project-scoped by the snapshot),
+    /// generates their tests and Test Data drafts through Contract Testing, and returns the contract references added.</summary>
+    private async Task<List<SuiteContractRef>> AddSourceContractsAsync(ContractGeneration gen, IqrSourceSnapshot snapshot, IReadOnlyCollection<string> modules,
+        IntegrationSuiteGenerateRequest request, List<SuiteContractRef> earlier, CancellationToken ct)
+    {
+        var contractRefs = new List<SuiteContractRef>();
+        var testRefs = gen.Tests; var unsupported = gen.Unsupported; var config = gen.Configuration; var testData = gen.TestData; var limitations = gen.Limitations;
         var sourceContracts = (snapshot.EvidenceDomains?.Contracts?.Contracts ?? [])
             .Where(c => c.Type is SourceContractType.OpenApi or SourceContractType.GraphQlSchema && IntegrationSuiteComposer.InModules(c.File, modules))
             .OrderBy(c => c.File, StringComparer.Ordinal).ToList();
-        // A later snapshot of the same project continues the contracts the previous revision used (same file and type) as their next
-        // version, so existing tests stay pinned to the old version and the change shows up as drift instead of as a second contract.
-        var earlier = await db.IntegrationSuites.AsNoTracking().Where(s => s.SuiteKey == suiteKey).OrderByDescending(s => s.Revision).Select(s => s.DefinitionJson).FirstOrDefaultAsync(ct) is { } earlierJson
-            ? JsonSerializer.Deserialize<IntegrationSuite>(earlierJson, Json)?.Contracts ?? [] : [];
         foreach (var source in sourceContracts)
         {
-            var continues = earlier.FirstOrDefault(e => e.SourceFile == source.File && e.Type == source.Type.ToString() && e.ContractKey is { Length: > 0 })?.ContractKey;
+            var continues = earlier.FirstOrDefault(e => e.SourceFile == source.File && e.Type == source.Type.ToString() && e.ContractKey is { Length: > 0 }
+                && (e.ProjectKey is null || e.ProjectKey == ContractRegistryService.ProjectKeyOf(snapshot)))?.ContractKey;
             var import = await registry.ImportFromSourceAsync(new SourceContractImportRequest(snapshot.Id, source.Id, continues, null), ct);
             if (continues is not null && !import.Imported && !import.Unchanged) // e.g. the contract was archived: fall back to a separate contract
                 import = await registry.ImportFromSourceAsync(new SourceContractImportRequest(snapshot.Id, source.Id, null, null), ct);
@@ -104,7 +277,7 @@ public sealed class IntegrationSuiteService(
             {
                 SourceContractId = source.Id, SourceFile = source.File, Name = source.Name, Type = source.Type.ToString(), ContractKey = import.Key, ContractVersion = import.Version,
                 ImportOutcome = import.Imported ? "Imported" : import.Unchanged ? "Unchanged (existing version reused)" : $"Not imported: {import.Message}",
-                Servers = [.. source.Servers], Operations = source.Operations.Count,
+                Servers = [.. source.Servers], Operations = source.Operations.Count, SnapshotId = snapshot.Id, ProjectKey = ContractRegistryService.ProjectKeyOf(snapshot),
             });
             if (import.Key is not { } key || import.Version is not { } version) { limitations.Add($"{source.File}: {import.Message}"); continue; }
             var (_, skipped) = await contractTests.GenerateAsync(key, version, null, ct);
@@ -140,118 +313,8 @@ public sealed class IntegrationSuiteService(
                 testRefs.Add(TestRef(key, view, view.Test.Binding is null && data.TryGetValue(view.Test.Operation, out var d) ? d.Dataset : null));
             config.AddRange(Configuration(source, key, version));
         }
-
-        // Stable order (the registry lists tests in storage order, which differs between runs): the same evidence must give the same suite.
-        testRefs.Sort((a, b) => string.CompareOrdinal($"{a.ContractRef}|{a.Operation}|{a.Kind}|{a.Variant}|{a.TestId:D}", $"{b.ContractRef}|{b.Operation}|{b.Kind}|{b.Variant}|{b.TestId:D}"));
-        testData.Sort((a, b) => string.CompareOrdinal(a.Role, b.Role));
-
-        // 2. Journey-pack Test Data requirements resolved through the shared catalog (never generated identities).
-        var pack = scope.JourneyPackId is { } packId ? packs.Find(packId) : null;
-        if (pack is not null)
-            foreach (var journey in pack.Journeys.Where(j => scope.JourneyIds.Contains(j.JourneyId)))
-            {
-                var requirements = pack.TestDataRequirements(journey);
-                if (requirements.Count == 0) continue;
-                var resolution = catalog.Resolve(requirements);
-                foreach (var role in resolution.Roles)
-                    testData.Add(new SuiteTestDataItem
-                    {
-                        Role = $"{journey.JourneyId}:{role.Role}", Purpose = role.Optional ? "optional journey input" : "journey input", Asset = role.AssetAlias,
-                        Approved = role.State is TestDataResolutionState.Resolved or TestDataResolutionState.Selected, State = role.State.ToString(),
-                        Prerequisite = role.State is TestDataResolutionState.Resolved or TestDataResolutionState.Selected ? null : role.Reason,
-                    });
-            }
-
-        // 3. XSDs of the scope (the snapshot's retained schema artifact, analysed by the shared XSD capability).
-        var xml = await XmlSchemasAsync(snapshot.Id, modules, limitations, ct);
-
-        // 4. Topology candidates (environment-scoped provider graph; nothing merged by name).
-        var mappings = await TopologyAsync(request.EnvironmentId, scope, limitations, ct);
-
-        // 5. Stages with the runner's registered executor/observer coverage.
-        var stages = Stages(scope, pack, request.EnvironmentId, testRefs, mappings);
-
-        // 6. Kode 6/7 — reuse the shared Security Classification consumer (no second module).
-        var decisions = await DecisionsAsync(suiteKey, ct);
-        var securityScenarios = new List<SuiteSecurityScenario>();
-        if (request.IncludeSecurity && scope.IncludesSecurityClassification)
-        {
-            SecurityClassificationConsumerAssessment? consumer = null;
-            // The consumer's requirements are product-defined: they exist without an environment (state Not assessed until an M01 review runs);
-            // a Target Environment adds that environment's review runs and approved context.
-            if (security is not null)
-                consumer = (await security.AssessAsync(request.EnvironmentId ?? "", ct)).FirstOrDefault(c => c.ConsumerId == scope.JourneyPackId);
-            if (request.EnvironmentId is not { Length: > 0 })
-                limitations.Add("Kode 6/7: no Target Environment selected — M01 requirements are listed with their environment-independent state; review runs of an environment are not read.");
-            bool Level(int n) => catalog.Resolve([new TestDataRequirement { Role = $"level-{n}", Kind = TestDataKind.EntityReference, Capabilities = [$"classification-level-{n}"] }]).Satisfied;
-            // The protected synthetic children the Kode 6/7 scenarios need: approved Test Data only (resolved by capability, pinned by version) —
-            // never generated, and Kode 6 and Kode 7 are separate roles (different authorization semantics).
-            foreach (var (level, label) in new[] { (3, "Kode 6 synthetic child"), (2, "Kode 7 synthetic child") })
-            {
-                var role = catalog.Resolve([new TestDataRequirement { Role = label, Kind = TestDataKind.EntityReference, Capabilities = [$"classification-level-{level}"] }]).Roles.FirstOrDefault();
-                var resolved = role?.State is TestDataResolutionState.Resolved or TestDataResolutionState.Selected;
-                testData.Add(new SuiteTestDataItem
-                {
-                    Role = $"kode67:{label}", Purpose = $"Kode 6/7 scenarios (Test Data capability classification-level-{level})", Asset = role?.AssetAlias, Approved = resolved,
-                    State = resolved ? "Resolved (approved Test Data)" : "Unresolved",
-                    Prerequisite = resolved ? null : $"An approved synthetic {label.Replace(" synthetic child", "")} child (capability classification-level-{level}) registered in the target Person service — never generated.",
-                });
-            }
-            var stageReady = stages.ToDictionary(s => s.StageId, s => s);
-            securityScenarios = IntegrationSuiteComposer.Security(new IntegrationSuiteComposer.SecurityInputs(consumer, Level(3), Level(2), Level(1),
-                AltinnSubmissionExecutable: stageReady.TryGetValue("altinn", out var a) && a.Coverage is SuiteStageCoverage.Executable or SuiteStageCoverage.ExecutableAndObservable,
-                MuMmObservable: stageReady.TryGetValue("mm", out var m) && m.Coverage is SuiteStageCoverage.Observable or SuiteStageCoverage.ExecutableAndObservable,
-                IntakeObservedPerMessage: false, // message telemetry is aggregate unless correlated: never a per-message observation by itself
-                BufdataVerifierRegistered: stageReady.TryGetValue("bufdata", out var b) && b.Coverage is not SuiteStageCoverage.Unsupported,
-                SourceRuleEvidence: SecurityEvidence(snapshot, modules), Decisions: decisions.ToDictionary(d => d.Key, d => (string?)d.Value.Decision)));
-        }
-
-        // 7. Review queue and readiness.
-        var review = Review(contractRefs, config, testData, xml, mappings, securityScenarios, request.EnvironmentId)
-            .Select(r => decisions.TryGetValue(r.Key, out var d) ? r with { Decision = d.Decision, DecidedBy = d.By, DecidedAt = d.At } : r).ToList();
-        var readiness = Readiness(provenance, contractRefs, testRefs, xml, testData, mappings, stages, request.EnvironmentId, securityScenarios, review);
-        var (status, reason) = IntegrationSuiteComposer.Status(readiness, review, stages);
-
-        var body = new IntegrationSuite
-        {
-            SuiteKey = suiteKey, Snapshot = provenance, Scope = scope, EnvironmentId = request.EnvironmentId, Contracts = contractRefs, Tests = testRefs,
-            Unsupported = unsupported, Configuration = config, TestData = testData, XmlSchemas = xml, Topology = mappings, Stages = stages, Security = securityScenarios,
-            Review = review, Readiness = readiness, Status = status, StatusReason = reason, Limitations = limitations,
-        };
-        // Identity of the generated definition: the references and verdicts — not status prose, so an unchanged regeneration is the same revision.
-        var fingerprint = IntegrationSuiteComposer.Fingerprint(new
-        {
-            body.Snapshot.SnapshotId, Contracts = contractRefs.Select(c => (c.SourceContractId, c.ContractKey, c.ContractVersion)),
-            Tests = testRefs.Select(x => (x.TestId, x.Revision, x.Readiness, x.TestDataBinding)), Data = testData.Select(d => (d.Role, d.Asset, d.Approved)),
-            Xml = xml.Select(x => (x.File, x.DependenciesResolved)), Topology = mappings.Select(m => (m.Key, m.Class)), Stages = stages.Select(s => (s.StageId, s.Coverage, s.Readiness)),
-            Security = securityScenarios.Select(s => (s.ScenarioId, s.Readiness, s.ExistingState)), Config = config.Select(c => (c.Key, c.Value)), // Review decisions are overlays read live (ReadAsync), so they and the status they drive are not part of the definition.
-            Review = review.Select(r => r.Key),
-        });
-        var latest = await db.IntegrationSuites.AsNoTracking().Where(s => s.SuiteKey == suiteKey).OrderByDescending(s => s.Revision).FirstOrDefaultAsync(ct);
-        if (latest is not null && latest.Fingerprint == fingerprint)
-            return new(await ReadAsync(latest, ct), true, null); // unchanged: no new revision, no duplicate definitions
-        var previous = latest is null ? null : JsonSerializer.Deserialize<IntegrationSuite>(latest.DefinitionJson, Json);
-        var suite = body with
-        {
-            Id = Guid.NewGuid(), Revision = (latest?.Revision ?? 0) + 1, Fingerprint = fingerprint, GeneratedAt = Now, GeneratedBy = initiator,
-            Drift = previous is null ? [] : Drift(previous, body),
-        };
-        db.IntegrationSuites.Add(new IntegrationSuiteRecord
-        {
-            Id = suite.Id, SuiteKey = suiteKey, Revision = suite.Revision, SnapshotId = snapshot.Id, ScopeId = scope.ScopeId, EnvironmentId = request.EnvironmentId,
-            GeneratedAt = suite.GeneratedAt, Fingerprint = fingerprint, DefinitionJson = JsonSerializer.Serialize(suite, Json),
-        });
-        try { await db.SaveChangesAsync(ct); }
-        catch (DbUpdateException)
-        {
-            // A concurrent generation saved this revision first (unique suite key + revision): return it instead of a second copy.
-            db.ChangeTracker.Clear();
-            var winner = await db.IntegrationSuites.AsNoTracking().FirstOrDefaultAsync(s => s.SuiteKey == suiteKey && s.Revision == suite.Revision, ct);
-            if (winner is null) throw;
-            return new(await ReadAsync(winner, ct), true, null);
-        }
-        logger.LogInformation("Integration suite generated. Scope {Scope}; revision {Revision}; tests {Tests}; stages {Stages}", scope.ScopeId, suite.Revision, testRefs.Count, stages.Count);
-        return new(suite, false, null);
+        gen.Contracts.AddRange(contractRefs);
+        return contractRefs;
     }
 
     private static SuiteSnapshotProvenance Provenance(IqrSourceSnapshot s, IntegrationSuiteScope scope)
@@ -518,6 +581,8 @@ public sealed class IntegrationSuiteService(
         foreach (var c in current.Contracts)
             if (previous.Contracts.FirstOrDefault(p => p.ContractKey is { Length: > 0 } && p.ContractKey == c.ContractKey) is { } p && p.ContractVersion != c.ContractVersion)
                 drift.Add($"{c.SourceFile}: contract {c.ContractKey} v{p.ContractVersion} → v{c.ContractVersion}. Existing tests stay on v{p.ContractVersion}; regenerate them in Contract Testing after review.");
+        foreach (var gone in previous.Contracts.Where(p => p.ContractKey is { Length: > 0 } && current.Contracts.All(c => c.ContractKey != p.ContractKey)))
+            drift.Add($"{gone.SourceFile}: contract {gone.ContractKey} is no longer provided by the sources (removed, renamed or unreadable); its tests left the suite.");
         var added = current.Tests.Select(t => t.TestId).Except(previous.Tests.Select(t => t.TestId)).Count();
         var removed = previous.Tests.Select(t => t.TestId).Except(current.Tests.Select(t => t.TestId)).Count();
         if (added + removed > 0) drift.Add($"{added} test(s) added, {removed} no longer in scope.");
@@ -533,7 +598,8 @@ public sealed class IntegrationSuiteService(
         var rows = await db.IntegrationSuites.AsNoTracking().OrderByDescending(s => s.GeneratedAt).Take(100).ToListAsync(ct);
         return [.. rows.Select(r => (r, s: JsonSerializer.Deserialize<IntegrationSuite>(r.DefinitionJson, Json)!))
             .Select(x => new IntegrationSuiteSummary(x.r.Id, x.r.SuiteKey, x.r.Revision, x.r.ScopeId, x.s.Scope.DisplayName, x.r.SnapshotId, x.s.Snapshot.ArchiveFileName,
-                x.r.GeneratedAt, x.s.Status, x.s.Tests.Count, x.s.Stages.Count, x.s.Review.Count(i => i.Decision is null)))];
+                x.r.GeneratedAt, x.s.Status, x.s.Tests.Count, x.s.Stages.Count, x.s.Review.Count(i => i.Decision is null))
+            { CompositeContextId = x.s.Composite?.ContextId, Sources = x.s.Composite?.Sources.Count ?? 1 })];
     }
 
     public async Task<IntegrationSuite?> GetAsync(Guid id, CancellationToken ct) =>
@@ -572,6 +638,17 @@ public sealed class IntegrationSuiteService(
         var readiness = suite.Readiness.Select(d => d.Name == "Review"
             ? d with { State = open == 0 ? SuiteItemReadiness.Ready : SuiteItemReadiness.NeedsReview, Detail = $"{open} open review item(s)" } : d).ToList();
         var (status, reason) = IntegrationSuiteComposer.Status(readiness, review, suite.Stages);
+        if (suite.Composite is not null)
+        {
+            // Composite suites: the verdict comes only from composite runs (one continuous transaction each); flat test runs never verify E2E.
+            var (composite, compositeRuns) = await CompositeOverlayAsync(suite with { Review = review }, ct);
+            outcome = compositeRuns.Any(r => r.Verdict == CompositeRunVerdict.FullE2EVerified) ? SuiteExecutionOutcome.Verified
+                : compositeRuns.Any(r => r.Verdict == CompositeRunVerdict.SubflowVerified) ? SuiteExecutionOutcome.PartiallyVerified
+                : compositeRuns.FirstOrDefault() is { Verdict: CompositeRunVerdict.Failed or CompositeRunVerdict.WrongCorrelation } ? SuiteExecutionOutcome.Failed
+                : compositeRuns.Count > 0 ? SuiteExecutionOutcome.Executed : SuiteExecutionOutcome.NotExecuted;
+            (status, reason) = CompositeStatus(composite, status, reason);
+            return suite with { Review = review, Runs = runs, Outcome = outcome, Readiness = readiness, Status = status, StatusReason = reason, Composite = composite };
+        }
         return suite with { Review = review, Runs = runs, Outcome = outcome, Readiness = readiness, Status = status, StatusReason = reason };
     }
 
