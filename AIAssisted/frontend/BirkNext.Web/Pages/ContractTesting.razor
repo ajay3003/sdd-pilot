@@ -163,7 +163,7 @@
                         @if (info is not null)
                         {
                             <span data-testid="ct-version-source">@(info.Source switch { ContractVersionSource.Url => "From URL", ContractVersionSource.SourceSnapshot => "From Source Analysis", _ => "Uploaded" }) · @info.SourceLabel · @info.Format.ToUpperInvariant() · @info.ImportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
-                            <span class="ct-muted" title="SHA-256 of the imported document">#@info.Sha256[..12]</span>
+                            <span class="ct-muted" title="SHA-256 of the imported document">#@(info.Sha256.Length > 12 ? info.Sha256[..12] : info.Sha256)</span>
                             <span class="ct-pill" data-testid="ct-parse">@(info.ParseSupport == DomainSupport.Supported ? "Fully read" : "Partly read")</span>
                             <span class="ct-pill" data-testid="ct-validation-depth" title="@(info.HasDocument ? "The document text is kept: requests and responses are validated against the full schema." : "Only the parsed contract is kept: responses get a structural (type) check. Re-import the project to get full validation.")">@(info.HasDocument ? "Full schema validation" : "Structural validation")</span>
                         }

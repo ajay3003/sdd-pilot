@@ -34,6 +34,7 @@ public sealed class ContractTestingPageTests : BunitContext
         public bool GraphQl { get; set; }
         public bool PostReady { get; set; }
         public bool SourceBacked { get; set; }
+        public bool LegacySha { get; set; }
         public bool Executed { get; set; } = true;
 
         private static readonly ApiContractSummary GqlSummary = new(Guid.NewGuid(), "children-graphql", "Children GraphQL", ApiContractProtocol.GraphQl, 1, 2, 1, DateTimeOffset.UtcNow);
@@ -94,6 +95,7 @@ public sealed class ContractTestingPageTests : BunitContext
             Log.Add($"contract {key} {version}");
             var v = version ?? 2;
             if (GraphQl) return Task.FromResult<(ApiContractDetail?, string?)>((new(GqlSummary, [Info(1) with { Format = "graphql" }], 1, GqlDocument), null));
+            if (LegacySha) return Task.FromResult<(ApiContractDetail?, string?)>((new(Summary with { IdentityState = "NeedsReview" }, [Info(2) with { Sha256 = "legacy" }, Info(1)], v, Document(v)), null));
             var latest = SourceBacked ? Info(2) with { Source = ContractVersionSource.SourceSnapshot, SourceSnapshotId = Guid.Parse("33333333-3333-3333-3333-333333333333"), SourcePath = "openapi:Children/autodoc/openapi.yaml", HasDocument = false } : Info(2);
             return Task.FromResult<(ApiContractDetail?, string?)>((new(Summary, [latest, Info(1)], v, Document(v)), null));
         }
@@ -934,5 +936,16 @@ public sealed class ContractTestingPageTests : BunitContext
         _api.Approved.SuggestionId.Should().Be("sugg-1");
         page.WaitForAssertion(() => page.FindAll("[data-testid=ct-chain-draft]").Should().BeEmpty());
         _api.ChainRun.Should().BeNull("nothing ran");
+    }
+
+    /// <summary>Acceptance CTH-D1: a legacy version with a short fingerprint crashed the contract header (substring out of range).</summary>
+    [Fact]
+    public void A_legacy_version_with_a_short_fingerprint_renders_and_shows_the_identity_review_banner()
+    {
+        _api.LegacySha = true; _api.Projects = true;
+        var page = Open("?contract=children-api");
+        page.Find("[data-testid=ct-detail]").TextContent.Should().Contain("#legacy");
+        page.Find("[data-testid=ct-identity-banner]").TextContent.Should().Contain("Identity needs review");
+        page.FindAll("[data-testid=ct-assign-project] option").Select(o => o.GetAttribute("value")).Should().Contain(["m2lb", "m2lb-language"]);
     }
 }
