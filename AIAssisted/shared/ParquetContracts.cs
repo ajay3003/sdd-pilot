@@ -9,10 +9,15 @@ namespace BirkNext.Parquet;
 public enum ParquetFigure { Exact, FromMetadata, NotAvailable }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ParquetFilterOperator { Equals, NotEquals, Contains, GreaterThan, LessThan, Between, IsNull, NotNull, In }
+public enum ParquetFilterOperator { Equals, NotEquals, Contains, GreaterThan, LessThan, Between, IsNull, NotNull, In, NotIn }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ParquetRuleKind { ColumnExists, TypeIs, NotNull, Unique, AllowedValues, Range, RecordCount }
+public enum ParquetRuleKind
+{
+    ColumnExists, TypeIs, NotNull, Unique, AllowedValues, Range, RecordCount,
+    // Parquet Quality Review (additive; existing values keep their numbers).
+    Pattern, NullUnless, RequiredWhen, OnlyWith, SumIdentity, RollUp, SortedBy, RowGroupCount, Compression, Manifest, NoIdentifierValues, NoProtectedCanary,
+}
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ParquetRuleOutcome { Pass, Fail, Inconclusive }
@@ -105,6 +110,26 @@ public sealed record ParquetRule
     public string? Min { get; init; }
     public string? Max { get; init; }
     public List<string> Values { get; init; } = [];
+    // ── Quality Review (all optional; a rule written before them behaves as before) ──
+    public string? Name { get; init; }
+    /// <summary>Unique: composite key; SortedBy: sort keys.</summary>
+    public List<string> Columns { get; init; } = [];
+    /// <summary>NullUnless / RequiredWhen / OnlyWith: the condition column and values; RollUp: rows excluded by this column's values.</summary>
+    public string? WhenColumn { get; init; }
+    public List<string> WhenValues { get; init; } = [];
+    /// <summary>SumIdentity / RollUp: the measured (summed) column.</summary>
+    public string? ValueColumn { get; init; }
+    public List<string> GroupColumns { get; init; } = [];
+    public RuleOrigin Origin { get; init; } = RuleOrigin.UserAuthored;
+    public RuleReviewState Review { get; init; } = RuleReviewState.Active;
+    public string Severity { get; init; } = "Medium";
+    public List<string> RequirementIds { get; init; } = [];
+    /// <summary>Where the rule comes from (document path and line, or "schema"); never a value.</summary>
+    public string? Provenance { get; init; }
+    public string? ContractVersion { get; init; }
+    public int RuleVersion { get; init; } = 1;
+    /// <summary>What the rule checks, in words, including any interpretation a reviewer must confirm.</summary>
+    public string? Semantics { get; init; }
 }
 
 public sealed record ParquetRuleSet
@@ -115,9 +140,27 @@ public sealed record ParquetRuleSet
 }
 
 public sealed record ParquetRuleResult(string RuleId, ParquetRuleKind Kind, string? Column, ParquetRuleOutcome Outcome, string Expected, string Actual, string Scope, long RowsExamined,
-    List<long> FailingRowNumbers, string Explanation);
+    List<long> FailingRowNumbers, string Explanation)
+{
+    public string? RuleName { get; init; }
+    public RuleOrigin Origin { get; init; }
+    public string? ContractVersion { get; init; }
+    public List<string> RequirementIds { get; init; } = [];
+    public EvaluationMode Mode { get; init; } = EvaluationMode.Exact;
+    public long AffectedRows { get; init; }
+    public string Severity { get; init; } = "Medium";
+    /// <summary>"rule:{id}@v{n}" + the file SHA-256 prefix: what this result is evidence of.</summary>
+    public string EvidenceRef { get; init; } = "";
+    /// <summary>Live only (never persisted): group-level detail and filters that open the offending rows in Data.</summary>
+    public List<string> Details { get; init; } = [];
+    public List<ParquetFilter> DrillFilters { get; init; } = [];
+}
 
-public sealed record ParquetValidation(string RuleSetName, int RuleSetVersion, List<ParquetRuleResult> Results, long RowsExamined, string Scope);
+public sealed record ParquetValidation(string RuleSetName, int RuleSetVersion, List<ParquetRuleResult> Results, long RowsExamined, string Scope)
+{
+    public string? ContractVersion { get; init; }
+    public string? RuleSetRef { get; init; }
+}
 
 public sealed record ParquetSchemaChange(string Path, string Change, string? Baseline, string? Current);
 
@@ -133,6 +176,7 @@ public sealed record ParquetComparison
     public long BaselineRows { get; init; }
     public long CurrentRows { get; init; }
     public string? KeyColumn { get; init; }
+    public List<string> KeyColumns { get; init; } = [];
     public Dictionary<string, long> RecordCounts { get; init; } = [];
     /// <summary>Bounded list of record differences (changed field names only; values are not shown unless permitted).</summary>
     public List<ParquetRecordDiff> Records { get; init; } = [];
@@ -159,8 +203,36 @@ public sealed record ParquetInspectionEvidence
     public string? Note { get; init; }
     public DateTimeOffset SavedAt { get; init; }
     public string SavedBy { get; init; } = "";
+    // ── Quality Review (document version 2; older documents leave these empty) ──
+    public int DocumentVersion { get; init; } = 1;
+    public string FileSource { get; init; } = "Local file";
+    public ContractAssociation? Association { get; init; }
+    public ParquetSchemaCheck? Schema { get; init; }
+    public List<RequirementCoverage> Coverage { get; init; } = [];
+    public List<QualityDimension> Dimensions { get; init; } = [];
+    public ParquetStatistics? Statistics { get; init; }
+    public ParquetManifestSummary? Manifest { get; init; }
+    public ParquetCorrelation? Correlation { get; init; }
+    public BaselineAssessment? Baseline { get; init; }
+    public List<string> SchemaColumns { get; init; } = [];
+    public List<string> Limitations { get; init; } = [];
+    /// <summary>A person marked this evidence as an approved baseline (append-only; the original evidence is unchanged otherwise).</summary>
+    public string? BaselineApprovedBy { get; init; }
+    public DateTimeOffset? BaselineApprovedAt { get; init; }
 }
 
-public sealed record ParquetEvidenceRequest(Guid SessionId, string EnvironmentId, ParquetRuleSet? Rules, Guid? CompareWith, string? KeyColumn, Guid? LinkedRunId, string? Note);
+public sealed record ParquetEvidenceRequest(Guid SessionId, string EnvironmentId, ParquetRuleSet? Rules, Guid? CompareWith, string? KeyColumn, Guid? LinkedRunId, string? Note)
+{
+    public ContractAssociation? Association { get; init; }
+    public List<string> KeyColumns { get; init; } = [];
+    public Guid? BaselineEvidenceId { get; init; }
+    /// <summary>The tester links a run without correlating evidence: stored as MANUAL_UNVERIFIED with the reason, never as proof.</summary>
+    public bool ManualLink { get; init; }
+    public string? ManualReason { get; init; }
+}
 
-public sealed record ParquetCompareRequest(Guid BaselineSessionId, Guid CurrentSessionId, string? KeyColumn);
+public sealed record ParquetCompareRequest(Guid BaselineSessionId, Guid CurrentSessionId, string? KeyColumn)
+{
+    /// <summary>Composite record identity (takes precedence over <see cref="KeyColumn"/>).</summary>
+    public List<string> KeyColumns { get; init; } = [];
+}

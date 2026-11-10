@@ -19,13 +19,17 @@ namespace BirkNext.Api.Services.Parquet;
 /// name, never a caller path) and expires after <see cref="SessionLifetime"/>; closing removes it. Durable evidence holds metadata, fingerprints,
 /// rule results and comparison counts — never row values. Every scan is bounded; filters on a page are labelled as page-only.
 /// </summary>
-public sealed class ParquetInspectionService(AppDbContext db, ExecutionEvidenceStore executions, IHostEnvironment environment, TimeProvider? clock = null)
+public sealed partial class ParquetInspectionService(AppDbContext db, ExecutionEvidenceStore executions, IHostEnvironment environment, TimeProvider? clock = null)
 {
     public const long MaxFileBytes = 64L * 1024 * 1024;
     public const long MaxScanRows = 2_000_000;
     public const int MaxPageRows = 200;
     public const int MaxDistinctTracked = 100_000;
     public const int MaxRecordDiffs = 500;
+    /// <summary>Live temporary sessions kept on disk; opening one more closes the oldest (disk is bounded: at most 20 x 64 MB).</summary>
+    public const int MaxLiveSessions = 20;
+    /// <summary>Decoded files kept in memory (each holds its bytes): the cache never grows past this.</summary>
+    public const int MaxCachedFiles = 4;
     public static readonly TimeSpan SessionLifetime = TimeSpan.FromHours(2);
     internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -57,10 +61,45 @@ public sealed class ParquetInspectionService(AppDbContext db, ExecutionEvidenceS
         var name = DisplayName(fileName);
         var overview = Overview(id, name, bytes, file, Now);
         Directory.CreateDirectory(Root);
+        EnforceSessionCap();
         await File.WriteAllBytesAsync(FilePath(id), bytes, ct);
         await File.WriteAllTextAsync(MetaPath(id), JsonSerializer.Serialize(new SessionMeta(name, overview.OpenedAt, overview.ExpiresAt), Json), ct);
+        Evict();
         Cache[id] = (file, overview);
         return (overview, null);
+    }
+
+    /// <summary>Keeps at most <see cref="MaxCachedFiles"/> decoded files in memory (a reload from disk restores an evicted one).</summary>
+    private static void Evict()
+    {
+        while (Cache.Count >= MaxCachedFiles)
+        {
+            var oldest = Cache.OrderBy(kv => kv.Value.Overview.OpenedAt).First().Key;
+            Cache.TryRemove(oldest, out _);
+        }
+    }
+
+    /// <summary>Closes the oldest live sessions so that a new one stays within <see cref="MaxLiveSessions"/>.</summary>
+    private void EnforceSessionCap()
+    {
+        var live = LiveSessions();
+        foreach (var (id, _) in live.OrderBy(s => s.Meta.OpenedAt).Take(Math.Max(0, live.Count - (MaxLiveSessions - 1)))) Close(id);
+    }
+
+    private List<(Guid Id, SessionMeta Meta)> LiveSessions()
+    {
+        var result = new List<(Guid, SessionMeta)>();
+        if (!Directory.Exists(Root)) return result;
+        foreach (var meta in Directory.EnumerateFiles(Root, "*.json"))
+        {
+            try
+            {
+                if (JsonSerializer.Deserialize<SessionMeta>(File.ReadAllText(meta), Json) is { } m && m.ExpiresAt > Now
+                    && Guid.TryParseExact(Path.GetFileNameWithoutExtension(meta), "N", out var id)) result.Add((id, m));
+            }
+            catch (Exception ex) when (ex is IOException or JsonException) { }
+        }
+        return result;
     }
 
     private sealed record SessionMeta(string FileName, DateTimeOffset OpenedAt, DateTimeOffset ExpiresAt);
@@ -79,7 +118,7 @@ public sealed class ParquetInspectionService(AppDbContext db, ExecutionEvidenceS
         var bytes = File.ReadAllBytes(FilePath(id));
         var file = ParquetFile.Open(bytes);
         var overview = Overview(id, meta.FileName, bytes, file, meta.OpenedAt) with { ExpiresAt = meta.ExpiresAt };
-        while (Cache.Count >= 4) Cache.TryRemove(Cache.Keys.First(), out _);
+        Evict();
         Cache[id] = (file, overview);
         return (file, overview);
     }
@@ -89,7 +128,7 @@ public sealed class ParquetInspectionService(AppDbContext db, ExecutionEvidenceS
     {
         Cache.TryRemove(id, out _);
         var existed = File.Exists(FilePath(id));
-        foreach (var p in new[] { FilePath(id), MetaPath(id) }) try { File.Delete(p); } catch (IOException) { }
+        foreach (var p in new[] { FilePath(id), MetaPath(id), ManifestPath(id) }) try { File.Delete(p); } catch (IOException) { }
         return existed;
     }
 
@@ -271,7 +310,7 @@ public sealed class ParquetInspectionService(AppDbContext db, ExecutionEvidenceS
             case ParquetFilterOperator.IsNull: return value is null;
             case ParquetFilterOperator.NotNull: return value is not null;
         }
-        if (value is null) return f.Operator == ParquetFilterOperator.NotEquals && f.Value is not null;
+        if (value is null) return (f.Operator == ParquetFilterOperator.NotEquals && f.Value is not null) || f.Operator == ParquetFilterOperator.NotIn;
         return f.Operator switch
         {
             ParquetFilterOperator.Equals => Compare(value, f.Value) == 0,
@@ -281,6 +320,7 @@ public sealed class ParquetInspectionService(AppDbContext db, ExecutionEvidenceS
             ParquetFilterOperator.LessThan => Compare(value, f.Value) is < 0 and not int.MinValue,
             ParquetFilterOperator.Between => Compare(value, f.Value) is >= 0 and not int.MinValue && Compare(value, f.Value2) is <= 0 and not int.MinValue,
             ParquetFilterOperator.In => (f.Values ?? []).Any(v => Compare(value, v) == 0),
+            ParquetFilterOperator.NotIn => !(f.Values ?? []).Any(v => Compare(value, v) == 0),
             _ => false,
         };
     }
@@ -364,100 +404,42 @@ public sealed class ParquetInspectionService(AppDbContext db, ExecutionEvidenceS
 
     // ── Validation ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    public (ParquetValidation? Validation, string? Error) Validate(Guid id, ParquetRuleSet rules, CancellationToken ct)
-    {
-        if (Session(id) is not { } s) return (null, "The Parquet session has expired; open the file again.");
-        if (rules.Rules.Count is 0 or > 100) return (null, "Give between 1 and 100 rules.");
-        var file = s.File;
-        var results = new List<ParquetRuleResult>();
-        var scanned = false;
-        foreach (var rule in rules.Rules)
-        {
-            ct.ThrowIfCancellationRequested();
-            var leaf = rule.Column is null ? null : file.Leaves.FirstOrDefault(l => l.Path == rule.Column);
-            ParquetRuleResult R(ParquetRuleOutcome o, string expected, string actual, string scope, long rows, List<long>? failing, string why) =>
-                new(rule.Id, rule.Kind, rule.Column, o, expected, actual, scope, rows, failing ?? [], why);
-            switch (rule.Kind)
-            {
-                case ParquetRuleKind.ColumnExists:
-                    results.Add(R(leaf is null ? ParquetRuleOutcome.Fail : ParquetRuleOutcome.Pass, "present", leaf is null ? "absent" : "present", "Schema", 0, null,
-                        leaf is null ? "The column is not in the file's schema." : "The column is in the schema."));
-                    continue;
-                case ParquetRuleKind.RecordCount:
-                    var ok = long.TryParse(rule.Expected, NumberStyles.Integer, CultureInfo.InvariantCulture, out var expectedRows);
-                    results.Add(R(!ok ? ParquetRuleOutcome.Inconclusive : expectedRows == file.Rows ? ParquetRuleOutcome.Pass : ParquetRuleOutcome.Fail, rule.Expected ?? "", file.Rows.ToString(CultureInfo.InvariantCulture),
-                        "File metadata (row count)", 0, null, ok ? "Compared with the row count in the file's footer." : "The expected count is not a number."));
-                    continue;
-            }
-            if (leaf is null) { results.Add(R(ParquetRuleOutcome.Fail, rule.Expected ?? "", "column absent", "Schema", 0, null, "The column is not in the file's schema.")); continue; }
-            if (rule.Kind == ParquetRuleKind.TypeIs)
-            {
-                var actual = $"{ParquetFile.PhysicalNames[leaf.Physical]}{(ParquetFile.LogicalName(leaf.Node) is { } lt ? " / " + lt : "")}";
-                var pass = rule.Expected is { Length: > 0 } e && (string.Equals(ParquetFile.PhysicalNames[leaf.Physical], e, StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(ParquetFile.LogicalName(leaf.Node), e, StringComparison.OrdinalIgnoreCase) || (ParquetFile.LogicalName(leaf.Node)?.StartsWith(e + "(", StringComparison.OrdinalIgnoreCase) ?? false));
-                results.Add(R(pass ? ParquetRuleOutcome.Pass : ParquetRuleOutcome.Fail, rule.Expected ?? "", actual, "Schema", 0, null, "Physical or logical type as written in the schema."));
-                continue;
-            }
-            if (leaf.NotReadable is { } why) { results.Add(R(ParquetRuleOutcome.Inconclusive, rule.Expected ?? "", "not readable", "—", 0, null, why)); continue; }
-            if (file.Rows > MaxScanRows) { results.Add(R(ParquetRuleOutcome.Inconclusive, rule.Expected ?? "", "not scanned", "—", 0, null, $"Full scans are limited to {N(MaxScanRows)} rows.")); continue; }
-            scanned = true;
-            var failing = new List<long>(); long failures = 0, row = 0;
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            try
-            {
-                foreach (var group in file.RowGroups)
-                    foreach (var v in file.ReadColumn(group.Index, leaf.Index))
-                    {
-                        row++;
-                        var bad = rule.Kind switch
-                        {
-                            ParquetRuleKind.NotNull => v is null,
-                            ParquetRuleKind.Unique => v is not null && !seen.Add(ParquetFile.Format(v)!),
-                            ParquetRuleKind.AllowedValues => v is not null && !rule.Values.Contains(ParquetFile.Format(v)!, StringComparer.Ordinal),
-                            ParquetRuleKind.Range => v is not null && ((rule.Min is not null && Compare(v, rule.Min) < 0) || (rule.Max is not null && Compare(v, rule.Max) is > 0 or int.MinValue)),
-                            _ => false,
-                        };
-                        if (!bad) continue;
-                        failures++;
-                        if (failing.Count < 5) failing.Add(row);
-                    }
-            }
-            catch (ParquetFormatException ex) { results.Add(R(ParquetRuleOutcome.Inconclusive, rule.Expected ?? "", "read failed", "—", row, null, ex.Message)); continue; }
-            var expectedText = rule.Kind switch
-            {
-                ParquetRuleKind.NotNull => "no nulls", ParquetRuleKind.Unique => "unique values",
-                ParquetRuleKind.AllowedValues => string.Join(", ", rule.Values), ParquetRuleKind.Range => $"{rule.Min ?? "−∞"} … {rule.Max ?? "+∞"}", _ => "",
-            };
-            results.Add(R(failures == 0 ? ParquetRuleOutcome.Pass : ParquetRuleOutcome.Fail, expectedText, failures == 0 ? "all rows comply" : $"{N(failures)} row(s) do not",
-                "Full scan", row, failing, failures == 0 ? "Every row was examined." : "Row numbers of the first violations are listed (values are not)."));
-        }
-        return (new ParquetValidation(rules.Name, rules.Version, results, scanned ? file.Rows : 0, scanned ? $"Full scan of all {N(file.Rows)} rows" : "Schema and metadata only"), null);
-    }
+    // Validation lives in ParquetInspectionService.Quality.cs (one engine for user, schema- and contract-derived rules).
 
     // ── Comparison ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    public (ParquetComparison? Comparison, string? Error) Compare(Guid baselineId, Guid currentId, string? keyColumn, CancellationToken ct)
+    public (ParquetComparison? Comparison, string? Error) Compare(Guid baselineId, Guid currentId, string? keyColumn, CancellationToken ct) =>
+        CompareByKeys(baselineId, currentId, string.IsNullOrWhiteSpace(keyColumn) ? [] : [keyColumn], ct);
+
+    /// <summary>Record comparison by an explicit (composite) key; row order is never identity; duplicate keys are Ambiguous.</summary>
+    public (ParquetComparison? Comparison, string? Error) CompareByKeys(Guid baselineId, Guid currentId, IReadOnlyList<string> keyColumns, CancellationToken ct)
     {
         if (Session(baselineId) is not { } b || Session(currentId) is not { } c) return (null, "A Parquet session has expired; open the files again.");
         var schema = SchemaChanges(b.File, c.File);
-        var limitations = new List<string> { "Row order is not identity: records are matched only by the chosen key column." };
+        var keys = keyColumns.Where(k => !string.IsNullOrWhiteSpace(k)).Distinct().ToList();
+        var limitations = new List<string> { "Row order is not identity: records are matched only by the chosen key column(s)." };
         var result = new ParquetComparison
         {
             BaselineSessionId = baselineId, CurrentSessionId = currentId, BaselineFile = b.Overview.FileName, CurrentFile = c.Overview.FileName,
-            SchemaChanges = schema, BaselineRows = b.File.Rows, CurrentRows = c.File.Rows, KeyColumn = keyColumn,
+            SchemaChanges = schema, BaselineRows = b.File.Rows, CurrentRows = c.File.Rows, KeyColumn = keys.Count == 1 ? keys[0] : null, KeyColumns = keys,
         };
-        if (string.IsNullOrWhiteSpace(keyColumn))
+        if (keys.Count == 0)
             return (result with { Limitations = [.. limitations, "No key column chosen: schema and row counts only; record-level differences are not available."] }, null);
-        var bKey = b.File.Leaves.FirstOrDefault(l => l.Path == keyColumn); var cKey = c.File.Leaves.FirstOrDefault(l => l.Path == keyColumn);
-        if (bKey is null || cKey is null) return (null, $"The key column {Clip(keyColumn)} is not in both files.");
-        if (bKey.NotReadable is not null || cKey.NotReadable is not null) return (null, $"The key column {Clip(keyColumn)} cannot be read.");
+        var bKeys = new List<ParquetFile.Leaf>(); var cKeys = new List<ParquetFile.Leaf>();
+        foreach (var k in keys)
+        {
+            var bk = b.File.Leaves.FirstOrDefault(l => l.Path == k); var ck = c.File.Leaves.FirstOrDefault(l => l.Path == k);
+            if (bk is null || ck is null) return (null, $"The key column {Clip(k)} is not in both files.");
+            if (bk.NotReadable is not null || ck.NotReadable is not null) return (null, $"The key column {Clip(k)} cannot be read.");
+            bKeys.Add(bk); cKeys.Add(ck);
+        }
         if (b.File.Rows > MaxScanRows / 4 || c.File.Rows > MaxScanRows / 4) return (null, $"Record comparison is limited to {N(MaxScanRows / 4)} rows per file.");
-        var shared = b.File.Leaves.Where(l => l.NotReadable is null && l.Path != keyColumn)
+        var shared = b.File.Leaves.Where(l => l.NotReadable is null && !keys.Contains(l.Path))
             .Select(l => (Baseline: l, Current: c.File.Leaves.FirstOrDefault(x => x.Path == l.Path && x.NotReadable is null))).Where(p => p.Current is not null).ToList();
         try
         {
-            var (bRows, bDup) = Records(b.File, bKey, shared.Select(p => p.Baseline).ToList(), ct);
-            var (cRows, cDup) = Records(c.File, cKey, shared.Select(p => p.Current!).ToList(), ct);
+            var (bRows, bDup) = Records(b.File, bKeys, shared.Select(p => p.Baseline).ToList(), ct);
+            var (cRows, cDup) = Records(c.File, cKeys, shared.Select(p => p.Current!).ToList(), ct);
             var counts = new Dictionary<string, long> { ["Added"] = 0, ["Removed"] = 0, ["Changed"] = 0, ["Unchanged"] = 0, ["Ambiguous"] = 0 };
             var records = new List<ParquetRecordDiff>();
             void Add(string key, ParquetRecordChange change, List<string> fields)
@@ -481,18 +463,18 @@ public sealed class ParquetInspectionService(AppDbContext db, ExecutionEvidenceS
         catch (ParquetFormatException ex) { return (null, ex.Message); }
     }
 
-    private static (Dictionary<string, string?[]> Rows, HashSet<string> Duplicates) Records(ParquetFile file, ParquetFile.Leaf key, List<ParquetFile.Leaf> fields, CancellationToken ct)
+    private static (Dictionary<string, string?[]> Rows, HashSet<string> Duplicates) Records(ParquetFile file, List<ParquetFile.Leaf> key, List<ParquetFile.Leaf> fields, CancellationToken ct)
     {
         var rows = new Dictionary<string, string?[]>(StringComparer.Ordinal);
         var duplicates = new HashSet<string>(StringComparer.Ordinal);
         foreach (var group in file.RowGroups)
         {
             ct.ThrowIfCancellationRequested();
-            var keys = file.ReadColumn(group.Index, key.Index);
+            var keys = key.Select(k => file.ReadColumn(group.Index, k.Index)).ToList();
             var columns = fields.Select(f => file.ReadColumn(group.Index, f.Index)).ToList();
             for (var r = 0; r < group.Rows; r++)
             {
-                var k = ParquetFile.Format(keys[r]) ?? "(null)";
+                var k = string.Join(" | ", keys.Select(col => ParquetFile.Format(col[r]) ?? "(null)"));
                 if (!rows.TryAdd(k, [.. columns.Select(col => ParquetFile.Format(col[r]))])) duplicates.Add(k);
             }
         }
@@ -516,40 +498,6 @@ public sealed class ParquetInspectionService(AppDbContext db, ExecutionEvidenceS
     }
 
     // ── Evidence (durable; no row values) ────────────────────────────────────────────────────────────────────────────────
-
-    public async Task<(ParquetInspectionEvidence? Evidence, string? Error)> SaveEvidenceAsync(ParquetEvidenceRequest request, string initiator, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(request.EnvironmentId)) return (null, "Choose the Target Environment the evidence belongs to.");
-        if (Session(request.SessionId) is not { } s) return (null, "The Parquet session has expired; open the file again.");
-        ParquetValidation? validation = null;
-        if (request.Rules is { Rules.Count: > 0 } rules)
-        {
-            var (v, error) = Validate(request.SessionId, rules, ct);
-            if (error is not null) return (null, error);
-            validation = v;
-        }
-        ParquetComparison? comparison = null;
-        if (request.CompareWith is { } other)
-        {
-            var (cmp, error) = Compare(other, request.SessionId, request.KeyColumn, ct);
-            if (error is not null) return (null, error);
-            comparison = cmp;
-        }
-        if (request.LinkedRunId is { } runId)
-        {
-            var run = (await executions.ListAsync(new ExecutionRunQuery(request.EnvironmentId, Take: 500), ct)).FirstOrDefault(r => r.RunId == runId);
-            if (run is null) return (null, "The linked run is not an Execution Evidence run of this environment.");
-        }
-        var evidence = new ParquetInspectionEvidence
-        {
-            EnvironmentId = request.EnvironmentId.Trim(), FileName = s.Overview.FileName, Sha256 = s.Overview.Sha256, SizeBytes = s.Overview.SizeBytes, Rows = s.Overview.Rows,
-            Columns = s.Overview.Columns.Count, SchemaFingerprint = s.Overview.SchemaFingerprint, Validation = validation, Comparison = comparison, LinkedRunId = request.LinkedRunId,
-            Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim()[..Math.Min(500, request.Note.Trim().Length)], SavedAt = Now, SavedBy = initiator,
-        };
-        db.ParquetInspections.Add(new ParquetInspectionRecord { Id = evidence.Id, EnvironmentId = evidence.EnvironmentId, FileName = evidence.FileName, SavedAt = evidence.SavedAt, DocumentJson = JsonSerializer.Serialize(evidence, Json) });
-        await db.SaveChangesAsync(ct);
-        return (evidence, null);
-    }
 
     public async Task<List<ParquetInspectionEvidence>> EvidenceAsync(string environmentId, CancellationToken ct) =>
         (await db.ParquetInspections.AsNoTracking().Where(r => r.EnvironmentId == environmentId).OrderByDescending(r => r.SavedAt).Take(200).ToListAsync(ct))

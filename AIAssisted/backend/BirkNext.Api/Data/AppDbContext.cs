@@ -21,6 +21,7 @@ public class AppDbContext : DbContext
     public DbSet<ExecutionRetentionSettingsRow> ExecutionRetentionSettings => Set<ExecutionRetentionSettingsRow>();
     public DbSet<MessageObservationSetRecord> MessageObservationSets => Set<MessageObservationSetRecord>();
     public DbSet<ParquetInspectionRecord> ParquetInspections => Set<ParquetInspectionRecord>();
+    public DbSet<ParquetRuleSetRecord> ParquetRuleSets => Set<ParquetRuleSetRecord>();
     public DbSet<BlobObservationRecord> BlobObservations => Set<BlobObservationRecord>();
     public DbSet<ImplementationGapEvaluationRecord> ImplementationGapEvaluations => Set<ImplementationGapEvaluationRecord>();
     public DbSet<IntegrationSuiteRecord> IntegrationSuites => Set<IntegrationSuiteRecord>();
@@ -1113,6 +1114,19 @@ public class AppDbContext : DbContext
             entity.Property(r => r.FileName).HasMaxLength(300).IsRequired();
             entity.Property(r => r.DocumentJson).HasColumnType("text").IsRequired();
             entity.HasIndex(r => new { r.EnvironmentId, r.SavedAt });
+        });
+        modelBuilder.Entity<ParquetRuleSetRecord>(entity =>
+        {
+            entity.ToTable("parquet_rule_sets");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.ProjectKey).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.ContractKey).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.ContractVersion).HasMaxLength(100).IsRequired();
+            entity.Property(r => r.Name).HasMaxLength(300).IsRequired();
+            entity.Property(r => r.RulesJson).HasColumnType("text").IsRequired();
+            entity.Property(r => r.ApprovedBy).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.Note).HasMaxLength(1000);
+            entity.HasIndex(r => new { r.ProjectKey, r.ContractKey, r.ContractVersion, r.Version }).IsUnique();
         });
         modelBuilder.Entity<BlobObservationRecord>(entity =>
         {

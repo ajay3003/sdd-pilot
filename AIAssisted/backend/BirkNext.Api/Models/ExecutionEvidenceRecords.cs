@@ -55,6 +55,22 @@ public sealed class ParquetInspectionRecord
     public string DocumentJson { get; set; } = "";
 }
 
+/// <summary>An approved Parquet rule-set version for one project + dataset contract + contract version. Insert only: a new approval is a new
+/// version; earlier versions stay as they were (results saved against them keep their reference).</summary>
+public sealed class ParquetRuleSetRecord
+{
+    public Guid Id { get; init; }
+    public string ProjectKey { get; init; } = "";
+    public string ContractKey { get; init; } = "";
+    public string ContractVersion { get; init; } = "";
+    public int Version { get; init; }
+    public string Name { get; init; } = "";
+    public string RulesJson { get; init; } = "";
+    public string ApprovedBy { get; init; } = "";
+    public DateTimeOffset ApprovedAt { get; init; }
+    public string? Note { get; init; }
+}
+
 /// <summary>One revision of a generated integration suite: a manifest of references (never copies of contracts, tests, data or evidence).</summary>
 public sealed class IntegrationSuiteRecord
 {

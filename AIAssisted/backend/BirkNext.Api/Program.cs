@@ -617,6 +617,10 @@ builder.Services.AddScoped<BirkNext.Api.Services.ExecutionEvidence.ExecutionEvid
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.Messaging.MessageObservationService>();
 // Parquet data explorer: temporary read-only sessions of uploaded files + durable evidence without row values.
 builder.Services.AddScoped<BirkNext.Api.Services.Parquet.ParquetInspectionService>();
+builder.Services.AddScoped<BirkNext.Api.Services.Parquet.Quality.ParquetQualityService>(sp => new BirkNext.Api.Services.Parquet.Quality.ParquetQualityService(
+    sp.GetRequiredService<BirkNext.Api.Data.AppDbContext>(), sp.GetRequiredService<BirkNext.Api.Services.Parquet.ParquetInspectionService>(),
+    sp.GetRequiredService<BirkNext.Api.Services.ExecutionEvidence.ExecutionEvidenceStore>(), sp.GetService<BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider>(),
+    sp.GetService<BirkNext.Api.Services.TestData.TestDataCatalog>()));
 // Read-only Blob Storage explorer: stores configured per environment under "BlobStorage" (none by default); synthetic local stores in Development only.
 builder.Services.Configure<BirkNext.Api.Services.BlobStorage.BlobStorageOptions>(builder.Configuration.GetSection(BirkNext.Api.Services.BlobStorage.BlobStorageOptions.Section));
 builder.Services.AddScoped<BirkNext.Api.Services.BlobStorage.BlobExplorerService>();

@@ -252,12 +252,16 @@ public sealed class ParquetExplorerTests : IDisposable
     {
         var o = await OpenAsync("children_v1.parquet");
         var rules = new ParquetRuleSet { Name = "children", Rules = [new() { Id = "name-required", Kind = ParquetRuleKind.NotNull, Column = "name" }] };
-        (await _service.SaveEvidenceAsync(new ParquetEvidenceRequest(o.SessionId, "env-a", rules, null, null, Guid.NewGuid(), null), "tester", default)).Error.Should().Contain("not an Execution Evidence run");
+        var quality = new BirkNext.Api.Services.Parquet.Quality.ParquetQualityService(_db, _service, new ExecutionEvidenceStore(_db));
+        (await quality.SaveEvidenceAsync(new ParquetEvidenceRequest(o.SessionId, "env-a", rules, null, null, Guid.NewGuid(), null), "tester", default)).Error.Should().Contain("does not exist in Execution Evidence");
         var run = Guid.NewGuid();
         await new ExecutionEvidenceStore(_db).CreateAsync(new ExecutionRunSummary { RunId = run, Name = "produce children", EnvironmentId = "env-a", StartedAt = DateTimeOffset.UtcNow, State = ExecutionState.Passed }, [], default);
-        var (evidence, error) = await _service.SaveEvidenceAsync(new ParquetEvidenceRequest(o.SessionId, "env-a", rules, null, null, run, "nightly export"), "tester", default);
+        (await quality.SaveEvidenceAsync(new ParquetEvidenceRequest(o.SessionId, "env-a", rules, null, null, run, "nightly export"), "tester", default)).Error
+            .Should().Contain("manual, unverified", "an existing but unrelated run is never accepted as proof");
+        var (evidence, error) = await quality.SaveEvidenceAsync(new ParquetEvidenceRequest(o.SessionId, "env-a", rules, null, null, run, "nightly export") { ManualLink = true, ManualReason = "exported by the nightly job" }, "tester", default);
         error.Should().BeNull();
-        evidence!.Should().Match<ParquetInspectionEvidence>(e => e.Rows == 1000 && e.SchemaFingerprint == o.SchemaFingerprint && e.LinkedRunId == run && e.Validation!.Results[0].Outcome == ParquetRuleOutcome.Fail);
+        evidence!.Should().Match<ParquetInspectionEvidence>(e => e.Rows == 1000 && e.SchemaFingerprint == o.SchemaFingerprint && e.LinkedRunId == run && e.Validation!.Results[0].Outcome == ParquetRuleOutcome.Fail
+            && e.Correlation!.Level == CorrelationLevel.ManualUnverified);
         var stored = (await _db.ParquetInspections.SingleAsync()).DocumentJson;
         stored.Should().NotContain("Synthetic child").And.NotContain("ACTIVE");
         _service.Close(o.SessionId);

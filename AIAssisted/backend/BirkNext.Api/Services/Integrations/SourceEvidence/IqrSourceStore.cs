@@ -294,6 +294,27 @@ public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? log
                 contractBytes += bytesCount;
                 contractCount++;
             }
+            // Parquet dataset contracts (Markdown with a Parquet column table) and the documents that state renames of their versions, retained as
+            // contract documents so Parquet Quality Review validates against this snapshot's exact text. Bounded like the other documents.
+            const int maxDatasetDocuments = 40;
+            const long maxDatasetBytes = 4L * 1024 * 1024;
+            var markdown = (workspace.DocumentationCandidates ?? []).Concat(workspace.DocumentFiles ?? [])
+                .Where(f => f.Path.EndsWith(".md", StringComparison.OrdinalIgnoreCase)).DistinctBy(f => f.Path.Replace('\\', '/')).OrderBy(f => f.Path, StringComparer.Ordinal).ToList();
+            var datasetDocuments = markdown.Where(f => BirkNext.Api.Services.Parquet.Quality.DatasetContractParser.LooksLikeDatasetContract(f.Content)).Take(maxDatasetDocuments / 2).ToList();
+            var versions = datasetDocuments.SelectMany(d => BirkNext.Api.Services.Parquet.Quality.DatasetContractParser.Parse(d.Path, d.Content, "").Select(c => c.Version)).Where(v => v.Length > 0).Distinct().ToList();
+            var relatedDocuments = markdown.Where(f => !datasetDocuments.Contains(f) && versions.Any(v => BirkNext.Api.Services.Parquet.Quality.DatasetContractParser.MentionsVersionChange(f.Content, v))).Take(maxDatasetDocuments / 2);
+            long datasetBytes = 0;
+            foreach (var file in datasetDocuments.Concat(relatedDocuments))
+            {
+                var bytesCount = Encoding.UTF8.GetByteCount(file.Content);
+                if (bytesCount > IqrSourceArchiveReader.MaxFileBytes || datasetBytes + bytesCount > maxDatasetBytes || contractPaths.Contains(file.Path.Replace('\\', '/'))) continue;
+                db.SourceContractDocuments.Add(new SourceContractDocumentRecord
+                {
+                    Id = Guid.NewGuid(), SnapshotId = snapshot.Id, Path = file.Path.Replace('\\', '/'), Text = file.Content, CapturedAt = snapshot.AnalyzedAt,
+                    Sha256 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(file.Content))).ToLowerInvariant(),
+                });
+                datasetBytes += bytesCount;
+            }
         }
         try { await db.SaveChangesAsync(ct); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
