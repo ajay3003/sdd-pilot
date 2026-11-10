@@ -17,6 +17,25 @@
     <PageHeader Title="Contract Testing" Description="Import the API contracts Source Analysis found, generate tests and synthetic test data in one step, check what is ready and run it. What was sent and received is saved in Execution Results." />
     <p class="ct-back"><a href="api-quality-review">← API Quality Review</a> · <a href="execution-results">Execution Results</a> · <a href="test-data">Test Data</a> · <a href="integration-suites" data-testid="ct-suites-link">Integration suites</a></p>
 
+    <nav class="ct-workspace" aria-label="Contract Testing workspace" data-testid="ct-workspace">
+        @if (_projects is { Count: > 0 } projects)
+        {
+            <label class="ct-inline ct-project">Project
+                <select class="form-control" data-testid="ct-project" value="@(Project ?? "")" @onchange="e => Go(WorkspaceLink(ContractKey is null ? Mode : null, e.Value?.ToString()))">
+                    <option value="">All projects</option>
+                    @foreach (var p in projects) { <option value="@p.Key">@p.DisplayName · @p.Contracts contract(s)</option> }
+                </select>
+            </label>
+        }
+        <span class="ct-modes" aria-label="Workspace">
+            @foreach (var (key, label) in Modes)
+            {
+                var on = ShowWorkspace && Mode == key;
+                <a class="ct-mode @(on ? "ct-mode-on" : null)" aria-current="@(on ? "page" : null)" href="@WorkspaceLink(key, Project)" data-testid="ct-mode-@key">@label</a>
+            }
+        </span>
+    </nav>
+
     @if (_contracts is { Count: > 0 } all)
     {
         <dl class="ct-stats" data-testid="ct-stats">
@@ -72,7 +91,8 @@
                             {
                                 <li class="@(c.Key == ContractKey ? "ct-selected" : null)"><a href="@Link(contract: c.Key, version: null, view: "operations", test: null)" data-testid="ct-contract-link" aria-current="@(c.Key == ContractKey ? "page" : null)">@c.Name</a>
                                     <span class="ct-muted">@(c.Protocol == ApiContractProtocol.GraphQl ? "GraphQL" : "REST") · v@(c.LatestVersion) · @c.OperationCount operations · @c.TestCount tests</span>
-                                    @if (c.Lifecycle != ContractLifecycle.Active) { <span class="ct-pill" data-testid="ct-contract-lifecycle">@c.Lifecycle</span> }</li>
+                                    @if (c.Lifecycle != ContractLifecycle.Active) { <span class="ct-pill" data-testid="ct-contract-lifecycle">@c.Lifecycle</span> }
+                                    @if (c.IdentityState == "NeedsReview") { <span class="ct-pill ct-src-changed" data-testid="ct-contract-identity">identity needs review</span> }</li>
                             }
                         </ul>
                     }
@@ -81,6 +101,8 @@
         </aside>
 
         <main class="ct-main">
+            @if (ShowWorkspace && Mode == "configure") { @ConfigureView() }
+            else if (ShowWorkspace && Mode == "coverage") { @ProjectCoverageView() }
             @if (ShowImport)
             {
             <section class="ct-card" aria-labelledby="ct-import-h" data-testid="ct-import">
@@ -148,6 +170,7 @@
                         <a href="@SuiteLink(info)" data-testid="ct-suite-handoff">Build an integration suite →</a>
                     </div>
                     @if (info?.Limitations is { Count: > 0 } limits) { <p class="ct-muted" data-testid="ct-limitations">@string.Join(" ", limits)</p> }
+                    @if (d.Contract.IdentityState == "NeedsReview") { @IdentityBanner(d) }
                     @if (d.Contract.Lifecycle == ContractLifecycle.Archived) { <p class="ct-error" data-testid="ct-archived">Archived: read-only. Versions, tests and results are kept; nothing can be imported, generated or run until it is made active again.</p> }
                     else if (d.Contract.Lifecycle == ContractLifecycle.Deprecated) { <p class="ct-message" data-testid="ct-deprecated">Deprecated: tests still run, with a readiness warning.</p> }
                     <ContractEndpointPanel ContractKey="@d.Contract.Key" Protocol="@d.Contract.Protocol" EnvironmentId="@_environment?.EnvironmentId" Changed="ReloadAsync" />
@@ -181,8 +204,27 @@
     [SupplyParameterFromQuery(Name = "import")] public bool? ImportQuery { get; set; }
 
     /// <summary>The import panel: always when no contract is open (also the empty start), or on request next to an open contract.</summary>
-    private bool ShowImport => ContractKey is null || ImportQuery == true;
-    private string ImportLink => "api-quality-review/contracts?import=true";
+    [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "project")] public string? Project { get; set; }
+    [SupplyParameterFromQuery(Name = "keys")] public string? KeysQuery { get; set; }
+
+    private static readonly (string Key, string Label)[] Modes = [("import", "Import"), ("configure", "Configure environment"), ("coverage", "Project coverage")];
+    /// <summary>The workspace (import, bulk configuration, project coverage) shows when no contract is open, or on request next to one.</summary>
+    private bool ShowWorkspace => ContractKey is null || ImportQuery == true || ModeQuery is not null;
+    private string Mode => ModeQuery is "configure" or "coverage" ? ModeQuery : "import";
+    private bool ShowImport => ShowWorkspace && Mode == "import";
+    private string ImportLink => WorkspaceLink("import", Project);
+    private IReadOnlyList<ContractProject>? _projects;
+    /// <summary>The selected project, or the only one there is.</summary>
+    private string? EffectiveProject => Project ?? _keysProject ?? (_projects is { Count: 1 } one ? one[0].Key : null);
+    /// <summary>The project of the contracts a hand-off preselected (Integration Suite → Resolve environment blockers).</summary>
+    private string? _keysProject;
+
+    private static string WorkspaceLink(string? mode, string? project) =>
+        "api-quality-review/contracts" + (mode is null && string.IsNullOrEmpty(project) ? "" : "?" + string.Join('&', new[]
+        {
+            mode is null ? null : $"mode={mode}", string.IsNullOrEmpty(project) ? null : $"project={Uri.EscapeDataString(project)}",
+        }.Where(x => x is not null)));
     private string _contractFilter = "", _sourceFilter = "", _sourceState = "all", _testFilter = "", _testState = "all", _opFilter = "";
     private bool _bulkGenerate = true, _breakingOnly;
     private readonly HashSet<string> _sourceSelected = [];
@@ -216,6 +258,13 @@
         SourceContractCandidateState.New => "New",
         SourceContractCandidateState.Changed => $"Changed → v{(c.ContractVersion ?? 0) + 1} of {c.ContractKey}",
         SourceContractCandidateState.Archived => $"Archived ({c.ContractKey})",
+        SourceContractCandidateState.Moved => $"Moved: same document as {c.ContractKey}",
+        SourceContractCandidateState.NeedsReview => c.Identity switch
+        {
+            ContractIdentityClassification.MovedChanged => "Possibly moved and changed: review",
+            ContractIdentityClassification.Ambiguous => "Several possible matches: review",
+            _ => "Possible match: review",
+        },
         _ => c.ImportedAs is { } done ? $"Up to date ({done})" : "Up to date",
     };
 
@@ -245,8 +294,8 @@
         _message = $"{result.Imported} contract(s) imported or updated, {result.Unchanged} unchanged, {result.Failed} failed."
             + (_bulkGenerate ? $" {tests} test(s) generated; test data bound automatically for {bound} operation(s), {review} need a value or a review." : " Tests were not generated.")
             + " Nothing was sent to any API.";
-        (_contracts, _) = await api.ContractsAsync();
-        (_sourceContracts, _) = await api.SourceContractsAsync();
+        (_contracts, _) = await api.ProjectContractsAsync(Project);
+        (_sourceContracts, _) = await api.ProjectSourceContractsAsync(Project);
     }
 
     private RenderFragment SourceImport() => __builder =>
@@ -296,6 +345,7 @@
                                 <span class="ct-muted">@SourceFacts(c)@(c.HasDocument ? "" : " · structural validation only")</span>
                                 @if (!actionable && c.ImportedAs is { } done) { <span class="ct-muted" data-testid="ct-source-imported">Imported as @done</span> }
                                 else if (actionable) { <button class="btn btn-link btn-sm" data-testid="ct-source-import" disabled="@_busy" @onclick="() => ImportSourceAsync(c)">Import only this one</button> }
+                                @if (c.State == SourceContractCandidateState.NeedsReview) { @IdentityReview(c) }
                             </li>
                         }
                     </ul>
@@ -312,7 +362,7 @@
     };
 
     /// <summary>Importable: not in the registry yet, or changed since its latest version (and not already imported from this very snapshot).</summary>
-    private static bool Actionable(SourceContractCandidate c) => c.ImportedAs is null && c.State is SourceContractCandidateState.New or SourceContractCandidateState.Changed;
+    private static bool Actionable(SourceContractCandidate c) => c.ImportedAs is null && c.State is SourceContractCandidateState.New or SourceContractCandidateState.Changed or SourceContractCandidateState.Moved;
 
     private static int selectableCount(IEnumerable<SourceContractCandidate> list) => list.Count(Actionable);
 
@@ -411,8 +461,12 @@
     {
         _loading = true; _error = null;
         if (Api is not { } api) { _error = "Contract Testing is not available in this host."; _loading = false; return; }
-        (_contracts, _error) = await api.ContractsAsync();
-        if (ShowImport && _importFromSource && _sourceContracts is null) { (_sourceContracts, var sourceError) = await api.SourceContractsAsync(); _error ??= sourceError; }
+        if (_projects is null) (_projects, _) = await api.ProjectsAsync();
+        (_contracts, _error) = await api.ProjectContractsAsync(Project);
+        if (ShowImport && _importFromSource && (_sourceContracts is null || _sourceProject != Project))
+        { (_sourceContracts, var sourceError) = await api.ProjectSourceContractsAsync(Project); _sourceProject = Project; _error ??= sourceError; }
+        if (ShowWorkspace && Mode == "configure") PrepareConfigure();
+        if (ShowWorkspace && Mode == "coverage" && EffectiveProject is { } coverageProject) (_projectCoverage, _error) = await api.ProjectCoverageAsync(coverageProject, _environment);
         _detail = null; _tests = null; _options = null; _diff = null; _coverage = null; _retention = null;
         if (ContractKey is { } key && _error is null)
         {
@@ -448,6 +502,7 @@
         if (w is not null) q.Add($"view={w}");
         if (test is not null) q.Add($"test={test}");
         if (from is not null) q.Add($"from={from}");
+        if (!string.IsNullOrEmpty(Project)) q.Add($"project={Uri.EscapeDataString(Project)}");
         return "api-quality-review/contracts" + (q.Count > 0 ? "?" + string.Join('&', q) : "");
     }
 
@@ -500,7 +555,8 @@
     {
         _importFromSource = true; _importByUrl = false; _sourceContracts = null;
         if (Api is not { } api) return;
-        (_sourceContracts, _error) = await api.SourceContractsAsync();
+        (_sourceContracts, _error) = await api.ProjectSourceContractsAsync(Project);
+        _sourceProject = Project;
     }
 
     /// <summary>Imports a contract Source Analysis already holds (no re-upload), as a new contract or the selected contract's next version.</summary>
@@ -833,6 +889,8 @@
     {
         public Guid? Id { get; init; }
         public int? Revision { get; init; }
+        public ContractChainState State { get; init; }
+        public string? SuggestionId { get; init; }
         public string Name { get; set; } = "";
         public List<StepEdit> Steps { get; } = [];
     }
@@ -842,7 +900,7 @@
     private void EditChain(ContractTestChain chain)
     {
         _chainProblems = [];
-        _chainEdit = new() { Id = chain.Id, Revision = chain.Revision, Name = chain.Name };
+        _chainEdit = new() { Id = chain.Id, Revision = chain.Revision, Name = chain.Name, State = chain.State, SuggestionId = chain.SuggestionId };
         foreach (var s in chain.Steps)
         {
             var step = new StepEdit { StepId = s.StepId, TestId = s.TestId, RowId = s.RowId ?? "" };
@@ -858,7 +916,7 @@
         _busy = true; _error = null; _message = null;
         var save = new ContractChainSave
         {
-            Name = edit.Name, ExpectedRevision = edit.Revision,
+            Name = edit.Name, ExpectedRevision = edit.Revision, State = edit.State, SuggestionId = edit.SuggestionId,
             Steps = [.. edit.Steps.Select(s => new ContractChainStep
             {
                 StepId = s.StepId.Trim(), TestId = s.TestId ?? Guid.Empty, RowId = string.IsNullOrWhiteSpace(s.RowId) ? null : s.RowId.Trim(),
@@ -932,13 +990,14 @@
                         <tbody>
                             @foreach (var c in chains)
                             {
-                                <tr data-testid="ct-chain-row">
-                                    <td>@c.Name</td>
+                                <tr data-testid="ct-chain-row" data-state="@c.State">
+                                    <td>@c.Name @if (c.State == ContractChainState.Draft) { <span class="ct-pill ct-src-changed" data-testid="ct-chain-draft">Draft</span> }</td>
                                     <td>@string.Join(" → ", c.Steps.Select(s => s.StepId))</td>
                                     <td data-testid="ct-chain-readiness">@ChainReadiness(c)</td>
                                     <td>r@(c.Revision)</td>
                                     <td class="ct-actions">
-                                        <button class="btn btn-primary" data-testid="ct-chain-run" disabled="@(_busy || _environment is null)" @onclick="() => RunChainAsync(c)">Run</button>
+                                        @if (c.State == ContractChainState.Draft) { <button class="btn btn-secondary" data-testid="ct-chain-approve" disabled="@_busy" @onclick="() => ApproveChainAsync(c)">Approve</button> }
+                                        <button class="btn btn-primary" data-testid="ct-chain-run" disabled="@(_busy || _environment is null || c.State == ContractChainState.Draft)" title="@(c.State == ContractChainState.Draft ? "A draft runs only after approval" : null)" @onclick="() => RunChainAsync(c)">Run</button>
                                         <button class="btn btn-secondary" data-testid="ct-chain-edit" @onclick="() => EditChain(c)">Edit</button>
                                         <button class="btn btn-secondary" data-testid="ct-chain-delete" disabled="@_busy" @onclick="() => DeleteChainAsync(c)">Delete</button>
                                     </td>
@@ -949,8 +1008,12 @@
                 </div>
             }
             else { <p class="ct-muted" data-testid="ct-chains-empty">No chains yet.</p> }
-            @if (_chainEdit is null) { <button class="btn btn-secondary" data-testid="ct-chain-new" disabled="@(_tests is not { Count: > 0 })" @onclick="NewChain">New chain</button> }
-            else { @ChainEditor(_chainEdit) }
+            <div class="ct-row ct-runbar">
+                @if (_chainEdit is null) { <button class="btn btn-secondary" data-testid="ct-chain-new" disabled="@(_tests is not { Count: > 0 })" @onclick="NewChain">New chain</button> }
+                <button class="btn btn-secondary" data-testid="ct-chain-suggest" disabled="@_busy" @onclick="() => SuggestChainsAsync(d.Contract.Key)">Suggest chains</button>
+            </div>
+            @if (_chainEdit is not null) { @ChainEditor(_chainEdit) }
+            @if (_suggestions is { } suggestions) { @Suggestions(d.Contract.Key, suggestions) }
         </section>
     };
 
@@ -1376,4 +1439,352 @@
 
     private static string ChangeSeverity(ContractChangeClass c) => c is ContractChangeClass.OperationAdded or ContractChangeClass.FieldAddedOptional or ContractChangeClass.TypeAdded
         or ContractChangeClass.EnumValueAdded or ContractChangeClass.ParameterAddedOptional or ContractChangeClass.None ? "Compatible" : "Potentially breaking";
+}
+
+@code {
+    // ── Identity review (moved / renamed contracts) ─────────────────────────────────────────────────────────────────────────
+    private string? _sourceProject;
+
+    private RenderFragment IdentityReview(SourceContractCandidate c) => @<div class="ct-review" data-testid="ct-identity-review">
+        <p class="ct-muted">This file may continue an existing contract of the project. Nothing is imported until you decide; the decision is recorded.</p>
+        <ul class="ct-checks">
+            @foreach (var x in c.Candidates)
+            {
+                <li data-testid="ct-identity-candidate" data-key="@x.Key">
+                    <strong>@x.Name</strong> <code>@($"{x.Key}@v{x.LatestVersion}")</code> <span class="ct-muted">@x.SharedOperations/@x.SourceOperations operations shared@(x.SameDocument ? " · identical document" : "")</span>
+                    <div class="ct-muted">@string.Join(" · ", x.Evidence)</div>
+                    <span class="ct-actions">
+                        <button class="btn btn-secondary btn-sm" data-testid="ct-identity-confirm" disabled="@_busy" @onclick="() => DecideAsync(c, x.Key, true)">Continue @x.Key</button>
+                        <button class="btn btn-link btn-sm" data-testid="ct-identity-reject" disabled="@_busy" @onclick="() => DecideAsync(c, x.Key, false)">Not this one</button>
+                    </span>
+                </li>
+            }
+        </ul>
+        <button class="btn btn-link btn-sm" data-testid="ct-identity-new" disabled="@_busy" @onclick="() => DecideAsync(c, null, false)">Import as a new contract</button>
+    </div>;
+
+    private async Task DecideAsync(SourceContractCandidate c, string? target, bool confirm)
+    {
+        if (Api is not { } api) return;
+        _busy = true; _error = null; _message = null;
+        var (result, error) = await api.DecideIdentityAsync(new ContractIdentityDecisionRequest(c.SnapshotId, c.ContractId, target, confirm));
+        _busy = false;
+        if (result is null) { _error = error; return; }
+        _message = result.Message + " The decision was recorded.";
+        (_sourceContracts, _) = await api.ProjectSourceContractsAsync(Project);
+        (_contracts, _) = await api.ProjectContractsAsync(Project);
+    }
+
+    private string? _assignProject;
+
+    private RenderFragment IdentityBanner(ApiContractDetail d) => @<div class="ct-review" data-testid="ct-identity-banner">
+        <strong>Identity needs review.</strong> This contract was stored before contracts were scoped to projects, and its versions point to different projects (or to
+        snapshots that no longer exist). It is not continued automatically until you assign its project.
+        @if (_projects is { Count: > 0 } projects)
+        {
+            <span class="ct-inline">
+                <select class="form-control" aria-label="Project" data-testid="ct-assign-project" @bind="_assignProject">
+                    <option value="">Choose…</option>
+                    @foreach (var k in projects.SelectMany(p => p.Keys).Distinct()) { <option value="@k">@k</option> }
+                </select>
+                <button class="btn btn-secondary btn-sm" data-testid="ct-assign-project-save" disabled="@(_busy || string.IsNullOrEmpty(_assignProject))" @onclick="() => AssignProjectAsync(d.Contract.Key)">Assign project</button>
+            </span>
+        }
+    </div>;
+
+    private async Task AssignProjectAsync(string key)
+    {
+        if (Api is not { } api || string.IsNullOrEmpty(_assignProject)) return;
+        _busy = true; _error = await api.AssignProjectAsync(key, _assignProject); _busy = false;
+        if (_error is null) { _message = $"Project {_assignProject} assigned; the decision was recorded."; await ReloadAsync(); }
+    }
+
+    // ── Bulk environment configuration ─────────────────────────────────────────────────────────────────────────────────────
+    private readonly HashSet<string> _configureSelected = new(StringComparer.Ordinal);
+    private ExecutionAuthenticationKind _bulkAuth;
+    private BulkBasePathMode _bulkMode = BulkBasePathMode.KeepExisting;
+    private string? _bulkPath, _bulkGraphQl, _configureFilter = "";
+    private bool _confirmEnvironment;
+    private BulkBindingPreview? _bindingPreview;
+    private BulkBindingApplyResult? _bindingResult;
+    private readonly HashSet<string> _applyRows = new(StringComparer.Ordinal), _confirmRows = new(StringComparer.Ordinal);
+    private bool _configurePrepared;
+
+    private void PrepareConfigure()
+    {
+        if (_configurePrepared) return;
+        _configurePrepared = true;
+        foreach (var k in (KeysQuery ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)) _configureSelected.Add(k);
+        _keysProject = _contracts?.Where(c => _configureSelected.Contains(c.Key)).Select(c => c.ProjectKey).FirstOrDefault(k => k is not null);
+    }
+
+    private void SelectShown(IEnumerable<ApiContractSummary> shown) { foreach (var c in shown) _configureSelected.Add(c.Key); }
+
+    private void ToggleConfigure(string key, bool on) { if (on) _configureSelected.Add(key); else _configureSelected.Remove(key); }
+    private void ToggleSet(HashSet<string> set, string key, bool on) { if (on) set.Add(key); else set.Remove(key); }
+
+    private RenderFragment ConfigureView() => __builder =>
+    {
+        <section class="ct-card" aria-labelledby="ct-configure-h" data-testid="ct-configure">
+            <h2 id="ct-configure-h">Configure environment for selected contracts</h2>
+            @if (_environment is null)
+            {
+                <p class="ct-muted" data-testid="ct-configure-noenv">Select an approved Target Environment first (the environment selector of BirkNext); its origin stays authoritative and is never taken from a contract.</p>
+            }
+            else if (EffectiveProject is null)
+            {
+                <p class="ct-muted" data-testid="ct-configure-noproject">Choose the project above: contracts are configured one project at a time.</p>
+            }
+            else
+            {
+                var candidates = (_contracts ?? []).Where(c => c.ProjectKey is not null && Matches(_configureFilter ?? "", c.Name, c.Key, c.Module)).ToList();
+                <p class="ct-muted">Environment <strong>@_environmentName</strong> <span class="ct-pill">@_environment.EnvironmentType</span> <code>@_environment.TargetUrl</code>. Preview first: nothing is saved or sent until you apply the rows you approve.</p>
+                <div class="ct-filterbar">
+                    <input type="search" class="form-control ct-search" placeholder="Search contracts or modules" aria-label="Search contracts" data-testid="ct-configure-search" @bind="_configureFilter" @bind:event="oninput" />
+                    <button class="btn btn-link btn-sm" data-testid="ct-configure-all" @onclick="() => SelectShown(candidates)">Select all shown</button>
+                    <button class="btn btn-link btn-sm" @onclick="() => _configureSelected.Clear()">Clear</button>
+                </div>
+                <div class="ct-groups">
+                    @foreach (var group in candidates.GroupBy(c => c.Module ?? "(no module)"))
+                    {
+                        <details class="ct-group" open="@(candidates.Count <= 40)">
+                            <summary><strong>@group.Key</strong> <span class="ct-muted">@group.Count() contract(s)</span></summary>
+                            <ul class="ct-list">
+                                @foreach (var c in group)
+                                {
+                                    <li><label class="ct-inline"><input type="checkbox" data-testid="ct-configure-select" data-key="@c.Key" checked="@_configureSelected.Contains(c.Key)"
+                                        @onchange="e => ToggleConfigure(c.Key, e.Value is true)" /> @c.Name <span class="ct-muted">@(c.Protocol == ApiContractProtocol.GraphQl ? "GraphQL" : "REST")</span></label></li>
+                                }
+                            </ul>
+                        </details>
+                    }
+                </div>
+                <div class="ct-form-row">
+                    <label class="ct-inline">Authentication
+                        <select class="form-control" data-testid="ct-configure-auth" @bind="_bulkAuth">
+                            <option value="@ExecutionAuthenticationKind.None">None (anonymous)</option>
+                            <option value="@ExecutionAuthenticationKind.AttendedSession">Attended session (your sign-in)</option>
+                            <option value="@ExecutionAuthenticationKind.ClientCredentials">Client credentials (environment credential)</option>
+                            <option value="@ExecutionAuthenticationKind.ApiKey">API key (environment credential)</option>
+                        </select>
+                    </label>
+                    <label class="ct-inline">Base path
+                        <select class="form-control" data-testid="ct-configure-mode" @bind="_bulkMode">
+                            <option value="@BulkBasePathMode.KeepExisting">Keep saved, else the single declared server path</option>
+                            <option value="@BulkBasePathMode.FromContractServers">From each contract's declared servers</option>
+                            <option value="@BulkBasePathMode.Explicit">One path for all</option>
+                        </select>
+                    </label>
+                    @if (_bulkMode == BulkBasePathMode.Explicit) { <input class="form-control ct-narrow" placeholder="/api" aria-label="Base path" data-testid="ct-configure-path" @bind="_bulkPath" @bind:event="oninput" /> }
+                    <input class="form-control ct-narrow" placeholder="/graphql" aria-label="GraphQL endpoint path (GraphQL contracts)" data-testid="ct-configure-graphql" @bind="_bulkGraphQl" @bind:event="oninput" />
+                    <button class="btn btn-primary" data-testid="ct-configure-preview" disabled="@(_busy || _configureSelected.Count == 0)" @onclick="PreviewBindingsAsync">Preview (@_configureSelected.Count)</button>
+                </div>
+                @if (_bindingPreview is { } preview) { @BindingPreview(preview) }
+                @if (_bindingResult is { } applied)
+                {
+                    <ul class="ct-checks" data-testid="ct-configure-result">
+                        @foreach (var r in applied.Rows) { <li data-testid="ct-configure-result-row" data-status="@r.Status"><strong>@r.Key</strong> <span class="ct-pill">@r.Status</span> <span class="ct-muted">@r.Message</span></li> }
+                    </ul>
+                }
+            }
+        </section>
+    };
+
+    private RenderFragment BindingPreview(BulkBindingPreview p) => @<div class="ct-scroll" data-testid="ct-configure-preview-table">
+        @if (!p.EnvironmentAllowed) { <p class="ct-error" data-testid="ct-configure-env-refused">@p.EnvironmentProblem</p> }
+        <table class="ct-table">
+            <caption class="visually-hidden">Proposed bindings</caption>
+            <thead><tr><th scope="col">Apply</th><th scope="col">Contract</th><th scope="col">Endpoint</th><th scope="col">Saved</th><th scope="col">Proposed</th><th scope="col">Authentication</th><th scope="col">Status</th></tr></thead>
+            <tbody>@foreach (var r in p.Rows)
+            {
+                var canApply = r.Status is BulkBindingStatus.Applicable or BulkBindingStatus.NeedsReview;
+                <tr data-testid="ct-configure-row" data-key="@r.Key" data-status="@r.Status">
+                    <td>@if (canApply) { <input type="checkbox" aria-label="@($"Apply {r.Name}")" data-testid="ct-configure-apply-row" checked="@_applyRows.Contains(r.Key)"
+                            @onchange="e => ToggleSet(_applyRows, r.Key, e.Value is true)" />
+                        @if (r.Status == BulkBindingStatus.NeedsReview) { <label class="ct-inline ct-muted"><input type="checkbox" data-testid="ct-configure-confirm-row" checked="@_confirmRows.Contains(r.Key)"
+                            @onchange="e => ToggleSet(_confirmRows, r.Key, e.Value is true)" /> reviewed</label> } }</td>
+                    <th scope="row">@r.Name<div class="ct-muted">@(r.Module ?? "")</div></th>
+                    <td><span class="ct-pill">@r.Endpoint</span>@foreach (var c in r.Candidates) { <div class="ct-muted">@c.BasePath · @c.Source</div> }</td>
+                    <td>@(r.Existing is { } e ? $"{e.BasePath ?? e.GraphQlPath ?? "root"} · {e.Authentication}" : "none")</td>
+                    <td>@(r.Protocol == ApiContractProtocol.GraphQl ? r.ProposedGraphQlPath ?? "/graphql" : r.ProposedBasePath ?? "environment root")</td>
+                    <td>@r.ProposedAuthentication<div class="ct-muted">@(r.RequiredSchemes.Count == 0 ? "no declared security" : "requires " + string.Join(", ", r.RequiredSchemes)) · @r.Credential</div></td>
+                    <td><span class="ct-state ct-bind-@r.Status.ToString().ToLowerInvariant()">@r.Status</span>@foreach (var why in r.Reasons) { <div class="ct-muted">@why</div> }</td>
+                </tr>
+            }</tbody>
+        </table>
+        <ul class="ct-checks ct-muted">@foreach (var l in p.Limitations) { <li>@l</li> }</ul>
+        <div class="ct-row ct-runbar">
+            <label class="ct-inline"><input type="checkbox" data-testid="ct-configure-confirm-env" @bind="_confirmEnvironment" /> I confirm <strong>@_environmentName</strong> (@p.EnvironmentType, @p.TargetOrigin) is the approved environment for these bindings</label>
+            <button class="btn btn-primary" data-testid="ct-configure-apply" disabled="@(_busy || !_confirmEnvironment || _applyRows.Count == 0)" @onclick="() => ApplyBindingsAsync(p)">Apply approved (@_applyRows.Count)</button>
+        </div>
+    </div>;
+
+    private BulkBindingRequest BindingRequest() => new()
+    {
+        ProjectKey = EffectiveProject ?? "", Environment = _environment!, ContractKeys = [.. _configureSelected], Authentication = _bulkAuth, BasePathMode = _bulkMode,
+        BasePath = string.IsNullOrWhiteSpace(_bulkPath) ? null : _bulkPath.Trim(), GraphQlPath = string.IsNullOrWhiteSpace(_bulkGraphQl) ? null : _bulkGraphQl.Trim(),
+    };
+
+    private async Task PreviewBindingsAsync()
+    {
+        if (Api is not { } api || _environment is null) return;
+        _busy = true; _error = null; _bindingResult = null; _applyRows.Clear(); _confirmRows.Clear(); _confirmEnvironment = false;
+        (_bindingPreview, _error) = await api.PreviewBindingsAsync(BindingRequest());
+        foreach (var r in _bindingPreview?.Rows.Where(r => r.Status == BulkBindingStatus.Applicable) ?? []) _applyRows.Add(r.Key);
+        _busy = false;
+    }
+
+    private async Task ApplyBindingsAsync(BulkBindingPreview preview)
+    {
+        if (Api is not { } api || _environment is null) return;
+        _busy = true; _error = null;
+        var items = preview.Rows.Where(r => _applyRows.Contains(r.Key)).Select(r => new BulkBindingApplyItem(r.Key,
+            r.Protocol == ApiContractProtocol.Rest ? r.ProposedBasePath : null, r.ProposedGraphQlPath, r.ProposedAuthentication, r.Existing?.UpdatedAt, _confirmRows.Contains(r.Key))).ToList();
+        (_bindingResult, _error) = await api.ApplyBindingsAsync(new BulkBindingApplyRequest { ProjectKey = EffectiveProject ?? "", Environment = _environment, ConfirmEnvironment = _confirmEnvironment, Items = items });
+        _busy = false;
+        if (_bindingResult is { } r) _message = $"{r.Applied} binding(s) applied, {r.NotApplied} not applied (see each row). Nothing was sent to any API.";
+        _bindingPreview = null; _applyRows.Clear(); _confirmRows.Clear(); _confirmEnvironment = false;
+    }
+
+    // ── Project coverage ───────────────────────────────────────────────────────────────────────────────────────────────────
+    private ProjectCoverageReport? _projectCoverage;
+    private string _coverageFilter = "all", _coverageSearch = "", _coverageModule = "";
+
+    private static string Value(ProjectCoverageTotal? t) => t is null || !t.Assessed ? "NOT ASSESSED" : $"{t.Numerator} / {t.Denominator}";
+    private static double Pct(ProjectCoverageTotal? t) => t is { Assessed: true, Denominator: > 0 } ? 100.0 * t.Numerator / t.Denominator : 0;
+    private static ContractCoverageMetric? M(ProjectCoverageContract c, string id) => c.Coverage.Metrics.FirstOrDefault(m => m.Id == id);
+    private static string Short(ContractCoverageMetric? m) => m is null || !m.Assessed ? "not assessed" : $"{m.Numerator}/{m.Denominator}";
+
+    private static readonly (string Id, string Label)[] CoverageKpis =
+        [("operations-with-tests", "Test definitions"), ("operations-executed", "Executed"), ("operations-verified", "Verified"), ("operations-with-negative-tests", "Negative tests"), ("documented-responses-observed", "Response codes observed")];
+
+    private bool CoverageVisible(ProjectCoverageContract c) =>
+        Matches(_coverageSearch, c.Name, c.Key) && (_coverageModule.Length == 0 || (c.Module ?? "(no module)") == _coverageModule) && _coverageFilter switch
+        {
+            "missing-tests" => M(c, "operations-with-tests") is { } t && t.Numerator < t.Denominator,
+            "not-executed" => M(c, "operations-executed") is { } e && e.Numerator < e.Denominator,
+            "failed" => c.Coverage.AssertionsFailed > 0 || (M(c, "operations-executed") is { Numerator: > 0 } ex && M(c, "operations-passing") is { } pa && pa.Numerator < ex.Numerator),
+            "changed" => c.TestsOnOlderVersions > 0 || c.History.Count > 0,
+            "blocked" => c.BlockedTests > 0,
+            _ => true,
+        };
+
+    private RenderFragment ProjectCoverageView() => __builder =>
+    {
+        <section class="ct-card" aria-labelledby="ct-pcov-h" data-testid="ct-project-coverage">
+            <h2 id="ct-pcov-h">Project coverage</h2>
+            @if (EffectiveProject is null) { <p class="ct-muted" data-testid="ct-pcov-noproject">Choose a project above.</p> }
+            else if (_projectCoverage is not { } r) { <p class="ct-muted">@(_loading ? "Loading…" : "No coverage available for this project.")</p> }
+            else
+            {
+                var totals = r.Totals.ToDictionary(t => t.Id);
+                <p class="ct-muted">@r.DisplayName · @r.Contracts.Count contract(s), each counted once at its latest version. Definition is what is prepared; execution and verification come only from documented runs. Nothing executed shows NOT ASSESSED.</p>
+                <div class="ct-kpis" data-testid="ct-pcov-kpis">
+                    @foreach (var (id, label) in CoverageKpis)
+                    {
+                        var t = totals.GetValueOrDefault(id);
+                        <div class="ct-kpi" data-testid="ct-pcov-kpi" data-metric="@id" data-assessed="@(t?.Assessed == true ? "true" : "false")">
+                            <span class="ct-muted">@label</span><strong data-testid="ct-pcov-value">@Value(t)</strong>
+                            <div class="ct-meter" role="img" aria-label="@($"{label}: {Value(t)}")"><span style="width:@(Pct(t).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))%"></span></div>
+                        </div>
+                    }
+                    @if (r.Contracts.Any(c => c.ReadinessAssessed))
+                    {
+                        <div class="ct-kpi" data-testid="ct-pcov-kpi" data-metric="blocked"><span class="ct-muted">Tests not ready</span><strong>@r.Contracts.Sum(c => c.BlockedTests) / @r.Contracts.Sum(c => c.Tests)</strong></div>
+                    }
+                </div>
+                <div class="ct-filterbar">
+                    <input type="search" class="form-control ct-search" placeholder="Search contracts" aria-label="Search contracts" data-testid="ct-pcov-search" @bind="_coverageSearch" @bind:event="oninput" />
+                    <select class="form-control ct-narrow-select" aria-label="Module" data-testid="ct-pcov-module" @bind="_coverageModule">
+                        <option value="">All modules</option>
+                        @foreach (var m in r.Contracts.Select(c => c.Module ?? "(no module)").Distinct().OrderBy(m => m)) { <option value="@m">@m</option> }
+                    </select>
+                    <select class="form-control ct-narrow-select" aria-label="Show" data-testid="ct-pcov-filter" @bind="_coverageFilter">
+                        <option value="all">All contracts</option><option value="missing-tests">Missing tests</option><option value="not-executed">Not executed</option>
+                        <option value="failed">Failed verification</option><option value="changed">Changed contract</option><option value="blocked">Blocked</option>
+                    </select>
+                </div>
+                @foreach (var module in r.Contracts.Where(CoverageVisible).GroupBy(c => c.Module ?? "(no module)").OrderBy(g => g.Key))
+                {
+                    <details class="ct-group" open data-testid="ct-pcov-module-group" data-module="@module.Key">
+                        <summary><strong>@module.Key</strong> <span class="ct-muted">@module.Count() contract(s) · @module.Sum(c => M(c, "operations-with-tests")?.Denominator ?? 0) operations</span></summary>
+                        <ul class="ct-list">
+                            @foreach (var c in module)
+                            {
+                                <li class="ct-pcov-row" data-testid="ct-pcov-contract" data-key="@c.Key">
+                                    <span class="ct-source-name"><a href="@Link(contract: c.Key, version: null, view: "coverage", test: null)" data-testid="ct-pcov-open">@c.Name</a> <span class="ct-muted">v@(c.Version)</span>
+                                        @if (c.TestsOnOlderVersions > 0) { <span class="ct-pill ct-src-changed">@c.TestsOnOlderVersions test(s) on older versions</span> }</span>
+                                    <span class="ct-muted" data-testid="ct-pcov-figures">tests @Short(M(c, "operations-with-tests")) · executed @Short(M(c, "operations-executed")) · verified @Short(M(c, "operations-verified"))@(c.Coverage.LatestExecutionAt is { } at ? $" · last run {at.ToLocalTime():yyyy-MM-dd HH:mm}" : "")</span>
+                                    @if (c.BlockerAreas.Count > 0) { <span class="ct-muted" data-testid="ct-pcov-blockers">Blocked: @string.Join(", ", c.BlockerAreas)</span> }
+                                    @if (c.History.Count > 0) { <span class="ct-muted" data-testid="ct-pcov-history">History: @string.Join("; ", c.History.Select(h => $"v{h.Version} executed {h.Executed}/{h.Operations}"))</span> }
+                                </li>
+                            }
+                        </ul>
+                    </details>
+                }
+                <ul class="ct-checks ct-muted">@foreach (var l in r.Limitations) { <li>@l</li> }</ul>
+            }
+        </section>
+    };
+
+    // ── Chain suggestions ───────────────────────────────────────────────────────────────────────────────────────────────────
+    private IReadOnlyList<ChainSuggestion>? _suggestions;
+
+    private async Task SuggestChainsAsync(string key)
+    {
+        if (Api is not { } api) return;
+        _busy = true; (_suggestions, _error) = await api.ChainSuggestionsAsync(key, _environment); _busy = false;
+    }
+
+    private RenderFragment Suggestions(string key, IReadOnlyList<ChainSuggestion> list) => @<div class="ct-suggestions" data-testid="ct-suggestions">
+        @if (list.Count == 0) { <p class="ct-muted" data-testid="ct-suggestions-empty">No chain could be derived from this contract's evidence (it needs a typed response field that feeds an item path parameter of the same collection).</p> }
+        @foreach (var s in list)
+        {
+            <article class="ct-suggestion" data-testid="ct-suggestion" data-id="@s.Id">
+                <div class="ct-row"><strong>@s.Purpose</strong>
+                    <span><span class="ct-pill">@s.Confidence confidence</span> @if (s.Mutating) { <span class="ct-pill ct-mutating">changes data</span> } @if (s.AcceptedChainId is not null) { <span class="ct-pill ct-src-uptodate" data-testid="ct-suggestion-accepted">accepted as draft</span> }</span></div>
+                <ol class="ct-steps">@foreach (var st in s.Steps) { <li><code>@st.Operation</code>@foreach (var x in st.Extract) { <span class="ct-muted"> → provides @x.Name (@x.Path)</span> }@foreach (var i in st.Inputs) { <span class="ct-muted"> ← @i.Input from @($"{i.FromStep}.{i.Output}")</span> }</li> }</ol>
+                <details><summary>Evidence</summary><ul class="ct-checks">@foreach (var e in s.Evidence) { <li>@e</li> }</ul></details>
+                @if (s.Missing.Count > 0) { <ul class="ct-checks ct-missing" data-testid="ct-suggestion-missing">@foreach (var m in s.Missing) { <li>@m</li> }</ul> }
+                @if (s.AcceptedChainId is null)
+                {
+                    <span class="ct-actions">
+                        <button class="btn btn-secondary btn-sm" data-testid="ct-suggestion-accept" disabled="@(_busy || s.Steps.Any(x => x.TestId is null))" @onclick="() => AcceptSuggestionAsync(key, s)">Accept as draft</button>
+                        <button class="btn btn-link btn-sm" data-testid="ct-suggestion-reject" disabled="@_busy" @onclick="() => RejectSuggestionAsync(key, s)">Reject</button>
+                    </span>
+                }
+            </article>
+        }
+    </div>;
+
+    private async Task AcceptSuggestionAsync(string key, ChainSuggestion s)
+    {
+        if (Api is not { } api) return;
+        _busy = true; _error = null;
+        var (result, error) = await api.AcceptChainSuggestionAsync(key, s.Id);
+        _busy = false;
+        if (result?.Chain is { } chain) { _message = $"{chain.Name} saved as a draft chain. Review and approve it before it can run."; (_chains, _) = await api.ChainsAsync(); (_suggestions, _) = await api.ChainSuggestionsAsync(key, _environment); }
+        else _error = result?.Problems.FirstOrDefault() ?? error;
+    }
+
+    private async Task RejectSuggestionAsync(string key, ChainSuggestion s)
+    {
+        if (Api is not { } api) return;
+        _busy = true; _error = await api.RejectChainSuggestionAsync(key, s.Id); _busy = false;
+        if (_error is null) { _message = "Suggestion rejected; it will not be offered again."; (_suggestions, _) = await api.ChainSuggestionsAsync(key, _environment); }
+    }
+
+    /// <summary>Approving a draft saves a new revision with the same steps in the Approved state (explicit; the chain can then run with the usual gates).</summary>
+    private async Task ApproveChainAsync(ContractTestChain chain)
+    {
+        if (Api is not { } api) return;
+        _busy = true; _error = null;
+        var (result, error) = await api.SaveChainAsync(chain.Id, new ContractChainSave
+        {
+            Name = chain.Name, Description = chain.Description, Steps = chain.Steps, ExpectedRevision = chain.Revision, State = ContractChainState.Approved, SuggestionId = chain.SuggestionId,
+        });
+        _busy = false;
+        if (result?.Chain is { } saved && result.Problems.Count == 0) { _message = $"{saved.Name} approved as revision {saved.Revision}."; (_chains, _) = await api.ChainsAsync(); }
+        else _error = result?.Problems.FirstOrDefault() ?? error;
+    }
 }

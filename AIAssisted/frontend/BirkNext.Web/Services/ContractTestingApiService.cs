@@ -14,6 +14,25 @@ public interface IContractTestingApiService
     Task<(ApiContractDetail? Detail, string? Error)> ContractAsync(string key, int? version, CancellationToken ct = default);
     Task<(ContractImportResult? Result, string? Error)> ImportAsync(ContractImportRequest request, CancellationToken ct = default);
     Task<(IReadOnlyList<SourceContractCandidate>? Candidates, string? Error)> SourceContractsAsync(CancellationToken ct = default);
+    // Project scope, identity review, bulk binding, project coverage and chain suggestions (default implementations: hosts without them say so).
+    Task<(IReadOnlyList<ContractProject>? Projects, string? Error)> ProjectsAsync(CancellationToken ct = default) =>
+        Task.FromResult<(IReadOnlyList<ContractProject>?, string?)>(([], null));
+    Task<(IReadOnlyList<ApiContractSummary>? Contracts, string? Error)> ProjectContractsAsync(string? project, CancellationToken ct = default) => ContractsAsync(ct);
+    Task<(IReadOnlyList<SourceContractCandidate>? Candidates, string? Error)> ProjectSourceContractsAsync(string? project, CancellationToken ct = default) => SourceContractsAsync(ct);
+    Task<(ContractImportResult? Result, string? Error)> DecideIdentityAsync(ContractIdentityDecisionRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(ContractImportResult?, string?)>((null, "Identity review is not available in this host."));
+    Task<string?> AssignProjectAsync(string key, string projectKey, CancellationToken ct = default) => Task.FromResult<string?>("Not available in this host.");
+    Task<(BulkBindingPreview? Preview, string? Error)> PreviewBindingsAsync(BulkBindingRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(BulkBindingPreview?, string?)>((null, "Bulk configuration is not available in this host."));
+    Task<(BulkBindingApplyResult? Result, string? Error)> ApplyBindingsAsync(BulkBindingApplyRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(BulkBindingApplyResult?, string?)>((null, "Bulk configuration is not available in this host."));
+    Task<(ProjectCoverageReport? Report, string? Error)> ProjectCoverageAsync(string projectKey, ContractTestEnvironment? environment, CancellationToken ct = default) =>
+        Task.FromResult<(ProjectCoverageReport?, string?)>((null, "Project coverage is not available in this host."));
+    Task<(IReadOnlyList<ChainSuggestion>? Suggestions, string? Error)> ChainSuggestionsAsync(string key, ContractTestEnvironment? environment, CancellationToken ct = default) =>
+        Task.FromResult<(IReadOnlyList<ChainSuggestion>?, string?)>(([], null));
+    Task<(ContractChainSaveResult? Result, string? Error)> AcceptChainSuggestionAsync(string key, string suggestionId, CancellationToken ct = default) =>
+        Task.FromResult<(ContractChainSaveResult?, string?)>((null, "Not available in this host."));
+    Task<string?> RejectChainSuggestionAsync(string key, string suggestionId, CancellationToken ct = default) => Task.FromResult<string?>("Not available in this host.");
     Task<(ContractImportResult? Result, string? Error)> ImportFromSourceAsync(SourceContractImportRequest request, CancellationToken ct = default);
     /// <summary>Imports several source contracts (each continues its earlier import), then generates their tests and test data when asked; sends nothing.</summary>
     Task<(SourceContractBulkImportResult? Result, string? Error)> ImportFromSourceBulkAsync(SourceContractBulkImportRequest request, CancellationToken ct = default) =>
@@ -71,6 +90,39 @@ public sealed class ContractTestingApiService(HttpClient http) : IContractTestin
 
     public Task<(ContractImportResult? Result, string? Error)> ImportAsync(ContractImportRequest request, CancellationToken ct = default) =>
         SendAsync<ContractImportResult>(HttpMethod.Post, $"{Base}/contracts", request, ct, readErrorBody: true);
+
+    public Task<(IReadOnlyList<ContractProject>? Projects, string? Error)> ProjectsAsync(CancellationToken ct = default) =>
+        SendAsync<IReadOnlyList<ContractProject>>(HttpMethod.Get, $"{Base}/projects", null, ct);
+
+    public Task<(IReadOnlyList<ApiContractSummary>? Contracts, string? Error)> ProjectContractsAsync(string? project, CancellationToken ct = default) =>
+        SendAsync<IReadOnlyList<ApiContractSummary>>(HttpMethod.Get, $"{Base}/contracts" + (string.IsNullOrEmpty(project) ? "" : $"?project={Uri.EscapeDataString(project)}"), null, ct);
+
+    public Task<(IReadOnlyList<SourceContractCandidate>? Candidates, string? Error)> ProjectSourceContractsAsync(string? project, CancellationToken ct = default) =>
+        SendAsync<IReadOnlyList<SourceContractCandidate>>(HttpMethod.Get, $"{Base}/source-contracts" + (string.IsNullOrEmpty(project) ? "" : $"?project={Uri.EscapeDataString(project)}"), null, ct);
+
+    public Task<(ContractImportResult? Result, string? Error)> DecideIdentityAsync(ContractIdentityDecisionRequest request, CancellationToken ct = default) =>
+        SendAsync<ContractImportResult>(HttpMethod.Post, $"{Base}/contracts/identity-decisions", request, ct, readErrorBody: true);
+
+    public async Task<string?> AssignProjectAsync(string key, string projectKey, CancellationToken ct = default) =>
+        (await SendAsync<object>(HttpMethod.Put, $"{Base}/contracts/{Uri.EscapeDataString(key)}/project", new ContractProjectAssignment(projectKey), ct)).Error;
+
+    public Task<(BulkBindingPreview? Preview, string? Error)> PreviewBindingsAsync(BulkBindingRequest request, CancellationToken ct = default) =>
+        SendAsync<BulkBindingPreview>(HttpMethod.Post, $"{Base}/bindings/preview", request, ct);
+
+    public Task<(BulkBindingApplyResult? Result, string? Error)> ApplyBindingsAsync(BulkBindingApplyRequest request, CancellationToken ct = default) =>
+        SendAsync<BulkBindingApplyResult>(HttpMethod.Post, $"{Base}/bindings/apply", request, ct);
+
+    public Task<(ProjectCoverageReport? Report, string? Error)> ProjectCoverageAsync(string projectKey, ContractTestEnvironment? environment, CancellationToken ct = default) =>
+        SendAsync<ProjectCoverageReport>(HttpMethod.Post, $"{Base}/projects/{Uri.EscapeDataString(projectKey)}/coverage", environment ?? new ContractTestEnvironment(), ct);
+
+    public Task<(IReadOnlyList<ChainSuggestion>? Suggestions, string? Error)> ChainSuggestionsAsync(string key, ContractTestEnvironment? environment, CancellationToken ct = default) =>
+        SendAsync<IReadOnlyList<ChainSuggestion>>(HttpMethod.Post, $"{Base}/contracts/{Uri.EscapeDataString(key)}/chain-suggestions/query", environment ?? new ContractTestEnvironment(), ct);
+
+    public Task<(ContractChainSaveResult? Result, string? Error)> AcceptChainSuggestionAsync(string key, string suggestionId, CancellationToken ct = default) =>
+        SendAsync<ContractChainSaveResult>(HttpMethod.Post, $"{Base}/contracts/{Uri.EscapeDataString(key)}/chain-suggestions/{Uri.EscapeDataString(suggestionId)}/accept", new { }, ct, readErrorBody: true);
+
+    public async Task<string?> RejectChainSuggestionAsync(string key, string suggestionId, CancellationToken ct = default) =>
+        (await SendAsync<object>(HttpMethod.Post, $"{Base}/contracts/{Uri.EscapeDataString(key)}/chain-suggestions/{Uri.EscapeDataString(suggestionId)}/reject", new { }, ct)).Error;
 
     public Task<(IReadOnlyList<SourceContractCandidate>? Candidates, string? Error)> SourceContractsAsync(CancellationToken ct = default) =>
         SendAsync<IReadOnlyList<SourceContractCandidate>>(HttpMethod.Get, $"{Base}/source-contracts", null, ct);

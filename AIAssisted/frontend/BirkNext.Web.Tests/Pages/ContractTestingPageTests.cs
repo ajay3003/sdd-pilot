@@ -111,6 +111,87 @@ public sealed class ContractTestingPageTests : BunitContext
                     { Module = "(root)", State = SourceContractCandidateState.UpToDate, ContractKey = "schema", ContractVersion = 1 },
                 new(Guid.Parse("11111111-1111-1111-1111-111111111111"), DateTimeOffset.UtcNow, "children-source.zip", "c0ffee1", "openapi:api/schools.yaml", "Schools API", "OpenApi", "api/schools.yaml", 2, null)
                     { Module = "api", State = SourceContractCandidateState.Changed, ContractKey = "schools-api", ContractVersion = 1 }], null));
+        // Project scope, identity review, bulk binding, project coverage, chain suggestions.
+        public List<string?> ProjectQueries { get; } = [];
+        public bool Projects { get; set; }
+        public bool ReviewCandidate { get; set; }
+        public ContractIdentityDecisionRequest? Decision { get; private set; }
+        public BulkBindingRequest? Previewed { get; private set; }
+        public BulkBindingApplyRequest? Applied { get; private set; }
+        public bool Executed2 { get; set; }
+        public ContractChainSave? Approved { get; private set; }
+        public string? AcceptedSuggestion { get; private set; }
+        public Task<(IReadOnlyList<ContractProject>? Projects, string? Error)> ProjectsAsync(CancellationToken ct = default) =>
+            Task.FromResult<(IReadOnlyList<ContractProject>?, string?)>((Projects ? [new("m2lb", "M2LB + M2LB-language", ["m2lb", "m2lb-language"], 2, 1, Guid.Parse("11111111-1111-1111-1111-111111111111"), DateTimeOffset.UtcNow),
+                new("other", "Other", ["other"], 1, 0, null, null)] : [], null));
+        public Task<(IReadOnlyList<ApiContractSummary>? Contracts, string? Error)> ProjectContractsAsync(string? project, CancellationToken ct = default)
+        {
+            ProjectQueries.Add(project);
+            return Task.FromResult<(IReadOnlyList<ApiContractSummary>?, string?)>((HasContract ? [(GraphQl ? GqlSummary : Summary) with { ProjectKey = "m2lb", Module = "Children" }] : [], null));
+        }
+        public async Task<(IReadOnlyList<SourceContractCandidate>? Candidates, string? Error)> ProjectSourceContractsAsync(string? project, CancellationToken ct = default)
+        {
+            var (list, error) = await SourceContractsAsync(ct);
+            if (!ReviewCandidate) return (list, error);
+            return ([.. list!, new(Guid.Parse("11111111-1111-1111-1111-111111111111"), DateTimeOffset.UtcNow, "children-source.zip", "c0ffee1", "openapi:ChildrenService/openapi.yaml", "Children API",
+                "OpenApi", "ChildrenService/openapi.yaml", 5, null)
+            {
+                Module = "ChildrenService", State = SourceContractCandidateState.NeedsReview, Identity = ContractIdentityClassification.MovedChanged, ContractKey = "children-api",
+                Candidates = [new("children-api", "Children API", 2, "openapi:Children/openapi.yaml", false, true, 4, 4, 5, 0.8, ["same project (m2lb) and protocol (Rest)", "4 of 5 operations also in children-api@v2"])],
+            }], null);
+        }
+        public Task<(ContractImportResult? Result, string? Error)> DecideIdentityAsync(ContractIdentityDecisionRequest request, CancellationToken ct = default)
+        {
+            Decision = request;
+            return Task.FromResult<(ContractImportResult?, string?)>((new(true, false, "children-api", 3, "Imported Children API as version 3.", []), null));
+        }
+        public Task<(BulkBindingPreview? Preview, string? Error)> PreviewBindingsAsync(BulkBindingRequest request, CancellationToken ct = default)
+        {
+            Previewed = request;
+            return Task.FromResult<(BulkBindingPreview?, string?)>((new(request.Environment.EnvironmentId, "Local", "http://localhost:5288", true, null,
+            [
+                new("children-api", "Children API", ApiContractProtocol.Rest, "Children", null, [new("/v1", "Declared server", "https://api.example.test/v1")], EndpointEvidenceState.Candidate, "/v1", null,
+                    request.Authentication, ["bearer"], "api-credential:local-synthetic:ClientCredentials:v1", BulkBindingStatus.Applicable, []),
+                new("schools-api", "Schools API", ApiContractProtocol.Rest, "Schools", null, [], EndpointEvidenceState.Unresolved, null, null, request.Authentication, [], "none",
+                    BulkBindingStatus.NeedsReview, ["No saved path and no declared server path: the environment root would be used. Confirm or enter a path."]),
+                new("other-api", "Other", ApiContractProtocol.Rest, null, null, [], EndpointEvidenceState.Unresolved, null, null, request.Authentication, [], "", BulkBindingStatus.Blocked, ["This contract belongs to project other, not to the selected project."]),
+            ], ["Token audience and scopes are not validated by BirkNext's credential resolver."]), null));
+        }
+        public Task<(BulkBindingApplyResult? Result, string? Error)> ApplyBindingsAsync(BulkBindingApplyRequest request, CancellationToken ct = default)
+        {
+            Applied = request;
+            return Task.FromResult<(BulkBindingApplyResult?, string?)>((new([.. request.Items.Select(i => new BulkBindingApplyRow(i.Key, BulkBindingStatus.Applied, "Applied.", null))]), null));
+        }
+        private static ContractCoverageReport Cov(int tested, int executed, int verified) => new("children-api", 2, ApiContractProtocol.Rest,
+        [
+            new("operations-with-tests", "Operations with a stored test", tested, 3, "3 operation(s)", 0, "Stored") { Group = CoverageGroup.Definition },
+            new("operations-executed", "Operations executed", executed, 3, "3 operation(s)", 3 - executed, "Execution Evidence"),
+            new("operations-passing", "Operations whose latest results all passed", executed, 3, "3 operation(s)", 3 - executed, "Execution Evidence") { Group = CoverageGroup.Verification },
+            new("operations-verified", "Operations verified", verified, 3, "3 operation(s)", 3 - verified, "Execution Evidence") { Group = CoverageGroup.Verification },
+        ], DateTimeOffset.UtcNow);
+        public Task<(ProjectCoverageReport? Report, string? Error)> ProjectCoverageAsync(string projectKey, ContractTestEnvironment? environment, CancellationToken ct = default)
+        {
+            var contracts = new List<ProjectCoverageContract>
+            {
+                new("children-api", "Children API", ApiContractProtocol.Rest, "Children", 2, Cov(3, Executed2 ? 1 : 0, Executed2 ? 1 : 0)) { Tests = 5, TestsOnOlderVersions = 2, History = [new(1, 3, 2, 2, DateTimeOffset.UtcNow)] },
+                new("schools-api", "Schools API", ApiContractProtocol.Rest, "Schools", 1, Cov(1, 0, 0) with { Key = "schools-api" }) { Tests = 1 },
+            };
+            var totals = contracts.SelectMany(c => c.Coverage.Metrics).GroupBy(m => m.Id).Select(g => new ProjectCoverageTotal(g.Key, g.First().Label, g.First().Group, g.Sum(m => m.Numerator), g.Sum(m => m.Denominator), g.Sum(m => m.NotAssessed))).ToList();
+            return Task.FromResult<(ProjectCoverageReport?, string?)>((new(projectKey, "M2LB + M2LB-language", ["m2lb", "m2lb-language"], null, contracts, totals, DateTimeOffset.UtcNow, ["Current coverage counts each contract once."]), null));
+        }
+        private static readonly ChainSuggestion Suggestion = new("sugg-1", "Create then read: POST /children → GET /children/{id}",
+            [new("step1", "POST /children", PostTest, true, [new OutputExtraction("id", OutputSource.JsonBody, "$.id", "Integer")], []), new("step2", "GET /children/{id}", GetTest, false, [], [new ContractChainInput("id", "step1", "id")])],
+            ["POST /children documents a 201 response of type Child with field \"id\" (integer)"], "High", [], true, true, null);
+        public Task<(IReadOnlyList<ChainSuggestion>? Suggestions, string? Error)> ChainSuggestionsAsync(string key, ContractTestEnvironment? environment, CancellationToken ct = default) =>
+            Task.FromResult<(IReadOnlyList<ChainSuggestion>?, string?)>(([AcceptedSuggestion is null ? Suggestion : Suggestion with { AcceptedChainId = Chains[0].Id.ToString("D") }], null));
+        public Task<(ContractChainSaveResult? Result, string? Error)> AcceptChainSuggestionAsync(string key, string suggestionId, CancellationToken ct = default)
+        {
+            AcceptedSuggestion = suggestionId;
+            var chain = new ContractTestChain { Id = Guid.NewGuid(), Name = Suggestion.Purpose, Revision = 1, State = ContractChainState.Draft, SuggestionId = suggestionId,
+                Steps = [new() { StepId = "step1", TestId = PostTest }, new() { StepId = "step2", TestId = GetTest, Inputs = [new("id", "step1", "id")] }] };
+            Chains.Add(chain);
+            return Task.FromResult<(ContractChainSaveResult?, string?)>((new(chain, []), null));
+        }
         public SourceContractBulkImportRequest? Bulk { get; private set; }
         public Task<(SourceContractBulkImportResult? Result, string? Error)> ImportFromSourceBulkAsync(SourceContractBulkImportRequest request, CancellationToken ct = default)
         {
@@ -212,6 +293,14 @@ public sealed class ContractTestingPageTests : BunitContext
         public Task<(ContractChainSaveResult? Result, string? Error)> SaveChainAsync(Guid? id, ContractChainSave save, CancellationToken ct = default)
         {
             SavedChain = save;
+            if (id is { } existing && Chains.FirstOrDefault(c => c.Id == existing) is { } current)
+            {
+                Approved = save;
+                Chains.Remove(current);
+                var next = current with { Revision = current.Revision + 1, State = save.State };
+                Chains.Add(next);
+                return Task.FromResult<(ContractChainSaveResult?, string?)>((new(next, []), null));
+            }
             if (save.Steps.Any(s => s.Inputs.Any(i => i.Output.Length == 0)))
                 return Task.FromResult<(ContractChainSaveResult?, string?)>((new(null, ["read: step create provides no output ."]), "refused"));
             var chain = new ContractTestChain { Id = Guid.NewGuid(), Name = save.Name, Revision = 1, Steps = save.Steps };
@@ -742,5 +831,108 @@ public sealed class ContractTestingPageTests : BunitContext
         var page = Open("?contract=children-api&view=changes");
         page.Find("[data-testid=ct-breaking-count]").TextContent.Should().Be("2");
         page.FindAll("[data-testid=ct-breaking-only]").Should().BeEmpty("every change is potentially breaking, so the filter would change nothing");
+    }
+
+    [Fact]
+    public void The_project_selector_scopes_contracts_and_the_workspace_modes_keep_the_project()
+    {
+        _api.Projects = true;
+        var page = Open("?project=m2lb");
+        page.Find("[data-testid=ct-project]").GetAttribute("value").Should().Be("m2lb");
+        _api.ProjectQueries.Should().Contain("m2lb", "contracts are listed for the selected project only");
+        page.Find("[data-testid=ct-mode-coverage]").GetAttribute("href").Should().Be("api-quality-review/contracts?mode=coverage&project=m2lb");
+        page.Find("[data-testid=ct-mode-import]").GetAttribute("aria-current").Should().Be("page");
+        page.Find("[data-testid=ct-contract-link]").GetAttribute("href").Should().Contain("project=m2lb");
+    }
+
+    [Fact]
+    public void A_possibly_moved_contract_is_not_selectable_for_bulk_import_and_a_person_decides_with_the_evidence()
+    {
+        _api.HasContract = false; _api.ReviewCandidate = true;
+        var page = Open("");
+        page.WaitForAssertion(() => page.Find("[data-testid=ct-identity-review]"));
+        var row = page.FindAll("[data-testid=ct-source-contract]").Single(r => r.GetAttribute("data-state") == "NeedsReview");
+        row.QuerySelector("[data-testid=ct-source-select]").Should().BeNull("never imported in bulk without a decision");
+        row.QuerySelector("[data-testid=ct-source-state-pill]")!.TextContent.Should().Be("Possibly moved and changed: review");
+        row.QuerySelector("[data-testid=ct-identity-candidate]")!.TextContent.Should().Contain("4/5 operations shared").And.Contain("same project (m2lb)");
+        row.QuerySelector("[data-testid=ct-identity-confirm]")!.Click();
+        page.WaitForAssertion(() => _api.Decision.Should().Be(new ContractIdentityDecisionRequest(Guid.Parse("11111111-1111-1111-1111-111111111111"), "openapi:ChildrenService/openapi.yaml", "children-api", true)));
+        page.Find("[data-testid=ct-message]").TextContent.Should().Contain("decision was recorded");
+    }
+
+    [Fact]
+    public void Configure_environment_previews_applies_only_approved_rows_after_the_environment_is_confirmed()
+    {
+        _api.Projects = true;
+        var page = Open("?mode=configure&project=m2lb");
+        page.Find("[data-testid=ct-configure-select]").Change(true);
+        page.Find("[data-testid=ct-configure-auth]").Change(ExecutionAuthenticationKind.ClientCredentials.ToString());
+        page.Find("[data-testid=ct-configure-preview]").Click();
+        page.WaitForAssertion(() => _api.Previewed.Should().NotBeNull());
+        _api.Previewed!.Should().Match<BulkBindingRequest>(r => r.ProjectKey == "m2lb" && r.Authentication == ExecutionAuthenticationKind.ClientCredentials && r.ContractKeys.SequenceEqual(new[] { "children-api" })
+            && r.Environment.EnvironmentId == "local-synthetic");
+        var rows = page.FindAll("[data-testid=ct-configure-row]");
+        rows.Select(r => r.GetAttribute("data-status")).Should().Equal("Applicable", "NeedsReview", "Blocked");
+        rows[2].QuerySelector("[data-testid=ct-configure-apply-row]").Should().BeNull("a blocked row cannot be applied");
+        page.Find("[data-testid=ct-configure-apply]").HasAttribute("disabled").Should().BeTrue("the environment must be confirmed first");
+        page.Find("[data-testid=ct-configure-preview-table]").TextContent.Should().Contain("audience");
+        page.FindAll("[data-testid=ct-configure-apply-row]")[1].Change(true);
+        page.Find("[data-testid=ct-configure-confirm-env]").Change(true);
+        page.Find("[data-testid=ct-configure-apply]").Click();
+        page.WaitForAssertion(() => _api.Applied.Should().NotBeNull());
+        _api.Applied!.ConfirmEnvironment.Should().BeTrue();
+        _api.Applied.Items.Select(i => (i.Key, i.ConfirmOverwrite)).Should().Equal(("children-api", false), ("schools-api", false));
+        page.Find("[data-testid=ct-message]").TextContent.Should().Contain("Nothing was sent");
+        _api.Ran.Should().BeNull();
+    }
+
+    [Fact]
+    public void Configure_environment_without_a_Target_Environment_explains_instead_of_offering_a_form()
+    {
+        _context.ActiveProfile = new FrontendAnalysisProfile();
+        var page = Open("?mode=configure");
+        page.Find("[data-testid=ct-configure-noenv]").TextContent.Should().Contain("Target Environment");
+        page.FindAll("[data-testid=ct-configure-preview]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Project_coverage_shows_exact_totals_not_assessed_execution_module_groups_history_and_filters()
+    {
+        _api.Projects = true;
+        var page = Open("?mode=coverage&project=m2lb");
+        string Kpi(string id) => page.Find($"[data-testid=ct-pcov-kpi][data-metric='{id}'] [data-testid=ct-pcov-value]").TextContent;
+        Kpi("operations-with-tests").Should().Be("4 / 6");
+        Kpi("operations-executed").Should().Be("NOT ASSESSED");
+        Kpi("operations-verified").Should().Be("NOT ASSESSED");
+        page.FindAll("[data-testid=ct-pcov-module-group]").Select(g => g.GetAttribute("data-module")).Should().Equal("Children", "Schools");
+        page.Find("[data-testid=ct-pcov-contract][data-key='children-api'] [data-testid=ct-pcov-history]").TextContent.Should().Contain("v1 executed 2/3");
+        page.Find("[data-testid=ct-pcov-contract][data-key='children-api'] [data-testid=ct-pcov-open]").GetAttribute("href").Should().Contain("contract=children-api").And.Contain("view=coverage");
+        page.Find("[data-testid=ct-pcov-filter]").Change("missing-tests");
+        page.FindAll("[data-testid=ct-pcov-contract]").Select(c => c.GetAttribute("data-key")).Should().Equal("schools-api");
+
+        _api.Executed2 = true;
+        page = Open("?mode=coverage&project=m2lb");
+        page.Find("[data-testid=ct-pcov-kpi][data-metric='operations-executed'] [data-testid=ct-pcov-value]").TextContent.Should().Be("1 / 6");
+    }
+
+    [Fact]
+    public void Chain_suggestions_are_accepted_as_drafts_that_cannot_run_until_approved()
+    {
+        _api.Bind = true;
+        var page = Open("?contract=children-api&view=chains");
+        page.Find("[data-testid=ct-chain-suggest]").Click();
+        page.WaitForAssertion(() => page.Find("[data-testid=ct-suggestion]"));
+        page.Find("[data-testid=ct-suggestion]").TextContent.Should().Contain("High confidence").And.Contain("changes data").And.Contain("provides id ($.id)");
+        page.Find("[data-testid=ct-suggestion-accept]").Click();
+        page.WaitForAssertion(() => page.Find("[data-testid=ct-chain-draft]"));
+        _api.AcceptedSuggestion.Should().Be("sugg-1");
+        page.Find("[data-testid=ct-suggestion-accepted]").Should().NotBeNull();
+        page.Find("[data-testid=ct-chain-run]").HasAttribute("disabled").Should().BeTrue("a draft never runs");
+        page.Find("[data-testid=ct-chain-approve]").Click();
+        page.WaitForAssertion(() => _api.Approved.Should().NotBeNull());
+        _api.Approved!.State.Should().Be(ContractChainState.Approved);
+        _api.Approved.SuggestionId.Should().Be("sugg-1");
+        page.WaitForAssertion(() => page.FindAll("[data-testid=ct-chain-draft]").Should().BeEmpty());
+        _api.ChainRun.Should().BeNull("nothing ran");
     }
 }

@@ -118,3 +118,23 @@ tr[data-certainty="Unresolved"] > * { background: #fef2f2; }
 td.ct-actions { display: table-cell; }
 td.ct-actions > .btn { margin: 0 0.25rem 0.25rem 0; }
 .ct-source-name .ct-pill { white-space: normal; overflow-wrap: anywhere; }
+/* Workspace bar, identity review, bulk configuration, project coverage, chain suggestions. */
+.ct-workspace { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; justify-content: space-between; }
+.ct-project select { max-width: 22rem; min-width: 0; }
+.ct-modes { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.ct-mode { padding: 0.3rem 0.75rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 999px; text-decoration: none; color: var(--clr-text-muted, #57606a); font-size: 0.85rem; }
+.ct-mode-on { background: var(--clr-primary, #0969da); border-color: var(--clr-primary, #0969da); color: #fff; }
+.ct-review { border: 1px solid #eac54f; background: #fffdf0; border-radius: 8px; padding: 0.4rem 0.6rem; display: grid; gap: 0.3rem; min-width: 0; overflow-wrap: anywhere; }
+.ct-form-row { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; }
+.ct-form-row select, .ct-narrow-select { max-width: 22rem; min-width: 0; }
+.ct-bind-applicable, .ct-bind-applied, .ct-bind-unchanged { background: #dafbe1; color: #116329; border-color: #aceebb; }
+.ct-bind-needsreview, .ct-bind-skipped { background: #fff8c5; color: #7d4e00; border-color: #eac54f; }
+.ct-bind-blocked, .ct-bind-failed { background: #ffebe9; color: #a40e26; border-color: #ffcecb; }
+.ct-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.5rem; }
+.ct-kpi { border: 1px solid var(--clr-border, #d0d7de); border-radius: 8px; padding: 0.45rem 0.7rem; display: grid; gap: 0.25rem; min-width: 0; }
+.ct-kpi strong { font-size: 1.05rem; }
+.ct-pcov-row { border-top: 1px solid var(--clr-border, #d0d7de); overflow-wrap: anywhere; }
+.ct-suggestions { display: grid; gap: 0.5rem; margin-top: 0.5rem; }
+.ct-suggestion { border: 1px solid var(--clr-border, #d0d7de); border-radius: 8px; padding: 0.5rem 0.75rem; display: grid; gap: 0.35rem; min-width: 0; overflow-wrap: anywhere; }
+.ct-steps { margin: 0; padding-left: 1.2rem; font-size: 0.85rem; display: grid; gap: 0.15rem; }
+@media (max-width: 640px) { .ct-workspace { align-items: stretch; } .ct-project select, .ct-narrow-select { max-width: 100%; } }

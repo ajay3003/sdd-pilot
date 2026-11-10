@@ -94,6 +94,11 @@
                 <span class="its-badge" data-testid="its-outcome">@Outcome(suite.Outcome)</span>
             </div>
             <p class="its-note" data-testid="its-status-reason">@suite.StatusReason</p>
+            @if (suite.Contracts.Where(c => c.ContractKey is { Length: > 0 }).Select(c => c.ContractKey!).Distinct().ToList() is { Count: > 0 } suiteKeys)
+            {
+                @* Hand-off to Contract Testing's bulk configuration: these contracts preselected; nothing is applied until the tester previews and confirms there. *@
+                <p class="its-note"><a href="@($"api-quality-review/contracts?mode=configure&keys={Uri.EscapeDataString(string.Join(',', suiteKeys))}")" data-testid="its-resolve-environment">Resolve environment blockers for these @suiteKeys.Count contract(s) →</a></p>
+            }
             <div class="its-triage" data-testid="its-triage">
                 <div><strong data-testid="its-can-run">@CountTriage(suite, SuiteTriage.CanRunNow)</strong> can be generated and run now</div>
                 <div><strong data-testid="its-waiting">@CountTriage(suite, SuiteTriage.WaitingForPrerequisite)</strong> generated, waiting for a prerequisite</div>

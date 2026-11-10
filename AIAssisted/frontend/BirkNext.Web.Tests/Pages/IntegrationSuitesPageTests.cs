@@ -66,6 +66,7 @@ public sealed class IntegrationSuitesPageTests : BunitContext
         Readiness = [new("Correlation", SuiteItemReadiness.Blocked, "Downstream stages need a per-message correlated observer.")],
         Review = [new() { Key = "topology:mu->mm", Area = "Topology", Question = "Is MU → MM confirmed?", Why = "Candidate mapping" }],
         Drift = ["ward-api: contract v1 → v2. Existing tests stay on v1."],
+        Contracts = [new() { SourceContractId = "openapi:Ward/openapi.yaml", SourceFile = "Ward/openapi.yaml", Name = "Ward API", Type = "OpenApi", ContractKey = "ward-api", ContractVersion = 2 }],
     };
 
     private IRenderedComponent<IntegrationSuitesPage> Generated()
@@ -76,6 +77,13 @@ public sealed class IntegrationSuitesPageTests : BunitContext
         cut.Find("[data-testid=its-generate]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=its-suite]"));
         return cut;
+    }
+
+    [Fact]
+    public void Environment_blockers_hand_off_to_bulk_configuration_with_the_suites_contracts_preselected()
+    {
+        var cut = Generated();
+        cut.Find("[data-testid=its-resolve-environment]").GetAttribute("href").Should().Be("api-quality-review/contracts?mode=configure&keys=ward-api");
     }
 
     [Fact]
