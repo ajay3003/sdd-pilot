@@ -1,408 +1,639 @@
 @page "/parquet-viewer"
 @using BirkNext.Parquet
+@using BirkNext.ExecutionEvidence
 @inject IParquetApiService Api
+@inject IExecutionEvidenceApiService Runs
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject IJSRuntime JS
+@inject NavigationManager Nav
 @implements IAsyncDisposable
 
-<PageTitle>Parquet Data Explorer · BirkNext</PageTitle>
+<PageTitle>Parquet Quality Review · BirkNext</PageTitle>
 
-@* Read-only Parquet explorer. Metadata comes from the file footer; rows are bounded reads; filters on a page say so; Profile and rule validation are
-   explicit full scans; saved evidence keeps metadata, fingerprints, results and counts — never row values. The original file is never modified. *@
+@* Parquet Quality Review. A file is opened into a temporary, expiring session (the original is never changed); a dataset contract from an imported
+   Source Analysis snapshot drives generated rules; schema, data, business rules and end-to-end evidence are separate results. Every figure comes from
+   the backend; saved evidence never holds row values. *@
 <div class="pq" data-testid="pq-page">
     <header class="pq-head">
-        <h1>Parquet Data Explorer</h1>
-        <p class="pq-note">Open a local .parquet file (≤ 64 MB). BirkNext reads a temporary copy that expires after two hours; your file is never changed.</p>
-        <div class="pq-open">
-            <label class="pq-file">File <InputFile OnChange="e => OpenAsync(e, false)" accept=".parquet" data-testid="pq-file" /></label>
-            @if (_current is not null)
-            {
-                <label class="pq-file">Baseline file (the version to compare against) <InputFile OnChange="e => OpenAsync(e, true)" accept=".parquet" data-testid="pq-file-compare" /></label>
-            }
+        <div class="pq-title">
+            <h1>Parquet Quality Review</h1>
+            <span class="pq-sub">Contract-driven validation of Parquet datasets</span>
         </div>
-        @if (_busy) { <p class="pq-note" role="status" data-testid="pq-busy">Working…</p> }
+        @if (_current is { } f)
+        {
+            <div class="pq-source" data-testid="pq-source" aria-label="Open file">
+                <div class="pq-source-main">
+                    <strong class="pq-wrap" data-testid="pq-name">@f.FileName</strong>
+                    <span class="pq-context">Local file · @Bytes(f.SizeBytes) · <span data-testid="pq-rows">@f.Rows.ToString("N0", Inv)</span> rows · @f.Columns.Count columns · session until @Utc(f.ExpiresAt)</span>
+                </div>
+                <span class="pq-pill @(_association is null ? "pq-pill-neutral" : _association.ReviewStatus == "Confirmed" ? "pq-pill-pass" : "pq-pill-warn")" data-testid="pq-contract-chip">
+                    @(_association is null ? "No contract selected" : $"{_association.ContractKey} {_association.ContractVersion} · {(_association.ReviewStatus == "Confirmed" ? "confirmed" : "proposed")}")
+                </span>
+                <div class="pq-source-actions">
+                    <label class="btn-secondary pq-file-btn">Open another file<InputFile OnChange="OpenAsync" accept=".parquet" class="pq-file-input" data-testid="pq-file" /></label>
+                    <button type="button" class="sd-link" @onclick="CloseFileAsync" data-testid="pq-close">Close file</button>
+                </div>
+            </div>
+        }
+        @if (_busy) { <p class="pq-note" role="status" data-testid="pq-busy">@(_busyText ?? "Working…")</p> }
         @if (_error is { } error) { <p class="sd-reason" role="alert" data-testid="pq-error">@error</p> }
     </header>
 
-    @if (_current is { } o)
+    @if (_current is null && _area != "evidence")
     {
-        <nav class="pq-tabs" aria-label="Parquet views" role="tablist">
-            @foreach (var t in Tabs)
+        <section class="pq-card pq-start" data-testid="pq-empty" aria-label="Open a Parquet file">
+            <h2>Open a Parquet file to review</h2>
+            <p class="pq-note">BirkNext reads a temporary copy (up to 64 MB) that expires after two hours; your file is never changed. After expiry, saved evidence and reports stay available but the file must be opened again to validate.</p>
+            <div class="pq-start-actions">
+                <label class="btn-primary pq-file-btn">Open local Parquet file<InputFile OnChange="OpenAsync" accept=".parquet" class="pq-file-input" data-testid="pq-file" /></label>
+                <button type="button" class="btn-secondary" @onclick='() => GoAsync("evidence")' data-testid="pq-open-history">Open saved evidence</button>
+            </div>
+            @if (_recent.Count > 0)
             {
-                <button type="button" role="tab" class="pq-tab" aria-selected="@(_tab == t ? "true" : "false")" @onclick="() => SelectAsync(t)" data-testid="@($"pq-tab-{t.ToLowerInvariant()}")">@t</button>
+                <h3>Recent files (still in their session)</h3>
+                <ul class="pq-list" data-testid="pq-recent">
+                    @foreach (var r in _recent)
+                    {
+                        <li><button type="button" class="sd-link" @onclick="() => ResumeAsync(r)">@r.FileName</button> <span class="pq-context">@r.Rows.ToString("N0", Inv) rows · until @Utc(r.ExpiresAt)</span></li>
+                    }
+                </ul>
             }
-        </nav>
-
-        @switch (_tab)
-        {
-            case "Overview":
-                <section class="pq-card" data-testid="pq-overview" aria-label="Overview">
-                    <dl class="pq-facts">
-                        <div><dt>File</dt><dd data-testid="pq-name">@o.FileName</dd></div>
-                        <div><dt>Size</dt><dd>@Bytes(o.SizeBytes)</dd></div>
-                        <div><dt>Rows (file metadata)</dt><dd data-testid="pq-rows">@o.Rows.ToString("N0", Inv)</dd></div>
-                        <div><dt>Columns</dt><dd>@o.Columns.Count</dd></div>
-                        <div><dt>Row groups</dt><dd>@o.RowGroups.Count</dd></div>
-                        <div><dt>Codecs</dt><dd>@string.Join(", ", o.Columns.SelectMany(c => c.Codecs).Distinct())</dd></div>
-                        <div><dt>Created by</dt><dd>@(o.CreatedBy ?? "not stated")</dd></div>
-                        <div><dt>Schema fingerprint</dt><dd><code>@o.SchemaFingerprint</code></dd></div>
-                        <div><dt>SHA-256</dt><dd><code>@o.Sha256[..16]…</code></dd></div>
-                        <div><dt>Session expires</dt><dd>@Utc(o.ExpiresAt)</dd></div>
-                    </dl>
-                    <div class="pq-scroll" tabindex="0" role="region" aria-label="Column metadata">
-                        <table class="pq-table" data-testid="pq-columns">
-                            <thead><tr><th scope="col">Column</th><th scope="col">Type</th><th scope="col">Nulls (metadata)</th><th scope="col">Min / max (metadata)</th><th scope="col">Encodings</th><th scope="col">Readable</th></tr></thead>
-                            <tbody>@foreach (var c in o.Columns)
-                            {
-                                <tr data-testid="pq-column" data-readable="@(c.Readable ? "true" : "false")"><th scope="row">@c.Path</th><td>@c.PhysicalType@(c.LogicalType is { } lt ? $" / {lt}" : "")@(c.Optional ? " · optional" : " · required")</td>
-                                    <td>@(c.NullCount?.ToString("N0", Inv) ?? "not in metadata")</td><td>@(c.Min is null ? "not in metadata" : $"{c.Min} … {c.Max}")</td><td>@string.Join(", ", c.Encodings)</td>
-                                    <td>@(c.Readable ? "yes" : c.NotReadableReason)</td></tr>
-                            }</tbody>
-                        </table>
-                    </div>
-                    @if (o.KeyValueMetadata.Count > 0)
-                    {
-                        <details><summary>Key-value metadata (@o.KeyValueMetadata.Count)</summary><dl class="pq-facts">@foreach (var kv in o.KeyValueMetadata) { <div><dt>@kv.Key</dt><dd>@kv.Value</dd></div> }</dl></details>
-                    }
-                    <ul class="pq-note-list">@foreach (var l in o.Limitations) { <li>@l</li> }</ul>
-                </section>
-                break;
-
-            case "Schema":
-                <section class="pq-card" data-testid="pq-schema" aria-label="Schema">
-                    <ul class="pq-tree" role="tree">@foreach (var n in o.Schema.Children) { @SchemaNode(n) }</ul>
-                </section>
-                break;
-
-            case "Data":
-                <section class="pq-card" data-testid="pq-data" aria-label="Data">
-                    <fieldset class="pq-columns-pick"><legend>Columns</legend>
-                        @foreach (var c in o.Columns.Where(c => c.Readable))
-                        {
-                            var path = c.Path;
-                            <label class="sd-check"><input type="checkbox" checked="@_columns.Contains(path)" @onchange="e => ToggleColumn(path, e.Value is true)" /> @path</label>
-                        }
-                    </fieldset>
-                    <div class="pq-filter" data-testid="pq-filter">
-                        <label>Filter column <select @bind="_filterColumn" data-testid="pq-filter-column"><option value="">—</option>@foreach (var c in o.Columns.Where(c => c.Readable)) { <option value="@c.Path">@c.Path</option> }</select></label>
-                        <label>Operator <select @bind="_filterOperator" data-testid="pq-filter-operator">@foreach (var op in Enum.GetValues<ParquetFilterOperator>()) { <option value="@op">@op</option> }</select></label>
-                        <label>Value <input @bind="_filterValue" data-testid="pq-filter-value" /></label>
-                        <label>and <input @bind="_filterValue2" data-testid="pq-filter-value2" /></label>
-                        <label class="sd-check"><input type="checkbox" @bind="_fullScan" data-testid="pq-filter-full" /> Scan the whole file (count every match)</label>
-                        <button type="button" class="btn-secondary" @onclick="() => LoadRowsAsync(0)" data-testid="pq-filter-apply">Apply</button>
-                    </div>
-                    @if (_rows is { } r)
-                    {
-                        <p class="pq-scope" data-testid="pq-scope">@r.Scope@(r.MatchingRows is { } m ? $" · {m.ToString("N0", Inv)} matching" : "")</p>
-                        <div class="pq-scroll" tabindex="0" role="region" aria-label="Rows">
-                            <table class="pq-table pq-grid" data-testid="pq-grid">
-                                <thead><tr><th scope="col">#</th>@foreach (var c in r.Columns) { <th scope="col">@c</th> }</tr></thead>
-                                <tbody>@for (var i = 0; i < r.Rows.Count; i++)
-                                {
-                                    var row = r.Rows[i];
-                                    <tr data-testid="pq-row"><th scope="row">@r.RowNumbers[i]</th>@foreach (var cell in row) { @if (cell is null) { <td class="pq-null">null</td> } else { <td>@cell</td> } }</tr>
-                                }</tbody>
-                            </table>
-                        </div>
-                        <div class="pq-pager">
-                            <button type="button" class="btn-secondary" disabled="@(_offset == 0)" @onclick="() => LoadRowsAsync(Math.Max(0, _offset - PageSize))" data-testid="pq-prev">Previous</button>
-                            <button type="button" class="btn-secondary" disabled="@(_offset + PageSize >= o.Rows || _fullScan)" @onclick="() => LoadRowsAsync(_offset + PageSize)" data-testid="pq-next">Next</button>
-                        </div>
-                    }
-                </section>
-                break;
-
-            case "Profile":
-                <section class="pq-card" data-testid="pq-profile" aria-label="Profile">
-                    <p class="pq-note">Profiling reads every row of the readable columns (an explicit full scan).</p>
-                    <button type="button" class="btn-secondary" @onclick="ProfileAsync" disabled="@_busy" data-testid="pq-profile-run">Profile all rows</button>
-                    @if (_profile is { } p)
-                    {
-                        <p class="pq-scope" data-testid="pq-profile-scope">@p.Scope · @p.Seconds.ToString(Inv) s</p>
-                        <div class="pq-scroll" tabindex="0" role="region" aria-label="Column profile">
-                            <table class="pq-table" data-testid="pq-profile-table">
-                                <thead><tr><th scope="col">Column</th><th scope="col">Nulls</th><th scope="col">Non-null</th><th scope="col">Distinct</th><th scope="col">Min</th><th scope="col">Max</th><th scope="col">Mean</th></tr></thead>
-                                <tbody>@foreach (var c in p.Columns)
-                                {
-                                    <tr data-testid="pq-profile-row" data-column="@c.Column"><th scope="row">@c.Column</th><td>@c.Nulls.ToString("N0", Inv)</td><td>@c.NonNull.ToString("N0", Inv)</td>
-                                        <td>@(c.Distinct?.ToString("N0", Inv) ?? c.DistinctFigure)</td><td>@(c.Min ?? "—")</td><td>@(c.Max ?? "—")</td><td>@(c.Mean?.ToString(Inv) ?? "—")</td></tr>
-                                }</tbody>
-                            </table>
-                        </div>
-                    }
-                </section>
-                break;
-
-            case "Validation":
-                <section class="pq-card" data-testid="pq-validation" aria-label="Validation">
-                    <label>Rule set name <input @bind="_ruleSet" data-testid="pq-rules-name" /></label>
-                    <div class="pq-rule-add">
-                        <label>Rule <select @bind="_ruleKind" data-testid="pq-rule-kind">@foreach (var k in Enum.GetValues<ParquetRuleKind>()) { <option value="@k">@k</option> }</select></label>
-                        <label>Column <select @bind="_ruleColumn" data-testid="pq-rule-column"><option value="">—</option>@foreach (var c in o.Columns) { <option value="@c.Path">@c.Path</option> }</select></label>
-                        <label>Expected / min <input @bind="_ruleExpected" data-testid="pq-rule-expected" /></label>
-                        <label>Max <input @bind="_ruleMax" data-testid="pq-rule-max" /></label>
-                        <label>Allowed values (comma-separated) <input @bind="_ruleValues" data-testid="pq-rule-values" /></label>
-                        <button type="button" class="btn-secondary" @onclick="AddRule" data-testid="pq-rule-add">Add rule</button>
-                    </div>
-                    @if (_rules.Count > 0)
-                    {
-                        <ul class="pq-rules" data-testid="pq-rules">@foreach (var rule in _rules) { <li>@rule.Id · @rule.Kind @(rule.Column) @(rule.Expected ?? rule.Min) @(rule.Max) @string.Join(",", rule.Values)</li> }</ul>
-                        <button type="button" class="btn-primary" @onclick="ValidateAsync" disabled="@_busy" data-testid="pq-validate">Validate</button>
-                    }
-                    @if (_validation is { } v)
-                    {
-                        <p class="pq-scope" data-testid="pq-validation-scope">@v.RuleSetName v@(v.RuleSetVersion) · @v.Scope</p>
-                        <div class="pq-scroll" tabindex="0" role="region" aria-label="Rule results">
-                            <table class="pq-table" data-testid="pq-results">
-                                <thead><tr><th scope="col">Rule</th><th scope="col">Outcome</th><th scope="col">Expected</th><th scope="col">Actual</th><th scope="col">Scope</th><th scope="col">First failing rows</th></tr></thead>
-                                <tbody>@foreach (var res in v.Results)
-                                {
-                                    <tr data-testid="pq-result" data-outcome="@res.Outcome"><th scope="row">@res.RuleId</th><td><span class="pq-pill pq-pill-@res.Outcome.ToString().ToLowerInvariant()">@res.Outcome</span></td>
-                                        <td>@res.Expected</td><td>@res.Actual</td><td>@res.Scope</td><td>@(res.FailingRowNumbers.Count == 0 ? "—" : string.Join(", ", res.FailingRowNumbers))</td></tr>
-                                }</tbody>
-                            </table>
-                        </div>
-                    }
-                </section>
-                break;
-
-            case "Compare":
-                <section class="pq-card" data-testid="pq-compare" aria-label="Compare">
-                    @if (_baseline is null)
-                    {
-                        <p class="pq-note" data-testid="pq-compare-empty">Open a baseline file above to compare. The first file is the current one; the baseline is the version it is compared against.</p>
-                    }
-                    else
-                    {
-                        <p class="pq-note" data-testid="pq-compare-direction">Baseline: <strong>@_baseline.FileName</strong> (@_baseline.Rows.ToString("N0", Inv) rows) → current: <strong>@o.FileName</strong> (@o.Rows.ToString("N0", Inv) rows)
-                            <button type="button" class="sd-link" @onclick="Swap" data-testid="pq-compare-swap">Swap baseline and current</button></p>
-                        <label>Key column (record identity) <select @bind="_key" data-testid="pq-compare-key"><option value="">No key: schema and counts only</option>@foreach (var c in o.Columns.Where(c => c.Readable)) { <option value="@c.Path">@c.Path</option> }</select></label>
-                        <button type="button" class="btn-secondary" @onclick="CompareAsync" disabled="@_busy" data-testid="pq-compare-run">Compare</button>
-                        @if (_comparison is { } cmp)
-                        {
-                            <h3>Schema</h3>
-                            @if (cmp.SchemaChanges.Count == 0) { <p data-testid="pq-schema-same">No schema changes.</p> }
-                            else
-                            {
-                                <ul class="pq-changes" data-testid="pq-schema-changes">@foreach (var ch in cmp.SchemaChanges) { <li data-change="@ch.Change"><strong>@ch.Path</strong> @ch.Change @(ch.Baseline is null ? "" : $"(was {ch.Baseline})") @(ch.Current is null ? "" : $"→ {ch.Current}")</li> }</ul>
-                            }
-                            @if (cmp.RecordCounts.Count > 0)
-                            {
-                                <h3>Records by @cmp.KeyColumn</h3>
-                                <div class="pq-filter" role="group" aria-label="Show records">
-                                    @foreach (var (kind, n) in cmp.RecordCounts)
-                                    {
-                                        <button type="button" class="pq-chip" aria-pressed="@(_recordFilter == kind ? "true" : "false")" @onclick="() => _recordFilter = kind" data-testid="@($"pq-records-{kind.ToLowerInvariant()}")">@kind (@n.ToString("N0", Inv))</button>
-                                    }
-                                </div>
-                                <div class="pq-scroll" tabindex="0" role="region" aria-label="Record differences">
-                                    <table class="pq-table" data-testid="pq-records">
-                                        <thead><tr><th scope="col">Key</th><th scope="col">Change</th><th scope="col">Changed fields</th></tr></thead>
-                                        <tbody>@foreach (var rec in cmp.Records.Where(x => x.Change.ToString() == _recordFilter).Take(100)) { <tr data-testid="pq-record"><th scope="row">@rec.Key</th><td>@rec.Change</td><td>@string.Join(", ", rec.ChangedFields)</td></tr> }</tbody>
-                                    </table>
-                                </div>
-                            }
-                            <ul class="pq-note-list">@foreach (var l in cmp.Limitations) { <li>@l</li> }</ul>
-                        }
-                    }
-                </section>
-                break;
-
-            case "Evidence":
-                <section class="pq-card" data-testid="pq-evidence" aria-label="Evidence">
-                    <p class="pq-note">Saving keeps the file's metadata, schema fingerprint, the rule results and comparison counts above — never row values.</p>
-                    <label>Link to an Execution Evidence run (optional run id) <input @bind="_runId" data-testid="pq-evidence-run" /></label>
-                    <label>Note <input @bind="_note" maxlength="500" data-testid="pq-evidence-note" /></label>
-                    <button type="button" class="btn-primary" @onclick="SaveEvidenceAsync" disabled="@(_busy || _profileId is null)" data-testid="pq-evidence-save">Save evidence</button>
-                    @if (_saved is { } list && list.Count > 0)
-                    {
-                        <div class="pq-scroll" tabindex="0" role="region" aria-label="Saved evidence">
-                            <table class="pq-table" data-testid="pq-evidence-list">
-                                <thead><tr><th scope="col">File</th><th scope="col">Saved</th><th scope="col">Rows</th><th scope="col">Rules</th><th scope="col">Linked run</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
-                                <tbody>@foreach (var e in list)
-                                {
-                                    <tr data-testid="pq-evidence-row"><th scope="row">@e.FileName<span class="pq-context">@e.SchemaFingerprint</span></th><td>@Utc(e.SavedAt) · @e.SavedBy</td><td>@e.Rows.ToString("N0", Inv)</td>
-                                        <td>@(e.Validation is { } val ? $"{val.Results.Count(x => x.Outcome == ParquetRuleOutcome.Pass)} pass · {val.Results.Count(x => x.Outcome == ParquetRuleOutcome.Fail)} fail" : "—")</td>
-                                        <td>@if (e.LinkedRunId is { } run) { <a href="@($"execution-results?run={run:D}")">@run.ToString("N")[..8] (declared)</a> } else { <span>—</span> }</td>
-                                        <td><button type="button" class="sd-link" @onclick="() => ExportAsync(e.Id)" data-testid="pq-evidence-export">Export</button>
-                                            <button type="button" class="sd-link" @onclick="() => DeleteAsync(e.Id)" data-testid="pq-evidence-delete">@(_deleteId == e.Id ? "Confirm delete" : "Delete")</button></td></tr>
-                                }</tbody>
-                            </table>
-                        </div>
-                    }
-                </section>
-                break;
-        }
+            <p class="pq-note">Blob Storage files are previewed on the Blob Storage page; opening them here is not supported.</p>
+        </section>
     }
     else
     {
-        <p class="pq-note" data-testid="pq-empty">No file open.</p>
+        <nav class="pq-tabs" aria-label="Parquet Quality Review areas" role="tablist">
+            @foreach (var (key, label) in Areas)
+            {
+                <button type="button" role="tab" class="pq-tab" aria-selected="@(_area == key ? "true" : "false")" @onclick="() => GoAsync(key)" data-testid="@($"pq-tab-{key}")">@label</button>
+            }
+        </nav>
+
+        @switch (_area)
+        {
+            case "overview" when _current is { } o:
+                @Overview(o)
+                break;
+            case "validation" when _current is { } o:
+                @Validation(o)
+                break;
+            case "explore" when _current is { } o:
+                @Explore(o)
+                break;
+            case "evidence":
+                @Evidence()
+                break;
+        }
     }
 </div>
 
 @code {
-    private static readonly System.Globalization.CultureInfo Inv = System.Globalization.CultureInfo.InvariantCulture;
-    private static readonly string[] Tabs = ["Overview", "Schema", "Data", "Profile", "Validation", "Compare", "Evidence"];
-    private const int PageSize = 50;
-    private ParquetOverview? _current, _baseline;
-    private ParquetRowsResult? _rows;
-    private ParquetProfile? _profile;
-    private ParquetValidation? _validation;
-    private ParquetComparison? _comparison;
-    private List<ParquetInspectionEvidence>? _saved;
-    private readonly List<ParquetRule> _rules = [];
-    private List<string> _columns = [];
-    private string _tab = "Overview", _ruleSet = "Rules", _recordFilter = "Changed";
-    private string? _error, _filterColumn, _filterValue, _filterValue2, _ruleColumn, _ruleExpected, _ruleMax, _ruleValues, _key, _runId, _note, _profileId;
-    private ParquetFilterOperator _filterOperator = ParquetFilterOperator.Equals;
-    private ParquetRuleKind _ruleKind = ParquetRuleKind.NotNull;
-    private bool _busy, _fullScan;
-    private long _offset;
-    private Guid? _deleteId;
-
-    protected override async Task OnInitializedAsync()
-    {
-        try { _profileId = (await ContextFactory.GetActiveContextAsync())?.ActiveProfileOrNull?.Id; } catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { }
-    }
-
-    private async Task OpenAsync(InputFileChangeEventArgs e, bool asBaseline)
-    {
-        _error = null;
-        if (e.File.Size > ParquetApiService.MaxUploadBytes) { _error = "The file exceeds 64 MB."; return; }
-        _busy = true;
-        try
-        {
-            await using var stream = e.File.OpenReadStream(ParquetApiService.MaxUploadBytes);
-            var (overview, error) = await Api.OpenAsync(e.File.Name, stream);
-            _error = error;
-            if (overview is null) return;
-            if (asBaseline)
+    private RenderFragment Overview(ParquetOverview o) => @<section class="pq-area" data-testid="pq-overview" aria-label="Quality Overview">
+        <div class="pq-dims" data-testid="pq-dimensions">
+            @foreach (var d in Dimensions())
             {
-                if (_baseline is { } old) await Api.CloseAsync(old.SessionId);
-                _baseline = overview; _comparison = null; _tab = "Compare";
+                <div class="pq-dim" data-testid="pq-dimension" data-state="@d.State"><span class="pq-dim-name">@d.Name</span><span class="pq-pill @PillClass(d.State)">@StateLabel(d.State)</span><span class="pq-context">@d.Reason</span></div>
+            }
+        </div>
+        <dl class="pq-kpis" data-testid="pq-kpis">
+            <div><dt>Requirements</dt><dd>@(_result?.Coverage.Count ?? 0)</dd></div>
+            <div><dt>Passed</dt><dd data-testid="pq-kpi-passed">@Cov(RequirementStatus.CoveredPass)</dd></div>
+            <div><dt>Failed</dt><dd data-testid="pq-kpi-failed">@Cov(RequirementStatus.CoveredFail)</dd></div>
+            <div><dt>Not assessed</dt><dd data-testid="pq-kpi-na">@(Cov(RequirementStatus.NotAssessed) + Cov(RequirementStatus.Blocked))</dd></div>
+            <div><dt>Not supported</dt><dd>@Cov(RequirementStatus.NotSupported)</dd></div>
+            <div><dt>Rows examined</dt><dd>@(_result?.Validation is { RowsExamined: > 0 } v ? v.RowsExamined.ToString("N0", Inv) : "Not assessed")</dd></div>
+            <div><dt>Schema</dt><dd>@(_result?.Schema.Compatibility switch { null or SchemaCompatibility.NotAssessed => "Not assessed", var c => Words(c.ToString()) })</dd></div>
+            <div><dt>Baseline</dt><dd>@(_baseline?.Assessment.Overall is { } b ? Words(b.ToString()) : "Not compared")</dd></div>
+        </dl>
+        <div class="pq-next" data-testid="pq-next">
+            <span>Recommended next action:</span>
+            <button type="button" class="btn-primary" @onclick="NextActionAsync" data-testid="pq-next-action">@NextAction()</button>
+        </div>
+        <section class="pq-card" aria-label="Contract association" data-testid="pq-contract">
+            <h2>Contract</h2>
+            @if (_association is { } a)
+            {
+                var candidate = _discovery?.Candidates.FirstOrDefault(c => c.Contract.Key == a.ContractKey && c.Source.SnapshotId == a.SnapshotId);
+                <dl class="pq-facts">
+                    <div><dt>Dataset contract</dt><dd data-testid="pq-contract-key">@a.ContractKey</dd></div>
+                    <div><dt>Version</dt><dd>@a.ContractVersion @if (candidate?.Contract.Governance is { } g) { <span class="pq-pill @(g == ContractGovernance.Approved ? "pq-pill-pass" : "pq-pill-warn")" data-testid="pq-governance">@g</span> }</dd></div>
+                    <div><dt>Project · snapshot</dt><dd class="pq-wrap">@a.ProjectKey · @a.SnapshotId.ToString("N")[..8]</dd></div>
+                    <div><dt>Source document</dt><dd class="pq-wrap"><code>@a.DocumentPath</code></dd></div>
+                    <div><dt>Match</dt><dd data-testid="pq-match">@Words(a.Match.ToString()) · @a.Confidence confidence</dd></div>
+                    <div><dt>Review</dt><dd>@(a.ReviewStatus == "Confirmed" ? "Confirmed (recorded with your name when evidence is saved)" : "Proposed — confirm after checking the evidence")</dd></div>
+                </dl>
+                @if (candidate?.Contract.GovernanceReason is { Length: > 0 } why) { <p class="pq-note">@why A synthetic or locally opened file is never a verified production delivery.</p> }
+                <ul class="pq-bullets">@foreach (var r in a.Reasons) { <li>@r</li> }</ul>
+                @if (a.ColumnMappings.Count > 0)
+                {
+                    <p class="pq-note" data-testid="pq-mappings">Column mappings: @foreach (var m in a.ColumnMappings) { <span class="pq-chip-static">@m.Actual → @m.Expected <small>(@m.Provenance.ToLowerInvariant())</small></span> }</p>
+                }
+                @if (candidate is { UnmappedExpected.Count: > 0 } && _current is { } cur)
+                {
+                    <details class="pq-mapping" data-testid="pq-declare" open>
+                        <summary>Declare mappings for columns the source does not explain (@candidate.UnmappedExpected.Count)</summary>
+                        <p class="pq-note">Only a person can declare these; results are then labelled as validated through a declared mapping, and the schema stays "partially compatible".</p>
+                        @foreach (var expected in candidate.UnmappedExpected)
+                        {
+                            var ex = expected;
+                            <label class="pq-field">@ex <select value="@(_declared.GetValueOrDefault(ex) ?? "")" @onchange="e => Declare(ex, e.Value?.ToString())" data-testid="@($"pq-declare-{ex}")">
+                                <option value="">— not mapped —</option>
+                                @foreach (var col in cur.Columns.Select(c => c.Path.Split('.')[0]).Distinct().Where(c => a.ColumnMappings.All(m => m.Actual != c) && candidate.Contract.Columns.All(cc => cc.Name != c))) { <option value="@col">@col</option> }
+                            </select></label>
+                        }
+                        <button type="button" class="btn-secondary" @onclick="ApplyMappingsAsync" disabled="@(_declared.Count == 0 || _busy)" data-testid="pq-declare-apply">Apply declared mappings</button>
+                    </details>
+                }
+                <div class="pq-actions">
+                    @if (a.ReviewStatus != "Confirmed") { <button type="button" class="btn-primary" @onclick="ConfirmAsync" data-testid="pq-confirm">Confirm contract</button> }
+                    <button type="button" class="sd-link" @onclick="ClearContractAsync" data-testid="pq-contract-clear">Validate without a contract</button>
+                </div>
             }
             else
             {
-                if (_current is { } old) await Api.CloseAsync(old.SessionId);
-                _current = overview; _rows = null; _profile = null; _validation = null; _comparison = null; _offset = 0;
-                _columns = overview.Columns.Where(c => c.Readable).Take(8).Select(c => c.Path).ToList();
-                _tab = "Overview";
+                <p class="pq-note" data-testid="pq-discovery">@(_discovery?.Explanation ?? "Looking for dataset contracts in the analysed source snapshots…")</p>
+                @if (_discovery is { Projects.Count: > 1 })
+                {
+                    <label class="pq-field">Project <select value="@(_projectFilter ?? "")" @onchange="e => FilterProjectAsync(e.Value?.ToString())" data-testid="pq-project">
+                        <option value="">All analysed projects</option>@foreach (var p in _discovery.Projects) { <option value="@p">@p</option> }</select></label>
+                }
+                @if (_discovery is { Candidates.Count: > 0 })
+                {
+                    <ul class="pq-candidates" data-testid="pq-candidates">
+                        @foreach (var c in _discovery.Candidates)
+                        {
+                            var cand = c;
+                            <li class="pq-candidate" data-testid="pq-candidate" data-match="@c.Match">
+                                <div><strong>@c.Contract.Key</strong> @c.Contract.Version <span class="pq-pill @(c.Match == ContractMatchKind.AuthoritativeContract ? "pq-pill-pass" : "pq-pill-warn")">@Words(c.Match.ToString())</span>
+                                    <span class="pq-context">@c.Source.ProjectName · @c.Contract.Governance · @c.Confidence confidence</span></div>
+                                <ul class="pq-bullets">@foreach (var r in c.Reasons) { <li>@r</li> }</ul>
+                                <button type="button" class="btn-secondary" @onclick="() => SelectAsync(cand)" data-testid="pq-candidate-select">Validate against this contract</button>
+                            </li>
+                        }
+                    </ul>
+                }
+                else if (_discovery is not null)
+                {
+                    <p class="pq-empty-line">No contract selected — generic Parquet inspection only (schema-derived rules describe the file itself, not its correctness).</p>
+                }
+                @foreach (var l in _discovery?.Limitations ?? []) { <p class="pq-note">@l</p> }
             }
-        }
-        finally { _busy = false; }
-    }
+        </section>
+        <section class="pq-card" aria-label="Prerequisites" data-testid="pq-prereqs">
+            <h2>Open prerequisites</h2>
+            @{ var pre = Prerequisites().ToList(); }
+            @if (pre.Count == 0) { <p class="pq-note">None.</p> }
+            else { <ul class="pq-bullets">@foreach (var p in pre) { <li>@p</li> }</ul> }
+            <details class="pq-manifest" data-testid="pq-manifest">
+                <summary>Delivery manifest @(_manifest is null ? "(not attached)" : "(attached)")</summary>
+                @if (_manifest is { } mf) { <p class="pq-note">Period @(mf.Period ?? "—") · contract @(mf.ContractVersion ?? "—") · rows @(mf.RowCount?.ToString("N0", Inv) ?? "—") · @mf.Source</p> }
+                <label class="pq-field">Paste the _manifest.json of the delivery (≤ 64 KB)<textarea rows="4" @bind="_manifestText" data-testid="pq-manifest-text"></textarea></label>
+                <button type="button" class="btn-secondary" @onclick="AttachManifestAsync" disabled="@string.IsNullOrWhiteSpace(_manifestText)" data-testid="pq-manifest-attach">Attach manifest</button>
+            </details>
+        </section>
+    </section>;
 
-    private async Task SelectAsync(string tab)
-    {
-        _tab = tab;
-        if (tab == "Data" && _rows is null) await LoadRowsAsync(0);
-        if (tab == "Evidence" && _profileId is not null) (_saved, _) = await Api.EvidenceAsync(_profileId);
-    }
-
-    private void ToggleColumn(string path, bool on) { if (on && !_columns.Contains(path)) _columns.Add(path); else if (!on) _columns.Remove(path); }
-
-    private async Task LoadRowsAsync(long offset)
-    {
-        if (_current is null) return;
-        _busy = true; _error = null;
-        var filters = string.IsNullOrWhiteSpace(_filterColumn) ? new List<ParquetFilter>()
-            : [new ParquetFilter(_filterColumn, _filterOperator, _filterValue, _filterValue2, _filterOperator == ParquetFilterOperator.In ? (_filterValue ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList() : null)];
-        var (rows, error) = await Api.RowsAsync(_current.SessionId, new ParquetRowsRequest { Offset = offset, Count = PageSize, Columns = _columns, Filters = filters, FullScan = _fullScan && filters.Count > 0 });
-        if (rows is not null) { _rows = rows; _offset = offset; }
-        _error = error; _busy = false;
-    }
-
-    private async Task ProfileAsync()
-    {
-        if (_current is null) return;
-        _busy = true;
-        (_profile, _error) = await Api.ProfileAsync(_current.SessionId);
-        _busy = false;
-    }
-
-    private void AddRule()
-    {
-        var values = (_ruleValues ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList();
-        _rules.Add(new ParquetRule
+    private RenderFragment Validation(ParquetOverview o) => @<section class="pq-area" data-testid="pq-validation" aria-label="Validation">
+        <nav class="pq-subtabs" aria-label="Validation views">
+            @foreach (var (key, label) in new[] { ("rules", "Rules"), ("requirements", "Requirements"), ("schema", "Schema checks") })
+            {
+                <button type="button" class="pq-chip" aria-pressed="@(_validationView == key ? "true" : "false")" @onclick="() => _validationView = key" data-testid="@($"pq-view-{key}")">@label</button>
+            }
+        </nav>
+        <div class="pq-toolbar">
+            <button type="button" class="btn-primary" @onclick="RunAsync" disabled="@(_busy || _rules.Count == 0)" data-testid="pq-validate">Run validation</button>
+            <button type="button" class="btn-secondary" @onclick="RegenerateAsync" disabled="@_busy" data-testid="pq-generate">@(_association is null ? "Generate rules from schema" : "Regenerate rules from contract")</button>
+            <button type="button" class="btn-secondary" @onclick="OpenEditor" data-testid="pq-rule-new">Add custom rule</button>
+            <span class="pq-context" data-testid="pq-validation-scope">@(_result?.Validation is { } v ? $"{v.RuleSetName} · {v.Scope}" : "Not run yet")</span>
+        </div>
+        @switch (_validationView)
         {
-            Id = $"r{_rules.Count + 1}-{_ruleKind.ToString().ToLowerInvariant()}", Kind = _ruleKind, Column = string.IsNullOrWhiteSpace(_ruleColumn) ? null : _ruleColumn,
-            Expected = _ruleKind == ParquetRuleKind.Range ? null : _ruleExpected, Min = _ruleKind == ParquetRuleKind.Range ? _ruleExpected : null, Max = _ruleMax, Values = values,
-        });
-        _ruleExpected = null; _ruleMax = null; _ruleValues = null;
-    }
-
-    private async Task ValidateAsync()
-    {
-        if (_current is null) return;
-        _busy = true;
-        (_validation, _error) = await Api.ValidateAsync(_current.SessionId, new ParquetRuleSet { Name = _ruleSet, Rules = [.. _rules] });
-        _busy = false;
-    }
-
-    /// <summary>Changes the comparison direction; every result of the old current file is cleared (they described the other file).</summary>
-    private void Swap()
-    {
-        if (_current is null || _baseline is null) return;
-        (_current, _baseline) = (_baseline, _current);
-        _rows = null; _profile = null; _validation = null; _comparison = null; _offset = 0;
-        _columns = _current.Columns.Where(c => c.Readable).Take(8).Select(c => c.Path).ToList();
-    }
-
-    private async Task CompareAsync()
-    {
-        if (_current is null || _baseline is null) return;
-        _busy = true;
-        (_comparison, _error) = await Api.CompareAsync(new ParquetCompareRequest(_baseline.SessionId, _current.SessionId, string.IsNullOrWhiteSpace(_key) ? null : _key));
-        _recordFilter = "Changed";
-        _busy = false;
-    }
-
-    private async Task SaveEvidenceAsync()
-    {
-        if (_current is null || _profileId is null) return;
-        Guid? run = null;
-        if (!string.IsNullOrWhiteSpace(_runId))
-        {
-            if (!Guid.TryParse(_runId.Trim(), out var parsed)) { _error = "The run id is not a valid id."; return; }
-            run = parsed;
+            case "rules":
+                @if (_editor) { @RuleEditor(o) }
+                @if (_rules.Any(r => r.Review == RuleReviewState.NeedsReview))
+                {
+                    <div class="pq-review" data-testid="pq-review-panel">
+                        <p><strong>@_rules.Count(r => r.Review == RuleReviewState.NeedsReview) generated business rule(s) await review.</strong> They are not run until a test lead approves them (a new, immutable rule-set version).</p>
+                        <div class="pq-actions">
+                            <button type="button" class="btn-secondary" @onclick="() => ApproveAsync(false)" disabled="@(_approve.Count == 0 || _association is null || _busy)" data-testid="pq-approve">Approve selected (@_approve.Count)</button>
+                            <button type="button" class="sd-link" @onclick="() => ApproveAsync(true)" disabled="@(_approve.Count == 0 || _association is null || _busy)" data-testid="pq-reject">Reject selected</button>
+                        </div>
+                    </div>
+                }
+                <div class="pq-scroll" tabindex="0" role="region" aria-label="Rules">
+                    <table class="pq-table" data-testid="pq-rules">
+                        <thead><tr><th scope="col"><span class="visually-hidden">Select</span></th><th scope="col">Rule</th><th scope="col">Source</th><th scope="col">Severity</th><th scope="col">Scope</th><th scope="col">Status</th><th scope="col">Last result</th></tr></thead>
+                        <tbody>
+                            @foreach (var rule in _rules)
+                            {
+                                var r = rule;
+                                var res = Result(r.Id);
+                                <tr data-testid="pq-rule" data-origin="@r.Origin" data-review="@r.Review" data-outcome="@(res?.Outcome.ToString() ?? "NotRun")" class="@(_selectedRule == r.Id ? "pq-selected" : "")">
+                                    <td>@if (r.Review == RuleReviewState.NeedsReview) { <input type="checkbox" aria-label="@($"Select {RuleName(r)}")" checked="@_approve.Contains(r.Id)" @onchange="e => ToggleApprove(r.Id, e.Value is true)" data-testid="pq-rule-select" /> }</td>
+                                    <th scope="row"><button type="button" class="sd-link pq-left" @onclick="() => _selectedRule = _selectedRule == r.Id ? null : r.Id" data-testid="pq-rule-open">@RuleName(r)</button></th>
+                                    <td>@Origin(r.Origin)</td><td>@r.Severity</td><td>@Scope(r)</td><td>@ReviewLabel(r.Review)</td>
+                                    <td>@if (res is null) { <span class="pq-pill pq-pill-neutral">@(r.Review == RuleReviewState.Active ? "Not run" : "Not assessed")</span> } else { <span class="pq-pill pq-pill-@res.Outcome.ToString().ToLowerInvariant()">@res.Outcome</span> }</td>
+                                </tr>
+                                @if (_selectedRule == r.Id) { <tr class="pq-detail-row"><td colspan="7">@RuleDetail(r, res)</td></tr> }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                break;
+            case "requirements":
+                @if (_result is not { Coverage.Count: > 0 }) { <p class="pq-empty-line" data-testid="pq-coverage-empty">Requirement coverage needs a selected contract. Without one, only schema-derived rules exist.</p> }
+                else
+                {
+                    <p class="pq-note">@_result.Coverage.Count requirement(s) extracted from @(_association?.DocumentPath): column tables, rule sentences, manifest and determinism. Prose BirkNext does not recognise is listed as not supported — never left out. A rule definition is not execution evidence; a requirement counts only when its rules ran.</p>
+                    <div class="pq-scroll" tabindex="0" role="region" aria-label="Requirement coverage">
+                        <table class="pq-table" data-testid="pq-coverage">
+                            <thead><tr><th scope="col">Requirement</th><th scope="col">Category</th><th scope="col">Status</th><th scope="col">Why</th><th scope="col">Rules</th><th scope="col">Review</th></tr></thead>
+                            <tbody>@foreach (var c in _result.Coverage)
+                            {
+                                <tr data-testid="pq-requirement" data-status="@c.Status"><th scope="row" class="pq-wrap-cell"><span class="pq-wrap">@c.Text</span><span class="pq-context pq-block">@c.RequirementId</span></th><td>@c.Category</td>
+                                    <td><span class="pq-pill @CoverageClass(c.Status)">@Words(c.Status.ToString())</span></td><td class="pq-wrap-cell">@c.Reason</td><td>@c.RuleIds.Count</td><td>@c.Review</td></tr>
+                            }</tbody>
+                        </table>
+                    </div>
+                }
+                break;
+            case "schema":
+                @if (_result is not { Schema.Findings.Count: > 0 } r2) { <p class="pq-empty-line">@(_result?.Schema.Summary ?? "Not assessed.")</p> }
+                else
+                {
+                    <p data-testid="pq-schema-summary"><span class="pq-pill @(r2.Schema.Compatibility == SchemaCompatibility.Compatible ? "pq-pill-pass" : r2.Schema.Compatibility == SchemaCompatibility.Incompatible ? "pq-pill-fail" : "pq-pill-warn")">@Words(r2.Schema.Compatibility.ToString())</span> @r2.Schema.Summary</p>
+                    <div class="pq-scroll" tabindex="0" role="region" aria-label="Schema checks">
+                        <table class="pq-table" data-testid="pq-schema-checks">
+                            <thead><tr><th scope="col">Column</th><th scope="col">Expected</th><th scope="col">Actual</th><th scope="col">Result</th></tr></thead>
+                            <tbody>@foreach (var f in r2.Schema.Findings)
+                            {
+                                <tr data-testid="pq-schema-finding" data-kind="@f.Kind"><th scope="row">@f.Column@(f.ActualColumn is { } ac && ac != f.Column ? $" (file: {ac})" : "")</th><td>@f.Expected</td><td>@f.Actual</td>
+                                    <td><span class="pq-pill @(f.Severity == "High" ? "pq-pill-fail" : f.Severity == "Warning" ? "pq-pill-warn" : "pq-pill-pass")">@Words(f.Kind.ToString())</span> <span class="pq-context">@f.Explanation</span></td></tr>
+                            }</tbody>
+                        </table>
+                    </div>
+                }
+                break;
         }
-        _busy = true;
-        var rules = _rules.Count > 0 ? new ParquetRuleSet { Name = _ruleSet, Rules = [.. _rules] } : null;
-        var (saved, error) = await Api.SaveEvidenceAsync(new ParquetEvidenceRequest(_current.SessionId, _profileId, rules, _comparison is null ? null : _baseline?.SessionId, _comparison?.KeyColumn, run, _note));
-        _error = error;
-        if (saved is not null) (_saved, _) = await Api.EvidenceAsync(_profileId);
-        _busy = false;
-    }
+    </section>;
 
-    private async Task ExportAsync(Guid id)
-    {
-        if (_profileId is null) return;
-        var (bytes, error) = await Api.ExportEvidenceAsync(_profileId, id);
-        if (bytes is not null) await JS.InvokeVoidAsync("downloadBase64File", $"parquet-inspection-{id:N}.json", Convert.ToBase64String(bytes), "application/json");
-        _error = error;
-    }
+    private RenderFragment RuleDetail(ParquetRule r, ParquetRuleResult? res) => @<div class="pq-rule-detail" data-testid="pq-rule-detail">
+        <dl class="pq-facts">
+            <div><dt>Checks</dt><dd>@(r.Semantics ?? RuleName(r))</dd></div>
+            <div><dt>Evidence</dt><dd class="pq-wrap">@(r.Provenance ?? "authored by the tester")</dd></div>
+            <div><dt>Contract / rule version</dt><dd>@(r.ContractVersion ?? "—") · v@(r.RuleVersion)</dd></div>
+            <div><dt>Evaluation</dt><dd>@(Scope(r)) · @(FullScan(r) ? "reads every row" : "metadata only")</dd></div>
+            <div><dt>Exposure</dt><dd>Counts and row numbers only; values stay in the file.</dd></div>
+            @if (res is { } x)
+            {
+                <div><dt>Expected</dt><dd>@x.Expected</dd></div>
+                <div><dt>Actual</dt><dd data-testid="pq-rule-actual">@x.Actual</dd></div>
+                <div><dt>Rows examined</dt><dd>@x.RowsExamined.ToString("N0", Inv) (@x.Mode.ToString().ToLowerInvariant())</dd></div>
+                <div><dt>Affected</dt><dd>@x.AffectedRows.ToString("N0", Inv)@(x.FailingRowNumbers.Count > 0 ? $" · first rows {string.Join(", ", x.FailingRowNumbers)}" : "")</dd></div>
+            }
+        </dl>
+        @if (res is { } y)
+        {
+            <p class="pq-note">@y.Explanation</p>
+            @if (y.Details.Count > 0) { <ul class="pq-bullets" data-testid="pq-rule-groups">@foreach (var d in y.Details) { <li>@d</li> }</ul> }
+            @if (y.DrillFilters.Count > 0) { <button type="button" class="btn-secondary" @onclick="() => DrillAsync(r, y)" data-testid="pq-drill">Open the affected rows in Data</button> }
+        }
+        @if (r.Origin == RuleOrigin.UserAuthored) { <button type="button" class="sd-link" @onclick="() => RemoveRule(r.Id)" data-testid="pq-rule-remove">Remove this rule</button> }
+    </div>;
 
-    private async Task DeleteAsync(Guid id)
-    {
-        if (_profileId is null) return;
-        if (_deleteId != id) { _deleteId = id; return; }
-        _deleteId = null;
-        _error = await Api.DeleteEvidenceAsync(_profileId, id);
-        (_saved, _) = await Api.EvidenceAsync(_profileId);
-    }
+    private RenderFragment RuleEditor(ParquetOverview o) => @<section class="pq-card pq-editor" aria-label="Add custom rule" data-testid="pq-editor">
+        <h2>Add custom rule</h2>
+        <label class="pq-field">Rule type <select value="@_rKind" @onchange="e => { _rKind = Enum.Parse<ParquetRuleKind>(e.Value!.ToString()!); _preview = null; _ruleError = null; }" data-testid="pq-rule-kind">
+            @foreach (var (kind, label) in EditorKinds) { <option value="@kind">@label</option> }</select></label>
+        @switch (_rKind)
+        {
+            case ParquetRuleKind.Unique:
+                <fieldset class="pq-columns-pick"><legend>Columns that together identify a row</legend>
+                    @foreach (var c in o.Columns.Where(c => c.Readable)) { var p = c.Path; <label class="sd-check"><input type="checkbox" checked="@_rColumns.Contains(p)" @onchange="e => { if (e.Value is true) _rColumns.Add(p); else _rColumns.Remove(p); }" /> @p</label> }
+                </fieldset>
+                break;
+            case ParquetRuleKind.RecordCount:
+                <label class="pq-field">Expected number of rows <input type="number" min="0" @bind="_rExpected" data-testid="pq-rule-expected" /></label>
+                break;
+            default:
+                <label class="pq-field">Column <select value="@(_rColumn ?? "")" @onchange="e => _rColumn = e.Value?.ToString()" data-testid="pq-rule-column"><option value="">— choose —</option>@foreach (var c in o.Columns.Where(c => c.Readable)) { <option value="@c.Path">@c.Path</option> }</select></label>
+                @if (_rKind == ParquetRuleKind.AllowedValues)
+                {
+                    <label class="pq-field">Allowed values (one per line)<textarea rows="3" @bind="_rValues" data-testid="pq-rule-values"></textarea></label>
+                }
+                @if (_rKind == ParquetRuleKind.Range)
+                {
+                    <label class="pq-field">Minimum <input @bind="_rMin" data-testid="pq-rule-min" /></label>
+                    <label class="pq-field">Maximum <input @bind="_rMax" data-testid="pq-rule-max" /></label>
+                    <p class="pq-note">Numbers and dates (YYYY-MM-DD) compare by value; text compares in byte order.</p>
+                }
+                @if (_rKind == ParquetRuleKind.Pattern)
+                {
+                    <label class="pq-field">Format <select @bind="_rExpected" data-testid="pq-rule-format"><option value="">— choose —</option><option value="YYYY-MM">YYYY-MM</option><option value="YYYY-MM-DD">YYYY-MM-DD</option><option value="YYYY">YYYY</option></select></label>
+                }
+                @if (_rKind == ParquetRuleKind.RequiredWhen)
+                {
+                    <label class="pq-field">Only when column <select value="@(_rWhenColumn ?? "")" @onchange="e => _rWhenColumn = e.Value?.ToString()" data-testid="pq-rule-when"><option value="">— choose —</option>@foreach (var c in o.Columns.Where(c => c.Readable)) { <option value="@c.Path">@c.Path</option> }</select></label>
+                    <label class="pq-field">has one of the values (one per line)<textarea rows="2" @bind="_rWhenValues" data-testid="pq-rule-when-values"></textarea></label>
+                }
+                break;
+        }
+        @if (_ruleError is { } re) { <p class="sd-reason" role="alert" data-testid="pq-rule-error">@re</p> }
+        @if (_preview is { } pv) { <p data-testid="pq-rule-preview">Preview: <span class="pq-pill pq-pill-@pv.Outcome.ToString().ToLowerInvariant()">@pv.Outcome</span> @pv.Actual · @pv.Scope</p> }
+        <div class="pq-actions">
+            <button type="button" class="btn-secondary" @onclick="PreviewRuleAsync" disabled="@_busy" data-testid="pq-rule-preview-run">Check rule</button>
+            <button type="button" class="btn-primary" @onclick="AddRule" data-testid="pq-rule-add">Add rule</button>
+            <button type="button" class="sd-link" @onclick="() => _editor = false">Cancel</button>
+        </div>
+    </section>;
+
+    private RenderFragment Explore(ParquetOverview o) => @<section class="pq-area" data-testid="pq-explore" aria-label="Explore and compare">
+        <nav class="pq-subtabs" aria-label="Explore views">
+            @foreach (var (key, label) in new[] { ("data", "Data"), ("schema", "Schema"), ("profile", "Profile"), ("compare", "Compare") })
+            {
+                <button type="button" class="pq-chip" aria-pressed="@(_exploreView == key ? "true" : "false")" @onclick="() => ExploreAsync(key)" data-testid="@($"pq-view-{key}")">@label</button>
+            }
+        </nav>
+        @switch (_exploreView)
+        {
+            case "data": @Data(o) break;
+            case "schema": @SchemaView(o) break;
+            case "profile": @Profile(o) break;
+            case "compare": @Compare(o) break;
+        }
+    </section>;
+
+    private RenderFragment Data(ParquetOverview o) => @<div class="pq-data" data-testid="pq-data">
+        <div class="pq-toolbar">
+            <label class="pq-field pq-grow">Find a column <input type="search" @bind="_columnSearch" @bind:event="oninput" placeholder="column name" data-testid="pq-column-search" /></label>
+            <details class="pq-columns-menu"><summary>Columns (@_columns.Count shown)</summary>
+                <div class="pq-columns-pick">@foreach (var c in o.Columns.Where(c => c.Readable && (string.IsNullOrWhiteSpace(_columnSearch) || c.Path.Contains(_columnSearch, StringComparison.OrdinalIgnoreCase))))
+                { var path = c.Path; <label class="sd-check"><input type="checkbox" checked="@_columns.Contains(path)" @onchange="e => ToggleColumn(path, e.Value is true)" /> @path</label> }</div>
+            </details>
+        </div>
+        <div class="pq-filters" data-testid="pq-filter">
+            @if (_drillFrom is { } from) { <span class="pq-chip-static" data-testid="pq-drill-source">Rows of rule: @from</span> }
+            @foreach (var f in _filters.ToList())
+            {
+                var filter = f;
+                <span class="pq-chip-static" data-testid="pq-filter-chip">@FilterText(f) <button type="button" class="pq-chip-x" aria-label="@($"Remove filter {FilterText(f)}")" @onclick="() => RemoveFilterAsync(filter)">×</button></span>
+            }
+            <details class="pq-filter-add" open="@_filterOpen" @ontoggle="() => _filterOpen = !_filterOpen">
+                <summary data-testid="pq-filter-add">Add filter</summary>
+                <div class="pq-filter-editor">
+                    <label class="pq-field">Column <select value="@(_fColumn ?? "")" @onchange="e => { _fColumn = e.Value?.ToString(); _fOp = ParquetFilterOperator.Equals; }" data-testid="pq-filter-column"><option value="">—</option>@foreach (var c in o.Columns.Where(c => c.Readable)) { <option value="@c.Path">@c.Path</option> }</select></label>
+                    @if (_fColumn is { Length: > 0 } fc)
+                    {
+                        <label class="pq-field">Condition <select value="@_fOp" @onchange="e => _fOp = Enum.Parse<ParquetFilterOperator>(e.Value!.ToString()!)" data-testid="pq-filter-operator">@foreach (var op in Operators(o, fc)) { <option value="@op">@OperatorLabel(op)</option> }</select></label>
+                        @if (_fOp == ParquetFilterOperator.Between)
+                        {
+                            <label class="pq-field">From <input @bind="_fValue" data-testid="pq-filter-value" /></label>
+                            <label class="pq-field">To <input @bind="_fValue2" data-testid="pq-filter-value2" /></label>
+                        }
+                        else if (_fOp is ParquetFilterOperator.In or ParquetFilterOperator.NotIn)
+                        {
+                            <label class="pq-field">Values (one per line)<textarea rows="2" @bind="_fValue" data-testid="pq-filter-value"></textarea></label>
+                        }
+                        else if (_fOp is not (ParquetFilterOperator.IsNull or ParquetFilterOperator.NotNull))
+                        {
+                            <label class="pq-field">Value <input @bind="_fValue" data-testid="pq-filter-value" /></label>
+                        }
+                        <button type="button" class="btn-secondary" @onclick="AddFilterAsync" data-testid="pq-filter-apply">Apply filter</button>
+                    }
+                </div>
+            </details>
+        </div>
+        <fieldset class="pq-scope-pick"><legend>Filters apply to</legend>
+            <label class="sd-check"><input type="radio" name="pq-scope" checked="@(!_fullScan)" @onchange="() => SetScopeAsync(false)" data-testid="pq-scope-page" /> the current page only</label>
+            <label class="sd-check"><input type="radio" name="pq-scope" checked="@_fullScan" @onchange="() => SetScopeAsync(true)" data-testid="pq-filter-full" /> the whole file (full scan, counts every match)</label>
+        </fieldset>
+        @if (_rows is { } r)
+        {
+            <p class="pq-scope" data-testid="pq-scope">@r.Scope@(r.MatchingRows is { } m ? $" · {m.ToString("N0", Inv)} matching" : "")</p>
+            <div class="pq-scroll" tabindex="0" role="region" aria-label="Rows">
+                <table class="pq-table pq-grid" data-testid="pq-grid">
+                    <thead><tr><th scope="col">#</th>@foreach (var c in r.Columns) { <th scope="col">@c</th> }</tr></thead>
+                    <tbody>@for (var i = 0; i < r.Rows.Count; i++)
+                    {
+                        var row = r.Rows[i]; var index = i;
+                        <tr data-testid="pq-row"><th scope="row"><button type="button" class="sd-link" @onclick="() => _detailRow = _detailRow == index ? null : index" aria-expanded="@(_detailRow == index ? "true" : "false")">@r.RowNumbers[i]</button></th>
+                            @foreach (var cell in row) { @if (cell is null) { <td class="pq-null">null</td> } else { <td title="@cell">@cell</td> } }</tr>
+                        @if (_detailRow == index)
+                        {
+                            <tr class="pq-detail-row"><td colspan="@(r.Columns.Count + 1)"><dl class="pq-facts" data-testid="pq-row-detail">@for (var c = 0; c < r.Columns.Count; c++) { <div><dt>@r.Columns[c]</dt><dd class="pq-wrap">@(row[c] ?? "null")</dd></div> }</dl></td></tr>
+                        }
+                    }</tbody>
+                </table>
+            </div>
+            <div class="pq-pager">
+                <button type="button" class="btn-secondary" disabled="@(_offset == 0)" @onclick="() => LoadRowsAsync(Math.Max(0, _offset - PageSize))" data-testid="pq-prev">Previous</button>
+                <button type="button" class="btn-secondary" disabled="@(!HasNext(o, r))" @onclick="() => LoadRowsAsync(_offset + PageSize)" data-testid="pq-next">Next</button>
+                <span class="pq-context">Rows are shown in file order (sorting is not available).</span>
+            </div>
+        }
+    </div>;
+
+    private RenderFragment SchemaView(ParquetOverview o) => @<div data-testid="pq-schema">
+        <div class="pq-scroll" tabindex="0" role="region" aria-label="Schema">
+            <table class="pq-table" data-testid="pq-columns">
+                <thead><tr><th scope="col">Column</th><th scope="col">Type</th><th scope="col">Nullable</th><th scope="col">Contract</th><th scope="col">Nulls · min / max (file metadata)</th><th scope="col">Readable</th></tr></thead>
+                <tbody>@foreach (var c in o.Columns)
+                {
+                    var finding = _result?.Schema.Findings.FirstOrDefault(x => (x.ActualColumn ?? x.Column) == c.Path);
+                    <tr data-testid="pq-column" data-readable="@(c.Readable ? "true" : "false")"><th scope="row">@c.Path</th><td>@Friendly(c)</td><td>@(c.Optional ? "yes" : "no")</td>
+                        <td>@(finding is null ? "—" : Words(finding.Kind.ToString()))</td>
+                        <td>@(c.NullCount?.ToString("N0", Inv) ?? "not in metadata") · @(c.Min is null ? "not in metadata" : $"{c.Min} … {c.Max}")</td><td>@(c.Readable ? "yes" : c.NotReadableReason)</td></tr>
+                }</tbody>
+            </table>
+        </div>
+        <details class="pq-tech"><summary>Technical schema (physical, logical, repetition, encodings)</summary>
+            <dl class="pq-facts"><div><dt>Row groups</dt><dd>@o.RowGroups.Count</dd></div><div><dt>Codecs</dt><dd>@string.Join(", ", o.Columns.SelectMany(c => c.Codecs).Distinct())</dd></div>
+                <div><dt>Created by</dt><dd>@(o.CreatedBy ?? "not stated")</dd></div><div><dt>Schema fingerprint</dt><dd><code>@o.SchemaFingerprint</code></dd></div><div><dt>SHA-256</dt><dd class="pq-wrap"><code>@o.Sha256</code></dd></div></dl>
+            <ul class="pq-tree" role="tree">@foreach (var n in o.Schema.Children) { @SchemaNode(n) }</ul>
+            @if (o.KeyValueMetadata.Count > 0) { <dl class="pq-facts">@foreach (var kv in o.KeyValueMetadata) { <div><dt>@kv.Key</dt><dd class="pq-wrap">@kv.Value</dd></div> }</dl> }
+            <ul class="pq-note-list">@foreach (var l in o.Limitations) { <li>@l</li> }</ul>
+        </details>
+    </div>;
+
+    private RenderFragment Profile(ParquetOverview o) => @<div data-testid="pq-profile">
+        @if (_result?.Statistics is not { } s)
+        {
+            <p class="pq-empty-line">The profile is an exact full scan of every readable column.</p>
+            <button type="button" class="btn-secondary" @onclick="ProfileAsync" disabled="@_busy" data-testid="pq-profile-run">Profile all rows</button>
+        }
+        else
+        {
+            <p class="pq-scope" data-testid="pq-profile-scope"><span class="pq-pill pq-pill-pass">EXACT</span> @s.Scope · duplicate rows: @s.DuplicateRows.ToString("N0", Inv)</p>
+            @if (s.Pivot.Count > 0)
+            {
+                var rowsKeys = s.Pivot.Select(p => p.Row).Distinct().ToList(); var colKeys = s.Pivot.Select(p => p.Column).Distinct().ToList();
+                <h3>Sum of @s.PivotValueColumn by @s.PivotRowColumn and @s.PivotColumnColumn (contract aggregate, exact)</h3>
+                <div class="pq-scroll" tabindex="0" role="region" aria-label="Contract aggregate">
+                    <table class="pq-table" data-testid="pq-pivot"><thead><tr><th scope="col">@s.PivotRowColumn</th>@foreach (var c in colKeys) { <th scope="col" class="pq-num">@c</th> }</tr></thead>
+                        <tbody>@foreach (var rk in rowsKeys) { <tr><th scope="row">@rk</th>@foreach (var c in colKeys) { <td class="pq-num">@(s.Pivot.FirstOrDefault(p => p.Row == rk && p.Column == c)?.Value.ToString(Inv) ?? "—")</td> }</tr> }</tbody></table>
+                </div>
+                <p class="pq-note">Totals are shown as stored; whether they must add up is decided only by approved rules (Validation).</p>
+            }
+            <div class="pq-profile-cards">
+                @foreach (var c in s.Columns)
+                {
+                    <article class="pq-card pq-col-card" data-testid="pq-profile-row" data-column="@c.Column">
+                        <h3>@c.Column</h3>
+                        <p class="pq-context">@c.Rows.ToString("N0", Inv) rows · @c.Nulls.ToString("N0", Inv) null (@Pct(c.Nulls, c.Rows)) · @(c.Distinct?.ToString("N0", Inv) ?? "over the limit") distinct@(c.Min is null ? "" : $" · {c.Min} … {c.Max}")</p>
+                        <div class="pq-bar" role="img" aria-label="@($"{Pct(c.Nulls, c.Rows)} null")"><span style="width:@(c.Rows == 0 ? 0 : 100.0 * (c.Rows - c.Nulls) / c.Rows)%"></span></div>
+                        @if (c.Categories.Count > 0)
+                        {
+                            var max = c.Categories.Max(x => x.Count);
+                            <ul class="pq-cats">@foreach (var cat in c.Categories.Take(12)) { <li><span class="pq-wrap">@cat.Value</span><span class="pq-bar pq-bar-sm"><span style="width:@(100.0 * cat.Count / Math.Max(1, max))%"></span></span><span class="pq-num">@cat.Count.ToString("N0", Inv)</span></li> }</ul>
+                        }
+                    </article>
+                }
+            </div>
+        }
+    </div>;
+
+    private RenderFragment Compare(ParquetOverview o) => @<div data-testid="pq-compare">
+        <fieldset class="pq-scope-pick"><legend>Baseline</legend>
+            <label class="sd-check"><input type="radio" name="pq-baseline" checked="@(_baselineMode == "file")" @onchange='() => _baselineMode = "file"' /> another local file</label>
+            <label class="sd-check"><input type="radio" name="pq-baseline" checked="@(_baselineMode == "evidence")" @onchange="SelectEvidenceBaselineAsync" data-testid="pq-baseline-evidence-mode" /> saved evidence</label>
+        </fieldset>
+        @if (_baselineMode == "file")
+        {
+            @if (_baselineFile is null) { <p class="pq-note" data-testid="pq-compare-empty">Choose the baseline file (the version to compare against). The open file is the current one.</p> }
+            else { <p class="pq-note" data-testid="pq-compare-direction">Baseline: <strong>@_baselineFile.FileName</strong> (@_baselineFile.Rows.ToString("N0", Inv) rows) → current: <strong>@o.FileName</strong> (@o.Rows.ToString("N0", Inv) rows)
+                <button type="button" class="sd-link" @onclick="SwapAsync" data-testid="pq-compare-swap">Swap baseline and current</button></p> }
+            <label class="btn-secondary pq-file-btn">@(_baselineFile is null ? "Choose baseline file" : "Choose another baseline")<InputFile OnChange="OpenBaselineAsync" accept=".parquet" class="pq-file-input" data-testid="pq-file-compare" /></label>
+            <fieldset class="pq-columns-pick"><legend>Record identity (key columns; row order is never identity)</legend>
+                @foreach (var c in o.Columns.Where(c => c.Readable)) { var p = c.Path; <label class="sd-check"><input type="checkbox" checked="@_keys.Contains(p)" @onchange="e => { if (e.Value is true) _keys.Add(p); else _keys.Remove(p); }" data-testid="pq-compare-key" /> @p</label> }
+            </fieldset>
+        }
+        else
+        {
+            <label class="pq-field">Saved evidence <select value="@(_baselineEvidenceId?.ToString() ?? "")" @onchange="e => _baselineEvidenceId = Guid.TryParse(e.Value?.ToString(), out var g) ? g : null" data-testid="pq-baseline-evidence">
+                <option value="">— choose —</option>@foreach (var e in _saved ?? []) { <option value="@e.Id">@e.FileName · @Utc(e.SavedAt)@(e.BaselineApprovedBy is null ? "" : " · approved baseline")</option> }</select></label>
+        }
+        <button type="button" class="btn-primary" @onclick="CompareAsync" disabled="@(_busy || (_baselineMode == "file" ? _baselineFile is null : _baselineEvidenceId is null))" data-testid="pq-compare-run">Compare with baseline</button>
+        @if (_baseline is { } b)
+        {
+            var a = b.Assessment;
+            <p data-testid="pq-baseline-overall"><span class="pq-pill @BaselineClassCss(a.Overall)">@Words(a.Overall.ToString())</span> against @a.BaselineLabel (@a.BaselineKind@(a.BaselineApproved ? ", approved" : ", not approved"))</p>
+            <ul class="pq-bullets">@foreach (var c in a.Checks) { <li>@c</li> }</ul>
+            @if (a.Findings.Count > 0)
+            {
+                <div class="pq-scroll" tabindex="0" role="region" aria-label="Baseline differences">
+                    <table class="pq-table" data-testid="pq-baseline-findings"><thead><tr><th scope="col">Area</th><th scope="col">What</th><th scope="col">Baseline</th><th scope="col">Current</th><th scope="col">Classification</th></tr></thead>
+                        <tbody>@foreach (var f in a.Findings) { <tr data-testid="pq-baseline-finding" data-class="@f.Class"><td>@f.Area</td><th scope="row">@f.Subject</th><td>@f.Baseline</td><td>@f.Current</td><td><span class="pq-pill @BaselineClassCss(f.Class)">@Words(f.Class.ToString())</span> <span class="pq-context">@f.Reason</span></td></tr> }</tbody></table>
+                </div>
+            }
+            @if (b.Records is { } cmp)
+            {
+                <h3>Records by @string.Join(" + ", cmp.KeyColumns)</h3>
+                @if (cmp.SchemaChanges.Count > 0) { <ul class="pq-changes" data-testid="pq-schema-changes">@foreach (var ch in cmp.SchemaChanges) { <li data-change="@ch.Change"><strong>@ch.Path</strong> @ch.Change @(ch.Baseline is null ? "" : $"(was {ch.Baseline})") @(ch.Current is null ? "" : $"→ {ch.Current}")</li> }</ul> }
+                @if (cmp.RecordCounts.Count > 0)
+                {
+                    <div class="pq-filters" role="group" aria-label="Show records">
+                        @foreach (var (kind, n) in cmp.RecordCounts) { <button type="button" class="pq-chip" aria-pressed="@(_recordFilter == kind ? "true" : "false")" @onclick="() => _recordFilter = kind" data-testid="@($"pq-records-{kind.ToLowerInvariant()}")">@kind (@n.ToString("N0", Inv))</button> }
+                    </div>
+                    <div class="pq-scroll" tabindex="0" role="region" aria-label="Record differences">
+                        <table class="pq-table" data-testid="pq-records"><thead><tr><th scope="col">Key</th><th scope="col">Change</th><th scope="col">Changed fields</th></tr></thead>
+                            <tbody>@foreach (var rec in cmp.Records.Where(x => x.Change.ToString() == _recordFilter).Take(100)) { <tr data-testid="pq-record"><th scope="row">@rec.Key</th><td>@rec.Change</td><td>@string.Join(", ", rec.ChangedFields)</td></tr> }</tbody></table>
+                    </div>
+                }
+            }
+            <ul class="pq-note-list">@foreach (var l in a.Limitations.Concat(b.Records?.Limitations ?? [])) { <li>@l</li> }</ul>
+        }
+    </div>;
+
+    private RenderFragment Evidence() => @<section class="pq-area" data-testid="pq-evidence" aria-label="Evidence and history">
+        @if (_profileId is null) { <p class="sd-reason" role="alert" data-testid="pq-no-environment">Select a Target Environment first: evidence belongs to one environment.</p> }
+        @if (_current is { } cur)
+        {
+            <section class="pq-card" aria-label="Save evidence" data-testid="pq-save">
+                <h2>Save validation evidence</h2>
+                <p class="pq-note">Saved: file identity (SHA-256, schema fingerprint), the contract association and source snapshot, rule set and results, requirement coverage, exact statistics (contract-enumerated categories only), the baseline summary and the run correlation — never row values. The server re-runs the review when saving.</p>
+                <div class="pq-runs" data-testid="pq-run-picker">
+                    <label class="pq-field pq-grow">Execution run <input type="search" @bind="_runSearch" placeholder="search by run name" data-testid="pq-run-search" /></label>
+                    <label class="pq-field">From <input type="date" @bind="_runFrom" /></label>
+                    <button type="button" class="btn-secondary" @onclick="SearchRunsAsync" disabled="@(_profileId is null)" data-testid="pq-run-find">Find runs</button>
+                </div>
+                @if (_runs is { } runs)
+                {
+                    @if (runs.Count == 0) { <p class="pq-empty-line" data-testid="pq-run-none">No run of this Target Environment matches.</p> }
+                    else
+                    {
+                        <ul class="pq-run-list" data-testid="pq-runs">@foreach (var run in runs.Take(25))
+                        {
+                            var id = run.RunId;
+                            <li><label class="sd-check"><input type="radio" name="pq-run" checked="@(_runId == id)" @onchange="() => _runId = id" data-testid="pq-run" /> <strong>@run.Name</strong> <span class="pq-context">@run.State · @Utc(run.StartedAt) · @run.Counts.Executed of @run.Counts.Planned calls@(run.SourceSnapshotId is null ? "" : " · source snapshot")</span></label></li>
+                        }</ul>
+                        @if (_runId is not null) { <button type="button" class="sd-link" @onclick="() => _runId = null">Do not link a run</button> }
+                    }
+                }
+                @if (_runId is not null)
+                {
+                    <p class="pq-note">BirkNext checks the run on save: CONFIRMED only if the run's own evidence names this file's SHA-256; CANDIDATE when it shares the source snapshot or contract. Otherwise you can link it as a manual, unverified association — never as proof.</p>
+                    <label class="sd-check"><input type="checkbox" @bind="_manual" data-testid="pq-manual" /> Manual, unverified association</label>
+                    @if (_manual) { <label class="pq-field">Reason <input @bind="_manualReason" maxlength="300" data-testid="pq-manual-reason" /></label> }
+                }
+                <label class="pq-field">Note <input @bind="_note" maxlength="500" data-testid="pq-evidence-note" /></label>
+                <button type="button" class="btn-primary" @onclick="SaveEvidenceAsync" disabled="@(_busy || _profileId is null)" data-testid="pq-evidence-save">Save evidence</button>
+            </section>
+        }
+        <section class="pq-card" aria-label="History" data-testid="pq-history">
+            <h2>History</h2>
+            @if (_saved is not { Count: > 0 } list) { <p class="pq-empty-line" data-testid="pq-history-empty">No saved evidence for this Target Environment.</p> }
+            else
+            {
+                <div class="pq-scroll" tabindex="0" role="region" aria-label="Saved evidence">
+                    <table class="pq-table" data-testid="pq-evidence-list">
+                        <thead><tr><th scope="col">File</th><th scope="col">Saved</th><th scope="col">Contract</th><th scope="col">Result</th><th scope="col">Run</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                        <tbody>@foreach (var e in list)
+                        {
+                            var ev = e;
+                            <tr data-testid="pq-evidence-row"><th scope="row"><button type="button" class="sd-link pq-left" @onclick="() => OpenEvidenceAsync(ev.Id)" data-testid="pq-evidence-open">@e.FileName</button><span class="pq-context pq-block">@e.SchemaFingerprint</span></th>
+                                <td>@Utc(e.SavedAt) · @e.SavedBy</td>
+                                <td>@(e.Association is { } a ? $"{a.ContractKey} {a.ContractVersion}" : "none")</td>
+                                <td>@(e.Coverage.Count > 0 ? $"{e.Coverage.Count(c => c.Status == RequirementStatus.CoveredPass)} passed · {e.Coverage.Count(c => c.Status == RequirementStatus.CoveredFail)} failed · {e.Coverage.Count(c => c.Status is RequirementStatus.NotAssessed or RequirementStatus.Blocked)} not assessed" : e.Validation is { } val ? $"{val.Results.Count(x => x.Outcome == ParquetRuleOutcome.Pass)} pass · {val.Results.Count(x => x.Outcome == ParquetRuleOutcome.Fail)} fail" : "—")</td>
+                                <td>@if (e.Correlation is { RunId: { } run } co) { <a href="@($"execution-results?run={run:D}")">@Words(co.Level.ToString())</a> } else if (e.LinkedRunId is { } legacy) { <a href="@($"execution-results?run={legacy:D}")">declared</a> } else { <span>—</span> }</td>
+                                <td class="pq-row-actions"><button type="button" class="sd-link" @onclick="() => ReportAsync(ev.Id)" data-testid="pq-evidence-report">Report</button>
+                                    <button type="button" class="sd-link" @onclick="() => ExportAsync(ev.Id)" data-testid="pq-evidence-export">Export</button>
+                                    <button type="button" class="sd-link" @onclick="() => DeleteAsync(ev.Id)" data-testid="pq-evidence-delete">@(_deleteId == ev.Id ? "Confirm delete" : "Delete")</button></td></tr>
+                        }</tbody>
+                    </table>
+                </div>
+            }
+        </section>
+        @if (_openEvidence is { } h)
+        {
+            <section class="pq-card" aria-label="Saved result" data-testid="pq-history-detail">
+                <h2>@h.FileName <span class="pq-context">saved @Utc(h.SavedAt) by @h.SavedBy</span></h2>
+                <p class="pq-note" data-testid="pq-history-file">@(_current?.Sha256 == h.Sha256 ? "The same file is open in this session." : "The original file is not available here (temporary sessions expire); this is the saved result and cannot be re-run.")</p>
+                @if (h.Dimensions.Count > 0)
+                {
+                    <div class="pq-dims">@foreach (var d in h.Dimensions) { <div class="pq-dim"><span class="pq-dim-name">@d.Name</span><span class="pq-pill @PillClass(d.State)">@StateLabel(d.State)</span><span class="pq-context">@d.Reason</span></div> }</div>
+                }
+                else { <p class="pq-note">Saved before the quality review: rule results only.</p> }
+                @if (h.Correlation is { } hc) { <p data-testid="pq-history-correlation"><strong>Execution correlation:</strong> @Words(hc.Level.ToString()) — @hc.Explanation</p> }
+                @if (h.Coverage.Count > 0)
+                {
+                    <div class="pq-scroll" tabindex="0" role="region" aria-label="Saved coverage">
+                        <table class="pq-table"><thead><tr><th scope="col">Requirement</th><th scope="col">Status</th><th scope="col">Why</th></tr></thead>
+                            <tbody>@foreach (var c in h.Coverage) { <tr><th scope="row" class="pq-wrap-cell">@c.Text</th><td><span class="pq-pill @CoverageClass(c.Status)">@Words(c.Status.ToString())</span></td><td class="pq-wrap-cell">@c.Reason</td></tr> }</tbody></table>
+                    </div>
+                }
+                <div class="pq-actions">
+                    <button type="button" class="btn-secondary" @onclick="() => ReportAsync(h.Id)">Download quality report</button>
+                    @if (h.BaselineApprovedBy is null) { <button type="button" class="sd-link" @onclick="() => ApproveBaselineAsync(h.Id)" data-testid="pq-approve-baseline">Approve as baseline</button> }
+                    else { <span class="pq-context">Approved baseline by @h.BaselineApprovedBy</span> }
+                </div>
+            </section>
+        }
+    </section>;
 
     private RenderFragment SchemaNode(ParquetSchemaNode n) => @<li role="treeitem" data-testid="pq-schema-node" data-path="@n.Path" data-readable="@(n.Readable ? "true" : "false")">
         <span class="pq-node"><strong>@n.Name</strong> <span class="pq-context">@(n.IsGroup ? "group" : n.PhysicalType)@(n.LogicalType is { } lt ? $" · {lt}" : "") · @n.Repetition@(n.TypeLength is { } len ? $" · length {len}" : "")</span>
             @if (!n.IsGroup && !n.Readable) { <span class="pq-context">· not read: @n.NotReadableReason</span> }</span>
         @if (n.Children.Count > 0) { <ul role="group">@foreach (var c in n.Children) { @SchemaNode(c) }</ul> }
     </li>;
-
-    private static string Bytes(long n) => n < 1024 ? $"{n} B" : n < 1024 * 1024 ? $"{(n / 1024.0).ToString("0.#", Inv)} KB" : $"{(n / 1048576.0).ToString("0.#", Inv)} MB";
-    private static string Utc(DateTimeOffset t) => t.ToUniversalTime().ToString("yyyy-MM-dd HH:mm", Inv) + " UTC";
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_current is { } c) await Api.CloseAsync(c.SessionId);
-        if (_baseline is { } b) await Api.CloseAsync(b.SessionId);
-    }
 }

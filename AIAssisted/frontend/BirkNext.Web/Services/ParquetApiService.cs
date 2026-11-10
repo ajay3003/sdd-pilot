@@ -21,6 +21,20 @@ public interface IParquetApiService
     Task<(List<ParquetInspectionEvidence>? Evidence, string? Error)> EvidenceAsync(string environmentId, CancellationToken ct = default);
     Task<(byte[]? Bytes, string? Error)> ExportEvidenceAsync(string environmentId, Guid id, CancellationToken ct = default);
     Task<string?> DeleteEvidenceAsync(string environmentId, Guid id, CancellationToken ct = default);
+    // ── Quality Review ──
+    Task<(List<ParquetOverview>? Sessions, string? Error)> SessionsAsync(IEnumerable<Guid> ids, CancellationToken ct = default);
+    Task<(ParquetManifestSummary? Manifest, string? Error)> AttachManifestAsync(Guid session, string json, CancellationToken ct = default);
+    Task<(ContractDiscovery? Discovery, string? Error)> DiscoverAsync(Guid session, string? project, CancellationToken ct = default);
+    Task<(List<ContractCandidate>? Contracts, string? Error)> ContractsAsync(string? project, CancellationToken ct = default);
+    Task<(ContractAssociation? Association, string? Error)> AssociateAsync(Guid session, ContractAssociation association, CancellationToken ct = default);
+    Task<(RuleGeneration? Generation, string? Error)> GenerateAsync(Guid session, ContractAssociation? association, CancellationToken ct = default);
+    Task<(ParquetQualityResult? Result, string? Error)> ReviewAsync(Guid session, ParquetQualityRequest request, CancellationToken ct = default);
+    Task<(ParquetBaselineResult? Result, string? Error)> BaselineAsync(ParquetBaselineRequest request, CancellationToken ct = default);
+    Task<(List<ParquetRuleSetVersion>? Versions, string? Error)> RuleSetsAsync(string project, string contract, string version, CancellationToken ct = default);
+    Task<(ParquetRuleSetVersion? Version, string? Error)> ApproveRulesAsync(Guid session, ParquetApprovalRequest request, CancellationToken ct = default);
+    Task<(ParquetInspectionEvidence? Evidence, string? Error)> EvidenceDetailAsync(string environmentId, Guid id, CancellationToken ct = default);
+    Task<(byte[]? Bytes, string? Error)> ReportAsync(string environmentId, Guid id, CancellationToken ct = default);
+    Task<(ParquetInspectionEvidence? Evidence, string? Error)> ApproveBaselineAsync(string environmentId, Guid id, CancellationToken ct = default);
 }
 
 public sealed class ParquetApiService(HttpClient http) : IParquetApiService
@@ -79,6 +93,50 @@ public sealed class ParquetApiService(HttpClient http) : IParquetApiService
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { return Fail(ex); }
     }
+
+    public Task<(List<ParquetOverview>? Sessions, string? Error)> SessionsAsync(IEnumerable<Guid> ids, CancellationToken ct = default) =>
+        Get<List<ParquetOverview>>($"{Base}/sessions?ids={string.Join(',', ids.Take(20))}", ct);
+
+    public async Task<(ParquetManifestSummary? Manifest, string? Error)> AttachManifestAsync(Guid session, string json, CancellationToken ct = default)
+    {
+        try
+        {
+            using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            using var response = await http.PostAsync($"{Base}/sessions/{session}/manifest", content, ct);
+            return await Read<ParquetManifestSummary>(response, ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return (null, Fail(ex)); }
+    }
+
+    public Task<(ContractDiscovery? Discovery, string? Error)> DiscoverAsync(Guid session, string? project, CancellationToken ct = default) =>
+        Get<ContractDiscovery>($"{Base}/sessions/{session}/contracts{(string.IsNullOrWhiteSpace(project) ? "" : "?project=" + Uri.EscapeDataString(project))}", ct);
+    public Task<(List<ContractCandidate>? Contracts, string? Error)> ContractsAsync(string? project, CancellationToken ct = default) =>
+        Get<List<ContractCandidate>>($"{Base}/contracts{(string.IsNullOrWhiteSpace(project) ? "" : "?project=" + Uri.EscapeDataString(project))}", ct);
+    public Task<(ContractAssociation? Association, string? Error)> AssociateAsync(Guid session, ContractAssociation association, CancellationToken ct = default) =>
+        Post<ContractAssociation>($"{Base}/sessions/{session}/association", association, ct);
+    public Task<(RuleGeneration? Generation, string? Error)> GenerateAsync(Guid session, ContractAssociation? association, CancellationToken ct = default) =>
+        Post<RuleGeneration>($"{Base}/sessions/{session}/rules", association ?? new ContractAssociation(), ct);
+    public Task<(ParquetQualityResult? Result, string? Error)> ReviewAsync(Guid session, ParquetQualityRequest request, CancellationToken ct = default) =>
+        Post<ParquetQualityResult>($"{Base}/sessions/{session}/review", request, ct);
+    public Task<(ParquetBaselineResult? Result, string? Error)> BaselineAsync(ParquetBaselineRequest request, CancellationToken ct = default) =>
+        Post<ParquetBaselineResult>($"{Base}/baseline", request, ct);
+    public Task<(List<ParquetRuleSetVersion>? Versions, string? Error)> RuleSetsAsync(string project, string contract, string version, CancellationToken ct = default) =>
+        Get<List<ParquetRuleSetVersion>>($"{Base}/rule-sets?project={Uri.EscapeDataString(project)}&contract={Uri.EscapeDataString(contract)}&version={Uri.EscapeDataString(version)}", ct);
+    public Task<(ParquetRuleSetVersion? Version, string? Error)> ApproveRulesAsync(Guid session, ParquetApprovalRequest request, CancellationToken ct = default) =>
+        Post<ParquetRuleSetVersion>($"{Base}/sessions/{session}/rule-sets", request, ct);
+    public Task<(ParquetInspectionEvidence? Evidence, string? Error)> EvidenceDetailAsync(string environmentId, Guid id, CancellationToken ct = default) =>
+        Get<ParquetInspectionEvidence>($"{Base}/evidence/{id}?environmentId={Uri.EscapeDataString(environmentId)}", ct);
+    public async Task<(byte[]? Bytes, string? Error)> ReportAsync(string environmentId, Guid id, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.GetAsync($"{Base}/evidence/{id}/report?environmentId={Uri.EscapeDataString(environmentId)}", ct);
+            return response.IsSuccessStatusCode ? (await response.Content.ReadAsByteArrayAsync(ct), null) : (null, await Message(response, ct));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { return (null, Fail(ex)); }
+    }
+    public Task<(ParquetInspectionEvidence? Evidence, string? Error)> ApproveBaselineAsync(string environmentId, Guid id, CancellationToken ct = default) =>
+        Post<ParquetInspectionEvidence>($"{Base}/evidence/{id}/approve-baseline?environmentId={Uri.EscapeDataString(environmentId)}", new { }, ct);
 
     private async Task<(T? Value, string? Error)> Get<T>(string url, CancellationToken ct)
     {

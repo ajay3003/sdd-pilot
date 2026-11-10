@@ -120,6 +120,7 @@
     <Compile Include="../../shared/PerformanceBaselineRegression.cs" Link="Models/PerformanceBaselineRegression.cs" />
     <Compile Include="../../shared/MessagingObservationContracts.cs" Link="Models/MessagingObservationContracts.cs" />
     <Compile Include="../../shared/ParquetContracts.cs" Link="Models/ParquetContracts.cs" />
+    <Compile Include="../../shared/ParquetQualityContracts.cs" Link="Models/ParquetQualityContracts.cs" />
     <Compile Include="../../shared/BlobStorageContracts.cs" Link="Models/BlobStorageContracts.cs" />
     <Compile Include="../../shared/ImplementationGapContracts.cs" Link="Models/ImplementationGapContracts.cs" />
     <Compile Include="../../shared/IntegrationSuiteContracts.cs" Link="Models/IntegrationSuiteContracts.cs" />
