@@ -11,6 +11,12 @@ public sealed class ApiContractRow
     public DateTimeOffset UpdatedAt { get; set; }
     /// <summary>Active, Deprecated or Archived (ContractLifecycle).</summary>
     public string Lifecycle { get; set; } = "Active";
+    /// <summary>The project (Source Analysis repository identity key) that owns the contract; null for uploaded/URL contracts and for legacy contracts
+    /// whose project could not be resolved. Source paths are provenance, never the identity across projects.</summary>
+    public string? ProjectKey { get; set; }
+    /// <summary>Null = resolved (or new). "Unscoped" = not from Source Analysis (upload/URL). "NeedsReview" = a legacy contract whose versions point to
+    /// different projects (or to snapshots that no longer exist): never continued automatically until a person assigns its project.</summary>
+    public string? IdentityState { get; set; }
 }
 
 /// <summary>One imported version of a contract. Never updated: a changed document is a new version; an identical one is not stored again.</summary>
@@ -33,6 +39,28 @@ public sealed class ApiContractVersionRow
     public Guid? SourceSnapshotId { get; init; }
     public string? SourcePath { get; init; }
     public bool Hidden { get; set; }
+    /// <summary>The project (repository identity key) of the snapshot this version was imported from; null for uploads and unresolved legacy versions.</summary>
+    public string? SourceProjectKey { get; set; }
+}
+
+/// <summary>
+/// A recorded identity or configuration decision: a confirmed or rejected relocation match (who, when, on which evidence), a recorded source location
+/// of an unchanged moved contract, a project assignment of a legacy contract, an applied bulk endpoint binding, a rejected chain suggestion. Never
+/// updated or deleted: the history of how a contract's identity was decided stays traceable.
+/// </summary>
+public sealed class ContractReviewDecisionRow
+{
+    public Guid Id { get; init; }
+    /// <summary>identity-confirm, identity-reject, location, project-assignment, binding, chain-reject.</summary>
+    public string Kind { get; init; } = "";
+    public Guid? ContractId { get; init; }
+    public string? ProjectKey { get; init; }
+    /// <summary>The subject: a source contract id (identity, location), an environment id (binding) or a suggestion id (chain).</summary>
+    public string SubjectKey { get; init; } = "";
+    public Guid? SnapshotId { get; init; }
+    public string Detail { get; init; } = "";
+    public string DecidedBy { get; init; } = "";
+    public DateTimeOffset DecidedAt { get; init; }
 }
 
 /// <summary>A contract test definition (ContractTestDefinition as JSON) with its searchable columns.</summary>

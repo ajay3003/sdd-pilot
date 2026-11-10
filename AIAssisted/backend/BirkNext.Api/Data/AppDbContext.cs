@@ -29,6 +29,7 @@ public class AppDbContext : DbContext
     public DbSet<ApiContractVersionRow> ApiContractVersions => Set<ApiContractVersionRow>();
     public DbSet<ContractTestRow> ContractTests => Set<ContractTestRow>();
     public DbSet<ContractEndpointBindingRow> ContractEndpointBindings => Set<ContractEndpointBindingRow>();
+    public DbSet<ContractReviewDecisionRow> ContractReviewDecisions => Set<ContractReviewDecisionRow>();
     public DbSet<ContractTestRevisionRow> ContractTestRevisions => Set<ContractTestRevisionRow>();
     public DbSet<ContractTestChainRow> ContractTestChains => Set<ContractTestChainRow>();
     public DbSet<ImpactAnalysisRunRecord> ImpactAnalysisRuns => Set<ImpactAnalysisRunRecord>();
@@ -1205,6 +1206,9 @@ public class AppDbContext : DbContext
             entity.Property(c => c.Protocol).HasMaxLength(20).IsRequired();
             entity.HasIndex(c => c.Key).IsUnique();
             entity.Property(c => c.Lifecycle).HasMaxLength(20).IsRequired().HasDefaultValue("Active");
+            entity.Property(c => c.ProjectKey).HasMaxLength(200);
+            entity.Property(c => c.IdentityState).HasMaxLength(20);
+            entity.HasIndex(c => c.ProjectKey);
         });
         modelBuilder.Entity<ApiContractVersionRow>(entity =>
         {
@@ -1219,6 +1223,20 @@ public class AppDbContext : DbContext
             entity.HasIndex(v => new { v.ContractId, v.Version }).IsUnique();
             entity.Property(v => v.SourcePath).HasMaxLength(500);
             entity.HasIndex(v => new { v.SourceSnapshotId, v.SourcePath });
+            entity.Property(v => v.SourceProjectKey).HasMaxLength(200);
+            entity.HasIndex(v => new { v.SourceProjectKey, v.SourcePath });
+        });
+        modelBuilder.Entity<ContractReviewDecisionRow>(entity =>
+        {
+            entity.ToTable("contract_review_decisions");
+            entity.HasKey(d => d.Id);
+            entity.Property(d => d.Kind).HasMaxLength(40).IsRequired();
+            entity.Property(d => d.ProjectKey).HasMaxLength(200);
+            entity.Property(d => d.SubjectKey).HasMaxLength(500).IsRequired();
+            entity.Property(d => d.Detail).HasColumnType("text").IsRequired();
+            entity.Property(d => d.DecidedBy).HasMaxLength(200).IsRequired();
+            entity.HasIndex(d => new { d.Kind, d.SubjectKey });
+            entity.HasIndex(d => d.ContractId);
         });
         modelBuilder.Entity<ContractTestRow>(entity =>
         {

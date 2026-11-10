@@ -23,12 +23,19 @@ public sealed class ContractBulkImportService(ContractRegistryService registry, 
             var name = candidate?.Name ?? item.SourceContractId;
             var before = candidate?.ContractVersion;
             var import = await registry.ImportFromSourceAsync(new SourceContractImportRequest(item.SnapshotId, item.SourceContractId, null, null), ct);
+            if (import.NeedsReview)
+            {
+                // A possible move/rename of an existing contract of the project: never imported as a second contract without a person's decision.
+                items.Add(new(item.SourceContractId, file, name, BulkImportOutcome.NeedsReview, null, null, import.Message));
+                continue;
+            }
             if (import.Key is not { } key || import.Version is not { } version || !(import.Imported || import.Unchanged))
             {
                 items.Add(new(item.SourceContractId, file, name, BulkImportOutcome.Failed, import.Key, import.Version, import.Message));
                 continue;
             }
-            var outcome = import.Unchanged ? BulkImportOutcome.Unchanged : before is not null && version > 1 ? BulkImportOutcome.NewVersion : BulkImportOutcome.Imported;
+            var outcome = import.Moved ? BulkImportOutcome.Moved : import.Unchanged ? BulkImportOutcome.Unchanged
+                : before is not null && version > 1 ? BulkImportOutcome.NewVersion : BulkImportOutcome.Imported;
             var result = new SourceContractBulkItem(item.SourceContractId, file, name, outcome, key, version, import.Message);
             if (request.GenerateTests)
             {

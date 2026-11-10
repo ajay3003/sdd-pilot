@@ -85,7 +85,18 @@ public sealed record ApiContractSummary(Guid Id, string Key, string Name, ApiCon
     DateTimeOffset UpdatedAt)
 {
     public ContractLifecycle Lifecycle { get; init; }
+    /// <summary>The owning project (Source Analysis repository identity key); null for uploaded/URL contracts and unresolved legacy contracts.</summary>
+    public string? ProjectKey { get; init; }
+    /// <summary>Null = resolved; "Unscoped" = upload/URL; "NeedsReview" = legacy contract whose project a person must assign.</summary>
+    public string? IdentityState { get; init; }
+    /// <summary>Top-level folder of the latest source-backed version's file (module/service); null for uploads.</summary>
+    public string? Module { get; init; }
 }
+
+/// <summary>A project as Contract Testing scopes contracts: one repository identity, or several a person declared to be the same repository.</summary>
+public sealed record ContractProject(string Key, string DisplayName, List<string> Keys, int Snapshots, int Contracts, Guid? LatestSnapshotId, DateTimeOffset? LatestAnalyzedAt);
+
+public sealed record ContractProjectAssignment(string ProjectKey);
 
 /// <summary>One immutable version: what was imported (fingerprint, source, format) and how far it could be read.</summary>
 public sealed record ApiContractVersionInfo(int Version, string Sha256, ContractVersionSource Source, string SourceLabel, string Format, DateTimeOffset ImportedAt,
@@ -117,10 +128,33 @@ public sealed record SourceContractCandidate(Guid SnapshotId, DateTimeOffset Ana
     public int Snapshots { get; init; } = 1;
     /// <summary>The snapshot retained the document text: the imported version gets full schema validation (otherwise structural only).</summary>
     public bool HasDocument { get; init; }
+    /// <summary>The project the snapshot belongs to (repository identity key and display name).</summary>
+    public string ProjectKey { get; init; } = "";
+    public string ProjectName { get; init; } = "";
+    public ContractIdentityClassification Identity { get; init; } = ContractIdentityClassification.NewContract;
+    /// <summary>Existing contracts of the same project this source contract may continue (relocation candidates), with evidence.</summary>
+    public List<ContractIdentityCandidate> Candidates { get; init; } = [];
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum SourceContractCandidateState { New, UpToDate, Changed, Archived }
+public enum SourceContractCandidateState { New, UpToDate, Changed, Archived, Moved, NeedsReview }
+
+/// <summary>
+/// How a source contract relates to the project's existing contracts. SameContract / NewVersion: same source location. MovedUnchanged: the identical
+/// document at a new location (recorded as a location of the existing contract). MovedChanged: one strong candidate (same protocol, most operations
+/// shared) at a new location with changes — needs a person. PossibleMatch: a weaker single candidate — needs a person. Ambiguous: several candidates —
+/// needs a person. NewContract: nothing in the project matches. Never across projects.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ContractIdentityClassification { SameContract, NewVersion, MovedUnchanged, MovedChanged, PossibleMatch, NewContract, Ambiguous }
+
+/// <summary>An existing contract of the same project that a moved/renamed source contract may continue, with the evidence for and against.</summary>
+public sealed record ContractIdentityCandidate(string Key, string Name, int LatestVersion, string? LatestSourcePath, bool SameDocument, bool SameTitle, int SharedOperations,
+    int CandidateOperations, int SourceOperations, double OperationOverlap, List<string> Evidence);
+
+/// <summary>A person's decision on a relocation candidate: confirm (continue <see cref="TargetKey"/>) or reject (with a target: not that one; without:
+/// import as a new contract). Recorded with who and when; the source location history is kept on the versions.</summary>
+public sealed record ContractIdentityDecisionRequest(Guid SnapshotId, string SourceContractId, string? TargetKey, bool Confirm);
 
 public sealed record SourceContractImportRequest(Guid SnapshotId, string SourceContractId, string? ContractKey, string? Name);
 
@@ -136,7 +170,7 @@ public sealed record SourceContractBulkImportRequest
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum BulkImportOutcome { Imported, NewVersion, Unchanged, Failed }
+public enum BulkImportOutcome { Imported, NewVersion, Unchanged, Failed, Moved, NeedsReview }
 
 /// <summary>What happened to one source contract: the registry outcome, the tests created and the test data per state (operations).</summary>
 public sealed record SourceContractBulkItem(string SourceContractId, string File, string Name, BulkImportOutcome Outcome, string? Key, int? Version, string Message)
@@ -156,6 +190,8 @@ public sealed record SourceContractBulkImportResult(List<SourceContractBulkItem>
     public int Imported => Items.Count(i => i.Outcome is BulkImportOutcome.Imported or BulkImportOutcome.NewVersion);
     public int Unchanged => Items.Count(i => i.Outcome == BulkImportOutcome.Unchanged);
     public int Failed => Items.Count(i => i.Outcome == BulkImportOutcome.Failed);
+    public int Moved => Items.Count(i => i.Outcome == BulkImportOutcome.Moved);
+    public int NeedsReview => Items.Count(i => i.Outcome == BulkImportOutcome.NeedsReview);
 }
 
 public sealed record ApiContractDetail(ApiContractSummary Contract, List<ApiContractVersionInfo> Versions, int Version, SourceContract Document);
@@ -171,7 +207,13 @@ public sealed record ContractImportRequest
     public string? Url { get; init; }
 }
 
-public sealed record ContractImportResult(bool Imported, bool Unchanged, string? Key, int? Version, string Message, List<string> Problems);
+public sealed record ContractImportResult(bool Imported, bool Unchanged, string? Key, int? Version, string Message, List<string> Problems)
+{
+    /// <summary>Not imported: the source contract may be a moved/renamed existing contract; a person decides (identity review).</summary>
+    public bool NeedsReview { get; init; }
+    /// <summary>The identical document at a new location: recorded as a location of the existing contract, no new version.</summary>
+    public bool Moved { get; init; }
+}
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ContractTestKind

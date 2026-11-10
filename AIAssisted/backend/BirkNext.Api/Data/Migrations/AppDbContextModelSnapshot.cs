@@ -209,6 +209,10 @@ namespace BirkNext.Api.Data.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("IdentityState")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.Property<string>("Key")
                         .IsRequired()
                         .HasMaxLength(80)
@@ -226,6 +230,10 @@ namespace BirkNext.Api.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<string>("ProjectKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<string>("Protocol")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -238,6 +246,8 @@ namespace BirkNext.Api.Data.Migrations
 
                     b.HasIndex("Key")
                         .IsUnique();
+
+                    b.HasIndex("ProjectKey");
 
                     b.ToTable("api_contracts", (string)null);
                 });
@@ -292,6 +302,10 @@ namespace BirkNext.Api.Data.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<string>("SourceProjectKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<Guid?>("SourceSnapshotId")
                         .HasColumnType("uuid");
 
@@ -302,6 +316,8 @@ namespace BirkNext.Api.Data.Migrations
 
                     b.HasIndex("ContractId", "Version")
                         .IsUnique();
+
+                    b.HasIndex("SourceProjectKey", "SourcePath");
 
                     b.HasIndex("SourceSnapshotId", "SourcePath");
 
@@ -575,6 +591,53 @@ namespace BirkNext.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("contract_endpoint_bindings", (string)null);
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Models.ContractReviewDecisionRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ContractId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("DecidedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DecidedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("ProjectKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid?>("SnapshotId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SubjectKey")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractId");
+
+                    b.HasIndex("Kind", "SubjectKey");
+
+                    b.ToTable("contract_review_decisions", (string)null);
                 });
 
             modelBuilder.Entity("BirkNext.Api.Models.ContractTestChainRow", b =>

@@ -780,6 +780,8 @@ builder.Services.AddSingleton<BirkNext.Api.Services.TestData.TestDataSchemaAssoc
 // Performance / Critical E2E references: alias-only references are migrated to stable ids once (never guessed for reused aliases).
 builder.Services.AddScoped<BirkNext.Api.Services.TestDataConsumers.TestDataConsumerReferenceMigration>();
 builder.Services.AddHostedService<BirkNext.Api.Services.TestDataConsumers.TestDataConsumerReferenceMigrationHostedService>();
+// Contract identity: legacy contracts get their Source Analysis project (or a review state); never merged or deleted.
+builder.Services.AddHostedService<BirkNext.Api.Services.ContractTesting.ContractIdentityBackfillHostedService>();
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.TestData.TestDataCatalog(sp.GetServices<BirkNext.Api.Services.TestData.ITestDataProvider>(), null,
     sp.GetRequiredService<BirkNext.Api.Services.TestData.TestDataRegistryStore>(), sp.GetServices<BirkNext.Api.Services.TestData.ITestDataCanonicalFixtures>(),
     sp.GetRequiredService<BirkNext.Api.Services.TestData.TestDataIdentityStore>()));

@@ -25,12 +25,43 @@ public sealed class ContractTestingController(ContractRegistryService registry, 
         return result.Imported || result.Unchanged ? Ok(result) : UnprocessableEntity(result);
     }
 
+    /// <summary>Contracts; with <paramref name="project"/> only that project's (its repository identity and declared same-repository identities).</summary>
     [HttpGet("contracts")]
-    public async Task<ActionResult<IReadOnlyList<ApiContractSummary>>> List(CancellationToken ct) => Ok(await registry.ListAsync(ct));
+    public async Task<ActionResult<IReadOnlyList<ApiContractSummary>>> List([FromQuery] string? project, CancellationToken ct) =>
+        Ok(await registry.ListAsync(string.IsNullOrWhiteSpace(project) ? null : project, ct));
 
-    /// <summary>OpenAPI / GraphQL schema contracts found by Source Analysis, with the store version each was imported as (reading only).</summary>
+    /// <summary>Projects (Source Analysis repository identities, joined by declared same-repository associations) with their snapshots and contracts.</summary>
+    [HttpGet("projects")]
+    public async Task<ActionResult<IReadOnlyList<ContractProject>>> Projects(CancellationToken ct) => Ok(await registry.ProjectsAsync(ct));
+
+    /// <summary>OpenAPI / GraphQL schema contracts found by Source Analysis, one per source contract and project, with the identity classification
+    /// against the project's contracts (reading only).</summary>
     [HttpGet("source-contracts")]
-    public async Task<ActionResult<IReadOnlyList<SourceContractCandidate>>> SourceContracts(CancellationToken ct) => Ok(await registry.SourceCandidatesAsync(ct));
+    public async Task<ActionResult<IReadOnlyList<SourceContractCandidate>>> SourceContracts([FromQuery] string? project, CancellationToken ct) =>
+        Ok(await registry.SourceCandidatesAsync(string.IsNullOrWhiteSpace(project) ? null : project, ct));
+
+    /// <summary>A person's decision on a possible move/rename: continue a candidate contract of the same project, reject a candidate, or import as new.
+    /// Recorded with who and when.</summary>
+    [HttpPost("contracts/identity-decisions")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public async Task<ActionResult<ContractImportResult>> DecideIdentity([FromBody] ContractIdentityDecisionRequest request, CancellationToken ct)
+    {
+        var result = await registry.DecideIdentityAsync(request, User.Identity?.Name ?? "local user", ct);
+        return result.Imported || result.Unchanged || result.Problems.Count == 0 ? Ok(result) : UnprocessableEntity(result);
+    }
+
+    public sealed record IdentityDecisionView(string Kind, string? ProjectKey, string SubjectKey, Guid? SnapshotId, string Detail, string DecidedBy, DateTimeOffset DecidedAt);
+
+    /// <summary>The identity history of a contract: confirmed/rejected relocations, recorded locations, project assignments.</summary>
+    [HttpGet("contracts/{key}/identity")]
+    public async Task<ActionResult<IReadOnlyList<IdentityDecisionView>>> IdentityHistory(string key, CancellationToken ct) =>
+        Ok((await registry.DecisionsAsync(key, ct)).Select(d => new IdentityDecisionView(d.Kind, d.ProjectKey, d.SubjectKey, d.SnapshotId, d.Detail, d.DecidedBy, d.DecidedAt)).ToList());
+
+    /// <summary>Assigns the project of a legacy contract whose identity needs review (one of the projects its versions came from).</summary>
+    [HttpPut("contracts/{key}/project")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public async Task<IActionResult> AssignProject(string key, [FromBody] ContractProjectAssignment request, CancellationToken ct) =>
+        Refusal(await registry.AssignProjectAsync(key, request.ProjectKey, User.Identity?.Name ?? "local user", ct));
 
     [HttpPost("contracts/from-source")]
     public async Task<ActionResult<ContractImportResult>> ImportFromSource([FromBody] SourceContractImportRequest request, CancellationToken ct)
