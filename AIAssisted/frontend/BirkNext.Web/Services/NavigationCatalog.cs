@@ -181,7 +181,7 @@ public static class NavigationCatalog
             new("test-data", "Test Data", "nav-icon-task-alignment", Always, Hint: "approved typed test data: values, payloads, files, entity references, data sets, expected results"),
             new("api-quality-review/contracts", "Contract Testing", "nav-icon-task-alignment", Always, Hint: "stored REST/GraphQL contracts: versions, tests, readiness, runs, impact and coverage",
                 Aliases: ["Contract-Driven Testing", "Contracts"]),
-            new("integration-suites", "Generate Integration Test Suite", "nav-icon-task-alignment", Always, WrapLabel: true,
+            new("integration-suites", "Integration Test Suites", "nav-icon-task-alignment", Always, WrapLabel: true,
                 Hint: "from an analysed source snapshot: contracts, tests, test data, flow, Kode 6/7 scenarios, readiness and what remains before a run",
                 Aliases: ["Integration Suites", "Generate Suite", "ATG"]),
             new("execution-results", "Execution Results", "nav-icon-task-alignment", Always, Hint: "saved REST/GraphQL runs: what was actually sent and received, attempts, assertions"),

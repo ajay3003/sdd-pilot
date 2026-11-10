@@ -262,7 +262,7 @@ public static class DocumentationCatalog
             ("code-risk-review","Code Risk Review","/code-risk-review","code-risk-review","Quality & Testing",null,null),
             ("api-quality-review/contracts","Contract Testing","/api-quality-review/contracts","contract-testing","Quality & Testing",null,null),
             ("execution-results","Execution Results","/execution-results","execution-results","Quality & Testing",null,null),
-            ("integration-suites","Generate Integration Test Suite","/integration-suites","integration-suites","Quality & Testing",null,null),
+            ("integration-suites","Integration Test Suites","/integration-suites","integration-suites","Quality & Testing",null,null),
             ("parquet-viewer","Parquet Quality Review","/parquet-viewer","parquet-viewer","Quality & Testing",null,null),
             ("test-data","Test Data","/test-data","test-data","Quality & Testing",null,null),
             ("security-classification-review","M01 – Gradert tilgang (Kode 6/7)","/security-classification-review","quality-reviews","Extensions",null,"M2LB child-security-classification"),

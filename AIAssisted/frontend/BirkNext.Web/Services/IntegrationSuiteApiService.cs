@@ -17,6 +17,24 @@ public interface IIntegrationSuiteApiService
     Task<(IntegrationSuiteGenerateResult? Result, string? Error)> GenerateAsync(IntegrationSuiteGenerateRequest request, CancellationToken ct = default);
     Task<string?> ReviewAsync(Guid id, IntegrationSuiteReviewRequest request, CancellationToken ct = default);
     Task<(IntegrationSuiteExecuteResult? Result, string? Error)> ExecuteAsync(Guid id, IntegrationSuiteExecuteRequest request, CancellationToken ct = default);
+
+    // ── Multi-source (composite) ──
+    Task<(CompositeDiscovery? Discovery, string? Error)> DiscoverAsync(string scopeId, Guid? contextId, CancellationToken ct = default) =>
+        Task.FromResult<(CompositeDiscovery?, string?)>((null, "Not available."));
+    Task<(List<CompositeContextSummary>? Contexts, string? Error)> ContextsAsync(CancellationToken ct = default) =>
+        Task.FromResult<(List<CompositeContextSummary>?, string?)>(([], null));
+    Task<(CompositeSourceContext? Context, string? Error)> ContextAsync(Guid id, CancellationToken ct = default) =>
+        Task.FromResult<(CompositeSourceContext?, string?)>((null, "Not available."));
+    Task<(CompositeContextSaveResult? Result, string? Error)> SaveContextAsync(CompositeContextSaveRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(CompositeContextSaveResult?, string?)>((null, "Not available."));
+    Task<(CompositePlan? Plan, string? Error)> ApprovePlanAsync(Guid suiteId, CancellationToken ct = default) =>
+        Task.FromResult<(CompositePlan?, string?)>((null, "Not available."));
+    Task<(CompositePreflight? Preflight, string? Error)> PreflightAsync(Guid suiteId, CompositeRunRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(CompositePreflight?, string?)>((null, "Not available."));
+    Task<(CompositeRunResult? Result, string? Error)> RunCompositeAsync(Guid suiteId, CompositeRunRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(CompositeRunResult?, string?)>((null, "Not available."));
+    Task<(CompositeRunView? Run, string? Error)> CompositeRunAsync(Guid suiteId, Guid runId, CancellationToken ct = default) =>
+        Task.FromResult<(CompositeRunView?, string?)>((null, "Not available."));
 }
 
 public sealed class IntegrationSuiteApiService(HttpClient http) : IIntegrationSuiteApiService
@@ -72,6 +90,71 @@ public sealed class IntegrationSuiteApiService(HttpClient http) : IIntegrationSu
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return (null, BackendRequestClassifier.FromException(Area, ex).UserMessage); }
     }
+
+    // ── Multi-source (composite) ──
+
+    public Task<(CompositeDiscovery? Discovery, string? Error)> DiscoverAsync(string scopeId, Guid? contextId, CancellationToken ct = default) =>
+        GetAsync<CompositeDiscovery>($"{Base}/composite/discovery?scopeId={Uri.EscapeDataString(scopeId)}{(contextId is { } c ? $"&contextId={c:D}" : "")}", ct);
+
+    public Task<(List<CompositeContextSummary>? Contexts, string? Error)> ContextsAsync(CancellationToken ct = default) => GetAsync<List<CompositeContextSummary>>($"{Base}/composite/contexts", ct);
+
+    public Task<(CompositeSourceContext? Context, string? Error)> ContextAsync(Guid id, CancellationToken ct = default) => GetAsync<CompositeSourceContext>($"{Base}/composite/contexts/{id:D}", ct);
+
+    public async Task<(CompositeContextSaveResult? Result, string? Error)> SaveContextAsync(CompositeContextSaveRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.PostAsJsonAsync($"{Base}/composite/contexts", request, Json, ct);
+            if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized) return (null, "You do not have permission to associate sources (integration configuration write permission).");
+            if (response.StatusCode is HttpStatusCode.OK or HttpStatusCode.BadRequest or HttpStatusCode.Conflict)
+            {
+                try { if (await response.Content.ReadFromJsonAsync<CompositeContextSaveResult>(Json, ct) is { } r) return (r, null); }
+                catch (JsonException) { }
+            }
+            return (null, await Message(response, ct));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return (null, BackendRequestClassifier.FromException(Area, ex).UserMessage); }
+    }
+
+    public async Task<(CompositePlan? Plan, string? Error)> ApprovePlanAsync(Guid suiteId, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.PostAsync($"{Base}/{suiteId:D}/plan/approve", null, ct);
+            if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<CompositePlan>(Json, ct), null);
+            return (null, response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized ? "You do not have permission to approve the plan (integration configuration write permission)." : await Message(response, ct));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return (null, BackendRequestClassifier.FromException(Area, ex).UserMessage); }
+    }
+
+    public async Task<(CompositePreflight? Preflight, string? Error)> PreflightAsync(Guid suiteId, CompositeRunRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.PostAsJsonAsync($"{Base}/{suiteId:D}/composite-runs/preflight", request, Json, ct);
+            return response.IsSuccessStatusCode ? (await response.Content.ReadFromJsonAsync<CompositePreflight>(Json, ct), null) : (null, await Message(response, ct));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return (null, BackendRequestClassifier.FromException(Area, ex).UserMessage); }
+    }
+
+    public async Task<(CompositeRunResult? Result, string? Error)> RunCompositeAsync(Guid suiteId, CompositeRunRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.PostAsJsonAsync($"{Base}/{suiteId:D}/composite-runs", request, Json, ct);
+            if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized) return (null, "You do not have permission to execute (active execution permission).");
+            if (response.StatusCode is HttpStatusCode.OK or HttpStatusCode.BadRequest or HttpStatusCode.NotFound)
+            {
+                try { if (await response.Content.ReadFromJsonAsync<CompositeRunResult>(Json, ct) is { } r) return (r, null); }
+                catch (JsonException) { }
+            }
+            return (null, await Message(response, ct));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return (null, BackendRequestClassifier.FromException(Area, ex).UserMessage); }
+    }
+
+    public Task<(CompositeRunView? Run, string? Error)> CompositeRunAsync(Guid suiteId, Guid runId, CancellationToken ct = default) =>
+        GetAsync<CompositeRunView>($"{Base}/{suiteId:D}/composite-runs/{runId:D}", ct);
 
     private async Task<(T? Value, string? Error)> GetAsync<T>(string url, CancellationToken ct) where T : class
     {

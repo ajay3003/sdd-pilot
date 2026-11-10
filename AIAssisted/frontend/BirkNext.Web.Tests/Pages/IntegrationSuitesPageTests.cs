@@ -69,11 +69,19 @@ public sealed class IntegrationSuitesPageTests : BunitContext
         Contracts = [new() { SourceContractId = "openapi:Ward/openapi.yaml", SourceFile = "Ward/openapi.yaml", Name = "Ward API", Type = "OpenApi", ContractKey = "ward-api", ContractVersion = 2 }],
     };
 
+    private IRenderedComponent<IntegrationSuitesPage> RenderGenerateArea()
+    {
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("integration-suites?area=generate");
+        return Render<IntegrationSuitesPage>();
+    }
+
+    private static void Pick(IRenderedComponent<IntegrationSuitesPage> cut) => cut.Find("[data-testid=its-snapshot-option]").Change(Snap.ToString("D"));
+
     private IRenderedComponent<IntegrationSuitesPage> Generated()
     {
-        var cut = Render<IntegrationSuitesPage>();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=its-snapshot]"));
-        cut.Find("[data-testid=its-snapshot]").Change(Snap.ToString("D"));
+        var cut = RenderGenerateArea();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=its-snapshot-option]"));
+        Pick(cut);
         cut.Find("[data-testid=its-generate]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=its-suite]"));
         return cut;
@@ -102,9 +110,9 @@ public sealed class IntegrationSuitesPageTests : BunitContext
     [Fact]
     public void Generate_is_disabled_until_a_snapshot_is_chosen_and_sends_the_chosen_scope_and_snapshot()
     {
-        var cut = Render<IntegrationSuitesPage>();
+        var cut = RenderGenerateArea();
         cut.WaitForAssertion(() => cut.Find("[data-testid=its-generate]").HasAttribute("disabled").Should().BeTrue());
-        cut.Find("[data-testid=its-snapshot]").Change(Snap.ToString("D"));
+        Pick(cut);
         cut.Find("[data-testid=its-snapshot-facts]").TextContent.Should().Contain("M2LB-synthetic.zip").And.Contain("aaaaaaaaaaaaaaaa");
         cut.Find("[data-testid=its-generate]").Click();
         cut.WaitForAssertion(() => _sent.Should().NotBeNull());
@@ -159,9 +167,9 @@ public sealed class IntegrationSuitesPageTests : BunitContext
     {
         _api.Setup(a => a.GenerateAsync(It.IsAny<IntegrationSuiteGenerateRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((new IntegrationSuiteGenerateResult(null, false, "The source snapshot failed analysis; no suite is generated from it."), null));
-        var cut = Render<IntegrationSuitesPage>();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=its-snapshot]"));
-        cut.Find("[data-testid=its-snapshot]").Change(Snap.ToString("D"));
+        var cut = RenderGenerateArea();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=its-snapshot-option]"));
+        Pick(cut);
         cut.Find("[data-testid=its-generate]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=its-error]").TextContent.Should().Contain("failed analysis"));
         cut.FindAll("[data-testid=its-suite]").Should().BeEmpty();

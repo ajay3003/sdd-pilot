@@ -5,282 +5,415 @@
 @using BirkNext.Web.Models
 @inject IIntegrationSuiteApiService Api
 @inject IFrontendAnalysisContextFactory ContextFactory
+@inject NavigationManager Navigation
 
-<PageTitle>Generate Integration Test Suite · BirkNext</PageTitle>
+<PageTitle>Integration Test Suites · BirkNext</PageTitle>
 
-@* Thin orchestration over existing owners: contracts and tests (Contract Testing), Test Data drafts, the Skolenærvær journey pack, the M01 Kode 6/7
-   review, topology and Execution Evidence. The page shows what the backend generated and stored; it never computes a pass, never runs anything on
-   generation, and keeps three outcomes apart: can run now / waiting for a named prerequisite / needs a domain decision. *@
+@* Thin orchestration over existing owners. Four work areas: 1 Integration & Sources (a versioned Composite Source Context: discovered snapshots per
+   stage, human approvals, static compatibility), 2 Generate & Review (draft suites — composite or single-snapshot), 3 Resolve Readiness (three levels,
+   actionable blockers), 4 Execute & Evidence (approved plan, authorised composite runs, stage timeline, correlation, coverage). The page shows what the
+   backend stored and never computes a pass. *@
 <div class="its" data-testid="its-page">
     <header class="its-head">
-        <h1>Generate Integration Test Suite</h1>
-        <p class="its-note">Choose an analysed source snapshot and a scope. BirkNext finds existing contracts, tests, test data and Kode 6/7 coverage, links them to the
-            integration flow, fills in what the evidence supports and lists exactly what remains before a real run. Generating is draft-only and sends nothing.</p>
+        <h1>Integration Test Suites</h1>
+        <p class="its-note">Build one end-to-end suite from several imported sources: map every stage of the integration to evidence-backed source snapshots,
+            generate a draft over the existing contracts, Test Data and Kode 6/7 reviews, resolve what blocks a run, and run approved stages as one correlated transaction.</p>
     </header>
+
+    <nav class="its-areas" aria-label="Suite work areas" data-testid="its-areas">
+        @foreach (var (key, label) in Areas)
+        {
+            <a href="@AreaHref(key)" class="its-area" aria-current="@(_area == key ? "page" : null)" data-testid="@($"its-area-{key}")"
+               @onclick="() => SetArea(key)" @onclick:preventDefault="true">@label</a>
+        }
+    </nav>
 
     @if (_error is { } error) { <p class="sd-reason" role="alert" data-testid="its-error">@error</p> }
     @if (_message is { } message) { <p class="its-note" role="status" data-testid="its-message">@message</p> }
 
-    <section class="its-card" aria-labelledby="its-source-title" data-testid="its-source">
-        <h2 id="its-source-title">1 · Source and scope</h2>
-        @if (_snapshots is null) { <p class="its-note">Loading snapshots…</p> }
-        else if (_snapshots.Count == 0) { <p class="its-note" data-testid="its-no-snapshots">No analysed source snapshot yet. <a href="/project-import">Import the project</a> first.</p> }
-        else
-        {
-            <div class="its-form">
-                <label>Source snapshot
-                    <select @bind="SelectedSnapshot" data-testid="its-snapshot">
-                        <option value="">Choose a snapshot…</option>
-                        @foreach (var s in _snapshots)
-                        {
-                            <option value="@s.Id.ToString("D")">@($"{s.Archive.FileName} · {s.AnalyzedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC · {s.Status}")</option>
-                        }
-                    </select>
-                </label>
-                <label>Scope
-                    <select @bind="_scopeId" data-testid="its-scope">
-                        @foreach (var sc in _scopes ?? []) { <option value="@sc.ScopeId">@sc.DisplayName</option> }
-                    </select>
-                </label>
-                @if (_scopeId == "api")
-                {
-                    <label>Modules (top-level folders, comma-separated) <input @bind="_modules" data-testid="its-modules" /></label>
-                }
-                <label class="its-check"><input type="checkbox" @bind="_negatives" /> Include negative proposals</label>
-                <label class="its-check"><input type="checkbox" @bind="_security" /> Include Kode 6/7 security scenarios</label>
-                <label class="its-check"><input type="checkbox" @bind="_testData" /> Generate synthetic test data drafts</label>
-            </div>
-            @if (Picked is { } p)
-            {
-                <dl class="its-facts" data-testid="its-snapshot-facts">
-                    <div><dt>Archive</dt><dd>@p.Archive.FileName</dd></div>
-                    <div><dt>SHA-256</dt><dd><code>@(p.Archive.Sha256.Length >= 16 ? p.Archive.Sha256[..16] + "…" : p.Archive.Sha256)</code></dd></div>
-                    <div><dt>Snapshot</dt><dd><code>@p.Id.ToString("D")[..8]</code></dd></div>
-                    <div><dt>Analysed</dt><dd>@Utc(p.AnalyzedAt)</dd></div>
-                    <div><dt>Project import</dt><dd>@(p.ProjectImportId ?? "source-only upload")</dd></div>
-                </dl>
-            }
-            @if (ScopeDef is { } scopeDef)
-            {
-                <p class="its-note" data-testid="its-scope-description">@scopeDef.Description</p>
-            }
-            <button type="button" class="btn btn-primary" disabled="@(_busy || Picked is null)" @onclick="GenerateAsync" data-testid="its-generate">Generate suite</button>
-        }
-    </section>
-
-    @if (_suites is { Count: > 0 })
+    @if (StripStages.Count > 0)
     {
-        <section class="its-card" aria-labelledby="its-history-title">
-            <h2 id="its-history-title">Generated suites</h2>
-            <div class="its-scroll" tabindex="0" role="region" aria-label="Generated suites">
-                <table class="its-table" data-testid="its-history">
-                    <thead><tr><th scope="col">Suite</th><th scope="col">Revision</th><th scope="col">Archive</th><th scope="col">Generated</th><th scope="col">Status</th><th scope="col">Tests</th><th scope="col">Open review</th><th scope="col"></th></tr></thead>
-                    <tbody>@foreach (var s in _suites)
-                    {
-                        <tr data-testid="its-history-row"><th scope="row">@s.ScopeName</th><td>r@(s.Revision)</td><td>@s.ArchiveFileName</td><td>@Utc(s.GeneratedAt)</td><td>@Label(s.Status)</td><td>@s.Tests</td><td>@s.ReviewOpen</td>
-                            <td><button type="button" class="btn btn-secondary btn-sm" @onclick="() => OpenAsync(s.Id)">Open</button></td></tr>
-                    }</tbody>
-                </table>
-            </div>
-        </section>
+        <ol class="its-strip" aria-label="Stage coverage" data-testid="its-strip">
+            @foreach (var s in StripStages)
+            {
+                <li class="its-strip-stage" data-testid="its-strip-stage" data-stage="@s.Id" data-state="@s.State" title="@s.Detail">
+                    <span class="its-strip-label">@s.Label</span>
+                    <span class="its-strip-state">@s.StateLabel</span>
+                </li>
+            }
+        </ol>
     }
 
-    @if (_suite is { } suite)
+    @switch (_area)
     {
-        <section class="its-card its-summary" aria-labelledby="its-suite-title" data-testid="its-suite">
-            <h2 id="its-suite-title">@suite.Scope.DisplayName · revision @suite.Revision</h2>
-            <div class="its-badges">
-                <span class="its-badge" data-status="@suite.Status" data-testid="its-status">@Label(suite.Status)</span>
-                <span class="its-badge" data-testid="its-outcome">@Outcome(suite.Outcome)</span>
-            </div>
-            <p class="its-note" data-testid="its-status-reason">@suite.StatusReason</p>
-            @if (suite.Contracts.Where(c => c.ContractKey is { Length: > 0 }).Select(c => c.ContractKey!).Distinct().ToList() is { Count: > 0 } suiteKeys)
-            {
-                @* Hand-off to Contract Testing's bulk configuration: these contracts preselected; nothing is applied until the tester previews and confirms there. *@
-                <p class="its-note"><a href="@($"api-quality-review/contracts?mode=configure&keys={Uri.EscapeDataString(string.Join(',', suiteKeys))}")" data-testid="its-resolve-environment">Resolve environment blockers for these @suiteKeys.Count contract(s) →</a></p>
-            }
-            <div class="its-triage" data-testid="its-triage">
-                <div><strong data-testid="its-can-run">@CountTriage(suite, SuiteTriage.CanRunNow)</strong> can be generated and run now</div>
-                <div><strong data-testid="its-waiting">@CountTriage(suite, SuiteTriage.WaitingForPrerequisite)</strong> generated, waiting for a prerequisite</div>
-                <div><strong data-testid="its-decision">@CountTriage(suite, SuiteTriage.NeedsDomainDecision)</strong> need a domain decision</div>
-                <div><strong>@CountTriage(suite, SuiteTriage.NotSupported)</strong> not supported</div>
-            </div>
-            @if (suite.Drift.Count > 0)
-            {
-                <ul class="its-list" data-testid="its-drift" aria-label="Changes since the previous revision">@foreach (var d in suite.Drift) { <li>@d</li> }</ul>
-            }
-        </section>
+        case "sources":
+            <section class="its-card" aria-labelledby="its-int-title" data-testid="its-sources">
+                <h2 id="its-int-title">Integration</h2>
+                <div class="its-segment" role="radiogroup" aria-label="Integration scope">
+                    @foreach (var sc in (_scopes ?? []).Where(s => s.Stages.Any(t => t.Source is not null)))
+                    {
+                        <button type="button" role="radio" aria-checked="@(_compositeScope == sc.ScopeId ? "true" : "false")" class="its-seg" @onclick="() => _compositeScope = sc.ScopeId"
+                                data-testid="its-composite-scope">@sc.DisplayName</button>
+                    }
+                </div>
+                <div class="its-actions">
+                    <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="DiscoverAsync" data-testid="its-discover">Auto-discover sources</button>
+                    @if (_contexts is { Count: > 0 })
+                    {
+                        @foreach (var c in _contexts.Take(5))
+                        {
+                            <button type="button" class="btn btn-secondary btn-sm" @onclick="() => OpenContextAsync(c.Id)" data-testid="its-context-open">
+                                @($"{c.OwningProject} · r{c.Revision} · {c.StagesCovered}/{c.Stages} stages")</button>
+                        }
+                    }
+                </div>
+                @if (_context is { } ctx)
+                {
+                    <p class="its-note" data-testid="its-context-summary">Context <strong>@ctx.ContextKey</strong> · revision @ctx.Revision · @ctx.Snapshots.Count source(s), @ctx.Snapshots.Count(s => s.Approval == CompositeApproval.Approved) approved · saved @Utc(ctx.UpdatedAt)</p>
+                    @foreach (var n in ctx.NewerSources)
+                    {
+                        <p class="its-prereq" data-testid="its-newer-source">A newer snapshot of <strong>@n.ProjectKey</strong> exists (@Short(n.NewerArchiveSha256), @Utc(n.NewerAnalyzedAt)); it affects @string.Join(", ", n.AffectedStages).
+                            <button type="button" class="btn btn-secondary btn-sm" @onclick="() => UseNewer(n)" data-testid="its-use-newer">Use it (review again)</button></p>
+                    }
+                }
+            </section>
 
-        <nav class="its-tabs" role="tablist" aria-label="Suite views">
-            @foreach (var t in Tabs)
+            @if (_discovery is { } discovery)
             {
-                <button type="button" role="tab" class="its-tab" aria-selected="@(_tab == t ? "true" : "false")" @onclick="() => _tab = t" data-testid="@($"its-tab-{Slug(t)}")">@t</button>
-            }
-        </nav>
-
-        @switch (_tab)
-        {
-            case "Readiness":
-                <section class="its-card" data-testid="its-readiness" aria-label="Readiness">
-                    <ul class="its-dimensions">@foreach (var d in suite.Readiness)
-                    {
-                        <li data-testid="its-dimension" data-state="@d.State"><span class="its-dim-name">@d.Name</span><span class="its-badge" data-state="@d.State">@Label(d.State)</span><span class="its-dim-detail">@d.Detail</span></li>
-                    }</ul>
-                    <h3>Source snapshot</h3>
-                    <dl class="its-facts">
-                        <div><dt>Archive</dt><dd>@suite.Snapshot.ArchiveFileName</dd></div>
-                        <div><dt>SHA-256</dt><dd><code>@Short(suite.Snapshot.ArchiveSha256)</code></dd></div>
-                        <div><dt>Evidence domains</dt><dd>@string.Join(", ", suite.Snapshot.EvidenceDomains)</dd></div>
-                        <div><dt>Modules</dt><dd>@string.Join(", ", suite.Snapshot.Modules)</dd></div>
-                    </dl>
-                    @if (suite.Snapshot.MissingSourceAreas.Count > 0)
-                    {
-                        <ul class="its-list" data-testid="its-missing-areas">@foreach (var m in suite.Snapshot.MissingSourceAreas) { <li>@m</li> }</ul>
-                    }
-                    @if (suite.Limitations.Count > 0)
-                    {
-                        <h3>Limitations</h3>
-                        <ul class="its-list">@foreach (var l in suite.Limitations) { <li>@l</li> }</ul>
-                    }
-                </section>
-                break;
-            case "Flow":
-                <section class="its-card" data-testid="its-flow" aria-label="Integration flow">
-                    <ol class="its-stages">@foreach (var st in suite.Stages.OrderBy(s => s.Order))
-                    {
-                        <li data-testid="its-stage" data-stage="@st.StageId" data-coverage="@st.Coverage">
-                            <div class="its-stage-head"><strong>@st.Label</strong> <span class="its-muted">@st.Component</span>
-                                <span class="its-badge" data-state="@st.Readiness">@Coverage(st.Coverage)</span> <span class="its-badge">@Triage(st.Triage)</span></div>
-                            <div class="its-muted">@st.ExecutorObserver</div>
-                            @if (st.Blockers.Count > 0) { <ul class="its-list">@foreach (var b in st.Blockers) { <li>@b</li> }</ul> }
-                        </li>
-                    }</ol>
-                    @if (suite.Topology.Count > 0)
-                    {
-                        <h3>Topology mapping</h3>
-                        <div class="its-scroll" tabindex="0" role="region" aria-label="Topology mapping">
-                            <table class="its-table" data-testid="its-topology">
-                                <thead><tr><th scope="col">From</th><th scope="col">To</th><th scope="col">Relationship</th><th scope="col">Mapping</th><th scope="col">Confidence</th></tr></thead>
-                                <tbody>@foreach (var m in suite.Topology) { <tr><td>@m.From</td><td>@m.To</td><td>@m.Relationship</td><td>@m.Class@(m.RequiresReview ? " · review" : "")</td><td>@m.Confidence</td></tr> }</tbody>
-                            </table>
-                        </div>
-                    }
-                </section>
-                break;
-            case "Configuration":
-                <section class="its-card" data-testid="its-configuration" aria-label="Configuration">
-                    @if (suite.Configuration.Count == 0) { <p class="its-note">No configuration values were found in the source.</p> }
-                    else
-                    {
-                        <div class="its-scroll" tabindex="0" role="region" aria-label="Configuration values">
-                            <table class="its-table">
-                                <thead><tr><th scope="col">Field</th><th scope="col">Value</th><th scope="col">Origin</th><th scope="col">Binding</th><th scope="col">Evidence</th></tr></thead>
-                                <tbody>@foreach (var c in suite.Configuration)
+                <section class="its-card" aria-labelledby="its-map-title" data-testid="its-mapping">
+                    <h2 id="its-map-title">Review mappings</h2>
+                    <p class="its-note">One source per stage. Recognised from folder, project and component names and the contracts in them — never from archive names. Nothing is merged; each source keeps its own project.</p>
+                    <div class="its-stage-grid">
+                        @foreach (var st in discovery.Stages)
+                        {
+                            <article class="its-stage-card" data-testid="its-stage-card" data-stage="@st.StageId" data-class="@st.Class">
+                                <header class="its-stage-head"><strong>@st.Label</strong> <span class="its-badge" data-state="@ClassState(st.Class)">@Class(st.Class)</span>@if (!st.Mandatory) { <span class="its-muted">optional</span> }</header>
+                                @if (st.Candidates.Count == 0)
                                 {
-                                    <tr data-testid="its-config" data-origin="@c.Origin"><th scope="row">@c.Field</th><td>@(c.Value ?? "unresolved")</td><td>@c.Origin@(c.NeedsReview ? " · review" : "")</td><td>@c.Binding</td>
-                                        <td>@string.Join(", ", c.Evidence.Take(2).Select(Ref))</td></tr>
-                                }</tbody>
-                            </table>
-                        </div>
-                    }
-                </section>
-                break;
-            case "Test data":
-                <section class="its-card" data-testid="its-test-data" aria-label="Test data">
-                    <p class="its-note">Generated values are synthetic drafts in Test Data (never approved automatically). Identity fields are never synthesised.</p>
-                    <ul class="its-items">@foreach (var d in suite.TestData)
-                    {
-                        <li data-testid="its-data-item" data-state="@d.State"><strong>@d.Role</strong> <span class="its-badge">@d.State</span> @(d.Asset is { } a ? $"· {a}" : "")
-                            <div class="its-muted">@d.Purpose</div>
-                            @if (d.Prerequisite is { } pre) { <div class="its-prereq" data-testid="its-data-prereq">@pre</div> }
-                            @if (d.Values.Count > 0) { <div class="its-muted">@string.Join(" · ", d.Values.Take(8).Select(v => $"{v.Name} = {v.Value} ({v.Constraint})"))</div> }
-                        </li>
-                    }</ul>
-                </section>
-                break;
-            case "Tests":
-                <section class="its-card" data-testid="its-tests" aria-label="Tests">
-                    <div class="its-scroll" tabindex="0" role="region" aria-label="Contract tests">
-                        <table class="its-table">
-                            <thead><tr><th scope="col">Operation</th><th scope="col">Kind</th><th scope="col">Contract</th><th scope="col">Readiness</th><th scope="col">Triage</th><th scope="col">Run</th></tr></thead>
-                            <tbody>@foreach (var t in suite.Tests)
-                            {
-                                <tr data-testid="its-test" data-triage="@t.Triage"><th scope="row">@t.Operation</th><td>@t.Kind@(t.Variant is { } v ? $" · {v}" : "")@(t.Mutating ? " · mutating" : "")</td>
-                                    <td><a href="@($"/api-quality-review/contracts?test={t.TestId:D}")">@t.ContractRef</a></td>
-                                    <td><span>@t.Readiness</span>@if (t.ReadinessGaps.Count > 0) { <div class="its-muted">@string.Join("; ", t.ReadinessGaps.Take(3))</div> }</td>
-                                    <td>@Triage(t.Triage)</td>
-                                    <td><input type="checkbox" aria-label="@($"Select {t.Operation} {t.Kind}")" checked="@_selected.Contains(t.TestId)" disabled="@(t.Triage != SuiteTriage.CanRunNow)"
-                                               @onchange="e => Toggle(t.TestId, e.Value is true)" data-testid="its-select" /></td></tr>
-                            }</tbody>
-                        </table>
+                                    <p class="its-muted" data-testid="its-stage-none">@(st.ReferenceSource is { } r ? $"Covered by the built-in {r}." : "No source recognised.")</p>
+                                }
+                                else
+                                {
+                                    <fieldset class="its-candidates"><legend class="visually-hidden">Source for @st.Label</legend>
+                                        @foreach (var c in st.Candidates)
+                                        {
+                                            <label class="its-candidate" data-testid="its-candidate" data-project="@c.ProjectKey">
+                                                <input type="radio" name="@($"stage-{st.StageId}")" checked="@(Chosen(st.StageId) == c.SnapshotId)" @onchange="() => Choose(st.StageId, c.SnapshotId)" />
+                                                <span><strong>@c.ProjectKey</strong> · @c.ArchiveFileName · @Utc(c.AnalyzedAt)
+                                                    <span class="its-muted">@c.Confidence@(c.OlderSnapshots > 0 ? $" · {c.OlderSnapshots} older snapshot(s)" : "")</span>
+                                                    <span class="its-chips">@foreach (var m in c.MatchedOn.Take(3)) { <span class="its-chip">@m</span> }</span>
+                                                    @if (c.Artifacts.Count > 0)
+                                                    {
+                                                        <details class="its-details"><summary>@c.Artifacts.Count stage artifact(s)</summary><ul class="its-list">@foreach (var a in c.Artifacts) { <li>@a</li> }</ul></details>
+                                                    }
+                                                </span>
+                                            </label>
+                                        }
+                                        @if (Chosen(st.StageId) is not null)
+                                        {
+                                            <button type="button" class="btn btn-link btn-sm" @onclick="() => Choose(st.StageId, null)" data-testid="its-unchoose">Remove association</button>
+                                        }
+                                    </fieldset>
+                                }
+                                @foreach (var m in st.Missing) { <p class="its-prereq">@m</p> }
+                            </article>
+                        }
                     </div>
-                    @if (suite.Unsupported.Count > 0)
+                    @if (discovery.Supporting.Count > 0)
                     {
-                        <h3>Not supported</h3>
-                        <ul class="its-list">@foreach (var u in suite.Unsupported) { <li>@u.Operation (@u.ContractRef): @u.Reason</li> }</ul>
+                        <details class="its-details" data-testid="its-supporting"><summary>Supporting evidence, not stage sources (@discovery.Supporting.Count)</summary>
+                            <ul class="its-list">@foreach (var s in discovery.Supporting) { <li>@s.ProjectKey · @s.ArchiveFileName · @s.Kind</li> }</ul>
+                        </details>
                     }
                 </section>
-                break;
-            case "XML":
-                <section class="its-card" data-testid="its-xml" aria-label="XML schemas">
-                    @if (suite.XmlSchemas.Count == 0) { <p class="its-note">No XML schema in the scope's modules.</p> }
+
+                <section class="its-card" aria-labelledby="its-sel-title" data-testid="its-selection">
+                    <h2 id="its-sel-title">Selected sources</h2>
+                    @if (SelectedSources.Count == 0) { <p class="its-note">Choose a source for at least one stage.</p> }
                     else
                     {
-                        <p class="its-note">Minimum-valid XML fixtures are generated in Schema Studio from the exact snapshot (dependency closure resolved there).</p>
-                        <ul class="its-items">@foreach (var x in suite.XmlSchemas)
+                        <ul class="its-items">@foreach (var s in SelectedSources)
                         {
-                            <li data-testid="its-xsd" data-resolved="@(x.DependenciesResolved ? "true" : "false")"><strong>@x.File</strong> <span class="its-badge">@x.State</span>
-                                <div class="its-muted">@(x.TargetNamespace ?? "no target namespace") · roots: @string.Join(", ", x.RootElements)</div>
-                                @if (x.Unresolved.Count > 0) { <div class="its-prereq">Unresolved: @string.Join(", ", x.Unresolved)</div> }
-                                <a href="@($"/schema-studio?snapshot={suite.Snapshot.SnapshotId:D}&contract={Uri.EscapeDataString(x.File)}")">Open in Schema Studio</a>
-                            </li>
-                        }</ul>
-                    }
-                </section>
-                break;
-            case "Kode 6/7":
-                <section class="its-card" data-testid="its-security" aria-label="Kode 6/7 security scenarios">
-                    <p class="its-note">Reuses the existing M01 graded-access review (Kode 6/7); BirkNext does not build a second Kode 6/7 module. Synthetic persons only.</p>
-                    @foreach (var group in TriageOrder)
-                    {
-                        var rows = suite.Security.Where(s => s.Triage == group).ToList();
-                        if (rows.Count == 0) continue;
-                        <h3 data-testid="@($"its-sec-group-{group}")">@Triage(group) (@rows.Count)</h3>
-                        <ul class="its-items">@foreach (var s in rows)
-                        {
-                            <li data-testid="its-sec" data-id="@s.ScenarioId" data-triage="@s.Triage"><strong>@s.ScenarioId</strong> @s.Title <span class="its-badge">@Label(s.Readiness)</span>
-                                @if (s.Reuses is { } reuse) { <div class="its-muted">Reuses @reuse@(s.ExistingState is { } es ? $" · {es}" : "")</div> }
-                                @if (s.OpenQuestion is { } q) { <div class="its-prereq" data-testid="its-sec-question">@q</div> }
-                                @if (s.Prerequisites.Count > 0) { <ul class="its-list">@foreach (var pr in s.Prerequisites) { <li>@pr</li> }</ul> }
-                            </li>
-                        }</ul>
-                    }
-                    <a href="/security-classification-review">Open M01 – Gradert tilgang (Kode 6/7)</a>
-                </section>
-                break;
-            case "Review":
-                <section class="its-card" data-testid="its-review" aria-label="Review">
-                    @if (suite.Review.Count == 0) { <p class="its-note">Nothing needs review.</p> }
-                    <ul class="its-items">@foreach (var r in suite.Review)
-                    {
-                        <li data-testid="its-review-item" data-key="@r.Key"><strong>@r.Area</strong> · @r.Question
-                            <div class="its-muted">@r.Why</div>
-                            @if (r.Decision is { } dec) { <div data-testid="its-review-decision">@dec by @r.DecidedBy @(r.DecidedAt is { } at ? Utc(at) : "")</div> }
-                            else
-                            {
+                            <li data-testid="its-selected-source" data-project="@s.ProjectKey" data-approval="@Approval(s.SnapshotId)">
+                                <strong>@s.ProjectKey</strong> · @s.ArchiveFileName <span class="its-muted">@string.Join(", ", s.Stages)</span>
+                                <span class="its-badge" data-state="@(Approval(s.SnapshotId) == CompositeApproval.Approved ? "Ready" : "NeedsReview")">@Approval(s.SnapshotId)</span>
                                 <div class="its-actions">
-                                    @foreach (var choice in new[] { "Acceptable", "IssueFound", "NeedsEvidence", "NotApplicable" })
-                                    {
-                                        <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => ReviewAsync(r.Key, choice)" data-testid="@($"its-review-{choice}")">@choice</button>
-                                    }
+                                    <button type="button" class="btn btn-secondary btn-sm" @onclick="() => SetApproval(s.SnapshotId, CompositeApproval.Approved)" data-testid="its-approve-source">Approve</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" @onclick="() => SetApproval(s.SnapshotId, CompositeApproval.Proposed)">Undo</button>
                                 </div>
+                            </li>
+                        }</ul>
+                    }
+                    <details class="its-details" data-testid="its-manual"><summary>Add compatible source manually</summary>
+                        <div class="its-form">
+                            <label>Find snapshot <input @bind="_manualFilter" @bind:event="oninput" placeholder="project or archive" data-testid="its-manual-filter" /></label>
+                            <label>Stage
+                                <select @bind="_manualStage" data-testid="its-manual-stage">@foreach (var st in discovery.Stages) { <option value="@st.StageId">@st.Label</option> }</select>
+                            </label>
+                            <label>Reason (required) <input @bind="_manualReason" data-testid="its-manual-reason" /></label>
+                        </div>
+                        <ul class="its-items">@foreach (var s in ManualMatches)
+                        {
+                            <li><button type="button" class="btn btn-link btn-sm" disabled="@string.IsNullOrWhiteSpace(_manualReason)" @onclick="() => AddManual(s.Id)" data-testid="its-manual-add">@s.Archive.FileName · @Utc(s.AnalyzedAt)</button></li>
+                        }</ul>
+                    </details>
+                    <div class="its-actions">
+                        <button type="button" class="btn btn-primary" disabled="@(_busy || SelectedSources.Count == 0)" @onclick="SaveContextAsync" data-testid="its-save-context">Save context revision</button>
+                    </div>
+                </section>
+            }
+
+            @if (_context is { } saved)
+            {
+                <section class="its-card" aria-labelledby="its-compat-title" data-testid="its-compatibility">
+                    <h2 id="its-compat-title">Compatibility between stages</h2>
+                    @if (saved.SourceCoverage is { } a)
+                    {
+                        <p data-testid="its-source-coverage" data-state="@a.State"><span class="its-badge" data-state="@a.State">Source coverage: @Readiness(a.State)</span> @a.Detail</p>
+                    }
+                    <p class="its-note">Static evidence only: what the sources declare. Similar names never make a transition compatible, and a declared contract is not proof of runtime compatibility.</p>
+                    <ul class="its-items">@foreach (var t in saved.Compatibility)
+                    {
+                        <li data-testid="its-transition" data-key="@t.Key" data-state="@t.Overall">
+                            <strong>@t.FromStage → @t.ToStage</strong> <span class="its-muted">@t.Channel</span> <span class="its-badge" data-state="@CompatState(t.Overall)">@Compat(t.Overall)</span>
+                            @if (t.Accepted) { <span class="its-badge" data-testid="its-accepted">Accepted by @t.AcceptedBy: @t.AcceptedReason</span> }
+                            <details class="its-details"><summary>@t.Dimensions.Count dimension(s)</summary>
+                                <ul class="its-list">@foreach (var d in t.Dimensions) { <li data-testid="its-dimension-row" data-state="@d.State"><strong>@d.Name</strong>: @Compat(d.State) — @d.Detail</li> }</ul>
+                            </details>
+                            @if (t.Overall == TransitionCompatibility.Incompatible && !t.Accepted)
+                            {
+                                <div class="its-form"><label>Accept with a reason after review <input value="@_acceptReason.GetValueOrDefault(t.Key)" @oninput="e => _acceptReason[t.Key] = e.Value?.ToString() ?? string.Empty" data-testid="its-accept-reason" /></label>
+                                    <button type="button" class="btn btn-secondary btn-sm" disabled="@string.IsNullOrWhiteSpace(_acceptReason.GetValueOrDefault(t.Key))" @onclick="() => AcceptAsync(t.Key)" data-testid="its-accept">Accept</button></div>
                             }
                         </li>
                     }</ul>
+                    <details class="its-details" data-testid="its-technical"><summary>Technical details</summary>
+                        <ul class="its-list">@foreach (var s in saved.Snapshots) { <li><code>@s.SnapshotId.ToString("D")</code> · @s.ProjectKey · SHA-256 <code>@s.ArchiveSha256</code> · @s.Approval@(s.DecidedBy is { } by ? $" by {by}" : "")</li> }</ul>
+                        @if (saved.Changes.Count > 0) { <p class="its-muted">Revision @saved.Revision: @string.Join("; ", saved.Changes)</p> }
+                    </details>
                 </section>
-                break;
-            case "Execution":
-                <section class="its-card" data-testid="its-execution" aria-label="Execution">
+            }
+            break;
+
+        case "generate":
+            @if (_context is { } gctx)
+            {
+                <section class="its-card" aria-labelledby="its-gen-title" data-testid="its-generate-composite">
+                    <h2 id="its-gen-title">Composite draft</h2>
+                    <p class="its-note">From context <strong>@gctx.ContextKey</strong> revision @gctx.Revision: only approved sources are used. Generating writes drafts to their owners and sends nothing.</p>
+                    <div class="its-form">
+                        <label class="its-check"><input type="checkbox" @bind="_negatives" /> Include negative proposals</label>
+                        <label class="its-check"><input type="checkbox" @bind="_security" /> Include Kode 6/7 security scenarios</label>
+                        <label class="its-check"><input type="checkbox" @bind="_testData" /> Generate synthetic test data drafts</label>
+                        @if (gctx.SourceCoverage is { State: not CompositeReadiness.Ready } cov)
+                        {
+                            <label class="its-check"><input type="checkbox" @bind="_allowPartial" data-testid="its-allow-partial" /> Generate a partial draft (source coverage is @Readiness(cov.State))</label>
+                        }
+                    </div>
+                    <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="GenerateCompositeAsync" data-testid="its-generate-composite-btn">Generate draft suite</button>
+                </section>
+            }
+            else
+            {
+                <p class="its-note" data-testid="its-no-context">No composite source context is open. <a href='@AreaHref("sources")' @onclick='() => SetArea("sources")' @onclick:preventDefault="true">Map the integration's sources first</a>, or generate from one snapshot below.</p>
+            }
+
+            <section class="its-card" aria-labelledby="its-source-title" data-testid="its-source">
+                <h2 id="its-source-title">Single snapshot</h2>
+                <p class="its-note">A suite from one analysed snapshot — for an API scope of chosen modules, or when one archive really holds the whole integration.</p>
+                @if (_snapshots is null) { <p class="its-note">Loading snapshots…</p> }
+                else if (_snapshots.Count == 0) { <p class="its-note" data-testid="its-no-snapshots">No analysed source snapshot yet. <a href="/project-import">Import the project</a> first.</p> }
+                else
+                {
+                    <div class="its-form">
+                        <label>Find snapshot <input @bind="_snapshotFilter" @bind:event="oninput" placeholder="archive name" data-testid="its-snapshot-filter" /></label>
+                        <label>Scope
+                            <select @bind="_scopeId" data-testid="its-scope">
+                                @foreach (var sc in _scopes ?? []) { <option value="@sc.ScopeId">@sc.DisplayName</option> }
+                            </select>
+                        </label>
+                        @if (_scopeId == "api")
+                        {
+                            <label>Modules (top-level folders, comma-separated) <input @bind="_modules" data-testid="its-modules" /></label>
+                        }
+                        <label class="its-check"><input type="checkbox" @bind="_negatives" /> Include negative proposals</label>
+                        <label class="its-check"><input type="checkbox" @bind="_security" /> Include Kode 6/7 security scenarios</label>
+                        <label class="its-check"><input type="checkbox" @bind="_testData" /> Generate synthetic test data drafts</label>
+                    </div>
+                    <fieldset class="its-snapshot-list" data-testid="its-snapshot"><legend class="visually-hidden">Source snapshot</legend>
+                        @foreach (var s in FilteredSnapshots)
+                        {
+                            <label class="its-candidate"><input type="radio" name="its-snapshot" value='@s.Id.ToString("D")' checked="@(_snapshotId == s.Id.ToString("D"))"
+                                                               @onchange='() => _snapshotId = s.Id.ToString("D")' data-testid="its-snapshot-option" />
+                                <span>@s.Archive.FileName · @Utc(s.AnalyzedAt) · @s.Status</span></label>
+                        }
+                        @if (FilteredCount > FilteredSnapshots.Count) { <p class="its-muted">@(FilteredCount - FilteredSnapshots.Count) more — refine the search.</p> }
+                    </fieldset>
+                    @if (Picked is { } p)
+                    {
+                        <dl class="its-facts" data-testid="its-snapshot-facts">
+                            <div><dt>Archive</dt><dd>@p.Archive.FileName</dd></div>
+                            <div><dt>SHA-256</dt><dd><code>@(p.Archive.Sha256.Length >= 16 ? p.Archive.Sha256[..16] + "…" : p.Archive.Sha256)</code></dd></div>
+                            <div><dt>Snapshot</dt><dd><code>@p.Id.ToString("D")[..8]</code></dd></div>
+                            <div><dt>Analysed</dt><dd>@Utc(p.AnalyzedAt)</dd></div>
+                            <div><dt>Project import</dt><dd>@(p.ProjectImportId ?? "source-only upload")</dd></div>
+                        </dl>
+                    }
+                    @if (ScopeDef is { } scopeDef) { <p class="its-note" data-testid="its-scope-description">@scopeDef.Description</p> }
+                    <button type="button" class="btn btn-primary" disabled="@(_busy || Picked is null)" @onclick="GenerateAsync" data-testid="its-generate">Generate suite</button>
+                }
+            </section>
+
+            @if (_suites is { Count: > 0 })
+            {
+                <section class="its-card" aria-labelledby="its-history-title">
+                    <h2 id="its-history-title">Generated suites</h2>
+                    <div class="its-scroll" tabindex="0" role="region" aria-label="Generated suites">
+                        <table class="its-table" data-testid="its-history">
+                            <thead><tr><th scope="col">Suite</th><th scope="col">Revision</th><th scope="col">Sources</th><th scope="col">Generated</th><th scope="col">Status</th><th scope="col">Tests</th><th scope="col">Open review</th><th scope="col"></th></tr></thead>
+                            <tbody>@foreach (var s in _suites)
+                            {
+                                <tr data-testid="its-history-row"><th scope="row">@s.ScopeName@(s.CompositeContextId is not null ? " · composite" : "")</th><td>r@(s.Revision)</td>
+                                    <td>@(s.CompositeContextId is not null ? $"{s.Sources} sources" : s.ArchiveFileName)</td><td>@Utc(s.GeneratedAt)</td><td>@Label(s.Status)</td><td>@s.Tests</td><td>@s.ReviewOpen</td>
+                                    <td><button type="button" class="btn btn-secondary btn-sm" @onclick="() => OpenAsync(s.Id)" data-testid="its-history-open">Open</button></td></tr>
+                            }</tbody>
+                        </table>
+                    </div>
+                </section>
+            }
+
+            @if (_suite is { } suite)
+            {
+                <section class="its-card its-summary" aria-labelledby="its-suite-title" data-testid="its-suite">
+                    <h2 id="its-suite-title">@SuiteTitle(suite)</h2>
+                    <div class="its-badges">
+                        <span class="its-badge" data-status="@suite.Status" data-testid="its-status">@Label(suite.Status)</span>
+                        <span class="its-badge" data-testid="its-outcome">@Outcome(suite.Outcome)</span>
+                        @if (suite.Composite?.PartialDraft == true) { <span class="its-badge" data-state="NeedsReview" data-testid="its-partial">Partial draft</span> }
+                    </div>
+                    <p class="its-note" data-testid="its-status-reason">@suite.StatusReason</p>
+                    @if (suite.Contracts.Where(c => c.ContractKey is { Length: > 0 }).Select(c => c.ContractKey!).Distinct().ToList() is { Count: > 0 } suiteKeys)
+                    {
+                        <p class="its-note"><a href="@($"api-quality-review/contracts?mode=configure&keys={Uri.EscapeDataString(string.Join(',', suiteKeys))}")" data-testid="its-resolve-environment">Resolve environment blockers for these @suiteKeys.Count contract(s) →</a></p>
+                    }
+                    <div class="its-triage" data-testid="its-triage">
+                        <div><strong data-testid="its-can-run">@CountTriage(suite, SuiteTriage.CanRunNow)</strong> can be generated and run now</div>
+                        <div><strong data-testid="its-waiting">@CountTriage(suite, SuiteTriage.WaitingForPrerequisite)</strong> generated, waiting for a prerequisite</div>
+                        <div><strong data-testid="its-decision">@CountTriage(suite, SuiteTriage.NeedsDomainDecision)</strong> need a domain decision</div>
+                        <div><strong>@CountTriage(suite, SuiteTriage.NotSupported)</strong> not supported</div>
+                    </div>
+                    @if (suite.Composite is not null)
+                    {
+                        <p class="its-actions"><a href='@AreaHref("readiness")' @onclick='() => SetArea("readiness")' @onclick:preventDefault="true" data-testid="its-go-readiness">Resolve readiness →</a>
+                            <a href='@AreaHref("execute")' @onclick='() => SetArea("execute")' @onclick:preventDefault="true">Execute &amp; evidence →</a></p>
+                    }
+                    @if (suite.Drift.Count > 0)
+                    {
+                        <ul class="its-list" data-testid="its-drift" aria-label="Changes since the previous revision">@foreach (var d in suite.Drift) { <li>@d</li> }</ul>
+                    }
+                </section>
+
+                <nav class="its-tabs" role="tablist" aria-label="Suite views">
+                    @foreach (var t in Tabs)
+                    {
+                        <button type="button" role="tab" class="its-tab" aria-selected="@(_tab == t ? "true" : "false")" @onclick="() => _tab = t" data-testid="@($"its-tab-{Slug(t)}")">@t</button>
+                    }
+                </nav>
+                <IntegrationSuiteDetail Suite="suite" Tab="@_tab" Busy="_busy" Environment="_environment" EnvironmentName="@_environmentName" Selected="_selected"
+                                        OnReview="ReviewAsync" OnExecute="ExecuteAsync" OnToggle="Toggle" />
+            }
+            break;
+
+        case "readiness":
+            @if (_suite?.Composite is { } rc)
+            {
+                <section class="its-card" aria-labelledby="its-levels-title" data-testid="its-levels">
+                    <h2 id="its-levels-title">Readiness</h2>
+                    <div class="its-level-grid">
+                        @foreach (var level in rc.Readiness)
+                        {
+                            <article class="its-level" data-testid="its-level" data-level="@level.Level" data-state="@level.State">
+                                <header><strong>@level.Level</strong> <span class="its-badge" data-state="@level.State">@Readiness(level.State)</span></header>
+                                <p class="its-muted">@level.Detail</p>
+                                @if (level.Items.Count > 0) { <details class="its-details"><summary>@level.Items.Count item(s)</summary><ul class="its-list">@foreach (var i in level.Items) { <li>@i</li> }</ul></details> }
+                            </article>
+                        }
+                    </div>
+                </section>
+                <section class="its-card" aria-labelledby="its-stages-title" data-testid="its-stage-table">
+                    <h2 id="its-stages-title">Stages</h2>
+                    <ul class="its-items">@foreach (var s in rc.Stages)
+                    {
+                        <li data-testid="its-stage-row" data-stage="@s.StageId" data-readiness="@s.Readiness" data-coverage="@s.Coverage">
+                            <div class="its-stage-head"><strong>@s.Order. @s.Label</strong> <span class="its-badge" data-state="@s.Readiness">@Readiness(s.Readiness)</span> <span class="its-badge">@s.Coverage</span>
+                                <span class="its-muted">@(s.Sources.Count > 0 ? string.Join("; ", s.Sources) : "no source")</span></div>
+                            <details class="its-details"><summary>Contract, executor, observer</summary>
+                                <dl class="its-facts">
+                                    <div><dt>Contracts</dt><dd>@(s.Contracts.Count > 0 ? string.Join(", ", s.Contracts) : "none")</dd></div>
+                                    <div><dt>Executor</dt><dd>@s.Executor</dd></div>
+                                    <div><dt>Observer</dt><dd>@s.Observer</dd></div>
+                                </dl>
+                            </details>
+                            @if (s.WhyNotVerified is { } why) { <div class="its-muted" data-testid="its-why-not">@why</div> }
+                        </li>
+                    }</ul>
+                </section>
+                <section class="its-card" aria-labelledby="its-blockers-title" data-testid="its-blockers">
+                    <h2 id="its-blockers-title">Blockers (@rc.Blockers.Count)</h2>
+                    <div class="its-segment" role="radiogroup" aria-label="Owner">
+                        @foreach (var owner in Owners(rc))
+                        {
+                            <button type="button" role="radio" class="its-seg" aria-checked="@(_ownerFilter == owner ? "true" : "false")" @onclick="() => _ownerFilter = owner" data-testid="its-owner-filter">@owner</button>
+                        }
+                    </div>
+                    <ul class="its-items">@foreach (var b in rc.Blockers.Where(b => _ownerFilter == "All" || b.Owner == _ownerFilter).OrderBy(b => b.Severity == "Blocking" ? 0 : 1))
+                    {
+                        <li data-testid="its-blocker" data-id="@b.Id" data-severity="@b.Severity" data-owner="@b.Owner">
+                            <div class="its-stage-head"><span class="its-badge" data-state="@(b.Severity == "Blocking" ? "Blocked" : "NeedsReview")">@b.Severity</span> <strong>@b.Stage</strong> <span class="its-muted">@b.Owner · @b.ReviewStatus</span></div>
+                            <div>@b.Reason</div>
+                            <div class="its-prereq" data-testid="its-blocker-action">@b.Action</div>
+                            @if (b.Evidence.Length > 0 || b.Missing.Length > 0) { <details class="its-details"><summary>Evidence</summary><p class="its-muted">Missing: @b.Missing</p><p class="its-muted">@b.Evidence</p></details> }
+                        </li>
+                    }</ul>
+                </section>
+            }
+            else if (_suite is { } flat)
+            {
+                <section class="its-card" data-testid="its-readiness-flat"><h2>Readiness</h2>
+                    <ul class="its-dimensions">@foreach (var d in flat.Readiness)
+                    {
+                        <li data-testid="its-dimension" data-state="@d.State"><span class="its-dim-name">@d.Name</span><span class="its-badge" data-state="@d.State">@Label(d.State)</span><span class="its-dim-detail">@d.Detail</span></li>
+                    }</ul>
+                </section>
+            }
+            else
+            {
+                <p class="its-note" data-testid="its-no-suite">Open or generate a suite first.</p>
+            }
+            break;
+
+        case "execute":
+            @if (_suite is { Composite: { } ec } esuite)
+            {
+                <section class="its-card" aria-labelledby="its-plan-title" data-testid="its-plan" data-state="@ec.Plan.State">
+                    <h2 id="its-plan-title">Transaction plan <span class="its-badge" data-state="@(ec.Plan.State == "Approved" ? "Ready" : "NeedsReview")" data-testid="its-plan-state">@ec.Plan.State</span></h2>
+                    <p class="its-note">One continuous chain: each later stage is read by an identifier a documented response field of an earlier stage provides. @ec.Plan.Confidence</p>
+                    <ol class="its-timeline">@foreach (var step in ec.Plan.Steps)
+                    {
+                        <li data-testid="its-plan-step" data-stage="@step.StageId" data-role="@step.Role">
+                            <strong>@step.StageId</strong> · @step.Role · <code>@step.Operation</code> <span class="its-muted">@step.ContractRef</span>@if (step.Mutating) { <span class="its-badge" data-state="NeedsReview">data-changing</span> }
+                            @if (step.FromStep is not null) { <div class="its-muted" data-testid="its-plan-mapping">@step.Parameter ← @step.FromField of @step.FromStep@(step.EchoField is { } e ? $" · checks {e}" : "")@(step.ObserveAttempts > 0 ? $" · waits ≤ {step.ObserveAttempts} × {step.ObserveDelayMs} ms" : "")</div> }
+                        </li>
+                    }</ol>
+                    @foreach (var m in ec.Plan.Missing) { <p class="its-prereq" data-testid="its-plan-missing">@m</p> }
+                    @if (ec.Plan.ChainId is not null && ec.Plan.State != "Approved")
+                    {
+                        <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="ApprovePlanAsync" data-testid="its-approve-plan">Approve plan</button>
+                    }
+                </section>
+
+                <section class="its-card" aria-labelledby="its-run-title" data-testid="its-composite-run">
+                    <h2 id="its-run-title">Run</h2>
                     @if (_environment is null)
                     {
                         <p class="its-note" data-testid="its-no-environment">No active Target Environment with a target URL. Choose one in <a href="@($"/{NavigationCatalog.TargetEnvironmentsRoute}")">Target Environments</a> before running.</p>
@@ -288,163 +421,86 @@
                     else
                     {
                         <p class="its-note">Target: <strong>@_environmentName</strong> (@_environment.EnvironmentType) · @_environment.TargetUrl</p>
-                        <p class="its-note">@_selected.Count test(s) selected on the Tests tab. Only tests that can run now are selectable; nothing else is sent.</p>
-                        <label class="its-check"><input type="checkbox" @bind="_confirmMutating" data-testid="its-confirm-mutating" /> I confirm mutating calls in this environment</label>
-                        <label class="its-check"><input type="checkbox" @bind="_authorized" data-testid="its-authorize" /> I authorise this run against the target above</label>
-                        <button type="button" class="btn btn-primary" disabled="@(_busy || !_authorized || _selected.Count == 0)" @onclick="ExecuteAsync" data-testid="its-run">Run selected tests</button>
-                    }
-                    @if (suite.Runs.Count > 0)
-                    {
-                        <h3>Runs</h3>
-                        <ul class="its-items">@foreach (var run in suite.Runs)
+                        <div class="its-segment" role="radiogroup" aria-label="Stages to run">
+                            @foreach (var i in Enumerable.Range(0, PlanStages(ec).Count))
+                            {
+                                <button type="button" role="radio" class="its-seg" aria-checked="@((_runUntil < 0 ? i == PlanStages(ec).Count - 1 : _runUntil == i) ? "true" : "false")" @onclick="() => { _runUntil = i; _preflight = null; }" data-testid="its-run-until">
+                                    @StopLabel(ec, i)</button>
+                            }
+                        </div>
+                        <div class="its-actions"><button type="button" class="btn btn-secondary" disabled="@_busy" @onclick="PreflightAsync" data-testid="its-preflight">Check run</button></div>
+                        @if (_preflight is { } pf)
                         {
-                            <li data-testid="its-run-link"><a href="@($"/execution-results?run={run.RunId:D}")">@Utc(run.StartedAt)</a> · @run.State · @run.Initiator</li>
-                        }</ul>
+                            <div data-testid="its-preflight-result" data-kind="@pf.Kind">
+                                <p><span class="its-badge" data-state="@(pf.Kind == CompositeRunKind.FullE2E ? "Ready" : "NeedsReview")">@(pf.Kind == CompositeRunKind.FullE2E ? "FULL_E2E run" : "SUBFLOW_TEST")</span> @string.Join(" → ", pf.Stages)</p>
+                                @if (pf.MutatingOperations.Count > 0) { <p class="its-prereq" data-testid="its-mutating">Data-changing: @string.Join("; ", pf.MutatingOperations)</p> }
+                                @foreach (var w in pf.Warnings) { <p class="its-muted">@w</p> }
+                                @foreach (var pr in pf.Problems.Where(x => !x.Contains("authorisation") && !x.StartsWith("Confirm"))) { <p class="its-prereq" data-testid="its-preflight-problem">@pr</p> }
+                            </div>
+                            <label class="its-check"><input type="checkbox" @bind="_confirmMutating" data-testid="its-confirm-mutating" /> I confirm the data-changing operations above in this environment</label>
+                            <label class="its-check"><input type="checkbox" @bind="_authorized" data-testid="its-authorize" /> I authorise this run against the target above</label>
+                            <button type="button" class="btn btn-primary" disabled="@(_busy || !_authorized)" @onclick="RunCompositeAsync" data-testid="its-run-composite">Run</button>
+                        }
                     }
                 </section>
-                break;
-        }
+
+                <section class="its-card" aria-labelledby="its-runs-title" data-testid="its-composite-runs">
+                    <h2 id="its-runs-title">Runs and evidence</h2>
+                    @if (esuite.Runs.Count == 0) { <p class="its-note">No run yet.</p> }
+                    <div class="its-actions">@foreach (var r in esuite.Runs)
+                    {
+                        <button type="button" class="btn btn-secondary btn-sm" @onclick="() => OpenRunAsync(r.RunId)" data-testid="its-run-open">@Utc(r.StartedAt) · @r.Kind</button>
+                    }</div>
+                    @if (_run is { } run)
+                    {
+                        <div data-testid="its-run-view" data-verdict="@run.Verdict">
+                            <p><span class="its-badge" data-state="@VerdictState(run.Verdict)" data-testid="its-verdict">@Verdict(run.Verdict)</span> @run.VerdictReason</p>
+                            <p class="its-muted">@(run.Kind == CompositeRunKind.FullE2E ? "Full E2E run" : "Subflow test") · suite revision @run.SuiteRevision · @Utc(run.StartedAt) · @run.Initiator ·
+                                <a href="@($"/execution-results?run={run.RunId:D}")">Execution evidence</a></p>
+                            <ol class="its-timeline" data-testid="its-run-timeline">@foreach (var s in run.Stages)
+                            {
+                                <li data-testid="its-run-stage" data-stage="@s.StageId" data-state="@s.State"><strong>@s.StageId</strong> <span class="its-badge" data-state="@StageState(s.State)">@s.State</span>
+                                    <span class="its-muted">@s.Detail@(s.Attempts > 1 ? $" · {s.Attempts} sends" : "")</span></li>
+                            }</ol>
+                            <h3>Correlation</h3>
+                            <ul class="its-items">@foreach (var c in run.Correlation)
+                            {
+                                <li data-testid="its-correlation" data-state="@c.State"><strong>@c.Boundary</strong> · @c.Field <span class="its-badge" data-state="@(c.State is CorrelationState.Confirmed or CorrelationState.Carried ? "Ready" : "Blocked")">@c.State</span>
+                                    <span class="its-muted">@c.Evidence</span></li>
+                            }</ul>
+                            <details class="its-details"><summary>Exact source versions</summary>
+                                <ul class="its-list">@foreach (var s in run.Sources) { <li>@s.ProjectKey · @s.ArchiveFileName · <code>@Short(s.ArchiveSha256)</code> · @string.Join(", ", s.Stages)</li> }</ul></details>
+                        </div>
+                    }
+                </section>
+
+                <section class="its-card" aria-labelledby="its-cov-title" data-testid="its-coverage">
+                    <h2 id="its-cov-title">Coverage</h2>
+                    <p class="its-note">Generated → Configured → Executable → Executed → Verified. Separate runs are never combined into a full E2E result.</p>
+                    <div class="its-scroll" tabindex="0" role="region" aria-label="Coverage">
+                        <table class="its-table">
+                            <thead><tr><th scope="col">Subject</th><th scope="col">Kind</th><th scope="col">Level</th><th scope="col">Why not verified</th></tr></thead>
+                            <tbody>@foreach (var row in ec.Coverage.Where(r => r.Kind != "Contract operation" || _showOperations))
+                            {
+                                <tr data-testid="its-coverage-row" data-kind="@row.Kind" data-level="@row.Level"><th scope="row">@row.Subject</th><td>@row.Kind</td><td>@row.Level</td><td>@(row.WhyNotVerified ?? "—")</td></tr>
+                            }</tbody>
+                        </table>
+                    </div>
+                    <label class="its-check"><input type="checkbox" @bind="_showOperations" /> Show contract operations</label>
+                    <details class="its-details" data-testid="its-period-lock"><summary>Period lock and Bufdata delivery</summary>
+                        <ul class="its-list">@foreach (var l in ec.PeriodLock) { <li>@l</li> }</ul>
+                        <p class="its-muted" data-testid="its-bufdata">@ec.BufdataDelivery</p>
+                    </details>
+                </section>
+            }
+            else if (_suite is not null)
+            {
+                <p class="its-note">This suite comes from a single snapshot: run its ready tests from the Execution tab in Generate &amp; Review.</p>
+            }
+            else
+            {
+                <p class="its-note" data-testid="its-no-suite">Open or generate a suite first.</p>
+            }
+            break;
     }
 </div>
-
-@code {
-    private static readonly string[] Tabs = ["Readiness", "Flow", "Configuration", "Test data", "Tests", "XML", "Kode 6/7", "Review", "Execution"];
-    private static readonly SuiteTriage[] TriageOrder = [SuiteTriage.CanRunNow, SuiteTriage.WaitingForPrerequisite, SuiteTriage.NeedsDomainDecision, SuiteTriage.NotSupported];
-
-    private List<IqrSourceSnapshotSummary>? _snapshots;
-    private List<IntegrationSuiteScope>? _scopes;
-    private List<IntegrationSuiteSummary>? _suites;
-    private IntegrationSuite? _suite;
-    private string _snapshotId = "";
-    private string _scopeId = "skolenaervaer";
-    private string _modules = "";
-    private bool _negatives = true, _security = true, _testData = true;
-    private bool _busy, _authorized, _confirmMutating;
-    private string? _error, _message;
-    private string _tab = Tabs[0];
-    private readonly HashSet<Guid> _selected = [];
-    private ContractTestEnvironment? _environment;
-    private string? _environmentName;
-
-    // Hand-off from Contract Testing: the snapshot, scope and modules a contract came from are preselected; generation stays an explicit click.
-    [SupplyParameterFromQuery(Name = "snapshot")] public string? SnapshotQuery { get; set; }
-    [SupplyParameterFromQuery(Name = "scope")] public string? ScopeQuery { get; set; }
-    [SupplyParameterFromQuery(Name = "modules")] public string? ModulesQuery { get; set; }
-
-    private string SelectedSnapshot { get => _snapshotId; set => _snapshotId = value ?? ""; }
-    private IqrSourceSnapshotSummary? Picked => Guid.TryParse(_snapshotId, out var id) ? _snapshots?.FirstOrDefault(s => s.Id == id) : null;
-    private IntegrationSuiteScope? ScopeDef => _scopes?.FirstOrDefault(s => s.ScopeId == _scopeId);
-
-    protected override async Task OnInitializedAsync()
-    {
-        var (snapshots, e1) = await Api.SnapshotsAsync();
-        var (scopes, e2) = await Api.ScopesAsync();
-        var (suites, e3) = await Api.ListAsync();
-        _snapshots = snapshots ?? []; _scopes = scopes ?? []; _suites = suites ?? [];
-        _error = e1 ?? e2 ?? e3;
-        if (ScopeQuery is { Length: > 0 } scope && _scopes.Any(s => s.ScopeId == scope)) _scopeId = scope;
-        if (_scopes.Count > 0 && _scopes.All(s => s.ScopeId != _scopeId)) _scopeId = _scopes[0].ScopeId;
-        if (Guid.TryParse(SnapshotQuery, out var handedOff) && _snapshots.Any(s => s.Id == handedOff)) _snapshotId = handedOff.ToString("D");
-        if (!string.IsNullOrWhiteSpace(ModulesQuery)) _modules = ModulesQuery.Trim();
-        try
-        {
-            var context = await ContextFactory.GetActiveContextAsync();
-            if (context.ActiveProfileOrNull is { } profile && !string.IsNullOrWhiteSpace(context.TargetUrl))
-            {
-                var identity = ReviewAuthenticationIdentity.ForContext(context);
-                _environmentName = profile.Name;
-                _environment = new()
-                {
-                    EnvironmentId = profile.Id, TargetUrl = context.TargetUrl, EnvironmentType = profile.EnvironmentType.ToString(), IsProduction = profile.EnvironmentType == FrontendEnvironmentType.Production,
-                    ProfileId = identity.ProfileId, ContextFingerprint = identity.ContextFingerprint,
-                };
-            }
-        }
-        catch (Exception) { _environment = null; }
-    }
-
-    private async Task GenerateAsync()
-    {
-        if (Picked is not { } snapshot) return;
-        _busy = true; _error = null; _message = null;
-        var request = new IntegrationSuiteGenerateRequest
-        {
-            SnapshotId = snapshot.Id, ScopeId = _scopeId, IncludeNegatives = _negatives, IncludeSecurity = _security, GenerateTestData = _testData,
-            Modules = [.. _modules.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)],
-        };
-        var (result, error) = await Api.GenerateAsync(request);
-        if (error is not null || result?.Error is not null) _error = error ?? result!.Error;
-        else if (result?.Suite is { } suite)
-        {
-            _suite = suite; _tab = Tabs[0]; _selected.Clear();
-            _message = result.Reused ? $"Nothing changed since revision {suite.Revision}; the existing suite is shown (no duplicates were created)." : $"Revision {suite.Revision} generated as a draft. Nothing was sent.";
-            _suites = (await Api.ListAsync()).Suites ?? _suites;
-        }
-        _busy = false;
-    }
-
-    private async Task OpenAsync(Guid id)
-    {
-        _busy = true; _error = null; _message = null;
-        (_suite, _error) = await Api.GetAsync(id);
-        _selected.Clear(); _tab = Tabs[0];
-        _busy = false;
-    }
-
-    private async Task ReviewAsync(string key, string decision)
-    {
-        if (_suite is not { } suite) return;
-        _busy = true; _error = await Api.ReviewAsync(suite.Id, new IntegrationSuiteReviewRequest(key, decision, null));
-        if (_error is null) (_suite, _error) = await Api.GetAsync(suite.Id);
-        _busy = false;
-    }
-
-    private async Task ExecuteAsync()
-    {
-        if (_suite is not { } suite || _environment is not { } env || !_authorized) return;
-        _busy = true; _error = null; _message = null;
-        var (result, error) = await Api.ExecuteAsync(suite.Id, new IntegrationSuiteExecuteRequest
-        {
-            TestIds = [.. _selected], EnvironmentId = env.EnvironmentId, TargetUrl = env.TargetUrl, EnvironmentType = env.EnvironmentType, IsProduction = env.IsProduction,
-            ProfileId = env.ProfileId, ContextFingerprint = env.ContextFingerprint, ConfirmMutatingCalls = _confirmMutating, Authorized = true,
-        });
-        if (error is not null) _error = error;
-        else if (result is not null)
-        {
-            _message = result.NotRun.Count > 0 ? $"{result.Message} Not run: {result.NotRun.Count}." : result.Message;
-            if (result.RunId is not null) (_suite, _) = await Api.GetAsync(suite.Id);
-        }
-        _authorized = false; // authorisation is per run
-        _busy = false;
-    }
-
-    private void Toggle(Guid id, bool on) { if (on) _selected.Add(id); else _selected.Remove(id); }
-
-    private static int CountTriage(IntegrationSuite s, SuiteTriage t) => s.Tests.Count(x => x.Triage == t) + s.Security.Count(x => x.Triage == t) + s.Stages.Count(x => x.Triage == t);
-
-    private static string Label(SuiteStatus s) => s switch
-    {
-        SuiteStatus.ReadyToExecute => "Ready to execute", SuiteStatus.PartiallyExecutable => "Partially executable", SuiteStatus.NeedsReview => "Needs review", _ => s.ToString(),
-    };
-    private static string Label(SuiteItemReadiness r) => r switch
-    {
-        SuiteItemReadiness.NeedsReview => "Needs review", SuiteItemReadiness.PartiallyExecutable => "Partially executable", SuiteItemReadiness.NotSupported => "Not supported",
-        SuiteItemReadiness.NotAssessed => "Not assessed", _ => r.ToString(),
-    };
-    private static string Outcome(SuiteExecutionOutcome o) => o switch
-    {
-        SuiteExecutionOutcome.NotExecuted => "Not executed", SuiteExecutionOutcome.PartiallyVerified => "Partially verified", _ => o.ToString(),
-    };
-    private static string Triage(SuiteTriage t) => t switch
-    {
-        SuiteTriage.CanRunNow => "Can run now", SuiteTriage.WaitingForPrerequisite => "Waiting for prerequisite", SuiteTriage.NeedsDomainDecision => "Needs domain decision", _ => "Not supported",
-    };
-    private static string Coverage(SuiteStageCoverage c) => c switch
-    {
-        SuiteStageCoverage.ExecutableAndObservable => "Executable + observable", _ => c.ToString(),
-    };
-    private static string Ref(SuiteSourceRef r) => r.Line is { } l ? $"{r.Path}:{l}" : r.Path;
-    private static string Short(string sha) => sha.Length >= 16 ? sha[..16] + "…" : sha;
-    private static string Utc(DateTimeOffset t) => t.UtcDateTime.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture) + " UTC";
-    private static string Slug(string t) => new string([.. t.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-')]);
-}
