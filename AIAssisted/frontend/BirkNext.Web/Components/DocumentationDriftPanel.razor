@@ -15,11 +15,20 @@
     }
     else if (View == "overview")
     {
-        @Overview()
+        @QualityOverview()
+        <details class="dd-advanced" data-testid="dd-overview-details">
+            <summary>Inventory and import details</summary>
+            @Overview()
+        </details>
+    }
+    else if (View == "findings")
+    {
+        @FindingsView()
     }
     else if (View == "changes")
     {
         @Changes()
+        @MovesView()
     }
     else if (View == "drift")
     {
@@ -91,7 +100,17 @@
     }
 
     // ── Compare ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    /// <summary>Compare: the automatic candidates first (one action for every eligible area); every expert mode stays under Advanced comparison.</summary>
     private RenderFragment Compare() => __builder =>
+    {
+        @Candidates()
+        <details class="dd-advanced" data-testid="dd-advanced-compare" open="@(!string.IsNullOrEmpty(PreselectModule) || !QualityAreas.Any(a => a.Status is QualityAreaStatus.NotAssessed or QualityAreaStatus.Compared))">
+            <summary>Advanced comparison (single area, versions, manual)</summary>
+            @AdvancedCompare()
+        </details>
+    };
+
+    private RenderFragment AdvancedCompare() => __builder =>
     {
         <p class="dd-note" data-testid="dd-compare-lead">Authored intent is compared with implementation-derived documentation for the same module and area.</p>
         <ReviewDisclosure Text="How comparison works" CollapseText="Hide how comparison works" TestId="dd-how-compare" Class="disclosure-inline disclosure-small">
@@ -1154,4 +1173,278 @@
             <p data-testid="dd-composite-saved-outcome">@s.Outcome</p>
         </section>
     };
+}
+
+@code {
+    // ── Documentation Quality: areas, bulk comparison, findings, review, report (one engine; see DocumentationQuality) ─────────
+    private string? QualityImport => ConsistencyFocus;
+    private IReadOnlyList<QualityArea> QualityAreas => Lifecycle is null ? [] : DocumentationQuality.Areas(_catalog, Saved, QualityImport, ProjectImportsOf(QualityImport));
+    private IReadOnlyList<QualityFinding> QualityFindings(IReadOnlyList<QualityArea> areas) => Lifecycle is { } state ? DocumentationQuality.Findings(state, areas) : [];
+    private IReadOnlyList<BulkComparisonRow>? _bulkRows;
+    private readonly HashSet<string> _areaSelected = new(StringComparer.Ordinal);
+    private bool _previewBulk;
+    private string _findingFilter = "open", _findingSearch = "", _findingModule = "", _findingSeverity = "", _reviewer = "", _reviewNote = "";
+    private string? _findingOpen;
+    private string? _qualityMessage;
+
+    private static string AreaLabel(QualityAreaStatus s) => s switch
+    {
+        QualityAreaStatus.Compared => "Compared",
+        QualityAreaStatus.NotAssessed => "Ready to compare",
+        QualityAreaStatus.MissingGenerated => "Generated documentation missing",
+        QualityAreaStatus.MissingAuthored => "Authored documentation missing",
+        QualityAreaStatus.Ambiguous => "Ambiguous pairing — review",
+        _ => "Not supported",
+    };
+
+    private static string AreaTone(QualityAreaStatus s) => s switch
+    {
+        QualityAreaStatus.Compared => "green", QualityAreaStatus.NotAssessed => "blue", QualityAreaStatus.Ambiguous => "amber", _ => "grey",
+    };
+
+    private RenderFragment QualityOverview() => __builder =>
+    {
+        var areas = QualityAreas;
+        var findings = QualityFindings(areas);
+        var s = DocumentationQuality.Summary(_catalog, QualityImport, areas, findings);
+        var import = _imports.FirstOrDefault(i => i.ImportId == QualityImport);
+        <section class="dq-overview" data-testid="dq-overview" aria-label="Documentation quality overview">
+            <div class="dq-head">
+                <div><h2>Documentation quality</h2>
+                    <p class="dd-note" data-testid="dq-import">@(import is null ? "No imported project" : $"{import.Label} · {import.ArchiveName} · source snapshot {import.SourceSnapshotId?.ToString("N")[..8] ?? "not recorded"}")</p></div>
+                @if (_imports.Count > 1)
+                {
+                    <label class="dd-field dq-import-select">Project import
+                        <select data-testid="dq-import-select" @onchange="CompositeImportChanged">
+                            @foreach (var i in _imports) { <option value="@i.ImportId" selected="@(i.ImportId == QualityImport)">@i.Label</option> }
+                        </select>
+                    </label>
+                }
+            </div>
+            <dl class="dq-kpis" data-testid="dq-kpis">
+                <div data-testid="dq-kpi-comparable"><dt>Comparable areas</dt><dd>@s.Comparable</dd></div>
+                <div data-testid="dq-kpi-compared"><dt>Compared</dt><dd>@(s.Comparable == 0 ? DocumentationQuality.NotAssessedText : $"{s.Compared} / {s.Comparable}")</dd></div>
+                <div data-testid="dq-kpi-confirmed"><dt>Confirmed differences</dt><dd>@(s.Compared == 0 ? DocumentationQuality.NotAssessedText : s.ConfirmedDifferences.ToString())</dd></div>
+                <div data-testid="dq-kpi-potential"><dt>Potential drift</dt><dd>@(s.Compared == 0 ? DocumentationQuality.NotAssessedText : s.PotentialDrift.ToString())</dd></div>
+                <div data-testid="dq-kpi-review"><dt>Needs review</dt><dd>@(s.Compared == 0 ? DocumentationQuality.NotAssessedText : s.NeedsReview.ToString())</dd></div>
+                <div data-testid="dq-kpi-missing"><dt>Missing evidence</dt><dd>@(s.MissingGenerated + s.MissingAuthored)</dd></div>
+            </dl>
+            <p class="dd-note" data-testid="dq-secondary">@s.AuthoredDocuments authored · @s.GeneratedDocuments generated documents · @s.NotSupported area(s) without a structured extractor · @s.Ambiguous ambiguous · @s.ReviewedFindings reviewed finding(s)@(s.StaleAreas > 0 ? $" · {s.StaleAreas} area(s) changed since their last comparison" : "")</p>
+            <details class="dq-evidence" data-testid="dq-evidence">
+                <summary>What evidence is available and why</summary>
+                <ul class="dd-plain">
+                    <li data-testid="dq-evidence-authored"><strong>Authored documentation</strong> — @(s.AuthoredDocuments > 0 ? $"available ({s.AuthoredDocuments} documents)" : "missing: import the project's specification documents") · required for any comparison.</li>
+                    <li data-testid="dq-evidence-generated"><strong>Generated documentation</strong> — @(s.GeneratedDocuments > 0 ? $"available ({s.GeneratedDocuments} documents)" : "missing: the imported source has no generated documentation (autodoc)") · required here, optional for the project's evidence readiness.</li>
+                    <li data-testid="dq-evidence-source"><strong>Application source</strong> — @(import?.SourceSnapshotId is { } snap ? $"snapshot {snap.ToString("N")[..8]}" : "no Source Analysis snapshot recorded for this import") · used for provenance; drift is evaluated on documentation.</li>
+                </ul>
+                <p class="dd-note" data-testid="dq-evidence-explain">The project strip's "required evidence roles" counts project-level inputs (application source and documentation). It does not decide comparability: each module area below is comparable when it has authored and generated documentation of the same area, whatever that project-level count says.</p>
+                <p><a class="btn-link" href="source-analysis">Open Source Analysis</a> · <a class="btn-link" href="@NavigationCatalog.GeneratedDocumentationHealthRoute">Generated Documentation Health</a> · <a class="btn-link" href="project-import">Import another version</a></p>
+            </details>
+            <div class="dq-actions" data-testid="dq-actions">
+                <button type="button" class="btn-primary" data-testid="dq-compare-all" disabled="@(!areas.Any(a => a.Status == QualityAreaStatus.NotAssessed))" @onclick='() => OnViewChange.InvokeAsync("compare")'>Compare all eligible (@areas.Count(a => a.Status == QualityAreaStatus.NotAssessed))</button>
+                <button type="button" class="btn-secondary" data-testid="dq-review-findings" disabled="@(!findings.Any(f => f.IsDifference))" @onclick='() => OnViewChange.InvokeAsync("findings")'>Review findings (@findings.Count(f => f.IsDifference && !f.Closed))</button>
+                <button type="button" class="btn-secondary" data-testid="dq-report" @onclick="DownloadReportAsync">Quality report</button>
+                @if (_imports.GroupBy(i => i.LineageKey).Any(g => g.Count() > 1)) { <button type="button" class="btn-secondary" data-testid="dq-versions" @onclick='() => OnViewChange.InvokeAsync("changes")'>Compare versions</button> }
+            </div>
+            @if (_qualityMessage is { } qm) { <p class="dd-note" role="status" data-testid="dq-message">@qm</p> }
+            <h3 class="dq-h">Module areas</h3>
+            <ul class="dq-areas" data-testid="dq-areas">
+                @foreach (var module in areas.GroupBy(a => a.Module).OrderByDescending(g => g.Count(a => a.Comparison is not null && findings.Any(f => f.ComparisonId == a.Comparison.Id && f.IsDifference && !f.Closed))).ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    var open = findings.Count(f => f.Module == module.Key && f.IsDifference && !f.Closed);
+                    <li class="dq-area-row" data-testid="dq-area-module" data-module="@module.Key">
+                        <strong>@module.Key</strong>
+                        <span class="dq-chips">@foreach (var a in module) { <span class="dd-status dd-status-@AreaTone(a.Status)" title="@a.Reason" data-testid="dq-area" data-status="@a.Status" data-concern="@a.Concern">@DocumentationDriftComposite.ConcernLabel(a.Concern): @AreaLabel(a.Status)</span> }</span>
+                        @if (open > 0) { <button type="button" class="btn-link" data-testid="dq-area-findings" @onclick='() => { _findingModule = module.Key; OnViewChange.InvokeAsync("findings"); }'>@open open finding(s)</button> }
+                    </li>
+                }
+            </ul>
+        </section>
+    };
+
+    private RenderFragment Candidates() => __builder =>
+    {
+        var areas = QualityAreas;
+        var eligible = areas.Where(a => a.Status == QualityAreaStatus.NotAssessed).ToList();
+        <section class="dq-candidates" data-testid="dq-candidates" aria-label="Comparison candidates">
+            <div class="dq-head"><h2>Comparison candidates</h2>
+                <span class="dd-note">@eligible.Count ready · @areas.Count(a => a.Status == QualityAreaStatus.Compared) compared · @areas.Count(a => a.Status is QualityAreaStatus.MissingGenerated or QualityAreaStatus.MissingAuthored) missing evidence · @areas.Count(a => a.Status == QualityAreaStatus.Ambiguous) ambiguous</span></div>
+            <p class="dd-note">Pairs are found automatically: the same module and documentation area, authored intent against implementation-derived documentation. Ambiguous, missing and unsupported areas are never compared automatically.</p>
+            @if (areas.Count == 0) { <p class="dd-note" data-testid="dq-candidates-empty">No module area with documentation was found for this import.</p> }
+            else
+            {
+                <ul class="dq-candidate-list">
+                    @foreach (var a in areas.Where(a => a.Status != QualityAreaStatus.NotSupported))
+                    {
+                        <li data-testid="dq-candidate" data-status="@a.Status" data-key="@a.Key">
+                            @if (a.Status == QualityAreaStatus.NotAssessed) { <input type="checkbox" aria-label="@($"Select {a.Module} {DocumentationDriftComposite.ConcernLabel(a.Concern)}")" data-testid="dq-candidate-select" checked="@_areaSelected.Contains(a.Key)" @onchange="e => { if (e.Value is true) _areaSelected.Add(a.Key); else _areaSelected.Remove(a.Key); }" /> }
+                            <strong>@a.Module</strong> · @DocumentationDriftComposite.ConcernLabel(a.Concern)
+                            <span class="dd-status dd-status-@AreaTone(a.Status)">@AreaLabel(a.Status)</span>
+                            <span class="dd-note">@a.AuthoredDocuments authored · @a.GeneratedDocuments generated@(a.AuthoredDocuments > 1 ? " · several authored documents (additive unless they conflict)" : "")</span>
+                        </li>
+                    }
+                </ul>
+                <div class="dq-actions">
+                    <button type="button" class="btn-secondary" data-testid="dq-preview" disabled="@(eligible.Count == 0)" @onclick="() => _previewBulk = !_previewBulk">Preview (@eligible.Count)</button>
+                    <button type="button" class="btn-primary" data-testid="dq-run-all" disabled="@(eligible.Count == 0)" @onclick="() => RunBulkAsync(BulkScope.AllEligible)">Compare all eligible (@eligible.Count)</button>
+                    <button type="button" class="btn-secondary" data-testid="dq-run-selected" disabled="@(_areaSelected.Count == 0)" @onclick="() => RunBulkAsync(BulkScope.Selected)">Compare selected (@_areaSelected.Count)</button>
+                    @if (areas.Any(a => a.Status == QualityAreaStatus.NotAssessed && a.HasEarlierComparison)) { <button type="button" class="btn-secondary" data-testid="dq-run-changed" @onclick="() => RunBulkAsync(BulkScope.Changed)">Recompare changed (@areas.Count(a => a.Status == QualityAreaStatus.NotAssessed && a.HasEarlierComparison))</button> }
+                </div>
+                @if (_previewBulk)
+                {
+                    <ul class="dd-plain" data-testid="dq-preview-list">@foreach (var a in eligible) { <li>@a.Module · @DocumentationDriftComposite.ConcernLabel(a.Concern): @a.AuthoredDocuments authored ↔ 1 generated — @a.Reason</li> }</ul>
+                }
+                @if (_bulkRows is { } rows)
+                {
+                    <table class="dq-table" data-testid="dq-bulk-result"><caption class="visually-hidden">Bulk comparison result</caption>
+                        <thead><tr><th scope="col">Module</th><th scope="col">Area</th><th scope="col">Result</th><th scope="col">Detail</th></tr></thead>
+                        <tbody>@foreach (var r in rows) { <tr data-testid="dq-bulk-row" data-outcome="@r.Outcome"><td>@r.Module</td><td>@r.Concern</td><td>@r.Outcome</td><td>@r.Detail</td></tr> }</tbody>
+                    </table>
+                }
+            }
+        </section>
+    };
+
+    private async Task RunBulkAsync(BulkScope scope)
+    {
+        if (Lifecycle is not { } state) return;
+        _bulkRows = DocumentationQuality.RunBulk(state, QualityAreas, scope, _areaSelected, Parser, Repository?.SessionScope, DateTimeOffset.UtcNow);
+        _areaSelected.Clear(); _previewBulk = false;
+        _qualityMessage = $"{_bulkRows.Count(r => r.Outcome == "Compared")} area(s) compared, {_bulkRows.Count(r => r.Outcome == "Unchanged")} unchanged, {_bulkRows.Count(r => r.Outcome == "Skipped")} skipped, {_bulkRows.Count(r => r.Outcome == "Failed")} failed. Local analysis only.";
+        if (_bulkRows.Any(r => r.Outcome == "Compared") && ServiceProvider.GetService(typeof(IWorkspaceAutoSaveService)) is IWorkspaceAutoSaveService autoSave) await autoSave.SaveNowAsync();
+    }
+
+    private IEnumerable<QualityFinding> VisibleFindings(IReadOnlyList<QualityFinding> all) => all.Where(f =>
+        (_findingFilter switch
+        {
+            "open" => f.IsDifference && !f.Closed,
+            "potential" => f.Classification == FindingClassification.PotentialDrift,
+            "review" => f.Classification is FindingClassification.NeedsReview or FindingClassification.Conflict,
+            "confirmed" => f.Review?.Decision == nameof(DriftReviewDecision.ConfirmDifference),
+            "reviewed" => f.Review is not null,
+            "reopened" => f.ReviewState == "Reopened",
+            "consistent" => f.Classification == FindingClassification.Consistent,
+            _ => true,
+        })
+        && (_findingModule.Length == 0 || f.Module == _findingModule) && (_findingSeverity.Length == 0 || f.Severity.ToString() == _findingSeverity)
+        && (_findingSearch.Length == 0 || $"{f.Concept} {f.Module} {f.Expected} {f.Actual}".Contains(_findingSearch, StringComparison.OrdinalIgnoreCase)));
+
+    private RenderFragment FindingsView() => __builder =>
+    {
+        var areas = QualityAreas;
+        var all = QualityFindings(areas);
+        <section class="dq-findings" data-testid="dq-findings" aria-label="Findings">
+            <div class="dq-head"><h2>Findings</h2><span class="dd-note">@all.Count(f => f.IsDifference) differences in @areas.Count(a => a.Status == QualityAreaStatus.Compared) compared area(s) · analyzer verdict and human review are kept apart</span></div>
+            @if (all.Count == 0)
+            {
+                <p class="dd-note" data-testid="dq-findings-empty">@DocumentationQuality.NotAssessedText — no area has been compared yet. <button type="button" class="btn-link" @onclick='() => OnViewChange.InvokeAsync("compare")'>Compare all eligible</button></p>
+            }
+            else
+            {
+                <div class="dq-filters">
+                    <input type="search" class="dd-search" placeholder="Search concept, module or value" aria-label="Search findings" data-testid="dq-finding-search" @bind="_findingSearch" @bind:event="oninput" />
+                    <select aria-label="Status" data-testid="dq-finding-filter" @bind="_findingFilter">
+                        <option value="open">Open differences</option><option value="potential">Potential drift</option><option value="review">Needs review / conflicts</option>
+                        <option value="confirmed">Confirmed differences</option><option value="reviewed">Reviewed</option><option value="reopened">Reopened by new inputs</option><option value="consistent">Consistent</option><option value="all">All</option>
+                    </select>
+                    <select aria-label="Module" data-testid="dq-finding-module" @bind="_findingModule">
+                        <option value="">All modules</option>
+                        @foreach (var m in all.Select(f => f.Module).Distinct().OrderBy(m => m)) { <option value="@m">@m</option> }
+                    </select>
+                    <select aria-label="Severity" data-testid="dq-finding-severity" @bind="_findingSeverity">
+                        <option value="">All severities</option>@foreach (var sev in Enum.GetNames<FindingSeverity>()) { <option value="@sev">@sev</option> }
+                    </select>
+                </div>
+                <ul class="dq-finding-list">
+                    @foreach (var f in VisibleFindings(all).Take(300))
+                    {
+                        <li class="dq-finding" data-testid="dq-finding" data-id="@f.Id" data-classification="@f.Classification" data-review="@f.ReviewState">
+                            <button type="button" class="dq-finding-head" aria-expanded="@(_findingOpen == f.Id ? "true" : "false")" @onclick="() => _findingOpen = _findingOpen == f.Id ? null : f.Id">
+                                <span class="dd-status dd-status-@(f.Classification switch { FindingClassification.PotentialDrift => "amber", FindingClassification.Conflict => "red", FindingClassification.NeedsReview => "blue", FindingClassification.Consistent => "green", _ => "grey" })">@f.Classification</span>
+                                <strong>@f.Concept</strong> <span class="dd-note">@f.Module · @f.Concern · @f.Severity · @f.ReviewState</span>
+                            </button>
+                            @if (_findingOpen == f.Id)
+                            {
+                                <div class="dq-finding-detail" data-testid="dq-finding-detail">
+                                    <dl class="dq-ea"><div><dt>Expected (authored)</dt><dd>@(f.Expected ?? "—")</dd></div><div><dt>Actual (implementation-derived)</dt><dd>@(f.Actual ?? "—")</dd></div></dl>
+                                    <p class="dd-note">@f.Explanation</p>
+                                    <p class="dd-note" data-testid="dq-finding-rationale">Severity @f.Severity: @f.SeverityRationale · Rule: @f.Rule · Confidence: @f.Confidence · Compared @f.ComparedAt.ToLocalTime().ToString("g")</p>
+                                    <ul class="dd-plain" data-testid="dq-finding-evidence">
+                                        @foreach (var r in f.AuthoredReferences) { <li class="dd-wrap">Authored: <code>@r</code></li> }
+                                        @if (f.GeneratedReference is { } g) { <li class="dd-wrap">Generated: <code>@g</code></li> }
+                                        @foreach (var p in f.SpecificationPacks) { <li>Specification pack: <code>@p</code> (provenance)</li> }
+                                    </ul>
+                                    <p class="dd-note">Trace: <a class="btn-link" href="data-model-explorer">Data Model Explorer</a> · <a class="btn-link" href="specification-explorer">Specification Explorer</a> · <a class="btn-link" href="artifact-traceability">Artifact Traceability</a> · <a class="btn-link" href="impact-analysis">Impact Analysis</a> <span class="dd-note">(links by module; requirement and test links are not established by evidence here)</span></p>
+                                    @if (f.History.Count > 0)
+                                    {
+                                        <ul class="dd-plain" data-testid="dq-review-history">@foreach (var h in f.History) { <li>@h.At.ToLocalTime().ToString("g") · @h.Reviewer · @h.Decision@(h.Note is { } n ? $" — {n}" : "")@(h.InputsFingerprint != f.InputsFingerprint ? " (earlier inputs)" : "")</li> }</ul>
+                                    }
+                                    @if (f.IsDifference)
+                                    {
+                                        <div class="dq-review" data-testid="dq-review">
+                                            <input class="dd-search" placeholder="Reviewer" aria-label="Reviewer" data-testid="dq-reviewer" @bind="_reviewer" @bind:event="oninput" />
+                                            <input class="dd-search" placeholder="Note (optional)" aria-label="Review note" data-testid="dq-review-note" @bind="_reviewNote" @bind:event="oninput" />
+                                            @foreach (var d in Enum.GetValues<DriftReviewDecision>())
+                                            {
+                                                <button type="button" class="btn-secondary dq-decision" data-testid="dq-decision-@d" @onclick="() => ReviewAsync(f, d)">@DecisionLabel(d)</button>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+    };
+
+    private static string DecisionLabel(DriftReviewDecision d) => d switch
+    {
+        DriftReviewDecision.ConfirmDifference => "Confirm difference", DriftReviewDecision.AcceptExpectedChange => "Accept expected change", DriftReviewDecision.FalsePositive => "False positive",
+        DriftReviewDecision.RequestClarification => "Request clarification", DriftReviewDecision.Defer => "Defer", _ => "Resolved with evidence",
+    };
+
+    private async Task ReviewAsync(QualityFinding f, DriftReviewDecision decision)
+    {
+        if (Lifecycle is not { } state) return;
+        DocumentationQuality.Review(state, f, decision, _reviewNote, _reviewer, DateTimeOffset.UtcNow);
+        _reviewNote = "";
+        _qualityMessage = $"{DecisionLabel(decision)} recorded for {f.Concept}.";
+        if (ServiceProvider.GetService(typeof(IWorkspaceAutoSaveService)) is IWorkspaceAutoSaveService autoSave) await autoSave.SaveNowAsync();
+    }
+
+    private RenderFragment MovesView() => __builder =>
+    {
+        var lineage = string.IsNullOrEmpty(_changesLineage) ? _imports.LastOrDefault()?.LineageKey : _changesLineage;
+        var moves = lineage is null ? [] : DocumentationQuality.Moves(_catalog, _imports, lineage);
+        @if (moves.Count > 0)
+        {
+            <section class="dq-moves" data-testid="dq-moves" aria-label="Moved documents">
+                <h3>Moved documents (identical content, new location)</h3>
+                <ul class="dd-plain">@foreach (var m in moves) { <li class="dd-wrap" data-testid="dq-move"><code>@m.FromPath</code> → <code>@m.ToPath</code> <span class="dd-note">@m.Origin · @m.FromImport → @m.ToImport</span></li> }</ul>
+                <p class="dd-note">Only exact-content moves are recognised; a moved and changed document shows as removed and added.</p>
+            </section>
+        }
+    };
+
+    private async Task DownloadReportAsync()
+    {
+        var areas = QualityAreas;
+        var findings = QualityFindings(areas);
+        var import = _imports.FirstOrDefault(i => i.ImportId == QualityImport);
+        var lineage = import?.LineageKey;
+        var report = DocumentationQuality.Report(import, areas, findings, DocumentationQuality.Summary(_catalog, QualityImport, areas, findings),
+            lineage is null ? [] : DocumentationQuality.Moves(_catalog, _imports, lineage), DateTimeOffset.UtcNow);
+        LastReport = report;
+        if (ServiceProvider.GetService(typeof(Microsoft.JSInterop.IJSRuntime)) is Microsoft.JSInterop.IJSRuntime js)
+        {
+            try { await js.InvokeVoidAsync("downloadBase64File", $"documentation-quality-{DateTimeOffset.UtcNow:yyyyMMdd-HHmm}.md", Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(report)), "text/markdown"); }
+            catch (Microsoft.JSInterop.JSException) { _qualityMessage = "The report could not be downloaded in this browser."; return; }
+        }
+        _qualityMessage = "Quality report generated (Markdown).";
+    }
+
+    /// <summary>The last generated report (tests read it; the browser downloads it).</summary>
+    public string? LastReport { get; private set; }
 }

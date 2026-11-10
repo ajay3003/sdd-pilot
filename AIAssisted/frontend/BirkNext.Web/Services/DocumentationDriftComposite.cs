@@ -415,7 +415,7 @@ public static partial class DocumentationDriftComposite
             Outcome = drift.Outcome, Counts = new(drift.Counts), Items = [.. drift.Items], AnalysisVersion = DocumentationDrift.AnalysisVersion, WorkspaceScope = scope,
         };
         state.DocumentationDriftComparisons.Insert(0, saved);
-        if (state.DocumentationDriftComparisons.Count > 50) state.DocumentationDriftComparisons.RemoveAt(state.DocumentationDriftComparisons.Count - 1);
+        if (state.DocumentationDriftComparisons.Count > 200) state.DocumentationDriftComparisons.RemoveAt(state.DocumentationDriftComparisons.Count - 1);
         return saved;
     }
 

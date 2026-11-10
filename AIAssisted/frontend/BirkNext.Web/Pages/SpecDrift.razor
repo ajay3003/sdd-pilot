@@ -53,7 +53,7 @@
 </div>
 
 @code {
-    private static readonly (string Key, string Label)[] Tabs = [("overview", "Overview"), ("compare", "Compare"), ("changes", "Changes"), ("drift", "Drift")];
+    private static readonly (string Key, string Label)[] Tabs = [("overview", "Overview"), ("findings", "Findings"), ("compare", "Compare"), ("changes", "Changes"), ("drift", "Drift")];
 
     /// <summary>Compare is the default. Older links keep working: ?tab=documents and ?tab=actions open Compare.</summary>
     private string _activeTab = "compare";
@@ -90,7 +90,7 @@
 
     public static string NormalizeTab(string tab) => tab switch
     {
-        "overview" or "changes" or "drift" or "compare" => tab,
+        "overview" or "findings" or "changes" or "drift" or "compare" => tab,
         _ => "compare",
     };
 

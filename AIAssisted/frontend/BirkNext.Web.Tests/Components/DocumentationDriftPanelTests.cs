@@ -294,7 +294,7 @@ public sealed class DocumentationDriftPageTests : BunitContext
     {
         Services.GetRequiredService<NavigationManager>().NavigateTo("/documentation-drift" + query);
         var cut = Render<SpecDrift>();
-        cut.FindAll("[role=tab]").Select(t => t.TextContent.Trim()).Should().Equal("Overview", "Compare", "Changes", "Drift");
+        cut.FindAll("[role=tab]").Select(t => t.TextContent.Trim()).Should().Equal("Overview", "Findings", "Compare", "Changes", "Drift");
         cut.Find("[role=tab][aria-selected=true]").TextContent.Trim().Should().Be(char.ToUpperInvariant(view[0]) + view[1..]);
         cut.Find("[data-testid=dd-panel]").GetAttribute("data-view").Should().Be(view);
     }

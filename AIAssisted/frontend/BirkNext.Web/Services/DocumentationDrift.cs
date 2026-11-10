@@ -535,7 +535,7 @@ public static class DocumentationDrift
             Outcome = result.Outcome, Counts = new(result.Counts), Items = [.. result.Items], AnalysisVersion = AnalysisVersion, WorkspaceScope = scope,
         };
         state.DocumentationDriftComparisons.Insert(0, saved);
-        if (state.DocumentationDriftComparisons.Count > 50) state.DocumentationDriftComparisons.RemoveAt(state.DocumentationDriftComparisons.Count - 1);
+        if (state.DocumentationDriftComparisons.Count > 200) state.DocumentationDriftComparisons.RemoveAt(state.DocumentationDriftComparisons.Count - 1);
         return saved;
     }
 

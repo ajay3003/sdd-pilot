@@ -46,6 +46,9 @@ public sealed class SddLifecycleState
     public Dictionary<string, string> GeneratedDocumentContents { get; set; } = [];
     /// <summary>Saved Documentation Drift comparisons: exact references and the result as computed (immutable).</summary>
     public List<SddDocumentationDriftComparison> DocumentationDriftComparisons { get; set; } = [];
+    /// <summary>Human review decisions on Documentation Quality findings: append-only history (who, what, when, on which inputs). A newer comparison
+    /// with other inputs reopens a finding without erasing these.</summary>
+    public List<SddDriftReview> DocumentationDriftReviews { get; set; } = [];
     /// <summary>The artifact pack explorers and reviews currently view, per scope and module. Navigation only — never authority.</summary>
     public List<SddPackFocus> PackFocus { get; set; } = [];
     /// <summary>
@@ -145,6 +148,24 @@ public sealed class SddDriftItem
     public string Detail { get; set; } = "";
     public List<string> Left { get; set; } = [];
     public List<string> Right { get; set; } = [];
+}
+
+/// <summary>One review decision on one Documentation Quality finding (stable finding id), recorded against the exact compared inputs.</summary>
+public sealed class SddDriftReview
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string FindingId { get; set; } = "";
+    /// <summary>ConfirmDifference, AcceptExpectedChange, FalsePositive, RequestClarification, Defer, ResolvedWithEvidence.</summary>
+    public string Decision { get; set; } = "";
+    public string? Note { get; set; }
+    public string Reviewer { get; set; } = "";
+    public DateTimeOffset At { get; set; }
+    /// <summary>The inputs the decision was made on (contributor fingerprints + generated fingerprint + rule version).</summary>
+    public string InputsFingerprint { get; set; } = "";
+    public Guid? ComparisonId { get; set; }
+    public string? Module { get; set; }
+    public string? Concern { get; set; }
+    public string? Concept { get; set; }
 }
 
 public sealed class SddDocumentationDriftComparison
