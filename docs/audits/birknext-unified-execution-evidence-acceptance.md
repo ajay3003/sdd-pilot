@@ -104,4 +104,17 @@ Two Person-like tests needed an identifier ("Select a dataset that provides id")
 
 ## 5. Full regression (tasks 4 + 5 tree)
 
-Run sequentially: six memory-guarded backend partitions, then the full frontend suite, then the Release build. Results are in §5a, appended when the run completes.
+Run sequentially on the committed tree (multi-source E2E `35633daf` + this task): six memory-guarded backend partitions, then the full
+frontend suite, then the Release build. No timeout was changed and no test was disabled.
+
+| Step | Result |
+|---|---|
+| Backend partition 1 (SourceAnalysis, Integrations, PerformanceTests) | 1031 passed, 2 skipped, 0 failed |
+| Backend partition 2 (TargetEnvironmentDetection, TestData, LocalHttpsProxy, AltinnTesting) | 1098 passed, 5 skipped, 0 failed |
+| Backend partition 3 (IntegrationJourneys, CriticalE2E, ApiQuality, AuthenticatedReview) | 830 passed, 0 failed |
+| Backend partition 4 (CanonicalInterpretation … AzureEnvironment) | 652 passed, 1 skipped, 0 failed |
+| Backend partition 5 (IntegrationTopology … IntegrationQuality) | 520 passed, 3 skipped, 0 failed |
+| Backend partition 6 (everything else, including ExecutionExplorer and IntegrationSuites) | 2261 passed, 8 skipped, 0 failed |
+| **Backend total** | **6392 passed, 19 skipped, 0 failed** (peak memory 4.9 GB in partition 6, floor never reached) |
+| Full frontend suite | **8571 / 8571 passed** |
+| Release frontend build (`dotnet publish -c Release`) | PASS |

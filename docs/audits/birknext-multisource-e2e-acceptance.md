@@ -112,4 +112,4 @@ No timeout was increased and no check was weakened. The harness changes were:
 | Focused backend: IntegrationSuites, ContractTest, IntegrationJourney, SkoleNaervaer | 549/549 PASS, including `CompositeSuiteTests` 9/9 with the new assertions for MS-D1/D3/D5 |
 | Focused frontend: IntegrationSuites, Navigation, Documentation, Guide | 412/412 PASS, including `IntegrationSuitesCompositePageTests` 6 |
 | Release frontend publish | PASS |
-| Full regression (six memory-guarded backend partitions, then the full frontend suite, then the Release build) | Run once, sequentially, on the combined tree after the next task (Test Execution & Evidence). Results are recorded in `birknext-unified-execution-evidence-acceptance.md` §Regression. |
+| Full regression (six memory-guarded backend partitions, then the full frontend suite, then the Release build) | PASS on the combined tree (`35633daf` + `8148cc2d`): backend 6392 passed, 19 skipped, 0 failed; frontend 8571/8571; Release build PASS. Details: `birknext-unified-execution-evidence-acceptance.md` §5. |
