@@ -258,6 +258,13 @@ public sealed class ContractTestDataTests : IAsyncLifetime
         JsonNode.DeepEquals(JsonNode.Parse(sent.Body), JsonNode.Parse(dataset.Value!)).Should().BeTrue("the target received exactly the dataset value");
         JsonNode.Parse(sent.Body)!["quantity"]!.GetValueKind().Should().Be(JsonValueKind.Number, "types are preserved");
         detail.Calls.Single().State.Should().Be(ExecutionState.Passed);
+
+        // Without the data-changing confirmation nothing is sent, and the run says why (not a bare "blocked").
+        _seen.Clear();
+        var unconfirmed = await Scoped<ContractTestService>(scope).RunAsync(new() { TestIds = [positive.Test.Id], Environment = Local, ConfirmMutatingCalls = false }, default);
+        unconfirmed.Run!.State.Should().Be(ExecutionState.Blocked);
+        unconfirmed.Run.Message.Should().Contain("can change data").And.Contain("explicitly confirmed");
+        _seen.Should().BeEmpty();
     }
 
     [Fact]

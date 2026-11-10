@@ -321,6 +321,11 @@
     private ContractTestEnvironment? _environment;
     private string? _environmentName;
 
+    // Hand-off from Contract Testing: the snapshot, scope and modules a contract came from are preselected; generation stays an explicit click.
+    [SupplyParameterFromQuery(Name = "snapshot")] public string? SnapshotQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "scope")] public string? ScopeQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "modules")] public string? ModulesQuery { get; set; }
+
     private string SelectedSnapshot { get => _snapshotId; set => _snapshotId = value ?? ""; }
     private IqrSourceSnapshotSummary? Picked => Guid.TryParse(_snapshotId, out var id) ? _snapshots?.FirstOrDefault(s => s.Id == id) : null;
     private IntegrationSuiteScope? ScopeDef => _scopes?.FirstOrDefault(s => s.ScopeId == _scopeId);
@@ -332,7 +337,10 @@
         var (suites, e3) = await Api.ListAsync();
         _snapshots = snapshots ?? []; _scopes = scopes ?? []; _suites = suites ?? [];
         _error = e1 ?? e2 ?? e3;
+        if (ScopeQuery is { Length: > 0 } scope && _scopes.Any(s => s.ScopeId == scope)) _scopeId = scope;
         if (_scopes.Count > 0 && _scopes.All(s => s.ScopeId != _scopeId)) _scopeId = _scopes[0].ScopeId;
+        if (Guid.TryParse(SnapshotQuery, out var handedOff) && _snapshots.Any(s => s.Id == handedOff)) _snapshotId = handedOff.ToString("D");
+        if (!string.IsNullOrWhiteSpace(ModulesQuery)) _modules = ModulesQuery.Trim();
         try
         {
             var context = await ContextFactory.GetActiveContextAsync();

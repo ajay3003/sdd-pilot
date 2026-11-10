@@ -15,6 +15,9 @@ public interface IContractTestingApiService
     Task<(ContractImportResult? Result, string? Error)> ImportAsync(ContractImportRequest request, CancellationToken ct = default);
     Task<(IReadOnlyList<SourceContractCandidate>? Candidates, string? Error)> SourceContractsAsync(CancellationToken ct = default);
     Task<(ContractImportResult? Result, string? Error)> ImportFromSourceAsync(SourceContractImportRequest request, CancellationToken ct = default);
+    /// <summary>Imports several source contracts (each continues its earlier import), then generates their tests and test data when asked; sends nothing.</summary>
+    Task<(SourceContractBulkImportResult? Result, string? Error)> ImportFromSourceBulkAsync(SourceContractBulkImportRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(SourceContractBulkImportResult?, string?)>((null, "Bulk import is not available in this host."));
     Task<(ContractVersionDiff? Diff, string? Error)> DiffAsync(string key, int from, int to, CancellationToken ct = default);
     Task<(int Created, IReadOnlyList<string> Skipped, string? Error)> GenerateAsync(string key, int? version, IReadOnlyList<string>? operations, CancellationToken ct = default);
     Task<(int Created, IReadOnlyList<string> Skipped, string? Error)> ProposeNegativesAsync(string key, string operation, CancellationToken ct = default);
@@ -74,6 +77,9 @@ public sealed class ContractTestingApiService(HttpClient http) : IContractTestin
 
     public Task<(ContractImportResult? Result, string? Error)> ImportFromSourceAsync(SourceContractImportRequest request, CancellationToken ct = default) =>
         SendAsync<ContractImportResult>(HttpMethod.Post, $"{Base}/contracts/from-source", request, ct, readErrorBody: true);
+
+    public Task<(SourceContractBulkImportResult? Result, string? Error)> ImportFromSourceBulkAsync(SourceContractBulkImportRequest request, CancellationToken ct = default) =>
+        SendAsync<SourceContractBulkImportResult>(HttpMethod.Post, $"{Base}/contracts/from-source/bulk", request, ct);
 
     public Task<(ContractVersionDiff? Diff, string? Error)> DiffAsync(string key, int from, int to, CancellationToken ct = default) =>
         SendAsync<ContractVersionDiff>(HttpMethod.Get, $"{Base}/contracts/{Uri.EscapeDataString(key)}/diff?from={from}&to={to}", null, ct);

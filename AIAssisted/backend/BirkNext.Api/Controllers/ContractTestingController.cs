@@ -39,6 +39,18 @@ public sealed class ContractTestingController(ContractRegistryService registry, 
         return result.Imported || result.Unchanged ? Ok(result) : UnprocessableEntity(result);
     }
 
+    /// <summary>Imports several source contracts (each continues its earlier import as the next version), then generates their tests and test data
+    /// when asked. Writes the registry, tests and Test Data; never sends a request.</summary>
+    [HttpPost("contracts/from-source/bulk")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public async Task<ActionResult<SourceContractBulkImportResult>> ImportFromSourceBulk([FromBody] SourceContractBulkImportRequest request,
+        [FromServices] ContractBulkImportService bulk, CancellationToken ct)
+    {
+        if (request.Items.Count == 0) return UnprocessableEntity(new { message = "Select at least one contract." });
+        if (request.Items.Count > ContractBulkImportService.MaxItems) return UnprocessableEntity(new { message = $"At most {ContractBulkImportService.MaxItems} contracts per import." });
+        return Ok(await bulk.ImportAsync(request, ct));
+    }
+
     [HttpGet("contracts/{key}")]
     public async Task<ActionResult<ApiContractDetail>> Get(string key, [FromQuery] int? version, CancellationToken ct) =>
         await registry.GetAsync(key, version, ct) is { } detail ? Ok(detail) : NotFound();

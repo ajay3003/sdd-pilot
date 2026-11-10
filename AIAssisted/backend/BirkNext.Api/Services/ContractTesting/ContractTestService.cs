@@ -129,13 +129,19 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         var negativeOps = tests.Where(t => t.Kind != ContractTestKind.Positive).Select(t => t.Operation).ToHashSet(StringComparer.Ordinal);
         string scope = $"{ops.Count} operation(s) of {reference}" + (doc.Operations.Count > ops.Count ? " (subscriptions excluded)" : "");
         const string Evidence = "Execution Evidence (calls naming this contract version)";
+        // Data-ready: every positive test of the operation has pinned Test Data, or needs no required value.
+        var dataReadyOps = tests.Where(t => t.Kind == ContractTestKind.Positive).GroupBy(t => t.Operation)
+            .Where(g => g.All(t => t.Binding is not null || t.Inputs.All(i => !i.Required))).Select(g => g.Key).ToHashSet(StringComparer.Ordinal);
+        const string Defined = "Stored contract tests bound to this version";
         var metrics = new List<ContractCoverageMetric>
         {
-            new("operations-with-tests", "Operations with a stored test", testedOps.Count, ops.Count, scope, 0, "Stored contract tests bound to this version",
-                "A stored test is not evidence that the operation works."),
+            new("operations-with-tests", "Operations with a stored test", testedOps.Count, ops.Count, scope, 0, Defined,
+                "A stored test is not evidence that the operation works.") { Group = CoverageGroup.Definition },
+            new("operations-with-negative-tests", "Operations with a negative test", negativeOps.Count, ops.Count, scope, 0, Defined) { Group = CoverageGroup.Definition },
+            new("operations-with-test-data", "Operations whose positive tests have their Test Data", dataReadyOps.Count, ops.Count, scope, 0, Defined + " and their pinned Test Data",
+                "Pinned, approved data (or no required value). Data that needs review or a value is not counted.") { Group = CoverageGroup.Definition },
             new("operations-executed", "Operations executed", executedOps.Count, ops.Count, scope, ops.Count - executedOps.Count, Evidence),
             new("operations-passing", "Operations whose latest results all passed", passingOps.Count, ops.Count, scope, ops.Count - executedOps.Count, Evidence),
-            new("operations-with-negative-tests", "Operations with a negative test", negativeOps.Count, ops.Count, scope, 0, "Stored contract tests bound to this version"),
         };
         if (protocol == ApiContractProtocol.Rest)
         {

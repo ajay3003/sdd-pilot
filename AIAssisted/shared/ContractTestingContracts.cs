@@ -102,9 +102,61 @@ public sealed record ApiContractVersionInfo(int Version, string Sha256, Contract
 
 /// <summary>A REST or GraphQL contract a Source Analysis snapshot found, and whether the store already has it.</summary>
 public sealed record SourceContractCandidate(Guid SnapshotId, DateTimeOffset AnalyzedAt, string Archive, string? Commit, string ContractId, string Name, string Type, string File,
-    int OperationCount, string? ImportedAs);
+    int OperationCount, string? ImportedAs)
+{
+    /// <summary>The top-level folder of <see cref="File"/> (the module/service it belongs to); "(root)" for a top-level file.</summary>
+    public string Module { get; init; } = "";
+    public ApiContractProtocol Protocol { get; init; }
+    /// <summary>New: not in the registry. UpToDate: the registry's latest version is this exact evidence. Changed: importing adds the next version of
+    /// <see cref="ContractKey"/>. Archived: the contract that continues it is archived (read-only).</summary>
+    public SourceContractCandidateState State { get; init; }
+    /// <summary>The registry contract that continues this source contract (imported earlier from any snapshot), and its latest version.</summary>
+    public string? ContractKey { get; init; }
+    public int? ContractVersion { get; init; }
+    /// <summary>How many of the listed snapshots hold this source contract; only the newest is offered.</summary>
+    public int Snapshots { get; init; } = 1;
+    /// <summary>The snapshot retained the document text: the imported version gets full schema validation (otherwise structural only).</summary>
+    public bool HasDocument { get; init; }
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SourceContractCandidateState { New, UpToDate, Changed, Archived }
 
 public sealed record SourceContractImportRequest(Guid SnapshotId, string SourceContractId, string? ContractKey, string? Name);
+
+public sealed record SourceContractRef(Guid SnapshotId, string SourceContractId);
+
+/// <summary>Import several source contracts at once; optionally generate their tests and synthetic test data right after (nothing is ever sent).</summary>
+public sealed record SourceContractBulkImportRequest
+{
+    public List<SourceContractRef> Items { get; init; } = [];
+    public bool GenerateTests { get; init; } = true;
+    public bool GenerateTestData { get; init; } = true;
+    public string? EnvironmentId { get; init; }
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum BulkImportOutcome { Imported, NewVersion, Unchanged, Failed }
+
+/// <summary>What happened to one source contract: the registry outcome, the tests created and the test data per state (operations).</summary>
+public sealed record SourceContractBulkItem(string SourceContractId, string File, string Name, BulkImportOutcome Outcome, string? Key, int? Version, string Message)
+{
+    public int TestsCreated { get; init; }
+    public int TestsExisting { get; init; }
+    public int Unsupported { get; init; }
+    public int DataBound { get; init; }
+    public int DataNeedsReview { get; init; }
+    public int DataUnresolved { get; init; }
+    public int DataNoInputs { get; init; }
+    public int DataFailed { get; init; }
+}
+
+public sealed record SourceContractBulkImportResult(List<SourceContractBulkItem> Items)
+{
+    public int Imported => Items.Count(i => i.Outcome is BulkImportOutcome.Imported or BulkImportOutcome.NewVersion);
+    public int Unchanged => Items.Count(i => i.Outcome == BulkImportOutcome.Unchanged);
+    public int Failed => Items.Count(i => i.Outcome == BulkImportOutcome.Failed);
+}
 
 public sealed record ApiContractDetail(ApiContractSummary Contract, List<ApiContractVersionInfo> Versions, int Version, SourceContract Document);
 
@@ -282,6 +334,18 @@ public sealed record ContractVersionRetention(int Version, bool Hidden, bool Lat
 public sealed record ContractRetention(string Key, ContractLifecycle Lifecycle, List<ContractVersionRetention> Versions, bool ContractDeletable, string Policy);
 
 /// <summary>One coverage figure, always with what it counts over and where the numbers come from. NotAssessed counts items that could not be judged.</summary>
-public sealed record ContractCoverageMetric(string Id, string Label, int Numerator, int Denominator, string Scope, int NotAssessed, string EvidenceSource, string? Note = null);
+public sealed record ContractCoverageMetric(string Id, string Label, int Numerator, int Denominator, string Scope, int NotAssessed, string EvidenceSource, string? Note = null)
+{
+    /// <summary>Definition: what is defined and prepared (tests, negatives, bound data) — never evidence that the API works. Execution: what
+    /// documented execution evidence shows.</summary>
+    public CoverageGroup Group { get; init; } = CoverageGroup.Execution;
+
+    /// <summary>Nothing to count over (0/0), or an execution figure with no executed item: not assessed, never 0 % and never covered.</summary>
+    [JsonIgnore]
+    public bool Assessed => Denominator > 0 && (Group == CoverageGroup.Definition || NotAssessed < Denominator);
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CoverageGroup { Definition, Execution }
 
 public sealed record ContractCoverageReport(string Key, int Version, ApiContractProtocol Protocol, List<ContractCoverageMetric> Metrics, DateTimeOffset ComputedAt);

@@ -14,16 +14,28 @@
    tests, bind Test Data pinned by version, check readiness and run through Execution Evidence. Opening anything here never sends a request;
    only "Run selected" does, and only for tests that are Ready. State lives in the URL. *@
 <div class="ct" data-testid="ct-page" aria-busy="@(_loading ? "true" : "false")">
-    <PageHeader Title="Contract Testing" Description="Import an OpenAPI contract or a GraphQL schema, generate tests from its operations, bind Test Data and run them. What was sent and received is saved in Execution Results." />
-    <p class="ct-back"><a href="api-quality-review">← API Quality Review</a> · <a href="execution-results">Execution Results</a> · <a href="test-data">Test Data</a></p>
+    <PageHeader Title="Contract Testing" Description="Import the API contracts Source Analysis found, generate tests and synthetic test data in one step, check what is ready and run it. What was sent and received is saved in Execution Results." />
+    <p class="ct-back"><a href="api-quality-review">← API Quality Review</a> · <a href="execution-results">Execution Results</a> · <a href="test-data">Test Data</a> · <a href="integration-suites" data-testid="ct-suites-link">Integration suites</a></p>
+
+    @if (_contracts is { Count: > 0 } all)
+    {
+        <dl class="ct-stats" data-testid="ct-stats">
+            <div><dt>Contracts</dt><dd data-testid="ct-stat-contracts">@all.Count</dd></div>
+            <div><dt>Operations</dt><dd>@all.Sum(c => c.OperationCount)</dd></div>
+            <div><dt>Tests</dt><dd data-testid="ct-stat-tests">@all.Sum(c => c.TestCount)</dd></div>
+            <div><dt>Runs against</dt><dd>@(_environment is null ? "no Target Environment" : _environmentName)</dd></div>
+        </dl>
+    }
 
     <section class="ct-card ct-env" aria-label="Target Environment" data-testid="ct-env">
         @if (_environment is null) { <p class="ct-muted" data-testid="ct-env-missing">No Target Environment is active. Tests can be explored and prepared; select a Target Environment to run them.</p> }
         else
         {
             <p><strong>Runs against</strong> <span data-testid="ct-env-name">@_environmentName</span> <span class="ct-pill">@_environment.EnvironmentType</span> <code>@_environment.TargetUrl</code></p>
-            <label class="ct-inline">Base path override for this run <input data-testid="ct-base-path" @bind="_basePath" @bind:event="oninput" placeholder="(use the contract's binding)" aria-describedby="ct-base-help" /></label>
-            <span id="ct-base-help" class="ct-muted">Optional. A path inside this environment (for example /api); hosts are never accepted. The contract's own endpoint and authentication are set below.</span>
+            <details class="ct-run-options"><summary>Base path override for this run</summary>
+                <label class="ct-inline">Base path <input data-testid="ct-base-path" @bind="_basePath" @bind:event="oninput" placeholder="(use the contract's binding)" aria-describedby="ct-base-help" /></label>
+                <span id="ct-base-help" class="ct-muted">Optional. A path inside this environment (for example /api); hosts are never accepted. The contract's own endpoint and authentication are set per contract.</span>
+            </details>
             @if (_attended is { } session)
             {
                 <p class="ct-attended" data-testid="ct-attended" data-active="@(session.Active ? "true" : "false")">
@@ -42,48 +54,46 @@
     <div class="ct-layout">
         <aside class="ct-side">
             <section class="ct-card" aria-labelledby="ct-contracts-h" data-testid="ct-contracts">
-                <h2 id="ct-contracts-h">Contracts</h2>
+                <div class="ct-row"><h2 id="ct-contracts-h">Contracts</h2>
+                    <a class="btn btn-secondary btn-sm" href="@ImportLink" data-testid="ct-open-import">Import contracts</a></div>
                 @if (_contracts is null) { <p class="ct-muted">Loading…</p> }
-                else if (_contracts.Count == 0) { <p class="ct-muted" data-testid="ct-contracts-empty">No contracts yet. Import an OpenAPI document or a GraphQL schema below.</p> }
+                else if (_contracts.Count == 0) { <p class="ct-muted" data-testid="ct-contracts-empty">No contracts yet. Import the contracts Source Analysis found, or a file or URL.</p> }
                 else
                 {
-                    <ul class="ct-list">
-                        @foreach (var c in _contracts)
-                        {
-                            <li class="@(c.Key == ContractKey ? "ct-selected" : null)"><a href="@Link(contract: c.Key, version: null, view: "operations", test: null)" data-testid="ct-contract-link" aria-current="@(c.Key == ContractKey ? "page" : null)">@c.Name</a>
-                                <span class="ct-muted">@(c.Protocol == ApiContractProtocol.GraphQl ? "GraphQL" : "REST") · v@(c.LatestVersion) · @c.OperationCount operations · @c.TestCount tests</span>
-                                @if (c.Lifecycle != ContractLifecycle.Active) { <span class="ct-pill" data-testid="ct-contract-lifecycle">@c.Lifecycle</span> }</li>
-                        }
-                    </ul>
-                }
-            </section>
-
-            <section class="ct-card" aria-labelledby="ct-import-h" data-testid="ct-import">
-                <h2 id="ct-import-h">Import a contract</h2>
-                <fieldset class="ct-radios">
-                    <legend class="visually-hidden">Source</legend>
-                    <label><input type="radio" name="ct-src" checked="@(!_importByUrl && !_importFromSource)" @onchange="FileMode" data-testid="ct-import-file-mode" /> File</label>
-                    <label><input type="radio" name="ct-src" checked="@(_importByUrl && !_importFromSource)" @onchange="UrlMode" data-testid="ct-import-url-mode" /> URL</label>
-                    <label><input type="radio" name="ct-src" checked="@_importFromSource" @onchange="LoadSourceContractsAsync" data-testid="ct-import-source-mode" /> From Source Analysis</label>
-                </fieldset>
-                @if (_importFromSource)
-                {
-                    @if (_sourceContracts is null) { <p class="ct-muted">Loading…</p> }
-                    else if (_sourceContracts.Count == 0) { <p class="ct-muted" data-testid="ct-source-none">No OpenAPI or GraphQL schema contract was found in Source Analysis snapshots.</p> }
-                    else
+                    @if (_contracts.Count > 5)
                     {
-                        <ul class="ct-list" data-testid="ct-source-list">
-                            @foreach (var c in _sourceContracts)
+                        <input type="search" class="form-control ct-search" placeholder="Search contracts" aria-label="Search contracts" data-testid="ct-contract-search" @bind="_contractFilter" @bind:event="oninput" />
+                    }
+                    @foreach (var group in _contracts.Where(c => Matches(_contractFilter, c.Name, c.Key)).GroupBy(c => c.Protocol).OrderBy(g => g.Key))
+                    {
+                        <h3 class="ct-group-h">@(group.Key == ApiContractProtocol.GraphQl ? "GraphQL" : "REST") <span class="ct-muted">@group.Count()</span></h3>
+                        <ul class="ct-list">
+                            @foreach (var c in group)
                             {
-                                <li data-testid="ct-source-contract" data-file="@c.File">
-                                    <span><strong>@c.Name</strong> <span class="ct-pill">@(c.Type == "OpenApi" ? "REST" : "GraphQL")</span></span>
-                                    <span class="ct-muted">@SourceFacts(c)</span>
-                                    @if (c.ImportedAs is { } done) { <span class="ct-muted" data-testid="ct-source-imported">Imported as @done</span> }
-                                    else { <button class="btn btn-secondary btn-sm" data-testid="ct-source-import" disabled="@_busy" @onclick="() => ImportSourceAsync(c)">Import</button> }
-                                </li>
+                                <li class="@(c.Key == ContractKey ? "ct-selected" : null)"><a href="@Link(contract: c.Key, version: null, view: "operations", test: null)" data-testid="ct-contract-link" aria-current="@(c.Key == ContractKey ? "page" : null)">@c.Name</a>
+                                    <span class="ct-muted">@(c.Protocol == ApiContractProtocol.GraphQl ? "GraphQL" : "REST") · v@(c.LatestVersion) · @c.OperationCount operations · @c.TestCount tests</span>
+                                    @if (c.Lifecycle != ContractLifecycle.Active) { <span class="ct-pill" data-testid="ct-contract-lifecycle">@c.Lifecycle</span> }</li>
                             }
                         </ul>
                     }
+                }
+            </section>
+        </aside>
+
+        <main class="ct-main">
+            @if (ShowImport)
+            {
+            <section class="ct-card" aria-labelledby="ct-import-h" data-testid="ct-import">
+                <h2 id="ct-import-h">Import contracts</h2>
+                <fieldset class="ct-radios ct-segmented">
+                    <legend class="visually-hidden">Source</legend>
+                    <label><input type="radio" name="ct-src" checked="@_importFromSource" @onchange="LoadSourceContractsAsync" data-testid="ct-import-source-mode" /> From Source Analysis</label>
+                    <label><input type="radio" name="ct-src" checked="@(!_importByUrl && !_importFromSource)" @onchange="FileMode" data-testid="ct-import-file-mode" /> File</label>
+                    <label><input type="radio" name="ct-src" checked="@(_importByUrl && !_importFromSource)" @onchange="UrlMode" data-testid="ct-import-url-mode" /> URL</label>
+                </fieldset>
+                @if (_importFromSource)
+                {
+                    @SourceImport()
                 }
                 else if (_importByUrl)
                 {
@@ -96,27 +106,25 @@
                     <p class="ct-muted">OpenAPI 3 or Swagger 2 (JSON or YAML), or a GraphQL schema (SDL or an introspection result as JSON).</p>
                     @if (_importFileName is not null) { <p class="ct-muted" data-testid="ct-import-picked">@_importFileName (@(_importContent?.Length ?? 0) characters)</p> }
                 }
-                @if (string.IsNullOrEmpty(_importTarget))
-                {
-                    <label class="ct-field">Name <span class="ct-muted">(optional; default: the document's title)</span><input data-testid="ct-import-name" @bind="_importName" @bind:event="oninput" maxlength="200" /></label>
-                }
-                <label class="ct-field">Add as
-                    <select data-testid="ct-import-target" @bind="_importTarget">
-                        <option value="">a new contract</option>
-                        @foreach (var c in _contracts ?? []) { <option value="@c.Key">the next version of @c.Name</option> }
-                    </select>
-                </label>
                 @if (!_importFromSource)
                 {
+                    @if (string.IsNullOrEmpty(_importTarget))
+                    {
+                        <label class="ct-field">Name <span class="ct-muted">(optional; default: the document's title)</span><input data-testid="ct-import-name" @bind="_importName" @bind:event="oninput" maxlength="200" /></label>
+                    }
+                    <label class="ct-field">Add as
+                        <select data-testid="ct-import-target" @bind="_importTarget">
+                            <option value="">a new contract</option>
+                            @foreach (var c in _contracts ?? []) { <option value="@c.Key">the next version of @c.Name</option> }
+                        </select>
+                    </label>
                     <button class="btn btn-primary" data-testid="ct-import-submit" disabled="@(_busy || (_importByUrl ? string.IsNullOrWhiteSpace(_importUrl) : _importContent is null))" @onclick="ImportAsync">Import</button>
                 }
             </section>
-        </aside>
-
-        <main class="ct-main">
+            }
             @if (_detail is null)
             {
-                <section class="ct-card"><p class="ct-muted" data-testid="ct-no-contract">@(ContractKey is null ? "Select or import a contract." : _loading ? "Loading…" : "Contract not found.")</p></section>
+                @if (ContractKey is not null) { <section class="ct-card"><p class="ct-muted" data-testid="ct-no-contract">@(_loading ? "Loading…" : "Contract not found.")</p></section> }
             }
             else
             {
@@ -135,7 +143,9 @@
                             <span data-testid="ct-version-source">@(info.Source switch { ContractVersionSource.Url => "From URL", ContractVersionSource.SourceSnapshot => "From Source Analysis", _ => "Uploaded" }) · @info.SourceLabel · @info.Format.ToUpperInvariant() · @info.ImportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
                             <span class="ct-muted" title="SHA-256 of the imported document">#@info.Sha256[..12]</span>
                             <span class="ct-pill" data-testid="ct-parse">@(info.ParseSupport == DomainSupport.Supported ? "Fully read" : "Partly read")</span>
+                            <span class="ct-pill" data-testid="ct-validation-depth" title="@(info.HasDocument ? "The document text is kept: requests and responses are validated against the full schema." : "Only the parsed contract is kept: responses get a structural (type) check. Re-import the project to get full validation.")">@(info.HasDocument ? "Full schema validation" : "Structural validation")</span>
                         }
+                        <a href="@SuiteLink(info)" data-testid="ct-suite-handoff">Build an integration suite →</a>
                     </div>
                     @if (info?.Limitations is { Count: > 0 } limits) { <p class="ct-muted" data-testid="ct-limitations">@string.Join(" ", limits)</p> }
                     @if (d.Contract.Lifecycle == ContractLifecycle.Archived) { <p class="ct-error" data-testid="ct-archived">Archived: read-only. Versions, tests and results are kept; nothing can be imported, generated or run until it is made active again.</p> }
@@ -168,12 +178,169 @@
     [SupplyParameterFromQuery(Name = "view")] public string? ViewQuery { get; set; }
     [SupplyParameterFromQuery(Name = "test")] public Guid? TestId { get; set; }
     [SupplyParameterFromQuery(Name = "from")] public int? FromQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "import")] public bool? ImportQuery { get; set; }
+
+    /// <summary>The import panel: always when no contract is open (also the empty start), or on request next to an open contract.</summary>
+    private bool ShowImport => ContractKey is null || ImportQuery == true;
+    private string ImportLink => "api-quality-review/contracts?import=true";
+    private string _contractFilter = "", _sourceFilter = "", _sourceState = "all", _testFilter = "", _testState = "all", _opFilter = "";
+    private bool _bulkGenerate = true, _breakingOnly;
+    private readonly HashSet<string> _sourceSelected = [];
+    private SourceContractBulkImportResult? _bulkResult;
+
+    private static bool Matches(string filter, params string?[] values) =>
+        string.IsNullOrWhiteSpace(filter) || values.Any(v => v?.Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase) == true);
+
+    private static string SourceKey(SourceContractCandidate c) => $"{c.SnapshotId:N}|{c.ContractId}";
+
+    /// <summary>The module of a source-backed version ("openapi:Autorisasjon/autodoc/openapi.yaml" → Autorisasjon).</summary>
+    private static string? SourceModule(string? sourcePath)
+    {
+        if (sourcePath is null) return null;
+        var path = sourcePath[(sourcePath.IndexOf(':') + 1)..].Replace('\\', '/');
+        var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 1 ? parts[0] : null;
+    }
+
+    /// <summary>Hand-off to the Integration Suite Generator: the snapshot and module this version came from, preselected (generation stays explicit there).</summary>
+    private static string SuiteLink(ApiContractVersionInfo? info) =>
+        info?.SourceSnapshotId is { } snapshot
+            ? $"integration-suites?snapshot={snapshot:D}&scope=api" + (SourceModule(info.SourcePath) is { } module ? $"&modules={Uri.EscapeDataString(module)}" : "")
+            : "integration-suites";
+
+    private IEnumerable<SourceContractCandidate> VisibleSources => (_sourceContracts ?? []).Where(c => Matches(_sourceFilter, c.Name, c.File, c.Module)
+        && (_sourceState == "all" || (_sourceState == "actionable" ? Actionable(c) : c.State.ToString() == _sourceState)));
+
+    private static string StateLabel(SourceContractCandidate c) => c.State switch
+    {
+        SourceContractCandidateState.New => "New",
+        SourceContractCandidateState.Changed => $"Changed → v{(c.ContractVersion ?? 0) + 1} of {c.ContractKey}",
+        SourceContractCandidateState.Archived => $"Archived ({c.ContractKey})",
+        _ => c.ImportedAs is { } done ? $"Up to date ({done})" : "Up to date",
+    };
+
+    private void ToggleSource(SourceContractCandidate c, bool on) { if (on) _sourceSelected.Add(SourceKey(c)); else _sourceSelected.Remove(SourceKey(c)); }
+
+    private void ToggleGroup(IEnumerable<SourceContractCandidate> group, bool on)
+    {
+        foreach (var c in group.Where(Actionable)) ToggleSource(c, on);
+    }
+
+    /// <summary>Imports the selected source contracts (new ones and new versions), then generates their tests and test data in the same step.</summary>
+    private async Task BulkImportAsync()
+    {
+        if (Api is not { } api || _sourceContracts is null) return;
+        var items = _sourceContracts.Where(c => _sourceSelected.Contains(SourceKey(c))).Select(c => new SourceContractRef(c.SnapshotId, c.ContractId)).ToList();
+        if (items.Count == 0) return;
+        _busy = true; _error = null; _message = null; _bulkResult = null;
+        var (result, error) = await api.ImportFromSourceBulkAsync(new SourceContractBulkImportRequest
+            { Items = items, GenerateTests = _bulkGenerate, GenerateTestData = _bulkGenerate, EnvironmentId = _environment?.EnvironmentId });
+        _busy = false;
+        if (result is null) { _error = error ?? "Nothing was imported."; return; }
+        _bulkResult = result;
+        _sourceSelected.Clear();
+        var tests = result.Items.Sum(i => i.TestsCreated);
+        var bound = result.Items.Sum(i => i.DataBound);
+        var review = result.Items.Sum(i => i.DataNeedsReview + i.DataUnresolved + i.DataFailed);
+        _message = $"{result.Imported} contract(s) imported or updated, {result.Unchanged} unchanged, {result.Failed} failed."
+            + (_bulkGenerate ? $" {tests} test(s) generated; test data bound automatically for {bound} operation(s), {review} need a value or a review." : " Tests were not generated.")
+            + " Nothing was sent to any API.";
+        (_contracts, _) = await api.ContractsAsync();
+        (_sourceContracts, _) = await api.SourceContractsAsync();
+    }
+
+    private RenderFragment SourceImport() => __builder =>
+    {
+        if (_sourceContracts is null) { <p class="ct-muted">Loading the contracts Source Analysis found…</p> return; }
+        if (_sourceContracts.Count == 0)
+        {
+            <p class="ct-muted" data-testid="ct-source-none">No OpenAPI or GraphQL schema contract was found in Source Analysis snapshots. <a href="project-import">Import the project</a> first, or import a file or URL.</p>
+            return;
+        }
+        var counts = _sourceContracts.GroupBy(c => c.State).ToDictionary(g => g.Key, g => g.Count());
+        <p class="ct-muted" data-testid="ct-source-summary">@_sourceContracts.Count contract(s) in @_sourceContracts.Select(c => c.Module).Distinct().Count() module(s): @counts.GetValueOrDefault(SourceContractCandidateState.New) new,
+            @counts.GetValueOrDefault(SourceContractCandidateState.Changed) changed, @counts.GetValueOrDefault(SourceContractCandidateState.UpToDate) up to date. Only the newest snapshot of each file is listed.</p>
+        <div class="ct-filterbar">
+            <input type="search" class="form-control ct-search" placeholder="Search name, file or module" aria-label="Search source contracts" data-testid="ct-source-search" @bind="_sourceFilter" @bind:event="oninput" />
+            <label class="ct-inline">Show
+                <select class="form-control" data-testid="ct-source-state" @bind="_sourceState">
+                    <option value="all">All</option><option value="actionable">New and changed</option><option value="UpToDate">Up to date</option><option value="Archived">Archived</option>
+                </select>
+            </label>
+        </div>
+        var visible = VisibleSources.ToList();
+        if (visible.Count == 0) { <p class="ct-muted" data-testid="ct-source-filtered">No contract matches. @(_sourceState == "actionable" ? "Everything found is already imported and up to date — choose Show: All to see it." : "")</p> }
+        <div class="ct-groups" data-testid="ct-source-list">
+            @foreach (var group in visible.GroupBy(c => c.Module))
+            {
+                var selectable = group.Where(Actionable).ToList();
+                <details class="ct-group" open="@(visible.Count <= 40)" data-testid="ct-source-group" data-module="@group.Key">
+                    <summary>
+                        @if (selectable.Count > 0)
+                        {
+                            <input type="checkbox" aria-label="@($"Select every new or changed contract in {group.Key}")" data-testid="ct-source-group-select"
+                                   checked="@selectable.All(c => _sourceSelected.Contains(SourceKey(c)))" @onchange="e => ToggleGroup(group, e.Value is true)" />
+                        }
+                        <strong>@group.Key</strong> <span class="ct-muted">@group.Count() contract(s) · @group.Sum(c => c.OperationCount) operations</span>
+                    </summary>
+                    <ul class="ct-list">
+                        @foreach (var c in group)
+                        {
+                            var actionable = Actionable(c);
+                            <li data-testid="ct-source-contract" data-file="@c.File" data-state="@c.State" class="ct-source-row">
+                                <span class="ct-source-name">
+                                    @if (actionable) { <input type="checkbox" aria-label="@($"Select {c.Name} ({c.File})")" data-testid="ct-source-select" checked="@_sourceSelected.Contains(SourceKey(c))" @onchange="e => ToggleSource(c, e.Value is true)" /> }
+                                    <strong>@c.Name</strong> <span class="ct-pill">@(c.Type == "OpenApi" ? "REST" : "GraphQL")</span>
+                                    <span class="ct-pill ct-src-@c.State.ToString().ToLowerInvariant()" data-testid="ct-source-state-pill">@StateLabel(c)</span>
+                                </span>
+                                <span class="ct-muted">@SourceFacts(c)@(c.HasDocument ? "" : " · structural validation only")</span>
+                                @if (!actionable && c.ImportedAs is { } done) { <span class="ct-muted" data-testid="ct-source-imported">Imported as @done</span> }
+                                else if (actionable) { <button class="btn btn-link btn-sm" data-testid="ct-source-import" disabled="@_busy" @onclick="() => ImportSourceAsync(c)">Import only this one</button> }
+                            </li>
+                        }
+                    </ul>
+                </details>
+            }
+        </div>
+        <div class="ct-row ct-runbar ct-sticky" data-testid="ct-bulk-bar">
+            <label class="ct-inline"><input type="checkbox" data-testid="ct-bulk-generate" @bind="_bulkGenerate" /> Generate tests and synthetic test data right away</label>
+            <button class="btn btn-primary" data-testid="ct-bulk-import" disabled="@(_busy || _sourceSelected.Count == 0)" @onclick="BulkImportAsync">Import selected (@_sourceSelected.Count)</button>
+            @if (selectableCount(visible) > 0) { <button class="btn btn-link btn-sm" data-testid="ct-source-select-all" @onclick="() => ToggleGroup(visible, true)">Select all shown</button> }
+        </div>
+        <p class="ct-muted">A changed file becomes the next version of the contract it was imported as; existing tests stay on their version until you review the update. Nothing is sent to any API.</p>
+        if (_bulkResult is { } r) { @BulkResult(r) }
+    };
+
+    /// <summary>Importable: not in the registry yet, or changed since its latest version (and not already imported from this very snapshot).</summary>
+    private static bool Actionable(SourceContractCandidate c) => c.ImportedAs is null && c.State is SourceContractCandidateState.New or SourceContractCandidateState.Changed;
+
+    private static int selectableCount(IEnumerable<SourceContractCandidate> list) => list.Count(Actionable);
+
+    private RenderFragment BulkResult(SourceContractBulkImportResult r) => @<div class="ct-scroll" data-testid="ct-bulk-result">
+        <table class="ct-table">
+            <caption class="visually-hidden">Import result per contract</caption>
+            <thead><tr><th scope="col">Contract</th><th scope="col">Result</th><th scope="col">Tests</th><th scope="col">Test data (operations)</th></tr></thead>
+            <tbody>@foreach (var i in r.Items)
+            {
+                <tr data-testid="ct-bulk-row" data-outcome="@i.Outcome">
+                    <th scope="row">@if (i.Key is { } key) { <a href="@Link(contract: key, version: null, view: "tests", test: null)">@i.Name</a> } else { @i.Name }<div class="ct-muted">@i.File</div></th>
+                    <td>@(i.Outcome switch { BulkImportOutcome.Imported => $"Imported as v{i.Version}", BulkImportOutcome.NewVersion => $"New version v{i.Version}", BulkImportOutcome.Unchanged => $"Unchanged (v{i.Version})", _ => "Failed" })
+                        @if (i.Outcome == BulkImportOutcome.Failed) { <div class="ct-missing">@i.Message</div> }</td>
+                    <td>@i.TestsCreated new@(i.TestsExisting > 0 ? $", {i.TestsExisting} existing" : "")@(i.Unsupported > 0 ? $", {i.Unsupported} not testable" : "")</td>
+                    <td><span class="ct-pill" data-state="Bound">@i.DataBound bound</span> @if (i.DataNeedsReview > 0) { <span class="ct-pill" data-state="NeedsReview">@i.DataNeedsReview review</span> }
+                        @if (i.DataUnresolved > 0) { <span class="ct-pill" data-state="Unresolved">@i.DataUnresolved need a value</span> } @if (i.DataFailed > 0) { <span class="ct-pill" data-state="Failed">@i.DataFailed failed</span> }
+                        <span class="ct-muted">@i.DataNoInputs without inputs</span></td>
+                </tr>
+            }</tbody>
+        </table>
+    </div>;
 
     private static readonly (string Key, string Label)[] Views = [("operations", "Operations"), ("tests", "Tests"), ("chains", "Chains"), ("changes", "Changes"), ("coverage", "Coverage"), ("lifecycle", "Lifecycle & retention")];
     private string View => Views.Any(v => v.Key == ViewQuery) ? ViewQuery! : "operations";
     private IContractTestingApiService? Api => Services.GetService(typeof(IContractTestingApiService)) as IContractTestingApiService;
 
-    private bool _loading = true, _busy, _importByUrl, _importFromSource, _confirmMutating, _stopOnFailure;
+    // Source Analysis is the default import source: the contracts a project import already analysed, no re-upload.
+    private bool _loading = true, _busy, _importByUrl, _importFromSource = true, _confirmMutating, _stopOnFailure;
     private string _rowIds = "";
     private int? _maxExecutions;
     private int _reauthWait;
@@ -245,6 +412,7 @@
         _loading = true; _error = null;
         if (Api is not { } api) { _error = "Contract Testing is not available in this host."; _loading = false; return; }
         (_contracts, _error) = await api.ContractsAsync();
+        if (ShowImport && _importFromSource && _sourceContracts is null) { (_sourceContracts, var sourceError) = await api.SourceContractsAsync(); _error ??= sourceError; }
         _detail = null; _tests = null; _options = null; _diff = null; _coverage = null; _retention = null;
         if (ContractKey is { } key && _error is null)
         {
@@ -343,7 +511,7 @@
         var (result, error) = await api.ImportFromSourceAsync(new(candidate.SnapshotId, candidate.ContractId, string.IsNullOrEmpty(_importTarget) ? null : _importTarget,
             string.IsNullOrWhiteSpace(_importName) ? null : _importName.Trim()));
         _busy = false;
-        if (result is { Imported: true } or { Unchanged: true }) { _message = result.Message; _importFromSource = false; Go(Link(contract: result.Key, version: null, view: "operations", test: null)); }
+        if (result is { Imported: true } or { Unchanged: true }) { _message = result.Message; Go(Link(contract: result.Key, version: null, view: "operations", test: null)); }
         else _error = result?.Message ?? error;
     }
 
@@ -353,8 +521,10 @@
         _busy = true; _error = null; _message = null;
         var (created, skipped, error) = await api.GenerateAsync(_detail.Contract.Key, _detail.Version, operations);
         if (error is not null) { _busy = false; _error = error; return; }
-        _message = created > 0 ? $"{created} draft test(s) generated from v{_detail.Version}." + (skipped.Count > 0 ? $" {skipped.Count} skipped (already generated or not REST)." : "")
-            : "No new tests: " + (skipped.Count > 0 ? "every operation already has its tests." : "no REST operation.");
+        var notTestable = skipped.Count(s => !s.EndsWith(": already exists.", StringComparison.Ordinal));
+        _message = (created > 0 ? $"{created} draft test(s) generated from v{_detail.Version}." : "No new tests: every operation already has its tests.")
+            + (notTestable > 0 ? $" {notTestable} operation(s) cannot be tested by a contract test (for example subscriptions)." : "");
+        _opSelected.Clear();
         // The tests' input values come with them: generated from the contract, validated, and pinned when certain (never on page load).
         await GenerateDataAsync(operations, keepMessage: true);
         _busy = false;
@@ -509,10 +679,31 @@
         if (_diff is not null && int.TryParse(e.Value?.ToString(), out var from)) Go(Link(view: "changes", version: _diff.ToVersion, from: from));
     }
 
+    /// <summary>Selects the ready tests that are shown; data-changing tests only once the data-changing confirmation is ticked.</summary>
     private void SelectReady(ChangeEventArgs e)
     {
-        foreach (var t in (_tests ?? []).Where(t => t.Readiness.State == ContractTestReadinessState.Ready)) Toggle(t.Test.Id, e.Value is true);
+        foreach (var t in VisibleTests.Where(t => t.Readiness.State == ContractTestReadinessState.Ready && (_confirmMutating || !ExecutionRunService_Mutating(t.Test)))) Toggle(t.Test.Id, e.Value is true);
     }
+
+    private IEnumerable<ContractTestView> VisibleTests => (_tests ?? []).Where(t => Matches(_testFilter, t.Test.Name, t.Test.Operation) && _testState switch
+    {
+        "ready" => t.Readiness.State == ContractTestReadinessState.Ready,
+        "notready" => t.Readiness.State == ContractTestReadinessState.NotReady,
+        "blocked" => t.Readiness.State == ContractTestReadinessState.Blocked,
+        "data" => t.Readiness.MissingValues.Count > 0 || (t.Test.Binding is null && t.Test.Inputs.Any(i => i.Required)),
+        "positive" => t.Test.Kind == ContractTestKind.Positive,
+        "negative" => t.Test.Kind != ContractTestKind.Positive,
+        "mutating" => ExecutionRunService_Mutating(t.Test),
+        "impacted" => t.Impact is { Level: not ContractTestImpactLevel.NoEvidence },
+        _ => true,
+    });
+
+    /// <summary>What stops tests from running, grouped by readiness area (from the backend readiness, never recomputed): one line per area.</summary>
+    private IEnumerable<(string Area, ReadinessItemState State, int Tests, string Example)> Blockers() =>
+        (_tests ?? []).SelectMany(t => t.Readiness.Items.Where(i => i.State != ReadinessItemState.Ok).Select(i => (Test: t.Test.Id, Item: i)))
+            .GroupBy(x => x.Item.Area)
+            .Select(g => (g.Key, g.Max(x => x.Item.State), g.Select(x => x.Test).Distinct().Count(), g.First().Item.Text))
+            .OrderByDescending(b => b.Item2).ThenByDescending(b => b.Item3);
 
     private static string ReadinessLabel(ContractTestReadinessState s) => s switch
     {
@@ -548,30 +739,62 @@
         else _error = result?.Message ?? error;
     }
 
-    private RenderFragment OperationsView(ApiContractDetail d) => @<section class="ct-card" aria-labelledby="ct-ops-h" data-testid="ct-operations">
+    /// <summary>What the operation's tests need before they can run, from the tests themselves (never recomputed here).</summary>
+    private (string Label, string State) OperationData(string operation)
+    {
+        var tests = _tests?.Where(t => t.Test.Operation == operation && t.Test.ReviewState != ContractTestReviewState.Retired).ToList() ?? [];
+        if (tests.Count == 0) return ("no tests", "none");
+        var positive = tests.Where(t => t.Test.Kind == ContractTestKind.Positive).ToList();
+        if (positive.Count > 0 && positive.All(t => t.Test.Inputs.All(i => !i.Required))) return ("no input needed", "ok");
+        if (positive.Count > 0 && positive.All(t => t.Test.Binding is not null)) return ($"bound · {positive[0].Test.Binding!.Alias}", "ok");
+        var missing = positive.SelectMany(t => t.Readiness.MissingValues).Distinct(StringComparer.Ordinal).ToList();
+        return (missing.Count > 0 ? $"needs {string.Join(", ", missing.Take(3))}{(missing.Count > 3 ? "…" : "")}" : "not bound", "missing");
+    }
+
+    private static bool MutatingOperation(ContractOperation op) =>
+        op.Kind == "mutation" || op.Kind.ToUpperInvariant() is "POST" or "PUT" or "PATCH" or "DELETE";
+
+    private readonly HashSet<string> _opSelected = new(StringComparer.Ordinal);
+
+    private RenderFragment OperationsView(ApiContractDetail d) => __builder =>
+    {
+        var ops = d.Document.Operations.Where(o => Matches(_opFilter, o.Name, o.Summary, o.OperationId)).ToList();
+        var untested = d.Document.Operations.Count(o => _tests?.Any(t => t.Test.Operation == o.Name) != true);
+        <section class="ct-card" aria-labelledby="ct-ops-h" data-testid="ct-operations">
         <div class="ct-row">
-            <h3 id="ct-ops-h">Operations in v@(d.Version)</h3>
-            <button class="btn btn-secondary" data-testid="ct-generate-all" disabled="@_busy" @onclick="() => GenerateAsync(null)">Generate tests for all operations</button>
+            <h3 id="ct-ops-h">Operations in v@(d.Version) <span class="ct-muted">@d.Document.Operations.Count · @untested without tests</span></h3>
+            <span class="ct-actions">
+                @if (_opSelected.Count > 0) { <button class="btn btn-secondary" data-testid="ct-generate-selected" disabled="@_busy" @onclick="() => GenerateAsync([.. _opSelected])">Generate for selected (@_opSelected.Count)</button> }
+                <button class="btn btn-primary" data-testid="ct-generate-all" disabled="@_busy" @onclick="() => GenerateAsync(null)">Generate tests and test data</button>
+            </span>
         </div>
+        <p class="ct-muted">Generating creates draft tests for every operation and synthetic test data from the contract; it never sends a request. Data-changing operations are marked and run only with an explicit confirmation.</p>
         @if (d.Document.Operations.Count == 0) { <p class="ct-muted">This version declares no operations.</p> }
         else
         {
+            @if (d.Document.Operations.Count > 8)
+            {
+                <div class="ct-filterbar"><input type="search" class="form-control ct-search" placeholder="Search operations" aria-label="Search operations" data-testid="ct-op-search" @bind="_opFilter" @bind:event="oninput" /></div>
+            }
             <div class="ct-scroll">
                 <table class="ct-table" data-testid="ct-op-table">
-                    <caption class="visually-hidden">Operations, with the values they need and their documented responses</caption>
-                    <thead><tr><th scope="col">Operation</th><th scope="col">Inputs</th><th scope="col">Request body</th><th scope="col">Responses</th><th scope="col">Security</th><th scope="col">Tests</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                    <caption class="visually-hidden">Operations, with the values they need, their documented responses, tests and test data</caption>
+                    <thead><tr><th scope="col"><span class="visually-hidden">Select</span></th><th scope="col">Operation</th><th scope="col">Inputs</th><th scope="col">Request body</th><th scope="col">Responses</th><th scope="col">Security</th><th scope="col">Tests · data</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
                     <tbody>
-                        @foreach (var op in d.Document.Operations)
+                        @foreach (var op in ops)
                         {
                             var count = _tests?.Count(t => t.Test.Operation == op.Name) ?? 0;
-                            <tr data-testid="ct-op-row" data-op="@op.Name">
-                                <th scope="row"><code>@op.Name</code>@if (op.Summary is { } s) { <div class="ct-muted">@s</div> }@if (op.OperationId is { } id) { <div class="ct-muted">operationId @id</div> }</th>
+                            var (dataLabel, dataState) = OperationData(op.Name);
+                            <tr data-testid="ct-op-row" data-op="@op.Name" data-data="@dataState">
+                                <td><input type="checkbox" aria-label="@($"Select {op.Name}")" data-testid="ct-op-select" checked="@_opSelected.Contains(op.Name)" @onchange="e => { if (e.Value is true) _opSelected.Add(op.Name); else _opSelected.Remove(op.Name); }" /></td>
+                                <th scope="row"><code>@op.Name</code>@if (MutatingOperation(op)) { <span class="ct-pill ct-mutating" data-testid="ct-op-mutating" title="Runs only with the explicit data-changing confirmation">changes data</span> }@if (op.Deprecated) { <span class="ct-pill">deprecated</span> }
+                                    @if (op.Summary is { } s) { <div class="ct-muted">@s</div> }@if (op.OperationId is { } id) { <div class="ct-muted">operationId @id</div> }</th>
                                 <td>@if (op.ParameterDetails.Count == 0) { <span class="ct-muted">none</span> } else { @foreach (var p in op.ParameterDetails) { <div>@p.Name <span class="ct-muted">@p.In@(p.Type is null ? "" : " · " + p.Type)@(p.Required ? " · required" : "")</span></div> } }</td>
                                 <td>@if (op.RequestContentTypes.Count == 0) { <span class="ct-muted">none</span> } else { <span>@(op.RequestSchema ?? "body")</span> <span class="ct-muted">@string.Join(", ", op.RequestContentTypes)@(op.RequestBodyRequired ? " · required" : "")</span> }</td>
                                 <td>@(op.ResultType is { } result ? $"returns {result}" : string.Join(", ", op.ResponseCodes.Select(c => op.ResponseSchemas.TryGetValue(c, out var schema) ? $"{c} {schema}" : c)))</td>
                                 <td>@(op.Security.Count == 0 ? "none" : string.Join(", ", op.Security))</td>
-                                <td>@count</td>
-                                <td><button class="btn btn-secondary btn-sm" data-testid="ct-generate-op" disabled="@_busy" @onclick="() => GenerateAsync([op.Name])" aria-label="@($"Generate tests for {op.Name}")">Generate</button>
+                                <td><span data-testid="ct-op-tests">@count</span> <span class="ct-state ct-data-@dataState" data-testid="ct-op-data">@dataLabel</span></td>
+                                <td class="ct-actions"><button class="btn btn-secondary btn-sm" data-testid="ct-generate-op" disabled="@_busy" @onclick="() => GenerateAsync([op.Name])" aria-label="@($"Generate tests for {op.Name}")">Generate</button>
                                     <button class="btn btn-link btn-sm" data-testid="ct-propose-op" disabled="@_busy" @onclick="() => ProposeAsync(op.Name)" aria-label="@($"Propose negative tests for {op.Name}")">Propose negatives</button></td>
                             </tr>
                         }
@@ -579,7 +802,8 @@
                 </table>
             </div>
         }
-    </section>;
+        </section>
+    };
 
     /// <summary>Run options shared by test runs and chain runs: rows, execution limit, stop policy and the attended re-sign-in wait.</summary>
     private RenderFragment RunOptions() => @<details class="ct-run-options" data-testid="ct-run-options">
@@ -676,6 +900,17 @@
         input.Output = parts.Length > 1 ? parts[1] : "";
     }
 
+    /// <summary>A chain's readiness from its steps' test readiness (tests of other contracts are not loaded here and are named as such).</summary>
+    private string ChainReadiness(ContractTestChain chain)
+    {
+        var steps = chain.Steps.Select(s => _tests?.FirstOrDefault(t => t.Test.Id == s.TestId)).ToList();
+        var notReady = steps.Count(t => t is not null && t.Readiness.State != ContractTestReadinessState.Ready);
+        var elsewhere = steps.Count(t => t is null);
+        var mutating = steps.Any(t => t is not null && ExecutionRunService_Mutating(t.Test));
+        return (notReady == 0 && elsewhere == 0 ? "All steps ready" : notReady > 0 ? $"{notReady} step(s) not ready" : "Ready here")
+            + (elsewhere > 0 ? $" · {elsewhere} step(s) from another contract" : "") + (mutating ? " · changes data (needs the confirmation)" : "");
+    }
+
     private string TestName(Guid id) => _tests?.FirstOrDefault(t => t.Test.Id == id)?.Test.Name ?? $"test {id.ToString()[..8]} (another contract)";
 
     private RenderFragment ChainsView(ApiContractDetail d) => __builder =>
@@ -693,13 +928,14 @@
                 <div class="ct-scroll">
                     <table class="ct-table" data-testid="ct-chain-table">
                         <caption class="visually-hidden">Chains</caption>
-                        <thead><tr><th scope="col">Chain</th><th scope="col">Steps</th><th scope="col">Revision</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                        <thead><tr><th scope="col">Chain</th><th scope="col">Steps</th><th scope="col">Readiness</th><th scope="col">Revision</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
                         <tbody>
                             @foreach (var c in chains)
                             {
                                 <tr data-testid="ct-chain-row">
                                     <td>@c.Name</td>
                                     <td>@string.Join(" → ", c.Steps.Select(s => s.StepId))</td>
+                                    <td data-testid="ct-chain-readiness">@ChainReadiness(c)</td>
                                     <td>r@(c.Revision)</td>
                                     <td class="ct-actions">
                                         <button class="btn btn-primary" data-testid="ct-chain-run" disabled="@(_busy || _environment is null)" @onclick="() => RunChainAsync(c)">Run</button>
@@ -808,11 +1044,44 @@
         }
         else
         {
+            var ready = _tests.Count(t => t.Readiness.State == ContractTestReadinessState.Ready);
+            var blocked = _tests.Count(t => t.Readiness.State == ContractTestReadinessState.Blocked);
+            var mutatingSelected = _tests.Count(t => _selected.Contains(t.Test.Id) && ExecutionRunService_Mutating(t.Test));
+            <dl class="ct-stats ct-stats-sm" data-testid="ct-test-stats">
+                <div><dt>Tests</dt><dd>@_tests.Count</dd></div>
+                <div><dt>Ready</dt><dd data-testid="ct-count-ready">@ready</dd></div>
+                <div><dt>Not ready</dt><dd>@(_tests.Count - ready - blocked)</dd></div>
+                <div><dt>Blocked</dt><dd>@blocked</dd></div>
+                <div><dt>Never run</dt><dd>@_tests.Count(t => t.Last is null)</dd></div>
+            </dl>
+            @if (Blockers().ToList() is { Count: > 0 } blockers)
+            {
+                <details class="ct-blockers" data-testid="ct-blockers" open="@(ready == 0)">
+                    <summary><strong>What stops tests from running</strong> <span class="ct-muted">@blockers.Count area(s)</span></summary>
+                    <ul class="ct-checks">
+                        @foreach (var b in blockers)
+                        {
+                            <li data-testid="ct-blocker" data-area="@b.Area"><span class="ct-state ct-item-@b.State.ToString().ToLowerInvariant()">@b.State</span> <strong>@b.Area</strong> · @b.Tests test(s) — <span class="ct-muted">@b.Example</span></li>
+                        }
+                    </ul>
+                    <p class="ct-muted">Endpoint and authentication are set per contract above; Test Data values in <a href="test-data">Test Data</a> (generated sets are listed under Generate test data).</p>
+                </details>
+            }
+            <div class="ct-filterbar">
+                <input type="search" class="form-control ct-search" placeholder="Search tests or operations" aria-label="Search tests" data-testid="ct-test-search" @bind="_testFilter" @bind:event="oninput" />
+                <label class="ct-inline">Show
+                    <select class="form-control" data-testid="ct-test-filter" @bind="_testState">
+                        <option value="all">All tests</option><option value="ready">Ready</option><option value="notready">Not ready</option><option value="blocked">Blocked</option>
+                        <option value="data">Missing test data</option><option value="positive">Positive</option><option value="negative">Negative</option><option value="mutating">Changes data</option><option value="impacted">Affected by a newer version</option>
+                    </select>
+                </label>
+            </div>
             <div class="ct-row ct-runbar" data-testid="ct-runbar">
-                <label class="ct-inline"><input type="checkbox" data-testid="ct-select-ready" checked="@(_tests.Where(t => t.Readiness.State == ContractTestReadinessState.Ready).All(t => _selected.Contains(t.Test.Id)) && _selected.Count > 0)"
-                    @onchange="SelectReady" /> Select every ready test</label>
-                <label class="ct-inline"><input type="checkbox" data-testid="ct-confirm-mutating" @bind="_confirmMutating" /> Confirm data-changing calls (POST, PUT, PATCH, DELETE) for this run</label>
+                <label class="ct-inline"><input type="checkbox" data-testid="ct-select-ready" checked="@(VisibleTests.Where(t => t.Readiness.State == ContractTestReadinessState.Ready && (_confirmMutating || !ExecutionRunService_Mutating(t.Test))).All(t => _selected.Contains(t.Test.Id)) && _selected.Count > 0)"
+                    @onchange="SelectReady" /> Select every ready test@(_confirmMutating ? "" : " (read-only)")</label>
+                <label class="ct-inline"><input type="checkbox" data-testid="ct-confirm-mutating" @bind="_confirmMutating" /> Confirm data-changing calls (POST, PUT, PATCH, DELETE, mutations) for this run</label>
                 <button class="btn btn-primary" data-testid="ct-run" disabled="@(_busy || _environment is null || _selected.Count == 0)" @onclick="RunAsync">Run selected (@_selected.Count)</button>
+                @if (mutatingSelected > 0 && !_confirmMutating) { <span class="ct-missing" data-testid="ct-mutating-warning">@mutatingSelected selected test(s) change data: they are not sent unless you confirm data-changing calls.</span> }
                 @if (_runId is { } runId) { <a data-testid="ct-run-link" href="@($"execution-results?run={runId}")">Open the run in Execution Results →</a> }
             </div>
             @RunOptions()
@@ -821,7 +1090,7 @@
                     <caption class="visually-hidden">Contract tests with readiness, contract impact and the latest result</caption>
                     <thead><tr><th scope="col"><span class="visually-hidden">Select</span></th><th scope="col">Test</th><th scope="col">Readiness</th><th scope="col">Contract</th><th scope="col">Test Data</th><th scope="col">Latest result</th></tr></thead>
                     <tbody>
-                        @foreach (var t in _tests)
+                        @foreach (var t in VisibleTests)
                         {
                             var test = t.Test;
                             <tr data-testid="ct-test-row" data-kind="@test.Kind" data-op="@test.Operation" data-state="@t.Readiness.State" class="@(test.Id == TestId ? "ct-selected" : null)">
@@ -935,14 +1204,21 @@
                 </label>
                 <span>with v@(_diff.ToVersion)</span>
             </p>
-            <h4>@_diff.Changes.Count change(s)</h4>
+            var breaking = _diff.Changes.Count(c => ChangeSeverity(c.ContractChange) != "Compatible");
+            <dl class="ct-stats ct-stats-sm" data-testid="ct-change-stats">
+                <div><dt>Changes</dt><dd>@_diff.Changes.Count</dd></div>
+                <div><dt>Potentially breaking</dt><dd data-testid="ct-breaking-count">@breaking</dd></div>
+                <div><dt>Compatible</dt><dd>@(_diff.Changes.Count - breaking)</dd></div>
+                <div><dt>Tests affected</dt><dd>@_diff.Impacts.Count(i => i.Level != ContractTestImpactLevel.NoEvidence)</dd></div>
+            </dl>
+            @if (breaking > 0 && breaking < _diff.Changes.Count) { <label class="ct-inline"><input type="checkbox" data-testid="ct-breaking-only" @bind="_breakingOnly" /> Only potentially breaking changes</label> }
             @if (_diff.Changes.Count > 0)
             {
                 <div class="ct-scroll">
                     <table class="ct-table" data-testid="ct-change-table">
                         <thead><tr><th scope="col">Change</th><th scope="col">Kind</th><th scope="col">For consumers</th></tr></thead>
                         <tbody>
-                            @foreach (var c in _diff.Changes)
+                            @foreach (var c in _diff.Changes.Where(c => !_breakingOnly || ChangeSeverity(c.ContractChange) != "Compatible"))
                             {
                                 <tr data-testid="ct-change-row" data-class="@c.ContractChange"><td>@c.Detail</td><td>@ChangeLabel(c.ContractChange)</td><td>@ChangeSeverity(c.ContractChange)</td></tr>
                             }
@@ -967,29 +1243,37 @@
         }
     </section>;
 
+    /// <summary>"3 / 10 (30%)", or NOT ASSESSED when there is nothing to count over or nothing was executed (never 0 % and never covered).</summary>
+    private static string CoverageValue(ContractCoverageMetric m) =>
+        !m.Assessed ? "NOT ASSESSED" : $"{m.Numerator} / {m.Denominator} ({100.0 * m.Numerator / m.Denominator:0}%)";
+
     private RenderFragment CoverageView(ApiContractDetail d) => __builder =>
     {
         <section class="ct-card" aria-labelledby="ct-coverage-h" data-testid="ct-coverage">
             <h3 id="ct-coverage-h">Coverage of v@(d.Version)</h3>
-            <p class="ct-muted">Counted from Execution Evidence of calls that name this exact contract version. Not assessed = no execution evidence for that item; it is never counted as covered.</p>
+            <p class="ct-muted">Definition coverage counts what is defined and prepared; it rises when tests and data are created and is never evidence that the API works.
+                Execution coverage is counted only from Execution Evidence of calls that name this exact contract version. Nothing executed = NOT ASSESSED; it is never counted as covered.</p>
             @if (_coverage is null) { <p class="ct-muted">@(_loading ? "Loading…" : "No coverage available.")</p> }
             else
             {
-                <div class="ct-scroll">
-                    <table class="ct-table" data-testid="ct-coverage-table">
-                        <thead><tr><th scope="col">Metric</th><th scope="col">Covered</th><th scope="col">Not assessed</th><th scope="col">Scope</th><th scope="col">Evidence</th></tr></thead>
-                        <tbody>
-                            @foreach (var m in _coverage.Metrics)
-                            {
-                                <tr data-testid="ct-coverage-row" data-metric="@m.Id">
-                                    <th scope="row">@m.Label@if (m.Note is not null) { <div class="ct-muted">@m.Note</div> }</th>
-                                    <td data-testid="ct-coverage-value">@m.Numerator / @m.Denominator@(m.Denominator > 0 ? $" ({100.0 * m.Numerator / m.Denominator:0}%)" : "")</td>
-                                    <td>@m.NotAssessed</td><td>@m.Scope</td><td>@m.EvidenceSource</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
+                @foreach (var group in new[] { CoverageGroup.Definition, CoverageGroup.Execution })
+                {
+                    var metrics = _coverage.Metrics.Where(m => m.Group == group).ToList();
+                    if (metrics.Count == 0) continue;
+                    <h4 class="ct-group-h" data-testid="ct-coverage-group" data-group="@group">@(group == CoverageGroup.Definition ? "Definition coverage — what is prepared" : "Execution coverage — what documented runs show")</h4>
+                    <ul class="ct-meters">
+                        @foreach (var m in metrics)
+                        {
+                            var pct = m.Assessed ? 100.0 * m.Numerator / m.Denominator : 0;
+                            <li data-testid="ct-coverage-row" data-metric="@m.Id" data-assessed="@(m.Assessed ? "true" : "false")">
+                                <div class="ct-row"><span>@m.Label</span><strong data-testid="ct-coverage-value" class="@(m.Assessed ? null : "ct-not-assessed")">@CoverageValue(m)</strong></div>
+                                <div class="ct-meter" role="img" aria-label="@($"{m.Label}: {CoverageValue(m)}")"><span style="width:@(pct.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture))%"></span></div>
+                                <div class="ct-muted">@m.Scope@(m.NotAssessed > 0 ? $" · {m.NotAssessed} not assessed" : "") · @m.EvidenceSource</div>
+                                @if (m.Note is not null) { <div class="ct-muted">@m.Note</div> }
+                            </li>
+                        }
+                    </ul>
+                }
                 <p class="ct-muted">Contract @ContractIdentity.ContractRef(_coverage.Key, _coverage.Version) · computed @_coverage.ComputedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</p>
             }
         </section>

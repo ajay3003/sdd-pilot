@@ -638,6 +638,8 @@ builder.Services.AddScoped<BirkNext.Api.Services.ContractTesting.ContractRegistr
 builder.Services.AddScoped<BirkNext.Api.Services.ContractTesting.ContractTestService>();
 // Automatic contract test data: typed synthetic values from the stored contract, validated, kept in Test Data, approved/pinned only when certain.
 builder.Services.AddScoped<BirkNext.Api.Services.ContractTesting.ContractTestDataService>();
+// Bulk import from Source Analysis: orchestrates the registry import, test generation and test data above (no logic of its own).
+builder.Services.AddScoped<BirkNext.Api.Services.ContractTesting.ContractBulkImportService>();
 builder.Services.AddScoped<BirkNext.Api.Services.ExecutionEvidence.IExecutionContractValidator, BirkNext.Api.Services.ContractTesting.ContractCallValidator>();
 builder.Services.AddScoped<BirkNext.Api.Services.ApiQuality.IStoredContractSource, BirkNext.Api.Services.ContractTesting.StoredContractSource>();
 // Resource Stability: provider-based observation of approved components (Podman container stats; .NET runtime counters of BirkNext's own process).

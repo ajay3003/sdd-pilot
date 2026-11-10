@@ -79,6 +79,19 @@ public sealed class IntegrationSuitesPageTests : BunitContext
     }
 
     [Fact]
+    public void A_hand_off_from_Contract_Testing_preselects_snapshot_scope_and_module_but_generates_only_on_click()
+    {
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo($"integration-suites?snapshot={Snap:D}&scope=api&modules=Autorisasjon");
+        var cut = Render<IntegrationSuitesPage>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=its-modules]").GetAttribute("value").Should().Be("Autorisasjon"));
+        cut.Find("[data-testid=its-snapshot-facts]").TextContent.Should().Contain("M2LB-synthetic.zip");
+        _sent.Should().BeNull("a hand-off never generates by itself");
+        cut.Find("[data-testid=its-generate]").Click();
+        cut.WaitForAssertion(() => _sent.Should().NotBeNull());
+        _sent!.Should().Match<IntegrationSuiteGenerateRequest>(r => r.SnapshotId == Snap && r.ScopeId == "api" && r.Modules.SequenceEqual(new[] { "Autorisasjon" }));
+    }
+
+    [Fact]
     public void Generate_is_disabled_until_a_snapshot_is_chosen_and_sends_the_chosen_scope_and_snapshot()
     {
         var cut = Render<IntegrationSuitesPage>();

@@ -147,7 +147,14 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
         {
             var store = scope.ServiceProvider.GetRequiredService<ExecutionEvidenceStore>();
             await store.CreateAsync(summary, calls, ct);
-            if (summary.State == ExecutionState.Blocked) { await store.CompleteAsync(runId, ExecutionState.Blocked, ct); return new(runId, ExecutionState.Blocked, string.Join(" ", blockers.DefaultIfEmpty("Every call was blocked before sending.")), blockers); }
+            // Without a run-level blocker the calls' own reasons say why (for example the missing data-changing confirmation), never a bare "blocked".
+            if (summary.State == ExecutionState.Blocked)
+            {
+                await store.CompleteAsync(runId, ExecutionState.Blocked, ct);
+                var why = blockers.Count > 0 ? string.Join(" ", blockers)
+                    : "Every call was blocked before sending: " + string.Join(" ", calls.Select(c => c.Reason).Where(r => r is { Length: > 0 }).Distinct(StringComparer.Ordinal).Take(5));
+                return new(runId, ExecutionState.Blocked, why, blockers);
+            }
         }
         var cts = new CancellationTokenSource();
         Running[runId] = cts;

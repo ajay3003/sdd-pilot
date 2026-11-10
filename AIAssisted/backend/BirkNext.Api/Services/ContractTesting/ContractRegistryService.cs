@@ -144,15 +144,73 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
         if (sources is null || !sources.SourceAnalysisEnabled) return [];
         var imported = await db.ApiContractVersions.AsNoTracking().Where(v => v.SourceSnapshotId != null)
             .Join(db.ApiContracts.AsNoTracking(), v => v.ContractId, c => c.Id, (v, c) => new { v.SourceSnapshotId, v.SourcePath, c.Key, v.Version }).ToListAsync(ct);
-        var result = new List<SourceContractCandidate>();
-        foreach (var snapshot in (await sources.ListAsync(string.Empty, ct)).Take(20))
+        // One row per source contract (file + type), from the newest snapshot that holds it: re-analysing a project does not list its contracts twice.
+        var snapshots = (await sources.ListAsync(string.Empty, ct)).OrderByDescending(s => s.AnalyzedAt).Take(20).ToList();
+        var newest = new Dictionary<string, (BirkNext.Integrations.IqrSourceSnapshot Snapshot, SourceContract Contract, int Count)>(StringComparer.Ordinal);
+        foreach (var snapshot in snapshots)
             foreach (var c in snapshot.EvidenceDomains?.Contracts.Contracts.Where(c => c.Type is SourceContractType.OpenApi or SourceContractType.GraphQlSchema) ?? [])
+                newest[c.Id] = newest.TryGetValue(c.Id, out var seen) ? (seen.Snapshot, seen.Contract, seen.Count + 1) : (snapshot, c, 1);
+        var snapshotIds = newest.Values.Select(n => n.Snapshot.Id).Distinct().ToList();
+        var documents = (await db.SourceContractDocuments.AsNoTracking().Where(d => snapshotIds.Contains(d.SnapshotId)).Select(d => new { d.SnapshotId, d.Path, d.Sha256 }).ToListAsync(ct))
+            .GroupBy(d => (d.SnapshotId, d.Path)).ToDictionary(g => g.Key, g => g.First().Sha256);
+        var result = new List<SourceContractCandidate>();
+        foreach (var (snapshot, c, count) in newest.Values)
+        {
+            var hit = imported.FirstOrDefault(i => i.SourceSnapshotId == snapshot.Id && i.SourcePath == c.Id);
+            var docSha = documents.GetValueOrDefault((snapshot.Id, c.File.Replace('\\', '/')));
+            var protocol = c.Type == SourceContractType.OpenApi ? ApiContractProtocol.Rest : ApiContractProtocol.GraphQl;
+            var continues = await ContinuedContractAsync(c.Id, protocol, ct);
+            var latest = continues is null ? null : await db.ApiContractVersions.AsNoTracking().Where(v => v.ContractId == continues.Id).OrderByDescending(v => v.Version)
+                .Select(v => new { v.Version, v.Sha256 }).FirstOrDefaultAsync(ct);
+            var state = continues is null ? SourceContractCandidateState.New
+                : continues.Lifecycle == nameof(ContractLifecycle.Archived) ? SourceContractCandidateState.Archived
+                : SameSource(latest?.Sha256, c, docSha) ? SourceContractCandidateState.UpToDate : SourceContractCandidateState.Changed;
+            result.Add(new(snapshot.Id, snapshot.AnalyzedAt, snapshot.Archive.FileName, snapshot.Commit, c.Id, c.Name, c.Type.ToString(), c.File, c.Operations.Count,
+                hit is not null ? ContractIdentity.ContractRef(hit.Key, hit.Version) : state == SourceContractCandidateState.UpToDate ? ContractIdentity.ContractRef(continues!.Key, latest!.Version) : null)
             {
-                var hit = imported.FirstOrDefault(i => i.SourceSnapshotId == snapshot.Id && i.SourcePath == c.Id);
-                result.Add(new(snapshot.Id, snapshot.AnalyzedAt, snapshot.Archive.FileName, snapshot.Commit, c.Id, c.Name, c.Type.ToString(), c.File, c.Operations.Count,
-                    hit is null ? null : ContractIdentity.ContractRef(hit.Key, hit.Version)));
-            }
-        return result;
+                Module = SourceModule(c.File), Protocol = protocol, State = state, ContractKey = continues?.Key, ContractVersion = latest?.Version, Snapshots = count, HasDocument = docSha is not null,
+            });
+        }
+        return [.. result.OrderBy(r => r.Module, StringComparer.OrdinalIgnoreCase).ThenBy(r => r.File, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    /// <summary>The top-level folder of a source contract's file ("Autorisasjon/autodoc/openapi.yaml" → "Autorisasjon"); "(root)" for a top-level file.</summary>
+    public static string SourceModule(string file)
+    {
+        var parts = file.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 1 ? parts[0] : "(root)";
+    }
+
+    /// <summary>
+    /// The fingerprint a source-backed version is stored with. With the retained document text it is the document itself, so the same OpenAPI/GraphQL
+    /// document in another snapshot or archive is the same version even when the analyser's surroundings (code references, line numbers) differ.
+    /// Without text it is the parsed evidence (the only thing known).
+    /// </summary>
+    private static string SourceFingerprint(SourceContract source, string? documentSha) =>
+        documentSha is null ? LegacySourceFingerprint(source, null) : Sha("source-document\n" + documentSha);
+
+    /// <summary>The earlier fingerprint (parsed evidence plus the document hash): versions stored with it are still recognised as identical.</summary>
+    private static string LegacySourceFingerprint(SourceContract source, string? documentSha)
+    {
+        var evidenceJson = JsonSerializer.Serialize(source, ExecutionEvidenceStore.Json);
+        return Sha(documentSha is null ? evidenceJson : evidenceJson + "\n" + documentSha);
+    }
+
+    private static string Sha(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
+
+    private static bool SameSource(string? stored, SourceContract source, string? documentSha) =>
+        stored is not null && (stored == SourceFingerprint(source, documentSha) || stored == LegacySourceFingerprint(source, documentSha));
+
+    /// <summary>
+    /// The contract that already continues a source contract: one with a version imported from the same source contract (same file and type, any
+    /// snapshot) and the same protocol, the most recently updated first. A newer snapshot then becomes its next version instead of a second contract.
+    /// </summary>
+    private async Task<ApiContractRow?> ContinuedContractAsync(string sourceContractId, ApiContractProtocol protocol, CancellationToken ct)
+    {
+        var ids = await db.ApiContractVersions.AsNoTracking().Where(v => v.SourcePath == sourceContractId).Select(v => v.ContractId).Distinct().ToListAsync(ct);
+        if (ids.Count == 0) return null;
+        var p = protocol.ToString();
+        return await db.ApiContracts.AsNoTracking().Where(c => ids.Contains(c.Id) && c.Protocol == p).OrderByDescending(c => c.UpdatedAt).FirstOrDefaultAsync(ct);
     }
 
     /// <summary>
@@ -168,12 +226,11 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
         if (snapshot.EvidenceDomains?.Contracts.Contracts.FirstOrDefault(c => c.Id == request.SourceContractId) is not { } source) return Fail("The snapshot has no such contract.");
         if (source.Type is not (SourceContractType.OpenApi or SourceContractType.GraphQlSchema)) return Fail("Only OpenAPI and GraphQL schema contracts can be imported for contract testing.");
         var protocol = source.Type == SourceContractType.OpenApi ? ApiContractProtocol.Rest : ApiContractProtocol.GraphQl;
-        var evidenceJson = JsonSerializer.Serialize(source, ExecutionEvidenceStore.Json);
         // The snapshot's retained document text (snapshots analysed before retention have none): with it the version is validated against its
         // full schema; the fingerprint then also covers the text, so the first import with text is a new version of a text-less one.
         var path = source.File.Replace('\\', '/');
         var document = await db.SourceContractDocuments.AsNoTracking().Where(d => d.SnapshotId == snapshot.Id && d.Path == path).Select(d => new { d.Text, d.Sha256 }).FirstOrDefaultAsync(ct);
-        var sha = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(document is null ? evidenceJson : evidenceJson + "\n" + document.Sha256))).ToLowerInvariant();
+        var sha = SourceFingerprint(source, document?.Sha256);
         if (await db.ApiContractVersions.AsNoTracking().Where(v => v.SourceSnapshotId == snapshot.Id && v.SourcePath == source.Id)
                 .Join(db.ApiContracts.AsNoTracking(), v => v.ContractId, c => c.Id, (v, c) => new { c.Key, v.Version }).FirstOrDefaultAsync(ct) is { } already)
             return new(false, true, already.Key, already.Version, $"Already imported from this snapshot as {ContractIdentity.ContractRef(already.Key, already.Version)}; nothing was stored.", []);
@@ -186,6 +243,10 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
             if (existing.Protocol != protocol.ToString()) return Fail($"{existing.Name} is a {existing.Protocol} contract; this source contract is {protocol}.");
             contract = existing;
         }
+        else if (string.IsNullOrWhiteSpace(request.Name) && await ContinuedContractAsync(source.Id, protocol, ct) is { } continued
+                 && continued.Lifecycle != nameof(ContractLifecycle.Archived) && await db.ApiContracts.FirstOrDefaultAsync(c => c.Id == continued.Id, ct) is { } tracked)
+            // The same source contract was imported before (from an earlier snapshot): this is its next version, never a second contract.
+            contract = tracked;
         else
         {
             var name = Trim(string.IsNullOrWhiteSpace(request.Name) ? source.Name : request.Name.Trim(), 200);
@@ -193,7 +254,7 @@ public sealed partial class ContractRegistryService(AppDbContext db, IContractSo
             db.ApiContracts.Add(contract);
         }
         var last = await db.ApiContractVersions.AsNoTracking().Where(v => v.ContractId == contract.Id).OrderByDescending(v => v.Version).FirstOrDefaultAsync(ct);
-        if (last?.Sha256 == sha) return new(false, true, contract.Key, last.Version, $"Unchanged: the source evidence is identical to version {last.Version}; nothing was stored.", []);
+        if (last is not null && SameSource(last.Sha256, source, document?.Sha256)) return new(false, true, contract.Key, last.Version, $"Unchanged: the source evidence is identical to version {last.Version}; nothing was stored.", []);
         var version = (last?.Version ?? 0) + 1;
         var stored = source with
         {

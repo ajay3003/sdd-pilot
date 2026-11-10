@@ -32,6 +32,9 @@ public sealed class ContractTestingPageTests : BunitContext
         public bool HasContract { get; set; } = true;
         public bool Bind { get; set; }
         public bool GraphQl { get; set; }
+        public bool PostReady { get; set; }
+        public bool SourceBacked { get; set; }
+        public bool Executed { get; set; } = true;
 
         private static readonly ApiContractSummary GqlSummary = new(Guid.NewGuid(), "children-graphql", "Children GraphQL", ApiContractProtocol.GraphQl, 1, 2, 1, DateTimeOffset.UtcNow);
         private static readonly SourceContract GqlDocument = new()
@@ -77,11 +80,12 @@ public sealed class ContractTestingPageTests : BunitContext
             new(GetTest, "GET /children/{id} — succeeds with valid data", "GET /children/{id}", 1, 2, ContractTestImpactLevel.Potential, ["Potential impact: response type Child.age (field removed); it was required."]),
             Bind ? new(Run, Call, ExecutionState.Passed, 200, DateTimeOffset.UtcNow, "contract-test:x@r2", "children-api@v1#GET /children/{id}", ["children-complete@v1"]) : null);
 
-        private static ContractTestView Post => new(new ContractTestDefinition
+        private ContractTestView Post => new(new ContractTestDefinition
         {
             Id = PostTest, ContractKey = "children-api", ContractVersion = 2, Operation = "POST /children", Name = "POST /children — succeeds with valid data", Kind = ContractTestKind.Positive,
             Template = new() { Method = "POST", Path = "/children", Body = """{"name":"{{dataset.name}}"}""", ExpectedOutcome = "HTTP 201" }, Inputs = [new("name", "body", true, "string")],
-        }, new(ContractTestReadinessState.Blocked, [new("Target Environment", ReadinessItemState.Blocked, "Production is refused.")], []), null, null);
+        }, PostReady ? new(ContractTestReadinessState.Ready, [new("Contract", ReadinessItemState.Ok, "Generated from v2.")], [])
+            : new(ContractTestReadinessState.Blocked, [new("Target Environment", ReadinessItemState.Blocked, "Production is refused.")], []), null, null);
 
         public Task<(IReadOnlyList<ApiContractSummary>? Contracts, string? Error)> ContractsAsync(CancellationToken ct = default) =>
             Task.FromResult<(IReadOnlyList<ApiContractSummary>?, string?)>((HasContract ? [GraphQl ? GqlSummary : Summary] : [], null));
@@ -90,7 +94,8 @@ public sealed class ContractTestingPageTests : BunitContext
             Log.Add($"contract {key} {version}");
             var v = version ?? 2;
             if (GraphQl) return Task.FromResult<(ApiContractDetail?, string?)>((new(GqlSummary, [Info(1) with { Format = "graphql" }], 1, GqlDocument), null));
-            return Task.FromResult<(ApiContractDetail?, string?)>((new(Summary, [Info(2), Info(1)], v, Document(v)), null));
+            var latest = SourceBacked ? Info(2) with { Source = ContractVersionSource.SourceSnapshot, SourceSnapshotId = Guid.Parse("33333333-3333-3333-3333-333333333333"), SourcePath = "openapi:Children/autodoc/openapi.yaml", HasDocument = false } : Info(2);
+            return Task.FromResult<(ApiContractDetail?, string?)>((new(Summary, [latest, Info(1)], v, Document(v)), null));
         }
         public Task<(ContractImportResult? Result, string? Error)> ImportAsync(ContractImportRequest request, CancellationToken ct = default)
         {
@@ -100,8 +105,20 @@ public sealed class ContractTestingPageTests : BunitContext
         public SourceContractImportRequest? SourceImport { get; private set; }
         public Task<(IReadOnlyList<SourceContractCandidate>? Candidates, string? Error)> SourceContractsAsync(CancellationToken ct = default) =>
             Task.FromResult<(IReadOnlyList<SourceContractCandidate>?, string?)>(([
-                new(Guid.Parse("11111111-1111-1111-1111-111111111111"), DateTimeOffset.UtcNow, "children-source.zip", "c0ffee1", "openapi:api/children.yaml", "Children API", "OpenApi", "api/children.yaml", 4, null),
-                new(Guid.Parse("22222222-2222-2222-2222-222222222222"), DateTimeOffset.UtcNow, "children-source.zip", "c0ffee0", "graphql:schema.graphql", "Schema", "GraphQlSchema", "schema.graphql", 3, "schema@v1")], null));
+                new(Guid.Parse("11111111-1111-1111-1111-111111111111"), DateTimeOffset.UtcNow, "children-source.zip", "c0ffee1", "openapi:api/children.yaml", "Children API", "OpenApi", "api/children.yaml", 4, null)
+                    { Module = "api", HasDocument = true },
+                new(Guid.Parse("22222222-2222-2222-2222-222222222222"), DateTimeOffset.UtcNow, "children-source.zip", "c0ffee0", "graphql:schema.graphql", "Schema", "GraphQlSchema", "schema.graphql", 3, "schema@v1")
+                    { Module = "(root)", State = SourceContractCandidateState.UpToDate, ContractKey = "schema", ContractVersion = 1 },
+                new(Guid.Parse("11111111-1111-1111-1111-111111111111"), DateTimeOffset.UtcNow, "children-source.zip", "c0ffee1", "openapi:api/schools.yaml", "Schools API", "OpenApi", "api/schools.yaml", 2, null)
+                    { Module = "api", State = SourceContractCandidateState.Changed, ContractKey = "schools-api", ContractVersion = 1 }], null));
+        public SourceContractBulkImportRequest? Bulk { get; private set; }
+        public Task<(SourceContractBulkImportResult? Result, string? Error)> ImportFromSourceBulkAsync(SourceContractBulkImportRequest request, CancellationToken ct = default)
+        {
+            Bulk = request; HasContract = true;
+            return Task.FromResult<(SourceContractBulkImportResult?, string?)>((new([
+                new("openapi:api/children.yaml", "api/children.yaml", "Children API", BulkImportOutcome.Imported, "children-api", 1, "Imported.") { TestsCreated = 6, DataBound = 2, DataNeedsReview = 1, DataNoInputs = 1 },
+                new("openapi:api/schools.yaml", "api/schools.yaml", "Schools API", BulkImportOutcome.NewVersion, "schools-api", 2, "Imported as version 2.") { TestsCreated = 1, DataBound = 1 }]), null));
+        }
         public Task<(ContractImportResult? Result, string? Error)> ImportFromSourceAsync(SourceContractImportRequest request, CancellationToken ct = default)
         {
             SourceImport = request; HasContract = true;
@@ -173,8 +190,13 @@ public sealed class ContractTestingPageTests : BunitContext
         public (int Version, string Confirm)? DeletedVersion { get; private set; }
         public Task<(ContractCoverageReport? Report, string? Error)> CoverageAsync(string key, int? version, CancellationToken ct = default) =>
             Task.FromResult<(ContractCoverageReport?, string?)>((new(key, version ?? 2, ApiContractProtocol.Rest,
-                [new("operations-executed", "Operations executed", 1, 3, "3 operation(s) of children-api@v2", 2, "Execution Evidence (calls naming this contract version)"),
-                 new("responses-valid", "Latest responses valid against the contract", 1, 1, "1 latest executed call(s)", 0, "Execution Evidence (calls naming this contract version)", "note")], DateTimeOffset.UtcNow), null));
+                Executed
+                ? [new("operations-executed", "Operations executed", 1, 3, "3 operation(s) of children-api@v2", 2, "Execution Evidence (calls naming this contract version)"),
+                   new("responses-valid", "Latest responses valid against the contract", 1, 1, "1 latest executed call(s)", 0, "Execution Evidence (calls naming this contract version)", "note")]
+                : [new("operations-with-tests", "Operations with a stored test", 2, 3, "3 operation(s) of children-api@v2", 0, "Stored contract tests") { Group = CoverageGroup.Definition },
+                   new("operations-executed", "Operations executed", 0, 3, "3 operation(s) of children-api@v2", 3, "Execution Evidence (calls naming this contract version)"),
+                   new("assertions-passed", "Assertions passed (latest results)", 0, 0, "0 assertion(s) in 0 latest executed call(s)", 0, "Execution Evidence (calls naming this contract version)")],
+                DateTimeOffset.UtcNow), null));
         public Task<(ContractRetention? Retention, string? Error)> RetentionAsync(string key, CancellationToken ct = default) =>
             Task.FromResult<(ContractRetention?, string?)>((new(key, ContractLifecycle.Active,
                 [new(2, false, true, 0, 0, false, false, ["latest version"]), new(1, false, false, 0, 0, false, true, [])], false, "Archive by default."), null));
@@ -292,7 +314,7 @@ public sealed class ContractTestingPageTests : BunitContext
         _api.HasContract = false;
         var page = Open("");
         page.Find("[data-testid=ct-import-source-mode]").Change(true);
-        page.WaitForAssertion(() => page.FindAll("[data-testid=ct-source-contract]").Should().HaveCount(2));
+        page.WaitForAssertion(() => page.FindAll("[data-testid=ct-source-contract]").Should().HaveCount(3));
         page.Find("[data-testid=ct-source-imported]").TextContent.Should().Be("Imported as schema@v1");
         page.Find("[data-testid=ct-source-import]").Click();
         page.WaitForAssertion(() => _api.SourceImport.Should().Be(new SourceContractImportRequest(Guid.Parse("11111111-1111-1111-1111-111111111111"), "openapi:api/children.yaml", null, null)));
@@ -605,5 +627,120 @@ public sealed class ContractTestingPageTests : BunitContext
         page.Find("[data-testid=ct-confirm-key]").Input("children-api");
         page.Find("[data-testid=ct-confirm-delete]").Click();
         page.WaitForAssertion(() => _api.DeletedVersion.Should().Be((1, "children-api")));
+    }
+
+    [Fact]
+    public void Source_Analysis_is_the_default_import_source_grouped_by_module_with_the_registry_state()
+    {
+        _api.HasContract = false;
+        var page = Open("");
+        page.WaitForAssertion(() => page.FindAll("[data-testid=ct-source-contract]").Should().HaveCount(3, "no click needed: Source Analysis is the default"));
+        page.FindAll("[data-testid=ct-source-group]").Select(g => g.GetAttribute("data-module")).Should().Equal("api", "(root)");
+        page.Find("[data-testid=ct-source-summary]").TextContent.Should().Contain("1 new").And.Contain("1 changed").And.Contain("1 up to date");
+        var states = page.FindAll("[data-testid=ct-source-state-pill]").Select(p => p.TextContent).ToList();
+        states.Should().Equal("New", "Changed → v2 of schools-api", "Up to date (schema@v1)");
+        page.FindAll("[data-testid=ct-source-select]").Should().HaveCount(2, "only new and changed contracts can be selected");
+
+        page.Find("[data-testid=ct-source-search]").Input("schools");
+        page.FindAll("[data-testid=ct-source-contract]").Select(r => r.GetAttribute("data-file")).Should().Equal("api/schools.yaml");
+        page.Find("[data-testid=ct-source-search]").Input("");
+        page.Find("[data-testid=ct-source-state]").Change("UpToDate");
+        page.FindAll("[data-testid=ct-source-contract]").Select(r => r.GetAttribute("data-file")).Should().Equal("schema.graphql");
+    }
+
+    [Fact]
+    public void Bulk_import_sends_the_selected_contracts_with_generation_and_reports_tests_and_data_per_contract()
+    {
+        _api.HasContract = false;
+        var page = Open("");
+        page.WaitForAssertion(() => page.FindAll("[data-testid=ct-source-group-select]").Should().NotBeEmpty());
+        page.Find("[data-testid=ct-bulk-import]").HasAttribute("disabled").Should().BeTrue("nothing is selected");
+        page.Find("[data-testid=ct-source-group-select]").Change(true);
+        page.Find("[data-testid=ct-bulk-import]").TextContent.Should().Be("Import selected (2)");
+        page.Find("[data-testid=ct-bulk-import]").Click();
+        page.WaitForAssertion(() => _api.Bulk.Should().NotBeNull());
+        _api.Bulk!.Items.Select(i => i.SourceContractId).Should().Equal("openapi:api/children.yaml", "openapi:api/schools.yaml");
+        _api.Bulk.GenerateTests.Should().BeTrue("tests and test data are generated in the same step by default");
+        _api.Bulk.GenerateTestData.Should().BeTrue();
+        _api.Bulk.EnvironmentId.Should().Be("local-synthetic");
+        page.WaitForAssertion(() => page.FindAll("[data-testid=ct-bulk-row]").Select(r => r.GetAttribute("data-outcome")).Should().Equal("Imported", "NewVersion"));
+        page.FindAll("[data-testid=ct-bulk-row]")[0].TextContent.Should().Contain("6 new").And.Contain("2 bound").And.Contain("1 review");
+        page.Find("[data-testid=ct-message]").TextContent.Should().Contain("2 contract(s) imported or updated").And.Contain("7 test(s) generated").And.Contain("Nothing was sent");
+        _api.Ran.Should().BeNull("importing never runs anything");
+    }
+
+    [Fact]
+    public void Selecting_ready_tests_leaves_data_changing_tests_out_until_the_confirmation_is_ticked()
+    {
+        _api.Bind = true; _api.PostReady = true;
+        var page = Open("?contract=children-api&view=tests");
+        page.Find("[data-testid=ct-count-ready]").TextContent.Should().Be("2");
+        page.Find("[data-testid=ct-select-ready]").Change(true);
+        page.Find("[data-testid=ct-run]").TextContent.Should().Be("Run selected (1)", "POST /children changes data");
+        page.Find("[data-testid=ct-confirm-mutating]").Change(true);
+        page.Find("[data-testid=ct-select-ready]").Change(true);
+        page.Find("[data-testid=ct-run]").TextContent.Should().Be("Run selected (2)");
+        page.Find("[data-testid=ct-test-filter]").Change("mutating");
+        page.FindAll("[data-testid=ct-test-row]").Select(r => r.GetAttribute("data-op")).Should().Equal("POST /children");
+    }
+
+    [Fact]
+    public void Tests_name_what_stops_them_from_running_grouped_by_area()
+    {
+        var page = Open("?contract=children-api&view=tests");
+        var blockers = page.FindAll("[data-testid=ct-blocker]");
+        blockers.Select(b => b.GetAttribute("data-area")).Should().Equal("Target Environment", "Test Data");
+        blockers[1].TextContent.Should().Contain("1 test(s)").And.Contain("Select a dataset that provides id");
+        page.Find("[data-testid=ct-test-search]").Input("POST");
+        page.FindAll("[data-testid=ct-test-row]").Should().ContainSingle().Which.GetAttribute("data-op").Should().Be("POST /children");
+    }
+
+    [Fact]
+    public void Operations_mark_data_changing_calls_and_show_test_data_state()
+    {
+        _api.Bind = true;
+        var page = Open("?contract=children-api");
+        var rows = page.FindAll("[data-testid=ct-op-row]");
+        rows[0].QuerySelector("[data-testid=ct-op-mutating]").Should().BeNull();
+        rows[1].QuerySelector("[data-testid=ct-op-mutating]")!.TextContent.Should().Be("changes data");
+        rows[0].GetAttribute("data-data").Should().Be("ok");
+        rows[0].QuerySelector("[data-testid=ct-op-data]")!.TextContent.Should().Contain("bound · children-complete");
+        rows[1].GetAttribute("data-data").Should().Be("missing");
+        rows[2].GetAttribute("data-data").Should().Be("none");
+        rows[1].QuerySelector("[data-testid=ct-op-select]")!.Change(true);
+        page.Find("[data-testid=ct-generate-selected]").Click();
+        page.WaitForAssertion(() => _api.Log.Should().Contain("generate 2 POST /children"));
+    }
+
+    [Fact]
+    public void Coverage_separates_definition_from_execution_and_shows_not_assessed_instead_of_zero()
+    {
+        _api.Executed = false;
+        var page = Open("?contract=children-api&view=coverage");
+        page.FindAll("[data-testid=ct-coverage-group]").Select(g => g.GetAttribute("data-group")).Should().Equal("Definition", "Execution");
+        var rows = page.FindAll("[data-testid=ct-coverage-row]");
+        rows[0].QuerySelector("[data-testid=ct-coverage-value]")!.TextContent.Should().Be("2 / 3 (67%)", "definition coverage rises when tests are created");
+        rows[1].QuerySelector("[data-testid=ct-coverage-value]")!.TextContent.Should().Be("NOT ASSESSED", "nothing was executed");
+        rows[2].QuerySelector("[data-testid=ct-coverage-value]")!.TextContent.Should().Be("NOT ASSESSED", "0/0 is not 0 %");
+        page.Find("[data-testid=ct-coverage]").TextContent.Should().NotContain("0 / 0");
+    }
+
+    [Fact]
+    public void A_source_backed_contract_hands_off_to_the_integration_suite_generator_with_its_snapshot_and_module()
+    {
+        _api.SourceBacked = true;
+        var page = Open("?contract=children-api");
+        page.Find("[data-testid=ct-suite-handoff]").GetAttribute("href").Should().Be("integration-suites?snapshot=33333333-3333-3333-3333-333333333333&scope=api&modules=Children");
+        page.Find("[data-testid=ct-validation-depth]").TextContent.Should().Be("Structural validation");
+        _api.SourceBacked = false;
+        Open("?contract=children-api").Find("[data-testid=ct-suite-handoff]").GetAttribute("href").Should().Be("integration-suites");
+    }
+
+    [Fact]
+    public void Changes_summarise_breaking_changes_and_can_show_only_those()
+    {
+        var page = Open("?contract=children-api&view=changes");
+        page.Find("[data-testid=ct-breaking-count]").TextContent.Should().Be("2");
+        page.FindAll("[data-testid=ct-breaking-only]").Should().BeEmpty("every change is potentially breaking, so the filter would change nothing");
     }
 }
