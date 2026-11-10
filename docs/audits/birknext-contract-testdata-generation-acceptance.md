@@ -83,4 +83,5 @@ TB-Z1 no external request, no page error, no console error — PASS.
 
 ## Regression
 
-See the gap register.
+Backend partitions 1–5: 1,031 + 1,097 (+1 pre-existing Altinn flake, 5/5 on re-run) + 830 + 652 + 520 passed. Partition 6 (re-run
+2026-11-10): 2,208 passed, 8 skipped, 0 failed. Frontend full: 8,531/8,531. Details in the gap register.

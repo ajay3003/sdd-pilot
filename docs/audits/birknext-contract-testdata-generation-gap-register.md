@@ -12,8 +12,8 @@ Statuses: IMPLEMENTED · TESTED · VERIFIED (isolated acceptance) · PARTIAL · 
 | Focused frontend (Contract Testing page, suite page) | TESTED | 23/23 PASS |
 | Real M2LB + synthetic ledger + restart + browser | VERIFIED | **27/27 PASS** (`birknext-contract-testdata-generation-acceptance.md`) |
 | Backend partitions 1–5 | TESTED | 1,031 + 1,097(+1 flake, see below) + 830 + 652 + 520 passed; 0 caused by this change |
-| Backend partition 6 | **NOT RUN** | stopped by Claude Code because the workstation was critically low on memory (not a test failure) |
-| Frontend full regression | **NOT RUN** | same stop (it was queued after partition 6) |
+| Backend partition 6 | TESTED (re-run 2026-11-10) | **2,208 passed, 8 skipped, 0 failed** (memory guard: start 5,315 MB free, minimum 2,287 MB, no abort). The first attempt had been stopped for low memory; the re-run used the same filter, settings and timeouts |
+| Frontend full regression | TESTED (re-run 2026-11-10, after partition 6) | **8,531 passed, 0 skipped, 0 failed** |
 | Release frontend publish | TESTED | PASS (used for the browser acceptance) |
 
 Partition 2 had one failure: `AltinnTestingTests.ASubmission_EvidencesTheSixAltinnSteps…` asserts no 11-digit run in stored evidence; it
@@ -31,7 +31,8 @@ passed 5/5 when re-run in isolation — a pre-existing data-dependent flake (ran
 | CTD-G6 | Additional positive variants (boundary values, every enum member, optional omitted) | NOT IMPLEMENTED | one minimal-valid set per operation today; negatives come from `ContractNegativeRules` |
 | CTD-G7 | Tests on a newer contract version get data only after the reviewed update proposal moves them | BY DESIGN | the update proposal keeps the binding; readiness shows missing values |
 | CTD-G8 | Contract Testing UI is still the form-heavy layout | NEXT TASK | *Contract Testing complete product hardening* (queued) |
-| CTD-G9 | Backend partition 6 and the full frontend regression | NOT RUN | re-run when the workstation has memory available |
+| CTD-G9 | Backend partition 6 and the full frontend regression | CLOSED | re-run sequentially on 2026-11-10: 2,208/8 skipped/0 failed and 8,531/8,531 |
+| CTD-G10 | `AltinnTestingTests.ASubmission_EvidencesTheSixAltinnSteps…` failed once (11-digit run in stored evidence), passed 5/5 in isolation | OPEN (pre-existing flake, root cause not verified) | find which random id/timestamp produces an 11-digit run; not caused by this change |
 
 ## Security findings
 
