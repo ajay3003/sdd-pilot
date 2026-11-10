@@ -1,6 +1,6 @@
 # BirkNext — Contract Testing complete product hardening: audit (2026-11-10)
 
-Branch `008-traceability-first`. Baseline `b8df19f0` (automatic contract test data + completed regression). Read-only audit of the Contract Testing
+Branch `008-traceability-first`. Baseline `7d2e53c8` (automatic contract test data + completed regression). Read-only audit of the Contract Testing
 page (`/api-quality-review/contracts`), its backend (`Services/ContractTesting`, `ContractTestingController`) and the shared contracts, against
 the product brief and the three acceptance criteria: (1) import M2LB once and have the contracts available from Source Analysis, (2) Generate
 Tests + Test Data created and linked automatically with clear blockers, (3) accurate coverage — definition coverage rises on creation, execution

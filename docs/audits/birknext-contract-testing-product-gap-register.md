@@ -1,6 +1,6 @@
 # BirkNext — Contract Testing complete product hardening: gap register (2026-11-10)
 
-Branch `008-traceability-first`. Baseline `b8df19f0`. Statuses: IMPLEMENTED · TESTED · VERIFIED (isolated acceptance) · PARTIAL · BLOCKED · NOT RUN.
+Branch `008-traceability-first`. Baseline `7d2e53c8`. Statuses: IMPLEMENTED · TESTED · VERIFIED (isolated acceptance) · PARTIAL · BLOCKED · NOT RUN.
 
 ## Verification summary
 

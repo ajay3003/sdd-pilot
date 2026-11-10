@@ -1,6 +1,6 @@
 # BirkNext — Contract Testing complete product hardening: acceptance (2026-11-10)
 
-Branch `008-traceability-first`. Baseline `b8df19f0`; verified source = the working tree committed with these reports.
+Branch `008-traceability-first`. Baseline `7d2e53c8`; verified source = the working tree committed with these reports.
 
 **Result: 48/48 PASS** on a clean isolated stack (API 18/18 · browser 18/18 · after restart and re-analysis 12/12), after round 1 found
 three product defects and one harness error (round 1: 44 PASS / 4 FAIL — see below).

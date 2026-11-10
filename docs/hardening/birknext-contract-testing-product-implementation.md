@@ -1,6 +1,6 @@
 # BirkNext — Contract Testing complete product hardening: implementation (2026-11-10)
 
-Branch `008-traceability-first`. Baseline `b8df19f0`. Findings referenced as CTP-A* are in `docs/audits/birknext-contract-testing-product-audit.md`.
+Branch `008-traceability-first`. Baseline `7d2e53c8`. Findings referenced as CTP-A* are in `docs/audits/birknext-contract-testing-product-audit.md`.
 
 ## Workflow after this change
 
