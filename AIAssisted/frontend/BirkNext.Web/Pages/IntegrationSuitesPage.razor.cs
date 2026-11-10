@@ -1,4 +1,4 @@
-using BirkNext.ContractTesting;
+﻿using BirkNext.ContractTesting;
 using BirkNext.Integrations;
 using BirkNext.IntegrationSuites;
 using BirkNext.Web.Models;
@@ -179,8 +179,14 @@ public partial class IntegrationSuitesPage
         _error = error;
         if (context is not null) LoadContext(context);
         if (!keepArea) _area = "sources";
+        if (context is not null && !keepArea) SetArea(_area); // the link already names it on first load
         _busy = false;
     }
+
+    /// <summary>The current revision of the open context's key when the open one is older (a bookmarked or shared link) — saving from an old revision conflicts.</summary>
+    private CompositeContextSummary? NewerRevision => _context is { } c
+        ? _contexts?.Where(x => x.ContextKey == c.ContextKey && x.Revision > c.Revision).OrderByDescending(x => x.Revision).FirstOrDefault()
+        : null;
 
     private void LoadContext(CompositeSourceContext context)
     {
@@ -193,6 +199,12 @@ public partial class IntegrationSuitesPage
             _approval[a.SnapshotId] = a.Approval;
             if (a.Reason is { Length: > 0 } r) _manualReasons[a.SnapshotId] = r;
         }
+    }
+
+    private void NewContext()
+    {
+        _context = null; _discovery = null; _chosen.Clear(); _approval.Clear(); _manualReasons.Clear(); _acceptReason.Clear();
+        _message = "New context: discover the sources and choose one per stage.";
     }
 
     private void UseNewer(CompositeSourceChange change)
@@ -225,6 +237,7 @@ public partial class IntegrationSuitesPage
         else if (result?.Context is { } context)
         {
             LoadContext(context);
+            SetArea(_area);
             _message = result.Unchanged ? $"Nothing changed: revision {context.Revision} is current." : $"Revision {context.Revision} saved. {string.Join(" ", context.Changes.Take(3))}";
             _contexts = (await Api.ContextsAsync()).Contexts ?? _contexts;
         }

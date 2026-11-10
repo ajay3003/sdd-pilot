@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using BirkNext.Api.Data;
@@ -291,6 +291,8 @@ public sealed class CompositeSuiteTests : IAsyncLifetime
         composite.Plan.Steps.Where(s => s.FromStep != null).Select(s => $"{s.Parameter}<-{s.FromField}").Should()
             .Equal("submissionId<-submissionId", "messageId<-messageId", "reportId<-reportId", "reportId<-reportId", "period<-period", "period<-period");
         composite.Plan.State.Should().Be("Draft");
+        composite.Readiness.Single(r => r.Level == "Stage execution").State.Should().Be(CompositeReadiness.Ready,
+            "a data-changing step is confirmed per run and the Target Environment is chosen per run: " + string.Join(" | ", composite.Readiness.Single(r => r.Level == "Stage execution").Items));
         composite.Readiness.Single(r => r.Level == "Complete E2E").State.Should().Be(CompositeReadiness.NeedsReview, string.Join(" | ", composite.Readiness.SelectMany(r => r.Items.Prepend(r.Level + " " + r.State))));
         composite.Blockers.Should().Contain(b => b.Id == "plan:approve" && b.Owner == "Test lead");
 
@@ -409,6 +411,11 @@ public sealed class CompositeSuiteTests : IAsyncLifetime
         regenerated.Revision.Should().Be(2);
         regenerated.Drift.Should().Contain(d => d.StartsWith("Person/openapi.json") && d.Contains("v1 → v2"), string.Join(" | ", first.Contracts.Concat(regenerated.Contracts).Select(c => $"{c.SourceFile} {c.ContractKey} v{c.ContractVersion} {c.ImportOutcome} {c.ProjectKey}")));
         (await With(sp => sp.GetRequiredService<AppDbContext>().ApiContracts.CountAsync())).Should().Be(contractsBefore, "a changed source continues its contract (next version), never a second contract");
+        var person = regenerated.Composite!.Plan.Steps.Single(s => s.StageId == "person-tjeneste");
+        person.TestId.Should().NotBeNull("the positive test still bound to v1 is used; contract evolution never rebinds it silently");
+        regenerated.Composite.Stages.Single(s => s.StageId == "person-tjeneste").WhyNotVerified.Should().NotContain("has no positive contract test");
+        IntegrationSuiteService.VersionOf("synthetic-person@v12", "synthetic-person").Should().Be(12);
+        IntegrationSuiteService.VersionOf("synthetic-person-x@v1", "synthetic-person").Should().BeNull();
         (await With(sp => sp.GetRequiredService<IntegrationSuiteService>().GetAsync(first.Id, default)))!.Composite!.Sources.Should().Contain(s => s.SnapshotId == p.C, "history keeps the exact source versions");
         _ = chainsBefore;
     }
@@ -448,6 +455,11 @@ public sealed class CompositeSuiteTests : IAsyncLifetime
         discovery.Stages.Single(s => s.StageId == "mm").Candidates.Should().ContainSingle(c => c.ProjectKey == "m2lb");
         discovery.Stages.Single(s => s.StageId == "altinn").Should().Match<CompositeStageDiscovery>(s => s.Class == CompositeMatchClass.Confirmed && s.Candidates.Count == 0 && s.ReferenceSource != null);
         discovery.Supporting.Should().ContainSingle(c => c.ProjectKey == "terraform-iac-m2lb" && c.Kind == CompositeSourceKind.Infrastructure);
+        var failedIac = F("terraform-iac-meldingsutveksler", []) with { Status = "Failed" };
+        var withFailed = CompositeSourceRules.Discover(scope, [tiltak, m2lb, iac, failedIac], null);
+        withFailed.Supporting.Should().ContainSingle(c => c.ProjectKey == "terraform-iac-meldingsutveksler" && c.Kind == CompositeSourceKind.Infrastructure && c.AnalysisStatus == "Failed",
+            "an archive that failed analysis only for lack of application code is still supporting evidence");
+        withFailed.Stages.SelectMany(s => s.Candidates).Should().NotContain(c => c.ProjectKey == "terraform-iac-meldingsutveksler");
 
         var sides = new Dictionary<string, CompositeSourceRules.Side>
         {

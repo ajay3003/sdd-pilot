@@ -1,4 +1,4 @@
-@page "/integration-suites"
+﻿@page "/integration-suites"
 @using BirkNext.Integrations
 @using BirkNext.IntegrationSuites
 @using BirkNext.ContractTesting
@@ -13,7 +13,7 @@
    stage, human approvals, static compatibility), 2 Generate & Review (draft suites — composite or single-snapshot), 3 Resolve Readiness (three levels,
    actionable blockers), 4 Execute & Evidence (approved plan, authorised composite runs, stage timeline, correlation, coverage). The page shows what the
    backend stored and never computes a pass. *@
-<div class="its" data-testid="its-page">
+<div class="its" data-testid="its-page" aria-busy='@(_busy ? "true" : "false")'>
     <header class="its-head">
         <h1>Integration Test Suites</h1>
         <p class="its-note">Build one end-to-end suite from several imported sources: map every stage of the integration to evidence-backed source snapshots,
@@ -58,6 +58,10 @@
                 </div>
                 <div class="its-actions">
                     <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="DiscoverAsync" data-testid="its-discover">Auto-discover sources</button>
+                    @if (_context is not null || _chosen.Count > 0)
+                    {
+                        <button type="button" class="btn btn-secondary" disabled="@_busy" @onclick="NewContext" data-testid="its-new-context">Start a new context</button>
+                    }
                     @if (_contexts is { Count: > 0 })
                     {
                         @foreach (var c in _contexts.Take(5))
@@ -70,6 +74,11 @@
                 @if (_context is { } ctx)
                 {
                     <p class="its-note" data-testid="its-context-summary">Context <strong>@ctx.ContextKey</strong> · revision @ctx.Revision · @ctx.Snapshots.Count source(s), @ctx.Snapshots.Count(s => s.Approval == CompositeApproval.Approved) approved · saved @Utc(ctx.UpdatedAt)</p>
+                    @if (NewerRevision is { } latest)
+                    {
+                        <p class="its-prereq" data-testid="its-older-revision">This is revision @ctx.Revision; revision @latest.Revision is current. Saving from an older revision is refused (conflict).
+                            <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => OpenContextAsync(latest.Id)" data-testid="its-open-latest">Open revision @latest.Revision</button></p>
+                    }
                     @foreach (var n in ctx.NewerSources)
                     {
                         <p class="its-prereq" data-testid="its-newer-source">A newer snapshot of <strong>@n.ProjectKey</strong> exists (@Short(n.NewerArchiveSha256), @Utc(n.NewerAnalyzedAt)); it affects @string.Join(", ", n.AffectedStages).
@@ -466,6 +475,7 @@
                             <ul class="its-items">@foreach (var c in run.Correlation)
                             {
                                 <li data-testid="its-correlation" data-state="@c.State"><strong>@c.Boundary</strong> · @c.Field <span class="its-badge" data-state="@(c.State is CorrelationState.Confirmed or CorrelationState.Carried ? "Ready" : "Blocked")">@c.State</span>
+                                    @if (c.Value is { Length: > 0 }) { <code data-testid="its-correlation-value">@c.Value</code> }
                                     <span class="its-muted">@c.Evidence</span></li>
                             }</ul>
                             <details class="its-details"><summary>Exact source versions</summary>

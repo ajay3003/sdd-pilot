@@ -1,4 +1,5 @@
-using System.Text.Json;
+﻿using System.Text.Json;
+using BirkNext.Api.Data;
 using BirkNext.Api.Models;
 using BirkNext.Api.Services.ContractTesting;
 using BirkNext.Api.Services.ExecutionEvidence;
@@ -64,7 +65,10 @@ public sealed partial class IntegrationSuiteService
             {
                 if (await registry.DocumentAsync(c.ContractKey!, c.ContractVersion!.Value, ct) is not { } doc) continue;
                 var cref = ContractIdentity.ContractRef(c.ContractKey!, c.ContractVersion!.Value);
-                var positives = tests.Where(t => t.ContractRef == cref && t.Kind == nameof(ContractTestKind.Positive)).GroupBy(t => t.Operation).ToDictionary(g => g.Key, g => g.First().TestId, StringComparer.Ordinal);
+                // The newest positive test of this contract at or below the stage's version. Contract evolution never rebinds a test silently: a test
+                // still bound to an earlier version is used, and its own readiness names what blocks it (the update proposal to review, authentication).
+                var positives = tests.Where(t => t.Kind == nameof(ContractTestKind.Positive) && VersionOf(t.ContractRef, c.ContractKey!) is { } v && v <= c.ContractVersion!.Value)
+                    .GroupBy(t => t.Operation).ToDictionary(g => g.Key, g => g.OrderByDescending(t => VersionOf(t.ContractRef, c.ContractKey!)).First().TestId, StringComparer.Ordinal);
                 stageContracts.Add(new(c.ContractKey!, c.ContractVersion!.Value, doc, positives));
             }
             stageInputs.Add(new(template.StageId, template.Label, template.Source!, stageContracts));
@@ -162,11 +166,12 @@ public sealed partial class IntegrationSuiteService
     /// <summary>
     /// The readiness gaps of a plan step's test that stop a composite run — the same rule the chain runner applies: a chained input's own Test Data
     /// gap does not block (the value comes from an earlier step), a test's review state is a limitation (the plan approval is the run gate), and the
-    /// Target Environment is chosen per run.
+    /// Target Environment is chosen per run, and a data-changing call is confirmed per run in the preflight (an unbound authentication still blocks).
     /// </summary>
     internal static List<string> BlockingGaps(CompositePlanStep step, SuiteTestRef test) =>
         [.. test.ReadinessGaps.Where(g => !(step.FromStep is not null && g.StartsWith("Test Data", StringComparison.Ordinal))
-            && !g.StartsWith("Review", StringComparison.Ordinal) && !g.StartsWith("Target Environment", StringComparison.Ordinal))];
+            && !g.StartsWith("Review", StringComparison.Ordinal) && !g.StartsWith("Target Environment", StringComparison.Ordinal)
+            && !g.StartsWith("Changes data", StringComparison.Ordinal))];
 
     private static string? WhyNot(CompositeStageMapping? mapping, CompositePlanStep? step, CompositeReadiness readiness, List<string> gaps, CompositePlan plan)
     {
@@ -434,9 +439,18 @@ public sealed partial class IntegrationSuiteService
         return link is null ? null : await CompositeRunAsync(link, ct);
     }
 
-    private async Task<CompositeRunView?> CompositeRunAsync(IntegrationSuiteRunRecord link, CancellationToken ct)
+    private Task<CompositeRunView?> CompositeRunAsync(IntegrationSuiteRunRecord link, CancellationToken ct) => ReadCompositeRunAsync(db, evidence, link, ct);
+
+    /// <summary>The version of a "key@vN" contract reference when it belongs to <paramref name="key"/>; otherwise null.</summary>
+    internal static int? VersionOf(string contractRef, string key) =>
+        contractRef.StartsWith(key + "@v", StringComparison.Ordinal) && int.TryParse(contractRef.AsSpan(key.Length + 2), out var v) ? v : null;
+
+    /// <summary>Reopens a composite run from its stored link (plan, kind, source versions) and its Execution Evidence run. Read-only; also used by
+    /// Test Execution &amp; Evidence so the verdict has one owner.</summary>
+    public static async Task<CompositeRunView?> ReadCompositeRunAsync(AppDbContext db, ExecutionEvidenceStore evidence, IntegrationSuiteRunRecord link, CancellationToken ct)
     {
-        var runPlan = JsonSerializer.Deserialize<CompositeRunPlan>(link.PlanJson!, Json);
+        if (link.PlanJson is null) return null;
+        var runPlan = JsonSerializer.Deserialize<CompositeRunPlan>(link.PlanJson, Json);
         if (runPlan is null) return null;
         var revision = await db.IntegrationSuites.AsNoTracking().Where(s => s.Id == link.SuiteId).Select(s => s.Revision).FirstOrDefaultAsync(ct);
         var detail = await evidence.GetAsync(link.RunId, new ExecutionCallQuery(0, 500), ct);

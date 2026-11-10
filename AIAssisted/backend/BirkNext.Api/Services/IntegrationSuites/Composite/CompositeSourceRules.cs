@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using BirkNext.Api.Services.IntegrationJourneys;
 using BirkNext.Integrations;
 using BirkNext.IntegrationSuites;
@@ -190,7 +190,15 @@ public static partial class CompositeSourceRules
         var supporting = current.Where(c => !matched.Contains(c.Newest.Id))
             .Select(c => Candidate(c.Newest, c.Older, c.Newest.HasInfrastructure && !c.Newest.HasApplicationCode ? CompositeSourceKind.Infrastructure : CompositeSourceKind.Library,
                 c.Newest.HasInfrastructure ? ["Infrastructure as Code"] : ["No stage of this integration recognised"], [], []))
-            .OrderBy(c => c.Kind).ThenBy(c => c.ProjectKey, StringComparer.Ordinal).ToList();
+            .ToList();
+        // A snapshot that failed analysis only because it has no application code (Infrastructure as Code alone) is still supporting evidence: listed with
+        // its Failed status, never a stage source and never associable.
+        var knownProjects = current.Select(c => c.Newest.ProjectKey).ToHashSet(StringComparer.Ordinal);
+        supporting.AddRange(all.Where(f => f.Status == nameof(SourceAnalysisStatus.Failed) && f.HasInfrastructure && !knownProjects.Contains(f.ProjectKey))
+            .GroupBy(f => f.ProjectKey, StringComparer.Ordinal)
+            .Select(g => (Newest: g.OrderByDescending(x => x.AnalyzedAt).ThenByDescending(x => x.Id).First(), Older: g.Count() - 1))
+            .Select(c => Candidate(c.Newest, c.Older, CompositeSourceKind.Infrastructure, ["Infrastructure as Code (analysis status Failed: no application code)"], [], [])));
+        supporting = [.. supporting.OrderBy(c => c.Kind).ThenBy(c => c.ProjectKey, StringComparer.Ordinal)];
         return new CompositeDiscovery
         {
             ScopeId = scope.ScopeId, ScopeName = scope.DisplayName, Stages = stages, Supporting = supporting, SnapshotsConsidered = all.Count,

@@ -1,4 +1,4 @@
-using BirkNext.ContractTesting;
+﻿using BirkNext.ContractTesting;
 using BirkNext.Integrations;
 using BirkNext.IntegrationSuites;
 using BirkNext.Web.Pages;
@@ -157,6 +157,21 @@ public sealed class IntegrationSuitesCompositePageTests : BunitContext
     }
 
     [Fact]
+    public void A_link_to_an_older_revision_says_so_and_opens_the_current_one_and_the_url_follows_it()
+    {
+        var current = Guid.Parse("cccccccc-3333-0000-0000-000000000003");
+        _api.Setup(a => a.ContextsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(([new CompositeContextSummary(current, "skolenaervaer:m2lb", 3, "skolenaervaer", "m2lb", 2, 2, 2, 2, DateTimeOffset.UnixEpoch)], null));
+        _api.Setup(a => a.ContextAsync(current, It.IsAny<CancellationToken>())).ReturnsAsync((Context(null) with { Id = current, Revision = 3 }, null));
+        var cut = At($"area=sources&context={Ctx:D}");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=its-older-revision]").TextContent.Should().Contain("revision 3 is current"));
+        cut.Find("[data-testid=its-open-latest]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=its-context-summary]").TextContent.Should().Contain("revision 3"));
+        cut.FindAll("[data-testid=its-older-revision]").Should().BeEmpty();
+        Services.GetRequiredService<NavigationManager>().Uri.Should().Contain($"context={current:D}", "a reload or a shared link opens the revision on screen");
+    }
+
+    [Fact]
     public void An_incompatible_transition_is_accepted_only_with_a_reason_and_stays_incompatible()
     {
         var cut = At($"area=sources&context={Ctx:D}");
@@ -208,6 +223,7 @@ public sealed class IntegrationSuitesCompositePageTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=its-verdict]").TextContent.Should().Be("WRONG_CORRELATION"));
         cut.FindAll("[data-testid=its-run-stage]").Select(s => s.GetAttribute("data-state")).Should().Equal("Succeeded", "Succeeded");
         cut.Find("[data-testid=its-correlation]").GetAttribute("data-state").Should().Be("WrongCorrelation", "succeeded stages do not hide a wrong correlation");
+        cut.Find("[data-testid=its-correlation-value]").TextContent.Should().Be("msg-1", "the tester sees the identifier BirkNext carried");
         cut.Find("[data-testid=its-bufdata]").TextContent.Should().StartWith("SPECIFIED_BUT_NOT_RUNTIME_VERIFIED");
         cut.Find("[data-testid=its-coverage-row]").GetAttribute("data-level").Should().Be("Configured");
     }
