@@ -51,7 +51,12 @@ public static class IqrSourceArchiveReader
         List<SourceFile>? ConfigurationFiles = null, List<SourceFile>? EvidenceFiles = null, List<string>? AllPaths = null,
         List<SourceFile>? DocumentFiles = null, List<ArchiveDocumentSkip>? SkippedDocuments = null, long EntryCount = 0,
         List<RawDocumentFile>? RawDocumentFiles = null, List<SourceFile>? DocumentationCandidates = null, IReadOnlyDictionary<string, DateTimeOffset>? EntryModified = null,
-        List<SourceTextEncoding>? TextEncodings = null);
+        List<SourceTextEncoding>? TextEncodings = null, List<SourceFile>? UiFiles = null, int UiFilesSkipped = 0);
+
+    /// <summary>UI source (Razor, CSHTML, HTML) held in memory for the UI-surface facts only; never stored. Bounded by count, size and a total budget.</summary>
+    public const int MaxUiFiles = 600;
+    public const long MaxUiFileBytes = 512 * 1024;
+    public const long MaxUiBytes = 16L * 1024 * 1024;
 
     public const int MaxDocumentationCandidates = 2_000;
     public const long MaxDocumentationBytes = 24L * 1024 * 1024;
@@ -130,6 +135,9 @@ public static class IqrSourceArchiveReader
         var skippedDocuments = new List<ArchiveDocumentSkip>();
         var documentationCandidates = new List<SourceFile>();
         var documentationCandidatesSkipped = 0;
+        var uiFiles = new List<SourceFile>();
+        var uiFilesSkipped = 0;
+        long uiBytes = 0;
         long documentationBytes = 0;
         var entryModified = new Dictionary<string, DateTimeOffset>(StringComparer.Ordinal);
         var fileEntryCount = 0;
@@ -223,6 +231,18 @@ public static class IqrSourceArchiveReader
                 // Non-Markdown generated-documentation artifacts (OpenAPI/AsyncAPI YAML or JSON, GraphQL SDL, XSD, proto) keep their text as documentation
                 // candidates under the same limits, so generated documentation can show them; they are still processed as source below.
                 if (BirkNext.Api.Services.SourceAnalysis.GeneratedDocumentation.GeneratedDocumentationDetector.IsDocumentFile(path) && CaptureDocumentationCandidate(MaxDocumentBytes) is { } artifactRejection) return artifactRejection;
+                if (extension is ".razor" or ".cshtml" or ".html" or ".htm")
+                {
+                    // UI source for the UI-surface facts (routes, forms, controls); build output and vendored libraries are not application UI.
+                    if (path.Split('/').Any(d => d is "bin" or "obj" or "node_modules" or "lib" or "dist")) continue;
+                    if (uiFiles.Count >= MaxUiFiles || entry.Length > MaxUiFileBytes || uiBytes + entry.Length > MaxUiBytes || actualRead + entry.Length > MaxExpandedBytes) { uiFilesSkipped++; continue; }
+                    var (uiText, _, uiRejection) = ReadEntry(entry, path);
+                    if (uiRejection is not null) return uiRejection;
+                    if (uiText!.Contains('\0')) { uiFilesSkipped++; continue; }
+                    uiBytes += entry.Length;
+                    uiFiles.Add(new SourceFile(path, uiText));
+                    continue;
+                }
                 if (extension is ".zip" or ".tar" or ".gz" or ".7z") { limitations.Add("Nested archives are not analyzed."); continue; }
                 if (extension is ".tfstate" || path.EndsWith(".tfstate.backup", StringComparison.OrdinalIgnoreCase))
                 { limitations.Add("Terraform state file present but not read: state can hold secrets and is runtime state, not source."); continue; }
@@ -284,7 +304,7 @@ public static class IqrSourceArchiveReader
         if (documentationCandidatesSkipped > 0)
             limitations.Add($"{documentationCandidatesSkipped:N0} documentation file(s) were not read for generated-documentation evidence (size, binary content or the {MaxDocumentationCandidates:N0}-file limit).");
         return new(new Workspace(new SourceArchive(ArchiveDisplayName(name), sha, files.Count + configurations.Count + evidenceFiles.Count), files, [.. limitations], configurations, configurationFiles, evidenceFiles, allPaths,
-            captureDocuments ? documentFiles : null, captureDocuments ? skippedDocuments : null, entryCount ?? 0, rawDocumentFiles, documentationCandidates, entryModified, textEncodings), null);
+            captureDocuments ? documentFiles : null, captureDocuments ? skippedDocuments : null, entryCount ?? 0, rawDocumentFiles, documentationCandidates, entryModified, textEncodings, uiFiles, uiFilesSkipped), null);
     }
 
     private sealed record NormalizedPath(string? Path, bool IsDirectory, bool IsRoot, SourceArchiveValidationFailure? Failure);

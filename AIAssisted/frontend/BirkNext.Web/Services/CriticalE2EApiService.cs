@@ -24,6 +24,13 @@ public interface ICriticalE2EApiService
     // Delivery modules: explicit registration only. A module label typed on a flow never registers one.
     Task<CriticalE2EOverview> RegisterModuleAsync(CriticalE2EModuleRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     Task<CriticalE2EOverview> UnregisterModuleAsync(CriticalE2EModuleRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+    // Suggested tests. Generation reads Source Analysis facts only; verification asks the paired Edge Companion; approval saves a Diagnostic flow.
+    Task<List<SuggestionSnapshotOption>> SuggestionSnapshotsAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task<SuggestionGenerationResult?> GenerateSuggestionsAsync(SuggestionGenerateRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task<SuggestionVerifyResult> VerifySuggestionAsync(SuggestionVerifyRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task<(TestSuggestion? Suggestion, string? Problem)> DecideSuggestionAsync(SuggestionDecisionRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task<SuggestionApproveResult> ApproveSuggestionAsync(SuggestionApproveRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 }
 
 public sealed class CriticalE2EApiService(HttpClient http) : ICriticalE2EApiService
@@ -70,6 +77,36 @@ public sealed class CriticalE2EApiService(HttpClient http) : ICriticalE2EApiServ
 
     public Task<CriticalE2EOverview> UnregisterModuleAsync(CriticalE2EModuleRequest request, CancellationToken ct = default) =>
         PostAsync<CriticalE2EOverview>("api/critical-e2e/modules/unregister", request, ct);
+
+    public async Task<List<SuggestionSnapshotOption>> SuggestionSnapshotsAsync(CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<List<SuggestionSnapshotOption>>("api/critical-e2e/suggestions/snapshots", ct) ?? [];
+
+    public async Task<SuggestionGenerationResult?> GenerateSuggestionsAsync(SuggestionGenerateRequest request, CancellationToken ct = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/critical-e2e/suggestions/generate", request, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<SuggestionGenerationResult>(cancellationToken: ct);
+    }
+
+    public Task<SuggestionVerifyResult> VerifySuggestionAsync(SuggestionVerifyRequest request, CancellationToken ct = default) =>
+        PostAsync<SuggestionVerifyResult>("api/critical-e2e/suggestions/verify", request, ct);
+
+    public async Task<(TestSuggestion? Suggestion, string? Problem)> DecideSuggestionAsync(SuggestionDecisionRequest request, CancellationToken ct = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/critical-e2e/suggestions/decide", request, ct);
+        if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<TestSuggestion>(cancellationToken: ct), null);
+        var error = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement?>(cancellationToken: ct);
+        return (null, error is { } e && e.TryGetProperty("message", out var m) ? m.GetString() : $"Refused ({(int)response.StatusCode}).");
+    }
+
+    public async Task<SuggestionApproveResult> ApproveSuggestionAsync(SuggestionApproveRequest request, CancellationToken ct = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/critical-e2e/suggestions/approve", request, ct);
+        if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.UnprocessableEntity)
+            return (await response.Content.ReadFromJsonAsync<SuggestionApproveResult>(cancellationToken: ct))!;
+        return new SuggestionApproveResult(null, [$"Refused ({(int)response.StatusCode})."]);
+    }
 
     private async Task<T> PostAsync<T>(string path, object body, CancellationToken ct)
     {

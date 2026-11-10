@@ -604,6 +604,7 @@ public sealed record BrowserCompanionLiveSession
 
     /// <summary>The connected extension can let the tester pick an element on the live page.</summary>
     public bool SupportsElementPick => ExtensionConnected && Capabilities.Contains(CriticalE2E.CompanionCapabilities.ElementPick);
+    public bool SupportsSelectorVerify => ExtensionConnected && Capabilities.Contains(CriticalE2E.CompanionCapabilities.SelectorVerify);
 
     public int LiveApprovedPageCount => LivePages.Count;
     /// <summary>A content script is running somewhere we can reach. Without one there is no DOM to read or act on.</summary>

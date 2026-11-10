@@ -8,7 +8,7 @@ const { pageIdentity, sanitize } = globalThis.BirkNextCompanion;
 const BACKEND_CANDIDATES = ['http://127.0.0.1:5000', 'http://localhost:5000'];
 const EXTENSION_VERSION = chrome.runtime.getManifest().version;
 /** What this build can do, reported on every heartbeat so BirkNext never offers a feature an older build lacks. */
-const CAPABILITIES = ['element-pick'];
+const CAPABILITIES = ['element-pick', 'selector-verify'];
 const CONTENT_SCRIPT_ID = 'birknext-companion-content';
 const MAIN_WORLD_SCRIPT_ID = 'birknext-companion-main';
 const CONTENT_FILES = ['lib/sanitize.js', 'lib/page-identity.js', 'lib/automation.js', 'lib/picker.js', 'lib/dom.js', 'lib/wcag.js', 'lib/wcag-interaction.js', 'lib/wcag-keyboard.js', 'lib/a11y.js', 'vendor/axe.min.js', 'lib/axe-evidence.js', 'lib/perf.js', 'lib/navigation.js', 'content.js'];

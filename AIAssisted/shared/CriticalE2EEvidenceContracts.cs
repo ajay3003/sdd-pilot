@@ -15,7 +15,7 @@ public enum CompanionSelectorStability { Preferred, Acceptable, Fragile }
 
 /// <summary>Where a flow came from. Provenance only — never execution truth.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum CriticalE2EFlowSource { Manual, BrowserDiscovery, ObservedJourney, RequirementDriven, Imported }
+public enum CriticalE2EFlowSource { Manual, BrowserDiscovery, ObservedJourney, RequirementDriven, Imported, SuggestedFromSource }
 
 /// <summary>The concrete outcome a flow proves. Each kind is executable (browser) or explicitly provider-verified.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]

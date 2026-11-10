@@ -140,6 +140,21 @@
           });
           return;
         }
+        // Authoring: resolve a bounded list of selectors and report identity only (suggested-test locator verification).
+        if (command.action === 'VerifySelectors') {
+          if (command.contentScriptInstanceId && command.contentScriptInstanceId !== instanceId) {
+            finish({ status: 'Blocked', sanitizedError: 'The page was reloaded after verification was requested.' }); return;
+          }
+          const verified = C.automation.verify(doc, win, command.selectors);
+          if (verified.error) { finish({ status: 'Blocked', sanitizedError: C.sanitize.text(verified.error) }); return; }
+          finish({
+            status: 'Passed',
+            selectorChecks: verified.checks.map(c => ({ ...c, accessibleName: c.accessibleName == null ? null : C.sanitize.text(c.accessibleName),
+              limitation: c.limitation == null ? null : C.sanitize.text(c.limitation) })),
+            safeSummary: `Checked ${verified.checks.length} selector(s)`,
+          });
+          return;
+        }
         if (!C.automation.ACTIONS.includes(command.action)) {
           finish({ status: 'Blocked', sanitizedError: `Action not allowed: ${C.sanitize.text(String(command.action))}` }); return;
         }

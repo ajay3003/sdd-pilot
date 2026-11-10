@@ -86,6 +86,14 @@ public sealed partial class BrowserCompanionService
             // the tester had already been told to click.
             if (command.Action == CompanionActionKind.PickElement && !session.Capabilities.Contains(CompanionCapabilities.ElementPick))
                 return Refuse(command.CommandId, "The paired Browser Companion does not support element picking. Reload the extension to update it.");
+            // Selector verification is bounded (the result must fit the command-result envelope) and needs a build that can do it.
+            if (command.Action == CompanionActionKind.VerifySelectors)
+            {
+                if (!session.Capabilities.Contains(CompanionCapabilities.SelectorVerify))
+                    return Refuse(command.CommandId, "The paired Browser Companion cannot verify selectors. Reload the extension to update it.");
+                if (command.Selectors is not { Count: > 0 } selectors || selectors.Count > CompanionCapabilities.MaxSelectorsPerVerify)
+                    return Refuse(command.CommandId, $"Selector verification needs 1–{CompanionCapabilities.MaxSelectorsPerVerify} selectors.");
+            }
 
             // One step at a time. A flow is a sequence, and two commands in flight would make "which click produced this
             // route" unanswerable.
@@ -243,6 +251,11 @@ public sealed partial class BrowserCompanionService
         SanitizedError = Text(result.SanitizedError),
         EvidenceReference = Text(result.EvidenceReference),
         Element = result.Element is { } e ? SanitizeElement(e) : null,
+        SelectorChecks = result.SelectorChecks?.Take(CompanionCapabilities.MaxSelectorsPerVerify).Select(c => c with
+        {
+            Selector = SanitizeSelector(c.Selector), MatchCount = Math.Clamp(c.MatchCount, 0, 10_000), TagName = Cap(Text(c.TagName), 20), Role = Cap(Text(c.Role), 30),
+            AccessibleName = Cap(Text(c.AccessibleName), 80), Limitation = Cap(Text(c.Limitation), 160),
+        }).ToList(),
     };
 
     /// <summary>

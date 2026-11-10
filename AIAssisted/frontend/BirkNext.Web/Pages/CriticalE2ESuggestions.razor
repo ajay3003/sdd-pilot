@@ -1,0 +1,316 @@
+@using BirkNext.CriticalE2E
+@using BirkNext.Web.Services
+@inject ICriticalE2EApiService Api
+
+@* Suggested tests inside Critical E2E Regression: DRAFT flows from the imported source (offline), locators verified on the attended Edge page
+   (identity only), reviewed by a person, approved into a Diagnostic flow that runs through the existing runner. Nothing here runs a test. *@
+<section class="sg" aria-labelledby="sg-heading" data-testid="sg-panel" aria-busy="@(_busy ? "true" : "false")">
+    <div class="sg-head">
+        <div>
+            <h2 id="sg-heading">Suggested tests</h2>
+            <p class="sg-muted">Drafts from an imported source snapshot. Locators count only after the Edge Companion verifies them on the attended page.</p>
+        </div>
+        <div class="sg-actions">
+            <label class="sg-field">Source snapshot
+                <select class="form-control" data-testid="sg-snapshot" value="@(_snapshotId?.ToString() ?? "")" @onchange="SelectSnapshot">
+                    <option value="">Choose…</option>
+                    @foreach (var s in _snapshots)
+                    {
+                        <option value="@s.SnapshotId">@($"{s.ProjectKey} · {s.ArchiveFileName} · {s.AnalyzedAt.ToLocalTime():yyyy-MM-dd HH:mm}{(s.HasUiSurface ? $" · {s.Routes} route(s)" : " · no UI facts")}")</option>
+                    }
+                </select>
+            </label>
+            <button type="button" class="btn btn-primary" data-testid="sg-generate" disabled="@(_busy || _snapshotId is null || string.IsNullOrEmpty(EnvironmentId))" @onclick="GenerateAsync">Generate suggestions</button>
+        </div>
+    </div>
+    @if (_error is not null) { <p class="sg-error" role="alert" data-testid="sg-error">@_error</p> }
+    @if (_message is not null) { <p class="sg-message" role="status" data-testid="sg-message">@_message</p> }
+
+    @if (_result is { } r)
+    {
+        <dl class="sg-summary" data-testid="sg-summary">
+            @Count("suggestions", "Suggestions", r.Summary.Suggestions)
+            @Count("reused", "Existing tests reused", r.Summary.ExistingReused)
+            @Count("new", "New tests suggested", r.Summary.NewSuggested)
+            @Count("dom", "Missing DOM mappings", r.Summary.MissingDomMappings)
+            @Count("expected", "Missing expected results", r.Summary.MissingExpectedResults)
+            @Count("data", "Missing Test Data", r.Summary.MissingTestData)
+            @Count("ready", "Ready for approval", r.Summary.ReadyForApproval)
+        </dl>
+        <nav class="sg-areas" role="tablist" aria-label="Suggested tests areas">
+            @foreach (var (key, label) in Areas)
+            {
+                <button type="button" role="tab" class="sg-area @(_area == key ? "is-active" : "")" aria-selected="@(_area == key ? "true" : "false")" data-testid="@($"sg-area-{key}")" @onclick="() => _area = key">@label</button>
+            }
+        </nav>
+        @if (r.Impact.Count > 0)
+        {
+            <details class="sg-impact" data-testid="sg-impact" open>
+                <summary>Regression impact on approved tests (@r.Impact.Count) — proposals only, nothing is rewritten</summary>
+                <ul>@foreach (var i in r.Impact) { <li data-testid="sg-impact-item" data-kind="@i.Kind"><strong>@ImpactLabel(i.Kind)</strong> @(i.FlowName.Length > 0 ? $"· {i.FlowName} · step {i.StepId}" : "") — @i.Detail</li> }</ul>
+            </details>
+        }
+
+        @if (_area == "suggestions")
+        {
+            @if (r.Suggestions.Count == 0) { <p class="sg-muted" data-testid="sg-empty">No suggestion: @(r.Limitations.FirstOrDefault() ?? "the snapshot has no routable page with supported controls.")</p> }
+            <ul class="sg-list" data-testid="sg-list">
+                @foreach (var s in r.Suggestions)
+                {
+                    <li class="sg-item @(s.SuggestionId == _selectedId ? "is-selected" : "")" data-testid="sg-item" data-kind="@s.Kind" data-coverage="@s.Coverage" data-id="@s.SuggestionId">
+                        <div class="sg-item-main">
+                            <button type="button" class="sg-link" data-testid="sg-review" @onclick="() => Select(s)">@s.Title</button>
+                            <span class="sg-sub">@KindLabel(s.Kind) · @s.Route · @s.Steps.Count step(s) · confidence @s.Confidence@(s.RequirementRefs.Count > 0 ? $" · {string.Join(", ", s.RequirementRefs)}" : "")</span>
+                        </div>
+                        <div class="sg-badges">
+                            <span class="sg-badge sg-cov-@s.Coverage" data-testid="sg-coverage">@CoverageLabel(s.Coverage)</span>
+                            @foreach (var st in s.States) { <span class="sg-badge sg-state" data-testid="sg-state" data-state="@st">@StateLabel(st)</span> }
+                        </div>
+                    </li>
+                }
+            </ul>
+        }
+        else if (_area == "data")
+        {
+            <table class="sg-table" data-testid="sg-readiness">
+                <caption class="visually-hidden">Readiness of every suggestion</caption>
+                <thead><tr><th scope="col">Suggestion</th><th scope="col">Readiness</th><th scope="col">Test Data needed</th><th scope="col">Prerequisites</th></tr></thead>
+                <tbody>
+                    @foreach (var s in r.Suggestions)
+                    {
+                        <tr data-testid="sg-readiness-row" data-id="@s.SuggestionId"><th scope="row">@s.Title</th><td>@string.Join(", ", s.States.Select(StateLabel))</td>
+                            <td>@(s.TestDataNeeds.Count == 0 ? "none" : string.Join("; ", s.TestDataNeeds))</td><td>@(s.Preconditions.Count == 0 ? "–" : string.Join("; ", s.Preconditions))</td></tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else if (_area == "results")
+        {
+            var approved = r.Suggestions.Where(s => s.ApprovedFlowId is not null).ToList();
+            @if (approved.Count == 0) { <p class="sg-muted" data-testid="sg-results-empty">No suggestion is approved yet. Approved tests run through the flows above, after explicit authorization.</p> }
+            else
+            {
+                <ul class="sg-list" data-testid="sg-results">
+                    @foreach (var s in approved)
+                    {
+                        <li class="sg-item" data-testid="sg-result" data-state="@(s.States.Contains(SuggestionState.Executed) ? "Executed" : "Executable")">
+                            <div class="sg-item-main"><span>@s.Title</span><span class="sg-sub">flow @s.ApprovedFlowId v@(s.ApprovedFlowVersion) · @(s.States.Contains(SuggestionState.Executed) ? "executed — results are actual browser evidence" : "not executed yet")</span></div>
+                            <a class="btn-secondary" href="execution-results?area=runs&amp;rsrc=BrowserE2E" data-testid="sg-open-results">Open results</a>
+                        </li>
+                    }
+                </ul>
+            }
+        }
+        @if (_area is "suggestions" or "mapping" && Selected is { } sel)
+        {
+            @Detail(sel)
+        }
+        else if (_area == "mapping")
+        {
+            <p class="sg-muted" data-testid="sg-mapping-empty">Choose a suggestion under Test Suggestions to map its controls.</p>
+        }
+        @if (r.Limitations.Count > 0)
+        {
+            <details class="sg-details"><summary>Limitations (@r.Limitations.Count)</summary><ul>@foreach (var l in r.Limitations) { <li>@l</li> }</ul></details>
+        }
+    }
+</section>
+
+@code {
+    [Parameter] public string EnvironmentId { get; set; } = "";
+    [Parameter] public string? ProfileId { get; set; }
+    [Parameter] public string? CurrentRoute { get; set; }
+    [Parameter] public EventCallback OnApproved { get; set; }
+
+    private static readonly (string Key, string Label)[] Areas = [("suggestions", "Test Suggestions"), ("mapping", "DOM Mapping"), ("data", "Test Data & Readiness"), ("results", "Execution Results")];
+    private List<SuggestionSnapshotOption> _snapshots = [];
+    private Guid? _snapshotId;
+    private SuggestionGenerationResult? _result;
+    private string _area = "suggestions";
+    private string? _selectedId, _error, _message, _expectedRoute;
+    private bool _busy;
+    private readonly Dictionary<string, string> _manual = new(StringComparer.Ordinal);
+
+    private TestSuggestion? Selected => _result?.Suggestions.FirstOrDefault(s => s.SuggestionId == _selectedId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _snapshots = await Api.SuggestionSnapshotsAsync() ?? []; _snapshotId ??= _snapshots.FirstOrDefault(s => s.HasUiSurface)?.SnapshotId; }
+        catch (Exception e) when (e is not OperationCanceledException) { _error = "Source snapshots could not be loaded."; }
+    }
+
+    private void SelectSnapshot(ChangeEventArgs e) { _snapshotId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null; _result = null; _selectedId = null; }
+
+    private async Task GenerateAsync()
+    {
+        if (_snapshotId is not { } id) return;
+        _busy = true; _error = null; _message = null;
+        try
+        {
+            _result = await Api.GenerateSuggestionsAsync(new SuggestionGenerateRequest(id, EnvironmentId));
+            if (_result is null) _error = "The source snapshot no longer exists.";
+            else _message = $"{_result.Summary.Suggestions} suggestion(s) from {_result.PagesAnalyzed} UI file(s). Nothing was executed.";
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { _error = "Suggestions could not be generated."; }
+        _busy = false;
+    }
+
+    private void Select(TestSuggestion s) { _selectedId = s.SuggestionId; _expectedRoute = null; }
+
+    private void Replace(TestSuggestion updated)
+    {
+        if (_result is null) return;
+        _result = _result with { Suggestions = [.. _result.Suggestions.Select(s => s.SuggestionId == updated.SuggestionId ? updated : s)] };
+    }
+
+    private async Task VerifyAsync(TestSuggestion s)
+    {
+        if (_snapshotId is not { } id || string.IsNullOrEmpty(ProfileId)) { _error = "Select a Target Environment and pair the Edge Companion first."; return; }
+        _busy = true; _error = null; _message = null;
+        try
+        {
+            var result = await Api.VerifySuggestionAsync(new SuggestionVerifyRequest(id, s.SuggestionId, EnvironmentId, ProfileId));
+            if (result.Suggestion is { } updated) Replace(updated);
+            if (result.Dispatched) _message = result.Message; else _error = result.Message;
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { _error = "Verification failed."; }
+        _busy = false;
+    }
+
+    private async Task DecideAsync(TestSuggestion s, SuggestedStep step, LocatorDecision decision, CompanionSelector? selector = null)
+    {
+        if (_snapshotId is not { } id) return;
+        _busy = true; _error = null; _message = null;
+        try
+        {
+            var (updated, problem) = await Api.DecideSuggestionAsync(new SuggestionDecisionRequest(id, s.SuggestionId, EnvironmentId, step.StepId, decision, selector, _manual.GetValueOrDefault(step.StepId)));
+            if (updated is not null) { Replace(updated); _message = $"Step {step.StepId}: {decision}."; } else _error = problem;
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { _error = "The decision was not saved."; }
+        _busy = false;
+    }
+
+    private async Task ApproveAsync(TestSuggestion s)
+    {
+        if (_snapshotId is not { } id || string.IsNullOrEmpty(ProfileId)) { _error = "Select a Target Environment first."; return; }
+        _busy = true; _error = null; _message = null;
+        try
+        {
+            var expected = string.IsNullOrWhiteSpace(_expectedRoute) ? null : _expectedRoute.Trim();
+            var result = await Api.ApproveSuggestionAsync(new SuggestionApproveRequest(id, s.SuggestionId, EnvironmentId, ProfileId, expected, expected is null ? null : CriticalE2EOutcomeKind.UrlEquals));
+            if (result.Flow is { } flow)
+            {
+                // Refresh first, then say what happened: the refresh must not replace the approval message.
+                await GenerateAsync();
+                _message = $"Approved as the Diagnostic flow \"{flow.Name}\" (v{flow.Version}). It runs only when you start it in the flows above.";
+                await OnApproved.InvokeAsync();
+            }
+            else _error = string.Join(" ", result.Problems);
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { _error = "Approval failed."; }
+        _busy = false;
+    }
+
+    private RenderFragment Detail(TestSuggestion s) => __builder =>
+    {
+        var onRoute = CurrentRoute is not null && CriticalE2ERoutes.Matches(s.Route, CurrentRoute);
+        <article class="sg-detail" data-testid="sg-detail" data-id="@s.SuggestionId" aria-labelledby="sg-detail-heading">
+            <div class="sg-head">
+                <h3 id="sg-detail-heading">@s.Title</h3>
+                <div class="sg-actions">
+                    <button type="button" class="btn btn-secondary" data-testid="sg-verify" disabled="@(_busy || s.ApprovedFlowId is not null)" @onclick="() => VerifyAsync(s)">Verify DOM in Edge</button>
+                    <button type="button" class="btn btn-primary" data-testid="sg-approve" disabled="@(_busy || s.ApprovedFlowId is not null)" @onclick="() => ApproveAsync(s)">Approve test</button>
+                    @if (s.CoveredByFlowId is { } covered) { <a class="btn-secondary" href="@($"critical-e2e-regression#e2e-flow-{covered}")" data-testid="sg-open-existing">Open existing test</a> }
+                </div>
+            </div>
+            <p class="sg-muted" data-testid="sg-route-state">@(onRoute ? $"The attended page is on {CurrentRoute}: locators can be verified now." : $"Open {s.Route} in the attended browser to verify locators{(CurrentRoute is null ? "" : $" (it is on {CurrentRoute})")}.")</p>
+            @if (s.CoverageNote is { } note) { <p class="sg-note" data-testid="sg-coverage-note">@note</p> }
+            <dl class="sg-facts">
+                <div><dt>Expected result</dt><dd data-testid="sg-expected">@(s.ExpectedResult ?? "NEEDS EXPECTED RESULT — not stated in the source")</dd></div>
+                <div><dt>Basis</dt><dd>@(s.ExpectedBasis ?? "–")</dd></div>
+                <div><dt>Origin</dt><dd>@string.Join(", ", s.Origins) · rule @s.RuleVersion</dd></div>
+                <div><dt>Source</dt><dd class="sg-mono" data-testid="sg-source-refs">@string.Join(", ", s.SourceRefs)</dd></div>
+                @if (s.Preconditions.Count > 0) { <div><dt>Preconditions</dt><dd>@string.Join("; ", s.Preconditions)</dd></div> }
+                @if (s.TestDataNeeds.Count > 0) { <div><dt>Test Data needed</dt><dd data-testid="sg-data-needs">@string.Join("; ", s.TestDataNeeds)</dd></div> }
+            </dl>
+            @if (!s.Steps.Any(st => st.IsFinalAssertion))
+            {
+                <label class="sg-field">Expected route after the last step (reviewer-stated)
+                    <input class="form-control" data-testid="sg-expected-route" placeholder="/children" value="@_expectedRoute" @oninput="e => _expectedRoute = e.Value?.ToString()" /></label>
+            }
+            <ol class="sg-steps" data-testid="sg-steps">
+                @foreach (var step in s.Steps)
+                {
+                    var v = s.Verifications.FirstOrDefault(x => x.StepId == step.StepId);
+                    var d = s.Decisions.LastOrDefault(x => x.StepId == step.StepId);
+                    <li class="sg-step" data-testid="sg-step" data-step="@step.StepId" data-verification="@(v?.State.ToString() ?? "NotAssessed")" data-decision="@(d?.Decision.ToString() ?? "Pending")">
+                        <div class="sg-step-main"><strong>@step.Description</strong> <span class="sg-badge">@step.Action</span>@if (step.IsFinalAssertion) { <span class="sg-badge sg-final">final assertion</span> }@if (step.Mutating) { <span class="sg-badge sg-warn">changes data</span> }
+                            @if (step.Value is { } value) { <span class="sg-sub">value: <code>@value</code>@(step.ValueBasis is { } vb ? $" ({vb})" : "")</span> }</div>
+                        @if (step.ControlId is not null)
+                        {
+                            <table class="sg-table sg-locators" data-testid="sg-locators">
+                                <caption class="visually-hidden">Locator candidates and what the attended page showed</caption>
+                                <thead><tr><th scope="col">Locator</th><th scope="col">Basis</th><th scope="col">Matches</th><th scope="col">Visible</th><th scope="col">Choose</th></tr></thead>
+                                <tbody>
+                                    @foreach (var l in step.Locators)
+                                    {
+                                        var check = v?.Checks.FirstOrDefault(c => c.Selector.Kind == l.Selector.Kind && c.Selector.Value == l.Selector.Value && c.Selector.Role == l.Selector.Role && c.Selector.Name == l.Selector.Name);
+                                        <tr data-testid="sg-locator" data-matches="@(check?.MatchCount.ToString() ?? "")">
+                                            <td class="sg-mono">@l.Selector.Describe()</td><td>@l.Basis</td><td>@(check is null ? "not checked" : check.MatchCount.ToString())</td><td>@(check is null ? "–" : check.Visible ? "yes" : "no")</td>
+                                            <td>@if (check is { MatchCount: 1 } && v?.Selector is { } best && !(best.Kind == l.Selector.Kind && best.Value == l.Selector.Value && best.Name == l.Selector.Name))
+                                                { <button type="button" class="btn-secondary sg-small" data-testid="sg-choose" disabled="@_busy" @onclick="() => DecideAsync(s, step, LocatorDecision.AlternativeChosen, l.Selector)">Use this</button> }</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                            <div class="sg-step-foot">
+                                <span class="sg-badge sg-ver-@(v?.State ?? LocatorVerification.NotAssessed)" data-testid="sg-verification">@VerificationLabel(v?.State ?? LocatorVerification.NotAssessed)</span>
+                                @if (v is { VerifiedAt: { } at }) { <span class="sg-sub">@at.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") · @(v.ObservedOrigin)@(v.ObservedRoute)@(v.Note is { } n ? $" · {n}" : "")</span> }
+                                @if (d is not null) { <span class="sg-sub" data-testid="sg-decision">@d.Decision by @d.DecidedBy@(d.Selector is { } ds ? $" · {ds.Describe()}" : "")@(d.Reason is { } rr ? $" · {rr}" : "")</span> }
+                                <button type="button" class="btn-secondary sg-small" data-testid="sg-accept" disabled="@(_busy || v?.State != LocatorVerification.VerifiedUnique)" title="@(v?.State == LocatorVerification.Ambiguous ? "Ambiguous locators are never accepted" : null)" @onclick="() => DecideAsync(s, step, LocatorDecision.Accepted)">Accept locator</button>
+                                <button type="button" class="btn-secondary sg-small" data-testid="sg-reject" disabled="@_busy" @onclick="() => DecideAsync(s, step, LocatorDecision.Rejected)">Reject mapping</button>
+                                <button type="button" class="btn-secondary sg-small" data-testid="sg-unresolved" disabled="@_busy" @onclick="() => DecideAsync(s, step, LocatorDecision.Unresolved)">Mark unresolved</button>
+                            </div>
+                        }
+                    </li>
+                }
+            </ol>
+            @if (s.Limitations.Count > 0) { <ul class="sg-limits" data-testid="sg-limitations">@foreach (var l in s.Limitations) { <li>@l</li> }</ul> }
+        </article>
+    };
+
+    private static RenderFragment Count(string key, string label, int value) => __builder =>
+    {
+        <div class="sg-count" data-testid="@($"sg-count-{key}")"><dt>@label</dt><dd>@value</dd></div>
+    };
+
+    private static string KindLabel(SuggestionKind k) => k switch
+    {
+        SuggestionKind.PageOpens => "Page opens", SuggestionKind.Navigation => "Navigation", SuggestionKind.RequiredFields => "Required fields",
+        SuggestionKind.InvalidInput => "Invalid input", _ => "Valid submission",
+    };
+
+    private static string CoverageLabel(SuggestionCoverage c) => c switch
+    {
+        SuggestionCoverage.AlreadyCovered => "Already covered", SuggestionCoverage.PartiallyCovered => "Partially covered",
+        SuggestionCoverage.OverlapRequiresReview => "Overlap: review", _ => "New",
+    };
+
+    private static string StateLabel(SuggestionState s) => s switch
+    {
+        SuggestionState.NeedsDomVerification => "Needs DOM verification", SuggestionState.NeedsTestData => "Needs Test Data", SuggestionState.NeedsExpectedResult => "Needs expected result",
+        SuggestionState.ReadyForReview => "Ready for review", _ => s.ToString(),
+    };
+
+    private static string VerificationLabel(LocatorVerification v) => v switch
+    {
+        LocatorVerification.VerifiedUnique => "Verified unique", LocatorVerification.NotFound => "Not found", LocatorVerification.NotVisible => "Not visible",
+        LocatorVerification.UnsupportedFrame => "Unsupported frame", LocatorVerification.NotAssessed => "Not assessed", _ => v.ToString(),
+    };
+
+    private static string ImpactLabel(SuggestionImpactKind k) => k switch
+    {
+        SuggestionImpactKind.LocatorRevalidationNeeded => "Locator revalidation needed", SuggestionImpactKind.TestDataReviewNeeded => "Test Data review needed",
+        SuggestionImpactKind.AssertionReviewNeeded => "Assertion review needed", SuggestionImpactKind.NewTestSuggested => "New test suggested", _ => "Test may be obsolete",
+    };
+}

@@ -220,6 +220,11 @@ public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? log
         // Per-test facts for the Test Coverage & Overlap Review (boundary signals, assertions, targets): read once here, never by rescanning the archive.
         await ReportProgressAsync("Analyzing test behavior", "Extracting test assertions and boundary signals.");
         snapshot = snapshot with { TestBehaviorEvidence = AnalyzeTestBehavior(snapshot, workspace, ct) };
+        // UI-surface facts for suggested E2E tests: read once here from the in-memory UI source; the markup is never stored.
+        await ReportProgressAsync("Analyzing UI source", "Extracting routes, forms and controls from Razor/HTML files.");
+        try { snapshot = snapshot with { UiSurface = BirkNext.Api.Services.CriticalE2E.Suggestions.SourceUiExtractor.Extract(workspace.UiFiles, workspace.Files, workspace.UiFilesSkipped) }; }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        { snapshot = snapshot with { UiSurface = new BirkNext.CriticalE2E.SourceUiSurface { Limitations = [$"UI source could not be analysed ({ex.GetType().Name})."] } }; }
         // Classification-relevant observations Security Classification consumes (facts with file:line, read by its own analyzer): captured once
         // here so Security Classification never needs the archive. Source Analysis neither shows nor judges them.
         await ReportProgressAsync("Analyzing security classification evidence", "Extracting source references used by Security Classification.");
@@ -332,7 +337,7 @@ public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? log
         Task ReportProgressAsync(string stage, string detail) => reportProgress is null ? Task.CompletedTask : reportProgress(new BirkNext.ProjectImport.ProjectImportCommitEvent
         {
             Kind = BirkNext.ProjectImport.ProjectImportCommitEventKind.Progress, StageNumber = ++reportedStage,
-            StageCount = 18, Stage = stage, Detail = detail,
+            StageCount = 19, Stage = stage, Detail = detail,
         });
     }
 

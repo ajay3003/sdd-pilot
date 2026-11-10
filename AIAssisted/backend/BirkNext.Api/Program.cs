@@ -410,6 +410,9 @@ builder.Services.AddSingleton<BirkNext.Api.Services.CriticalE2E.ICriticalE2EStep
 builder.Services.AddSingleton<BirkNext.Api.Services.CriticalE2E.ICriticalE2EStepExecutor, BirkNext.Api.Services.CriticalE2E.EventHubStepExecutor>();
 builder.Services.AddSingleton<BirkNext.Api.Services.CriticalE2E.CriticalE2ERunner>();
 builder.Services.AddSingleton<BirkNext.Api.Services.CriticalE2E.ICriticalE2EService, BirkNext.Api.Services.CriticalE2E.CriticalE2EService>();
+// Suggested E2E tests: review state (decisions, verification evidence, approval links) only; suggestions are regenerated from Source Analysis.
+builder.Services.AddSingleton<BirkNext.Api.Services.CriticalE2E.Suggestions.ICriticalE2ESuggestionStore, BirkNext.Api.Services.CriticalE2E.Suggestions.CriticalE2ESuggestionStore>();
+builder.Services.AddScoped<BirkNext.Api.Services.CriticalE2E.Suggestions.CriticalE2ESuggestionService>();
 builder.Services.AddScoped<BirkNext.Api.Controllers.BrowserCompanionExtensionCallerFilter>();
 builder.Services.AddSingleton<IAuthenticatedBrowserHost, PlaywrightAuthenticatedBrowserHost>();
 builder.Services.AddSingleton<AuthenticationOriginPolicy>();

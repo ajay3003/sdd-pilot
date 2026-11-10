@@ -1,4 +1,5 @@
 using BirkNext.Api.Services.CriticalE2E;
+using BirkNext.Api.Services.CriticalE2E.Suggestions;
 using BirkNext.Api.Services.ManagedEdge;
 using BirkNext.CriticalE2E;
 using Microsoft.AspNetCore.Mvc;
@@ -67,6 +68,37 @@ public sealed class CriticalE2EController(ICriticalE2EService service) : Control
         Response.Headers.CacheControl = "no-store";
         try { return Ok(await service.PickElementAsync(request, cancellationToken)); }
         catch (OperationCanceledException) { return StatusCode(StatusCodes.Status499ClientClosedRequest, new { message = "Element picking cancelled." }); }
+        catch (Exception) { return Conflict(new { message = "Critical E2E operation unavailable." }); }
+    }
+
+    // ── Suggested tests: generation is offline; verification asks the paired Edge Companion (identity only); approval saves a Diagnostic flow. ──
+
+    [HttpGet("suggestions/snapshots")]
+    public async Task<IActionResult> SuggestionSnapshotsAsync([FromServices] CriticalE2ESuggestionService suggestions, CancellationToken ct) =>
+        await RunAsync(async () => Ok(await suggestions.SnapshotsAsync(ct)));
+
+    [HttpPost("suggestions/generate")]
+    public async Task<IActionResult> GenerateSuggestionsAsync([FromServices] CriticalE2ESuggestionService suggestions, SuggestionGenerateRequest request, CancellationToken ct) =>
+        await RunAsync(async () => await suggestions.GenerateAsync(request, ct) is { } result ? Ok(result) : NotFound(new { message = "Source snapshot not found." }));
+
+    [HttpPost("suggestions/verify")]
+    public async Task<IActionResult> VerifySuggestionAsync([FromServices] CriticalE2ESuggestionService suggestions, SuggestionVerifyRequest request, CancellationToken ct) =>
+        await RunAsync(async () => Ok(await suggestions.VerifyAsync(request, ct)));
+
+    [HttpPost("suggestions/decide")]
+    public async Task<IActionResult> DecideSuggestionAsync([FromServices] CriticalE2ESuggestionService suggestions, SuggestionDecisionRequest request, CancellationToken ct) =>
+        await RunAsync(async () => await suggestions.DecideAsync(request, ct) is var (s, problem) && s is not null ? Ok(s) : BadRequest(new { message = problem }));
+
+    [HttpPost("suggestions/approve")]
+    public async Task<IActionResult> ApproveSuggestionAsync([FromServices] CriticalE2ESuggestionService suggestions, SuggestionApproveRequest request, CancellationToken ct) =>
+        await RunAsync(async () => await suggestions.ApproveAsync(request, ct) is var r && r.Flow is not null ? Ok(r) : UnprocessableEntity(r));
+
+    private async Task<IActionResult> RunAsync(Func<Task<IActionResult>> action)
+    {
+        Response.Headers.CacheControl = "no-store";
+        try { return await action(); }
+        catch (OperationCanceledException) { return StatusCode(StatusCodes.Status499ClientClosedRequest, new { message = "Cancelled." }); }
+        catch (ArgumentException) { return BadRequest(new { message = "Request rejected by the Critical E2E safety policy." }); }
         catch (Exception) { return Conflict(new { message = "Critical E2E operation unavailable." }); }
     }
 

@@ -257,6 +257,9 @@
                                    OnSave="SaveFlowAsync" OnCancel="CancelEdit" />
         }
 
+        @* ── Suggested tests: drafts from the imported source, verified on the attended page, approved into flows above. ── *@
+        <CriticalE2ESuggestions EnvironmentId="@_environmentId" ProfileId="@_profileId" CurrentRoute="@_overview?.Attended?.CurrentRoute" OnApproved="RefreshAsync" />
+
         @if (_lastRun is { } run)
         {
             @* ── The run that just finished: outcome first, the step that decided it next, every step after that. ── *@

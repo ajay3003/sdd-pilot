@@ -77,6 +77,9 @@ public sealed record IqrSourceSnapshot
     /// <summary>Per-test facts (boundaries, mocks, assertions, targets) the Test Coverage &amp; Overlap Review reads; captured once at upload. Null on
     /// snapshots analyzed before it existed.</summary>
     public BirkNext.TestCoverage.TestBehaviorSourceEvidence? TestBehaviorEvidence { get; init; }
+    /// <summary>UI-surface facts (routes, forms, controls, labels, test ids, constraints) from Razor/CSHTML/HTML, captured once at upload for
+    /// suggested E2E tests. Facts only — never markup. Null on snapshots analyzed before it existed.</summary>
+    public BirkNext.CriticalE2E.SourceUiSurface? UiSurface { get; init; }
 }
 
 /// <summary>

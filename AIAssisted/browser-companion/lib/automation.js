@@ -146,8 +146,14 @@
     return `${el.tagName.toLowerCase()}${name ? ` "${name.slice(0, 60)}"` : ''}`;
   }
 
+  /** A password field's value is never read, compared or reported — by any action. */
+  function isSecret(el) {
+    return el && el.tagName === 'INPUT' && String(el.getAttribute('type') || '').toLowerCase() === 'password';
+  }
+
   /** The value a control currently holds, for ReadValue and AssertValue. */
   function valueOf(el) {
+    if (isSecret(el)) return '';
     if ('value' in el) return String(el.value ?? '');
     return accessibleName(el);
   }
@@ -240,6 +246,7 @@
       }
 
       case 'AssertValue': {
+        if (isSecret(el)) return { status: 'failed', error: 'Password fields are never read or compared.' };
         const actual = valueOf(el);
         return textMatches(actual, command.expected, match)
           ? { status: 'passed', assertionResult: true, observedValue: actual, summary: `${describe(el)} has the expected value` }
@@ -247,6 +254,7 @@
       }
 
       case 'ReadValue':
+        if (isSecret(el)) return { status: 'failed', error: 'Password fields are never read.' };
         return { status: 'passed', observedValue: valueOf(el), summary: `Read ${describe(el)}` };
 
       case 'Click':
@@ -258,6 +266,12 @@
         const wanted = String(command.value ?? '');
         try { setValue(el, win, wanted); } catch (e) { return { status: 'failed', error: `Value was not accepted: ${e && e.message}` }; }
         // Verify rather than assume. A framework that rejected or reformatted the input must not read as a pass.
+        if (isSecret(el)) {
+          // A typed secret is never echoed back: its length is the only thing compared.
+          return String(el.value || '').length === wanted.length
+            ? { status: 'passed', summary: `Filled ${describe(el)} (value not reported)` }
+            : { status: 'failed', error: 'The password field did not take the value.' };
+        }
         const actual = valueOf(el);
         return actual === wanted
           ? { status: 'passed', observedValue: actual, summary: `Filled ${describe(el)}` }
@@ -292,6 +306,43 @@
     }
   }
 
+  const IMPLICIT_ROLES = { BUTTON: 'button', A: 'link', SELECT: 'combobox', TEXTAREA: 'textbox', H1: 'heading', H2: 'heading', H3: 'heading', H4: 'heading', H5: 'heading', H6: 'heading', LI: 'listitem', TD: 'cell', TH: 'cell', TR: 'row', OUTPUT: 'status' };
+  function roleOf(el) {
+    const explicit = el.getAttribute('role');
+    if (explicit) return explicit.split(/\s+/)[0];
+    if (el.tagName === 'INPUT') {
+      const type = String(el.getAttribute('type') || 'text').toLowerCase();
+      return type === 'checkbox' ? 'checkbox' : type === 'radio' ? 'radio' : type === 'button' || type === 'submit' ? 'button' : 'textbox';
+    }
+    if (el.tagName === 'A' && !el.hasAttribute('href')) return null;
+    return IMPLICIT_ROLES[el.tagName] || null;
+  }
+
+  /**
+   * Selector verification for suggested tests (authoring, never a flow step): each selector is resolved with the same rule replay uses, and
+   * the report is identity only — match count, tag, role, a short accessible name, visible, enabled. No value, no text content beyond the
+   * accessible name, no HTML. Frames and shadow roots are not searched; when the top frame has none, that is stated, never guessed.
+   */
+  function verify(doc, win, selectors, max = 16) {
+    if (!Array.isArray(selectors) || selectors.length === 0) return { error: 'No selectors to verify.' };
+    if (selectors.length > max) return { error: `At most ${max} selectors per verification.` };
+    const frames = doc.querySelectorAll('iframe, frame').length;
+    const checks = selectors.map(selector => {
+      const resolved = matches(doc, win, selector);
+      if (resolved.error) return { selector, matchCount: 0, visible: false, enabled: false, limitation: resolved.error };
+      const pool = resolved.pool;
+      const first = pool[0];
+      const limitation = pool.length === 0 && frames > 0 ? `Not in the top frame; ${frames} frame(s) on the page are not searched.` : null;
+      if (!first) return { selector, matchCount: 0, visible: false, enabled: false, limitation };
+      const name = accessibleName(first);
+      return {
+        selector, matchCount: pool.length, visible: visible(first, win), enabled: enabled(first),
+        tagName: first.tagName.toLowerCase(), role: roleOf(first), accessibleName: isSecret(first) ? null : name.slice(0, 80), limitation,
+      };
+    });
+    return { checks };
+  }
+
   /**
    * Waits for a condition rather than sleeping: an SPA renders when it renders, and a fixed delay is either a flake or
    * wasted time. Polls the same predicate until it holds or the bounded timeout expires.
@@ -312,7 +363,7 @@
     });
   }
 
-  const api = { ACTIONS, MUTATING, SELECTORS, ROLE_TAGS, find, matches, perform, waitFor, visible, enabled, writable, accessibleName, describe, valueOf, setValue };
+  const api = { ACTIONS, MUTATING, SELECTORS, ROLE_TAGS, find, matches, perform, verify, roleOf, isSecret, waitFor, visible, enabled, writable, accessibleName, describe, valueOf, setValue };
   root.BirkNextCompanion = Object.assign(root.BirkNextCompanion || {}, { automation: api });
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

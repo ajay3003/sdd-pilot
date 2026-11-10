@@ -79,6 +79,12 @@ public enum CompanionActionKind
     /// <see cref="CompanionElementDescriptor"/>. Nothing on the page is activated.
     /// </summary>
     PickElement,
+    /// <summary>
+    /// Authoring only, never a flow step: the companion resolves a bounded list of selectors on the live page with the same resolver replay
+    /// uses and reports per selector how many elements match and the first match's role, accessible name, visibility and enabled state.
+    /// Nothing on the page is activated and no value, text content or HTML is returned.
+    /// </summary>
+    VerifySelectors,
 }
 
 /// <summary>Named companion capabilities. A BirkNext feature that needs one is offered only when the paired extension reports it.</summary>
@@ -86,6 +92,10 @@ public static class CompanionCapabilities
 {
     /// <summary>The extension can enter element-pick mode and return a <see cref="CompanionElementDescriptor"/>.</summary>
     public const string ElementPick = "element-pick";
+    /// <summary>The extension can resolve a bounded list of selectors and report <see cref="CompanionSelectorCheck"/>s.</summary>
+    public const string SelectorVerify = "selector-verify";
+    /// <summary>At most this many selectors per <see cref="CompanionActionKind.VerifySelectors"/> command.</summary>
+    public const int MaxSelectorsPerVerify = 16;
 }
 
 /// <summary>
@@ -262,6 +272,8 @@ public sealed record CompanionAutomationCommand
     public string? Expected { get; init; }
     public CompanionTextMatch Match { get; init; } = CompanionTextMatch.Equals;
     public int TimeoutMs { get; init; } = 8000;
+    /// <summary>Only for <see cref="CompanionActionKind.VerifySelectors"/>: the selectors to resolve (bounded).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<CompanionSelector>? Selectors { get; init; }
 }
 
 /// <summary>Extension → BirkNext. Observations and an outcome; no page text beyond a short accessible name, no payloads.</summary>
@@ -285,6 +297,8 @@ public sealed record CompanionAutomationResult
     public string? SanitizedError { get; init; }
     /// <summary>Only for <see cref="CompanionActionKind.PickElement"/>: the element the tester picked.</summary>
     public CompanionElementDescriptor? Element { get; init; }
+    /// <summary>Only for <see cref="CompanionActionKind.VerifySelectors"/>: one check per requested selector, in request order.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<CompanionSelectorCheck>? SelectorChecks { get; init; }
 }
 
 /// <summary>Extension → backend envelope for a command outcome, carrying the same session proof as a heartbeat.</summary>
@@ -478,6 +492,8 @@ public sealed record CriticalE2EFlowDefinition
         if (Steps.Any(s => !s.IsBrowserStep && !s.IsIntegrationStep)) return "A step has no action.";
         if (Steps.Any(s => s.BrowserAction == CompanionActionKind.PickElement))
             return "Pick element is an authoring action, not a flow step.";
+        if (Steps.Any(s => s.BrowserAction == CompanionActionKind.VerifySelectors))
+            return "Selector verification is an authoring action, not a flow step.";
         if (Steps.Any(s => s.IsBrowserStep && s.BrowserAction != CompanionActionKind.Navigate
                 && s.BrowserAction != CompanionActionKind.AssertRoute && s.BrowserAction != CompanionActionKind.WaitForRoute
                 && string.IsNullOrWhiteSpace(s.Selector?.Value) && string.IsNullOrWhiteSpace(s.Selector?.Role)))
