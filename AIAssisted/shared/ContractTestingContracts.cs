@@ -391,3 +391,63 @@ public sealed record ContractCoverageMetric(string Id, string Label, int Numerat
 public enum CoverageGroup { Definition, Execution }
 
 public sealed record ContractCoverageReport(string Key, int Version, ApiContractProtocol Protocol, List<ContractCoverageMetric> Metrics, DateTimeOffset ComputedAt);
+
+// ── Bulk environment and authentication configuration ────────────────────────────────────────────────────────────────
+
+/// <summary>Where a proposed base path comes from: kept as bound, the contract's declared servers (path part only), or one explicit path.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum BulkBasePathMode { KeepExisting, FromContractServers, Explicit }
+
+/// <summary>AUTHORITATIVE: a binding a tester already saved. CANDIDATE: one path the contract's declared servers suggest. AMBIGUOUS: several.
+/// UNRESOLVED: no evidence (the environment root would be used).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum EndpointEvidenceState { Authoritative, Candidate, Ambiguous, Unresolved }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum BulkBindingStatus { Applicable, Unchanged, NeedsReview, Blocked, Applied, Skipped, Failed }
+
+public sealed record EndpointCandidate(string BasePath, string Source, string Evidence);
+
+/// <summary>Preview or apply of one environment's endpoint + authentication for several contracts of one project. Nothing is sent to any API.</summary>
+public sealed record BulkBindingRequest
+{
+    public string ProjectKey { get; init; } = "";
+    public ContractTestEnvironment Environment { get; init; } = new();
+    public List<string> ContractKeys { get; init; } = [];
+    public ExecutionAuthenticationKind Authentication { get; init; }
+    public BulkBasePathMode BasePathMode { get; init; } = BulkBasePathMode.KeepExisting;
+    public string? BasePath { get; init; }
+    public string? GraphQlPath { get; init; }
+}
+
+/// <summary>One contract in the preview: evidence, existing and proposed binding, authentication requirement and credential, status with reasons.</summary>
+public sealed record BulkBindingPreviewRow(string Key, string Name, ApiContractProtocol Protocol, string? Module, ContractEndpointBinding? Existing, List<EndpointCandidate> Candidates,
+    EndpointEvidenceState Endpoint, string? ProposedBasePath, string? ProposedGraphQlPath, ExecutionAuthenticationKind ProposedAuthentication, List<string> RequiredSchemes,
+    string Credential, BulkBindingStatus Status, List<string> Reasons)
+{
+    /// <summary>Applying changes an existing binding (needs an explicit overwrite confirmation).</summary>
+    public bool Overwrites { get; init; }
+}
+
+public sealed record BulkBindingPreview(string EnvironmentId, string EnvironmentType, string TargetOrigin, bool EnvironmentAllowed, string? EnvironmentProblem, List<BulkBindingPreviewRow> Rows,
+    List<string> Limitations);
+
+/// <summary>A row the tester approved: the values seen in the preview, the binding's last change time then (concurrency), and an explicit overwrite.</summary>
+public sealed record BulkBindingApplyItem(string Key, string? BasePath, string? GraphQlPath, ExecutionAuthenticationKind Authentication, DateTimeOffset? ExpectedUpdatedAt, bool ConfirmOverwrite);
+
+public sealed record BulkBindingApplyRequest
+{
+    public string ProjectKey { get; init; } = "";
+    public ContractTestEnvironment Environment { get; init; } = new();
+    /// <summary>The tester confirms that this Target Environment is the approved one for these bindings.</summary>
+    public bool ConfirmEnvironment { get; init; }
+    public List<BulkBindingApplyItem> Items { get; init; } = [];
+}
+
+public sealed record BulkBindingApplyRow(string Key, BulkBindingStatus Status, string Message, ContractEndpointBinding? Binding);
+
+public sealed record BulkBindingApplyResult(List<BulkBindingApplyRow> Rows)
+{
+    public int Applied => Rows.Count(r => r.Status == BulkBindingStatus.Applied);
+    public int NotApplied => Rows.Count(r => r.Status != BulkBindingStatus.Applied && r.Status != BulkBindingStatus.Unchanged);
+}

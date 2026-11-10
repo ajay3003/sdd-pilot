@@ -404,19 +404,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
     /// </summary>
     private ContractReadinessItem AuthenticationItem(ContractTestDefinition test, ContractOperation? op, ContractTestEnvironment? environment, ExecutionAuthenticationKind kind)
     {
-        var schemes = (op?.Security ?? []).Select(s => s.Contains('(') ? s[(s.LastIndexOf('(') + 1)..].TrimEnd(')').Trim().ToLowerInvariant() : s.ToLowerInvariant()).ToList();
-        if (schemes.Count > 0)
-        {
-            var bearer = schemes.Any(s => s is "bearer" or "oauth2" or "openidconnect" or "jwt");
-            var apiKey = schemes.Contains("apikey");
-            if (kind == ExecutionAuthenticationKind.None)
-                return new("Authentication", ReadinessItemState.Blocked, $"The operation requires {string.Join(", ", op!.Security)}. Choose its authentication for this contract in this environment; it is never sent anonymously instead.");
-            if (schemes.All(s => s == "basic"))
-                return new("Authentication", ReadinessItemState.Blocked, "The operation requires HTTP Basic authentication, which contract test runs do not support.");
-            var fits = kind is ExecutionAuthenticationKind.AttendedSession or ExecutionAuthenticationKind.ClientCredentials ? bearer : apiKey;
-            if (!fits)
-                return new("Authentication", ReadinessItemState.Blocked, $"The operation requires {string.Join(", ", op!.Security)}; {ExecutionCredentialResolver.Label(kind)} does not provide that.");
-        }
+        if (AuthenticationFitProblem(op, kind) is { } misfit) return new("Authentication", ReadinessItemState.Blocked, misfit);
         if (kind == ExecutionAuthenticationKind.None)
             return new("Authentication", ReadinessItemState.Ok, test.Template.Protocol == ExecutionProtocol.GraphQl
                 ? "No authentication selected; the run is anonymous (a GraphQL schema does not declare authentication), and an authentication error from the API shows as a failed test."
@@ -432,6 +420,27 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             : prepared.Problem is { } problem ? new("Authentication", ReadinessItemState.Blocked, $"{prepared.Mode}: {problem}")
             : new("Authentication", ReadinessItemState.Ok, $"{prepared.Mode} ({prepared.Reference}).");
     }
+
+    /// <summary>
+    /// Whether an authentication kind fits an operation's declared security (shared by readiness and bulk configuration): bearer / OAuth2 / OpenID
+    /// Connect need a bearer credential (attended session or client credentials), apiKey needs an API key, Basic is not supported, and a declared
+    /// requirement is never satisfied by None. Null = fits (or nothing declared).
+    /// </summary>
+    public static string? AuthenticationFitProblem(ContractOperation? op, ExecutionAuthenticationKind kind)
+    {
+        var schemes = SecuritySchemes(op);
+        if (schemes.Count == 0) return null;
+        if (kind == ExecutionAuthenticationKind.None)
+            return $"The operation requires {string.Join(", ", op!.Security)}. Choose its authentication for this contract in this environment; it is never sent anonymously instead.";
+        if (schemes.All(s => s == "basic")) return "The operation requires HTTP Basic authentication, which contract test runs do not support.";
+        var bearer = schemes.Any(s => s is "bearer" or "oauth2" or "openidconnect" or "jwt");
+        var fits = kind is ExecutionAuthenticationKind.AttendedSession or ExecutionAuthenticationKind.ClientCredentials ? bearer : schemes.Contains("apikey");
+        return fits ? null : $"The operation requires {string.Join(", ", op!.Security)}; {ExecutionCredentialResolver.Label(kind)} does not provide that.";
+    }
+
+    /// <summary>The declared security scheme types of an operation, lower case ("bearer (bearer)" → "bearer").</summary>
+    public static List<string> SecuritySchemes(ContractOperation? op) =>
+        [.. (op?.Security ?? []).Select(s => s.Contains('(') ? s[(s.LastIndexOf('(') + 1)..].TrimEnd(')').Trim().ToLowerInvariant() : s.ToLowerInvariant())];
 
     /// <summary>A path inside the Target Environment: one leading '/', no host, scheme, query, fragment or backslash. Null = fine (or not given).</summary>
     public static string? PathProblem(string? path, string what)

@@ -82,6 +82,19 @@ public sealed class ContractTestingController(ContractRegistryService registry, 
         return Ok(await bulk.ImportAsync(request, ct));
     }
 
+    /// <summary>Preview of one Target Environment's endpoint and authentication for several contracts of a project (reading only; nothing is sent).</summary>
+    [HttpPost("bindings/preview")]
+    public async Task<ActionResult<BulkBindingPreview>> PreviewBindings([FromBody] BulkBindingRequest request, [FromServices] ContractBulkBindingService bulk, CancellationToken ct) =>
+        request.ContractKeys.Count > ContractBulkBindingService.MaxContracts ? UnprocessableEntity(new { message = $"At most {ContractBulkBindingService.MaxContracts} contracts." })
+            : Ok(await bulk.PreviewAsync(request, ct));
+
+    /// <summary>Applies the approved rows (explicit environment confirmation, concurrency check, overwrite confirmation, per-row results, audit).</summary>
+    [HttpPost("bindings/apply")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public async Task<ActionResult<BulkBindingApplyResult>> ApplyBindings([FromBody] BulkBindingApplyRequest request, [FromServices] ContractBulkBindingService bulk, CancellationToken ct) =>
+        request.Items.Count > ContractBulkBindingService.MaxContracts ? UnprocessableEntity(new { message = $"At most {ContractBulkBindingService.MaxContracts} contracts." })
+            : Ok(await bulk.ApplyAsync(request, User.Identity?.Name ?? "local user", ct));
+
     [HttpGet("contracts/{key}")]
     public async Task<ActionResult<ApiContractDetail>> Get(string key, [FromQuery] int? version, CancellationToken ct) =>
         await registry.GetAsync(key, version, ct) is { } detail ? Ok(detail) : NotFound();
