@@ -32,7 +32,7 @@
         }
     </div>
 
-    <DocumentationDriftPanel View="@_activeTab" OnViewChange="SetTab" PreselectImport="@_preImport" PreselectModule="@_preModule" PreselectConcern="@_preConcern" />
+    <DocumentationDriftPanel View="@_activeTab" OnViewChange="SetTab" OnImportChange="ImportChanged" PreselectImport="@_preImport" PreselectModule="@_preModule" PreselectConcern="@_preConcern" />
 
     @if (_activeTab == "changes")
     {
@@ -94,5 +94,18 @@
         _ => "compare",
     };
 
-    private void SetTab(string tab) => _activeTab = NormalizeTab(tab);
+    /// <summary>The tab and the selected import are kept in the URL (reload, back and shared links keep the context).</summary>
+    private void SetTab(string tab)
+    {
+        _activeTab = NormalizeTab(tab);
+        NavigationManager.NavigateTo(StateUrl(), replace: true);
+    }
+
+    private void ImportChanged(string importId)
+    {
+        _preImport = string.IsNullOrEmpty(importId) ? null : importId;
+        NavigationManager.NavigateTo(StateUrl(), replace: true);
+    }
+
+    private string StateUrl() => "documentation-drift?tab=" + _activeTab + (string.IsNullOrEmpty(_preImport) ? "" : "&import=" + Uri.EscapeDataString(_preImport));
 }

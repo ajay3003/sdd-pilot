@@ -47,6 +47,8 @@
     [Parameter] public EventCallback<string> OnViewChange { get; set; }
     /// <summary>Context from another page: the import, module and concern to preselect in the composite comparison. Nothing is run or saved.</summary>
     [Parameter] public string? PreselectImport { get; set; }
+    /// <summary>The selected project import changed (the page keeps it in the URL so reloads and links keep the selection).</summary>
+    [Parameter] public EventCallback<string> OnImportChange { get; set; }
     [Parameter] public string? PreselectModule { get; set; }
     [Parameter] public string? PreselectConcern { get; set; }
 
@@ -82,8 +84,8 @@
         if (Lifecycle is not { } state) return;
         _catalog = DocumentationDrift.Catalog(state);
         _imports = DocumentationDrift.Imports(state);
-        _consistencyImport = FocusImport ?? "";
-        _changesLineage = _imports.FirstOrDefault(i => i.ImportId == FocusImport)?.LineageKey ?? _imports.LastOrDefault()?.LineageKey ?? "";
+        _consistencyImport = PreselectImport is { Length: > 0 } chosen && state.ProjectImports.Any(i => i.ImportId == chosen) ? chosen : FocusImport ?? "";
+        _changesLineage = _imports.FirstOrDefault(i => i.ImportId == (string.IsNullOrEmpty(_consistencyImport) ? FocusImport : _consistencyImport))?.LineageKey ?? _imports.LastOrDefault()?.LineageKey ?? "";
         // Without any same-lineage revision, Compare opens on the mode that can do something.
         if (!DocumentationDrift.Identities(_catalog).Any(i => i.Versions.Count > 1)) _mode = FocusImport is null ? DriftIntent.Manual : DriftIntent.ConsistencyDrift;
         // Combined authored intent ↔ generated is the recommended default wherever a module + concern candidate exists.
@@ -996,7 +998,12 @@
         _intentPreview = SelectedGroup is { Contributors.Count: > 0 } g ? DocumentationDriftComposite.BuildDataModel(g.ImportId, g.Module, ContributorTexts(g), Parser) : null;
     }
 
-    private void CompositeImportChanged(ChangeEventArgs e) { _consistencyImport = e.Value?.ToString() ?? ""; _groupKey = ""; _module = ""; _composite = null; _intentPreview = null; _savedComposite = null; }
+    private async Task CompositeImportChanged(ChangeEventArgs e)
+    {
+        _consistencyImport = e.Value?.ToString() ?? ""; _groupKey = ""; _module = ""; _composite = null; _intentPreview = null; _savedComposite = null;
+        _bulkRows = null; _areaSelected.Clear(); _findingOpen = null;
+        await OnImportChange.InvokeAsync(_consistencyImport);
+    }
 
     private void ContributionChanged(ChangeEventArgs e) { _contributorId = e.Value?.ToString() ?? ""; _composite = null; }
 

@@ -212,4 +212,28 @@ public sealed class DocumentationQualityTests : BunitContext
         panel.Find("[data-testid=dq-report]").Click();
         panel.Instance.LastReport.Should().Contain("## 6. Potential drift").And.Contain("Person.Email").And.Contain("## 10. Human review status");
     }
+
+    [Fact]
+    public void Choosing_another_import_reports_it_for_the_URL_and_a_preselected_import_is_honoured()
+    {
+        ControlProject("i1");
+        Import("i2", "other"); Authored("i2", "Solo/specs/001-s/data-model.md", Model(Person)); Generated("i2", "Solo", Model(Person));
+        string? chosen = null;
+        var panel = Render<DocumentationDriftPanel>(p => p.Add(x => x.View, "overview").Add(x => x.OnImportChange, (string id) => chosen = id));
+        panel.Find("[data-testid=dq-import-select]").Change("i1");
+        chosen.Should().Be("i1");
+        panel.Find("[data-testid=dq-kpi-comparable] dd").TextContent.Should().Be("7");
+        var preselected = Render<DocumentationDriftPanel>(p => p.Add(x => x.View, "overview").Add(x => x.PreselectImport, "i1"));
+        preselected.Find("[data-testid=dq-kpi-comparable] dd").TextContent.Should().Be("7", "a reload with ?import= keeps the chosen import even when another import is current");
+    }
+
+    [Fact]
+    public void The_changes_view_shows_moves_of_the_selected_imports_project_even_when_another_import_is_current()
+    {
+        Import("a1", "proj"); Authored("a1", "Old/specs/001-x/data-model.md", Model(Person));
+        Import("a2", "proj"); Authored("a2", "New/specs/001-x/data-model.md", Model(Person));
+        Import("b1", "other"); Authored("b1", "Elsewhere/specs/001-y/data-model.md", Model(Table("Other", ("Id", "Guid", "No", "Key"))));
+        var panel = Render<DocumentationDriftPanel>(p => p.Add(x => x.View, "changes").Add(x => x.PreselectImport, "a2"));
+        panel.Find("[data-testid=dq-move]").TextContent.Should().Contain("Old/specs/001-x/data-model.md").And.Contain("New/specs/001-x/data-model.md");
+    }
 }
