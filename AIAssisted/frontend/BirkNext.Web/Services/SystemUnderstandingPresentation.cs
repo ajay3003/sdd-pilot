@@ -53,112 +53,153 @@ public static class SystemUnderstandingPresentation
         _ => ("Suggested", "neutral"),
     };
 
-    // ── Flow layout ─────────────────────────────────────────────────────────────────────────────────────────
+    // ── Journey presentation (generic; no positions are specific to one system) ────────────────────────────────
 
-    public const int ColumnWidth = 226, RowHeight = 138, NodeWidth = 144, NodeHeight = 68, Padding = 24, TopMargin = 46;
+    /// <summary>One stage of the main journey, in journey order.</summary>
+    public sealed record JourneyStage(GuideComponent Component, int Index);
 
-    public sealed record LaidNode(GuideComponent Component, int Column, int Row)
+    /// <summary>The connection from stage <paramref name="FromIndex"/> to the next stage (null edge: the two stages are not directly connected).</summary>
+    public sealed record JourneyConnector(GuideEdge? Edge, int FromIndex, string Label);
+
+    /// <summary>A connection that goes back along the main journey (e.g. an acknowledgment), drawn on its own track below the stages: spans
+    /// on one track never overlap, so two return paths never share a line.</summary>
+    public sealed record JourneyReturn(GuideEdge Edge, int FromIndex, int ToIndex, int Track, string Label)
     {
-        public double X => Padding + Column * ColumnWidth;
-        public double Y => TopMargin + Row * RowHeight;
-        public double CenterX => X + NodeWidth / 2.0;
-        public double CenterY => Y + NodeHeight / 2.0;
+        public int Start => Math.Min(FromIndex, ToIndex);
+        public int End => Math.Max(FromIndex, ToIndex);
     }
 
-    public sealed record LaidEdge(GuideEdge Edge, string Path, double LabelX, double LabelY, string ShortLabel);
+    /// <summary>How a supporting component relates to a main stage: one request (component → stage or stage → component) and, when both
+    /// directions exist, the answer as the same relationship (request/response is one connection, not two crossing arrows).</summary>
+    public sealed record JourneyAttachment(GuideEdge Edge, GuideEdge? Reverse, string MemberId, string StageId, bool IntoStage);
 
-    public sealed record FlowLayout(IReadOnlyList<LaidNode> Nodes, IReadOnlyList<LaidEdge> Edges, double Width, double Height);
+    /// <summary>A supporting integration: the components of one side lane, the chain between them and how the chain attaches to the journey.</summary>
+    public sealed record JourneyGroup(string Lane, string Title, GuideFlowKind Kind, IReadOnlyList<GuideComponent> Members, IReadOnlyList<GuideEdge> Chain,
+        IReadOnlyList<JourneyAttachment> Attachments);
+
+    public sealed record Journey(IReadOnlyList<JourneyStage> Stages, IReadOnlyList<JourneyConnector> Connectors, IReadOnlyList<JourneyReturn> Returns,
+        IReadOnlyList<GuideEdge> Bypasses, IReadOnlyList<JourneyGroup> Groups, IReadOnlyList<GuideEdge> Unplaced)
+    {
+        public int ReturnTracks => Returns.Count == 0 ? 0 : Returns.Max(r => r.Track) + 1;
+    }
 
     /// <summary>
-    /// Main-lane components in journey order on row 0; each side lane is placed next to the main component it connects to (its connecting
-    /// node directly under it, the rest of the lane leading in from the left) and packed into the first row where it does not overlap.
+    /// Builds the reading model of a guide's flow:
+    /// <list type="bullet">
+    /// <item>Stages: the components of the main lane in journey order (flow order; a guide without a "main" lane uses its main-report flow).</item>
+    /// <item>Connectors: only between neighbouring stages, so the primary row never has a crossing; a forward connection that skips stages is a
+    /// bypass, and a backward one is a return on its own track.</item>
+    /// <item>Groups: each side lane with its internal chain and its attachments to stages (both directions merged into one relationship).</item>
+    /// <item>Unplaced: connections whose components are unknown (shown as such, never dropped silently).</item>
+    /// </list>
     /// </summary>
-    public static FlowLayout Layout(SystemGuideContent c)
+    public static Journey BuildJourney(SystemGuideContent c)
     {
         var order = c.Flows.SelectMany(f => f.Path).Concat(c.Components.Select(x => x.Id)).Distinct().ToList();
         int Rank(string id) => order.IndexOf(id) is var i and >= 0 ? i : int.MaxValue;
-        var byId = c.Components.ToDictionary(x => x.Id, StringComparer.Ordinal);
-        var main = c.Components.Where(x => x.Lane == "main").OrderBy(x => Rank(x.Id)).ToList();
-        var nodes = main.Select((x, i) => new LaidNode(x, i, 0)).ToList();
-        var column = nodes.ToDictionary(n => n.Component.Id, n => n.Column, StringComparer.Ordinal);
-        var occupied = new List<(int Row, int From, int To)> { (0, 0, Math.Max(0, main.Count - 1)) };
-        foreach (var lane in c.Components.Where(x => x.Lane != "main").Select(x => x.Lane).Distinct().ToList())
+        var ids = c.Components.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
+        var mainFlow = c.Flows.FirstOrDefault(f => f.Kind == GuideFlowKind.MainReport);
+        var mainComponents = c.Components.Any(x => x.Lane == "main")
+            ? c.Components.Where(x => x.Lane == "main").OrderBy(x => Rank(x.Id)).ToList()
+            : mainFlow is null ? [] : mainFlow.Path.Select(id => c.Components.FirstOrDefault(x => x.Id == id)).OfType<GuideComponent>().ToList();
+        var stages = mainComponents.Select((x, i) => new JourneyStage(x, i)).ToList();
+        var index = stages.ToDictionary(s => s.Component.Id, s => s.Index, StringComparer.Ordinal);
+
+        var connectors = new List<JourneyConnector>();
+        for (var i = 0; i + 1 < stages.Count; i++)
         {
-            var members = c.Components.Where(x => x.Lane == lane).OrderBy(x => Rank(x.Id)).ToList();
-            var link = c.Edges.FirstOrDefault(e => (members.Any(m => m.Id == e.From) && column.ContainsKey(e.To)) || (members.Any(m => m.Id == e.To) && column.ContainsKey(e.From)));
-            var anchor = link is null ? 0 : column[column.ContainsKey(link.To) ? link.To : link.From];
-            var connector = link is null ? members.Last().Id : members.Any(m => m.Id == link.From) ? link.From : link.To;
-            // A lane that feeds the main flow leads in from the left and ends one column before its anchor; a lane the main flow calls sits
-            // under its anchor (a single node may move one column aside to share a row). Then the first row where the lane does not overlap.
-            var index = members.FindIndex(m => m.Id == connector);
-            var feeds = link is not null && members.Any(m => m.Id == link.From);
-            int[] candidates = feeds && members.Count > 1 ? [anchor - members.Count]
-                : members.Count == 1 ? [anchor, anchor + 1, anchor - 1] : [anchor - index];
-            int start = 0, row = 0;
-            for (var r = 1; row == 0; r++)
-                foreach (var candidate in candidates.Select(x => Math.Max(0, x)))
-                    if (!occupied.Any(o => o.Row == r && !(candidate + members.Count - 1 < o.From || candidate > o.To))) { start = candidate; row = r; break; }
-            occupied.Add((row, start, start + members.Count - 1));
-            for (var i = 0; i < members.Count; i++)
-            {
-                var laid = new LaidNode(members[i], start + i, row);
-                nodes.Add(laid);
-                column.TryAdd(members[i].Id, laid.Column);
-            }
+            var edge = c.Edges.FirstOrDefault(e => e.From == stages[i].Component.Id && e.To == stages[i + 1].Component.Id);
+            connectors.Add(new JourneyConnector(edge, i, edge is null ? "" : Short(edge.DataFormat)));
         }
-        var at = nodes.ToDictionary(n => n.Component.Id, StringComparer.Ordinal);
-        var edges = new List<LaidEdge>();
-        foreach (var e in c.Edges)
+
+        var returns = new List<JourneyReturn>();
+        var bypasses = new List<GuideEdge>();
+        foreach (var e in c.Edges.Where(e => index.ContainsKey(e.From) && index.ContainsKey(e.To)))
         {
-            if (!at.TryGetValue(e.From, out var a) || !at.TryGetValue(e.To, out var b)) continue;
-            string path; double lx, ly;
-            if (a.Row == b.Row && b.Column > a.Column)
-            {
-                var y = a.CenterY;
-                path = $"M {F(a.X + NodeWidth)} {F(y)} L {F(b.X)} {F(y)}";
-                (lx, ly) = ((a.X + NodeWidth + b.X) / 2, y - 8);
-            }
-            else if (a.Row == b.Row)
-            {
-                // A reverse edge on the same row (e.g. an acknowledgment) arcs over the row.
-                var top = a.Y - 30;
-                path = $"M {F(a.CenterX - 18)} {F(a.Y)} C {F(a.CenterX - 18)} {F(top)}, {F(b.CenterX + 18)} {F(top)}, {F(b.CenterX + 18)} {F(b.Y)}";
-                (lx, ly) = ((a.CenterX + b.CenterX) / 2, top + 2);
-            }
-            else if (b.Row > a.Row)
-            {
-                var x1 = a.CenterX + (b.Column - a.Column) * 4; var y1 = a.Y + NodeHeight; var y2 = b.Y;
-                path = $"M {F(x1)} {F(y1)} C {F(x1)} {F((y1 + y2) / 2)}, {F(b.CenterX)} {F((y1 + y2) / 2)}, {F(b.CenterX)} {F(y2)}";
-                (lx, ly) = ((x1 + b.CenterX) / 2 + 6, (y1 + y2) / 2);
-            }
-            else
-            {
-                // Upwards (a side flow feeding the main lane): leave from the top of the source, travel through the gap between the rows and
-                // enter the target from below — never across a node of the source's row.
-                var x1 = a.Column < b.Column ? a.X + NodeWidth - 18 : a.Column > b.Column ? a.X + 18 : a.CenterX; var y1 = a.Y;
-                var x2 = a.Column < b.Column ? b.X + 18 : a.Column > b.Column ? b.X + NodeWidth - 18 : b.CenterX; var y2 = b.Y + NodeHeight;
-                var mid = (y1 + y2) / 2;
-                path = $"M {F(x1)} {F(y1)} C {F(x1)} {F(mid)}, {F(x2)} {F(mid)}, {F(x2)} {F(y2)}";
-                (lx, ly) = ((x1 + x2) / 2, mid - 6);
-            }
-            edges.Add(new LaidEdge(e, path, lx, ly, Short(e.DataFormat)));
+            var (from, to) = (index[e.From], index[e.To]);
+            if (to == from + 1) continue;
+            if (to > from) { bypasses.Add(e); continue; }
+            var start = Math.Min(from, to); var end = Math.Max(from, to);
+            var track = 0;
+            while (returns.Any(r => r.Track == track && !(end < r.Start || start > r.End))) track++;
+            returns.Add(new JourneyReturn(e, from, to, track, Essence(e.DataFormat)));
         }
-        var columns = nodes.Count == 0 ? 1 : nodes.Max(n => n.Column) + 1;
-        var rows = nodes.Count == 0 ? 1 : nodes.Max(n => n.Row) + 1;
-        return new FlowLayout(nodes, edges, Padding * 2 + (columns - 1) * ColumnWidth + NodeWidth, TopMargin + (rows - 1) * RowHeight + NodeHeight + Padding);
+
+        var groups = new List<JourneyGroup>();
+        var lanes = c.Components.Where(x => !index.ContainsKey(x.Id)).GroupBy(x => x.Lane)
+            .OrderBy(g => g.Min(x => Rank(x.Id))).ToList();
+        foreach (var lane in lanes)
+        {
+            var members = lane.OrderBy(x => Rank(x.Id)).ToList();
+            var memberIds = members.Select(m => m.Id).ToHashSet(StringComparer.Ordinal);
+            var flow = c.Flows.Where(f => f.Kind != GuideFlowKind.MainReport).OrderByDescending(f => f.Path.Count(memberIds.Contains)).ThenBy(f => c.Flows.IndexOf(f))
+                .FirstOrDefault(f => f.Path.Any(memberIds.Contains));
+            var chain = c.Edges.Where(e => memberIds.Contains(e.From) && memberIds.Contains(e.To)).OrderBy(e => Rank(e.From)).ToList();
+            var attachments = new List<JourneyAttachment>();
+            foreach (var e in c.Edges.Where(e => (memberIds.Contains(e.From) && index.ContainsKey(e.To)) || (memberIds.Contains(e.To) && index.ContainsKey(e.From))))
+            {
+                var member = memberIds.Contains(e.From) ? e.From : e.To;
+                var stage = member == e.From ? e.To : e.From;
+                if (attachments.Any(a => a.Reverse?.Id == e.Id)) continue;
+                var reverse = c.Edges.FirstOrDefault(r => r.From == e.To && r.To == e.From && r.Id != e.Id);
+                if (reverse is not null && attachments.Any(a => a.Edge.Id == reverse.Id)) continue;
+                attachments.Add(new JourneyAttachment(e, reverse, member, stage, IntoStage: member == e.From));
+            }
+            groups.Add(new JourneyGroup(lane.Key, flow?.Title ?? lane.Key, flow?.Kind ?? GuideFlowKind.SupportingData, members, chain, attachments));
+        }
+
+        var unplaced = c.Edges.Where(e => !ids.Contains(e.From) || !ids.Contains(e.To)).ToList();
+        return new Journey(stages, connectors, returns, bypasses, groups, unplaced);
     }
 
+    // ── Two-row placement for medium widths (an intentional reflow instead of shrinking text): the first half of the stages on row 1, the rest
+    // on row 3; returns of one half on the row below it; the connector that crosses the break sits at the end of row 1 ("continues").
+
+    public static int Half(int stages) => (stages + 1) / 2;
+
+    public static string TwoRowColumns(int stages) =>
+        string.Join(" ", Enumerable.Range(0, Half(stages)).Select(_ => "minmax(7.5rem, 1fr) minmax(2.75rem, 3.75rem)"));
+
+    public static (int Row, int Column) TwoRowStage(int index, int stages) =>
+        (index < Half(stages) ? 1 : 3, 2 * (index % Half(stages)) + 1);
+
+    public static (int Row, int Column, bool Break) TwoRowConnector(int fromIndex, int stages)
+    {
+        var half = Half(stages);
+        var crosses = fromIndex == half - 1;
+        return crosses ? (1, 2 * half, true) : (fromIndex < half ? 1 : 3, 2 * (fromIndex % half) + 2, false);
+    }
+
+    public static (int Row, string Columns) TwoRowReturn(int start, int end, int stages)
+    {
+        var half = Half(stages);
+        if (start < half && end < half) return (2, $"{2 * start + 1} / {2 * end + 2}");
+        if (start >= half && end >= half) return (4, $"{2 * (start % half) + 1} / {2 * (end % half) + 2}");
+        return (4, "1 / -1"); // a return across the break is listed on its own full-width row
+    }
+
+    /// <summary>CSS grid columns of the journey: a stage column, then a connector column, alternating (stage i sits in column 2i+1).</summary>
+    public static string StageColumns(int stages) => stages <= 0 ? "minmax(0, 1fr)"
+        : string.Join(" ", Enumerable.Range(0, stages).Select(i => i == stages - 1 ? "minmax(6.5rem, 1fr)" : "minmax(6.5rem, 1fr) minmax(2.75rem, 3.25rem)"));
+
     /// <summary>The short label on the diagram (full transport and format are in the connection details).</summary>
+    /// <summary>The essence of a format without shortening (return paths have room for the whole phrase).</summary>
+    public static string Essence(string format)
+    {
+        var s = format.Split('(')[0];
+        if (s.LastIndexOf(": ", StringComparison.Ordinal) is var colon and >= 0) s = s[(colon + 2)..];
+        return s.Split(" + ")[0].Trim();
+    }
+
     public static string Short(string format)
     {
         // The essence of the format: before any parenthesis, after a "Planned:"-style prefix, before a "+" companion ("Parquet + manifest").
         var s = format.Split('(')[0];
         if (s.LastIndexOf(": ", StringComparison.Ordinal) is var colon and >= 0) s = s[(colon + 2)..];
         s = s.Split(" + ")[0].Trim();
-        return s.Length > 14 ? s[..13] + "…" : s;
+        return s.Length > 18 ? s[..17] + "…" : s;
     }
 
-    private static string F(double v) => v.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>The edges of a flow (consecutive path pairs, in either direction) for highlighting.</summary>
     public static IReadOnlySet<string> FlowEdges(SystemGuideContent c, GuideFlow flow)

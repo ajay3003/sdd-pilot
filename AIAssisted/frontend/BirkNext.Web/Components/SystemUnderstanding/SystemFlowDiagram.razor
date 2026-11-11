@@ -1,91 +1,189 @@
 @using BirkNext.SystemUnderstanding
 @using P = BirkNext.Web.Services.SystemUnderstandingPresentation
 
-@* The system flow: the main journey on the top row, side flows packed below, every connection styled by its kind and labelled with what
-   travels. Nodes and connections are keyboard-selectable buttons; under 760px the same flows render as a vertical list. *@
+@* The system flow as a reading layout (not a free graph): the main journey as aligned stages with one connector between neighbours, return
+   paths (acknowledgments) on their own dashed track below, and the supporting integrations grouped beneath with how each attaches to a
+   stage. HTML text wraps instead of being clipped; under a narrow container the journey becomes a vertical list. The text alternative is
+   built from the same journey model. Nodes and connections are keyboard-selectable buttons. *@
 @{
-    var layout = P.Layout(Content);
+    var j = Journey;
     var focus = FlowFocus is null ? null : Content.Flows.FirstOrDefault(f => f.Id == FlowFocus);
     var focusEdges = focus is null ? null : P.FlowEdges(Content, focus);
+    bool DimNode(string id) => focus is not null && !focus.Path.Contains(id);
+    bool DimEdge(string id) => focusEdges is not null && !focusEdges.Contains(id);
 }
-<div class="sfd" data-testid="su-flow">
-    <div class="sfd-canvas" role="group" aria-label="System flow diagram. Use the flow list below for a text version.">
-        <svg viewBox="0 0 @F(layout.Width) @F(layout.Height)" width="@F(layout.Width)" height="@F(layout.Height)" class="sfd-svg" data-testid="su-flow-svg" focusable="false">
-            <defs>
-                @foreach (var kind in Enum.GetValues<GuideFlowKind>())
+<div class="sfj" lang="nb" data-testid="su-flow">
+    <section class="sfj-main" aria-label="Main journey">
+        <h3 class="sfj-region">@(Content.Flows.FirstOrDefault(f => f.Kind == GuideFlowKind.MainReport)?.Title ?? "Main journey")</h3>
+        <ol class="sfj-stages" style="grid-template-columns: @P.StageColumns(j.Stages.Count); --cols2: @P.TwoRowColumns(j.Stages.Count)" data-testid="su-flow-main">
+            @foreach (var s in j.Stages)
+            {
+                var x = s.Component;
+                var badge = P.Badge(P.Classes(x.Evidence, 1)[0]);
+                var st2 = P.TwoRowStage(s.Index, j.Stages.Count);
+                <li class="sfj-cell" style="grid-column: @(2 * s.Index + 1); grid-row: 1; --row2: @st2.Row; --col2: @st2.Column">
+                    <button type="button" class="sfj-node @(x.External ? "is-external" : "") @(SelectedNode == x.Id ? "is-selected" : "") @(DimNode(x.Id) ? "is-dim" : "") @(Highlight.Contains(x.Id) ? "is-match" : "")"
+                            aria-pressed="@(SelectedNode == x.Id ? "true" : "false")" aria-label="@($"Stage {s.Index + 1}: {x.Name}. {x.Responsibility}. Evidence: {badge.Label}{(x.External ? ". External system" : "")}")"
+                            title="@x.Responsibility" data-testid="su-node-@x.Id" @onclick="() => OnSelectNode.InvokeAsync(x.Id)">
+                        <span class="sfj-step" aria-hidden="true">Stage @(s.Index + 1)</span>
+                        <span class="sfj-name">@x.Name</span>
+                        <span class="sfj-resp">@x.Responsibility</span>
+                        <span class="sfj-ev sfj-ev-@badge.Tone">@badge.Glyph @badge.Label</span>
+                    </button>
+                </li>
+                if (s.Index < j.Connectors.Count)
                 {
-                    <marker id="sfd-arrow-@P.Kind(kind).Css" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                        <path d="M0,0 L10,5 L0,10 z" class="sfd-arrowhead @P.Kind(kind).Css" />
-                    </marker>
+                    var c = j.Connectors[s.Index];
+                var cn2 = P.TwoRowConnector(c.FromIndex, j.Stages.Count);
+                <li class="sfj-link @(cn2.Break ? "is-break" : "")" style="grid-column: @(2 * c.FromIndex + 2); grid-row: 1; --row2: @cn2.Row; --col2: @cn2.Column">
+                    @if (c.Edge is { } e)
+                    {
+                        var kind = P.Kind(e.Kind);
+                        <button type="button" class="sfj-conn @kind.Css @(SelectedEdge == e.Id ? "is-selected" : "") @(DimEdge(e.Id) ? "is-dim" : "")"
+                                aria-pressed="@(SelectedEdge == e.Id ? "true" : "false")" aria-label="@($"{Name(e.From)} to {Name(e.To)}: {e.Transport}, {e.DataFormat}")"
+                                title="@($"{e.Transport} · {e.DataFormat}")" data-testid="su-edge-@e.Id" @onclick="() => OnSelectEdge.InvokeAsync(e.Id)">
+                            <span class="sfj-conn-label">@c.Label</span><span class="sfj-continues">continues ↓</span>
+                            <span class="sfj-arrow" aria-hidden="true"></span>
+                        </button>
+                    }
+                    else
+                    {
+                        <span class="sfj-gap" aria-label="@($"{Name(j.Stages[c.FromIndex].Component.Id)} and {Name(j.Stages[c.FromIndex + 1].Component.Id)} are not directly connected")">·</span>
+                    }
+                </li>
                 }
-            </defs>
-            @foreach (var lane in layout.Nodes.GroupBy(n => n.Row).OrderBy(g => g.Key))
-            {
-                var minX = lane.Min(n => n.X) - 12; var maxX = lane.Max(n => n.X) + P.NodeWidth + 12;
-                <rect class="sfd-lane @(lane.Key == 0 ? "is-main" : "")" x="@F(minX)" y="@F(lane.First().Y - 14)" width="@F(maxX - minX)" height="@F(P.NodeHeight + 28)" rx="14" />
             }
-            @foreach (var e in layout.Edges)
+            @foreach (var r in j.Returns)
             {
-                var kind = P.Kind(e.Edge.Kind);
-                var dim = focusEdges is not null && !focusEdges.Contains(e.Edge.Id);
-                <g class="sfd-edge @kind.Css @(SelectedEdge == e.Edge.Id ? "is-selected" : "") @(dim ? "is-dim" : "")" role="button" tabindex="0"
-                   aria-label="@($"{Name(e.Edge.From)} to {Name(e.Edge.To)}: {e.Edge.Transport}, {e.Edge.DataFormat}")" aria-pressed="@(SelectedEdge == e.Edge.Id ? "true" : "false")"
-                   data-testid="su-edge-@e.Edge.Id" @onclick="() => OnSelectEdge.InvokeAsync(e.Edge.Id)" @onkeydown="k => Key(k, () => OnSelectEdge.InvokeAsync(e.Edge.Id))">
-                    <path d="@e.Path" class="sfd-hit" />
-                    <path d="@e.Path" class="sfd-line" marker-end="url(#sfd-arrow-@kind.Css)" />
-                    <text x="@F(e.LabelX)" y="@F(e.LabelY)" text-anchor="middle" class="sfd-edge-label">@e.ShortLabel</text>
-                </g>
-            }
-            @foreach (var n in layout.Nodes)
-            {
-                var x = n.Component;
-                var dim = focus is not null && !focus.Path.Contains(x.Id);
-                var classes = P.Classes(x.Evidence, 1);
-                <g class="sfd-node @(x.External ? "is-external" : "") @(SelectedNode == x.Id ? "is-selected" : "") @(dim ? "is-dim" : "") @(Highlight.Contains(x.Id) ? "is-match" : "")"
-                   role="button" tabindex="0" aria-pressed="@(SelectedNode == x.Id ? "true" : "false")" aria-label="@($"{x.Name}: {x.Responsibility}. Evidence: {P.Badge(classes[0]).Label}")"
-                   data-testid="su-node-@x.Id" @onclick="() => OnSelectNode.InvokeAsync(x.Id)" @onkeydown="k => Key(k, () => OnSelectNode.InvokeAsync(x.Id))">
-                    <rect x="@F(n.X)" y="@F(n.Y)" width="@P.NodeWidth" height="@P.NodeHeight" rx="12" class="sfd-box" />
-                    <text x="@F(n.X + 14)" y="@F(n.Y + 25)" class="sfd-name">@x.Name</text>
-                    <text x="@F(n.X + 14)" y="@F(n.Y + 44)" class="sfd-resp">@Clip(x.Responsibility, 24)</text>
-                    <text x="@F(n.X + 14)" y="@F(n.Y + 59)" class="sfd-ev sfd-ev-@P.Badge(classes[0]).Tone">@P.Badge(classes[0]).Glyph @P.Badge(classes[0]).Label</text>
-                </g>
-            }
-        </svg>
-    </div>
-
-    <ul class="sfd-legend" aria-label="Connection types">
-        @foreach (var kind in Content.Edges.Select(e => e.Kind).Distinct())
-        {
-            <li><span class="sfd-swatch @P.Kind(kind).Css" aria-hidden="true"></span>@P.Kind(kind).Label</li>
-        }
-        <li><span class="sfd-swatch is-external" aria-hidden="true"></span>External system</li>
-    </ul>
-
-    @* The same flows as text: always in the DOM (screen readers, narrow screens); visible on small screens or on request. *@
-    <div class="sfd-text" data-testid="su-flow-text">
-        <button type="button" class="sfd-text-toggle" aria-expanded="@(_textOpen ? "true" : "false")" aria-controls="sfd-list" @onclick="() => _textOpen = !_textOpen">
-            @(_textOpen ? "Hide flow as text" : "Show flow as text")
-        </button>
-        <ol class="sfd-list @(_textOpen ? "" : "is-collapsed")" id="sfd-list">
-            @foreach (var flow in Content.Flows)
-            {
-                <li data-testid="su-flow-text-@flow.Id">
-                    <span class="sfd-list-kind @P.Kind(flow.Kind).Css">@P.Kind(flow.Kind).Label</span>
-                    <strong>@flow.Title</strong> — @flow.Summary
-                    <ol class="sfd-hops">
-                        @foreach (var (from, to) in flow.Path.Zip(flow.Path.Skip(1)))
-                        {
-                            var edge = Content.Edges.FirstOrDefault(e => e.From == from && e.To == to);
-                            <li>
-                                <button type="button" class="sfd-hop" @onclick="() => OnSelectNode.InvokeAsync(from)">@Name(from)</button> →
-                                <button type="button" class="sfd-hop" @onclick="() => OnSelectNode.InvokeAsync(to)">@Name(to)</button>
-                                @if (edge is not null) { <span class="sfd-hop-meta">@edge.Transport · @edge.DataFormat</span> }
-                            </li>
-                        }
-                    </ol>
+                var kind = P.Kind(r.Edge.Kind);
+                var rt2 = P.TwoRowReturn(r.Start, r.End, j.Stages.Count);
+                <li class="sfj-return-cell" style="grid-column: @(2 * r.Start + 1) / @(2 * r.End + 2); grid-row: @(2 + r.Track); --row2: @(rt2.Row + 4 * r.Track); --col2: @rt2.Columns">
+                    <button type="button" class="sfj-return @kind.Css @(SelectedEdge == r.Edge.Id ? "is-selected" : "") @(DimEdge(r.Edge.Id) ? "is-dim" : "")"
+                            aria-pressed="@(SelectedEdge == r.Edge.Id ? "true" : "false")" aria-label="@($"{kind.Label}: {Name(r.Edge.From)} back to {Name(r.Edge.To)}: {r.Edge.Transport}, {r.Edge.DataFormat}")"
+                            title="@($"{r.Edge.Transport} · {r.Edge.DataFormat}")" data-testid="su-edge-@r.Edge.Id" @onclick="() => OnSelectEdge.InvokeAsync(r.Edge.Id)">
+                        <span class="sfj-return-line" aria-hidden="true"></span>
+                        <span class="sfj-return-label">↩ @kind.Label: @Name(r.Edge.From) → @Name(r.Edge.To) · @r.Label</span>
+                    </button>
                 </li>
             }
         </ol>
+        @if (j.Bypasses.Count > 0)
+        {
+            <ul class="sfj-bypass" aria-label="Other connections between stages">
+                @foreach (var e in j.Bypasses)
+                {
+                    <li><button type="button" class="sfj-pill @P.Kind(e.Kind).Css" data-testid="su-edge-@e.Id" aria-pressed="@(SelectedEdge == e.Id ? "true" : "false")" @onclick="() => OnSelectEdge.InvokeAsync(e.Id)">@Name(e.From) → @Name(e.To) · @P.Short(e.DataFormat)</button></li>
+                }
+            </ul>
+        }
+    </section>
+
+    @if (j.Groups.Count > 0)
+    {
+        <section class="sfj-support" aria-label="Supporting integrations">
+            <h3 class="sfj-region">Supporting integrations</h3>
+            <div class="sfj-groups">
+                @foreach (var g in j.Groups)
+                {
+                    var kind = P.Kind(g.Kind);
+                    var groupDim = focus is not null && g.Members.All(m => DimNode(m.Id));
+                    <article class="sfj-group @kind.Css @(groupDim ? "is-dim" : "")" data-testid="su-group-@g.Lane">
+                        <header class="sfj-group-head"><span class="sfj-kind">@kind.Label</span><h4>@g.Title</h4></header>
+                        <div class="sfj-chain">
+                            @for (var i = 0; i < g.Members.Count; i++)
+                            {
+                                var m = g.Members[i];
+                                var badge = P.Badge(P.Classes(m.Evidence, 1)[0]);
+                                <button type="button" class="sfj-chip-node @(m.External ? "is-external" : "") @(SelectedNode == m.Id ? "is-selected" : "") @(DimNode(m.Id) ? "is-dim" : "") @(Highlight.Contains(m.Id) ? "is-match" : "")"
+                                        aria-pressed="@(SelectedNode == m.Id ? "true" : "false")" aria-label="@($"{m.Name}: {m.Responsibility}. Evidence: {badge.Label}")" title="@m.Responsibility"
+                                        data-testid="su-node-@m.Id" @onclick="() => OnSelectNode.InvokeAsync(m.Id)">
+                                    <span class="sfj-name">@m.Name</span><span class="sfj-resp">@m.Responsibility</span>
+                                </button>
+                                if (i + 1 < g.Members.Count)
+                                {
+                                    var next = g.Members[i + 1];
+                                    var e = g.Chain.FirstOrDefault(x => x.From == m.Id && x.To == next.Id) ?? g.Chain.FirstOrDefault(x => x.From == next.Id && x.To == m.Id);
+                                    if (e is not null)
+                                    {
+                                        <button type="button" class="sfj-chain-link @P.Kind(e.Kind).Css @(SelectedEdge == e.Id ? "is-selected" : "") @(DimEdge(e.Id) ? "is-dim" : "")" aria-pressed="@(SelectedEdge == e.Id ? "true" : "false")"
+                                                aria-label="@($"{Name(e.From)} to {Name(e.To)}: {e.Transport}, {e.DataFormat}")" title="@($"{e.Transport} · {e.DataFormat}")"
+                                                data-testid="su-edge-@e.Id" @onclick="() => OnSelectEdge.InvokeAsync(e.Id)"><span aria-hidden="true">@(e.From == m.Id ? "↓" : "↑")</span><span class="sfj-chain-label">@P.Short(e.DataFormat)</span></button>
+                                    }
+                                    else { <span class="sfj-chain-gap" aria-hidden="true">·</span> }
+                                }
+                            }
+                        </div>
+                        <ul class="sfj-attach">
+                            @foreach (var a in g.Attachments)
+                            {
+                                var e = a.Edge;
+                                <li>
+                                    <button type="button" class="sfj-attach-link @P.Kind(e.Kind).Css @(SelectedEdge == e.Id ? "is-selected" : "") @(DimEdge(e.Id) ? "is-dim" : "")" aria-pressed="@(SelectedEdge == e.Id ? "true" : "false")"
+                                            aria-label="@($"{Name(e.From)} to {Name(e.To)}: {e.Transport}, {e.DataFormat}{(a.Reverse is null ? "" : $"; answer {Name(a.Reverse.From)} to {Name(a.Reverse.To)}")}")"
+                                            title="@($"{e.Transport} · {e.DataFormat}")" data-testid="su-edge-@e.Id" @onclick="() => OnSelectEdge.InvokeAsync(e.Id)">
+                                        <span class="sfj-attach-dir">@Name(e.From) <span aria-hidden="true">@(a.Reverse is null ? "→" : "⇄")</span> @Name(e.To)</span>
+                                        <span class="sfj-attach-what">@P.Short(e.DataFormat) · @Brief(e.Transport)</span>
+                                    </button>
+                                    @if (a.Reverse is { } back)
+                                    {
+                                        <button type="button" class="sfj-attach-back" data-testid="su-edge-@back.Id" aria-pressed="@(SelectedEdge == back.Id ? "true" : "false")" @onclick="() => OnSelectEdge.InvokeAsync(back.Id)">answer: @Name(back.From) → @Name(back.To)</button>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    </article>
+                }
+            </div>
+        </section>
+    }
+
+    @if (j.Unplaced.Count > 0)
+    {
+        <p class="sfj-unplaced" role="note">@j.Unplaced.Count connection(s) name a component this guide does not define: @string.Join(", ", j.Unplaced.Select(e => e.Id)).</p>
+    }
+
+    <ul class="sfj-legend" aria-label="How to read the flow">
+        <li><span class="sfj-swatch k-main" aria-hidden="true"></span>Main journey</li>
+        @if (j.Returns.Count > 0) { <li><span class="sfj-swatch k-ack" aria-hidden="true"></span>Return path (dashed)</li> }
+        <li><span class="sfj-swatch is-external" aria-hidden="true"></span>External system</li>
+        <li>Select any stage or connection for details</li>
+    </ul>
+
+    @* The same journey as text: always in the DOM (screen readers); visible on narrow screens or on request. *@
+    <div class="sfj-text" data-testid="su-flow-text">
+        <button type="button" class="sfj-text-toggle" aria-expanded="@(_textOpen ? "true" : "false")" aria-controls="sfj-list" @onclick="() => _textOpen = !_textOpen">
+            @(_textOpen ? "Hide flow as text" : "Show flow as text")
+        </button>
+        <div class="sfj-list @(_textOpen ? "" : "is-collapsed")" id="sfj-list">
+            <p><strong>Main journey:</strong> @string.Join(" → ", j.Stages.Select(s => s.Component.Name))</p>
+            <ol class="sfj-hops">
+                @foreach (var c in j.Connectors.Where(c => c.Edge is not null))
+                {
+                    var e = c.Edge!;
+                    <li><button type="button" class="sfj-hop" @onclick="() => OnSelectNode.InvokeAsync(e.From)">@Name(e.From)</button> → <button type="button" class="sfj-hop" @onclick="() => OnSelectNode.InvokeAsync(e.To)">@Name(e.To)</button>
+                        <span class="sfj-hop-meta">@e.Transport · @e.DataFormat</span></li>
+                }
+                @foreach (var r in j.Returns)
+                {
+                    <li>↩ @P.Kind(r.Edge.Kind).Label: @Name(r.Edge.From) → @Name(r.Edge.To) <span class="sfj-hop-meta">@r.Edge.Transport · @r.Edge.DataFormat</span></li>
+                }
+            </ol>
+            <ol class="sfj-flows">
+                @foreach (var flow in Content.Flows)
+                {
+                    <li data-testid="su-flow-text-@flow.Id">
+                        <span class="sfj-kind">@P.Kind(flow.Kind).Label</span> <strong>@flow.Title</strong> — @flow.Summary
+                        <ol class="sfj-hops">
+                            @foreach (var (from, to) in flow.Path.Zip(flow.Path.Skip(1)))
+                            {
+                                var edge = Content.Edges.FirstOrDefault(e => e.From == from && e.To == to) ?? Content.Edges.FirstOrDefault(e => e.From == to && e.To == from);
+                                <li>@Name(from) → @Name(to) @if (edge is not null) { <span class="sfj-hop-meta">@edge.Transport · @edge.DataFormat</span> }</li>
+                            }
+                        </ol>
+                    </li>
+                }
+            </ol>
+        </div>
     </div>
 </div>
 
@@ -96,13 +194,31 @@
     [Parameter] public string? FlowFocus { get; set; }
     [Parameter] public IReadOnlySet<string> Highlight { get; set; } = new HashSet<string>();
     [Parameter] public bool ShowText { get; set; }
-    private bool _textOpen;
-    protected override void OnInitialized() => _textOpen = ShowText;
     [Parameter] public EventCallback<string> OnSelectNode { get; set; }
     [Parameter] public EventCallback<string> OnSelectEdge { get; set; }
 
+    private bool _textOpen;
+    private SystemGuideContent? _built;
+    private P.Journey _journey = P.BuildJourney(new SystemGuideContent());
+
+    /// <summary>The journey is rebuilt only when the guide content changes (selection and flow focus never recompute it).</summary>
+    private P.Journey Journey
+    {
+        get
+        {
+            if (!ReferenceEquals(_built, Content)) { _journey = P.BuildJourney(Content); _built = Content; }
+            return _journey;
+        }
+    }
+
+    protected override void OnInitialized() => _textOpen = ShowText;
+
     private string Name(string id) => Content.Components.FirstOrDefault(c => c.Id == id)?.Name ?? id;
-    private static string F(double v) => v.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
-    private static string Clip(string s, int max) => s.Length > max ? s[..(max - 1)] + "…" : s;
-    private static async Task Key(KeyboardEventArgs e, Func<Task> select) { if (e.Key is "Enter" or " ") await select(); }
+
+    /// <summary>The transport's first phrase (before a parenthesis or a "+" companion), e.g. "HTTP-oppslag"; full text in the details.</summary>
+    private static string Brief(string transport)
+    {
+        var s = transport.Split('(')[0].Split(" + ")[0].Trim();
+        return s.Length > 42 ? s[..41] + "…" : s;
+    }
 }

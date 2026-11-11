@@ -94,8 +94,10 @@ public sealed class SystemUnderstandingPageTests : BunitContext
         cut.Find("[data-testid=su-edge-transport]").TextContent.Should().Contain("POST /api/skole/v1/skolenaervaer/rapporter");
         cut.Find("[data-testid=su-edge-format]").TextContent.Should().Contain("JSON");
         cut.Find("[data-testid=su-edge-detail]").TextContent.Should().Contain("v2.0.1", "the other source generation stays visible as uncertainty");
-        cut.Find("[data-testid=su-edge-e-mm-skole]").KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "Enter" });
-        cut.FindAll("[data-testid=su-edge-detail]").Should().BeEmpty("Enter toggles the selection off again (keyboard operable)");
+        var edgeButton = cut.Find("[data-testid=su-edge-e-mm-skole]");
+        (edgeButton.TagName, edgeButton.GetAttribute("type")).Should().Be(("BUTTON", "button"), "a native button: Enter and Space work in every browser (checked in browser acceptance)");
+        edgeButton.Click();
+        cut.FindAll("[data-testid=su-edge-detail]").Should().BeEmpty("selecting again toggles the details off");
     }
 
     [Fact]
@@ -220,38 +222,101 @@ public sealed class SystemUnderstandingPageTests : BunitContext
     // ── Presentation (generic) ──────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void The_layout_puts_the_main_journey_on_top_and_packs_side_flows_without_overlap()
+    public void The_journey_puts_the_six_main_stages_in_order_with_one_connector_between_neighbours()
     {
-        var layout = P.Layout(Seed());
-        var at = layout.Nodes.ToDictionary(n => n.Component.Id);
-        new[] { "altinn", "mu", "mm", "skole", "periodelaas", "bufdata" }.Select(id => at[id].Row).Should().OnlyContain(r => r == 0);
-        new[] { "altinn", "mu", "mm", "skole", "periodelaas", "bufdata" }.Select(id => at[id].Column).Should().BeInAscendingOrder();
-        at["person"].Row.Should().BeGreaterThan(0);
-        at["person"].Column.Should().Be(at["skole"].Column, "an identity lookup sits under the component that calls it");
-        at["skoleadapter"].Column.Should().BeLessThan(at["skole"].Column, "a feeding lane leads in from the left");
-        layout.Nodes.GroupBy(n => (n.Row, n.Column)).Should().OnlyContain(g => g.Count() == 1, "no two components share a cell");
-        layout.Nodes.Max(n => n.Row).Should().BeLessThanOrEqualTo(2, "side flows are packed compactly");
-        layout.Edges.Should().HaveCount(Seed().Edges.Count);
+        var j = P.BuildJourney(Seed());
+        j.Stages.Select(s => s.Component.Id).Should().Equal("altinn", "mu", "mm", "skole", "periodelaas", "bufdata");
+        j.Connectors.Select(c => c.Edge?.Id).Should().Equal("e-altinn-mu", "e-mu-mm", "e-mm-skole", "e-skole-periodelaas", "e-periodelaas-bufdata");
+        j.Returns.Should().ContainSingle().Which.Edge.Id.Should().Be("e-mm-mu-ack", "the acknowledgment runs back on its own track, never across the stages");
+        j.Returns[0].Should().Match<P.JourneyReturn>(r => r.Start == 1 && r.End == 2 && r.Track == 0);
+        j.Groups.Select(g => g.Lane).Should().BeEquivalentTo(["person", "tjeneste", "utdanning"]);
+        var education = j.Groups.Single(g => g.Lane == "utdanning");
+        education.Members.Select(m => m.Id).Should().Equal("birk", "eventhub", "skoleadapter");
+        education.Chain.Select(e => e.Id).Should().Equal("e-birk-eventhub", "e-eventhub-skoleadapter");
+        education.Attachments.Should().ContainSingle(a => a.Edge.Id == "e-skoleadapter-skole" && a.IntoStage && a.StageId == "skole");
+        j.Groups.Single(g => g.Lane == "person").Attachments.Should().ContainSingle(a => a.StageId == "skole" && !a.IntoStage, "SkoleService calls Person");
+        // Every edge of the guide is placed exactly once: connector, return, bypass, chain, attachment (+ reverse) or unplaced.
+        var placed = j.Connectors.Select(c => c.Edge?.Id).OfType<string>().Concat(j.Returns.Select(r => r.Edge.Id)).Concat(j.Bypasses.Select(e => e.Id))
+            .Concat(j.Groups.SelectMany(g => g.Chain.Select(e => e.Id).Concat(g.Attachments.SelectMany(a => new[] { a.Edge.Id, a.Reverse?.Id }.OfType<string>()))))
+            .Concat(j.Unplaced.Select(e => e.Id)).ToList();
+        placed.Should().OnlyHaveUniqueItems().And.BeEquivalentTo(Seed().Edges.Select(e => e.Id));
+    }
+
+    private static SystemGuideContent Synthetic(string[] main, (string Id, string Lane)[]? side = null, (string Id, string From, string To, GuideFlowKind Kind)[]? edges = null) => new()
+    {
+        Title = "Synthetic",
+        Components = [.. main.Select(id => new GuideComponent { Id = id, Name = id.ToUpperInvariant() }), .. (side ?? []).Select(s => new GuideComponent { Id = s.Id, Name = s.Id, Lane = s.Lane })],
+        Edges = [.. (edges ?? []).Select(e => new GuideEdge { Id = e.Id, From = e.From, To = e.To, Kind = e.Kind, DataFormat = "JSON", Transport = "HTTP" })],
+        Flows = [new() { Id = "main", Kind = GuideFlowKind.MainReport, Path = [.. main] }],
+    };
+
+    [Fact]
+    public void Synthetic_layouts_A_to_O_follow_independently_stated_rules()
+    {
+        const GuideFlowKind M = GuideFlowKind.MainReport, S = GuideFlowKind.SupportingData, A = GuideFlowKind.Acknowledgment, I = GuideFlowKind.IdentityLookup;
+        // A. Simple linear flow: two stages, one connector.
+        var a = P.BuildJourney(Synthetic(["a", "b"], edges: [("ab", "a", "b", M)]));
+        (a.Stages.Count, a.Connectors.Single().Edge!.Id).Should().Be((2, "ab"));
+        // B. Six stages: five connectors, in order.
+        var six = new[] { "s1", "s2", "s3", "s4", "s5", "s6" };
+        var b = P.BuildJourney(Synthetic(six, edges: [.. six.Zip(six.Skip(1)).Select(p => ($"{p.First}-{p.Second}", p.First, p.Second, M))]));
+        b.Connectors.Select(c => c.FromIndex).Should().Equal(0, 1, 2, 3, 4);
+        (P.StageColumns(6).Split("minmax(").Length - 1).Should().Be(11, "six stage columns alternate with five connector columns");
+        (P.StageColumns(6).Split("1fr)").Length - 1).Should().Be(6, "only the stage columns take the free space");
+        // C. Main flow plus one dependency → one group attached to its stage.
+        var c = P.BuildJourney(Synthetic(["a", "b"], [("x", "x")], [("ab", "a", "b", M), ("bx", "b", "x", I)]));
+        c.Groups.Single().Attachments.Single().StageId.Should().Be("b");
+        // D. Multiple supporting branches → one group per lane, none in the main row.
+        var d = P.BuildJourney(Synthetic(["a", "b", "c"], [("x", "x"), ("y", "y"), ("z", "z")], [("ab", "a", "b", M), ("bc", "b", "c", M), ("ax", "a", "x", I), ("by", "b", "y", I), ("zc", "z", "c", S)]));
+        d.Groups.Should().HaveCount(3);
+        d.Stages.Select(s => s.Component.Id).Should().Equal("a", "b", "c");
+        // E. Bidirectional request/response → one relationship with its answer, not two crossing arrows.
+        var e = P.BuildJourney(Synthetic(["a"], [("p", "p")], [("ap", "a", "p", I), ("pa", "p", "a", I)]));
+        e.Groups.Single().Attachments.Should().ContainSingle().Which.Reverse!.Id.Should().Be("pa");
+        // F. Acknowledgment return path → a return on track 0, not a connector.
+        var f = P.BuildJourney(Synthetic(["a", "b", "c"], edges: [("ab", "a", "b", M), ("bc", "b", "c", M), ("ca", "c", "a", A)]));
+        f.Returns.Single().Should().Match<P.JourneyReturn>(r => r.Edge.Id == "ca" && r.Start == 0 && r.End == 2 && r.Track == 0);
+        // G. Long component names are kept whole (text wraps in HTML; nothing is clipped by the model).
+        var longName = new string('L', 80);
+        P.BuildJourney(new SystemGuideContent { Components = [new() { Id = "a", Name = longName }], Flows = [] }).Stages.Single().Component.Name.Should().Be(longName);
+        // H. Missing optional node → a gap, never a fabricated connection.
+        var h = P.BuildJourney(Synthetic(["a", "b", "c"], edges: [("ab", "a", "b", M)]));
+        h.Connectors[1].Edge.Should().BeNull();
+        // I. Multiple edges between the same stages → the first is the connector, the rest are not lost.
+        var i = P.BuildJourney(Synthetic(["a", "b"], edges: [("ab1", "a", "b", M), ("ab2", "a", "b", S)]));
+        i.Connectors.Single().Edge!.Id.Should().Be("ab1");
+        // J. Statuses come from each component's own evidence (no shared verdict).
+        P.Badge(P.Classes([new GuideEvidence { Class = GuideEvidenceClass.SourceImplemented }], 1)[0]).Label.Should().NotBe(P.Badge(GuideEvidenceClass.NeedsClarification).Label);
+        // M. Large node count: twelve stages, eleven connectors, no overlap of return tracks.
+        var many = Enumerable.Range(1, 12).Select(n => $"n{n}").ToArray();
+        var m = P.BuildJourney(Synthetic(many, edges: [.. many.Zip(many.Skip(1)).Select(p => ($"{p.First}-{p.Second}", p.First, p.Second, M)), ("r1", "n5", "n2", A), ("r2", "n4", "n3", A), ("r3", "n9", "n7", A)]));
+        m.Connectors.Should().HaveCount(11);
+        m.Returns.Single(r => r.Edge.Id == "r2").Track.Should().Be(1, "it overlaps r1, so it gets the next track");
+        m.Returns.Single(r => r.Edge.Id == "r3").Track.Should().Be(0, "it does not overlap r1");
+        foreach (var g in m.Returns.GroupBy(r => r.Track))
+            g.SelectMany(r => Enumerable.Range(r.Start, r.End - r.Start + 1)).Should().OnlyHaveUniqueItems("returns on one track never overlap");
+        // N. Cyclic relationship inside a side lane is kept as its chain, without loops in the main row.
+        var n = P.BuildJourney(Synthetic(["a"], [("x", "l"), ("y", "l")], [("xy", "x", "y", S), ("yx", "y", "x", S), ("ya", "y", "a", S)]));
+        n.Groups.Single().Chain.Select(x => x.Id).Should().BeEquivalentTo(["xy", "yx"]);
+        // O. Unknown/ambiguous relationship → listed as unplaced, never drawn.
+        var o = P.BuildJourney(Synthetic(["a", "b"], edges: [("ab", "a", "b", M), ("ghost", "a", "nobody", S)]));
+        o.Unplaced.Single().Id.Should().Be("ghost");
+        // Forward skip → a bypass, so the primary row stays crossing-free.
+        P.BuildJourney(Synthetic(["a", "b", "c"], edges: [("ab", "a", "b", M), ("bc", "b", "c", M), ("ac", "a", "c", S)])).Bypasses.Single().Id.Should().Be("ac");
+        P.Short("Planlagt: Parquet + manifest").Should().Be("Parquet");
+        P.Short("Kryptert XML (AES-256-CBC)").Should().Be("Kryptert XML");
     }
 
     [Fact]
-    public void The_layout_is_generic_for_another_system()
+    public void The_rendered_flow_has_six_stage_buttons_supporting_groups_and_a_text_alternative_from_the_same_model()
     {
-        var other = new SystemGuideContent
-        {
-            Title = "Orders",
-            Components = [new() { Id = "shop", Name = "Shop" }, new() { Id = "pay", Name = "Payment", Lane = "pay" }, new() { Id = "wms", Name = "Warehouse" }, new() { Id = "erp", Name = "ERP", Lane = "erp" }],
-            Edges = [new() { Id = "a", From = "shop", To = "wms", Kind = GuideFlowKind.MainReport, DataFormat = "Avro (v3)" }, new() { Id = "b", From = "shop", To = "pay", Kind = GuideFlowKind.SupportingData, DataFormat = "JSON" },
-                     new() { Id = "c", From = "erp", To = "wms", Kind = GuideFlowKind.SupportingData, DataFormat = "CSV" }],
-            Flows = [new() { Id = "f", Path = ["shop", "wms"] }],
-        };
-        var layout = P.Layout(other);
-        layout.Nodes.Should().HaveCount(4);
-        layout.Nodes.GroupBy(n => (n.Row, n.Column)).Should().OnlyContain(g => g.Count() == 1);
-        layout.Edges.Single(e => e.Edge.Id == "a").ShortLabel.Should().Be("Avro");
-        P.Short("Planlagt: Parquet + manifest").Should().Be("Parquet");
-        P.Short("Kryptert XML (AES-256-CBC)").Should().Be("Kryptert XML");
-        P.Short("Applikasjonskvittering v2 (XML)").Length.Should().BeLessThanOrEqualTo(14, "labels fit between columns; details carry the full text");
+        var cut = Render(new Api(View()));
+        cut.FindAll("[data-testid=su-flow-main] .sfj-node").Select(b => b.GetAttribute("data-testid")).Should()
+            .Equal("su-node-altinn", "su-node-mu", "su-node-mm", "su-node-skole", "su-node-periodelaas", "su-node-bufdata");
+        cut.Find("[data-testid=su-node-mm] .sfj-resp").TextContent.Should().NotContain("…", "responsibilities wrap instead of being clipped");
+        cut.FindAll("[data-testid^=su-group-]").Select(g => g.GetAttribute("data-testid")).Should().BeEquivalentTo(["su-group-person", "su-group-tjeneste", "su-group-utdanning"]);
+        cut.Find("[data-testid=su-flow-text]").TextContent.Should().Contain("Altinn → MU → MM").And.Contain("Applikasjonskvittering");
+        cut.Find("[data-testid=su-edge-e-mm-mu-ack]").GetAttribute("aria-label").Should().Contain("back to MU");
     }
 
     [Fact]
