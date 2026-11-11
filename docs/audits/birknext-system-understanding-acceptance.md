@@ -15,6 +15,9 @@ Statuses: PASS · FAIL · PARTIAL · BLOCKED · NOT RUN.
 | Backend `SystemGuideTests` on a fresh migrated temporary PostgreSQL | **15/15 PASS**: seed consistency and honesty; seed once as an unreviewed draft; submit → approve → publish; published content never rewritten (database trigger) and supersession kept; one published revision per guide (unique index); identical content creates nothing; concurrent edit gives 409; source import gives "may need review" without changing content; generic second system; unsafe links (6 cases) refused; inconsistent drafts refused |
 | Focused frontend (System Understanding page and presentation, navigation, Help Center, user guide, documentation catalog, Recommended Workflow, feature visibility) | **292/292 PASS** (run before the final label change; re-run in the follow-up regression) |
 | First runs | Failed: page/namespace name clash in the test, a wrong bUnit keyboard API, raw-SQL `{}` placeholder. All were test-code errors, fixed |
+| Full frontend regression at `e8615434` | **8630/8630 PASS** (0 failed, 0 skipped) |
+| Full backend regression at `e8615434`, six sequential memory-guarded partitions | **6510 passed, 0 failed, 19 skipped (6529)**: partitions 1–5 = 1049/1098/840/652/520 passed (2/5/0/1/3 skipped). Partition 6 was stopped by the memory guard on the first run because another workload (an isolated import for the next task) ran at the same time; this was not a test failure. A re-run of partition 6 alone gave 2351 passed, 8 skipped, 0 failed |
+| Build | Api.Tests and Web.Tests build succeeded (294 / 147 warnings, all pre-existing kinds) |
 
 ## 2. Browser acceptance
 
