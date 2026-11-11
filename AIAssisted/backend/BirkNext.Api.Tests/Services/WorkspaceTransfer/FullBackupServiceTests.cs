@@ -98,7 +98,7 @@ public sealed class FullBackupServiceTests : IAsyncLifetime
         var report = await service.RestoreIsolatedAsync(created.Backup.FileName, Pass, default);
         _created.Add(report.RestoredDatabase);
         report.Verdict.Should().Be("VERIFIED_WITH_WARNINGS", string.Join(" | ", report.Checks.Select(c => $"{c.Name}:{c.Status}:{c.Detail}")));
-        report.Checks.Where(c => c.Status == CheckStatus.Warning).Select(c => c.Name).Should().BeEquivalentTo("File → database references", "Secrets");
+        report.Checks.Where(c => c.Status == TransferCheckStatus.Warning).Select(c => c.Name).Should().BeEquivalentTo("File → database references", "Secrets");
         report.RestoredDatabase.Should().MatchRegex("^birknext_restore_[0-9a-f]{12}$").And.NotBe(_source);
 
         // Independent oracle: counts and key rows read directly from both databases; files compared byte by byte.
@@ -121,7 +121,7 @@ public sealed class FullBackupServiceTests : IAsyncLifetime
 
         var wrong = await service.RestoreIsolatedAsync(created.Backup.FileName, "another passphrase 99", default);
         wrong.Verdict.Should().Be("FAILED");
-        wrong.Checks.Should().Contain(c => c.Name == "Decryption and authenticity" && c.Status == CheckStatus.Fail);
+        wrong.Checks.Should().Contain(c => c.Name == "Decryption and authenticity" && c.Status == TransferCheckStatus.Fail);
 
         var path = Path.Combine(service.BackupDirectory, created.Backup.FileName);
         var bytes = await File.ReadAllBytesAsync(path);
@@ -143,7 +143,7 @@ public sealed class FullBackupServiceTests : IAsyncLifetime
         var restoresBefore = await RestoreDatabases();
         var report = await older.RestoreIsolatedAsync(created.Backup.FileName, Pass, default);
         report.Verdict.Should().Be("FAILED");
-        report.Checks.Should().Contain(c => c.Name == "Compatibility" && c.Status == CheckStatus.Fail && c.Detail.Contains("newer BirkNext"));
+        report.Checks.Should().Contain(c => c.Name == "Compatibility" && c.Status == TransferCheckStatus.Fail && c.Detail.Contains("newer BirkNext"));
         (await RestoreDatabases()).Should().BeEquivalentTo(restoresBefore);
     }
 

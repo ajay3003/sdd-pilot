@@ -1,0 +1,393 @@
+@page "/workspace-transfer"
+@using BirkNext.WorkspaceTransfer
+
+<PageTitle>Backup &amp; Transfer – BirkNext</PageTitle>
+
+<div class="wtx" data-testid="wtx" aria-busy="@(_busy ? "true" : "false")">
+    <header class="wtx-hero">
+        <div>
+            <h1>Backup &amp; Transfer</h1>
+            <p class="wtx-muted">Back up this installation, or move a project or an integration to another BirkNext. Packages carry configuration and history — never credentials, sessions or active connections.</p>
+        </div>
+    </header>
+
+    @if (_error is not null) { <p class="wtx-error" role="alert" data-testid="wtx-error">@_error</p> }
+    @if (_message is not null) { <p class="wtx-message" role="status" data-testid="wtx-message">@_message</p> }
+
+    <nav class="wtx-areas" aria-label="Backup and Transfer areas" data-testid="wtx-areas">
+        @foreach (var (key, label, hint) in Areas)
+        {
+            <a href="@AreaHref(key)" class="wtx-area @(Area == key ? "is-active" : "")" aria-current="@(Area == key ? "page" : null)" data-testid="@($"wtx-area-{key}")">
+                <span class="wtx-area-label">@label</span><span class="wtx-area-hint">@hint</span>
+            </a>
+        }
+    </nav>
+
+    @switch (Area)
+    {
+        case "export":
+            <section class="wtx-card" aria-labelledby="wtx-export-h" data-testid="wtx-export">
+                <h2 id="wtx-export-h">Export a package</h2>
+                <ol class="wtx-steps" aria-label="Export steps">
+                    <li class="@(_exportPreview is null ? "is-current" : "is-done")">Choose scope</li>
+                    <li class="@(_exportPreview is not null && _exportResult is null ? "is-current" : _exportResult is not null ? "is-done" : "")">Review dependencies &amp; security</li>
+                    <li class="@(_exportResult is not null ? "is-current" : "")">Download</li>
+                </ol>
+
+                <div class="wtx-segment" role="radiogroup" aria-label="Package type" data-testid="wtx-kind">
+                    @foreach (var (kind, label) in new[] { (TransferKind.ProjectWorkspace, "Project"), (TransferKind.IntegrationWorkspace, "Integration"), (TransferKind.Diagnostic, "Diagnostic") })
+                    {
+                        <button type="button" role="radio" aria-checked="@(_kind == kind ? "true" : "false")" class="wtx-seg @(_kind == kind ? "is-active" : "")"
+                                data-testid="@($"wtx-kind-{kind}")" @onclick="() => ChooseKind(kind)">@label</button>
+                    }
+                </div>
+
+                @if (_scopes is null) { <p class="wtx-muted">Loading what can be exported…</p> }
+                else if (_kind == TransferKind.IntegrationWorkspace)
+                {
+                    <label class="wtx-search">Find an environment <input type="search" @bind="_scopeSearch" @bind:event="oninput" placeholder="Environment name or id" data-testid="wtx-scope-search" /></label>
+                    <div class="wtx-choices" role="radiogroup" aria-label="Integration environment" data-testid="wtx-env-choices">
+                        @foreach (var e in FilteredEnvironments)
+                        {
+                            <button type="button" role="radio" aria-checked="@(_environmentId == e.EnvironmentId ? "true" : "false")" class="wtx-choice @(_environmentId == e.EnvironmentId ? "is-active" : "")"
+                                    data-testid="wtx-env-choice" @onclick="() => { _environmentId = e.EnvironmentId; ResetExport(); }">
+                                <strong>@EnvironmentName(e.EnvironmentId)</strong>
+                                <span class="wtx-muted">@e.ConnectedSystems systems · @e.Integrations integrations · @e.SourceBindings source bindings · @e.Flows browser tests · @e.Suites suites</span>
+                            </button>
+                        }
+                        @if (!FilteredEnvironments.Any()) { <p class="wtx-muted">No environment has stored integration configuration.</p> }
+                    </div>
+                    <label class="wtx-check"><input type="checkbox" @bind="_includeProfile" data-testid="wtx-include-profile" /> Include this environment's Target Environment profile (non-secret settings; imported as a disabled draft)</label>
+                }
+                else if (_kind == TransferKind.ProjectWorkspace)
+                {
+                    <label class="wtx-search">Find a project <input type="search" @bind="_scopeSearch" @bind:event="oninput" placeholder="Project name" data-testid="wtx-scope-search" /></label>
+                    <div class="wtx-choices" role="radiogroup" aria-label="Project" data-testid="wtx-project-choices">
+                        @foreach (var p in FilteredProjects)
+                        {
+                            <button type="button" role="radio" aria-checked="@(_projectKey == p.ProjectKey ? "true" : "false")" class="wtx-choice @(_projectKey == p.ProjectKey ? "is-active" : "")"
+                                    data-testid="wtx-project-choice" @onclick="() => { _projectKey = p.ProjectKey; ResetExport(); }">
+                                <strong>@p.DisplayName</strong>
+                                <span class="wtx-muted">@p.Snapshots snapshot(s) · @p.Contracts contract(s) · @p.Suites suite(s) · @p.CompositeContexts composite context(s) · analysed @p.LatestAnalysis.ToLocalTime().ToString("yyyy-MM-dd")</span>
+                            </button>
+                        }
+                        @if (!FilteredProjects.Any()) { <p class="wtx-muted">No imported project matches.</p> }
+                    </div>
+                }
+                else
+                {
+                    <div class="wtx-grid2">
+                        <label class="wtx-field">Integration suite key <input @bind="_suiteKey" placeholder="scope:project:fingerprint" data-testid="wtx-diag-suite" /></label>
+                        <label class="wtx-field">or Critical E2E flow id <input @bind="_flowId" placeholder="flow-…" data-testid="wtx-diag-flow" /></label>
+                    </div>
+                    <p class="wtx-muted">A diagnostic package holds only what reproduces one suite or flow. Identifier-shaped values are replaced by stable markers; evidence bodies are left out.</p>
+                }
+
+                @if (_kind != TransferKind.Diagnostic)
+                {
+                    <label class="wtx-check"><input type="checkbox" @bind="_includeEvidence" data-testid="wtx-include-evidence" /> Include recent execution evidence (imported elsewhere as history, never as new runs)</label>
+                }
+                <div class="wtx-actions">
+                    <button class="btn btn-primary" disabled="@(!CanPreview || _busy)" @onclick="PreviewExport" data-testid="wtx-preview-export">Review dependencies</button>
+                </div>
+
+                @if (_exportPreview is { } ep)
+                {
+                    <section class="wtx-sub" aria-labelledby="wtx-ep-h" data-testid="wtx-export-preview">
+                        <h3 id="wtx-ep-h">@ep.Scope <span class="wtx-pill @(ep.Completeness == "COMPLETE" ? "wtx-ok" : "wtx-warn")" data-testid="wtx-completeness">@ep.Completeness</span></h3>
+                        <ul class="wtx-chips" aria-label="Objects in the package" data-testid="wtx-counts">
+                            @foreach (var (type, n) in ep.Counts.OrderBy(c => c.Key)) { <li><span class="wtx-chip-n">@n</span> @TypeLabel(type)</li> }
+                        </ul>
+                        @if (ep.Stages.Count > 0)
+                        {
+                            <ol class="wtx-stages" aria-label="Integration stages" data-testid="wtx-stage-map">
+                                @foreach (var s in ep.Stages)
+                                {
+                                    <li><strong>@s.Stage</strong><span class="wtx-muted">@(s.SourceProject ?? "no source project")</span><span class="wtx-pill @(s.Status == "Source included" ? "wtx-ok" : "wtx-warn")">@s.Status</span></li>
+                                }
+                            </ol>
+                        }
+                        @if (ep.Dependencies.Any(d => d.Status != DependencyStatus.Included))
+                        {
+                            <h4>Dependencies not in the package</h4>
+                            <ul class="wtx-list" data-testid="wtx-deps">
+                                @foreach (var d in ep.Dependencies.Where(d => d.Status != DependencyStatus.Included))
+                                {
+                                    <li><span class="wtx-pill @(d.Status == DependencyStatus.ExternalReference ? "wtx-info" : "wtx-bad")">@DependencyLabel(d.Status)</span> @TypeLabel(d.To.Type) for @TypeLabel(d.From.Type) — @d.Detail</li>
+                                }
+                            </ul>
+                        }
+                        @if (ep.RequiredCapabilities.Count > 0)
+                        {
+                            <p class="wtx-muted" data-testid="wtx-capabilities">Needs these capabilities in the destination: @string.Join(", ", ep.RequiredCapabilities)</p>
+                        }
+                        <h4>Security review</h4>
+                        @if (ep.Security.Count == 0) { <p class="wtx-muted" data-testid="wtx-security-clean">No secret- or identifier-shaped values found.</p> }
+                        else
+                        {
+                            <ul class="wtx-list" data-testid="wtx-security">
+                                @foreach (var f in ep.Security.Take(20)) { <li><span class="wtx-pill @(f.Severity == "BLOCKING" ? "wtx-bad" : "wtx-warn")">@f.Severity</span> @f.Finding <span class="wtx-mono">@f.Location</span></li> }
+                            </ul>
+                            @if (ep.Security.Any(f => f.Severity == "SENSITIVE") && _kind != TransferKind.Diagnostic)
+                            {
+                                <label class="wtx-check"><input type="checkbox" @bind="_acknowledge" data-testid="wtx-ack" /> These identifier-shaped values are synthetic test data</label>
+                            }
+                        }
+                        <details class="wtx-details"><summary>Never exported</summary><ul class="wtx-list">@foreach (var x in ep.Excluded) { <li>@x</li> }</ul></details>
+                        @if (ep.Blockers.Count > 0)
+                        {
+                            <ul class="wtx-blockers" data-testid="wtx-blockers">@foreach (var b in ep.Blockers) { <li>@b</li> }</ul>
+                            @if (ep.Completeness == "PARTIAL")
+                            {
+                                <label class="wtx-check"><input type="checkbox" @bind="_allowPartial" data-testid="wtx-partial" /> Create an explicitly PARTIAL package</label>
+                            }
+                        }
+                        <div class="wtx-actions">
+                            <button class="btn btn-primary" disabled="@_busy" @onclick="CreatePackage" data-testid="wtx-create-package">Create package</button>
+                        </div>
+                    </section>
+                }
+
+                @if (_exportResult is { } er)
+                {
+                    <section class="wtx-sub wtx-result" aria-labelledby="wtx-er-h" data-testid="wtx-export-result">
+                        <h3 id="wtx-er-h">Package ready</h3>
+                        <dl class="wtx-facts">
+                            <div><dt>File</dt><dd class="wtx-mono">@er.FileName</dd></div>
+                            <div><dt>Size</dt><dd>@Size(er.Bytes)</dd></div>
+                            <div><dt>Completeness</dt><dd>@er.Manifest.Completeness</dd></div>
+                            <div><dt>SHA-256</dt><dd class="wtx-mono" data-testid="wtx-package-sha">@er.Sha256</dd></div>
+                        </dl>
+                        <p class="wtx-muted">@er.Manifest.Authenticity</p>
+                        <a class="btn btn-primary" href="@Api.PackageDownloadUrl(er.FileName)" download="@er.FileName" data-testid="wtx-download-package">Download package</a>
+                    </section>
+                }
+            </section>
+            break;
+
+        case "import":
+            <section class="wtx-card" aria-labelledby="wtx-import-h" data-testid="wtx-import">
+                <h2 id="wtx-import-h">Import a package</h2>
+                <ol class="wtx-steps" aria-label="Import steps">
+                    <li class="@(_importPreview is null ? "is-current" : "is-done")">Select package</li>
+                    <li class="@(_importPreview is not null && _importReport is null ? "is-current" : _importReport is not null ? "is-done" : "")">Inspect, map &amp; decide</li>
+                    <li class="@(_importReport is not null ? "is-current" : "")">Verification report</li>
+                </ol>
+                <p class="wtx-muted">Nothing is written until you apply. The preview checks the package's integrity, format and capabilities, and compares every object with this installation.</p>
+                <label class="wtx-file">.birknext package <InputFile OnChange="StagePackage" accept=".birknext,.zip" disabled="@_busy" data-testid="wtx-import-file" /></label>
+
+                @if (_importPreview is { } ip)
+                {
+                    <section class="wtx-sub" aria-labelledby="wtx-ip-h" data-testid="wtx-import-preview">
+                        <h3 id="wtx-ip-h">@(ip.Manifest?.Label ?? "Package") <span class="wtx-pill @(ip.Verdict == "REFUSED" ? "wtx-bad" : "wtx-info")" data-testid="wtx-import-verdict">@Pretty(ip.Verdict)</span></h3>
+                        <ul class="wtx-checks" data-testid="wtx-import-checks">
+                            @foreach (var c in ip.Checks) { <li><span class="wtx-pill @CheckClass(c.Status)">@c.Status</span> <strong>@c.Name</strong> — @c.Detail</li> }
+                        </ul>
+                        @if (ip.Manifest is { } m)
+                        {
+                            <dl class="wtx-facts">
+                                <div><dt>Type</dt><dd>@TypeName(m.ExportType)</dd></div>
+                                <div><dt>Projects</dt><dd>@string.Join(", ", m.IncludedProjects)</dd></div>
+                                <div><dt>Exported</dt><dd>@m.ExportTimestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm") by BirkNext @m.BirkNextApplicationVersion</dd></div>
+                                <div><dt>Evidence</dt><dd>@m.OptionalEvidencePolicy</dd></div>
+                            </dl>
+                        }
+                        @if (ip.Environment is { } env)
+                        {
+                            <fieldset class="wtx-mapping" data-testid="wtx-env-mapping">
+                                <legend>Destination environment for "@(env.ImportedName ?? env.ImportedEnvironmentId)"</legend>
+                                <p class="wtx-muted">@env.Note</p>
+                                <label><input type="radio" name="wtx-env" checked="@(_envAction == EnvironmentMappingAction.LeaveUnresolved)" @onchange="() => _envAction = EnvironmentMappingAction.LeaveUnresolved" data-testid="wtx-env-leave" /> Leave unresolved — import only project data</label>
+                                <label><input type="radio" name="wtx-env" checked="@(_envAction == EnvironmentMappingAction.CreateDisabled)" @onchange="() => _envAction = EnvironmentMappingAction.CreateDisabled" data-testid="wtx-env-create" /> Create a new disabled environment</label>
+                                <label><input type="radio" name="wtx-env" checked="@(_envAction == EnvironmentMappingAction.ReuseVerified)" @onchange="() => _envAction = EnvironmentMappingAction.ReuseVerified" disabled="@(env.Candidates.Count == 0)" data-testid="wtx-env-reuse" /> Use one of my verified environments</label>
+                                @if (_envAction == EnvironmentMappingAction.ReuseVerified)
+                                {
+                                    <div class="wtx-choices" role="radiogroup" aria-label="Environment">
+                                        @foreach (var c in env.Candidates)
+                                        {
+                                            <button type="button" role="radio" aria-checked="@(_targetEnv == c.Id ? "true" : "false")" class="wtx-choice @(_targetEnv == c.Id ? "is-active" : "")" @onclick="() => _targetEnv = c.Id" data-testid="wtx-env-candidate">
+                                                <strong>@c.Name</strong><span class="wtx-muted">@c.EnvironmentType</span></button>
+                                        }
+                                    </div>
+                                }
+                            </fieldset>
+                        }
+                        @if (ip.UnsupportedCapabilities.Count > 0)
+                        {
+                            <p class="wtx-warning" data-testid="wtx-unsupported">Not available in this BirkNext (stays unsupported and not executable): @string.Join(", ", ip.UnsupportedCapabilities)</p>
+                        }
+                        <h4>Objects</h4>
+                        <div class="wtx-groups" data-testid="wtx-import-items">
+                            @foreach (var group in ip.Items.GroupBy(i => i.Status).OrderBy(g => StatusOrder(g.Key)))
+                            {
+                                <details class="wtx-group" open="@(group.Key is not (ImportStatus.Identical or ImportStatus.New))" data-testid="@($"wtx-group-{group.Key}")">
+                                    <summary><span class="wtx-pill @StatusClass(group.Key)">@Pretty(group.Key.ToString())</span> @group.Count() object(s)</summary>
+                                    <ul class="wtx-items">
+                                        @foreach (var item in group)
+                                        {
+                                            <li>
+                                                <div><strong>@item.Label</strong> <span class="wtx-muted">@TypeLabel(item.Type)</span></div>
+                                                <div class="wtx-muted">@item.Detail</div>
+                                                @if (item.AllowedActions.Count > 1)
+                                                {
+                                                    <div class="wtx-decision" role="radiogroup" aria-label="@($"Decision for {item.Label}")">
+                                                        @foreach (var a in item.AllowedActions)
+                                                        {
+                                                            <button type="button" role="radio" aria-checked="@(Decision(item) == a ? "true" : "false")" class="wtx-seg wtx-seg-sm @(Decision(item) == a ? "is-active" : "")"
+                                                                    @onclick="() => _decisions[item.Key] = a" data-testid="wtx-decision">@Pretty(a.ToString())</button>
+                                                        }
+                                                    </div>
+                                                }
+                                            </li>
+                                        }
+                                    </ul>
+                                </details>
+                            }
+                        </div>
+                        @if (ip.CanApply && _importReport is null)
+                        {
+                            <div class="wtx-actions">
+                                <button class="btn btn-primary" disabled="@(_busy || (_envAction == EnvironmentMappingAction.ReuseVerified && _targetEnv is null))" @onclick="ApplyImport" data-testid="wtx-apply-import">Apply import</button>
+                                <span class="wtx-muted">Imported connections stay disabled; nothing is executed.</span>
+                            </div>
+                        }
+                    </section>
+                }
+
+                @if (_importReport is { } rep)
+                {
+                    <section class="wtx-sub wtx-result" aria-labelledby="wtx-rep-h" data-testid="wtx-import-report">
+                        <h3 id="wtx-rep-h">Verification report <span class="wtx-pill @(rep.State == "COMPLETED" ? "wtx-ok" : "wtx-bad")" data-testid="wtx-import-state">@Pretty(rep.State)</span></h3>
+                        @if (rep.Error is not null) { <p class="wtx-error">@rep.Error</p> }
+                        <ul class="wtx-readiness" aria-label="Readiness after import" data-testid="wtx-readiness">
+                            @foreach (var r in rep.Readiness) { <li><span class="wtx-dim">@Pretty(r.Dimension)</span><span class="wtx-pill @ReadinessClass(r)">@r.Status</span><span class="wtx-muted">@r.Detail</span></li> }
+                        </ul>
+                        <details class="wtx-details" open data-testid="wtx-reconciliation">
+                            <summary>Reconciliation (@rep.Reconciliation.Count)</summary>
+                            <ul class="wtx-list">@foreach (var r in rep.Reconciliation) { <li><span class="wtx-pill @ReconcileClass(r.Status)">@Pretty(r.Status.ToString())</span> @r.Item — @r.Detail</li> }</ul>
+                        </details>
+                        @if (rep.IdentityMap.Count > 0)
+                        {
+                            <details class="wtx-details"><summary>Identity mapping (@rep.IdentityMap.Count)</summary><ul class="wtx-list wtx-mono">@foreach (var m in rep.IdentityMap) { <li>@m.Type: @m.ImportedId → @m.DestinationId</li> }</ul></details>
+                        }
+                        <p class="wtx-muted">@rep.HistoricalRecords historical record(s) imported as history; they are not runs or approvals of this installation.</p>
+                        @if (rep.ProfileDraftJson is not null)
+                        {
+                            <div class="wtx-actions">
+                                <button class="btn btn-secondary" disabled="@_profileCreated" @onclick="CreateDraftProfile" data-testid="wtx-create-profile">Create the disabled draft Target Environment</button>
+                                <span class="wtx-muted">Credentials, sign-in and target checks are set up there afterwards.</span>
+                            </div>
+                        }
+                        @if (rep.State == "FAILED_RECOVERABLE")
+                        {
+                            <div class="wtx-actions"><button class="btn btn-primary" disabled="@_busy" @onclick="ApplyImport" data-testid="wtx-retry-import">Retry the remaining steps</button></div>
+                        }
+                    </section>
+                }
+            </section>
+            break;
+
+        case "backup":
+            <section class="wtx-card" aria-labelledby="wtx-backup-h" data-testid="wtx-backup">
+                <h2 id="wtx-backup-h">Full backup</h2>
+                @if (_status is { } st)
+                {
+                    <dl class="wtx-facts" data-testid="wtx-backup-status">
+                        <div><dt>PostgreSQL tools</dt><dd><span class="wtx-pill @(st.DumpToolVersion is null ? "wtx-bad" : "wtx-ok")">@(st.DumpToolVersion is null ? "Not available" : "Available")</span> @(st.DumpToolVersion ?? st.ToolProblem)</dd></div>
+                        <div><dt>Mode</dt><dd>@st.Mode</dd></div>
+                        <div><dt>Managed files now</dt><dd>@st.ManagedFiles.Count</dd></div>
+                        <div><dt>BirkNext</dt><dd>@st.ApplicationVersion <span class="wtx-mono">@ShortCommit(st.ApplicationCommit)</span></dd></div>
+                    </dl>
+                    <details class="wtx-details"><summary>What a backup contains and leaves out</summary>
+                        <p>Every database table (PostgreSQL custom-format dump from one consistent snapshot) and the managed file stores: @string.Join(", ", st.ManagedFiles).</p>
+                        <ul class="wtx-list">@foreach (var x in st.Excluded) { <li><strong>@x.Component</strong> — @x.Reason</li> }</ul>
+                    </details>
+                }
+                <form class="wtx-form" @onsubmit="CreateBackup" @onsubmit:preventDefault data-testid="wtx-backup-form">
+                    <div class="wtx-grid2">
+                        <label class="wtx-field">Passphrase (at least 12 characters) <input type="password" autocomplete="new-password" @bind="_passphrase" data-testid="wtx-passphrase" /></label>
+                        <label class="wtx-field">Repeat passphrase <input type="password" autocomplete="new-password" @bind="_passphrase2" data-testid="wtx-passphrase2" /></label>
+                    </div>
+                    <label class="wtx-field">Note (optional) <input @bind="_note" maxlength="200" data-testid="wtx-note" /></label>
+                    <p class="wtx-warning">Backups are always encrypted. BirkNext does not keep the passphrase: if it is lost, the backup cannot be opened by anyone.</p>
+                    <div class="wtx-actions"><button class="btn btn-primary" type="submit" disabled="@(_busy || _status?.DumpToolVersion is null)" data-testid="wtx-create-backup">Create full backup</button></div>
+                </form>
+            </section>
+
+            <section class="wtx-card" aria-labelledby="wtx-backups-h" data-testid="wtx-backups">
+                <h2 id="wtx-backups-h">Backups and isolated restore</h2>
+                <p class="wtx-muted">A restore always goes into a new database and a separate folder, then BirkNext checks it against the backup's own inventory. The running installation is never changed, and there is no switch-over button.</p>
+                @if (_backups.Count == 0) { <p class="wtx-muted">No backups yet.</p> }
+                <ul class="wtx-backuplist">
+                    @foreach (var b in _backups)
+                    {
+                        <li data-testid="wtx-backup-row">
+                            <div class="wtx-backup-head">
+                                <strong>@b.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</strong>
+                                <span class="wtx-muted">@Size(b.Bytes) · BirkNext @b.ApplicationVersion · PostgreSQL @b.DatabaseServerVersion.Split(' ')[0]@(string.IsNullOrEmpty(b.Note) ? "" : $" · {b.Note}")</span>
+                            </div>
+                            <div class="wtx-backup-actions">
+                                <a class="btn btn-sm btn-secondary" href="@Api.BackupDownloadUrl(b.FileName)" download="@b.FileName">Download</a>
+                                <button class="btn btn-sm btn-secondary" @onclick="() => OpenBackup(b.FileName)" data-testid="wtx-open-backup">Inspect / restore</button>
+                            </div>
+                            @if (_openBackup == b.FileName)
+                            {
+                                <div class="wtx-sub" data-testid="wtx-backup-panel">
+                                    <label class="wtx-field">Backup passphrase <input type="password" autocomplete="off" @bind="_restorePassphrase" data-testid="wtx-restore-passphrase" /></label>
+                                    <div class="wtx-actions">
+                                        <button class="btn btn-secondary" disabled="@_busy" @onclick="() => InspectBackup(b.FileName)" data-testid="wtx-inspect">Verify</button>
+                                        <button class="btn btn-primary" disabled="@(_busy || string.IsNullOrEmpty(_restorePassphrase))" @onclick="() => Restore(b.FileName)" data-testid="wtx-restore">Restore into a new isolated database</button>
+                                    </div>
+                                    @if (_inspection is { } ins)
+                                    {
+                                        <ul class="wtx-checks" data-testid="wtx-inspection">@foreach (var c in ins.Checks) { <li><span class="wtx-pill @CheckClass(c.Status)">@c.Status</span> <strong>@c.Name</strong> — @c.Detail</li> }</ul>
+                                    }
+                                </div>
+                            }
+                        </li>
+                    }
+                </ul>
+                @if (_restores.Count > 0)
+                {
+                    <h3>Restore reports</h3>
+                    <ul class="wtx-backuplist" data-testid="wtx-restores">
+                        @foreach (var r in _restores)
+                        {
+                            <li>
+                                <div class="wtx-backup-head"><span class="wtx-pill @(r.Verdict.StartsWith("VERIFIED") ? "wtx-ok" : "wtx-bad")" data-testid="wtx-restore-verdict">@Pretty(r.Verdict)</span>
+                                    <strong class="wtx-mono">@(string.IsNullOrEmpty(r.RestoredDatabase) ? "no database created" : r.RestoredDatabase)</strong>
+                                    <span class="wtx-muted">@r.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") from @r.BackupFileName</span></div>
+                                <details class="wtx-details"><summary>@r.Checks.Count check(s)</summary>
+                                    <ul class="wtx-checks">@foreach (var c in r.Checks) { <li><span class="wtx-pill @CheckClass(c.Status)">@c.Status</span> <strong>@c.Name</strong> — @c.Detail</li> }</ul>
+                                    <p class="wtx-muted">@r.CutoverPolicy</p>
+                                </details>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+            break;
+
+        default:
+            <section class="wtx-cards" aria-label="What do you want to do?" data-testid="wtx-overview">
+                @foreach (var (area, kind, title, text) in Actions)
+                {
+                    <a class="wtx-action" href="@ActionHref(area, kind)" data-testid="@($"wtx-action-{title.Replace(' ', '-').ToLowerInvariant()}")">
+                        <strong>@title</strong><span>@text</span>
+                    </a>
+                }
+            </section>
+            <section class="wtx-card" aria-labelledby="wtx-hist-h" data-testid="wtx-history">
+                <h2 id="wtx-hist-h">Recent activity</h2>
+                @if (_operations.Count == 0) { <p class="wtx-muted">No exports or imports yet.</p> }
+                <ul class="wtx-history">
+                    @foreach (var o in _operations)
+                    {
+                        <li><span class="wtx-pill @OperationClass(o.State)">@Pretty(o.State)</span><strong>@o.Kind</strong><span>@o.Summary</span>
+                            <span class="wtx-muted">@o.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")@(o.Error is null ? "" : $" — {o.Error}")</span></li>
+                    }
+                </ul>
+            </section>
+            break;
+    }
+</div>

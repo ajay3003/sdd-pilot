@@ -354,6 +354,10 @@ if (entra.Configured)
 var executionEvidenceClient = builder.Services.AddHttpClient<IExecutionEvidenceApiService, ExecutionEvidenceApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
     executionEvidenceClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
+// Backup & Transfer: full backup / isolated restore, project and integration packages (every decision is the backend's).
+var workspaceTransferClient = builder.Services.AddHttpClient<IWorkspaceTransferApiService, WorkspaceTransferApiService>(client => { client.BaseAddress = backendBase; client.Timeout = TimeSpan.FromMinutes(30); });
+if (entra.Configured)
+    workspaceTransferClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
 // Test Execution & Evidence: read-only unified projection over the evidence owners.
 var executionExplorerClient = builder.Services.AddHttpClient<IExecutionExplorerApiService, ExecutionExplorerApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)

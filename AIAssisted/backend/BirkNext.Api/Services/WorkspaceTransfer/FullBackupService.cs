@@ -331,7 +331,7 @@ public sealed class FullBackupService
             header = JsonSerializer.Deserialize<BackupPublicHeader>(TransferCrypto.ReadPreamble(f).HeaderJson, TransferJson.Options)!;
         if (string.IsNullOrEmpty(passphrase))
             return new BackupInspection(fileName, header, false, null,
-                [new("Header", CheckStatus.NotRun, "The header is readable but not authenticated until the backup is decrypted with its passphrase.")], "NOT_VERIFIED");
+                [new("Header", TransferCheckStatus.NotRun, "The header is readable but not authenticated until the backup is decrypted with its passphrase.")], "NOT_VERIFIED");
         var staging = Path.Combine(RestoreRoot, "inspect-" + Guid.NewGuid().ToString("N"));
         try
         {
@@ -354,7 +354,7 @@ public sealed class FullBackupService
             header = JsonSerializer.Deserialize<BackupPublicHeader>(preamble.HeaderJson, TransferJson.Options)!;
             if (header.Format != "birknext-backup" || header.FormatVersion != 1)
             {
-                checks.Add(new("Format", CheckStatus.Fail, $"Unsupported backup format {header.Format} v{header.FormatVersion}."));
+                checks.Add(new("Format", TransferCheckStatus.Fail, $"Unsupported backup format {header.Format} v{header.FormatVersion}."));
                 return (null, checks);
             }
             await using var plain = TransferCrypto.CreateDecryptingStream(input, preamble, passphrase);
@@ -364,42 +364,42 @@ public sealed class FullBackupService
         }
         catch (TransferAuthenticationException ex)
         {
-            checks.Add(new("Decryption and authenticity", CheckStatus.Fail, ex.Message));
+            checks.Add(new("Decryption and authenticity", TransferCheckStatus.Fail, ex.Message));
             return (null, checks);
         }
         catch (TransferFormatException ex)
         {
-            checks.Add(new("Format", CheckStatus.Fail, $"{ex.Code}: {ex.Message}"));
+            checks.Add(new("Format", TransferCheckStatus.Fail, $"{ex.Code}: {ex.Message}"));
             return (null, checks);
         }
-        checks.Add(new("Decryption and authenticity", CheckStatus.Pass, "Every chunk authenticated with the passphrase (AES-256-GCM); the header and chunk order are unchanged."));
+        checks.Add(new("Decryption and authenticity", TransferCheckStatus.Pass, "Every chunk authenticated with the passphrase (AES-256-GCM); the header and chunk order are unchanged."));
 
         await using var zipFile = File.OpenRead(payload);
         TransferArchiveReader zip;
         try { zip = TransferArchiveReader.Open(zipFile, TransferArchiveLimits.Backup); }
-        catch (TransferFormatException ex) { checks.Add(new("Archive", CheckStatus.Fail, $"{ex.Code}: {ex.Message}")); return (null, checks); }
+        catch (TransferFormatException ex) { checks.Add(new("Archive", TransferCheckStatus.Fail, $"{ex.Code}: {ex.Message}")); return (null, checks); }
         using (zip)
         {
             var problems = await zip.VerifyHashesAsync(TransferJson.Options, ct);
             checks.Add(problems.Count == 0
-                ? new("Content hashes", CheckStatus.Pass, $"{zip.Paths.Count - 1} entries match integrity/hashes.json (SHA-256).")
-                : new("Content hashes", CheckStatus.Fail, string.Join(" ", problems.Take(5))));
+                ? new("Content hashes", TransferCheckStatus.Pass, $"{zip.Paths.Count - 1} entries match integrity/hashes.json (SHA-256).")
+                : new("Content hashes", TransferCheckStatus.Fail, string.Join(" ", problems.Take(5))));
             if (problems.Count > 0) return (null, checks);
             var manifest = await zip.ReadJsonAsync<BackupManifest>("manifest.json", TransferJson.Options);
             checks.Add(manifest.BackupId == header.BackupId && manifest.BackupFormatVersion == 1
-                ? new("Manifest", CheckStatus.Pass, $"Backup {manifest.BackupId:D} from {manifest.BackupTimestamp:u}, BirkNext {manifest.ApplicationVersion} ({manifest.ApplicationCommit}).")
-                : new("Manifest", CheckStatus.Fail, "The manifest does not belong to this backup header."));
+                ? new("Manifest", TransferCheckStatus.Pass, $"Backup {manifest.BackupId:D} from {manifest.BackupTimestamp:u}, BirkNext {manifest.ApplicationVersion} ({manifest.ApplicationCommit}).")
+                : new("Manifest", TransferCheckStatus.Fail, "The manifest does not belong to this backup header."));
             checks.Add(zip.Has("database/birknext.dump")
-                ? new("Database dump", CheckStatus.Pass, $"pg_dump custom format from {manifest.DumpToolVersion}; {manifest.Database.Tables.Count} tables, {manifest.Database.Tables.Sum(t => t.Rows):N0} rows at snapshot {manifest.Database.SnapshotId}.")
-                : new("Database dump", CheckStatus.Fail, "database/birknext.dump is missing."));
+                ? new("Database dump", TransferCheckStatus.Pass, $"pg_dump custom format from {manifest.DumpToolVersion}; {manifest.Database.Tables.Count} tables, {manifest.Database.Tables.Sum(t => t.Rows):N0} rows at snapshot {manifest.Database.SnapshotId}.")
+                : new("Database dump", TransferCheckStatus.Fail, "database/birknext.dump is missing."));
             var missingFiles = manifest.ManagedFileInventory.Where(f => !zip.Has($"files/{f.Store}/{f.RelativePath}")).ToList();
             checks.Add(missingFiles.Count == 0
-                ? new("Managed files", CheckStatus.Pass, $"{manifest.ManagedFileInventory.Count} managed files present.")
-                : new("Managed files", CheckStatus.Fail, $"Missing: {string.Join(", ", missingFiles.Select(f => f.Store + "/" + f.RelativePath))}."));
+                ? new("Managed files", TransferCheckStatus.Pass, $"{manifest.ManagedFileInventory.Count} managed files present.")
+                : new("Managed files", TransferCheckStatus.Fail, $"Missing: {string.Join(", ", missingFiles.Select(f => f.Store + "/" + f.RelativePath))}."));
             checks.Add(Compatibility(manifest));
             checks.Add(manifest.ConsistencyMethod.Contains("FILES_CHANGED_DURING_CAPTURE", StringComparison.Ordinal)
-                ? new("Consistency", CheckStatus.Warning, $"{manifest.ConsistencyMethod}: database and files are not from one moment.")
-                : new("Consistency", CheckStatus.Pass, manifest.ConsistencyMethod));
+                ? new("Consistency", TransferCheckStatus.Warning, $"{manifest.ConsistencyMethod}: database and files are not from one moment.")
+                : new("Consistency", TransferCheckStatus.Pass, manifest.ConsistencyMethod));
             return (manifest, checks);
         }
     }
@@ -412,11 +412,11 @@ public sealed class FullBackupService
             .ToList();
         var unknownTables = manifest.Database.Migrations.Keys.Where(k => !code.ContainsKey(k)).ToList();
         if (unknown.Count > 0)
-            return new("Compatibility", CheckStatus.Fail, $"The backup has migrations this build does not know (it comes from a newer BirkNext): {string.Join(", ", unknown.Take(5))}.");
+            return new("Compatibility", TransferCheckStatus.Fail, $"The backup has migrations this build does not know (it comes from a newer BirkNext): {string.Join(", ", unknown.Take(5))}.");
         var behind = code.Sum(kv => kv.Value.Count - (manifest.Database.Migrations.TryGetValue(kv.Key, out var have) ? have.Count : 0));
         return behind > 0
-            ? new("Compatibility", CheckStatus.Warning, $"The backup is {behind} migration(s) behind this build; BirkNext would migrate the restored database forward when it starts against it.")
-            : new("Compatibility", CheckStatus.Pass, unknownTables.Count == 0 ? "Schema migration state equals this build." : $"Schema state equals this build (history tables not used by this build: {string.Join(", ", unknownTables)}).");
+            ? new("Compatibility", TransferCheckStatus.Warning, $"The backup is {behind} migration(s) behind this build; BirkNext would migrate the restored database forward when it starts against it.")
+            : new("Compatibility", TransferCheckStatus.Pass, unknownTables.Count == 0 ? "Schema migration state equals this build." : $"Schema state equals this build (history tables not used by this build: {string.Join(", ", unknownTables)}).");
     }
 
     // ───────────────────────────── Isolated restore ─────────────────────────────
@@ -434,7 +434,7 @@ public sealed class FullBackupService
         {
             var staging = Path.Combine(dir, "staging");
             var (manifest, checks) = await DecryptAndVerifyAsync(path, passphrase, staging, ct);
-            if (manifest is null || checks.Any(c => c.Status == CheckStatus.Fail))
+            if (manifest is null || checks.Any(c => c.Status == TransferCheckStatus.Fail))
                 return Persist(dir, new RestoreReport { RestoreId = restoreId, BackupFileName = fileName, StartedAt = started, FinishedAt = _clock.GetUtcNow(), Checks = checks, Verdict = "FAILED" });
 
             var active = new NpgsqlConnectionStringBuilder(_connectionString) { Pooling = false };
@@ -458,20 +458,20 @@ public sealed class FullBackupService
                 {
                     await using var dump = zip.OpenRead("database/birknext.dump");
                     await _tools.RestoreAsync(targetConnection, dump, ct);
-                    checks.Add(new("Database restore", CheckStatus.Pass, $"pg_restore into the new database {target} (single transaction)."));
+                    checks.Add(new("Database restore", TransferCheckStatus.Pass, $"pg_restore into the new database {target} (single transaction)."));
                 }
                 catch (PostgresToolException ex)
                 {
-                    checks.Add(new("Database restore", CheckStatus.Fail, ex.Message));
+                    checks.Add(new("Database restore", TransferCheckStatus.Fail, ex.Message));
                     // Compensating cleanup of the scratch database this call created a moment ago (nothing else is ever dropped).
                     await DropOwnRestoreDatabaseAsync(active, target);
-                    checks.Add(new("Cleanup", CheckStatus.Pass, $"The incomplete database {target}, created by this restore, was dropped."));
+                    checks.Add(new("Cleanup", TransferCheckStatus.Pass, $"The incomplete database {target}, created by this restore, was dropped."));
                     return Persist(dir, new RestoreReport { RestoreId = restoreId, BackupFileName = fileName, BackupId = manifest.BackupId, RestoredDatabase = target, StartedAt = started, FinishedAt = _clock.GetUtcNow(), Checks = checks, Verdict = "FAILED" });
                 }
                 foreach (var f in manifest.ManagedFileInventory)
                 {
                     var store = _files.Stores.FirstOrDefault(s => s.Name == f.Store);
-                    if (store is null || !store.Files.Contains(f.RelativePath)) { checks.Add(new("Managed files", CheckStatus.Fail, $"Unknown managed file {f.Store}/{f.RelativePath}.")); continue; }
+                    if (store is null || !store.Files.Contains(f.RelativePath)) { checks.Add(new("Managed files", TransferCheckStatus.Fail, $"Unknown managed file {f.Store}/{f.RelativePath}.")); continue; }
                     var destination = Path.Combine(filesDir, f.Store, f.RelativePath);
                     EnsureDirectory(Path.GetDirectoryName(destination)!);
                     await using var source = zip.OpenRead($"files/{f.Store}/{f.RelativePath}");
@@ -501,8 +501,8 @@ public sealed class FullBackupService
         var checks = new List<TransferCheck>
         {
             !string.Equals(target.Database, activeDatabase, StringComparison.OrdinalIgnoreCase)
-                ? new("Isolation", CheckStatus.Pass, $"Restored into {target.Database}; the active database {activeDatabase} was not written.")
-                : new("Isolation", CheckStatus.Fail, "The restore target is the active database."),
+                ? new("Isolation", TransferCheckStatus.Pass, $"Restored into {target.Database}; the active database {activeDatabase} was not written.")
+                : new("Isolation", TransferCheckStatus.Fail, "The restore target is the active database."),
         };
         await using var db = new NpgsqlConnection(target.ConnectionString);
         await db.OpenAsync(ct);
@@ -513,15 +513,15 @@ public sealed class FullBackupService
         var tableDiff = expected.Where(kv => !actual.TryGetValue(kv.Key, out var n) || n != kv.Value).Select(kv => $"{kv.Key}: {kv.Value} → {(actual.TryGetValue(kv.Key, out var n) ? n : -1)}")
             .Concat(actual.Keys.Except(expected.Keys).Select(k => $"{k}: unexpected")).ToList();
         checks.Add(tableDiff.Count == 0
-            ? new("Tables and rows", CheckStatus.Pass, $"{actual.Count} tables, {actual.Values.Sum():N0} rows: identical to the backup inventory.")
-            : new("Tables and rows", CheckStatus.Fail, string.Join("; ", tableDiff.Take(8))));
+            ? new("Tables and rows", TransferCheckStatus.Pass, $"{actual.Count} tables, {actual.Values.Sum():N0} rows: identical to the backup inventory.")
+            : new("Tables and rows", TransferCheckStatus.Fail, string.Join("; ", tableDiff.Take(8))));
         var migrationDiff = manifest.Database.Migrations.Where(kv => !restored.Migrations.TryGetValue(kv.Key, out var ids) || !ids.SequenceEqual(kv.Value)).Select(kv => kv.Key).ToList();
         checks.Add(migrationDiff.Count == 0
-            ? new("EF migration state", CheckStatus.Pass, string.Join(", ", restored.Migrations.Select(kv => $"{kv.Key} {kv.Value.Count}")))
-            : new("EF migration state", CheckStatus.Fail, $"Differs in {string.Join(", ", migrationDiff)}."));
+            ? new("EF migration state", TransferCheckStatus.Pass, string.Join(", ", restored.Migrations.Select(kv => $"{kv.Key} {kv.Value.Count}")))
+            : new("EF migration state", TransferCheckStatus.Fail, $"Differs in {string.Join(", ", migrationDiff)}."));
         checks.Add(restored.ForeignKeys == manifest.Database.ForeignKeys
-            ? new("Referential constraints", CheckStatus.Pass, $"{restored.ForeignKeys} foreign keys restored and validated by PostgreSQL.")
-            : new("Referential constraints", CheckStatus.Fail, $"{restored.ForeignKeys} foreign keys, expected {manifest.Database.ForeignKeys}."));
+            ? new("Referential constraints", TransferCheckStatus.Pass, $"{restored.ForeignKeys} foreign keys restored and validated by PostgreSQL.")
+            : new("Referential constraints", TransferCheckStatus.Fail, $"{restored.ForeignKeys} foreign keys, expected {manifest.Database.ForeignKeys}."));
         var fileProblems = new List<string>();
         var referenced = new HashSet<string>(StringComparer.Ordinal);
         foreach (var f in manifest.ManagedFileInventory)
@@ -533,17 +533,17 @@ public sealed class FullBackupService
             foreach (Match m in SnapshotReference.Matches(System.Text.Encoding.UTF8.GetString(bytes))) referenced.Add(m.Groups["id"].Value.ToLowerInvariant());
         }
         checks.Add(fileProblems.Count == 0
-            ? new("Managed files", CheckStatus.Pass, $"{manifest.ManagedFileInventory.Count} files restored with identical SHA-256.")
-            : new("Managed files", CheckStatus.Fail, string.Join("; ", fileProblems)));
+            ? new("Managed files", TransferCheckStatus.Pass, $"{manifest.ManagedFileInventory.Count} files restored with identical SHA-256.")
+            : new("Managed files", TransferCheckStatus.Fail, string.Join("; ", fileProblems)));
         var snapshotIds = await ExistingSnapshotIdsAsync(db, tx, ct);
         var dangling = referenced.Where(id => !snapshotIds.Contains(id)).OrderBy(x => x, StringComparer.Ordinal).ToList();
         checks.Add(referenced.Count == manifest.FileSnapshotReferences && dangling.SequenceEqual(manifest.DanglingFileReferences)
-            ? new("File → database references", dangling.Count == 0 ? CheckStatus.Pass : CheckStatus.Warning,
+            ? new("File → database references", dangling.Count == 0 ? TransferCheckStatus.Pass : TransferCheckStatus.Warning,
                 dangling.Count == 0 ? $"All {referenced.Count} source-snapshot references from managed files resolve in the restored database."
                 : $"{referenced.Count} references; {dangling.Count} were already unresolved in the source at backup time (unchanged): {string.Join(", ", dangling.Take(3))}.")
-            : new("File → database references", CheckStatus.Fail, $"{referenced.Count} references with {dangling.Count} unresolved; the backup recorded {manifest.FileSnapshotReferences} with {manifest.DanglingFileReferences.Count}."));
+            : new("File → database references", TransferCheckStatus.Fail, $"{referenced.Count} references with {dangling.Count} unresolved; the backup recorded {manifest.FileSnapshotReferences} with {manifest.DanglingFileReferences.Count}."));
         await tx.RollbackAsync(ct);
-        checks.Add(new("Secrets", CheckStatus.Warning, "Credentials, sessions and pairings were not in the backup (by design): re-enter them before using the restored installation."));
+        checks.Add(new("Secrets", TransferCheckStatus.Warning, "Credentials, sessions and pairings were not in the backup (by design): re-enter them before using the restored installation."));
         return checks;
     }
 
@@ -566,7 +566,7 @@ public sealed class FullBackupService
     }
 
     private static string Verdict(IReadOnlyList<TransferCheck> checks) =>
-        checks.Any(c => c.Status == CheckStatus.Fail) ? "FAIL" : checks.Any(c => c.Status == CheckStatus.Warning) ? "WARNING" : "PASS";
+        checks.Any(c => c.Status == TransferCheckStatus.Fail) ? "FAIL" : checks.Any(c => c.Status == TransferCheckStatus.Warning) ? "WARNING" : "PASS";
 
     private RestoreReport Persist(string dir, RestoreReport report)
     {

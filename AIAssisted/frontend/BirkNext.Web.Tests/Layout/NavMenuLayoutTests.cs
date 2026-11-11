@@ -280,7 +280,7 @@ public sealed class NavMenuLayoutTests : BunitContext
     [InlineData("source-review", new[] { "source-analysis", "schema-studio", "generated-documentation-explorer", "generated-documentation-health", "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
     [InlineData("quality-testing", new[] { "test-coverage-review", "code-risk-review", "test-data", "api-quality-review/contracts", "integration-suites", "execution-results", "parquet-viewer", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "performance-test-review", "critical-e2e-regression" })]
     [InlineData("extensions", new[] { "security-classification-review", "extensions/skolenaervaer" })]
-    [InlineData("admin", new[] { "user-guide", "admin/system-settings" })]
+    [InlineData("admin", new[] { "user-guide", "admin/system-settings", "workspace-transfer" })]
     public void Rows_AreOrderedFromPrerequisiteToConsumer(string section, string[] routes)
     {
         var cut = Render<NavMenu>();

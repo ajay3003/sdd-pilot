@@ -210,6 +210,8 @@ public static class NavigationCatalog
         [
             new("user-guide", "User Guide", "nav-icon-user-guide", f => f.UserGuide, Aliases: ["Help"]),
             new("admin/system-settings", "System Settings", "nav-icon-settings", f => f.AdminSystemSettings, Aliases: ["Admin", "Feature Visibility", "Authentication"]),
+            new("workspace-transfer", "Backup & Transfer", "nav-icon-import", f => f.AdminSystemSettings,
+                Hint: "full backup and isolated restore; export and import projects and integrations (no credentials travel)", Aliases: ["Backup", "Export", "Import package", "Restore"]),
         ], "nav-icon-settings"),
     ];
 

@@ -86,6 +86,7 @@ public static class UserGuideContent
         new("troubleshooting", "Troubleshooting", Reference, "problem fix missing empty blocked invalid tls baseline", "scenarios", "faq"),
         new("glossary", "Glossary", Reference, "terms definitions project package fixture contract baseline"),
         new("system-settings", "System Settings", Reference, "admin settings diagnostics maintenance reset feature visibility"),
+        new("workspace-transfer", "Backup & Transfer", Reference, "backup restore export import package birknext move project integration disaster recovery passphrase encryption"),
         new("feature-matrix", "Feature matrix", Reference, "all features navigation purpose boundary", "where", "workflows"),
         new("discovery", "Navigation badges", Reference, "badge partial setup no evidence backend connectivity", "backend-connectivity", "validation"),
         new("about", "About and limitations", Reference, "ecosystem optional extension limitations", "ecosystem", "optional-capabilities", "feature-details"),

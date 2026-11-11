@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace BirkNext.WorkspaceTransfer;
 
 // Backup & Transfer: four operations with separate safety models.
@@ -6,9 +8,11 @@ namespace BirkNext.WorkspaceTransfer;
 // No contract here carries a secret value; passphrases travel only in requests and are never echoed or persisted.
 
 /// <summary>Where a piece of persistent state lives (audit §2).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum StorageClass { InDatabase, ManagedFilesystem, ExternalReference, RegenerableCache, SecretStore }
 
 /// <summary>The four transfer operations.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TransferKind { FullBackup, ProjectWorkspace, IntegrationWorkspace, Diagnostic }
 
 /// <summary>Plain, non-secret metadata in front of the encrypted payload. Authenticated (it is the AEAD associated data of every chunk), so a
@@ -84,8 +88,9 @@ public sealed record BackupSummary(string FileName, Guid BackupId, DateTimeOffse
 public sealed record BackupCreateResult(BackupSummary Backup, string ConsistencyMethod, string BackupCompleteness, int Tables, long Rows, int ManagedFiles,
     IReadOnlyList<BackupExclusion> Excluded, IReadOnlyList<string> Warnings);
 
-public enum CheckStatus { Pass, Warning, Fail, NotRun }
-public sealed record TransferCheck(string Name, CheckStatus Status, string Detail);
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TransferCheckStatus { Pass, Warning, Fail, NotRun }
+public sealed record TransferCheck(string Name, TransferCheckStatus Status, string Detail);
 
 /// <summary>Inspection of a backup: with a passphrase the payload is decrypted and every hash verified; without one only the header claim is shown.</summary>
 public sealed record BackupInspection(string FileName, BackupPublicHeader Header, bool Decrypted, BackupManifest? Manifest, IReadOnlyList<TransferCheck> Checks, string Verdict);
@@ -111,20 +116,26 @@ public sealed record RestoreReport
 // ───────────────────────────── Portable workspace packages (.birknext) ─────────────────────────────
 
 /// <summary>Dependency status in an export closure.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum DependencyStatus { Included, ExternalReference, Missing, Optional, Unauthorized, Unsupported }
 
 /// <summary>How an object travels: plain configuration, configuration that must be revalidated in the destination, or history.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum Portability { Portable, EnvironmentDependent, HistoricalEvidence, HistoricalDecision, CapabilityReference }
 
 /// <summary>Import classification of one object against the destination (before anything is written).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ImportStatus { New, Identical, NewerRevision, OlderRevision, ConflictingContent, MissingDependency, Unauthorized, Unsupported, EnvironmentRebindRequired }
 
 /// <summary>A person's decision for one object.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ImportAction { CreateNew, ReuseIdentical, ImportAsNewRevision, KeepExisting, SkipOptional, ResolveManually }
 
 /// <summary>What happens to the integration's environment in the destination. Never chosen by name.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum EnvironmentMappingAction { LeaveUnresolved, ReuseVerified, CreateDisabled, SkipOptional }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ReconciliationStatus { Resolved, NeedsRevalidation, Unresolved, Unsupported }
 
 public sealed record PortableObjectRef(string Type, string LogicalId);

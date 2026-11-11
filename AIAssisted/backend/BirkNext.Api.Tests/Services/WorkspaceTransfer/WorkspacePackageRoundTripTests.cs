@@ -292,13 +292,13 @@ public sealed class WorkspacePackageRoundTripTests : IAsyncLifetime
         (await StageAndPreviewAsync(tampered)).Verdict.Should().Be("REFUSED");
 
         var corrupt = Rewrite(package, entries => entries["manifest.json"] = "{not json"u8.ToArray());
-        (await StageAndPreviewAsync(corrupt)).Checks.Should().Contain(c => c.Name == "Manifest" && c.Status == CheckStatus.Fail);
+        (await StageAndPreviewAsync(corrupt)).Checks.Should().Contain(c => c.Name == "Manifest" && c.Status == TransferCheckStatus.Fail);
 
         var future = Rewrite(package, entries => entries["manifest.json"] = Edit(entries["manifest.json"], m => m["packageFormatVersion"] = 2));
-        (await StageAndPreviewAsync(future)).Checks.Should().Contain(c => c.Name == "Format version" && c.Status == CheckStatus.Fail);
+        (await StageAndPreviewAsync(future)).Checks.Should().Contain(c => c.Name == "Format version" && c.Status == TransferCheckStatus.Fail);
 
         var duplicate = Rewrite(package, entries => entries["inventory/objects.json"] = Edit(entries["inventory/objects.json"], a => a.AsArray().Add(a.AsArray()[0]!.DeepClone())));
-        (await StageAndPreviewAsync(duplicate)).Checks.Should().Contain(c => c.Name == "Identities" && c.Status == CheckStatus.Fail);
+        (await StageAndPreviewAsync(duplicate)).Checks.Should().Contain(c => c.Name == "Identities" && c.Status == TransferCheckStatus.Fail);
 
         // A hand-edited project package claiming an object of an undeclared project: that object is refused, the rest stays importable.
         var cross = Rewrite(package, entries => entries["inventory/objects.json"] = Edit(entries["inventory/objects.json"], a =>

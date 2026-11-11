@@ -79,16 +79,16 @@ public sealed partial class WorkspacePackageService
         var (manifest, entries, security) = await ReadPackageAsync(path, checks, ct);
         if (manifest is null)
         {
-            await UpdateAsync(op, "FAILED_VALIDATION", "Package refused", string.Join(" ", checks.Where(c => c.Status == CheckStatus.Fail).Select(c => c.Detail)), ct);
+            await UpdateAsync(op, "FAILED_VALIDATION", "Package refused", string.Join(" ", checks.Where(c => c.Status == TransferCheckStatus.Fail).Select(c => c.Detail)), ct);
             return new ImportPreview { OperationId = operationId, Checks = checks, Security = security, Verdict = "REFUSED" };
         }
 
         var unsupported = manifest.RequiredCapabilities.Where(c => !Supported(c)).ToList();
         checks.Add(unsupported.Count == 0
-            ? new("Capabilities", CheckStatus.Pass, $"{manifest.RequiredCapabilities.Count} capability reference(s) known to this build.")
-            : new("Capabilities", CheckStatus.Warning, $"Not available in this build (stay UNSUPPORTED / NOT_EXECUTABLE): {string.Join(", ", unsupported)}."));
+            ? new("Capabilities", TransferCheckStatus.Pass, $"{manifest.RequiredCapabilities.Count} capability reference(s) known to this build.")
+            : new("Capabilities", TransferCheckStatus.Warning, $"Not available in this build (stay UNSUPPORTED / NOT_EXECUTABLE): {string.Join(", ", unsupported)}."));
         if (manifest.Completeness == "PARTIAL")
-            checks.Add(new("Completeness", CheckStatus.Warning, "This is an explicitly PARTIAL package: some required dependencies were missing at export and stay unresolved."));
+            checks.Add(new("Completeness", TransferCheckStatus.Warning, "This is an explicitly PARTIAL package: some required dependencies were missing at export and stay unresolved."));
 
         var planned = new List<PlannedItem>();
         foreach (var entry in entries.OrderBy(e => PackageTypes.Order(e.Object.Type)))
@@ -104,7 +104,7 @@ public sealed partial class WorkspacePackageService
         op.DestinationFingerprint = TransferJson.Sha256(string.Join("\n", plan.Tokens.OrderBy(t => t.Key, StringComparer.Ordinal).Select(t => $"{t.Key}={t.Value}")));
         await UpdateAsync(op, Previewed, $"{manifest.Label}: {plan.Items.Count} objects", null, ct);
 
-        var blocking = checks.Any(c => c.Status == CheckStatus.Fail);
+        var blocking = checks.Any(c => c.Status == TransferCheckStatus.Fail);
         return new ImportPreview
         {
             OperationId = operationId, Manifest = manifest, Checks = checks, Items = plan.Items, Security = security, UnsupportedCapabilities = unsupported,
@@ -135,40 +135,40 @@ public sealed partial class WorkspacePackageService
         await using var file = File.OpenRead(path);
         TransferArchiveReader zip;
         try { zip = TransferArchiveReader.Open(file, TransferArchiveLimits.Package); }
-        catch (TransferFormatException ex) { checks.Add(new("Archive", CheckStatus.Fail, $"{ex.Code}: {ex.Message}")); return (null, entries, []); }
+        catch (TransferFormatException ex) { checks.Add(new("Archive", TransferCheckStatus.Fail, $"{ex.Code}: {ex.Message}")); return (null, entries, []); }
         using (zip)
         {
-            checks.Add(new("Archive", CheckStatus.Pass, $"{zip.Paths.Count} entries; paths, sizes and compression within limits."));
+            checks.Add(new("Archive", TransferCheckStatus.Pass, $"{zip.Paths.Count} entries; paths, sizes and compression within limits."));
             var problems = await zip.VerifyHashesAsync(TransferJson.Options, ct);
-            if (problems.Count > 0) { checks.Add(new("Content hashes", CheckStatus.Fail, string.Join(" ", problems.Take(5)))); return (null, entries, []); }
-            checks.Add(new("Content hashes", CheckStatus.Pass, "Every entry matches its SHA-256 (integrity only; the package is unsigned, so its origin is not proven)."));
+            if (problems.Count > 0) { checks.Add(new("Content hashes", TransferCheckStatus.Fail, string.Join(" ", problems.Take(5)))); return (null, entries, []); }
+            checks.Add(new("Content hashes", TransferCheckStatus.Pass, "Every entry matches its SHA-256 (integrity only; the package is unsigned, so its origin is not proven)."));
             PackageManifest manifest;
             try { manifest = await zip.ReadJsonAsync<PackageManifest>("manifest.json", TransferJson.Options, 16L << 20); }
-            catch (TransferFormatException ex) { checks.Add(new("Manifest", CheckStatus.Fail, $"{ex.Code}: {ex.Message}")); return (null, entries, []); }
+            catch (TransferFormatException ex) { checks.Add(new("Manifest", TransferCheckStatus.Fail, $"{ex.Code}: {ex.Message}")); return (null, entries, []); }
             if (manifest.Format != "birknext-workspace-package" || manifest.PackageFormatVersion != 1)
             {
-                checks.Add(new("Format version", CheckStatus.Fail, $"{manifest.Format} v{manifest.PackageFormatVersion} is not supported by this build (supports birknext-workspace-package v1)."));
+                checks.Add(new("Format version", TransferCheckStatus.Fail, $"{manifest.Format} v{manifest.PackageFormatVersion} is not supported by this build (supports birknext-workspace-package v1)."));
                 return (null, entries, []);
             }
             if (manifest.ExportType is not (TransferKind.ProjectWorkspace or TransferKind.IntegrationWorkspace or TransferKind.Diagnostic))
-            { checks.Add(new("Format version", CheckStatus.Fail, "A full backup is restored from Backup, never imported as a package.")); return (null, entries, []); }
-            checks.Add(new("Manifest", CheckStatus.Pass, $"{manifest.ExportType} \"{manifest.Label}\" exported {manifest.ExportTimestamp:u} by BirkNext {manifest.BirkNextApplicationVersion} ({manifest.SourceCommit})."));
+            { checks.Add(new("Format version", TransferCheckStatus.Fail, "A full backup is restored from Backup, never imported as a package.")); return (null, entries, []); }
+            checks.Add(new("Manifest", TransferCheckStatus.Pass, $"{manifest.ExportType} \"{manifest.Label}\" exported {manifest.ExportTimestamp:u} by BirkNext {manifest.BirkNextApplicationVersion} ({manifest.SourceCommit})."));
             var objects = await zip.ReadJsonAsync<List<PortableObject>>("inventory/objects.json", TransferJson.Options);
             var keys = new HashSet<string>(StringComparer.Ordinal);
             foreach (var o in objects)
             {
                 if (!keys.Add(PackageIds.Key(o.Type, o.LogicalId)))
-                { checks.Add(new("Identities", CheckStatus.Fail, $"Duplicate logical identity {o.Type} {o.LogicalId}.")); return (null, [], []); }
-                if (!zip.Has(o.Path)) { checks.Add(new("Inventory", CheckStatus.Fail, $"{o.Type} {o.LogicalId} has no payload entry.")); return (null, [], []); }
+                { checks.Add(new("Identities", TransferCheckStatus.Fail, $"Duplicate logical identity {o.Type} {o.LogicalId}.")); return (null, [], []); }
+                if (!zip.Has(o.Path)) { checks.Add(new("Inventory", TransferCheckStatus.Fail, $"{o.Type} {o.LogicalId} has no payload entry.")); return (null, [], []); }
                 var payload = await zip.ReadJsonAsync<JsonNode>(o.Path, TransferJson.Options);
-                if (PackageIds.Fingerprint(payload) != o.Fingerprint) { checks.Add(new("Inventory", CheckStatus.Fail, $"{o.Type} {o.LogicalId}: payload does not match its fingerprint.")); return (null, [], []); }
+                if (PackageIds.Fingerprint(payload) != o.Fingerprint) { checks.Add(new("Inventory", TransferCheckStatus.Fail, $"{o.Type} {o.LogicalId}: payload does not match its fingerprint.")); return (null, [], []); }
                 entries.Add(new PackageEntry(o, payload));
             }
-            checks.Add(new("Identities", CheckStatus.Pass, $"{objects.Count} objects with unique logical identities."));
+            checks.Add(new("Identities", TransferCheckStatus.Pass, $"{objects.Count} objects with unique logical identities."));
             var security = ScanAll(entries);
             checks.Add(security.Any(f => f.Severity == PackageSecretScanner.Blocking)
-                ? new("Security", CheckStatus.Warning, $"{security.Count(f => f.Severity == PackageSecretScanner.Blocking)} secret-looking value(s): the objects holding them are refused.")
-                : new("Security", CheckStatus.Pass, security.Count == 0 ? "No secret- or identifier-shaped values." : $"{security.Count} identifier-shaped value(s); confirm they are synthetic."));
+                ? new("Security", TransferCheckStatus.Warning, $"{security.Count(f => f.Severity == PackageSecretScanner.Blocking)} secret-looking value(s): the objects holding them are refused.")
+                : new("Security", TransferCheckStatus.Pass, security.Count == 0 ? "No secret- or identifier-shaped values." : $"{security.Count} identifier-shaped value(s); confirm they are synthetic."));
             return (manifest, entries, security);
         }
     }

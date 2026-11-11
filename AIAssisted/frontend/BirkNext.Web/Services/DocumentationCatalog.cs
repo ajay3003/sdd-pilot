@@ -108,6 +108,7 @@ public static class DocumentationCatalog
         ["code-risk-review"] = new("Reviews source code and changes for deterministic implementation risks, evidence gaps and drift.", "The current (and optional baseline) Source Analysis snapshot, its contract/configuration/dependency/test evidence, Dependency Review runs and the workspace requirement graph.", "It never determines who or what wrote the code; no indicators observed does not mean the code is correct."),
         ["test-data"] = new("Shows the approved typed test data every test can use: values, payloads, files, entity references, data sets and expected results.", "The configured catalog (TestData section), approved local test configuration and Schema Studio XML explicitly registered as Test Data.", "Approved is not validated, and resolving test data never creates it; sensitive values are never shown."),
         ["admin/system-settings"] = new("Configures platform, targets, capabilities and diagnostics.", "Host settings and Target Environment profiles.", "Visibility/configuration is not support, applicability or verification."),
+        ["workspace-transfer"] = new("Creates encrypted full backups and restores them into a new isolated database; exports and imports project, integration and diagnostic packages with a read-only preview, environment mapping and conflict decisions.", "The BirkNext database (PostgreSQL custom-format dump), the managed file stores, and the stored projects, contracts, suites, Connected Systems, browser tests and Test Data of the chosen scope.", "Credentials, sessions, pairings and original source archives never travel; imported connections and browser tests stay disabled; imported runs and decisions are history, never new evidence; a restore never replaces the running installation."),
         ["ai-change-auditor"] = new("Optionally reviews AI-generated changes when enabled.", "AI configuration and submitted change context.", "Optional; not a core workflow and not a substitute for deterministic evidence.")
     };
 
@@ -270,7 +271,8 @@ public static class DocumentationCatalog
             ("delivery-overview","Delivery Overview","/delivery-overview","delivery-overview","Delivery Management",null,null),
             ("delivery-reporting","Delivery Reports","/delivery-reporting","delivery-reporting","Delivery Management",null,null),
             ("ai-change-auditor","AI Change Review","/ai-change-auditor","optional-capabilities","Optional",null,null),
-            ("admin/system-settings","System Settings","/admin/system-settings","system-settings","Admin",null,null)
+            ("admin/system-settings","System Settings","/admin/system-settings","system-settings","Admin",null,null),
+            ("workspace-transfer","Backup & Transfer","/workspace-transfer","workspace-transfer","Admin",null,null)
         };
         var optional = new HashSet<string>(["traceability", "traceability/suggestions", "code-traceability", "ai-change-auditor"], StringComparer.OrdinalIgnoreCase);
         return definitions.Select(d => new DocumentationFeature(d.Id,d.Name,d.Route,d.Anchor,d.Category,Required: !optional.Contains(d.Id),ProviderScope:d.Provider,ExtensionScope:d.Extension)).ToArray();

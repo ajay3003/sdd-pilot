@@ -89,6 +89,20 @@
     </ReviewDisclosure>
 </section>
 
+<section id="workspace-transfer" class="ug-section ug-topic" data-topic="workspace-transfer" aria-labelledby="workspace-transfer-title">
+    <h2 id="workspace-transfer-title" class="ug-section-title" tabindex="-1">Backup &amp; Transfer</h2>
+    <p class="ug-lead"><a href="/workspace-transfer">Backup &amp; Transfer</a> has two separate jobs. A <strong>full backup</strong> protects this installation; a <strong>package</strong> moves one project or one integration to another BirkNext.</p>
+    <ol class="ug-steps">
+        <li><strong>Full backup.</strong> Choose a passphrase (12+ characters). BirkNext dumps the whole database from one consistent snapshot, adds the managed file stores (Critical E2E, Test Data, reset state) and encrypts everything. It does not keep the passphrase: a lost passphrase means a lost backup.</li>
+        <li><strong>Restore.</strong> Restoring always creates a <em>new</em> database and a separate folder, then checks tables, rows, migrations, files and references against the backup. The running installation is never replaced; switching over is a separate administrative change.</li>
+        <li><strong>Export.</strong> Pick a project (its sources, contracts with every version, tests, suites, composite contexts) or an integration environment (Connected Systems, catalog, stage sources, browser tests, Test Data). Review the dependencies and the security scan, then create the <code>.birknext</code> package.</li>
+        <li><strong>Import.</strong> Upload the package. The preview writes nothing: it checks integrity and format, and compares every object with this installation (new, identical, newer, conflicting, missing dependency). Choose where the integration's environment goes — an environment you have verified, a new disabled one, or none — and decide conflicts. Then apply and read the verification report.</li>
+    </ol>
+    <ReviewDisclosure Text="What never travels, and what stays disabled" CollapseText="Hide" TestId="ug-transfer-safety">
+        <p>Passwords, client secrets, tokens, PATs, cookies, private keys, Companion pairings and browser profiles are never in a backup or package; enter credentials again in the destination. Original source archives are not kept by BirkNext, so packages carry the analysed snapshot instead. Imported Connected Systems, integration definitions and browser tests are disabled and not release-gating until you revalidate them. Imported runs and review decisions are stored as history: they never count as runs or approvals of the destination. Packages are checked with SHA-256 hashes, which proves the transfer was not altered — not who made it.</p>
+    </ReviewDisclosure>
+</section>
+
 <section id="feature-matrix" class="ug-section ug-topic" data-topic="feature-matrix" aria-labelledby="feature-matrix-title">
     <h2 id="feature-matrix-title" class="ug-section-title" tabindex="-1">Feature matrix</h2>
     <p class="ug-lead">Every current feature with its purpose, inputs and boundary. Applicability is evaluated per project.</p>
