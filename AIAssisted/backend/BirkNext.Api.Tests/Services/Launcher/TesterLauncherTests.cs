@@ -194,7 +194,8 @@ public sealed class TesterLauncherTests
         pw.Should().HaveLength(32).And.MatchRegex("^[A-Za-z0-9]+$", "no character needs quoting in SQL or a connection string");
         var credentials = DatabaseCredentials.New();
         credentials.ToString().Should().NotContain(credentials.AppPassword).And.NotContain(credentials.AdminPassword);
-        credentials.AppConnectionString(55432).Should().StartWith("Host=127.0.0.1;Port=55432;Database=birknext;Username=birknext_app;");
+        new Npgsql.NpgsqlConnectionStringBuilder(credentials.AppConnectionString(55432)).Should().Match<Npgsql.NpgsqlConnectionStringBuilder>(b =>
+            b.Host == "127.0.0.1" && b.Port == 55432 && b.Database == credentials.Database && b.Username == credentials.AppUser && b.Password == credentials.AppPassword);
         LauncherLog.Redact(credentials.AppConnectionString(55432)).Should().NotContain(credentials.AppPassword).And.Contain("Password=[redacted]");
         LauncherLog.Redact("PGPASSWORD=abc123 pwd: xyz").Should().Be("PGPASSWORD=[redacted] pwd: [redacted]");
         if (!OperatingSystem.IsWindows()) return;
@@ -217,7 +218,8 @@ public sealed class TesterLauncherTests
         env["Authorization__LocalTrustedExecution"].Should().Be("true", "the single-user tester runs its own tests; the backend still checks loopback, Host, Origin and the session");
         env["PerformanceTests__Native__K6Path"].Should().Be(Path.Combine("C:\\Pkg\\BirkNext-Tester", "runtime", "k6", "k6.exe"));
         env["PerformanceTests__Native__K6Sha256"].Should().Be(new string('c', 64));
-        env["ConnectionStrings__Default"].Should().StartWith("Host=127.0.0.1;Port=55433;Database=birknext;Username=birknext_app");
+        new Npgsql.NpgsqlConnectionStringBuilder(env["ConnectionStrings__Default"]).Should().Match<Npgsql.NpgsqlConnectionStringBuilder>(b =>
+            b.Host == "127.0.0.1" && b.Port == 55433 && b.Database == credentials.Database && b.Username == credentials.AppUser, "only the launcher-managed database, as its own non-superuser role");
         env["ASPNETCORE_URLS"].Should().Be("http://localhost:5480");
         env["FRONTEND_ORIGIN"].Should().Be("http://localhost:5481");
         env["BIRKNEXT_APP_DATA_DIR"].Should().StartWith(data.Root, "mutable files live in the user's data folder, never in the package");
