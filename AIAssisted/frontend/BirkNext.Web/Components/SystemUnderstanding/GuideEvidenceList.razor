@@ -1,0 +1,35 @@
+@using BirkNext.SystemUnderstanding
+@using P = BirkNext.Web.Services.SystemUnderstandingPresentation
+
+@* Evidence references of one claim: classification (text + glyph), where it comes from (source role, reviewed source, file/symbol/lines,
+   document) and a link to the owning BirkNext explorer when it is a safe relative route. Never source text, never markup. *@
+@if (Items.Count == 0)
+{
+    <p class="gel-none" data-testid="su-evidence-none">No evidence is recorded for this claim: treat it as not assessed.</p>
+}
+else
+{
+    <ul class="gel" data-testid="su-evidence">
+        @foreach (var e in Items)
+        {
+            var b = P.Badge(e.Class);
+            <li class="gel-item">
+                <span class="gel-badge gel-@b.Tone" title="@b.Meaning"><span aria-hidden="true">@b.Glyph</span> @b.Label</span>
+                <span class="gel-body">
+                    @if (e.SourceLabel is { } label) { <span class="gel-src">@label</span> }
+                    @if (e.Symbol is { } symbol) { <code class="gel-code">@symbol@(e.Lines is { } l ? $" · linje {l}" : "")</code> }
+                    else if (e.File is { } file) { <code class="gel-code">@file@(e.Lines is { } l2 ? $":{l2}" : "")</code> }
+                    @if (e.TestId is { } test) { <span class="gel-test">Test: @test</span> }
+                    @if (e.ContractId is { } contract) { <span class="gel-test">Contract: @contract</span> }
+                    @if (e.Note is { } note) { <span class="gel-note">@note</span> }
+                    @if (e.Document is { } doc) { <span class="gel-doc">Recorded in <code>@doc</code></span> }
+                    @if (e.Link is { } link && SystemGuideLinks.IsSafeRoute(link)) { <a class="gel-link" href="@link">Open in BirkNext</a> }
+                </span>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<GuideEvidence> Items { get; set; } = [];
+}

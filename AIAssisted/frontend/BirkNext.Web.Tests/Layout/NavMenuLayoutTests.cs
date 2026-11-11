@@ -273,7 +273,7 @@ public sealed class NavMenuLayoutTests : BunitContext
     }
 
     [Theory]
-    [InlineData("getting-started", new[] { "dashboard", "getting-started", "project-import", "sources", "demo-projects", NavigationCatalog.TargetEnvironmentsRoute })]
+    [InlineData("getting-started", new[] { "dashboard", "getting-started", "system-understanding", "project-import", "sources", "demo-projects", NavigationCatalog.TargetEnvironmentsRoute })]
     [InlineData("delivery-reporting", new[] { NavigationCatalog.DeliveryOverviewRoute, "delivery-reporting" })]
     [InlineData("document-review", new[] { "specification-explorer", "constitution-explorer", "data-model-explorer", "plan-explorer", "task-explorer", "quality/document", "task-alignment", "documentation-drift" })]
     [InlineData("traceability", new[] { "artifact-traceability", "impact-analysis", "correlation-review", "release-readiness", "snapshots" })]

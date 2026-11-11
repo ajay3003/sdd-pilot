@@ -91,6 +91,8 @@ public static class NavigationCatalog
             new("dashboard", "Project Quality", "nav-icon-dashboard", f => f.Dashboard, NavLinkMatch.Prefix,
                 Hint: "Project Quality Dashboard: evidence, specification quality, traceability, reviews and verification", Aliases: ["Dashboard", "Project Quality Dashboard"]),
             new("getting-started", "Recommended Workflow", "nav-icon-workflow", f => f.RecommendedWorkflow, Aliases: ["Getting Started"]),
+            new("system-understanding", "System Understanding", "nav-icon-system-understanding", f => f.RecommendedWorkflow,
+                Hint: "how the system under test works: flow, step by step, data and contracts, rules and what to test", Aliases: ["Systemforståelse", "System guide"]),
             new("project-import", "Import Project", "nav-icon-import", f => f.SampleProjects || f.SourceAnalysis,
                 Hint: "primary input: one project ZIP becomes project artifacts and a Source Analysis snapshot", Aliases: ["Project Inputs", "Upload ZIP"]),
             new("sources", "Source Management", "nav-icon-import", f => f.SampleProjects || f.SourceAnalysis,

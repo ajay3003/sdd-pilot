@@ -18,6 +18,7 @@ public class AppDbContext : DbContext
     public DbSet<ExecutionRunRow> ExecutionRuns => Set<ExecutionRunRow>();
     public DbSet<ExecutionCallRow> ExecutionCalls => Set<ExecutionCallRow>();
     public DbSet<ExecutionManifestRow> ExecutionManifests => Set<ExecutionManifestRow>();
+    public DbSet<SystemGuideRevisionRecord> SystemGuideRevisions => Set<SystemGuideRevisionRecord>();
     public DbSet<ExecutionEvidenceAuditRow> ExecutionEvidenceAudit => Set<ExecutionEvidenceAuditRow>();
     public DbSet<ExecutionRetentionSettingsRow> ExecutionRetentionSettings => Set<ExecutionRetentionSettingsRow>();
     public DbSet<MessageObservationSetRecord> MessageObservationSets => Set<MessageObservationSetRecord>();
@@ -1120,6 +1121,24 @@ public class AppDbContext : DbContext
             entity.Property(r => r.DocumentJson).HasColumnType("text").IsRequired();
             entity.HasIndex(r => new { r.Owner, r.RunId }).IsUnique();
             entity.HasIndex(r => r.DependencyFingerprint);
+        });
+        modelBuilder.Entity<SystemGuideRevisionRecord>(entity =>
+        {
+            entity.ToTable("system_guide_revisions");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.GuideKey).HasMaxLength(100).IsRequired();
+            entity.Property(r => r.State).HasMaxLength(20).IsRequired();
+            entity.Property(r => r.ContentFingerprint).HasMaxLength(64).IsRequired();
+            entity.Property(r => r.ContentJson).HasColumnType("text").IsRequired();
+            entity.Property(r => r.SourceBasisJson).HasColumnType("text").IsRequired();
+            entity.Property(r => r.CreatedBy).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.ChangeSummary).HasMaxLength(1000);
+            entity.Property(r => r.SubmittedBy).HasMaxLength(200);
+            entity.Property(r => r.ApprovedBy).HasMaxLength(200);
+            entity.HasIndex(r => new { r.GuideKey, r.Revision }).IsUnique();
+            // At most one open revision (Draft/InReview) and one Published revision per guide: concurrent saves or publishes cannot fork it.
+            entity.HasIndex(r => r.GuideKey, "IX_system_guide_revisions_open").IsUnique().HasFilter("\"State\" IN ('Draft', 'InReview')");
+            entity.HasIndex(r => r.GuideKey, "IX_system_guide_revisions_published").IsUnique().HasFilter("\"State\" = 'Published'");
         });
         modelBuilder.Entity<ParquetInspectionRecord>(entity =>
         {

@@ -1,0 +1,699 @@
+@page "/system-understanding"
+@using BirkNext.SystemUnderstanding
+@using BirkNext.Web.Services
+@using P = BirkNext.Web.Services.SystemUnderstandingPresentation
+@inject IServiceProvider ServiceProvider
+@inject NavigationManager Nav
+
+@* System Understanding (Systemforståelse): how the SYSTEM UNDER TEST works — not BirkNext's own user guide. Content is a curated, versioned guide
+   whose claims point at evidence with an explicit classification; nothing here is rendered as markup, and no claim is upgraded to verified. *@
+<PageTitle>System Understanding</PageTitle>
+
+<div class="su" data-testid="su" aria-busy="@(_loading ? "true" : "false")">
+    @if (_loading)
+    {
+        <p class="su-muted" data-testid="su-loading">Loading the system guide…</p>
+    }
+    else if (_view?.Shown is not { } shown)
+    {
+        <header class="su-head">
+            <div class="su-eyebrow">System Understanding <BirkNext.Web.Components.HelpLink Topic="system-understanding" Text="What this page is" /></div>
+            <h1 class="su-title">System Understanding</h1>
+        </header>
+        <section class="su-empty" data-testid="su-empty">
+            <h2>No system guide available</h2>
+            <p>@(_error ?? "No guide is available for this workspace.")</p>
+            <p class="su-muted">A system guide explains the system under test: its flow, steps, rules and what to test. It is not created from an import automatically.</p>
+            <a class="su-btn" href="source-analysis">Open Source Analysis</a>
+        </section>
+    }
+    else
+    {
+        var c = Content;
+        <header class="su-head" data-testid="su-header">
+            <div class="su-head-main">
+                <div class="su-eyebrow">System Understanding · Systemforståelse <BirkNext.Web.Components.HelpLink Topic="system-understanding" Text="How to read this guide" /></div>
+                @if (_guides is { Count: > 1 } list)
+                {
+                    <label class="su-guide-pick">Guide
+                        <select @onchange="SelectGuide" data-testid="su-guide-select">
+                            @foreach (var g in list) { <option value="@g.GuideKey" selected="@(g.GuideKey == _guideKey)">@g.Title</option> }
+                        </select>
+                    </label>
+                }
+                <h1 class="su-title" data-testid="su-title">@c.Title</h1>
+                <p class="su-purpose" data-testid="su-purpose">@c.Purpose</p>
+                <div class="su-meta">
+                    <span class="su-chip su-@ReviewTone" data-testid="su-review">@_view.ReviewState</span>
+                    <span class="su-fact" data-testid="su-revision">Guide revision @shown.Revision · @shown.State</span>
+                    <span class="su-fact" data-testid="su-sources">@SourceSummary</span>
+                    @if (_view.SourceChanges.Count > 0)
+                    {
+                        <button type="button" class="su-chip su-warn su-chip-btn" data-testid="su-changes" @onclick='() => Tab("gaps")'>Sources changed — guide may need review (@_view.SourceChanges.Count)</button>
+                    }
+                </div>
+            </div>
+            <div class="su-head-actions">
+                <a class="su-btn su-btn-primary" href="source-analysis" data-testid="su-explore-source">Explore source evidence</a>
+                <a class="su-link" href="integration-topology">Integration Topology</a>
+            </div>
+        </header>
+
+        <div class="su-toolbar">
+            <nav class="su-tabs" role="tablist" aria-label="System Understanding sections">
+                @foreach (var (id, label) in Tabs)
+                {
+                    <button type="button" role="tab" id="su-tab-@id" aria-selected="@(_tab == id ? "true" : "false")" aria-controls="su-panel"
+                            class="su-tab @(_tab == id ? "is-active" : "")" data-testid="su-tab-@id" @onclick="() => Tab(id)">@label</button>
+                }
+            </nav>
+            <label class="su-search">
+                <span class="visually-hidden">Search the guide</span>
+                <input type="search" placeholder="Search steps, components, rules, tests…" value="@_query" @oninput="OnSearch" data-testid="su-search" />
+                @if (_search.Count > 0) { <span class="su-search-count" data-testid="su-search-count">@_search.Count matches</span> }
+            </label>
+        </div>
+
+        @if (_message is { } message) { <p class="su-note su-note-@_messageTone" role="status" data-testid="su-message">@message</p> }
+
+        <section id="su-panel" role="tabpanel" aria-labelledby="su-tab-@_tab" class="su-panel" data-testid="su-panel-@_tab">
+            @switch (_tab)
+            {
+                case "overview":
+                    @Overview(c)
+                    break;
+                case "steps":
+                    @Steps(c)
+                    break;
+                case "data":
+                    @Data(c)
+                    break;
+                case "rules":
+                    @Rules(c)
+                    break;
+                case "tests":
+                    @Tests(c)
+                    break;
+                case "gaps":
+                    @Gaps(c)
+                    break;
+                default:
+                    @Revisions()
+                    break;
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private static readonly (string Id, string Label)[] Tabs =
+        [("overview", "Overview & flow"), ("steps", "Step by step"), ("data", "Data & contracts"), ("rules", "Business rules"), ("tests", "What to test"), ("gaps", "Gaps & evidence"), ("revisions", "Revisions")];
+
+    [SupplyParameterFromQuery(Name = "guide")] public string? GuideQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "tab")] public string? TabQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "step")] public string? StepQuery { get; set; }
+
+    private ISystemUnderstandingApiService? _api;
+    private IReadOnlyList<SystemGuideSummary>? _guides;
+    private SystemGuideView? _view;
+    private string? _guideKey;
+    private string _tab = "overview";
+    private bool _loading = true;
+    private string? _error;
+    private string? _message;
+    private string _messageTone = "info";
+    private string _query = "";
+    private P.SearchResult _search = P.Search(new(), null);
+    private string? _selectedNode;
+    private string? _selectedEdge;
+    private string? _flowFocus;
+    private string? _openStep;
+    private string? _stageFilter;
+    private string? _ruleCategory;
+    private readonly HashSet<string> _openRules = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _openScenarios = new(StringComparer.Ordinal);
+    private bool _editing;
+    private SystemGuideContent? _work;
+    private string _changeSummary = "";
+    private bool _busy;
+
+    /// <summary>The content being read (published revision, else the latest draft) or, while editing, the working copy.</summary>
+    private SystemGuideContent Content => _editing && _work is not null ? _work : _view?.Shown?.Content ?? new();
+
+    private string ReviewTone => _view?.ReviewState.StartsWith("Published", StringComparison.Ordinal) == true ? "ok" : "warn";
+
+    private string SourceSummary
+    {
+        get
+        {
+            var roles = Content.SourceRoles.Count;
+            var imported = _view?.CurrentSources.Where(s => s.SnapshotId is not null).Select(s => s.Role).Distinct().Count() ?? 0;
+            return roles == 0 ? "No source roles declared" : $"{imported} of {roles} source roles imported";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _api = ServiceProvider.GetService(typeof(ISystemUnderstandingApiService)) as ISystemUnderstandingApiService;
+        if (_api is null) { _error = "System Understanding is not available in this host."; _loading = false; return; }
+        var (guides, error) = await _api.ListAsync();
+        _guides = guides;
+        _error = error;
+        _guideKey = guides?.FirstOrDefault(g => g.GuideKey == GuideQuery)?.GuideKey ?? guides?.FirstOrDefault()?.GuideKey;
+        if (_guideKey is not null) await LoadAsync();
+        _tab = Tabs.Any(t => t.Id == TabQuery) ? TabQuery! : "overview";
+        _openStep = StepQuery;
+        if (_openStep is not null && TabQuery is null) _tab = "steps";
+        _loading = false;
+    }
+
+    private async Task LoadAsync()
+    {
+        var (view, error) = await _api!.GetAsync(_guideKey!);
+        _view = view;
+        _error = error;
+        _search = P.Search(Content, _query);
+    }
+
+    private async Task SelectGuide(ChangeEventArgs e)
+    {
+        _guideKey = e.Value?.ToString();
+        _editing = false; _selectedNode = _selectedEdge = _flowFocus = null;
+        await LoadAsync();
+        Sync();
+    }
+
+    private void Tab(string id) { _tab = id; Sync(); }
+
+    /// <summary>Keeps guide, tab and step in the address (deep links and Back restore the place), without reloading the page.</summary>
+    private void Sync()
+    {
+        var uri = Nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["guide"] = _guideKey, ["tab"] = _tab, ["step"] = _tab == "steps" ? _openStep : null });
+        Nav.NavigateTo(uri, new NavigationOptions { ReplaceHistoryEntry = false });
+    }
+
+    private void OnSearch(ChangeEventArgs e)
+    {
+        _query = e.Value?.ToString() ?? "";
+        _search = P.Search(Content, _query);
+    }
+
+    private bool Matches(IReadOnlySet<string> set, string id) => _search.Count == 0 || set.Contains(id);
+
+    private string Name(string componentId) => Content.Components.FirstOrDefault(x => x.Id == componentId)?.Name ?? componentId;
+
+    private void SelectNode(string id) { _selectedNode = _selectedNode == id ? null : id; _selectedEdge = null; }
+    private void SelectEdge(string id) { _selectedEdge = _selectedEdge == id ? null : id; _selectedNode = null; }
+    private void Focus(string? flowId) => _flowFocus = _flowFocus == flowId ? null : flowId;
+
+    private void KeySelect(KeyboardEventArgs e, Action select) { if (e.Key is "Enter" or " ") select(); }
+
+    private void OpenStep(string id) { _openStep = _openStep == id ? null : id; Sync(); }
+
+    private void GoToStep(string id) { _tab = "steps"; _openStep = id; _stageFilter = null; Sync(); }
+
+    // ── Editing and review ───────────────────────────────────────────────────────────────────────────────────
+
+    private void StartEditing()
+    {
+        _work = _view?.Draft is { State: GuideRevisionState.Draft } d ? d.Content : _view?.Shown?.Content;
+        _editing = _work is not null;
+        _message = _editing ? "Editing a draft. Published revisions are never changed: saving creates or updates the draft revision." : null;
+        _messageTone = "info";
+    }
+
+    private void CancelEditing() { _editing = false; _work = null; _message = null; }
+
+    private void EditStep(string id, Func<GuideStep, GuideStep> change) =>
+        _work = _work! with { Steps = [.. _work!.Steps.Select(s => s.Id == id ? change(s) : s)] };
+
+    private void MarkUnresolved(string stepId) => EditStep(stepId, s => s with
+    {
+        Evidence = [.. s.Evidence, new GuideEvidence { Class = GuideEvidenceClass.NeedsClarification, Note = "Marked unresolved by a reviewer." }],
+    });
+
+    private async Task SaveDraftAsync()
+    {
+        if (_work is null || _busy) return;
+        _busy = true;
+        var baseFingerprint = _view?.Draft is { State: GuideRevisionState.Draft } d ? d.ContentFingerprint : null;
+        var (revision, error) = await _api!.SaveDraftAsync(_guideKey!, new SaveGuideDraftRequest(_work, _changeSummary, baseFingerprint));
+        _busy = false;
+        if (error is not null) { _message = error; _messageTone = "bad"; return; }
+        _message = $"Draft revision {revision!.Revision} saved. It is not published until it is reviewed, approved and published.";
+        _messageTone = "ok";
+        _editing = false; _work = null; _changeSummary = "";
+        await LoadAsync();
+    }
+
+    private async Task TransitionAsync(int revision, string action)
+    {
+        if (_busy) return;
+        _busy = true;
+        var (result, error) = await _api!.TransitionAsync(_guideKey!, revision, action);
+        _busy = false;
+        if (error is not null) { _message = error; _messageTone = "bad"; return; }
+        _message = $"Revision {result!.Revision} is now {result.State}.";
+        _messageTone = "ok";
+        await LoadAsync();
+    }
+
+    private static string? SafeLink(string? link) => link is not null && SystemGuideLinks.IsSafeRoute(link) ? link : null;
+
+    private void ToggleRule(string id) { if (!_openRules.Remove(id)) _openRules.Add(id); }
+    private void ToggleScenario(string id) { if (!_openScenarios.Remove(id)) _openScenarios.Add(id); }
+    private void OpenScenario(string id) { _openScenarios.Add(id); Tab("tests"); }
+
+    // ── Overview & flow ─────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment Overview(SystemGuideContent c) => __builder =>
+    {
+        <div class="su-overview" data-testid="su-overview">
+            <h2 class="su-h2">The system in one minute</h2>
+            <p class="su-lead" data-testid="su-business-purpose">@c.Overview.BusinessPurpose</p>
+            <ol class="su-ipo" aria-label="Input, processing and output">
+                <li><span class="su-ipo-k">Input</span><span>@c.Overview.MainInput</span></li>
+                <li><span class="su-ipo-k">Processing</span><span>@c.Overview.Processing</span></li>
+                <li><span class="su-ipo-k">Output</span><span>@c.Overview.MainOutput</span></li>
+            </ol>
+            @if (c.Overview.Dependencies.Count > 0)
+            {
+                <div class="su-deps"><span class="su-ipo-k">Depends on</span>
+                    <ul>@foreach (var d in c.Overview.Dependencies) { <li>@d</li> }</ul></div>
+            }
+        </div>
+        <section class="su-flow-card" aria-labelledby="su-flow-h">
+            <div class="su-flow-head">
+                <h2 class="su-h2" id="su-flow-h">How information moves</h2>
+                <div class="su-flow-chips" role="group" aria-label="Highlight a flow">
+                    @foreach (var f in c.Flows)
+                    {
+                        var flowId = f.Id;
+                        <button type="button" class="su-flow-chip @P.Kind(f.Kind).Css @(_flowFocus == f.Id ? "is-active" : "")" aria-pressed="@(_flowFocus == f.Id ? "true" : "false")"
+                                data-testid="su-flow-chip-@f.Id" @onclick="() => Focus(flowId)">@f.Title</button>
+                    }
+                </div>
+            </div>
+            <BirkNext.Web.Components.SystemUnderstanding.SystemFlowDiagram Content="c" SelectedNode="@_selectedNode" SelectedEdge="@_selectedEdge" FlowFocus="@_flowFocus"
+                Highlight="_search.Components" OnSelectNode="SelectNode" OnSelectEdge="SelectEdge" />
+            @if (_selectedNode is { } nodeId && c.Components.FirstOrDefault(x => x.Id == nodeId) is { } node)
+            {
+                @NodeDetail(c, node)
+            }
+            else if (_selectedEdge is { } edgeId && c.Edges.FirstOrDefault(x => x.Id == edgeId) is { } edge)
+            {
+                @EdgeDetail(edge)
+            }
+            else
+            {
+                <p class="su-hint" data-testid="su-flow-hint">Select a component or a connection to see what it does, what goes in and out, and what to test.</p>
+            }
+        </section>
+    };
+
+    private RenderFragment NodeDetail(SystemGuideContent c, GuideComponent n) => __builder =>
+    {
+        var steps = c.Steps.Where(s => s.ComponentId == n.Id).OrderBy(s => s.Order).ToList();
+        <article class="su-detail" data-testid="su-node-detail" aria-live="polite">
+            <header class="su-detail-head">
+                <div>
+                    <h3 class="su-h3">@n.Name @if (n.External) { <span class="su-tag">External</span> }</h3>
+                    <p class="su-detail-lead">@(n.Description ?? n.Responsibility)</p>
+                </div>
+                <button type="button" class="su-close" aria-label="Close details" @onclick="() => SelectNode(n.Id)">×</button>
+            </header>
+            <dl class="su-dl">
+                @if (n.Inputs.Count > 0) { <dt>In</dt><dd>@string.Join(" · ", n.Inputs)</dd> }
+                @if (n.Outputs.Count > 0) { <dt>Out</dt><dd>@string.Join(" · ", n.Outputs)</dd> }
+                @if (n.Technology is { } tech) { <dt>Technology</dt><dd>@tech</dd> }
+                @if (n.Dependencies.Count > 0) { <dt>Depends on</dt><dd>@string.Join(" · ", n.Dependencies)</dd> }
+                @if (n.ExpectedSuccess is { } ok) { <dt>Success looks like</dt><dd>@ok</dd> }
+                @if (n.CommonFailure is { } fail) { <dt>Typical failure</dt><dd>@fail</dd> }
+            </dl>
+            @if (steps.Count > 0)
+            {
+                <div class="su-related"><span class="su-ipo-k">Steps here</span>
+                    @foreach (var s in steps) { var stepId = s.Id; <button type="button" class="su-pill" @onclick="() => GoToStep(stepId)">@s.Id · @s.Title</button> }</div>
+            }
+            <h4 class="su-h4">Evidence</h4>
+            <BirkNext.Web.Components.SystemUnderstanding.GuideEvidenceList Items="n.Evidence" />
+        </article>
+    };
+
+    private RenderFragment EdgeDetail(GuideEdge e) => __builder =>
+    {
+        var kind = P.Kind(e.Kind);
+        <article class="su-detail" data-testid="su-edge-detail" aria-live="polite">
+            <header class="su-detail-head">
+                <div>
+                    <h3 class="su-h3">@Name(e.From) → @Name(e.To) <span class="su-tag @kind.Css">@kind.Label</span></h3>
+                    @if (e.Description is { } desc) { <p class="su-detail-lead">@desc</p> }
+                </div>
+                <button type="button" class="su-close" aria-label="Close details" @onclick="() => SelectEdge(e.Id)">×</button>
+            </header>
+            <dl class="su-dl">
+                <dt>Transport</dt><dd data-testid="su-edge-transport">@e.Transport</dd>
+                <dt>Data</dt><dd data-testid="su-edge-format">@e.DataFormat</dd>
+                @if (e.Contract is { } contract) { <dt>Contract</dt><dd>@contract@(e.ContractVersion is { } v ? $" · {v}" : "")</dd> }
+                @if (e.Uncertainty is { } u) { <dt>Not established</dt><dd class="su-warn-text">@u</dd> }
+            </dl>
+            <h4 class="su-h4">Evidence</h4>
+            <BirkNext.Web.Components.SystemUnderstanding.GuideEvidenceList Items="e.Evidence" />
+        </article>
+    };
+
+    // ── Step by step ────────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment Steps(SystemGuideContent c) => __builder =>
+    {
+        var ordered = c.Steps.OrderBy(s => s.Order).ToList();
+        <div class="su-steps" data-testid="su-steps">
+            <nav class="su-stages" aria-label="Stages">
+                <button type="button" class="su-stage @(_stageFilter is null ? "is-active" : "")" aria-pressed="@(_stageFilter is null ? "true" : "false")" @onclick="() => _stageFilter = null">All stages <span class="su-count">@ordered.Count</span></button>
+                @foreach (var st in c.Stages)
+                {
+                    var stageId = st.Id;
+                    <button type="button" class="su-stage @(_stageFilter == st.Id ? "is-active" : "")" aria-pressed="@(_stageFilter == st.Id ? "true" : "false")"
+                            data-testid="su-stage-@st.Id" @onclick="() => _stageFilter = stageId">@st.Title <span class="su-count">@ordered.Count(s => s.Stage == stageId)</span></button>
+                }
+            </nav>
+            @if (_editing) { <p class="su-note su-note-info">Editing the draft: change what happens or how to check it, or mark a step unresolved. Save from the Revisions tab.</p> }
+            @foreach (var stage in c.Stages.Where(st => _stageFilter is null || st.Id == _stageFilter))
+            {
+                var inStage = ordered.Where(s => s.Stage == stage.Id && Matches(_search.Steps, s.Id)).ToList();
+                if (inStage.Count == 0) { continue; }
+                <section class="su-stage-block" aria-labelledby="su-stage-h-@stage.Id">
+                    <h2 class="su-stage-title" id="su-stage-h-@stage.Id">@stage.Title <span class="su-stage-sum">@stage.Summary</span></h2>
+                    <ol class="su-step-list">
+                        @foreach (var s in inStage)
+                        {
+                            var stepId = s.Id;
+                            var open = _openStep == s.Id;
+                            var index = ordered.IndexOf(s);
+                            <li class="su-step @(open ? "is-open" : "")" data-testid="su-step-@s.Id">
+                                <button type="button" class="su-step-head" aria-expanded="@(open ? "true" : "false")" aria-controls="su-step-body-@s.Id" @onclick="() => OpenStep(stepId)">
+                                    <span class="su-step-no" aria-hidden="true">@s.Id</span>
+                                    <span class="su-step-main">
+                                        <span class="su-step-title">@s.Title</span>
+                                        <span class="su-step-sum">@s.Summary</span>
+                                    </span>
+                                    <span class="su-step-side">
+                                        <span class="su-tag">@Name(s.ComponentId)</span>
+                                        @foreach (var cls in P.Classes(s.Evidence)) { var b = P.Badge(cls); <span class="su-ev su-ev-@b.Tone" title="@b.Meaning"><span aria-hidden="true">@b.Glyph</span> @b.Label</span> }
+                                    </span>
+                                </button>
+                                @if (open)
+                                {
+                                    <div class="su-step-body" id="su-step-body-@s.Id">
+                                        @if (_editing)
+                                        {
+                                            <label class="su-edit">What happens
+                                                <textarea rows="3" value="@s.Summary" @onchange="e => EditStep(stepId, x => x with { Summary = e.Value?.ToString() ?? string.Empty })" data-testid="su-edit-summary"></textarea></label>
+                                            <label class="su-edit">How the tester can check it
+                                                <textarea rows="2" value="@s.HowToVerify" @onchange="e => EditStep(stepId, x => x with { HowToVerify = e.Value?.ToString() })" data-testid="su-edit-verify"></textarea></label>
+                                            <button type="button" class="su-btn" @onclick="() => MarkUnresolved(stepId)" data-testid="su-mark-unresolved">Mark as needing clarification</button>
+                                        }
+                                        <dl class="su-dl su-dl-cols">
+                                            @if (s.Trigger is { } t) { <dt>Trigger</dt><dd>@t</dd> }
+                                            @if (s.Input is { } i) { <dt>In</dt><dd>@i</dd> }
+                                            @if (s.Processing is { } pr) { <dt>Processing</dt><dd>@pr</dd> }
+                                            @if (s.Output is { } o) { <dt>Out</dt><dd>@o</dd> }
+                                            @if (s.DataFormat is { } f) { <dt>Data</dt><dd>@f</dd> }
+                                            @if (s.ExpectedResult is { } ex) { <dt>Expected</dt><dd>@ex</dd> }
+                                        </dl>
+                                        @if (s.WhatCanGoWrong.Count > 0)
+                                        {
+                                            <h4 class="su-h4">What can go wrong</h4>
+                                            <ul class="su-bullets">@foreach (var w in s.WhatCanGoWrong) { <li>@w</li> }</ul>
+                                        }
+                                        @if (s.HowToVerify is { } v && !_editing)
+                                        {
+                                            <h4 class="su-h4">How the tester can check it</h4>
+                                            <p class="su-verify" data-testid="su-step-verify">@v</p>
+                                        }
+                                        @if (s.TestScenarioIds.Count > 0)
+                                        {
+                                            <div class="su-related"><span class="su-ipo-k">Test guidance</span>
+                                                @foreach (var id in s.TestScenarioIds) { var scenarioId = id; <button type="button" class="su-pill" @onclick="() => OpenScenario(scenarioId)">@(c.Scenarios.FirstOrDefault(x => x.Id == id)?.Title ?? id)</button> }</div>
+                                        }
+                                        <h4 class="su-h4">Evidence</h4>
+                                        <BirkNext.Web.Components.SystemUnderstanding.GuideEvidenceList Items="s.Evidence" />
+                                        <div class="su-step-nav">
+                                            @if (index > 0) { var prev = ordered[index - 1].Id; <button type="button" class="su-link-btn" @onclick="() => GoToStep(prev)" data-testid="su-step-prev">← @ordered[index - 1].Title</button> }
+                                            @if (index < ordered.Count - 1) { var next = ordered[index + 1].Id; <button type="button" class="su-link-btn su-next" @onclick="() => GoToStep(next)" data-testid="su-step-next">@ordered[index + 1].Title →</button> }
+                                        </div>
+                                    </div>
+                                }
+                            </li>
+                        }
+                    </ol>
+                </section>
+            }
+        </div>
+    };
+
+    // ── Data & contracts ────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment Data(SystemGuideContent c) => __builder =>
+    {
+        <div class="su-data" data-testid="su-data">
+            <p class="su-muted">What moves between components, in which format and under which contract. Version facts are kept per source snapshot: a version seen in source does not say what is deployed.</p>
+            <ul class="su-transfers">
+                @foreach (var t in c.Transfers)
+                {
+                    var b = P.Badge(t.Evidence);
+                    var edge = c.Edges.FirstOrDefault(e => e.Id == t.EdgeId);
+                    <li class="su-transfer" data-testid="su-transfer-@t.EdgeId">
+                        <div class="su-transfer-route">
+                            <strong>@t.From</strong><span class="su-arrow" aria-hidden="true">→</span><strong>@t.To</strong>
+                            @if (edge is not null) { <span class="su-tag @P.Kind(edge.Kind).Css">@P.Kind(edge.Kind).Label</span> }
+                        </div>
+                        <div class="su-transfer-facts">
+                            <span><span class="su-ipo-k">Transport</span>@t.Transport</span>
+                            <span><span class="su-ipo-k">Format</span>@t.DataFormat</span>
+                            @if (t.Contract is { } contract) { <span><span class="su-ipo-k">Contract</span>@contract</span> }
+                        </div>
+                        @if (t.Versions.Count > 0)
+                        {
+                            <ul class="su-versions" aria-label="Version facts per source">
+                                @foreach (var v in t.Versions) { var vb = P.Badge(v.Class); <li><span class="su-ev su-ev-@vb.Tone"><span aria-hidden="true">@vb.Glyph</span> @vb.Label</span> <span class="su-muted">@v.SourceLabel:</span> @v.Fact</li> }
+                            </ul>
+                            @if (t.Versions.Select(v => v.Fact).Distinct().Count() > 1)
+                            {
+                                <p class="su-note su-note-warn" data-testid="su-version-mismatch">Version mismatch across source snapshots. Deployment compatibility: not verified.</p>
+                            }
+                        }
+                        <div class="su-transfer-foot">
+                            <span class="su-ev su-ev-@b.Tone"><span aria-hidden="true">@b.Glyph</span> @b.Label</span>
+                            <span class="su-muted">@t.Verification</span>
+                            @if (SafeLink(t.Link) is { } link) { <a href="@link" class="su-link">Open contract</a> }
+                        </div>
+                    </li>
+                }
+            </ul>
+        </div>
+    };
+
+    // ── Business rules ──────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment Rules(SystemGuideContent c) => __builder =>
+    {
+        <div class="su-rules" data-testid="su-rules">
+            <div class="su-stages" role="group" aria-label="Rule categories">
+                <button type="button" class="su-stage @(_ruleCategory is null ? "is-active" : "")" aria-pressed="@(_ruleCategory is null ? "true" : "false")" @onclick="() => _ruleCategory = null">All</button>
+                @foreach (var cat in c.Rules.Select(r => r.Category).Distinct())
+                {
+                    var category = cat;
+                    <button type="button" class="su-stage @(_ruleCategory == cat ? "is-active" : "")" aria-pressed="@(_ruleCategory == cat ? "true" : "false")" @onclick="() => _ruleCategory = category">@cat</button>
+                }
+            </div>
+            <ul class="su-cards">
+                @foreach (var r in c.Rules.Where(r => (_ruleCategory is null || r.Category == _ruleCategory) && Matches(_search.Rules, r.Id)))
+                {
+                    var ruleId = r.Id;
+                    var open = _openRules.Contains(r.Id);
+                    var impl = P.Badge(r.Implementation); var ver = P.Badge(r.Verification);
+                    <li class="su-card @(open ? "is-open" : "")" data-testid="su-rule-@r.Id">
+                        <button type="button" class="su-card-head" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleRule(ruleId)">
+                            <span class="su-card-cat">@r.Category</span>
+                            <span class="su-card-title">@r.Title</span>
+                            <span class="su-card-sum">@r.Summary</span>
+                            <span class="su-card-badges">
+                                <span class="su-ev su-ev-@impl.Tone" title="@impl.Meaning"><span aria-hidden="true">@impl.Glyph</span> Implementation: @impl.Label</span>
+                                <span class="su-ev su-ev-@ver.Tone" title="@ver.Meaning"><span aria-hidden="true">@ver.Glyph</span> Verification: @ver.Label</span>
+                            </span>
+                        </button>
+                        @if (open)
+                        {
+                            <div class="su-card-body">
+                                <dl class="su-dl">
+                                    @if (r.WhyItMatters is { } why) { <dt>Why it matters</dt><dd>@why</dd> }
+                                    @if (r.Conditions is { } cond) { <dt>When</dt><dd>@cond</dd> }
+                                    @if (r.ExpectedBehavior is { } exp) { <dt>Expected</dt><dd>@exp</dd> }
+                                    @if (r.ComponentId is { } comp) { <dt>Component</dt><dd>@Name(comp)</dd> }
+                                </dl>
+                                <BirkNext.Web.Components.SystemUnderstanding.GuideEvidenceList Items="r.Evidence" />
+                            </div>
+                        }
+                    </li>
+                }
+            </ul>
+        </div>
+    };
+
+    // ── What to test ────────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment Tests(SystemGuideContent c) => __builder =>
+    {
+        <div class="su-tests" data-testid="su-tests">
+            <p class="su-note su-note-info" data-testid="su-guidance-note">Test guidance, not test coverage. A suggested scenario is not a test definition, and an existing test definition is not an executed or verified result.</p>
+            <ul class="su-cards">
+                @foreach (var s in c.Scenarios.Where(s => Matches(_search.Scenarios, s.Id)))
+                {
+                    var scenarioId = s.Id;
+                    var open = _openScenarios.Contains(s.Id);
+                    var state = P.ScenarioState(s.State);
+                    <li class="su-card @(open ? "is-open" : "")" data-testid="su-scenario-@s.Id">
+                        <button type="button" class="su-card-head" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleScenario(scenarioId)">
+                            <span class="su-card-title">@s.Title</span>
+                            <span class="su-card-sum">@s.Objective</span>
+                            <span class="su-card-badges"><span class="su-ev su-ev-@state.Tone">@state.Label</span></span>
+                        </button>
+                        @if (open)
+                        {
+                            <div class="su-card-body">
+                                <dl class="su-dl">
+                                    @if (s.Preconditions is { } pre) { <dt>Preconditions</dt><dd>@pre</dd> }
+                                    @if (s.TestData is { } td) { <dt>Synthetic test data</dt><dd>@td</dd> }
+                                    @if (s.ExpectedOutcome is { } eo) { <dt>Expected</dt><dd>@eo</dd> }
+                                    @if (s.ObservableEvidence is { } obs) { <dt>Observe</dt><dd>@obs</dd> }
+                                    @if (s.FailureCases.Count > 0) { <dt>Failure cases</dt><dd>@string.Join(" · ", s.FailureCases)</dd> }
+                                    @if (s.ExistingTests.Count > 0) { <dt>Existing definitions</dt><dd>@string.Join(" · ", s.ExistingTests) <span class="su-muted">(defined, not executed here)</span></dd> }
+                                    @if (s.FollowUp is { } fu) { <dt>Next step</dt><dd>@fu</dd> }
+                                </dl>
+                                @if (s.StepIds.Count > 0)
+                                {
+                                    <div class="su-related"><span class="su-ipo-k">Steps</span>
+                                        @foreach (var id in s.StepIds) { var stepId = id; <button type="button" class="su-pill" @onclick="() => GoToStep(stepId)">@id · @(c.Steps.FirstOrDefault(x => x.Id == id)?.Title)</button> }</div>
+                                }
+                            </div>
+                        }
+                    </li>
+                }
+            </ul>
+            <p class="su-muted">Prepare data in <a href="test-data">Test Data</a>, build runnable tests in <a href="integration-suites">Integration Suites</a> and review results in <a href="execution-results">Test Execution &amp; Evidence</a>.</p>
+        </div>
+    };
+
+    // ── Gaps & evidence ─────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment Gaps(SystemGuideContent c) => __builder =>
+    {
+        <div class="su-gaps" data-testid="su-gaps">
+            @if (_view!.SourceChanges.Count > 0)
+            {
+                <section class="su-block" data-testid="su-source-changes">
+                    <h2 class="su-h2">Source changes since this revision</h2>
+                    <p class="su-muted">The guide is not changed automatically. A reviewer decides whether the explanation still holds.</p>
+                    <ul class="su-bullets">@foreach (var ch in _view.SourceChanges) { <li><strong>@ch.Label</strong>: @ch.Change (@ch.AffectedClaims claims cite this source)</li> }</ul>
+                </section>
+            }
+            <section class="su-block">
+                <h2 class="su-h2">Known gaps</h2>
+                <ul class="su-gap-list">
+                    @foreach (var g in c.Gaps)
+                    {
+                        var b = P.Badge(g.Class);
+                        <li class="su-gap" data-testid="su-gap-@g.Id"><span class="su-ev su-ev-@b.Tone"><span aria-hidden="true">@b.Glyph</span> @b.Label</span>
+                            <strong>@g.Title</strong><span>@g.Detail</span>@if (g.Owner is { } o) { <span class="su-muted">Owner: @o</span> }</li>
+                    }
+                </ul>
+            </section>
+            <section class="su-block">
+                <h2 class="su-h2">What a tester can observe</h2>
+                <ul class="su-observe">
+                    @foreach (var o in c.Observability) { <li><strong>@Name(o.ComponentId)</strong><span>@o.WhatToObserve</span><span class="su-muted">@o.Availability</span></li> }
+                </ul>
+            </section>
+            <section class="su-block">
+                <h2 class="su-h2">Sources behind this revision</h2>
+                <ul class="su-bullets" data-testid="su-basis">@foreach (var s in _view.Shown!.SourceBasis) { <li>@s.Label</li> }</ul>
+                <h3 class="su-h3">Imported now</h3>
+                <ul class="su-bullets" data-testid="su-current-sources">@foreach (var s in _view.CurrentSources) { <li>@s.Label</li> }</ul>
+            </section>
+            <section class="su-block">
+                <h2 class="su-h2">Evidence classes</h2>
+                <ul class="su-legend-list">
+                    @foreach (var cls in Enum.GetValues<GuideEvidenceClass>()) { var b = P.Badge(cls); <li><span class="su-ev su-ev-@b.Tone"><span aria-hidden="true">@b.Glyph</span> @b.Label</span> @b.Meaning</li> }
+                </ul>
+            </section>
+        </div>
+    };
+
+    // ── Revisions and review ────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment Revisions() => __builder =>
+    {
+        var draft = _view!.Draft;
+        <div class="su-revisions" data-testid="su-revisions">
+            @if (_view.CanEdit)
+            {
+                <section class="su-block su-review" data-testid="su-review-panel">
+                    <h2 class="su-h2">Review</h2>
+                    @if (_editing)
+                    {
+                        <label class="su-edit">Purpose
+                            <textarea rows="2" value="@_work!.Purpose" @onchange="e => _work = _work! with { Purpose = e.Value?.ToString() ?? string.Empty }" data-testid="su-edit-purpose"></textarea></label>
+                        <label class="su-edit">Change summary
+                            <input type="text" @bind="_changeSummary" data-testid="su-change-summary" /></label>
+                        <div class="su-actions">
+                            <button type="button" class="su-btn su-btn-primary" disabled="@_busy" @onclick="SaveDraftAsync" data-testid="su-save-draft">Save draft</button>
+                            <button type="button" class="su-btn" @onclick="CancelEditing">Cancel</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="su-actions">
+                            @if (draft is null || draft.State == GuideRevisionState.Draft)
+                            {
+                                <button type="button" class="su-btn" @onclick="StartEditing" data-testid="su-edit">@(draft is null ? "Start a new draft" : "Edit draft")</button>
+                            }
+                            @if (draft is { State: GuideRevisionState.Draft })
+                            {
+                                var rev = draft.Revision;
+                                <button type="button" class="su-btn su-btn-primary" disabled="@_busy" @onclick='() => TransitionAsync(rev, "submit")' data-testid="su-submit">Submit revision @rev for review</button>
+                            }
+                            @if (draft is { State: GuideRevisionState.InReview })
+                            {
+                                var rev = draft.Revision;
+                                <button type="button" class="su-btn su-btn-primary" disabled="@_busy" @onclick='() => TransitionAsync(rev, "approve")' data-testid="su-approve">Approve revision @rev</button>
+                                <button type="button" class="su-btn" disabled="@_busy" @onclick='() => TransitionAsync(rev, "return-to-draft")' data-testid="su-return">Return to draft</button>
+                            }
+                            @if (draft is { State: GuideRevisionState.Approved })
+                            {
+                                var rev = draft.Revision;
+                                <button type="button" class="su-btn su-btn-primary" disabled="@_busy" @onclick='() => TransitionAsync(rev, "publish")' data-testid="su-publish">Publish revision @rev</button>
+                            }
+                        </div>
+                        <p class="su-muted">Published revisions are never changed. An edit opens a new draft revision; publishing it keeps the previous one as superseded history.</p>
+                    }
+                </section>
+            }
+            else
+            {
+                <p class="su-note su-note-info" data-testid="su-read-only">Read only. Changing, approving or publishing a guide needs the configuration-write permission.</p>
+            }
+            <h2 class="su-h2">Revision history</h2>
+            <ol class="su-history">
+                @foreach (var r in _view.Revisions)
+                {
+                    <li data-testid="su-rev-@r.Revision"><strong>Revision @r.Revision</strong>
+                        <span class="su-chip su-@(r.State == GuideRevisionState.Published ? "ok" : r.State == GuideRevisionState.Superseded ? "neutral" : "warn")">@r.State</span>
+                        <span class="su-muted">@r.CreatedBy · @r.CreatedAt.ToString("yyyy-MM-dd HH:mm")@(r.ApprovedBy is { } a ? $" · approved by {a}" : "")@(r.PublishedAt is { } p ? $" · published {p:yyyy-MM-dd}" : "")</span>
+                        @if (r.ChangeSummary is { } cs) { <span class="su-hist-sum">@cs</span> }
+                        <code class="su-sha" title="Content fingerprint">@(r.ContentFingerprint.Length >= 12 ? r.ContentFingerprint[..12] : r.ContentFingerprint)</code></li>
+                }
+            </ol>
+        </div>
+    };
+}

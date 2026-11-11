@@ -169,6 +169,8 @@
                                 <p class="rw-stage-detail" data-testid="rw-stage-detail">@stage.Detail</p>
                                 <p class="rw-stage-links">
                                     @if (stage.Href is { } href) { <a href="@href" data-testid="rw-stage-open">@stage.ActionLabel</a> }
+                                    @* Understanding the system under test belongs to this stage; opening the guide never marks the stage complete. *@
+                                    @if (stage.Id == "understand") { <a href="system-understanding" data-testid="rw-understand-system">Understand the system flow</a> }
                                     <HelpLink Topic="@stage.HelpTopic" Text="Learn how" />
                                 </p>
                             </details>

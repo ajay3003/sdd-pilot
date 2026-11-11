@@ -44,6 +44,7 @@ public static class UserGuideContent
         new("getting-started", "Import a project", GettingStarted, "import zip archive package demo project documents modules artifact candidates selection workspace",
             "project-inputs", "project-import", "multiple-documents", "sample-project-discovery", "current-workspace"),
         new("project-quality", "Project Quality and the next action", GettingStarted, "project quality dashboard next action recommendation metrics execution evidence score stage workflow imported reviewed tested"),
+        new("system-understanding", "System Understanding (the system under test)", GettingStarted, "system understanding systemforstaelse systemforståelse flow how the system works step by step data contracts business rules what to test guide revision review publish evidence class"),
         new("recommended-workflow", "Recommended Workflow", GettingStarted, "next step next action configure project bind evidence review decision", "review-decisions"),
 
         new("project-model", "Project model and binding", ProjectEvidence, "project logical system package bind binding role required optional bound ready partial conflict source-only docs-only contract infrastructure supporting",
@@ -134,6 +135,7 @@ public static class UserGuideContent
         ["whats-new"] = new("2026-11-11", "BirkNext 1.0.0", "No release-notes source exists in this build"),
         ["status-reference"] = new("2026-11-11", "BirkNext 1.0.0", "ExecutionState and ResultApplicability contracts"),
         ["project-quality"] = new("2026-11-11", "BirkNext 1.0.0", "Dashboard and Recommended Workflow share DashboardPresentation.NextStep; ProjectQualityStages; ExecutionEvidenceFacts"),
+        ["system-understanding"] = new("2026-11-11", "BirkNext 1.0.0", "SystemGuideService revisions (system_guide_revisions), SystemUnderstanding page, curated Skolenærvær draft"),
         ["troubleshooting"] = new("2026-11-11", "BirkNext 1.0.0", "Messages of the build-info card, Backup & Transfer import and Execution Results"),
         ["system-settings"] = new("2026-11-11", "BirkNext 1.0.0", "Application information card (api/system/build-info)"),
         ["workspace-transfer"] = new("2026-11-11", "BirkNext 1.0.0", "Backup & Transfer acceptance WT-01–WT-43"),

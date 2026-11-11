@@ -1,0 +1,15 @@
+.gel { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.gel-item { display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.82rem; min-width: 0; }
+.gel-badge { flex: 0 0 auto; display: inline-flex; gap: 0.25rem; align-items: center; border-radius: 999px; padding: 0.05rem 0.55rem; font-size: 0.72rem; font-weight: 650; border: 1px solid transparent; white-space: nowrap; }
+.gel-ok { background: #dafbe1; color: #116329; border-color: #aceebb; }
+.gel-info { background: #ddf4ff; color: #0550ae; border-color: #b6e3ff; }
+.gel-warn { background: #fff8c5; color: #7d4e00; border-color: #eac54f; }
+.gel-bad { background: #ffebe9; color: #a40e26; border-color: #ffcecb; }
+.gel-neutral { background: var(--clr-surface, #f6f8fa); color: var(--clr-text-muted, #57606a); border-color: var(--clr-border, #d0d7de); }
+.gel-body { display: flex; flex-wrap: wrap; gap: 0.15rem 0.6rem; min-width: 0; align-items: baseline; }
+.gel-src { font-weight: 600; }
+.gel-code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.76rem; overflow-wrap: anywhere; }
+.gel-test, .gel-doc { color: var(--clr-text-muted, #57606a); overflow-wrap: anywhere; }
+.gel-note { flex-basis: 100%; color: var(--clr-text, #1f2328); }
+.gel-link { font-weight: 600; }
+.gel-none { font-size: 0.8rem; color: var(--clr-text-muted, #57606a); margin: 0; }

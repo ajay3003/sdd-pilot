@@ -1,0 +1,108 @@
+@using BirkNext.SystemUnderstanding
+@using P = BirkNext.Web.Services.SystemUnderstandingPresentation
+
+@* The system flow: the main journey on the top row, side flows packed below, every connection styled by its kind and labelled with what
+   travels. Nodes and connections are keyboard-selectable buttons; under 760px the same flows render as a vertical list. *@
+@{
+    var layout = P.Layout(Content);
+    var focus = FlowFocus is null ? null : Content.Flows.FirstOrDefault(f => f.Id == FlowFocus);
+    var focusEdges = focus is null ? null : P.FlowEdges(Content, focus);
+}
+<div class="sfd" data-testid="su-flow">
+    <div class="sfd-canvas" role="group" aria-label="System flow diagram. Use the flow list below for a text version.">
+        <svg viewBox="0 0 @F(layout.Width) @F(layout.Height)" width="@F(layout.Width)" height="@F(layout.Height)" class="sfd-svg" data-testid="su-flow-svg" focusable="false">
+            <defs>
+                @foreach (var kind in Enum.GetValues<GuideFlowKind>())
+                {
+                    <marker id="sfd-arrow-@P.Kind(kind).Css" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                        <path d="M0,0 L10,5 L0,10 z" class="sfd-arrowhead @P.Kind(kind).Css" />
+                    </marker>
+                }
+            </defs>
+            @foreach (var lane in layout.Nodes.GroupBy(n => n.Row).OrderBy(g => g.Key))
+            {
+                var minX = lane.Min(n => n.X) - 12; var maxX = lane.Max(n => n.X) + P.NodeWidth + 12;
+                <rect class="sfd-lane @(lane.Key == 0 ? "is-main" : "")" x="@F(minX)" y="@F(lane.First().Y - 14)" width="@F(maxX - minX)" height="@F(P.NodeHeight + 28)" rx="14" />
+            }
+            @foreach (var e in layout.Edges)
+            {
+                var kind = P.Kind(e.Edge.Kind);
+                var dim = focusEdges is not null && !focusEdges.Contains(e.Edge.Id);
+                <g class="sfd-edge @kind.Css @(SelectedEdge == e.Edge.Id ? "is-selected" : "") @(dim ? "is-dim" : "")" role="button" tabindex="0"
+                   aria-label="@($"{Name(e.Edge.From)} to {Name(e.Edge.To)}: {e.Edge.Transport}, {e.Edge.DataFormat}")" aria-pressed="@(SelectedEdge == e.Edge.Id ? "true" : "false")"
+                   data-testid="su-edge-@e.Edge.Id" @onclick="() => OnSelectEdge.InvokeAsync(e.Edge.Id)" @onkeydown="k => Key(k, () => OnSelectEdge.InvokeAsync(e.Edge.Id))">
+                    <path d="@e.Path" class="sfd-hit" />
+                    <path d="@e.Path" class="sfd-line" marker-end="url(#sfd-arrow-@kind.Css)" />
+                    <text x="@F(e.LabelX)" y="@F(e.LabelY)" text-anchor="middle" class="sfd-edge-label">@e.ShortLabel</text>
+                </g>
+            }
+            @foreach (var n in layout.Nodes)
+            {
+                var x = n.Component;
+                var dim = focus is not null && !focus.Path.Contains(x.Id);
+                var classes = P.Classes(x.Evidence, 1);
+                <g class="sfd-node @(x.External ? "is-external" : "") @(SelectedNode == x.Id ? "is-selected" : "") @(dim ? "is-dim" : "") @(Highlight.Contains(x.Id) ? "is-match" : "")"
+                   role="button" tabindex="0" aria-pressed="@(SelectedNode == x.Id ? "true" : "false")" aria-label="@($"{x.Name}: {x.Responsibility}. Evidence: {P.Badge(classes[0]).Label}")"
+                   data-testid="su-node-@x.Id" @onclick="() => OnSelectNode.InvokeAsync(x.Id)" @onkeydown="k => Key(k, () => OnSelectNode.InvokeAsync(x.Id))">
+                    <rect x="@F(n.X)" y="@F(n.Y)" width="@P.NodeWidth" height="@P.NodeHeight" rx="12" class="sfd-box" />
+                    <text x="@F(n.X + 14)" y="@F(n.Y + 25)" class="sfd-name">@x.Name</text>
+                    <text x="@F(n.X + 14)" y="@F(n.Y + 44)" class="sfd-resp">@Clip(x.Responsibility, 24)</text>
+                    <text x="@F(n.X + 14)" y="@F(n.Y + 59)" class="sfd-ev sfd-ev-@P.Badge(classes[0]).Tone">@P.Badge(classes[0]).Glyph @P.Badge(classes[0]).Label</text>
+                </g>
+            }
+        </svg>
+    </div>
+
+    <ul class="sfd-legend" aria-label="Connection types">
+        @foreach (var kind in Content.Edges.Select(e => e.Kind).Distinct())
+        {
+            <li><span class="sfd-swatch @P.Kind(kind).Css" aria-hidden="true"></span>@P.Kind(kind).Label</li>
+        }
+        <li><span class="sfd-swatch is-external" aria-hidden="true"></span>External system</li>
+    </ul>
+
+    @* The same flows as text: always in the DOM (screen readers, narrow screens); visible on small screens or on request. *@
+    <div class="sfd-text" data-testid="su-flow-text">
+        <button type="button" class="sfd-text-toggle" aria-expanded="@(_textOpen ? "true" : "false")" aria-controls="sfd-list" @onclick="() => _textOpen = !_textOpen">
+            @(_textOpen ? "Hide flow as text" : "Show flow as text")
+        </button>
+        <ol class="sfd-list @(_textOpen ? "" : "is-collapsed")" id="sfd-list">
+            @foreach (var flow in Content.Flows)
+            {
+                <li data-testid="su-flow-text-@flow.Id">
+                    <span class="sfd-list-kind @P.Kind(flow.Kind).Css">@P.Kind(flow.Kind).Label</span>
+                    <strong>@flow.Title</strong> — @flow.Summary
+                    <ol class="sfd-hops">
+                        @foreach (var (from, to) in flow.Path.Zip(flow.Path.Skip(1)))
+                        {
+                            var edge = Content.Edges.FirstOrDefault(e => e.From == from && e.To == to);
+                            <li>
+                                <button type="button" class="sfd-hop" @onclick="() => OnSelectNode.InvokeAsync(from)">@Name(from)</button> →
+                                <button type="button" class="sfd-hop" @onclick="() => OnSelectNode.InvokeAsync(to)">@Name(to)</button>
+                                @if (edge is not null) { <span class="sfd-hop-meta">@edge.Transport · @edge.DataFormat</span> }
+                            </li>
+                        }
+                    </ol>
+                </li>
+            }
+        </ol>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public SystemGuideContent Content { get; set; } = new();
+    [Parameter] public string? SelectedNode { get; set; }
+    [Parameter] public string? SelectedEdge { get; set; }
+    [Parameter] public string? FlowFocus { get; set; }
+    [Parameter] public IReadOnlySet<string> Highlight { get; set; } = new HashSet<string>();
+    [Parameter] public bool ShowText { get; set; }
+    private bool _textOpen;
+    protected override void OnInitialized() => _textOpen = ShowText;
+    [Parameter] public EventCallback<string> OnSelectNode { get; set; }
+    [Parameter] public EventCallback<string> OnSelectEdge { get; set; }
+
+    private string Name(string id) => Content.Components.FirstOrDefault(c => c.Id == id)?.Name ?? id;
+    private static string F(double v) => v.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+    private static string Clip(string s, int max) => s.Length > max ? s[..(max - 1)] + "…" : s;
+    private static async Task Key(KeyboardEventArgs e, Func<Task> select) { if (e.Key is "Enter" or " ") await select(); }
+}

@@ -72,7 +72,7 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         var cut = Render<NavMenu>();
 
         // Import Project feeds Source Analysis too, so it stays visible with it; Source Analysis itself is a source review.
-        Entries(cut).Should().ContainInConsecutiveOrder("Recommended Workflow", "Import Project", "Source Management", "§Delivery Management");
+        Entries(cut).Should().ContainInConsecutiveOrder("Recommended Workflow", "System Understanding", "Import Project", "Source Management", "§Delivery Management");
         Entries(cut).Should().ContainInConsecutiveOrder("§Source & Architecture", "Source Analysis", "Schema Studio", "Generated Documentation Explorer", "Generated Documentation Health", "Technology Coverage");
     }
 

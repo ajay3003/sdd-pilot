@@ -47,6 +47,7 @@
     <!-- Test Pack references ship inside the assembly (never as loose content, never imported). -->
     <Content Remove="Services\IntegrationJourneys\Packs\**\*.reference.json" />
     <EmbeddedResource Include="Services\IntegrationJourneys\Packs\**\*.reference.json" LogicalName="TestPackReference.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Services\SystemUnderstanding\Guides\*.guide.json" LogicalName="SystemGuide.%(Filename)%(Extension)" />
     <Content Update="Tools\LighthouseRunner\package.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Update="Tools\LighthouseRunner\package-lock.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Update="Tools\LighthouseRunner\run-lighthouse.mjs" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
@@ -152,6 +153,7 @@
     <Compile Include="../../shared/ExecutionManifestContracts.cs" Link="Models/ExecutionManifestContracts.cs" />
     <Compile Include="../../shared/BuildIdentityContracts.cs" Link="Models/BuildIdentityContracts.cs" />
     <Compile Include="../../shared/RuntimeProfileContracts.cs" Link="Models/RuntimeProfileContracts.cs" />
+    <Compile Include="../../shared/SystemUnderstandingContracts.cs" Link="Models/SystemUnderstandingContracts.cs" />
     <Compile Include="../../shared/ContractTestDataContracts.cs" Link="Models/ContractTestDataContracts.cs" />
     <Compile Include="../../shared/PerformanceLocalExecutionContracts.cs" Link="Models/PerformanceLocalExecutionContracts.cs" />
     <Compile Include="../../shared/PerformanceResourceContracts.cs" Link="Models/PerformanceResourceContracts.cs" />

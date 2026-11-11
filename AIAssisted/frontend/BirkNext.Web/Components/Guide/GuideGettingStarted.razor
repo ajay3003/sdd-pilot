@@ -101,6 +101,20 @@
     </ul>
 </section>
 
+<section id="system-understanding" class="ug-section ug-topic" data-topic="system-understanding" aria-labelledby="system-understanding-title">
+    <h2 id="system-understanding-title" class="ug-section-title" tabindex="-1">System Understanding (the system under test)</h2>
+    <GuideArticleMeta Topic="system-understanding" />
+    <p class="ug-lead"><a href="/system-understanding">System Understanding</a> explains the <strong>system you are testing</strong> — what it does, how information moves, what happens at each step, which rules apply and what to test. It is not this Help Center (how to use BirkNext), not Integration Topology (what is connected according to evidence) and not Specification Review (what requirements say).</p>
+    <ul>
+        <li><strong>Overview &amp; flow</strong>: the system in one minute, then the flow. The main journey runs along the top; side flows (for example identity lookup, supporting data, placements, acknowledgments, periodic export) are drawn with their own line style. Select a component or a connection for what goes in and out, the transport, the data format and its evidence. "Flow as text" gives the same information as a list.</li>
+        <li><strong>Step by step</strong>: each step says what triggers it, what happens, what can go wrong and how a tester can check it.</li>
+        <li><strong>Data &amp; contracts</strong>: what moves between components and under which contract. Versions are listed per source snapshot; a version seen in source does not say what is deployed.</li>
+        <li><strong>Business rules</strong> and <strong>What to test</strong>: rules with separate implementation and verification status; test guidance is <em>not</em> test coverage.</li>
+        <li><strong>Evidence classes</strong>: <em>In source</em> (code exists — not proof that the integration works), <em>Test defined</em> (a test exists, not executed here), <em>Specified</em>, <em>Inferred</em>, <em>Needs clarification</em>, <em>Conflicting</em>, <em>Not assessed</em>; <em>Test verified</em> and <em>Runtime verified</em> need a current execution.</li>
+        <li><strong>Revisions</strong>: a guide is versioned. A curated guide starts as an unreviewed draft. Readers see the published revision; an edit opens a new draft, which is submitted, approved and published. A published revision is never changed. When new source snapshots are imported, the guide says it may need review — it is never rewritten automatically. Editing and approving need the configuration-write permission.</li>
+    </ul>
+</section>
+
 <section id="recommended-workflow" class="ug-section ug-topic" data-topic="recommended-workflow" aria-labelledby="recommended-workflow-title">
     <h2 id="recommended-workflow-title" class="ug-section-title" tabindex="-1">Recommended Workflow</h2>
     <GuideArticleMeta Topic="recommended-workflow" />
