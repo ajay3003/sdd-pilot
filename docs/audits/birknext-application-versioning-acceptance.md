@@ -105,7 +105,9 @@ Run sequentially with the existing memory guards; no timeout changed, no test di
 
 | Step | Result |
 |---|---|
-| Backend partitions 1–6 | PENDING: recorded in the follow-up update |
-| Frontend full suite | PENDING |
+| Backend partitions 1–6 (on `edae017a`) | **6,461 passed, 19 skipped, 1 failed** (1031 / 1098 / 840 / 652 / 520 / 2320). The one failure is `ScenariosQueryTests.Scenarios_With100Records_…WarmedP95CompletesWithinTwoSeconds`, a timing test: p95 was 2,513 ms against 2,000 ms, with two slow samples (5,569 and 2,513 ms) while free memory fell to 1.6 GB during partition 6. That query path is not touched by this change. |
+| The same test class rerun alone (no timeout changed) | **5/5 passed** |
+| .NET 8 parse guard (`CompilerCompatibilityTests`, partition 6) | PASS |
+| Frontend full suite | **8,586 / 8,586 passed** |
 | Release publish of backend and frontend | PASS (synthetic CI builds 152, 153 and a local Release frontend) |
 | Azure DevOps pipeline | NOT RUN (no pipeline triggered; .NET 8 SDK not installed locally) |
