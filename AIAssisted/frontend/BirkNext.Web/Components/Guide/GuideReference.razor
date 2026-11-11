@@ -5,6 +5,7 @@
 
 <section id="status-reference" class="ug-section ug-topic" data-topic="status-reference" aria-labelledby="status-reference-title">
     <h2 id="status-reference-title" class="ug-section-title" tabindex="-1">Status meanings</h2>
+    <GuideArticleMeta Topic="status-reference" />
     <p class="ug-lead">One vocabulary across BirkNext. Each status describes one dimension only — the word, not the colour, carries the meaning.</p>
     <div class="ug-table-scroll" role="region" aria-label="Status meanings" tabindex="0"><table class="ug-table ug-status-table">
         <thead><tr><th scope="col">Status</th><th scope="col">Means</th><th scope="col">Not the same as</th></tr></thead>
@@ -26,10 +27,30 @@
         <div class="ug-compare-col"><p class="ug-compare-label"><span class="status-chip status-chip-info">Observed</span></p><p>Runtime evidence exists — a sign-in, a request, a message.</p></div>
         <div class="ug-compare-col"><p class="ug-compare-label"><span class="status-chip status-chip-ready">Verified</span></p><p>That evidence satisfied explicit verification criteria. Until then the status reads <em>Not verified</em>.</p></div>
     </div>
+
+    <h3 id="execution-outcomes" class="ug-subtitle">Execution outcomes are not review statuses</h3>
+    <p>A run or a call in <a href="/execution-results">Test Execution &amp; Evidence</a> has an outcome: what actually happened at runtime. <strong>Ready</strong> in a review never means a test passed, and a static assessment is never an execution.</p>
+    <div class="ug-table-scroll" role="region" aria-label="Execution outcomes" tabindex="0"><table class="ug-table ug-status-table">
+        <thead><tr><th scope="col">Outcome</th><th scope="col">Means</th><th scope="col">Not the same as</th></tr></thead>
+        <tbody>@foreach (var term in UserGuideContent.ExecutionOutcomes)
+        {
+            <tr data-testid="ug-outcome-term"><th scope="row"><span class="status-chip status-chip-@term.Tone">@term.Term</span></th><td>@term.Meaning</td><td>@term.NotTheSameAs</td></tr>
+        }</tbody>
+    </table></div>
+    <h3 id="result-currency" class="ug-subtitle">Current or historical result</h3>
+    <p>Every new run keeps a record of exactly what it ran against. The run page's <strong>Executed against</strong> panel says whether the result still applies to what is current. The result itself never changes.</p>
+    <div class="ug-table-scroll" role="region" aria-label="Result currency" tabindex="0"><table class="ug-table ug-status-table">
+        <thead><tr><th scope="col">Label</th><th scope="col">Means</th><th scope="col">Not the same as</th></tr></thead>
+        <tbody>@foreach (var term in UserGuideContent.ResultCurrency)
+        {
+            <tr data-testid="ug-currency-term"><th scope="row"><span class="status-chip status-chip-@term.Tone">@term.Term</span></th><td>@term.Meaning</td><td>@term.NotTheSameAs</td></tr>
+        }</tbody>
+    </table></div>
 </section>
 
 <section id="feature-availability" class="ug-section ug-topic" data-topic="feature-availability" aria-labelledby="feature-availability-title">
     <h2 id="feature-availability-title" class="ug-section-title" tabindex="-1">Feature availability</h2>
+    <GuideArticleMeta Topic="feature-availability" />
     <p class="ug-lead">Availability describes BirkNext itself; configuration describes your environment. They are separate.</p>
     <div class="ug-compare">
         <div class="ug-compare-col"><p class="ug-compare-label"><span class="status-chip status-chip-neutral">Unavailable</span></p><p>The capability is not ready for normal use. The page shows an <em>Unavailable</em> badge and banner, the sidebar marks it, and Recommended Workflow never recommends it. Configuration alone does not enable it.</p></div>
@@ -48,6 +69,7 @@
 
 <section id="troubleshooting" class="ug-section ug-topic" data-topic="troubleshooting" aria-labelledby="troubleshooting-title">
     <h2 id="troubleshooting-title" class="ug-section-title" tabindex="-1">Troubleshooting</h2>
+    <GuideArticleMeta Topic="troubleshooting" />
     <div class="ug-trouble-list">@foreach (var entry in UserGuideContent.Troubleshooting)
     {
         <article class="ug-trouble" data-testid="ug-trouble">
@@ -71,6 +93,7 @@
 
 <section id="glossary" class="ug-section ug-topic" data-topic="glossary" aria-labelledby="glossary-title">
     <h2 id="glossary-title" class="ug-section-title" tabindex="-1">Glossary</h2>
+    <GuideArticleMeta Topic="glossary" />
     <dl class="ug-glossary">@foreach (var entry in UserGuideContent.Glossary)
     {
         <div class="ug-glossary-entry"><dt>@entry.Term</dt><dd>@entry.Definition</dd></div>
@@ -79,6 +102,7 @@
 
 <section id="system-settings" class="ug-section ug-topic" data-topic="system-settings" aria-labelledby="system-settings-title">
     <h2 id="system-settings-title" class="ug-section-title" tabindex="-1">System Settings</h2>
+    <GuideArticleMeta Topic="system-settings" />
     <p class="ug-lead"><a href="/admin/system-settings">System Settings</a> holds operational controls and diagnostics. Configuration health is about configuration, not project quality; Feature Visibility controls menus, not capability or applicability.</p>
     <div class="ug-table-scroll" role="region" aria-label="System Settings areas" tabindex="0"><table class="ug-table">
         <thead><tr><th scope="col">Area</th><th scope="col">Purpose</th><th scope="col">Safety meaning</th></tr></thead>
@@ -89,8 +113,39 @@
     </ReviewDisclosure>
 </section>
 
+<section id="versioning" class="ug-section ug-topic" data-topic="versioning" aria-labelledby="versioning-title">
+    <h2 id="versioning-title" class="ug-section-title" tabindex="-1">Versions: artifacts and BirkNext builds</h2>
+    <GuideArticleMeta Topic="versioning" />
+    <p class="ug-lead">Two different things have versions, and BirkNext keeps them apart: the <strong>artifacts you work with</strong> (contracts, tests, Test Data, suites, browser flows) and <strong>BirkNext itself</strong> (the build you are running).</p>
+    <div class="ug-card-grid ug-card-grid-2">
+        <article class="ug-card" id="artifact-versioning"><h3>Artifact versions and historical results</h3>
+            <ul>
+                <li>A contract has numbered versions (<code>children-api@v3</code>) next to the version declared inside the document; a test has revisions (<code>r2</code>); Test Data has versions; a suite has revisions; a browser flow has versions with its earlier definitions kept.</li>
+                <li>Saving identical content creates no new version or revision.</li>
+                <li>Every new run records exactly which versions it executed, with a fingerprint of each and the BirkNext build that ran it — see the run's <strong>Executed against</strong> panel in <a href="/execution-results">Test Execution &amp; Evidence</a>.</li>
+                <li>When any of those later changes, the run is labelled <a href="@UserGuideContent.Href("result-currency")">Historical result</a>: still true for what it tested, not evidence for the current version. Runs from before this record existed say <em>Currency unknown</em>.</li>
+                <li>An integration suite revision runs exactly the test revisions it pinned.</li>
+            </ul></article>
+        <article class="ug-card" id="application-versioning"><h3>The BirkNext build</h3>
+            <ul>
+                <li><strong>Application version</strong> (for example 1.0.0) is set by the BirkNext team for a release.</li>
+                <li><strong>Build</strong>: a <em>CI build</em> names its pipeline run (<code>1.0.0-ci.152</code>) and the full source commit; a <em>Local build</em> is a developer build and is never an official release; <em>Unknown build</em> means the build did not record its identity.</li>
+                <li><a href="/admin/system-settings">System Settings</a> → General → <strong>Application information</strong> shows the running frontend and backend builds, whether they are the same build, the Edge Companion versions (the Companion has its own version) and the database migration state, with a copy action for support.</li>
+                <li>Downloaded packages are named after the build (<code>BirkNext-1.0.0-ci.152.zip</code>) and come with a <code>.sha256</code> checksum; the package's own validation compares the binaries with its build manifest.</li>
+            </ul></article>
+    </div>
+    <GuideCallout Kind="CalloutKind.Important">A checksum proves the package is unchanged, not who published it. A file name alone proves nothing about the binaries inside.</GuideCallout>
+</section>
+
+<section id="whats-new" class="ug-section ug-topic" data-topic="whats-new" aria-labelledby="whats-new-title">
+    <h2 id="whats-new-title" class="ug-section-title" tabindex="-1">What's new</h2>
+    <GuideArticleMeta Topic="whats-new" />
+    <GuideCallout Kind="CalloutKind.Unavailable">Release notes are not available in this build. BirkNext does not publish release notes with the application yet, and commit messages are not release notes. The running build is shown in <a href="/admin/system-settings">System Settings</a> → Application information.</GuideCallout>
+</section>
+
 <section id="workspace-transfer" class="ug-section ug-topic" data-topic="workspace-transfer" aria-labelledby="workspace-transfer-title">
     <h2 id="workspace-transfer-title" class="ug-section-title" tabindex="-1">Backup &amp; Transfer</h2>
+    <GuideArticleMeta Topic="workspace-transfer" />
     <p class="ug-lead"><a href="/workspace-transfer">Backup &amp; Transfer</a> has two separate jobs. A <strong>full backup</strong> protects this installation; a <strong>package</strong> moves one project or one integration to another BirkNext.</p>
     <ol class="ug-steps">
         <li><strong>Full backup.</strong> Choose a passphrase (12+ characters). BirkNext dumps the whole database from one consistent snapshot, adds the managed file stores (Critical E2E, Test Data, reset state) and encrypts everything. It does not keep the passphrase: a lost passphrase means a lost backup.</li>
@@ -105,6 +160,7 @@
 
 <section id="feature-matrix" class="ug-section ug-topic" data-topic="feature-matrix" aria-labelledby="feature-matrix-title">
     <h2 id="feature-matrix-title" class="ug-section-title" tabindex="-1">Feature matrix</h2>
+    <GuideArticleMeta Topic="feature-matrix" />
     <p class="ug-lead">Every current feature with its purpose, inputs and boundary. Applicability is evaluated per project.</p>
     <ReviewDisclosure Text="Show all features" CollapseText="Hide feature matrix" TestId="ug-feature-matrix">
         <div class="ug-table-scroll" role="region" aria-label="Feature matrix, scroll horizontally for all columns" tabindex="0"><table class="ug-table">
@@ -138,6 +194,7 @@
 
 <section id="discovery" class="ug-section ug-topic" data-topic="discovery" aria-labelledby="discovery-title">
     <h2 id="discovery-title" class="ug-section-title" tabindex="-1">Navigation badges</h2>
+    <GuideArticleMeta Topic="discovery" />
     <p class="ug-lead">Sidebar badges describe availability, applicability or evidence state — never a quality grade.</p>
     <ul class="ug-list">
         <li><strong>Unavailable</strong> — the BirkNext capability is not ready for normal use; it outranks every other badge.</li>
@@ -153,6 +210,7 @@
 
 <section id="about" class="ug-section ug-topic" data-topic="about" aria-labelledby="about-title">
     <h2 id="about-title" class="ug-section-title" tabindex="-1">About and limitations</h2>
+    <GuideArticleMeta Topic="about" />
     <p id="ecosystem">BirkNext works with project documents, source, configured target systems, optional providers, test engines and runtime evidence. It is evidence-driven: source never proves runtime behavior, browser automation cannot prove everything, active tests are safety-gated, performance testing is controlled, and unsupported technology is reported honestly.</p>
     <p id="optional-capabilities">Feature Visibility can hide or show optional items. AI Change Review is optional and may be disabled by default; AI is not the core workflow. Extensions such as the M2LB child-security-classification extension apply only when present and enabled.</p>
     <p id="feature-details">Each feature page carries its own short help; this guide holds the full workflow and reference. Absence of an automated violation is not full compliance, and suggested evidence is not confirmed evidence.</p>

@@ -4,6 +4,7 @@
 
 <section id="project-model" class="ug-section ug-topic" data-topic="project-model" aria-labelledby="project-model-title">
     <h2 id="project-model-title" class="ug-section-title" tabindex="-1">Project model and binding</h2>
+    <GuideArticleMeta Topic="project-model" />
     <p class="ug-lead"><strong>Target Application is the system under test; Project is its evidence.</strong> The <a href="@UserGuideContent.TargetEnvironmentTab("target")">Target Application tab</a> says WHAT an environment represents (for example M2LB — chosen from detected applications or added manually). The <a href="@UserGuideContent.TargetEnvironmentTab("project")">Project tab</a> then binds the imported packages that describe it: application source, documentation, contracts, infrastructure and supporting packages. Packages remain independent evidence providers with their own history.</p>
     <div class="ug-compare">
         <div class="ug-compare-col ug-compare-yes"><p class="ug-compare-label">Project is</p><ul><li>One logical system, such as an application and its contracts</li><li>A set of evidence roles, each bound to packages</li><li>References only — imports and snapshots keep their owners</li></ul></div>
@@ -50,6 +51,7 @@
 
 <section id="source-analysis" class="ug-section ug-topic" data-topic="source-analysis" aria-labelledby="source-analysis-title">
     <h2 id="source-analysis-title" class="ug-section-title" tabindex="-1">Source Analysis</h2>
+    <GuideArticleMeta Topic="source-analysis" />
     <p class="ug-lead"><a href="/source-analysis">Source Analysis</a> turns an archive into an immutable, fingerprinted snapshot that other features select by reference. It needs no Target Environment, and reviews never need a duplicate upload.</p>
     <p>Areas:</p><ul class="ug-chip-row ug-chip-list">@foreach (var domain in DocumentationCatalog.DocumentedSourceAnalysisDomains) { <li class="ug-chip">@domain</li> }</ul>
     <ul class="ug-list">
@@ -66,6 +68,7 @@
 
 <section id="explorers" class="ug-section ug-topic" data-topic="explorers" aria-labelledby="explorers-title">
     <h2 id="explorers-title" class="ug-section-title" tabindex="-1">Explorers and documents</h2>
+    <GuideArticleMeta Topic="explorers" />
     <p class="ug-lead">The <a href="/specification-explorer">Specification Explorer</a>, <a href="/constitution-explorer">Constitution Explorer</a>, <a href="/plan-explorer">Plan Explorer</a>, <a href="/task-explorer">Task Explorer</a> and <a href="/data-model-explorer">Data Model Explorer</a> read the documents of the logical Project. Documentation may come from a different package than the application source.</p>
     <ul class="ug-list">
         <li><strong>Where documents come from:</strong> a Demo Project, else the documentation bound on the Project tab, else the current import; plus documents imported into the workspace with an Explorer’s <em>Import</em> action. Each artifact shows the package it came from.</li>
@@ -88,6 +91,7 @@
 
 <section id="generated-documentation" class="ug-section ug-topic" data-topic="generated-documentation" aria-labelledby="generated-documentation-title">
     <h2 id="generated-documentation-title" class="ug-section-title" tabindex="-1">Generated documentation</h2>
+    <GuideArticleMeta Topic="generated-documentation" />
     <p class="ug-lead">Some projects keep documentation that a tool, build step or agent writes from the code (for example per-module <code>autodoc/</code> folders). BirkNext treats it as <strong>implementation-derived evidence</strong> — useful, but never automatically authoritative.</p>
     <div class="ug-card-grid ug-card-grid-2">
         <article class="ug-card"><h3><a href="/generated-documentation-explorer">Generated Documentation Explorer</a></h3><p>Browse the captured documents of the selected import by module and type — Data Model, architecture, data flow, messaging, overview. Read-only, with provenance.</p></article>
@@ -103,6 +107,7 @@
 
 <section id="traceability" class="ug-section ug-topic" data-topic="traceability" aria-labelledby="traceability-title">
     <h2 id="traceability-title" class="ug-section-title" tabindex="-1">Traceability</h2>
+    <GuideArticleMeta Topic="traceability" />
     <p class="ug-lead"><a href="/artifact-traceability">Requirements Traceability</a> presents the shared graph: requirement → plan → task → implementation evidence → designed test → test execution. Links may be partial or stale, and the graph never turns source links into runtime verification.</p>
     <div class="ug-card-grid">
         <article class="ug-card" id="implementation-review"><h3><a href="/task-alignment">Task Alignment Review</a></h3><p>Checks every task against the Specification: <em>Direct spec link</em>, <em>Technical only</em>, <em>Needs review</em> or <em>Possible deviation</em> (only the last two are findings). It does not read source code, so it is not full implementation verification. Results are bound to both artifacts’ fingerprints (Current, Stale, Not run).</p></article>

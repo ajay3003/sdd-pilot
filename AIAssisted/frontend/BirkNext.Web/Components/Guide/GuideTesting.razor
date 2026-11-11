@@ -5,6 +5,7 @@
 
 <section id="testing" class="ug-section ug-topic" data-topic="testing" aria-labelledby="testing-title">
     <h2 id="testing-title" class="ug-section-title" tabindex="-1">Runtime testing</h2>
+    <GuideArticleMeta Topic="testing" />
     <p class="ug-lead">Runtime reviews run against a configured Target Environment: <a href="/frontend-quality-review">Frontend Quality Review</a>, <a href="/api-quality-review">API Quality Review</a>, <a href="/integration-quality-review">Integration Quality Review</a>, <a href="/performance-test-review">Performance Test Review</a> and <a href="/critical-e2e-regression">Critical E2E Regression</a>. Every active test is safety-gated.</p>
     <h3 class="ug-subtitle">Authentication tab: four separate answers</h3>
     <div class="ug-card-grid">
@@ -18,6 +19,7 @@
 
 <section id="browser-endpoint-discovery" class="ug-section ug-topic" data-topic="browser-endpoint-discovery" aria-labelledby="browser-endpoint-discovery-title">
     <h2 id="browser-endpoint-discovery-title" class="ug-section-title" tabindex="-1">Browser and Endpoint Discovery</h2>
+    <GuideArticleMeta Topic="browser-endpoint-discovery" />
     <div class="ug-card-grid ug-card-grid-2">
         <article class="ug-card"><h3><a href="@UserGuideContent.TargetEnvironmentTab("browser")">Browser Discovery</a></h3>
             <p>The Browser Companion records evidence per page while you use the application: <strong>DOM</strong>, <strong>accessibility</strong> and <strong>performance</strong> evidence, with live and historical sessions. It is evidence only — Frontend Quality Review interprets it.</p>
@@ -30,6 +32,7 @@
 
 <section id="performance-test-review" class="ug-section ug-topic" data-topic="performance-test-review" aria-labelledby="performance-test-review-title">
     <h2 id="performance-test-review-title" class="ug-section-title" tabindex="-1">Performance Test Review</h2>
+    <GuideArticleMeta Topic="performance-test-review" />
     <p class="ug-lead"><a href="/performance-test-review">Performance Test Review</a> defines, checks, runs and analyzes a controlled load test for the active environment. Host capability (k6, Podman, images, resource providers) is in System Settings → Performance Test Engines.</p>
     <div class="ug-table-scroll" role="region" aria-label="Performance Test Review tabs" tabindex="0"><table class="ug-table">
         <thead><tr><th scope="col">Group</th><th scope="col">Tabs</th><th scope="col">Purpose</th></tr></thead>
@@ -99,6 +102,7 @@
 
 <section id="quality-reviews" class="ug-section ug-topic" data-topic="quality-reviews" aria-labelledby="quality-reviews-title">
     <h2 id="quality-reviews-title" class="ug-section-title" tabindex="-1">Quality reviews</h2>
+    <GuideArticleMeta Topic="quality-reviews" />
     <div class="ug-card-grid">
         <article class="ug-card"><h3><a href="/quality/document">Document Quality Review</a></h3><p>Evaluates project artifacts without a source snapshot. Its packs — quality, data model, constitution, documentation standards (WCAG 2.2, OWASP, GDPR, ISO 25010) and readiness — inspect documents only: documentation coverage, not conformance or legal compliance.</p></article>
         <article class="ug-card"><h3>Frontend, API and Integration reviews</h3><p>Consume target, runtime, configuration and source evidence. Browser findings do not prove full WCAG conformance, source configuration does not prove runtime enforcement, and configured integrations do not prove a successful flow.</p></article>
@@ -116,6 +120,7 @@
 
 <section id="skolenaervaer" class="ug-section ug-topic" data-topic="skolenaervaer" aria-labelledby="skolenaervaer-title">
     <h2 id="skolenaervaer-title" class="ug-section-title" tabindex="-1">Skolenærvær Testing <span class="ug-scope">Extension</span></h2>
+    <GuideArticleMeta Topic="skolenaervaer" />
     <p class="ug-lead"><a href="/extensions/skolenaervaer">Skolenærvær Testing</a> brings the Skolenærvær test pack into one view: Overview, Journeys, Security / Gradert tilgang, Verify and History. It is an example of a domain extension — the patterns apply to other packs, the names do not.</p>
     <h3 class="ug-subtitle">Journeys and who owns each interaction</h3>
     <ol class="ug-hops">
@@ -136,6 +141,7 @@
 
 <section id="test-coverage-review" class="ug-section ug-topic" data-topic="test-coverage-review" aria-labelledby="test-coverage-review-title">
     <h2 id="test-coverage-review-title" class="ug-section-title" tabindex="-1">Test Coverage &amp; Overlap Review</h2>
+    <GuideArticleMeta Topic="test-coverage-review" />
     <p class="ug-lead"><a href="/test-coverage-review">Test Coverage &amp; Overlap Review</a> shows what is already tested, what each test proves, at which level and boundary, which parts of each journey are not verified, and where QA may repeat developer tests. <strong>It never removes or rejects a test</strong> — the test lead decides.</p>
     <ul class="ug-list">
         <li>A test that was found is not a test that ran; a test that ran is not a covered requirement.</li>
@@ -149,6 +155,7 @@
 
 <section id="code-risk-review" class="ug-section ug-topic" data-topic="code-risk-review" aria-labelledby="code-risk-review-title">
     <h2 id="code-risk-review-title" class="ug-section-title" tabindex="-1">Code Risk Review</h2>
+    <GuideArticleMeta Topic="code-risk-review" />
     <p class="ug-lead"><a href="/code-risk-review">Code Risk Review</a> (formerly “AI-Generated Code Review”) reviews source and changes for deterministic implementation risks, evidence gaps and drift. <strong>It does not determine whether code was written by AI.</strong> No language model is called and there is no score.</p>
     <p>Read it summary first, then <em>What should I fix first?</em>, review coverage (a coverage limitation is never a code defect), findings by category and rule, and change risk (Limited without a baseline snapshot). Source-level rules exist for C# only; other languages are listed as unsupported, never as clean.</p>
     <ReviewDisclosure Text="Advanced details: rules" CollapseText="Hide advanced details" TestId="ug-crr-advanced">
@@ -158,30 +165,54 @@
 
 <section id="contract-testing" class="ug-section ug-topic" data-topic="contract-testing" aria-labelledby="contract-testing-title">
     <h2 id="contract-testing-title" class="ug-section-title" tabindex="-1">Contract Testing</h2>
+    <GuideArticleMeta Topic="contract-testing" />
     <p class="ug-lead"><a href="/api-quality-review/contracts">Contract Testing</a> stores OpenAPI/Swagger contracts and GraphQL schemas as immutable versions, generates draft tests from their operations, and runs Ready tests through Execution Evidence against the active Target Environment. <strong>Opening, comparing or editing never sends a request.</strong></p>
     <p>Tests are edited as revisions (history, compare, revert); every run records the exact revision and contract version. <strong>Changes</strong> classifies each test as Definite, Potential, No evidence or Needs human review, with an update proposal you apply explicitly. <strong>Coverage</strong> counts only execution evidence of that exact version and shows numerator, denominator, scope and what was not assessed. <strong>Lifecycle &amp; retention</strong> archives or deprecates a contract; a version is deleted only when nothing references it and you type the contract key.</p>
 </section>
 
 <section id="execution-results" class="ug-section ug-topic" data-topic="execution-results" aria-labelledby="execution-results-title">
     <h2 id="execution-results-title" class="ug-section-title" tabindex="-1">Test Execution &amp; Evidence</h2>
+    <GuideArticleMeta Topic="execution-results" />
     <p class="ug-lead"><a href="/execution-results">Test Execution &amp; Evidence</a> shows the actual results of every BirkNext test module in four areas — <strong>Overview</strong>, <strong>Runs &amp; Results</strong>, <strong>Evidence &amp; Traceability</strong> and <strong>Storage &amp; Retention</strong>. Static assessments (static security reviews, saved data-file validations) are labelled and never counted as executions; a subflow is never a full end-to-end result. For a REST or GraphQL run it shows what was actually sent and received: one row per logical call, every physical attempt (retries are attempts, not extra tests), the captured request and response, and each assertion. <strong>Opening a result never executes anything.</strong></p>
     <p>Everything is redacted before it is stored (authentication headers, cookies, API keys, sensitive fields, token patterns and 11-digit numbers); a body may be Truncated or Metadata only, and is never called the original. A call without assertions is <strong>Not assessed</strong>; HTTP 200 with GraphQL errors is not a success by itself, and an expected 404 can pass. Blocked calls were refused before sending and have no request.</p>
 </section>
 
 <section id="integration-suites" class="ug-section ug-topic" data-topic="integration-suites" aria-labelledby="integration-suites-title">
     <h2 id="integration-suites-title" class="ug-section-title" tabindex="-1">Integration Test Suites</h2>
+    <GuideArticleMeta Topic="integration-suites" />
     <p class="ug-lead"><a href="/integration-suites">Integration Test Suites</a> builds one <strong>draft</strong> end-to-end suite from several imported sources. <strong>Integration &amp; Sources</strong> discovers which snapshot (of which project) serves each stage — Altinn → MU → MM → Skolenærvær → Bufdata — and records your approval and the static compatibility between stages; <strong>Generate &amp; Review</strong> creates the draft (or a suite from one snapshot); <strong>Resolve Readiness</strong> separates source coverage, stage execution and complete-E2E readiness with actionable blockers; <strong>Execute &amp; Evidence</strong> runs an approved plan as one correlated transaction (FULL_E2E only when every stage is executed or observed in the same run; anything less is a SUBFLOW_TEST). From the sources BirkNext imports the contracts into Contract Testing, generates tests, drafts synthetic test data, maps the integration flow, reuses the existing M01 Kode 6/7 review and lists exactly what remains before a real run.</p>
-    <p>Every item is in one of three groups: <strong>can run now</strong>, <strong>generated but waiting for a prerequisite</strong> (for example an approved synthetic Kode 7 person in Person, or an authorised Altinn configuration) or <strong>needs a domain decision</strong> (for example whether Kode 6/7 data counts in aggregate Bufdata figures). Generating never sends anything; running selected ready tests needs an active Target Environment and your explicit authorisation for each run. Regenerating with the same evidence reuses the suite; a newer snapshot becomes a new revision with the changes listed.</p>
+    <p>Every item is in one of three groups: <strong>can run now</strong>, <strong>generated but waiting for a prerequisite</strong> (for example an approved synthetic Kode 7 person in Person, or an authorised Altinn configuration) or <strong>needs a domain decision</strong> (for example whether Kode 6/7 data counts in aggregate Bufdata figures). Generating never sends anything; running selected ready tests needs an active Target Environment and your explicit authorisation for each run. Regenerating with the same evidence reuses the suite; a newer snapshot becomes a new revision with the changes listed. Running a suite revision runs exactly the test revisions that revision pinned, and every run records them (see <a href="@UserGuideContent.Href("versioning")">Versions</a>).</p>
+    <p><strong>Passing separate subflows does not prove one complete end-to-end journey.</strong> Only a run in which every stage was executed or observed, correlated as one transaction, is a full E2E result.</p>
+    <h3 id="mu-mm-contract-risk" class="ug-subtitle">Example: the MU → MM schema-version risk</h3>
+    <p>Static analysis of the imported sources shows that MU's own test schemas know Skolenærvær up to <strong>v2.0.0</strong>, while MM accepts exactly the <strong>v2.0.1.flat</strong> namespace and rejects other versions. MU forwards the Altinn payload unchanged, so the version that reaches MM is the one the <strong>sending Altinn application</strong> puts in the message header. That sender version is not in the imported sources, so BirkNext reports the stage pair as a <strong>contract risk that needs the sender's evidence</strong> — not as a confirmed production incompatibility. The routing channel used for this message type is also unresolved from source alone.</p>
+</section>
+
+<section id="suggested-e2e" class="ug-section ug-topic" data-topic="suggested-e2e" aria-labelledby="suggested-e2e-title">
+    <h2 id="suggested-e2e-title" class="ug-section-title" tabindex="-1">Suggested E2E tests and the Edge Companion</h2>
+    <GuideArticleMeta Topic="suggested-e2e" />
+    <p class="ug-lead"><a href="/critical-e2e-regression">Critical E2E Regression</a> → <strong>Suggested tests</strong> turns an imported source snapshot into candidate browser tests: routes and pages found in Razor/HTML source, the controls and forms on them, and the locators that could address them. A suggestion is a <strong>candidate</strong> until a person has seen it work on the running application and approved it.</p>
+    <ol class="ug-steps">
+        <li><strong>Generate suggestions</strong> from the selected snapshot. Each suggestion lists its preconditions, the <strong>Test Data needed</strong> and an <strong>Expected result</strong> with where that expectation came from (source, or your own decision).</li>
+        <li>Check <strong>Readiness of every suggestion</strong>: what is missing before it can become a test (a locator, Test Data, an expected result).</li>
+        <li id="dom-verification"><strong>Verify DOM in Edge</strong>: with the Edge Companion paired to your own signed-in (attended) browser session, BirkNext asks the page you have open whether each locator candidate matches exactly one element and whether it is visible. <strong>Locator candidates and what the attended page showed</strong> lists the result per candidate; choose <strong>Accept locator</strong>, <strong>Mark unresolved</strong> or <strong>Reject mapping</strong>. A locator from source is only a candidate: source does not prove the running build renders it.</li>
+        <li><strong>Approve test</strong>: the suggestion becomes a <strong>Diagnostic</strong> Critical E2E flow. It is not release-gating until you decide so in the flow itself.</li>
+        <li>Run the flow from Critical E2E Regression; <strong>Open results</strong> shows the run and its evidence.</li>
+    </ol>
+    <h3 id="companion-pairing" class="ug-subtitle">Pairing the Edge Companion</h3>
+    <p>The Companion is a browser extension that BirkNext ships with the backend. Pair it from the Target Environment's browser setup with the one-time code BirkNext shows; it then reports from the browser you are using — see <a href="@UserGuideContent.Href("browser-endpoint-discovery")">Browser and Endpoint Discovery</a> and <a href="@UserGuideContent.Href("browser-authentication")">Browser authentication</a>. It acts only in your attended session: it never signs in for you, never stores credentials and never runs unattended. Do not weaken browser security settings to make it work; if pairing fails, generate a new code.</p>
+    <GuideCallout Kind="CalloutKind.Important">A suggestion's counts and locators describe the snapshot it came from. When a newer build of the application is deployed, locators can go stale: verify them again before trusting an approved flow, and treat an unresolved locator as unresolved, never as passed.</GuideCallout>
 </section>
 
 <section id="parquet-viewer" class="ug-section ug-topic" data-topic="parquet-viewer" aria-labelledby="parquet-viewer-title">
     <h2 id="parquet-viewer-title" class="ug-section-title" tabindex="-1">Parquet Quality Review</h2>
+    <GuideArticleMeta Topic="parquet-viewer" />
     <p class="ug-lead"><a href="/parquet-viewer">Parquet Quality Review</a> opens a local .parquet file (up to 64 MB) and validates it against the dataset contract found in an imported Source Analysis snapshot: Quality Overview (contract, five separate quality results, next action), Validation (generated and own rules, requirement coverage, schema checks), Explore &amp; Compare (data grid, schema, exact profile, baseline) and Evidence &amp; History (run correlation, saved results, quality report). Generated business rules run only after a test lead approves them. <strong>Your file is never changed</strong>; BirkNext reads a temporary copy that expires after two hours.</p>
     <p>Overview statistics are the file's own metadata. A filter applies to the shown page unless you choose to scan the whole file, and the page says which. Profile and rule validation are explicit full scans with exact counts; failing rules list row numbers, never values. Compare needs a key column for record differences; without one it compares schema and row counts only. Repeated (list/map) columns, ZSTD/LZ4/BROTLI codecs and DELTA encodings are shown but not read. Saved evidence keeps metadata, the schema fingerprint, rule results and comparison counts — never row values — and can name the test run it belongs to.</p>
 </section>
 
 <section id="pipeline" class="ug-section ug-topic" data-topic="pipeline" aria-labelledby="pipeline-title">
     <h2 id="pipeline-title" class="ug-section-title" tabindex="-1">Pipeline Review</h2>
+    <GuideArticleMeta Topic="pipeline" />
     <p class="ug-lead"><a href="/pipeline-review">Pipeline Review</a> interprets CI/CD definitions captured by Source Analysis — Overview, Flow, Gaps, Tests, Environments, Dependencies and Changes. A detected definition does not mean the pipeline executed, passed or deployed.</p>
     <p><strong>Ready</strong>, <strong>Partial</strong>, <strong>Needs refresh</strong>, <strong>Unsupported</strong> and <strong>N/A</strong> keep distinct meanings; Needs refresh means the source evidence is outdated, not that the review does not apply. Azure DevOps metadata is optional enrichment.</p>
 </section>

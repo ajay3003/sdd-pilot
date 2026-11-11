@@ -4,6 +4,7 @@
 
 <section id="target-environment" class="ug-section ug-topic" data-topic="target-environment" aria-labelledby="target-environment-title">
     <h2 id="target-environment-title" class="ug-section-title" tabindex="-1">Target Environment</h2>
+    <GuideArticleMeta Topic="target-environment" />
     <p class="ug-lead">A <a href="/admin/system-settings?section=target-environments">Target Environment</a> describes one deployed system under test and the setup around it. It is configuration scoped to that target, separate from imported project evidence. Links from this guide open the active environment.</p>
     <div class="ug-table-scroll" role="region" aria-label="Target Environment tabs" tabindex="0"><table class="ug-table">
         <thead><tr><th scope="col">Tab</th><th scope="col">Owns</th></tr></thead>
@@ -14,6 +15,7 @@
 
 <section id="browser-authentication" class="ug-section ug-topic" data-topic="browser-authentication" aria-labelledby="browser-authentication-title">
     <h2 id="browser-authentication-title" class="ug-section-title" tabindex="-1">Browser authentication</h2>
+    <GuideArticleMeta Topic="browser-authentication" />
     <p class="ug-lead"><a href="/admin/system-settings?section=authentication">System Settings → Authentication</a> shows the two browser authentication modes side by side. Both can be available at the same time; they are not one setting with two values.</p>
     <h3 id="attended-login" class="ug-subtitle">Attended login</h3>
     <p>Used when a person must complete login or MFA: the dedicated Edge browser, Managed Edge or the local HTTPS proxy, configured per environment in Target Environment → Authentication. It is unchanged, remains the default for manual and interactive runs, and is the right choice for any identity that requires MFA.</p>
@@ -30,6 +32,7 @@
 
 <section id="connected-systems" class="ug-section ug-topic" data-topic="connected-systems" aria-labelledby="connected-systems-title">
     <h2 id="connected-systems-title" class="ug-section-title" tabindex="-1">Connected Systems</h2>
+    <GuideArticleMeta Topic="connected-systems" />
     <p class="ug-lead"><a href="@UserGuideContent.TargetEnvironmentTab("external")">Connected Systems</a> holds the provider instances this environment talks to — Altinn, REST, GraphQL, Service Bus, Event Hub, databases, file/SFTP. Each system shows what it needs before testing, who owns each gap, and one next action.</p>
     <h3 class="ug-subtitle">Summary dimensions (Altinn example)</h3>
     <div class="ug-table-scroll" role="region" aria-label="Connected system summary dimensions" tabindex="0"><table class="ug-table">
@@ -80,6 +83,7 @@
 
 <section id="integrations" class="ug-section ug-topic" data-topic="integrations" aria-labelledby="integrations-title">
     <h2 id="integrations-title" class="ug-section-title" tabindex="-1">Integration Catalog and Integration Quality Review</h2>
+    <GuideArticleMeta Topic="integrations" />
     <p class="ug-lead">The <a href="@UserGuideContent.TargetEnvironmentTab("integrations")">Integration Catalog</a> holds the logical producer → consumer integrations of an environment. <a href="/integration-quality-review">Integration Quality Review</a> (IQR) is the evidence and review layer over them.</p>
     <div class="ug-card-grid ug-card-grid-2">
         <article class="ug-card"><h3>Discovery in the catalog</h3><ul class="ug-list">
@@ -101,6 +105,7 @@
 
 <section id="test-data" class="ug-section ug-topic" data-topic="test-data" aria-labelledby="test-data-title">
     <h2 id="test-data-title" class="ug-section-title" tabindex="-1">Test Data</h2>
+    <GuideArticleMeta Topic="test-data" />
     <p class="ug-lead"><a href="/test-data">Test Data</a> is the one catalog of reusable, centrally owned assets. Consumers — Connected Systems, performance scenarios, API reviews, test packs — reference assets by alias; they never copy them. Sensitive values stay in the backend and are never shown.</p>
     <div class="ug-chip-row" role="list" aria-label="Asset kinds">
         <span class="ug-chip" role="listitem">Reporter identities</span><span class="ug-chip" role="listitem">Child identities</span><span class="ug-chip" role="listitem">Scalar/simple values</span>
@@ -154,6 +159,7 @@
 
 <section id="schema-studio" class="ug-section ug-topic" data-topic="schema-studio" aria-labelledby="schema-studio-title">
     <h2 id="schema-studio-title" class="ug-section-title" tabindex="-1">Schema Studio</h2>
+    <GuideArticleMeta Topic="schema-studio" />
     <p class="ug-lead"><a href="/schema-studio">Schema Studio</a> inspects, validates and compares XSD contracts. It is the shared XSD capability that Test Data and Contract Evolution also use. <span class="status-chip status-chip-partial">Partial</span></p>
     <ul class="ug-list">
         <li><strong>Source snapshot:</strong> open XSDs from an exact Source Analysis snapshot (Project-bound snapshots are listed first) or upload XSD files and bounded ZIP packages. The origin stays visible as provenance.</li>
@@ -169,6 +175,7 @@
 
 <section id="setup-library" class="ug-section ug-topic" data-topic="setup-library" aria-labelledby="setup-library-title">
     <h2 id="setup-library-title" class="ug-section-title" tabindex="-1">Setup Library</h2>
+    <GuideArticleMeta Topic="setup-library" />
     <p class="ug-lead">The <a href="@UserGuideContent.TargetEnvironmentTab("library")">Setup Library</a> keeps reusable, sanitized setup packages with immutable versions. Save one from Connected Systems → <em>Export setup</em>, then apply it to another environment.</p>
     <div class="ug-compare">
         <div class="ug-compare-col ug-compare-yes"><p class="ug-compare-label">Portable</p><ul><li>Safe configuration values</li><li>References: integrations, Test Data aliases, Test Pack requirements</li></ul></div>

@@ -7,7 +7,7 @@
    backend's build-info endpoint); nothing is configured or hardcoded. Missing values are shown as unknown, never as a release. *@
 <section class="abc" aria-labelledby="abc-heading" data-testid="abc" data-channel="@Frontend.Channel" aria-busy="@(_loading ? "true" : "false")">
     <div class="abc-head">
-        <h2 id="abc-heading" class="abc-title">Application information</h2>
+        <h2 id="abc-heading" class="abc-title">Application information <BirkNext.Web.Components.HelpLink Topic="application-versioning" Text="What these versions mean" /></h2>
         <button type="button" class="abc-copy" data-testid="abc-copy" @onclick="CopyAsync">@(_copied ? "Copied" : "Copy version information")</button>
     </div>
 

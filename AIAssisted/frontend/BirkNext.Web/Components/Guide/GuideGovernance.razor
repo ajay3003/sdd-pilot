@@ -4,6 +4,7 @@
 
 <section id="documentation-drift" class="ug-section ug-topic" data-topic="documentation-drift" aria-labelledby="documentation-drift-title">
     <h2 id="documentation-drift-title" class="ug-section-title" tabindex="-1">Documentation Drift</h2>
+    <GuideArticleMeta Topic="documentation-drift" />
     <p class="ug-lead"><a href="/documentation-drift">Documentation Drift</a> compares documentation artifacts of an imported project: what the team intended (authored) against what was generated from the code, and how documents changed between imports.</p>
     <div class="ug-card-grid">
         <article class="ug-card"><h3><a href="/documentation-drift?tab=overview">Overview</a></h3><p>Counts per status and <em>What to review next</em>, scoped to the selected import.</p></article>
@@ -30,6 +31,7 @@
 
 <section id="readiness" class="ug-section ug-topic" data-topic="readiness" aria-labelledby="readiness-title">
     <h2 id="readiness-title" class="ug-section-title" tabindex="-1">Readiness and review decisions</h2>
+    <GuideArticleMeta Topic="readiness" />
     <p class="ug-lead">Readiness answers one question per dimension — can this activity proceed? — with an owner and one next action for every gap. It is never a quality score.</p>
     <ul class="ug-list">
         <li><strong>Testability first:</strong> readiness names what blocks a test (missing evidence, configuration, Test Data, credentials) and who owns it — Test Data, Target Environment, Integration Catalog, Source Analysis.</li>
@@ -41,6 +43,7 @@
 
 <section id="delivery-overview" class="ug-section ug-topic" data-topic="delivery-overview" aria-labelledby="delivery-overview-title">
     <h2 id="delivery-overview-title" class="ug-section-title" tabindex="-1">Delivery overview</h2>
+    <GuideArticleMeta Topic="delivery-overview" />
     <p class="ug-lead"><a href="/delivery-overview">Delivery Overview</a> is a virtual SDD backlog of a delivery project: every feature with its user stories, acceptance criteria, phases and tasks, and one delivery status, from the newest frozen weekly report (or, without a report, the newest imported snapshot).</p>
     <ul class="ug-list">
         <li><strong>Statuses stay separate.</strong> <em>Planned</em> (not started), <em>In progress</em>, <em>Implemented</em> (all tasks checked; ready for test and testing are shown as such), <em>Verified</em>, <em>Accepted</em> (an explicit “Status: Done” in the feature documents) and <em>Blocked</em> (explicit only). <em>Verified</em> needs verification evidence that snapshots do not contain, so it is shown as not available rather than inferred; checked tasks never make a feature Verified or Accepted.</li>
@@ -52,6 +55,7 @@
 
 <section id="delivery-reporting" class="ug-section ug-topic" data-topic="delivery-reporting" aria-labelledby="delivery-reporting-title">
     <h2 id="delivery-reporting-title" class="ug-section-title" tabindex="-1">Delivery reporting</h2>
+    <GuideArticleMeta Topic="delivery-reporting" />
     <p class="ug-lead"><a href="/delivery-reporting">Delivery Reports</a> answer “what changed in the project this week?” for a Scrum Master or Project Leader: which stories progressed, which are new, completed or need attention, and what to focus on next week.</p>
     <p>It is standalone: create a reporting project (for example M2LB), import a <strong>baseline</strong> and a <strong>current</strong> repository ZIP, then generate the weekly report. It has its own import and its own snapshots; it never uses Import Project, Source Analysis snapshots, Target Environment or Test Data. Each snapshot has an <strong>effective date</strong> (when the repository was in that state) separate from its import date, so a Git export of an earlier commit can be imported later as the baseline.</p>
     <ul class="ug-list">

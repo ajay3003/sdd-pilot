@@ -1,0 +1,12 @@
+@* Contextual help: one link from a feature page to the matching Help Center article (deep link /user-guide#topic). Renders nothing for an
+   unknown topic, so a renamed article never leaves a dead link; guide tests check every Topic used in the app exists. *@
+@using BirkNext.Web.Services
+@if (UserGuideContent.TopicFor(Topic) is { } topic)
+{
+    <a class="help-link" href="@UserGuideContent.Href(Topic)" data-testid="help-link" data-topic="@Topic"><span class="help-link-icon" aria-hidden="true">?</span>@(Text ?? "Guide")<span class="visually-hidden">: @topic.Title</span></a>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Topic { get; set; } = "";
+    [Parameter] public string? Text { get; set; }
+}

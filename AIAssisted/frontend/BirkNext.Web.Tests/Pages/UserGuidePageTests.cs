@@ -62,7 +62,7 @@ public sealed class UserGuidePageTests : BunitContext
     {
         var cut = Render<UserGuide>();
 
-        cut.Find("h1").TextContent.Should().Be("User Guide");
+        cut.Find("h1").TextContent.Should().Be("Help Center");
         var cards = cut.FindAll("[data-testid=ug-task-card]");
         cards.Select(c => c.QuerySelector(".ug-task-title")!.TextContent).Should().Contain(["Import a project", "Configure Project", "Set up Target Environment",
             "Review Connected Systems", "Prepare Test Data", "Build a performance scenario", "Review Documentation Drift"]);

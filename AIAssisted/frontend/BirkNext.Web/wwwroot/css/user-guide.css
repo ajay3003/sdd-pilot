@@ -290,3 +290,31 @@
 
 /* Contextual "Learn more" links from feature pages into the guide (global: used outside the guide). */
 .ug-learn-more { font-size: 0.85em; font-weight: 500; white-space: nowrap; color: var(--clr-primary); }
+
+/* ── Help Center landing: search first, quick links, audience areas, compact category cards ── */
+.ug-hero { max-width: 52rem; margin: 0 0 1.75rem; }
+.ug-hero .ug-search { margin-bottom: 0.6rem; }
+.ug-hero .ug-search-input { font-size: 1rem; padding: 0.6rem 0.8rem; }
+.ug-search-hit-title { display: block; font-weight: 600; }
+.ug-search-excerpt { display: block; margin-top: 0.15rem; font-size: 0.78rem; color: var(--clr-text-body); overflow-wrap: anywhere; }
+.ug-search-excerpt mark { background: var(--clr-surface-selected, #fff8c5); color: inherit; padding: 0 0.1rem; border-radius: 2px; }
+.ug-quick { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0.35rem 1rem; font-size: 0.85rem; }
+.ug-quick a { color: var(--clr-primary); }
+.ug-home-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem 1rem; margin-bottom: 0.75rem; }
+.ug-home-head .ug-home-title { margin: 0; }
+.ug-areas { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; padding: 0.2rem; border: 1px solid var(--clr-border); border-radius: 999px; background: var(--clr-surface-white); }
+.ug-area { border: 0; background: transparent; border-radius: 999px; padding: 0.3rem 0.8rem; font-size: 0.82rem; color: var(--clr-text-body); cursor: pointer; }
+.ug-area.is-active { background: var(--clr-primary); color: #fff; font-weight: 600; }
+.ug-area:focus-visible { outline: 2px solid var(--clr-primary-focus); outline-offset: 2px; }
+.ug-category-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.75rem; }
+.ug-category { border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-white); padding: 0.75rem 0.9rem; min-width: 0; }
+.ug-category-title { font-size: 0.9rem; font-weight: 700; margin: 0 0 0.4rem; color: var(--clr-text-heading); }
+.ug-category ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.25rem; font-size: 0.85rem; }
+
+/* ── Article header facts (breadcrumb, open feature, verification, related) ── */
+.ug-meta { margin: -0.25rem 0 0.9rem; font-size: 0.78rem; color: var(--clr-text-subtle); }
+.ug-meta p { margin: 0.1rem 0; overflow-wrap: anywhere; }
+.ug-breadcrumbs a { color: var(--clr-primary); }
+.ug-meta-facts { display: flex; flex-wrap: wrap; gap: 0.2rem 0.9rem; align-items: baseline; }
+.ug-meta-open { color: var(--clr-primary); font-weight: 600; }
+.ug-meta-related a { margin-left: 0.5rem; color: var(--clr-primary); }

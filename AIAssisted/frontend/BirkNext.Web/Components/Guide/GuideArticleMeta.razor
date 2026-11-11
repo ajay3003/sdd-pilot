@@ -1,0 +1,36 @@
+@* Article header facts for one guide topic: where it sits in the Help Center, the real feature pages it describes (from the documentation
+   catalog, so links follow the navigation), related guides, and whether its content was verified against a BirkNext version. An article
+   without a verification record says so; a file's modification date is never shown as verification. *@
+@using BirkNext.Web.Services
+@if (UserGuideContent.Topics.FirstOrDefault(t => t.Id == Topic) is { } topic)
+{
+    var features = DocumentationCatalog.Features.Where(f => string.Equals(f.UserGuideAnchor, Topic, StringComparison.Ordinal)).Take(3).ToList();
+    var related = UserGuideContent.RelatedTo(Topic);
+    <div class="ug-meta" data-testid="ug-meta" data-topic="@Topic">
+        <p class="ug-breadcrumbs" data-testid="ug-breadcrumbs"><a href="@UserGuideContent.Route">Help Center</a><span aria-hidden="true"> › </span>@UserGuideContent.AreaLabel(UserGuideContent.AreaOf(topic))<span aria-hidden="true"> › </span>@topic.Group</p>
+        <p class="ug-meta-facts">
+            @foreach (var f in features)
+            {
+                <a class="ug-meta-open" href="@f.Route" data-testid="ug-meta-open">Open @f.DisplayName<span aria-hidden="true"> →</span></a>
+            }
+            @if (UserGuideContent.Verified.TryGetValue(Topic, out var verified))
+            {
+                <span class="ug-meta-verified" data-testid="ug-meta-verified">Verified against @verified.AppliesTo on @verified.VerifiedOn</span>
+            }
+            else
+            {
+                <span class="ug-meta-unverified" data-testid="ug-meta-unverified">Verification against the current version not recorded</span>
+            }
+        </p>
+        @if (related.Count > 0)
+        {
+            <p class="ug-meta-related" data-testid="ug-meta-related">Related:
+                @foreach (var r in related) { <a href="@r.Href">@r.Title</a> }
+            </p>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Topic { get; set; } = "";
+}

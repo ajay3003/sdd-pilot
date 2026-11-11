@@ -1,0 +1,4 @@
+.help-link { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.8rem; text-decoration: none; color: var(--clr-link, #0969da); white-space: nowrap; }
+.help-link:hover { text-decoration: underline; }
+.help-link:focus-visible { outline: 2px solid var(--clr-focus, #0969da); outline-offset: 2px; border-radius: 4px; }
+.help-link-icon { display: inline-grid; place-items: center; width: 1.05rem; height: 1.05rem; border-radius: 50%; border: 1px solid currentColor; font-size: 0.7rem; font-weight: 700; line-height: 1; }

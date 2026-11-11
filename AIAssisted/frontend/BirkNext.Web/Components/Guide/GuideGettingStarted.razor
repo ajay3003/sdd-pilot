@@ -5,6 +5,7 @@
 
 <section id="overview" class="ug-section ug-topic" data-topic="overview" aria-labelledby="overview-title">
     <h2 id="overview-title" class="ug-section-title" tabindex="-1">What BirkNext does</h2>
+    <GuideArticleMeta Topic="overview" />
     <p class="ug-lead">BirkNext brings together project documents, source analysis, traceability, quality reviews and controlled runtime testing. It shows the evidence it has and the limits of that evidence, and it never treats every feature as relevant to every project.</p>
     <div class="ug-pillars">
         <div class="ug-pillar"><h3>Project &amp; evidence</h3><p>Import packages, bind them to a logical Project, and explore documents, source and generated documentation.</p></div>
@@ -16,6 +17,7 @@
 
 <section id="start-here" class="ug-section ug-topic" data-topic="start-here" aria-labelledby="start-here-title">
     <h2 id="start-here-title" class="ug-section-title" tabindex="-1">Start here</h2>
+    <GuideArticleMeta Topic="start-here" />
     <p class="ug-lead">A first-time path. Skip any step your project does not need: no step is required of every project, and one package rarely contains everything.</p>
     <ol class="ug-steps">
         <li><span class="ug-step-title">Import project evidence</span><span class="ug-step-text">One or more ZIPs: source and docs together, or separate packages for docs, contracts or infrastructure. <a href="/project-import">Import Project</a></span></li>
@@ -32,6 +34,7 @@
 
 <section id="concepts" class="ug-section ug-topic" data-topic="concepts" aria-labelledby="concepts-title">
     <h2 id="concepts-title" class="ug-section-title" tabindex="-1">Core concepts</h2>
+    <GuideArticleMeta Topic="concepts" />
     <div class="ug-card-grid">
         <article class="ug-card"><h3>Applicability, coverage and quality</h3><p><strong>Applicable</strong> means a review fits the project; <strong>NotApplicable</strong> (N/A) means it does not. <strong>Unsupported</strong> means the tool cannot assess a relevant technology — a tool limitation, not a project quality problem. <strong>NotTested</strong>, <strong>Unavailable</strong>, <strong>NotAssessed</strong> and <strong>No evidence</strong> describe missing evidence and never mean failure. Quality scores use assessed checks; coverage is reported separately. If nothing was assessed, no score is inferred.</p></article>
         <article class="ug-card"><h3>Evidence maturity</h3><p>Documented → source-confirmed → configured → observed → runtime-verified → executed → passed. A later stage is never implied by an earlier one: a designed test is not an executed test, and execution is not a pass. Source evidence does not prove runtime behavior; a pipeline definition shows intended steps, not a successful run. No automated violation is not full compliance.</p></article>
@@ -42,6 +45,7 @@
 
 <section id="getting-started" class="ug-section ug-topic" data-topic="getting-started" aria-labelledby="getting-started-title">
     <h2 id="getting-started-title" class="ug-section-title" tabindex="-1">Import a project</h2>
+    <GuideArticleMeta Topic="getting-started" />
     <p class="ug-lead"><a href="/project-import">Import Project</a> takes one ZIP, validates it once and shows what it found before anything is imported. Import succeeds on its own — configuring a Project afterwards is offered, never forced.</p>
 
     <h3 id="project-inputs" class="ug-subtitle">Three kinds of input</h3>
@@ -87,6 +91,7 @@
 
 <section id="recommended-workflow" class="ug-section ug-topic" data-topic="recommended-workflow" aria-labelledby="recommended-workflow-title">
     <h2 id="recommended-workflow-title" class="ug-section-title" tabindex="-1">Recommended Workflow</h2>
+    <GuideArticleMeta Topic="recommended-workflow" />
     <p class="ug-lead"><a href="/getting-started">Recommended Workflow</a> recommends the most useful next step with the evidence and configuration available now. It is guidance, not a mandatory sequence or a release decision.</p>
     <p>When several things are possible it offers <strong>review paths</strong> instead of one forced step: <strong>Source review</strong> (ready as soon as source is analyzed — infrastructure-only packages included), <strong>Document review</strong> (needs supported project documents) and <strong>Runtime / integration review</strong>. A missing input blocks only the work that needs it: missing documents block document reviews, a missing Target Environment blocks runtime reviews, and browser authentication matters only for runtime runs that need it (unattended login only for automated execution).</p>
     <p>On the runtime path the setup order is: <strong>Target Environment</strong> (where you test) → <strong>Target Application</strong> (what is deployed there) → <strong>Project evidence</strong> (which imported packages describe it) → set the environment active → run. Configuring an application or Project never activates an environment; Recommended Workflow asks you to set it active only when you are about to run runtime work.</p>
