@@ -22,12 +22,17 @@ Acceptance: `birknext-suggested-e2e-tests-acceptance.md` (31/31 + 4/4 PASS with 
 | ID | Defect | Fix |
 |---|---|---|
 | SG-D1 | After approval the panel's refresh replaced the "Approved as…" message, so the tester did not see that approval happened | the message is set after the refresh |
+| SG-D2 (2026-11-11, real M2LB) | A Razor expression with nested quotes in an attribute value (5 tags in M2LB) made the attribute map throw `ArgumentException`; one try/catch around the whole extraction then left the snapshot with **0 pages** | first-wins attribute map; per-file isolation with a limitation naming the file (test: the real shapes, red then green) |
+| SG-D3 (2026-11-11, real M2LB) | The Blazor host page `wwwroot/index.html` became the route `/index.html` and a "page opens" suggestion | a page loading `_framework/blazor.(webassembly\|web\|server)` (including the .NET 9 `#[.{fingerprint}]` form) is a host page: no route, a limitation |
 
 ## Remaining gaps
 
 | ID | Gap | Status | Owner | Note |
 |---|---|---|---|---|
-| SG-R1 | BirkNext suggestions on the real M2LB snapshots | BLOCKED | User (environment) | The local Podman/WSL VM hosting PostgreSQL stopped during the import (`wsl.exe`: "The file cannot be accessed by the system"). Independent offline inventory done: 8 routes, 0 test ids, 0 forms. |
+| SG-R1 | BirkNext suggestions on the real M2LB snapshots | ~~BLOCKED~~ → **PASS (2026-11-11)** | — | 2026-11-10: blocked when the local Podman/WSL VM hosting PostgreSQL stopped during the import (`wsl.exe`: "The file cannot be accessed by the system"); that day's offline inventory said 8 routes. 2026-11-11: environment restored (normal `podman machine start`). The 8-route inventory was wrong (BOM before `@page`). After SG-D2 and SG-D3, BirkNext equals the corrected oracle on both archives: 13 routes, 11 page-open suggestions, 0 forms, 0 test ids, expected results from `<h1>`/route with file:line. Acceptance §7.2. |
+| SG-R9 | Real M2LB locators verified on a real DOM | NOT RUN (by rule) | Tester | 7 heading locators are NEEDS_DOM_VERIFICATION. Verification needs an attended, approved Edge Companion session on an M2LB environment, which this recovery task may not open. |
+| SG-R10 | Navigation through layout menus | NOT SUPPORTED | Platform | `NavLink` in `MainLayout`/`NavMenu` belongs to no route, so menu navigation is never suggested. Suggestions come only from links on a routable page. |
+| SG-R11 | MU → MM Skolenærvær contract | OPEN (domain) | Domain owner / MU team | Static candidate, blocking if the Altinn app emits a version other than v2.0.1.flat; separate MU channel dependency. `birknext-mu-mm-skolenaervaer-contract-gap.md` (MM-G1). |
 | SG-R2 | Requirement-text expected results (acceptance criteria in spec.md) | NOT SUPPORTED | Platform | requirement ids are recorded; free text never becomes an expected result without a reviewed mapping |
 | SG-R3 | .tsx / .jsx / .vue UI | NOT SUPPORTED | Platform | Source Analysis does not read JS/TS |
 | SG-R4 | Frames and shadow DOM | NOT SUPPORTED | Platform | reported per selector; would need `allFrames` and a permission review |

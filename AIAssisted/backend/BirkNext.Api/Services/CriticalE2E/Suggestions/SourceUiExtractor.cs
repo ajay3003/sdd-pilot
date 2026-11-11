@@ -51,10 +51,15 @@ public static partial class SourceUiExtractor
             return new SourceUiSurface { FilesSkipped = skipped, Limitations = ["No Razor, CSHTML or HTML file was read from this archive."] };
         var models = ModelRules(codeFiles ?? []);
         var codeBehind = (codeFiles ?? []).Where(f => f.Path.EndsWith(".razor.cs", StringComparison.OrdinalIgnoreCase) || f.Path.EndsWith(".cshtml.cs", StringComparison.OrdinalIgnoreCase))
-            .ToDictionary(f => f.Path[..^3], f => f.Content, StringComparer.OrdinalIgnoreCase);
+            .GroupBy(f => f.Path[..^3], StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Content, StringComparer.OrdinalIgnoreCase);
         var pages = new List<SourceUiPage>();
+        var failed = new List<string>();
         foreach (var file in uiFiles.OrderBy(f => f.Path, StringComparer.Ordinal).Take(MaxPages))
-            pages.Add(Page(file, codeBehind.GetValueOrDefault(file.Path), models));
+        {
+            // One file the extractor cannot read never erases the facts of every other page: it is named as a limitation instead.
+            try { pages.Add(Page(file, codeBehind.GetValueOrDefault(file.Path), models)); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { failed.Add($"{file.Path.Replace('\\', '/')}({ex.GetType().Name})"); }
+        }
         var limitations = new List<string>
         {
             "Facts from UI source only: routes, controls, labels and test ids are candidates until the Edge Companion verifies them on the attended page.",
@@ -62,6 +67,7 @@ public static partial class SourceUiExtractor
         };
         if (uiFiles.Count > MaxPages) limitations.Add($"Only the first {MaxPages} UI files were analysed.");
         if (skipped > 0) limitations.Add($"{skipped} UI file(s) were not read (size, binary content or the file limit).");
+        if (failed.Count > 0) limitations.Add($"{failed.Count} UI file(s) could not be analysed: {string.Join(", ", failed.Take(5))}{(failed.Count > 5 ? ", …" : "")}.");
         return new SourceUiSurface { Pages = pages, FilesRead = uiFiles.Count, FilesSkipped = skipped, Limitations = limitations };
     }
 
@@ -116,7 +122,12 @@ public static partial class SourceUiExtractor
         code += "\n" + (codeBehind ?? "");
         var limitations = new List<string>();
         var routes = PageDirective().Matches(text).Select(m => m.Groups["route"].Value).Distinct().ToList();
-        if (routes.Count == 0 && path.Contains("/wwwroot/", StringComparison.OrdinalIgnoreCase) && path.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+        // A Blazor host page (it loads _framework/blazor.*.js) is the shell every @page renders into, not a page of its own: opening
+        // /index.html only hands the path to the Blazor router, so it gets no route and no "page opens" suggestion.
+        // Also the .NET 9 fingerprinted form: _framework/blazor.webassembly#[.{fingerprint}].js.
+        var blazorHost = Regex.IsMatch(text, @"_framework/blazor\.(?:webassembly|web|server)\b", RegexOptions.IgnoreCase);
+        if (blazorHost) limitations.Add("Blazor host page: the shell the @page components render into, not a navigable page.");
+        if (routes.Count == 0 && !blazorHost && path.Contains("/wwwroot/", StringComparison.OrdinalIgnoreCase) && path.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
             routes.Add("/" + path[(path.IndexOf("/wwwroot/", StringComparison.OrdinalIgnoreCase) + 9)..]);
         var auth = Authorize().Match(text + "\n" + code);
         var roles = auth.Success && Roles().Match(auth.Value) is { Success: true } r ? r.Groups["r"].Value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList() : [];
@@ -148,7 +159,11 @@ public static partial class SourceUiExtractor
                 if (tag is "EditForm" or "form") currentForm = null;
                 continue;
             }
-            var attrs = Attr().Matches(t.Groups["attrs"].Value).ToDictionary(a => a.Groups["name"].Value, a => a.Groups["v"].Success ? a.Groups["v"].Value : "", StringComparer.OrdinalIgnoreCase);
+            // First occurrence wins, as in the browser. A Razor expression with nested quotes in a value (class="@(x ? "a" : "")") is
+            // split by the attribute pattern into fragments that can repeat a name; those fragments must never abort the page.
+            var attrs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (Match a in Attr().Matches(t.Groups["attrs"].Value))
+                attrs.TryAdd(a.Groups["name"].Value, a.Groups["v"].Success ? a.Groups["v"].Value : "");
             string? A(string name) => attrs.TryGetValue(name, out var v) ? v : null;
             var line = LineOf(text, t.Index);
             var (conditional, repeated) = regions(t.Index);

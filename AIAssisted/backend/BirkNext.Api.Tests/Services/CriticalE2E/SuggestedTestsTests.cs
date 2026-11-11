@@ -109,6 +109,39 @@ public sealed class SuggestedTestsTests : IDisposable
     }
 
     [Fact]
+    public void Razor_expressions_with_nested_quotes_in_attributes_never_erase_the_ui_facts()
+    {
+        // Shapes found in the real M2LB source: an interpolated string with nested quotes, and a conditional class. The attribute pattern
+        // splits these values into fragments that repeat a name; that once aborted the whole snapshot (ArgumentException, 0 pages).
+        const string admin = """
+            @page "/admin/roles"
+            <h1>Roller</h1>
+            <div class="@(_open ? "role-list role-list--open" : "role-list")" role="list" data-testid="roles">
+              <ConfirmDialog Title="Deaktiver rolle" Message="@($"Er du sikker på at du vil deaktivere «{_target?.Name}»? Er du sikker?")" />
+              <a href="/admin">Tilbake</a>
+            </div>
+            """;
+        const string host = """<!DOCTYPE html><html><head><title>M2LB</title></head><body><div id="app">Laster…</div><script src="_framework/blazor.webassembly#[.{fingerprint}].js"></script></body></html>""";
+        var surface = SourceUiExtractor.Extract(
+            [new SourceFile("Web/Pages/Roles.razor", admin), new SourceFile("Web/Pages/NewChild.razor", ChildPage),
+             new SourceFile("Web/wwwroot/index.html", host), new SourceFile("Web/wwwroot/help.html", "<html><body><h1>Hjelp</h1></body></html>")],
+            [new SourceFile("Web/Models/ChildForm.cs", Model)]);
+
+        surface.Pages.Should().HaveCount(4, "one awkward tag never removes a page, let alone every page");
+        var hostPage = surface.Pages.Single(p => p.File == "Web/wwwroot/index.html");
+        hostPage.Routes.Should().BeEmpty("the Blazor host page is the shell, not a navigable page");
+        hostPage.Limitations.Should().Contain(l => l.Contains("Blazor host page"));
+        surface.Pages.Single(p => p.File == "Web/wwwroot/help.html").Routes.Should().Equal(["/help.html"], "a plain static page keeps its route");
+        SuggestionEngine.Generate("web", Guid.NewGuid(), surface, []).Should().NotContain(s => s.Route == "/index.html");
+        var roles = surface.Pages.Single(p => p.File == "Web/Pages/Roles.razor");
+        roles.Routes.Should().Equal("/admin/roles");
+        roles.Title.Should().Be("Roller");
+        roles.Controls.Should().ContainSingle(c => c.Kind == SourceUiControlKind.Link && c.Href == "/admin" && c.Text == "Tilbake");
+        surface.Pages.Single(p => p.File == "Web/Pages/NewChild.razor").Controls.Should().Contain(c => c.TestId == "child-name");
+        surface.Limitations.Should().NotContain(l => l.Contains("could not be analysed"));
+    }
+
+    [Fact]
     public void Suggestions_use_explicit_evidence_for_expected_results_and_never_invent_one()
     {
         var all = SuggestionEngine.Generate("synth.ui", Guid.NewGuid(), Surface(), []);

@@ -43,7 +43,7 @@ and fails MS-K1 honestly when focus never reaches the area tab.
 | ID | Gap | Status | Owner | Note |
 |---|---|---|---|---|
 | MS-R1 | No real executor/observer for MU, MM, Skolenærvær, Person, Bufdata | NOT SUPPORTED | Platform | needs approved read contracts/observers in a non-production environment; nothing is invented |
-| MS-R2 | Real MU → MM schema incompatibility | OPEN (domain) | Test lead / Domain owner | Tiltak 2 ships Skolenærvær XSD v2.0.0 (and v0.8.2); M2LB MM validates v2.0.1.flat. Accepting it needs a written reason (e.g. MU forwards opaquely) |
+| MS-R2 | Real MU → MM schema incompatibility | OPEN (domain) | Test lead / Domain owner | Tiltak 2 ships Skolenærvær XSD v2.0.0 (and v0.8.2); M2LB MM validates v2.0.1.flat. Accepting it needs a written reason (e.g. MU forwards opaquely). **2026-11-11 investigation:** MU does forward the Altinn payload opaquely (no XSD validation, no transform, version-agnostic routing); its v2.0.0 XSDs are test data. The real sender contract is the Altinn app, whose source is not imported, so this is a static candidate, blocking only if the app emits a version other than v2.0.1.flat. See `birknext-mu-mm-skolenaervaer-contract-gap.md` (MM-G1), including the separate MU channel dependency. |
 | MS-R3 | M2LB and M2LB-language claim the same stages | OPEN (human choice) | Tester | AMBIGUOUS by design; a person chooses one, nothing merged |
 | MS-R4 | Bufdata consumer side | NOT SUPPORTED | Domain owner | only the producer's draft dataset contract; files verified separately in Parquet Quality Review |
 | MS-R5 | Authentication and environment compatibility per transition | NOT ASSESSED | Operator | never inferred from source; assessed per run via the Target Environment |
