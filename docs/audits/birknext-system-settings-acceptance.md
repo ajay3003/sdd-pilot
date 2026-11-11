@@ -57,3 +57,21 @@ Screenshots: `ss-general-1440.png` and `ss-<width>.png`.
 
 - TesterNative runtime (see the runtime verification report).
 - Unauthorized-access probe.
+
+## Full regression (commit 16162bb1, scratch build tree, sequential)
+
+Backend `BirkNext.Api.Tests`, run as 6 sequential partitions, with no memory-guard abort:
+
+| Partition | Passed | Skipped | Failed |
+|---|---|---|---|
+| 1 | 1049 | 2 | 0 |
+| 2 | 1098 | 5 | 0 |
+| 3 | 840 | 0 | 0 |
+| 4 | 652 | 1 | 0 |
+| 5 | 520 | 3 | 0 |
+| 6 | 2368 | 8 | 0 |
+| **Total** | **6527** | **19** | **0** (6546 tests) |
+
+Frontend `BirkNext.Web.Tests`: 8646 passed, 0 failed, 0 skipped.
+
+The Release frontend was built with `dotnet publish -c Release`; that is the build the browser acceptance ran against.
