@@ -1,39 +1,68 @@
+// Help Center (Pages/UserGuide.razor). The page decides which article is shown from the URL fragment; this script only:
+// - turns same-page /user-guide#anchor links into history entries (pushState) and tells the page (so Back/Forward work),
+// - scrolls to and focuses the target, without touching history,
+// - gives the page the headings of an article ("On this page") and the article that owns a heading anchor.
 window.userGuide = {
-    // Marks the guide navigation link of the topic that owns an anchor (aria-current), so the current section is highlighted.
-    markCurrent(topicId) {
-        if (!topicId) {
-            return;
-        }
+    page: null,
 
-        document.querySelectorAll(".ug-nav a[aria-current]").forEach(link => link.removeAttribute("aria-current"));
-        const link = document.querySelector(`.ug-nav a[data-topic="${CSS.escape(topicId)}"]`);
-        if (link) {
-            link.setAttribute("aria-current", "location");
-        }
+    register(dotnet) {
+        window.userGuide.page = dotnet;
     },
 
     topicOf(element) {
         return element?.closest("[data-topic]")?.getAttribute("data-topic") ?? null;
     },
 
+    /** The article (data-topic) that contains an element with this id, or null when no such element exists. */
+    topicOfAnchor(anchor) {
+        const element = document.getElementById(anchor);
+        return element ? window.userGuide.topicOf(element) : null;
+    },
+
+    /** The h3 headings of one article, each with a stable id (an existing id, or topic + heading text). */
+    headings(topicId) {
+        const section = document.querySelector(`section.ug-topic[data-topic="${CSS.escape(topicId)}"]`);
+        if (!section) {
+            return [];
+        }
+
+        const used = new Set();
+        return Array.from(section.querySelectorAll("h3")).map(h => {
+            if (!h.id) {
+                const slug = (h.textContent || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "section";
+                let id = `${topicId}--${slug}`;
+                for (let n = 2; used.has(id) || (document.getElementById(id) && document.getElementById(id) !== h); n++) {
+                    id = `${topicId}--${slug}-${n}`;
+                }
+                h.id = id;
+            }
+            used.add(h.id);
+            h.classList.add("ug-anchor-target");
+            return { id: h.id, text: (h.textContent || "").trim() };
+        }).filter(h => h.text.length > 0);
+    },
+
     scrollToSection(sectionId) {
         const scroll = () => {
-            const section = document.getElementById(sectionId);
-            if (!section) {
+            const target = document.getElementById(sectionId);
+            if (!target) {
                 return;
             }
-
-            // Instant: the app's smooth scrolling would let the scroll spy mark every section it passes.
-            section.scrollIntoView({ block: "start", behavior: "instant" });
+            // A whole article starts at the top of the page (breadcrumb and title visible); a heading inside it is scrolled into view
+            // below the app's top bar (scroll-margin-top in user-guide.css).
+            if (target.matches("section.ug-topic")) {
+                window.scrollTo({ top: 0, behavior: "instant" });
+                document.querySelector(".content, main, article.content")?.scrollTo?.({ top: 0, behavior: "instant" });
+            } else {
+                target.scrollIntoView({ block: "start", behavior: "instant" });
+            }
         };
 
         scroll();
         requestAnimationFrame(scroll);
         window.setTimeout(scroll, 150);
-        window.setTimeout(scroll, 500);
-        history.replaceState(null, "", `/user-guide#${sectionId}`);
 
-        // Keyboard and screen-reader users land on the target: a section moves focus to its heading, any other anchor to itself.
+        // Keyboard and screen-reader users land on the target: an article moves focus to its heading, any other anchor to itself.
         const target = document.getElementById(sectionId);
         if (target) {
             const focusTarget = target.matches("section") ? target.querySelector(".ug-section-title") ?? target : target;
@@ -41,76 +70,36 @@ window.userGuide = {
                 focusTarget.setAttribute("tabindex", "-1");
             }
             focusTarget.focus({ preventScroll: true });
-            window.userGuide.chosen = { topic: window.userGuide.topicOf(target), at: Date.now() };
-            window.userGuide.markCurrent(window.userGuide.chosen.topic);
         }
-    },
-
-    // Scroll spy: the last topic whose top has passed the upper part of the viewport is the current one.
-    syncWithScroll() {
-        if (window.location.pathname !== "/user-guide") {
-            return;
-        }
-
-        const topics = Array.from(document.querySelectorAll("section.ug-topic[data-topic]"));
-        if (topics.length === 0) {
-            return;
-        }
-
-        // A section the reader just chose stays current while its scroll settles, and at the end of the page (where the last short
-        // sections can never reach the top).
-        const chosen = window.userGuide.chosen;
-        const atEnd = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
-        if (chosen && (Date.now() - chosen.at < 800 || atEnd)) {
-            window.userGuide.markCurrent(chosen.topic);
-            return;
-        }
-
-        let current = null;
-        for (const topic of topics) {
-            if (topic.getBoundingClientRect().top <= 140) {
-                current = topic;
-            }
-        }
-        window.userGuide.markCurrent(current?.getAttribute("data-topic") ?? null);
     }
 };
 
+// Capture phase: runs before Blazor's own link handling, so a same-page fragment link becomes exactly one history entry.
 document.addEventListener("click", (event) => {
-    const link = event.target.closest('a[href^="/user-guide#"]');
-    if (!link) {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+    }
+
+    const link = event.target.closest('a[href*="user-guide#"]');
+    if (!link || !window.userGuide.page || window.location.pathname !== "/user-guide") {
         return;
     }
 
     const url = new URL(link.href);
-    if (url.origin !== window.location.origin || url.pathname !== "/user-guide" || window.location.pathname !== "/user-guide") {
+    if (url.origin !== window.location.origin || url.pathname !== "/user-guide") {
         return;
     }
 
     event.preventDefault();
-    window.userGuide.scrollToSection(url.hash.slice(1));
-});
-
-let userGuideScrollFrame = 0;
-window.addEventListener("scroll", () => {
-    if (userGuideScrollFrame) {
-        return;
+    event.stopPropagation();
+    if (url.hash !== window.location.hash) {
+        history.pushState(null, "", `/user-guide${url.hash}`);
     }
+    window.userGuide.page.invokeMethodAsync("ShowAnchor", decodeURIComponent(url.hash.slice(1)));
+}, true);
 
-    userGuideScrollFrame = requestAnimationFrame(() => {
-        userGuideScrollFrame = 0;
-        window.userGuide.syncWithScroll();
-    });
-}, { passive: true, capture: true });
-
-window.addEventListener("hashchange", () => {
-    if (window.location.pathname === "/user-guide" && window.location.hash.length > 1) {
-        window.userGuide.scrollToSection(window.location.hash.slice(1));
-    }
-});
-
-window.addEventListener("load", () => {
-    if (window.location.pathname === "/user-guide" && window.location.hash.length > 1) {
-        window.userGuide.scrollToSection(window.location.hash.slice(1));
+window.addEventListener("popstate", () => {
+    if (window.location.pathname === "/user-guide" && window.userGuide.page) {
+        window.userGuide.page.invokeMethodAsync("ShowAnchor", decodeURIComponent(window.location.hash.slice(1)));
     }
 });

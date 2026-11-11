@@ -3,6 +3,7 @@ using BirkNext.Web.Pages;
 using BirkNext.Web.Services;
 using Bunit;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace BirkNext.Web.Tests.Pages;
@@ -73,6 +74,9 @@ public sealed class UserGuidePageTests : BunitContext
     [Fact]
     public void Navigation_is_grouped_compact_and_links_every_topic()
     {
+        // The full guide navigation belongs to the article view (the home shows category cards, never the whole directory).
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("/user-guide#start-here");
         var cut = Render<UserGuide>();
 
         cut.FindAll("[data-testid=ug-nav-group] summary").Select(s => s.TextContent).Should().Equal(UserGuideContent.Groups);
@@ -84,6 +88,8 @@ public sealed class UserGuidePageTests : BunitContext
     [Fact]
     public void Narrow_navigation_toggle_reports_its_state()
     {
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("/user-guide#glossary");
         var cut = Render<UserGuide>();
         var toggle = cut.Find("[data-testid=ug-nav-toggle]");
         toggle.GetAttribute("aria-expanded").Should().Be("false");
@@ -111,7 +117,7 @@ public sealed class UserGuidePageTests : BunitContext
 
         cut.Find("[data-testid=ug-search]").Input("zzzz-nothing");
         cut.FindAll("[data-testid=ug-search-result]").Should().BeEmpty();
-        cut.Find("[data-testid=ug-search-status]").TextContent.Should().Be("No guide sections match.");
+        cut.Find("[data-testid=ug-search-status]").TextContent.Should().StartWith("No guide sections match.").And.Contain("browse the categories", "an empty result offers a next step");
     }
 
     [Fact]

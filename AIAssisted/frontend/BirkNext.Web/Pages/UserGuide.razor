@@ -1,20 +1,45 @@
 @page "/user-guide"
+@implements IDisposable
 @using BirkNext.Web.Services
 @using BirkNext.Web.Components.Guide
+@using Microsoft.AspNetCore.Components.Routing
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 
-<PageTitle>Help Center — BirkNext</PageTitle>
-<div class="ug-page">
-    <PageHeader Title="Help Center" Description="Guides for testers, test leads and administrators: what BirkNext does, how to set it up, how to run supported QA workflows, and what every status means. Reading the guide never runs a test or contacts a system." />
+@* Help Center. Two views on one route, both driven by the URL fragment (existing deep links /user-guide#anchor keep working):
+   - Home (no fragment): search, the getting-started journey, category cards per audience, common tasks and support links. The article
+     directory is not expanded here.
+   - Article (#topic or #anchor inside a topic): breadcrumb, compact navigation of the current group, one readable article, "On this page"
+     and previous/next. Every article stays rendered (hidden) so every anchor resolves and contextual links from the app never break. *@
 
-    @* Search first: local, in-memory, over titles, keywords, headings and article text. Enter opens the best match. *@
-    <section class="ug-hero" aria-labelledby="ug-search-title">
+<PageTitle>@(_topic is { } t ? $"{t.Title} — Help Center" : "Help Center — BirkNext")</PageTitle>
+<div class="ug-page @(Reading ? "is-reading" : "is-home")" data-testid="ug-page" data-view="@(Reading ? "article" : _missing is null ? "home" : "missing")">
+    @if (!Reading)
+    {
+        <PageHeader Title="Help Center" Description="Guides, workflows and technical documentation for BirkNext." />
+    }
+    else
+    {
+        <h1 class="visually-hidden">Help Center: @_topic!.Title</h1>
+        <nav class="ug-crumbs" aria-label="Breadcrumb" data-testid="ug-crumbs">
+            <ol>
+                <li><a href="@UserGuideContent.Route" data-testid="ug-crumb-home">Help Center</a></li>
+                <li>@UserGuideContent.AreaLabel(UserGuideContent.AreaOf(_topic))</li>
+                <li>@_topic.Group</li>
+                <li aria-current="page">@_topic.Title</li>
+            </ol>
+        </nav>
+    }
+
+    <section class="ug-hero @(Reading ? "is-compact" : "")" aria-labelledby="ug-search-title">
         <h2 id="ug-search-title" class="visually-hidden">Search the Help Center</h2>
         <div class="ug-search" role="search">
-            <label for="ug-search-input" class="ug-search-label">Search guide</label>
-            <input id="ug-search-input" type="search" class="ug-search-input" placeholder="Try: historical result, pairing, Test Data, build version" autocomplete="off" maxlength="@UserGuideSearch.MaxQueryLength"
-                   aria-describedby="ug-search-status" aria-controls="ug-search-results" data-testid="ug-search" @bind="_query" @bind:event="oninput" @onkeydown="OnSearchKey" />
+            <label for="ug-search-input" class="ug-search-label @(Reading ? "visually-hidden" : "")">Search guide</label>
+            <div class="ug-search-box">
+                <svg class="ug-search-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" /><path d="M13 13l4.5 4.5" /></svg>
+                <input id="ug-search-input" type="search" class="ug-search-input" placeholder="Search: historical result, pairing, Test Data, backup…" autocomplete="off" maxlength="@UserGuideSearch.MaxQueryLength"
+                       aria-describedby="ug-search-status" aria-controls="ug-search-results" data-testid="ug-search" @bind="_query" @bind:event="oninput" @onkeydown="OnSearchKey" />
+            </div>
             <p id="ug-search-status" class="ug-search-status" role="status" aria-live="polite" data-testid="ug-search-status">@SearchStatus</p>
             @if (_hits.Count > 0)
             {
@@ -29,90 +54,178 @@
                 </ul>
             }
         </div>
-        <ul class="ug-quick" aria-label="Quick links" data-testid="ug-quick-links">
-            <li><a href="@UserGuideContent.Href("start-here")">Start here</a></li>
-            <li><a href="@UserGuideContent.Href("troubleshooting")">Troubleshooting</a></li>
-            <li><a href="@UserGuideContent.Href("status-reference")">Status meanings</a></li>
-            <li><a href="@UserGuideContent.Href("glossary")">Glossary</a></li>
-            <li><a href="@UserGuideContent.Href("whats-new")">What's new</a></li>
-        </ul>
+        @if (!Reading)
+        {
+            <ul class="ug-quick" aria-label="Quick links" data-testid="ug-quick-links">
+                <li><a href="@UserGuideContent.Href("start-here")">Start here</a></li>
+                <li><a href="@UserGuideContent.Href("troubleshooting")">Troubleshooting</a></li>
+                <li><a href="@UserGuideContent.Href("status-reference")">Status meanings</a></li>
+                <li><a href="@UserGuideContent.Href("glossary")">Glossary</a></li>
+                <li><a href="@UserGuideContent.Href("whats-new")">What's new</a></li>
+            </ul>
+        }
     </section>
 
-    <div class="ug-shell">
-        <aside class="ug-sidebar" aria-label="User Guide navigation">
-            <button type="button" class="ug-nav-toggle btn-secondary" aria-expanded="@(_navOpen ? "true" : "false")" aria-controls="ug-nav-panel"
-                    data-testid="ug-nav-toggle" @onclick="() => _navOpen = !_navOpen">@(_navOpen ? "Hide guide contents" : "Guide contents")</button>
-            <div id="ug-nav-panel" class="ug-nav-panel @(_navOpen ? "is-open" : "")">
-                <nav class="ug-nav" aria-label="Guide sections" data-testid="ug-nav">
-                    @foreach (var group in UserGuideContent.Groups)
-                    {
-                        <details class="ug-nav-group" open data-testid="ug-nav-group">
-                            <summary class="ug-nav-group-title">@group</summary>
-                            <ul>
-                                @foreach (var topic in UserGuideContent.Topics.Where(t => t.Group == group))
-                                {
-                                    <li><a class="ug-nav-link" href="@topic.Href" data-topic="@topic.Id" data-testid="ug-nav-link">@topic.Title</a></li>
-                                }
-                            </ul>
-                        </details>
-                    }
-                </nav>
-            </div>
-        </aside>
+    @if (_missing is not null)
+    {
+        <section class="ug-empty" role="status" data-testid="ug-missing">
+            <h2>This guide section was not found</h2>
+            <p>There is no Help Center article or section named <code>@_missing</code>. The link may be outdated.</p>
+            <p><a class="ug-button" href="@UserGuideContent.Route">Go to Help Center home</a> or search above.</p>
+        </section>
+    }
 
-        <div class="ug-content">
-            @* Browse by audience: user guides are the default; administration and technical reference are one click away. *@
-            <section class="ug-home" aria-labelledby="ug-browse-title">
-                <div class="ug-home-head">
-                    <h2 id="ug-browse-title" class="ug-home-title">Browse topics</h2>
-                    <div class="ug-areas" role="group" aria-label="Audience" data-testid="ug-areas">
-                        @foreach (var area in Enum.GetValues<UserGuideContent.GuideArea>())
-                        {
-                            <button type="button" class="ug-area @(area == _area ? "is-active" : "")" aria-pressed="@(area == _area ? "true" : "false")"
-                                    data-testid="ug-area" data-area="@area" @onclick="() => _area = area">@UserGuideContent.AreaLabel(area)</button>
-                        }
-                    </div>
-                </div>
-                <div class="ug-category-grid" data-testid="ug-categories">
-                    @foreach (var group in UserGuideContent.Groups)
+    @if (!Reading && _missing is null)
+    {
+        <section class="ug-journey-wrap" aria-labelledby="ug-journey-title" data-testid="ug-journey">
+            <div class="ug-home-head">
+                <h2 id="ug-journey-title" class="ug-home-title">New to BirkNext? Start here</h2>
+                <span class="ug-muted">Ten short steps, each its own guide</span>
+            </div>
+            <ol class="ug-journey">
+                @foreach (var (step, i) in UserGuideContent.Journey.Select((s, i) => (s, i)))
+                {
+                    <li><a href="@UserGuideContent.Href(step.TopicId)" data-topic="@step.TopicId" data-testid="ug-journey-step"><span class="ug-journey-n" aria-hidden="true">@(i + 1)</span>@step.Title</a></li>
+                }
+            </ol>
+        </section>
+
+        <section class="ug-home" aria-labelledby="ug-browse-title">
+            <div class="ug-home-head">
+                <h2 id="ug-browse-title" class="ug-home-title">Browse topics</h2>
+                <div class="ug-areas" role="group" aria-label="Audience" data-testid="ug-areas">
+                    @foreach (var area in Enum.GetValues<UserGuideContent.GuideArea>())
                     {
-                        var topics = UserGuideContent.Topics.Where(t => t.Group == group && UserGuideContent.AreaOf(t) == _area).ToList();
-                        if (topics.Count == 0) continue;
-                        <article class="ug-category" data-testid="ug-category">
-                            <h3 class="ug-category-title">@group</h3>
-                            <ul>@foreach (var t in topics) { <li><a href="@t.Href" data-testid="ug-category-link" data-topic="@t.Id">@t.Title</a></li> }</ul>
+                        <button type="button" class="ug-area @(area == _area ? "is-active" : "")" aria-pressed="@(area == _area ? "true" : "false")"
+                                data-testid="ug-area" data-area="@area" @onclick="() => _area = area">@UserGuideContent.AreaLabel(area)</button>
+                    }
+                </div>
+            </div>
+            <div class="ug-category-grid" data-testid="ug-categories">
+                @foreach (var group in UserGuideContent.Groups)
+                {
+                    var topics = UserGuideContent.Topics.Where(t => t.Group == group && UserGuideContent.AreaOf(t) == _area).ToList();
+                    if (topics.Count == 0) continue;
+                    var info = UserGuideContent.GroupInfo.TryGetValue(group, out var gi) ? gi : ("book", "");
+                    <article class="ug-category" data-testid="ug-category">
+                        <div class="ug-category-head">
+                            <span class="ug-category-icon" aria-hidden="true">@Icon(info.Item1)</span>
+                            <div>
+                                <h3 class="ug-category-title">@group</h3>
+                                <p class="ug-category-desc">@info.Item2</p>
+                            </div>
+                            <span class="ug-category-count" title="Articles in this category for @UserGuideContent.AreaLabel(_area)">@topics.Count</span>
+                        </div>
+                        <ul class="ug-category-links">
+                            @foreach (var t in topics)
+                            {
+                                <li><a href="@t.Href" data-testid="ug-category-link" data-topic="@t.Id">@t.Title<span class="ug-chevron" aria-hidden="true">›</span></a></li>
+                            }
+                        </ul>
+                    </article>
+                }
+            </div>
+        </section>
+
+        @if (_area == UserGuideContent.GuideArea.UserGuides)
+        {
+            <section class="ug-home" aria-labelledby="ug-tasks-title">
+                <h2 id="ug-tasks-title" class="ug-home-title">Common tasks</h2>
+                <div class="ug-task-grid" data-testid="ug-task-cards">
+                    @foreach (var card in UserGuideContent.TaskCards)
+                    {
+                        <article class="ug-task" data-testid="ug-task-card">
+                            <h3 class="ug-task-title">@card.Title</h3>
+                            <p class="ug-task-purpose">@card.Purpose</p>
+                            <p class="ug-task-when"><span class="ug-task-label">When</span> @card.When</p>
+                            <div class="ug-task-actions">
+                                <a class="ug-open-link" href="@card.Href">@card.OpenLabel <span aria-hidden="true">→</span></a>
+                                <a class="ug-guide-link" href="@UserGuideContent.Href(card.GuideId)">Read the guide<span class="visually-hidden">: @card.Title</span></a>
+                            </div>
                         </article>
                     }
                 </div>
             </section>
+        }
 
-            @if (_area == UserGuideContent.GuideArea.UserGuides)
+        <section class="ug-home ug-support" aria-labelledby="ug-support-title" data-testid="ug-support">
+            <h2 id="ug-support-title" class="ug-home-title">When something looks wrong</h2>
+            <div class="ug-support-grid">
+                <a class="ug-support-card" href="@UserGuideContent.Href("troubleshooting")"><strong>Troubleshooting</strong><span>Symptoms, causes and the page that fixes them</span></a>
+                <a class="ug-support-card" href="@UserGuideContent.Href("status-reference")"><strong>Status meanings</strong><span>Available, executed, verified, historical…</span></a>
+                <a class="ug-support-card" href="@UserGuideContent.Href("glossary")"><strong>Glossary</strong><span>The terms BirkNext uses</span></a>
+                <a class="ug-support-card" href="@UserGuideContent.Href("whats-new")"><strong>What's new</strong><span>Changes in this BirkNext build</span></a>
+            </div>
+            @if (RecentlyVerified.Count > 0)
             {
-                <section class="ug-home" aria-labelledby="ug-tasks-title">
-                    <h2 id="ug-tasks-title" class="ug-home-title">Common tasks</h2>
-                    <div class="ug-task-grid" data-testid="ug-task-cards">
-                        @foreach (var card in UserGuideContent.TaskCards)
+                <div class="ug-recent" data-testid="ug-recent">
+                    <h3 class="ug-recent-title">Recently verified articles</h3>
+                    <ul>
+                        @foreach (var (topic, v) in RecentlyVerified)
                         {
-                            <article class="ug-task" data-testid="ug-task-card">
-                                <h3 class="ug-task-title">@card.Title</h3>
-                                <p class="ug-task-purpose">@card.Purpose</p>
-                                <p class="ug-task-when"><span class="ug-task-label">When</span> @card.When</p>
-                                <div class="ug-task-actions">
-                                    <a class="ug-open-link" href="@card.Href">@card.OpenLabel <span aria-hidden="true">→</span></a>
-                                    <a class="ug-guide-link" href="@UserGuideContent.Href(card.GuideId)">Read the guide<span class="visually-hidden">: @card.Title</span></a>
-                                </div>
-                            </article>
+                            <li><a href="@topic.Href">@topic.Title</a> <span class="ug-muted">verified against @v.AppliesTo on @v.VerifiedOn</span></li>
                         }
-                    </div>
-                </section>
+                    </ul>
+                </div>
             }
+        </section>
+    }
 
-            <div class="ug-group" data-group="getting-started"><p class="ug-group-label">@UserGuideContent.GettingStarted</p><GuideGettingStarted /></div>
-            <div class="ug-group" data-group="project"><p class="ug-group-label">@UserGuideContent.ProjectEvidence</p><GuideProject /></div>
-            <div class="ug-group" data-group="setup"><p class="ug-group-label">@UserGuideContent.TestSetup</p><GuideSetup /></div>
-            <div class="ug-group" data-group="testing"><p class="ug-group-label">@UserGuideContent.Testing</p><GuideTesting /></div>
-            <div class="ug-group" data-group="governance"><p class="ug-group-label">@UserGuideContent.Governance</p><GuideGovernance /></div>
-            <div class="ug-group" data-group="reference"><p class="ug-group-label">@UserGuideContent.Reference</p><GuideReference /></div>
+    <div class="ug-shell">
+        @if (Reading)
+        {
+            <aside class="ug-sidebar" aria-label="Guide navigation">
+                <button type="button" class="ug-nav-toggle" aria-expanded="@(_navOpen ? "true" : "false")" aria-controls="ug-nav-panel"
+                        data-testid="ug-nav-toggle" @onclick="() => _navOpen = !_navOpen">@(_navOpen ? "Hide guide contents" : "Guide contents")</button>
+                <div id="ug-nav-panel" class="ug-nav-panel @(_navOpen ? "is-open" : "")">
+                    <a class="ug-back" href="@UserGuideContent.Route" data-testid="ug-back-home"><span aria-hidden="true">←</span> Help Center home</a>
+                    <nav class="ug-nav" aria-label="Guide sections" data-testid="ug-nav">
+                        @foreach (var group in UserGuideContent.Groups)
+                        {
+                            <details class="ug-nav-group" open="@(group == _topic!.Group)" data-testid="ug-nav-group">
+                                <summary class="ug-nav-group-title">@group</summary>
+                                <ul>
+                                    @foreach (var topic in UserGuideContent.Topics.Where(t => t.Group == group))
+                                    {
+                                        <li><a class="ug-nav-link" href="@topic.Href" data-topic="@topic.Id" data-testid="ug-nav-link" aria-current="@(topic.Id == _topic.Id ? "page" : null)">@topic.Title</a></li>
+                                    }
+                                </ul>
+                            </details>
+                        }
+                    </nav>
+                </div>
+            </aside>
+        }
+
+        <div class="ug-content">
+            @if (Reading && _toc.Count >= 3)
+            {
+                <details class="ug-toc" data-testid="ug-toc">
+                    <summary>On this page <span class="ug-muted">(@_toc.Count)</span></summary>
+                    <ol>@foreach (var h in _toc) { <li><a href="@UserGuideContent.Href(h.Id)" data-testid="ug-toc-link">@h.Text</a></li> }</ol>
+                </details>
+            }
+            @if (Reading)
+            {
+                @* Only the current article is shown; the id is a registry topic id (never user text), so this rule cannot inject CSS. *@
+                <style>.ug-articles .ug-topic:not([data-topic="@_topic!.Id"]) { display: none; }</style>
+            }
+            <div class="ug-articles" data-testid="ug-articles" data-current="@(_topic?.Id)">
+                <div class="ug-group" data-group="getting-started"><p class="ug-group-label">@UserGuideContent.GettingStarted</p><GuideGettingStarted /></div>
+                <div class="ug-group" data-group="project"><p class="ug-group-label">@UserGuideContent.ProjectEvidence</p><GuideProject /></div>
+                <div class="ug-group" data-group="setup"><p class="ug-group-label">@UserGuideContent.TestSetup</p><GuideSetup /></div>
+                <div class="ug-group" data-group="testing"><p class="ug-group-label">@UserGuideContent.Testing</p><GuideTesting /></div>
+                <div class="ug-group" data-group="governance"><p class="ug-group-label">@UserGuideContent.Governance</p><GuideGovernance /></div>
+                <div class="ug-group" data-group="reference"><p class="ug-group-label">@UserGuideContent.Reference</p><GuideReference /></div>
+            </div>
+            @if (Reading)
+            {
+                var (prev, next) = UserGuideContent.Neighbours(_topic!.Id);
+                <nav class="ug-pager" aria-label="Previous and next article" data-testid="ug-pager">
+                    @if (prev is not null) { <a class="ug-pager-link" href="@prev.Href" rel="prev"><span class="ug-muted">Previous</span><span>@prev.Title</span></a> } else { <span></span> }
+                    @if (next is not null) { <a class="ug-pager-link is-next" href="@next.Href" rel="next"><span class="ug-muted">Next</span><span>@next.Title</span></a> }
+                </nav>
+            }
         </div>
     </div>
 </div>
@@ -120,19 +233,106 @@
 @code {
     private bool _navOpen;
     private UserGuideContent.GuideArea _area = UserGuideContent.GuideArea.UserGuides;
+    private GuideTopic? _topic;
+    private string? _anchor;
+    private string? _missing;
+    private string? _unresolved;
+    private bool _scrollPending;
+    private List<GuideHeading> _toc = [];
+    private DotNetObjectReference<UserGuide>? _self;
 
-    // Arriving from another page with a fragment (for example a feature's contextual help link): land on that section and mark it current.
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    public sealed record GuideHeading(string Id, string Text);
+
+    private bool Reading => _topic is not null;
+
+    private static readonly IReadOnlyList<(GuideTopic Topic, UserGuideContent.ArticleVerification Verification)> RecentlyVerified =
+        [.. UserGuideContent.Verified.OrderByDescending(v => v.Value.VerifiedOn).ThenBy(v => v.Key)
+            .Select(v => (UserGuideContent.Topics.FirstOrDefault(t => t.Id == v.Key), v.Value)).Where(x => x.Item1 is not null).Take(5).Select(x => (x.Item1!, x.Item2))];
+
+    protected override void OnInitialized()
     {
-        if (!firstRender || new Uri(Navigation.Uri).Fragment.TrimStart('#') is not { Length: > 0 } anchor) return;
-        await ScrollAsync(anchor);
+        Navigation.LocationChanged += OnLocationChanged;
+        Resolve(Navigation.Uri);
     }
 
-    private async Task ScrollAsync(string anchor)
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
-        try { await JS.InvokeVoidAsync("userGuide.scrollToSection", anchor); }
-        catch (JSException) { }
-        catch (InvalidOperationException) { }
+        if (!new Uri(e.Location).AbsolutePath.Equals(UserGuideContent.Route, StringComparison.OrdinalIgnoreCase)) return;
+        Resolve(e.Location);
+        InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Called by userGuide.js for same-page fragment links and browser back/forward (the browser's own fragment navigation).</summary>
+    [JSInvokable]
+    public Task ShowAnchor(string? anchor)
+    {
+        ResolveAnchor(anchor);
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private void Resolve(string uri) => ResolveAnchor(new Uri(uri).Fragment.TrimStart('#'));
+
+    /// <summary>An anchor opens its article (a topic id, or a declared anchor inside it). Any other anchor is checked once in the page (a heading
+    /// inside an article); an anchor that exists nowhere shows "not found", never another article.</summary>
+    private void ResolveAnchor(string? raw)
+    {
+        var anchor = Uri.UnescapeDataString(raw ?? "").Trim();
+        _missing = null;
+        _unresolved = null;
+        if (anchor.Length == 0) { _topic = null; _anchor = null; _toc = []; return; }
+        if (anchor.Length > 120 || !System.Text.RegularExpressions.Regex.IsMatch(anchor, "^[A-Za-z0-9_-]+$")) { _topic = null; _missing = anchor.Length > 120 ? anchor[..120] + "…" : anchor; return; }
+        var topic = UserGuideContent.TopicFor(anchor);
+        if (topic is null) { _unresolved = anchor; return; }
+        if (_topic?.Id != topic.Id) _toc = [];
+        _topic = topic;
+        _anchor = anchor;
+        _navOpen = false;
+        _scrollPending = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _self = DotNetObjectReference.Create(this);
+            await TryJs(() => JS.InvokeVoidAsync("userGuide.register", _self).AsTask());
+        }
+        if (_unresolved is { } pending)
+        {
+            _unresolved = null;
+            string? owner = null;
+            await TryJs(async () => owner = await JS.InvokeAsync<string?>("userGuide.topicOfAnchor", pending));
+            var topic = owner is null ? null : UserGuideContent.Topics.FirstOrDefault(t => t.Id == owner);
+            if (topic is null) { _topic = null; _missing = pending; }
+            else { _topic = topic; _anchor = pending; _scrollPending = true; _toc = []; }
+            StateHasChanged();
+            return;
+        }
+        if (_scrollPending && _topic is { } current)
+        {
+            _scrollPending = false;
+            if (_toc.Count == 0)
+            {
+                GuideHeading[]? headings = null;
+                await TryJs(async () => headings = await JS.InvokeAsync<GuideHeading[]>("userGuide.headings", current.Id));
+                _toc = headings?.ToList() ?? [];
+                if (_toc.Count > 0) StateHasChanged();
+            }
+            await TryJs(() => JS.InvokeVoidAsync("userGuide.scrollToSection", _anchor ?? current.Id).AsTask());
+        }
+    }
+
+    private static async Task TryJs(Func<Task> call)
+    {
+        try { await call(); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { } // prerender/tests without JS: the page still renders correctly
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+        _self?.Dispose();
     }
 
     private string _queryValue = "";
@@ -145,14 +345,33 @@
     }
 
     // Enter opens the best match (the results stay reachable with Tab).
-    private async Task OnSearchKey(KeyboardEventArgs e)
+    private Task OnSearchKey(KeyboardEventArgs e)
     {
-        if (e.Key != "Enter" || _hits.Count == 0) return;
-        Navigation.NavigateTo(_hits[0].Topic.Href);
-        await ScrollAsync(_hits[0].Topic.Id);
+        if (e.Key != "Enter" || _hits.Count == 0) return Task.CompletedTask;
+        var target = _hits[0].Topic;
+        _query = "";
+        Navigation.NavigateTo(target.Href);
+        ResolveAnchor(target.Id); // a fragment-only navigation on this page may not raise LocationChanged
+        return Task.CompletedTask;
     }
 
     private string SearchStatus => _queryValue.Trim().Length == 0 ? ""
-        : _hits.Count == 0 ? "No guide sections match."
+        : _hits.Count == 0 ? "No guide sections match. Try fewer or other words, or browse the categories."
         : $"{_hits.Count} guide section{(_hits.Count == 1 ? "" : "s")} match.";
+
+    private static RenderFragment Icon(string key) => builder =>
+    {
+        var d = key switch
+        {
+            "start" => "M4 12h12M12 6l6 6-6 6",
+            "source" => "M5 4h10l4 4v12H5zM15 4v4h4",
+            "setup" => "M12 3v3M12 18v3M3 12h3M18 12h3M6 6l2 2M16 16l2 2M6 18l2-2M16 8l2-2M12 9a3 3 0 100 6 3 3 0 000-6z",
+            "test" => "M9 3h6M10 3v6l-5 9a2 2 0 002 3h10a2 2 0 002-3l-5-9V3",
+            "flow" => "M5 6h6v4H5zM13 14h6v4h-6zM8 10v6h5",
+            "review" => "M5 12l4 4 10-10",
+            "box" => "M4 7l8-4 8 4v10l-8 4-8-4zM4 7l8 4 8-4M12 11v10",
+            _ => "M5 4h10a4 4 0 014 4v12H9a4 4 0 01-4-4z",
+        };
+        builder.AddMarkupContent(0, $"<svg viewBox=\"0 0 24 24\" focusable=\"false\"><path d=\"{d}\" /></svg>");
+    };
 }

@@ -45,7 +45,7 @@ public sealed class HelpCenterTests : BunitContext
         var cut = Page();
         cut.Find("[data-testid=ug-search]").Input("<script>alert(1)</script><img src=x onerror=alert(1)>");
         cut.FindAll(".ug-search-results script, .ug-search-results img").Should().BeEmpty();
-        cut.Find("[data-testid=ug-search-status]").TextContent.Should().Be("No guide sections match.");
+        cut.Find("[data-testid=ug-search-status]").TextContent.Should().StartWith("No guide sections match.");
         var huge = string.Join(' ', Enumerable.Repeat("status", 5000));
         var act = () => UserGuideSearch.Find(huge);
         act.Should().NotThrow();
@@ -63,6 +63,79 @@ public sealed class HelpCenterTests : BunitContext
         cut.FindAll("[data-testid=ug-search-excerpt] mark").Should().NotBeEmpty();
         cut.Find("[data-testid=ug-search]").KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "Enter" });
         Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().Uri.Should().EndWith("/user-guide#suggested-e2e");
+    }
+
+    private IRenderedComponent<UserGuide> At(string fragment)
+    {
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("/user-guide" + fragment);
+        return Render<UserGuide>();
+    }
+
+    [Fact]
+    public void The_home_shows_search_journey_categories_and_support_but_never_the_whole_directory_or_an_article()
+    {
+        var cut = Page();
+        cut.Find("[data-testid=ug-page]").GetAttribute("data-view").Should().Be("home");
+        cut.Find("h1").TextContent.Should().Be("Help Center");
+        cut.Find(".page-header, header").TextContent.Should().Contain("Guides, workflows and technical documentation for BirkNext.");
+        cut.FindAll("[data-testid=ug-nav]").Should().BeEmpty("one navigation on the home: category cards, not the full directory");
+        var journey = cut.FindAll("[data-testid=ug-journey-step]").Select(a => a.GetAttribute("data-topic")).ToList();
+        journey.Should().HaveCount(10).And.OnlyContain(id => UserGuideContent.Topics.Any(t => t.Id == id), "every step is an existing article");
+        cut.FindAll("[data-testid=ug-category]").Should().OnlyContain(c => c.QuerySelector(".ug-category-icon svg") != null && c.QuerySelector(".ug-category-desc") != null);
+        foreach (var card in cut.FindAll("[data-testid=ug-category]"))
+            card.QuerySelector(".ug-category-count")!.TextContent.Should().Be(card.QuerySelectorAll("[data-testid=ug-category-link]").Length.ToString(), "the count is the real number of articles shown");
+        cut.Find("[data-testid=ug-support]").TextContent.Should().Contain("Troubleshooting").And.Contain("Status meanings");
+        cut.Find("[data-testid=ug-recent]").TextContent.Should().Contain("verified against", "only recorded verification, never a file date");
+    }
+
+    [Fact]
+    public void A_deep_link_opens_one_article_with_breadcrumb_current_navigation_and_paging()
+    {
+        var cut = At("#contract-testing");
+        cut.Find("[data-testid=ug-page]").GetAttribute("data-view").Should().Be("article");
+        cut.Find("[data-testid=ug-crumbs]").TextContent.Should().Contain("Help Center").And.Contain("Testing").And.Contain("Contract Testing");
+        cut.Find("[data-testid=ug-crumb-home]").GetAttribute("href").Should().Be("/user-guide");
+        cut.Find("[data-testid=ug-nav-link][aria-current=page]").GetAttribute("data-topic").Should().Be("contract-testing");
+        cut.FindAll("[data-testid=ug-nav-group][open]").Select(g => g.QuerySelector("summary")!.TextContent).Should().Equal("Testing");
+        cut.Find("style").TextContent.Should().Contain("[data-topic=\"contract-testing\"]", "only this article is shown");
+        cut.FindAll("[data-testid=ug-meta]").Should().HaveCount(UserGuideContent.Topics.Count, "every article stays in the page, so every anchor resolves");
+        var (prev, next) = UserGuideContent.Neighbours("contract-testing");
+        cut.Find("[data-testid=ug-pager] a[rel=prev]").GetAttribute("href").Should().Be(prev!.Href);
+        cut.Find("[data-testid=ug-pager] a[rel=next]").GetAttribute("href").Should().Be(next!.Href);
+        cut.FindAll("h1").Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void An_anchor_inside_an_article_opens_that_article()
+    {
+        var cut = At("#runtime-profiles");
+        cut.Find("[data-testid=ug-nav-link][aria-current=page]").GetAttribute("data-topic").Should().Be("system-settings");
+    }
+
+    [Fact]
+    public void An_unknown_or_hostile_anchor_shows_not_found_and_never_another_article()
+    {
+        var unknown = At("#no-such-guide-section");
+        unknown.Find("[data-testid=ug-page]").GetAttribute("data-view").Should().Be("missing");
+        unknown.Find("[data-testid=ug-missing]").TextContent.Should().Contain("no-such-guide-section").And.Contain("Help Center home");
+        unknown.FindAll("[data-testid=ug-nav-link][aria-current]").Should().BeEmpty();
+
+        var hostile = At("#%3Cscript%3Ealert(1)%3C%2Fscript%3E");
+        hostile.Find("[data-testid=ug-page]").GetAttribute("data-view").Should().Be("missing");
+        hostile.Markup.Should().NotContain("<script>alert", "the anchor is shown as text, never as markup");
+        hostile.FindAll("style").Should().BeEmpty("no article rule is built from an unknown anchor");
+    }
+
+    [Fact]
+    public void Navigating_between_articles_and_back_home_follows_the_url()
+    {
+        var cut = At("#glossary");
+        var nav = Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>();
+        nav.NavigateTo("/user-guide#troubleshooting");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ug-nav-link][aria-current=page]").GetAttribute("data-topic").Should().Be("troubleshooting"));
+        nav.NavigateTo("/user-guide");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ug-page]").GetAttribute("data-view").Should().Be("home"));
     }
 
     [Fact]

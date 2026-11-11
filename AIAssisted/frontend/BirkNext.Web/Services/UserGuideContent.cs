@@ -163,6 +163,36 @@ public static class UserGuideContent
     public static IReadOnlyList<GuideTopic> RelatedTo(string topicId) =>
         Related.TryGetValue(topicId, out var ids) ? [.. ids.Select(id => Topics.FirstOrDefault(t => t.Id == id)).OfType<GuideTopic>()] : [];
 
+    /// <summary>One line per category for the Help Center home (what the group helps with), and its icon key.</summary>
+    public static readonly IReadOnlyDictionary<string, (string Icon, string Description)> GroupInfo = new Dictionary<string, (string, string)>(StringComparer.Ordinal)
+    {
+        [GettingStarted] = ("start", "What BirkNext does and the first steps with a project."),
+        [ProjectEvidence] = ("source", "Projects, source snapshots, documents and traceability."),
+        [TestSetup] = ("setup", "Target environments, connected systems, integrations and Test Data."),
+        [Testing] = ("test", "Reviews, contract and performance tests, results and evidence."),
+        [IntegrationE2E] = ("flow", "Integration suites, Skolenærvær and end-to-end browser tests."),
+        [Governance] = ("review", "Readiness, review decisions, drift and delivery reporting."),
+        [VersionsWorkspace] = ("box", "Versions, settings, backup and what changed."),
+        [Reference] = ("book", "Status meanings, glossary, troubleshooting and feature reference."),
+    };
+
+    /// <summary>The getting-started journey of a new tester: ten steps, each one an existing article (never one giant article).</summary>
+    public static readonly IReadOnlyList<(string Title, string TopicId)> Journey =
+    [
+        ("What BirkNext does", "overview"), ("Import a source project", "getting-started"), ("Select the project and snapshot", "project-model"),
+        ("Understand the system", "system-understanding"), ("Review requirements", "traceability"), ("Inspect integrations", "integrations"),
+        ("Prepare Test Data", "test-data"), ("Prepare an Integration Suite", "integration-suites"), ("Check execution readiness", "readiness"),
+        ("Review execution evidence", "execution-results"),
+    ];
+
+    /// <summary>The topic before and after a topic in reading order (the registry order), for article paging.</summary>
+    public static (GuideTopic? Previous, GuideTopic? Next) Neighbours(string topicId)
+    {
+        for (var i = 0; i < Topics.Count; i++)
+            if (Topics[i].Id == topicId) return (i > 0 ? Topics[i - 1] : null, i < Topics.Count - 1 ? Topics[i + 1] : null);
+        return (null, null);
+    }
+
     public static GuideTopic? TopicFor(string? anchor) =>
         string.IsNullOrWhiteSpace(anchor) ? null : Topics.FirstOrDefault(t => t.Owns(anchor.TrimStart('#')));
 
