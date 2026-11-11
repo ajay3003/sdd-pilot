@@ -14,7 +14,7 @@
         <li class="fvp-metric" data-testid="fv-metric-switches">
             <span class="fvp-mk">Switches</span>
             <span class="fvp-mv">@_inv.SwitchCount</span>
-            <span class="fvp-md">configurable · @(_inv.SwitchCount - _inv.SwitchesWithoutEffect) with an effect, @_inv.SwitchesWithoutEffect without · @_inv.PlatformCount platform always on</span>
+            <span class="fvp-md">configurable, each gating a sidebar entry · @_inv.PlatformCount platform always on · @FeatureVisibilityTaxonomy.Retired.Count retired</span>
         </li>
         <li class="fvp-metric" data-testid="fv-metric-shown">
             <span class="fvp-mk">Shown in the sidebar</span>
@@ -113,7 +113,7 @@
     {
         anyShown = true;
         <details class="fvp-group" data-testid="fv-group-retired">
-            <summary><span class="fvp-gl">Retired</span> <span class="fvp-gc">@retired.Count · configuration values are ignored</span></summary>
+            <summary><span class="fvp-gl">Retired</span> <span class="fvp-gc">@retired.Count · not configurable; configuration values are ignored</span></summary>
             <ul class="fvp-rows">
                 @foreach (var r in retired)
                 {
@@ -138,7 +138,15 @@
         }
         else
         {
-            <span>Settings are stored for this installation (<code>FeatureVisibility</code> in <code>appsettings.Local.json</code>). Use <strong>Edit Settings</strong> to change them. Hiding an entry is not access control.</span>
+            <span>Settings are stored for this installation (<code>FeatureVisibility</code> in <code>appsettings.Local.json</code>); every change is recorded with who made it. Hiding an entry is not access control.</span>
+            @if (EditDeniedReason is { Length: > 0 } denied)
+            {
+                <span class="fvp-denied" role="note" data-testid="fv-edit-denied"> Editing is not available: @denied</span>
+            }
+            else
+            {
+                <span> Use <strong>Edit Settings</strong> to change them (requires the SystemConfiguration.Write capability).</span>
+            }
         }
     </p>
 </section>
@@ -149,6 +157,8 @@
     /// <summary>Edited values (edit mode); the panel previews the sidebar with them.</summary>
     [Parameter] public IReadOnlyDictionary<string, bool>? EditValues { get; set; }
     [Parameter] public EventCallback<(string Key, bool On)> OnToggle { get; set; }
+    /// <summary>Why this session may not change configuration (from the backend); null when it may or when the backend did not say.</summary>
+    [Parameter] public string? EditDeniedReason { get; set; }
 
     private FeatureInventory _inv = new([], [], [], []);
     private string _query = "", _filter = "all";
@@ -282,11 +292,7 @@
                 @if (s.Declaration is { } d) { <span class="fvp-desc">@d.Note</span> }
             </div>
             <div class="fvp-side">
-                @if (s.Lifecycle == FeatureLifecycle.NoEffect)
-                {
-                    <span class="fvp-state fvp-state-muted" data-testid="fv-no-effect">No effect</span>
-                }
-                else if (IsEditMode)
+                @if (IsEditMode)
                 {
                     @Toggle(s, s.Label)
                 }

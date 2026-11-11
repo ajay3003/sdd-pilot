@@ -459,6 +459,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
         public string ExplorerCoverageJson { get; set; } = "{}";
         public string EditableJson { get; set; } = EditableSettingsJson;
         public string? LastSaveBody { get; private set; }
+        public string ConfigurationAccessJson { get; set; } = """{ "allowed": true, "reason": "Local system configuration: loopback-only Development backend." }""";
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -478,6 +479,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
             {
                 "/api/admin/system-settings" => SystemSettingsJson,
                 "/api/admin/editable-settings" => EditableJson,
+                "/api/admin/configuration-access" => ConfigurationAccessJson,
                 "/api/frontend-quality-engines/status" => FrontendQualityStatusJson,
                 "/api/admin/environment-diagnostics" => EnvironmentDiagnosticsJson,
                 "/api/system-diagnostics/project-compatibility/run" => ProjectCompatibilityJson,

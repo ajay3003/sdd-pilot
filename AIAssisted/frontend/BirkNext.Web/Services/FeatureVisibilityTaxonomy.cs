@@ -17,8 +17,6 @@ public enum FeatureLifecycle
     Optional,
     /// <summary>Kept for compatibility; a newer page replaces it.</summary>
     Legacy,
-    /// <summary>The switch exists in configuration but no page or sidebar entry reads it.</summary>
-    NoEffect,
 }
 
 /// <summary>What the code cannot say about one switch. <paramref name="MasterSwitch"/>: gates other switches' entries rather than its own.</summary>
@@ -48,17 +46,17 @@ public static class FeatureVisibilityTaxonomy
         new("TraceabilityCoverage", FeatureLifecycle.Legacy, "Renders the same graph as Requirements Traceability.", Successor: "artifact-traceability"),
         new("TraceabilitySuggestions", FeatureLifecycle.Legacy, "Relationship Review holds the shared review decisions.", Successor: "correlation-review"),
         new("CodeTraceability", FeatureLifecycle.Legacy, "Change Traceability and Source Analysis cover code links.", Successor: "implementation-traceability"),
-        new("QaArtifactLibrary", FeatureLifecycle.NoEffect, "No page or sidebar entry reads this switch."),
-        new("BlazorWasmSecurityReview", FeatureLifecycle.NoEffect, "Its separate page was retired; no page reads this switch."),
-        new("BlazorWasmPerformanceReview", FeatureLifecycle.NoEffect,
-            "There is no separate page; Frontend Quality Review runs the performance checks.", Successor: "frontend-quality-review"),
-        new("EnableExtractionReview", FeatureLifecycle.NoEffect, "Switches a mode of a component that no page shows."),
-        new("EnableArchitectureView", FeatureLifecycle.NoEffect, "Switches a mode of a component that no page shows.", Successor: "integration-topology"),
     ];
 
-    /// <summary>Removed keys. They are not listed by the backend and their configuration values are ignored.</summary>
+    /// <summary>Removed keys. They are not listed by the backend, cannot be saved, and their configuration values are ignored (never enabled).</summary>
     public static IReadOnlyList<RetiredFeature> Retired { get; } =
     [
+        // Retired from the configurable catalog in task 13: these switches had no effect (no page or sidebar entry read them).
+        new("QaArtifactLibrary", "QA Artifact Library", "No page; the switch had no effect"),
+        new("BlazorWasmSecurityReview", "WASM Security Review", "Its separate page was retired; the switch had no effect"),
+        new("BlazorWasmPerformanceReview", "WASM Performance Review", "Frontend Quality Review runs the performance checks; the switch had no effect"),
+        new("EnableExtractionReview", "Extraction Review", "A mode of a component no page shows; the switch had no effect"),
+        new("EnableArchitectureView", "Architecture View", "A mode of a component no page shows; Integration Topology covers architecture; the switch had no effect"),
         new("SpecComparison", "Spec Comparison", "Documentation Drift → Changes (the old /compare links redirect there)"),
         new("SpecificationDeltas", "Specification Deltas", "Documentation Drift"),
         new("TaskDeltas", "Task Deltas", "Task Explorer → Changes (the old /task-deltas link redirects there)"),
@@ -95,7 +93,6 @@ public static class FeatureVisibilityTaxonomy
     {
         FeatureLifecycle.Optional => "Optional",
         FeatureLifecycle.Legacy => "Legacy",
-        FeatureLifecycle.NoEffect => "No effect",
         _ => "Implemented",
     };
 }

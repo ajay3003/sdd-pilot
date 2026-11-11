@@ -33,7 +33,6 @@ public sealed record FeatureInventory(
 {
     /// <summary>Configurable switches (platform keys excluded): the backend's Core and Advanced lists.</summary>
     public int SwitchCount => Switches.Count(s => !s.Platform);
-    public int SwitchesWithoutEffect => Switches.Count(s => !s.Platform && s.Lifecycle == FeatureLifecycle.NoEffect);
     public int PlatformCount => Switches.Count(s => s.Platform);
     public int ShownEntries => Entries.Count(e => e.Shown);
     public int HiddenEntries => Entries.Count(e => !e.Shown);
@@ -127,13 +126,10 @@ public static class FeatureVisibilityInventory
                 gated.Select(e => e.Route).ToList(), gated.Any(e => e.Shown));
         }).ToList();
 
-        foreach (var s in switches.Where(s => !s.Platform))
-        {
-            if (s.Lifecycle == FeatureLifecycle.NoEffect && s.HasEffect)
-                issues.Add(new("Declared without effect, but gates entries", s.Label, $"{s.Key} gates {string.Join(", ", s.GatedRoutes.Select(r => "/" + r))}; update its declaration."));
-            if (s.Lifecycle != FeatureLifecycle.NoEffect && !s.HasEffect)
-                issues.Add(new("Switch gates nothing", s.Label, $"{s.Key} hides no sidebar entry. Wire it to an entry or declare it as having no effect."));
-        }
+        foreach (var s in switches.Where(s => !s.Platform && !s.HasEffect))
+            issues.Add(new("Switch gates nothing", s.Label, $"{s.Key} hides no sidebar entry. Wire it to an entry or retire it."));
+        foreach (var s in switches.Where(s => FeatureVisibilityTaxonomy.Retired.Any(r => r.Key.Equals(s.Key, StringComparison.OrdinalIgnoreCase))))
+            issues.Add(new("Retired switch still configurable", s.Label, $"{s.Key} is retired but the backend still lists it."));
         foreach (var d in FeatureVisibilityTaxonomy.Declarations.Where(d => !keys.Contains(d.Key, StringComparer.OrdinalIgnoreCase)))
             issues.Add(new("Declared switch not configured", d.Key, "The backend does not list this key."));
 

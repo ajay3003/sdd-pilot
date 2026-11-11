@@ -17,12 +17,11 @@ public static class FeatureVisibilityFixture
     [
         ("SpecificationExplorer", "Specification Explorer", true), ("ConstitutionExplorer", "Constitution Explorer", true),
         ("DataModelExplorer", "Data Model Explorer", true), ("PlanExplorer", "Plan Explorer", true), ("TaskExplorer", "Task Explorer", true),
-        ("QaArtifactLibrary", "QA Artifact Library", true), ("SampleProjects", "Sample Projects", true),
+        ("SampleProjects", "Sample Projects", true),
         ("TraceabilityCoverage", "Traceability & Coverage", true), ("ArtifactTraceability", "Requirements Traceability", true),
         ("QualityReview", "Document Quality Review", true), ("FrontendQualityReview", "Frontend Quality Review", true),
         ("ApiQualityReview", "API Quality Review", true), ("IntegrationQualityReview", "Integration Quality Review", true),
-        ("CriticalE2ERegression", "Critical E2E Regression", true), ("BlazorWasmSecurityReview", "WASM Security Review", true),
-        ("BlazorWasmPerformanceReview", "WASM Performance Review", true), ("ImplementationReview", "Task Alignment Review", true),
+        ("CriticalE2ERegression", "Critical E2E Regression", true), ("ImplementationReview", "Task Alignment Review", true),
         ("ImplementationTraceability", "Change Traceability", false), ("SourceAnalysis", "Source Analysis", true),
         ("AzureEnvironmentAnalysis", "Azure Environment Analysis", true), ("GeneratedDocumentationHealth", "Generated Documentation Health", true),
         ("GeneratedDocumentationExplorer", "Generated Documentation Explorer", true),
@@ -30,7 +29,6 @@ public static class FeatureVisibilityFixture
 
     public static readonly (string Key, string Label, bool Value)[] Advanced =
     [
-        ("EnableExtractionReview", "Extraction Review", false), ("EnableArchitectureView", "Architecture View", false),
         ("LegacyTraceabilityNavigationEnabled", "Legacy Traceability Navigation", false), ("TraceabilitySuggestions", "Traceability Suggestions", false),
         ("CodeTraceability", "Code Traceability", false), ("ImpactAnalysis", "Impact Analysis", false),
         ("SpecDrift", "Documentation Drift", true), ("AiChangeReview", "AI Change Review", false),
@@ -65,8 +63,8 @@ public sealed class FeatureVisibilityInventoryTests
         var inv = Real();
 
         inv.Issues.Should().BeEmpty("every entry opens a page, every switch with an effect gates an entry, every page is in the sidebar or classified");
-        inv.SwitchCount.Should().Be(30, "22 core + 8 advanced configurable switches (platform keys excluded)");
-        inv.SwitchesWithoutEffect.Should().Be(5, "QA Artifact Library, WASM Security Review, WASM Performance Review, Extraction Review, Architecture View");
+        inv.SwitchCount.Should().Be(25, "19 core + 6 advanced configurable switches (platform keys excluded; 5 no-effect switches retired)");
+        inv.Switches.Where(s => !s.Platform).Should().OnlyContain(s => s.HasEffect, "every configurable switch gates a sidebar entry");
         inv.PlatformCount.Should().Be(4);
         inv.Entries.Should().HaveCount(53, "sidebar rows, including deep links and shared entries");
         inv.HiddenEntries.Should().Be(6);
@@ -116,13 +114,16 @@ public sealed class FeatureVisibilityInventoryTests
         environment.Availability!.IsUnavailable.Should().BeTrue();
     }
 
-    [Fact] // G: switches without any page are declared as having no effect (not issues, not shown as working toggles)
-    public void Switches_without_a_page_are_declared_no_effect()
+    [Fact] // G: switches without any page were retired from the configurable catalog; a backend that still lists one is an issue
+    public void Switches_without_a_page_are_retired_and_reported_if_still_configurable()
     {
-        var inv = Real();
-        inv.Switches.Where(s => s.Lifecycle == FeatureLifecycle.NoEffect).Select(s => s.Key).Should().BeEquivalentTo(
-            "QaArtifactLibrary", "BlazorWasmSecurityReview", "BlazorWasmPerformanceReview", "EnableExtractionReview", "EnableArchitectureView");
-        inv.Switches.Where(s => s.Lifecycle == FeatureLifecycle.NoEffect).Should().OnlyContain(s => !s.HasEffect);
+        FeatureVisibilityTaxonomy.Retired.Select(r => r.Key).Should().Contain(
+            ["QaArtifactLibrary", "BlazorWasmSecurityReview", "BlazorWasmPerformanceReview", "EnableExtractionReview", "EnableArchitectureView"]);
+        var old = FeatureVisibilityFixture.Settings();
+        old.Core.Add(new FeatureEntryDto { Key = "QaArtifactLibrary", Label = "QA Artifact Library", Value = true });
+        var inv = FeatureVisibilityInventory.Build(old);
+        inv.Issues.Should().Contain(i => i.Kind == "Retired switch still configurable" && i.Subject == "QA Artifact Library")
+            .And.Contain(i => i.Kind == "Switch gates nothing" && i.Subject == "QA Artifact Library");
     }
 
     [Fact] // H: one entry shared by several switches
@@ -150,7 +151,7 @@ public sealed class FeatureVisibilityInventoryTests
     [Fact] // M: retired keys and their old addresses
     public void Retired_features_are_listed_and_their_old_addresses_are_classified_redirects()
     {
-        FeatureVisibilityTaxonomy.Retired.Select(r => r.Key).Should().Equal("SpecComparison", "SpecificationDeltas", "TaskDeltas");
+        FeatureVisibilityTaxonomy.Retired.Select(r => r.Key).Should().Contain(["SpecComparison", "SpecificationDeltas", "TaskDeltas"]);
         var inv = Real();
         inv.OtherPages.Single(p => p.Template == "task-deltas").Kind.Should().Be(ContextualRouteKind.Redirect);
         inv.OtherPages.Single(p => p.Template == "compare").Of.Should().Be("documentation-drift");
@@ -220,13 +221,6 @@ public sealed class FeatureVisibilityInventoryTests
         var settings = Switches("SpecificationExplorer", "SpecificationExplorer");
         var inv = Synthetic(settings, Pages, Row("specification-explorer", "A", f => f.SpecificationExplorer), Row("specification-explorer", "B", f => f.SpecificationExplorer));
         inv.Issues.Should().Contain(i => i.Kind == "Duplicate entry").And.Contain(i => i.Kind == "Duplicate switch");
-    }
-
-    [Fact] // a declaration that no longer matches the code
-    public void A_switch_declared_without_effect_that_gates_an_entry_is_an_issue()
-    {
-        var inv = Synthetic(Switches("QaArtifactLibrary"), Pages, Row("schema-studio", "Library", f => f.QaArtifactLibrary));
-        inv.Issues.Should().Contain(i => i.Kind == "Declared without effect, but gates entries" && i.Subject == "QaArtifactLibrary");
     }
 
     [Fact] // R: a partial configuration (advanced switches missing) is reported, never silently "in sync"

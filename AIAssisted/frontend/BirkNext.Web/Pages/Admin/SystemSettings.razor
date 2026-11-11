@@ -41,7 +41,9 @@
         {
             @if (CanEditSelectedPane && _editableSettings is not null)
             {
-                <button class="btn-edit-settings" @onclick="EnterEditMode">
+                @* The backend enforces SystemConfiguration.Write on save; this only explains up front why editing is unavailable. *@
+                <button class="btn-edit-settings" @onclick="EnterEditMode" disabled="@(_configAccess?.Allowed == false)" data-testid="ss-edit"
+                        title="@(_configAccess?.Allowed == false ? _configAccess.Reason : "Change these settings")">
                     <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M12.854.146a.5.5 0 0 0-.707 0L10.5 1.793 14.207 5.5l1.647-1.646a.5.5 0 0 0 0-.708l-3-3zm.646 6.061L9.793 2.5 3.293 9H3.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.207l6.5-6.5zm-7.468 7.468A.5.5 0 0 1 6 13.5V13h-.5a.5.5 0 0 1-.5-.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.5-.5V10h-.5a.499.499 0 0 1-.175-.032l-.179.178a.5.5 0 0 0-.11.168l-2 5a.5.5 0 0 0 .65.65l5-2a.5.5 0 0 0 .168-.11l.178-.178z"/></svg>
                     Edit Settings
                 </button>
@@ -273,6 +275,7 @@ else if (_settings is not null)
                     @if (_editableSettings is not null)
                     {
                         <BirkNext.Web.Components.Admin.FeatureVisibilityPanel Settings="_editableSettings.FeatureVisibility" IsEditMode="_isEditMode"
+                                                                              EditDeniedReason="@(_configAccess?.Allowed == false ? _configAccess.Reason : null)"
                                                                               EditValues="_editFv" OnToggle="t => ToggleFeature(t.Key, t.On)" />
                         <div class="fv-admin" data-testid="fv-admin">
                             <FeatureRow Label="Show Diagnostic Information"
@@ -1153,6 +1156,8 @@ else if (_settings is not null)
 @code {
     private SystemSettingsDto?      _settings;
     private EditableSettingsDto?    _editableSettings;
+    /// <summary>SystemConfiguration.Write for this session (null = the backend did not say; it enforces on save regardless).</summary>
+    private ConfigurationAccessDto? _configAccess;
     private bool                    _isLoading = true;
     private string?                 _loadError;
 
@@ -1830,10 +1835,12 @@ else if (_settings is not null)
         {
             var settingsTask  = AdminApi.GetSystemSettingsAsync();
             var editableTask  = AdminApi.GetEditableSettingsAsync();
-            await Task.WhenAll(settingsTask, editableTask);
+            var accessTask    = AdminApi.GetConfigurationAccessAsync();
+            await Task.WhenAll(settingsTask, editableTask, accessTask);
 
             _settings         = settingsTask.Result;
             _editableSettings = editableTask.Result;
+            _configAccess     = accessTask.Result;
 
             if (_settings is null)
                 _loadError = "Could not load system settings. Make sure the backend is running.";

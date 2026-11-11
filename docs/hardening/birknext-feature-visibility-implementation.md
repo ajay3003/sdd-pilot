@@ -85,3 +85,20 @@ This extends the System Settings work of task 12. There is no second Settings im
 
 - **Tests that relied on the old frontend fallback** showing Impact Analysis, Code Traceability or Traceability Suggestions with no backend answer (defect FV-D9) now state those flags explicitly, as an installation that enables them would. The behaviour they check (order, hierarchy, legacy group) is unchanged.
 - **Removed tests:** the category and `MenuItems` tests were removed together with the hand-written lists they guarded. The inventory tests replace them with identity checks.
+
+## Follow-up (task 13b): configuration permission, audit trail, retirement
+
+- **Feature visibility is not authorization** — hidden routes stay reachable by design (some features are intentionally direct-access). What is
+  restricted is **changing configuration**: `POST api/admin/system-settings` now requires the backend policy `SystemConfigurationWrite`
+  (`Services/LocalSecurity/SystemConfigurationPermissions.cs`), granted to (a) an authenticated principal holding `SystemConfiguration.Write`
+  (Entra scope/app role/permission claim) or (b) the local single-user installation when `Authorization:LocalSystemConfiguration` is true,
+  under exactly the loopback/Host/Origin/environment checks of `LocalTrustedExecution` (Development, or the TesterNative package — the launcher
+  sets it). ActiveEventExecute, IntegrationConfiguration.Write and WorkspaceTransfer do not imply it. No client-only protection: the UI only
+  explains (`GET api/admin/configuration-access` → disabled Edit Settings with the backend's reason).
+- **Audit:** every save appends to `App_Data/audit/configuration-changes.jsonl` (`GET api/admin/configuration-changes`): time, actor, each
+  feature switch before → after, other sections changed. Actor = `authenticated-user:<16-hex hash of issuer|subject>` or `local-session:loopback`
+  (a capability, not a person), else `not attributed` — an identity is never invented. The log line names the same actor.
+- **Retired:** QA Artifact Library, WASM Security Review, WASM Performance Review, Extraction Review, Architecture View (no page or entry read
+  them). Removed from the configurable catalog (`AdminService` lists), listed under Retired, values ignored and never enabled; saving them is
+  rejected ("retired"). The inventory reports a backend that still lists one ("Retired switch still configurable"). Switches: 30 → **25**, each
+  gating a sidebar entry.

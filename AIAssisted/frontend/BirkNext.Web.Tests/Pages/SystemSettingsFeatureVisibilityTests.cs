@@ -45,8 +45,8 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
 
         cut.Find(".fvp-title").TextContent.Should().Be("Feature Visibility");
         cut.Find(".fvp-sub").TextContent.Should().Be("Explore available BirkNext capabilities, their visibility and requirements.");
-        Metric(cut, "switches").Should().Be("30");
-        cut.Find("[data-testid=fv-metric-switches] .fvp-md").TextContent.Should().Contain("25 with an effect, 5 without").And.Contain("4 platform");
+        Metric(cut, "switches").Should().Be("25");
+        cut.Find("[data-testid=fv-metric-switches] .fvp-md").TextContent.Should().Contain("each gating a sidebar entry").And.Contain("4 platform").And.Contain("8 retired");
         Metric(cut, "shown").Should().StartWith("47").And.EndWith("of 53");
         Metric(cut, "hidden").Should().Be("6");
         cut.Find("[data-testid=fv-metric-navigation]").GetAttribute("data-state").Should().Be("consistent");
@@ -67,10 +67,9 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
         EntryRow(cut, "schema-studio").TextContent.Should().Contain("Always shown");
         EntryRow(cut, "azure-environment").TextContent.Should().Contain("Unavailable").And.Contain("Shown");
 
-        cut.FindAll("[data-testid=fv-group-switches] [data-testid=fv-switch]").Select(s => s.GetAttribute("data-key")).Should().BeEquivalentTo(
-            "QaArtifactLibrary", "BlazorWasmSecurityReview", "BlazorWasmPerformanceReview", "EnableExtractionReview", "EnableArchitectureView", "LegacyTraceabilityNavigationEnabled");
-        cut.FindAll("[data-testid=fv-no-effect]").Should().HaveCount(5);
-        cut.FindAll("[data-testid=fv-retired] .fvp-name").Select(n => n.TextContent).Should().Equal("Spec Comparison", "Specification Deltas", "Task Deltas");
+        cut.FindAll("[data-testid=fv-group-switches] [data-testid=fv-switch]").Select(s => s.GetAttribute("data-key")).Should().Equal("LegacyTraceabilityNavigationEnabled");
+        cut.FindAll("[data-testid=fv-retired] .fvp-name").Select(n => n.TextContent).Should().Equal(
+            "QA Artifact Library", "WASM Security Review", "WASM Performance Review", "Extraction Review", "Architecture View", "Spec Comparison", "Specification Deltas", "Task Deltas");
     }
 
     [Fact]
@@ -116,12 +115,24 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
     }
 
     [Fact]
+    public void FeatureVisibility_editing_is_unavailable_with_the_backends_reason_when_this_session_may_not_change_configuration()
+    {
+        _handler.ConfigurationAccessJson = """{ "allowed": false, "reason": "Changing configuration is not permitted for this session. Local system configuration is not enabled for this backend." }""";
+        var cut = RenderFeatureVisibility();
+
+        var edit = cut.Find("[data-testid=ss-edit]");
+        edit.HasAttribute("disabled").Should().BeTrue();
+        edit.GetAttribute("title").Should().Contain("not permitted");
+        cut.Find("[data-testid=fv-edit-denied]").TextContent.Should().Contain("Local system configuration is not enabled");
+    }
+
+    [Fact]
     public void FeatureVisibility_toggling_previews_the_sidebar_and_saves_the_stable_key_only()
     {
         var cut = RenderFeatureVisibility();
         FindButton(cut, "Edit Settings")!.Click();
 
-        cut.FindAll("[data-testid=fv-toggle-QaArtifactLibrary]").Should().BeEmpty("a switch without effect is never offered as a toggle");
+        cut.FindAll("[data-testid=fv-toggle-QaArtifactLibrary]").Should().BeEmpty("a retired switch is never offered as a toggle");
         cut.Find("[data-testid=fv-toggle-SpecDrift]").Change(false);
         EntryRow(cut, "documentation-drift").GetAttribute("data-state").Should().Be("hidden");
         Metric(cut, "hidden").Should().Be("7");

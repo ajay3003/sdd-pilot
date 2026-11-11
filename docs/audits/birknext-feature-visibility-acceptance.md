@@ -85,3 +85,22 @@ Screenshots: `fv-1440-top`, `fv-1440-detail`, `fv-768`, `fv-390`.
 - Rows show name, short description and one state, with the reason inline for hidden entries.
 - Details are a compact two-column definition list.
 - No tiny text, overflow, empty columns or repeated badges.
+
+## Follow-up acceptance (task 13b, final code)
+
+Run against the backend started exactly as the Tester Package launcher starts it (Production + TesterNative, NOCREATEDB application role,
+disposable PostgreSQL 16 cluster) and the Release frontend built from the final working tree.
+
+| Harness | Result |
+|---|---|
+| `rp/fv-accept.cjs main` (Feature Visibility end to end) | 28/28 — 25 switches = backend keys; 47 of 53 shown, independently matched to the rendered sidebar; Navigation consistent; 8 retired listed, only the legacy master switch without own entry; save writes only `ImpactAnalysis`; log line `Feature visibility changed by local-session:loopback: ImpactAnalysis: off -> on`; persisted audit records with actor and before/after; configuration access granted for the TesterNative local session |
+| `rp/deny.cjs` (grant disabled: `Authorization:LocalSystemConfiguration=false`) | 5/5 — `configuration-access` false with reason; direct API save **403**, nothing written; reading stays open; Edit Settings disabled with the backend's reason; panel explains |
+| Focused backend (FeatureVisibility, AdminService, SystemConfiguration, LocalTrustedExecution, Launcher, WorkspaceTransfer/Backup, PostgresTool, Transfer) | 186/186 |
+| Focused frontend (Feature Visibility, System Settings, NavMenu, Dashboard, Help/User Guide, Documentation, Navigation, Traceability, SharedLoading, SettingsOverview) | 816/816 (includes `SharedLoadingTests` with the committed header CSS) |
+
+### Original full regression of 1da8a9f6 (reported as run)
+
+Backend P1–P5 passed (4159 passed, 11 skipped, 0 failed); **P6 aborted by the memory guard** (free memory fell below the 1500 MB floor while
+other applications used memory; the guard's taskkill failed and ended the script); **frontend not run**. The scratch tree did not contain the
+later header CSS change. That run is therefore **not** a clean regression of the final code; the full regression is re-run against the final
+HEAD (see the final report).

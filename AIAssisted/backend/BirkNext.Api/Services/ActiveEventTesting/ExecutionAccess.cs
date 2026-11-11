@@ -28,24 +28,30 @@ public sealed class LocalTrustedExecution(IHostEnvironment environment, IConfigu
 
     public bool Applies(HttpContext? context) => Evaluate(context).Allowed;
 
-    public Decision Evaluate(HttpContext? context)
+    public Decision Evaluate(HttpContext? context) => EvaluateFor(Setting, "Local trusted execution", context);
+
+    /// <summary>
+    /// The same loopback-bounded local grant for another capability with its own backend setting (for example
+    /// <c>Authorization:LocalSystemConfiguration</c>): every condition above applies unchanged; only the enabling setting differs.
+    /// </summary>
+    public Decision EvaluateFor(string setting, string capability, HttpContext? context)
     {
-        if (!bool.TryParse(configuration[Setting], out var enabled) || !enabled)
-            return new(false, "Local trusted execution is not enabled for this backend.");
+        if (!bool.TryParse(configuration[setting], out var enabled) || !enabled)
+            return new(false, $"{capability} is not enabled for this backend.");
         if (!environment.IsDevelopment() && !TesterNative)
-            return new(false, "Local trusted execution is only available when the backend runs in the Development environment or as the Windows Tester Package (TesterNative).");
+            return new(false, $"{capability} is only available when the backend runs in the Development environment or as the Windows Tester Package (TesterNative).");
         if (context is null) return new(false, "No request.");
         var connection = context.Connection;
         if (connection.RemoteIpAddress is not { } remote || !IsLoopback(remote) || (connection.LocalIpAddress is { } local && !IsLoopback(local)))
-            return new(false, "Local trusted execution needs a loopback connection to the backend.");
+            return new(false, $"{capability} needs a loopback connection to the backend.");
         if (!IsLoopbackHostName(context.Request.Host.Host))
-            return new(false, "Local trusted execution needs the backend to be addressed as localhost or a loopback address.");
+            return new(false, $"{capability} needs the backend to be addressed as localhost or a loopback address.");
         if (ConfiguredOrigin(configuration["FRONTEND_ORIGIN"]) is not { } allowed)
-            return new(false, "The configured FRONTEND_ORIGIN is not a loopback http(s) origin, so local trusted execution is unavailable.");
+            return new(false, $"The configured FRONTEND_ORIGIN is not a loopback http(s) origin, so {capability.ToLowerInvariant()} is unavailable.");
         var origin = context.Request.Headers.Origin;
         if (origin.Count != 1 || ParseOrigin(origin.ToString()) is not { } actual || !SameOrigin(actual, allowed))
-            return new(false, "Local trusted execution is only granted to requests from the configured BirkNext frontend origin.");
-        return new(true, $"Local trusted execution: loopback-only {(TesterNative ? "Tester Package (TesterNative)" : "Development")} backend, request from the configured BirkNext frontend.");
+            return new(false, $"{capability} is only granted to requests from the configured BirkNext frontend origin.");
+        return new(true, $"{capability}: loopback-only {(TesterNative ? "Tester Package (TesterNative)" : "Development")} backend, request from the configured BirkNext frontend.");
     }
 
     /// <summary>The launcher-set TesterNative profile (an invalid profile value stops startup, so it is never guessed here).</summary>

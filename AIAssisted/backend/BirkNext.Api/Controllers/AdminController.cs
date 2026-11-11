@@ -49,8 +49,21 @@ public class AdminController : ControllerBase
         return Ok(settings);
     }
 
+    /// <summary>Whether this session may change configuration (System Settings shows it; the save endpoint enforces it).</summary>
+    [HttpGet("configuration-access")]
+    public IActionResult GetConfigurationAccess([FromServices] BirkNext.Api.Services.ActiveEventTesting.LocalTrustedExecution local)
+    {
+        var (allowed, reason) = BirkNext.Api.Services.LocalSecurity.SystemConfigurationPermissions.Evaluate(User, local, HttpContext);
+        return Ok(new { allowed, reason });
+    }
+
+    /// <summary>Recent configuration changes (append-only audit: actor, feature switches before → after, other sections changed).</summary>
+    [HttpGet("configuration-changes")]
+    public IActionResult GetConfigurationChanges() => _adminService.IsEnabled ? Ok(_adminService.ReadConfigurationAudit()) : NotFound();
+
     [HttpPost("system-settings")]
-    public async Task<IActionResult> SaveSystemSettings([FromBody] SaveSettingsRequest request)
+    [Microsoft.AspNetCore.Authorization.Authorize(Policy = BirkNext.Api.Services.LocalSecurity.SystemConfigurationPermissions.Policy)]
+    public async Task<IActionResult> SaveSystemSettings([FromBody] SaveSettingsRequest request, [FromServices] BirkNext.Api.Services.ActiveEventTesting.LocalTrustedExecution local)
     {
         if (!_adminService.IsEnabled)
             return NotFound();
@@ -59,7 +72,11 @@ public class AdminController : ControllerBase
         if (!valid)
             return BadRequest(new SaveSettingsResponse { Success = false, Message = validationError });
 
-        var (success, message) = await _adminService.SaveSettingsAsync(request);
+        var granted = BirkNext.Api.Services.LocalSecurity.SystemConfigurationPermissions.Evaluate(User, local, HttpContext);
+        var actor = BirkNext.Api.Services.LocalSecurity.SystemConfigurationPermissions.Actor(User,
+            local.EvaluateFor(BirkNext.Api.Services.LocalSecurity.SystemConfigurationPermissions.LocalSetting,
+                BirkNext.Api.Services.LocalSecurity.SystemConfigurationPermissions.LocalCapability, HttpContext).Allowed);
+        var (success, message) = await _adminService.SaveSettingsAsync(request, granted.Allowed ? actor : null);
 
         return success
             ? Ok(new SaveSettingsResponse { Success = true, Message = message })

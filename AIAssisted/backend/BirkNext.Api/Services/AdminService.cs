@@ -33,6 +33,15 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
             "Dashboard", "UserGuide", "RecommendedWorkflow", "AdminSystemSettings"
         };
 
+    /// <summary>
+    /// Keys removed from the configurable catalog because no page or sidebar entry reads them (task 13): QA Artifact Library, WASM Security
+    /// Review (page retired), WASM Performance Review (Frontend Quality Review runs those checks), Extraction Review and Architecture View
+    /// (modes of a component no page renders). Existing configuration values are ignored and kept; they cannot be saved any more.
+    /// </summary>
+    internal static readonly IReadOnlySet<string> RetiredFeatureKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        { "QaArtifactLibrary", "BlazorWasmSecurityReview", "BlazorWasmPerformanceReview", "EnableExtractionReview", "EnableArchitectureView",
+          "SpecComparison", "SpecificationDeltas", "TaskDeltas" };
+
     private static readonly IReadOnlyList<(string Key, string Label)> CoreFeatures =
     [
         ("SpecificationExplorer",      "Specification Explorer"),
@@ -40,7 +49,6 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         ("DataModelExplorer",          "Data Model Explorer"),
         ("PlanExplorer",               "Plan Explorer"),
         ("TaskExplorer",               "Task Explorer"),
-        ("QaArtifactLibrary",          "QA Artifact Library"),
         ("SampleProjects",             "Sample Projects"),
         ("TraceabilityCoverage",       "Traceability & Coverage"),
         ("ArtifactTraceability",       "Requirements Traceability"),
@@ -49,8 +57,6 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         ("ApiQualityReview",           "API Quality Review"),
         ("IntegrationQualityReview",   "Integration Quality Review"),
         ("CriticalE2ERegression",      "Critical E2E Regression"),
-        ("BlazorWasmSecurityReview",   "WASM Security Review"),
-        ("BlazorWasmPerformanceReview","WASM Performance Review"),
         ("ImplementationReview",       "Task Alignment Review"),
         ("ImplementationTraceability", "Change Traceability"),
         ("SourceAnalysis",             "Source Analysis"),
@@ -71,8 +77,6 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
 
     private static readonly IReadOnlyList<(string Key, string Label)> AdvancedFeatures =
     [
-        ("EnableExtractionReview", "Extraction Review"),
-        ("EnableArchitectureView", "Architecture View"),
         ("LegacyTraceabilityNavigationEnabled", "Legacy Traceability Navigation"),
         ("TraceabilitySuggestions", "Traceability Suggestions"),
         ("CodeTraceability",    "Code Traceability"),
@@ -337,8 +341,8 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
             TaskExplorer                = s.GetValue("TaskExplorer",                true),
             QualityReview               = s.GetValue("QualityReview",               true),
             AiChangeReview       = s.GetValue("AiChangeReview",       FeatureDefault("AiChangeReview")),
-            EnableExtractionReview = s.GetValue("EnableExtractionReview", FeatureDefault("EnableExtractionReview")),
-            EnableArchitectureView = s.GetValue("EnableArchitectureView", FeatureDefault("EnableArchitectureView")),
+            EnableExtractionReview = s.GetValue("EnableExtractionReview", false),
+            EnableArchitectureView = s.GetValue("EnableArchitectureView", false),
             AdminSystemSettings  = s.GetValue("AdminSystemSettings",  true)
         };
     }
@@ -404,12 +408,46 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         };
     }
 
+    public sealed record FeatureChange(string Key, bool Before, bool After);
+
+    private async Task AppendConfigurationAuditAsync(string? actor, IReadOnlyList<FeatureChange> features, SaveSettingsRequest request)
+    {
+        var sections = new List<string>();
+        if (request.Logging is not null) sections.Add("Logging");
+        if (request.Admin?.ShowDiagnostics.HasValue == true) sections.Add("Admin");
+        if (request.FrontendQualityEngines is not null) sections.Add("FrontendQualityEngines");
+        if (request.MicrosoftSignIn is not null) sections.Add("MicrosoftSignIn");
+        var record = new JsonObject
+        {
+            ["at"] = DateTimeOffset.UtcNow.ToString("O"),
+            ["actor"] = actor ?? "not attributed",
+            ["featureVisibility"] = new JsonArray(features.Select(c => (JsonNode)new JsonObject { ["key"] = c.Key, ["before"] = c.Before, ["after"] = c.After }).ToArray()),
+            ["otherSections"] = new JsonArray(sections.Select(x => (JsonNode)JsonValue.Create(x)!).ToArray()),
+        };
+        try
+        {
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(ConfigurationAuditPath)!);
+            await File.AppendAllTextAsync(ConfigurationAuditPath, record.ToJsonString() + Environment.NewLine);
+        }
+        catch (Exception ex) { _logger.LogWarning(ex, "The configuration change was saved but its audit record could not be written to {Path}", ConfigurationAuditPath); }
+    }
+
+    /// <summary>The most recent configuration audit records, newest first.</summary>
+    public IReadOnlyList<JsonNode> ReadConfigurationAudit(int take = 20)
+    {
+        if (!File.Exists(ConfigurationAuditPath)) return [];
+        return File.ReadLines(ConfigurationAuditPath).Reverse().Take(take)
+            .Select(line => { try { return JsonNode.Parse(line); } catch { return null; } }).OfType<JsonNode>().ToList();
+    }
+
     public (bool Valid, string Error) ValidateSettingsUpdate(SaveSettingsRequest request)
     {
         if (request.FeatureVisibility != null)
         {
             foreach (var (key, value) in request.FeatureVisibility)
             {
+                if (RetiredFeatureKeys.Contains(key))
+                    return (false, $"'{key}' was retired from the configurable features because no page reads it; its value can no longer be changed.");
                 if (!IsKnownFeatureKey(key))
                     return (false, $"Unknown feature key '{key}'. Only the feature keys listed in System Settings can be saved.");
                 if (PlatformFeatureKeys.Contains(key) && !value)
@@ -444,16 +482,26 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
     /// </summary>
     public const string SignInSettingsFile = "App_Data/microsoft-sign-in.json";
 
-    public async Task<(bool Success, string Message)> SaveSettingsAsync(SaveSettingsRequest request)
+    /// <summary>Append-only record of configuration changes (feature switches before → after, other sections changed, actor), one JSON object per line.</summary>
+    public string ConfigurationAuditPath => System.IO.Path.Combine(AppDataLocation.Root(_env), "audit", "configuration-changes.jsonl");
+
+    /// <param name="actor">Who changed it, as far as the backend can tell: <c>authenticated-user:&lt;hash&gt;</c> or <c>local-session:loopback</c>.
+    /// Null is recorded as "not attributed" — an identity is never invented.</param>
+    public async Task<(bool Success, string Message)> SaveSettingsAsync(SaveSettingsRequest request, string? actor = null)
     {
         var (valid, error) = ValidateSettingsUpdate(request);
         if (!valid) return (false, error);
 
         if (request.MicrosoftSignIn is { } signInOnly && request.FeatureVisibility is not { Count: > 0 } && request.Logging is null
             && request.Admin?.ShowDiagnostics.HasValue != true && request.FrontendQualityEngines is null)
-            return await SaveMicrosoftSignInAsync(signInOnly);
+        {
+            var result = await SaveMicrosoftSignInAsync(signInOnly);
+            if (result.Success) await AppendConfigurationAuditAsync(actor, [], request);
+            return result;
+        }
 
         var path = System.IO.Path.Combine(_env.ContentRootPath, "appsettings.Local.json");
+        var featureChanges = new List<FeatureChange>();
 
         JsonObject root;
         try
@@ -471,16 +519,16 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         {
             var fvNode = root.TryGetPropertyValue("FeatureVisibility", out var existing)
                 && existing is JsonObject obj ? obj : new JsonObject();
-            var changes = new List<string>();
             foreach (var (key, value) in request.FeatureVisibility)
             {
                 if (PlatformFeatureKeys.Contains(key)) continue;
                 var before = _config.GetSection("FeatureVisibility").GetValue(key, FeatureDefault(key));
-                if (before != value) changes.Add($"{key}: {(before ? "on" : "off")} -> {(value ? "on" : "off")}");
+                if (before != value) featureChanges.Add(new(key, before, value));
                 fvNode[key] = JsonValue.Create(value);
             }
-            // Audit trail of who-changed-what is limited to the log: BirkNext has no user identity beyond the local session.
-            if (changes.Count > 0) _logger.LogInformation("Feature visibility changed by a local session: {Changes}", string.Join("; ", changes));
+            if (featureChanges.Count > 0)
+                _logger.LogInformation("Feature visibility changed by {Actor}: {Changes}", actor ?? "not attributed",
+                    string.Join("; ", featureChanges.Select(c => $"{c.Key}: {(c.Before ? "on" : "off")} -> {(c.After ? "on" : "off")}")));
             root["FeatureVisibility"] = fvNode;
         }
 
@@ -525,6 +573,7 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         catch (Exception ex) { _logger.LogWarning(ex, "IConfiguration reload after settings save encountered an issue"); }
 
         _logger.LogInformation("Local settings saved to {Path}", path);
+        await AppendConfigurationAuditAsync(actor, featureChanges, request);
         if (request.MicrosoftSignIn is { } signIn) return await SaveMicrosoftSignInAsync(signIn);
         return (true, "Settings saved. Feature visibility changes apply immediately. Logging changes require a backend restart.");
     }

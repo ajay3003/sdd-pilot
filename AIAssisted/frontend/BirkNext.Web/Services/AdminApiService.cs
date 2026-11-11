@@ -84,11 +84,21 @@ public class AdminApiService
         }
     }
 
+    /// <summary>Whether this session may change configuration (SystemConfiguration.Write), and why. Null when the backend does not say
+    /// (older backend or unreachable): the page then leaves editing to the backend, which enforces the permission on save either way.</summary>
+    public virtual async Task<ConfigurationAccessDto?> GetConfigurationAccessAsync()
+    {
+        try { return await _client.GetFromJsonAsync<ConfigurationAccessDto>("api/admin/configuration-access"); }
+        catch { return null; }
+    }
+
     public virtual async Task<(bool Success, string Message)> SaveSettingsAsync(SaveSettingsRequest request)
     {
         try
         {
             var response = await _client.PostAsJsonAsync("api/admin/system-settings", request);
+            if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden)
+                return (false, "Changing configuration is not permitted for this session (SystemConfiguration.Write). Nothing was saved.");
             var result = await response.Content.ReadFromJsonAsync<SaveSettingsResponse>();
             return (result?.Success == true, result?.Message ?? (response.IsSuccessStatusCode ? "Saved." : "Save failed."));
         }
@@ -442,6 +452,12 @@ public class SaveSettingsResponse
 {
     [JsonPropertyName("success")] public bool   Success { get; set; }
     [JsonPropertyName("message")] public string Message { get; set; } = "";
+}
+
+public sealed class ConfigurationAccessDto
+{
+    [JsonPropertyName("allowed")] public bool Allowed { get; set; }
+    [JsonPropertyName("reason")]  public string Reason { get; set; } = "";
 }
 
 public class FeatureVisibilityDto

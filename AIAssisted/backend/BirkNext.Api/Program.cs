@@ -134,7 +134,10 @@ builder.Services.AddAuthorization(options =>
         policy.AddRequirements(new BirkNext.Api.Services.ActiveEventTesting.IntegrationConfigurationWriteRequirement()));
     options.AddPolicy(BirkNext.Api.Services.WorkspaceTransfer.WorkspaceTransferPermissions.Policy, policy =>
         policy.AddRequirements(new BirkNext.Api.Services.WorkspaceTransfer.WorkspaceTransferRequirement()));
+    options.AddPolicy(BirkNext.Api.Services.LocalSecurity.SystemConfigurationPermissions.Policy, policy =>
+        policy.AddRequirements(new BirkNext.Api.Services.LocalSecurity.SystemConfigurationWriteRequirement()));
 });
+builder.Services.AddSingleton<IAuthorizationHandler, BirkNext.Api.Services.LocalSecurity.SystemConfigurationWriteHandler>();
 builder.Services.AddSingleton<IAuthorizationHandler, BirkNext.Api.Services.WorkspaceTransfer.WorkspaceTransferHandler>();
 
 var databaseConnectionString = DatabaseConnection.GetConnectionString(builder.Configuration);
