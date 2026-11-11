@@ -110,7 +110,8 @@ public sealed class WorkspacePackageRoundTripTests : IAsyncLifetime
         (await Read(db => db.ParquetRuleSets.Select(r => r.ApprovedBy).ToListAsync())).Should().Equal("Tester A");
         _destination.TestData.Assets().Select(a => a.Alias).Should().Equal("m2lb-report-xml");
         // History stays history: the decision and the run are imported records, not destination decisions or runs.
-        (await Read(db => db.ImportedHistoricalRecords.Select(h => h.Kind).ToListAsync())).Should().BeEquivalentTo(["contract-review-decision", "integration-suite-run", "execution-run"]);
+        (await Read(db => db.ImportedHistoricalRecords.Select(h => h.Kind).ToListAsync())).Should().BeEquivalentTo(["contract-review-decision", "integration-suite-run", "execution-run", "execution-run"],
+            "the suite's run and the contract test's own run (found through its DefinitionRef) are both history");
         (await Read(db => db.ExecutionRuns.CountAsync())).Should().Be(0);
         (await Read(db => db.IntegrationSuiteRuns.CountAsync())).Should().Be(0);
         (await Read(db => db.ContractReviewDecisions.CountAsync())).Should().Be(0);

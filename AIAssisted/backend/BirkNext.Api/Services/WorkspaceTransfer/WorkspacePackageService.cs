@@ -286,11 +286,24 @@ public sealed partial class WorkspacePackageService
         foreach (var run in runs)
         {
             AddHistory(closure, "integration-suite-run", run.Id.ToString(), null, null, run.StartedAt, run);
-            var execution = await _db.ExecutionRuns.AsNoTracking().FirstOrDefaultAsync(r => r.Id == run.RunId, ct);
-            if (execution is null) continue;
-            var calls = await _db.ExecutionCalls.AsNoTracking().Where(c => c.RunId == run.RunId).OrderBy(c => c.Sequence).ToListAsync(ct);
-            AddHistory(closure, "execution-run", execution.Id.ToString(), null, execution.EnvironmentId, execution.StartedAt, new { run = execution, calls });
+            if (await _db.ExecutionRuns.AsNoTracking().FirstOrDefaultAsync(r => r.Id == run.RunId, ct) is { } execution) await AddExecutionRunAsync(closure, execution, ct);
         }
+        // Runs of this package's contract tests (calls name the exact test: "contract-test:{id}@r{revision}").
+        var testIds = closure.Entries.Where(e => e.Object.Type == PackageTypes.Contract)
+            .SelectMany(e => e.Payload.Deserialize<ContractPayload>(Web)!.Tests.Select(t => t.Id.ToString())).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (testIds.Count == 0) return;
+        var calls = await _db.ExecutionCalls.AsNoTracking().Where(c => c.DefinitionRef != null && c.DefinitionRef.StartsWith("contract-test:"))
+            .Select(c => new { c.RunId, c.DefinitionRef }).ToListAsync(ct);
+        var testRuns = calls.Where(c => testIds.Contains(c.DefinitionRef!["contract-test:".Length..].Split('@')[0])).Select(c => c.RunId).Distinct().ToList();
+        foreach (var run in await _db.ExecutionRuns.AsNoTracking().Where(r => testRuns.Contains(r.Id)).OrderByDescending(r => r.StartedAt).Take(_options.MaxEvidenceRuns).ToListAsync(ct))
+            await AddExecutionRunAsync(closure, run, ct);
+    }
+
+    private async Task AddExecutionRunAsync(Closure closure, ExecutionRunRow run, CancellationToken ct)
+    {
+        if (closure.Has(PackageTypes.History, $"execution-run:{run.Id}")) return;
+        var calls = await _db.ExecutionCalls.AsNoTracking().Where(c => c.RunId == run.Id).OrderBy(c => c.Sequence).ToListAsync(ct);
+        AddHistory(closure, "execution-run", run.Id.ToString(), null, run.EnvironmentId, run.StartedAt, new { run, calls });
     }
 
     private static void AddHistory(Closure closure, string kind, string originalId, string? project, string? environment, DateTimeOffset? at, object document) =>
@@ -392,6 +405,9 @@ public sealed partial class WorkspacePackageService
         if (evidence)
         {
             await AddSuiteEvidenceAsync(closure, ct);
+            // Every recorded execution in this environment (contract tests, chains, suites): the most recent, bounded.
+            foreach (var run in await _db.ExecutionRuns.AsNoTracking().Where(r => r.EnvironmentId == environmentId).OrderByDescending(r => r.StartedAt).Take(_options.MaxEvidenceRuns).ToListAsync(ct))
+                await AddExecutionRunAsync(closure, run, ct);
             foreach (var run in _flows.History(environmentId, Math.Min(_options.MaxEvidenceRuns, 100)))
                 AddHistory(closure, "critical-e2e-run", run.RunId, null, environmentId, run.StartedAt, run);
             foreach (var run in await _db.IntegrationJourneyRuns.AsNoTracking().Where(r => r.EnvironmentId == environmentId).OrderByDescending(r => r.StartedAt).Take(_options.MaxEvidenceRuns).ToListAsync(ct))
