@@ -107,3 +107,179 @@ public sealed record RestoreReport
     public string Verdict { get; init; } = "";
     public string CutoverPolicy { get; init; } = "No cutover from BirkNext. Pointing the installation at the restored database is a separate administrative change in a maintenance window, after this report.";
 }
+
+// ───────────────────────────── Portable workspace packages (.birknext) ─────────────────────────────
+
+/// <summary>Dependency status in an export closure.</summary>
+public enum DependencyStatus { Included, ExternalReference, Missing, Optional, Unauthorized, Unsupported }
+
+/// <summary>How an object travels: plain configuration, configuration that must be revalidated in the destination, or history.</summary>
+public enum Portability { Portable, EnvironmentDependent, HistoricalEvidence, HistoricalDecision, CapabilityReference }
+
+/// <summary>Import classification of one object against the destination (before anything is written).</summary>
+public enum ImportStatus { New, Identical, NewerRevision, OlderRevision, ConflictingContent, MissingDependency, Unauthorized, Unsupported, EnvironmentRebindRequired }
+
+/// <summary>A person's decision for one object.</summary>
+public enum ImportAction { CreateNew, ReuseIdentical, ImportAsNewRevision, KeepExisting, SkipOptional, ResolveManually }
+
+/// <summary>What happens to the integration's environment in the destination. Never chosen by name.</summary>
+public enum EnvironmentMappingAction { LeaveUnresolved, ReuseVerified, CreateDisabled, SkipOptional }
+
+public enum ReconciliationStatus { Resolved, NeedsRevalidation, Unresolved, Unsupported }
+
+public sealed record PortableObjectRef(string Type, string LogicalId);
+
+/// <summary>One object in a package: type + logical identity (never a local database key as the identity), revision, owner, fingerprint of its
+/// canonical payload, the entry holding it, and what it needs.</summary>
+public sealed record PortableObject
+{
+    public string Type { get; init; } = "";
+    public string LogicalId { get; init; } = "";
+    public string Label { get; init; } = "";
+    public int? Revision { get; init; }
+    public string? OwningProject { get; init; }
+    public string? EnvironmentId { get; init; }
+    public Portability Portability { get; init; }
+    public string Fingerprint { get; init; } = "";
+    public string Path { get; init; } = "";
+    public IReadOnlyList<PortableObjectRef> Dependencies { get; init; } = [];
+}
+
+public sealed record DependencyEntry(PortableObjectRef From, PortableObjectRef To, DependencyStatus Status, bool Required, string Detail);
+
+public sealed record PackageManifest
+{
+    public string Format { get; init; } = "birknext-workspace-package";
+    public int PackageFormatVersion { get; init; } = 1;
+    public TransferKind ExportType { get; init; }
+    public string BirkNextApplicationVersion { get; init; } = "";
+    public string SourceCommit { get; init; } = "unknown";
+    public string ExporterInstanceId { get; init; } = "";
+    public DateTimeOffset ExportTimestamp { get; init; }
+    public string Label { get; init; } = "";
+    public IReadOnlyList<string> IncludedProjects { get; init; } = [];
+    public IReadOnlyList<string> IncludedIntegrationScopes { get; init; } = [];
+    /// <summary>Main schema migration head of the exporting installation.</summary>
+    public string SchemaVersion { get; init; } = "";
+    public IReadOnlyList<string> RequiredCapabilities { get; init; } = [];
+    /// <summary>Entry path → SHA-256 (the same values as integrity/hashes.json). Integrity only: an unsigned package proves nothing about who made it.</summary>
+    public IReadOnlyDictionary<string, string> ContentFingerprints { get; init; } = new Dictionary<string, string>();
+    public IReadOnlyList<DependencyEntry> DependencyManifest { get; init; } = [];
+    public string RedactionProfile { get; init; } = "none";
+    public string OptionalEvidencePolicy { get; init; } = "excluded";
+    /// <summary>COMPLETE (every required dependency resolved) or PARTIAL (explicitly labelled; never imported as a complete workspace).</summary>
+    public string Completeness { get; init; } = "COMPLETE";
+    public IReadOnlyList<string> Exclusions { get; init; } = [];
+    public string Authenticity { get; init; } = "UNSIGNED: content hashes prove integrity of the transfer, not its origin.";
+}
+
+public sealed record EnvironmentCandidate(string Id, string Name, string? EnvironmentType = null);
+
+public sealed record ExportRequest
+{
+    public TransferKind Kind { get; init; }
+    /// <summary>Project packages: the Source Analysis repository key.</summary>
+    public string? ProjectKey { get; init; }
+    /// <summary>Integration packages: the Target Environment id whose integration setup is exported.</summary>
+    public string? EnvironmentId { get; init; }
+    public bool IncludeEvidence { get; init; }
+    /// <summary>The browser's Target Environment profile (JSON) to carry as a disabled draft; sanitised again on the server.</summary>
+    public string? TargetProfileJson { get; init; }
+    /// <summary>Diagnostic: limit to one integration suite (SuiteKey) and/or one Critical E2E flow.</summary>
+    public string? SuiteKey { get; init; }
+    public string? FlowId { get; init; }
+    /// <summary>Acknowledge identifier-shaped values (11 digits) found in exported content; secrets are never exportable.</summary>
+    public bool AcknowledgeSensitive { get; init; }
+    /// <summary>Allow an explicitly PARTIAL package when required dependencies are missing.</summary>
+    public bool AllowPartial { get; init; }
+    public string? Label { get; init; }
+}
+
+public sealed record SecurityFinding(string Severity, string Location, string Finding);
+
+/// <summary>An integration stage as stored (composite source context stage → source project, systems). Only what exists is shown.</summary>
+public sealed record StageSummary(string Stage, string? SourceProject, int Systems, int Contracts, int Tests, string Status);
+
+public sealed record ExportPreview
+{
+    public TransferKind Kind { get; init; }
+    public string Scope { get; init; } = "";
+    public IReadOnlyDictionary<string, int> Counts { get; init; } = new Dictionary<string, int>();
+    public IReadOnlyList<PortableObject> Objects { get; init; } = [];
+    public IReadOnlyList<DependencyEntry> Dependencies { get; init; } = [];
+    public IReadOnlyList<string> RequiredCapabilities { get; init; } = [];
+    public IReadOnlyList<SecurityFinding> Security { get; init; } = [];
+    public IReadOnlyList<string> Excluded { get; init; } = [];
+    public IReadOnlyList<string> Blockers { get; init; } = [];
+    public IReadOnlyList<StageSummary> Stages { get; init; } = [];
+    public string Completeness { get; init; } = "COMPLETE";
+}
+
+public sealed record ExportResult(Guid OperationId, string FileName, string Sha256, long Bytes, PackageManifest Manifest, IReadOnlyList<SecurityFinding> Security);
+
+public sealed record ImportItem
+{
+    public string Key { get; init; } = "";
+    public string Type { get; init; } = "";
+    public string LogicalId { get; init; } = "";
+    public string Label { get; init; } = "";
+    public Portability Portability { get; init; }
+    public ImportStatus Status { get; init; }
+    public IReadOnlyList<ImportAction> AllowedActions { get; init; } = [];
+    public ImportAction DefaultAction { get; init; }
+    public string Detail { get; init; } = "";
+}
+
+public sealed record ImportEnvironmentMapping
+{
+    public string? ImportedEnvironmentId { get; init; }
+    public string? ImportedName { get; init; }
+    public IReadOnlyList<EnvironmentCandidate> Candidates { get; init; } = [];
+    public string Note { get; init; } = "";
+}
+
+public sealed record ImportPreview
+{
+    public Guid OperationId { get; init; }
+    public PackageManifest? Manifest { get; init; }
+    public IReadOnlyList<TransferCheck> Checks { get; init; } = [];
+    public IReadOnlyList<ImportItem> Items { get; init; } = [];
+    public ImportEnvironmentMapping? Environment { get; init; }
+    public IReadOnlyList<SecurityFinding> Security { get; init; } = [];
+    public IReadOnlyList<string> UnsupportedCapabilities { get; init; } = [];
+    public string PlanFingerprint { get; init; } = "";
+    public bool CanApply { get; init; }
+    public string Verdict { get; init; } = "";
+}
+
+public sealed record ImportApplyRequest
+{
+    public Guid OperationId { get; init; }
+    public string PlanFingerprint { get; init; } = "";
+    public Dictionary<string, ImportAction> Decisions { get; init; } = [];
+    public EnvironmentMappingAction EnvironmentAction { get; init; } = EnvironmentMappingAction.LeaveUnresolved;
+    public string? TargetEnvironmentId { get; init; }
+    public bool ImportEvidence { get; init; }
+}
+
+public sealed record ReconciliationItem(string Item, ReconciliationStatus Status, string Detail);
+public sealed record ReadinessDimension(string Dimension, string Status, string Detail);
+public sealed record IdentityMapping(string Type, string ImportedId, string DestinationId);
+
+public sealed record ImportReport
+{
+    public Guid OperationId { get; init; }
+    public string State { get; init; } = "";
+    public IReadOnlyList<string> Applied { get; init; } = [];
+    public IReadOnlyList<string> Skipped { get; init; } = [];
+    public IReadOnlyList<ReconciliationItem> Reconciliation { get; init; } = [];
+    public IReadOnlyList<ReadinessDimension> Readiness { get; init; } = [];
+    public IReadOnlyList<IdentityMapping> IdentityMap { get; init; } = [];
+    public int HistoricalRecords { get; init; }
+    public string? DestinationEnvironmentId { get; init; }
+    /// <summary>A sanitised Target Environment profile for the browser to save as a NEW, disabled draft (never merged into an existing profile).</summary>
+    public string? ProfileDraftJson { get; init; }
+    public string? Error { get; init; }
+}
+
+public sealed record TransferOperationSummary(Guid Id, string Kind, string State, string Scope, string Summary, string Actor, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string? PackageSha256, string? Error);

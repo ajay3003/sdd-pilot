@@ -74,7 +74,10 @@ public sealed partial class WorkspaceTransferController(FullBackupService backup
 
     private IActionResult Refused(TransferRequestException ex) => ex.Code switch
     {
-        "BUSY" => Conflict(new TransferError(ex.Code, ex.Message)),
+        "BUSY" or "DESTINATION_CHANGED" or "PLAN_CHANGED" or "STATE" => Conflict(new TransferError(ex.Code, ex.Message)),
+        "EXPORT_BLOCKED" or "REDACTION_INCOMPLETE" or "DECISION" or "ENVIRONMENT" => UnprocessableEntity(new TransferError(ex.Code, ex.Message)),
+        "PACKAGE_TOO_LARGE" => StatusCode(StatusCodes.Status413PayloadTooLarge, new TransferError(ex.Code, ex.Message)),
+        "EXPIRED" => StatusCode(StatusCodes.Status410Gone, new TransferError(ex.Code, ex.Message)),
         "NOT_FOUND" => NotFound(new TransferError(ex.Code, ex.Message)),
         "INSUFFICIENT_DISK_SPACE" => StatusCode(StatusCodes.Status507InsufficientStorage, new TransferError(ex.Code, ex.Message)),
         "TOOLS_UNAVAILABLE" or "TOOLS_NOT_CONFIGURED" => StatusCode(StatusCodes.Status503ServiceUnavailable, new TransferError(ex.Code, ex.Message)),

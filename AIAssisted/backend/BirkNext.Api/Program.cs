@@ -148,6 +148,19 @@ builder.Services.AddSingleton(sp =>
         sp.GetRequiredService<BirkNext.Api.Services.WorkspaceTransfer.ManagedFileStores>(), options, directory,
         () => BirkNext.Api.Services.WorkspaceTransfer.CodeMigrations.Read(scopeFactory), sp.GetRequiredService<ILogger<BirkNext.Api.Services.WorkspaceTransfer.FullBackupService>>());
 });
+// Portable workspace packages (project / integration / diagnostic): server-side dependency closures, two-phase import. Docs: docs/architecture/birknext-workspace-package-format.md.
+builder.Services.AddSingleton(sp => builder.Configuration.GetSection("WorkspaceTransfer").Get<BirkNext.Api.Services.WorkspaceTransfer.WorkspacePackageOptions>() ?? new());
+builder.Services.AddScoped(sp =>
+{
+    var options = sp.GetRequiredService<BirkNext.Api.Services.WorkspaceTransfer.WorkspacePackageOptions>();
+    var environment = sp.GetRequiredService<IWebHostEnvironment>();
+    var directory = options.Directory is { Length: > 0 } d ? d : System.IO.Path.Combine(environment.ContentRootPath, "App_Data", "transfer");
+    return new BirkNext.Api.Services.WorkspaceTransfer.WorkspacePackageService(sp.GetRequiredService<AppDbContext>(),
+        sp.GetRequiredService<BirkNext.Api.Services.CriticalE2E.ICriticalE2EStore>(), sp.GetRequiredService<BirkNext.Api.Services.TestData.TestDataRegistryStore>(),
+        sp.GetRequiredService<BirkNext.Api.Services.TestData.AuthoredTestDataStore>(), sp.GetRequiredService<BirkNext.Api.Services.ExternalIntegrations.EnvironmentSetupService>(),
+        sp.GetServices<BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyPack>(), options, directory,
+        sp.GetRequiredService<ILogger<BirkNext.Api.Services.WorkspaceTransfer.WorkspacePackageService>>());
+});
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(databaseConnectionString));

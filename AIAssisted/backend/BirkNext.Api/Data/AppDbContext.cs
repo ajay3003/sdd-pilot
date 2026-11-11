@@ -79,6 +79,8 @@ public class AppDbContext : DbContext
     public DbSet<ProjectActivityRecord> ProjectActivity => Set<ProjectActivityRecord>();
     public DbSet<EndpointDiscoveryRunRecord> EndpointDiscoveryRuns => Set<EndpointDiscoveryRunRecord>();
     public DbSet<ObservedOperationRecord> ObservedOperations => Set<ObservedOperationRecord>();
+    public DbSet<WorkspaceTransferOperationRecord> WorkspaceTransferOperations => Set<WorkspaceTransferOperationRecord>();
+    public DbSet<ImportedHistoricalRecord> ImportedHistoricalRecords => Set<ImportedHistoricalRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -1159,6 +1161,40 @@ public class AppDbContext : DbContext
             entity.Property(r => r.TestIdsJson).HasColumnType("text").IsRequired();
             entity.Property(r => r.PlanJson).HasColumnType("text");
             entity.HasIndex(r => new { r.SuiteKey, r.StartedAt });
+        });
+        // Backup & Transfer: operation log (plans, fingerprints, identity mapping, reports) and imported history (never destination runs or decisions).
+        modelBuilder.Entity<WorkspaceTransferOperationRecord>(entity =>
+        {
+            entity.ToTable("workspace_transfer_operations");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Kind).HasMaxLength(40).IsRequired();
+            entity.Property(r => r.State).HasMaxLength(40).IsRequired();
+            entity.Property(r => r.Actor).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.Scope).HasMaxLength(60).IsRequired();
+            entity.Property(r => r.Summary).HasMaxLength(500).IsRequired();
+            entity.Property(r => r.PackageSha256).HasMaxLength(64);
+            entity.Property(r => r.PlanFingerprint).HasMaxLength(64);
+            entity.Property(r => r.DestinationFingerprint).HasMaxLength(64);
+            entity.Property(r => r.PlanJson).HasColumnType("text");
+            entity.Property(r => r.ResultJson).HasColumnType("text");
+            entity.Property(r => r.Error).HasMaxLength(2000);
+            entity.Property(r => r.StagedPackage).HasMaxLength(200);
+            entity.HasIndex(r => r.CreatedAt);
+        });
+        modelBuilder.Entity<ImportedHistoricalRecord>(entity =>
+        {
+            entity.ToTable("imported_historical_records");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Kind).HasMaxLength(60).IsRequired();
+            entity.Property(r => r.OriginalId).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.OriginInstanceId).HasMaxLength(100).IsRequired();
+            entity.Property(r => r.OriginalProject).HasMaxLength(200);
+            entity.Property(r => r.OriginalEnvironmentId).HasMaxLength(200);
+            entity.Property(r => r.EnvironmentId).HasMaxLength(200);
+            entity.Property(r => r.DocumentJson).HasColumnType("text").IsRequired();
+            // Re-importing the same package never duplicates history: one row per origin, kind and original id.
+            entity.HasIndex(r => new { r.OriginInstanceId, r.Kind, r.OriginalId }).IsUnique();
+            entity.HasIndex(r => r.OperationId);
         });
         modelBuilder.Entity<CompositeSourceContextRecord>(entity =>
         {
