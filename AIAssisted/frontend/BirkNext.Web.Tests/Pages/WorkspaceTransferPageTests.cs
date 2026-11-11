@@ -71,12 +71,22 @@ public sealed class WorkspaceTransferPageTests : BunitContext
                 ProfileDraftJson = """{"id":"imported-1234abcd","name":"QA one","manualVerification":{"verified":true},"targetUrl":"https://app.example.invalid"}""",
             }, null));
         _api.Setup(a => a.BackupStatusAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new BackupStatusView(true, null, "pg_dump (PostgreSQL) 16.13", "pg_restore 16.13", "ContainerExec", "x",
-            ["critical-e2e/flows.json"], [new("App_Data/api-service-credentials", StorageClass.SecretStore, "DPAPI")], "1.0.0", "fe12e79ed50ee02ca076ad715be495ddf9944873"), null));
+            ["critical-e2e/flows.json"], [new("App_Data/api-service-credentials", StorageClass.SecretStore, "DPAPI")], "1.0.0", "fe12e79ed50ee02ca076ad715be495ddf9944873", ReadyReadiness), null));
         _api.Setup(a => a.BackupsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(([new BackupSummary("b.bnbackup", Guid.NewGuid(), DateTimeOffset.UtcNow, 4 << 20, "1.0.0", "16.13 (Debian)", new Dictionary<string, string>(), "")], null));
         _api.Setup(a => a.RestoresAsync(It.IsAny<CancellationToken>())).ReturnsAsync(([], null));
         _api.Setup(a => a.PackageDownloadUrl(It.IsAny<string>())).Returns((string f) => $"http://localhost/x/{f}");
         _api.Setup(a => a.BackupDownloadUrl(It.IsAny<string>())).Returns((string f) => $"http://localhost/b/{f}");
     }
+
+    private static readonly BackupReadiness ReadyReadiness = new()
+    {
+        Backup = BackupReadinessStatus.Ready, Restore = BackupReadinessStatus.Ready, RuntimeProfile = "Developer (containers)", ToolProvider = "Container exec",
+        SearchLocations = ["podman container birknext-studio-local_postgres_1"], DumpToolVersion = "pg_dump (PostgreSQL) 16.13", RestoreToolVersion = "pg_restore (PostgreSQL) 16.13",
+        ServerVersion = "16.13 (Debian)", CheckedAt = DateTimeOffset.UtcNow,
+        Items = [new("database", "Database", BackupReadinessStatus.Ready, "Connected · PostgreSQL 16.13"), new("pg_dump", "pg_dump", BackupReadinessStatus.Ready, "pg_dump (PostgreSQL) 16.13"),
+            new("pg_restore", "pg_restore", BackupReadinessStatus.Ready, "pg_restore (PostgreSQL) 16.13"), new("identity", "Container identity", BackupReadinessStatus.Ready, "same server"),
+            new("compatibility", "Version compatibility", BackupReadinessStatus.Ready, "pg_dump 16 can dump PostgreSQL 16"), new("restore-destination", "Restore destination", BackupReadinessStatus.Ready, "may create")],
+    };
 
     private IRenderedComponent<TransferPage> Open(string query)
     {
@@ -166,16 +176,45 @@ public sealed class WorkspaceTransferPageTests : BunitContext
     }
 
     [Fact]
-    public void The_backup_area_states_what_is_excluded_and_requires_matching_passphrases()
+    public void The_backup_area_leads_with_readiness_states_exclusions_and_requires_matching_passphrases()
     {
         var page = Open("?area=backup");
-        page.Find("[data-testid=wtx-backup-status]").TextContent.Should().Contain("Available").And.Contain("fe12e79ed50e");
-        page.Find("[data-testid=wtx-backup]").TextContent.Should().Contain("api-service-credentials").And.Contain("cannot be opened by anyone");
-        page.Find("[data-testid=wtx-passphrase]").Change("synthetic passphrase 1");
-        page.Find("[data-testid=wtx-passphrase2]").Change("synthetic passphrase 2");
+        page.Find("[data-testid=wtx-backup-ready]").TextContent.Should().Be("Backup: Ready");
+        page.Find("[data-testid=wtx-ready-tools]").TextContent.Should().Contain("Ready").And.Contain("pg_dump 16.13").And.Contain("Container exec");
+        page.Find("[data-testid=wtx-backup-status]").TextContent.Should().Contain("1 found");
+        page.Find("[data-testid=wtx-readiness-details]").TextContent.Should().Contain("fe12e79ed50e").And.Contain("Container identity");
+        page.Find("[data-testid=wtx-exclusions]").TextContent.Should().Contain("api-service-credentials");
+        page.Find("[data-testid=wtx-backup]").TextContent.Should().Contain("nobody can open the backup");
+        page.FindAll("[data-testid=wtx-backup-blocker]").Should().BeEmpty("nothing blocks a ready backup");
+        page.Find("[data-testid=wtx-create-reason]").TextContent.Should().Contain("at least 12 characters", "the action explains why it is disabled");
+        page.Find("[data-testid=wtx-passphrase]").Input("synthetic passphrase 1");
+        page.Find("[data-testid=wtx-passphrase2]").Input("synthetic passphrase 2");
+        page.Find("[data-testid=wtx-pass-state]").TextContent.Should().Contain("different");
+        page.Find("[data-testid=wtx-create-backup]").HasAttribute("disabled").Should().BeTrue();
         page.Find("[data-testid=wtx-backup-form]").Submit();
-        page.WaitForAssertion(() => page.Find("[data-testid=wtx-error]").TextContent.Should().Contain("different"));
         _api.Verify(a => a.CreateBackupAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
-        page.Find("[data-testid=wtx-backups]").TextContent.Should().Contain("no switch-over button");
+        page.Find("[data-testid=wtx-restore-assurance]").TextContent.Should().Contain("The current BirkNext installation will not be changed");
     }
+
+    [Fact]
+    public void Missing_tools_explain_where_BirkNext_looked_and_offer_retry_never_a_silent_disabled_button()
+    {
+        var missing = ReadyReadiness with
+        {
+            Backup = BackupReadinessStatus.Unavailable, Restore = BackupReadinessStatus.Unavailable, ToolProvider = "PATH", SearchLocations = ["PATH"], DumpToolVersion = null, RestoreToolVersion = null,
+            BackupBlocker = "pg_dump could not be started (PATH: PATH).",
+            Items = [new("database", "Database", BackupReadinessStatus.Ready, "Connected"), new("pg_dump", "pg_dump", BackupReadinessStatus.Unavailable, "pg_dump could not be started (PATH: PATH)."),
+                new("pg_restore", "pg_restore", BackupReadinessStatus.Unavailable, "x"), new("compatibility", "Version compatibility", BackupReadinessStatus.NotChecked, "Not checked")],
+        };
+        _api.Setup(a => a.BackupStatusAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new BackupStatusView(true, null, null, null, "Host", "x", [], [], "1.0.0", "abc", missing), null));
+        var page = Open("?area=backup");
+        page.Find("[data-testid=wtx-backup-ready]").TextContent.Should().Be("Backup: Unavailable");
+        page.Find("[data-testid=wtx-backup-blocker]").TextContent.Should().Contain("PostgreSQL backup tools could not be found").And.Contain("Looked in").And.Contain("PATH");
+        page.Find("[data-testid=wtx-create-reason]").TextContent.Should().StartWith("Backups cannot run yet");
+        page.Find("[data-testid=wtx-create-backup]").HasAttribute("disabled").Should().BeTrue();
+        page.Find("[data-testid=wtx-restore-blocker]").TextContent.Should().Contain("cannot run here yet");
+        page.Find("[data-testid=wtx-retry-detection]").Click();
+        _api.Verify(a => a.BackupStatusAsync(It.IsAny<CancellationToken>()), Times.AtLeast(2), "Retry detection asks the backend again");
+    }
+
 }

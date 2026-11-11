@@ -289,39 +289,111 @@
 
         case "backup":
             <section class="wtx-card" aria-labelledby="wtx-backup-h" data-testid="wtx-backup">
-                <h2 id="wtx-backup-h">Full backup</h2>
+                <div class="wtx-backup-top">
+                    <div>
+                        <h2 id="wtx-backup-h">Full backup</h2>
+                        <p class="wtx-muted">The whole database and the managed file stores, always encrypted. Restores go into a new, isolated database.</p>
+                    </div>
+                    @if (Readiness is { } rd)
+                    {
+                        <span class="wtx-pill wtx-pill-lg @ReadyClass(rd.Backup)" data-testid="wtx-backup-ready">Backup: @ReadyLabel(rd.Backup)</span>
+                    }
+                </div>
                 @if (_status is { } st)
                 {
-                    <dl class="wtx-facts" data-testid="wtx-backup-status">
-                        <div><dt>PostgreSQL tools</dt><dd><span class="wtx-pill @(st.DumpToolVersion is null ? "wtx-bad" : "wtx-ok")">@(st.DumpToolVersion is null ? "Not available" : "Available")</span> @(st.DumpToolVersion ?? st.ToolProblem)</dd></div>
-                        <div><dt>Mode</dt><dd>@st.Mode</dd></div>
-                        <div><dt>Managed files now</dt><dd>@st.ManagedFiles.Count</dd></div>
-                        <div><dt>BirkNext</dt><dd>@st.ApplicationVersion <span class="wtx-mono">@ShortCommit(st.ApplicationCommit)</span></dd></div>
-                    </dl>
-                    <details class="wtx-details"><summary>What a backup contains and leaves out</summary>
-                        <p>Every database table (PostgreSQL custom-format dump from one consistent snapshot) and the managed file stores: @string.Join(", ", st.ManagedFiles).</p>
+                    <ul class="wtx-ready-grid" aria-label="Backup readiness" data-testid="wtx-backup-status">
+                        <li><span class="wtx-ready-name">Database</span><span class="wtx-pill @ReadyClass(Item("database"))">@ReadyLabel(Item("database"))</span>
+                            <span class="wtx-muted">@(Readiness?.ServerVersion is { } sv ? $"PostgreSQL {sv.Split(' ')[0]}" : "Not reachable")</span></li>
+                        <li data-testid="wtx-ready-tools"><span class="wtx-ready-name">Backup tools</span><span class="wtx-pill @ReadyClass(ToolsStatus)">@ReadyLabel(ToolsStatus)</span>
+                            <span class="wtx-muted">@ToolSummary</span></li>
+                        <li data-testid="wtx-ready-restore"><span class="wtx-ready-name">Isolated restore</span><span class="wtx-pill @ReadyClass(Readiness?.Restore ?? BackupReadinessStatus.NotChecked)">@ReadyLabel(Readiness?.Restore ?? BackupReadinessStatus.NotChecked)</span>
+                            <span class="wtx-muted">@(RestoreReady ? "New database, separate folder" : "See readiness details")</span></li>
+                        <li><span class="wtx-ready-name">Managed files</span><span class="wtx-pill wtx-info">@st.ManagedFiles.Count found</span>
+                            <span class="wtx-muted">Files that exist now; missing stores are not counted</span></li>
+                        <li><span class="wtx-ready-name">Encryption</span><span class="wtx-pill wtx-info">Required</span>
+                            <span class="wtx-muted">Passphrase-protected; never stored</span></li>
+                    </ul>
+                    @if (Readiness is { } r && r.Backup != BackupReadinessStatus.Ready)
+                    {
+                        <div class="wtx-blocker" role="status" data-testid="wtx-backup-blocker">
+                            <strong>@(ToolsMissing ? "PostgreSQL backup tools could not be found." : "Backups cannot run yet.")</strong>
+                            <span>@r.BackupBlocker</span>
+                            <dl class="wtx-facts wtx-facts-tight">
+                                <div><dt>Runtime</dt><dd>@r.RuntimeProfile</dd></div>
+                                <div><dt>Expected tools</dt><dd>pg_dump, pg_restore</dd></div>
+                                <div><dt>Looked in</dt><dd class="wtx-mono">@string.Join(" · ", r.SearchLocations) (@r.ToolProvider)</dd></div>
+                            </dl>
+                            <div class="wtx-actions">
+                                <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="RetryDetection" data-testid="wtx-retry-detection">Retry detection</button>
+                                <a class="wtx-link" href="user-guide#workspace-transfer">How to set up backups</a>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="wtx-actions"><button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="RetryDetection" data-testid="wtx-retry-detection">Check again</button></div>
+                    }
+                    <details class="wtx-details" data-testid="wtx-readiness-details"><summary>Readiness details</summary>
+                        <ul class="wtx-checks">
+                            @foreach (var i in Readiness?.Items ?? [])
+                            {
+                                <li><span class="wtx-pill @ReadyClass(i.Status)">@ReadyLabel(i.Status)</span> <strong>@i.Name</strong> — @i.Detail</li>
+                            }
+                        </ul>
+                        @if (Readiness is { } rr) { <p class="wtx-muted">Checked @rr.CheckedAt.ToLocalTime().ToString("HH:mm:ss") · @rr.RuntimeProfile · BirkNext @st.ApplicationVersion <span class="wtx-mono">@ShortCommit(st.ApplicationCommit)</span></p> }
+                    </details>
+                    <div class="wtx-scope" data-testid="wtx-backup-scope">
+                        <div><span class="wtx-pill wtx-ok">Included</span> Database (one consistent snapshot) + managed file stores</div>
+                        <div><span class="wtx-pill wtx-neutral">Excluded</span> Credentials, sessions, private keys and temporary data</div>
+                    </div>
+                    <details class="wtx-details" data-testid="wtx-included"><summary>View included files (@st.ManagedFiles.Count)</summary>
+                        <ul class="wtx-list wtx-mono">@foreach (var f in st.ManagedFiles) { <li>@f</li> }</ul>
+                    </details>
+                    <details class="wtx-details" data-testid="wtx-exclusions"><summary>View exclusions and why (@st.Excluded.Count)</summary>
                         <ul class="wtx-list">@foreach (var x in st.Excluded) { <li><strong>@x.Component</strong> — @x.Reason</li> }</ul>
                     </details>
                 }
                 <form class="wtx-form" @onsubmit="CreateBackup" @onsubmit:preventDefault data-testid="wtx-backup-form">
                     <div class="wtx-grid2">
-                        <label class="wtx-field">Passphrase (at least 12 characters) <input type="password" autocomplete="new-password" @bind="_passphrase" data-testid="wtx-passphrase" /></label>
-                        <label class="wtx-field">Repeat passphrase <input type="password" autocomplete="new-password" @bind="_passphrase2" data-testid="wtx-passphrase2" /></label>
+                        <label class="wtx-field">Passphrase <span class="wtx-hint">at least 12 characters</span>
+                            <input type="@(_showPassphrase ? "text" : "password")" autocomplete="new-password" @bind="_passphrase" @bind:event="oninput" data-testid="wtx-passphrase"
+                                   aria-invalid="@(PassphraseTooShort ? "true" : "false")" /></label>
+                        <label class="wtx-field">Repeat passphrase
+                            <input type="@(_showPassphrase ? "text" : "password")" autocomplete="new-password" @bind="_passphrase2" @bind:event="oninput" data-testid="wtx-passphrase2"
+                                   aria-invalid="@(PassphraseMismatch ? "true" : "false")" aria-describedby="wtx-pass-state" /></label>
+                    </div>
+                    <div class="wtx-actions">
+                        <label class="wtx-check"><input type="checkbox" @bind="_showPassphrase" data-testid="wtx-show-passphrase" /> Show passphrase</label>
+                        <span id="wtx-pass-state" class="@(PassphraseMismatch ? "wtx-field-error" : "wtx-muted")" aria-live="polite" data-testid="wtx-pass-state">@PassphraseState</span>
                     </div>
                     <label class="wtx-field">Note (optional) <input @bind="_note" maxlength="200" data-testid="wtx-note" /></label>
-                    <p class="wtx-warning">Backups are always encrypted. BirkNext does not keep the passphrase: if it is lost, the backup cannot be opened by anyone.</p>
-                    <div class="wtx-actions"><button class="btn btn-primary" type="submit" disabled="@(_busy || _status?.DumpToolVersion is null)" data-testid="wtx-create-backup">Create full backup</button></div>
+                    <p class="wtx-warning">BirkNext does not keep the passphrase. If it is lost, nobody can open the backup.</p>
+                    <div class="wtx-actions">
+                        <button class="btn btn-primary" type="submit" disabled="@(_busy || CreateBlockedReason is not null)" aria-describedby="wtx-create-reason" data-testid="wtx-create-backup">Create encrypted backup</button>
+                        <span id="wtx-create-reason" class="wtx-muted" data-testid="wtx-create-reason">@CreateBlockedReason</span>
+                    </div>
+                    @if (_creating)
+                    {
+                        <div class="wtx-progress" role="status" aria-live="polite" data-testid="wtx-backup-progress">
+                            <span class="wtx-spinner" aria-hidden="true"></span>
+                            <span>Creating the backup on the server: database export, managed files, encryption and verification. It is listed below only after the final check.</span>
+                        </div>
+                    }
                 </form>
             </section>
 
             <section class="wtx-card" aria-labelledby="wtx-backups-h" data-testid="wtx-backups">
                 <h2 id="wtx-backups-h">Backups and isolated restore</h2>
-                <p class="wtx-muted">A restore always goes into a new database and a separate folder, then BirkNext checks it against the backup's own inventory. The running installation is never changed, and there is no switch-over button.</p>
+                <p class="wtx-assure" data-testid="wtx-restore-assurance"><strong>The current BirkNext installation will not be changed.</strong> A restore always goes into a new database and a separate folder, then BirkNext checks it against the backup's own inventory. There is no switch-over.</p>
+                @if (Readiness is { } rs && rs.Restore != BackupReadinessStatus.Ready)
+                {
+                    <p class="wtx-warning" data-testid="wtx-restore-blocker">Isolated restore cannot run here yet: @rs.RestoreBlocker</p>
+                }
                 @if (_backups.Count == 0) { <p class="wtx-muted">No backups yet.</p> }
                 <ul class="wtx-backuplist">
                     @foreach (var b in _backups)
                     {
-                        <li data-testid="wtx-backup-row">
+                        <li data-testid="wtx-backup-row" data-file="@b.FileName">
                             <div class="wtx-backup-head">
                                 <strong>@b.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</strong>
                                 <span class="wtx-muted">@Size(b.Bytes) · BirkNext @b.ApplicationVersion · PostgreSQL @b.DatabaseServerVersion.Split(' ')[0]@(string.IsNullOrEmpty(b.Note) ? "" : $" · {b.Note}")</span>
@@ -336,7 +408,7 @@
                                     <label class="wtx-field">Backup passphrase <input type="password" autocomplete="off" @bind="_restorePassphrase" data-testid="wtx-restore-passphrase" /></label>
                                     <div class="wtx-actions">
                                         <button class="btn btn-secondary" disabled="@_busy" @onclick="() => InspectBackup(b.FileName)" data-testid="wtx-inspect">Verify</button>
-                                        <button class="btn btn-primary" disabled="@(_busy || string.IsNullOrEmpty(_restorePassphrase))" @onclick="() => Restore(b.FileName)" data-testid="wtx-restore">Restore into a new isolated database</button>
+                                        <button class="btn btn-primary" disabled="@(_busy || string.IsNullOrEmpty(_restorePassphrase) || !RestoreReady)" @onclick="() => Restore(b.FileName)" data-testid="wtx-restore">Restore into a new isolated database</button>
                                     </div>
                                     @if (_inspection is { } ins)
                                     {

@@ -218,6 +218,9 @@ public sealed class TesterLauncherTests
         env["Authorization__LocalTrustedExecution"].Should().Be("true", "the single-user tester runs its own tests; the backend still checks loopback, Host, Origin and the session");
         env["PerformanceTests__Native__K6Path"].Should().Be(Path.Combine("C:\\Pkg\\BirkNext-Tester", "runtime", "k6", "k6.exe"));
         env["PerformanceTests__Native__K6Sha256"].Should().Be(new string('c', 64));
+        // In-app Backup & Transfer uses the package's bundled pg_dump/pg_restore (the root cause of "PostgreSQL tools: Not available" in the package).
+        env["Backup__PostgresTools__Mode"].Should().Be("Host");
+        env["Backup__PostgresTools__BinDirectory"].Should().Be(Path.Combine("C:\\Pkg\\BirkNext-Tester", "runtime", "postgresql", "bin"), "never the global PATH");
         new Npgsql.NpgsqlConnectionStringBuilder(env["ConnectionStrings__Default"]).Should().Match<Npgsql.NpgsqlConnectionStringBuilder>(b =>
             b.Host == "127.0.0.1" && b.Port == 55433 && b.Database == credentials.Database && b.Username == credentials.AppUser, "only the launcher-managed database, as its own non-superuser role");
         env["ASPNETCORE_URLS"].Should().Be("http://localhost:5480");

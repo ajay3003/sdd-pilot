@@ -151,7 +151,8 @@ builder.Services.AddSingleton(sp =>
     var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
     return new BirkNext.Api.Services.WorkspaceTransfer.FullBackupService(databaseConnectionString, sp.GetRequiredService<BirkNext.Api.Services.WorkspaceTransfer.PostgresTools>(),
         sp.GetRequiredService<BirkNext.Api.Services.WorkspaceTransfer.ManagedFileStores>(), options, directory,
-        () => BirkNext.Api.Services.WorkspaceTransfer.CodeMigrations.Read(scopeFactory), sp.GetRequiredService<ILogger<BirkNext.Api.Services.WorkspaceTransfer.FullBackupService>>());
+        () => BirkNext.Api.Services.WorkspaceTransfer.CodeMigrations.Read(scopeFactory), sp.GetRequiredService<ILogger<BirkNext.Api.Services.WorkspaceTransfer.FullBackupService>>(),
+        profile: BirkNext.Api.Services.SystemInfo.RuntimeEnvironmentService.Resolve(builder.Configuration).Profile);
 });
 // Portable workspace packages (project / integration / diagnostic): server-side dependency closures, two-phase import. Docs: docs/architecture/birknext-workspace-package-format.md.
 builder.Services.AddSingleton(sp => builder.Configuration.GetSection("WorkspaceTransfer").Get<BirkNext.Api.Services.WorkspaceTransfer.WorkspacePackageOptions>() ?? new());

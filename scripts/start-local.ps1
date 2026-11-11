@@ -458,6 +458,23 @@ function Test-PostgresConnection {
     }
 }
 
+# The compose project's own PostgreSQL container (compose labels: project + service), for Backup & Transfer's pg_dump/pg_restore.
+# Exactly one match or nothing: never a name guess. The backend still verifies that this container is the server it is connected to.
+function Get-ComposePostgresContainer {
+    $projectName = if (-not [string]::IsNullOrWhiteSpace($env:COMPOSE_PROJECT_NAME)) { $env:COMPOSE_PROJECT_NAME } else { "birknext-studio-local" }
+    foreach ($rt in @("podman", "docker")) {
+        if (-not (Command-Exists $rt)) { continue }
+        try {
+            $r = Invoke-NativeCommand -Executable $rt -Arguments @("ps", "--filter", "label=com.docker.compose.project=$projectName", "--filter", "label=com.docker.compose.service=postgres", "--format", "{{.Names}}")
+            if ($r.ExitCode -ne 0) { continue }
+            $names = @($r.Stdout -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+            if ($names.Count -eq 1) { return @{ Runtime = $rt; Name = $names[0] } }
+        }
+        catch { }
+    }
+    return $null
+}
+
 function Detect-ExistingBirkNextDatabase {
     param([int]$Port = 5432)
 
@@ -930,6 +947,17 @@ function Start-DotNetProcessLogged {
     # Set backend environment variables — inherited by the child process
     # This launcher is the DeveloperContainer runtime profile (PostgreSQL and k6 in containers); the Tester Package uses Start-BirkNext.exe.
     if ($Name -eq "Backend") { $env:BirkNext__RuntimeProfile = "DeveloperContainer" }
+    # Backup & Transfer: run pg_dump/pg_restore inside this compose project's PostgreSQL container (no host PostgreSQL tools needed).
+    # An explicit Backup__PostgresTools__Mode in the environment (or appsettings) wins.
+    if ($Name -eq "Backend" -and [string]::IsNullOrWhiteSpace($env:Backup__PostgresTools__Mode)) {
+        $pg = Get-ComposePostgresContainer
+        if ($pg) {
+            $env:Backup__PostgresTools__Mode      = "ContainerExec"
+            $env:Backup__PostgresTools__Runtime   = $pg.Runtime
+            $env:Backup__PostgresTools__Container = $pg.Name
+            Info "Backup tools: pg_dump/pg_restore inside $($pg.Name)"
+        }
+    }
     if ($Name -eq "Backend" -and -not [string]::IsNullOrWhiteSpace($script:BackendConnectionString)) {
         $env:ConnectionStrings__Default = $script:BackendConnectionString
         $env:POSTGRES_DB                = $script:PostgresConfig.Database

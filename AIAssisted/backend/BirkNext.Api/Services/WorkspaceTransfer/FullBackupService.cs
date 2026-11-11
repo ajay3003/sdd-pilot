@@ -54,10 +54,13 @@ public sealed class FullBackupService
     private readonly Func<IReadOnlyDictionary<string, IReadOnlyList<string>>> _codeMigrations;
     private readonly ILogger _logger;
     private readonly TimeProvider _clock;
+    private readonly BirkNext.BuildInfo.RuntimeProfile _profile;
 
     public FullBackupService(string connectionString, PostgresTools tools, ManagedFileStores files, FullBackupOptions options, string backupDirectory,
-        Func<IReadOnlyDictionary<string, IReadOnlyList<string>>> codeMigrations, ILogger<FullBackupService> logger, TimeProvider? clock = null)
+        Func<IReadOnlyDictionary<string, IReadOnlyList<string>>> codeMigrations, ILogger<FullBackupService> logger, TimeProvider? clock = null,
+        BirkNext.BuildInfo.RuntimeProfile profile = BirkNext.BuildInfo.RuntimeProfile.DeveloperContainer)
     {
+        _profile = profile;
         _connectionString = connectionString;
         _tools = tools;
         _files = files;
@@ -69,6 +72,17 @@ public sealed class FullBackupService
     }
 
     public string BackupDirectory { get; }
+
+    /// <summary>Whether backup and isolated restore can run right now, from the real tools and the real server (see <see cref="PostgresToolReadiness"/>).</summary>
+    public Task<BackupReadiness> ReadinessAsync(CancellationToken ct) => PostgresToolReadiness.EvaluateAsync(_tools, _connectionString, _profile, _clock, ct);
+
+    private static string RefusalCode(BackupReadinessStatus status) => status switch
+    {
+        BackupReadinessStatus.Incompatible => "TOOLS_INCOMPATIBLE",
+        BackupReadinessStatus.Blocked => "TOOLS_BLOCKED",
+        _ => "TOOLS_UNAVAILABLE",
+    };
+
     private string RestoreRoot => Path.Combine(BackupDirectory, "restores");
 
     /// <summary>The running build (version without build metadata, and commit) from the one build-information provider.</summary>
@@ -87,8 +101,10 @@ public sealed class FullBackupService
         if (!await Gate.WaitAsync(TimeSpan.Zero, ct)) throw new TransferRequestException("BUSY", "Another backup or restore is running; try again when it finishes.");
         try
         {
-            var dumpVersion = await _tools.VersionAsync("pg_dump", ct)
-                ?? throw new TransferRequestException("TOOLS_UNAVAILABLE", "pg_dump could not be started. Configure Backup:PostgresTools (Host with BinDirectory, or ContainerExec with the database container).");
+            var readiness = await ReadinessAsync(ct);
+            if (readiness.Backup != BackupReadinessStatus.Ready)
+                throw new TransferRequestException(RefusalCode(readiness.Backup), readiness.BackupBlocker ?? "Backup is not ready.");
+            var dumpVersion = readiness.DumpToolVersion!;
             EnsureDirectory(BackupDirectory);
             var connection = new NpgsqlConnectionStringBuilder(_connectionString) { Pooling = false };
             await EnsureDiskSpaceAsync(connection, ct);
@@ -424,6 +440,9 @@ public sealed class FullBackupService
         if (string.IsNullOrEmpty(passphrase)) throw new TransferRequestException("PASSPHRASE", "The backup passphrase is required.");
         if (_tools.ConfigurationProblem() is { } tool) throw new TransferRequestException("TOOLS_NOT_CONFIGURED", tool);
         var path = ResolveBackup(fileName);
+        var readiness = await ReadinessAsync(ct);
+        if (readiness.Restore != BackupReadinessStatus.Ready)
+            throw new TransferRequestException(RefusalCode(readiness.Restore), readiness.RestoreBlocker ?? "Isolated restore is not ready.");
         if (!await Gate.WaitAsync(TimeSpan.Zero, ct)) throw new TransferRequestException("BUSY", "Another backup or restore is running; try again when it finishes.");
         var restoreId = Guid.NewGuid();
         var dir = Path.Combine(RestoreRoot, restoreId.ToString("N"));
@@ -432,6 +451,8 @@ public sealed class FullBackupService
         {
             var staging = Path.Combine(dir, "staging");
             var (manifest, checks) = await DecryptAndVerifyAsync(path, passphrase, staging, ct);
+            if (manifest is not null && PostgresToolReadiness.RestoreToolProblem(readiness.RestoreToolVersion, manifest.DumpToolVersion) is { } toolProblem)
+                checks.Add(new("Restore tool", TransferCheckStatus.Fail, toolProblem));
             if (manifest is null || checks.Any(c => c.Status == TransferCheckStatus.Fail))
                 return Persist(dir, new RestoreReport { RestoreId = restoreId, BackupFileName = fileName, StartedAt = started, FinishedAt = _clock.GetUtcNow(), Checks = checks, Verdict = "FAILED" });
 

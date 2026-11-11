@@ -80,6 +80,9 @@ internal sealed class BackendProcess(PackageLayout package, DataLayout data, Lau
         ["PerformanceTests__Runner"] = "Native",
         ["PerformanceTests__Native__K6Path"] = package.K6Exe,
         ["PerformanceTests__Native__K6Sha256"] = package.Manifest.K6.Sha256,
+        // Backup & Transfer: pg_dump/pg_restore are the package's own bundled tools (same build as the managed server), never the global PATH.
+        ["Backup__PostgresTools__Mode"] = "Host",
+        ["Backup__PostgresTools__BinDirectory"] = package.PostgresBin,
         ["BIRKNEXT_APP_DATA_DIR"] = data.AppData,
         ["LoggingSettings__LogPath"] = Path.Combine(data.Logs, "backend"),
         ["GitSources__SettingsDirectory"] = Path.Combine(data.AppData, "git-sources"),
@@ -91,7 +94,8 @@ internal sealed class BackendProcess(PackageLayout package, DataLayout data, Lau
             throw new LauncherException("This BirkNext package is incomplete: the BirkNext service is missing.", "Download the BirkNext Tester Package again and extract the whole archive.");
         var info = new ProcessStartInfo(package.BackendExe) { WorkingDirectory = package.Backend, UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (var key in info.Environment.Keys.Where(k => k.StartsWith("ConnectionStrings__", StringComparison.OrdinalIgnoreCase) || k.StartsWith("BirkNext__", StringComparison.OrdinalIgnoreCase)
-                     || k.StartsWith("PerformanceTests__", StringComparison.OrdinalIgnoreCase) || k.StartsWith("ASPNETCORE_", StringComparison.OrdinalIgnoreCase)).ToList())
+                     || k.StartsWith("PerformanceTests__", StringComparison.OrdinalIgnoreCase) || k.StartsWith("ASPNETCORE_", StringComparison.OrdinalIgnoreCase)
+                     || k.StartsWith("Backup__", StringComparison.OrdinalIgnoreCase)).ToList())
             info.Environment.Remove(key);
         foreach (var (k, v) in Environment(package, data, ports, credentials)) info.Environment[k] = v;
         Directory.CreateDirectory(data.Logs);

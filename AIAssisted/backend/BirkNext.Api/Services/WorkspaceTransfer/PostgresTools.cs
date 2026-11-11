@@ -26,6 +26,8 @@ public sealed class PostgresToolOptions
 
 public sealed class PostgresTools(PostgresToolOptions options)
 {
+    public PostgresToolOptions Options => options;
+
     public bool ContainerMode => string.Equals(options.Mode, "ContainerExec", StringComparison.OrdinalIgnoreCase);
 
     public string? ConfigurationProblem() =>
@@ -39,6 +41,22 @@ public sealed class PostgresTools(PostgresToolOptions options)
         try
         {
             var (exit, stdout, _) = await RunCapturedAsync(tool, ["--version"], connection: null, ct);
+            return exit == 0 ? stdout.Trim() : null;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException) { return null; }
+    }
+
+    /// <summary>
+    /// Container mode only: runs one read-only query with psql inside the configured container (local socket, the connection string's user and
+    /// database) and returns its single value, or null when the container cannot be queried. Used to prove the container is BirkNext's server.
+    /// </summary>
+    public async Task<string?> QueryInContainerAsync(NpgsqlConnectionStringBuilder connection, string sql, CancellationToken ct)
+    {
+        if (!ContainerMode) return null;
+        try
+        {
+            var (exit, stdout, _) = await RunCapturedAsync("psql",
+                ["--no-psqlrc", "--tuples-only", "--no-align", $"--username={connection.Username}", $"--dbname={connection.Database}", $"--command={sql}"], connection: null, ct);
             return exit == 0 ? stdout.Trim() : null;
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException) { return null; }

@@ -161,6 +161,15 @@
         <li><strong>Export.</strong> Pick a project (its sources, contracts with every version, tests, suites, composite contexts) or an integration environment (Connected Systems, catalog, stage sources, browser tests, Test Data). Review the dependencies and the security scan, then create the <code>.birknext</code> package.</li>
         <li><strong>Import.</strong> Upload the package. The preview writes nothing: it checks integrity and format, and compares every object with this installation (new, identical, newer, conflicting, missing dependency). Choose where the integration's environment goes — an environment you have verified, a new disabled one, or none — and decide conflicts. Then apply and read the verification report.</li>
     </ol>
+    <ReviewDisclosure Text="Backup readiness and PostgreSQL tools" CollapseText="Hide" TestId="ug-transfer-tools">
+        <p>The Full backup card shows whether a backup and an isolated restore can run <em>now</em>. Each line is Ready, Blocked, Unavailable, Incompatible or Not checked. Ready means the real <code>pg_dump</code>/<code>pg_restore</code> answered, and their versions were compared with the database server.</p>
+        <ul>
+            <li><strong>Tester Package:</strong> uses the PostgreSQL tools bundled in the package (<code>runtime/postgresql/bin</code>). Nothing is installed or taken from PATH. In the package the database role cannot create databases, so isolated restore shows Blocked; a backup is still possible.</li>
+            <li><strong>Developer setup</strong> (<code>scripts/start-local.ps1</code>): the tools run inside the compose project's PostgreSQL container. BirkNext first checks that this container is the very server it is connected to.</li>
+            <li><strong>Other setups:</strong> set <code>Backup:PostgresTools:BinDirectory</code> to a PostgreSQL client directory, or <code>Mode = ContainerExec</code> with <code>Container</code>. Without either, BirkNext looks on PATH.</li>
+        </ul>
+        <p>"PostgreSQL backup tools could not be found" lists where BirkNext looked. Fix the setting, then choose <strong>Retry detection</strong>. A <code>pg_dump</code> older than the server is Incompatible; a <code>pg_restore</code> older than the backup's <code>pg_dump</code> refuses that backup.</p>
+    </ReviewDisclosure>
     <ReviewDisclosure Text="What never travels, and what stays disabled" CollapseText="Hide" TestId="ug-transfer-safety">
         <p>Passwords, client secrets, tokens, PATs, cookies, private keys, Companion pairings and browser profiles are never in a backup or package; enter credentials again in the destination. Original source archives are not kept by BirkNext, so packages carry the analysed snapshot instead. Imported Connected Systems, integration definitions and browser tests are disabled and not release-gating until you revalidate them. Imported runs and review decisions are stored as history: they never count as runs or approvals of the destination. Packages are checked with SHA-256 hashes, which proves the transfer was not altered — not who made it.</p>
     </ReviewDisclosure>

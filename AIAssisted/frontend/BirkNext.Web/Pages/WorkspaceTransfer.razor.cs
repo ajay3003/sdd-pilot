@@ -249,9 +249,68 @@ public partial class WorkspaceTransfer : IDisposable
 
     // ───── backup ─────
 
+    private bool _showPassphrase;
+    private bool _creating;
+
+    private bool PassphraseMismatch => _passphrase2.Length > 0 && _passphrase != _passphrase2;
+    private bool PassphraseTooShort => _passphrase.Length is > 0 and < 12;
+    private BackupReadiness? Readiness => _status?.Readiness;
+    private bool BackupReady => Readiness?.Backup == BackupReadinessStatus.Ready;
+    private bool RestoreReady => Readiness?.Restore == BackupReadinessStatus.Ready;
+
+    /// <summary>Why the primary action cannot run now, or null. Shown next to the disabled button (never a silent disabled state).</summary>
+    private string? CreateBlockedReason =>
+        _status is null ? "Checking whether backups can run…"
+        : !BackupReady ? (Readiness is null ? "Backups cannot run yet: readiness could not be read." : "Backups cannot run yet: resolve the blocker shown above, then Retry detection.")
+        : _passphrase.Length < 12 ? "Enter a passphrase of at least 12 characters."
+        : _passphrase != _passphrase2 ? "Repeat the same passphrase."
+        : null;
+
+    private static string ReadyClass(BackupReadinessStatus status) => status switch
+    {
+        BackupReadinessStatus.Ready => "wtx-ok",
+        BackupReadinessStatus.NotChecked => "wtx-neutral",
+        BackupReadinessStatus.Incompatible or BackupReadinessStatus.Blocked => "wtx-warn",
+        _ => "wtx-bad",
+    };
+
+    private static string ReadyLabel(BackupReadinessStatus status) => status switch
+    {
+        BackupReadinessStatus.Ready => "Ready",
+        BackupReadinessStatus.Blocked => "Blocked",
+        BackupReadinessStatus.Unavailable => "Unavailable",
+        BackupReadinessStatus.Incompatible => "Incompatible",
+        _ => "Not checked",
+    };
+
+    private bool ToolsMissing => Readiness?.Items.Any(i => i.Key is "pg_dump" && i.Status == BackupReadinessStatus.Unavailable) == true;
+    private string? ToolSummary => Readiness?.DumpToolVersion is { } dv ? $"{dv.Replace("pg_dump (PostgreSQL) ", "pg_dump ")} · {Readiness.ToolProvider}" : Readiness?.ToolProvider;
+    private string PassphraseState => PassphraseMismatch ? "The passphrases are different." : PassphraseTooShort ? "Too short: at least 12 characters." : "";
+
+    private BackupReadinessStatus Item(string key) => Readiness?.Items.FirstOrDefault(i => i.Key == key)?.Status ?? BackupReadinessStatus.NotChecked;
+    private BackupReadinessStatus ToolsStatus => Readiness is null ? BackupReadinessStatus.NotChecked
+        : Readiness.Items.FirstOrDefault(i => i.Key == "tools")?.Status ?? Worst(Item("pg_dump"), Item("compatibility"), Readiness.Items.Any(i => i.Key == "identity") ? Item("identity") : BackupReadinessStatus.Ready);
+
+    private static BackupReadinessStatus Worst(params BackupReadinessStatus[] all) =>
+        all.FirstOrDefault(s => s is BackupReadinessStatus.Blocked or BackupReadinessStatus.Unavailable or BackupReadinessStatus.Incompatible,
+            all.Contains(BackupReadinessStatus.NotChecked) ? BackupReadinessStatus.NotChecked : BackupReadinessStatus.Ready);
+
+    private Task RetryDetection() => Run(async ct =>
+    {
+        var (status, e) = await Api.BackupStatusAsync(ct);
+        (_status, _error) = (status ?? _status, e);
+        if (status is not null) _message = BackupReady ? "Backup tools found and verified." : "Checked again: backups still cannot run.";
+    });
+
     private Task CreateBackup() => Run(async ct =>
     {
-        if (_passphrase != _passphrase2) { _error = "The passphrases are different."; return; }
+        if (CreateBlockedReason is { } blocked) { _error = blocked; return; }
+        _creating = true;
+        try { await CreateBackupCore(ct); } finally { _creating = false; }
+    });
+
+    private async Task CreateBackupCore(CancellationToken ct)
+    {
         var (result, e) = await Api.CreateBackupAsync(_passphrase, _note, ct);
         _error = e;
         if (result is null) return;
@@ -259,7 +318,7 @@ public partial class WorkspaceTransfer : IDisposable
         _message = $"Backup created: {result.Tables} tables, {result.Rows:N0} rows, {result.ManagedFiles} managed files ({Pretty(result.BackupCompleteness)}).{(result.Warnings.Count > 0 ? " " + string.Join(" ", result.Warnings) : "")}";
         var (backups, _) = await Api.BackupsAsync(ct);
         _backups = backups;
-    });
+    }
 
     private void OpenBackup(string fileName)
     {

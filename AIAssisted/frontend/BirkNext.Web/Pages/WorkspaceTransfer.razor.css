@@ -93,3 +93,25 @@
 @media (max-width: 640px) {
     .wtx-card { padding: 0.8rem; }
 }
+
+/* Full backup: readiness first, details on demand. */
+.wtx-backup-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 0.5rem 1rem; }
+.wtx-backup-top p { margin-top: 0.2rem; }
+.wtx-pill-lg { font-size: 0.85rem; padding: 0.2rem 0.75rem; }
+.wtx-ready-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11.5rem), 1fr)); gap: 0.5rem; }
+.wtx-ready-grid li { display: grid; gap: 0.3rem; align-content: start; padding: 0.65rem 0.75rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 8px; background: var(--clr-surface, #f6f8fa); min-width: 0; }
+.wtx-ready-grid .wtx-pill { justify-self: start; }
+.wtx-ready-grid .wtx-muted { font-size: 0.8rem; overflow-wrap: anywhere; }
+.wtx-ready-name { font-weight: 600; font-size: 0.9rem; }
+.wtx-blocker { display: grid; gap: 0.45rem; padding: 0.75rem 0.9rem; border-left: 3px solid #bf8700; background: #fff8c5; border-radius: 6px; font-size: 0.9rem; min-width: 0; }
+.wtx-facts-tight { gap: 0.25rem 1rem; }
+.wtx-link { font-size: 0.875rem; }
+.wtx-scope { display: grid; gap: 0.35rem; font-size: 0.9rem; }
+.wtx-scope > div { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; }
+.wtx-hint { font-weight: 400; color: var(--clr-text-muted, #57606a); font-size: 0.8rem; }
+.wtx-field-error { font-size: 0.85rem; color: #a40e26; font-weight: 600; }
+.wtx-assure { margin: 0; padding: 0.55rem 0.75rem; border-radius: 6px; background: var(--clr-success-bg, #ecfdf3); color: var(--clr-success-text, #14532d); font-size: 0.9rem; }
+.wtx-progress { display: flex; gap: 0.6rem; align-items: center; padding: 0.55rem 0.75rem; border-radius: 6px; background: var(--clr-surface, #f6f8fa); font-size: 0.875rem; }
+.wtx-spinner { width: 1rem; height: 1rem; flex: none; border-radius: 50%; border: 2px solid var(--clr-border, #d0d7de); border-top-color: var(--clr-primary, #0969da); animation: wtx-spin 0.9s linear infinite; }
+@keyframes wtx-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .wtx-spinner { animation: none; } }

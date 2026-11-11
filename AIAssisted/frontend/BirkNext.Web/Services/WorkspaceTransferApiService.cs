@@ -10,7 +10,7 @@ public sealed record TransferProjectScopeView(string ProjectKey, string DisplayN
 public sealed record TransferEnvironmentScopeView(string EnvironmentId, int ConnectedSystems, int Integrations, int SourceBindings, int Flows, int Suites);
 public sealed record TransferScopesView(IReadOnlyList<TransferProjectScopeView> Projects, IReadOnlyList<TransferEnvironmentScopeView> Environments);
 public sealed record BackupStatusView(bool ToolsConfigured, string? ToolProblem, string? DumpToolVersion, string? RestoreToolVersion, string Mode, string BackupDirectory,
-    IReadOnlyList<string> ManagedFiles, IReadOnlyList<BackupExclusion> Excluded, string ApplicationVersion, string ApplicationCommit);
+    IReadOnlyList<string> ManagedFiles, IReadOnlyList<BackupExclusion> Excluded, string ApplicationVersion, string ApplicationCommit, BackupReadiness? Readiness = null);
 public sealed record StagedPackageView(Guid OperationId, string Sha256, long Bytes);
 
 /// <summary>Backup &amp; Transfer: a thin client over api/workspace-transfer. Every decision (closure, classification, sanitising) is made by the

@@ -16,17 +16,17 @@ namespace BirkNext.Api.Controllers;
 public sealed partial class WorkspaceTransferController(FullBackupService backups, PostgresTools tools, ManagedFileStores files) : ControllerBase
 {
     public sealed record BackupStatus(bool ToolsConfigured, string? ToolProblem, string? DumpToolVersion, string? RestoreToolVersion, string Mode, string BackupDirectory,
-        IReadOnlyList<string> ManagedFiles, IReadOnlyList<BackupExclusion> Excluded, string ApplicationVersion, string ApplicationCommit);
+        IReadOnlyList<string> ManagedFiles, IReadOnlyList<BackupExclusion> Excluded, string ApplicationVersion, string ApplicationCommit, BackupReadiness? Readiness = null);
 
     [HttpGet("backups/status")]
     public async Task<BackupStatus> Status(CancellationToken ct)
     {
         var problem = tools.ConfigurationProblem();
         var (version, commit) = FullBackupService.ApplicationIdentity();
-        return new BackupStatus(problem is null, problem,
-            problem is null ? await tools.VersionAsync("pg_dump", ct) : null, problem is null ? await tools.VersionAsync("pg_restore", ct) : null,
+        var readiness = await backups.ReadinessAsync(ct);
+        return new BackupStatus(problem is null, problem, readiness.DumpToolVersion, readiness.RestoreToolVersion,
             tools.ContainerMode ? "ContainerExec" : "Host", backups.BackupDirectory,
-            files.Existing().Select(f => $"{f.Store.Name}/{f.File}").ToList(), ManagedFileStores.Exclusions, version, commit);
+            files.Existing().Select(f => $"{f.Store.Name}/{f.File}").ToList(), ManagedFileStores.Exclusions, version, commit, readiness);
     }
 
     [HttpGet("backups")]
@@ -80,7 +80,7 @@ public sealed partial class WorkspaceTransferController(FullBackupService backup
         "EXPIRED" => StatusCode(StatusCodes.Status410Gone, new TransferError(ex.Code, ex.Message)),
         "NOT_FOUND" => NotFound(new TransferError(ex.Code, ex.Message)),
         "INSUFFICIENT_DISK_SPACE" => StatusCode(StatusCodes.Status507InsufficientStorage, new TransferError(ex.Code, ex.Message)),
-        "TOOLS_UNAVAILABLE" or "TOOLS_NOT_CONFIGURED" => StatusCode(StatusCodes.Status503ServiceUnavailable, new TransferError(ex.Code, ex.Message)),
+        "TOOLS_UNAVAILABLE" or "TOOLS_NOT_CONFIGURED" or "TOOLS_INCOMPATIBLE" or "TOOLS_BLOCKED" => StatusCode(StatusCodes.Status503ServiceUnavailable, new TransferError(ex.Code, ex.Message)),
         _ => BadRequest(new TransferError(ex.Code, ex.Message)),
     };
 

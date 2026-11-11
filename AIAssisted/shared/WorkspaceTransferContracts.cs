@@ -88,6 +88,37 @@ public sealed record BackupSummary(string FileName, Guid BackupId, DateTimeOffse
 public sealed record BackupCreateResult(BackupSummary Backup, string ConsistencyMethod, string BackupCompleteness, int Tables, long Rows, int ManagedFiles,
     IReadOnlyList<BackupExclusion> Excluded, IReadOnlyList<string> Warnings);
 
+/// <summary>Readiness of one backup/restore prerequisite. Ready only after the real executable answered and the versions were compared.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum BackupReadinessStatus { Ready, Blocked, Unavailable, NotChecked, Incompatible }
+
+public sealed record BackupReadinessItem(string Key, string Name, BackupReadinessStatus Status, string Detail);
+
+/// <summary>
+/// The one PostgreSQL tool resolution result for Backup &amp; Transfer: which provider runs pg_dump/pg_restore (configured directory, the Tester
+/// Package's bundled tools, PATH, or a container verified to be the database server BirkNext is connected to), the versions that actually
+/// answered, and whether backup and isolated restore can run. No connection string, password or secret is included.
+/// </summary>
+public sealed record BackupReadiness
+{
+    public BackupReadinessStatus Backup { get; init; }
+    public BackupReadinessStatus Restore { get; init; }
+    /// <summary>The first reason backup cannot run (null when Ready).</summary>
+    public string? BackupBlocker { get; init; }
+    public string? RestoreBlocker { get; init; }
+    /// <summary>Runtime profile of this installation (Developer (containers) / Tester (native Windows)).</summary>
+    public string RuntimeProfile { get; init; } = "";
+    /// <summary>How the tools are reached: "Configured directory", "Tester Package (bundled)", "PATH" or "Container exec".</summary>
+    public string ToolProvider { get; init; } = "";
+    /// <summary>Where the tools were looked for (directory names or "PATH" or the container name); never a secret.</summary>
+    public List<string> SearchLocations { get; init; } = [];
+    public string? DumpToolVersion { get; init; }
+    public string? RestoreToolVersion { get; init; }
+    public string? ServerVersion { get; init; }
+    public List<BackupReadinessItem> Items { get; init; } = [];
+    public DateTimeOffset CheckedAt { get; init; }
+}
+
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TransferCheckStatus { Pass, Warning, Fail, NotRun }
 public sealed record TransferCheck(string Name, TransferCheckStatus Status, string Detail);
