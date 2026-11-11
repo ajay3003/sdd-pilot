@@ -23,7 +23,8 @@ All six real packages were imported into one isolated installation (see `birknex
 |---|---|
 | Focused backend: SystemGuide, SkoleNaervaer*, IntegrationIdentity, SetupProfileService, MessageVerification, ScenarioCapability, TestPackSource, ContractEvolution, IntegrationJourney*, Topology* | **410/410 PASS** (final build). An earlier run was 409/410: the new seed-basis test's fixture had no pack roles (a test error, fixed) |
 | Focused frontend: SystemUnderstanding, SkoleNaervaer, IntegrationJourney, IntegrationQualityReview | **226/226 PASS** |
-| Full backend (6 partitions) and full frontend | Run after the commit; counts in the follow-up commit (the user's "don't wait" preference) |
+| Full frontend at `a900c22a` | **8630/8630 PASS** |
+| Full backend at `a900c22a`, six sequential memory-guarded partitions | **6511 passed, 1 failed, 19 skipped (6531)**. Partitions 1–5 = 1049/1098/840/652/520 passed; partition 6 = 2352 passed, 1 failed, 8 skipped. The failure is `CompositeSuiteTests.One_continuous_synthetic_transaction_is_verified_end_to_end_against_an_independent_ledger` (a loopback mock reported a 200 call as failed; peak memory 5.6 GB in that partition). Re-run alone on the same build: **`CompositeSuiteTests` 9/9 PASS**. It passed in the previous full run (`02bac857`). Classified as load-dependent flakiness, not a regression from this change (the test does not use the Skolenærvær pack, guide or channel) |
 
 ## Test changes
 
