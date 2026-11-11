@@ -57,6 +57,7 @@ Run sequentially with the existing memory guards; no timeout changed, no test di
 
 | Step | Result |
 |---|---|
-| Backend partitions 1–6 | PENDING: recorded in the follow-up update |
-| Frontend full suite | PENDING |
+| Backend partitions 1–6 (on `ae5a644b`; the backend is unchanged by this task) | **6,461 passed, 19 skipped, 1 failed** (1031 / 1098 / 840 / 652 / 520 / 2320). The failure is again the timing test `ScenariosQueryTests…WarmedP95CompletesWithinTwoSeconds`: p95 was 2,420 ms against 2,000 ms, with samples of 3,133 and 2,420 ms. Gap UD-G11. |
+| The same test class rerun alone (no timeout changed) | **5/5 passed** |
+| Frontend full suite | **8,595 / 8,595 passed** |
 | Release frontend publish | PASS (used for the browser acceptance) |
