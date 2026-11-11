@@ -109,9 +109,48 @@ public sealed class TesterLauncherTests
             .And.Contain("password_encryption = 'scram-sha-256'").And.Contain("log_rotation_size").And.Contain("C:/Users/t/AppData");
         var hba = PostgresManager.HostBasedAuthentication();
         var rules = hba.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0 && !l.StartsWith('#')).ToList();
-        rules.Should().HaveCount(2).And.OnlyContain(r => r.EndsWith("scram-sha-256") && r.Contains("127.0.0.1/32"));
+        rules.Should().HaveCount(4).And.OnlyContain(r => r.EndsWith("scram-sha-256") && r.Contains("127.0.0.1/32"));
+        rules.Should().ContainSingle(r => r.Contains("birknext_app") && r.Contains("birknext_restore_")).Which.Should().Contain("\"/^birknext_restore_[0-9a-f]{12}$\"",
+            "the application role may also open the isolated restore databases it owns, matched exactly (never all databases)");
         hba.Should().NotContain("trust").And.NotContain("0.0.0.0").And.NotContain("::/0");
         rules.Should().Contain(r => r.StartsWith("host") && r.Contains("birknext_app") && r.Contains(" birknext "), "the application role reaches only its own database");
+        rules.Should().ContainSingle(r => r.Contains(DatabaseCredentials.ProvisionerUser)).Which.Should().StartWith("host    postgres ",
+            "the restore-provisioning role reaches only the maintenance database, where it can create a new database and nothing else");
+    }
+
+    [Fact]
+    public void The_restore_provisioning_role_is_narrow_and_the_application_role_never_gets_CREATEDB()
+    {
+        var statements = string.Join("\n", PostgresManager.ProvisionerStatements("birknext_app", "Pw23456789abcdefghijkmnopqrstuvw", 17));
+        statements.Should().Contain("CREATE ROLE birknext_restore_provisioner LOGIN NOSUPERUSER CREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT")
+            .And.Contain("ALTER ROLE birknext_restore_provisioner WITH LOGIN NOSUPERUSER CREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT",
+                "an existing role is re-asserted narrow on every start")
+            .And.Contain("GRANT birknext_app TO birknext_restore_provisioner WITH INHERIT FALSE, SET TRUE", "only to create databases OWNED BY the application role")
+            .And.Contain("GRANT CONNECT ON DATABASE postgres TO birknext_restore_provisioner");
+        statements.Should().NotContain("ALTER ROLE birknext_app").And.NotMatchRegex(@"(?<![A-Z])(SUPERUSER|CREATEROLE|REPLICATION|BYPASSRLS)", "only the NO… forms of the broad attributes appear");
+        string.Join("\n", PostgresManager.ProvisionerStatements("birknext_app", "x", 15)).Should().Contain("GRANT birknext_app TO birknext_restore_provisioner")
+            .And.NotContain("SET TRUE", "the WITH SET option exists from PostgreSQL 16");
+    }
+
+    [Fact]
+    public void The_backend_gets_a_restore_provisioning_login_only_when_one_was_provisioned()
+    {
+        var data = new DataLayout(TempDir());
+        var package = new PackageLayout("C:\\Pkg\\BirkNext-Tester", Manifest());
+        var old = DatabaseCredentials.New();
+        old.ProvisionerPassword.Should().BeNull("credentials written by earlier launchers have no provisioning role");
+        BackendProcess.Environment(package, data, new Ports.Assignment(55433, 5480, 5481), old)["Backup__RestoreProvisioning__ConnectionString"].Should().BeEmpty();
+
+        var provisioned = old with { ProvisionerPassword = DatabaseCredentials.NewPassword() };
+        var connection = new Npgsql.NpgsqlConnectionStringBuilder(BackendProcess.Environment(package, data, new Ports.Assignment(55433, 5480, 5481), provisioned)["Backup__RestoreProvisioning__ConnectionString"]);
+        connection.Host.Should().Be("127.0.0.1");
+        connection.Database.Should().Be("postgres");
+        connection.Username.Should().Be(DatabaseCredentials.ProvisionerUser).And.NotBe(provisioned.AdminUser, "never the cluster administrator");
+        provisioned.ToString().Should().NotContain(provisioned.ProvisionerPassword!);
+
+        var file = Path.Combine(TempDir(), "secrets.bin");
+        provisioned.Save(file);
+        DatabaseCredentials.Load(file).Should().Be(provisioned);
     }
 
     [Fact]
@@ -216,6 +255,8 @@ public sealed class TesterLauncherTests
         env["BirkNext__Distribution"].Should().Be("WindowsTesterPackage");
         env["PerformanceTests__Runner"].Should().Be("Native");
         env["Authorization__LocalTrustedExecution"].Should().Be("true", "the single-user tester runs its own tests; the backend still checks loopback, Host, Origin and the session");
+        env["Authorization__LocalSystemConfiguration"].Should().Be("true", "the tester maintains their own installation's configuration");
+        env["Authorization__LocalWorkspaceTransfer"].Should().Be("true", "the tester backs up and restores their own installation");
         env["PerformanceTests__Native__K6Path"].Should().Be(Path.Combine("C:\\Pkg\\BirkNext-Tester", "runtime", "k6", "k6.exe"));
         env["PerformanceTests__Native__K6Sha256"].Should().Be(new string('c', 64));
         // In-app Backup & Transfer uses the package's bundled pg_dump/pg_restore (the root cause of "PostgreSQL tools: Not available" in the package).

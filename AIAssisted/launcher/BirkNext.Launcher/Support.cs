@@ -48,8 +48,14 @@ public sealed partial class LauncherLog
 }
 
 /// <summary>Database credentials generated on first run, stored protected for this Windows user (DPAPI, CurrentUser scope).</summary>
-public sealed record DatabaseCredentials(string AdminUser, string AdminPassword, string AppUser, string AppPassword, string Database)
+/// <param name="ProvisionerPassword">Password of <see cref="ProvisionerUser"/>, the restore-provisioning role (null until the launcher has created it;
+/// older credential files have none).</param>
+public sealed record DatabaseCredentials(string AdminUser, string AdminPassword, string AppUser, string AppPassword, string Database, string? ProvisionerPassword = null)
 {
+    /// <summary>The restore-provisioning role: CREATEDB, NOSUPERUSER, may SET ROLE to the application role, logs in only to <c>postgres</c> from 127.0.0.1.
+    /// The backend uses it for one thing — creating a new isolated restore database owned by the application role — so the application role keeps NOCREATEDB.</summary>
+    public const string ProvisionerUser = "birknext_restore_provisioner";
+
     private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("BirkNext.TesterNative.DatabaseCredentials.v1");
 
     /// <summary>A password from an alphabet that never needs quoting in SQL or connection strings (letters and digits, 32 characters ≈ 190 bits).</summary>
@@ -87,6 +93,10 @@ public sealed record DatabaseCredentials(string AdminUser, string AdminPassword,
     }
 
     public string AppConnectionString(int port) => $"Host=127.0.0.1;Port={port};Database={Database};Username={AppUser};Password={AppPassword};Pooling=true";
+
+    /// <summary>The restore-provisioning login (maintenance database only). Empty when the role has not been provisioned: restore then reports BLOCKED.</summary>
+    public string ProvisioningConnectionString(int port) =>
+        ProvisionerPassword is { Length: > 0 } p ? $"Host=127.0.0.1;Port={port};Database=postgres;Username={ProvisionerUser};Password={p};Pooling=false" : "";
     public override string ToString() => $"{AppUser}@{Database} (credentials redacted)";
 }
 

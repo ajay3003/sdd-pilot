@@ -72,11 +72,18 @@ internal sealed class BackendProcess(PackageLayout package, DataLayout data, Lau
         ["DOTNET_ENVIRONMENT"] = "Production",
         ["ASPNETCORE_URLS"] = $"http://localhost:{ports.Backend}",
         ["ConnectionStrings__Default"] = credentials.AppConnectionString(ports.Database),
+        // Used only to create a new isolated restore database owned by the application role (empty = not provisioned → restore BLOCKED).
+        ["Backup__RestoreProvisioning__ConnectionString"] = credentials.ProvisioningConnectionString(ports.Database),
         ["FRONTEND_ORIGIN"] = $"http://localhost:{ports.Frontend}",
         ["BirkNext__RuntimeProfile"] = "TesterNative",
         ["BirkNext__Distribution"] = BirkNext.BuildInfo.RuntimeProfiles.WindowsTesterPackage,
         // Local single-user execution (performance tests and other active tests) under the backend's own loopback, Host, Origin and session checks.
         ["Authorization__LocalTrustedExecution"] = "true",
+        // The Tester Package is a per-user installation: its own user maintains its configuration (System Settings saves), under the same
+        // loopback, Host, Origin and local-session checks. Never a header; never in any other environment.
+        ["Authorization__LocalSystemConfiguration"] = "true",
+        // Backup & Transfer for the same single user (full backup, isolated restore, packages), under the same loopback/Host/Origin/session checks.
+        ["Authorization__LocalWorkspaceTransfer"] = "true",
         ["PerformanceTests__Runner"] = "Native",
         ["PerformanceTests__Native__K6Path"] = package.K6Exe,
         ["PerformanceTests__Native__K6Sha256"] = package.Manifest.K6.Sha256,

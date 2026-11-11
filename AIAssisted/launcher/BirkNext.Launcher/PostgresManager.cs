@@ -181,8 +181,46 @@ public sealed class PostgresManager(PackageLayout package, DataLayout data, Laun
         # Written by the BirkNext launcher (TesterNative): local TCP only, password (SCRAM) required, BirkNext roles only.
         # TYPE  DATABASE   USER             ADDRESS        METHOD
         host    birknext   birknext_app     127.0.0.1/32   scram-sha-256
+        host    "/^birknext_restore_[0-9a-f]{12}$"   birknext_app   127.0.0.1/32   scram-sha-256
         host    all        birknext_admin   127.0.0.1/32   scram-sha-256
+        host    postgres   birknext_restore_provisioner   127.0.0.1/32   scram-sha-256
         """;
+
+    /// <summary>The SQL that creates or re-asserts the restore-provisioning role (idempotent). Narrow by construction: LOGIN CREATEDB only, never
+    /// SUPERUSER/CREATEROLE/REPLICATION/BYPASSRLS; membership in the application role only so CREATE DATABASE … OWNER app is allowed (no inherited
+    /// privileges); CONNECT only to the maintenance database.</summary>
+    internal static IReadOnlyList<string> ProvisionerStatements(string appUser, string password, int major) =>
+    [
+        $"""
+        DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{DatabaseCredentials.ProvisionerUser}') THEN
+            CREATE ROLE {DatabaseCredentials.ProvisionerUser} LOGIN NOSUPERUSER CREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT PASSWORD '{password}';
+          END IF;
+        END $$;
+        """,
+        $"ALTER ROLE {DatabaseCredentials.ProvisionerUser} WITH LOGIN NOSUPERUSER CREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOINHERIT PASSWORD '{password}'",
+        major >= 16 ? $"GRANT {appUser} TO {DatabaseCredentials.ProvisionerUser} WITH INHERIT FALSE, SET TRUE" : $"GRANT {appUser} TO {DatabaseCredentials.ProvisionerUser}",
+        $"GRANT CONNECT ON DATABASE postgres TO {DatabaseCredentials.ProvisionerUser}",
+    ];
+
+    /// <summary>
+    /// Ensures the restore-provisioning role exists with this installation's stored password (created on first need, password kept in the DPAPI
+    /// credential file) and that pg_hba allows it to the maintenance database only. Never changes the application role or any database.
+    /// Returns the (possibly updated) credentials; on failure the caller keeps running and restore reports BLOCKED.
+    /// </summary>
+    public DatabaseCredentials EnsureRestoreProvisioner(int port, DatabaseCredentials credentials)
+    {
+        var updated = credentials.ProvisionerPassword is { Length: > 0 } ? credentials : credentials with { ProvisionerPassword = DatabaseCredentials.NewPassword() };
+        using (var admin = Open(port, credentials.AdminUser, credentials.AdminPassword, "postgres"))
+        {
+            foreach (var sql in ProvisionerStatements(credentials.AppUser, updated.ProvisionerPassword!, package.Manifest.PostgreSql.Major)) Execute(admin, sql);
+            File.WriteAllText(Path.Combine(data.Database, "pg_hba.conf"), HostBasedAuthentication());
+            Execute(admin, "SELECT pg_reload_conf()");
+        }
+        if (!ReferenceEquals(updated, credentials)) updated.Save(data.SecretsFile);
+        log.Info($"Restore-provisioning role {DatabaseCredentials.ProvisionerUser} is in place (CREATEDB, not a superuser).");
+        return updated;
+    }
 
     // ── Start / status / stop ──────────────────────────────────────────────────────────────────────────────
 

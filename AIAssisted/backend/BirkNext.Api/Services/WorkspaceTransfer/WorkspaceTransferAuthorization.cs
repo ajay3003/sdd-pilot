@@ -9,8 +9,9 @@ namespace BirkNext.Api.Services.WorkspaceTransfer;
 /// rebinding all require it. ActiveEventExecute and IntegrationConfiguration.Write do not imply it.
 /// <list type="bullet">
 /// <item>Granted to an authenticated principal holding <c>WorkspaceTransfer</c> (scope, app role or permission claim).</item>
-/// <item>For the local single-user tool: <c>Authorization:LocalWorkspaceTransfer = true</c>, in Development only, from a loopback peer only. This is the
-/// same rule as local configuration writes; never a header.</item>
+/// <item>For the local single-user tool: <c>Authorization:LocalWorkspaceTransfer = true</c>, in Development from a loopback peer (the same rule as local
+/// configuration writes), or in the Windows Tester Package (TesterNative) under the full loopback / Host / Origin checks of
+/// <see cref="LocalTrustedExecution"/>; never a header.</item>
 /// </list>
 /// BirkNext has no per-project authorization. A package's scope is therefore decided by the server-side dependency closure of the selected project or
 /// environment, never by a caller-supplied list of records.
@@ -23,12 +24,14 @@ public static class WorkspaceTransferPermissions
 
 public sealed class WorkspaceTransferRequirement : IAuthorizationRequirement { }
 
-public sealed class WorkspaceTransferHandler(IHostEnvironment environment, IConfiguration configuration, IHttpContextAccessor http)
+public sealed class WorkspaceTransferHandler(IHostEnvironment environment, IConfiguration configuration, IHttpContextAccessor http, LocalTrustedExecution local)
     : AuthorizationHandler<WorkspaceTransferRequirement>
 {
     protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, WorkspaceTransferRequirement requirement)
     {
-        if (BirkNextPermissions.Holds(context.User, WorkspaceTransferPermissions.WorkspaceTransfer) || LocalDevelopment()) context.Succeed(requirement);
+        if (BirkNextPermissions.Holds(context.User, WorkspaceTransferPermissions.WorkspaceTransfer) || LocalDevelopment()
+            || local.EvaluateFor("Authorization:LocalWorkspaceTransfer", "Local Backup & Transfer", http.HttpContext).Allowed)
+            context.Succeed(requirement);
         return Task.CompletedTask;
     }
 

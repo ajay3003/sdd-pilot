@@ -16,6 +16,8 @@ public sealed class FullBackupOptions
     public int KeyDerivationIterations { get; set; } = TransferCrypto.DefaultIterations;
     /// <summary>Upper bound for the managed files held in memory while they are captured at the snapshot (they are small JSON stores).</summary>
     public long MaxManagedFileBytes { get; set; } = 256L << 20;
+    /// <summary>Optional narrowly privileged role that creates the isolated restore database when the application role may not (Tester Package).</summary>
+    public RestoreProvisioningOptions RestoreProvisioning { get; set; } = new();
 }
 
 /// <summary>
@@ -74,7 +76,7 @@ public sealed class FullBackupService
     public string BackupDirectory { get; }
 
     /// <summary>Whether backup and isolated restore can run right now, from the real tools and the real server (see <see cref="PostgresToolReadiness"/>).</summary>
-    public Task<BackupReadiness> ReadinessAsync(CancellationToken ct) => PostgresToolReadiness.EvaluateAsync(_tools, _connectionString, _profile, _clock, ct);
+    public Task<BackupReadiness> ReadinessAsync(CancellationToken ct) => PostgresToolReadiness.EvaluateAsync(_tools, _connectionString, _profile, _clock, ct, _options.RestoreProvisioning.ConnectionString);
 
     private static string RefusalCode(BackupReadinessStatus status) => status switch
     {
@@ -459,14 +461,36 @@ public sealed class FullBackupService
             var active = new NpgsqlConnectionStringBuilder(_connectionString) { Pooling = false };
             var target = RestoreName.IsMatch(RestorePrefix + restoreId.ToString("N")[..12]) ? RestorePrefix + restoreId.ToString("N")[..12] : throw new InvalidOperationException();
             if (string.Equals(target, active.Database, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Refusing to restore over the active database.");
+            var restoreDestination = await RestoreProvisioning.EvaluateAsync(active.ConnectionString, _options.RestoreProvisioning.ConnectionString, ct);
+            if (!restoreDestination.Allowed) throw new TransferRequestException("RESTORE_BLOCKED", restoreDestination.Detail);
+            string owner;
             await using (var admin = new NpgsqlConnection(active.ConnectionString))
             {
                 await admin.OpenAsync(ct);
-                await using var exists = new NpgsqlCommand("SELECT 1 FROM pg_database WHERE datname = @n", admin);
-                exists.Parameters.AddWithValue("n", target);
-                if (await exists.ExecuteScalarAsync(ct) is not null) throw new TransferRequestException("TARGET_EXISTS", $"Database {target} already exists; it is never overwritten.");
-                await using var create = new NpgsqlCommand($"CREATE DATABASE {Quote(target)}", admin);
-                await create.ExecuteNonQueryAsync(ct);
+                await using (var who = new NpgsqlCommand("SELECT current_user", admin)) owner = (string)(await who.ExecuteScalarAsync(ct))!;
+                if (!restoreDestination.UsesProvisioningRole)
+                {
+                    await using var exists = new NpgsqlCommand("SELECT 1 FROM pg_database WHERE datname = @n", admin);
+                    exists.Parameters.AddWithValue("n", target);
+                    if (await exists.ExecuteScalarAsync(ct) is not null) throw new TransferRequestException("TARGET_EXISTS", $"Database {target} already exists; it is never overwritten.");
+                    await using var create = new NpgsqlCommand($"CREATE DATABASE {Quote(target)}", admin);
+                    await create.ExecuteNonQueryAsync(ct);
+                }
+            }
+            if (restoreDestination.UsesProvisioningRole)
+                await RestoreProvisioning.CreateOwnedDatabaseAsync(_options.RestoreProvisioning.ConnectionString!, target, owner, ct);
+            // Verified ownership: the new database must belong to the application role that restores into it (never to the provisioning role).
+            await using (var admin = new NpgsqlConnection(active.ConnectionString))
+            {
+                await admin.OpenAsync(ct);
+                await using var own = new NpgsqlCommand("SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = @n", admin);
+                own.Parameters.AddWithValue("n", target);
+                var actualOwner = await own.ExecuteScalarAsync(ct) as string;
+                if (!string.Equals(actualOwner, owner, StringComparison.Ordinal))
+                    throw new InvalidOperationException($"The new restore database {target} is owned by {actualOwner ?? "nobody"}, not by {owner}; restore stopped before writing anything.");
+                checks.Add(new("Restore database", TransferCheckStatus.Pass, restoreDestination.UsesProvisioningRole
+                    ? $"New database {target} created by the restore-provisioning role and owned by {owner} (verified)."
+                    : $"New database {target} created and owned by {owner} (verified)."));
             }
             var targetConnection = new NpgsqlConnectionStringBuilder(active.ConnectionString) { Database = target, Pooling = false };
             var filesDir = Path.Combine(dir, "files");

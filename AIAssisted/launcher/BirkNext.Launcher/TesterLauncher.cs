@@ -141,6 +141,10 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
         ui.Step("Checking application files");
         CheckPackage(package, data, log, full: false);
         var (ports, credentials, record) = PrepareDatabase(package, data, postgres, log);
+        // Isolated restore needs a new database; the application role stays NOCREATEDB, so a separate narrow role creates it (see PostgresManager).
+        try { credentials = postgres.EnsureRestoreProvisioner(ports.Database, credentials); }
+        catch (Exception e) when (e is Npgsql.NpgsqlException or IOException or UnauthorizedAccessException)
+        { log.Warn($"The restore-provisioning role could not be prepared; isolated restore will report BLOCKED. {e.Message}"); }
 
         if (options.Command == "backup")
         {

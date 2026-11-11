@@ -27,7 +27,8 @@ public static partial class PostgresToolReadiness
     public static int? Major(string? version) =>
         version is not null && ToolVersion().Match(version) is { Success: true } m ? int.Parse(m.Groups["major"].Value, CultureInfo.InvariantCulture) : null;
 
-    public static async Task<BackupReadiness> EvaluateAsync(PostgresTools tools, string connectionString, RuntimeProfile profile, TimeProvider clock, CancellationToken ct)
+    public static async Task<BackupReadiness> EvaluateAsync(PostgresTools tools, string connectionString, RuntimeProfile profile, TimeProvider clock, CancellationToken ct,
+        string? restoreProvisioningConnectionString = null)
     {
         var options = tools.Options;
         var items = new List<BackupReadinessItem>();
@@ -107,12 +108,19 @@ public static partial class PostgresToolReadiness
             items.Add(new("restore-compatibility", "Restore compatibility", BackupReadinessStatus.Incompatible, $"pg_restore {r} is older than pg_dump {d}; it cannot read the backups it would be given."));
 
         // 6. Isolated restore creates a new database.
-        items.Add(canCreateDatabase switch
+        //    The application role creates it when it may; otherwise only a verified, narrowly privileged provisioning role (RestoreProvisioning).
+        if (canCreateDatabase is null)
+            items.Add(new("restore-destination", "Restore destination", BackupReadinessStatus.NotChecked, "Not checked: the database did not answer."));
+        else
         {
-            true => new("restore-destination", "Restore destination", BackupReadinessStatus.Ready, "The database role may create the new, isolated restore database."),
-            false => new("restore-destination", "Restore destination", BackupReadinessStatus.Blocked, "The database role may not create databases, so an isolated restore cannot create its new database. Backups still work."),
-            _ => new("restore-destination", "Restore destination", BackupReadinessStatus.NotChecked, "Not checked: the database did not answer."),
-        });
+            RestoreProvisioning.Decision decision;
+            try { decision = await RestoreProvisioning.EvaluateAsync(connectionString, restoreProvisioningConnectionString, ct); }
+            catch (Exception ex) when (ex is NpgsqlException or TimeoutException or System.Net.Sockets.SocketException or InvalidOperationException)
+            { decision = new(false, false, "Not checked: the database did not answer."); }
+            items.Add(decision.Allowed
+                ? new("restore-destination", "Restore destination", BackupReadinessStatus.Ready, decision.Detail)
+                : new("restore-destination", "Restore destination", BackupReadinessStatus.Blocked, decision.Detail + " Backups still work."));
+        }
         return Finish(result, items);
     }
 
