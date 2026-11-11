@@ -61,6 +61,6 @@ The generic outcome text seen in that screenshot ("Moves the recommended workflo
 
 | Step | Result |
 |---|---|
-| Backend partitions 1–6 | PENDING: recorded in the follow-up update |
-| Frontend full suite | PENDING |
+| Backend partitions 1–6 (sequential, memory-guarded) | **6,462 passed, 19 skipped, 0 failed** (1,031 / 1,098 / 840 / 652 / 520 / 2,321) |
+| Frontend full suite | **8,612 passed, 0 failed** |
 | Release frontend publish | PASS (used for the browser acceptance) |
