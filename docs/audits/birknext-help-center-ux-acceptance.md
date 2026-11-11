@@ -48,7 +48,8 @@
 | Suite | Result |
 |---|---|
 | Focused frontend (UserGuide, HelpCenter, Documentation*, HelpLink, Guide*) | **240/240 PASS** |
-| Full regression | After the commit; counts in the follow-up commit |
+| Full frontend at `da5f4a72` | **8636/8636 PASS** |
+| Full backend at `da5f4a72`, six sequential partitions | **6526 passed, 1 failed, 19 skipped (6546)**. Partitions 1–5 = 1049/1098/840/652/520; partition 6 = 2367 passed, 1 failed. The failure is a timing test, `ScenariosQueryTests…WarmedP95CompletesWithinTwoSeconds` (p95 4.3 s; samples of 4.3 s and 9.1 s while the partition ran 5 min 40 s instead of 3 min 22 s). Re-run alone on the same build: **5/5 PASS**. This change touches no backend code; the threshold was not changed |
 
 ## Synthetic fixtures (§41)
 
