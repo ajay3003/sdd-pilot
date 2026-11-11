@@ -56,20 +56,47 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
     public static string Fingerprint(SystemGuideContent content) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(content, Json)))).ToLowerInvariant();
 
-    /// <summary>Inserts the curated seed as revision 1, Draft, once: never when any revision exists, never as approved.</summary>
+    /// <summary>
+    /// Inserts the curated seed as revision 1, Draft, once: never when any revision exists, never as approved. A seed that nobody has edited,
+    /// submitted or published (the only revision, still a Draft by the seed author) is replaced by a newer shipped seed; anything a person touched
+    /// is never changed.
+    /// </summary>
     private async Task EnsureSeededAsync(SystemGuideCatalogEntry entry, CancellationToken ct)
     {
-        if (await db.SystemGuideRevisions.AnyAsync(r => r.GuideKey == entry.GuideKey, ct)) return;
+        var rows = await db.SystemGuideRevisions.Where(r => r.GuideKey == entry.GuideKey).OrderBy(r => r.Revision).Take(2).ToListAsync(ct);
+        if (rows.Count == 1 && rows[0] is { Revision: 1, State: nameof(GuideRevisionState.Draft), CreatedBy: SeedAuthor } untouched)
+        {
+            var shipped = LoadSeed(entry.SeedResource);
+            var fingerprint = Fingerprint(shipped);
+            if (untouched.ContentFingerprint == fingerprint) return;
+            untouched.ContentJson = JsonSerializer.Serialize(shipped, Json);
+            untouched.ContentFingerprint = fingerprint;
+            untouched.SourceBasisJson = JsonSerializer.Serialize(SeedBasis(entry, shipped), Json);
+            untouched.ChangeSummary = SeedSummary + " Replaced an older, unedited curated draft.";
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateException) { db.ChangeTracker.Clear(); }
+            return;
+        }
+        if (rows.Count > 0) return;
         var content = LoadSeed(entry.SeedResource);
         db.SystemGuideRevisions.Add(new SystemGuideRevisionRecord
         {
             Id = Guid.NewGuid(), GuideKey = entry.GuideKey, Revision = 1, State = nameof(GuideRevisionState.Draft), ContentJson = JsonSerializer.Serialize(content, Json),
-            ContentFingerprint = Fingerprint(content), SourceBasisJson = JsonSerializer.Serialize(await CurrentSourcesAsync(entry, content, ct), Json),
-            CreatedBy = SeedAuthor, CreatedAt = Now, ChangeSummary = "Curated draft seeded by BirkNext from reviewed source evidence. Not reviewed or approved.",
+            ContentFingerprint = Fingerprint(content), SourceBasisJson = JsonSerializer.Serialize(SeedBasis(entry, content), Json),
+            CreatedBy = SeedAuthor, CreatedAt = Now, ChangeSummary = SeedSummary,
         });
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateException) { db.ChangeTracker.Clear(); } // another request seeded it first (unique guide+revision)
     }
+
+    private const string SeedSummary = "Curated draft shipped with BirkNext, written from reviewed source packages. Not reviewed or approved here.";
+
+    /// <summary>
+    /// A curated seed is written outside this installation, so it is based on no imported snapshot here: every recognised snapshot therefore reads
+    /// as not yet reviewed against the guide. Recording the snapshots present at seeding time would claim a review that never happened.
+    /// </summary>
+    private List<GuideSourceBasis> SeedBasis(SystemGuideCatalogEntry entry, SystemGuideContent content) =>
+        [.. Roles(entry, content).Select(role => new GuideSourceBasis(role.Key, null, null, $"{role.Label}: curated outside this installation (no imported snapshot)"))];
 
     // ── Reading ──────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -169,7 +196,7 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
         var now = current.Where(c => c.SnapshotId is not null).Select(c => c.SnapshotId!.Value).ToHashSet();
         var changes = new List<GuideSourceChange>();
         foreach (var added in current.Where(c => c.SnapshotId is { } id && !basis.Contains(id)))
-            changes.Add(new GuideSourceChange(added.Role, added.Label, "Imported after this revision was written — the guide may need review", Claims(added.Role)));
+            changes.Add(new GuideSourceChange(added.Role, added.Label, "Not among the sources this revision was written from — the guide may need review", Claims(added.Role)));
         foreach (var removed in shown.SourceBasis.Where(b => b.SnapshotId is { } id && !now.Contains(id)))
             changes.Add(new GuideSourceChange(removed.Role, removed.Label, "No longer imported — the claims citing it can no longer be opened", Claims(removed.Role)));
         return changes;

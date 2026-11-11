@@ -112,7 +112,7 @@ public sealed class ScenarioCapabilityTests
         limitations["mm-skole-contract"].Status.Should().Be("Not runtime verified");
         limitations["skoleadapter-source"].Status.Should().Be("Not available");
         limitations["period-lock"].Status.Should().Be("Operator required");
-        limitations["bufdata-delivery"].Detail.Should().Contain("Klargjort");
+        limitations["bufdata-delivery"].Detail.Should().Contain("depends on the M2LB source generation");
         limitations["graphql-coverage"].Status.Should().Be("Needs an approved client and role");
         limitations["target-system-tests"].Status.Should().Be("Discovered, not executed");
         JsonSerializer.Serialize(limitations).Should().NotContainAny("Passed", "\"Verified\"");

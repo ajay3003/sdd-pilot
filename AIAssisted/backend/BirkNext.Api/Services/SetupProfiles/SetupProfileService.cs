@@ -500,7 +500,7 @@ public sealed class SetupProfileService(IIntegrationJourneyPackRegistry packs, I
               type: "service-bus"
               producerRole: "Skolenærværsrapport"
               channel:
-                name: "skole.reports"
+                name: "skole.perioder"
               consumer:
                 logicalName: "Bufdata"
         manualRequirements:

@@ -26,9 +26,9 @@ public sealed class SkoleNaervaerTopologyProfile : ITopologyProfile
         // similarity match: "M2LB.SkoleService.Api" is Skoletjenesten because the pack says so, not because the names look alike.
         new("MM", ["Meldingsutvekslermottak", "Skolenærværsmottaket", "M2LB.Meldingsutvekslermottak.Host", "M2LB.MeldingsutvekslerReceiver.Host"], $"Validates and maps the report and calls Skoletjenesten ({Docs})."),
         new("Skoletjenesten", ["Skole", "Skolenærværsrapport", "Skolenaervaersrapport", "M2LB.Skole.Api", "M2LB.SkoleService.Api"], $"Receives reports and education data ({Docs})."),
-        new("Person", ["M2LB.Person.Api"], $"Publishes person events Skoletjenesten consumes ({Docs})."),
+        new("Person", ["M2LB.Person.Api", "M2LB.PersonService.Api"], $"Publishes person events Skoletjenesten consumes (topics person.barn, person.person) and answers its identity lookups over HTTP ({Docs})."),
         new("SkoleAdapter", ["M2LB.Skole.BiRK.Worker", "M2LB.SkoleAdapter.Worker"], $"Forwards education data from BiRK to Skoletjenesten ({Docs})."),
-        new("Bufdata", [], $"Receives the completed dataset after period lock; no delivery exists yet (ADR-028, {Docs})."),
+        new("Bufdata", [], $"Receives the completed dataset after period lock: the English-named SkoleService generation writes Parquet files with a manifest and publishes the period-closed event; the Norwegian-named Skole does not deliver yet. No Bufdata consumer is in any imported source ({Docs})."),
     ];
 
     public IReadOnlyList<TopologyExpectedPath> Paths { get; } =

@@ -2,7 +2,7 @@
 
 | ID | Gap | Status | Note |
 |---|---|---|---|
-| SU-G1 | Real-source verification of the Skolenærvær guide against the six packages in `C:\Downloads` | OPEN (queued as the next task) | The guide is grounded in the 2026-10-14 source review. MU internals, SkoleAdapter, Tjeneste and the v2.0.1 / `/reports` generation stay Needs clarification until checked |
+| SU-G1 | Real-source verification of the Skolenærvær guide against the six packages (found in `C:\Users\ajaan\Downloads`; `C:\Downloads` does not exist) | CLOSED 2026-11-11 | The seed was rewritten from the independent oracle (`birknext-skolenaervaer-evidence-matrix.md`). Both M2LB generations are kept apart; what remains unknown stays Needs clarification or Conflicting. The seed source-basis defect is fixed (see `birknext-skolenaervaer-integration-gap-register.md` BN-4/BN-5) |
 | SU-G2 | No source text viewer (file/line) | NOT SUPPORTED | BirkNext never retains source text. Citations name snapshot, file, symbol and lines, and link to the owning explorer |
 | SU-G3 | No separate reviewer/approver role; the same configuration-write permission edits, approves and publishes | OPEN | No independent four-eyes approval is enforced |
 | SU-G4 | Guides are not scoped to a project or workspace selection; the catalog applies to the installation, and sources are recognised by role across Source Analysis snapshots | OPEN | Change awareness lists every recognised snapshot separately and never picks the newest |

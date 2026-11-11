@@ -14,7 +14,7 @@ namespace BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer;
 /// <item>Utdanningsdata — BiRK → Debezium → Event Hub → SkoleAdapter → Utdanning. Executed by the existing Active Event provider
 /// (<see cref="SkoleNaervaerScenarioProvider"/>); this pack only summarizes it.</item>
 /// <item>Rapportmottak — external reporter → Altinn → MU → MM → Skolenærværsrapport.</item>
-/// <item>Periodeavslutning — Skolenærværsrapport → Service Bus (SkolenaervaersperiodeLukket) → Bufdata.</item>
+/// <item>Periodeavslutning — Skolenærværsrapport → Service Bus topic skole.perioder (SkolenaervaersperiodeLukket / SkolenaervaerPeriodClosed) → Bufdata.</item>
 /// </list>
 /// Integration configuration comes only from Integration Quality Review (the integration catalog and its message-flow test configuration);
 /// this pack defines no endpoint, namespace, topic, consumer group, authentication or environment. No MU, MM, Skolenærværsrapport, Bufdata or
@@ -28,6 +28,9 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     public const string RapportmottakId = "rapportmottak";
     public const string PeriodeavslutningId = "periodeavslutning";
     public const string PeriodClosedEvent = "SkolenaervaersperiodeLukket";
+    /// <summary>The period-closed event under both M2LB source generations: SkolenaervaersperiodeLukket (Norwegian-named Skole) and
+    /// SkolenaervaerPeriodClosed (English-named SkoleService). Either one is the same logical contract.</summary>
+    public static readonly IReadOnlyList<string> PeriodClosedEventNames = [PeriodClosedEvent, "SkolenaervaerPeriodClosed"];
     /// <summary>Read-only observation of an existing Altinn instance (Altinn Storage GET); sends and changes nothing.</summary>
     public const string InstanceEvidenceScenario = "instance-evidence";
     /// <summary>Read-only verification of one existing message from recorded and telemetry evidence (nothing is sent).</summary>
@@ -62,7 +65,9 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
 
     /// <summary>What Skoletjenesten does with a locked period's delivery today, from a review of its source (not runtime verified).</summary>
     internal const string SkoleDeliveryState =
-        "At lock Skoletjenesten prepares delivery rows (status Klargjort) but does not yet write dataset files, mark a delivery Levert or publish SkolenaervaersperiodeLukket (Skole source review, ADR-028 pending; not runtime verified).";
+        "It depends on the M2LB source generation: the Norwegian-named Skole prepares delivery rows at lock but writes no dataset file and publishes no event; " +
+        "the English-named SkoleService writes write-once Parquet files with a manifest and then publishes SkolenaervaerPeriodClosed on skole.perioder " +
+        "(source review of the imported packages; which generation runs in an environment is not known; not runtime verified).";
 
     public string PackId => Id;
     public string PackVersion => "1";
@@ -138,7 +143,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     /// <summary>
     /// Add-integration templates, one per pack integration requirement whose shape the pack knows (it also recognizes the result through
     /// <see cref="Matches"/>). Only deterministic, non-secret values: the report intake webhook is MU's known endpoint (never offered for a
-    /// production environment), the period-closed topic is the skole.reports channel (its event contract is separate); the CDC Event Hub name and source table vary per environment
+    /// production environment), the period-closed topic is the skole.perioder channel (its event contract is separate); the CDC Event Hub name and source table vary per environment
     /// and are left for the tester. No MU → MM or MM → Skoletjenesten template: the pack has no integration requirement for them.
     /// </summary>
     public IReadOnlyList<IntegrationTemplateDefinition> IntegrationTemplates { get; } =
@@ -476,7 +481,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         new()
         {
             PackId = Id, JourneyId = PeriodeavslutningId, DisplayName = "Periodeavslutning", Flow = "Skolenærværsrapport → Service Bus → Bufdata", Order = 3, ExecutionMode = JourneyExecutionMode.JourneyRunner,
-            Description = "When a reporting period closes, Skolenærværsrapport prepares the completed dataset and publishes SkolenaervaersperiodeLukket on Service Bus; Bufdata consumes the completed reporting data. The Bufdata dataset must not contain fødselsnummer or DUF.",
+            Description = "When a reporting period closes, Skolenærværsrapport prepares the completed dataset and publishes the period-closed event on Service Bus topic skole.perioder; Bufdata consumes the completed reporting data. The Bufdata dataset must not contain fødselsnummer or DUF.",
             Integrations = [new(PeriodClosed, "Skolenærvær – Period Closed", IntegrationKind.ServiceBus, "Skolenærværsrapport", "Bufdata", $"{PeriodClosedEvent} after period closure") { Identity = PeriodClosedIdentity }],
             Steps =
             [
@@ -496,7 +501,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                 new("event-emitted", "Event emitted", $"{PeriodClosedEvent} is emitted once for the closed period.", JourneyScenarioSupport.NotAssessed,
                     $"Not assessed: requires an operator-run lock and a broker observer. {SkoleDeliveryState}"),
                 new("event-metadata", "Event metadata correct", "The event carries the expected period metadata.", JourneyScenarioSupport.NotAssessed,
-                    "Not assessed: Skoletjenesten declares the event (period, delivered row count, coverage) and routes it to topic skole.perioder, but nothing publishes it yet (Skole source review, ADR-028 pending; not runtime verified), so no emitted event exists to check."),
+                    $"Not assessed: no emitted event has been observed. The event (period, delivered row count, coverage) is routed to topic skole.perioder. {SkoleDeliveryState}"),
                 new("bufdata-receives", "Bufdata receives dataset", "Bufdata processed the dataset for the closed period.", JourneyScenarioSupport.NotAssessed,
                     $"Not assessed: no Bufdata read/verification surface exists, and Skoletjenesten has no delivery acknowledgement. {SkoleDeliveryState}"),
                 new("pii-absent", "PII absent", "The delivered dataset contains no fødselsnummer or DUF.", JourneyScenarioSupport.NotAssessed,
@@ -596,22 +601,22 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
         ["close-valid-period"] = new("Skoletjenesten → Service Bus → Bufdata", "None in BirkNext: Skoletjenesten's lock planner locks the period on its schedule.",
             "A QA reporting period whose lock an operator controls.", "Synthetic reports and education data for that period.",
             "Skole operations (Skole:UtsetteLaas only postpones the lock).", JourneyResultVerification.NotVerifiable,
-            "After a lock, frozen coverage needs an approved GraphQL client and role; the dataset is not written yet.",
-            "Dataset files, the SkolenaervaersperiodeLukket publisher and a Bufdata receipt (ADR-028 pending in Skoletjenesten).",
+            "After a lock, frozen coverage needs an approved GraphQL client and role; whether the dataset is written depends on the deployed source generation.",
+            "Knowing which source generation is deployed, and a Bufdata receipt (none exists in any imported package).",
             "Skole operations; Skole team; Bufdata team", "Agree an operator-run QA lock procedure; until then rely on Skole's PeriodelaasEndeTilEndeTests (discovered, not executed).",
             OperatorRequired: true),
         ["event-emitted"] = new("Skoletjenesten → Service Bus", NotRunnableHere, "An operator-run lock; a broker observer for topic skole.perioder.", "A locked synthetic period.",
-            "Read access to Service Bus metrics for skole.perioder.", JourneyResultVerification.NotVerifiable, "Nothing publishes the event yet.",
-            "The event publisher in Skoletjenesten (ADR-028).", TeamSkole, "Wait for the publisher; then add a read-only broker observer."),
+            "Read access to Service Bus metrics for skole.perioder.", JourneyResultVerification.NotVerifiable, "No emitted event has been observed; only the English-named SkoleService generation publishes it.",
+            "Knowing which source generation is deployed, and a read-only broker observer.", TeamSkole, "Confirm the deployed generation; then add a read-only broker observer."),
         ["event-metadata"] = new("Skoletjenesten → Service Bus", NotRunnableHere, "As for event-emitted.", "A locked synthetic period.", "As for event-emitted.",
-            JourneyResultVerification.NotVerifiable, "No emitted event exists to check.", "An emitted SkolenaervaersperiodeLukket (period, delivered row count, coverage).", TeamSkole,
-            "Wait for the publisher (ADR-028)."),
+            JourneyResultVerification.NotVerifiable, "No emitted event has been observed.", "An emitted period-closed event (period, delivered row count, coverage).", TeamSkole,
+            "Confirm the deployed generation and observe one emitted event."),
         ["bufdata-receives"] = new("Bufdata", NotRunnableHere, "A Bufdata read or receipt surface.", "A delivered synthetic period.", "Read access to Bufdata delivery status (none exists).",
-            JourneyResultVerification.NotVerifiable, "Only prepared delivery rows exist (Klargjort); no file or receipt.", "A dataset file, a Levert state and a Bufdata receipt.",
+            JourneyResultVerification.NotVerifiable, "No delivered file has been observed; no imported package has a Bufdata receipt (the English-named SkoleService generation writes files, the Norwegian-named Skole only prepares rows).", "A delivered dataset file and a Bufdata receipt.",
             $"{TeamSkole}; Bufdata team", "Agree a Bufdata receipt or read-only status surface."),
         ["pii-absent"] = new("Bufdata", NotRunnableHere, "Access to the delivered dataset.", "A delivered synthetic period.", "Read access to the dataset (none exists).",
-            JourneyResultVerification.NotVerifiable, "No dataset file exists to scan.", "The delivered dataset; Skole's file PII test is skipped (ADR-028).",
-            $"{TeamSkole}; Bufdata team", "Use Skole's PersonvernTests (discovered, not executed) for the database and events; the file scan waits for ADR-028."),
+            JourneyResultVerification.NotVerifiable, "No delivered dataset file has been observed to scan.", "Read access to a delivered dataset file.",
+            $"{TeamSkole}; Bufdata team", "Use Skole's PersonvernTests (discovered, not executed) for the database and events; a file scan needs a delivered file."),
         ["coverage-metadata"] = new("Skoletjenesten", NotRunnableHere, "An approved GraphQL client for dekningsstatistikk.", "A locked synthetic period.",
             "Role Skole:SeDekningsstatistikk (not granted).", JourneyResultVerification.NotVerifiable,
             "Frozen coverage is readable through GraphQL after a lock, but BirkNext has no approved client; it is not the Bufdata delivery population.",
@@ -838,7 +843,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                     "Only the SkoleAdapter specification has been supplied; its source is not in Source Analysis. The education CDC contract is not verified, and update, delete and late linkage stay Not assessed.",
                     "SkoleAdapter team"),
             new("period-lock", "Period lock", "Operator required", $"{SkoleLockLifecycle} BirkNext never locks a period.", "Skole operations"),
-            new("bufdata-delivery", "Bufdata delivery", "Not verifiable beyond prepared rows", SkoleDeliveryState, $"{TeamSkole}; Bufdata team"),
+            new("bufdata-delivery", "Bufdata delivery", "Not verifiable: no delivered file or Bufdata receipt observed", SkoleDeliveryState, $"{TeamSkole}; Bufdata team"),
             new("graphql-coverage", "Coverage (GraphQL)", "Needs an approved client and role",
                 "dekningsstatistikk needs Skole:SeDekningsstatistikk and the follow-up lists need Skole:SeOppfolgingsliste (with graded access for Kode 6/7). BirkNext has no approved client, so coverage is not verified.",
                 TeamSkole),
@@ -958,7 +963,8 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     }
 
     // ── Canonical integration identities (Test Pack expectations; aliases are TestPackExpected, never source-proven) ──────────────────────────
-    // The channel and the contract are separate: Period Closed is published on skole.reports (M2LB source) and carries SkolenaervaersperiodeLukket.
+    // The channel and the contract are separate: Period Closed is published on skole.perioder (M2LB source, both generations) and carries
+    // SkolenaervaersperiodeLukket (Norwegian-named Skole) or SkolenaervaerPeriodClosed (English-named SkoleService).
 
     public IReadOnlyList<IntegrationAlias> Aliases => ExpectedAliases;
 
@@ -989,12 +995,13 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
     public static readonly IntegrationRequirementIdentity PeriodClosedIdentity = new()
     {
         Kind = IntegrationKind.ServiceBus, LogicalName = "Skolenærvær – Period Closed",
-        ProducerNames = ["Skolenærværsrapport", "Skoletjenesten"], ConsumerNames = ["Bufdata"], Channels = [PeriodClosedChannel], ContractIdentities = [PeriodClosedEvent],
+        ProducerNames = ["Skolenærværsrapport", "Skoletjenesten"], ConsumerNames = ["Bufdata"], Channels = [PeriodClosedChannel], ContractIdentities = [.. PeriodClosedEventNames],
         Aliases = ExpectedAliases,
     };
 
-    /// <summary>The Service Bus topic Skolenærværsrapport publishes period closure on (named in the M2LB source; Test Pack expectation here).</summary>
-    public const string PeriodClosedChannel = "skole.reports";
+    /// <summary>The Service Bus topic Skolenærværsrapport publishes period closure on: skole.perioder in every imported M2LB package that implements
+    /// Skole (WolverineOppsett/WolverineSetup publish rules); a Test Pack expectation here, matched by exact name.</summary>
+    public const string PeriodClosedChannel = "skole.perioder";
 
     public bool Matches(JourneyIntegrationRequirement requirement, IntegrationDefinition integration) => requirement.Key switch
     {
@@ -1214,7 +1221,7 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
 
             case PeriodeavslutningId:
             {
-                // Transport channel and event contract are separate facts: the channel is the configured integration's topic (skole.reports), looked
+                // Transport channel and event contract are separate facts: the channel is the configured integration's topic (skole.perioder), looked
                 // for by its exact name; the event contract is looked for as a contract/message type — never as a topic named after the event.
                 var boundIds = context.Bindings.Select(binding => binding.SnapshotId).ToHashSet();
                 var configuredChannel = context.Catalog.Integrations.Where(item => item.Enabled && IntegrationIdentityResolver.Match(PeriodClosedIdentity, item).Found)
@@ -1225,8 +1232,8 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                     IntegrationIdentityResolver.SameName(configuredChannel, pair.Channel.EntityName) || IntegrationIdentityResolver.SameName(configuredChannel, pair.Channel.Name));
                 var channelBound = channelSnapshot is not null && boundIds.Contains(channelSnapshot.Id);
                 var contractInSource = context.SourceSnapshots.Any(snapshot =>
-                    snapshot.EvidenceDomains?.Contracts.Contracts.Any(contract => ArchitectureRuleEvaluator.MatchesAny([PeriodClosedEvent], contract.Name, contract.File)) == true
-                    || (snapshot.Architecture?.MessagingChannels ?? []).Any(item => item.ContractReferences.Any(reference => ArchitectureRuleEvaluator.MatchesAny([PeriodClosedEvent], reference))));
+                    snapshot.EvidenceDomains?.Contracts.Contracts.Any(contract => ArchitectureRuleEvaluator.MatchesAny([.. PeriodClosedEventNames], contract.Name, contract.File)) == true
+                    || (snapshot.Architecture?.MessagingChannels ?? []).Any(item => item.ContractReferences.Any(reference => ArchitectureRuleEvaluator.MatchesAny([.. PeriodClosedEventNames], reference))));
                 return
                 [
                     new("domain-trigger", "Safe period-closure trigger", JourneyPrerequisiteCategory.Trigger, JourneyReadinessState.NotReady,
@@ -1238,8 +1245,8 @@ public sealed class SkoleNaervaerJourneyPack(IIntegrationMessageFlowStore messag
                             : $"Not source verified: Service Bus channel {channel.EntityName ?? channel.Name} ({channel.Type}) is in snapshot {channelSnapshot!.Archive.FileName}, which is not bound in Integration Quality Review → Evidence.")
                         { Source = SourceAnalysisSource },
                     new("event-contract", $"{PeriodClosedEvent} contract", JourneyPrerequisiteCategory.Contract, contractInSource ? JourneyReadinessState.Partial : JourneyReadinessState.NotReady,
-                        contractInSource ? $"{PeriodClosedEvent} is named in source contract evidence; the producer ↔ consumer contract relationship is not reviewed."
-                            : $"Documented in the architecture only: no contract or message type named {PeriodClosedEvent} is in Source Analysis (the channel {configuredChannel} is a separate fact)."),
+                        contractInSource ? $"The period-closed event ({string.Join(" / ", PeriodClosedEventNames)}) is named in source contract evidence; the producer ↔ consumer contract relationship is not reviewed."
+                            : $"Documented in the architecture only: no contract or message type named {string.Join(" or ", PeriodClosedEventNames)} is in Source Analysis contract evidence (the channel {configuredChannel} is a separate fact)."),
                     Source("Skolenærværsrapport", ["Skolenærværsrapport", "Skolenaervaersrapport"], M2lbSource),
                     Source("Bufdata", ["Bufdata"], null),
                     new("bufdata-verifier", "Bufdata verification", JourneyPrerequisiteCategory.DownstreamVerification, JourneyReadinessState.NotAvailable,

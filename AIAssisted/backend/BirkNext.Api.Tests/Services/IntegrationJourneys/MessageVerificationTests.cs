@@ -315,7 +315,7 @@ public sealed class MessageVerificationTests
         var bufdata = (await t.VerifyAsync(Inputs("bufdata-delivery", message: MessageId))).MessageVerification!;
         bufdata.Verdict.Should().Be(MessageVerificationVerdict.NotEvaluated);
         Assertion(bufdata, "bufdata-received").Should().Be(MessageVerificationVerdict.NotEvaluated);
-        bufdata.Providers.Single(item => item.ProviderId == SkoleNaervaerMessageEvidence.BufdataProvider).Detail.Should().Contain("Klargjort");
+        bufdata.Providers.Single(item => item.ProviderId == SkoleNaervaerMessageEvidence.BufdataProvider).Detail.Should().Contain("no imported package has a Bufdata receipt surface");
     }
 
     // ── Persistence and safety ──────────────────────────────────────────────────────────────────────────────────

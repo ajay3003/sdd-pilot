@@ -33,12 +33,12 @@ public sealed class IntegrationIdentityTests
     }
 
     [Fact]
-    public void PeriodClosed_ResolvesTheExistingSkoleReportsIntegration_AsFoundWithMappingIncomplete()
+    public void PeriodClosed_ResolvesTheExistingSkolePerioderIntegration_AsFoundWithMappingIncomplete()
     {
-        var skoleReports = new IntegrationDefinition { Id = "sb", Kind = IntegrationKind.ServiceBus, EndpointOrTopic = "skole.reports", Producer = "M2LB.SkoleService.Api" };
+        var skoleReports = new IntegrationDefinition { Id = "sb", Kind = IntegrationKind.ServiceBus, EndpointOrTopic = "skole.perioder", Producer = "M2LB.SkoleService.Api" };
         var match = IntegrationIdentityResolver.Match(SkoleNaervaerJourneyPack.PeriodClosedIdentity, skoleReports);
         match.State.Should().Be(IntegrationMatchState.MappingIncomplete, "the integration exists; only its consumer mapping is missing");
-        match.Matched.Should().Contain(["Channel skole.reports", "Producer M2LB.SkoleService.Api"]);
+        match.Matched.Should().Contain(["Channel skole.perioder", "Producer M2LB.SkoleService.Api"]);
         match.Unresolved.Should().ContainSingle().Which.Should().Be("Consumer Bufdata not configured");
 
         IntegrationIdentityResolver.Match(SkoleNaervaerJourneyPack.PeriodClosedIdentity, skoleReports with { Consumer = new IntegrationConsumer { DisplayName = "Bufdata" } })
@@ -46,6 +46,12 @@ public sealed class IntegrationIdentityTests
         IntegrationIdentityResolver.Match(SkoleNaervaerJourneyPack.PeriodClosedIdentity, skoleReports with { Kind = IntegrationKind.EventHub }).Found.Should().BeFalse();
         IntegrationIdentityResolver.Match(SkoleNaervaerJourneyPack.PeriodClosedIdentity, new IntegrationDefinition { Kind = IntegrationKind.ServiceBus, EndpointOrTopic = "other.topic", Producer = "Something" })
             .Found.Should().BeFalse("no anchor matched — a display name alone never resolves an integration");
+        // skole.rapporter / skole.reports carry report changes, not period closure (WolverineSetup/WolverineOppsett publish rules in the imported M2LB packages).
+        foreach (var reportsTopic in new[] { "skole.rapporter", "skole.reports" })
+            IntegrationIdentityResolver.Match(SkoleNaervaerJourneyPack.PeriodClosedIdentity, skoleReports with { EndpointOrTopic = reportsTopic }).Found
+                .Should().BeFalse($"{reportsTopic} is the report-changed topic, not the period-closed channel");
+        // Both source generations name the event differently; either identifies the contract.
+        SkoleNaervaerJourneyPack.PeriodClosedIdentity.ContractIdentities.Should().BeEquivalentTo(["SkolenaervaersperiodeLukket", "SkolenaervaerPeriodClosed"]);
     }
 
     [Fact]

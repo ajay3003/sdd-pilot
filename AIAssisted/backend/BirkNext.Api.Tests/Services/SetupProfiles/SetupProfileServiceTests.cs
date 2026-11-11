@@ -94,8 +94,8 @@ public sealed class SetupProfileServiceTests : IAsyncLifetime
 
     private static readonly IntegrationDefinition SkoleReports = new()
     {
-        Id = "dev:servicebus:skole-reports", EnvironmentId = Env, PlatformId = "dev:servicebus:m2lb", DisplayName = "skole.reports", Kind = IntegrationKind.ServiceBus, Enabled = true,
-        EndpointOrTopic = "skole.reports", Producer = "M2LB.SkoleService.Api",
+        Id = "dev:servicebus:skole-perioder", EnvironmentId = Env, PlatformId = "dev:servicebus:m2lb", DisplayName = "skole.perioder", Kind = IntegrationKind.ServiceBus, Enabled = true,
+        EndpointOrTopic = "skole.perioder", Producer = "M2LB.SkoleService.Api",
     };
 
     private static readonly IntegrationDefinition AltinnIntake = new()
@@ -118,7 +118,7 @@ public sealed class SetupProfileServiceTests : IAsyncLifetime
               producerRole: "Skolenærværsrapport"
               producerImplementation: "M2LB.SkoleService.Api"
               channel:
-                name: "skole.reports"
+                name: "skole.perioder"
               consumer:
                 logicalName: "Bufdata"
             sourceEvidence:
@@ -148,7 +148,7 @@ public sealed class SetupProfileServiceTests : IAsyncLifetime
         var json = await Preview("""
             {"version": 1, "profile": {"name": "Skolenærvær Development", "testPack": "skolenaervaer", "environment": "Development"},
              "journeys": {"periodeavslutning": {"integration": {"logicalName": "Skolenærvær – Period Closed", "type": "service-bus", "producerRole": "Skolenærværsrapport",
-               "producerImplementation": "M2LB.SkoleService.Api", "channel": {"name": "skole.reports"}, "consumer": {"logicalName": "Bufdata"}}, "sourceEvidence": {"snapshotName": "M2LB.zip"}},
+               "producerImplementation": "M2LB.SkoleService.Api", "channel": {"name": "skole.perioder"}, "consumer": {"logicalName": "Bufdata"}}, "sourceEvidence": {"snapshotName": "M2LB.zip"}},
                "rapportmottak": {"integration": {"logicalName": "Skolenærvær – Altinn report intake", "type": "http-api", "producer": "Altinn", "consumer": "Meldingsutveksleren (MU)",
                "endpoint": "https://mu.example.test/api/altinn/webhook"}, "sourceEvidence": {"snapshotName": "Tiltak 2.zip"}}},
              "aliases": [{"logical": "Skolenærværsrapport", "technical": "M2LB.SkoleService.Api"}]}
@@ -342,7 +342,7 @@ public sealed class SetupProfileServiceTests : IAsyncLifetime
         var m2lb = Snapshot("M2LB.zip", "sha-m2lb");
         _bindings.Items.Add(IntegrationEvidenceBinding.For(Env, SkoleReports.Id, m2lb, DateTimeOffset.UtcNow));
         var export = await Service().ExportAsync(Env, SkoleNaervaerJourneyPack.Id, SetupProfileFormat.Yaml, default);
-        export.Content.Should().Contain("containsSecrets: false").And.Contain("sanitized: true").And.Contain("\"trustedExecution\"").And.Contain("\"skole.reports\"");
+        export.Content.Should().Contain("containsSecrets: false").And.Contain("sanitized: true").And.Contain("\"trustedExecution\"").And.Contain("\"skole.perioder\"");
         export.Content.Should().NotContainAny("secret:", "token", "password", "trusted:", "verified:", "approved:", "confirmed:", ActiveEventTestHarness.Sentinel);
         export.Excluded.Should().Contain("Execution trust and active-execution permission");
 

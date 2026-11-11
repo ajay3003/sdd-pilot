@@ -1,0 +1,38 @@
+# BirkNext — Skolenærvær integration gap register (real-source audit, 2026-11-11)
+
+There are two kinds of finding here:
+- **BirkNext gaps (BN-…)**: defects or limitations in BirkNext's own treatment of Skolenærvær.
+- **System observations (SYS-…)**: properties of the system under test, found in the real source, which BirkNext now explains. They are not BirkNext defects. The M2LB source was not changed (that was forbidden).
+
+The evidence for every row is in `birknext-skolenaervaer-evidence-matrix.md`.
+
+## BirkNext gaps
+
+| ID | Gap | Evidence | Status |
+|---|---|---|---|
+| BN-1 | **The Period-closed channel was wrong.** The pack expected Service Bus topic `skole.reports`. Every imported package that implements Skole publishes period closure on `skole.perioder`. The same pack's scenario text already said `skole.perioder`, and BirkNext's own cross-repo review agreed. Consequences: readiness looked for a channel no source contains, so the event-channel prerequisite could never be met from source, and a correctly configured `skole.perioder` integration was not recognised as Period closed. | `WolverineSetup.cs:50` ([M2LB (7)], [M2LB (3)]), `WolverineOppsett.cs:47` ([M2LB (5)]); Source Analysis of the imports lists `skole.perioder` as a Confirmed producer channel of SkoleService/Skole | **FIXED**: `PeriodClosedChannel = "skole.perioder"`, setup-profile template, tests |
+| BN-2 | **Period-closed event identity covered one generation only.** Only `SkolenaervaersperiodeLukket` (Norwegian-named) was recognised; the English-named generation publishes `SkolenaervaerPeriodClosed`. The "event contract in source" check therefore missed it. | `[M2LB (7)]` 35 references, `[M2LB (3)]` 13, `[M2LB (5)]` 3 (old name) | **FIXED**: `PeriodClosedEventNames` (both names) used for identity and the contract-in-source check |
+| BN-3 | **Curated facts were stale.** MM input was pinned to "XSD v2.0.0", Skole intake to `skjemaversjon "2.0.0"`, Bufdata to "no dataset writer, no Parquet library (ADR-028)", and delivery to "prepared rows (Klargjort) only". All four hold for one generation only. | Evidence matrix §3, §5 | **FIXED**: the texts state the generation dependency; the supported versions are no longer guessed (`SupportedVersions = null`, so they are not evaluated) |
+| BN-4 | **The System Understanding seed claimed a source basis it never had.** The seed recorded the snapshots present when it was first opened as its basis. With the six packages imported before the guide was opened, the guide showed **no** "sources changed", although it had never been checked against any of them. | Isolated run: `sourceChanges: []` with 5 recognised snapshots (`bn-api_system_understanding_guides_skolenaervaer.json`) | **FIXED**: the seed basis is "curated outside this installation (no imported snapshot)"; every recognised snapshot reads "may need review". Test added |
+| BN-5 | **The System Understanding guide content was out of date**: route, schema version, Parquet, MU polling, receipt semantics, Tjeneste timing, Person events, CDC state. | Evidence matrix | **FIXED**: the seed was rewritten from the oracle; generations are kept apart; nothing is RuntimeVerified. An *unedited* installed seed is refreshed once; anything a person edited is never touched |
+| BN-6 | Person was not recognised in the English-named generation (`M2LB.PersonService.Api`), and its description said "publishes events" only | `[M2LB (7)] PersonService/…` | **FIXED** (alias plus description: events and HTTP lookup) |
+| BN-7 | Tjeneste and the Skoletjenesten → Person HTTP lookup are not expected relationships in the Integration Topology profile, which models resolvable technical relationships only | Evidence matrix §2–3 | OPEN: adding them needs resolver evidence rules. System Understanding shows both |
+| BN-8 | The M2LB source role is one role for MM, Skole and SkoleAdapter. A candidate snapshot that contains only some of them (`M2LB (6)`: Skole code only) is offered like a complete one. "Matched on" names the components but does not say what is missing | Source setup response: `M2LB (6).zip` matched on `Skole.Api` only | OPEN (recommendation: capability coverage per candidate) |
+| BN-9 | Contract usage is "Published API" for an OpenAPI file in a specs folder with no implementing code (`M2LB (4)`, `Skole/specs/…/rapportinntak.openapi.yaml`) | Contract evidence `usage: "Published API"`, `evidenceState: "Inferred"` | OPEN: the provenance is Inferred, but the usage label overstates |
+| BN-10 | Wolverine publish rules with a generic envelope (`Hendelseskonvolutt<SkolenaervaersperiodeLukket>`, `SkolenaervaerPeriodClosedEnvelope`) do not yield `ContractReferences` on the channel | Source Analysis channels with `contractReferences: []` | OPEN: the event contract is still found through contract evidence |
+| BN-11 | No cross-source compatibility check between MU's message-type versions and MM's registered version | MU knows v2.0.0 at most; MM in `M2LB (7)`/`(3)` accepts only v2.0.1 | OPEN: the Contract Evidence compare is manual; the guide records the risk (SYS-1) |
+| BN-13 | Source Management lists the workspace's import records only (created by the Project Import UI). Snapshots imported through the API, or otherwise present in Source Analysis, are absent ("No sources yet"), while the Snapshot Registry lists all six | Browser run, `/sources` vs `/snapshots` | OPEN (cross-module inconsistency; not changed in this task) |
+| BN-12 | Snapshot labels show the uploaded file name. The harness uploaded copies named `p1.zip`…`p6.zip`; the mapping to the original names is in the acceptance report | Acceptance §1 | NOTE (harness choice; BirkNext keeps the SHA-256, which identifies the original) |
+
+## System observations (M2LB / MU; reported, not changed)
+
+| ID | Observation | Evidence | Classification |
+|---|---|---|---|
+| SYS-1 | **Possible version mismatch.** MU's schema tool ships skolenærvær v0.8.1, v0.8.2 and v2.0.0 only. MM in `M2LB (7)` and `M2LB (3)` registers only `…skolenaervaer.v2.0.1.flat`; any other namespace completes as `UnsupportedVersion` with a positive receipt and is never delivered | Evidence matrix §5–7 | Conflicting; needs clarification (the real Altinn namespace is not in these sources) |
+| SYS-2 | The receipt policy is positive only: rejected reports also get a positive Applikasjonskvittering | `MessageTypeRegistration.cs:58-63` | SourceImplemented |
+| SYS-3 | Two M2LB generations differ on the wire: `/rapporter` + `skjemaversjon 2.0.0` + `{"utfall":"Mottatt"}` + role `Skole.Rapportinntak`, versus `/reports` + `2.0.1` + `{"outcome":"Received"}` + `Skolenaervaer.Submit` | Evidence matrix §1, §5 | SourceImplemented; which one is deployed is not known |
+| SYS-4 | The English-named SkoleService calls Person routes (`internal/barn/lookup-identifier`) that only `M2LB (7)`'s PersonService implements. In `M2LB (3)` the Person project implements the Norwegian routes only | Oracle §2 | Conflicting within `M2LB (3)` |
+| SYS-5 | Utdanning CDC capture is not live: the CDC order is a draft ("Ingenting her er sendt"), CdcReplay lists the tables as AwaitingCapture, and the code-translation tables are empty, so codes are sent as `unknown` | Oracle §4 | Specified / NeedsClarification |
+| SYS-6 | `barnEksternId` is `long?` in SkoleAdapter but `int?` in SkoleService | Oracle §4 | Conflicting |
+| SYS-7 | `Delivery:Storage:BlobEndpoint` is empty in source, so whether any environment has a delivery account is not verifiable | Oracle §5 | NotVerifiable |
+| SYS-8 | The MM spec says MU does not validate Altinn payloads, but the MU source validates them (XSD) before forwarding | Oracle §7 | Conflicting (spec vs source) |

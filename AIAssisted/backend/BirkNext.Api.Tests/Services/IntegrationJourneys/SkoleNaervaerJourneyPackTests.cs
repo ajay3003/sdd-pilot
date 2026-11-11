@@ -177,8 +177,9 @@ public sealed class SkoleNaervaerJourneyPackTests
             Architecture = new ArchitectureSnapshot
             {
                 Components = [new() { Id = "c-mm", Name = "Skolenaervaer.MM.Worker" }, new() { Id = "c-rapport", Name = "Skolenaervaersrapport.Api" }],
-                // The real shape: the period-closed event is carried on the skole.reports topic; the topic is not named after the event.
-                MessagingChannels = [new() { Id = "ch-1", Name = "skole.reports", EntityName = "skole.reports", Type = MessagingChannelType.ServiceBusTopic, ContractReferences = ["SkolenaervaersperiodeLukket"] }],
+                // The real shape (every imported M2LB package that implements Skole): the period-closed event is carried on the skole.perioder topic;
+                // the topic is not named after the event.
+                MessagingChannels = [new() { Id = "ch-1", Name = "skole.perioder", EntityName = "skole.perioder", Type = MessagingChannelType.ServiceBusTopic, ContractReferences = ["SkolenaervaersperiodeLukket"] }],
             },
         };
         harness.Sources.Snapshots.Add(snapshot);
@@ -261,7 +262,8 @@ public sealed class SkoleNaervaerJourneyPackTests
         close.NotAssessedBecause.Should().StartWith("Not assessed — operator required.").And.Contain("only postpones").And.Contain("never locks a period");
         closure.Prerequisites.Single(item => item.Key == "domain-trigger").Detail.Should().StartWith("Operator required.");
         closure.Journey.Scenarios.Where(item => item.ScenarioId is "event-emitted" or "bufdata-receives" or "pii-absent")
-            .Should().OnlyContain(item => item.NotAssessedBecause!.Contains("Klargjort") && item.NotAssessedBecause.Contains("not runtime verified"));
+            .Should().OnlyContain(item => item.NotAssessedBecause!.Contains("depends on the M2LB source generation") && item.NotAssessedBecause.Contains("not runtime verified"),
+                "delivery differs between the imported M2LB generations; which one is deployed is not known");
         closure.CanRun.Should().BeFalse();
 
         var run = await service.StartAsync(new IntegrationJourneyRunRequest
@@ -326,24 +328,24 @@ public sealed class SkoleNaervaerJourneyPackTests
     // ── Canonical identity: an existing technical integration is the journey's integration ─────────────────────────────
 
     [Fact]
-    public async Task Periodeavslutning_FindsTheExistingSkoleReportsIntegration_MappingIncomplete_NeverMissing()
+    public async Task Periodeavslutning_FindsTheExistingSkolePerioderIntegration_MappingIncomplete_NeverMissing()
     {
         await using var harness = new IntegrationJourneyHarness();
         harness.Active.Catalog.Extra.Add(new IntegrationDefinition
         {
-            Id = "dev:servicebus:skole-reports", EnvironmentId = ActiveEventTestHarness.Env, DisplayName = "skole.reports", Kind = IntegrationKind.ServiceBus, Enabled = true,
-            EndpointOrTopic = "skole.reports", Producer = "M2LB.SkoleService.Api",
+            Id = "dev:servicebus:skole-perioder", EnvironmentId = ActiveEventTestHarness.Env, DisplayName = "skole.perioder", Kind = IntegrationKind.ServiceBus, Enabled = true,
+            EndpointOrTopic = "skole.perioder", Producer = "M2LB.SkoleService.Api",
         });
         var closure = (await harness.Service(Pack(harness)).PacksAsync(ActiveEventTestHarness.Env, default)).Single().Journeys.Single(view => view.Journey.JourneyId == "periodeavslutning");
 
-        closure.MatchedIntegrations.Should().ContainSingle(item => item.IntegrationId == "dev:servicebus:skole-reports" && item.MatchState == IntegrationMatchState.MappingIncomplete);
+        closure.MatchedIntegrations.Should().ContainSingle(item => item.IntegrationId == "dev:servicebus:skole-perioder" && item.MatchState == IntegrationMatchState.MappingIncomplete);
         closure.Prerequisites.Should().NotContain(item => item.Category == JourneyPrerequisiteCategory.Integration && item.State == JourneyReadinessState.NotConfigured,
             "the integration exists; requiring a duplicate is the defect");
         var mapping = closure.Prerequisites.Single(item => item.Key == "integration:period-closed:mapping");
         (mapping.State, mapping.Mandatory).Should().Be((JourneyReadinessState.Partial, false));
-        mapping.Detail.Should().StartWith("Integration found: skole.reports").And.Contain("Consumer Bufdata not configured").And.Contain("not source verified");
-        mapping.Diagnostics.Should().Contain("integration-id:dev:servicebus:skole-reports");
-        closure.Prerequisites.Single(item => item.Key == "event-channel").Label.Should().Be("Service Bus channel skole.reports", "the channel is the integration's topic, never the event name");
+        mapping.Detail.Should().StartWith("Integration found: skole.perioder").And.Contain("Consumer Bufdata not configured").And.Contain("not source verified");
+        mapping.Diagnostics.Should().Contain("integration-id:dev:servicebus:skole-perioder");
+        closure.Prerequisites.Single(item => item.Key == "event-channel").Label.Should().Be("Service Bus channel skole.perioder", "the channel is the integration's topic, never the event name");
         closure.Prerequisites.Single(item => item.Key == "domain-trigger").Detail.Should().Contain("never publishes the event directly");
         closure.Prerequisites.Single(item => item.Key == "bufdata-verifier").State.Should().Be(JourneyReadinessState.NotAvailable, "no Bufdata evidence is fabricated");
     }

@@ -63,9 +63,14 @@ public sealed class SystemGuideTests : IAsyncLifetime
         SystemGuideService.AllEvidence(seed).Should().NotContain(e => e.Class == GuideEvidenceClass.RuntimeVerified || e.Class == GuideEvidenceClass.TestVerified);
         seed.Rules.Should().OnlyContain(r => r.Verification == GuideEvidenceClass.NotAssessed);
         seed.Scenarios.Should().OnlyContain(s => s.State == GuideScenarioState.Suggested || s.State == GuideScenarioState.NeedsClarification, "guidance is never coverage");
-        // Bufdata delivery is not presented as done; the deployed contract version is not guessed.
-        seed.Edges.Single(e => e.Id == "e-periodelaas-bufdata").Uncertainty.Should().Contain("Ikke implementert");
-        seed.Transfers.Single(t => t.EdgeId == "e-mm-skole").Versions.Should().Contain(v => v.Fact.Contains("/rapporter")).And.Contain(v => v.Fact.Contains("/reports") && v.Class == GuideEvidenceClass.NeedsClarification);
+        // Both imported M2LB source generations are kept as separate facts, and the deployed one is not guessed (real-source audit 2026-11-11).
+        var intake = seed.Transfers.Single(t => t.EdgeId == "e-mm-skole").Versions;
+        intake.Should().Contain(v => v.Fact.Contains("/rapporter")).And.Contain(v => v.Fact.Contains("/reports"));
+        intake.Should().NotContain(v => v.Class == GuideEvidenceClass.RuntimeVerified, "which generation is deployed is not known");
+        // Parquet delivery exists in source in one generation only; it is never presented as delivered to Bufdata.
+        var delivery = seed.Edges.Single(e => e.Id == "e-periodelaas-bufdata");
+        delivery.DataFormat.Should().Contain("Parquet");
+        delivery.Evidence.Should().NotContain(e => e.Class == GuideEvidenceClass.RuntimeVerified);
     }
 
     [Fact]
@@ -157,6 +162,59 @@ public sealed class SystemGuideTests : IAsyncLifetime
         changes.Should().ContainSingle().Which.Change.Should().Contain("may need review");
         changes[0].AffectedClaims.Should().Be(1);
         (await guides.GetAsync("skolenaervaer", true, default)).Shown!.ContentFingerprint.Should().Be(seed.ContentFingerprint, "nothing is rewritten automatically");
+    }
+
+    private static IqrSourceSnapshotRecord SnapshotRecord(string archive, string project) => new()
+    {
+        Id = Guid.NewGuid(), EnvironmentId = "", IntegrationId = IqrSourceStore.SourceAnalysisOwner, AnalyzedAt = DateTimeOffset.UtcNow,
+        EvidenceJson = JsonSerializer.Serialize(new IqrSourceSnapshot
+        {
+            Archive = new(archive, new string('d', 64), 12), AnalyzedAt = DateTimeOffset.UtcNow,
+            Projects = [new SourceProject(project, "src/" + project, false, "Api", SourceConfidence.Confirmed)],
+        }, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+    };
+
+    [Fact]
+    public async Task A_curated_seed_never_claims_the_snapshots_present_when_it_was_seeded_as_its_basis()
+    {
+        await using var db = Context();
+        // The source is imported BEFORE the guide is first opened (the order a real installation has).
+        db.IqrSourceSnapshots.Add(SnapshotRecord("M2LB (7).zip", "M2LB.SkoleService.Api"));
+        await db.SaveChangesAsync();
+        // The real catalog wiring: the guide's source roles come from the Skolenærvær pack (recognition by components/projects).
+        var flows = new BirkNext.Api.Tests.Services.IntegrationJourneys.IntegrationJourneyHarness.FakeMessageFlows();
+        var kit = new BirkNext.Api.Tests.Services.AltinnTesting.AltinnTestKit();
+        var pack = new BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerJourneyPack(flows, kit.Policy, kit.Contracts(flows));
+        var guides = new SystemGuideService(db, [Skole with { PackId = pack.PackId }], [pack]);
+        var view = await guides.GetAsync("skolenaervaer", true, default);
+
+        view.Shown!.SourceBasis.Should().OnlyContain(b => b.SnapshotId == null && b.Label.Contains("curated outside this installation"),
+            "the seed was written elsewhere; it was not checked against this installation's snapshots");
+        view.SourceChanges.Should().ContainSingle(c => c.Label.Contains("M2LB (7).zip")).Which.Change.Should().Contain("may need review",
+            "an imported source the guide was not written from must be flagged, whenever it was imported");
+    }
+
+    [Fact]
+    public async Task An_unedited_seed_draft_is_refreshed_from_the_shipped_seed_and_an_edited_or_published_one_never_is()
+    {
+        await using (var db = Context())
+        {
+            var guides = Service(db);
+            var seed = (await guides.GetAsync("skolenaervaer", true, default)).Shown!;
+            // Simulate an installation seeded by an older BirkNext: same seed author, older content.
+            var row = await db.SystemGuideRevisions.SingleAsync();
+            var older = seed.Content with { Purpose = "Eldre kuratert tekst." };
+            row.ContentJson = JsonSerializer.Serialize(older, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            row.ContentFingerprint = SystemGuideService.Fingerprint(older);
+            await db.SaveChangesAsync();
+            var refreshed = (await guides.GetAsync("skolenaervaer", true, default)).Shown!;
+            refreshed.ContentFingerprint.Should().Be(seed.ContentFingerprint, "an unedited curated draft follows the shipped seed");
+            refreshed.Revision.Should().Be(1);
+
+            // A person edited the draft: it is theirs now and is never replaced.
+            var edited = await guides.SaveDraftAsync("skolenaervaer", new(seed.Content with { Purpose = "Redigert av en person." }, null, null), "reviewer", default);
+            (await guides.GetAsync("skolenaervaer", true, default)).Shown!.ContentFingerprint.Should().Be(edited.ContentFingerprint);
+        }
     }
 
     // ── Generic model, safety ──────────────────────────────────────────────────────────────────────────────────

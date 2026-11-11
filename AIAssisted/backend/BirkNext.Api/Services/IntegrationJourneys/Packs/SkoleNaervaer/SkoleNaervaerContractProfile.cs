@@ -34,9 +34,9 @@ public static class SkoleNaervaerContractProfile
         },
         new()
         {
-            Id = "mm-input", Label = "MM input (XSD v2.0.0 flat)", FromComponent = "MU", ToComponent = "MM", Role = ContractBoundaryRole.Consumes, ContractId = MuMessage,
-            Paths = null, UnknownMembers = ContractUnknownMemberPolicy.Reject, SupportedVersions = ["2.0.0"],
-            Evidence = $"MM validates the decrypted message against XSD v2.0.0 flat before mapping ({CrossRepo} §1). Its read paths are not imported into BirkNext.",
+            Id = "mm-input", Label = "MM input (XSD flat; version depends on the M2LB generation)", FromComponent = "MU", ToComponent = "MM", Role = ContractBoundaryRole.Consumes, ContractId = MuMessage,
+            Paths = null, UnknownMembers = ContractUnknownMemberPolicy.Reject, SupportedVersions = null,
+            Evidence = $"MM validates the decrypted message against one registered flat XSD before mapping: v2.0.0 in the Norwegian-named Meldingsutvekslermottak, v2.0.1 in the English-named MeldingsutvekslerReceiver; MU's schema tool ships v2.0.0 and older only. Which MM is deployed is not known, so the supported version is not evaluated ({CrossRepo} §1; source review of the imported packages).",
         },
         new()
         {
@@ -47,14 +47,14 @@ public static class SkoleNaervaerContractProfile
         new()
         {
             Id = "skole-intake", Label = "Skoletjenesten report intake", FromComponent = "MM", ToComponent = "Skoletjenesten", Role = ContractBoundaryRole.Consumes,
-            ContractId = SkoleReport, Paths = null, UnknownMembers = ContractUnknownMemberPolicy.Reject, SupportedVersions = ["2.0.0"],
-            Evidence = $"Strict JSON: unknown, duplicate or missing fields give 400; skjemaversjon \"2.0.0\" ({CrossRepo} §2–3).",
+            ContractId = SkoleReport, Paths = null, UnknownMembers = ContractUnknownMemberPolicy.Reject, SupportedVersions = null,
+            Evidence = $"Strict JSON: unknown, duplicate or missing fields give 400. skjemaversjon \"2.0.0\" at /rapporter (Norwegian-named Skole) or \"2.0.1\" at /reports (English-named SkoleService); which one is deployed is not known, so the supported version is not evaluated ({CrossRepo} §2–3; source review of the imported packages).",
         },
         new()
         {
             Id = "skole-to-bufdata", Label = "Skoletjenesten → Bufdata dataset", FromComponent = "Skoletjenesten", ToComponent = "Bufdata", Role = ContractBoundaryRole.Maps,
             ContractId = SkoleReport, OutputContractId = BufdataDataset, Mapping = null,
-            Evidence = $"No dataset writer or publisher exists yet (ADR-028; no Parquet library is referenced) ({CrossRepo}).",
+            Evidence = $"Generation-dependent: the English-named SkoleService writes Parquet files (Parquet.Net 6.1.0) with a manifest, the Norwegian-named Skole has no dataset writer. The column mapping is not imported as data ({CrossRepo}; source review of the imported packages).",
         },
         new()
         {

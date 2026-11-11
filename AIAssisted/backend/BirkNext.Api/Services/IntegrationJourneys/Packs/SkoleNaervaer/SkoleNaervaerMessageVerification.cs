@@ -468,7 +468,7 @@ public static class SkoleNaervaerMessageVerification
                 "BirkNext has no approved GraphQL client and role (Skole:SeDekningsstatistikk for coverage; Skole:SeOppfolgingsliste for follow-up lists). Coverage is aggregate and never a single message's outcome.",
                 "Skoletjenesten GraphQL schema (source-reviewed).", s.CollectedAt, "Skole team"),
             new(SkoleNaervaerMessageEvidence.BufdataProvider, "Bufdata delivery", "Bufdata", MessageEvidenceProviderState.NotApplicable,
-                "No Bufdata evidence provider exists: Skoletjenesten prepares delivery rows (Klargjort) but writes no dataset file and has no receipt surface yet (ADR-028).",
+                "No Bufdata evidence provider exists: depending on the M2LB source generation Skoletjenesten only prepares delivery rows or also writes Parquet files, and no imported package has a Bufdata receipt surface.",
                 "Skoletjenesten source review.", s.CollectedAt, "Skole team; Bufdata team"),
         };
         var assertions = Assertions(s);
@@ -674,7 +674,7 @@ public static class SkoleNaervaerMessageVerification
                 break;
             case "bufdata-delivery":
                 result.Add(new("bufdata-received", "Bufdata received the delivery", "Receipt from Bufdata",
-                    "No Bufdata evidence provider; Skoletjenesten prepares delivery rows (Klargjort) only", MessageVerificationVerdict.NotEvaluated, "No read surface"));
+                    "No Bufdata evidence provider; no Bufdata receipt surface in any imported package", MessageVerificationVerdict.NotEvaluated, "No read surface"));
                 break;
         }
         return result;
