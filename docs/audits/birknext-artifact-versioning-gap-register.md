@@ -35,4 +35,4 @@ Statuses: PASS · FAIL · PARTIAL · BLOCKED · NOT RUN · NOT SUPPORTED.
 | AV-G10 | Contract-version allocation under concurrent imports | NOT RUN | Contract registry | The unique index protects the data; a concurrent import would surface a database error rather than a friendly conflict. Not reproduced. |
 | AV-G11 | Contract test approval has no who/when | NOT SUPPORTED | Contract Testing | `ReviewState` only, as before. |
 | AV-G12 | Test Data `Remove(alias)` deletes every version | OPEN (detected) | Test Data | A pinned run's dependency becomes **Removed** and the run Historical; the deletion itself is unchanged. |
-| AV-G13 | Scratch databases `birknext_av_20261111`, `birknext_av2_20261111` | OPEN (needs approval) | User | Kept; deleting them needs your approval. |
+| AV-G13 | Scratch databases `birknext_av_20261111`, `birknext_av2_20261111` | CLOSED | User | Dropped on 2026-11-11 after your approval (no open connections; psql confirms none remain). |
