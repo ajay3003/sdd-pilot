@@ -1212,3 +1212,17 @@
 .ftc-reading, .ftc-technical { margin-top: 1rem; }
 .ftc-reading > summary, .ftc-technical > summary { cursor: pointer; font-weight: 600; color: var(--clr-primary); }
 @media (max-width: 480px) { .ftc-facts > div { grid-template-columns: minmax(0, 1fr); gap: 0; } }
+
+/* General: only host configuration not shown elsewhere; endpoints on demand. */
+.ss-general-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); gap: 0.6rem 1.25rem; margin: 0.5rem 0 0.75rem; }
+.ss-general-facts dt { font-size: 0.78rem; font-weight: 600; color: var(--clr-text-subtle, #6e7781); }
+.ss-general-facts dd { margin: 0.1rem 0 0; font-size: 0.95rem; color: var(--clr-text-heading, #1f2328); overflow-wrap: anywhere; }
+.ss-tech { border-top: 1px solid var(--clr-border-subtle, #eaeef2); padding-top: 0.6rem; }
+.ss-tech summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+.ss-tech summary:focus-visible { outline: 2px solid var(--clr-primary-focus, #0969da); outline-offset: 2px; }
+.ss-endpoint-list { display: grid; gap: 0.45rem; margin: 0.6rem 0 0; }
+.ss-endpoint { display: grid; grid-template-columns: minmax(7rem, 9rem) minmax(0, 1fr); gap: 0.25rem 0.75rem; align-items: center; }
+.ss-endpoint dt { font-size: 0.85rem; color: var(--clr-text-muted, #57606a); }
+.ss-endpoint dd { margin: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; min-width: 0; }
+.ss-endpoint .mono-chip { overflow-wrap: anywhere; }
+@media (max-width: 640px) { .ss-endpoint { grid-template-columns: minmax(0, 1fr); } }

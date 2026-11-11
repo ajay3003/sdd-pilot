@@ -1,0 +1,17 @@
+.sov { display: grid; gap: 0.7rem; margin: 0 0 1.25rem; }
+.sov-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem 0.9rem; }
+.sov-title { margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--clr-text-heading, #1f2328); }
+.sov-fresh { font-size: 0.82rem; color: var(--clr-text-subtle, #6e7781); }
+.sov-refresh { margin-left: auto; border: 1px solid var(--clr-border, #d0d7de); background: var(--clr-surface-white, #fff); border-radius: 6px; padding: 0.25rem 0.75rem; font: inherit; font-size: 0.85rem; cursor: pointer; }
+.sov-refresh:focus-visible, .sov-link:focus-visible { outline: 2px solid var(--clr-primary-focus, #0969da); outline-offset: 2px; }
+.sov-tiles { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12.5rem), 1fr)); gap: 0.65rem; }
+.sov-tile { display: grid; gap: 0.25rem; align-content: start; padding: 0.8rem 0.95rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 10px; background: var(--clr-surface-white, #fff); border-top-width: 3px; min-width: 0; }
+.sov-k { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--clr-text-subtle, #6e7781); }
+.sov-v { display: flex; gap: 0.4rem; align-items: baseline; font-size: 1rem; font-weight: 700; color: var(--clr-text-heading, #1f2328); overflow-wrap: anywhere; }
+.sov-d { font-size: 0.85rem; line-height: 1.45; color: var(--clr-text-muted, #57606a); overflow-wrap: anywhere; }
+.sov-dot { font-size: 0.7rem; }
+.sov-ok { border-top-color: var(--clr-success, #1a7f37); } .sov-ok .sov-dot { color: var(--clr-success, #1a7f37); }
+.sov-warn { border-top-color: var(--clr-warning-border, #d4a72c); } .sov-warn .sov-dot { color: #9a6700; }
+.sov-bad { border-top-color: var(--clr-danger, #cf222e); } .sov-bad .sov-dot { color: var(--clr-danger, #cf222e); }
+.sov-neutral { border-top-color: var(--clr-border, #d0d7de); } .sov-neutral .sov-dot { color: var(--clr-text-subtle, #6e7781); }
+.sov-link { justify-self: start; border: 0; background: none; padding: 0; color: var(--clr-primary, #0969da); font: inherit; font-size: 0.85rem; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }

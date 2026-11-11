@@ -111,6 +111,13 @@
     <ReviewDisclosure Text="Advanced details: diagnostics and reset" CollapseText="Hide advanced details" TestId="ug-settings-advanced">
         <p>Project Compatibility runs generated archive scenarios against the same archive reader and discovery as Project Import, in memory, without importing anything. Performance Test Engines describes host capability; Performance Test Review describes a project’s tests. Reset Local Data clears workspaces, artifacts, snapshots, Target Environments (restored to defaults), integration catalogs, review/test results, performance history, Critical E2E flows and cached browser state; installation-level configuration is preserved.</p>
     </ReviewDisclosure>
+    <article class="ug-card" id="settings-overview"><h3>The Overview: this installation at a glance</h3>
+        <ul>
+            <li><strong>Application</strong>: the BirkNext version and the kind of build (release, CI build or local development build). <em>Frontend/backend compatibility not assessed</em> is deliberate for a local build with uncommitted changes: the same commit id is not proof that the two builds match.</li>
+            <li><strong>Runtime</strong>: the runtime profile the launcher chose. <strong>Database</strong>: whether PostgreSQL answers, its version, and how many database contexts have every migration applied. A reachable database is not the same as a current schema.</li>
+            <li><strong>Performance tests</strong>: whether the k6 runner of this profile is available. <strong>Configuration</strong>: the result of Configuration Health. "Git Sources not set up" is optional setup, not a failure.</li>
+            <li>The tiles are read when the page opens (and on <strong>Refresh</strong>); they are not live monitoring. The details stay in Application information, Runtime &amp; Environment and Configuration Health below. The Edge Companion row shows a connected extension's version; a bundled extension version alone never counts as connected or compatible.</li>
+        </ul></article>
     <article class="ug-card" id="runtime-profiles"><h3>Runtime &amp; Environment: how this BirkNext runs</h3>
         <ul>
             <li>A <strong>runtime profile</strong> says where BirkNext's database and its k6 performance-test runner come from. It is not a user role: every profile has the same features, data model and rules.</li>

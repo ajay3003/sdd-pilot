@@ -93,7 +93,7 @@ public static class UserGuideContent
         new("troubleshooting", "Troubleshooting", Reference, "problem fix missing empty blocked invalid tls baseline", "scenarios", "faq"),
         new("glossary", "Glossary", Reference, "terms definitions project package fixture contract baseline"),
         new("system-settings", "System Settings", VersionsWorkspace, "admin settings diagnostics maintenance reset feature visibility runtime profile tester native developer container postgresql k6 environment",
-            "runtime-profiles"),
+            "runtime-profiles", "settings-overview"),
         new("versioning", "Versions: artifacts and BirkNext builds", VersionsWorkspace, "version versioning revision contract version test revision execution manifest historical pinned dependency build number commit ci application version release archive checksum companion version about",
             "artifact-versioning", "application-versioning"),
         new("whats-new", "What's new", VersionsWorkspace, "whats new release notes changes changelog version"),

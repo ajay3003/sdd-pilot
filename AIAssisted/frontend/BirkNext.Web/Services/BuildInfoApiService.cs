@@ -19,7 +19,39 @@ public sealed class BuildInfoApiService(HttpClient http) : IBuildInfoApiService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
 
-    public async Task<(BuildInfoResponse? Info, string? Error)> GetAsync(CancellationToken ct = default)
+    // One read per short window, shared by every card on the page (Overview, Application information, Runtime & Environment): the typed client
+    // is created per component, so the coalescing is static. Results stay a few seconds only; Refresh invalidates explicitly.
+    private static readonly TimeSpan Window = TimeSpan.FromSeconds(5);
+    private static readonly object Gate = new();
+    private static (Task<(BuildInfoResponse?, string?)> Task, DateTimeOffset At)? _build;
+    private static (Task<(RuntimeEnvironmentInfo?, string?)> Task, DateTimeOffset At)? _runtime;
+
+    /// <summary>Forget the shared results: the next read asks the backend again (the Overview's Refresh).</summary>
+    public static void Invalidate() { lock (Gate) { _build = null; _runtime = null; } }
+
+    public Task<(BuildInfoResponse? Info, string? Error)> GetAsync(CancellationToken ct = default)
+    {
+        lock (Gate)
+        {
+            if (_build is { } b && DateTimeOffset.UtcNow - b.At < Window) return b.Task;
+            var task = ReadBuildAsync(CancellationToken.None); // shared: one caller leaving never cancels it for the others
+            _build = (task, DateTimeOffset.UtcNow);
+            return task;
+        }
+    }
+
+    public Task<(RuntimeEnvironmentInfo? Info, string? Error)> GetRuntimeAsync(CancellationToken ct = default)
+    {
+        lock (Gate)
+        {
+            if (_runtime is { } r && DateTimeOffset.UtcNow - r.At < Window) return r.Task;
+            var task = ReadRuntimeAsync(CancellationToken.None);
+            _runtime = (task, DateTimeOffset.UtcNow);
+            return task;
+        }
+    }
+
+    private async Task<(BuildInfoResponse? Info, string? Error)> ReadBuildAsync(CancellationToken ct)
     {
         try
         {
@@ -33,7 +65,7 @@ public sealed class BuildInfoApiService(HttpClient http) : IBuildInfoApiService
         }
     }
 
-    public async Task<(RuntimeEnvironmentInfo? Info, string? Error)> GetRuntimeAsync(CancellationToken ct = default)
+    private async Task<(RuntimeEnvironmentInfo? Info, string? Error)> ReadRuntimeAsync(CancellationToken ct)
     {
         try
         {

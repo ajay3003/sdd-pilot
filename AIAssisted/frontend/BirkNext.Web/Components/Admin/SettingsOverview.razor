@@ -1,0 +1,121 @@
+@using BirkNext.BuildInfo
+@using BirkNext.Web.Services
+@inject IServiceProvider ServiceProvider
+
+@* System Settings overview: the installation's state in five tiles, each owned by one authoritative source and shown here only as a summary —
+   Application (build identity), Runtime (profile), Database (connection + schema), Performance tests (k6 runner) and Configuration (health).
+   The details stay in their owning cards and sections; nothing is calculated twice. Values are read when the page opens (not live monitoring). *@
+<section class="sov" aria-labelledby="sov-heading" data-testid="ss-overview" aria-busy="@(_loading ? "true" : "false")">
+    <div class="sov-head">
+        <h2 id="sov-heading" class="sov-title">Overview</h2>
+        <span class="sov-fresh" data-testid="ss-overview-fresh">@(_loading ? "Checking…" : $"Checked {_checkedAt:HH:mm:ss} · read when the page opened, not monitored live")</span>
+        <button type="button" class="sov-refresh" data-testid="ss-overview-refresh" disabled="@_loading" @onclick="RefreshAsync">Refresh</button>
+    </div>
+    <ul class="sov-tiles">
+        @Tile("ss-ov-application", "Application", Application.Value, Application.Detail, Application.Tone)
+        @Tile("ss-ov-runtime", "Runtime", Runtime.Value, Runtime.Detail, Runtime.Tone)
+        @Tile("ss-ov-database", "Database", Database.Value, Database.Detail, Database.Tone)
+        @Tile("ss-ov-performance", "Performance tests", Performance.Value, Performance.Detail, Performance.Tone)
+        <li class="sov-tile sov-@ConfigTone" data-testid="ss-ov-configuration" data-tone="@ConfigTone">
+            <span class="sov-k">Configuration</span>
+            <span class="sov-v"><span class="sov-dot" aria-hidden="true">@Glyph(ConfigTone)</span>
+                <span data-testid="ss-config-health" data-state="@ConfigState">@ConfigLabel</span></span>
+            <span class="sov-d">@ConfigDetail</span>
+            @if (OnOpenSection.HasDelegate) { <button type="button" class="sov-link" data-testid="ss-ov-open-health" @onclick='() => OnOpenSection.InvokeAsync("config-health")'>Open Configuration Health</button> }
+        </li>
+    </ul>
+</section>
+
+@code {
+    /// <summary>Failing configuration checks (from the page's own Configuration Health evaluation; never recalculated here).</summary>
+    [Parameter] public int ConfigIssueCount { get; set; }
+    /// <summary>Optional Git Sources setup steps not done (not a failure).</summary>
+    [Parameter] public int GitPrerequisites { get; set; }
+    [Parameter] public EventCallback<string> OnOpenSection { get; set; }
+
+    private BuildInfoResponse? _build;
+    private RuntimeEnvironmentInfo? _runtime;
+    private string? _buildError, _runtimeError;
+    private bool _loading = true;
+    private DateTimeOffset _checkedAt;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task RefreshAsync()
+    {
+        BuildInfoApiService.Invalidate();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        if (ServiceProvider.GetService(typeof(IBuildInfoApiService)) is IBuildInfoApiService api)
+        {
+            var build = api.GetAsync();
+            var runtime = api.GetRuntimeAsync();
+            (_build, _buildError) = await build;
+            (_runtime, _runtimeError) = await runtime;
+        }
+        else (_buildError, _runtimeError) = ("Not available in this host.", "Not available in this host.");
+        _checkedAt = DateTimeOffset.Now;
+        _loading = false;
+    }
+
+    private sealed record TileValue(string Value, string Detail, string Tone);
+
+    private TileValue Application
+    {
+        get
+        {
+            if (_loading) return new("Checking…", "", "neutral");
+            var b = _build?.Backend ?? FrontendBuildIdentity.Current;
+            var channel = b.Channel switch { BuildChannel.Release => "Release", BuildChannel.CI => "CI build", BuildChannel.Local => "Local development build", _ => "Unknown build" };
+            var (match, _) = _build is null ? (ComponentCompatibility.NotAssessed, "") : BuildCompatibilityRules.Compare(FrontendBuildIdentity.Current, _build.Backend);
+            var compat = match switch { ComponentCompatibility.Matched => "frontend and backend: same build", ComponentCompatibility.Mismatch => "frontend and backend: different builds", ComponentCompatibility.CompatibleDifferentBuilds => "frontend and backend: compatible", _ => "frontend/backend compatibility not assessed" };
+            return new($"BirkNext {(b.ApplicationVersion is { Length: > 0 } v ? v : "unknown")}", $"{channel} · {compat}",
+                match == ComponentCompatibility.Mismatch ? "bad" : _build is null ? "warn" : b.Channel is BuildChannel.Release or BuildChannel.CI ? "ok" : "neutral");
+        }
+    }
+
+    private TileValue Runtime => _loading ? new("Checking…", "", "neutral")
+        : _runtime is { } r ? new(r.ProfileName, r.Distribution, "neutral")
+        : new("Unknown", _runtimeError ?? "", "warn");
+
+    private TileValue Database
+    {
+        get
+        {
+            if (_loading) return new("Checking…", "", "neutral");
+            if (_runtime is not { } r) return new("Unknown", _runtimeError ?? "", "warn");
+            var schema = _build?.Database is { Count: > 0 } db ? $"schema: {db.Count(d => d.Status == SchemaCompatibility.Current)} of {db.Count} contexts current" : "schema not checked";
+            var schemaBad = _build?.Database?.Any(d => d.Status is SchemaCompatibility.AheadOfBuild or SchemaCompatibility.PendingMigrations) == true;
+            var connected = r.DatabaseStatus == "Connected";
+            return new(connected ? $"PostgreSQL {r.DatabaseServerVersion?.Split(' ')[0] ?? ""} connected".Replace("  ", " ") : $"PostgreSQL {r.DatabaseStatus.ToLowerInvariant()}", schema,
+                !connected ? "bad" : schemaBad ? "warn" : "ok");
+        }
+    }
+
+    private TileValue Performance => _loading ? new("Checking…", "", "neutral")
+        : _runtime is { } r ? new(r.PerformanceRunnerAvailability == "Available" ? $"k6 {r.K6Version ?? ""} available".Replace("  ", " ") : "k6 not available",
+            r.PerformanceRunnerAvailability == "Available" ? r.PerformanceRunner : r.PerformanceRunnerDetail, r.PerformanceRunnerAvailability == "Available" ? "ok" : "warn")
+        : new("Unknown", _runtimeError ?? "", "warn");
+
+    private string ConfigState => ConfigIssueCount > 0 ? "issues" : GitPrerequisites > 0 ? "setup" : "clear";
+    private string ConfigTone => ConfigIssueCount > 0 ? "bad" : GitPrerequisites > 0 ? "warn" : "ok";
+    private string ConfigLabel => ConfigIssueCount > 0 ? $"{ConfigIssueCount} issue{(ConfigIssueCount != 1 ? "s" : "")}{(GitPrerequisites > 0 ? " · Git Sources not set up" : "")}"
+        : GitPrerequisites > 0 ? "No failures · Git Sources not set up" : "All clear";
+    private string ConfigDetail => ConfigIssueCount > 0 ? "Required configuration is failing; see Configuration Health."
+        : GitPrerequisites > 0 ? "Optional: Git Sources needs setup before Azure DevOps sources can be linked." : "Platform configuration, migrations and Git Sources prerequisites.";
+
+    private static string Glyph(string tone) => tone switch { "ok" => "●", "bad" => "■", "warn" => "▲", _ => "○" };
+
+    private static RenderFragment Tile(string testId, string label, string value, string detail, string tone) => __builder =>
+    {
+        <li class="sov-tile sov-@tone" data-testid="@testId" data-tone="@tone">
+            <span class="sov-k">@label</span>
+            <span class="sov-v"><span class="sov-dot" aria-hidden="true">@Glyph(tone)</span>@value</span>
+            <span class="sov-d">@detail</span>
+        </li>
+    };
+}

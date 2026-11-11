@@ -83,47 +83,6 @@ else if (_loadError is not null)
 }
 else if (_settings is not null)
 {
-    <div class="ss-status-bar">
-        <span class="ss-status-pill">
-            <span class="ss-status-label">Host environment</span>
-            <span class="ss-status-value">@OrUnknown(_settings.Application.Environment)</span>
-        </span>
-        <span class="ss-status-pill">
-            <span class="ss-status-label">Database</span>
-            <span class="ss-status-value">@OrUnknown(_settings.Database.Mode)</span>
-        </span>
-        <span class="ss-status-pill">
-            <span class="ss-status-label">Package</span>
-            <span class="ss-status-value">@OrUnknown(_settings.Application.PackageMode)</span>
-        </span>
-        <span class="ss-status-pill">
-            <span class="ss-status-label">Logging</span>
-            <span class="ss-status-value">@OrUnknown(_settings.Logging.MinimumLevel)</span>
-        </span>
-        @if (_configHealthIssueCount > 0)
-        {
-            <span class="ss-status-pill ss-status-pill-warn" data-testid="ss-config-health" data-state="issues">
-                <span class="ss-status-label">Config Health</span>
-                <span class="ss-status-value">@($"{_configHealthIssueCount} issue{(_configHealthIssueCount != 1 ? "s" : "")}{(_gitPrerequisites > 0 ? " · Git Sources not set up" : "")}")</span>
-            </span>
-        }
-        else if (_gitPrerequisites > 0)
-        {
-            @* Nothing is failing, but an optional capability is not set up yet: never "All clear" next to a section listing what is missing. *@
-            <span class="ss-status-pill ss-status-pill-warn" data-testid="ss-config-health" data-state="setup" title="Git Sources: @_gitPrerequisites setup step(s) not done (System Settings → Git Sources → Microsoft sign-in setup)">
-                <span class="ss-status-label">Config Health</span>
-                <span class="ss-status-value">No failures · Git Sources not set up</span>
-            </span>
-        }
-        else
-        {
-            <span class="ss-status-pill ss-status-pill-ok" data-testid="ss-config-health" data-state="clear" title="Platform configuration, migrations and Git Sources prerequisites">
-                <span class="ss-status-label">Config Health</span>
-                <span class="ss-status-value">All clear</span>
-            </span>
-        }
-    </div>
-
     <div class="ss-layout">
 
         @* â”€â”€ Left Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ *@
@@ -171,116 +130,27 @@ else if (_settings is not null)
             @* â•â• General â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
             @if (_activeSection == "general")
             {
+                <BirkNext.Web.Components.Admin.SettingsOverview ConfigIssueCount="_configHealthIssueCount" GitPrerequisites="_gitPrerequisites" OnOpenSection="SetSection" />
                 <BirkNext.Web.Components.Admin.ApplicationBuildCard />
                 <BirkNext.Web.Components.Admin.RuntimeEnvironmentCard />
-                <div class="settings-card settings-card-full-width" role="region" aria-label="General">
+                <div class="settings-card settings-card-full-width ss-general" role="region" aria-label="General" data-testid="ss-general">
                     <div class="settings-card-title">General</div>
-                    <p class="settings-card-note">Runtime environment and application information. All values are read-only.</p>
-
-                    <div class="ss-info-grid">
-                        <MetricCard Value="@OrUnknown(_settings.Application.Environment)" Label="Environment" />
-                        <MetricCard Value="@OrUnknown(_settings.Application.PackageMode)" Label="Package" />
-                        <MetricCard Value="@OrUnknown(_settings.Database.Mode)" Label="Database" />
-                        <MetricCard Value="@OrUnknown(_settings.Logging.MinimumLevel)" Label="Logging" />
-                        <MetricCard Value="@SemVerCore(_settings.Application.Version)" Label="Version" />
-                        <MetricCard Value="@(_settings.Frontend.StaticHostingMode ? "Blazor WASM" : "Server-side")" Label="Hosting" />
-                    </div>
-
-                    <div class="dev-diag-subgrid">
-
-                        <div class="dev-diag-section">
-                            <div class="dev-diag-section-title">Application</div>
-                            <table class="settings-table">
-                                <tr><td>Name</td><td>@OrUnknown(_settings.Application.ApplicationName)</td></tr>
-                                <tr><td>Version</td><td>@OrUnknown(_settings.Application.Version)</td></tr>
-                                @if (!string.IsNullOrWhiteSpace(_settings.Application.BuildNumber))
-                                {
-                                    <tr><td>Build</td><td>@_settings.Application.BuildNumber</td></tr>
-                                }
-                                @if (!string.IsNullOrWhiteSpace(_settings.Application.CommitSha))
-                                {
-                                    <tr><td>Commit</td><td><span class="mono-chip">@_settings.Application.CommitSha</span></td></tr>
-                                }
-                                <tr><td>Package Mode</td><td><span class="settings-badge">@OrUnknown(_settings.Application.PackageMode)</span></td></tr>
-                                <tr>
-                                    <td>Database</td>
-                                    <td>
-                                        <span class="settings-badge @(_settings.Database.Mode == "Local" ? "settings-badge-local" : (_settings.Database.Mode == "Shared" ? "settings-badge-shared" : ""))">
-                                            @OrUnknown(_settings.Database.Mode)
-                                        </span>
-                                    </td>
-                                </tr>
-                                @if (_settings.Database.MigrationStatus is not null)
-                                {
-                                    <tr>
-                                        <td>Migrations</td>
-                                        <td>
-                                            @if (_settings.Database.MigrationStatus == "Up to date")
-                                            { <span class="settings-badge settings-badge-local">Up to date</span> }
-                                            else
-                                            { <span class="settings-badge">@_settings.Database.MigrationStatus</span> }
-                                        </td>
-                                    </tr>
-                                }
-                            </table>
-                        </div>
-
-                        <div class="dev-diag-section">
-                            <div class="dev-diag-section-title">Endpoints</div>
-                            <table class="settings-table">
-                                <tr>
-                                    <td>Frontend URL</td>
-                                    <td>
-                                        <div class="copyable-value">
-                                            <span class="mono-chip">@OrUnknown(_settings.Frontend.FrontendBaseUrl)</span>
-                                            @if (!string.IsNullOrWhiteSpace(_settings.Frontend.FrontendBaseUrl))
-                                            {
-                                                <button class="copy-btn" title="Copy to clipboard"
-                                                        @onclick="() => CopyAsync(_settings.Frontend.FrontendBaseUrl)">
-                                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
-                                                </button>
-                                            }
-                                        </div>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td>API Base URL</td>
-                                    <td>
-                                        <div class="copyable-value">
-                                            <span class="mono-chip">@OrUnknown(_settings.Frontend.ApiBaseUrl)</span>
-                                            @if (!string.IsNullOrWhiteSpace(_settings.Frontend.ApiBaseUrl))
-                                            {
-                                                <button class="copy-btn" title="Copy to clipboard"
-                                                        @onclick="() => CopyAsync(_settings.Frontend.ApiBaseUrl)">
-                                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
-                                                </button>
-                                            }
-                                        </div>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td>GraphQL</td>
-                                    <td><span class="mono-chip">@OrUnknown(_settings.Frontend.GraphQlEndpoint)</span></td>
-                                </tr>
-                                <tr>
-                                    <td>Backend URL</td>
-                                    <td>
-                                        <div class="copyable-value">
-                                            <span class="mono-chip">@OrUnknown(_settings.Backend.BackendBaseUrl)</span>
-                                            @if (!string.IsNullOrWhiteSpace(_settings.Backend.BackendBaseUrl))
-                                            {
-                                                <button class="copy-btn" title="Copy to clipboard"
-                                                        @onclick="() => CopyAsync(_settings.Backend.BackendBaseUrl)">
-                                                    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/></svg>
-                                                </button>
-                                            }
-                                        </div>
-                                    </td>
-                                </tr>
-                            </table>
-                        </div>
-
-                    </div>
+                    <p class="settings-card-note">Host configuration that is not shown above. Read-only. Version, build, database and runtime are in Application information and Runtime &amp; Environment.</p>
+                    <dl class="ss-general-facts">
+                        <div><dt>Application name</dt><dd>@OrUnknown(_settings.Application.ApplicationName)</dd></div>
+                        <div><dt>Host environment</dt><dd>@OrUnknown(_settings.Application.Environment)</dd></div>
+                        <div><dt>Logging level</dt><dd>@OrUnknown(_settings.Logging.MinimumLevel)</dd></div>
+                        <div><dt>Frontend hosting</dt><dd>@(_settings.Frontend.StaticHostingMode ? "Blazor WebAssembly (static files)" : "Server-side")</dd></div>
+                    </dl>
+                    <details class="ss-tech" data-testid="ss-endpoints">
+                        <summary>Technical details: endpoints</summary>
+                        <dl class="ss-endpoint-list">
+                            @EndpointRow("Frontend URL", _settings.Frontend.FrontendBaseUrl)
+                            @EndpointRow("API base URL", _settings.Frontend.ApiBaseUrl)
+                            @EndpointRow("GraphQL", _settings.Frontend.GraphQlEndpoint)
+                            @EndpointRow("Backend URL", _settings.Backend.BackendBaseUrl)
+                        </dl>
+                    </details>
                 </div>
             }
 
@@ -1645,6 +1515,20 @@ else if (_settings is not null)
         _activeSection = section;
         Navigation.NavigateTo($"admin/system-settings?section={Uri.EscapeDataString(section)}");
     }
+
+    private RenderFragment EndpointRow(string label, string? value) => __builder =>
+    {
+        <div class="ss-endpoint">
+            <dt>@label</dt>
+            <dd>
+                <span class="mono-chip">@OrUnknown(value)</span>
+                @if (!string.IsNullOrWhiteSpace(value))
+                {
+                    <button type="button" class="copy-btn" title="Copy @label" aria-label="Copy @label" @onclick="() => CopyAsync(value)">Copy</button>
+                }
+            </dd>
+        </div>
+    };
 
     private RenderFragment NavItem(string id, string label, int badge = 0) => __builder =>
     {
