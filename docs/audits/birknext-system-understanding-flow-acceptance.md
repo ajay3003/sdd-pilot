@@ -70,4 +70,5 @@ Nothing is shown as runtime-verified.
 | Suite | Result |
 |---|---|
 | Focused frontend (SystemUnderstanding, UserGuide, HelpCenter) | **56/56 PASS** |
-| Full regression | After the commit; counts in the follow-up commit |
+| Full frontend at `857cc849` | **8637/8637 PASS** |
+| Full backend at `857cc849`, six sequential partitions | **6527 passed, 0 failed, 19 skipped (6546)**: 1049 / 1098 / 840 / 652 / 520 / 2368 |
