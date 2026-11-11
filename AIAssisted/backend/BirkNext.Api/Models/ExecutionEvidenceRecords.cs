@@ -163,3 +163,18 @@ public sealed class ExecutionCallRow
     /// <summary>The definition this call ran (e.g. a contract test revision, "contract-test:{id}@r2"), for "latest result of a test" lookups.</summary>
     public string? DefinitionRef { get; init; }
 }
+
+/// <summary>
+/// One immutable execution manifest (what a run executed against). Inserted in the same transaction as the run it describes; never updated
+/// (a database trigger refuses UPDATE); deleted only together with that run (evidence deletion, retention, Local Data Reset).
+/// </summary>
+public sealed class ExecutionManifestRow
+{
+    public Guid Id { get; init; }
+    public string Owner { get; init; } = "";
+    public Guid RunId { get; init; }
+    public string SchemaVersion { get; init; } = "";
+    public string DependencyFingerprint { get; init; } = "";
+    public DateTimeOffset CreatedAt { get; init; }
+    public string DocumentJson { get; init; } = "";
+}

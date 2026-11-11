@@ -218,6 +218,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         if (asset?.Approval != TestDataApproval.Approved || asset.Version != bind.Version)
             return (null, $"Only the approved version of {bind.Alias} can be pinned{(asset?.Approval == TestDataApproval.Approved ? $" (v{asset.Version})" : " — it has none")}.");
         if (asset.Deprecated) return (null, $"{bind.Alias} is deprecated.");
+        if (test.Binding is { } same && same.Alias == bind.Alias && same.Version == bind.Version) return (test, null); // already pinned: no artificial revision
         test = test with { Binding = new(bind.Alias, bind.Version), Revision = test.Revision + 1, UpdatedAt = _clock.GetUtcNow() };
         await PersistAsync(row, test, $"Test Data pinned to {bind.Alias}@v{bind.Version}.", ct);
         return (test, null);
@@ -236,6 +237,10 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             return (null, $"{test.Operation} does not exist in v{latest}; delete the test or generate one for another operation.");
         var fresh = ContractTestRules.GenerateAny(doc, test.ContractKey, latest, op, _clock.GetUtcNow()).FirstOrDefault(t => t.Kind == test.Kind);
         if (fresh is null) return (null, $"v{latest} no longer gives {test.Operation} a {test.Kind} test (no required value to omit).");
+        // Identical content (same contract version, template, inputs and assertions): no artificial revision.
+        if (JsonSerializer.Serialize(fresh with { Id = test.Id, Name = test.Name, Description = test.Description, Binding = test.Binding, Revision = test.Revision, CreatedAt = test.CreatedAt,
+                UpdatedAt = test.UpdatedAt, ReviewState = test.ReviewState }, ExecutionEvidenceStore.Json) == JsonSerializer.Serialize(test, ExecutionEvidenceStore.Json))
+            return (test, null);
         test = fresh with { Id = test.Id, Name = test.Name, Description = test.Description, Binding = test.Binding, Revision = test.Revision + 1, CreatedAt = test.CreatedAt };
         await PersistAsync(row, test, $"Regenerated from contract v{latest}.", ct);
         return (test, null);
@@ -254,9 +259,19 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         var limit = Math.Clamp(request.MaxExecutions ?? ExecutionRunService.MaxCalls, 1, ExecutionRunService.MaxCalls);
         var contractRefs = new HashSet<string>(StringComparer.Ordinal);
         var kinds = new HashSet<ExecutionAuthenticationKind>();
+        var attested = new HashSet<string>(StringComparer.Ordinal);
+        var dependencies = new List<ManifestDependency>();
         foreach (var id in request.TestIds.Distinct())
         {
-            if (await LoadAsync(id, ct) is not { } test) { notRun.Add($"{id}: not found."); continue; }
+            if (await LoadAsync(id, ct) is not { } current) { notRun.Add($"{id}: not found."); continue; }
+            var test = current;
+            // A caller that pins a revision (an integration suite revision) runs exactly that stored revision, never the test's newer edits.
+            if (request.PinnedRevisions.TryGetValue(id, out var pinned) && pinned != current.Revision)
+            {
+                if (current.ReviewState == ContractTestReviewState.Retired) { notRun.Add($"{current.Name}: retired; not run."); continue; }
+                if (await RevisionAsync(id, pinned, ct) is not { } stored) { notRun.Add($"{current.Name}: the pinned revision r{pinned} no longer exists; not run."); continue; }
+                test = stored;
+            }
             var latest = await registry.LatestVersionAsync(test.ContractKey, ct) ?? 0;
             var view = await ViewAsync(test, latest, [], request.Environment, ct);
             if (view.Readiness.State != ContractTestReadinessState.Ready)
@@ -284,6 +299,9 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
                 added = true;
             }
             if (!added) continue;
+            Attest(attested, test);
+            if (dependencies.All(d => d.Ref != ExecutionManifestService.BindingRef(test.ContractKey, request.Environment.EnvironmentId)))
+                dependencies.Add(BindingDependency(test.ContractKey, request.Environment.EnvironmentId, binding, request.BasePath, request.GraphQlPath));
             // A missing-authentication negative is sent without the credential inside the same run; it never decides the run's authentication.
             if (!test.WithoutAuthentication) kinds.Add(binding?.Authentication ?? ExecutionAuthenticationKind.None);
             contractRefs.Add(ContractIdentity.ContractRef(test.ContractKey, test.ContractVersion));
@@ -297,7 +315,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             EnvironmentId = e.EnvironmentId, TargetUrl = e.TargetUrl, EnvironmentType = e.EnvironmentType, IsProduction = e.IsProduction, ProfileId = e.ProfileId,
             ContextFingerprint = e.ContextFingerprint, Calls = calls, ContractRefs = [.. contractRefs.Order(StringComparer.Ordinal)], ConfirmMutatingCalls = request.ConfirmMutatingCalls,
             CapturePolicy = CapturePolicy.BoundedBody, Authentication = kinds.SingleOrDefault(), ReauthenticationWaitSeconds = request.ReauthenticationWaitSeconds,
-            StopOnFirstFailure = request.StopOnFirstFailure,
+            StopOnFirstFailure = request.StopOnFirstFailure, OwnerAttestedRefs = attested, OwnerDependencies = [.. dependencies, .. request.OwnerDependencies],
         }, "Local session", ct);
         return new(started, notRun);
     }
@@ -755,6 +773,31 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         return (values, null);
     }
 
+    /// <summary>The references a run's calls were materialised from by this service (recorded as owner-resolved in the execution manifest).</summary>
+    private static void Attest(HashSet<string> attested, ContractTestDefinition test)
+    {
+        attested.Add(ContractIdentity.ContractRef(test.ContractKey, test.ContractVersion));
+        attested.Add(ContractIdentity.DefinitionRef(test.Id, test.Revision));
+        if (test.Binding is { } b) attested.Add($"{b.Alias}@v{b.Version}");
+    }
+
+    /// <summary>The endpoint binding as this run applies it. An explicit base path or GraphQL path from the caller overrides the stored binding,
+    /// so the dependency is then caller-declared (the run is not evidence for the stored binding).</summary>
+    internal static ManifestDependency BindingDependency(string key, string environmentId, ContractEndpointBinding? binding, string? basePathOverride, string? graphQlOverride)
+    {
+        var overridden = !string.IsNullOrWhiteSpace(basePathOverride) || !string.IsNullOrWhiteSpace(graphQlOverride);
+        var basePath = string.IsNullOrWhiteSpace(basePathOverride) ? binding?.BasePath : basePathOverride;
+        var graphQl = string.IsNullOrWhiteSpace(graphQlOverride) ? binding?.GraphQlPath : graphQlOverride;
+        var authentication = (binding?.Authentication ?? ExecutionAuthenticationKind.None).ToString();
+        return new()
+        {
+            Kind = ManifestDependencyKind.EndpointBinding, Ref = ExecutionManifestService.BindingRef(key, environmentId), Key = key, Resolution = ManifestResolution.Resolved,
+            ContentFingerprint = ExecutionManifestService.BindingFingerprint(key, environmentId, basePath, graphQl, authentication),
+            Origin = overridden ? ManifestDependencyOrigin.CallerDeclared : ManifestDependencyOrigin.OwnerResolved,
+            Detail = (overridden ? "Overridden for this run: " : binding is null ? "No stored binding: " : "") + $"base path '{(basePath ?? "").Trim()}', GraphQL path '{(graphQl ?? "").Trim()}', authentication {authentication}.",
+        };
+    }
+
     private async Task<ContractTestDefinition?> LoadAsync(Guid id, CancellationToken ct) =>
         await db.ContractTests.AsNoTracking().Where(t => t.Id == id).Select(t => t.DocumentJson).FirstOrDefaultAsync(ct) is { } d
             ? JsonSerializer.Deserialize<ContractTestDefinition>(d, ExecutionEvidenceStore.Json) : null;
@@ -919,6 +962,8 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         var calls = new List<ExecutionCallDefinition>();
         var contractRefs = new HashSet<string>(StringComparer.Ordinal);
         var kinds = new HashSet<ExecutionAuthenticationKind>();
+        var attested = new HashSet<string>(StringComparer.Ordinal) { ContractIdentity.ChainRef(chain.Id, chain.Revision) };
+        var dependencies = new List<ManifestDependency>();
         foreach (var step in Order(chosen))
         {
             var test = (await LoadAsync(step.TestId, ct))!;
@@ -956,6 +1001,9 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
                 Retry = step.Observe is { } o ? new RetryPolicy(o.Attempts, [.. o.OnStatus], false, o.DelayMs) : call.Retry,
             });
             contractRefs.Add(ContractIdentity.ContractRef(test.ContractKey, test.ContractVersion));
+            Attest(attested, test);
+            if (dependencies.All(d => d.Ref != ExecutionManifestService.BindingRef(test.ContractKey, request.Environment.EnvironmentId)))
+                dependencies.Add(BindingDependency(test.ContractKey, request.Environment.EnvironmentId, binding, request.BasePath, request.GraphQlPath));
         }
         if (notRun.Count > 0) return new(null, [.. notRun, "The chain was not run: every step must be ready, because later steps depend on earlier ones."]);
         if (kinds.Count > 1) return new(null, ["The chain's steps use different authentication in this environment; a chain runs with one authentication."]);
@@ -967,6 +1015,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
             ContextFingerprint = e.ContextFingerprint, Calls = calls, ContractRefs = [.. contractRefs.Order(StringComparer.Ordinal)], ConfirmMutatingCalls = request.ConfirmMutatingCalls,
             CapturePolicy = CapturePolicy.BoundedBody, Authentication = kinds.SingleOrDefault(), ReauthenticationWaitSeconds = request.ReauthenticationWaitSeconds,
             StopOnFirstFailure = request.StopOnFirstFailure, ChainRef = ContractIdentity.ChainRef(chain.Id, chain.Revision),
+            OwnerAttestedRefs = attested, OwnerDependencies = [.. dependencies, .. request.OwnerDependencies],
         }, "Local session", ct);
         return new(started, []);
     }

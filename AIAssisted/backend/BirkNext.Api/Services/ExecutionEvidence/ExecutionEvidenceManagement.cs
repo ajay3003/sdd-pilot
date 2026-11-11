@@ -155,6 +155,7 @@ public sealed class ExecutionEvidenceManagement(AppDbContext db, TimeProvider? c
         {
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             await db.ExecutionCalls.Where(c => ids.Contains(c.RunId)).ExecuteDeleteAsync(ct);
+            await db.ExecutionManifests.Where(m => m.Owner == ExecutionManifestSchema.ExecutionEvidenceOwner && ids.Contains(m.RunId)).ExecuteDeleteAsync(ct);
             var deleted = await db.ExecutionRuns.Where(r => ids.Contains(r.Id) && !r.Protected).ExecuteDeleteAsync(ct);
             if (deleted != ids.Count) { await tx.RollbackAsync(ct); return new(0, 0, 0, [], "The runs changed while deleting (one was protected meanwhile); nothing was deleted."); }
             Audit(action, scope, ids.Count, calls, bytes, initiator, Detail(ids));
@@ -164,6 +165,7 @@ public sealed class ExecutionEvidenceManagement(AppDbContext db, TimeProvider? c
         else
         {
             db.ExecutionCalls.RemoveRange(await db.ExecutionCalls.Where(c => ids.Contains(c.RunId)).ToListAsync(ct));
+            db.ExecutionManifests.RemoveRange(await db.ExecutionManifests.Where(m => m.Owner == ExecutionManifestSchema.ExecutionEvidenceOwner && ids.Contains(m.RunId)).ToListAsync(ct));
             db.ExecutionRuns.RemoveRange(await db.ExecutionRuns.Where(r => ids.Contains(r.Id)).ToListAsync(ct));
             Audit(action, scope, ids.Count, calls, bytes, initiator, Detail(ids));
             await db.SaveChangesAsync(ct);

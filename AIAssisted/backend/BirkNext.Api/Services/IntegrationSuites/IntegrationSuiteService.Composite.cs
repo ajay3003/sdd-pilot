@@ -405,7 +405,7 @@ public sealed partial class IntegrationSuiteService
                 EnvironmentId = request.EnvironmentId, TargetUrl = request.TargetUrl, EnvironmentType = request.EnvironmentType, IsProduction = request.IsProduction,
                 ProfileId = request.ProfileId, ContextFingerprint = request.ContextFingerprint,
             },
-            ConfirmMutatingCalls = request.ConfirmMutatingCalls, StopOnFirstFailure = true, StepIds = runPlan.StepIds,
+            ConfirmMutatingCalls = request.ConfirmMutatingCalls, StopOnFirstFailure = true, StepIds = runPlan.StepIds, OwnerDependencies = SuiteDependencies(suite),
             Name = $"{(runPlan.Kind == CompositeRunKind.FullE2E ? "Composite E2E" : "Composite subflow")} · {suite.Scope.DisplayName} r{suite.Revision}",
         }, ct);
         if (result.Run?.RunId is not { } runId)

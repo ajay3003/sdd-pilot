@@ -278,6 +278,8 @@ public sealed record ExecutionRunSummary
     public string? ChainRef { get; init; }
     /// <summary>Protected runs are never deleted by bulk deletion or retention; deleting one needs its protection removed first.</summary>
     public bool Protected { get; init; }
+    /// <summary>The run's immutable execution manifest (see <see cref="ExecutionManifest.DependencyFingerprint"/>); null for runs created before manifests.</summary>
+    public string? DependencyFingerprint { get; init; }
 }
 
 /// <summary>
@@ -358,6 +360,11 @@ public sealed record ExecutionRunRequest
     public bool StopOnFirstFailure { get; init; }
     /// <summary>The chain definition revision, for a chained run (see <see cref="ExecutionRunSummary.ChainRef"/>).</summary>
     public string? ChainRef { get; init; }
+    /// <summary>Server-side owners only (never bound from a request body): references the owner materialised the calls from, recorded in the
+    /// execution manifest as owner-resolved. Everything else a run names is caller-declared.</summary>
+    [JsonIgnore] public HashSet<string> OwnerAttestedRefs { get; init; } = new(StringComparer.Ordinal);
+    /// <summary>Server-side owners only: further pinned dependencies (endpoint binding, suite revision, composite context) for the manifest.</summary>
+    [JsonIgnore] public List<ManifestDependency> OwnerDependencies { get; init; } = [];
 }
 
 public sealed record ExecutionRunStartResult(Guid? RunId, ExecutionState State, string? Message, List<string> Blockers);

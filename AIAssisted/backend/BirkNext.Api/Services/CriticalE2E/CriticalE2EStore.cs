@@ -24,6 +24,8 @@ public interface ICriticalE2EStore
     bool UnregisterModule(string environmentId, string name) => false;
     /// <summary>Every recorded run of one flow, newest first, archived included.</summary>
     IReadOnlyList<CriticalE2ERunResult> FlowHistory(string flowId);
+    /// <summary>The flow's immutable definition versions, newest first (append-only; kept when the flow is deleted, cleared only by Local Data Reset).</summary>
+    IReadOnlyList<CriticalE2EFlowVersionRecord> FlowVersions(string flowId) => [];
     /// <summary>Sets (or, with null, removes) the archive marker on the named runs of one flow and nothing else. Returns how many changed.</summary>
     int SetArchived(string flowId, IReadOnlyCollection<string> runIds, DateTimeOffset? archivedAt, string? reason);
     /// <summary>Permanently removes the named runs of one flow. Returns how many were removed.</summary>
@@ -57,6 +59,8 @@ public sealed class CriticalE2EStore : ICriticalE2EStore
     private readonly string _flowsPath;
     private readonly string _historyPath;
     private readonly string _modulesPath;
+    private readonly string _versionsPath;
+    private readonly List<CriticalE2EFlowVersionRecord> _versions = [];
     private readonly ILogger<CriticalE2EStore> _logger;
     private readonly Dictionary<string, CriticalE2EFlowDefinition> _flows = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<CriticalE2ERunResult> _history = [];
@@ -72,7 +76,16 @@ public sealed class CriticalE2EStore : ICriticalE2EStore
         _flowsPath = Path.Combine(directory, "flows.json");
         _historyPath = Path.Combine(directory, "history.json");
         _modulesPath = Path.Combine(directory, "modules.json");
+        _versionsPath = Path.Combine(directory, "flow-versions.json");
         foreach (var flow in Read<List<CriticalE2EFlowDefinition>>(_flowsPath) ?? []) _flows[flow.Id] = flow;
+        _versions.AddRange(Read<List<CriticalE2EFlowVersionRecord>>(_versionsPath) ?? []);
+        // Flows saved before version history existed: record their current version once, marked as backfilled (earlier versions are gone).
+        var missing = _flows.Values.Where(f => !_versions.Any(v => v.FlowId == f.Id && v.Version == f.Version)).ToList();
+        if (missing.Count > 0)
+        {
+            _versions.AddRange(missing.Select(f => VersionRecord(f, backfilled: true)));
+            Write(_versionsPath, _versions);
+        }
         _history.AddRange(Read<List<CriticalE2ERunResult>>(_historyPath) ?? []);
         foreach (var (environmentId, modules) in Read<Dictionary<string, List<CriticalE2ERegisteredModule>>>(_modulesPath) ?? []) _modules[environmentId] = modules;
     }
@@ -107,8 +120,26 @@ public sealed class CriticalE2EStore : ICriticalE2EStore
                 stored = stored with { Version = Material(existing) == Material(stored) ? existing.Version : Math.Max(existing.Version, stored.Version) + 1 };
             _flows[stored.Id] = stored;
             Write(_flowsPath, _flows.Values.ToList());
+            // Append-only history: a new version (or a new flow) is recorded once; an identical save adds nothing.
+            if (!_versions.Any(v => v.FlowId == stored.Id && v.Version == stored.Version))
+            {
+                _versions.Add(VersionRecord(stored, backfilled: false));
+                Write(_versionsPath, _versions);
+            }
         }
         return stored;
+    }
+
+    /// <summary>SHA-256 of the definition's material content (<see cref="Material"/>): equal fingerprints = the same definition.</summary>
+    public static string Fingerprint(CriticalE2EFlowDefinition flow) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Material(flow with { Steps = Number(flow.Steps) })))).ToLowerInvariant();
+
+    private static CriticalE2EFlowVersionRecord VersionRecord(CriticalE2EFlowDefinition flow, bool backfilled) =>
+        new() { FlowId = flow.Id, Version = flow.Version, Fingerprint = Fingerprint(flow), RecordedAt = flow.UpdatedAt ?? DateTimeOffset.UtcNow, Backfilled = backfilled, Definition = flow };
+
+    public IReadOnlyList<CriticalE2EFlowVersionRecord> FlowVersions(string flowId)
+    {
+        lock (_gate) return [.. _versions.Where(v => string.Equals(v.FlowId, flowId, StringComparison.OrdinalIgnoreCase)).OrderByDescending(v => v.Version)];
     }
 
     /// <summary>The definition without its bookkeeping (version, timestamp): what makes two saves the same definition.</summary>
@@ -246,6 +277,8 @@ public sealed class CriticalE2EStore : ICriticalE2EStore
             _flows.Clear();
             _history.Clear();
             _modules.Clear();
+            _versions.Clear();
+            Write(_versionsPath, new List<CriticalE2EFlowVersionRecord>());
             Write(_flowsPath, new List<CriticalE2EFlowDefinition>());
             Write(_historyPath, new List<CriticalE2ERunResult>());
             Write(_modulesPath, new Dictionary<string, List<CriticalE2ERegisteredModule>>());

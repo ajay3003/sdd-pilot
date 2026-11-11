@@ -45,9 +45,10 @@ public sealed class ExecutionEvidenceStore(AppDbContext db, TimeProvider? clock 
         };
     }
 
-    /// <summary>Creates the run with every planned call before the first request is sent.</summary>
-    public async Task<ExecutionRunSummary> CreateAsync(ExecutionRunSummary run, IReadOnlyList<ExecutionCallRecord> calls, CancellationToken ct)
+    /// <summary>Creates the run with every planned call (and its immutable execution manifest, when given) before the first request is sent.</summary>
+    public async Task<ExecutionRunSummary> CreateAsync(ExecutionRunSummary run, IReadOnlyList<ExecutionCallRecord> calls, CancellationToken ct, ExecutionManifest? manifest = null)
     {
+        if (manifest is not null) db.ExecutionManifests.Add(ExecutionManifestService.Row(manifest));
         var runId = run.RunId;
         db.ExecutionRuns.Add(new ExecutionRunRow
         {

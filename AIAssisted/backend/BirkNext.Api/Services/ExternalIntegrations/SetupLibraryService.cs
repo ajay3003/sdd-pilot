@@ -56,6 +56,10 @@ public sealed class SetupLibraryService(AppDbContext db, EnvironmentSetupService
         if (row.Status == nameof(SetupLibraryStatus.Archived)) return (null, "An archived item gets no new version.");
         var (model, problem) = await ModelAsync(request, ct);
         if (model is null) return (null, problem);
+        // Identical to the latest version (same validated content): no artificial version.
+        if (await Latest(id, ct) is { } latest
+            && SetupPackageSchema.Serialize(model with { Name = row.Name, Version = latest.VersionNumber.ToString() }, SetupPackageFormat.Yaml, latest.CreatedAt) == latest.Payload)
+            return (null, $"Nothing changed: the content is identical to version {latest.VersionNumber}; no version was added.");
         var next = (await db.SetupLibraryVersions.Where(v => v.ItemId == id).MaxAsync(v => (int?)v.VersionNumber, ct) ?? 0) + 1;
         var now = clock.GetUtcNow();
         AddVersion(id, next, model with { Name = row.Name, Version = next.ToString() }, request.ChangeSummary, now);

@@ -43,7 +43,9 @@ public static class CriticalE2ECoverage
         var onBuild = runs.FirstOrDefault(r => MatchesBuild(r.BuildId, buildId));
         var latest = onBuild ?? runs.FirstOrDefault();
         // A run of an older definition is not evidence about the current one: it stays tied to the version it ran.
-        var stale = latest is not null && latest.FlowVersion != flow.Version;
+        var stale = latest is not null && (latest.FlowVersion != flow.Version
+            // Same version number but different content (for example re-keyed by an import): the run is not evidence for this definition either.
+            || latest.FlowFingerprint is { } executed && executed != CriticalE2EStore.Fingerprint(flow));
         return new CriticalE2EFlowSummary
         {
             FlowId = flow.Id,

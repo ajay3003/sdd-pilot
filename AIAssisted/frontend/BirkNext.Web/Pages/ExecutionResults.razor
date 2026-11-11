@@ -158,6 +158,8 @@
             </dl>
         </section>
 
+        @if (CallId is null) { @ManifestPanel(run) }
+
         @if (CallId is null)
         {
             <section class="xr-card" aria-labelledby="xr-calls-heading" data-testid="xr-calls">
@@ -363,6 +365,8 @@
     private int? _retentionDays;
     private IReadOnlyList<ExecutionRunSummary>? _runs;
     private ExecutionRunDetail? _detail;
+    private ExecutionManifest? _manifest;
+    private ExecutionApplicability? _applicability;
     private ExecutionCallRecord? _call;
     private readonly HashSet<int> _picked = [];
     private AttemptComparison? _comparison;
@@ -387,6 +391,8 @@
         {
             (_detail, _error) = await api.RunAsync(runId, (Page - 1) * PageSize, PageSize, State, Protocol, Method, Search, Sort);
             _call = null;
+            (_manifest, _) = await api.ManifestAsync(runId);
+            (_applicability, _) = await api.ApplicabilityAsync(runId);
             if (CallId is { } callId && _error is null)
             {
                 (_call, _error) = await api.CallAsync(runId, callId);
@@ -665,6 +671,55 @@
     }
 
     private static string Label(ExecutionState s) => s switch { ExecutionState.NotAssessed => "Not assessed", ExecutionState.TimedOut => "Timed out", _ => s.ToString() };
+    /// <summary>What the run executed against (its immutable manifest) and whether its unchanged result is still evidence for what is current.</summary>
+    private RenderFragment ManifestPanel(ExecutionRunSummary run) => __builder =>
+    {
+        var a = _applicability;
+        var (label, tone) = a?.Applicability switch
+        {
+            ResultApplicability.CurrentlyApplicable => ("Current definitions", "ok"),
+            ResultApplicability.Historical => ("Historical result", "warn"),
+            _ => ("Currency unknown", "neutral"),
+        };
+        <section class="xr-card" aria-labelledby="xr-manifest-heading" data-testid="xr-manifest" data-applicability="@(a?.Applicability.ToString() ?? "Unknown")">
+            <h2 id="xr-manifest-heading">Executed against <span class="xr-pill xr-@tone" data-testid="xr-applicability">@label</span></h2>
+            <p class="xr-muted" data-testid="xr-applicability-text">The @Label(run.State).ToLowerInvariant() result is unchanged. @(a?.Explanation ?? "No execution manifest was recorded for this run.")</p>
+            @if (_manifest is { } m)
+            {
+                <table class="xr-table" data-testid="xr-manifest-table">
+                    <caption class="visually-hidden">Definitions this run executed against</caption>
+                    <thead><tr><th scope="col">Kind</th><th scope="col">Pinned reference</th><th scope="col">Stated by</th><th scope="col">Now</th></tr></thead>
+                    <tbody>
+                        @foreach (var dep in m.Dependencies)
+                        {
+                            var now = a?.Dependencies.FirstOrDefault(x => x.Pinned.Ref == dep.Ref);
+                            <tr data-testid="xr-manifest-row" data-kind="@dep.Kind" data-state="@(now?.State.ToString() ?? "")">
+                                <td>@DependencyKind(dep.Kind)</td>
+                                <td><code>@dep.Ref</code>@if (dep.ContentFingerprint is { Length: >= 12 } fp) { <span class="xr-subline">sha256 @fp[..12]…</span> }@if (dep.Resolution == ManifestResolution.NotFound) { <span class="xr-subline">not found when the run started</span> }</td>
+                                <td>@(dep.Origin == ManifestDependencyOrigin.OwnerResolved ? "BirkNext (materialised)" : "Caller (declared)")</td>
+                                <td>@(now?.State switch { DependencyCurrencyState.Unchanged => "Unchanged", DependencyCurrencyState.Superseded => $"Superseded → {now.CurrentRef}", DependencyCurrencyState.Changed => "Changed", DependencyCurrencyState.Removed => "Removed", DependencyCurrencyState.NotVerifiable => "Not verifiable", _ => "–" })</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <p class="xr-muted" data-testid="xr-manifest-build">BirkNext @m.Build.Version (@(m.Build.SourceCommit.Length > 12 ? m.Build.SourceCommit[..12] : m.Build.SourceCommit)) · dependency fingerprint <code>@(m.DependencyFingerprint.Length > 12 ? m.DependencyFingerprint[..12] : m.DependencyFingerprint)</code> · @m.SchemaVersion</p>
+            }
+        </section>
+    };
+
+    private static string DependencyKind(ManifestDependencyKind kind) => kind switch
+    {
+        ManifestDependencyKind.Contract => "Contract version",
+        ManifestDependencyKind.ContractTest => "Test revision",
+        ManifestDependencyKind.ContractChain => "Chain revision",
+        ManifestDependencyKind.TestData => "Test Data version",
+        ManifestDependencyKind.EndpointBinding => "Endpoint binding",
+        ManifestDependencyKind.SourceSnapshot => "Source snapshot",
+        ManifestDependencyKind.IntegrationSuite => "Integration suite revision",
+        ManifestDependencyKind.CompositeContext => "Composite context revision",
+        _ => kind.ToString(),
+    };
+
     private static string Tone(ExecutionState s) => s switch
     {
         ExecutionState.Passed => "ok",

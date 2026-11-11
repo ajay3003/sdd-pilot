@@ -17,6 +17,7 @@ public class AppDbContext : DbContext
     public DbSet<IntegrationJourneyRunRecord> IntegrationJourneyRuns => Set<IntegrationJourneyRunRecord>();
     public DbSet<ExecutionRunRow> ExecutionRuns => Set<ExecutionRunRow>();
     public DbSet<ExecutionCallRow> ExecutionCalls => Set<ExecutionCallRow>();
+    public DbSet<ExecutionManifestRow> ExecutionManifests => Set<ExecutionManifestRow>();
     public DbSet<ExecutionEvidenceAuditRow> ExecutionEvidenceAudit => Set<ExecutionEvidenceAuditRow>();
     public DbSet<ExecutionRetentionSettingsRow> ExecutionRetentionSettings => Set<ExecutionRetentionSettingsRow>();
     public DbSet<MessageObservationSetRecord> MessageObservationSets => Set<MessageObservationSetRecord>();
@@ -1108,6 +1109,17 @@ public class AppDbContext : DbContext
             entity.Property(r => r.Protected).HasDefaultValue(false);
             entity.HasIndex(r => new { r.EnvironmentId, r.StartedAt });
             entity.HasIndex(r => r.StartedAt);
+        });
+        modelBuilder.Entity<ExecutionManifestRow>(entity =>
+        {
+            entity.ToTable("execution_manifests");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Owner).HasMaxLength(60).IsRequired();
+            entity.Property(r => r.SchemaVersion).HasMaxLength(40).IsRequired();
+            entity.Property(r => r.DependencyFingerprint).HasMaxLength(64).IsRequired();
+            entity.Property(r => r.DocumentJson).HasColumnType("text").IsRequired();
+            entity.HasIndex(r => new { r.Owner, r.RunId }).IsUnique();
+            entity.HasIndex(r => r.DependencyFingerprint);
         });
         modelBuilder.Entity<ParquetInspectionRecord>(entity =>
         {

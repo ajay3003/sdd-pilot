@@ -64,6 +64,7 @@ public sealed class CriticalE2ERunner(IEnumerable<ICriticalE2EStepExecutor> exec
                     ["stepsDefined"] = flow.Steps.Count.ToString(),
                 },
                 FlowVersion = flow.Version,
+                FlowFingerprint = CriticalE2EStore.Fingerprint(flow),
                 ReleaseEvidence = evidence,
                 ReleaseEvidenceNote = note,
                 DownstreamVerified = coversDownstream && status == CriticalE2EStatus.Passed,

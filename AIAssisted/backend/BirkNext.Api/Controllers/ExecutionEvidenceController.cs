@@ -39,6 +39,16 @@ public sealed class ExecutionEvidenceController(ExecutionEvidenceStore store) : 
         [FromQuery] ExecutionProtocol? protocol = null, [FromQuery] string? method = null, [FromQuery] string? search = null, [FromQuery] string sort = "sequence", CancellationToken ct = default) =>
         await store.GetAsync(runId, new(skip, take, state, protocol, method, search, sort), ct) is { } detail ? Ok(detail) : NotFound();
 
+    /// <summary>The run's immutable execution manifest: what it executed against. 404 for runs created before manifests existed.</summary>
+    [HttpGet("runs/{runId:guid}/manifest")]
+    public async Task<ActionResult<ExecutionManifest>> Manifest(Guid runId, [FromServices] ExecutionManifestService manifests, CancellationToken ct) =>
+        await manifests.GetAsync(runId, ct) is { } manifest ? Ok(manifest) : NotFound(new { message = "This run has no execution manifest (created before manifests were recorded)." });
+
+    /// <summary>Whether the run's (unchanged) result is still evidence for the current definitions, dependency by dependency. Reads only.</summary>
+    [HttpGet("runs/{runId:guid}/applicability")]
+    public async Task<ActionResult<ExecutionApplicability>> Applicability(Guid runId, [FromServices] ExecutionManifestService manifests, CancellationToken ct) =>
+        await manifests.ApplicabilityAsync(runId, ct) is { } applicability ? Ok(applicability) : NotFound();
+
     [HttpGet("runs/{runId:guid}/calls/{callId:guid}")]
     public async Task<ActionResult<ExecutionCallRecord>> Call(Guid runId, Guid callId, CancellationToken ct) =>
         await store.CallAsync(runId, callId, ct) is { } call ? Ok(call) : NotFound();

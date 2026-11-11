@@ -112,6 +112,8 @@ public sealed record ContractChainRunRequest
     public bool StopOnFirstFailure { get; init; }
     /// <summary>Run only these steps (a subflow); every dependency of a chosen step must be chosen too. Null = every step.</summary>
     public List<string>? StepIds { get; init; }
+    /// <summary>Server-side owners only (never bound from a request body): further dependencies for the run's execution manifest.</summary>
+    [JsonIgnore] public List<ManifestDependency> OwnerDependencies { get; init; } = [];
 }
 
 public sealed record ApiContractSummary(Guid Id, string Key, string Name, ApiContractProtocol Protocol, int LatestVersion, int OperationCount, int TestCount,
@@ -355,6 +357,10 @@ public sealed record ContractTestRunRequest
     public int? MaxExecutions { get; init; }
     /// <summary>Stop at the first failed, erroneous or blocked call (see <see cref="ExecutionRunRequest.StopOnFirstFailure"/>).</summary>
     public bool StopOnFirstFailure { get; init; }
+    /// <summary>Server-side owners only (never bound from a request body): run exactly these stored test revisions (an integration suite revision).</summary>
+    [JsonIgnore] public Dictionary<Guid, int> PinnedRevisions { get; init; } = [];
+    /// <summary>Server-side owners only: further dependencies for the run's execution manifest (suite revision, composite context).</summary>
+    [JsonIgnore] public List<ManifestDependency> OwnerDependencies { get; init; } = [];
 }
 
 public sealed record ContractTestRunResult(ExecutionRunStartResult? Run, List<string> NotRun);

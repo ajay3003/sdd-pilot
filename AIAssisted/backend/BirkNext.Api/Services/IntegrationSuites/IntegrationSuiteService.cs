@@ -670,6 +670,21 @@ public sealed partial class IntegrationSuiteService(
         }, ct);
     }
 
+    /// <summary>The suite revision (and its composite context revision) as execution manifest dependencies.</summary>
+    internal static List<ManifestDependency> SuiteDependencies(IntegrationSuite suite)
+    {
+        var deps = new List<ManifestDependency>
+        {
+            new() { Kind = ManifestDependencyKind.IntegrationSuite, Ref = ExecutionManifestService.SuiteRef(suite.SuiteKey, suite.Revision), Key = suite.SuiteKey, Version = suite.Revision,
+                ContentFingerprint = suite.Fingerprint, Origin = ManifestDependencyOrigin.OwnerResolved, Resolution = ManifestResolution.Resolved },
+        };
+        if (suite.Composite is { ContextKey.Length: > 0 } c)
+            deps.Add(new() { Kind = ManifestDependencyKind.CompositeContext, Ref = ExecutionManifestService.CompositeRef(c.ContextKey, c.ContextRevision), Key = c.ContextKey,
+                Version = c.ContextRevision, Origin = ManifestDependencyOrigin.OwnerResolved, Resolution = ManifestResolution.Resolved,
+                Detail = $"{c.Sources.Count} source(s){(c.PartialDraft ? "; partial draft" : "")}." });
+        return deps;
+    }
+
     /// <summary>Explicitly authorised execution of the suite's ready contract tests through Contract Testing (its environment safety policy,
     /// credential resolution and Execution Evidence). Tests outside this suite revision are refused; nothing else is executed.</summary>
     public async Task<IntegrationSuiteExecuteResult> ExecuteAsync(Guid id, IntegrationSuiteExecuteRequest request, string initiator, CancellationToken ct)
@@ -681,9 +696,11 @@ public sealed partial class IntegrationSuiteService(
         var foreign = request.TestIds.Where(t => !inSuite.Contains(t)).ToList();
         if (foreign.Count > 0) return new(null, "Refused", "Only tests of this suite revision can be executed from it.", [.. foreign.Select(f => f.ToString("D"))]);
         if (request.TestIds.Count == 0) return new(null, "Refused", "Choose at least one test.", []);
+        // The suite revision is the reviewed definition: its tests run at the revisions it pins, and the run's manifest names the suite revision.
         var result = await contractTests.RunAsync(new ContractTestRunRequest
         {
             TestIds = request.TestIds, ConfirmMutatingCalls = request.ConfirmMutatingCalls, Name = $"Integration suite {suite.Scope.DisplayName} r{suite.Revision}",
+            PinnedRevisions = suite.Tests.GroupBy(t => t.TestId).ToDictionary(g => g.Key, g => g.First().Revision), OwnerDependencies = SuiteDependencies(suite),
             Environment = new ContractTestEnvironment
             {
                 EnvironmentId = request.EnvironmentId, TargetUrl = request.TargetUrl, EnvironmentType = request.EnvironmentType, IsProduction = request.IsProduction,

@@ -146,7 +146,14 @@ public sealed class ExecutionRunService(IServiceScopeFactory scopes, IHttpClient
         using (var scope = scopes.CreateScope())
         {
             var store = scope.ServiceProvider.GetRequiredService<ExecutionEvidenceStore>();
-            await store.CreateAsync(summary, calls, ct);
+            // The immutable manifest (what this run executes against) is written in the same transaction as the run, before anything is sent.
+            ExecutionManifest? manifest = null;
+            if (scope.ServiceProvider.GetService<ExecutionManifestService>() is { } manifests)
+            {
+                manifest = await manifests.BuildAsync(request, summary, calls, ct);
+                summary = summary with { DependencyFingerprint = manifest.DependencyFingerprint };
+            }
+            await store.CreateAsync(summary, calls, ct, manifest);
             // Without a run-level blocker the calls' own reasons say why (for example the missing data-changing confirmation), never a bare "blocked".
             if (summary.State == ExecutionState.Blocked)
             {

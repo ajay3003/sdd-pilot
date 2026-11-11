@@ -107,6 +107,11 @@ public sealed class ExecutionResultsPageTests : BunitContext
             Task.FromResult<(AttemptComparison?, string?)>((new(runA, callA, attemptA, runB, callB, attemptB, ["HTTP status: 503 → 200"]), null));
         public Task<(ExecutionRunStartResult? Result, string? Error)> StartAsync(ExecutionRunRequest request, CancellationToken ct = default) { Starts++; return Task.FromResult<(ExecutionRunStartResult?, string?)>((null, null)); }
         public string ExportUrl(Guid runId) => $"http://localhost/api/execution-evidence/runs/{runId}/export";
+        public ExecutionManifest? Manifest { get; set; }
+        public ExecutionApplicability? Applicability { get; set; }
+        public Task<(ExecutionManifest? Manifest, string? Error)> ManifestAsync(Guid runId, CancellationToken ct = default) => Task.FromResult<(ExecutionManifest?, string?)>((Manifest, null));
+        public Task<(ExecutionApplicability? Applicability, string? Error)> ApplicabilityAsync(Guid runId, CancellationToken ct = default) =>
+            Task.FromResult<(ExecutionApplicability?, string?)>((Applicability, null));
     }
 
     private readonly Api _api = new();
@@ -304,5 +309,43 @@ public sealed class ExecutionResultsPageTests : BunitContext
                 ("xr-tab-request", "-1"), ("xr-tab-response", "-1"), ("xr-tab-assertions", "-1"), ("xr-tab-attempts", "-1"), ("xr-tab-contract", "-1"), ("xr-tab-evidence", "0"));
         }
         finally { (System.Globalization.CultureInfo.CurrentCulture, System.Globalization.CultureInfo.DefaultThreadCurrentCulture) = (culture, fallback); }
+    }
+
+    [Fact]
+    public void A_historical_result_keeps_its_outcome_and_shows_what_it_ran_against_and_what_moved()
+    {
+        var contract = new ManifestDependency { Kind = ManifestDependencyKind.Contract, Ref = "children-api@v1", Key = "children-api", Version = 1, ContentFingerprint = new string('a', 64),
+            Origin = ManifestDependencyOrigin.OwnerResolved, Resolution = ManifestResolution.Resolved };
+        var test = new ManifestDependency { Kind = ManifestDependencyKind.ContractTest, Ref = "contract-test:aa@r2", Version = 2, ContentFingerprint = new string('b', 64),
+            Origin = ManifestDependencyOrigin.OwnerResolved, Resolution = ManifestResolution.Resolved };
+        _api.Manifest = new() { ManifestId = Guid.NewGuid(), Owner = ExecutionManifestSchema.ExecutionEvidenceOwner, RunId = Run, Build = new("1.4.0", "0123456789abcdef"),
+            DependencyFingerprint = new string('c', 64), Dependencies = [contract, test] };
+        _api.Applicability = new() { RunId = Run, ResultState = ExecutionState.Failed, Applicability = ResultApplicability.Historical,
+            Explanation = "Historical: contract children-api is now v2 (the run used v1). The result stays valid for what it ran against.",
+            Dependencies = [new(contract, DependencyCurrencyState.Superseded, "children-api@v2", null, "contract children-api is now v2"), new(test, DependencyCurrencyState.Unchanged, test.Ref, null, "current")] };
+
+        var page = Open($"?run={Run}");
+        var panel = page.Find("[data-testid=xr-manifest]");
+        panel.GetAttribute("data-applicability").Should().Be("Historical");
+        page.Find("[data-testid=xr-applicability]").TextContent.Should().Be("Historical result");
+        page.Find("[data-testid=xr-applicability-text]").TextContent.Should().Contain("The failed result is unchanged").And.Contain("now v2");
+        page.Find("[data-testid=xr-run-state]").TextContent.Should().Be("Failed", "the run's own outcome is never rewritten");
+        var rows = page.FindAll("[data-testid=xr-manifest-row]");
+        rows.Should().HaveCount(2);
+        rows[0].GetAttribute("data-state").Should().Be("Superseded");
+        rows[0].TextContent.Should().Contain("Superseded → children-api@v2").And.Contain("BirkNext (materialised)");
+        page.Find("[data-testid=xr-manifest-build]").TextContent.Should().Contain("0123456789ab").And.Contain("execution-manifest/1");
+        _api.Starts.Should().Be(0, "reading a result never executes");
+    }
+
+    [Fact]
+    public void A_run_without_a_manifest_says_its_currency_is_unknown_and_never_claims_current()
+    {
+        _api.Applicability = new() { RunId = Run, ResultState = ExecutionState.Failed, Applicability = ResultApplicability.Unknown,
+            Explanation = "This run has no execution manifest (it was created before manifests were recorded)." };
+        var page = Open($"?run={Run}");
+        page.Find("[data-testid=xr-manifest]").GetAttribute("data-applicability").Should().Be("Unknown");
+        page.Find("[data-testid=xr-applicability]").TextContent.Should().Be("Currency unknown");
+        page.FindAll("[data-testid=xr-manifest-table]").Should().BeEmpty();
     }
 }

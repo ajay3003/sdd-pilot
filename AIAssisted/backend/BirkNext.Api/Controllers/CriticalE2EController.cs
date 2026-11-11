@@ -32,6 +32,10 @@ public sealed class CriticalE2EController(ICriticalE2EService service) : Control
     [HttpPost("modules/unregister")]
     public IActionResult UnregisterModule(CriticalE2EModuleRequest request) => Run(() => Ok(service.UnregisterModule(request)));
 
+    /// <summary>The flow's immutable definition versions, newest first. Read-only.</summary>
+    [HttpGet("flows/{flowId}/versions")]
+    public IActionResult FlowVersions(string flowId, [FromServices] ICriticalE2EStore store) => Run(() => Ok(store.FlowVersions(flowId)));
+
     [HttpDelete("flows/{flowId}")]
     public IActionResult DeleteFlow(string flowId) => Run(() => service.DeleteFlow(flowId) ? Ok(new { deleted = true }) : NotFound());
 

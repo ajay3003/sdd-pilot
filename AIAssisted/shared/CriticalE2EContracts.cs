@@ -562,6 +562,9 @@ public sealed record CriticalE2ERunResult
 
     /// <summary>The definition version this run executed. Older runs stay tied to the version they ran.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public int FlowVersion { get; init; }
+    /// <summary>SHA-256 of the executed definition's material content (the same content that decides a new version); the exact definition is kept
+    /// in the flow's version history. Null for runs recorded before fingerprints existed.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? FlowFingerprint { get; init; }
     /// <summary>The run can count toward a release: critical, release-ready definition, build bound. Otherwise a diagnostic result.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool ReleaseEvidence { get; init; }
     /// <summary>Why the run is not release evidence (e.g. "Diagnostic result · does not count as release evidence").</summary>
@@ -905,4 +908,19 @@ public sealed record CriticalE2ERunBatchResult
     public List<CriticalE2ERunResult> Runs { get; init; } = [];
     public CriticalE2EOverview Overview { get; init; } = new();
     public string Message { get; init; } = "";
+}
+
+/// <summary>
+/// One immutable version of a flow definition, appended when a save creates a new version (or, once, for the version current when history
+/// started: <see cref="Backfilled"/>). A run names <c>FlowVersion</c> and <c>FlowFingerprint</c>; this record is the definition it executed.
+/// </summary>
+public sealed record CriticalE2EFlowVersionRecord
+{
+    public string FlowId { get; init; } = "";
+    public int Version { get; init; }
+    public string Fingerprint { get; init; } = "";
+    public DateTimeOffset RecordedAt { get; init; }
+    /// <summary>True when the version existed before version history was kept (earlier versions of that flow are not available).</summary>
+    public bool Backfilled { get; init; }
+    public CriticalE2EFlowDefinition Definition { get; init; } = new();
 }

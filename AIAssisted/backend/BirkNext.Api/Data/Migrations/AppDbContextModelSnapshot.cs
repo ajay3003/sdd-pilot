@@ -1057,6 +1057,47 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("execution_evidence_audit", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.ExecutionManifestRow", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DependencyFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("DocumentJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Owner")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SchemaVersion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DependencyFingerprint");
+
+                    b.HasIndex("Owner", "RunId")
+                        .IsUnique();
+
+                    b.ToTable("execution_manifests", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.ExecutionRetentionSettingsRow", b =>
                 {
                     b.Property<int>("Id")

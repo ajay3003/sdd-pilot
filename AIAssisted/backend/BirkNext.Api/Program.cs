@@ -646,6 +646,7 @@ builder.Services.AddHttpClient(BirkNext.Api.Services.ExecutionEvidence.Execution
     .ConfigurePrimaryHttpMessageHandler(BirkNext.Api.Services.ExecutionEvidence.ExecutionRunService.CreatePrimaryHandler)
     .AddHttpMessageHandler<BirkNext.Api.Services.ExecutionEvidence.EvidenceCaptureHandler>();
 builder.Services.AddScoped<BirkNext.Api.Services.ExecutionEvidence.ExecutionEvidenceStore>();
+builder.Services.AddScoped(sp => new BirkNext.Api.Services.ExecutionEvidence.ExecutionManifestService(sp.GetRequiredService<BirkNext.Api.Data.AppDbContext>(), sp.GetService<BirkNext.Api.Services.TestData.AuthoredTestDataStore>()));
 builder.Services.AddScoped<BirkNext.Api.Services.ExecutionEvidence.ExecutionEvidenceManagement>();
 // Test Execution & Evidence: read-only providers over the existing evidence owners (no second store, no execution).
 builder.Services.AddScoped<BirkNext.Api.Services.ExecutionExplorer.ExecutionEvidenceExplorerProvider>();

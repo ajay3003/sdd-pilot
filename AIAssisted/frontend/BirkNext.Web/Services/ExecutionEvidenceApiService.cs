@@ -32,6 +32,10 @@ public interface IExecutionEvidenceApiService
     Task<(AttemptComparison? Comparison, string? Error)> CompareAsync(Guid runA, Guid callA, int attemptA, Guid runB, Guid callB, int attemptB, CancellationToken ct = default);
     Task<(ExecutionRunStartResult? Result, string? Error)> StartAsync(ExecutionRunRequest request, CancellationToken ct = default);
     string ExportUrl(Guid runId);
+    /// <summary>The run's immutable execution manifest (null for runs from before manifests).</summary>
+    Task<(ExecutionManifest? Manifest, string? Error)> ManifestAsync(Guid runId, CancellationToken ct = default) => Task.FromResult<(ExecutionManifest?, string?)>((null, null));
+    /// <summary>Whether the run's unchanged result is still evidence for the current definitions.</summary>
+    Task<(ExecutionApplicability? Applicability, string? Error)> ApplicabilityAsync(Guid runId, CancellationToken ct = default) => Task.FromResult<(ExecutionApplicability?, string?)>((null, null));
 }
 
 public sealed class ExecutionEvidenceApiService(HttpClient http) : IExecutionEvidenceApiService
@@ -138,6 +142,16 @@ public sealed class ExecutionEvidenceApiService(HttpClient http) : IExecutionEvi
         if (!string.IsNullOrWhiteSpace(search)) q.Add($"search={Uri.EscapeDataString(search)}");
         return GetAsync<ExecutionRunDetail>($"api/execution-evidence/runs/{runId}?{string.Join('&', q)}", ct);
     }
+
+    public async Task<(ExecutionManifest? Manifest, string? Error)> ManifestAsync(Guid runId, CancellationToken ct = default)
+    {
+        // A 404 means "created before manifests existed" — not an error the page shows.
+        var (manifest, error) = await GetAsync<ExecutionManifest>($"api/execution-evidence/runs/{runId}/manifest", ct);
+        return manifest is null ? (null, null) : (manifest, error);
+    }
+
+    public Task<(ExecutionApplicability? Applicability, string? Error)> ApplicabilityAsync(Guid runId, CancellationToken ct = default) =>
+        GetAsync<ExecutionApplicability>($"api/execution-evidence/runs/{runId}/applicability", ct);
 
     public Task<(ExecutionCallRecord? Call, string? Error)> CallAsync(Guid runId, Guid callId, CancellationToken ct = default) =>
         GetAsync<ExecutionCallRecord>($"api/execution-evidence/runs/{runId}/calls/{callId}", ct);
