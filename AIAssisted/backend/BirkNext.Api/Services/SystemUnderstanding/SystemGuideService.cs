@@ -177,7 +177,10 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
         var roles = Roles(entry, content);
         if (roles.Count == 0) return [];
         // The workspace's Source Analysis snapshots, as Source Analysis lists them (one shared reader; no second inventory).
-        var snapshots = (await new Integrations.SourceEvidence.IqrSourceStore(db).ListSourceAnalysisAsync(500, ct)).OrderBy(s => s.AnalyzedAt).ToList();
+        // Only the snapshot each logical source is analysed with (its analysis baseline, else the newest import): alternative branch snapshots of the
+        // same source are never all cited as the guide's basis. Switching the baseline changes the basis, so affected claims show as source changes.
+        var snapshots = SourceAnalysis.SourceBaselineService.Resolve(await new Integrations.SourceEvidence.IqrSourceStore(db).ListSourceAnalysisAsync(500, ct),
+            await SourceAnalysis.SourceBaselineService.CurrentBaselinesAsync(db, ct)).OrderBy(s => s.AnalyzedAt).ToList();
         var result = new List<GuideSourceBasis>();
         foreach (var role in roles)
         {

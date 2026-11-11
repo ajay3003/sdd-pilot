@@ -60,7 +60,7 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
         {
             StagingId = staged.StagingId,
             ImportId = importId,
-            Archive = new(workspace.Archive.FileName, workspace.Archive.Sha256, bytes.Length, workspace.EntryCount),
+            Archive = new(workspace.Archive.FileName, workspace.Archive.Sha256, bytes.Length, workspace.EntryCount, workspace.Archive.ContentSha256),
             ProjectName = projectName,
             ProjectNameBasis = basis,
             Documents = documents,

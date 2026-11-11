@@ -301,10 +301,39 @@ public static class IqrSourceArchiveReader
         }
         if (fileEntryCount == 0) return Reject("ARCHIVE_EMPTY", "Archive contains no files.", entryCount: entryCount);
         var sha = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        string? contentSha;
+        try { contentSha = ContentFingerprint(bytes, ct); }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or NotSupportedException) { contentSha = null; }
         if (documentationCandidatesSkipped > 0)
             limitations.Add($"{documentationCandidatesSkipped:N0} documentation file(s) were not read for generated-documentation evidence (size, binary content or the {MaxDocumentationCandidates:N0}-file limit).");
-        return new(new Workspace(new SourceArchive(ArchiveDisplayName(name), sha, files.Count + configurations.Count + evidenceFiles.Count), files, [.. limitations], configurations, configurationFiles, evidenceFiles, allPaths,
+        return new(new Workspace(new SourceArchive(ArchiveDisplayName(name), sha, files.Count + configurations.Count + evidenceFiles.Count, contentSha), files, [.. limitations], configurations, configurationFiles, evidenceFiles, allPaths,
             captureDocuments ? documentFiles : null, captureDocuments ? skippedDocuments : null, entryCount ?? 0, rawDocumentFiles, documentationCandidates, entryModified, textEncodings, uiFiles, uiFilesSkipped), null);
+    }
+
+    /// <summary>
+    /// Canonical content fingerprint of an archive that already passed validation (paths, sizes, symlinks, duplicates are checked by
+    /// <see cref="ReadDetailed(string, byte[], bool, bool, CancellationToken)"/>): every file entry outside <see cref="Ignored"/> directories, its normalised
+    /// path with the single common top-level folder removed when every file shares one, and the SHA-256 of its raw bytes (streamed, bounded by the
+    /// validated expanded size). The sorted "path\0sha256\n" lines are hashed again. Entry order, timestamps, compression and the archive name do not
+    /// change it; any byte change in any file — including line endings — does.
+    /// </summary>
+    public static string ContentFingerprint(byte[] bytes, CancellationToken ct = default)
+    {
+        using var zip = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
+        var entries = new List<(string Path, string Hash)>();
+        foreach (var entry in zip.Entries)
+        {
+            ct.ThrowIfCancellationRequested();
+            var normalized = NormalizeEntryPath(entry.FullName);
+            if (normalized.Failure is not null || normalized.IsDirectory || normalized.IsRoot || normalized.Path is null) continue;
+            if (normalized.Path.Split('/').Any(Ignored.Contains)) continue;
+            using var stream = entry.Open();
+            entries.Add((normalized.Path, Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant()));
+        }
+        var tops = entries.Select(e => e.Path.Contains('/') ? e.Path[..e.Path.IndexOf('/')] : null).Distinct(StringComparer.Ordinal).ToList();
+        var strip = tops.Count == 1 && tops[0] is not null;
+        var lines = entries.Select(e => (strip ? e.Path[(e.Path.IndexOf('/') + 1)..] : e.Path) + "\0" + e.Hash + "\n").OrderBy(l => l, StringComparer.Ordinal);
+        return Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(string.Concat(lines)))).ToLowerInvariant();
     }
 
     private sealed record NormalizedPath(string? Path, bool IsDirectory, bool IsRoot, SourceArchiveValidationFailure? Failure);

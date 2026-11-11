@@ -607,6 +607,8 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.IntegrationRev
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationReviewService, BirkNext.Api.Services.Integrations.IntegrationReviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationReviewEvidenceSources, BirkNext.Api.Services.Integrations.IntegrationReviewEvidenceSources>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore>();
+// The shared source context: one snapshot per logical source for every module (analysis baseline or explicit fallback); never combines alternatives.
+builder.Services.AddScoped<BirkNext.Api.Services.SourceAnalysis.SourceBaselineService>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.SourceEvidence.IIntegrationEvidenceBindingStore, BirkNext.Api.Services.Integrations.SourceEvidence.IntegrationEvidenceBindingStore>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.ContractRelationshipReviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.SetupProfiles.SetupProfileService>();

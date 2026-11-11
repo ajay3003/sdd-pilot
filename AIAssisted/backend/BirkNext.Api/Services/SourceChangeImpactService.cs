@@ -39,8 +39,10 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
         var after = await sources.ResolveAsync(request.EnvironmentId ?? string.Empty, request.TargetSnapshotId, ct);
         if (before is null || after is null || ReviewSourceEvidenceProvider.Identity(before).Key != ReviewSourceEvidenceProvider.Identity(after).Key)
             return null;
+        // Within an import's context, at least one side must be that import's snapshot; the other may be an alternative snapshot (another ZIP / branch)
+        // of the same logical source — comparing alternative versions is exactly what multi-branch review needs. Different sources are refused above.
         if (request.ProjectImportId is { Length: > 0 } importId &&
-            (before.ProjectImport?.ImportId != importId || after.ProjectImport?.ImportId != importId))
+            before.ProjectImport?.ImportId != importId && after.ProjectImport?.ImportId != importId)
             return null;
 
         var limitations = new List<string>();

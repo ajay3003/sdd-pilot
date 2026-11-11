@@ -163,6 +163,7 @@
     <Compile Include="../../shared/AiCodeReviewContracts.cs" Link="Models/AiCodeReviewContracts.cs" />
     <Compile Include="../../shared/TestCoverageContracts.cs" Link="Models/TestCoverageContracts.cs" />
     <Compile Include="../../shared/SourceChangeImpactContracts.cs" Link="Models/SourceChangeImpactContracts.cs" />
+    <Compile Include="../../shared/SourceBaselineContracts.cs" Link="Models/SourceBaselineContracts.cs" />
     <Compile Include="../../shared/AzureEnvironmentContracts.cs" Link="Models/AzureEnvironmentContracts.cs" />
     <Compile Include="../../shared/DependencyHealthContracts.cs" Link="Models/DependencyHealthContracts.cs" />
     <Compile Include="../../shared/DependencyEvidenceContracts.cs" Link="Models/DependencyEvidenceContracts.cs" />

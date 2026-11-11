@@ -65,8 +65,13 @@
     else
     {
         var summary = SourceManagementPresentation.Summary(_facts);
-        <ul class="sm-tiles" data-testid="sm-summary" aria-label="Source summary — choose a tile to filter the list">
-            <li>@Tile("sm-summary-total", summary.Total, summary.Total == 1 ? "source" : "sources", $"{summary.Zip} ZIP · {summary.Git} Git", null, () => _filter = new() { Sort = _filter.Sort })</li>
+        @* Logical sources and their versions (analysis baselines) first: the list below shows imported packages, where each version of one source is a row. *@
+        @if (Services.GetService(typeof(SourceContextApiService)) is not null)
+        {
+            <BirkNext.Web.Components.SourceManagement.SourceContextPanel OnChanged="ReloadAsync" />
+        }
+        <ul class="sm-tiles" data-testid="sm-summary" aria-label="Imported package summary — choose a tile to filter the list">
+            <li>@Tile("sm-summary-total", summary.Total, summary.Total == 1 ? "source" : "sources", $"{summary.Zip} ZIP · {summary.Git} Git imported packages (each version is one)", null, () => _filter = new() { Sort = _filter.Sort })</li>
             <li>@Tile("sm-summary-review", summary.NeedsReview, "requiring review", summary.NeedsReview == 0 ? "No open decisions" : "Role or association to decide",
                 summary.NeedsReview > 0 ? "attention" : null, () => _filter = _filter with { ReviewOnly = true })</li>
             <li>@Tile("sm-summary-analyzed", summary.Analyzed, "analyzed", "Every area present analyzed completely", null, () => _filter = _filter with { Analysis = nameof(SourceAnalysisBucket.Analyzed) })</li>

@@ -79,7 +79,8 @@ public sealed class ProfileTopologyProvider(IEnumerable<ITopologyProfile> profil
 /// </summary>
 public sealed class IntegrationTopologyService(IEnumerable<ITopologyProvider> providers, IEnumerable<ITopologyProfile> profiles,
     ITrustedExecutionEnvironmentRegistry environments, IIntegrationCatalogService catalog, IReviewSourceEvidenceProvider sources, TimeProvider clock,
-    BirkNext.Api.Services.Integrations.SourceEvidence.IIntegrationEvidenceBindingStore? bindings = null)
+    BirkNext.Api.Services.Integrations.SourceEvidence.IIntegrationEvidenceBindingStore? bindings = null,
+    BirkNext.Api.Services.SourceAnalysis.SourceBaselineService? baselines = null)
 {
     public async Task<(IntegrationTopologyView View, TopologyBuilder Builder)> BuildAsync(string environmentId, TopologyRequest request, CancellationToken ct)
     {
@@ -92,6 +93,8 @@ public sealed class IntegrationTopologyService(IEnumerable<ITopologyProvider> pr
         var trusted = environments.Resolve(environmentId, out var trustDetail);
         var configured = await catalog.GetAsync(environmentId, trusted?.EnvironmentType, trusted?.TargetUrl, ct);
         var snapshots = sources.SourceAnalysisEnabled ? await sources.ListAsync(environmentId, ct) : [];
+        // One snapshot per logical source (analysis baseline or explicit fallback): alternative branch snapshots are never combined into one topology.
+        if (baselines is not null) snapshots = await baselines.ResolveAsync(snapshots, ct);
         var context = new TopologyContext(environmentId, trusted, trustDetail, configured, snapshots, request);
         var builder = new TopologyBuilder();
         foreach (var provider in providers.OrderBy(item => item.Order)) await provider.ContributeAsync(context, builder, ct);

@@ -267,6 +267,7 @@
         var view = _view!;
         var primary = view.Associations.FirstOrDefault(a => a.State == EvidenceAssociationState.Associated && a.Role == PackageEvidenceRole.PrimaryApplicationSource);
         var candidate = view.Associations.FirstOrDefault(a => a.State == EvidenceAssociationState.NeedsReview && a.Role == PackageEvidenceRole.PrimaryApplicationSource);
+        <BirkNext.Web.Components.SourceManagement.SourceContextNotice Purpose="project evidence" />
         <div class="tep-overview" data-testid="tep-overview">
             <ul class="tep-facts" aria-label="Project Evidence summary">
                 <li data-testid="tep-fact-available"><strong>@view.Packages.Count</strong> imported source@(view.Packages.Count == 1 ? "" : "s") available</li>

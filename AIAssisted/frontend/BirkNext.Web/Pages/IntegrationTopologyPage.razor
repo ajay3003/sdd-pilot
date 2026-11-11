@@ -17,6 +17,7 @@
    one disclosure away. Read-only; rebuilt from stored source facts on every load. Expected ≠ resolved ≠ observed. *@
 <div class="it-page" data-testid="it-page" aria-busy="@(_loading ? "true" : "false")">
     <PageHeader Title="Integration Topology" Description="Components and the connections between them, resolved from application source, Infrastructure as Code, configured integrations, application metadata, OpenAPI documents and runtime observations. Every connection says why BirkNext believes it." />
+    <BirkNext.Web.Components.SourceManagement.SourceContextNotice Purpose="the topology" />
     @if (_profile is not null)
     {
         var plan = _view?.Discovery;

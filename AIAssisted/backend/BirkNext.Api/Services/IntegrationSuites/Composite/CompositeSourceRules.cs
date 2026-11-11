@@ -140,10 +140,15 @@ public static partial class CompositeSourceRules
     /// CONFIRMED; one candidate project = CANDIDATE; several = AMBIGUOUS; none = MISSING — a stage covered only by a built-in Test Pack reference is
     /// CONFIRMED by that reference. Snapshots that match no stage are supporting evidence (Infrastructure as Code, libraries), never alternatives.
     /// </summary>
-    public static CompositeDiscovery Discover(IntegrationSuiteScope scope, IReadOnlyList<SnapshotFacts> all, CompositeSourceContext? context)
+    public static CompositeDiscovery Discover(IntegrationSuiteScope scope, IReadOnlyList<SnapshotFacts> all, CompositeSourceContext? context,
+        IReadOnlyDictionary<string, Guid>? baselines = null)
     {
+        // One candidate per project: its analysis baseline when one is selected (a selected baseline that is unavailable leaves the project out —
+        // nothing is substituted), else the newest snapshot. Alternative branch snapshots of one project never compete as separate candidates.
         var current = all.Where(f => f.Status != nameof(SourceAnalysisStatus.Failed)).GroupBy(f => f.ProjectKey, StringComparer.Ordinal)
-            .Select(g => (Newest: g.OrderByDescending(x => x.AnalyzedAt).ThenByDescending(x => x.Id).First(), Older: g.Count() - 1)).ToList();
+            .Select(g => (Newest: baselines is not null && baselines.TryGetValue(g.Key, out var b) ? g.FirstOrDefault(x => x.Id == b)
+                : g.OrderByDescending(x => x.AnalyzedAt).ThenByDescending(x => x.Id).First(), Older: g.Count() - 1))
+            .Where(x => x.Newest is not null).Select(x => (Newest: x.Newest!, x.Older)).ToList();
         var stages = new List<CompositeStageDiscovery>();
         var matched = new HashSet<Guid>();
         foreach (var template in scope.Stages)

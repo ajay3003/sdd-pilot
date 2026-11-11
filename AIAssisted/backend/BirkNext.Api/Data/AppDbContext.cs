@@ -65,6 +65,7 @@ public class AppDbContext : DbContext
     public DbSet<DependencyReviewRunRecord> DependencyReviewRuns => Set<DependencyReviewRunRecord>();
     public DbSet<AiCodeReviewRunRecord> AiCodeReviewRuns => Set<AiCodeReviewRunRecord>();
     public DbSet<SourceRepositoryAssociationRecord> SourceRepositoryAssociations => Set<SourceRepositoryAssociationRecord>();
+    public DbSet<SourceDecisionRecord> SourceDecisions => Set<SourceDecisionRecord>();
     public DbSet<TestCoverageReviewRunRecord> TestCoverageReviewRuns => Set<TestCoverageReviewRunRecord>();
     public DbSet<TestCoverageDecisionRecord> TestCoverageDecisions => Set<TestCoverageDecisionRecord>();
     public DbSet<ManualReviewDecisionRecord> ManualReviewDecisions => Set<ManualReviewDecisionRecord>();
@@ -992,6 +993,24 @@ public class AppDbContext : DbContext
             entity.Property(r => r.RevokedAt).HasColumnName("revoked_at");
             entity.Property(r => r.RevokedBy).HasColumnName("revoked_by").HasMaxLength(200);
             entity.HasIndex(r => new { r.RepositoryKeyA, r.RepositoryKeyB }).HasDatabaseName("ix_source_repository_associations_keys");
+        });
+
+        // Append-only source decisions (analysis baselines, declared branch labels); see SourceDecisionRecord.
+        modelBuilder.Entity<SourceDecisionRecord>(entity =>
+        {
+            entity.ToTable("source_decisions");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.Kind).HasColumnName("kind").HasMaxLength(40).IsRequired();
+            entity.Property(r => r.Subject).HasColumnName("subject").HasMaxLength(300).IsRequired();
+            entity.Property(r => r.SnapshotId).HasColumnName("snapshot_id");
+            entity.Property(r => r.Value).HasColumnName("value").HasMaxLength(200);
+            entity.Property(r => r.SnapshotLabel).HasColumnName("snapshot_label").HasMaxLength(300);
+            entity.Property(r => r.ContentFingerprint).HasColumnName("content_fingerprint").HasMaxLength(64);
+            entity.Property(r => r.DecidedAt).HasColumnName("decided_at");
+            entity.Property(r => r.DecidedBy).HasColumnName("decided_by").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.Reason).HasColumnName("reason").HasMaxLength(500);
+            entity.HasIndex(r => new { r.Kind, r.Subject, r.DecidedAt }).HasDatabaseName("ix_source_decisions_kind_subject");
         });
 
         modelBuilder.Entity<AiCodeReviewRunRecord>(entity =>

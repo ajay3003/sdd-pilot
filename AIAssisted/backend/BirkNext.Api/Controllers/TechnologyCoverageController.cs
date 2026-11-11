@@ -12,7 +12,8 @@ namespace BirkNext.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/technology-coverage")]
-public sealed class TechnologyCoverageController(IqrSourceStore sources, IIntegrationCatalogService catalog) : ControllerBase
+public sealed class TechnologyCoverageController(IqrSourceStore sources, IIntegrationCatalogService catalog,
+    BirkNext.Api.Services.SourceAnalysis.SourceBaselineService? baselines = null) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<ProjectTechnologyCoverage>> Get([FromQuery] string? environmentId, CancellationToken ct, [FromQuery] Guid? snapshotId = null)
@@ -21,8 +22,11 @@ public sealed class TechnologyCoverageController(IqrSourceStore sources, IIntegr
         // belong to a target: without one there are none to list (not "none configured").
         // The application's own source when the caller names it (Project Evidence's main package); otherwise the workspace's newest snapshot,
         // which may belong to another package (a shared library or an infrastructure repository imported last).
+        // Without a named snapshot: the newest of the snapshots the shared source context uses (one per logical source) — never an unselected
+        // alternative branch snapshot of a source that has an analysis baseline.
         var latest = snapshotId is { } requested && await sources.FindSourceAnalysisAsync(requested, ct) is { } named ? named
-            : (await sources.ListSourceAnalysisAsync(1, ct)).FirstOrDefault();
+            : baselines is null ? (await sources.ListSourceAnalysisAsync(1, ct)).FirstOrDefault()
+            : (await baselines.ResolveAsync(await sources.ListSourceAnalysisAsync(BirkNext.Api.Services.SourceAnalysis.SourceBaselineService.Window, ct), ct)).MaxBy(s => s.AnalyzedAt);
         var hasTarget = !string.IsNullOrWhiteSpace(environmentId);
         // No environment type: a read-only check never upgrades or applies a template.
         var configured = hasTarget ? await catalog.GetAsync(environmentId!, null, null, ct) : new BirkNext.Integrations.IntegrationCatalog();

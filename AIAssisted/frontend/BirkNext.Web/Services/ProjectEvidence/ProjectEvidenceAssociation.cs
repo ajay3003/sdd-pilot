@@ -25,8 +25,10 @@ public enum EvidenceAssociationState
 public enum AssociationSuggestion { None, Strong, Possible }
 
 /// <summary>One package's association: state, role, and the reason in tester words.</summary>
+/// <param name="AnalysisBaseline">This package's snapshot is the selected analysis baseline of its logical source.</param>
+/// <param name="AlternativeVersion">Another version (snapshot) of a logical source that has several versions; it is not the one used for analysis.</param>
 public sealed record PackageAssociation(ProjectEvidencePackage Package, EvidenceAssociationState State, PackageEvidenceRole Role, string Detail, bool UserConfirmed = false,
-    AssociationSuggestion Suggestion = AssociationSuggestion.None, bool RoleConfirmed = false)
+    AssociationSuggestion Suggestion = AssociationSuggestion.None, bool RoleConfirmed = false, bool AnalysisBaseline = false, bool AlternativeVersion = false)
 {
     public string StateLabel => State switch
     {
@@ -66,9 +68,19 @@ public static class ProjectEvidenceAssociation
     }
 
     /// <param name="confirmedElsewhere">Import ids the person confirmed for the same Target Application in another Target Environment.</param>
+    /// <param name="sourceContext">The shared source context (logical sources, their versions and analysis baselines). With it, several imports of one
+    /// logical source are versions, not competing application sources: the analysis baseline is the application source and the others are
+    /// alternative versions (kept, not used); without a baseline there is exactly one decision — choose it. Explicit choices still win.</param>
     public static IReadOnlyList<PackageAssociation> Of(TargetApplicationIdentity? identity, EnvironmentProject? project, SddLifecycleState lifecycle,
-        IReadOnlyList<ProjectEvidencePackage> packages, SourceSetupView? setup, IReadOnlySet<string>? confirmedElsewhere = null)
+        IReadOnlyList<ProjectEvidencePackage> packages, SourceSetupView? setup, IReadOnlySet<string>? confirmedElsewhere = null,
+        BirkNext.SourceBaselines.SourceContextView? sourceContext = null)
     {
+        var versionOf = (sourceContext?.Sources ?? []).Where(s => s.DistinctContents > 1)
+            .SelectMany(s => s.Snapshots.Select(v => (v.SnapshotId, Source: s, View: v))).ToDictionary(x => x.SnapshotId, x => (x.Source, x.View));
+        // The one package that carries the "choose a baseline" decision per unresolved logical source: the version modules currently use.
+        var decisionCarrier = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var group in packages.Where(p => p.SnapshotId is { } id && versionOf.ContainsKey(id)).GroupBy(p => versionOf[p.SnapshotId!.Value].Source.RepositoryKey))
+            decisionCarrier.Add((group.FirstOrDefault(p => versionOf[p.SnapshotId!.Value].View.UsedForAnalysis) ?? group.First()).ImportId);
         var application = ApplicationFor(identity, lifecycle);
         // Roles are judged within the package's own application (the one it was imported for); without a Target Application only detected. A
         // role confirmed in Source Management is the canonical role (ApplicationContexts.Packages).
@@ -107,6 +119,28 @@ public static class ProjectEvidenceAssociation
                 return new PackageAssociation(p, EvidenceAssociationState.NotAssociated, role, $"Not used for {name} (your decision). The import is kept.");
             if (declined.Contains(p.ImportId) && !userBound.Contains(p.ImportId))
                 return new PackageAssociation(p, EvidenceAssociationState.NotAssociated, role, "Removed from this application's evidence earlier.");
+            // Versions of one logical source (several imports with different content): an analysis decision, not competing application sources.
+            if (role is PackageEvidenceRole.PrimaryApplicationSource or PackageEvidenceRole.RelatedApplicationSource
+                && p.SnapshotId is { } sid && versionOf.TryGetValue(sid, out var version) && !(roleConfirmed && role is PackageEvidenceRole.RelatedApplicationSource))
+            {
+                var (source, view) = version;
+                var baselineName = source.Snapshots.FirstOrDefault(v => v.IsBaseline)?.ArchiveName;
+                if (source.State == BirkNext.SourceBaselines.SourceBaselineState.Selected)
+                    return view.IsBaseline
+                        ? new(p, EvidenceAssociationState.Associated, PackageEvidenceRole.PrimaryApplicationSource,
+                            $"Analysis baseline of {source.DisplayName} (selected in Source versions); the application source of {name} for analysis — not a deployment claim.",
+                            RoleConfirmed: roleConfirmed, AnalysisBaseline: true)
+                        : new(p, EvidenceAssociationState.NotAssociated, PackageEvidenceRole.RelatedApplicationSource,
+                            $"Alternative version of {source.DisplayName}; not used for analysis (the analysis baseline is {baselineName}). The import is kept.",
+                            RoleConfirmed: roleConfirmed, AlternativeVersion: true);
+                return decisionCarrier.Contains(p.ImportId)
+                    ? new(p, EvidenceAssociationState.NeedsReview, role,
+                        $"{source.SnapshotCount} versions of {source.DisplayName} are imported ({source.DistinctContents} different contents) and no analysis baseline is selected. Choose it in Source Management → Source versions; BirkNext does not pick a branch.",
+                        RoleConfirmed: roleConfirmed)
+                    : new(p, EvidenceAssociationState.NotAssociated, PackageEvidenceRole.RelatedApplicationSource,
+                        $"Alternative version of {source.DisplayName}; waiting for the analysis baseline decision (Source Management → Source versions).",
+                        RoleConfirmed: roleConfirmed, AlternativeVersion: true);
+            }
             if (roleConfirmed && role is PackageEvidenceRole.RelatedApplicationSource)
                 return new(p, EvidenceAssociationState.Associated, role, $"{ApplicationContexts.RoleLabel(role)} of {name} — role confirmed in Source Management.", RoleConfirmed: true);
             return role switch
@@ -176,6 +210,13 @@ public static class ProjectEvidenceAssociation
         if (project.ProjectImportId is null && associated.FirstOrDefault(a => a.Role == PackageEvidenceRole.PrimaryApplicationSource)?.Package is { } primary)
         {
             project.ProjectImportId = primary.ImportId; project.ArchiveSha256 = primary.ArchiveSha256; project.Manual = false;
+            changed = true;
+        }
+        // An automatically chosen main package that is now an alternative version follows the selected analysis baseline (a manual choice never moves).
+        else if (!project.Manual && associated.FirstOrDefault(a => a.AnalysisBaseline)?.Package is { } baseline && project.ProjectImportId != baseline.ImportId
+            && associations.Any(a => a.AlternativeVersion && a.Package.ImportId == project.ProjectImportId))
+        {
+            project.ProjectImportId = baseline.ImportId; project.ArchiveSha256 = baseline.ArchiveSha256;
             changed = true;
         }
         foreach (var role in project.Evidence.Where(r => r.Origin is not (ProjectEvidenceRoleOrigin.Expected or ProjectEvidenceRoleOrigin.UserAdded)))

@@ -505,6 +505,8 @@ public sealed record TestPackSourceSetup(string PackId, string DisplayName, IRea
 /// in the requested environment. Read-only metadata; never source content.</summary>
 public sealed record SourceSetupSnapshot(Guid SnapshotId, string ArchiveFileName, string Fingerprint, DateTimeOffset AnalyzedAt, string Status)
 {
+    /// <summary>Canonical content fingerprint (null for snapshots imported before it existed); <see cref="Fingerprint"/> is the archive hash.</summary>
+    public string? ContentFingerprint { get; init; }
     public string? ImportId { get; init; }
     public string? Repository { get; init; }
     public IReadOnlyList<string> BoundIntegrations { get; init; } = [];

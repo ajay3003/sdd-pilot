@@ -270,6 +270,7 @@ public sealed class IntegrationJourneyService(
         var snapshots = context.SourceSnapshots.Select(snapshot => new SourceSetupSnapshot(snapshot.Id, snapshot.Archive.FileName, snapshot.Archive.Sha256, snapshot.AnalyzedAt,
             snapshot.Status.ToString())
         {
+            ContentFingerprint = snapshot.Archive.ContentSha256,
             ImportId = snapshot.ProjectImport?.ImportId,
             Repository = snapshot.Repository?.DisplayName,
             BoundIntegrations = [.. context.Bindings.Where(binding => binding.SnapshotId == snapshot.Id)

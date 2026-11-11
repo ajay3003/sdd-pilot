@@ -433,7 +433,14 @@
                     <div><dt>Fingerprint</dt><dd><code title="@duplicate.Fingerprint">@ProjectImportPresentation.ShortFingerprint(duplicate.Fingerprint)</code></dd></div>
                     <div><dt>Imported</dt><dd>@duplicate.ImportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</dd></div>
                 </dl>
-                <p class="pi-muted">This exact archive (same content, whatever its file name) is already @(duplicate.IsCurrent ? "the current project" : "imported"). Choose what to do; nothing is chosen for you.</p>
+                @if (duplicate.SameContentDifferentArchive)
+                {
+                    <p class="pi-muted" data-testid="pi-duplicate-content">A different archive with exactly the same files (same content fingerprint; another name, compression or entry order) is already @(duplicate.IsCurrent ? "the current project" : "imported"). Choose what to do; nothing is chosen for you.</p>
+                }
+                else
+                {
+                    <p class="pi-muted">This exact archive (the same bytes, whatever its file name) is already @(duplicate.IsCurrent ? "the current project" : "imported"). Choose what to do; nothing is chosen for you.</p>
+                }
                 <p class="pi-muted" data-testid="pi-duplicate-again-help">Import again updates that same import (no second history entry) and reuses its source analysis unless Source Analysis has changed since. Nothing is deleted.</p>
                 <div class="pi-actions">
                     @if (duplicate.ImportId is { } existingImport && !duplicate.IsCurrent && Activation.Imports.Any(i => i.ImportId == existingImport))

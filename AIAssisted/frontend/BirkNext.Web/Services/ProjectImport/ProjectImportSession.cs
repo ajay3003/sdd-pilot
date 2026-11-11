@@ -147,7 +147,7 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
         ClassifyTotal = preview.Documents.Count;
         progress.Stage("Detecting document roles", null, 0, ClassifyTotal, "documents");
         Notify();
-        Duplicate = ProjectImportHistory.Duplicate(preview.Archive.Sha256, activation.Imports, activation.Current?.ImportId, setup);
+        Duplicate = ProjectImportHistory.Duplicate(preview.Archive.Sha256, activation.Imports, activation.Current?.ImportId, setup, preview.Archive.ContentSha256);
         Discovery = await ProjectImportArtifactDiscovery.FromAsync(preview, new Progress<(int Done, int Total)>(p =>
         {
             Classified = p.Done; ClassifyTotal = p.Total;

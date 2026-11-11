@@ -94,12 +94,16 @@ public sealed class ProjectEvidenceService : IProjectEvidenceService
     private readonly IJSRuntime _js;
     private readonly TimeProvider _time;
     private readonly Dictionary<string, SourceSetupView?> _setup = new(StringComparer.Ordinal);
+    private readonly SourceContextApiService? _sourceContextApi;
+    /// <summary>The shared source context (versions and analysis baselines), read with the setup; null without the client or when unreachable.</summary>
+    private BirkNext.SourceBaselines.SourceContextView? _sourceContext;
 
     public event Action? Changed;
 
     public ProjectEvidenceService(IFrontendAnalysisSettingsService settings, IWorkspaceSessionService workspace, IIntegrationJourneysApiService journeys,
-        IJSRuntime js, TimeProvider? time = null)
+        IJSRuntime js, TimeProvider? time = null, SourceContextApiService? sourceContext = null)
     {
+        _sourceContextApi = sourceContext;
         _settings = settings;
         _workspace = workspace;
         _journeys = journeys;
@@ -119,6 +123,7 @@ public sealed class ProjectEvidenceService : IProjectEvidenceService
         {
             try { setup = (await _journeys.SourceSetupAsync(profile?.Id, cancellationToken)).Value; }
             catch (Exception ex) when (ex is not OperationCanceledException) { setup = null; }
+            if (_sourceContextApi is not null) _sourceContext = (await _sourceContextApi.GetAsync(cancellationToken)).Context;
             _setup[key] = setup;
             _missingAfterRead[key] = Missing(setup);
         }
@@ -225,7 +230,7 @@ public sealed class ProjectEvidenceService : IProjectEvidenceService
 
     private IReadOnlyList<PackageAssociation> Associations(FrontendAnalysisProfile? profile, SourceSetupView? setup) =>
         ProjectEvidenceAssociation.Of(TargetApplications.Of(profile), profile?.Project, _workspace.SddLifecycle, ProjectEvidencePackages.All(_workspace.SddLifecycle, setup), setup,
-            ConfirmedElsewhere(profile));
+            ConfirmedElsewhere(profile), _sourceContext);
 
     /// <summary>Packages the person bound (not "Detected") for the same Target Application in other Target Environments — reused as suggestions.</summary>
     private HashSet<string> ConfirmedElsewhere(FrontendAnalysisProfile? profile)

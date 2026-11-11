@@ -72,7 +72,7 @@ public sealed class SourceChangeImpactServiceTests
     }
 
     [Fact]
-    public async Task Imported_project_target_must_be_the_exact_import_snapshot()
+    public async Task Within_an_import_one_side_must_be_that_import_and_the_other_may_be_an_alternative_snapshot_of_the_same_source()
     {
         await using var db = Db();
         var before = Snapshot("v1", []) with
@@ -95,8 +95,9 @@ public sealed class SourceChangeImpactServiceTests
 
         accepted.Should().NotBeNull();
         accepted!.ProjectImportId.Should().Be("import-current");
-        mismatched.Should().BeNull();
-        crossImportBaseline.Should().BeNull("both snapshots must belong to the current imported project");
+        mismatched.Should().BeNull("neither snapshot belongs to the named import");
+        crossImportBaseline.Should().NotBeNull("an alternative snapshot (another ZIP/branch) of the same logical source may be compared with the import's snapshot");
+        crossImportBaseline!.BaselineSnapshotId.Should().Be(otherImportBaseline.Id, "the comparison direction is kept: baseline → target");
     }
 
     [Fact]

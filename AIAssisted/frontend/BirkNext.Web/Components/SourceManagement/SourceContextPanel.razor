@@ -1,0 +1,204 @@
+@using BirkNext.SourceBaselines
+@using BirkNext.Web.Services
+@using BirkNext.Web.Components
+@inject SourceContextApiService Api
+@inject IServiceProvider Services
+
+@* Source versions: every logical source with its imported snapshots, which one the whole application analyses (the analysis baseline), and the
+   decisions that change it. One shared source context for every module; a baseline is never a deployment claim. *@
+<section class="scp" aria-labelledby="scp-title" data-testid="scp" data-context="@_context?.ContextFingerprint">
+    <header class="scp-head">
+        <div>
+            <h2 id="scp-title" class="scp-title">Source versions</h2>
+            <p class="scp-sub">Each logical source is analysed with exactly one snapshot. When several versions exist, choose the analysis baseline; BirkNext never picks a branch for you and never combines alternative versions.</p>
+        </div>
+        @if (_context is { } c)
+        {
+            <ul class="scp-metrics" aria-label="Source context summary">
+                <li data-testid="scp-metric-sources"><strong>@c.LogicalSources</strong> logical source@(c.LogicalSources == 1 ? "" : "s")</li>
+                <li data-testid="scp-metric-snapshots"><strong>@c.Snapshots</strong> imported snapshot@(c.Snapshots == 1 ? "" : "s")</li>
+                <li data-testid="scp-metric-needs" class="@(c.NeedsBaseline > 0 ? "is-warn" : "")"><strong>@c.NeedsBaseline</strong> need@(c.NeedsBaseline == 1 ? "s" : "") a baseline</li>
+            </ul>
+        }
+    </header>
+
+    @if (_notice is not null) { <p class="scp-notice" role="status" data-testid="scp-notice">@_notice</p> }
+    @if (_error is not null) { <p class="scp-error" role="alert">@_error</p> }
+    else if (_context is null) { <InlineLoading Text="Loading source versions…" /> }
+    else if (_context.Sources.Count == 0) { <p class="scp-empty" data-testid="scp-empty">No source has been imported yet. Import a project or source archive to start.</p> }
+    else
+    {
+        @if (_denied is { Length: > 0 }) { <p class="scp-denied" role="note" data-testid="scp-denied">Choosing baselines is not available: @_denied</p> }
+        @foreach (var s in _context.Sources)
+        {
+            var open = _open.Contains(s.RepositoryKey) || (s.State is SourceBaselineState.NotSelected or SourceBaselineState.SelectedUnavailable && !_closed.Contains(s.RepositoryKey));
+            <article class="scp-source scp-@s.State.ToString().ToLowerInvariant()" data-testid="scp-source" data-key="@s.RepositoryKey" data-state="@s.State">
+                <button type="button" class="scp-source-head" aria-expanded="@(open ? "true" : "false")" @onclick="() => Toggle(s.RepositoryKey, open)" data-testid="scp-source-toggle">
+                    <span class="scp-name">@s.DisplayName</span>
+                    <span class="scp-count">@s.SnapshotCount snapshot@(s.SnapshotCount == 1 ? "" : "s")@(s.SnapshotCount > 1 ? $" · {s.DistinctContents} different content{(s.DistinctContents == 1 ? "" : "s")}" : "")</span>
+                    <span class="scp-state" data-testid="scp-state">@StateLabel(s.State)</span>
+                </button>
+                <p class="scp-detail" data-testid="scp-state-detail">@s.StateDetail@(s.IdentityBasis.Contains("archive", StringComparison.OrdinalIgnoreCase) ? " Grouped by archive name only — not verified repository identity." : "")</p>
+                @if (open)
+                {
+                    <ul class="scp-snapshots">
+                        @foreach (var v in s.Snapshots)
+                        {
+                            <li class="scp-snap @(v.UsedForAnalysis ? "is-used" : "")" data-testid="scp-snapshot" data-snapshot="@v.SnapshotId" data-used="@(v.UsedForAnalysis ? "true" : "false")">
+                                <div class="scp-snap-main">
+                                    <span class="scp-archive">@v.ArchiveName</span>
+                                    <span class="scp-badges">
+                                        @if (v.IsBaseline) { <span class="scp-badge scp-badge-baseline" data-testid="scp-baseline-badge">Analysis baseline</span> }
+                                        else if (v.UsedForAnalysis) { <span class="scp-badge" data-testid="scp-used-badge">Used for analysis</span> }
+                                        @if (v.IsNewest && s.SnapshotCount > 1) { <span class="scp-badge scp-badge-muted">Newest import</span> }
+                                    </span>
+                                    <span class="scp-meta">Imported @v.AnalyzedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @v.Status · @v.FilesAnalyzed.ToString("N0") files analysed</span>
+                                    <span class="scp-meta" data-testid="scp-branch">Branch: @BranchText(v)</span>
+                                    <span class="scp-meta">Content <code title="@(v.ContentFingerprint ?? "not computed for this older import")">@(v.ContentFingerprint is { Length: > 12 } fp ? fp[..12] : "not computed")</code> · archive <code title="@v.ArchiveSha256">@v.ArchiveSha256[..Math.Min(12, v.ArchiveSha256.Length)]</code>@(v.SameContentAs > 0 ? $" · same content as {v.SameContentAs} other import{(v.SameContentAs == 1 ? "" : "s")}" : "")</span>
+                                    @if (v.Components.Count > 0)
+                                    {
+                                        <span class="scp-components" data-testid="scp-components">@string.Join(" · ", v.Components.Take(8))@(v.Components.Count > 8 ? $" · +{v.Components.Count - 8}" : "")</span>
+                                    }
+                                </div>
+                                <div class="scp-actions">
+                                    @if (!v.IsBaseline)
+                                    {
+                                        <button type="button" class="btn-secondary btn-sm" disabled="@(_busy || _denied is { Length: > 0 })" title="@_denied" data-testid="scp-select" @onclick="() => SelectAsync(s, v.SnapshotId)">Use as analysis baseline</button>
+                                    }
+                                    @if (s.UsedSnapshotId is { } used && used != v.SnapshotId)
+                                    {
+                                        <button type="button" class="btn-link" data-testid="scp-compare" aria-expanded="@(_compare == (v.SnapshotId, used) ? "true" : "false")" @onclick="() => ToggleCompare(v.SnapshotId, used)">Compare with the version in use</button>
+                                    }
+                                    <a class="btn-link" href="@($"source-analysis?snapshot={v.SnapshotId:D}")" data-testid="scp-open">Open in Source Analysis</a>
+                                    <button type="button" class="btn-link" data-testid="scp-declare-toggle" @onclick="() => StartDeclare(v)" disabled="@(_denied is { Length: > 0 })">@(v.BranchKind == SourceBranchKind.Declared ? "Change declared branch" : "Declare branch")</button>
+                                </div>
+                                @if (_declaring == v.SnapshotId)
+                                {
+                                    <form class="scp-declare" @onsubmit="() => DeclareAsync(v.SnapshotId)" @onsubmit:preventDefault data-testid="scp-declare">
+                                        <label>Branch label (your statement, not Git evidence)
+                                            <input type="text" maxlength="200" value="@_declaredText" @oninput="e => _declaredText = e.Value?.ToString() ?? string.Empty" data-testid="scp-declare-input" />
+                                        </label>
+                                        <button type="submit" class="btn-secondary btn-sm" disabled="@_busy" data-testid="scp-declare-save">Save label</button>
+                                        <button type="button" class="btn-link" @onclick="() => _declaring = null">Cancel</button>
+                                    </form>
+                                }
+                                @if (_compare == (v.SnapshotId, s.UsedSnapshotId ?? Guid.Empty))
+                                {
+                                    <div class="scp-compare" data-testid="scp-compare-panel">
+                                        <p class="scp-meta">Baseline: <strong>@v.ArchiveName</strong> → target: <strong>@(s.Snapshots.FirstOrDefault(x => x.SnapshotId == s.UsedSnapshotId)?.ArchiveName)</strong>. A comparison of source content; it says nothing about what is deployed.</p>
+                                        <SourceChangeImpactPanel InitialBaseline="v.SnapshotId" InitialTarget="s.UsedSnapshotId" />
+                                    </div>
+                                }
+                            </li>
+                        }
+                    </ul>
+                    <div class="scp-source-foot">
+                        @if (s.BaselineSnapshotId is not null)
+                        {
+                            <button type="button" class="btn-link" disabled="@(_busy || _denied is { Length: > 0 })" data-testid="scp-clear" @onclick="() => SelectAsync(s, null)">Clear analysis baseline</button>
+                        }
+                        <button type="button" class="btn-link" data-testid="scp-history-toggle" aria-expanded="@(_historyKey == s.RepositoryKey ? "true" : "false")" @onclick="() => ToggleHistoryAsync(s.RepositoryKey)">Decision history</button>
+                    </div>
+                    @if (_historyKey == s.RepositoryKey)
+                    {
+                        @if (_history.Count == 0) { <p class="scp-meta" data-testid="scp-history-empty">No decisions recorded for this source.</p> }
+                        else
+                        {
+                            <ol class="scp-history" data-testid="scp-history">
+                                @foreach (var d in _history)
+                                {
+                                    <li data-testid="scp-history-item">@d.DecidedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @(d.Kind == "AnalysisBaseline" ? (d.SnapshotId is null ? "Baseline cleared" : $"Baseline → {d.SnapshotLabel}") : (d.Value is null ? $"Declared branch removed ({d.SnapshotLabel})" : $"Declared branch \"{d.Value}\" for {d.SnapshotLabel}")) · @d.DecidedBy</li>
+                                }
+                            </ol>
+                        }
+                    }
+                }
+            </article>
+        }
+        <p class="scp-foot">An analysis baseline decides what BirkNext analyses (System Understanding, Integration Topology, Contract Testing, Composite sources, Dashboard). It is not a deployment baseline: what runs in an environment is verified only from deployment evidence.</p>
+    }
+</section>
+
+@code {
+    /// <summary>Raised after a decision changed the source context, so the page can refresh what depends on it.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private SourceContextView? _context;
+    private string? _error, _notice, _denied, _declaredText;
+    private bool _busy;
+    private Guid? _declaring;
+    private (Guid Baseline, Guid Target)? _compare;
+    private string? _historyKey;
+    private IReadOnlyList<SourceDecisionView> _history = [];
+    private readonly HashSet<string> _open = new(StringComparer.Ordinal), _closed = new(StringComparer.Ordinal);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Services.GetService(typeof(AdminApiService)) is AdminApiService admin && await admin.GetConfigurationAccessAsync() is { Allowed: false } access) _denied = access.Reason;
+        await LoadAsync();
+    }
+
+    public async Task LoadAsync()
+    {
+        (_context, _error) = await Api.GetAsync();
+        StateHasChanged();
+    }
+
+    private void Toggle(string key, bool open)
+    {
+        if (open) { _open.Remove(key); _closed.Add(key); } else { _closed.Remove(key); _open.Add(key); }
+    }
+
+    private void ToggleCompare(Guid baseline, Guid target) => _compare = _compare == (baseline, target) ? null : (baseline, target);
+
+    private void StartDeclare(SourceSnapshotView v) { _declaring = v.SnapshotId; _declaredText = v.BranchKind == SourceBranchKind.Declared ? v.Branch : ""; }
+
+    private async Task SelectAsync(LogicalSourceView source, Guid? snapshotId)
+    {
+        _busy = true; _notice = null;
+        var result = await Api.SelectBaselineAsync(new SourceBaselineRequest(source.RepositoryKey, snapshotId));
+        _notice = result.Message;
+        _busy = false;
+        await LoadAsync();
+        if (result.Changed)
+        {
+            // Project evidence (Target Environments) reads the same context: drop its cached view so it follows without a reload.
+            (Services.GetService(typeof(BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService)) as BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService)?.Invalidate();
+            await OnChanged.InvokeAsync();
+        }
+        if (_historyKey == source.RepositoryKey) _history = await Api.HistoryAsync(source.RepositoryKey);
+    }
+
+    private async Task DeclareAsync(Guid snapshotId)
+    {
+        _busy = true;
+        var result = await Api.DeclareBranchAsync(new DeclaredBranchRequest(snapshotId, string.IsNullOrWhiteSpace(_declaredText) ? null : _declaredText));
+        _notice = result.Message;
+        _busy = false;
+        if (result.Changed || result.Message == "Unchanged.") _declaring = null;
+        await LoadAsync();
+    }
+
+    private async Task ToggleHistoryAsync(string key)
+    {
+        if (_historyKey == key) { _historyKey = null; return; }
+        _historyKey = key;
+        _history = await Api.HistoryAsync(key);
+    }
+
+    private static string StateLabel(SourceBaselineState state) => state switch
+    {
+        SourceBaselineState.Selected => "Baseline selected",
+        SourceBaselineState.SingleSnapshot => "One version",
+        SourceBaselineState.IdenticalContent => "Identical imports",
+        SourceBaselineState.SelectedUnavailable => "Baseline unavailable",
+        _ => "Choose a baseline",
+    };
+
+    private static string BranchText(SourceSnapshotView v) => v.BranchKind switch
+    {
+        SourceBranchKind.Verified => $"{v.Branch} (verified from Git{(v.Commit is { Length: > 7 } c ? $", commit {c[..8]}" : "")})",
+        SourceBranchKind.Declared => $"{v.Branch} (declared — not Git evidence)",
+        _ => "Unknown (no Git metadata in the archive)",
+    };
+}

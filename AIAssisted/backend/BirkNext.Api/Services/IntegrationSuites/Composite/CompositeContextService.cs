@@ -60,7 +60,7 @@ public sealed class CompositeContextService(AppDbContext db, IqrSourceStore sour
     {
         if (IntegrationSuiteComposer.Scope(scopeId) is not { } scope || scope.Stages.All(s => s.Source is null)) return null;
         var context = contextId is { } id ? await GetAsync(id, ct) : null;
-        return CompositeSourceRules.Discover(scope, await AllFactsAsync(ct), context);
+        return CompositeSourceRules.Discover(scope, await AllFactsAsync(ct), context, await BirkNext.Api.Services.SourceAnalysis.SourceBaselineService.CurrentBaselinesAsync(db, ct));
     }
 
     // ── Read ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

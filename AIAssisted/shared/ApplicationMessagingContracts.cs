@@ -112,7 +112,12 @@ public sealed record ApplicationMessagingEvidence
     public MessagingFact? Fact(string id) => Facts.FirstOrDefault(f => f.Id == id);
 }
 
-public sealed record SourceArchive(string FileName, string Sha256, int FilesAnalyzed);
+/// <param name="Sha256">SHA-256 of the archive bytes (binary identity: a re-zip of the same files differs).</param>
+/// <param name="ContentSha256">Canonical content fingerprint (content identity; null for snapshots imported before it existed). Rule
+/// (<c>IqrSourceArchiveReader.ContentFingerprint</c>): every file entry outside ignored directories, path with '/' separators and the single common
+/// top-level folder removed when all files share one, SHA-256 of the raw bytes; the sorted "path\0sha256\n" lines hashed again. Entry order,
+/// timestamps, compression and the archive's name are ignored; line endings are NOT normalised.</param>
+public sealed record SourceArchive(string FileName, string Sha256, int FilesAnalyzed, string? ContentSha256 = null);
 
 /// <summary>What one analysis of uploaded source archives established for an environment. Replaced as a whole on re-analysis.</summary>
 public sealed record ApplicationMessagingEvidenceSet

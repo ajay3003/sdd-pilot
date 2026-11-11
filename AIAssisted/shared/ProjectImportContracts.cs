@@ -26,7 +26,8 @@ public sealed record ProjectImportProvenance
 public enum ProjectNameBasis { ArchiveRoot, ArchiveFileName }
 
 /// <summary>The accepted archive. Sizes are the uploaded bytes and the archive's entry count.</summary>
-public sealed record ProjectImportArchive(string FileName, string Sha256, long SizeBytes, long EntryCount);
+/// <param name="ContentSha256">Canonical content fingerprint (same files = same value, whatever the archive name, entry order or compression).</param>
+public sealed record ProjectImportArchive(string FileName, string Sha256, long SizeBytes, long EntryCount, string? ContentSha256 = null);
 
 /// <summary>One readable Markdown document of the archive: a candidate for artifact-role classification (the frontend classifier decides the role).</summary>
 public sealed record ProjectImportDocument(string RelativePath, string FileName, long SizeBytes, string Content);

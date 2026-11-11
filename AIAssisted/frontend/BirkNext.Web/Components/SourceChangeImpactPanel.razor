@@ -170,6 +170,10 @@
 </section>
 
 @code {
+    /// <summary>Open with an exact pair (e.g. two alternative snapshots of one logical source from Source Management). Direction is kept: baseline → target.</summary>
+    [Parameter] public Guid? InitialBaseline { get; set; }
+    [Parameter] public Guid? InitialTarget { get; set; }
+
     private bool _loading = true;
     private bool _busy;
     private bool _enabled;
@@ -197,7 +201,10 @@
             var importedSnapshotId = CurrentImport?.SourceSnapshotId;
             _repository = (importedSnapshotId is { } importedId ? _snapshots.FirstOrDefault(s => s.Id == importedId)?.Repository : null)
                 ?? _repositories.FirstOrDefault() ?? "";
+            if (InitialTarget is { } t && _snapshots.FirstOrDefault(s => s.Id == t) is { } explicitTarget) _repository = explicitTarget.Repository;
             OnRepositoryChanged();
+            if (InitialTarget is { } it && CurrentSnapshots.Any(s => s.Id == it)) _target = it;
+            if (InitialBaseline is { } ib && CurrentSnapshots.Any(s => s.Id == ib) && ib != _target) _baseline = ib;
             var projectId = Workspace.CurrentProject ?? (CurrentImport is null ? string.Empty : $"import:{CurrentImport.ImportId}");
             if (!string.IsNullOrWhiteSpace(projectId))
                 _history = await Api.HistoryAsync(projectId, CurrentImport?.ImportId);
@@ -226,8 +233,11 @@
         {
             var import = CurrentImport;
             var projectId = Workspace.CurrentProject ?? (import is null ? string.Empty : $"import:{import.ImportId}");
+            // The import scopes the comparison only when one side is that import's snapshot; two alternative snapshots of the same logical source
+            // (neither the current import) are compared without it — the backend still refuses snapshots of different sources.
+            var scopedImport = import is not null && (import.SourceSnapshotId == _baseline || import.SourceSnapshotId == _target) ? import : null;
             var (report, error) = await Api.AnalyzeAsync(new(string.Empty, projectId, _baseline, _target,
-                import?.ImportId, import?.ProjectName ?? Workspace.CurrentProject, _maxImpactDepth));
+                scopedImport?.ImportId, import?.ProjectName ?? Workspace.CurrentProject, _maxImpactDepth));
             _report = report;
             if (report is not null)
                 _history = await Api.HistoryAsync(projectId, import?.ImportId);

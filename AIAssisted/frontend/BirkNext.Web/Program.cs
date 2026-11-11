@@ -166,6 +166,8 @@ builder.Services.AddHttpClient<ImplementationTraceabilityApiService>(client =>
     client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<SourceChangeImpactApiService>(client =>
     client.BaseAddress = backendBase);
+builder.Services.AddHttpClient<SourceContextApiService>(client =>
+    client.BaseAddress = backendBase);
 
 builder.Services.AddHttpClient<WasmSecurityApiService>(client =>
     client.BaseAddress = backendBase);

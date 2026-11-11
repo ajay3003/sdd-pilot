@@ -37,7 +37,11 @@ public sealed record PreviousImportRow(
 }
 
 /// <summary>A preview whose exact archive (same fingerprint) is already imported or analyzed. Shown before importing; never chosen silently.</summary>
-public sealed record ProjectImportDuplicate(string ArchiveFileName, string Fingerprint, DateTimeOffset ImportedAt, string? ImportId, Guid? SnapshotId, bool IsCurrent);
+public sealed record ProjectImportDuplicate(string ArchiveFileName, string Fingerprint, DateTimeOffset ImportedAt, string? ImportId, Guid? SnapshotId, bool IsCurrent)
+{
+    /// <summary>True when the archive bytes differ but the canonical content (the files) is identical.</summary>
+    public bool SameContentDifferentArchive { get; init; }
+}
 
 /// <summary>
 /// Import history as Import Project shows it: the workspace's recorded imports (source-only ones included) and stored Source Analysis snapshots
@@ -87,13 +91,22 @@ public static class ProjectImportHistory
         setup.Packs.SelectMany(p => p.Sources).Where(s => s.Candidates.Any(c => c.SnapshotId == id)).Select(s => s.Role.Label).Distinct().ToList();
 
     /// <summary>An earlier import or stored snapshot with exactly this archive content, if any (the current project included, flagged).</summary>
-    public static ProjectImportDuplicate? Duplicate(string fingerprint, IReadOnlyList<SddProjectImportRecord> imports, string? currentImportId, SourceSetupView? setup)
+    public static ProjectImportDuplicate? Duplicate(string fingerprint, IReadOnlyList<SddProjectImportRecord> imports, string? currentImportId, SourceSetupView? setup,
+        string? contentFingerprint = null)
     {
         if (string.IsNullOrWhiteSpace(fingerprint)) return null;
         if (imports.Where(i => string.Equals(i.ArchiveSha256, fingerprint, StringComparison.Ordinal)).OrderByDescending(i => i.ImportedAt).FirstOrDefault() is { } record)
             return new(record.ArchiveFileName, record.ArchiveSha256, record.ImportedAt, record.ImportId, record.SourceSnapshotId, record.ImportId == currentImportId);
         if ((setup?.Snapshots ?? []).Where(s => string.Equals(s.Fingerprint, fingerprint, StringComparison.Ordinal)).OrderByDescending(s => s.AnalyzedAt).FirstOrDefault() is { } snapshot)
             return new(snapshot.ArchiveFileName, snapshot.Fingerprint, snapshot.AnalyzedAt, null, snapshot.SnapshotId, false);
+        // A different archive (re-zipped, renamed, other compression) holding exactly the same files: content identity, not archive identity.
+        if (!string.IsNullOrWhiteSpace(contentFingerprint)
+            && (setup?.Snapshots ?? []).Where(s => string.Equals(s.ContentFingerprint, contentFingerprint, StringComparison.Ordinal)).OrderByDescending(s => s.AnalyzedAt).FirstOrDefault() is { } same)
+        {
+            var sameRecord = imports.FirstOrDefault(i => i.SourceSnapshotId == same.SnapshotId || (same.ImportId is not null && i.ImportId == same.ImportId));
+            return new(same.ArchiveFileName, same.Fingerprint, same.AnalyzedAt, sameRecord?.ImportId, same.SnapshotId, sameRecord?.ImportId == currentImportId && currentImportId is not null)
+                { SameContentDifferentArchive = true };
+        }
         return null;
     }
 

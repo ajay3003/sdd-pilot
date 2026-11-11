@@ -1,0 +1,5 @@
+.scn { display: flex; flex-wrap: wrap; gap: 0.35rem 1rem; align-items: baseline; justify-content: space-between; margin: 0 0 1rem; padding: 0.6rem 0.9rem;
+    border-radius: 10px; border: 1px solid var(--clr-border, #d0d7de); background: var(--clr-surface-subtle, #f6f8fa); font-size: 0.9rem; line-height: 1.45; }
+.scn-warn { border-color: var(--clr-warning-border, #d4a72c); background: var(--clr-warning-subtle, #fff8c5); }
+.scn-text { flex: 1 1 24rem; min-width: 0; color: var(--clr-text, #1f2328); overflow-wrap: anywhere; }
+.scn-link { white-space: nowrap; font-weight: 600; color: var(--clr-primary, #0969da); }
