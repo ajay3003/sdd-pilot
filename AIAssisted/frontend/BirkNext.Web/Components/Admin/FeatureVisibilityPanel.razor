@@ -1,0 +1,310 @@
+@using BirkNext.Web.Services
+
+@* System Settings → Feature Visibility. Every sidebar entry, every configurable switch and every page reached from elsewhere, derived from the
+   sidebar's own rules (FeatureVisibilityInventory) — not from a hand-written list. Visibility is presentation only: a hidden page still opens
+   by its address, and the backend has no per-module authorization (local session only). *@
+<section class="fvp" aria-labelledby="fvp-title" data-testid="fv-panel">
+    <header class="fvp-head">
+        <h2 id="fvp-title" class="fvp-title">Feature Visibility</h2>
+        <p class="fvp-sub">Explore available BirkNext capabilities, their visibility and requirements.</p>
+        <a class="fvp-help" href="user-guide#feature-visibility" data-testid="fv-help">What Feature Visibility does</a>
+    </header>
+
+    <ul class="fvp-metrics" aria-label="Summary">
+        <li class="fvp-metric" data-testid="fv-metric-switches">
+            <span class="fvp-mk">Switches</span>
+            <span class="fvp-mv">@_inv.SwitchCount</span>
+            <span class="fvp-md">configurable · @(_inv.SwitchCount - _inv.SwitchesWithoutEffect) with an effect, @_inv.SwitchesWithoutEffect without · @_inv.PlatformCount platform always on</span>
+        </li>
+        <li class="fvp-metric" data-testid="fv-metric-shown">
+            <span class="fvp-mk">Shown in the sidebar</span>
+            <span class="fvp-mv">@_inv.ShownEntries <small>of @_inv.Entries.Count</small></span>
+            <span class="fvp-md">sidebar entries · @_inv.AlwaysShownEntries always shown (no switch)</span>
+        </li>
+        <li class="fvp-metric" data-testid="fv-metric-hidden">
+            <span class="fvp-mk">Hidden</span>
+            <span class="fvp-mv">@_inv.HiddenEntries</span>
+            <span class="fvp-md">sidebar entries hidden by a switch; their pages still open by address</span>
+        </li>
+        <li class="fvp-metric fvp-metric-@(_inv.Issues.Count == 0 ? "ok" : "warn")" data-testid="fv-metric-navigation" data-state="@(_inv.Issues.Count == 0 ? "consistent" : "issues")">
+            <span class="fvp-mk">Navigation</span>
+            <span class="fvp-mv"><span aria-hidden="true">@(_inv.Issues.Count == 0 ? "●" : "▲")</span> @(_inv.Issues.Count == 0 ? "Consistent" : $"{_inv.Issues.Count} issue{(_inv.Issues.Count == 1 ? "" : "s")}")</span>
+            <span class="fvp-md">entries, switches and pages compared by identity</span>
+        </li>
+    </ul>
+
+    <div class="fvp-tools">
+        <label class="fvp-search">
+            <span class="visually-hidden">Search features</span>
+            <input type="search" placeholder="Search by name, description, group, key or address…" data-testid="fv-search"
+                   value="@_query" @oninput="e => _query = e.Value?.ToString() ?? string.Empty" />
+        </label>
+        <div class="fvp-filters" role="group" aria-label="Show">
+            @foreach (var (id, label) in Filters)
+            {
+                <button type="button" class="fvp-filter @(id == _filter ? "is-active" : "")" aria-pressed="@(id == _filter ? "true" : "false")"
+                        data-testid="fv-filter-@id" @onclick="() => _filter = id">@label <span class="fvp-count">@FilterCount(id)</span></button>
+            }
+        </div>
+    </div>
+
+    @if (_inv.Issues.Count > 0)
+    {
+        <div class="fvp-issues" role="status" data-testid="fv-issues">
+            <h3 class="fvp-h3">Navigation issues</h3>
+            <ul>
+                @foreach (var issue in _inv.Issues)
+                {
+                    <li data-testid="fv-issue"><strong>@issue.Kind:</strong> @issue.Subject. @issue.Detail</li>
+                }
+            </ul>
+        </div>
+    }
+
+    @{ var anyShown = false; }
+    @foreach (var group in _inv.Entries.GroupBy(e => e.SectionId))
+    {
+        var rows = group.Where(Matches).ToList();
+        if (rows.Count == 0) continue;
+        anyShown = true;
+        <details class="fvp-group" open data-testid="fv-group-@group.Key">
+            <summary><span class="fvp-gl">@group.First().SectionLabel</span> <span class="fvp-gc">@rows.Count(r => r.Shown) shown@(rows.Any(r => !r.Shown) ? $" · {rows.Count(r => !r.Shown)} hidden" : "")</span></summary>
+            <ul class="fvp-rows">
+                @foreach (var e in rows) { @EntryRow(e) }
+            </ul>
+        </details>
+    }
+
+    @{ var loose = LooseSwitches.Where(Matches).ToList(); }
+    @if (loose.Count > 0)
+    {
+        anyShown = true;
+        <details class="fvp-group" open data-testid="fv-group-switches">
+            <summary><span class="fvp-gl">Switches without their own entry</span> <span class="fvp-gc">@loose.Count</span></summary>
+            <ul class="fvp-rows">
+                @foreach (var s in loose) { @SwitchRow(s) }
+            </ul>
+        </details>
+    }
+
+    @{ var pages = _filter == "all" ? _inv.OtherPages.Where(Matches).ToList() : []; }
+    @if (pages.Count > 0)
+    {
+        anyShown = true;
+        <details class="fvp-group" data-testid="fv-group-other-pages">
+            <summary><span class="fvp-gl">Pages reached from other pages</span> <span class="fvp-gc">@pages.Count · aliases, redirects and detail pages</span></summary>
+            <ul class="fvp-rows">
+                @foreach (var p in pages)
+                {
+                    <li class="fvp-row" data-testid="fv-page">
+                        <div class="fvp-main">
+                            <span class="fvp-name">/@p.Template</span>
+                            <span class="fvp-desc">@p.Note</span>
+                        </div>
+                        <span class="fvp-state fvp-state-muted">@p.Kind</span>
+                    </li>
+                }
+            </ul>
+        </details>
+    }
+
+    @{ var retired = FeatureVisibilityTaxonomy.Retired.Where(Matches).ToList(); }
+    @if (retired.Count > 0)
+    {
+        anyShown = true;
+        <details class="fvp-group" data-testid="fv-group-retired">
+            <summary><span class="fvp-gl">Retired</span> <span class="fvp-gc">@retired.Count · configuration values are ignored</span></summary>
+            <ul class="fvp-rows">
+                @foreach (var r in retired)
+                {
+                    <li class="fvp-row" data-testid="fv-retired">
+                        <div class="fvp-main"><span class="fvp-name">@r.Label</span><span class="fvp-desc">Now: @r.Now</span></div>
+                        <span class="fvp-state fvp-state-muted">Retired</span>
+                    </li>
+                }
+            </ul>
+        </details>
+    }
+
+    @if (!anyShown)
+    {
+        <p class="fvp-empty" data-testid="fv-empty">No feature matches “@_query”@(_filter != "all" ? " with this filter" : "").</p>
+    }
+
+    <p class="fvp-note">
+        @if (IsEditMode)
+        {
+            <span>Switch entries on or off, then <strong>Save Settings</strong>. The sidebar changes as soon as the settings are saved. Platform entries are always on.</span>
+        }
+        else
+        {
+            <span>Settings are stored for this installation (<code>FeatureVisibility</code> in <code>appsettings.Local.json</code>). Use <strong>Edit Settings</strong> to change them. Hiding an entry is not access control.</span>
+        }
+    </p>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public EditableFeatureVisibilityDto Settings { get; set; } = new();
+    [Parameter] public bool IsEditMode { get; set; }
+    /// <summary>Edited values (edit mode); the panel previews the sidebar with them.</summary>
+    [Parameter] public IReadOnlyDictionary<string, bool>? EditValues { get; set; }
+    [Parameter] public EventCallback<(string Key, bool On)> OnToggle { get; set; }
+
+    private FeatureInventory _inv = new([], [], [], []);
+    private string _query = "", _filter = "all";
+    private readonly HashSet<string> _open = new(StringComparer.Ordinal);
+
+    private static readonly (string Id, string Label)[] Filters =
+        [("all", "All"), ("shown", "Shown"), ("hidden", "Hidden"), ("unavailable", "Unavailable"), ("optional", "Optional, legacy & retired")];
+
+    protected override void OnParametersSet() => _inv = FeatureVisibilityInventory.Build(Settings, IsEditMode ? EditValues : null);
+
+    private IEnumerable<FeatureSwitch> LooseSwitches =>
+        _inv.Switches.Where(s => !s.Platform && !_inv.Entries.Any(e => string.Equals(e.PrimaryKey, s.Key, StringComparison.OrdinalIgnoreCase)));
+
+    private bool Search(params string?[] texts) =>
+        string.IsNullOrWhiteSpace(_query) || texts.Any(t => t?.Contains(_query.Trim(), StringComparison.OrdinalIgnoreCase) == true);
+
+    private FeatureSwitch? PrimarySwitch(SidebarEntry e) => e.PrimaryKey is null ? null : _inv.Switch(e.PrimaryKey);
+
+    private bool Matches(SidebarEntry e)
+    {
+        var lifecycle = PrimarySwitch(e)?.Lifecycle ?? FeatureLifecycle.Implemented;
+        var filter = _filter switch
+        {
+            "shown" => e.Shown,
+            "hidden" => !e.Shown,
+            "unavailable" => e.Availability?.IsUnavailable == true,
+            "optional" => lifecycle is FeatureLifecycle.Optional or FeatureLifecycle.Legacy,
+            _ => true,
+        };
+        return filter && Search([e.Label, e.Item.Hint, e.SectionLabel, e.Route, e.PrimaryKey, .. e.Item.Aliases ?? []]);
+    }
+
+    private bool Matches(FeatureSwitch s) =>
+        (_filter is "all" or "optional" || (_filter == "hidden" && !s.On)) && Search(s.Label, s.Key, s.Declaration?.Note);
+
+    private bool Matches(ContextualRoute p) => Search(p.Template, p.Note, p.Of, p.Kind.ToString());
+    private bool Matches(RetiredFeature r) => _filter is "all" or "optional" && Search(r.Label, r.Key, r.Now);
+
+    private int FilterCount(string id) => id switch
+    {
+        "shown" => _inv.ShownEntries,
+        "hidden" => _inv.HiddenEntries,
+        "unavailable" => _inv.Entries.Count(e => e.Availability?.IsUnavailable == true),
+        "optional" => _inv.Entries.Count(e => (PrimarySwitch(e)?.Lifecycle ?? FeatureLifecycle.Implemented) is FeatureLifecycle.Optional or FeatureLifecycle.Legacy)
+                      + LooseSwitches.Count() + FeatureVisibilityTaxonomy.Retired.Count,
+        _ => _inv.Entries.Count + LooseSwitches.Count() + _inv.OtherPages.Count + FeatureVisibilityTaxonomy.Retired.Count,
+    };
+
+    private void ToggleDetail(string id) { if (!_open.Add(id)) _open.Remove(id); }
+
+    private string LabelOfRoute(string? route) =>
+        NavigationCatalog.Sections.SelectMany(s => s.Items).FirstOrDefault(i => string.Equals(i.Route, route, StringComparison.OrdinalIgnoreCase))?.Label ?? route ?? "";
+
+    private string SwitchLabel(string key) => _inv.Switch(key)?.Label ?? key;
+
+    private string Rule(SidebarEntry e) =>
+        e.AlwaysShown ? "Always shown: no switch controls this entry."
+        : e.AnyOfKeys.Count > 0 ? $"Shown when {string.Join(" or ", e.AnyOfKeys.Select(SwitchLabel))} is on."
+        : e.RequiredKeys.All(k => _inv.Switch(k)?.Platform == true) ? $"Platform ({string.Join(", ", e.RequiredKeys.Select(SwitchLabel))}): always on."
+        : e.RequiredKeys.Count == 1 ? $"Shown when {SwitchLabel(e.RequiredKeys[0])} is on."
+        : $"Shown when {string.Join(" and ", e.RequiredKeys.Select(SwitchLabel))} are all on.";
+
+    private RenderFragment Toggle(FeatureSwitch s, string name) => __builder =>
+    {
+        <label class="fvp-switch">
+            <input type="checkbox" role="switch" checked="@s.On" aria-label="Show @name" data-testid="fv-toggle-@s.Key"
+                   @onchange="e => OnToggle.InvokeAsync((s.Key, e.Value is true))" />
+            <span class="fvp-track" aria-hidden="true"></span>
+        </label>
+    };
+
+    private RenderFragment EntryRow(SidebarEntry e) => __builder =>
+    {
+        var sw = PrimarySwitch(e);
+        var id = "e:" + e.Route;
+        var open = _open.Contains(id);
+        var detailId = "fvd-" + Math.Abs(StringComparer.Ordinal.GetHashCode(id)).ToString();
+        var unavailable = e.Availability?.IsUnavailable == true;
+        <li class="fvp-row @(e.Shown ? "" : "is-hidden")" data-testid="fv-entry" data-route="@e.Route" data-state="@(e.Shown ? "shown" : "hidden")">
+            <div class="fvp-main">
+                <span class="fvp-name">@e.Label</span>
+                @if (e.Item.Hint is { Length: > 0 } hint) { <span class="fvp-desc">@hint</span> }
+                @if (!e.Shown) { <span class="fvp-reason" data-testid="fv-reason">@e.HiddenReason</span> }
+            </div>
+            <div class="fvp-side">
+                @if (unavailable) { <span class="fvp-state fvp-state-warn">▲ Unavailable</span> }
+                @if (sw is { Lifecycle: FeatureLifecycle.Optional or FeatureLifecycle.Legacy }) { <span class="fvp-state fvp-state-muted">@FeatureVisibilityTaxonomy.LifecycleLabel(sw.Lifecycle)</span> }
+                @if (IsEditMode && sw is { Platform: false })
+                {
+                    @Toggle(sw, e.Label)
+                }
+                else
+                {
+                    <span class="fvp-state @(e.Shown ? "fvp-state-ok" : "fvp-state-off")">@(e.Shown ? (e.AlwaysShown ? "● Always shown" : "● Shown") : "○ Hidden")</span>
+                }
+                <button type="button" class="fvp-more" aria-expanded="@(open ? "true" : "false")" aria-controls="@detailId" data-testid="fv-detail-toggle"
+                        @onclick="() => ToggleDetail(id)">Details<span class="visually-hidden"> of @e.Label</span></button>
+            </div>
+            @if (open)
+            {
+                <dl class="fvp-detail" id="@detailId" data-testid="fv-detail">
+                    <div><dt>Sidebar</dt><dd>@e.SectionLabel › @e.Label</dd></div>
+                    <div><dt>Address</dt><dd><code>/@e.Route</code></dd></div>
+                    <div><dt>Visibility</dt><dd>@Rule(e)@(sw is { Platform: false } ? $" Configured as FeatureVisibility:{sw.Key} = {(sw.On ? "on" : "off")}." : "")</dd></div>
+                    @if (sw?.Declaration is { } d)
+                    {
+                        <div><dt>Lifecycle</dt><dd>@FeatureVisibilityTaxonomy.LifecycleLabel(d.Lifecycle): @d.Note@(d.Successor is { } succ ? $" Use instead: {LabelOfRoute(succ)}." : "")</dd></div>
+                    }
+                    @if (e.Availability is { } a)
+                    {
+                        <div><dt>Availability</dt><dd>@FeatureAvailabilityCatalog.Label(a.State): @a.Summary</dd></div>
+                    }
+                    <div><dt>Access</dt><dd>Anyone with a local session can open the page by its address; hiding the entry only removes it from the sidebar.</dd></div>
+                    <div class="fvp-actions">
+                        @if (e.Help is { } help) { <a href="user-guide#@help.UserGuideAnchor" data-testid="fv-help-link">Help: @e.Label</a> }
+                        @if (e.Shown && !e.Route.Contains('{')) { <a href="@e.Route" data-testid="fv-open">Open @e.Label</a> }
+                    </div>
+                </dl>
+            }
+        </li>
+    };
+
+    private RenderFragment SwitchRow(FeatureSwitch s) => __builder =>
+    {
+        var id = "s:" + s.Key;
+        var open = _open.Contains(id);
+        var detailId = "fvd-" + Math.Abs(StringComparer.Ordinal.GetHashCode(id)).ToString();
+        <li class="fvp-row" data-testid="fv-switch" data-key="@s.Key">
+            <div class="fvp-main">
+                <span class="fvp-name">@s.Label</span>
+                @if (s.Declaration is { } d) { <span class="fvp-desc">@d.Note</span> }
+            </div>
+            <div class="fvp-side">
+                @if (s.Lifecycle == FeatureLifecycle.NoEffect)
+                {
+                    <span class="fvp-state fvp-state-muted" data-testid="fv-no-effect">No effect</span>
+                }
+                else if (IsEditMode)
+                {
+                    @Toggle(s, s.Label)
+                }
+                else
+                {
+                    <span class="fvp-state @(s.On ? "fvp-state-ok" : "fvp-state-off")">@(s.On ? "● On" : "○ Off")</span>
+                }
+                <button type="button" class="fvp-more" aria-expanded="@(open ? "true" : "false")" aria-controls="@detailId" data-testid="fv-detail-toggle"
+                        @onclick="() => ToggleDetail(id)">Details<span class="visually-hidden"> of @s.Label</span></button>
+            </div>
+            @if (open)
+            {
+                <dl class="fvp-detail" id="@detailId" data-testid="fv-detail">
+                    <div><dt>Key</dt><dd><code>FeatureVisibility:@s.Key</code> = @(s.On ? "on" : "off")</dd></div>
+                    <div><dt>Lifecycle</dt><dd>@FeatureVisibilityTaxonomy.LifecycleLabel(s.Lifecycle)@(s.Declaration?.Successor is { } succ ? $" · use instead: {LabelOfRoute(succ)}" : "")</dd></div>
+                    <div><dt>Gates</dt><dd>@(s.HasEffect ? string.Join(", ", s.GatedRoutes.Select(LabelOfRoute)) : "No sidebar entry and no page.")</dd></div>
+                </dl>
+            }
+        </li>
+    };
+}

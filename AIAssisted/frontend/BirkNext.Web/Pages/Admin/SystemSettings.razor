@@ -270,170 +270,21 @@ else if (_settings is not null)
             @if (_activeSection == "feature-visibility")
             {
                 <div class="settings-card settings-card-full-width">
-                    <div class="settings-card-title">Feature &amp; Menu Visibility</div>
-                    <p class="settings-card-note">
-                        @if (_isEditMode)
-                        {
-                            <span>Toggle features on or off. Platform features are always enabled and cannot be changed. After saving, refresh the page to update the sidebar.</span>
-                        }
-                        else
-                        {
-                            <span>Controls which items appear in the left sidebar. Use <strong>Edit Settings</strong> to change, or edit <code>appsettings.Local.json</code> directly. Refresh the page after any change to update the sidebar.</span>
-                        }
-                    </p>
-
                     @if (_editableSettings is not null)
                     {
-                        <!-- Platform Features â€” always on, shown as chips not toggles -->
-                        <div class="fv-section fv-section-platform">
-                            <div class="fv-section-header">
-                                <span class="fv-section-label">Platform Features</span>
-                                <span class="fv-section-hint">Always enabled</span>
-                            </div>
-                            <div class="fv-platform-chips">
-                                @foreach (var entry in _editableSettings.FeatureVisibility.Platform)
-                                {
-                                    <div class="fv-platform-chip">
-                                        <span class="fv-platform-chip-label">@entry.Label</span>
-                                        <span class="fv-platform-chip-badge">Always On</span>
-                                    </div>
-                                }
-                            </div>
-                        </div>
-
-                        <!-- Feature count summary: derived from category membership (FeatureVisibilityTaxonomy), never hard-coded -->
-                        <div class="fv-count-summary" data-testid="fv-count-summary">
-                            @foreach (var category in FeatureVisibilityTaxonomy.Categories)
-                            {
-                                <div class="fv-count-chip" data-testid="fv-count-@category.Id">
-                                    <span class="fv-count-group">@category.Label</span>
-                                    <span class="fv-count-on">@EnabledCount(category) enabled</span>
-                                    <span class="fv-count-sep">/</span>
-                                    <span class="fv-count-off">@(TotalCount(category) - EnabledCount(category)) disabled</span>
-                                </div>
-                            }
-                        </div>
-
-                        <!-- Grouped feature sections: the same categories as the sidebar navigation -->
-                        <div class="fv-sections-grid">
-
-                            @foreach (var category in FeatureVisibilityTaxonomy.Categories)
-                            {
-                                <div class="fv-section" data-testid="fv-section-@category.Id">
-                                    <div class="fv-section-header">
-                                        <span class="fv-section-label">@category.Label</span>
-                                    </div>
-                                    @foreach (var entry in FeatureVisibilityTaxonomy.EntriesOf(category, AllEditableFeatures))
-                                    {
-                                        <FeatureRow Label="@entry.Label"
-                                                    Enabled="@(_isEditMode ? _editFv.GetValueOrDefault(entry.Key, entry.Value) : entry.Value)"
-                                                    IsLocked="false"
-                                                    IsEditMode="@_isEditMode"
-                                                    OnToggle="@(v => ToggleFeature(entry.Key, v))" />
-                                    }
-                                </div>
-                            }
-
-                            <div class="fv-section">
-                                <div class="fv-section-header">
-                                    <span class="fv-section-label">Advanced Features</span>
-                                    <span class="fv-section-hint">Optional</span>
-                                </div>
-                                @foreach (var entry in GetSectionEntries(FeatureVisibilityTaxonomy.AdvancedKeys))
-                                {
-                                    <FeatureRow Label="@entry.Label"
-                                                Enabled="@(_isEditMode ? _editFv.GetValueOrDefault(entry.Key, entry.Value) : entry.Value)"
-                                                IsLocked="false"
-                                                IsEditMode="@_isEditMode"
-                                                OnToggle="@(v => ToggleFeature(entry.Key, v))" />
-                                }
-                            </div>
-
-                            <div class="fv-section">
-                                <div class="fv-section-header">
-                                    <span class="fv-section-label">Admin</span>
-                                </div>
-                                <FeatureRow Label="Show Diagnostic Information"
-                                            Enabled="@(_isEditMode ? _editShowDiagnostics : _editableSettings.Admin.ShowDiagnostics)"
-                                            IsLocked="false"
-                                            IsEditMode="@_isEditMode"
-                                            OnToggle="@(v => _editShowDiagnostics = v)" />
-                            </div>
-
-                        </div>
-
-                        <!-- Menu Synchronization -->
-                        <div class="fv-section fv-section-sync">
-                            <div class="fv-section-header">
-                                <span class="fv-section-label">Menu Synchronization</span>
-                                @if (UnflaggedList.Count > 0)
-                                {
-                                    <span class="fv-sync-warn-badge">@UnflaggedList.Count warning(s)</span>
-                                }
-                                else
-                                {
-                                    <span class="fv-section-hint">In sync</span>
-                                }
-                            </div>
-                            <div class="fv-sync-stats">
-                                <div class="fv-sync-stat">
-                                    <span class="fv-sync-stat-value">@AllConfiguredCount</span>
-                                    <span class="fv-sync-stat-label">Configured</span>
-                                </div>
-                                <div class="fv-sync-stat fv-sync-stat-on">
-                                    <span class="fv-sync-stat-value">@AllVisibleCount</span>
-                                    <span class="fv-sync-stat-label">Visible</span>
-                                </div>
-                                <div class="fv-sync-stat fv-sync-stat-off">
-                                    <span class="fv-sync-stat-value">@AllHiddenCount</span>
-                                    <span class="fv-sync-stat-label">Hidden</span>
-                                </div>
-                                <div class="fv-sync-stat fv-sync-stat-items">
-                                    <span class="fv-sync-stat-value">@MenuItemRegistry.Count</span>
-                                    <span class="fv-sync-stat-label">Menu Items</span>
-                                </div>
-                            </div>
-                            @if (UnflaggedList.Count > 0)
-                            {
-                                <div class="fv-sync-warnings">
-                                    <div class="fv-sync-warn-title">Menu items missing configuration:</div>
-                                    @foreach (var item in UnflaggedList)
-                                    {
-                                        <div class="fv-sync-warn-row">
-                                            <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="color:var(--clr-warning,#f59e0b);flex-shrink:0">
-                                                <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
-                                            </svg>
-                                            <span><strong>@item.Label</strong> â€” key <code>@item.Key</code> not found in feature configuration</span>
-                                        </div>
-                                    }
-                                </div>
-                            }
-                        </div>
-
-                        <!-- Retired Features â€” read-only -->
-                        <div class="fv-section fv-section-retired">
-                            <div class="fv-section-header">
-                                <span class="fv-section-label">Retired Features</span>
-                            </div>
-                            <p class="fv-retired-note">Retired. Functionality merged into newer workflows.</p>
-                            <div class="fv-retired-list">
-                                <div class="fv-retired-row">
-                                    <span class="fv-retired-label">Spec Comparison</span>
-                                    <span class="fv-retired-badge">Retired</span>
-                                </div>
-                                <div class="fv-retired-row">
-                                    <span class="fv-retired-label">Specification Deltas</span>
-                                    <span class="fv-retired-badge">Retired</span>
-                                </div>
-                                <div class="fv-retired-row">
-                                    <span class="fv-retired-label">Task Deltas</span>
-                                    <span class="fv-retired-badge">Retired</span>
-                                </div>
-                            </div>
+                        <BirkNext.Web.Components.Admin.FeatureVisibilityPanel Settings="_editableSettings.FeatureVisibility" IsEditMode="_isEditMode"
+                                                                              EditValues="_editFv" OnToggle="t => ToggleFeature(t.Key, t.On)" />
+                        <div class="fv-admin" data-testid="fv-admin">
+                            <FeatureRow Label="Show Diagnostic Information"
+                                        Enabled="@(_isEditMode ? _editShowDiagnostics : _editableSettings.Admin.ShowDiagnostics)"
+                                        IsLocked="false"
+                                        IsEditMode="@_isEditMode"
+                                        OnToggle="@(v => _editShowDiagnostics = v)" />
                         </div>
                     }
-                    else if (_settings.FeatureVisibility is not null)
+                    else
                     {
+                        <div class="settings-card-title">Feature Visibility</div>
                         <p class="settings-card-note">Feature configuration not available. The feature list will appear after a successful backend connection.</p>
                     }
                 </div>
@@ -1504,7 +1355,7 @@ else if (_settings is not null)
 
     private int _configHealthIssueCount =>
         _gitFailures +
-        (UnflaggedList.Count > 0 ? 1 : 0) +
+        (NavigationIssueCount > 0 ? 1 : 0) +
         (_settings?.AzureDevOps.Enabled == true && _settings?.AzureDevOps.PatConfigured == false ? 1 : 0) +
         (_settings?.Database.MigrationStatus is not null && _settings?.Database.MigrationStatus != "Up to date" ? 1 : 0);
 
@@ -1543,37 +1394,27 @@ else if (_settings is not null)
         </button>
     };
 
-    // ── Feature categories: FeatureVisibilityTaxonomy (shared with the sidebar), presentation only ─────────────────────
-
-    // All known menu items with their flag keys (used for Menu Synchronization check).
-    private static IReadOnlyList<(string Label, string Key)> MenuItemRegistry => FeatureVisibilityTaxonomy.MenuItems;
+    // ── Feature Visibility: counts and navigation consistency come from FeatureVisibilityInventory (derived from the sidebar) ──
 
     private IEnumerable<FeatureEntryDto> AllEditableFeatures =>
         _editableSettings?.FeatureVisibility.Core
             .Concat(_editableSettings.FeatureVisibility.Advanced) ?? [];
 
-    private IEnumerable<FeatureEntryDto> GetSectionEntries(IEnumerable<string> keys) =>
-        AllEditableFeatures.Where(e => keys.Contains(e.Key, StringComparer.OrdinalIgnoreCase));
-
-    private int EnabledCount(FeatureCategory category) =>
-        FeatureVisibilityTaxonomy.EntriesOf(category, AllEditableFeatures).Count(e =>
-            _isEditMode ? _editFv.GetValueOrDefault(e.Key, e.Value) : e.Value);
-
-    private int TotalCount(FeatureCategory category) =>
-        FeatureVisibilityTaxonomy.EntriesOf(category, AllEditableFeatures).Count;
-
-    private IEnumerable<(string Label, string Key)> UnflaggedMenuItems =>
-        MenuItemRegistry.Where(item =>
-            !AllEditableFeatures.Any(e =>
-                string.Equals(e.Key, item.Key, StringComparison.OrdinalIgnoreCase)) &&
-            !(_editableSettings?.FeatureVisibility.Platform.Any(e =>
-                string.Equals(e.Key, item.Key, StringComparison.OrdinalIgnoreCase)) ?? false));
-
-    // Menu synchronization summary properties
     private int AllConfiguredCount => AllEditableFeatures.Count();
     private int AllVisibleCount    => AllEditableFeatures.Count(e => e.Value);
-    private int AllHiddenCount     => AllEditableFeatures.Count(e => !e.Value);
-    private List<(string Label, string Key)> UnflaggedList => UnflaggedMenuItems.ToList();
+
+    /// <summary>Navigation consistency issues of the stored configuration (Feature Visibility → Navigation); one Configuration Health issue when any.</summary>
+    private (object? For, int Count) _navigationIssues;
+    private int NavigationIssueCount
+    {
+        get
+        {
+            if (_editableSettings is null) return 0;
+            if (!ReferenceEquals(_navigationIssues.For, _editableSettings))
+                _navigationIssues = (_editableSettings, FeatureVisibilityInventory.Build(_editableSettings.FeatureVisibility).Issues.Count);
+            return _navigationIssues.Count;
+        }
+    }
 
     private IReadOnlyList<(WorkspaceArtifactKind Kind, string Label, WorkspaceArtifact Artifact)> WorkspaceArtifacts =>
         ArtifactStatus.GetStatus().Availability
@@ -1622,7 +1463,7 @@ else if (_settings is not null)
 
     private string FeatureFlagSummary =>
         AllEditableFeatures.Any()
-            ? $"{AllVisibleCount} enabled / {AllConfiguredCount} configured"
+            ? $"{AllVisibleCount} of {AllConfiguredCount} switches on"
             : "Not available";
 
     private int RuntimeWarningCount =>
@@ -2945,108 +2786,6 @@ else if (_settings is not null)
     // â”€â”€ Documentation Health â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private sealed record DocHealthFinding(string Severity, string Category, string Description, string? Detail = null);
-
-    // All routes served by the application (one entry per @page directive).
-    private static readonly HashSet<string> KnownRoutes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "/", "/dashboard", "/specification-explorer", "/constitution-explorer", "/data-model-explorer", "/plan-explorer",
-        "/task-explorer", "/demo-projects", "/sample-projects", "/traceability",
-        "/traceability/suggestions", "/code-traceability", "/documentation-drift",
-        "/impact-analysis", "/artifact-traceability", "/task-alignment",
-        "/implementation-traceability", "/quality-review",
-        "/wasm-performance-review", "/ai-change-auditor", "/admin/system-settings",
-        "/getting-started", "/user-guide",
-    };
-
-    // Removed / deprecated routes â€” must not be referenced in any documentation or navigation.
-    private static readonly HashSet<string> RemovedRoutes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "/qa-auditor", "/constitution-compliance", "/standards-compliance",
-        // The standalone WASM Security Review page was retired; its scanner runs as Frontend Quality Review → HTTP Security.
-        "/wasm-security-review",
-        "/qa-readiness", "/delivery-readiness",
-        "qa-auditor", "constitution-compliance", "standards-compliance",
-        "qa-readiness", "delivery-readiness",
-    };
-
-    // All hrefs used in NavMenu â€” (label, href) pairs.
-    private static readonly (string Label, string Href)[] DocNavLinks =
-    [
-        ("Recommended Workflow",         "getting-started"),
-        ("User Guide",                   "user-guide"),
-        ("Dashboard",                    "dashboard"),
-        ("Specification Explorer",       "specification-explorer"),
-        ("Constitution Explorer",        "constitution-explorer"),
-        ("Data Model Explorer",          "data-model-explorer"),
-        ("Plan Explorer",                "plan-explorer"),
-        ("Task Explorer",                "task-explorer"),
-        ("Demo Projects",                "demo-projects"),
-        ("Traceability & Coverage",      "traceability"),
-        ("Traceability Suggestions",     "traceability/suggestions"),
-        ("Code Traceability",            "code-traceability"),
-        ("Documentation Drift",                   "documentation-drift"),
-        ("Impact Analysis",              "impact-analysis"),
-        ("Requirements Traceability",        "artifact-traceability"),
-        ("Task Alignment Review",        "task-alignment"),
-        ("Change Traceability",          "implementation-traceability"),
-        ("Source Analysis",              "source-analysis"),
-        ("Document Quality Review",      "quality/document"),
-        ("WASM Performance Review",      "wasm-performance-review"),
-        ("AI Change Review",             "ai-change-auditor"),
-        ("System Settings",              "admin/system-settings"),
-    ];
-
-    // All hrefs used inside documentation pages (RecommendedWorkflow, UserGuide, Dashboard, NavMenu).
-    private static readonly (string Page, string Href, string Context)[] DocPageLinks =
-    [
-        // RecommendedWorkflow.razor
-        ("Recommended Workflow", "constitution-explorer",       "Phase 1 CTA"),
-        ("Recommended Workflow", "data-model-explorer",         "Phase 2 CTA"),
-        ("Recommended Workflow", "specification-explorer",      "Phase 3 CTA"),
-        ("Recommended Workflow", "plan-explorer",               "Phase 4 CTA"),
-        ("Recommended Workflow", "artifact-traceability",       "Phase 4 CTA"),
-        ("Recommended Workflow", "quality/document",           "Phase 4 CTA (secondary)"),
-        ("Recommended Workflow", "task-alignment",              "Phase 5 CTA"),
-        ("Recommended Workflow", "quality/document",           "Phase 6 CTA"),
-        ("Recommended Workflow", "user-guide",                  "Footer cross-link"),
-        // UserGuide.razor
-        ("User Guide", "/getting-started",                      "Onboarding callout"),
-        ("User Guide", "/ai-change-auditor",                    "AI Change Review feature link"),
-        ("User Guide", "/quality/document",                    "Document Quality Review feature link"),
-        ("User Guide", "/constitution-explorer",                "Constitution Explorer link"),
-        ("User Guide", "/data-model-explorer",                  "Data Model Explorer link"),
-        ("User Guide", "/specification-explorer",               "Specification Explorer link"),
-        ("User Guide", "/plan-explorer",                        "Plan Explorer link"),
-        ("User Guide", "/task-explorer",                        "Task Explorer link"),
-        ("User Guide", "/documentation-drift",                           "Documentation Drift link"),
-        ("User Guide", "/impact-analysis",                      "Impact Analysis link"),
-        ("User Guide", "/artifact-traceability",                "Requirements Traceability link"),
-        ("User Guide", "/task-alignment",                       "Implementation Review link"),
-        ("User Guide", "/implementation-traceability",          "Change Traceability link"),
-        ("User Guide", "/traceability",                         "Traceability & Coverage link"),
-        ("User Guide", "/traceability/suggestions",             "Traceability Suggestions link"),
-        ("User Guide", "/code-traceability",                    "Code Traceability link"),
-        ("User Guide", "/wasm-performance-review",              "WASM Performance Review link"),
-        ("User Guide", "/admin/system-settings",                "System Settings link"),
-        // Dashboard.razor
-        ("Dashboard", "constitution-explorer",                  "Project Artifacts card link"),
-        ("Dashboard", "specification-explorer",                 "Project Artifacts card link"),
-        ("Dashboard", "plan-explorer",                          "Project Artifacts card link"),
-        ("Dashboard", "task-explorer",                          "Project Artifacts card link"),
-        ("Dashboard", "quality-review",                         "Readiness Summary links"),
-        ("Dashboard", "artifact-traceability",                  "Analysis Summary card"),
-        ("Dashboard", "quality-review",                         "Analysis Summary card"),
-        ("Dashboard", "wasm-performance-review",                "Analysis Summary card"),
-        ("Dashboard", "getting-started",                        "Onboarding CTA"),
-        ("Dashboard", "constitution-explorer",                  "Quick Actions"),
-        ("Dashboard", "specification-explorer",                 "Quick Actions"),
-        ("Dashboard", "plan-explorer",                          "Quick Actions"),
-        ("Dashboard", "task-explorer",                          "Quick Actions"),
-        ("Dashboard", "artifact-traceability",                  "Quick Actions"),
-        ("Dashboard", "quality-review",                         "Quick Actions"),
-        ("Dashboard", "wasm-performance-review",                "Quick Actions"),
-        ("Dashboard", "ai-change-auditor",                      "Quick Actions â€” AI"),
-    ];
 
     private List<DocHealthFinding> RunDocumentationHealthChecks()
     {

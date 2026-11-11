@@ -118,6 +118,13 @@
             <li><strong>Performance tests</strong>: whether the k6 runner of this profile is available. <strong>Configuration</strong>: the result of Configuration Health. "Git Sources not set up" is optional setup, not a failure.</li>
             <li>The tiles are read when the page opens (and on <strong>Refresh</strong>); they are not live monitoring. The details stay in Application information, Runtime &amp; Environment and Configuration Health below. The Edge Companion row shows a connected extension's version; a bundled extension version alone never counts as connected or compatible.</li>
         </ul></article>
+    <article class="ug-card" id="feature-visibility"><h3>Feature Visibility: what is shown and why</h3>
+        <ul>
+            <li><strong>Feature Visibility</strong> (System Settings) lists every sidebar entry, every configurable switch and the pages you reach from other pages. A switch decides whether a sidebar entry is <em>shown</em>; it does not install, remove or protect anything. A hidden page still opens by its address, and BirkNext has no per-module permissions: anyone with a local session can open it.</li>
+            <li><strong>Hidden</strong> means a switch is off; the row names the switch ("Off: Impact Analysis"). <strong>Unavailable</strong> is different: the page is shown, but the capability cannot be relied on yet (for example Environment Analysis without a verified Azure connection). A missing runtime dependency, such as k6, makes a run unavailable; it never hides or retires the feature.</li>
+            <li><strong>Optional</strong> switches are off by default because they depend on an optional integration; <strong>Legacy</strong> entries have a newer replacement, named in their details. <strong>No effect</strong> switches are still in the configuration, but no page reads them.</li>
+            <li>Not every page has its own entry: some entries are always shown, some are shown when one of several switches is on (Import Project), and aliases, redirects and detail pages are reached from other pages. <strong>Navigation</strong> compares sidebar entries, switches and pages by identity and lists any entry that opens no page, switch that gates nothing, or page that is neither in the sidebar nor classified.</li>
+        </ul></article>
     <article class="ug-card" id="runtime-profiles"><h3>Runtime &amp; Environment: how this BirkNext runs</h3>
         <ul>
             <li>A <strong>runtime profile</strong> says where BirkNext's database and its k6 performance-test runner come from. It is not a user role: every profile has the same features, data model and rules.</li>

@@ -81,6 +81,25 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         ("AiChangeReview",      "AI Change Review")
     ];
 
+    /// <summary>Advanced features that are on when the configuration does not set them. Documentation Drift is an implemented document
+    /// review; every other advanced entry is optional or legacy and stays off until a configuration turns it on.</summary>
+    internal static readonly IReadOnlySet<string> AdvancedFeaturesEnabledByDefault =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "SpecDrift" };
+
+    /// <summary>
+    /// The one default of every configurable feature key, used by both the sidebar flags (<see cref="BuildFeatureVisibility"/>) and the
+    /// System Settings values (<see cref="BuildEditableSettings"/>), so the two can never disagree about a key the configuration omits.
+    /// </summary>
+    internal static bool FeatureDefault(string key) =>
+        PlatformFeatureKeys.Contains(key) ? true
+        : AdvancedFeatures.Any(f => f.Key.Equals(key, StringComparison.OrdinalIgnoreCase)) ? AdvancedFeaturesEnabledByDefault.Contains(key)
+        : CoreDefault(key);
+
+    /// <summary>Every key System Settings can save (platform, core, advanced).</summary>
+    internal static bool IsKnownFeatureKey(string key) =>
+        PlatformFeatureKeys.Contains(key) || CoreFeatures.Any(f => f.Key.Equals(key, StringComparison.OrdinalIgnoreCase))
+        || AdvancedFeatures.Any(f => f.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+
     private static readonly string[] ValidLogLevels =
         ["Verbose", "Debug", "Information", "Warning", "Error", "Fatal"];
 
@@ -287,15 +306,15 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
             SpecificationExplorer = s.GetValue("SpecificationExplorer", true),
             QaArtifactLibrary    = s.GetValue("QaArtifactLibrary",    true),
             SampleProjects       = s.GetValue("SampleProjects",       true),
-            LegacyTraceabilityNavigationEnabled = s.GetValue("LegacyTraceabilityNavigationEnabled", false),
+            LegacyTraceabilityNavigationEnabled = s.GetValue("LegacyTraceabilityNavigationEnabled", FeatureDefault("LegacyTraceabilityNavigationEnabled")),
             TraceabilityCoverage = s.GetValue("TraceabilityCoverage", true),
-            TraceabilitySuggestions = s.GetValue("TraceabilitySuggestions", true),
-            CodeTraceability     = s.GetValue("CodeTraceability",     true),
+            TraceabilitySuggestions = s.GetValue("TraceabilitySuggestions", FeatureDefault("TraceabilitySuggestions")),
+            CodeTraceability     = s.GetValue("CodeTraceability",     FeatureDefault("CodeTraceability")),
             SpecComparison       = s.GetValue("SpecComparison",       true),
             SpecificationDeltas  = s.GetValue("SpecificationDeltas",  true),
             TaskDeltas           = s.GetValue("TaskDeltas",           true),
-            ImpactAnalysis       = s.GetValue("ImpactAnalysis",       true),
-            SpecDrift            = s.GetValue("SpecDrift",            true),
+            ImpactAnalysis       = s.GetValue("ImpactAnalysis",       FeatureDefault("ImpactAnalysis")),
+            SpecDrift            = s.GetValue("SpecDrift",            FeatureDefault("SpecDrift")),
             ImplementationReview        = s.GetValue("ImplementationReview",        true),
             // Optional Azure DevOps provenance: off unless explicitly enabled (an explicit true or false always wins).
             ImplementationTraceability  = s.GetValue("ImplementationTraceability",  CoreDefault("ImplementationTraceability")),
@@ -317,9 +336,9 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
             BlazorWasmPerformanceReview = s.GetValue("BlazorWasmPerformanceReview", true),
             TaskExplorer                = s.GetValue("TaskExplorer",                true),
             QualityReview               = s.GetValue("QualityReview",               true),
-            AiChangeReview       = s.GetValue("AiChangeReview",       false),
-            EnableExtractionReview = s.GetValue("EnableExtractionReview", false),
-            EnableArchitectureView = s.GetValue("EnableArchitectureView", false),
+            AiChangeReview       = s.GetValue("AiChangeReview",       FeatureDefault("AiChangeReview")),
+            EnableExtractionReview = s.GetValue("EnableExtractionReview", FeatureDefault("EnableExtractionReview")),
+            EnableArchitectureView = s.GetValue("EnableArchitectureView", FeatureDefault("EnableArchitectureView")),
             AdminSystemSettings  = s.GetValue("AdminSystemSettings",  true)
         };
     }
@@ -345,7 +364,7 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         var advanced = AdvancedFeatures.Select(f => new FeatureVisibilityEntry
         {
             Key = f.Key, Label = f.Label,
-            Value = fv.GetValue(f.Key, false), Locked = false
+            Value = fv.GetValue(f.Key, FeatureDefault(f.Key)), Locked = false
         }).ToList();
 
         return new EditableSettingsResponse
@@ -391,6 +410,8 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         {
             foreach (var (key, value) in request.FeatureVisibility)
             {
+                if (!IsKnownFeatureKey(key))
+                    return (false, $"Unknown feature key '{key}'. Only the feature keys listed in System Settings can be saved.");
                 if (PlatformFeatureKeys.Contains(key) && !value)
                     return (false, $"Platform features cannot be disabled. '{key}' is a platform feature and must always remain enabled.");
             }
@@ -450,11 +471,16 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         {
             var fvNode = root.TryGetPropertyValue("FeatureVisibility", out var existing)
                 && existing is JsonObject obj ? obj : new JsonObject();
+            var changes = new List<string>();
             foreach (var (key, value) in request.FeatureVisibility)
             {
-                if (!PlatformFeatureKeys.Contains(key))
-                    fvNode[key] = JsonValue.Create(value);
+                if (PlatformFeatureKeys.Contains(key)) continue;
+                var before = _config.GetSection("FeatureVisibility").GetValue(key, FeatureDefault(key));
+                if (before != value) changes.Add($"{key}: {(before ? "on" : "off")} -> {(value ? "on" : "off")}");
+                fvNode[key] = JsonValue.Create(value);
             }
+            // Audit trail of who-changed-what is limited to the log: BirkNext has no user identity beyond the local session.
+            if (changes.Count > 0) _logger.LogInformation("Feature visibility changed by a local session: {Changes}", string.Join("; ", changes));
             root["FeatureVisibility"] = fvNode;
         }
 

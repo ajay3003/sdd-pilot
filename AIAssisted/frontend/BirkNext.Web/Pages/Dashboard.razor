@@ -912,12 +912,16 @@
                     <a href="integration-quality-review" class="db-qa-btn">Integration Quality Review</a>
                 </div>
             </div>
+            @if ((Services.GetService(typeof(FeatureVisibilityService)) as FeatureVisibilityService)?.AiChangeReview == true)
+            {
+            @* Shown only when Feature Visibility shows AI Change Review (off by default): a quick action never leads to a hidden feature. *@
             <div class="db-qa-group">
                 <div class="db-qa-group-label">AI</div>
                 <div class="db-qa-buttons">
                     <a href="ai-change-auditor" class="db-qa-btn">AI Change Review</a>
                 </div>
             </div>
+            }
         </div>
     </section>
         </details>

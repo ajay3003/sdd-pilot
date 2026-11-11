@@ -1,48 +1,27 @@
 using BirkNext.Web.Pages.Admin;
-using BirkNext.Web.Services;
+using BirkNext.Web.Tests.Services;
 using Bunit;
 using FluentAssertions;
 
 namespace BirkNext.Web.Tests.Pages;
 
-/// <summary>Feature &amp; Menu Visibility presents the sidebar's taxonomy; counts and Menu Synchronization derive from category membership.</summary>
+/// <summary>
+/// System Settings → Feature Visibility: every sidebar entry with its visibility and reason, switches without an entry, other pages and retired
+/// keys, with search, filters, details and identity-based navigation health. Values are the shipped configuration (FeatureVisibilityFixture).
+/// </summary>
 public partial class SystemSettingsEnvironmentDiagnosticsTests
 {
-    // Mirrors AdminService's Platform/Core/Advanced keys and labels; values as a typical installation (Impact Analysis and AI off).
-    private static readonly (string Key, string Label, bool Value)[] PlatformFeatures =
-        [("Dashboard", "Dashboard", true), ("UserGuide", "User Guide", true), ("RecommendedWorkflow", "Recommended Workflow", true), ("AdminSystemSettings", "System Settings", true)];
-
-    private static readonly (string Key, string Label, bool Value)[] CoreFeatures =
-    [
-        ("SpecificationExplorer", "Specification Explorer", true), ("ConstitutionExplorer", "Constitution Explorer", true),
-        ("DataModelExplorer", "Data Model Explorer", true), ("PlanExplorer", "Plan Explorer", true), ("TaskExplorer", "Task Explorer", true),
-        ("QaArtifactLibrary", "QA Artifact Library", true), ("SampleProjects", "Sample Projects", true),
-        ("TraceabilityCoverage", "Traceability & Coverage", true), ("ArtifactTraceability", "Requirements Traceability", true),
-        ("QualityReview", "Document Quality Review", true), ("FrontendQualityReview", "Frontend Quality Review", true),
-        ("ApiQualityReview", "API Quality Review", true), ("IntegrationQualityReview", "Integration Quality Review", true),
-        ("CriticalE2ERegression", "Critical E2E Regression", true), ("BlazorWasmSecurityReview", "WASM Security Review", true),
-        ("BlazorWasmPerformanceReview", "WASM Performance Review", true), ("ImplementationReview", "Task Alignment Review", true),
-        ("ImplementationTraceability", "Change Traceability", false), ("SourceAnalysis", "Source Analysis", true),
-        ("AzureEnvironmentAnalysis", "Azure Environment Analysis", true), ("GeneratedDocumentationHealth", "Generated Documentation Health", true),
-        ("GeneratedDocumentationExplorer", "Generated Documentation Explorer", true),
-    ];
-
-    private static readonly (string Key, string Label, bool Value)[] AdvancedFeatures =
-    [
-        ("EnableExtractionReview", "Extraction Review", false), ("EnableArchitectureView", "Architecture View", false),
-        ("LegacyTraceabilityNavigationEnabled", "Legacy Traceability Navigation", false), ("TraceabilitySuggestions", "Traceability Suggestions", true),
-        ("CodeTraceability", "Code Traceability", true), ("ImpactAnalysis", "Impact Analysis", false),
-        ("SpecDrift", "Documentation Drift", true), ("AiChangeReview", "AI Change Review", false),
-    ];
-
-    private static string Entries((string Key, string Label, bool Value)[] features, bool locked = false) =>
+    private static string Entries(IEnumerable<(string Key, string Label, bool Value)> features, bool locked = false) =>
         string.Join(",", features.Select(f => $$"""{ "key": "{{f.Key}}", "label": "{{f.Label}}", "value": {{(f.Value ? "true" : "false")}}, "locked": {{(locked ? "true" : "false")}} }"""));
 
-    private IRenderedComponent<SystemSettings> RenderFeatureVisibility()
+    private IRenderedComponent<SystemSettings> RenderFeatureVisibility(Dictionary<string, bool>? overrides = null)
     {
+        var settings = FeatureVisibilityFixture.Settings(overrides);
         _handler.EditableJson = $$"""
             {
-              "featureVisibility": { "platform": [{{Entries(PlatformFeatures, locked: true)}}], "core": [{{Entries(CoreFeatures)}}], "advanced": [{{Entries(AdvancedFeatures)}}] },
+              "featureVisibility": { "platform": [{{Entries(FeatureVisibilityFixture.Platform.Select(p => (p.Key, p.Label, true)), locked: true)}}],
+                                     "core": [{{Entries(settings.Core.Select(e => (e.Key, e.Label, e.Value)))}}],
+                                     "advanced": [{{Entries(settings.Advanced.Select(e => (e.Key, e.Label, e.Value)))}}] },
               "logging": { "minimumLevel": "Information", "seqUrl": "" },
               "admin": { "showDiagnostics": true }
             }
@@ -50,87 +29,105 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
         var cut = Render<SystemSettings>();
         cut.WaitForAssertion(() => FindButton(cut, "Feature Visibility").Should().NotBeNull());
         cut.FindAll(".ss-nav-item").First(b => b.TextContent.Contains("Feature Visibility")).Click();
-        cut.WaitForAssertion(() => cut.FindAll("[data-testid=fv-section-document-review]").Should().ContainSingle());
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=fv-panel]").Should().ContainSingle());
         return cut;
     }
 
-    private static IReadOnlyList<string> SectionLabels(IRenderedComponent<SystemSettings> cut, string category) =>
-        cut.FindAll($"[data-testid=fv-section-{category}] .fv-label").Select(l => l.TextContent.Trim()).ToList();
+    private static AngleSharp.Dom.IElement EntryRow(IRenderedComponent<SystemSettings> cut, string route) =>
+        cut.FindAll("[data-testid=fv-entry]").Single(r => r.GetAttribute("data-route") == route);
+
+    private static string Metric(IRenderedComponent<SystemSettings> cut, string id) => cut.Find($"[data-testid=fv-metric-{id}] .fvp-mv").TextContent.Trim();
 
     [Fact]
-    public void FeatureVisibility_groups_features_like_the_sidebar()
+    public void FeatureVisibility_shows_counts_with_their_units_and_a_consistent_navigation()
     {
         var cut = RenderFeatureVisibility();
 
-        cut.FindAll(".fv-sections-grid .fv-section-label").Select(l => l.TextContent.Trim()).Should().StartWith(
-            ["Specifications & Planning", "Library", "Traceability & Impact", "Source & Architecture", "Impact Analysis", "Quality & Testing", "AI Review", "Advanced Features", "Admin"]);
-        SectionLabels(cut, "document-review").Should().Equal(
+        cut.Find(".fvp-title").TextContent.Should().Be("Feature Visibility");
+        cut.Find(".fvp-sub").TextContent.Should().Be("Explore available BirkNext capabilities, their visibility and requirements.");
+        Metric(cut, "switches").Should().Be("30");
+        cut.Find("[data-testid=fv-metric-switches] .fvp-md").TextContent.Should().Contain("25 with an effect, 5 without").And.Contain("4 platform");
+        Metric(cut, "shown").Should().StartWith("47").And.EndWith("of 53");
+        Metric(cut, "hidden").Should().Be("6");
+        cut.Find("[data-testid=fv-metric-navigation]").GetAttribute("data-state").Should().Be("consistent");
+        cut.FindAll("[data-testid=fv-issues]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void FeatureVisibility_lists_entries_by_sidebar_group_with_a_reason_for_each_hidden_one()
+    {
+        var cut = RenderFeatureVisibility();
+
+        cut.FindAll("[data-testid=fv-group-document-review] [data-testid=fv-entry] .fvp-name").Select(n => n.TextContent).Should().Equal(
             "Specification Explorer", "Constitution Explorer", "Data Model Explorer", "Plan Explorer", "Task Explorer",
             "Document Quality Review", "Task Alignment Review", "Documentation Drift");
-        SectionLabels(cut, "traceability").Should().Equal("Requirements Traceability", "Change Traceability");
-        cut.FindAll("[data-testid=fv-section-traceability] .fv-row").Single(r => r.TextContent.Contains("Change Traceability"))
-            .QuerySelector(".fv-badge-disabled")!.TextContent.Should().Be("Disabled", "optional Azure DevOps provenance is off by default");
-        cut.Find("[data-testid=fv-count-traceability] .fv-count-off").TextContent.Should().Be("1 disabled");
-        SectionLabels(cut, "source-review").Should().Equal("Source Analysis", "Generated Documentation Explorer", "Generated Documentation Health", "Azure Environment Analysis");
-        SectionLabels(cut, "analysis").Should().Equal("Impact Analysis");
-        SectionLabels(cut, "quality-testing").Should().NotContain("Document Quality Review");
+        EntryRow(cut, "impact-analysis").GetAttribute("data-state").Should().Be("hidden");
+        EntryRow(cut, "impact-analysis").QuerySelector("[data-testid=fv-reason]")!.TextContent.Should().Be("Off: Impact Analysis");
+        EntryRow(cut, "traceability").QuerySelector("[data-testid=fv-reason]")!.TextContent.Should().Be("Off: Legacy Traceability Navigation");
+        EntryRow(cut, "schema-studio").TextContent.Should().Contain("Always shown");
+        EntryRow(cut, "azure-environment").TextContent.Should().Contain("Unavailable").And.Contain("Shown");
 
-        // Each configured label appears once across the whole page's sections.
-        cut.FindAll(".fv-sections-grid .fv-label").Select(l => l.TextContent.Trim()).Should().OnlyHaveUniqueItems();
-        // Retired features stay retired and outside the categories.
-        cut.FindAll(".fv-retired-label").Select(l => l.TextContent.Trim()).Should().Equal("Spec Comparison", "Specification Deltas", "Task Deltas");
+        cut.FindAll("[data-testid=fv-group-switches] [data-testid=fv-switch]").Select(s => s.GetAttribute("data-key")).Should().BeEquivalentTo(
+            "QaArtifactLibrary", "BlazorWasmSecurityReview", "BlazorWasmPerformanceReview", "EnableExtractionReview", "EnableArchitectureView", "LegacyTraceabilityNavigationEnabled");
+        cut.FindAll("[data-testid=fv-no-effect]").Should().HaveCount(5);
+        cut.FindAll("[data-testid=fv-retired] .fvp-name").Select(n => n.TextContent).Should().Equal("Spec Comparison", "Specification Deltas", "Task Deltas");
     }
 
     [Fact]
-    public void FeatureVisibility_counts_are_derived_from_category_membership_and_preserve_stored_values()
+    public void FeatureVisibility_search_and_filters_use_the_actual_state()
     {
         var cut = RenderFeatureVisibility();
-        var values = CoreFeatures.Concat(AdvancedFeatures).ToDictionary(f => f.Key, f => f.Value);
 
-        foreach (var category in FeatureVisibilityTaxonomy.Categories)
-        {
-            var members = category.Keys.Where(values.ContainsKey).ToList();
-            var chip = cut.Find($"[data-testid=fv-count-{category.Id}]");
-            chip.QuerySelector(".fv-count-group")!.TextContent.Should().Be(category.Label);
-            chip.QuerySelector(".fv-count-on")!.TextContent.Should().Be($"{members.Count(k => values[k])} enabled");
-            chip.QuerySelector(".fv-count-off")!.TextContent.Should().Be($"{members.Count(k => !values[k])} disabled");
-        }
-        // Spot-check the fixture: moved Documentation Drift stays enabled; Impact Analysis stays disabled.
-        cut.Find("[data-testid=fv-count-document-review] .fv-count-on").TextContent.Should().Be("8 enabled");
-        cut.Find("[data-testid=fv-count-traceability] .fv-count-on").TextContent.Should().Be("1 enabled");
-        cut.Find("[data-testid=fv-count-analysis] .fv-count-off").TextContent.Should().Be("1 disabled");
-        cut.FindAll("[data-testid=fv-section-analysis] .fv-badge-disabled").Should().ContainSingle();
+        cut.Find("[data-testid=fv-search]").Input("drift");
+        cut.FindAll("[data-testid=fv-entry]").Select(r => r.GetAttribute("data-route")).Should().Equal("documentation-drift");
+        cut.Find("[data-testid=fv-search]").Input("ImpactAnalysis");
+        cut.FindAll("[data-testid=fv-entry]").Select(r => r.GetAttribute("data-route")).Should().Equal("impact-analysis");
+        cut.Find("[data-testid=fv-search]").Input("zzz-nothing");
+        cut.Find("[data-testid=fv-empty]").TextContent.Should().Contain("zzz-nothing");
+
+        cut.Find("[data-testid=fv-search]").Input("");
+        cut.Find("[data-testid=fv-filter-hidden]").Click();
+        cut.FindAll("[data-testid=fv-entry]").Should().HaveCount(6).And.OnlyContain(r => r.GetAttribute("data-state") == "hidden");
+        cut.Find("[data-testid=fv-filter-hidden]").GetAttribute("aria-pressed").Should().Be("true");
+        cut.Find("[data-testid=fv-filter-unavailable]").Click();
+        cut.FindAll("[data-testid=fv-entry]").Select(r => r.GetAttribute("data-route")).Should().Equal("azure-environment");
+        cut.Find("[data-testid=fv-filter-shown]").Click();
+        cut.FindAll("[data-testid=fv-entry]").Should().HaveCount(47);
     }
 
     [Fact]
-    public void FeatureVisibility_menu_synchronization_stays_in_sync()
+    public void FeatureVisibility_details_explain_visibility_lifecycle_access_and_link_only_to_shown_pages()
     {
         var cut = RenderFeatureVisibility();
-        var configured = CoreFeatures.Concat(AdvancedFeatures).ToList();
 
-        var sync = cut.Find(".fv-section-sync");
-        sync.QuerySelector(".fv-section-hint")!.TextContent.Should().Be("In sync");
-        sync.QuerySelectorAll(".fv-sync-warn-row").Should().BeEmpty();
-        string Stat(string label) => sync.QuerySelectorAll(".fv-sync-stat").Single(s => s.QuerySelector(".fv-sync-stat-label")!.TextContent == label)
-            .QuerySelector(".fv-sync-stat-value")!.TextContent;
-        Stat("Configured").Should().Be(configured.Count.ToString());
-        Stat("Visible").Should().Be(configured.Count(f => f.Value).ToString());
-        Stat("Hidden").Should().Be(configured.Count(f => !f.Value).ToString());
-        Stat("Menu Items").Should().Be(FeatureVisibilityTaxonomy.MenuItems.Count.ToString());
+        var impact = EntryRow(cut, "impact-analysis");
+        impact.QuerySelector("[data-testid=fv-detail-toggle]")!.Click();
+        impact = EntryRow(cut, "impact-analysis");
+        impact.QuerySelector("[data-testid=fv-detail-toggle]")!.GetAttribute("aria-expanded").Should().Be("true");
+        var detail = impact.QuerySelector("[data-testid=fv-detail]")!.TextContent;
+        detail.Should().Contain("Shown when Impact Analysis is on").And.Contain("FeatureVisibility:ImpactAnalysis = off").And.Contain("Optional")
+            .And.Contain("Use instead: Release Readiness").And.Contain("hiding the entry only removes it from the sidebar");
+        impact.QuerySelectorAll("[data-testid=fv-open]").Should().BeEmpty("a hidden entry is never offered as a link");
+
+        EntryRow(cut, "documentation-drift").QuerySelector("[data-testid=fv-detail-toggle]")!.Click();
+        var drift = EntryRow(cut, "documentation-drift");
+        drift.QuerySelector("[data-testid=fv-open]")!.GetAttribute("href").Should().Be("documentation-drift");
+        drift.QuerySelector("[data-testid=fv-help-link]")!.GetAttribute("href").Should().Be("user-guide#documentation-drift");
     }
 
     [Fact]
-    public void FeatureVisibility_toggling_a_moved_feature_saves_its_stable_key_only()
+    public void FeatureVisibility_toggling_previews_the_sidebar_and_saves_the_stable_key_only()
     {
         var cut = RenderFeatureVisibility();
         FindButton(cut, "Edit Settings")!.Click();
 
-        cut.Find("[data-testid=fv-section-document-review] label[aria-label='Disable Documentation Drift'] input").Change(false);
-        cut.Find("[data-testid=fv-count-document-review] .fv-count-off").TextContent.Should().Be("1 disabled");
+        cut.FindAll("[data-testid=fv-toggle-QaArtifactLibrary]").Should().BeEmpty("a switch without effect is never offered as a toggle");
+        cut.Find("[data-testid=fv-toggle-SpecDrift]").Change(false);
+        EntryRow(cut, "documentation-drift").GetAttribute("data-state").Should().Be("hidden");
+        Metric(cut, "hidden").Should().Be("7");
         FindButton(cut, "Save Settings")!.Click();
 
         cut.WaitForAssertion(() => _handler.LastSaveBody.Should().NotBeNull());
-        _handler.LastSaveBody.Should().Contain("\"SpecDrift\":false", "the stable key is unchanged by the new category")
-            .And.NotContain("DocumentationDrift").And.NotContain("ImplementationReview");
+        _handler.LastSaveBody.Should().Contain("\"SpecDrift\":false").And.NotContain("DocumentationDrift").And.NotContain("ImplementationReview");
     }
 }

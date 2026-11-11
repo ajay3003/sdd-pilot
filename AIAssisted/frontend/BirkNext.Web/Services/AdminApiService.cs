@@ -446,6 +446,7 @@ public class SaveSettingsResponse
 
 public class FeatureVisibilityDto
 {
+    // Used only when the backend does not answer: the same defaults as the backend's AdminService.FeatureDefault (optional and legacy entries off).
     [JsonPropertyName("recommendedWorkflow")]  public bool RecommendedWorkflow  { get; set; } = true;
     [JsonPropertyName("userGuide")]            public bool UserGuide            { get; set; } = true;
     [JsonPropertyName("dashboard")]            public bool Dashboard            { get; set; } = true;
@@ -454,12 +455,12 @@ public class FeatureVisibilityDto
     [JsonPropertyName("sampleProjects")]       public bool SampleProjects       { get; set; } = true;
     [JsonPropertyName("legacyTraceabilityNavigationEnabled")] public bool LegacyTraceabilityNavigationEnabled { get; set; } = false;
     [JsonPropertyName("traceabilityCoverage")]    public bool TraceabilityCoverage    { get; set; } = true;
-    [JsonPropertyName("traceabilitySuggestions")] public bool TraceabilitySuggestions { get; set; } = true;
-    [JsonPropertyName("codeTraceability")]        public bool CodeTraceability        { get; set; } = true;
+    [JsonPropertyName("traceabilitySuggestions")] public bool TraceabilitySuggestions { get; set; } = false;
+    [JsonPropertyName("codeTraceability")]        public bool CodeTraceability        { get; set; } = false;
     [JsonPropertyName("specComparison")]       public bool SpecComparison       { get; set; } = false;
     [JsonPropertyName("specificationDeltas")]  public bool SpecificationDeltas  { get; set; } = false;
     [JsonPropertyName("taskDeltas")]           public bool TaskDeltas           { get; set; } = false;
-    [JsonPropertyName("impactAnalysis")]       public bool ImpactAnalysis       { get; set; } = true;
+    [JsonPropertyName("impactAnalysis")]       public bool ImpactAnalysis       { get; set; } = false;
     [JsonPropertyName("specDrift")]            public bool SpecDrift            { get; set; } = true;
     [JsonPropertyName("implementationReview")]       public bool ImplementationReview       { get; set; } = true;
     // Optional Azure DevOps provenance: off unless explicitly enabled.

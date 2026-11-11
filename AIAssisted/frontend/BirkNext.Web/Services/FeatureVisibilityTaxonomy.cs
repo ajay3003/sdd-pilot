@@ -1,116 +1,101 @@
 namespace BirkNext.Web.Services;
 
-// ── Feature & Menu Visibility taxonomy ──────────────────────────────────────────────────────────────────────────────────
+// ── Feature Visibility declarations ─────────────────────────────────────────────────────────────────────────────────────
 //
-// System Settings › Feature & Menu Visibility groups the configurable feature keys into the same categories as the sidebar
-// (NavigationCatalog). A category is presentation only: it is never persisted, never part of a feature key and never a
-// workflow prerequisite. Moving a key between categories therefore keeps its stored enabled/disabled value. The feature keys
-// are the stable configuration keys (appsettings FeatureVisibility:*), which can differ from the display name
-// (ImplementationReview = Task Alignment Review, ImplementationTraceability = Change Traceability, SpecDrift = Documentation Drift).
+// The sidebar (NavigationCatalog) is the one registry of what a user can navigate to, and the backend's AdminService lists are the one
+// registry of configurable switches (FeatureVisibility:* keys). Which entries a switch gates is never written down by hand: it is derived by
+// evaluating the sidebar's own visibility rules (FeatureVisibilityInventory). This file only declares what cannot be derived from code:
+// switches that intentionally gate no sidebar entry and why, the lifecycle of optional and legacy switches, retired keys, and pages that are
+// reached from other pages instead of the sidebar. Declarations are checked against the code at runtime, so a stale one becomes an issue.
 
-/// <summary>One user-facing category. <paramref name="NavSectionId"/> is the sidebar section whose rows these keys gate
-/// (null when the keys have no single sidebar section, e.g. Library).</summary>
-public sealed record FeatureCategory(string Id, string Label, string? NavSectionId, IReadOnlyList<string> Keys)
+/// <summary>Lifecycle of a switch, from the code and the decisions recorded in it (not from whether a route exists).</summary>
+public enum FeatureLifecycle
 {
-    public bool Contains(string key) => Keys.Contains(key, StringComparer.OrdinalIgnoreCase);
+    /// <summary>A working page that is part of the normal product.</summary>
+    Implemented,
+    /// <summary>Working, but off by default because it depends on an optional integration or is not part of the normal workflow.</summary>
+    Optional,
+    /// <summary>Kept for compatibility; a newer page replaces it.</summary>
+    Legacy,
+    /// <summary>The switch exists in configuration but no page or sidebar entry reads it.</summary>
+    NoEffect,
 }
+
+/// <summary>What the code cannot say about one switch. <paramref name="MasterSwitch"/>: gates other switches' entries rather than its own.</summary>
+public sealed record FeatureDeclaration(string Key, FeatureLifecycle Lifecycle, string Note, string? Successor = null, bool MasterSwitch = false);
+
+/// <summary>A page that is intentionally not a sidebar entry. <paramref name="Of"/> is the sidebar route it belongs to (null for infrastructure).</summary>
+public sealed record ContextualRoute(string Template, ContextualRouteKind Kind, string? Of, string Note);
+
+public enum ContextualRouteKind { Alias, Redirect, Contextual, Infrastructure }
+
+/// <summary>A key that was removed from the product; its configuration value is ignored.</summary>
+public sealed record RetiredFeature(string Key, string Label, string Now);
 
 public static class FeatureVisibilityTaxonomy
 {
-    /// <summary>Categories in sidebar order. Each key belongs to exactly one category.</summary>
-    public static IReadOnlyList<FeatureCategory> Categories { get; } =
+    /// <summary>Switches that are not plain implemented pages. Every other configured switch is <see cref="FeatureLifecycle.Implemented"/>.</summary>
+    public static IReadOnlyList<FeatureDeclaration> Declarations { get; } =
     [
-        // What do the documents say, how good are they, how do they align, and how do they compare?
-        new("document-review", "Specifications & Planning", "document-review",
-        [
-            "SpecificationExplorer", "ConstitutionExplorer", "DataModelExplorer", "PlanExplorer", "TaskExplorer",
-            "QualityReview", "ImplementationReview", "SpecDrift",
-        ]),
-        new("library", "Library", null, ["QaArtifactLibrary", "SampleProjects"]),
-        // How are lifecycle artifacts and tracked delivery changes linked?
-        new("traceability", "Traceability & Impact", "traceability", ["ArtifactTraceability", "ImplementationTraceability"]),
-        // What does the source/implementation-oriented evidence say?
-        new("source-review", "Source & Architecture", "source-review", ["SourceAnalysis", "GeneratedDocumentationExplorer", "GeneratedDocumentationHealth", "AzureEnvironmentAnalysis"]),
-        // Impact Analysis sits in the Traceability & Impact sidebar group.
-        new("analysis", "Impact Analysis", "traceability", ["ImpactAnalysis"]),
-        // How do we assess or test the solution?
-        new("quality-testing", "Quality & Testing", "quality-testing",
-        [
-            "FrontendQualityReview", "ApiQualityReview", "IntegrationQualityReview", "CriticalE2ERegression", "BlazorWasmPerformanceReview",
-        ]),
-        // AI Change Review sits in the Source & Architecture sidebar group.
-        new("ai-review", "AI Review", "source-review", ["AiChangeReview"]),
+        new("ImplementationTraceability", FeatureLifecycle.Optional,
+            "Depends on the optional Azure DevOps integration and never counts toward workflow, coverage or readiness, so it is off by default."),
+        new("ImpactAnalysis", FeatureLifecycle.Optional, "Off by default. Release Readiness and Relationship Review use the shared canonical relations.",
+            Successor: "release-readiness"),
+        new("AiChangeReview", FeatureLifecycle.Optional, "Off by default in every shipped configuration."),
+        new("LegacyTraceabilityNavigationEnabled", FeatureLifecycle.Legacy,
+            "Shows the three legacy traceability entries (Traceability & Coverage, Traceability Suggestions, Code Traceability) when their own switches are on too.",
+            Successor: "artifact-traceability", MasterSwitch: true),
+        new("TraceabilityCoverage", FeatureLifecycle.Legacy, "Renders the same graph as Requirements Traceability.", Successor: "artifact-traceability"),
+        new("TraceabilitySuggestions", FeatureLifecycle.Legacy, "Relationship Review holds the shared review decisions.", Successor: "correlation-review"),
+        new("CodeTraceability", FeatureLifecycle.Legacy, "Change Traceability and Source Analysis cover code links.", Successor: "implementation-traceability"),
+        new("QaArtifactLibrary", FeatureLifecycle.NoEffect, "No page or sidebar entry reads this switch."),
+        new("BlazorWasmSecurityReview", FeatureLifecycle.NoEffect, "Its separate page was retired; no page reads this switch."),
+        new("BlazorWasmPerformanceReview", FeatureLifecycle.NoEffect,
+            "There is no separate page; Frontend Quality Review runs the performance checks.", Successor: "frontend-quality-review"),
+        new("EnableExtractionReview", FeatureLifecycle.NoEffect, "Switches a mode of a component that no page shows."),
+        new("EnableArchitectureView", FeatureLifecycle.NoEffect, "Switches a mode of a component that no page shows.", Successor: "integration-topology"),
     ];
 
-    /// <summary>Optional/legacy capabilities shown in their own Advanced Features group (unchanged by the taxonomy).</summary>
-    public static IReadOnlyList<string> AdvancedKeys { get; } =
+    /// <summary>Removed keys. They are not listed by the backend and their configuration values are ignored.</summary>
+    public static IReadOnlyList<RetiredFeature> Retired { get; } =
     [
-        "LegacyTraceabilityNavigationEnabled", "TraceabilityCoverage", "TraceabilitySuggestions", "CodeTraceability",
-        "EnableArchitectureView", "EnableExtractionReview",
+        new("SpecComparison", "Spec Comparison", "Documentation Drift → Changes (the old /compare links redirect there)"),
+        new("SpecificationDeltas", "Specification Deltas", "Documentation Drift"),
+        new("TaskDeltas", "Task Deltas", "Task Explorer → Changes (the old /task-deltas link redirects there)"),
     ];
 
-    /// <summary>The category of a stable feature key, or null when the key is advanced, platform or not listed.</summary>
-    public static FeatureCategory? CategoryOf(string key) => Categories.FirstOrDefault(c => c.Contains(key));
+    /// <summary>Pages with no sidebar entry, by design. Every page must be a sidebar entry or listed here (checked by the inventory).</summary>
+    public static IReadOnlyList<ContextualRoute> ContextualRoutes { get; } =
+    [
+        new("", ContextualRouteKind.Redirect, "dashboard", "The start address opens Project Quality."),
+        new("authentication/{action}", ContextualRouteKind.Infrastructure, null, "Microsoft sign-in callback."),
+        new("ai-generated-code-review", ContextualRouteKind.Alias, "code-risk-review", "Earlier address of Code Risk Review."),
+        new("change-traceability", ContextualRouteKind.Alias, "implementation-traceability", "Alternative address of Change Traceability."),
+        new("quality-review", ContextualRouteKind.Alias, "quality/document", "Earlier address of Document Quality Review."),
+        new("sample-projects", ContextualRouteKind.Alias, "demo-projects", "Earlier address of Demo Projects."),
+        new("spec-drift", ContextualRouteKind.Alias, "documentation-drift", "Earlier address of Documentation Drift."),
+        new("task-alignment-review", ContextualRouteKind.Alias, "task-alignment", "Alternative address of Task Alignment Review."),
+        new("traceability-suggestions", ContextualRouteKind.Alias, "traceability/suggestions", "Earlier address of Traceability Suggestions."),
+        new("compare", ContextualRouteKind.Redirect, "documentation-drift", "Retired Spec Comparison; redirects to Documentation Drift."),
+        new("compare/reviews", ContextualRouteKind.Redirect, "documentation-drift", "Retired list; redirects to Documentation Drift."),
+        new("compare/reviews/{id}", ContextualRouteKind.Contextual, "documentation-drift", "Detail of one stored comparison review, opened from its list."),
+        new("task-deltas", ContextualRouteKind.Redirect, "task-explorer", "Retired Task Deltas; redirects to Task Explorer → Changes."),
+        new("quality/source", ContextualRouteKind.Redirect, "source-analysis", "Earlier source quality page; redirects to Source Analysis."),
+        new("source-analysis/application-messaging", ContextualRouteKind.Contextual, "source-analysis", "Application messaging detail, opened from Source Analysis."),
+        new("implementation-review", ContextualRouteKind.Contextual, "task-explorer",
+            "Implementation Evidence Review, opened from Task Explorer and requirement evidence."),
+    ];
 
-    /// <summary>Configured entries of a category, in the category's order. Each entry keeps its own stored value.</summary>
-    public static IReadOnlyList<FeatureEntryDto> EntriesOf(FeatureCategory category, IEnumerable<FeatureEntryDto> configured)
+    public static FeatureDeclaration? Declaration(string key) =>
+        Declarations.FirstOrDefault(d => d.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+
+    public static FeatureLifecycle Lifecycle(string key) => Declaration(key)?.Lifecycle ?? FeatureLifecycle.Implemented;
+
+    public static string LifecycleLabel(FeatureLifecycle lifecycle) => lifecycle switch
     {
-        var byKey = configured.GroupBy(e => e.Key, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
-        return category.Keys.Where(byKey.ContainsKey).Select(k => byKey[k]).ToList();
-    }
-
-    /// <summary>
-    /// Sidebar rows that carry a feature key, for the Menu Synchronization check: each label is the sidebar label and each key
-    /// its visibility key. Platform rows (always on) are included so the total matches the sidebar.
-    /// </summary>
-    public static IReadOnlyList<(string Label, string Key)> MenuItems { get; } =
-    [
-        // Getting Started (Platform — always on)
-        ("Recommended Workflow",           "RecommendedWorkflow"),
-        ("User Guide",                     "UserGuide"),
-        ("Dashboard",                      "Dashboard"),
-
-        // Document Review
-        ("Specification Explorer",         "SpecificationExplorer"),
-        ("Constitution Explorer",          "ConstitutionExplorer"),
-        ("Data Model Explorer",            "DataModelExplorer"),
-        ("Plan Explorer",                  "PlanExplorer"),
-        ("Task Explorer",                  "TaskExplorer"),
-        ("Document Quality Review",        "QualityReview"),
-        ("Task Alignment Review",          "ImplementationReview"),
-        ("Documentation Drift",            "SpecDrift"),
-
-        // Library
-        ("Sample Projects",                "SampleProjects"),
-
-        // Traceability
-        ("Requirements Traceability",      "ArtifactTraceability"),
-        ("Change Traceability",            "ImplementationTraceability"),
-        // Legacy traceability — shown only when LegacyTraceabilityNavigationEnabled
-        ("Traceability & Coverage",        "TraceabilityCoverage"),
-        ("Traceability Suggestions",       "TraceabilitySuggestions"),
-        ("Code Traceability",              "CodeTraceability"),
-
-        // Source Review
-        ("Source Analysis",                "SourceAnalysis"),
-        ("Generated Documentation Explorer", "GeneratedDocumentationExplorer"),
-        ("Generated Documentation Health", "GeneratedDocumentationHealth"),
-        ("Azure Environment Analysis",     "AzureEnvironmentAnalysis"),
-
-        // Analysis
-        ("Impact Analysis",                "ImpactAnalysis"),
-
-        // Quality & Testing
-        ("Frontend Quality Review",        "FrontendQualityReview"),
-        ("API Quality Review",             "ApiQualityReview"),
-        ("Integration Quality Review",     "IntegrationQualityReview"),
-        ("Critical E2E Regression",        "CriticalE2ERegression"),
-        ("WASM Performance Review",        "BlazorWasmPerformanceReview"),
-
-        // AI Review
-        ("AI Change Review",               "AiChangeReview"),
-
-        // Admin (Platform — always on)
-        ("System Settings",                "AdminSystemSettings"),
-    ];
+        FeatureLifecycle.Optional => "Optional",
+        FeatureLifecycle.Legacy => "Legacy",
+        FeatureLifecycle.NoEffect => "No effect",
+        _ => "Implemented",
+    };
 }

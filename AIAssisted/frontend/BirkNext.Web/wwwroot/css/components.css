@@ -476,7 +476,8 @@
     flex-wrap: wrap;
 }
 
-.page-header-left { flex: 1; min-width: 0; }
+/* An 18rem basis makes the actions wrap below the title on narrow screens instead of squeezing the title into a sliver. */
+.page-header-left { flex: 1 1 18rem; min-width: 0; }
 
 .page-header-actions {
     display: flex;

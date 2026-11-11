@@ -14,7 +14,10 @@ public class AnalysisNavigationTests : BunitContext
 {
     public AnalysisNavigationTests()
     {
-        Services.AddSingleton<FeatureVisibilityService>();
+        // An installation that enables the optional Impact Analysis (off by default since the frontend fallback follows the backend's defaults).
+        var visibility = new FeatureVisibilityService();
+        visibility.ApplyLocalFlags(new FeatureVisibilityDto { ImpactAnalysis = true });
+        Services.AddSingleton(visibility);
         // SpecDrift injects IBirkNextClient; register a basic mock so DI succeeds
         // (LoadAsync catches all exceptions so a bare mock is sufficient for structure tests)
         Services.AddSingleton(new Mock<IBirkNextClient>().Object);

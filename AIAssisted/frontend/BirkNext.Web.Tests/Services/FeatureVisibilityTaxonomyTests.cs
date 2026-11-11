@@ -13,8 +13,6 @@ public sealed class FeatureVisibilityTaxonomyTests
     private static IReadOnlyList<string> SidebarLabels(string sectionId) =>
         NavigationCatalog.Sections.Single(s => s.Id == sectionId).Items.Select(i => i.Label).ToList();
 
-    private static string CategoryIdOf(string key) => FeatureVisibilityTaxonomy.CategoryOf(key)!.Id;
-
     // ── Sidebar ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -37,8 +35,9 @@ public sealed class FeatureVisibilityTaxonomyTests
         }
         // Traceability & Impact: Impact Analysis joined the group (its own key still gates it).
         // Relationship Review (shared canonical review registry) is always available at the end of the group.
-        Visible(null).Should().Equal("Requirements Traceability", "Impact Analysis", "Relationship Review", "Release Readiness", "Snapshots");
-        Visible(new FeatureVisibilityDto { ImplementationTraceability = true }).Should().Equal("Requirements Traceability", "Change Traceability", "Impact Analysis", "Relationship Review", "Release Readiness", "Snapshots");
+        // Without a backend answer the fallback uses the backend's defaults: Impact Analysis is optional and off.
+        Visible(null).Should().Equal("Requirements Traceability", "Relationship Review", "Release Readiness", "Snapshots");
+        Visible(new FeatureVisibilityDto { ImplementationTraceability = true, ImpactAnalysis = true }).Should().Equal("Requirements Traceability", "Change Traceability", "Impact Analysis", "Relationship Review", "Release Readiness", "Snapshots");
         Visible(new FeatureVisibilityDto { ImplementationTraceability = false, ImpactAnalysis = false }).Should().Equal("Requirements Traceability", "Relationship Review", "Release Readiness", "Snapshots");
         new FeatureVisibilityDto().ImplementationTraceability.Should().BeFalse("no explicit value means disabled");
         SidebarLabels("traceability").Should().NotContain(["Task Alignment Review", "Documentation Drift"], "document reviews stay in Specifications & Planning").And.Contain("Impact Analysis");
@@ -80,113 +79,22 @@ public sealed class FeatureVisibilityTaxonomyTests
         routes.Values.Should().OnlyHaveUniqueItems();
     }
 
-    // ── Feature & Menu Visibility categories ────────────────────────────────────────────────────────────────────────────
-
-    [Theory]
-    [InlineData("QualityReview", "document-review")]          // Document Quality Review
-    [InlineData("ImplementationReview", "document-review")]   // Task Alignment Review
-    [InlineData("GeneratedDocumentationHealth", "source-review")]
-    [InlineData("SpecDrift", "document-review")]              // Documentation Drift
-    [InlineData("ArtifactTraceability", "traceability")]      // Requirements Traceability
-    [InlineData("ImplementationTraceability", "traceability")] // Change Traceability
-    [InlineData("SourceAnalysis", "source-review")]
-    [InlineData("AzureEnvironmentAnalysis", "source-review")]
-    [InlineData("ImpactAnalysis", "analysis")]
-    public void Stable_keys_resolve_to_the_new_categories(string key, string category)
-    {
-        CategoryIdOf(key).Should().Be(category);
-    }
+    // ── Feature Visibility declarations ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Analysis_is_no_longer_a_catch_all_and_quality_holds_no_document_review()
-    {
-        var analysis = FeatureVisibilityTaxonomy.Categories.Single(c => c.Id == "analysis");
-        analysis.Keys.Should().Equal("ImpactAnalysis");
-        FeatureVisibilityTaxonomy.Categories.Single(c => c.Id == "quality-testing").Keys.Should().NotContain("QualityReview");
-        FeatureVisibilityTaxonomy.Categories.Select(c => c.Label).Should().Contain(["Specifications & Planning", "Traceability & Impact", "Source & Architecture", "Quality & Testing"])
-            .And.NotContain("Review", "the explorers' category is Specifications & Planning")
-            .And.NotContain("Quality", "the quality category is Quality & Testing, as in the sidebar");
-    }
-
-    [Fact]
-    public void Every_key_has_one_category_and_none_is_also_advanced_or_retired()
-    {
-        var keys = FeatureVisibilityTaxonomy.Categories.SelectMany(c => c.Keys).ToList();
-        keys.Select(k => k.ToUpperInvariant()).Should().OnlyHaveUniqueItems("a feature is never duplicated across categories");
-        keys.Intersect(FeatureVisibilityTaxonomy.AdvancedKeys, StringComparer.OrdinalIgnoreCase).Should().BeEmpty();
-        keys.Should().NotContain(["SpecComparison", "SpecificationDeltas", "TaskDeltas"], "retired features stay retired");
-    }
-
-    [Fact]
-    public void Every_key_is_an_existing_stable_configuration_key()
+    public void Every_declared_key_is_an_existing_stable_configuration_key_declared_once()
     {
         var dtoKeys = typeof(FeatureVisibilityDto).GetProperties().Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
-        FeatureVisibilityTaxonomy.Categories.SelectMany(c => c.Keys).Concat(FeatureVisibilityTaxonomy.AdvancedKeys)
-            .Concat(FeatureVisibilityTaxonomy.MenuItems.Select(m => m.Key))
-            .Should().OnlyContain(k => dtoKeys.Contains(k), "no new keys: ImplementationReview, ImplementationTraceability and SpecDrift keep their names");
+        FeatureVisibilityTaxonomy.Declarations.Select(d => d.Key).Should().OnlyContain(k => dtoKeys.Contains(k), "no new keys: stable keys keep their names")
+            .And.OnlyHaveUniqueItems();
+        FeatureVisibilityTaxonomy.Declarations.Select(d => d.Key).Should().NotContain(FeatureVisibilityTaxonomy.Retired.Select(r => r.Key), "retired keys are not switches");
     }
 
-    /// <summary>
-    /// The decisive consistency check: switching a key off hides exactly the sidebar rows it gates, and those rows sit in the sidebar
-    /// section of the key's Feature Visibility category. A key can therefore never be shown in one category and gate a row in another.
-    /// </summary>
     [Fact]
-    public void Each_category_gates_rows_only_in_its_matching_sidebar_section()
+    public void Every_successor_is_a_sidebar_entry()
     {
-        var allOn = new FeatureVisibilityDto();
-        foreach (var flag in typeof(FeatureVisibilityDto).GetProperties().Where(p => p.PropertyType == typeof(bool))) flag.SetValue(allOn, true);
-        var all = new FeatureVisibilityService();
-        all.ApplyLocalFlags(allOn);
-        var rows = NavigationCatalog.Sections.SelectMany(s => s.Items.Select(i => (Section: s.Id, Item: i))).ToList();
-
-        foreach (var category in FeatureVisibilityTaxonomy.Categories.Where(c => c.NavSectionId is not null))
-        foreach (var key in category.Keys)
-        {
-            var off = new FeatureVisibilityDto();
-            foreach (var flag in typeof(FeatureVisibilityDto).GetProperties().Where(p => p.PropertyType == typeof(bool))) flag.SetValue(off, true);
-            typeof(FeatureVisibilityDto).GetProperty(key)!.SetValue(off, false);
-            var without = new FeatureVisibilityService();
-            without.ApplyLocalFlags(off);
-
-            var gated = rows.Where(r => r.Item.Visible(all) && !r.Item.Visible(without)).ToList();
-            gated.Should().OnlyContain(r => r.Section == category.NavSectionId, $"{key} is listed under {category.Label}");
-            if (key != "BlazorWasmPerformanceReview") // a configurable review without a sidebar row
-                gated.Should().NotBeEmpty($"{key} gates a sidebar row");
-        }
-    }
-
-    // ── Counts ──────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Category_entries_and_counts_derive_from_membership_and_keep_each_stored_value()
-    {
-        var configured = new List<FeatureEntryDto>
-        {
-            new() { Key = "SpecificationExplorer", Label = "Specification Explorer", Value = true },
-            new() { Key = "SpecDrift", Label = "Documentation Drift", Value = false },
-            new() { Key = "ImplementationReview", Label = "Task Alignment Review", Value = true },
-            new() { Key = "ArtifactTraceability", Label = "Requirements Traceability", Value = true },
-            new() { Key = "ImpactAnalysis", Label = "Impact Analysis", Value = false },
-        };
-        var document = FeatureVisibilityTaxonomy.Categories.Single(c => c.Id == "document-review");
-
-        var entries = FeatureVisibilityTaxonomy.EntriesOf(document, configured);
-
-        entries.Select(e => e.Label).Should().Equal("Specification Explorer", "Task Alignment Review", "Documentation Drift");
-        entries.Count(e => e.Value).Should().Be(2);
-        entries.Single(e => e.Key == "SpecDrift").Value.Should().BeFalse("moving a category never resets a disabled feature");
-        FeatureVisibilityTaxonomy.Categories.Sum(c => FeatureVisibilityTaxonomy.EntriesOf(c, configured).Count).Should().Be(configured.Count, "each feature counted once");
-    }
-
-    // ── Menu synchronization ────────────────────────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Menu_registry_lists_each_feature_once_and_covers_every_category_key()
-    {
-        var menu = FeatureVisibilityTaxonomy.MenuItems;
-        menu.Select(m => m.Key).Should().OnlyHaveUniqueItems();
-        menu.Select(m => m.Label).Should().OnlyHaveUniqueItems();
-        menu.Select(m => m.Key).Should().Contain(FeatureVisibilityTaxonomy.Categories.Where(c => c.NavSectionId is not null).SelectMany(c => c.Keys),
-            "every key that gates a sidebar section is a menu item");
+        var routes = NavigationCatalog.Sections.SelectMany(s => s.Items).Select(i => i.Route).ToHashSet();
+        FeatureVisibilityTaxonomy.Declarations.Where(d => d.Successor is not null).Should().OnlyContain(d => routes.Contains(d.Successor!));
+        FeatureVisibilityTaxonomy.ContextualRoutes.Where(r => r.Of is not null).Should().OnlyContain(r => routes.Contains(r.Of!));
     }
 }

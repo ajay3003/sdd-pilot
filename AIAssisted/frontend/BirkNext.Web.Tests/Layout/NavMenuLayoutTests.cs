@@ -276,7 +276,7 @@ public sealed class NavMenuLayoutTests : BunitContext
     [InlineData("getting-started", new[] { "dashboard", "getting-started", "system-understanding", "project-import", "sources", "demo-projects", NavigationCatalog.TargetEnvironmentsRoute })]
     [InlineData("delivery-reporting", new[] { NavigationCatalog.DeliveryOverviewRoute, "delivery-reporting" })]
     [InlineData("document-review", new[] { "specification-explorer", "constitution-explorer", "data-model-explorer", "plan-explorer", "task-explorer", "quality/document", "task-alignment", "documentation-drift" })]
-    [InlineData("traceability", new[] { "artifact-traceability", "impact-analysis", "correlation-review", "release-readiness", "snapshots" })]
+    [InlineData("traceability", new[] { "artifact-traceability", "correlation-review", "release-readiness", "snapshots" })] // Impact Analysis is optional and off by default
     [InlineData("source-review", new[] { "source-analysis", "schema-studio", "generated-documentation-explorer", "generated-documentation-health", "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
     [InlineData("quality-testing", new[] { "test-coverage-review", "code-risk-review", "test-data", "api-quality-review/contracts", "integration-suites", "execution-results", "parquet-viewer", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "performance-test-review", "critical-e2e-regression" })]
     [InlineData("extensions", new[] { "security-classification-review", "extensions/skolenaervaer" })]
@@ -291,7 +291,7 @@ public sealed class NavMenuLayoutTests : BunitContext
     [Fact]
     public void TraceabilitySection_ListsRequirementsThenChangeTraceability_WhenChangeTraceabilityIsEnabled()
     {
-        Services.GetRequiredService<FeatureVisibilityService>().ApplyLocalFlags(new FeatureVisibilityDto { ImplementationTraceability = true });
+        Services.GetRequiredService<FeatureVisibilityService>().ApplyLocalFlags(new FeatureVisibilityDto { ImplementationTraceability = true, ImpactAnalysis = true });
         var cut = Render<NavMenu>();
         cut.Find("a[href='implementation-traceability']").GetAttribute("title").Should().StartWith("Change Traceability: Azure DevOps work items");
 

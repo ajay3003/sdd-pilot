@@ -86,9 +86,10 @@ public class NavMenuTests : BunitContext
     [Fact]
     public void Navigation_ShowsLegacyTraceabilityGroup_WhenFeatureFlagEnabled()
     {
+        // The legacy group needs its master switch and each entry's own switch (Suggestions and Code Traceability are off by default).
         Services.GetRequiredService<FeatureVisibilityService>().ApplyLocalFlags(new FeatureVisibilityDto
         {
-            LegacyTraceabilityNavigationEnabled = true
+            LegacyTraceabilityNavigationEnabled = true, TraceabilitySuggestions = true, CodeTraceability = true
         });
 
         var cut = Render<NavMenu>();
@@ -109,9 +110,10 @@ public class NavMenuTests : BunitContext
     [Fact]
     public void TraceabilityNavigation_RendersCorrectHierarchy_WhenFeatureFlagEnabled()
     {
+        // The legacy group needs its master switch and each entry's own switch (Suggestions and Code Traceability are off by default).
         Services.GetRequiredService<FeatureVisibilityService>().ApplyLocalFlags(new FeatureVisibilityDto
         {
-            LegacyTraceabilityNavigationEnabled = true
+            LegacyTraceabilityNavigationEnabled = true, TraceabilitySuggestions = true, CodeTraceability = true
         });
 
         var cut = Render<NavMenu>();

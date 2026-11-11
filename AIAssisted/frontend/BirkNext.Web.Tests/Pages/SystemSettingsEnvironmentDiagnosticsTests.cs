@@ -408,7 +408,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
         FindButton(cut, "Open Feature Visibility")!.Click();
 
         cut.Find(".ss-nav-item.is-active").TextContent.Should().Contain("Feature Visibility");
-        cut.Markup.Should().Contain("Feature &amp; Menu Visibility");
+        cut.FindAll(".fvp-title, .settings-card-title").Should().Contain(e => e.TextContent == "Feature Visibility", "the section heading is Feature Visibility");
     }
 
     private IRenderedComponent<SystemSettings> EnterFqeEditMode()

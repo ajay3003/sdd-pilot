@@ -182,7 +182,7 @@ public sealed class GeneratedDocumentationExplorerTests : BunitContext
     [Fact]
     public void Feature_is_a_source_review_feature_enabled_by_default()
     {
-        FeatureVisibilityTaxonomy.Categories.Single(c => c.Id == "source-review").Keys.Should().Contain("GeneratedDocumentationExplorer");
+        NavigationCatalog.Sections.Single(s => s.Id == "source-review").Items.Should().Contain(i => i.Route == NavigationCatalog.GeneratedDocumentationExplorerRoute);
         new FeatureVisibilityDto().GeneratedDocumentationExplorer.Should().BeTrue();
         NavigationCatalog.GeneratedDocumentationExplorerRoute.Should().Be("generated-documentation-explorer");
     }
