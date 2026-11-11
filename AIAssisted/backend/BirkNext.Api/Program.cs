@@ -127,9 +127,27 @@ builder.Services.AddAuthorization(options =>
         policy.AddRequirements(new BirkNext.Api.Services.ActiveEventTesting.ActiveEventPermissionRequirement()));
     options.AddPolicy(BirkNext.Api.Services.ActiveEventTesting.BirkNextPermissions.IntegrationConfigurationWritePolicy, policy =>
         policy.AddRequirements(new BirkNext.Api.Services.ActiveEventTesting.IntegrationConfigurationWriteRequirement()));
+    options.AddPolicy(BirkNext.Api.Services.WorkspaceTransfer.WorkspaceTransferPermissions.Policy, policy =>
+        policy.AddRequirements(new BirkNext.Api.Services.WorkspaceTransfer.WorkspaceTransferRequirement()));
 });
+builder.Services.AddSingleton<IAuthorizationHandler, BirkNext.Api.Services.WorkspaceTransfer.WorkspaceTransferHandler>();
 
 var databaseConnectionString = DatabaseConnection.GetConnectionString(builder.Configuration);
+
+// Backup & Transfer — full backup / isolated restore (PostgreSQL-native dump + managed files, always encrypted). Docs: docs/operations/birknext-backup-recovery.md.
+builder.Services.AddSingleton(sp => builder.Configuration.GetSection("Backup:PostgresTools").Get<BirkNext.Api.Services.WorkspaceTransfer.PostgresToolOptions>() ?? new());
+builder.Services.AddSingleton<BirkNext.Api.Services.WorkspaceTransfer.PostgresTools>();
+builder.Services.AddSingleton<BirkNext.Api.Services.WorkspaceTransfer.ManagedFileStores>();
+builder.Services.AddSingleton(sp =>
+{
+    var options = builder.Configuration.GetSection("Backup").Get<BirkNext.Api.Services.WorkspaceTransfer.FullBackupOptions>() ?? new();
+    var environment = sp.GetRequiredService<IWebHostEnvironment>();
+    var directory = options.Directory is { Length: > 0 } d ? d : System.IO.Path.Combine(environment.ContentRootPath, "App_Data", "backups");
+    var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
+    return new BirkNext.Api.Services.WorkspaceTransfer.FullBackupService(databaseConnectionString, sp.GetRequiredService<BirkNext.Api.Services.WorkspaceTransfer.PostgresTools>(),
+        sp.GetRequiredService<BirkNext.Api.Services.WorkspaceTransfer.ManagedFileStores>(), options, directory,
+        () => BirkNext.Api.Services.WorkspaceTransfer.CodeMigrations.Read(scopeFactory), sp.GetRequiredService<ILogger<BirkNext.Api.Services.WorkspaceTransfer.FullBackupService>>());
+});
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(databaseConnectionString));

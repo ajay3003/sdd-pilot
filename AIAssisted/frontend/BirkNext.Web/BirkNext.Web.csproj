@@ -127,6 +127,7 @@
     <Compile Include="../../shared/IntegrationSuiteContracts.cs" Link="Models/IntegrationSuiteContracts.cs" />
     <Compile Include="../../shared/CompositeSuiteContracts.cs" Link="Models/CompositeSuiteContracts.cs" />
     <Compile Include="../../shared/ExecutionExplorerContracts.cs" Link="Models/ExecutionExplorerContracts.cs" />
+    <Compile Include="../../shared/WorkspaceTransferContracts.cs" Link="Models/WorkspaceTransferContracts.cs" />
     <Compile Include="../../shared/ContractTestDataContracts.cs" Link="Models/ContractTestDataContracts.cs" />
     <Compile Include="../../shared/PerformanceLocalExecutionContracts.cs" Link="Models/PerformanceLocalExecutionContracts.cs" />
     <Compile Include="../../shared/PerformanceResourceContracts.cs" Link="Models/PerformanceResourceContracts.cs" />

@@ -49,6 +49,7 @@ public sealed class SourceIngestionOwnershipTests
             ["Services/ProjectImport/ProjectCompatibilityDiagnosticService.cs"] = "creates synthetic in-memory ZIP fixtures only; every fixture is still read by the canonical bounded archive reader",
             ["Services/MarkdownDiagnosticsService.cs"] = "creates synthetic in-memory Markdown ZIP fixtures only; every fixture is still read by the canonical bounded archive reader",
             ["Services/ExecutionEvidence/ExecutionEvidenceManagement.cs"] = "writes the redacted execution-evidence export ZIP of selected runs (ZipArchiveMode.Create); never reads an archive",
+            ["Services/WorkspaceTransfer/TransferArchive.cs"] = "Backup & Transfer: writes and reads BirkNext's own backup/package format (manifest, hashes, allow-listed folders) with the same path, symlink, duplicate, size and ratio checks; never source input, never Source Analysis",
         };
         Sources().Where(f => f.Text.Contains("new ZipArchive(", StringComparison.Ordinal)).Select(f => f.Rel)
             .Should().BeEquivalentTo(allowed.Keys, "source bytes come from Source Analysis; no review opens archives of its own");
