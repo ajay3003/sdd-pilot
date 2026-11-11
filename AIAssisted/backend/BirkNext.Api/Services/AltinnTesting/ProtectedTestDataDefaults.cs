@@ -31,7 +31,7 @@ public sealed class ProtectedTestDataDefaultsStore
     private List<ProtectedDefaultValue> _values;
 
     public ProtectedTestDataDefaultsStore(IHostEnvironment environment, ILogger<ProtectedTestDataDefaultsStore> logger)
-        : this(Path.Combine(environment.ContentRootPath, "App_Data", "test-data"), logger) { }
+        : this(System.IO.Path.Combine(BirkNext.Api.Services.AppDataLocation.Root(environment), "test-data"), logger) { }
 
     public ProtectedTestDataDefaultsStore(string directory, ILogger<ProtectedTestDataDefaultsStore> logger)
     {

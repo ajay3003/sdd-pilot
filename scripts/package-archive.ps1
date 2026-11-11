@@ -48,7 +48,8 @@ try {
     $manifest = Read-BirkNextJson (Join-Path $root 'build-manifest.json')
     if (-not $manifest) { Write-Host '[FAIL] build-manifest.json is missing: the archive name comes from it' -ForegroundColor Red; exit 1 }
     $name = $manifest.artifactIdentity.archive
-    if ($name -notmatch '^BirkNext-[0-9]+\.[0-9]+\.[0-9]+(-(ci\.[0-9]+|local|unknown))?\.zip$') { Write-Host "[FAIL] Unexpected archive name '$name'" -ForegroundColor Red; exit 1 }
+    # BirkNext-<version>.zip (source-style package) or BirkNext-Tester-Windows-x64-<version>.zip (TesterNative package).
+    if ($name -notmatch '^BirkNext-(Tester-Windows-x64-)?[0-9]+\.[0-9]+\.[0-9]+(-(ci\.[0-9]+|local|unknown))?\.zip$') { Write-Host "[FAIL] Unexpected archive name '$name'" -ForegroundColor Red; exit 1 }
     New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
     $zip = Join-Path (Resolve-Path $OutDir).Path $name
     if (Test-Path -LiteralPath $zip) { throw "Archive already exists (never overwritten): $zip" }

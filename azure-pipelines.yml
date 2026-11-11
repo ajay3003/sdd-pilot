@@ -273,3 +273,50 @@ jobs:
         targetPath: '$(Build.ArtifactStagingDirectory)/archive'
         artifact: 'birknext-tester-package-archive'
         publishLocation: 'pipeline'
+
+# Windows Tester Package (TesterNative runtime profile): self-contained backend and launcher, the frontend, the pinned native PostgreSQL and k6
+# from AIAssisted/versioning/native-runtime.lock.json (official upstream URLs, SHA-256 verified; nothing else is accepted), licenses and
+# manifests, archived as BirkNext-Tester-Windows-x64-<build version>.zip. The existing package above is unchanged. The isolated startup check
+# runs the packaged launcher against a throwaway data folder on the agent (first-run database, migrations, health, clean stop).
+- job: BuildWindowsTesterPackage
+  displayName: 'Build, start-check and publish the Windows Tester Package (TesterNative)'
+  pool:
+    vmImage: windows-latest
+  timeoutInMinutes: 60
+  steps:
+    - task: UseDotNet@2
+      displayName: 'Install .NET SDK'
+      inputs:
+        packageType: sdk
+        version: '8.0.x'
+
+    - pwsh: ./scripts/resolve-build-identity.ps1 -OutDir "$(Build.ArtifactStagingDirectory)/identity"
+      displayName: 'Resolve the build identity'
+
+    - pwsh: |
+        ./scripts/build-tester-package.ps1 -OutDir "$(Build.ArtifactStagingDirectory)/tester" -DownloadCache "$(Agent.TempDirectory)/native-runtime" `
+          -IdentityFile "$(Build.ArtifactStagingDirectory)/identity/build-identity.json" -AllowDownload
+        if ($LASTEXITCODE -ne 0) { throw "Tester package build failed ($LASTEXITCODE)." }
+      displayName: 'Build the Tester Package from pinned inputs'
+
+    - powershell: |
+        $ErrorActionPreference = "Stop"
+        $zip = Get-ChildItem "$(Build.ArtifactStagingDirectory)\tester\archive" -Filter "BirkNext-Tester-Windows-x64-*.zip" | Select-Object -First 1
+        powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\package-archive.ps1" -Verify -Archive $zip.FullName
+        if ($LASTEXITCODE -ne 0) { throw "Archive checksum failed." }
+        $clean = "C:\bn-tester"; $data = "C:\bn-tester-data"
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [IO.Compression.ZipFile]::ExtractToDirectory($zip.FullName, $clean)
+        & "$clean\Start-BirkNext.exe" --validate --data-dir $data
+        if ($LASTEXITCODE -ne 0) { throw "Start-BirkNext.exe --validate failed." }
+        & "$clean\Start-BirkNext.exe" --no-browser --data-dir $data --exit-after 15
+        if ($LASTEXITCODE -ne 0) { throw "Start-BirkNext.exe did not start and stop cleanly." }
+        if (-not (Test-Path "$data\config\cluster.json")) { throw "No database cluster was created." }
+      displayName: 'Offline package inspection and isolated startup check'
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish the Windows Tester Package archive and checksum'
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)/tester/archive'
+        artifact: 'birknext-windows-tester-package'
+        publishLocation: 'pipeline'

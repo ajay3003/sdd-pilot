@@ -111,6 +111,14 @@
     <ReviewDisclosure Text="Advanced details: diagnostics and reset" CollapseText="Hide advanced details" TestId="ug-settings-advanced">
         <p>Project Compatibility runs generated archive scenarios against the same archive reader and discovery as Project Import, in memory, without importing anything. Performance Test Engines describes host capability; Performance Test Review describes a project’s tests. Reset Local Data clears workspaces, artifacts, snapshots, Target Environments (restored to defaults), integration catalogs, review/test results, performance history, Critical E2E flows and cached browser state; installation-level configuration is preserved.</p>
     </ReviewDisclosure>
+    <article class="ug-card" id="runtime-profiles"><h3>Runtime &amp; Environment: how this BirkNext runs</h3>
+        <ul>
+            <li>A <strong>runtime profile</strong> says where BirkNext's database and its k6 performance-test runner come from. It is not a user role: every profile has the same features, data model and rules.</li>
+            <li><strong>Tester (native Windows)</strong> — the Windows Tester Package started with <code>Start-BirkNext.exe</code>: a local PostgreSQL bundled with the package and managed for your Windows user, and the bundled <code>k6.exe</code>. No Podman, Docker, WSL2 or Hyper-V.</li>
+            <li><strong>Developer (containers)</strong> — a source checkout started with <code>scripts/start-local.ps1</code>: PostgreSQL and k6 in Podman containers.</li>
+            <li>The launcher sets the profile; it cannot be changed from the browser while BirkNext runs, and BirkNext never switches databases or falls back to another profile when something is unavailable. The two profiles keep separate databases.</li>
+            <li>The card shows the database server version reported by the server itself and whether the k6 runner is available. Performance tests never run automatically.</li>
+        </ul></article>
 </section>
 
 <section id="versioning" class="ug-section ug-topic" data-topic="versioning" aria-labelledby="versioning-title">

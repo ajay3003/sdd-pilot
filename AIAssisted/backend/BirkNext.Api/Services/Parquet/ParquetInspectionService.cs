@@ -35,7 +35,7 @@ public sealed partial class ParquetInspectionService(AppDbContext db, ExecutionE
 
     private static readonly ConcurrentDictionary<Guid, (ParquetFile File, ParquetOverview Overview)> Cache = new();
     private DateTimeOffset Now => (clock ?? TimeProvider.System).GetUtcNow();
-    private string Root => Path.Combine(environment.ContentRootPath, "App_Data", "parquet-sessions");
+    private string Root => System.IO.Path.Combine(BirkNext.Api.Services.AppDataLocation.Root(environment), "parquet-sessions");
     private string FilePath(Guid id) => Path.Combine(Root, id.ToString("N") + ".parquet");
     private string MetaPath(Guid id) => Path.Combine(Root, id.ToString("N") + ".json");
 

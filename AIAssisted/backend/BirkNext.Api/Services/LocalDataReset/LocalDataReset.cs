@@ -43,7 +43,7 @@ public sealed class LocalDataResetState
     public sealed record Snapshot(int Epoch, DateTimeOffset? LastResetAt, Dictionary<string, int> CdcPersonPkFloors, Dictionary<string, long>? SyntheticIdentityFloors = null);
 
     public LocalDataResetState(IHostEnvironment environment, IConfiguration configuration)
-        : this(configuration["LocalDataReset:StatePath"] is { Length: > 0 } configured ? configured : Path.Combine(environment.ContentRootPath, "App_Data", "local-data-reset.json")) { }
+        : this(configuration["LocalDataReset:StatePath"] is { Length: > 0 } configured ? configured : System.IO.Path.Combine(BirkNext.Api.Services.AppDataLocation.Root(environment), "local-data-reset.json")) { }
 
     public LocalDataResetState(string path)
     {

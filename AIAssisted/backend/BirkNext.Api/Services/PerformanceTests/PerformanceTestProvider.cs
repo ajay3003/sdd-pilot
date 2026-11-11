@@ -22,6 +22,12 @@ public sealed record PerformanceTestOptions
     public bool AllowSoakTest { get; init; } = true;
     /// <summary>Container execution of providers (Podman). k6 is never part of the BirkNext images or repository.</summary>
     public PerformanceContainerOptions Container { get; init; } = new();
+    /// <summary>Which execution runtime runs k6: <c>Container</c> (Podman, the developer default) or <c>Native</c> (the Tester Package's bundled k6.exe).</summary>
+    public string Runner { get; init; } = Runners.Container;
+    /// <summary>The Native runner's pinned executable.</summary>
+    public PerformanceNativeOptions Native { get; init; } = new();
+    public static class Runners { public const string Container = "Container", Native = "Native"; }
+    public bool UsesNativeRunner => string.Equals(Runner, Runners.Native, StringComparison.OrdinalIgnoreCase);
     /// <summary>Resource Stability observation: approved targets, sampling bounds and the per-component sample cap.</summary>
     public BirkNext.Api.Services.PerformanceTests.Resources.PerformanceResourceOptions Resources { get; init; } = new();
     /// <summary>Extra time beyond the workload before the provider process is killed.</summary>
@@ -56,6 +62,8 @@ public sealed record PerformanceTestOptions
             AllowStressTest = s.GetValue("AllowStressTest", d.AllowStressTest),
             AllowSoakTest = s.GetValue("AllowSoakTest", d.AllowSoakTest),
             Container = PerformanceContainerOptions.From(s.GetSection("Container")),
+            Runner = ResolveRunner(BirkNext.BuildInfo.RuntimeProfiles.Parse(configuration[BirkNext.BuildInfo.RuntimeProfiles.ConfigurationKey]).Profile, s.GetValue<string?>("Runner")),
+            Native = new PerformanceNativeOptions { K6Path = s.GetValue<string?>("Native:K6Path"), K6Sha256 = s.GetValue<string?>("Native:K6Sha256") },
             Resources = BirkNext.Api.Services.PerformanceTests.Resources.PerformanceResourceOptions.From(s.GetSection("Resources")),
             ProviderTimeoutGraceSeconds = Math.Clamp(s.GetValue("ProviderTimeoutGraceSeconds", d.ProviderTimeoutGraceSeconds), 10, 1800),
             StartupTimeoutSeconds = Math.Clamp(s.GetValue("StartupTimeoutSeconds", d.StartupTimeoutSeconds), 15, 1800),
@@ -69,6 +77,22 @@ public sealed record PerformanceTestOptions
         };
     }
 
+    /// <summary>
+    /// The k6 runner of a runtime profile: TesterNative runs the bundled k6.exe and never a container; DeveloperContainer keeps the container
+    /// runner unless Native is configured explicitly. An unknown runner, or Container under TesterNative, stops startup (no silent fallback).
+    /// </summary>
+    public static string ResolveRunner(BirkNext.BuildInfo.RuntimeProfile? profile, string? configured)
+    {
+        var value = configured?.Trim();
+        if (string.IsNullOrEmpty(value)) return profile == BirkNext.BuildInfo.RuntimeProfile.TesterNative ? Runners.Native : Runners.Container;
+        if (string.Equals(value, Runners.Native, StringComparison.OrdinalIgnoreCase)) return Runners.Native;
+        if (!string.Equals(value, Runners.Container, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Unknown PerformanceTests:Runner '{value}'. Use Container or Native.");
+        if (profile == BirkNext.BuildInfo.RuntimeProfile.TesterNative)
+            throw new InvalidOperationException("The TesterNative runtime profile never runs k6 in a container: remove PerformanceTests:Runner=Container.");
+        return Runners.Container;
+    }
+
     public PerformanceSafetyLimits Limits(PerformanceTestSafetyPolicy? policy) => new(
         Math.Min(MaxVirtualUsers, policy?.MaxVirtualUsers ?? int.MaxValue),
         Math.Min(MaxRequestsPerSecond, policy?.MaxRequestsPerSecond ?? double.MaxValue),
@@ -76,6 +100,13 @@ public sealed record PerformanceTestOptions
         Math.Min(MaxSoakDurationSeconds, policy?.MaxDurationSeconds ?? int.MaxValue),
         Math.Min(MaxTotalRequests, policy?.MaxTotalRequests ?? long.MaxValue),
         AllowStressTest, AllowSoakTest);
+}
+
+/// <summary><c>PerformanceTests:Native</c>: the bundled k6 executable (full path) and its pinned SHA-256; set by the Tester Package launcher.</summary>
+public sealed record PerformanceNativeOptions
+{
+    public string? K6Path { get; init; }
+    public string? K6Sha256 { get; init; }
 }
 
 /// <summary>

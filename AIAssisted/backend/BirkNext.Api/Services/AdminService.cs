@@ -506,7 +506,7 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
     /// <summary>Public client values only (no secret exists for this sign-in), merged into <see cref="SignInSettingsFile"/>; other keys kept.</summary>
     private async Task<(bool Success, string Message)> SaveMicrosoftSignInAsync(SaveMicrosoftSignInSettings signIn)
     {
-        var path = System.IO.Path.Combine(_env.ContentRootPath, SignInSettingsFile);
+        var path = BirkNext.Api.Services.AppDataLocation.SignInSettingsPath(_env.ContentRootPath);
         var section = BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions.SectionName;
         JsonObject root;
         try { root = File.Exists(path) ? JsonNode.Parse(await File.ReadAllTextAsync(path))?.AsObject() ?? new JsonObject() : new JsonObject(); }

@@ -47,7 +47,7 @@ public sealed class AuthoredTestDataStore
     private List<AuthoredTestDataResource> _resources;
 
     public AuthoredTestDataStore(IHostEnvironment environment, TimeProvider? clock = null)
-        : this(Path.Combine(environment.ContentRootPath, "App_Data", "test-data"), clock) { }
+        : this(System.IO.Path.Combine(BirkNext.Api.Services.AppDataLocation.Root(environment), "test-data"), clock) { }
 
     public AuthoredTestDataStore(string directory, TimeProvider? clock = null)
     {

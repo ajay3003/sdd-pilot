@@ -1,0 +1,53 @@
+@using BirkNext.BuildInfo
+@using BirkNext.Web.Services
+@inject IServiceProvider ServiceProvider
+
+@* Runtime & Environment: the runtime profile this installation was started with and what it actually runs on, read from the backend
+   (database server version from the server itself, the k6 runner's real availability). Read-only by design: the profile is chosen by the
+   launcher and never switched from the browser. No secrets, connection strings or user paths are shown. *@
+<section class="rte" aria-labelledby="rte-heading" data-testid="rte" data-profile="@_info?.Profile" aria-busy="@(_loading ? "true" : "false")">
+    <h2 id="rte-heading" class="rte-title">Runtime &amp; Environment <BirkNext.Web.Components.HelpLink Topic="runtime-profiles" Text="What the runtime profile means" /></h2>
+    @if (_info is { } i)
+    {
+        <div class="rte-summary">
+            <span class="rte-profile" data-testid="rte-profile">@i.ProfileName</span>
+            <span class="rte-pill rte-neutral" data-testid="rte-distribution">@i.Distribution</span>
+        </div>
+        <p class="rte-note" data-testid="rte-source">@i.ProfileSource. The profile cannot be changed while BirkNext runs.</p>
+        <ul class="rte-rows">
+            <li data-testid="rte-database"><span class="rte-k">Database</span><span class="rte-v">@i.DatabaseMode</span></li>
+            <li data-testid="rte-database-status" data-status="@i.DatabaseStatus"><span class="rte-k">PostgreSQL</span>
+                <span class="rte-pill rte-@(i.DatabaseStatus == "Connected" ? "ok" : "bad")">@i.DatabaseStatus</span>
+                <span class="rte-v">@(i.DatabaseServerVersion is { } v ? $"server {v}" : "version unknown")</span></li>
+            <li data-testid="rte-k6" data-status="@i.PerformanceRunnerAvailability"><span class="rte-k">Performance tests</span>
+                <span class="rte-v">@i.PerformanceRunner@(i.K6Version is { } k ? $" · k6 {k}" : "")</span>
+                <span class="rte-pill rte-@(i.PerformanceRunnerAvailability == "Available" ? "ok" : "warn")" data-testid="rte-k6-availability">@AvailabilityLabel(i.PerformanceRunnerAvailability)</span>
+                @if (i.PerformanceRunnerAvailability != "Available") { <span class="rte-sub" data-testid="rte-k6-detail">@i.PerformanceRunnerDetail</span> }</li>
+        </ul>
+        @foreach (var n in i.Notes) { <p class="rte-note rte-warn-text" data-testid="rte-runtime-note">@n</p> }
+        <p class="rte-note">Database schema and the application build are shown under Application information.</p>
+    }
+    else
+    {
+        <p class="rte-note" data-testid="rte-unavailable">@(_loading ? "Loading…" : _error ?? "Unknown.")</p>
+    }
+</section>
+
+@code {
+    private RuntimeEnvironmentInfo? _info;
+    private string? _error;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        (_info, _error) = ServiceProvider.GetService(typeof(IBuildInfoApiService)) is IBuildInfoApiService api
+            ? await api.GetRuntimeAsync() : (null, "The runtime information is not available in this host.");
+        _loading = false;
+    }
+
+    private static string AvailabilityLabel(string a) => a switch
+    {
+        "Available" => "Available", "ImageMissing" => "k6 image missing", "RuntimeUnavailable" => "Runtime unavailable", "VersionUnsupported" => "Unsupported version",
+        "Misconfigured" => "Misconfigured", _ => "Unavailable",
+    };
+}

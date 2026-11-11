@@ -39,7 +39,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 // Microsoft sign-in settings saved from System Settings (non-secret, BirkNext's own file in App_Data; see AdminService.SignInSettingsFile).
-builder.Configuration.AddJsonFile(BirkNext.Api.Services.AdminService.SignInSettingsFile, optional: true, reloadOnChange: true);
+builder.Configuration.AddJsonFile(BirkNext.Api.Services.AppDataLocation.Override is null ? BirkNext.Api.Services.AdminService.SignInSettingsFile
+    : BirkNext.Api.Services.AppDataLocation.SignInSettingsPath(builder.Environment.ContentRootPath), optional: true, reloadOnChange: true);
 
 builder.Host.UseSerilog((ctx, lc) =>
 {
@@ -72,6 +73,10 @@ builder.Host.UseSerilog((ctx, lc) =>
           retainedFileCountLimit: 31,
           shared: true);
 });
+
+// The runtime profile is explicit configuration set by the launcher (DeveloperContainer for a source checkout when unset); an unknown value stops
+// startup here rather than letting a guess pick a database or a k6 runner.
+var runtimeProfile = BirkNext.Api.Services.SystemInfo.RuntimeEnvironmentService.Resolve(builder.Configuration).Profile;
 
 var frontendOrigin = builder.Configuration["FRONTEND_ORIGIN"] ?? "http://localhost:5173";
 
@@ -142,7 +147,7 @@ builder.Services.AddSingleton(sp =>
 {
     var options = builder.Configuration.GetSection("Backup").Get<BirkNext.Api.Services.WorkspaceTransfer.FullBackupOptions>() ?? new();
     var environment = sp.GetRequiredService<IWebHostEnvironment>();
-    var directory = options.Directory is { Length: > 0 } d ? d : System.IO.Path.Combine(environment.ContentRootPath, "App_Data", "backups");
+    var directory = options.Directory is { Length: > 0 } d ? d : System.IO.Path.Combine(BirkNext.Api.Services.AppDataLocation.Root(environment), "backups");
     var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
     return new BirkNext.Api.Services.WorkspaceTransfer.FullBackupService(databaseConnectionString, sp.GetRequiredService<BirkNext.Api.Services.WorkspaceTransfer.PostgresTools>(),
         sp.GetRequiredService<BirkNext.Api.Services.WorkspaceTransfer.ManagedFileStores>(), options, directory,
@@ -154,7 +159,7 @@ builder.Services.AddScoped(sp =>
 {
     var options = sp.GetRequiredService<BirkNext.Api.Services.WorkspaceTransfer.WorkspacePackageOptions>();
     var environment = sp.GetRequiredService<IWebHostEnvironment>();
-    var directory = options.Directory is { Length: > 0 } d ? d : System.IO.Path.Combine(environment.ContentRootPath, "App_Data", "transfer");
+    var directory = options.Directory is { Length: > 0 } d ? d : System.IO.Path.Combine(BirkNext.Api.Services.AppDataLocation.Root(environment), "transfer");
     return new BirkNext.Api.Services.WorkspaceTransfer.WorkspacePackageService(sp.GetRequiredService<AppDbContext>(),
         sp.GetRequiredService<BirkNext.Api.Services.CriticalE2E.ICriticalE2EStore>(), sp.GetRequiredService<BirkNext.Api.Services.TestData.TestDataRegistryStore>(),
         sp.GetRequiredService<BirkNext.Api.Services.TestData.AuthoredTestDataStore>(), sp.GetRequiredService<BirkNext.Api.Services.ExternalIntegrations.EnvironmentSetupService>(),
@@ -619,7 +624,11 @@ builder.Services.AddScoped<BirkNext.Api.Services.TestEvidence.TestExecutionImpor
 // Performance Test Review: generic definitions/runs/baselines; k6 is the first provider (external executable, generated script, no user scripts).
 builder.Services.AddSingleton(sp => BirkNext.Api.Services.PerformanceTests.PerformanceTestOptions.From(sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.IProcessRunner, BirkNext.Api.Services.PerformanceTests.SystemProcessRunner>();
-builder.Services.AddSingleton<BirkNext.Api.Services.ContainerRuntime.IContainerExecutionRuntime, BirkNext.Api.Services.ContainerRuntime.PodmanContainerExecutionRuntime>();
+// The runner is explicit configuration (PerformanceTests:Runner), never inferred from what is installed: the Tester Package sets Native, development keeps Podman.
+if (BirkNext.Api.Services.PerformanceTests.PerformanceTestOptions.From(builder.Configuration).UsesNativeRunner)
+    builder.Services.AddSingleton<BirkNext.Api.Services.ContainerRuntime.IContainerExecutionRuntime, BirkNext.Api.Services.ContainerRuntime.NativeProcessExecutionRuntime>();
+else
+    builder.Services.AddSingleton<BirkNext.Api.Services.ContainerRuntime.IContainerExecutionRuntime, BirkNext.Api.Services.ContainerRuntime.PodmanContainerExecutionRuntime>();
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.IPerformanceTestProvider, BirkNext.Api.Services.PerformanceTests.K6PerformanceTestProvider>();
 // Machine-local Container TLS trust (metadata only). A test host never reads or writes the user's real local file.
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceLocalExecutionStore>(sp => new(sp.GetRequiredService<BirkNext.Api.Services.PerformanceTests.PerformanceTestOptions>(), sp.GetRequiredService<IConfiguration>(),
@@ -646,6 +655,8 @@ builder.Services.AddHttpClient(BirkNext.Api.Services.ExecutionEvidence.Execution
     .ConfigurePrimaryHttpMessageHandler(BirkNext.Api.Services.ExecutionEvidence.ExecutionRunService.CreatePrimaryHandler)
     .AddHttpMessageHandler<BirkNext.Api.Services.ExecutionEvidence.EvidenceCaptureHandler>();
 builder.Services.AddScoped<BirkNext.Api.Services.ExecutionEvidence.ExecutionEvidenceStore>();
+builder.Services.AddSingleton(sp => new BirkNext.Api.Services.SystemInfo.RuntimeEnvironmentService(sp.GetRequiredService<IConfiguration>(), sp.GetRequiredService<IServiceScopeFactory>(),
+    sp.GetService<BirkNext.Api.Services.PerformanceTests.PerformanceTestProviderRegistry>()));
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.SystemInfo.BuildInfoService(sp.GetRequiredService<IServiceScopeFactory>(), sp.GetRequiredService<IConfiguration>(), sp.GetService<BirkNext.Api.Services.BrowserCompanion.BrowserCompanionService>()));
 builder.Services.AddScoped(sp => new BirkNext.Api.Services.ExecutionEvidence.ExecutionManifestService(sp.GetRequiredService<BirkNext.Api.Data.AppDbContext>(), sp.GetService<BirkNext.Api.Services.TestData.AuthoredTestDataStore>()));
 builder.Services.AddScoped<BirkNext.Api.Services.ExecutionEvidence.ExecutionEvidenceManagement>();
@@ -1021,6 +1032,19 @@ try
     // One process migrates at a time (parallel test hosts and multiple instances share the database).
     if (db.Database.IsRelational())
     {
+        // TesterNative never runs an older BirkNext against a database a newer BirkNext migrated (no automatic downgrade). Developers switch
+        // branches routinely, so DeveloperContainer only logs it.
+        foreach (var (name, context) in new (string, Microsoft.EntityFrameworkCore.DbContext)[] { ("Application", db),
+                     ("Delivery reporting", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.DeliveryReporting.DeliveryReportingDbContext>()),
+                     ("Canonical interpretation", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.CanonicalInterpretation.CanonicalInterpretationDbContext>()),
+                     ("Snapshot registry", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext>()) })
+        {
+            var schema = await BirkNext.Api.Services.SystemInfo.BuildInfoService.SchemaAsync(name, context, CancellationToken.None);
+            if (schema.Status != BirkNext.BuildInfo.SchemaCompatibility.AheadOfBuild) continue;
+            if (runtimeProfile == BirkNext.BuildInfo.RuntimeProfile.TesterNative)
+                throw new InvalidOperationException($"The database requires a newer BirkNext ({name}: {schema.Note}) Start the newer BirkNext version, or restore the backup taken before the upgrade.");
+            app.Logger.LogWarning("Database schema of {Context} is ahead of this build: {Note}", name, schema.Note);
+        }
         await DatabaseMigrationLock.MigrateAsync(db);
         // Skipped with the main context when a test host swaps it for a non-relational provider (no database to migrate).
         await DatabaseMigrationLock.MigrateAsync(scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.DeliveryReporting.DeliveryReportingDbContext>());

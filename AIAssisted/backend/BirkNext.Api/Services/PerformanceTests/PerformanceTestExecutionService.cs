@@ -171,6 +171,10 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
     {
         if (containers is null) return null;
         const string Label = "Container resource limits";
+        if (containers.SharesHostFilesystem)
+            return new("container-limits", Label, PerformanceReadinessState.Optional,
+                "Not applicable: the Tester Package runs its bundled k6 as a native process, without container memory, CPU or process limits. BirkNext's load limits (users, rate, duration, requests) still apply.", false)
+                { Category = PerformanceReadinessCategories.Optional, Summary = "container limits", Status = "Not applied (native runner)" };
         var c = options.Container;
         var requested = $"Requested: memory {c.MemoryMegabytes} MiB · {c.Cpus.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)} CPU · {ContainerRuntime.PodmanContainerExecutionRuntime.PidsLimit} processes · read-only root file system with /tmp {ContainerRuntime.PodmanContainerExecutionRuntime.TmpfsMegabytes} MiB";
         IReadOnlySet<string> controllers;
@@ -282,7 +286,7 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
         var fresh = reach is not null && DateTimeOffset.UtcNow - reach.CheckedAt < TimeSpan.FromMinutes(options.Container.NetworkCheckValidMinutes);
         // A check made under another network/TLS configuration (CA bundle, proxy, runtime, image, target) is never reused.
         var sameConfiguration = reach is not null && reach.NetworkFingerprint == fingerprint;
-        items.Add(NetworkItem(toolReady, reach, fresh, sameConfiguration));
+        items.Add(NetworkItem(toolReady, reach, fresh, sameConfiguration, containers?.SharesHostNetwork == true));
         items.Add(CaTrustItem(ca, reach is not null && sameConfiguration ? reach : null, d));
         items.Add(new("tls", "TLS verification and proxy", PerformanceReadinessState.Ready,
             (ca.Usable ? "Configured corporate CA bundle (read-only)" : "Container default CA store")
@@ -422,7 +426,7 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
     }
 
     /// <summary>The container network item. Host reachability never counts: only a check made from the load-generator container does.</summary>
-    internal static PerformanceReadinessItem NetworkItem(bool checkable, PerformanceReachability? reach, bool fresh, bool sameConfiguration)
+    internal static PerformanceReadinessItem NetworkItem(bool checkable, PerformanceReachability? reach, bool fresh, bool sameConfiguration, bool nativeRunner = false)
     {
         // Target reachability: the base target answered the k6 container. It never verifies a scenario endpoint (or its authentication).
         const string Label = "Target reachability", Summary = "target reachability", Category = PerformanceReadinessCategories.Reachability;
@@ -433,7 +437,9 @@ public sealed class PerformanceTestReadinessService(PerformanceTestOptions optio
                 reach is not null && !sameConfiguration
                     ? "The network or TLS configuration changed since the last check (target, runtime, image, CA bundle or proxy): check the container network again."
                     : reach is not null ? "The last container network check has expired: check again before running."
-                    : "The load generator must be able to reach the target independently of the BirkNext host. Host reachability does not prove container reachability.", true)
+                    : nativeRunner
+                        ? "Run the network check first: it verifies that the bundled k6 reaches the target with this PC's own network, proxy and Windows certificate store."
+                        : "The load generator must be able to reach the target independently of the BirkNext host. Host reachability does not prove container reachability.", true)
             {
                 Category = Category, Summary = Summary, Action = PerformanceReadinessActions.CheckNetwork,
                 Headline = reach is null ? "Container reachability has not been checked" : "Container reachability must be checked again",

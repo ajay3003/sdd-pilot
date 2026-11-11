@@ -11,12 +11,21 @@ namespace BirkNext.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/system")]
-public sealed class SystemInfoController(BuildInfoService builds) : ControllerBase
+public sealed class SystemInfoController(BuildInfoService builds, RuntimeEnvironmentService? runtime = null) : ControllerBase
 {
     [HttpGet("build-info")]
     public async Task<ActionResult<BuildInfoResponse>> BuildInfo(CancellationToken ct)
     {
         Response.Headers.CacheControl = "no-store";
         return Ok(await builds.GetAsync(ct));
+    }
+
+    /// <summary>The runtime profile and what this installation runs on (database server version, k6 runner). Read-only; never switches anything.</summary>
+    [HttpGet("runtime")]
+    public async Task<ActionResult<RuntimeEnvironmentInfo>> Runtime(CancellationToken ct)
+    {
+        Response.Headers.CacheControl = "no-store";
+        if (runtime is null) return NotFound();
+        return Ok(await runtime.GetAsync(ct));
     }
 }

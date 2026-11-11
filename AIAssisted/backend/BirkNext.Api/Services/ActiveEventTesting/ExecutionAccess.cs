@@ -12,7 +12,8 @@ namespace BirkNext.Api.Services.ActiveEventTesting;
 /// <list type="bullet">
 /// <item>the backend setting <c>Authorization:LocalTrustedExecution</c> is true (off by default; the same backend-setting pattern as
 /// <c>Authorization:LocalConfigurationWrites</c>; no request header or value can turn it on);</item>
-/// <item>the host environment is Development (not Production, Staging, QA or any other name);</item>
+/// <item>the host environment is Development (not Production, Staging, QA or any other name), or the backend runs the TesterNative runtime
+/// profile set by the Windows Tester Package launcher (a per-user installation whose backend is bound to loopback);</item>
 /// <item>the socket peer is loopback on both ends (no forwarded-header middleware is registered, so X-Forwarded-For is never consulted);</item>
 /// <item>the Host header is exactly <c>localhost</c> or a loopback IP literal (a DNS-rebinding page arrives with its own host name);</item>
 /// <item>an Origin header is present and equals the configured <c>FRONTEND_ORIGIN</c> exactly (scheme, host and port), and that
@@ -31,8 +32,8 @@ public sealed class LocalTrustedExecution(IHostEnvironment environment, IConfigu
     {
         if (!bool.TryParse(configuration[Setting], out var enabled) || !enabled)
             return new(false, "Local trusted execution is not enabled for this backend.");
-        if (!environment.IsDevelopment())
-            return new(false, "Local trusted execution is only available when the backend runs in the Development environment.");
+        if (!environment.IsDevelopment() && !TesterNative)
+            return new(false, "Local trusted execution is only available when the backend runs in the Development environment or as the Windows Tester Package (TesterNative).");
         if (context is null) return new(false, "No request.");
         var connection = context.Connection;
         if (connection.RemoteIpAddress is not { } remote || !IsLoopback(remote) || (connection.LocalIpAddress is { } local && !IsLoopback(local)))
@@ -44,8 +45,11 @@ public sealed class LocalTrustedExecution(IHostEnvironment environment, IConfigu
         var origin = context.Request.Headers.Origin;
         if (origin.Count != 1 || ParseOrigin(origin.ToString()) is not { } actual || !SameOrigin(actual, allowed))
             return new(false, "Local trusted execution is only granted to requests from the configured BirkNext frontend origin.");
-        return new(true, "Local trusted execution: loopback-only Development backend, request from the configured BirkNext frontend.");
+        return new(true, $"Local trusted execution: loopback-only {(TesterNative ? "Tester Package (TesterNative)" : "Development")} backend, request from the configured BirkNext frontend.");
     }
+
+    /// <summary>The launcher-set TesterNative profile (an invalid profile value stops startup, so it is never guessed here).</summary>
+    private bool TesterNative => BirkNext.BuildInfo.RuntimeProfiles.Parse(configuration[BirkNext.BuildInfo.RuntimeProfiles.ConfigurationKey]).Profile == BirkNext.BuildInfo.RuntimeProfile.TesterNative;
 
     internal static bool IsLoopback(IPAddress address) =>
         IPAddress.IsLoopback(address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address);

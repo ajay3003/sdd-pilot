@@ -36,6 +36,13 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
 
     private PerformanceContainerOptions C => options.Container;
 
+    /// <summary>Whether k6 runs as the Tester Package's native process (host paths, host network) instead of a container.</summary>
+    private bool Native => runtime.SharesHostFilesystem;
+
+    /// <summary>The path k6 itself uses for a run directory: the mount point in a container, the host directory (forward slashes) for a native process.</summary>
+    internal string ExecPath(string hostDirectory, string containerDirectory, string file) =>
+        Native ? Path.Combine(hostDirectory, file).Replace('\\', '/') : $"{containerDirectory}/{file}";
+
     /// <summary>The container variable holding the whole Authorization value (scheme + token) the generated script sends (value never written to the script or a command line).</summary>
     public const string ApiAuthorizationVariable = "BIRKNEXT_API_AUTHORIZATION";
 
@@ -58,21 +65,24 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
         status = status with { Runtime = rt };
         if (rt.Availability != ProviderAvailability.Available)
             return status with { Availability = ProviderAvailability.RuntimeUnavailable, Detail = $"{rt.DisplayName}: {rt.Detail}" };
-        if (!ContainerArgumentRules.IsImage(C.Image))
+        if (!Native && !ContainerArgumentRules.IsImage(C.Image))
             return status with { Availability = ProviderAvailability.Misconfigured, Detail = "PerformanceTests:Container:Image must be a pinned, fully-qualified image reference (no ':latest')." };
         var image = await runtime.ImageAsync(C.Image, ct);
+        if (!image.Present && Native) return status with { Availability = ProviderAvailability.Unavailable, Image = null, Detail = image.Detail };
         if (!image.Present)
             return status with { Availability = ProviderAvailability.ImageMissing,
                 Detail = $"The k6 image {C.Image} is not available locally. {(C.AllowImagePull ? "Pull it from System Settings → Performance Test Engines." : $"Pull it once: podman pull {C.Image}")}" };
-        status = status with { ImagePresent = true, ImageDigest = image.Digest };
+        status = status with { ImagePresent = true, ImageDigest = image.Digest, Image = Native ? "bundled k6.exe" : C.Image };
         // An invalid CA bundle is never mounted and never bypassed: the provider is misconfigured (after the image is known, so image state stays truthful) until the bundle is fixed (readiness says how).
         if (PerformanceCaBundleInspector.Inspect(C.EffectiveCaBundlePath) is { Configured: true, Usable: false } ca)
             return status with { Availability = ProviderAvailability.Misconfigured, Detail = $"The configured CA bundle ({PerformanceCaBundleInspector.ConfigurationKey}) is invalid: {ca.Detail}" };
         var version = await VersionAsync(image.Digest ?? C.Image, ct);
-        if (version is null) return status with { Availability = ProviderAvailability.Misconfigured, Detail = "The k6 container started but did not report a recognisable version." };
+        if (version is null) return status with { Availability = ProviderAvailability.Misconfigured,
+            Detail = Native ? "The bundled k6 executable did not report a recognisable version (it may have been blocked from starting)." : "The k6 container started but did not report a recognisable version." };
         if (version < MinimumVersion)
             return status with { Availability = ProviderAvailability.VersionUnsupported, Version = version.ToString(), Detail = $"k6 {version} is older than the supported minimum {MinimumVersion}." };
-        return status with { Availability = ProviderAvailability.Available, Version = version.ToString(), Detail = $"k6 {version} in {C.Image} on {rt.DisplayName} {rt.Version}." };
+        return status with { Availability = ProviderAvailability.Available, Version = version.ToString(),
+            Detail = Native ? $"k6 {version}, the Tester Package's bundled executable (native Windows process; no container)." : $"k6 {version} in {C.Image} on {rt.DisplayName} {rt.Version}." };
     }
 
     private async Task<Version?> VersionAsync(string key, CancellationToken ct)
@@ -94,6 +104,7 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
 
     public async Task<string?> PrepareAsync(CancellationToken ct = default)
     {
+        if (Native) return "The native runner uses the k6 executable bundled with the Tester Package; nothing is downloaded.";
         if (!C.AllowImagePull) return $"Image pulls are disabled (PerformanceTests:Container:AllowImagePull). Pull it once: podman pull {C.Image}";
         var pulled = await runtime.PullAsync(C.Image, ct);
         return pulled.Present ? null : pulled.Detail;
@@ -106,6 +117,11 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
     public ContainerTarget ResolveTarget(string targetOrigin)
     {
         var uri = new Uri(targetOrigin);
+        // A native process is on the host itself: every target is addressed exactly as configured (no alias, no container network).
+        if (runtime.SharesHostNetwork)
+            return new ContainerTarget(uri.GetLeftPart(UriPartial.Authority), null, false,
+                uri.IsLoopback || uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                    ? "The target runs on this PC; the bundled k6 reaches it directly (native process)." : "The bundled k6 reaches the target from this PC (native process; the PC's own network, proxy and DNS).");
         if (uri.IsLoopback || uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase))
         {
             var rewritten = new UriBuilder(uri) { Host = runtime.HostGatewayAlias }.Uri.GetLeftPart(UriPartial.Authority);
@@ -137,7 +153,7 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
         if (!string.IsNullOrWhiteSpace(C.HttpProxy)) env["HTTP_PROXY"] = C.HttpProxy!;
         if (!string.IsNullOrWhiteSpace(C.HttpsProxy)) env["HTTPS_PROXY"] = C.HttpsProxy!;
         if (!string.IsNullOrWhiteSpace(C.NoProxy)) env["NO_PROXY"] = C.NoProxy!;
-        if (caBundle is not null) env["SSL_CERT_FILE"] = CaFile;
+        if (caBundle is not null) env["SSL_CERT_FILE"] = Native ? caBundle : CaFile;
         return env;
     }
 
@@ -157,6 +173,7 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
     /// </summary>
     public async Task<string?> DefaultCaStorePemAsync(CancellationToken ct = default)
     {
+        if (Native) return null; // No image CA store: k6 on Windows uses the Windows certificate store.
         lock (_caStoreByImage) if (_caStoreByImage.TryGetValue(C.Image, out var cached)) return cached;
         var outcome = await runtime.RunAsync(new ContainerRunSpec
         {
@@ -171,8 +188,8 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
     public async Task<PerformanceProviderResult> ExecuteAsync(PerformanceProviderInput input, IProgress<string>? progress, CancellationToken ct)
     {
         var status = await StatusAsync(ct);
-        var provenance = new PerformanceProviderResult { RuntimeId = runtime.RuntimeId, RuntimeVersion = status.Runtime?.Version, ContainerImage = C.Image, ImageDigest = status.ImageDigest,
-            ProviderVersion = status.Version, MetricsSource = $"k6 {status.Version} end-of-test summary (handleSummary JSON) in {C.Image}" };
+        var provenance = new PerformanceProviderResult { RuntimeId = runtime.RuntimeId, RuntimeVersion = status.Runtime?.Version, ContainerImage = Native ? null : C.Image, ImageDigest = status.ImageDigest,
+            ProviderVersion = status.Version, MetricsSource = Native ? $"k6 {status.Version} end-of-test summary (handleSummary JSON), bundled native executable" : $"k6 {status.Version} end-of-test summary (handleSummary JSON) in {C.Image}" };
         if (status.Availability != ProviderAvailability.Available)
             return provenance with { State = PerformanceRunState.ExecutionFailed, Reason = status.Detail, MetricsSource = "k6 (not run)" };
         var inDir = Path.Combine(input.WorkingDirectory, "in");
@@ -184,7 +201,7 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
             Directory.CreateDirectory(outDir);
             var target = ResolveTarget(input.Definition.TargetOrigin);
             var executable = input.Definition with { TargetOrigin = target.ExecutionOrigin };
-            await File.WriteAllTextAsync(Path.Combine(inDir, "test.js"), K6ScriptGenerator.Generate(executable, input.TestData, $"{OutDir}/summary.json"), new UTF8Encoding(false), ct);
+            await File.WriteAllTextAsync(Path.Combine(inDir, "test.js"), K6ScriptGenerator.Generate(executable, input.TestData, ExecPath(outDir, OutDir, "summary.json")), new UTF8Encoding(false), ct);
             progress?.Report("Running");
             // Cancellation is graceful first: SIGTERM lets k6 stop the test and still write its (partial) end-of-test summary into the mounted
             // output directory; only when the runtime cannot stop it is the process killed. Results and diagnostics are read before any cleanup.
@@ -205,7 +222,7 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
             });
             var outcome = await runtime.RunAsync(new ContainerRunSpec
             {
-                Name = name, Image = C.Image, Command = ["run", "--no-color", "--quiet", "--out", $"json={OutDir}/{TelemetryFile}", $"{InDir}/test.js"],
+                Name = name, Image = C.Image, Command = ["run", "--no-color", "--quiet", "--out", $"json={ExecPath(outDir, OutDir, TelemetryFile)}", ExecPath(inDir, InDir, "test.js")],
                 Mounts = Mounts(inDir, outDir, C.CaBundlePathFor(input.Definition.TargetOrigin)), Environment = Environment(C.CaBundlePathFor(input.Definition.TargetOrigin)),
                 // The leased Target Environment API credential reaches k6 only through the container's process environment, for this run.
                 SecretEnvironment = input.Credential is { } credential ? new Dictionary<string, string> { [ApiAuthorizationVariable] = "Bearer " + credential.Token } : new Dictionary<string, string>(),
@@ -218,8 +235,10 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
             if (input.Credential is { Token.Length: > 0 } used) diagnostics = diagnostics.Replace(used.Token, "[redacted]", StringComparison.Ordinal);
             var telemetry = new K6JsonTelemetryReader(Path.Combine(outDir, TelemetryFile)).Read();
             var notes = new List<string>();
-            if (!outcome.Removed) notes.Add($"The container {name} could not be confirmed removed; cleanup runs again on the next start.");
-            if (outcome.UnappliedLimits.Count > 0)
+            if (!outcome.Removed) notes.Add(Native ? "The k6 process could not be confirmed stopped." : $"The container {name} could not be confirmed removed; cleanup runs again on the next start.");
+            if (outcome.UnappliedLimits.Count > 0 && Native)
+                notes.Add("k6 ran as a native process without memory/CPU/process limits (the Tester Package has no container). BirkNext's load limits still applied.");
+            else if (outcome.UnappliedLimits.Count > 0)
                 notes.Add($"The container ran without {string.Join("/", outcome.UnappliedLimits)} limits: the {runtime.DisplayName} host delegates no such cgroup controller (common for rootless machines). BirkNext's load limits still applied.");
             var cancelled = stopRequested || outcome.Cancelled;
             var graceful = stopRequested && !outcome.Cancelled;
@@ -232,7 +251,8 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
             async Task<(PerformanceMetrics? Metrics, string? Error)> SummaryAsync() => File.Exists(summaryPath)
                 ? K6SummaryParser.Parse(await File.ReadAllTextAsync(summaryPath, CancellationToken.None), input.Definition.Scenario.Steps.Select(s => s.Name).ToList())
                 : (null, null);
-            var removal = outcome.Removed ? "the container was removed" : "the container could not be confirmed removed";
+            var removal = Native ? (outcome.Removed ? "the k6 process has ended" : "the k6 process could not be confirmed stopped")
+                : outcome.Removed ? "the container was removed" : "the container could not be confirmed removed";
             if (cancelled)
             {
                 // A gracefully stopped k6 may have written a partial summary: shown as "Partial — run cancelled", never as a final result.
@@ -256,7 +276,7 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
             if (outcome.StartError is not null) return result with { State = PerformanceRunState.ExecutionFailed, Reason = outcome.StartError, ResultArtifact = PerformanceResultArtifactState.NotProduced };
             // 0 = finished; 99 = a k6 threshold crossed (BirkNext declares only always-true thresholds, to expose per-step metrics). Others = errors.
             if (outcome.ExitCode is not (0 or 99))
-                return result with { State = PerformanceRunState.ExecutionFailed, Reason = $"The k6 container exited with code {outcome.ExitCode}.",
+                return result with { State = PerformanceRunState.ExecutionFailed, Reason = Native ? $"k6 exited with code {outcome.ExitCode}." : $"The k6 container exited with code {outcome.ExitCode}.",
                     ResultArtifact = File.Exists(summaryPath) ? PerformanceResultArtifactState.Pending : PerformanceResultArtifactState.Missing };
             if (!File.Exists(summaryPath)) return result with { State = PerformanceRunState.ExecutionFailed, Reason = "k6 finished without writing its structured summary.",
                 ResultArtifact = PerformanceResultArtifactState.Missing, ResultArtifactDetail = "summary.json was not written by k6's handleSummary." };
@@ -281,7 +301,7 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
         var target = ResolveTarget(definition.TargetOrigin);
         var envelope = new PerformanceReachability { TargetOrigin = definition.TargetOrigin, ExecutionOrigin = target.ExecutionOrigin, Network = target.Network, CheckedAt = DateTimeOffset.UtcNow };
         var status = await StatusAsync(ct);
-        if (status.Availability is ProviderAvailability.RuntimeUnavailable) return envelope with { State = "RuntimeUnavailable", Detail = status.Detail };
+        if (status.Availability is ProviderAvailability.RuntimeUnavailable || (Native && status.Availability is ProviderAvailability.Unavailable)) return envelope with { State = "RuntimeUnavailable", Detail = status.Detail };
         if (status.Availability is ProviderAvailability.ImageMissing) return envelope with { State = "ImageMissing", Detail = status.Detail };
         if (status.Availability != ProviderAvailability.Available) return envelope with { State = "Unknown", Detail = status.Detail };
         var id = Guid.NewGuid();
@@ -290,10 +310,10 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
         try
         {
             Directory.CreateDirectory(inDir); Directory.CreateDirectory(outDir);
-            await File.WriteAllTextAsync(Path.Combine(inDir, "probe.js"), K6ScriptGenerator.Probe(target.ExecutionOrigin, $"{OutDir}/probe.json"), new UTF8Encoding(false), ct);
+            await File.WriteAllTextAsync(Path.Combine(inDir, "probe.js"), K6ScriptGenerator.Probe(target.ExecutionOrigin, ExecPath(outDir, OutDir, "probe.json")), new UTF8Encoding(false), ct);
             var outcome = await runtime.RunAsync(new ContainerRunSpec
             {
-                Name = ContainerName(id, "probe"), Image = C.Image, Command = ["run", "--no-color", "--quiet", $"{InDir}/probe.js"],
+                Name = ContainerName(id, "probe"), Image = C.Image, Command = ["run", "--no-color", "--quiet", ExecPath(inDir, InDir, "probe.js")],
                 Mounts = Mounts(inDir, outDir, C.CaBundlePathFor(definition.TargetOrigin)), Environment = Environment(C.CaBundlePathFor(definition.TargetOrigin)),
                 Labels = Labels(id), Network = target.Network, HostGateway = target.HostGateway, Timeout = TimeSpan.FromSeconds(90), MaxOutputBytes = 16 * 1024, MemoryMegabytes = 256, Cpus = 0.5,
             }, ct);
@@ -301,7 +321,8 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
             if (outcome.TimedOut) return envelope with { State = PerformanceProbeStates.Timeout, Detail = "The network check did not finish in time." };
             if (!File.Exists(probe))
                 return envelope with { State = PerformanceProbeStates.RuntimeFailure, Detail = outcome.StartError is not null
-                    ? "The container runtime could not start the network check container." : "The network check container produced no result.",
+                    ? (Native ? $"The bundled k6 could not run the network check: {outcome.StartError}" : "The container runtime could not start the network check container.")
+                    : Native ? "The network check produced no result." : "The network check container produced no result.",
                     ErrorCode = outcome.ExitCode };
             return Interpret(envelope, await File.ReadAllTextAsync(probe, ct), !string.IsNullOrWhiteSpace(C.HttpsProxy) || !string.IsNullOrWhiteSpace(C.HttpProxy));
         }

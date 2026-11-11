@@ -36,7 +36,7 @@ public sealed class CriticalE2ESuggestionStore : ICriticalE2ESuggestionStore
     private readonly string _path;
     private readonly Dictionary<string, SuggestionReviewRecord> _records = new(StringComparer.Ordinal);
 
-    public CriticalE2ESuggestionStore(IHostEnvironment environment) : this(System.IO.Path.Combine(environment.ContentRootPath, "App_Data", "critical-e2e")) { }
+    public CriticalE2ESuggestionStore(IHostEnvironment environment) : this(System.IO.Path.Combine(BirkNext.Api.Services.AppDataLocation.Root(environment), "critical-e2e")) { }
 
     public CriticalE2ESuggestionStore(string directory)
     {

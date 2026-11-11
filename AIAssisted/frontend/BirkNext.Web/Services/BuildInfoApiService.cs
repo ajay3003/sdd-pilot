@@ -9,6 +9,10 @@ namespace BirkNext.Web.Services;
 public interface IBuildInfoApiService
 {
     Task<(BuildInfoResponse? Info, string? Error)> GetAsync(CancellationToken ct = default);
+
+    /// <summary>The runtime profile and what this installation runs on (GET api/system/runtime). Read-only.</summary>
+    Task<(RuntimeEnvironmentInfo? Info, string? Error)> GetRuntimeAsync(CancellationToken ct = default) =>
+        Task.FromResult<(RuntimeEnvironmentInfo?, string?)>((null, "The runtime information is not available in this host."));
 }
 
 public sealed class BuildInfoApiService(HttpClient http) : IBuildInfoApiService
@@ -26,6 +30,20 @@ public sealed class BuildInfoApiService(HttpClient http) : IBuildInfoApiService
         catch (Exception e) when (e is HttpRequestException or JsonException or TaskCanceledException or NotSupportedException)
         {
             return (null, "The backend's build information is not reachable.");
+        }
+    }
+
+    public async Task<(RuntimeEnvironmentInfo? Info, string? Error)> GetRuntimeAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.GetAsync("api/system/runtime", ct);
+            if (!response.IsSuccessStatusCode) return (null, $"The backend did not return its runtime information (HTTP {(int)response.StatusCode}).");
+            return (await response.Content.ReadFromJsonAsync<RuntimeEnvironmentInfo>(Json, ct), null);
+        }
+        catch (Exception e) when (e is HttpRequestException or JsonException or TaskCanceledException or NotSupportedException)
+        {
+            return (null, "The backend's runtime information is not reachable.");
         }
     }
 }

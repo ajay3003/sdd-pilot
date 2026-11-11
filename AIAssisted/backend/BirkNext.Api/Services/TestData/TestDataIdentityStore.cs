@@ -57,7 +57,7 @@ public sealed class TestDataIdentityStore
     }
 
     public TestDataIdentityStore(IHostEnvironment environment, ILogger<TestDataIdentityStore>? logger = null)
-        : this(System.IO.Path.Combine(environment.ContentRootPath, "App_Data", "test-data"), logger) { }
+        : this(System.IO.Path.Combine(BirkNext.Api.Services.AppDataLocation.Root(environment), "test-data"), logger) { }
 
     public TestDataIdentityStore(string directory, ILogger<TestDataIdentityStore>? logger = null)
     {

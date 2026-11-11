@@ -928,6 +928,8 @@ function Start-DotNetProcessLogged {
     }
 
     # Set backend environment variables — inherited by the child process
+    # This launcher is the DeveloperContainer runtime profile (PostgreSQL and k6 in containers); the Tester Package uses Start-BirkNext.exe.
+    if ($Name -eq "Backend") { $env:BirkNext__RuntimeProfile = "DeveloperContainer" }
     if ($Name -eq "Backend" -and -not [string]::IsNullOrWhiteSpace($script:BackendConnectionString)) {
         $env:ConnectionStrings__Default = $script:BackendConnectionString
         $env:POSTGRES_DB                = $script:PostgresConfig.Database

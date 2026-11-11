@@ -13,28 +13,31 @@ public sealed class ManagedFileStores
     public sealed record Store(string Name, string Root, IReadOnlyList<string> Files, string Owner);
 
     private readonly string _contentRoot;
+    private readonly string _appData;
     private readonly string _gitSourcesDirectory;
     private readonly string _localDataResetPath;
 
     public ManagedFileStores(IHostEnvironment environment, IConfiguration configuration)
         : this(environment.ContentRootPath,
             configuration["GitSources:SettingsDirectory"] is { Length: > 0 } git ? git : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BirkNext"),
-            configuration["LocalDataReset:StatePath"] is { Length: > 0 } reset ? reset : Path.Combine(environment.ContentRootPath, "App_Data", "local-data-reset.json")) { }
+            configuration["LocalDataReset:StatePath"] is { Length: > 0 } reset ? reset : System.IO.Path.Combine(BirkNext.Api.Services.AppDataLocation.Root(environment), "local-data-reset.json"),
+            BirkNext.Api.Services.AppDataLocation.Root(environment)) { }
 
-    public ManagedFileStores(string contentRoot, string gitSourcesDirectory, string localDataResetPath)
+    public ManagedFileStores(string contentRoot, string gitSourcesDirectory, string localDataResetPath, string? appDataRoot = null)
     {
         _contentRoot = contentRoot;
+        _appData = appDataRoot ?? Path.Combine(contentRoot, "App_Data");
         _gitSourcesDirectory = gitSourcesDirectory;
         _localDataResetPath = localDataResetPath;
     }
 
     public IReadOnlyList<Store> Stores =>
     [
-        new("critical-e2e", Path.Combine(_contentRoot, "App_Data", "critical-e2e"), ["flows.json", "history.json", "modules.json", "suggestion-reviews.json"], "Critical E2E Regression (flows, run history, modules, suggestion reviews)"),
-        new("test-data", Path.Combine(_contentRoot, "App_Data", "test-data"),
+        new("critical-e2e", Path.Combine(_appData, "critical-e2e"), ["flows.json", "history.json", "modules.json", "suggestion-reviews.json"], "Critical E2E Regression (flows, run history, modules, suggestion reviews)"),
+        new("test-data", Path.Combine(_appData, "test-data"),
             ["registry.json", "authored.json", "identities.json", "canonical-fixtures.json", "schema-associations.json", "protected-defaults.json"], "Test Data catalog"),
         new("local-data-reset", Path.GetDirectoryName(_localDataResetPath)!, [Path.GetFileName(_localDataResetPath)], "Local Data Reset epoch and synthetic-key floors (never reuse a synthetic key)"),
-        new("installation", Path.Combine(_contentRoot, "App_Data"), ["microsoft-sign-in.json"], "Microsoft sign-in configuration (public client ids only)"),
+        new("installation", _appData, ["microsoft-sign-in.json"], "Microsoft sign-in configuration (public client ids only)"),
         new("git-sources", _gitSourcesDirectory, ["git-sources.json"], "Git Sources organisation and repository links (no tokens)"),
     ];
 

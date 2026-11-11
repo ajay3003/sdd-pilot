@@ -67,7 +67,7 @@ public sealed class CriticalE2EStore : ICriticalE2EStore
     private readonly Dictionary<string, List<CriticalE2ERegisteredModule>> _modules = new(StringComparer.OrdinalIgnoreCase);
 
     public CriticalE2EStore(IHostEnvironment environment, ILogger<CriticalE2EStore> logger)
-        : this(Path.Combine(environment.ContentRootPath, "App_Data", "critical-e2e"), logger) { }
+        : this(System.IO.Path.Combine(BirkNext.Api.Services.AppDataLocation.Root(environment), "critical-e2e"), logger) { }
 
     public CriticalE2EStore(string directory, ILogger<CriticalE2EStore> logger)
     {

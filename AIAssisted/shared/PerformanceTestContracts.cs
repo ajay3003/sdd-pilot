@@ -386,6 +386,8 @@ public static class PerformanceProviderIds
     public const string K6 = "performance.k6";
     /// <summary>Ephemeral containers through the Podman CLI.</summary>
     public const string PodmanRuntime = "container.podman";
+    /// <summary>The Tester Package's bundled k6 executable as a native Windows child process (no container).</summary>
+    public const string NativeRuntime = "process.native";
 }
 
 /// <summary>

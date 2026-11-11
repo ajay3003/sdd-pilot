@@ -1,0 +1,33 @@
+{
+  "format": 1,
+  "description": "Pinned native runtime components of the BirkNext Windows Tester Package (TesterNative profile). Every input is an exact version from an official upstream source with a SHA-256 recorded here; the package build refuses any other bytes and never fetches 'latest'. Changing a version means changing this file in a reviewed commit.",
+  "postgresql": {
+    "version": "16.13",
+    "major": 16,
+    "compatibleWith": "postgres:16 developer container (16.13 at the time of pinning)",
+    "source": "EnterpriseDB Windows x64 binaries, the distribution linked from postgresql.org/download/windows",
+    "url": "https://get.enterprisedb.com/postgresql/postgresql-16.13-1-windows-x64-binaries.zip",
+    "sha256": "9b4c7a1bc31147b5b2ba59178d0eef86c16181d54a20177192b387dff20f00a9",
+    "checksumProvenance": "EnterpriseDB publishes no checksum for this archive: the value is the SHA-256 of the archive downloaded over HTTPS from the official URL on 2026-11-11 (trust on first use). The binaries carry no Authenticode signature.",
+    "include": [ "pgsql/bin/", "pgsql/lib/", "pgsql/share/" ],
+    "exclude": [ "pgsql/bin/stackbuilder.exe", "pgsql/bin/wx*.dll", "pgsql/bin/testplug.dll", "pgsql/bin/pg_regress*.exe", "pgsql/bin/isolationtester.exe", "pgsql/bin/pg_isolation_regress.exe",
+                 "pgsql/bin/libpq_pipeline.exe", "pgsql/bin/libpq_testclient.exe", "pgsql/bin/libpq_uri_regress.exe", "pgsql/bin/test_cloexec.exe", "pgsql/lib/*.lib", "pgsql/lib/pgxs/" ],
+    "license": { "archiveEntry": "pgsql/doc/postgresql/html/legalnotice.html", "sha256": "fb33e3009a5a277adf0ac023d5e60c91729c7b7d22c354e27111b064a6678a26", "spdx": "PostgreSQL" },
+    "windowsPrerequisites": [ "Microsoft Visual C++ 2015-2022 Redistributable (x64): vcruntime140.dll and msvcp140.dll are imported by the PostgreSQL binaries and not part of the archive" ]
+  },
+  "k6": {
+    "version": "1.0.0",
+    "compatibleWith": "docker.io/grafana/k6:1.0.0 (PerformanceContainerOptions.DefaultImage)",
+    "source": "Grafana Labs GitHub release v1.0.0",
+    "url": "https://github.com/grafana/k6/releases/download/v1.0.0/k6-v1.0.0-windows-amd64.zip",
+    "sha256": "0bfbab5c6c263b3d2663fe05383707448385649610f2c9487b817343a890c70d",
+    "checksumProvenance": "Matches the upstream k6-v1.0.0-checksums.txt published with the release.",
+    "executableEntry": "k6-v1.0.0-windows-amd64/k6.exe",
+    "extensions": [],
+    "license": { "url": "https://raw.githubusercontent.com/grafana/k6/v1.0.0/LICENSE.md", "sha256": "45bd5efa5e66840e253253f3cc172d07213cb812206cda7bb71cd5b9dbd5a985", "spdx": "AGPL-3.0-only",
+                 "sourceOffer": "https://github.com/grafana/k6/tree/v1.0.0" }
+  },
+  "dotnet": {
+    "note": "The backend and the launcher are published self-contained for win-x64 with the .NET 8 runtime of the SDK that builds the package (recorded in config/runtime-manifest.json)."
+  }
+}

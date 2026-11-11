@@ -67,6 +67,27 @@ public sealed class LocalTrustedExecutionTests
         Local(frontend: "http://127.0.0.1:5173/").Evaluate(Request(origin: "http://127.0.0.1:5173")).Allowed.Should().BeTrue();
     }
 
+    /// <summary>The Windows Tester Package (TesterNative profile set by its launcher) is the other local single-user backend: same grant, same checks.</summary>
+    [Fact]
+    public void TesterNative_GrantsUnderTheSameChecks_AndProductionWithoutItStillDenies()
+    {
+        static LocalTrustedExecution Tester(string? profile, string? setting = "true") =>
+            new(new StubHostEnvironment { EnvironmentName = "Production" }, new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [LocalTrustedExecution.Setting] = setting, ["FRONTEND_ORIGIN"] = Frontend, [BirkNext.BuildInfo.RuntimeProfiles.ConfigurationKey] = profile,
+            }).Build());
+        var granted = Tester("TesterNative").Evaluate(Request());
+        granted.Allowed.Should().BeTrue();
+        granted.Reason.Should().Contain("TesterNative");
+        Tester("DeveloperContainer").Evaluate(Request()).Allowed.Should().BeFalse("a Production backend without the tester profile gets nothing");
+        Tester(null).Evaluate(Request()).Allowed.Should().BeFalse();
+        Tester("Tester").Evaluate(Request()).Allowed.Should().BeFalse("an unknown profile is not TesterNative");
+        Tester("TesterNative", setting: null).Evaluate(Request()).Allowed.Should().BeFalse("the launcher must still enable the setting explicitly");
+        Tester("TesterNative").Evaluate(Request(origin: "http://evil.example")).Allowed.Should().BeFalse("the Origin check is unchanged");
+        Tester("TesterNative").Evaluate(Request(remote: "10.0.0.5")).Allowed.Should().BeFalse("the loopback check is unchanged");
+        Tester("TesterNative").Evaluate(Request(host: "birknext.example:5000")).Allowed.Should().BeFalse("the Host check is unchanged");
+    }
+
     [Theory]
     [InlineData("no-grant")]
     [InlineData("grant-false")]

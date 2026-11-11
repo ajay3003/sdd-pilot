@@ -33,7 +33,7 @@ public sealed class LocalSessionService
     private int _generation;
 
     public LocalSessionService(IHostEnvironment environment, TimeProvider clock, ILogger<LocalSessionService> logger)
-        : this(System.IO.Path.Combine(environment.ContentRootPath, "App_Data", "local-session"), clock, logger) { }
+        : this(System.IO.Path.Combine(BirkNext.Api.Services.AppDataLocation.Root(environment), "local-session"), clock, logger) { }
 
     public LocalSessionService(string directory, TimeProvider clock, ILogger<LocalSessionService> logger)
     {

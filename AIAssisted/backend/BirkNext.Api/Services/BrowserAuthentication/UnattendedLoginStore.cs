@@ -84,7 +84,7 @@ public sealed class UnattendedLoginStore
         _protector = provider.CreateProtector(ProtectionPurpose);
     }
 
-    public static string DefaultDirectory(IHostEnvironment environment) => Path.Combine(environment.ContentRootPath, "App_Data", "browser-authentication");
+    public static string DefaultDirectory(IHostEnvironment environment) => System.IO.Path.Combine(BirkNext.Api.Services.AppDataLocation.Root(environment), "browser-authentication");
 
     public UnattendedLoginSettings? Load()
     {

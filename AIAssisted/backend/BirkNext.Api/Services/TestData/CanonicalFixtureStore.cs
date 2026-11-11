@@ -20,7 +20,7 @@ public sealed class CanonicalFixtureStore
     private JsonArray _items;
 
     public CanonicalFixtureStore(IHostEnvironment environment, ILogger<CanonicalFixtureStore> logger)
-        : this(System.IO.Path.Combine(environment.ContentRootPath, "App_Data", "test-data"), logger) { }
+        : this(System.IO.Path.Combine(BirkNext.Api.Services.AppDataLocation.Root(environment), "test-data"), logger) { }
 
     public CanonicalFixtureStore(string directory, ILogger<CanonicalFixtureStore> logger)
     {

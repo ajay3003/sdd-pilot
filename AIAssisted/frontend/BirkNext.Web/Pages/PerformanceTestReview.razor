@@ -1833,7 +1833,7 @@
                             var baseline = _baselines.FirstOrDefault(b => b.RunId == r.RunId);
                             <tr data-testid="pt-history-row" data-state="@r.State" id="@($"pt-history-{r.RunId:N}")" tabindex="-1" data-selected="@(_historyFocus == r.RunId ? "true" : "false")" class="@(_historyFocus == r.RunId ? "pt-history-selected" : "")">
                                 <th scope="row">@P.Short(r.RunId)<span class="sd-context">v@(r.DefinitionVersion)</span></th>
-                                <td>@P.Utc(r.CreatedAt)</td><td>@r.DefinitionSnapshot.EnvironmentName</td><td>@r.DefinitionSnapshot.Workload.Purpose · @P.Load(r.DefinitionSnapshot.Workload)</td><td>k6 @r.ProviderVersion · @(r.RuntimeId == PerformanceProviderIds.PodmanRuntime ? "Podman" : r.RuntimeId ?? "—") @r.RuntimeVersion</td>
+                                <td>@P.Utc(r.CreatedAt)</td><td>@r.DefinitionSnapshot.EnvironmentName</td><td>@r.DefinitionSnapshot.Workload.Purpose · @P.Load(r.DefinitionSnapshot.Workload)</td><td>k6 @r.ProviderVersion · @(r.RuntimeId == PerformanceProviderIds.PodmanRuntime ? "Podman" : r.RuntimeId == PerformanceProviderIds.NativeRuntime ? "native k6.exe" : r.RuntimeId ?? "—") @r.RuntimeVersion</td>
                                 <td>@P.Label(r.State)</td><td>@P.Label(r.Verdict)</td>
                                 <td>@PerformanceTestRules.Format(r.Metrics?.Latency.P95Ms, PerformanceMetric.LatencyP95Ms)</td><td>@PerformanceTestRules.Format(r.Metrics?.RequestsPerSecond, PerformanceMetric.ThroughputRps)</td>
                                 <td>@PerformanceTestRules.Format(r.Metrics?.ErrorRatePercent, PerformanceMetric.ErrorRatePercent)</td>

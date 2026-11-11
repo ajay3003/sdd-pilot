@@ -80,7 +80,7 @@ public sealed class TestDataRegistryStore
     }
 
     public TestDataRegistryStore(IHostEnvironment environment, ILogger<TestDataRegistryStore> logger)
-        : this(Path.Combine(environment.ContentRootPath, "App_Data", "test-data"), logger) { }
+        : this(System.IO.Path.Combine(BirkNext.Api.Services.AppDataLocation.Root(environment), "test-data"), logger) { }
 
     public TestDataRegistryStore(string directory, ILogger<TestDataRegistryStore> logger)
     {

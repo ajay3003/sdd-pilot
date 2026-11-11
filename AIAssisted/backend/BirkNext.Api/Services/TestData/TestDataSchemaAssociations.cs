@@ -34,7 +34,7 @@ public sealed class TestDataSchemaAssociationStore
     private readonly string _path;
     private List<TestDataSchemaAssociation> _items;
 
-    public TestDataSchemaAssociationStore(IHostEnvironment environment) : this(System.IO.Path.Combine(environment.ContentRootPath, "App_Data", "test-data")) { }
+    public TestDataSchemaAssociationStore(IHostEnvironment environment) : this(System.IO.Path.Combine(BirkNext.Api.Services.AppDataLocation.Root(environment), "test-data")) { }
 
     public TestDataSchemaAssociationStore(string directory)
     {

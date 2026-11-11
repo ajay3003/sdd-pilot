@@ -49,7 +49,7 @@ public sealed partial class AzureDevOpsConnectionStore
         _protector = provider.CreateProtector(ProtectionPurpose);
     }
 
-    public static string DefaultDirectory(IHostEnvironment environment) => Path.Combine(environment.ContentRootPath, "App_Data", "azure-devops");
+    public static string DefaultDirectory(IHostEnvironment environment) => System.IO.Path.Combine(BirkNext.Api.Services.AppDataLocation.Root(environment), "azure-devops");
 
     /// <summary>"Bufdir" or a dev.azure.com organization URL → the organization name; null when not a valid name (no custom hosts).</summary>
     public static string? Organization(string? input)

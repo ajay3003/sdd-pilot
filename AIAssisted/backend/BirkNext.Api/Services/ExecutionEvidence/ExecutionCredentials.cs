@@ -44,7 +44,7 @@ public sealed partial class ApiServiceCredentialStore
         _protector = provider.CreateProtector(ProtectionPurpose);
     }
 
-    public static string DefaultDirectory(IHostEnvironment environment) => System.IO.Path.Combine(environment.ContentRootPath, "App_Data", "api-service-credentials");
+    public static string DefaultDirectory(IHostEnvironment environment) => System.IO.Path.Combine(BirkNext.Api.Services.AppDataLocation.Root(environment), "api-service-credentials");
 
     public IReadOnlyList<ApiServiceCredentialView> List() { lock (_gate) return [.. Load().Values.Select(View)]; }
     public ApiServiceCredentialView? Get(string environmentId) { lock (_gate) return Load().TryGetValue(environmentId, out var e) ? View(e) : null; }

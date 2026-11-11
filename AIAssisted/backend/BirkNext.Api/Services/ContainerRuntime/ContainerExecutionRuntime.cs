@@ -67,6 +67,10 @@ public interface IContainerExecutionRuntime
     string DisplayName { get; }
     /// <summary>The alias a container uses to reach the BirkNext host (Podman: host.containers.internal).</summary>
     string HostGatewayAlias { get; }
+    /// <summary>The workload runs on the host network (no container): a loopback target stays loopback and no network can be selected.</summary>
+    bool SharesHostNetwork => false;
+    /// <summary>The workload sees host paths (no mounts): commands and scripts use the host directories themselves.</summary>
+    bool SharesHostFilesystem => false;
     Task<PerformanceRuntimeStatus> StatusAsync(CancellationToken ct = default);
     Task<ContainerImageStatus> ImageAsync(string image, CancellationToken ct = default);
     /// <summary>Pulls the image (only ever called on an explicit, policy-permitted action).</summary>
