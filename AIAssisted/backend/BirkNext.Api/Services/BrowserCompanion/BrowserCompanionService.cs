@@ -260,6 +260,16 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
         }
     }
 
+    /// <summary>The Companion builds currently connected (live heartbeat), grouped by reported version and build id. Reads only.</summary>
+    public IReadOnlyList<BirkNext.BuildInfo.ConnectedCompanion> ConnectedBuilds()
+    {
+        var now = time.GetUtcNow();
+        lock (_gate)
+            return [.. _sessionsByProfile.Values.Where(s => s.IsConnected(now))
+                .GroupBy(s => (Version: string.IsNullOrWhiteSpace(s.ExtensionVersion) ? "unknown" : s.ExtensionVersion, s.BuildId))
+                .Select(g => new BirkNext.BuildInfo.ConnectedCompanion(g.Key.Version, g.Key.BuildId, g.Count()))];
+    }
+
     public BrowserCompanionStatus Status(string profileId)
     {
         var now = time.GetUtcNow();

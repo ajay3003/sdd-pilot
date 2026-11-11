@@ -166,6 +166,9 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
                 ApplicationName = _config["RuntimeSettings:ApplicationName"] ?? "QA Review Studio",
                 Environment = aspNetEnv,
                 Version = informationalVersion,
+                // From the compiled build identity (BuildInfoService), never configuration: only actual values, otherwise left empty.
+                BuildNumber = BirkNext.Api.Services.SystemInfo.BuildInfoService.Current.BuildNumber ?? BirkNext.Api.Services.SystemInfo.BuildInfoService.Current.BuildId,
+                CommitSha = BirkNext.Api.Services.SystemInfo.BuildInfoService.Current.SourceCommit,
                 PackageMode = packageMode
             },
             Frontend = new FrontendInfo

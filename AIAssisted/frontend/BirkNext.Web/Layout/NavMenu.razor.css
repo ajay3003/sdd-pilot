@@ -307,3 +307,7 @@
     .nav-top-collapsed .nav-collapse-toggle { width: 1.6rem; margin-left: 0; }
     .nav-scrollable.nav-rail { overflow: visible; }
 }
+
+/* The running frontend's version, unobtrusive at the end of the expanded navigation. */
+.nav-build { margin: 0.75rem 1rem 1rem; font-size: 0.72rem; color: rgba(255, 255, 255, 0.55); line-height: 1.3; }
+.nav-build-channel { display: block; }

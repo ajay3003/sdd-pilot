@@ -61,11 +61,13 @@ public sealed class ExecutionManifestService(AppDbContext db, AuthoredTestDataSt
 
         var environment = new ManifestEnvironment(summary.EnvironmentId, summary.EnvironmentType, summary.TargetOrigin, summary.AuthenticationMode, summary.AuthenticationReference);
         var (version, commit) = FullBackupService.ApplicationIdentity();
+        var build = BirkNext.Api.Services.SystemInfo.BuildInfoService.Current;
         var ordered = deps.OrderBy(d => d.Kind).ThenBy(d => d.Ref, StringComparer.Ordinal).ToList();
         return new ExecutionManifest
         {
             ManifestId = Guid.NewGuid(), Owner = ExecutionManifestSchema.ExecutionEvidenceOwner, RunId = summary.RunId, CreatedAt = summary.StartedAt, Initiator = summary.Initiator,
-            Environment = environment, Build = new(version, commit), Dependencies = ordered, DependencyFingerprint = DependencyFingerprint(environment, ordered),
+            Environment = environment, Dependencies = ordered,
+            Build = new(version, commit) { Channel = build.Channel.ToString(), BuildId = build.BuildId, InformationalVersion = build.InformationalVersion }, DependencyFingerprint = DependencyFingerprint(environment, ordered),
         };
     }
 

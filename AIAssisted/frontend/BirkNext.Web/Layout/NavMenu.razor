@@ -171,6 +171,8 @@
                         @onclick="_sections.ToggleShowOtherModules">@(_sections.ShowOtherModules ? "Hide other modules" : $"Show {hidden} other module{(hidden == 1 ? "" : "s")}")</button>
             }
         </nav>
+        @* This frontend's own compiled version (never read from the backend); details are in System Settings → General. *@
+        <p class="nav-build" data-testid="nav-build" title="@FrontendBuildIdentity.Current.InformationalVersion">BirkNext @(FrontendBuildIdentity.Current.ApplicationVersion is { Length: > 0 } v ? v : "unknown")<span class="nav-build-channel">@(FrontendBuildIdentity.Current.Channel switch { BirkNext.BuildInfo.BuildChannel.CI => $"build {FrontendBuildIdentity.Current.BuildId}", BirkNext.BuildInfo.BuildChannel.Release => "release", BirkNext.BuildInfo.BuildChannel.Local => "local build", _ => "unknown build" })</span></p>
     }
 </div>
 

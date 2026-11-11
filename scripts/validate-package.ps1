@@ -22,13 +22,27 @@ param(
     [string]$PackageRoot = "",
     [switch]$CreateManifest,
     [string]$MigrationManifest = "",
-    [string]$SourceCommit = ""
+    [string]$SourceCommit = "",
+    # A pipeline package must carry build-manifest.json and agree with it (backend, frontend, Companion); without the switch the check runs
+    # only when the file is present (older packages have none).
+    [switch]$RequireBuildManifest
 )
 
 $ErrorActionPreference = "Stop"
 $TesterAdvice = "Download a new tester artifact or contact the build owner."
 
 function P([string]$root, [string[]]$parts) { $path = $root; foreach ($p in $parts) { $path = Join-Path $path $p }; return $path }
+# SHA-256 of a packaged file. On Windows a path beyond 260 characters is opened with the long-path prefix (Windows PowerShell 5.1's
+# Get-FileHash cannot open it), so a deep extraction folder never turns hashing into a crash.
+function FileSha256([string]$full) {
+    $path = if ($env:OS -eq "Windows_NT" -and $full.Length -ge 248 -and -not $full.StartsWith("\\?\")) { "\\?\$full" } else { $full }
+    $stream = [System.IO.File]::OpenRead($path)
+    try {
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        try { return ([System.BitConverter]::ToString($sha.ComputeHash($stream)) -replace '-', '').ToLowerInvariant() } finally { $sha.Dispose() }
+    }
+    finally { $stream.Dispose() }
+}
 
 try {
     if ([string]::IsNullOrWhiteSpace($PackageRoot)) { $PackageRoot = Split-Path -Parent $PSScriptRoot }
@@ -46,12 +60,15 @@ try {
         $files = Get-ChildItem -Path $root -Recurse -File -Force |
             ForEach-Object { $_.FullName.Substring($root.Length).TrimStart('\', '/').Replace('\', '/') } |
             Where-Object { $_ -ne "package-manifest.json" } | Sort-Object
+        # Format 2: every file also has its SHA-256, so a changed file is detected, not only a missing one.
+        $hashes = @($files | ForEach-Object { [PSCustomObject]@{ path = $_; sha256 = (FileSha256 (P $root ($_ -split '/'))) } })
         [PSCustomObject]@{
-            format = 1
+            format = 2
             createdAt = (Get-Date).ToUniversalTime().ToString("o")
             sourceCommit = $SourceCommit
             migrations = $migrations
             files = @($files)
+            fileHashes = $hashes
         } | ConvertTo-Json -Depth 4 | Set-Content -Path $manifestPath -Encoding UTF8
         Write-Host "[OK] package-manifest.json written: $($files.Count) files, $($migrations.Count) migrations" -ForegroundColor Green
         exit 0
@@ -109,6 +126,10 @@ try {
         if ($missing.Count -gt 0) {
             $problems.Add("$($missing.Count) packaged file(s) are missing, e.g. $(($missing | Select-Object -First 3) -join ', ')")
         }
+        if ([int]$manifest.format -ge 2 -and $missing.Count -eq 0) {
+            $changed = @($manifest.fileHashes | Where-Object { (FileSha256 (P $root ($_.path -split '/'))) -ne $_.sha256 } | ForEach-Object { $_.path })
+            if ($changed.Count -gt 0) { $problems.Add("$($changed.Count) packaged file(s) differ from what the build produced, e.g. $(($changed | Select-Object -First 3) -join ', ')") }
+        }
         if (Test-Path $apiDll) {
             # Each EF Core migration carries [Migration("<id>")] in the compiled assembly: its id must be present.
             $text = [System.Text.Encoding]::GetEncoding(28591).GetString([System.IO.File]::ReadAllBytes($apiDll))
@@ -121,6 +142,17 @@ try {
                 $migrationProblem = $true
                 $problems.Add("The package manifest lists no EF Core migrations")
             }
+        }
+    }
+
+    # Build provenance: build-manifest.json against the compiled backend, the frontend metadata and WebAssembly, and the bundled Companion.
+    $buildManifest = Join-Path $root "build-manifest.json"
+    if ($RequireBuildManifest -or (Test-Path $buildManifest)) {
+        $identityModule = Join-Path $PSScriptRoot "BirkNextBuildIdentity.psm1"
+        if (-not (Test-Path $identityModule)) { $problems.Add("scripts/BirkNextBuildIdentity.psm1 is missing: build provenance cannot be checked") }
+        else {
+            Import-Module $identityModule -Force
+            foreach ($p in @(Test-BirkNextBuildProvenance $root)) { $problems.Add("Build provenance: $p") }
         }
     }
 

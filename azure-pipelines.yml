@@ -50,6 +50,16 @@ jobs:
     - bash: dotnet --info
       displayName: 'Confirm installed .NET SDK'
 
+    # Build identity: resolved ONCE for this run (version from AIAssisted/versioning/BirkNext.Version.props, Build.BuildId, Build.BuildNumber,
+    # Build.SourceVersion, Build.SourceBranch) and passed to every compilation below; nothing is recomputed per project or stage.
+    - pwsh: ./scripts/tests/BirkNextBuildIdentity.Tests.ps1
+      displayName: 'Build identity: resolver tests (synthetic variables only)'
+      workingDirectory: .
+
+    - pwsh: ./scripts/resolve-build-identity.ps1 -OutDir "$(Build.ArtifactStagingDirectory)/identity"
+      displayName: 'Resolve the build identity (application version, run id, commit)'
+      workingDirectory: .
+
     # Automated tests are intentionally not executed in this pipeline.
     # Restore, compilation, publish, and runnable artifact validation remain enabled.
 
@@ -65,7 +75,7 @@ jobs:
       displayName: 'Validate migration file integrity (every migrations folder) and record migration ids'
       workingDirectory: .
 
-    - script: dotnet build BirkNext.sln --configuration Release --no-restore
+    - script: dotnet build BirkNext.sln --configuration Release --no-restore -p:BirkNextBuildIdentityProps="$(Build.ArtifactStagingDirectory)/identity/build-identity.props"
       displayName: 'Build backend solution'
       workingDirectory: AIAssisted/backend
 
@@ -83,7 +93,7 @@ jobs:
       displayName: 'Restore frontend solution'
       workingDirectory: AIAssisted/frontend
 
-    - script: dotnet build BirkNext.sln --configuration Release --no-restore
+    - script: dotnet build BirkNext.sln --configuration Release --no-restore -p:BirkNextBuildIdentityProps="$(Build.ArtifactStagingDirectory)/identity/build-identity.props"
       displayName: 'Build frontend solution'
       workingDirectory: AIAssisted/frontend
 
@@ -102,6 +112,7 @@ jobs:
         --configuration Release
         --no-restore
         --output "$(Build.ArtifactStagingDirectory)/BirkNext/AIAssisted/backend"
+        -p:BirkNextBuildIdentityProps="$(Build.ArtifactStagingDirectory)/identity/build-identity.props"
       displayName: 'Publish BirkNext backend'
       workingDirectory: AIAssisted/backend
 
@@ -110,6 +121,7 @@ jobs:
         --configuration Release
         --no-restore
         --output "$(Build.ArtifactStagingDirectory)/BirkNext/AIAssisted/frontend"
+        -p:BirkNextBuildIdentityProps="$(Build.ArtifactStagingDirectory)/identity/build-identity.props"
       displayName: 'Publish BirkNext Blazor WebAssembly frontend'
       workingDirectory: AIAssisted/frontend
 
@@ -128,7 +140,8 @@ jobs:
           cp AIAssisted/.env.example "$PACKAGE_DIR/AIAssisted/.env.example"
           # The checked-in example contains only local development defaults required by docker-compose.
           cp AIAssisted/.env.example "$PACKAGE_DIR/AIAssisted/.env"
-          cp scripts/start-local.bat scripts/start-local.ps1 scripts/BirkNextPreflight.psm1 scripts/check-migrations.ps1 scripts/validate-package.ps1 "$PACKAGE_DIR/scripts/"
+          cp scripts/start-local.bat scripts/start-local.ps1 scripts/BirkNextPreflight.psm1 scripts/check-migrations.ps1 scripts/validate-package.ps1 \
+            scripts/BirkNextBuildIdentity.psm1 scripts/package-archive.ps1 "$PACKAGE_DIR/scripts/"
           cp AIAssisted/backend/MIGRATION_GUIDE.md "$PACKAGE_DIR/"
 
           cat > "$PACKAGE_DIR/README.md" <<'EOF'
@@ -170,14 +183,16 @@ jobs:
           test -s "$PACKAGE_DIR/scripts/check-migrations.ps1"
           test -s "$PACKAGE_DIR/scripts/validate-package.ps1"
 
-          # Package manifest: every packaged file and every EF Core migration id the source holds.
+          # Build manifest: the run's identity plus the versions read from the compiled backend, frontend and bundled Companion; fails when
+          # they disagree. Then the package manifest: every packaged file with its SHA-256 and every EF Core migration id the source holds.
+          pwsh -NoProfile -File scripts/write-build-manifest.ps1 -IdentityFile "$(Build.ArtifactStagingDirectory)/identity/build-identity.json" -PackageRoot "$PACKAGE_DIR"
           pwsh -NoProfile -File "$PACKAGE_DIR/scripts/validate-package.ps1" -CreateManifest \
             -MigrationManifest "$(Build.ArtifactStagingDirectory)/migrations.json" -SourceCommit "$(Build.SourceVersion)"
           # Validate an untouched copy in a clean folder, exactly as a tester would receive it.
           CLEAN_DIR="$(Agent.TempDirectory)/package-clean"
           rm -rf "$CLEAN_DIR" && mkdir -p "$CLEAN_DIR"
           cp -r "$PACKAGE_DIR" "$CLEAN_DIR/"
-          pwsh -NoProfile -File "$CLEAN_DIR/BirkNext/scripts/validate-package.ps1" -PackageRoot "$CLEAN_DIR/BirkNext"
+          pwsh -NoProfile -File "$CLEAN_DIR/BirkNext/scripts/validate-package.ps1" -PackageRoot "$CLEAN_DIR/BirkNext" -RequireBuildManifest
 
           echo "Runnable package verified. Key files:"
           printf '%s\n' \
@@ -227,7 +242,7 @@ jobs:
         $clean = "C:\bn-smoke"
         if (Test-Path $clean) { Remove-Item -Recurse -Force $clean }
         Copy-Item -Recurse "$(Pipeline.Workspace)\candidate" $clean
-        powershell -NoProfile -ExecutionPolicy Bypass -File "$clean\scripts\validate-package.ps1"
+        powershell -NoProfile -ExecutionPolicy Bypass -File "$clean\scripts\validate-package.ps1" -RequireBuildManifest
         if ($LASTEXITCODE -ne 0) { throw "Tester package validation failed." }
         powershell -NoProfile -ExecutionPolicy Bypass -File "$clean\scripts\start-local.ps1" -ValidateOnly -SkipContainers
         if ($LASTEXITCODE -ne 0) { throw "start-local.ps1 -ValidateOnly failed on the tester package." }
@@ -238,4 +253,23 @@ jobs:
       inputs:
         targetPath: '$(Pipeline.Workspace)/candidate'
         artifact: 'birknext-tester-package'
+        publishLocation: 'pipeline'
+
+    # The downloadable, visibly versioned archive: BirkNext-<build version>.zip (name from the package's build-manifest.json) and its
+    # SHA-256 in a separate .sha256 file, computed after the archive is final. The artifact name stays stable for consumers.
+    - powershell: |
+        $ErrorActionPreference = "Stop"
+        $out = "$(Build.ArtifactStagingDirectory)\archive"
+        powershell -NoProfile -ExecutionPolicy Bypass -File "C:\bn-smoke\scripts\package-archive.ps1" -PackageRoot "$(Pipeline.Workspace)\candidate" -OutDir $out
+        if ($LASTEXITCODE -ne 0) { throw "Creating the versioned archive failed." }
+        $zip = Get-ChildItem $out -Filter "BirkNext-*.zip" | Select-Object -First 1
+        powershell -NoProfile -ExecutionPolicy Bypass -File "C:\bn-smoke\scripts\package-archive.ps1" -Verify -Archive $zip.FullName -ExtractTo "C:\bn-archive-check"
+        if ($LASTEXITCODE -ne 0) { throw "The versioned archive did not verify after extraction." }
+      displayName: 'Create the versioned archive and its SHA-256, then verify a fresh extraction'
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish BirkNext versioned archive and checksum'
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)/archive'
+        artifact: 'birknext-tester-package-archive'
         publishLocation: 'pipeline'

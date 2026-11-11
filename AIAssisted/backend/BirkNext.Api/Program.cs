@@ -646,6 +646,7 @@ builder.Services.AddHttpClient(BirkNext.Api.Services.ExecutionEvidence.Execution
     .ConfigurePrimaryHttpMessageHandler(BirkNext.Api.Services.ExecutionEvidence.ExecutionRunService.CreatePrimaryHandler)
     .AddHttpMessageHandler<BirkNext.Api.Services.ExecutionEvidence.EvidenceCaptureHandler>();
 builder.Services.AddScoped<BirkNext.Api.Services.ExecutionEvidence.ExecutionEvidenceStore>();
+builder.Services.AddSingleton(sp => new BirkNext.Api.Services.SystemInfo.BuildInfoService(sp.GetRequiredService<IServiceScopeFactory>(), sp.GetRequiredService<IConfiguration>(), sp.GetService<BirkNext.Api.Services.BrowserCompanion.BrowserCompanionService>()));
 builder.Services.AddScoped(sp => new BirkNext.Api.Services.ExecutionEvidence.ExecutionManifestService(sp.GetRequiredService<BirkNext.Api.Data.AppDbContext>(), sp.GetService<BirkNext.Api.Services.TestData.AuthoredTestDataStore>()));
 builder.Services.AddScoped<BirkNext.Api.Services.ExecutionEvidence.ExecutionEvidenceManagement>();
 // Test Execution & Evidence: read-only providers over the existing evidence owners (no second store, no execution).
@@ -1002,6 +1003,12 @@ builder.Services
     .ConfigureSchema(b => b.ModifyOptions(o => o.UseXmlDocumentation = true));
 
 var app = builder.Build();
+{
+    // The running build, once at startup (no secrets: version, channel, run id and commit only).
+    var build = BirkNext.Api.Services.SystemInfo.BuildInfoService.Current;
+    app.Logger.LogInformation("BirkNext {InformationalVersion} (channel {Channel}, run {BuildId}, provenance {Provenance})",
+        build.InformationalVersion, build.Channel, build.BuildId ?? "none", build.Provenance);
+}
 
 var authenticatedReview = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthenticatedReviewOptions>>().Value;
 app.Logger.LogInformation("Authenticated review configuration: Enabled={Enabled}, Runtime={Runtime}",

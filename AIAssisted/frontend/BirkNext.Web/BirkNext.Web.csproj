@@ -129,6 +129,7 @@
     <Compile Include="../../shared/ExecutionExplorerContracts.cs" Link="Models/ExecutionExplorerContracts.cs" />
     <Compile Include="../../shared/WorkspaceTransferContracts.cs" Link="Models/WorkspaceTransferContracts.cs" />
     <Compile Include="../../shared/ExecutionManifestContracts.cs" Link="Models/ExecutionManifestContracts.cs" />
+    <Compile Include="../../shared/BuildIdentityContracts.cs" Link="Models/BuildIdentityContracts.cs" />
     <Compile Include="../../shared/ContractTestDataContracts.cs" Link="Models/ContractTestDataContracts.cs" />
     <Compile Include="../../shared/PerformanceLocalExecutionContracts.cs" Link="Models/PerformanceLocalExecutionContracts.cs" />
     <Compile Include="../../shared/PerformanceResourceContracts.cs" Link="Models/PerformanceResourceContracts.cs" />
@@ -167,4 +168,9 @@
   <ItemGroup>
     <Using Include="BirkNext.SourceEvidence" />
   </ItemGroup>
+  <!-- Same build identity as the backend (one release package); publish also writes wwwroot/build-info.json. -->
+  <PropertyGroup>
+    <BirkNextWriteFrontendBuildInfo>true</BirkNextWriteFrontendBuildInfo>
+  </PropertyGroup>
+  <Import Project="../../versioning/BirkNext.BuildIdentity.targets" />
 </Project>

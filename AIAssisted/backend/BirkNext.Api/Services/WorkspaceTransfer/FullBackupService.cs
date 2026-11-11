@@ -71,13 +71,11 @@ public sealed class FullBackupService
     public string BackupDirectory { get; }
     private string RestoreRoot => Path.Combine(BackupDirectory, "restores");
 
+    /// <summary>The running build (version without build metadata, and commit) from the one build-information provider.</summary>
     public static (string Version, string Commit) ApplicationIdentity()
     {
-        var assembly = typeof(FullBackupService).Assembly;
-        var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? assembly.GetName().Version?.ToString() ?? "unknown";
-        var commit = assembly.GetCustomAttributes<AssemblyMetadataAttribute>().FirstOrDefault(a => a.Key == "SourceCommit")?.Value;
-        if (string.IsNullOrWhiteSpace(commit) && informational.Split('+') is [_, var sha, ..]) commit = sha;
-        return (informational.Split('+')[0], string.IsNullOrWhiteSpace(commit) ? "unknown" : commit);
+        var build = BirkNext.Api.Services.SystemInfo.BuildInfoService.Current;
+        return (build.BuildVersion is { Length: > 0 } v ? v : build.InformationalVersion.Split('+')[0], build.SourceCommit ?? "unknown");
     }
 
     // ───────────────────────────── Create ─────────────────────────────

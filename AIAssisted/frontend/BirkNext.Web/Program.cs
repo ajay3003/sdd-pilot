@@ -56,6 +56,7 @@ builder.Services
 
 builder.Services.AddHttpClient<AdminApiService>(client =>
     client.BaseAddress = backendBase);
+builder.Services.AddHttpClient<IBuildInfoApiService, BuildInfoApiService>(client => client.BaseAddress = backendBase);
 
 builder.Services.AddSingleton<FeatureVisibilityService>();
 builder.Services.AddSingleton<SchemaStudioService>();

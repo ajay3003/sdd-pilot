@@ -1,0 +1,125 @@
+<Project>
+  <!--
+    BirkNext build identity, imported by exactly two projects: BirkNext.Api and BirkNext.Web (the two components of one release package).
+
+    Inputs, in order:
+    1. versioning/BirkNext.Version.props: the application version (the only source of the product version).
+    2. -p:BirkNextBuildIdentityProps=<file>: the identity resolved ONCE per pipeline run by scripts/resolve-build-identity.ps1
+       (channel CI or Release, build id/number, commit, branch, timestamp). Every project of that run imports the same file,
+       so nothing is recomputed per project.
+    3. Otherwise (a developer build): the git commit and dirty state of the working tree, channel Local. In a CI environment without a
+       resolved identity the channel is Unknown — never Local, never CI.
+
+    Outputs: Version, AssemblyVersion (MAJOR.MINOR.0.0: binding stays stable across patches and builds), FileVersion
+    (MAJOR.MINOR.PATCH.<build id mod 65535, 0 locally>), InformationalVersion (<build version>+<commit>[.dirty]) and AssemblyMetadata
+    entries (BirkNextBuildChannel, BirkNextBuildVersion, BirkNextBuildId, BirkNextBuildNumber, SourceCommit, BirkNextSourceBranch,
+    BirkNextSourceDirty, BirkNextBuildTimestamp, BirkNextBuildConfiguration, BirkNextIdentitySchema, BirkNextPipelineDefinition).
+    Nothing here invents a CI build number: an absent value stays empty.
+  -->
+  <Import Project="$(MSBuildThisFileDirectory)BirkNext.Version.props" />
+  <Import Project="$(BirkNextBuildIdentityProps)" Condition="'$(BirkNextBuildIdentityProps)' != '' and Exists('$(BirkNextBuildIdentityProps)')" />
+
+  <PropertyGroup>
+    <_BirkNextVersionValid>$([System.Text.RegularExpressions.Regex]::IsMatch('$(BirkNextApplicationVersion)', '^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$'))</_BirkNextVersionValid>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(_BirkNextVersionValid)' == 'True'">
+    <_BirkNextMajor>$([System.Text.RegularExpressions.Regex]::Match('$(BirkNextApplicationVersion)', '^[0-9]+').Value)</_BirkNextMajor>
+    <_BirkNextMinor>$([System.Text.RegularExpressions.Regex]::Match('$(BirkNextApplicationVersion)', '(?&lt;=^[0-9]+\.)[0-9]+').Value)</_BirkNextMinor>
+    <_BirkNextPatch>$([System.Text.RegularExpressions.Regex]::Match('$(BirkNextApplicationVersion)', '[0-9]+$').Value)</_BirkNextPatch>
+    <BirkNextFileRevision Condition="'$(BirkNextFileRevision)' == ''">0</BirkNextFileRevision>
+    <Version>$(BirkNextApplicationVersion)</Version>
+    <AssemblyVersion>$(_BirkNextMajor).$(_BirkNextMinor).0.0</AssemblyVersion>
+    <FileVersion>$(_BirkNextMajor).$(_BirkNextMinor).$(_BirkNextPatch).$(BirkNextFileRevision)</FileVersion>
+    <!-- The commit is part of our own InformationalVersion; the SDK must not append a second one. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+  <Target Name="BirkNextResolveBuildIdentity" BeforeTargets="GetAssemblyAttributes">
+    <Error Condition="'$(_BirkNextVersionValid)' != 'True'" Text="BirkNextApplicationVersion '$(BirkNextApplicationVersion)' (versioning/BirkNext.Version.props) is not MAJOR.MINOR.PATCH." />
+    <Error Condition="'$(BirkNextBuildIdentityProps)' != '' and !Exists('$(BirkNextBuildIdentityProps)')" Text="The resolved build identity '$(BirkNextBuildIdentityProps)' does not exist: run scripts/resolve-build-identity.ps1 first." />
+
+    <!-- Developer build: the working tree's commit and whether it has changes (only when no resolved identity was given). -->
+    <Exec Condition="'$(BirkNextBuildChannel)' == ''" Command="git rev-parse HEAD" ConsoleToMSBuild="true" IgnoreExitCode="true" IgnoreStandardErrorWarningFormat="true"
+          StandardOutputImportance="low" StandardErrorImportance="low" WorkingDirectory="$(MSBuildProjectDirectory)">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_BirkNextGitHead" />
+      <Output TaskParameter="ExitCode" PropertyName="_BirkNextGitExit" />
+    </Exec>
+    <Exec Condition="'$(BirkNextBuildChannel)' == '' and '$(_BirkNextGitExit)' == '0'" Command="git status --porcelain" ConsoleToMSBuild="true" IgnoreExitCode="true"
+          IgnoreStandardErrorWarningFormat="true" StandardOutputImportance="low" StandardErrorImportance="low" WorkingDirectory="$(MSBuildProjectDirectory)">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_BirkNextGitStatus" />
+      <Output TaskParameter="ExitCode" PropertyName="_BirkNextGitStatusExit" />
+    </Exec>
+    <Exec Condition="'$(BirkNextBuildChannel)' == '' and '$(_BirkNextGitExit)' == '0'" Command="git rev-parse --abbrev-ref HEAD" ConsoleToMSBuild="true" IgnoreExitCode="true"
+          IgnoreStandardErrorWarningFormat="true" StandardOutputImportance="low" StandardErrorImportance="low" WorkingDirectory="$(MSBuildProjectDirectory)">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_BirkNextGitBranch" />
+    </Exec>
+    <PropertyGroup Condition="'$(BirkNextBuildChannel)' == ''">
+      <_BirkNextCiWithoutIdentity Condition="'$(TF_BUILD)' == 'True' or '$(GITHUB_ACTIONS)' == 'true' or '$(CI)' == 'true'">true</_BirkNextCiWithoutIdentity>
+      <BirkNextBuildChannel Condition="'$(_BirkNextCiWithoutIdentity)' == 'true'">Unknown</BirkNextBuildChannel>
+      <BirkNextBuildChannel Condition="'$(_BirkNextCiWithoutIdentity)' != 'true'">Local</BirkNextBuildChannel>
+      <BirkNextSourceCommit Condition="'$(BirkNextSourceCommit)' == '' and '$(_BirkNextGitExit)' == '0' and $([System.Text.RegularExpressions.Regex]::IsMatch('$(_BirkNextGitHead.Trim())', '^[0-9a-fA-F]{40}$'))">$(_BirkNextGitHead.Trim().ToLowerInvariant())</BirkNextSourceCommit>
+      <BirkNextSourceCommit Condition="'$(BirkNextSourceCommit)' == ''">unknown</BirkNextSourceCommit>
+      <BirkNextSourceDirty Condition="'$(BirkNextSourceCommit)' == 'unknown' or '$(_BirkNextGitStatusExit)' != '0'">unknown</BirkNextSourceDirty>
+      <BirkNextSourceDirty Condition="'$(BirkNextSourceDirty)' == '' and '$(_BirkNextGitStatus)' != ''">true</BirkNextSourceDirty>
+      <BirkNextSourceDirty Condition="'$(BirkNextSourceDirty)' == ''">false</BirkNextSourceDirty>
+      <BirkNextSourceBranch Condition="'$(_BirkNextGitExit)' == '0' and '$(_BirkNextGitBranch)' != ''">$([System.Text.RegularExpressions.Regex]::Replace('$(_BirkNextGitBranch.Trim())', '[^A-Za-z0-9._/-]', '-'))</BirkNextSourceBranch>
+      <BirkNextBuildVersion Condition="'$(BirkNextBuildChannel)' == 'Local'">$(BirkNextApplicationVersion)-local</BirkNextBuildVersion>
+      <BirkNextBuildVersion Condition="'$(BirkNextBuildChannel)' == 'Unknown'">$(BirkNextApplicationVersion)-unknown</BirkNextBuildVersion>
+    </PropertyGroup>
+    <PropertyGroup>
+      <_BirkNextBuildMetadata>$(BirkNextSourceCommit)</_BirkNextBuildMetadata>
+      <_BirkNextBuildMetadata Condition="'$(BirkNextSourceDirty)' == 'true'">$(BirkNextSourceCommit).dirty</_BirkNextBuildMetadata>
+      <InformationalVersion>$(BirkNextBuildVersion)+$(_BirkNextBuildMetadata)</InformationalVersion>
+    </PropertyGroup>
+    <ItemGroup>
+      <_BirkNextMeta Include="BirkNextIdentitySchema" Value="birknext-build-identity/1" />
+      <_BirkNextMeta Include="BirkNextBuildChannel" Value="$(BirkNextBuildChannel)" />
+      <_BirkNextMeta Include="BirkNextBuildVersion" Value="$(BirkNextBuildVersion)" />
+      <_BirkNextMeta Include="BirkNextBuildId" Value="$(BirkNextBuildId)" />
+      <_BirkNextMeta Include="BirkNextBuildNumber" Value="$(BirkNextBuildNumber)" />
+      <_BirkNextMeta Include="SourceCommit" Value="$(BirkNextSourceCommit)" />
+      <_BirkNextMeta Include="BirkNextSourceBranch" Value="$(BirkNextSourceBranch)" />
+      <_BirkNextMeta Include="BirkNextSourceDirty" Value="$(BirkNextSourceDirty)" />
+      <_BirkNextMeta Include="BirkNextBuildTimestamp" Value="$(BirkNextBuildTimestamp)" />
+      <_BirkNextMeta Include="BirkNextBuildConfiguration" Value="$(Configuration)" />
+      <_BirkNextMeta Include="BirkNextPipelineDefinition" Value="$(BirkNextPipelineDefinition)" />
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>%(_BirkNextMeta.Identity)</_Parameter1>
+        <_Parameter2>%(_BirkNextMeta.Value)</_Parameter2>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
+
+  <!-- The frontend ships as WebAssembly (webcil), which no version tool can read: publish also writes wwwroot/build-info.json from the same
+       identity so a package can be checked without running it. The running app reads its own assembly metadata, never this file. -->
+  <Target Name="BirkNextWriteFrontendBuildInfo" AfterTargets="Publish" DependsOnTargets="BirkNextResolveBuildIdentity" Condition="'$(BirkNextWriteFrontendBuildInfo)' == 'true'">
+    <PropertyGroup>
+      <_BnJsBuildId>null</_BnJsBuildId>
+      <_BnJsBuildId Condition="'$(BirkNextBuildId)' != ''">"$(BirkNextBuildId)"</_BnJsBuildId>
+      <_BnJsBuildNumber>null</_BnJsBuildNumber>
+      <_BnJsBuildNumber Condition="'$(BirkNextBuildNumber)' != ''">"$(BirkNextBuildNumber)"</_BnJsBuildNumber>
+      <_BnJsBranch>null</_BnJsBranch>
+      <_BnJsBranch Condition="'$(BirkNextSourceBranch)' != ''">"$(BirkNextSourceBranch)"</_BnJsBranch>
+      <_BnJsTimestamp>null</_BnJsTimestamp>
+      <_BnJsTimestamp Condition="'$(BirkNextBuildTimestamp)' != ''">"$(BirkNextBuildTimestamp)"</_BnJsTimestamp>
+    </PropertyGroup>
+    <ItemGroup>
+      <_BnBuildInfoLine Include="{" />
+      <_BnBuildInfoLine Include="  &quot;schema&quot;: &quot;birknext-build-identity/1&quot;," />
+      <_BnBuildInfoLine Include="  &quot;component&quot;: &quot;$(AssemblyName)&quot;," />
+      <_BnBuildInfoLine Include="  &quot;applicationVersion&quot;: &quot;$(BirkNextApplicationVersion)&quot;," />
+      <_BnBuildInfoLine Include="  &quot;buildVersion&quot;: &quot;$(BirkNextBuildVersion)&quot;," />
+      <_BnBuildInfoLine Include="  &quot;informationalVersion&quot;: &quot;$(InformationalVersion)&quot;," />
+      <_BnBuildInfoLine Include="  &quot;channel&quot;: &quot;$(BirkNextBuildChannel)&quot;," />
+      <_BnBuildInfoLine Include="  &quot;buildId&quot;: $(_BnJsBuildId)," />
+      <_BnBuildInfoLine Include="  &quot;buildNumber&quot;: $(_BnJsBuildNumber)," />
+      <_BnBuildInfoLine Include="  &quot;sourceCommit&quot;: &quot;$(BirkNextSourceCommit)&quot;," />
+      <_BnBuildInfoLine Include="  &quot;sourceBranch&quot;: $(_BnJsBranch)," />
+      <_BnBuildInfoLine Include="  &quot;sourceDirty&quot;: &quot;$(BirkNextSourceDirty)&quot;," />
+      <_BnBuildInfoLine Include="  &quot;buildTimestamp&quot;: $(_BnJsTimestamp)," />
+      <_BnBuildInfoLine Include="  &quot;configuration&quot;: &quot;$(Configuration)&quot;" />
+      <_BnBuildInfoLine Include="}" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(PublishDir)wwwroot/build-info.json" Lines="@(_BnBuildInfoLine)" Overwrite="true" Encoding="utf-8" />
+  </Target>
+</Project>

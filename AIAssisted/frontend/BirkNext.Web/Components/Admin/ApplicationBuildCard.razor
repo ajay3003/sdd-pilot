@@ -1,0 +1,147 @@
+@using BirkNext.BuildInfo
+@using BirkNext.Web.Services
+@inject IServiceProvider ServiceProvider
+@inject IJSRuntime JS
+
+@* Application information: the running BirkNext build. Every value is read from the compiled components (this frontend's own assembly, the
+   backend's build-info endpoint); nothing is configured or hardcoded. Missing values are shown as unknown, never as a release. *@
+<section class="abc" aria-labelledby="abc-heading" data-testid="abc" data-channel="@Frontend.Channel" aria-busy="@(_loading ? "true" : "false")">
+    <div class="abc-head">
+        <h2 id="abc-heading" class="abc-title">Application information</h2>
+        <button type="button" class="abc-copy" data-testid="abc-copy" @onclick="CopyAsync">@(_copied ? "Copied" : "Copy version information")</button>
+    </div>
+
+    <div class="abc-summary" data-testid="abc-summary">
+        <span class="abc-product">BirkNext <strong data-testid="abc-version">@VersionText</strong></span>
+        <span class="abc-pill abc-@ChannelTone(Backend?.Channel ?? Frontend.Channel)" data-testid="abc-channel">@ChannelLabel(Backend?.Channel ?? Frontend.Channel)</span>
+        @if ((Backend ?? Frontend).BuildId is { } run) { <span class="abc-fact" data-testid="abc-build">Build @run@((Backend ?? Frontend).BuildNumber is { } n ? $" · {n}" : "")</span> }
+        <span class="abc-fact" data-testid="abc-commit">Commit @((Backend ?? Frontend).ShortCommit ?? "unknown")@((Backend ?? Frontend).SourceDirty == true ? " (uncommitted changes)" : "")</span>
+        @if ((Backend ?? Frontend).BuildTimestampUtc is { } built) { <span class="abc-fact" data-testid="abc-built">Built @built</span> }
+    </div>
+    @if ((Backend?.Channel ?? Frontend.Channel) is not (BuildChannel.CI or BuildChannel.Release))
+    {
+        <p class="abc-note" data-testid="abc-not-official">@(Frontend.Channel == BuildChannel.Local ? "A local build: not an official CI build or release." : "The build channel could not be established: not an official release.")</p>
+    }
+    @if (_error is { } error) { <p class="abc-note abc-warn-text" role="status" data-testid="abc-error">@error Only this frontend's own identity is shown.</p> }
+
+    <ul class="abc-components" data-testid="abc-components">
+        <li data-testid="abc-row-frontend"><span class="abc-k">Frontend</span><span class="abc-v">@Frontend.InformationalVersion</span>@Provenance(Frontend.Provenance)</li>
+        <li data-testid="abc-row-backend"><span class="abc-k">Backend</span>
+            @if (Backend is { } b) { <span class="abc-v">@b.InformationalVersion</span>@Provenance(b.Provenance) } else { <span class="abc-v">@(_loading ? "Loading…" : "Unknown")</span> }</li>
+        <li data-testid="abc-row-match" data-status="@_match"><span class="abc-k">Frontend / backend</span>
+            <span class="abc-pill abc-@MatchTone(_match)" data-testid="abc-match">@MatchLabel(_match)</span><span class="abc-sub">@_matchText</span></li>
+        <li data-testid="abc-row-companion"><span class="abc-k">Edge Companion</span>
+            @if (_info?.Companion is { } c)
+            {
+                <span class="abc-v">@(c.Connected.Count > 0 ? string.Join(", ", c.Connected.Select(x => $"v{x.Version}")) + " connected" : "Not connected")@(c.BundledVersion is { } bv ? $" · bundled v{bv}" : "")</span>
+                <span class="abc-pill abc-neutral" data-testid="abc-companion-compat">Compatibility not assessed</span>
+            }
+            else { <span class="abc-v">Unknown</span> }</li>
+        <li data-testid="abc-row-database"><span class="abc-k">Database schema</span>
+            @if (_info?.Database is { Count: > 0 } db)
+            {
+                var worst = db.Any(d => d.Status == SchemaCompatibility.AheadOfBuild) ? SchemaCompatibility.AheadOfBuild
+                    : db.Any(d => d.Status == SchemaCompatibility.PendingMigrations) ? SchemaCompatibility.PendingMigrations
+                    : db.Any(d => d.Status == SchemaCompatibility.Unknown) ? SchemaCompatibility.Unknown : SchemaCompatibility.Current;
+                <span class="abc-v">@db.Count(d => d.Status == SchemaCompatibility.Current) of @db.Count contexts current</span>
+                <span class="abc-pill abc-@SchemaTone(worst)" data-testid="abc-schema" data-status="@worst">@SchemaLabel(worst)</span>
+            }
+            else { <span class="abc-v">Unknown</span> }</li>
+        @if (_info?.Manifest is { Status: not ManifestCheckStatus.NotPackaged } m)
+        {
+            <li data-testid="abc-row-manifest" data-status="@m.Status"><span class="abc-k">Package manifest</span>
+                <span class="abc-pill abc-@(m.Status == ManifestCheckStatus.Consistent ? "ok" : "bad")">@(m.Status == ManifestCheckStatus.Consistent ? "Matches the running build" : m.Status == ManifestCheckStatus.Invalid ? "Invalid" : "Differs from the running build")</span></li>
+        }
+    </ul>
+
+    <details class="abc-details" data-testid="abc-details">
+        <summary>Technical details</summary>
+        <dl class="abc-dl">
+            @Pair("Application version", (Backend ?? Frontend).ApplicationVersion)
+            @Pair("Build version", (Backend ?? Frontend).BuildVersion)
+            @Pair("Source commit", (Backend ?? Frontend).SourceCommit ?? "unknown", "abc-sha")
+            @Pair("Source branch", (Backend ?? Frontend).SourceBranch)
+            @Pair("Pipeline run id", (Backend ?? Frontend).BuildId)
+            @Pair("Build number", (Backend ?? Frontend).BuildNumber)
+            @Pair("Pipeline", (Backend ?? Frontend).PipelineDefinition)
+            @Pair("Configuration", (Backend ?? Frontend).Configuration)
+            @Pair("Backend assembly / file version", Backend is { } bb ? $"{bb.AssemblyVersion} / {bb.FileVersion}" : null)
+            @Pair("Frontend assembly / file version", $"{Frontend.AssemblyVersion} / {Frontend.FileVersion}")
+            @if (_info?.Manifest is { Status: not ManifestCheckStatus.NotPackaged } mf)
+            {
+                @Pair("Manifest SHA-256", mf.Fingerprint, "abc-sha")
+                @foreach (var d in mf.Differences) { @Pair("Manifest difference", d) }
+            }
+            @if (_info?.Companion is { } cc)
+            {
+                @Pair("Companion bundled build", cc.BundledBuildId, "abc-sha")
+                @Pair("Companion", cc.Note)
+            }
+        </dl>
+        @if (_info?.Database is { Count: > 0 } contexts)
+        {
+            <table class="abc-table" data-testid="abc-schema-table">
+                <caption class="visually-hidden">Database migrations per context</caption>
+                <thead><tr><th scope="col">Context</th><th scope="col">Applied / known</th><th scope="col">Status</th></tr></thead>
+                <tbody>@foreach (var s in contexts) { <tr data-status="@s.Status"><td>@s.Context</td><td>@s.Applied / @s.Known</td><td>@s.Note</td></tr> }</tbody>
+            </table>
+        }
+        @foreach (var p in Frontend.Problems.Concat(Backend?.Problems ?? [])) { <p class="abc-note abc-warn-text" data-testid="abc-problem">@p</p> }
+    </details>
+</section>
+
+@code {
+    private BuildInfoResponse? _info;
+    private string? _error;
+    private bool _loading = true;
+    private bool _copied;
+    private ComponentCompatibility _match = ComponentCompatibility.NotAssessed;
+    private string _matchText = "";
+
+    private static BuildIdentity Frontend => FrontendBuildIdentity.Current;
+    private BuildIdentity? Backend => _info?.Backend;
+    private string VersionText => (Backend ?? Frontend).ApplicationVersion is { Length: > 0 } v ? v : "unknown";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Optional: a host without the build-info client still shows this frontend's own identity (the backend's stays unknown).
+        (_info, _error) = ServiceProvider.GetService(typeof(IBuildInfoApiService)) is IBuildInfoApiService api
+            ? await api.GetAsync() : (null, "The backend's build information is not available in this host.");
+        (_match, _matchText) = _info is null ? (ComponentCompatibility.NotAssessed, "Not assessed: the backend's build is unknown.") : BuildCompatibilityRules.Compare(Frontend, _info.Backend);
+        _loading = false;
+    }
+
+    private async Task CopyAsync()
+    {
+        var b = Backend ?? Frontend;
+        var lines = new List<string>
+        {
+            $"BirkNext {b.ApplicationVersion} ({ChannelLabel(b.Channel)})",
+            $"Frontend: {Frontend.InformationalVersion}",
+            $"Backend: {Backend?.InformationalVersion ?? "unknown"}",
+            $"Frontend/backend: {MatchLabel(_match)}",
+            $"Commit: {b.SourceCommit ?? "unknown"}{(b.SourceDirty == true ? " (uncommitted changes)" : "")}",
+        };
+        if (b.BuildId is { } id) lines.Add($"Pipeline run: {id}{(b.BuildNumber is { } n ? $" ({n})" : "")}");
+        if (_info?.Companion is { } c) lines.Add($"Edge Companion: bundled {c.BundledVersion ?? "unknown"}; connected {(c.Connected.Count == 0 ? "none" : string.Join(", ", c.Connected.Select(x => x.Version)))}");
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", string.Join("\n", lines)); _copied = true; } catch (JSException) { }
+    }
+
+    private RenderFragment Pair(string label, string? value, string? cls = null) => __builder =>
+    {
+        if (string.IsNullOrWhiteSpace(value)) return;
+        <dt>@label</dt><dd class="@cls">@value</dd>
+    };
+
+    private static RenderFragment Provenance(ProvenanceStatus p) => __builder =>
+    {
+        <span class="abc-pill abc-@(p switch { ProvenanceStatus.Complete => "ok", ProvenanceStatus.Inconsistent => "bad", ProvenanceStatus.Partial => "info", _ => "neutral" })" data-testid="abc-provenance">@(p switch { ProvenanceStatus.Complete => "Full provenance", ProvenanceStatus.Partial => "Commit known, no pipeline", ProvenanceStatus.Inconsistent => "Inconsistent", _ => "Provenance unknown" })</span>
+    };
+
+    private static string ChannelLabel(BuildChannel c) => c switch { BuildChannel.Release => "Release", BuildChannel.CI => "CI build", BuildChannel.Local => "Local build", _ => "Unknown build" };
+    private static string ChannelTone(BuildChannel c) => c switch { BuildChannel.Release => "ok", BuildChannel.CI => "info", BuildChannel.Local => "neutral", _ => "warn" };
+    private static string MatchLabel(ComponentCompatibility m) => m switch { ComponentCompatibility.Matched => "Same build", ComponentCompatibility.Mismatch => "Different builds", ComponentCompatibility.CompatibleDifferentBuilds => "Compatible", _ => "Not assessed" };
+    private static string MatchTone(ComponentCompatibility m) => m switch { ComponentCompatibility.Matched => "ok", ComponentCompatibility.Mismatch => "bad", _ => "neutral" };
+    private static string SchemaLabel(SchemaCompatibility s) => s switch { SchemaCompatibility.Current => "Current", SchemaCompatibility.PendingMigrations => "Migrations pending", SchemaCompatibility.AheadOfBuild => "Newer than this build", _ => "Unknown" };
+    private static string SchemaTone(SchemaCompatibility s) => s switch { SchemaCompatibility.Current => "ok", SchemaCompatibility.PendingMigrations => "warn", SchemaCompatibility.AheadOfBuild => "bad", _ => "neutral" };
+}

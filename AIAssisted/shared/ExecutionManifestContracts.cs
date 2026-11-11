@@ -46,8 +46,14 @@ public sealed record ManifestDependency
 /// <summary>The environment the run targeted, as BirkNext knew it at run time (authority only; never a credential).</summary>
 public sealed record ManifestEnvironment(string EnvironmentId, string? EnvironmentType, string TargetOrigin, string? AuthenticationMode, string? AuthenticationReference);
 
-/// <summary>The BirkNext build that executed the run (assembly informational version and source commit, "unknown" when not stamped).</summary>
-public sealed record ManifestBuild(string Version, string SourceCommit);
+/// <summary>The BirkNext build that executed the run (its own software build, not the application under test): build version and source
+/// commit ("unknown" when not stamped), plus channel and pipeline run id when the build has them. Never back-filled for older runs.</summary>
+public sealed record ManifestBuild(string Version, string SourceCommit)
+{
+    public string? Channel { get; init; }
+    public string? BuildId { get; init; }
+    public string? InformationalVersion { get; init; }
+}
 
 public sealed record ExecutionManifest
 {

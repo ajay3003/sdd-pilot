@@ -1,0 +1,12 @@
+<Project>
+  <!--
+    The ONE source of the BirkNext application (product) version. Change it here, in a reviewed commit, when a release is planned;
+    nothing else may hardcode the product version (System Settings, the frontend, pipeline YAML and the Browser Companion read it or
+    keep their own, separate version). Format: MAJOR.MINOR.PATCH (SemVer core, no prerelease or build suffix: those come from the build).
+    1.0.0 is the version every BirkNext build has reported so far (the .NET SDK default), kept so existing backups and packages stay
+    comparable. Policy: docs/architecture/birknext-build-version-model.md.
+  -->
+  <PropertyGroup>
+    <BirkNextApplicationVersion>1.0.0</BirkNextApplicationVersion>
+  </PropertyGroup>
+</Project>

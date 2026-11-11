@@ -150,6 +150,7 @@
     <Compile Include="../../shared/ExecutionExplorerContracts.cs" Link="Models/ExecutionExplorerContracts.cs" />
     <Compile Include="../../shared/WorkspaceTransferContracts.cs" Link="Models/WorkspaceTransferContracts.cs" />
     <Compile Include="../../shared/ExecutionManifestContracts.cs" Link="Models/ExecutionManifestContracts.cs" />
+    <Compile Include="../../shared/BuildIdentityContracts.cs" Link="Models/BuildIdentityContracts.cs" />
     <Compile Include="../../shared/ContractTestDataContracts.cs" Link="Models/ContractTestDataContracts.cs" />
     <Compile Include="../../shared/PerformanceLocalExecutionContracts.cs" Link="Models/PerformanceLocalExecutionContracts.cs" />
     <Compile Include="../../shared/PerformanceResourceContracts.cs" Link="Models/PerformanceResourceContracts.cs" />
@@ -237,23 +238,7 @@
     <Compile Include="../../frontend/BirkNext.Web/Models/DataModelSemanticModel.cs" Link="DocumentClassification/DataModelSemanticModel.cs" />
   </ItemGroup>
 
-  <!-- The source commit this build was made from, recorded in backup and package manifests (AssemblyMetadata "SourceCommit").
-       From -p:BirkNextSourceCommit=… when given, else `git rev-parse HEAD`, else "unknown" (e.g. a source copy without .git). -->
-  <Target Name="BirkNextResolveSourceCommit" BeforeTargets="GetAssemblyAttributes">
-    <Exec Condition="'$(BirkNextSourceCommit)' == ''" Command="git rev-parse HEAD" ConsoleToMSBuild="true" IgnoreExitCode="true" IgnoreStandardErrorWarningFormat="true"
-          StandardOutputImportance="low" StandardErrorImportance="low" WorkingDirectory="$(MSBuildProjectDirectory)">
-      <Output TaskParameter="ConsoleOutput" PropertyName="_BirkNextGitHead" />
-      <Output TaskParameter="ExitCode" PropertyName="_BirkNextGitExit" />
-    </Exec>
-    <PropertyGroup Condition="'$(BirkNextSourceCommit)' == ''">
-      <BirkNextSourceCommit Condition="'$(_BirkNextGitExit)' == '0'">$(_BirkNextGitHead.Trim())</BirkNextSourceCommit>
-      <BirkNextSourceCommit Condition="'$(_BirkNextGitExit)' != '0'">unknown</BirkNextSourceCommit>
-    </PropertyGroup>
-    <ItemGroup>
-      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
-        <_Parameter1>SourceCommit</_Parameter1>
-        <_Parameter2>$(BirkNextSourceCommit)</_Parameter2>
-      </AssemblyAttribute>
-    </ItemGroup>
-  </Target>
+  <!-- Version, build identity and source commit (AssemblyMetadata "SourceCommit" and the BirkNext* entries): one shared definition for the
+       backend and the frontend. Policy: docs/architecture/birknext-build-version-model.md. -->
+  <Import Project="../../versioning/BirkNext.BuildIdentity.targets" />
 </Project>

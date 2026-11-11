@@ -167,6 +167,10 @@ public sealed class ExecutionManifestTests : IAsyncLifetime
         manifest.Dependencies.Should().OnlyContain(d => d.Origin == ManifestDependencyOrigin.OwnerResolved && d.Resolution == ManifestResolution.Resolved);
         manifest.Environment.Should().Match<ManifestEnvironment>(e => e.EnvironmentId == "local-synthetic" && e.TargetOrigin == new Uri(_server.Url("/")).GetLeftPart(UriPartial.Authority) + "/");
         manifest.Build.SourceCommit.Should().NotBeNullOrWhiteSpace();
+        // The BirkNext build that executed the run (its own software build, never the application under test).
+        var running = BirkNext.Api.Services.SystemInfo.BuildInfoService.Current;
+        manifest.Build.Should().Match<ManifestBuild>(b => b.Version == running.BuildVersion && b.InformationalVersion == running.InformationalVersion
+            && b.Channel == running.Channel.ToString() && b.BuildId == running.BuildId && b.SourceCommit == (running.SourceCommit ?? "unknown"));
         manifest.DependencyFingerprint.Should().HaveLength(64);
         run.Run.DependencyFingerprint.Should().Be(manifest.DependencyFingerprint, "the run summary names its manifest");
 
