@@ -257,7 +257,8 @@ public sealed class RequirementsTraceabilitySemanticsTests : BunitContext
         var informational = new DashboardReviewFacts { TraceabilityRun = true, TraceabilityTransitionsAssessed = 3, TraceabilityTransitionsTotal = 4, TraceabilityReferenceIssues = 0 };
 
         var area = DashboardPresentation.Health(workspace, null, informational).Single(a => a.Key == "traceability");
-        area.Status.Should().Be(DashboardStatus.Passed);
+        // 3 of 4 transitions assessed: no issues, but not every transition was assessed, so Partial — never a pass on part of the evidence.
+        area.Status.Should().Be(DashboardStatus.Partial);
         area.Result.Should().Be("3 of 4 transitions assessed").And.NotContain("%");
         area.Explanation.Should().Contain("Absence of an explicit reference is informational");
 

@@ -24,11 +24,12 @@ public sealed class DashboardQualitySummaryTests
     public void AvailableEvidence_IsNotReviewed_AndUnrunReviewsAreNotAssessed()
     {
         var cards = DashboardQualitySummary.Cards(Rows, [], new DashboardReviewFacts());
-        Card(cards, "evidence").Value.Should().Be("2 of 4 core document types");
+        Card(cards, "evidence").Value.Should().Be("2 of 3 core document types" /* Constitution is Not applicable: not in the denominator */);
         Card(cards, "evidence").Detail.Should().Contain("1 partial").And.Contain("presence only, not reviewed");
         Card(cards, "specification").Value.Should().Be("Not assessed");
         Card(cards, "traceability").Value.Should().Be("Not assessed");
-        Card(cards, "qa").Value.Should().Be("No verification evidence");
+        // Recorded runs were not read in this fixture: "Not read", never a verification claim (document review is not execution).
+        Card(cards, "execution").Value.Should().Be("Not read");
         Card(cards, "readiness").Value.Should().Be("1 of 2 inputs ready");
         cards.Should().OnlyContain(c => !c.Value.Contains('%'), "no invented percentage");
     }

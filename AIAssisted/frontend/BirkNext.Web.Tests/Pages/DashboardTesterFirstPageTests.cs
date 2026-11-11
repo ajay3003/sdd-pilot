@@ -46,7 +46,7 @@ public class DashboardTesterFirstPageTests : BunitContext
         var cut = Render(workspace, Imported(workspace, new FrontendAnalysisProfile { Name = "Development", TargetUrl = "https://dev.birk.example.no" }));
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=db-next-step]"));
-        cut.Find("[data-testid=db-import-success]").TextContent.Should().Contain("Project imported successfully").And.Contain("Nothing has been reviewed or tested yet");
+        cut.Find("[data-testid=db-import-success]").TextContent.Should().Contain("Project imported").And.Contain("Nothing has been reviewed or tested yet").And.Contain("importing is not a quality result");
         cut.Find("[data-testid=db-workspace-name]").TextContent.Trim().Should().Be("M2LB");
         cut.Find("[data-testid=db-test-environment]").TextContent.Should().Be("Target Environment: Development");
 
@@ -64,9 +64,9 @@ public class DashboardTesterFirstPageTests : BunitContext
         markup.IndexOf("db-workspace-panel", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-next-step", StringComparison.Ordinal), "the recommended next action sits right under the hero");
         markup.IndexOf("db-next-step", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-review-readiness", StringComparison.Ordinal));
         markup.IndexOf("db-next-step", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-detailed-analysis", StringComparison.Ordinal));
-        cut.FindAll("[data-testid=db-kpi]").Select(k => k.GetAttribute("data-key")).Should().Equal("evidence", "specification", "traceability", "readiness", "qa", "attention");
+        cut.FindAll("[data-testid=db-kpi]").Select(k => k.GetAttribute("data-key")).Should().Equal("evidence", "specification", "traceability", "readiness", "execution", "attention");
         cut.Find("[data-testid=db-kpi][data-key=specification] [data-testid=db-kpi-value]").TextContent.Should().Be("Not assessed", "nothing was reviewed after the import");
-        cut.Find("[data-testid=db-kpi][data-key=qa] [data-testid=db-kpi-value]").TextContent.Should().Be("No verification evidence");
+        cut.Find("[data-testid=db-kpi][data-key=execution] [data-testid=db-kpi-value]").TextContent.Should().Be("Not read", "this host has no execution evidence client: not read, never zero");
         markup.Should().NotContain("Quality status for assessed areas", "no composite score in the header");
         cut.Find("[data-testid=db-detailed-analysis]").HasAttribute("open").Should().BeFalse("the detailed analysis is collapsed by default");
         markup.IndexOf("db-attention", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-health", StringComparison.Ordinal));

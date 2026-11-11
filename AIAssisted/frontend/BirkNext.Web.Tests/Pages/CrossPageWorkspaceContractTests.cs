@@ -138,6 +138,29 @@ public sealed class CrossPageWorkspaceContractTests : BunitContext
         ShouldAgree(Dashboard(dashboard), Workflow(workflow));
     }
 
+    /// <summary>One engine, one presentation: for the same project the Dashboard and Recommended Workflow show the same next action — same key,
+    /// same title, same reason — and both follow a project switch.</summary>
+    [Theory]
+    [InlineData("person-module")]
+    [InlineData("skole")]
+    public void Both_pages_show_the_same_next_action_with_the_same_wording(string project)
+    {
+        _workspace.CurrentProject = project;
+        var dashboard = Render<Dashboard>();
+        var workflow = Render<RecommendedWorkflow>();
+        workflow.WaitForAssertion(() => workflow.FindAll("[data-testid=rw-next-action]").Should().ContainSingle());
+        dashboard.WaitForAssertion(() => dashboard.FindAll("[data-testid=db-next-step][data-key]").Should().ContainSingle());
+        var d = dashboard.Find("[data-testid=db-next-step]");
+        var w = workflow.Find("[data-testid=rw-next-action]");
+        w.GetAttribute("data-key").Should().Be(d.GetAttribute("data-key"));
+        workflow.Find("[data-testid=rw-next-action-title]").TextContent.Trim().Should().Be(dashboard.Find("[data-testid=db-next-title]").TextContent.Trim());
+        dashboard.Find("[data-testid=db-next-reason]").TextContent.Should().Contain(workflow.Find("[data-testid=rw-next-action-why]").TextContent.Trim());
+        // "Learn how" goes to the same Help Center article on both pages.
+        var dHelp = dashboard.FindAll("[data-testid=db-next-step] [data-testid=help-link]").Select(a => a.GetAttribute("href")).Single();
+        var wHelp = workflow.FindAll("[data-testid=rw-next-action] [data-testid=help-link]").Select(a => a.GetAttribute("href")).Single();
+        wHelp.Should().Be(dHelp);
+    }
+
     [Fact]
     public void ProjectSwitch_UpdatesBothPages_WithoutReload_AndNeverShowsTheOldProject()
     {

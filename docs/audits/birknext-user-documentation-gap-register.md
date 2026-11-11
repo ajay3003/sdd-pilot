@@ -29,5 +29,5 @@ Statuses: PASS · FAIL · PARTIAL · BLOCKED · NOT RUN · NOT SUPPORTED.
 | UD-G7 | Workflow acceptance A–H run end to end through the documentation | PARTIAL | Workflows are verified in their own feature acceptances (Backup & Transfer, Artifact and Application Versioning, Contract Testing); this task verified the guide's navigation, links and claims, not a fresh run of every workflow |
 | UD-G8 | Real M2LB documentation acceptance | PARTIAL | The MU → MM wording follows the M2LB/Tiltak 2 static analysis (MM-G1); suggestion counts are kept qualitative (not re-verified) |
 | UD-G9 | Field-level help (tooltips per field) | NOT RUN | Contextual links per page only |
-| UD-G10 | Scratch database `birknext_hc_20261111` | OPEN (needs approval) | Kept |
+| UD-G10 | Scratch database `birknext_hc_20261111` | CLOSED | Dropped on 2026-11-11 after your approval |
 | UD-G11 | `ScenariosQueryTests` warmed-p95 timing test fails inside full partition 6 under load (twice today: 2,513 ms and 2,420 ms), passes alone | OPEN (environmental, pre-existing test) | Not caused by these changes (frontend only); the timeout was not raised. Worth a separate look at what runs concurrently in partition 6 |

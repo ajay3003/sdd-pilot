@@ -114,22 +114,24 @@
         {
             @PathChooser()
         }
-        else if (_readiness.Recommendation is { } recommendation)
+        else if (_readiness.Recommendation is { } recommendation && SharedNext is { } shared)
         {
-            <div class="rw-next-action" data-testid="rw-next-action" data-reason="@recommendation.ReasonCode">
+            <div class="rw-next-action" data-testid="rw-next-action" data-reason="@recommendation.ReasonCode" data-key="@shared.Key">
                 <div class="rw-next-action-header">
                     <span class="rw-next-action-icon" aria-hidden="true">▶</span>
                     <div>
                         <div class="rw-next-action-label">Recommended next action</div>
-                        <div class="rw-next-action-title" data-testid="rw-next-action-title">@_readiness.NextRecommendedAction!.Title</div>
+                        <div class="rw-next-action-title" data-testid="rw-next-action-title">@shared.Title</div>
                     </div>
                 </div>
                 <div class="rw-next-action-label">Why this is recommended</div>
-                <p class="rw-next-action-desc" data-testid="rw-next-action-why">@_readiness.NextRecommendedAction.Description</p>
-                <div class="rw-next-action-label">What this unlocks</div>
-                <p class="rw-next-action-desc" data-testid="rw-next-action-unlocks">@recommendation.Unlocks</p>
+                <p class="rw-next-action-desc" data-testid="rw-next-action-why">@shared.Reason</p>
+                <div class="rw-next-action-label">What this will produce</div>
+                <p class="rw-next-action-desc" data-testid="rw-next-action-unlocks">@shared.Achieves</p>
+                <p class="rw-next-action-desc rw-next-action-unlocks-detail">Unlocks: @recommendation.Unlocks</p>
                 <div class="rw-next-action-buttons">
-                    @RenderQuickAction(_readiness.NextRecommendedAction)
+                    @RenderQuickAction(_readiness.NextRecommendedAction!)
+                    @if (RecommendedActionHelp.TopicFor(shared) is { } helpTopic) { <HelpLink Topic="@helpTopic" Text="Learn how" /> }
                     @foreach (var alternative in _readiness.AlternativeActions)
                     {
                         <a href="@alternative.Route" class="rw-next-action-alt" data-testid="rw-alternative-action">@alternative.ActionLabel</a>
@@ -149,7 +151,31 @@
         }
         else if (_readiness.WorkspaceLoaded || _readiness.Inputs.AnyProvided)
         {
-            <p class="rw-no-next-action" data-testid="rw-no-next-action">No open recommendation. Open any available review below, or the Dashboard for an overview.</p>
+            <p class="rw-no-next-action" data-testid="rw-no-next-action">@(SharedNext is { Key: "none" } done ? $"{done.Title}. {done.Reason} {done.Achieves}" : "No open recommendation. Open any available review below, or the Dashboard for an overview.")</p>
+        }
+
+        @if (_readiness.WorkspaceLoaded || _readiness.Inputs.AnyProvided)
+        {
+            @* The workflow stages, from recorded evidence only. They describe; the single next action above still decides what comes first. *@
+            <section class="rw-stages" aria-labelledby="rw-stages-title" data-testid="rw-stages">
+                <h2 id="rw-stages-title" class="rw-stages-title">Workflow stages</h2>
+                <ol class="rw-stage-list">
+                    @foreach (var stage in ProjectQualityStages.For(_readiness, _execution))
+                    {
+                        <li class="rw-stage rw-stage-@stage.State.ToString().ToLowerInvariant()" data-testid="rw-stage" data-stage="@stage.Id" data-state="@stage.State">
+                            <details>
+                                <summary><span class="rw-stage-n" aria-hidden="true">@stage.Number</span><span class="rw-stage-name">@stage.Title</span><span class="rw-stage-status" data-testid="rw-stage-status">@stage.Status</span></summary>
+                                <p class="rw-stage-purpose">@stage.Purpose</p>
+                                <p class="rw-stage-detail" data-testid="rw-stage-detail">@stage.Detail</p>
+                                <p class="rw-stage-links">
+                                    @if (stage.Href is { } href) { <a href="@href" data-testid="rw-stage-open">@stage.ActionLabel</a> }
+                                    <HelpLink Topic="@stage.HelpTopic" Text="Learn how" />
+                                </p>
+                            </details>
+                        </li>
+                    }
+                </ol>
+            </section>
         }
 
         @if (_readiness.WorkspaceLoaded || _readiness.Inputs.AnyProvided) { @AvailableNow() @NeedsSetup() }
@@ -325,7 +351,7 @@
         </div>
 
         <div class="rw-footer-note">
-            For detailed reference documentation on any feature, see the <a href="user-guide" class="rw-inline-link">User Guide</a>.
+            For detailed reference documentation on any feature, see the <a href="user-guide#recommended-workflow" class="rw-inline-link">User Guide</a>.
         </div>
     }
 
@@ -381,6 +407,22 @@
     private async Task RefreshReadinessAsync()
     {
         _readiness = await WorkflowReadiness.GetReadinessAsync();
+        await RefreshExecutionAsync();
+    }
+
+    /// <summary>The Dashboard's presentation of the same next action (one engine, one wording).</summary>
+    private DashboardNextStep? SharedNext => _readiness is { } r ? DashboardPresentation.NextStep(r.Workspace, r) : null;
+
+    private ExecutionEvidenceFacts? _execution;
+
+    /// <summary>Recorded runs of the active Target Environment for the "Prepare &amp; run tests" stage (optional services; unreadable is never zero).</summary>
+    private async Task RefreshExecutionAsync()
+    {
+        if (ServiceProvider.GetService(typeof(IExecutionEvidenceApiService)) is not IExecutionEvidenceApiService api
+            || ServiceProvider.GetService(typeof(ITargetEnvironmentService)) is not ITargetEnvironmentService environments
+            || environments.ActiveEnvironment is not { } active) { _execution = null; return; }
+        var (runs, error) = await api.RunsAsync(new ExecutionRunFilter(EnvironmentId: active.Id));
+        _execution = ExecutionEvidenceFacts.From(error is null ? runs : null, active.Name);
     }
 
     protected override async Task OnParametersSetAsync()

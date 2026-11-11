@@ -223,7 +223,7 @@ public static class DocumentationCatalog
         {
             ("getting-started","Recommended Workflow","/getting-started","recommended-workflow","Getting Started",null,null),
             ("user-guide","User Guide","/user-guide","overview","Getting Started",null,null),
-            ("dashboard","Project Quality Dashboard","/dashboard","feature-matrix","Getting Started",null,null),
+            ("dashboard","Project Quality Dashboard","/dashboard","project-quality","Getting Started",null,null),
             ("project-import","Import Project","/project-import","project-import","Project Inputs",null,null),
             ("sources","Source Management","/sources","project-import","Project Inputs",null,null),
             ("demo-projects","Demo Projects","/demo-projects","project-inputs","Project Inputs",null,null),

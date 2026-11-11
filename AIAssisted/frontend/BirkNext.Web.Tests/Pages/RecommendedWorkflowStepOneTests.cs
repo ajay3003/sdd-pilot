@@ -211,7 +211,8 @@ public sealed class RecommendedWorkflowStepOneTests : BunitContext
         cut.Markup.Should().NotContain("Load required artifacts first").And.NotContain("Required project artifacts");
 
         var card = cut.Find("[data-testid=rw-next-action]");
-        card.QuerySelector(".rw-next-action-title")!.TextContent.Should().Be("Load project artifacts");
+        // The same wording as the Dashboard: one presentation of the one next action.
+        card.QuerySelector(".rw-next-action-title")!.TextContent.Should().Be("Import your project");
         card.TextContent.Should().Contain("No project artifacts are available yet.").And.NotContain("Constitution Explorer");
         card.QuerySelector("a.rw-next-action-btn")!.GetAttribute("href").Should().Be("project-import", "the card carries the one primary action; no global step numbers");
         card.QuerySelector("[data-testid=rw-next-action-unlocks]")!.TextContent.Should().NotBeEmpty();

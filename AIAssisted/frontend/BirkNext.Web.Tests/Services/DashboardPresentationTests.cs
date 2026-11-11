@@ -26,6 +26,20 @@ public class DashboardPresentationTests
         return await services.BuildServiceProvider().GetRequiredService<ICurrentWorkspaceProjection>().GetAsync();
     }
 
+    /// <summary>Setup steps say what they produce (not a generic "moves the workflow forward"), on both pages, since both render NextStep.</summary>
+    [Theory]
+    [InlineData(WorkflowReadinessService.ConfigureProjectKey)]
+    [InlineData(WorkflowReadinessService.BindProjectEvidenceKey)]
+    public async Task Setup_steps_explain_what_they_produce_instead_of_a_generic_outcome(string key)
+    {
+        var workspace = await SnapshotAsync(File("specs/001-a/spec.md", "Specification"));
+        var step = new WorkflowStepViewModel { Key = key, Title = "Configure Target Application", Description = "", Route = "admin/system-settings?section=target-environments&tab=project", ActionLabel = "" };
+        var next = DashboardPresentation.NextStep(workspace, Readiness(workspace, step))!;
+        next.Achieves.Should().NotBe("Moves the recommended workflow forward.");
+        next.Reason.Should().NotBeNullOrWhiteSpace();
+        next.ActionLabel.Should().NotBeNullOrWhiteSpace();
+    }
+
     private static readonly DashboardReviewFacts NoReviews = new();
 
     private static WorkflowReadiness Readiness(CurrentWorkspaceSnapshot workspace, WorkflowStepViewModel? next = null,

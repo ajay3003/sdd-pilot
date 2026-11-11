@@ -43,6 +43,7 @@ public static class UserGuideContent
         new("concepts", "Core concepts", GettingStarted, "applicability coverage quality evidence maturity snapshot provenance analyzer provider engine extension"),
         new("getting-started", "Import a project", GettingStarted, "import zip archive package demo project documents modules artifact candidates selection workspace",
             "project-inputs", "project-import", "multiple-documents", "sample-project-discovery", "current-workspace"),
+        new("project-quality", "Project Quality and the next action", GettingStarted, "project quality dashboard next action recommendation metrics execution evidence score stage workflow imported reviewed tested"),
         new("recommended-workflow", "Recommended Workflow", GettingStarted, "next step next action configure project bind evidence review decision", "review-decisions"),
 
         new("project-model", "Project model and binding", ProjectEvidence, "project logical system package bind binding role required optional bound ready partial conflict source-only docs-only contract infrastructure supporting",
@@ -131,6 +132,7 @@ public static class UserGuideContent
         ["versioning"] = new("2026-11-11", "BirkNext 1.0.0", "Artifact versioning acceptance AV-*; application versioning acceptance CI-*, RT-*, BV-*"),
         ["whats-new"] = new("2026-11-11", "BirkNext 1.0.0", "No release-notes source exists in this build"),
         ["status-reference"] = new("2026-11-11", "BirkNext 1.0.0", "ExecutionState and ResultApplicability contracts"),
+        ["project-quality"] = new("2026-11-11", "BirkNext 1.0.0", "Dashboard and Recommended Workflow share DashboardPresentation.NextStep; ProjectQualityStages; ExecutionEvidenceFacts"),
         ["troubleshooting"] = new("2026-11-11", "BirkNext 1.0.0", "Messages of the build-info card, Backup & Transfer import and Execution Results"),
         ["system-settings"] = new("2026-11-11", "BirkNext 1.0.0", "Application information card (api/system/build-info)"),
         ["workspace-transfer"] = new("2026-11-11", "BirkNext 1.0.0", "Backup & Transfer acceptance WT-01–WT-43"),

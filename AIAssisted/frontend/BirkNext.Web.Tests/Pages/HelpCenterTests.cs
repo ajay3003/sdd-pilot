@@ -114,6 +114,8 @@ public sealed class HelpCenterTests : BunitContext
             .SelectMany(f => Regex.Matches(File.ReadAllText(f), "<(?:BirkNext\\.Web\\.Components\\.)?HelpLink Topic=\"([^\"]+)\"").Select(m => (File: Path.GetFileName(f), Topic: m.Groups[1].Value)))
             .ToList();
         uses.Select(u => u.File).Should().Contain(["ContractTesting.razor", "IntegrationSuitesPage.razor", "CriticalE2ERegression.razor", "ExecutionResults.razor", "WorkspaceTransfer.razor", "ApplicationBuildCard.razor"]);
+        // Dynamic topics (@expr) come from RecommendedActionHelp / ProjectQualityStages, whose every topic is checked in ProjectQualityTests.
+        uses = [.. uses.Where(u => !u.Topic.StartsWith('@'))];
         uses.Should().OnlyContain(u => UserGuideContent.TopicFor(u.Topic) != null, string.Join(", ", uses.Where(u => UserGuideContent.TopicFor(u.Topic) == null)));
     }
 

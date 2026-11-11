@@ -39,6 +39,7 @@
 }
 
     <PageHeader Title="Project Quality Dashboard" Description="Overview of project evidence, specification quality, traceability, reviews and verification. Shows what is available, what has been assessed and what still requires attention.">
+        <BirkNext.Web.Components.HelpLink Topic="project-quality" Text="How to read this page" />
         @if (_hasAnySnapshot)
         {
             <button type="button" class="btn-secondary db-export-btn" @onclick="ExportHtml">Export HTML</button>
@@ -67,9 +68,10 @@
         {
             @if (_workspace.IsImportedProject && _workspace.State == CurrentWorkspaceState.Loaded)
             {
+                @* A small confirmation that the project is loaded — never a quality result. *@
                 <p class="db-import-success" role="status" data-testid="db-import-success">
-                    <span aria-hidden="true">✓ </span><strong>Project imported successfully.</strong>
-                    @(_anythingReviewed ? " Review results below come from this session." : " Nothing has been reviewed or tested yet.")
+                    <span aria-hidden="true">✓ </span>Project imported.
+                    @(_anythingReviewed ? " Review results below come from this session." : " Nothing has been reviewed or tested yet: importing is not a quality result.")
                 </p>
             }
             <div class="db-workspace-info">
@@ -143,7 +145,8 @@
             <p class="db-next-achieves" data-testid="db-next-achieves"><span class="db-next-k">What it does:</span> @next.Achieves</p>
             <div class="db-next-actions">
                 <a href="@next.Href" class="db-btn-primary" data-testid="db-next-action">@next.ActionLabel</a>
-                <a href="getting-started" class="db-btn-link" data-testid="db-open-workflow">Open Recommended Workflow</a>
+                <a href="getting-started" class="db-btn-link" data-testid="db-open-workflow">Why and what comes next</a>
+                @if (RecommendedActionHelp.TopicFor(next) is { } helpTopic) { <BirkNext.Web.Components.HelpLink Topic="@helpTopic" Text="Learn how" /> }
             </div>
             @if (next.Then.Count > 0)
             {
@@ -814,7 +817,7 @@
                     var aqrCompleted = aqrCard.Targets.Count(t => t.Status == BirkNext.ApiReview.ApiReviewTargetStatus.Completed);
                     var aqrBlocked = aqrCard.Targets.Count(t => t.Status == BirkNext.ApiReview.ApiReviewTargetStatus.Blocked);
                     <div class="db-analysis-score">@aqrCompleted/@aqrCard.Targets.Count</div>
-                    <span class="db-analysis-status @(aqrBlocked > 0 ? "db-status-warn" : "db-status-ok")">@(aqrBlocked > 0 ? $"{aqrBlocked} target(s) blocked" : "API targets reviewed")</span>
+                    <span class="db-analysis-status @(aqrBlocked > 0 ? "db-status-warn" : aqrCompleted == aqrCard.Targets.Count && aqrCompleted > 0 ? "db-status-ok" : "db-status-warning")">@(aqrBlocked > 0 ? $"{aqrBlocked} target(s) blocked" : aqrCompleted == aqrCard.Targets.Count && aqrCompleted > 0 ? "All API targets reviewed" : $"{aqrCard.Targets.Count - aqrCompleted} target(s) not reviewed")</span>
                     @if (aqrCard.Findings.OrderBy(f => f.Severity).FirstOrDefault() is { } topAqrFinding)
                     {
                         <div class="db-analysis-finding">@topAqrFinding.Title</div>
@@ -960,6 +963,7 @@
         RefreshApplication();
         StateHasChanged();
         await RefreshActivityAsync(load);
+        await RefreshExecutionAsync(load);
         await RefreshWorkflowReadinessAsync(load);
         _loads.End(load);
     }
@@ -1078,7 +1082,24 @@
         PerformanceState = _perfReport?.ReadinessReport?.OverallState,
         RuntimeEvidence = RuntimeReviews.PerformanceReview.HasResult || RuntimeReviews.SecurityReview.HasResult || RuntimeReviews.QualityReview.HasResult
                           || RuntimeReviews.ApiQualityReview.HasResult || RuntimeReviews.IntegrationQualityReview.HasResult,
+        Execution = _execution,
     };
+
+    private ExecutionEvidenceFacts? _execution;
+
+    /// <summary>
+    /// Actual recorded runs of the active Target Environment (Test Execution &amp; Evidence). Optional services: a host without them leaves the
+    /// card "Not read"; a failing read is "Unavailable", never zero. Scoped to the environment, so another environment's runs never appear.
+    /// </summary>
+    private async Task RefreshExecutionAsync(LoadTicket? load)
+    {
+        if (Services.GetService(typeof(IExecutionEvidenceApiService)) is not IExecutionEvidenceApiService api
+            || Services.GetService(typeof(ITargetEnvironmentService)) is not ITargetEnvironmentService environments
+            || environments.ActiveEnvironment is not { } active) { _execution = null; return; }
+        var (runs, error) = await api.RunsAsync(new ExecutionRunFilter(EnvironmentId: active.Id));
+        if (load is { IsCurrent: false }) return;
+        _execution = ExecutionEvidenceFacts.From(error is null ? runs : null, active.Name);
+    }
 
     /// <summary>"pack Revision System (001-x) · module Person": what the latest Document Quality Review read, from its recorded inputs.</summary>
     private string? DocumentReviewScope()
@@ -1299,10 +1320,11 @@
         score >= 80 ? "db-status-healthy" :
         score >= 50 ? "db-status-warning" : "db-status-critical";
 
+    // A score band, not a verdict: no project policy turns a score into "healthy" or a pass.
     private static string KpiStatusLabel(double score, bool hasData) =>
         !hasData ? "Not Run" :
-        score >= 80 ? "Healthy" :
-        score >= 50 ? "Warning" : "Critical";
+        score >= 80 ? "Score 80+" :
+        score >= 50 ? "Score 50–79" : "Score below 50";
 
     private static string RuntimeStatusLabel(RuntimeReviewStatus status) => status switch
     {

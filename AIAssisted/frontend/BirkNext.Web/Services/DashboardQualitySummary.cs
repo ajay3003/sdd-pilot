@@ -16,7 +16,8 @@ public static class DashboardQualitySummary
 
     public static IReadOnlyList<DashboardKpi> Cards(IReadOnlyList<DashboardReadinessRow> readiness, IReadOnlyList<DashboardAttentionItem> attention, DashboardReviewFacts r)
     {
-        var roles = readiness.Where(x => DocumentRoles.Contains(x.Key)).ToList();
+        // An optional document type that does not apply (for example no Constitution) is not part of the denominator.
+        var roles = readiness.Where(x => DocumentRoles.Contains(x.Key) && x.Status != DashboardStatus.NotApplicable).ToList();
         var available = roles.Count(x => x.Status == DashboardStatus.Available);
         var partial = roles.Count(x => x.Status == DashboardStatus.Partial);
         var missingRequired = roles.Count(x => x.Status == DashboardStatus.NeedsSetup);
@@ -30,7 +31,7 @@ public static class DashboardQualitySummary
             r.DocumentReview == AnalysisSessionStatus.Completed
                 ? new("specification", "Specification quality", $"{r.DocumentReviewFindings} finding{S(r.DocumentReviewFindings)}",
                     $"{r.DocumentReviewSevere} severe · {(r.DocumentReviewAt is { } at ? $"reviewed {at.ToLocalTime():d MMM HH:mm}" : "reviewed this session")}", DashboardPresentation.DocumentReviewRoute,
-                    r.DocumentReviewSevere > 0 ? DashboardStatus.AttentionNeeded : DashboardStatus.Passed)
+                    r.DocumentReviewSevere > 0 ? DashboardStatus.AttentionNeeded : r.DocumentReviewFindings > 0 ? DashboardStatus.Partial : DashboardStatus.Available)
                 : new("specification", "Specification quality", r.DocumentReview == AnalysisSessionStatus.Failed ? "Review failed" : "Not assessed",
                     "Run Document Quality Review to assess specifications, plans and tasks.", DashboardPresentation.DocumentReviewRoute,
                     r.DocumentReview == AnalysisSessionStatus.Failed ? DashboardStatus.Failed : DashboardStatus.NotAssessed),
@@ -42,12 +43,31 @@ public static class DashboardQualitySummary
             new("readiness", "Analysis readiness", $"{inputs.Count(x => x.Status == DashboardStatus.Available)} of {inputs.Count} inputs ready",
                 inputs.Where(x => x.Status != DashboardStatus.Available).Select(x => $"{x.Label}: {x.StatusLabel}").DefaultIfEmpty("Source, Target Environment and runtime inputs ready").First(),
                 DashboardPresentation.WorkflowRoute, inputs.All(x => x.Status == DashboardStatus.Available) && inputs.Count > 0 ? DashboardStatus.Available : DashboardStatus.Partial),
-            r.RuntimeEvidence || r.QaAssessed
-                ? new("qa", "QA verification", "Results this session", "A runtime or QA review produced results; open the review for what was verified.", "quality-review", DashboardStatus.Available)
-                : new("qa", "QA verification", "No verification evidence", "Not assessed: no runtime or QA review has produced results for this project yet. Document and source analysis are not QA execution.", "quality-review", DashboardStatus.NotAssessed),
+            ExecutionCard(r),
             new("attention", "Needs attention", open.ToString(), open == 0 ? "No open item from the evidence and completed reviews." : $"{Groups(attention).Count} area{S(Groups(attention).Count)} affected",
                 "#db-attention-heading", open > 0 ? DashboardStatus.AttentionNeeded : DashboardStatus.Available),
         ];
+    }
+
+    /// <summary>
+    /// Actual recorded test runs (Test Execution &amp; Evidence) for the active Target Environment. Document and source analysis are never
+    /// executions; a generated test is not an executed test; unreadable evidence is reported as unavailable, never as zero.
+    /// </summary>
+    private static DashboardKpi ExecutionCard(DashboardReviewFacts r)
+    {
+        const string href = "/execution-results";
+        var e = r.Execution;
+        if (e is null)
+            return new("execution", "Execution evidence", "Not read", r.RuntimeEvidence ? "A runtime review produced results this session; recorded test runs were not read." : "Recorded test runs were not read for this view.", href, DashboardStatus.NotAssessed);
+        if (!e.Readable)
+            return new("execution", "Execution evidence", "Unavailable", "Test Execution & Evidence could not be read; this is not the same as no runs.", href, DashboardStatus.Unavailable);
+        if (e.Runs == 0)
+            return new("execution", "Execution evidence", "No recorded runs",
+                $"No test has been executed{(e.EnvironmentName is { } env ? $" in {env}" : "")}. Generated tests and analyses are not executions.", href, DashboardStatus.NotAssessed);
+        var other = e.Runs - e.Passed - e.Failed;
+        return new("execution", "Execution evidence", $"{e.Runs} recorded run{S(e.Runs)}",
+            $"{e.Passed} passed · {e.Failed} failed or error{(other > 0 ? $" · {other} blocked, not assessed or other" : "")}{(e.Latest is { } at ? $" · latest {at.ToLocalTime():d MMM HH:mm}" : "")}{(e.EnvironmentName is { } name ? $" · {name}" : "")}",
+            href, e.Failed > 0 ? DashboardStatus.AttentionNeeded : other > 0 ? DashboardStatus.Partial : DashboardStatus.Available);
     }
 
     /// <summary>The group a finding belongs to, from its stable key. Unknown keys stay "Other" — never merged by similar text.</summary>

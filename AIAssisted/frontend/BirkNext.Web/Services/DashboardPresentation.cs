@@ -93,6 +93,18 @@ public sealed record DashboardReviewFacts
     public PerformanceReadinessState? PerformanceState { get; init; }
     /// <summary>A runtime review (frontend, API, integration, performance, security) has a result this session.</summary>
     public bool RuntimeEvidence { get; init; }
+    /// <summary>Recorded test runs of the active Target Environment (Test Execution &amp; Evidence); null when not read.</summary>
+    public ExecutionEvidenceFacts? Execution { get; init; }
+}
+
+/// <summary>Counts of actual recorded runs. <see cref="Readable"/> false = the evidence could not be read (never shown as zero runs).</summary>
+public sealed record ExecutionEvidenceFacts(bool Readable, string? EnvironmentName, int Runs, int Passed, int Failed, DateTimeOffset? Latest)
+{
+    public static ExecutionEvidenceFacts From(IReadOnlyList<BirkNext.ExecutionEvidence.ExecutionRunSummary>? runs, string? environmentName) => runs is null
+        ? new(false, environmentName, 0, 0, 0, null)
+        : new(true, environmentName, runs.Count, runs.Count(x => x.State == BirkNext.ExecutionEvidence.ExecutionState.Passed),
+            runs.Count(x => x.State is BirkNext.ExecutionEvidence.ExecutionState.Failed or BirkNext.ExecutionEvidence.ExecutionState.Error or BirkNext.ExecutionEvidence.ExecutionState.TimedOut),
+            runs.Count == 0 ? null : runs.Max(x => x.StartedAt));
 }
 
 /// <summary>
@@ -431,6 +443,13 @@ public static class DashboardPresentation
 
         if (key == WorkflowReadinessService.EstablishSourceBindingKey && workflow.Recommendation is { } binding)
             return new(key, next.Title, binding.Why, binding.Unlocks, next.ActionLabel, next.Route, then);
+        if (key == WorkflowReadinessService.ConfigureProjectKey)
+            return new(key, next.Title, NotBlank(next.Description, "This environment does not yet say which system it tests."),
+                "BirkNext then knows which imported packages describe the system tested in this environment, so every review reads the right evidence.",
+                NotBlank(next.ActionLabel, "Configure project"), next.Route, then);
+        if (key == WorkflowReadinessService.BindProjectEvidenceKey)
+            return new(key, next.Title, NotBlank(next.Description, "An evidence role of this project is not bound to an imported package yet."),
+                "Reviews then read the bound package for each evidence role instead of guessing.", NotBlank(next.ActionLabel, "Bind evidence"), next.Route, then);
         if (key == WorkflowReadinessService.RefreshSourceKey)
             return new(key, "Analyze the source again", next.Description, "Source-based reviews then use current evidence.", "Analyze source", next.Route, then);
         if (key == WorkflowReadinessService.CompleteTargetKey)
@@ -545,7 +564,8 @@ public static class DashboardPresentation
         return new(key, a.Area, a.Help, status, explanation, action, href, result, a.Secondary);
     }
 
-    private static DashboardStatus ByScore(double score) => score >= 80 ? DashboardStatus.Passed : DashboardStatus.AttentionNeeded;
+    /// <summary>A review score. There is no project policy that turns a score into a pass, so a high score is Available (assessed), never Passed.</summary>
+    private static DashboardStatus ByScore(double score) => score >= 80 ? DashboardStatus.Available : DashboardStatus.AttentionNeeded;
 
     private static DashboardHealthArea Governance(CurrentWorkspaceSnapshot workspace, WorkflowReadiness? workflow)
     {
@@ -575,8 +595,11 @@ public static class DashboardPresentation
                 : r.TraceabilityReferenceIssues > 0
                     ? Area("traceability", DashboardStatus.AttentionNeeded, $"{r.TraceabilityReferenceIssues} broken, ambiguous or policy-required reference{S(r.TraceabilityReferenceIssues)} to review.",
                         "Open Requirements Traceability", TraceabilityRoute, $"{r.TraceabilityTransitionsAssessed} of {r.TraceabilityTransitionsTotal} transitions assessed")
-                    : Area("traceability", DashboardStatus.Passed, "Analyzed: no broken, ambiguous or policy-required references. Absence of an explicit reference is informational.",
-                        "Open Requirements Traceability", TraceabilityRoute, $"{r.TraceabilityTransitionsAssessed} of {r.TraceabilityTransitionsTotal} transitions assessed");
+                    : r.TraceabilityTransitionsAssessed < r.TraceabilityTransitionsTotal
+                        ? Area("traceability", DashboardStatus.Partial, $"No broken, ambiguous or policy-required references in the assessed transitions; {r.TraceabilityTransitionsTotal - r.TraceabilityTransitionsAssessed} transition{S(r.TraceabilityTransitionsTotal - r.TraceabilityTransitionsAssessed)} could not be assessed. Absence of an explicit reference is informational.",
+                            "Open Requirements Traceability", TraceabilityRoute, $"{r.TraceabilityTransitionsAssessed} of {r.TraceabilityTransitionsTotal} transitions assessed")
+                        : Area("traceability", DashboardStatus.Passed, "Analyzed: every transition assessed, no broken, ambiguous or policy-required references. Absence of an explicit reference is informational.",
+                            "Open Requirements Traceability", TraceabilityRoute, $"{r.TraceabilityTransitionsAssessed} of {r.TraceabilityTransitionsTotal} transitions assessed");
         if (!HasRole(workspace, WorkspaceArtifactType.Specification))
             return Area("traceability", DashboardStatus.NeedsSetup, "No specification found — traceability needs requirements.", "Explore specifications", "specification-explorer");
         var o = workspace.Overview;
@@ -620,10 +643,11 @@ public static class DashboardPresentation
     private static DashboardHealthArea Delivery(CurrentWorkspaceSnapshot workspace, DashboardReviewFacts r)
     {
         if (r.DeliveryRun && r.ReleaseDecision is { } release)
-            return Area("delivery", release == ReadinessState.Ready ? DashboardStatus.Passed : DashboardStatus.AttentionNeeded,
-                r.ReleaseSignificant
+            return Area("delivery", release == ReadinessState.Ready ? DashboardStatus.Available : DashboardStatus.AttentionNeeded,
+                (r.ReleaseSignificant
                     ? $"Development: {Readiness(r.DevelopmentDecision)} · Testing: {Readiness(r.TestingDecision)} · Release: {Readiness(release)}."
-                    : $"Development: {Readiness(r.DevelopmentDecision)} · Testing: {Readiness(r.TestingDecision)} · Documentation gate: {DocumentationGate.StateLabel(release, false)} (advisory).",
+                    : $"Development: {Readiness(r.DevelopmentDecision)} · Testing: {Readiness(r.TestingDecision)} · Documentation gate: {DocumentationGate.StateLabel(release, false)} (advisory).")
+                    + " Based on documents, not on test execution.",
                 "Open results", DocumentReviewRoute);
         if (!HasRole(workspace, WorkspaceArtifactType.Plan) && !HasRole(workspace, WorkspaceArtifactType.Tasks))
             return Area("delivery", DashboardStatus.NotApplicable, "No plan or tasks found, so there is no delivery evidence to assess.", null, null);
@@ -658,6 +682,9 @@ public static class DashboardPresentation
             return Area("workflow", DashboardStatus.Available, workflow.Recommendation is { } rec ? $"Current recommendation available: {rec.Title}." : "Workflow guidance available.",
                 "Open Recommended Workflow", WorkflowRoute, $"Core manual reviews: {recorded} / {core.Count} recorded");
         var result = $"{workflow.DecidedReviewCount} of {workflow.RequiredReviewCount} required review decisions recorded ({percent}%)";
+        var withGaps = workflow.DocumentReviewGates.Select(ArtifactReviewPresentation.Of).Count(g => g.State == ArtifactReviewState.NeedsChanges);
+        if (percent == 100 && withGaps > 0)
+            return Area("workflow", DashboardStatus.AttentionNeeded, $"Every required decision is recorded, but {withGaps} {(withGaps == 1 ? "was" : "were")} reviewed with gaps.", "Open Recommended Workflow", WorkflowRoute, result);
         return percent == 100
             ? Area("workflow", DashboardStatus.Passed, "Every required review decision is recorded on the current documents.", "Open Recommended Workflow", WorkflowRoute, result)
             : Area("workflow", DashboardStatus.InProgress, workflow.Recommendation is { } next ? $"Current recommendation: {next.Title}." : "Review decisions in progress.", "Open Recommended Workflow", WorkflowRoute, result);
