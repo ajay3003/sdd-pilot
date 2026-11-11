@@ -129,7 +129,7 @@ public sealed class SemanticEntity
 }
 
 /// <summary>
-/// Clarification / Q&A item.
+/// Clarification / Q&amp;A item.
 /// </summary>
 public sealed class SemanticClarification
 {

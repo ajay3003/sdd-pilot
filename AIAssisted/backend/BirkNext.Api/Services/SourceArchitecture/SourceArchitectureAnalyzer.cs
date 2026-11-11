@@ -14,7 +14,7 @@ namespace BirkNext.Api.Services.SourceArchitecture;
 public static class SourceArchitectureAnalyzer
 {
     public const int Version = 1;
-    /// <summary>Stable provider id: this analyzer reads .NET project files and C# syntax only. Other languages are inventoried by Technology & Analysis Coverage, never analyzed here.</summary>
+    /// <summary>Stable provider id: this analyzer reads .NET project files and C# syntax only. Other languages are inventoried by Technology &amp; Analysis Coverage, never analyzed here.</summary>
     public const string ProviderId = "source.architecture.dotnet";
 
     internal static readonly IReadOnlyList<IArchitectureExtractor> Extractors =

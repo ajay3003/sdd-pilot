@@ -89,6 +89,11 @@ public static partial class PackageSecretScanner
     private static readonly string[] SecretNames = ["password", "passwd", "clientsecret", "secret", "accesstoken", "refreshtoken", "bearertoken", "privatekey", "apikey", "connectionstring", "pat", "protectedpat", "sessioncookie", "cookie"];
 
     [GeneratedRegex(@"(?<!\d)\d{11}(?!\d)")] private static partial Regex ElevenDigits();
+    [GeneratedRegex(@"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")] private static partial Regex GuidPattern();
+
+    /// <summary>GUIDs are identities, not personal identifiers: a GUID's last group can hold eleven digits followed by a letter, which the identifier
+    /// rule must never see (it would block exports at random and redaction would break references). GUID spans are masked, keeping the length.</summary>
+    private static string WithoutGuids(string text) => GuidPattern().Replace(text, m => new string('g', m.Length));
 
     public static List<SecurityFinding> Scan(string location, JsonNode? node)
     {
@@ -112,7 +117,7 @@ public static partial class PackageSecretScanner
                 if (text.Length > 1 && (text[0] == '{' || text[0] == '[') && TryParse(text) is { } inner) { Walk(path, inner, key, findings); break; }
                 if (key is not null && SecretNames.Contains(SetupProfileSchema.Normalize(key)) && !IsPlaceholder(text))
                     findings.Add(new(Blocking, path, $"A field named \"{key}\" holds a value; secrets never travel in packages."));
-                else if (SetupProfileSchema.ValueIssue(new SetupNode { Path = path, Scalar = text }) is { } issue)
+                else if (SetupProfileSchema.ValueIssue(new SetupNode { Path = path, Scalar = WithoutGuids(text) }) is { } issue)
                     findings.Add(issue.Message.Contains("personal identifier", StringComparison.Ordinal)
                         ? new(Sensitive, path, "An 11-digit identifier-shaped value (possible national identity number).")
                         : new(Blocking, path, "A value that looks like a token, key, certificate or credential."));
@@ -128,10 +133,24 @@ public static partial class PackageSecretScanner
         catch (JsonException) { return null; }
     }
 
-    /// <summary>Deterministic redaction for diagnostic packages: identifier-shaped numbers become a fixed marker (same input → same output).</summary>
-    public static string RedactIdentifiers(string text) => ElevenDigits().Replace(text, m => "[redacted-id-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(m.Value)))[..6].ToLowerInvariant() + "]");
+    /// <summary>Deterministic redaction for diagnostic packages: identifier-shaped numbers become a fixed marker (same input → same output).
+    /// Only text outside GUIDs is redacted, so every GUID (and every reference made with one) stays byte for byte.</summary>
+    public static string RedactIdentifiers(string text)
+    {
+        var result = new StringBuilder(text.Length);
+        var last = 0;
+        foreach (Match guid in GuidPattern().Matches(text))
+        {
+            result.Append(RedactSegment(text[last..guid.Index])).Append(guid.Value);
+            last = guid.Index + guid.Length;
+        }
+        return result.Append(RedactSegment(text[last..])).ToString();
+    }
 
-    /// <summary>Redacts every string value of a JSON tree (never the serialized text: its escapes, e.g. ", would hide or shift digits).</summary>
+    private static string RedactSegment(string segment) =>
+        ElevenDigits().Replace(segment, m => "[redacted-id-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(m.Value)))[..6].ToLowerInvariant() + "]");
+
+    /// <summary>Redacts every string value of a JSON tree (never the serialized text: its escaped quotes would hide or shift digits).</summary>
     public static JsonNode? RedactIdentifiers(JsonNode? node)
     {
         switch (node)

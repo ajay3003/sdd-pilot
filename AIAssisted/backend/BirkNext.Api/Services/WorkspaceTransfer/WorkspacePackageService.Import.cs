@@ -212,7 +212,7 @@ public sealed partial class WorkspacePackageService
             ImportStatus.NewerRevision => new(Item(status, detail, ImportAction.ImportAsNewRevision, ImportAction.ImportAsNewRevision, ImportAction.KeepExisting), o, token),
             ImportStatus.OlderRevision => new(Item(status, detail, ImportAction.KeepExisting, ImportAction.KeepExisting), o, token),
             ImportStatus.ConflictingContent => new(Item(status, detail, ImportAction.KeepExisting,
-                o.Type is PackageTypes.Flow ? [ImportAction.KeepExisting, ImportAction.CreateNew, ImportAction.ResolveManually] : [ImportAction.KeepExisting, ImportAction.ResolveManually]), o, token),
+                (o.Type is PackageTypes.Flow) ? [ImportAction.KeepExisting, ImportAction.CreateNew, ImportAction.ResolveManually] : [ImportAction.KeepExisting, ImportAction.ResolveManually]), o, token),
             _ => new(Item(status, detail, ImportAction.SkipOptional, ImportAction.SkipOptional), o, token),
         };
     }

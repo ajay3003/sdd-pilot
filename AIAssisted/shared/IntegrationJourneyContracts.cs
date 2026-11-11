@@ -223,7 +223,7 @@ public sealed record JourneyReadinessDimension(JourneyDimension Dimension, strin
 {
     /// <summary>Supporting facts (one line each), e.g. "Producer contract: Available", "Runtime validation: Not assessed".</summary>
     public IReadOnlyList<string> Items { get; init; } = [];
-    /// <summary>The shared evidence family the dimension was read from ("Contract & Schema Evidence", "Test Data catalog" …).</summary>
+    /// <summary>The shared evidence family the dimension was read from ("Contract &amp; Schema Evidence", "Test Data catalog" …).</summary>
     public string Provenance { get; init; } = "";
 }
 

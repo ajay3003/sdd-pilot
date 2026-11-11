@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 namespace BirkNext.Api.Services.WorkspaceTransfer;
 
 /// <summary>
-/// Backup & Transfer is its own capability (audit WP-G10). Full backup, isolated restore, package export and import, evidence export and target
+/// Backup &amp; Transfer is its own capability (audit WP-G10). Full backup, isolated restore, package export and import, evidence export and target
 /// rebinding all require it. ActiveEventExecute and IntegrationConfiguration.Write do not imply it.
 /// <list type="bullet">
 /// <item>Granted to an authenticated principal holding <c>WorkspaceTransfer</c> (scope, app role or permission claim).</item>
