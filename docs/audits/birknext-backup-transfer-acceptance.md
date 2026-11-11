@@ -65,7 +65,8 @@ Statuses: PASS · FAIL · PARTIAL · BLOCKED · NOT RUN.
 |---|---|
 | Focused backend (`WorkspaceTransfer*`, including the new `PostgresToolReadinessTests`, `TesterLauncherTests`, `FullBackupServiceTests`, packages) | **72/72 PASS**, real PostgreSQL, real tools via the existing test gate |
 | Focused frontend (`WorkspaceTransfer*`, User Guide) | **59/59 PASS** (after rewriting the backup-area test for the new layout and adding the missing-tools test) |
-| Full backend and frontend regression | Run after the commit; counts in the follow-up commit |
+| Full frontend at `dbe5947e` | **8631/8631 PASS** |
+| Full backend at `dbe5947e`, six sequential memory-guarded partitions | **6527 passed, 0 failed, 19 skipped (6546)**: 1049 / 1098 / 840 / 652 / 520 / 2368 passed |
 
 ## 4. Not run / blocked
 
