@@ -99,22 +99,29 @@ public static class LauncherProgram
         // Closing the console window (CTRL_CLOSE_EVENT) arrives as SIGHUP: stop cleanly in the few seconds Windows allows.
         using var hup = PosixSignalRegistration.Create(PosixSignal.SIGHUP, c => { c.Cancel = true; stop.Cancel(); });
         using var term = PosixSignalRegistration.Create(PosixSignal.SIGTERM, c => { c.Cancel = true; stop.Cancel(); });
+        LauncherOptions? options = null;
         try
         {
-            var options = LauncherOptions.Parse(args);
+            options = LauncherOptions.Parse(args);
             var code = await new TesterLauncher(options, ui).RunAsync(stop.Token);
-            if (code != 0 && options.Command == "start" && !Console.IsInputRedirected && options.ExitAfterSeconds is null)
-            {
-                Console.WriteLine();
-                Console.WriteLine("  Press Enter to close this window.");
-                Console.ReadLine();
-            }
+            KeepWindowOpenOnFailure(code, options);
             return code;
         }
         catch (LauncherException e)
         {
+            // Failures before the log exists (usage, package manifest, data folder not writable): same message format, and the window stays
+            // open so a double-clicked start does not just flash and vanish.
             ui.Failure(e.Message, e.Action, "(no log yet)");
+            KeepWindowOpenOnFailure(e.ExitCode, options);
             return e.ExitCode;
         }
+    }
+
+    private static void KeepWindowOpenOnFailure(int code, LauncherOptions? options)
+    {
+        if (code == 0 || options is not { Command: "start", ExitAfterSeconds: null } || Console.IsInputRedirected) return;
+        Console.WriteLine();
+        Console.WriteLine("  Press Enter to close this window.");
+        Console.ReadLine();
     }
 }

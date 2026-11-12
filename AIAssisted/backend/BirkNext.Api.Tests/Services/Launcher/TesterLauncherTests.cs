@@ -133,6 +133,23 @@ public sealed class TesterLauncherTests
     }
 
     [Fact]
+    public void A_data_folder_that_cannot_be_created_is_a_plain_startup_failure_not_an_unhandled_exception()
+    {
+        // Packaged acceptance FX-04: a write-denied data folder crashed Start-BirkNext.exe with an unhandled UnauthorizedAccessException
+        // (exit 0xE0434352, stack trace, window closes). A file where the folder should be gives the same IOException family on every OS.
+        var blocker = Path.Combine(TempDir(), "data");
+        File.WriteAllText(blocker, "not a folder");
+
+        var act = () => new DataLayout(blocker).Create();
+
+        var failure = act.Should().Throw<LauncherException>().Which;
+        failure.Message.Should().Be($"BirkNext cannot write to its data folder: {Path.GetFullPath(blocker)}");
+        failure.Action.Should().Contain("--data-dir");
+        failure.Technical.Should().StartWith("IOException");
+        failure.ExitCode.Should().Be(2);
+    }
+
+    [Fact]
     public void The_backend_gets_a_restore_provisioning_login_only_when_one_was_provisioned()
     {
         var data = new DataLayout(TempDir());

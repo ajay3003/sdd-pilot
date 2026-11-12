@@ -112,10 +112,21 @@ public sealed class DataLayout(string root)
     public static string Default(RuntimeProfile profile) =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BirkNext", profile.ToString());
 
+    /// <summary>Creates the data folders. A folder the tester cannot write to (read-only location, managed folder, a file in the way) is a
+    /// plain-language startup failure, never an unhandled exception: this runs before the log exists, so the message is all the tester gets.</summary>
     public void Create()
     {
-        foreach (var d in new[] { Root, DatabaseParent, Config, Logs, Diagnostics, Backups, RuntimeState, Temporary, AppData })
-            Directory.CreateDirectory(d);
+        try
+        {
+            foreach (var d in new[] { Root, DatabaseParent, Config, Logs, Diagnostics, Backups, RuntimeState, Temporary, AppData })
+                Directory.CreateDirectory(d);
+        }
+        catch (Exception e) when (e is UnauthorizedAccessException or IOException)
+        {
+            throw new LauncherException($"BirkNext cannot write to its data folder: {Root}",
+                "Make sure your Windows user can write to that folder, or start BirkNext with another data folder (Start-BirkNext.exe --data-dir <folder>).",
+                $"{e.GetType().Name}: {e.Message}");
+        }
     }
 }
 
