@@ -36,7 +36,7 @@
         <div class="ug-search" role="search">
             <label for="ug-search-input" class="ug-search-label @(Reading ? "visually-hidden" : "")">Search guide</label>
             <div class="ug-search-box">
-                <svg class="ug-search-icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" /><path d="M13 13l4.5 4.5" /></svg>
+                <svg class="ug-search-icon" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><circle cx="8.5" cy="8.5" r="5.5" /><path d="M13 13l4.5 4.5" /></svg>
                 <input id="ug-search-input" type="search" class="ug-search-input" placeholder="Search: historical result, pairing, Test Data, backup…" autocomplete="off" maxlength="@UserGuideSearch.MaxQueryLength"
                        aria-describedby="ug-search-status" aria-controls="ug-search-results" data-testid="ug-search" @bind="_query" @bind:event="oninput" @onkeydown="OnSearchKey" />
             </div>
@@ -372,6 +372,6 @@
             "box" => "M4 7l8-4 8 4v10l-8 4-8-4zM4 7l8 4 8-4M12 11v10",
             _ => "M5 4h10a4 4 0 014 4v12H9a4 4 0 01-4-4z",
         };
-        builder.AddMarkupContent(0, $"<svg viewBox=\"0 0 24 24\" focusable=\"false\"><path d=\"{d}\" /></svg>");
+        builder.AddMarkupContent(0, $"<svg viewBox=\"0 0 24 24\" width=\"20\" height=\"20\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" focusable=\"false\"><path d=\"{d}\" /></svg>");
     };
 }

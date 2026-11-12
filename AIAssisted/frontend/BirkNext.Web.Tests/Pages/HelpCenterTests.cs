@@ -216,4 +216,32 @@ public sealed class HelpCenterTests : BunitContext
         cut.FindAll("[data-testid=ug-outcome-term]").Should().HaveCount(UserGuideContent.ExecutionOutcomes.Count);
         cut.FindAll("[data-testid=ug-currency-term]").Select(r => r.QuerySelector("th")!.TextContent.Trim()).Should().Equal("Current definitions", "Historical result", "Currency unknown");
     }
+    // Root cause of the oversized black circles and triangles (2026-11-12): the icon markup and the rules that size and paint it shipped in the
+    // same change, but css/user-guide.css is an unversioned static file. A browser that still held the previous copy (heuristic caching, no
+    // Cache-Control) rendered the new icons with no size (an SVG then fills its container: 832 px search glass, 224 px category icons) and the
+    // default black fill. The icons now carry their own size and paint, and the stylesheet link is versioned.
+    [Fact]
+    public void Every_help_center_icon_carries_its_own_size_and_stroke_paint_so_a_missing_or_stale_stylesheet_cannot_blow_it_up()
+    {
+        foreach (var cut in new[] { Page(), At("#manual-testing") })
+        {
+            var svgs = cut.FindAll("[data-testid=ug-page] svg");
+            svgs.Should().NotBeEmpty();
+            foreach (var svg in svgs)
+            {
+                int.Parse(svg.GetAttribute("width")!).Should().BeInRange(12, 24, svg.OuterHtml);
+                int.Parse(svg.GetAttribute("height")!).Should().BeInRange(12, 24, svg.OuterHtml);
+                svg.GetAttribute("fill").Should().Be("none", "an unpainted outline icon would otherwise be filled black");
+                svg.GetAttribute("stroke").Should().Be("currentColor");
+            }
+        }
+    }
+
+    [Fact]
+    public void The_help_center_stylesheet_link_is_versioned_so_a_cached_previous_copy_is_not_reused_with_new_markup()
+    {
+        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "BirkNext.Web"));
+        var html = File.ReadAllText(Path.Combine(root, "wwwroot", "index.html"));
+        Regex.IsMatch(html, @"href=""css/user-guide\.css\?v=[0-9A-Za-z.-]+""").Should().BeTrue();
+    }
 }
