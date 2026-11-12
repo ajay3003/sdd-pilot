@@ -121,6 +121,30 @@ public sealed class NavigationWorkspaceTests : BunitContext
     }
 
     [Fact]
+    public void All_Modules_is_the_complete_eligible_catalogue_derived_from_the_registry()
+    {
+        // The invariant (no allow-list): every catalogue row that Feature Visibility allows is exactly one row of All Modules, in catalogue order,
+        // never marked "other view"; a row Feature Visibility turns off is absent. A newly registered module therefore appears without any change here.
+        WorkspaceViews.Of(WorkspaceView.AllModules).Modules.Should().BeEmpty("All Modules keeps no list of its own");
+        var features = Services.GetRequiredService<FeatureVisibilityService>();
+        State.SetView(WorkspaceView.AllModules);
+        var cut = Render<NavMenu>();
+        var catalogue = NavigationCatalog.Sections.SelectMany(s => s.Items).ToList();
+        var eligible = catalogue.Where(i => i.Visible(features)).Select(i => i.Route).ToList();
+        var rendered = cut.FindAll("[id^='nav-section-'] a").Select(a => a.GetAttribute("href")).ToList();
+        rendered.Should().Equal(eligible, "every eligible module once, in catalogue order");
+        rendered.Should().OnlyHaveUniqueItems();
+        rendered.Should().Contain(["test-data", "test-plan-suggestions", "system-understanding", "dashboard", "getting-started", "artifact-traceability",
+            "correlation-review", "critical-e2e-regression", "integration-suites", "execution-results", "performance-test-review"]);
+        cut.FindAll("[data-testid=nav-outside-badge]").Should().BeEmpty("nothing is outside All Modules");
+        cut.FindAll("[data-testid=nav-show-other]").Should().BeEmpty();
+        catalogue.Where(i => !i.Visible(features)).Select(i => i.Route).Should().NotIntersectWith(rendered, "Feature Visibility still decides what exists");
+        // Every specialized view stays a strict subset of the eligible catalogue.
+        foreach (var view in WorkspaceViews.All.Where(v => !v.IsAllModules))
+            view.Modules.Where(r => catalogue.Single(i => i.Route == r).Visible(features)).Should().BeSubsetOf(eligible, $"{view.Label} only names catalogue modules");
+    }
+
+    [Fact]
     public void Eight_built_in_views_in_selector_order_with_stable_ids_and_audience_labels()
     {
         WorkspaceViews.All.Select(v => (v.View, v.Label)).Should().Equal(
