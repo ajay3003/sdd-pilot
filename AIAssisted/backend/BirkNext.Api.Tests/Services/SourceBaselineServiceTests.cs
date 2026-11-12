@@ -14,8 +14,9 @@ using Microsoft.EntityFrameworkCore;
 namespace BirkNext.Api.Tests.Services;
 
 /// <summary>
-/// The shared source context: snapshots of one logical source (repository identity) are versions; one is analysed (the person's analysis baseline,
-/// else the newest import, flagged NotSelected when contents differ); alternatives are never combined; a vanished baseline is never substituted;
+/// The shared source context: snapshots of one logical source (repository identity) are versions; at most one is analysed (the person's analysis
+/// baseline, else the only content). Alternative versions without a baseline are BASELINE_NOT_SELECTED: left out of cross-module analysis, the newest
+/// import is only a non-authoritative preview, never persisted; alternatives are never combined; a vanished baseline is never substituted;
 /// decisions are append-only and identical re-selection records nothing. Expectations are written from the rules, not read back from the code.
 /// Synthetic fixtures (multi-branch task A–Z where they apply).
 /// </summary>
@@ -44,12 +45,13 @@ public sealed class SourceBaselineServiceTests : IDisposable
 
     private SourceBaselineService Service() => new(_db, new IqrSourceStore(_db));
 
-    [Fact] // B, J: five alternative snapshots; the analysis uses exactly one per logical source, never a union
-    public void Resolve_returns_one_snapshot_per_logical_source_baseline_first_else_newest()
+    [Fact] // B, J: five alternative snapshots; the analysis uses at most one per logical source, never a union, and never the newest by default
+    public void Resolve_returns_the_baseline_and_leaves_out_unselected_alternatives()
     {
         var v3 = Snap("M2LB (3).zip", "c3", 1); var v4 = Snap("M2LB (4).zip", "c4", 2); var v7 = Snap("M2LB (7).zip", "c7", 5);
         var common = Snap("M2LB.Common.zip", "cc", 0, repoKey: "m2lb.common", repoName: "M2LB.Common");
-        SourceBaselineService.Resolve([v3, v4, v7, common], new Dictionary<string, Guid>()).Select(s => s.Id).Should().BeEquivalentTo([v7.Id, common.Id], "newest per source without a baseline");
+        SourceBaselineService.Resolve([v3, v4, v7, common], new Dictionary<string, Guid>()).Select(s => s.Id).Should().Equal([common.Id],
+            "BASELINE_NOT_SELECTED: import order never decides which alternative is analysed; the single-version source is unaffected");
         SourceBaselineService.Resolve([v3, v4, v7, common], new Dictionary<string, Guid> { ["m2lb"] = v3.Id }).Select(s => s.Id).Should().BeEquivalentTo([v3.Id, common.Id],
             "the selected baseline wins over newer imports; the supporting source keeps its own version");
     }
@@ -79,8 +81,13 @@ public sealed class SourceBaselineServiceTests : IDisposable
         var m2lb = context.Sources.Single(s => s.RepositoryKey == "m2lb");
         m2lb.State.Should().Be(SourceBaselineState.NotSelected);
         m2lb.DistinctContents.Should().Be(2);
-        m2lb.UsedSnapshotId.Should().Be(b.Id, "without a baseline the newest import is used, and that is said");
-        m2lb.StateDetail.Should().Contain("no analysis baseline");
+        m2lb.UsedSnapshotId.Should().BeNull("without a baseline nothing is authoritative");
+        m2lb.PreviewSnapshotId.Should().Be(b.Id, "the newest import is offered only as a labelled preview");
+        m2lb.StateCode.Should().Be("BASELINE_NOT_SELECTED");
+        m2lb.StateDetail.Should().Contain("no analysis baseline").And.Contain("non-authoritative preview");
+        m2lb.Snapshots.Should().OnlyContain(v => !v.UsedForAnalysis);
+        same.UsedSnapshotId.Should().NotBeNull("identical content is one version: no decision is needed");
+        same.PreviewSnapshotId.Should().BeNull();
         m2lb.Snapshots.Should().OnlyContain(v => v.BranchKind == SourceBranchKind.Unknown && v.Branch == null && v.Commit == null, "no Git metadata: branch unknown, nothing invented");
         m2lb.Snapshots.Single(v => v.SnapshotId == a.Id).Components.Should().Equal("Meldingsutvekslermottak", "Skole");
         context.NeedsBaseline.Should().Be(1);
@@ -135,6 +142,75 @@ public sealed class SourceBaselineServiceTests : IDisposable
         var service = Service();
         await service.SelectBaselineAsync("m2lb", old.Id, "x", null, default);
         (await service.ResolveAsync([newest], default)).Select(s => s.Id).Should().Equal(old.Id);
+    }
+
+    [Fact] // Baseline correction: identical content needs no decision; a single snapshot needs none; alternatives need one
+    public void Authoritative_rule_distinguishes_identical_content_single_and_alternative_versions()
+    {
+        var same1 = Snap("M2LB.zip", "c3", 1); var same2 = Snap("M2LB (3).zip", "c3", 2);
+        SourceBaselineService.Resolve([same1, same2], new Dictionary<string, Guid>()).Select(s => s.Id).Should().Equal([same2.Id], "a re-zip of the same files is one version");
+        var only = Snap("M2LB (4).zip", "c4", 1);
+        SourceBaselineService.Resolve([only], new Dictionary<string, Guid>()).Select(s => s.Id).Should().Equal([only.Id]);
+        SourceBaselineService.Resolve([same1, same2, only], new Dictionary<string, Guid>()).Should().BeEmpty("two different contents and no baseline");
+        SourceBaselineService.Resolve([same1, same2, only], new Dictionary<string, Guid> { ["m2lb"] = only.Id }).Select(s => s.Id).Should().Equal([only.Id]);
+    }
+
+    [Fact] // Baseline correction: reading the context (and its preview) never records a decision
+    public async Task The_preview_is_never_persisted_as_a_decision()
+    {
+        await Store(Snap("M2LB (5).zip", "c5", 3)); await Store(Snap("M2LB (7).zip", "c7", 4));
+        var service = Service();
+        await service.ContextAsync(default);
+        await service.ResolveAsync(await new IqrSourceStore(_db).ListSourceAnalysisAsync(10, default), default);
+        _db.SourceDecisions.Count().Should().Be(0);
+        (await service.CurrentBaselinesAsync(default)).Should().BeEmpty();
+    }
+
+    [Fact] // Baseline correction: the person's choice survives a newer import and a restart (a new context over the same store)
+    public async Task A_selected_baseline_survives_newer_imports_and_a_restart()
+    {
+        var name = Guid.NewGuid().ToString();
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(name).Options;
+        Guid chosen;
+        using (var db = new AppDbContext(options))
+        {
+            async Task<IqrSourceSnapshot> Put(IqrSourceSnapshot s)
+            {
+                db.IqrSourceSnapshots.Add(new IqrSourceSnapshotRecord { Id = s.Id, EnvironmentId = "", IntegrationId = IqrSourceStore.SourceAnalysisOwner, AnalyzedAt = s.AnalyzedAt,
+                    EvidenceJson = JsonSerializer.Serialize(s, new JsonSerializerOptions(JsonSerializerDefaults.Web)) });
+                await db.SaveChangesAsync();
+                return s;
+            }
+            var older = await Put(Snap("M2LB (5).zip", "c5", 3)); await Put(Snap("M2LB (7).zip", "c7", 4));
+            chosen = older.Id;
+            await new SourceBaselineService(db, new IqrSourceStore(db)).SelectBaselineAsync("m2lb", older.Id, "local-session:loopback", null, default);
+            await Put(Snap("M2LB (8).zip", "c8", 9));
+        }
+        using (var restarted = new AppDbContext(options))
+        {
+            var m2lb = (await new SourceBaselineService(restarted, new IqrSourceStore(restarted)).ContextAsync(default)).Sources.Single();
+            m2lb.State.Should().Be(SourceBaselineState.Selected);
+            m2lb.UsedSnapshotId.Should().Be(chosen, "a newer import never moves the person's choice");
+            m2lb.SnapshotCount.Should().Be(3);
+        }
+    }
+
+    [Fact] // Baseline correction: Project Quality / Recommended Workflow coverage never substitutes another source or the newest alternative
+    public async Task Technology_coverage_is_withheld_while_the_newest_source_has_no_baseline()
+    {
+        await Store(Snap("M2LB.Common.zip", "cc", 0, repoKey: "m2lb.common", repoName: "M2LB.Common"));
+        var older = await Store(Snap("M2LB (5).zip", "c5", 3)); await Store(Snap("M2LB (7).zip", "c7", 4));
+        var catalog = new Moq.Mock<BirkNext.Api.Services.Integrations.IIntegrationCatalogService>(Moq.MockBehavior.Strict);
+        BirkNext.Technology.ProjectTechnologyCoverage Coverage(Microsoft.AspNetCore.Mvc.ActionResult<BirkNext.Technology.ProjectTechnologyCoverage> r) =>
+            (r.Result as Microsoft.AspNetCore.Mvc.OkObjectResult)?.Value as BirkNext.Technology.ProjectTechnologyCoverage ?? r.Value!;
+        var controller = new BirkNext.Api.Controllers.TechnologyCoverageController(new IqrSourceStore(_db), catalog.Object, Service());
+
+        var unresolved = Coverage(await controller.Get(null, default));
+        unresolved.SourceSnapshotId.Should().BeNull("neither M2LB (7) by import order nor M2LB.Common stands in for M2LB");
+        unresolved.Notices.Should().ContainSingle(n => n.StartsWith("BASELINE_NOT_SELECTED: M2LB"));
+
+        await Service().SelectBaselineAsync("m2lb", older.Id, "local-session:loopback", null, default);
+        Coverage(await controller.Get(null, default)).SourceSnapshotId.Should().Be(older.Id);
     }
 }
 

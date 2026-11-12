@@ -134,7 +134,9 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
             GuideKey = guideKey, Title = shown.Content.Title, Purpose = shown.Content.Purpose, Shown = shown, Draft = open is null ? null : ToRevision(open),
             Revisions = [.. rows.OrderByDescending(r => r.Revision).Select(r => new SystemGuideRevisionSummary(r.Revision, Parse(r.State), r.ContentFingerprint, r.CreatedBy, r.CreatedAt,
                 r.ApprovedBy, r.ApprovedAt, r.PublishedAt, r.ChangeSummary))],
-            ReviewState = ReviewState(published, open), SourceChanges = SourceChanges(shown, current), CurrentSources = current, CanEdit = canEdit, CanApprove = canEdit,
+            ReviewState = ReviewState(published, open),
+            SourceChanges = SourceChanges(shown, current, (await new Integrations.SourceEvidence.IqrSourceStore(db).ListSourceAnalysisAsync(500, ct)).Select(s => s.Id).ToHashSet()),
+            CurrentSources = current, CanEdit = canEdit, CanApprove = canEdit,
         };
     }
 
@@ -177,22 +179,29 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
         var roles = Roles(entry, content);
         if (roles.Count == 0) return [];
         // The workspace's Source Analysis snapshots, as Source Analysis lists them (one shared reader; no second inventory).
-        // Only the snapshot each logical source is analysed with (its analysis baseline, else the newest import): alternative branch snapshots of the
-        // same source are never all cited as the guide's basis. Switching the baseline changes the basis, so affected claims show as source changes.
-        var snapshots = SourceAnalysis.SourceBaselineService.Resolve(await new Integrations.SourceEvidence.IqrSourceStore(db).ListSourceAnalysisAsync(500, ct),
-            await SourceAnalysis.SourceBaselineService.CurrentBaselinesAsync(db, ct)).OrderBy(s => s.AnalyzedAt).ToList();
+        // Only the snapshot each logical source is analysed with (its analysis baseline, else its only content): alternative branch snapshots of the
+        // same source are never all cited as the guide's basis, and none is cited while BASELINE_NOT_SELECTED. Switching the baseline changes the
+        // basis, so affected claims show as source changes.
+        var all = await new Integrations.SourceEvidence.IqrSourceStore(db).ListSourceAnalysisAsync(500, ct);
+        var snapshots = SourceAnalysis.SourceBaselineService.Resolve(all, await SourceAnalysis.SourceBaselineService.CurrentBaselinesAsync(db, ct)).OrderBy(s => s.AnalyzedAt).ToList();
+        var resolvedKeys = snapshots.Select(SourceAnalysis.SourceBaselineService.KeyOf).ToHashSet(StringComparer.Ordinal);
+        var unresolved = all.Where(s => !resolvedKeys.Contains(SourceAnalysis.SourceBaselineService.KeyOf(s))).ToList();
         var result = new List<GuideSourceBasis>();
         foreach (var role in roles)
         {
             var matched = snapshots.Where(s => TestPackSources.Recognizes(role, s)).ToList();
-            if (matched.Count == 0) result.Add(new GuideSourceBasis(role.Key, null, null, $"{role.Label}: not imported"));
+            if (matched.Count == 0 && unresolved.Where(s => TestPackSources.Recognizes(role, s)).Select(SourceAnalysis.SourceBaselineService.KeyOf).Distinct(StringComparer.Ordinal).ToList() is { Count: > 0 } waiting)
+                result.Add(new GuideSourceBasis(role.Key, null, null,
+                    $"{role.Label}: BASELINE_NOT_SELECTED — imported in alternative versions ({string.Join(", ", waiting)}); select the analysis baseline in Source versions"));
+            else if (matched.Count == 0) result.Add(new GuideSourceBasis(role.Key, null, null, $"{role.Label}: not imported"));
             result.AddRange(matched.Select(s => new GuideSourceBasis(role.Key, s.Id, s.Archive.Sha256, $"{role.Label}: {s.Archive.FileName} (analysed {s.AnalyzedAt:yyyy-MM-dd})")));
         }
         return result;
     }
 
-    /// <summary>Snapshots imported or removed since the shown revision's basis, with how many of its claims cite that role.</summary>
-    public static List<GuideSourceChange> SourceChanges(SystemGuideRevision shown, IReadOnlyList<GuideSourceBasis> current)
+    /// <summary>Snapshots imported or removed since the shown revision's basis, with how many of its claims cite that role. A basis snapshot that is
+    /// still imported but no longer the analysis baseline (<paramref name="stillImported"/>) is said to be so — never "no longer imported".</summary>
+    public static List<GuideSourceChange> SourceChanges(SystemGuideRevision shown, IReadOnlyList<GuideSourceBasis> current, IReadOnlySet<Guid>? stillImported = null)
     {
         int Claims(string role) => AllEvidence(shown.Content).Count(e => string.Equals(e.SourceRole, role, StringComparison.Ordinal));
         var basis = shown.SourceBasis.Where(b => b.SnapshotId is not null).Select(b => b.SnapshotId!.Value).ToHashSet();
@@ -201,7 +210,9 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
         foreach (var added in current.Where(c => c.SnapshotId is { } id && !basis.Contains(id)))
             changes.Add(new GuideSourceChange(added.Role, added.Label, "Not among the sources this revision was written from — the guide may need review", Claims(added.Role)));
         foreach (var removed in shown.SourceBasis.Where(b => b.SnapshotId is { } id && !now.Contains(id)))
-            changes.Add(new GuideSourceChange(removed.Role, removed.Label, "No longer imported — the claims citing it can no longer be opened", Claims(removed.Role)));
+            changes.Add(new GuideSourceChange(removed.Role, removed.Label, stillImported?.Contains(removed.SnapshotId!.Value) == true
+                ? "No longer the analysis baseline (still imported; its claims can still be opened) — review the guide against the current baseline"
+                : "No longer imported — the claims citing it can no longer be opened", Claims(removed.Role)));
         return changes;
     }
 

@@ -51,14 +51,15 @@ public sealed class ProjectEvidenceVersionsTests
         ApplicationContexts.Reconcile(Lifecycle, Setup);
     }
 
-    /// <summary>The backend's view: one logical source "m2lb" with five different contents; <paramref name="baseline"/> selected or not.</summary>
+    /// <summary>The backend's view: one logical source "m2lb" with five different contents; <paramref name="baseline"/> selected or not.
+    /// Without a baseline nothing is authoritative (BASELINE_NOT_SELECTED): no version is used for analysis; the newest is only a preview.</summary>
     private SourceContextView Context(string? baseline)
     {
-        var used = baseline ?? Versions[^1];
         var snapshots = Versions.Select((v, i) => new SourceSnapshotView(_snapshotOf[v], v, "sha", "content-" + i, T0.AddMinutes(i), "Partial", SourceBranchKind.Unknown, null, null,
-            null, v == baseline, i == Versions.Length - 1, v == used, 1, 10, [], 0)).Reverse().ToList();
+            null, v == baseline, i == Versions.Length - 1, v == baseline, 1, 10, [], 0)).Reverse().ToList();
         var m2lb = new LogicalSourceView("m2lb", "M2LB", "Archive file name", baseline is null ? SourceBaselineState.NotSelected : SourceBaselineState.Selected,
-            baseline is null ? null : _snapshotOf[baseline], _snapshotOf[used], "", 5, 5, snapshots);
+            baseline is null ? null : _snapshotOf[baseline], baseline is null ? null : _snapshotOf[baseline], "", 5, 5, snapshots,
+            baseline is null ? "BASELINE_NOT_SELECTED" : "BASELINE_SELECTED", baseline is null ? _snapshotOf[Versions[^1]] : null);
         return new SourceContextView([m2lb], 1, 5, baseline is null ? 1 : 0, "fp");
     }
 

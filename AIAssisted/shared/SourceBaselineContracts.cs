@@ -12,8 +12,9 @@ public enum SourceBranchKind { Verified, Declared, Unknown }
 /// <item><c>Selected</c> — a person chose the analysis baseline snapshot;</item>
 /// <item><c>SingleSnapshot</c> — only one snapshot exists, nothing to choose;</item>
 /// <item><c>IdenticalContent</c> — several imports, all with the same canonical content (one effective version);</item>
-/// <item><c>NotSelected</c> — alternative versions with different content exist and none is chosen: modules fall back to the newest import and say
-/// so; implementation-specific conclusions need a baseline;</item>
+/// <item><c>NotSelected</c> (BASELINE_NOT_SELECTED) — alternative versions with different content exist and none is chosen: inventory, history and
+/// comparison are available, but no module draws authoritative conclusions from this source (it is left out of cross-module analysis) until a person
+/// selects a baseline. The newest import is offered only as a labelled, non-authoritative preview;</item>
 /// <item><c>SelectedUnavailable</c> — the chosen baseline snapshot no longer exists; nothing is substituted.</item>
 /// </list>
 /// </summary>
@@ -26,10 +27,13 @@ public sealed record SourceSnapshotView(
     int AnalyzerVersion, int FilesAnalyzed, IReadOnlyList<string> Components, int SameContentAs);
 
 /// <summary>A logical source (repository identity) with its snapshots, newest first. <see cref="IdentityBasis"/> says how snapshots were grouped
-/// (e.g. "Archive file name" = grouped by name only, not verified repository identity).</summary>
+/// (e.g. "Archive file name" = grouped by name only, not verified repository identity). <see cref="UsedSnapshotId"/> is the authoritative snapshot
+/// (null for BASELINE_NOT_SELECTED and BASELINE_UNAVAILABLE). <see cref="PreviewSnapshotId"/> is set only for BASELINE_NOT_SELECTED: the newest import,
+/// a non-authoritative preview that is never persisted as a decision.</summary>
 public sealed record LogicalSourceView(
     string RepositoryKey, string DisplayName, string IdentityBasis, SourceBaselineState State, Guid? BaselineSnapshotId, Guid? UsedSnapshotId,
-    string StateDetail, int SnapshotCount, int DistinctContents, IReadOnlyList<SourceSnapshotView> Snapshots);
+    string StateDetail, int SnapshotCount, int DistinctContents, IReadOnlyList<SourceSnapshotView> Snapshots,
+    string StateCode = "", Guid? PreviewSnapshotId = null);
 
 public sealed record SourceDecisionView(Guid Id, string Kind, string Subject, Guid? SnapshotId, string? Value, string? SnapshotLabel, string? ContentFingerprint,
     DateTimeOffset DecidedAt, string DecidedBy, string? Reason);

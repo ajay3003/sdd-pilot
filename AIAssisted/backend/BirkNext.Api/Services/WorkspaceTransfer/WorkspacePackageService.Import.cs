@@ -291,6 +291,16 @@ public sealed partial class WorkspacePackageService
                     (x.RepositoryKeyA == r.RepositoryKeyA && x.RepositoryKeyB == r.RepositoryKeyB || x.RepositoryKeyA == r.RepositoryKeyB && x.RepositoryKeyB == r.RepositoryKeyA), ct);
                 return exists ? (ImportStatus.Identical, "These projects are already associated here.", "present") : (ImportStatus.New, "Association declared at the origin (kept with its original author and time).", "absent");
             }
+            case PackageTypes.SourceDecision:
+            {
+                var d = p.Deserialize<SourceDecisionPayload>(Web)!;
+                var here = await _db.SourceDecisions.AsNoTracking().Where(x => x.Kind == d.Kind && x.Subject == d.Subject).OrderBy(x => x.DecidedAt).ThenBy(x => x.Id).ToListAsync(ct);
+                var token = TransferJson.Sha256(string.Join(",", here.Select(x => x.Id)));
+                if (here.Count == 0) return (ImportStatus.New, $"{d.Decisions.Count} source decision(s) recorded at the origin (original actors and times kept).", "absent");
+                var ids = here.Select(x => x.Id).ToHashSet();
+                if (d.Decisions.All(x => ids.Contains(x.Id)) && here.Count == d.Decisions.Count) return (ImportStatus.Identical, "This decision history is already here.", token);
+                return (ImportStatus.ConflictingContent, "This installation has its own decision history for this source; an import never changes the analysis baseline chosen here.", token);
+            }
             case PackageTypes.History:
             {
                 var h = p.Deserialize<HistoryPayload>(Web)!;

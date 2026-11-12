@@ -250,6 +250,22 @@ public sealed class CompositeSuiteTests : IAsyncLifetime
         (await Save(Approved(p))).Unchanged.Should().BeTrue("the same decisions are not a new revision");
         (await Save(Approved(p) with { Associations = [new(Guid.NewGuid(), ["mu"], CompositeApproval.Approved)] })).Problems.Should().ContainSingle(x => x.Contains("not found"));
         (await Save(Approved(p) with { Associations = [new(p.D, ["mu"], CompositeApproval.Approved)] })).Problems.Should().ContainSingle(x => x.Contains("manual association needs a reason"));
+
+        // Component-level mixing: two different versions of ONE source (a second branch archive of package C) in one context are refused, never stitched.
+        var c2 = await Import("package-c-branch.zip", [.. PackageC(), ("NOTES.md", "another branch")]);
+        var mixed = await Save(Approved(p) with
+        {
+            Associations = [new(p.A, ["altinn", "mu"], CompositeApproval.Approved), new(p.B, ["mm"], CompositeApproval.Approved),
+                new(p.C, ["skole-intake"], CompositeApproval.Approved), new(c2, ["person-tjeneste", "period-lock"], CompositeApproval.Approved), new(p.D, ["bufdata"], CompositeApproval.Approved)],
+        });
+        mixed.Context.Should().BeNull();
+        mixed.Problems.Should().ContainSingle(x => x.Contains("2 different versions") && x.Contains("never combined"));
+        var sameContent = await Import("package-c-rezip.zip", PackageC());
+        (await Save(Approved(p) with
+        {
+            Associations = [new(p.A, ["altinn", "mu"], CompositeApproval.Approved), new(p.B, ["mm"], CompositeApproval.Approved),
+                new(p.C, ["skole-intake"], CompositeApproval.Approved), new(sameContent, ["person-tjeneste", "period-lock"], CompositeApproval.Approved), new(p.D, ["bufdata"], CompositeApproval.Approved)],
+        })).Problems.Should().NotContain(x => x.Contains("different versions"), "a content-identical re-import is the same version");
     }
 
     [Fact]
@@ -460,6 +476,19 @@ public sealed class CompositeSuiteTests : IAsyncLifetime
         withFailed.Supporting.Should().ContainSingle(c => c.ProjectKey == "terraform-iac-meldingsutveksler" && c.Kind == CompositeSourceKind.Infrastructure && c.AnalysisStatus == "Failed",
             "an archive that failed analysis only for lack of application code is still supporting evidence");
         withFailed.Stages.SelectMany(s => s.Candidates).Should().NotContain(c => c.ProjectKey == "terraform-iac-meldingsutveksler");
+
+        // Baseline correction: two versions of M2LB with different content and no analysis baseline → neither is a candidate (import order never
+        // decides); with a baseline exactly that version is; a content-identical re-import is one version.
+        var m2lbNorsk = m2lb with { Id = Guid.NewGuid(), ArchiveFileName = "M2LB (5).zip", ContentKey = "c5", AnalyzedAt = DateTimeOffset.UnixEpoch.AddDays(2) };
+        var m2lbEn = m2lb with { ContentKey = "c7", AnalyzedAt = DateTimeOffset.UnixEpoch.AddDays(1) };
+        var unresolved = CompositeSourceRules.Discover(scope, [tiltak, m2lbEn, m2lbNorsk, iac], null, new Dictionary<string, Guid>());
+        unresolved.Stages.SelectMany(s => s.Candidates).Should().NotContain(c => c.ProjectKey == "m2lb", "BASELINE_NOT_SELECTED: no M2LB version is a candidate");
+        unresolved.Limitations.Should().Contain(l => l.StartsWith("BASELINE_NOT_SELECTED: m2lb (2 versions)"));
+        var chosen = CompositeSourceRules.Discover(scope, [tiltak, m2lbEn, m2lbNorsk, iac], null, new Dictionary<string, Guid> { ["m2lb"] = m2lbEn.Id });
+        chosen.Stages.Single(s => s.StageId == "mm").Candidates.Should().ContainSingle(c => c.SnapshotId == m2lbEn.Id && c.OlderSnapshots == 1);
+        var rezip = m2lbEn with { Id = Guid.NewGuid(), ArchiveFileName = "M2LB.zip", ArchiveSha256 = new string('b', 64), AnalyzedAt = DateTimeOffset.UnixEpoch.AddDays(3) };
+        CompositeSourceRules.Discover(scope, [tiltak, m2lbEn, rezip, iac], null, new Dictionary<string, Guid>())
+            .Stages.Single(s => s.StageId == "mm").Candidates.Should().ContainSingle(c => c.SnapshotId == rezip.Id, "identical content needs no decision");
 
         var sides = new Dictionary<string, CompositeSourceRules.Side>
         {

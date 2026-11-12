@@ -227,6 +227,25 @@ public sealed class SddProjectImportRecord
     /// <summary>The logical application this package is evidence for (<see cref="SddApplicationContext.Id"/>). Null only in a workspace saved
     /// before applications existed; <c>ApplicationContexts.Ensure</c> assigns it without changing anything else.</summary>
     public string? ApplicationId { get; set; }
+    /// <summary>
+    /// Immutable import history of this archive identity (the import id is derived from the archive hash, so importing the same bytes again reuses
+    /// this record). The fields above are the mutable operational view (the latest import); every import that produced a different source
+    /// snapshot is appended here and never rewritten, so an earlier snapshot keeps its provenance. Empty in workspaces saved before history existed.
+    /// </summary>
+    public List<SddProjectImportEvent> History { get; set; } = [];
+}
+
+/// <summary>One import of an archive: when, which immutable Source Analysis snapshot it produced, and the archive/content identity. Append-only.</summary>
+public sealed class SddProjectImportEvent
+{
+    public DateTimeOffset ImportedAt { get; set; }
+    public string ArchiveFileName { get; set; } = "";
+    public string ArchiveSha256 { get; set; } = "";
+    /// <summary>Canonical content fingerprint, when the backend computed one.</summary>
+    public string? ContentFingerprint { get; set; }
+    public string SourceState { get; set; } = "";
+    public Guid? SourceSnapshotId { get; set; }
+    public DateTimeOffset? SourceAnalyzedAt { get; set; }
 }
 
 /// <summary>

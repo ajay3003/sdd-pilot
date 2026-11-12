@@ -74,6 +74,22 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         return record;
     }
 
+    [Fact] // Real-archive finding: a re-zipped archive chosen before the page's source setup arrived was imported as new (content check had no snapshots)
+    public async Task A_content_duplicate_is_detected_even_when_the_file_is_chosen_before_the_source_setup_loaded()
+    {
+        var existing = Guid.NewGuid();
+        _setup = new SourceSetupView { Snapshots = [new SourceSetupSnapshot(existing, "M2LB (3).zip", OldM2lbSha, DateTimeOffset.UtcNow.AddDays(-1), "Partial") { ContentFingerprint = "content-3" }] };
+        _preview = ProjectImportActivationTests.Preview(M2lbSha, source: true) with { Archive = new ProjectImportArchive("M2LB.zip", M2lbSha, 4096, 12, "content-3") };
+        var session = Services.GetRequiredService<ProjectImportSession>();
+
+        await session.StartPreviewAsync("M2LB.zip", 4096, _ => Task.FromResult<Stream>(new MemoryStream([1, 2, 3])), setup: null);
+
+        for (var i = 0; i < 100 && session.Duplicate is null; i++) await Task.Delay(20);
+        session.Duplicate.Should().NotBeNull("the session reads the source setup itself when the page had none yet");
+        session.Duplicate!.SameContentDifferentArchive.Should().BeTrue();
+        session.Duplicate.SnapshotId.Should().Be(existing);
+    }
+
     private static TestPackSourceRole Role(string key, string label, TestPackSourceRequirement requirement = TestPackSourceRequirement.Required, string? condition = null,
         params string[] journeys) => new(key, label, label)
     {
@@ -217,7 +233,7 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=pi-duplicate]"));
 
         cut.Find("[data-testid=pi-duplicate]").TextContent.Should().Contain("Matching imported source already exists").And.Contain("Tiltak 2 - hub (1).zip");
-        cut.Find("[data-testid=pi-duplicate-again-help]").TextContent.Should().Contain("no second history entry").And.Contain("Nothing is deleted");
+        cut.Find("[data-testid=pi-duplicate-again-help]").TextContent.Should().Contain("kept in that import's history").And.Contain("Nothing is deleted or rewritten");
         cut.Find("[data-testid=pi-import]").HasAttribute("disabled").Should().BeTrue("a duplicate is never imported or reused silently");
         cut.Find("[data-testid=pi-duplicate-import-again]").Click();
         cut.FindAll("[data-testid=pi-duplicate]").Should().BeEmpty();

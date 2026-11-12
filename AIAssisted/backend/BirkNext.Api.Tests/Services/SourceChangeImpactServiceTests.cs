@@ -180,6 +180,21 @@ public sealed class SourceChangeImpactServiceTests
         report.CoverageGaps.Should().Contain(x => x.Contains("Technical impact exists", StringComparison.Ordinal));
     }
 
+    [Fact] // Real-archive finding: M2LB (3).zip vs its re-zip M2LB.zip (same files) reported "unclassified change, review required"
+    public async Task The_same_content_in_a_different_archive_is_no_source_change()
+    {
+        await using var db = Db();
+        var before = Snapshot("v1", []) with { Archive = new SourceArchive("M2LB (3).zip", new string('a', 64), 1, "same-content") };
+        var after = Snapshot("v1", []) with { Id = Guid.NewGuid(), Archive = new SourceArchive("M2LB.zip", new string('c', 64), 1, "same-content") };
+        var service = new SourceChangeImpactService(db, new SnapshotProvider([before, after]));
+        var report = await service.AnalyzeAsync(Request(before, after), default);
+        report!.Changes.Should().BeEmpty("identical content is not a change, whatever the archive bytes");
+        report.Limitations.Should().Contain(x => x.Contains("same content fingerprint"));
+        var differing = after with { Archive = after.Archive with { ContentSha256 = "other-content" } };
+        (await new SourceChangeImpactService(db, new SnapshotProvider([before, differing])).AnalyzeAsync(Request(before, differing), default))!
+            .Changes.Should().ContainSingle(x => x.Domain == ImpactChangeDomain.Unclassified, "different content without a structured diff still needs review");
+    }
+
     [Fact]
     public async Task Contract_change_flows_through_explicit_component_link_to_requirement_and_test()
     {

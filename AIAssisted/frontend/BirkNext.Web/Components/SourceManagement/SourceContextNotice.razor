@@ -3,16 +3,16 @@
 @inject IServiceProvider Services
 
 @* The shared source context, in one line, on every page whose results depend on it: which version of a multi-version source is analysed, or that
-   none is chosen yet (then results use the newest import and implementation-specific conclusions need the choice). Renders nothing when every
-   source has a single version. *@
+   none is chosen yet (BASELINE_NOT_SELECTED: the source is left out of this page's analysis until a person chooses; import order never decides).
+   Renders nothing when every source has a single version. *@
 @if (_context is { } c && (_unresolved.Count > 0 || _selected.Count > 0))
 {
     <aside class="scn @(_unresolved.Count > 0 ? "scn-warn" : "scn-info")" role="note" data-testid="source-context-notice" data-context="@c.ContextFingerprint"
            data-state="@(_unresolved.Count > 0 ? "needs-baseline" : "baseline")">
         @if (_unresolved.Count > 0)
         {
-            <span class="scn-text"><strong>Select the @Names(_unresolved) source baseline.</strong> Multiple alternative source snapshots are available@(Purpose is { Length: > 0 } p ? $"; {p} uses the newest import until you choose" : "")
-                — select the intended source context before evaluating implementation-specific quality and test readiness. BirkNext does not pick a branch.</span>
+            <span class="scn-text" data-testid="source-context-notice-code" data-code="@(_unresolved.Any(s => s.State == SourceBaselineState.NotSelected) ? "BASELINE_NOT_SELECTED" : "BASELINE_UNAVAILABLE")"><strong>Select the @Names(_unresolved) source baseline.</strong> Multiple alternative source snapshots are available and none is selected@(Purpose is { Length: > 0 } p ? $"; {p} leaves {(_unresolved.Count == 1 ? "it" : "them")} out until you choose" : ", so they are left out of analysis until you choose")
+                — no implementation-specific quality, execution-readiness or release-readiness conclusion is drawn from them. BirkNext never picks a branch from import order.</span>
         }
         else
         {

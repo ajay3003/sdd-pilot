@@ -18,6 +18,7 @@ public sealed partial class WorkspacePackageService
     {
         PackageTypes.Snapshot, PackageTypes.Association, PackageTypes.Contract, PackageTypes.ParquetRules, PackageTypes.Suite, PackageTypes.Composite, PackageTypes.Platform,
         PackageTypes.Integration, PackageTypes.EvidenceBinding, PackageTypes.ContractArtifact, PackageTypes.GraphQlSchema, PackageTypes.MessageFlows, PackageTypes.History,
+        PackageTypes.SourceDecision,
     };
 
     private sealed class ApplyContext(Guid operationId, string originInstance, string? importedEnvironment, string? destinationEnvironment, DateTimeOffset now)
@@ -258,6 +259,28 @@ public sealed partial class WorkspacePackageService
                 var id = await FreeId(_db.SourceRepositoryAssociations, r.Id, x => x.Id, ct);
                 _db.SourceRepositoryAssociations.Add(Copy(r, id, $"Imported from installation {ctx.OriginInstance} (operation {ctx.OperationId:N}). {r.Note}".Trim()));
                 ctx.Reconciliation.Add(new(label, ReconciliationStatus.Resolved, $"Association declared by {r.DeclaredBy} at {r.DeclaredAt:u} (original author kept)."));
+                break;
+            }
+            case PackageTypes.SourceDecision:
+            {
+                // Inserted only (the table is append-only); the origin's ids, actors, times and reasons are kept so the history reads the same here.
+                var d = p.Deserialize<SourceDecisionPayload>(Web)!;
+                foreach (var r in d.Decisions.OrderBy(x => x.DecidedAt).ThenBy(x => x.Id))
+                {
+                    var id = await FreeId(_db.SourceDecisions, r.Id, x => x.Id, ct);
+                    _db.SourceDecisions.Add(new SourceDecisionRecord
+                    {
+                        Id = id, Kind = r.Kind, Subject = r.Subject, SnapshotId = r.SnapshotId, Value = r.Value, SnapshotLabel = r.SnapshotLabel, ContentFingerprint = r.ContentFingerprint,
+                        DecidedAt = r.DecidedAt, DecidedBy = r.DecidedBy,
+                        Reason = $"{r.Reason} [imported from installation {ctx.OriginInstance}, operation {ctx.OperationId:N}]".Trim(),
+                    });
+                }
+                var named = d.Decisions.Where(x => x.SnapshotId is not null).Select(x => x.SnapshotId!.Value).Distinct().ToList();
+                var present = await _db.IqrSourceSnapshots.AsNoTracking().Where(s => named.Contains(s.Id)).Select(s => s.Id).ToListAsync(ct);
+                var missing = named.Where(sid => !present.Contains(sid) && !_db.IqrSourceSnapshots.Local.Any(s => s.Id == sid)).ToList();
+                ctx.Reconciliation.Add(new(label, missing.Count == 0 ? ReconciliationStatus.Resolved : ReconciliationStatus.NeedsRevalidation, missing.Count == 0
+                    ? $"{d.Decisions.Count} decision(s) imported with their original actor and time."
+                    : $"{d.Decisions.Count} decision(s) imported; {missing.Count} named snapshot(s) are not in this installation, so that source shows its baseline as unavailable until one is chosen here."));
                 break;
             }
             case PackageTypes.Platform:

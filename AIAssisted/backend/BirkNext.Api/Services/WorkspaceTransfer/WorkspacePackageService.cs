@@ -225,8 +225,40 @@ public sealed partial class WorkspacePackageService
             closure.Add(PackageTypes.Association, $"{association.RepositoryKeyA}|{association.RepositoryKeyB}", $"{association.RepositoryA} ↔ {association.RepositoryB}", association,
                 Portability.HistoricalDecision, project: projectKey);
 
+        await AddSourceDecisionsAsync(closure, projectKey, snapshotIds, ct);
         AddTestDataForSnapshots(closure, snapshotIds, projectKey);
         if (evidence) await AddSuiteEvidenceAsync(closure, ct);
+    }
+
+    /// <summary>
+    /// The source context that interprets the exported snapshots: the project's analysis-baseline history (which version was analysed, by whom,
+    /// when) and the declared branch labels of its snapshots. Exported whole and unchanged (append-only history), one entry per subject. A decision
+    /// about a snapshot that no longer exists is still exported, with that snapshot reported as a missing dependency - never silently dropped.
+    /// </summary>
+    private async Task AddSourceDecisionsAsync(Closure closure, string projectKey, IReadOnlySet<Guid> snapshotIds, CancellationToken ct)
+    {
+        var baseline = SourceAnalysis.SourceBaselineService.BaselineKind;
+        var declared = SourceAnalysis.SourceBaselineService.DeclaredBranchKind;
+        var subjects = snapshotIds.Select(id => id.ToString()).ToHashSet(StringComparer.Ordinal);
+        var rows = (await _db.SourceDecisions.AsNoTracking().Where(d => (d.Kind == baseline && d.Subject == projectKey) || d.Kind == declared).ToListAsync(ct))
+            .Where(d => d.Kind == baseline || subjects.Contains(d.Subject)).ToList();
+        foreach (var group in rows.GroupBy(r => (r.Kind, r.Subject)).OrderBy(g => g.Key.Kind, StringComparer.Ordinal).ThenBy(g => g.Key.Subject, StringComparer.Ordinal))
+        {
+            var decisions = group.OrderBy(r => r.DecidedAt).ThenBy(r => r.Id).ToList();
+            var current = decisions[^1];
+            var referenced = decisions.Where(d => d.SnapshotId is not null).Select(d => d.SnapshotId!.Value).Distinct().ToList();
+            var label = group.Key.Kind == baseline
+                ? $"Analysis baseline history of {projectKey}: {decisions.Count} decision(s), current {(current.SnapshotId is null ? "none (cleared)" : current.SnapshotLabel ?? current.SnapshotId.ToString())}"
+                : $"Declared branch of {current.SnapshotLabel ?? group.Key.Subject}: {current.Value ?? "(removed)"}";
+            var me = new PortableObjectRef(PackageTypes.SourceDecision, $"{group.Key.Kind}:{group.Key.Subject}");
+            closure.Add(PackageTypes.SourceDecision, me.LogicalId, label, new SourceDecisionPayload(group.Key.Kind, group.Key.Subject, decisions), Portability.HistoricalDecision,
+                project: projectKey, dependencies: referenced.Select(id => new PortableObjectRef(PackageTypes.Snapshot, id.ToString())));
+            foreach (var id in referenced)
+                closure.Dependencies.Add(closure.Has(PackageTypes.Snapshot, id.ToString())
+                    ? new(me, new(PackageTypes.Snapshot, id.ToString()), DependencyStatus.Included, current.SnapshotId == id, "Snapshot named by a source decision")
+                    : new(me, new(PackageTypes.Snapshot, id.ToString()), DependencyStatus.Missing, false,
+                        "A source decision names a snapshot that no longer exists here; the decision is exported as history and the snapshot is reported missing."));
+        }
     }
 
     private async Task AddContractAsync(Closure closure, ApiContractRow contract, string? environmentId, CancellationToken ct)

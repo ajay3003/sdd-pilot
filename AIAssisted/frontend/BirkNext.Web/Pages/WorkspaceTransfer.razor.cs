@@ -363,7 +363,7 @@ public partial class WorkspaceTransfer : IDisposable
         PackageTypeNames.EvidenceBinding => "source binding", PackageTypeNames.ContractArtifact => "contract artifact", PackageTypeNames.GraphQlSchema => "GraphQL schema",
         PackageTypeNames.MessageFlows => "message flows", PackageTypeNames.Flow => "browser test", PackageTypeNames.Module => "browser test module",
         PackageTypeNames.TestDataAsset => "Test Data asset", PackageTypeNames.TestDataValues => "Test Data values", PackageTypeNames.Profile => "Target Environment profile",
-        PackageTypeNames.History => "historical record", _ => type,
+        PackageTypeNames.History => "historical record", PackageTypeNames.SourceDecision => "source decision history", _ => type,
     };
 
     internal static string DependencyLabel(DependencyStatus s) => s switch
@@ -412,5 +412,6 @@ public static class PackageTypeNames
     public const string Snapshot = "source-snapshot", Contract = "contract", ParquetRules = "parquet-rule-set", Suite = "integration-suite", Composite = "composite-source-context",
         Association = "source-association", ConnectedSystems = "connected-systems", Platform = "catalog-platform", Integration = "catalog-integration", EvidenceBinding = "evidence-binding",
         ContractArtifact = "contract-artifact", GraphQlSchema = "graphql-schema", MessageFlows = "message-flows", Flow = "critical-e2e-flow", Module = "critical-e2e-module",
-        TestDataAsset = "test-data-asset", TestDataValues = "test-data-values", Profile = "environment-profile", History = "historical-record";
+        TestDataAsset = "test-data-asset", TestDataValues = "test-data-values", Profile = "environment-profile", History = "historical-record",
+        SourceDecision = "source-decision";
 }

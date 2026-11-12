@@ -164,6 +164,46 @@ public sealed class SystemGuideTests : IAsyncLifetime
         (await guides.GetAsync("skolenaervaer", true, default)).Shown!.ContentFingerprint.Should().Be(seed.ContentFingerprint, "nothing is rewritten automatically");
     }
 
+    [Fact] // Baseline correction: alternative versions without a baseline are neither cited nor reported as "not imported"
+    public async Task A_role_imported_only_in_unselected_alternative_versions_says_baseline_not_selected()
+    {
+        await using var db = Context();
+        var guides = Service(db);
+        var generic = Synthetic() with { SourceRoles = [new GuideSourceRole("order-service", "Order service", ["OrderService"])] };
+        IqrSourceSnapshotRecord Version(string archive, char sha, int minutes)
+        {
+            var id = Guid.NewGuid();
+            return new()
+            {
+            Id = id, EnvironmentId = "", IntegrationId = IqrSourceStore.SourceAnalysisOwner, AnalyzedAt = DateTimeOffset.UtcNow.AddMinutes(minutes),
+            EvidenceJson = JsonSerializer.Serialize(new IqrSourceSnapshot
+            {
+                Id = id, Archive = new(archive, new string(sha, 64), 12), AnalyzedAt = DateTimeOffset.UtcNow.AddMinutes(minutes),
+                Projects = [new SourceProject("Contoso.OrderService.Api", "src/OrderService", false, "Api", SourceConfidence.Confirmed)],
+            }, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+            };
+        }
+        var older = Version("orders.zip", 'a', -5);
+        db.IqrSourceSnapshots.AddRange(older, Version("orders (2).zip", 'b', 0));
+        await db.SaveChangesAsync();
+
+        var current = await guides.CurrentSourcesAsync(Skole, generic, default);
+        current.Should().ContainSingle().Which.Should().Match<GuideSourceBasis>(b => b.SnapshotId == null && b.Label.Contains("BASELINE_NOT_SELECTED") && !b.Label.Contains("not imported"));
+
+        (await new BirkNext.Api.Services.SourceAnalysis.SourceBaselineService(db, new IqrSourceStore(db)).SelectBaselineAsync(
+            BirkNext.Api.Services.SourceAnalysis.SourceBaselineService.KeyOf(JsonSerializer.Deserialize<IqrSourceSnapshot>(older.EvidenceJson, new JsonSerializerOptions(JsonSerializerDefaults.Web))!), older.Id, "local-session:loopback", null, default)).Changed.Should().BeTrue();
+        var afterChoice = await guides.CurrentSourcesAsync(Skole, generic, default);
+        afterChoice.Should().ContainSingle().Which.SnapshotId.Should().Be(older.Id, "the chosen version is the basis, not the newest import");
+
+        // Real-archive finding: a revision written from the other (still imported) version said "No longer imported" after a baseline switch.
+        var seed = (await guides.GetAsync("skolenaervaer", true, default)).Shown!;
+        var newerId = db.IqrSourceSnapshots.Single(r => r.Id != older.Id).Id;
+        var revision = seed with { Content = generic, SourceBasis = [new GuideSourceBasis("order-service", newerId, null, "Order service: orders (2).zip")] };
+        var changes = SystemGuideService.SourceChanges(revision, afterChoice, new HashSet<Guid> { older.Id, newerId });
+        changes.Should().Contain(c => c.Change.StartsWith("No longer the analysis baseline (still imported")).And.NotContain(c => c.Change.StartsWith("No longer imported"));
+        SystemGuideService.SourceChanges(revision, afterChoice, new HashSet<Guid> { older.Id }).Should().Contain(c => c.Change.StartsWith("No longer imported"), "a deleted snapshot is still reported as such");
+    }
+
     private static IqrSourceSnapshotRecord SnapshotRecord(string archive, string project) => new()
     {
         Id = Guid.NewGuid(), EnvironmentId = "", IntegrationId = IqrSourceStore.SourceAnalysisOwner, AnalyzedAt = DateTimeOffset.UtcNow,

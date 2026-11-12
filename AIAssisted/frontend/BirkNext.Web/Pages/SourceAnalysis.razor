@@ -69,7 +69,7 @@
                 @if (selectedSummary is not null)
                 {
                     <p class="sa-current-title" data-testid="sa-current" data-snapshot="@selectedSummary.Id">
-                        <strong data-testid="sa-current-archive">@selectedSummary.Archive.FileName</strong>
+                        <strong data-testid="sa-current-archive">@selectedSummary.Archive.FileName</strong><BirkNext.Web.Components.SourceManagement.SourceVersionBadge SnapshotId="selectedSummary.Id" />
                         <span class="sa-muted"><span data-testid="sa-current-files">@selectedSummary.Archive.FilesAnalyzed</span> files · Analyzed <span data-testid="sa-current-analyzed">@SourceAnalysisOverview.Utc(selectedSummary.AnalyzedAt)</span></span>
                     </p>
                 }

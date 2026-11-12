@@ -32,7 +32,8 @@
         @foreach (var s in _context.Sources)
         {
             var open = _open.Contains(s.RepositoryKey) || (s.State is SourceBaselineState.NotSelected or SourceBaselineState.SelectedUnavailable && !_closed.Contains(s.RepositoryKey));
-            <article class="scp-source scp-@s.State.ToString().ToLowerInvariant()" data-testid="scp-source" data-key="@s.RepositoryKey" data-state="@s.State">
+            var reference = s.UsedSnapshotId ?? s.PreviewSnapshotId;
+            <article class="scp-source scp-@s.State.ToString().ToLowerInvariant()" data-testid="scp-source" data-key="@s.RepositoryKey" data-state="@s.State" data-code="@s.StateCode">
                 <button type="button" class="scp-source-head" aria-expanded="@(open ? "true" : "false")" @onclick="() => Toggle(s.RepositoryKey, open)" data-testid="scp-source-toggle">
                     <span class="scp-name">@s.DisplayName</span>
                     <span class="scp-count">@s.SnapshotCount snapshot@(s.SnapshotCount == 1 ? "" : "s")@(s.SnapshotCount > 1 ? $" · {s.DistinctContents} different content{(s.DistinctContents == 1 ? "" : "s")}" : "")</span>
@@ -50,7 +51,8 @@
                                     <span class="scp-badges">
                                         @if (v.IsBaseline) { <span class="scp-badge scp-badge-baseline" data-testid="scp-baseline-badge">Analysis baseline</span> }
                                         else if (v.UsedForAnalysis) { <span class="scp-badge" data-testid="scp-used-badge">Used for analysis</span> }
-                                        @if (v.IsNewest && s.SnapshotCount > 1) { <span class="scp-badge scp-badge-muted">Newest import</span> }
+                                        @if (v.SnapshotId == s.PreviewSnapshotId) { <span class="scp-badge scp-badge-muted" data-testid="scp-preview-badge" title="Shown first because it was imported last. Import order does not decide which version is analysed or deployed.">Newest import · preview only, not authoritative</span> }
+                                        else if (v.IsNewest && s.SnapshotCount > 1) { <span class="scp-badge scp-badge-muted">Newest import</span> }
                                     </span>
                                     <span class="scp-meta">Imported @v.AnalyzedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @v.Status · @v.FilesAnalyzed.ToString("N0") files analysed</span>
                                     <span class="scp-meta" data-testid="scp-branch">Branch: @BranchText(v)</span>
@@ -65,9 +67,9 @@
                                     {
                                         <button type="button" class="btn-secondary btn-sm" disabled="@(_busy || _denied is { Length: > 0 })" title="@_denied" data-testid="scp-select" @onclick="() => SelectAsync(s, v.SnapshotId)">Use as analysis baseline</button>
                                     }
-                                    @if (s.UsedSnapshotId is { } used && used != v.SnapshotId)
+                                    @if (reference is { } other && other != v.SnapshotId)
                                     {
-                                        <button type="button" class="btn-link" data-testid="scp-compare" aria-expanded="@(_compare == (v.SnapshotId, used) ? "true" : "false")" @onclick="() => ToggleCompare(v.SnapshotId, used)">Compare with the version in use</button>
+                                        <button type="button" class="btn-link" data-testid="scp-compare" aria-expanded="@(_compare == (v.SnapshotId, other) ? "true" : "false")" @onclick="() => ToggleCompare(v.SnapshotId, other)">@(s.UsedSnapshotId is null ? "Compare with the newest import" : "Compare with the version in use")</button>
                                     }
                                     <a class="btn-link" href="@($"source-analysis?snapshot={v.SnapshotId:D}")" data-testid="scp-open">Open in Source Analysis</a>
                                     <button type="button" class="btn-link" data-testid="scp-declare-toggle" @onclick="() => StartDeclare(v)" disabled="@(_denied is { Length: > 0 })">@(v.BranchKind == SourceBranchKind.Declared ? "Change declared branch" : "Declare branch")</button>
@@ -82,16 +84,32 @@
                                         <button type="button" class="btn-link" @onclick="() => _declaring = null">Cancel</button>
                                     </form>
                                 }
-                                @if (_compare == (v.SnapshotId, s.UsedSnapshotId ?? Guid.Empty))
+                                @if (_compare is { } pair && pair.Baseline == v.SnapshotId && s.Snapshots.Any(x => x.SnapshotId == pair.Target))
                                 {
-                                    <div class="scp-compare" data-testid="scp-compare-panel">
-                                        <p class="scp-meta">Baseline: <strong>@v.ArchiveName</strong> → target: <strong>@(s.Snapshots.FirstOrDefault(x => x.SnapshotId == s.UsedSnapshotId)?.ArchiveName)</strong>. A comparison of source content; it says nothing about what is deployed.</p>
-                                        <SourceChangeImpactPanel InitialBaseline="v.SnapshotId" InitialTarget="s.UsedSnapshotId" />
+                                    <div class="scp-compare" data-testid="scp-compare-panel" data-from="@pair.Baseline" data-to="@pair.Target">
+                                        <p class="scp-meta">From: <strong>@v.ArchiveName</strong> → to: <strong>@(s.Snapshots.FirstOrDefault(x => x.SnapshotId == pair.Target)?.ArchiveName)</strong>. A comparison of source content; it says nothing about what is deployed and changes no baseline.</p>
+                                        <SourceChangeImpactPanel @key="pair" InitialBaseline="pair.Baseline" InitialTarget="pair.Target" />
                                     </div>
                                 }
                             </li>
                         }
                     </ul>
+                    @if (s.SnapshotCount > 1)
+                    {
+                        <form class="scp-pair" data-testid="scp-pair" @onsubmit="() => ComparePair(s)" @onsubmit:preventDefault>
+                            <label>Compare
+                                <select data-testid="scp-pair-from" value="@PairFrom(s)" @onchange="e => _pairFrom[s.RepositoryKey] = Guid.Parse(e.Value!.ToString()!)">
+                                    @foreach (var v in s.Snapshots) { <option value="@v.SnapshotId">@v.ArchiveName</option> }
+                                </select>
+                            </label>
+                            <label>with
+                                <select data-testid="scp-pair-to" value="@PairTo(s)" @onchange="e => _pairTo[s.RepositoryKey] = Guid.Parse(e.Value!.ToString()!)">
+                                    @foreach (var v in s.Snapshots) { <option value="@v.SnapshotId">@v.ArchiveName</option> }
+                                </select>
+                            </label>
+                            <button type="submit" class="btn-secondary btn-sm" data-testid="scp-pair-go" disabled="@(PairFrom(s) == PairTo(s))">Compare these two versions</button>
+                        </form>
+                    }
                     <div class="scp-source-foot">
                         @if (s.BaselineSnapshotId is not null)
                         {
@@ -151,11 +169,19 @@
 
     private void ToggleCompare(Guid baseline, Guid target) => _compare = _compare == (baseline, target) ? null : (baseline, target);
 
+    // Any two versions of one source can be compared, with or without a baseline; comparing never changes a decision.
+    private readonly Dictionary<string, Guid> _pairFrom = new(StringComparer.Ordinal), _pairTo = new(StringComparer.Ordinal);
+    private Guid PairFrom(LogicalSourceView s) => _pairFrom.TryGetValue(s.RepositoryKey, out var id) && s.Snapshots.Any(v => v.SnapshotId == id) ? id : s.Snapshots[^1].SnapshotId;
+    private Guid PairTo(LogicalSourceView s) => _pairTo.TryGetValue(s.RepositoryKey, out var id) && s.Snapshots.Any(v => v.SnapshotId == id) ? id : s.Snapshots[0].SnapshotId;
+    private void ComparePair(LogicalSourceView s) { if (PairFrom(s) != PairTo(s)) _compare = (PairFrom(s), PairTo(s)); }
+
     private void StartDeclare(SourceSnapshotView v) { _declaring = v.SnapshotId; _declaredText = v.BranchKind == SourceBranchKind.Declared ? v.Branch : ""; }
 
     private async Task SelectAsync(LogicalSourceView source, Guid? snapshotId)
     {
         _busy = true; _notice = null;
+        // The source a person acts on stays open: a decided source would otherwise collapse and hide the choice just made.
+        _open.Add(source.RepositoryKey); _closed.Remove(source.RepositoryKey);
         var result = await Api.SelectBaselineAsync(new SourceBaselineRequest(source.RepositoryKey, snapshotId));
         _notice = result.Message;
         _busy = false;
@@ -192,7 +218,7 @@
         SourceBaselineState.SingleSnapshot => "One version",
         SourceBaselineState.IdenticalContent => "Identical imports",
         SourceBaselineState.SelectedUnavailable => "Baseline unavailable",
-        _ => "Choose a baseline",
+        _ => "Baseline not selected",
     };
 
     private static string BranchText(SourceSnapshotView v) => v.BranchKind switch

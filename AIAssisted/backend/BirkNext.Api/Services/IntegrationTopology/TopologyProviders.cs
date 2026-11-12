@@ -6,8 +6,9 @@ using BirkNext.SourceArchitecture;
 namespace BirkNext.Api.Services.IntegrationTopology;
 
 /// <summary>Everything a provider may read for one environment. Providers never write anywhere and never call out unless the request asks.</summary>
+/// <param name="AwaitingBaseline">Logical sources left out because they have alternative versions and no analysis baseline (BASELINE_NOT_SELECTED).</param>
 public sealed record TopologyContext(string EnvironmentId, TrustedExecutionEnvironment? Trusted, string TrustDetail, IntegrationCatalog Catalog,
-    IReadOnlyList<IqrSourceSnapshot> Snapshots, TopologyRequest Request);
+    IReadOnlyList<IqrSourceSnapshot> Snapshots, TopologyRequest Request, IReadOnlyList<string>? AwaitingBaseline = null);
 
 /// <summary>A discovery source feeding the canonical topology. <see cref="Order"/>: lower runs first (locations before observations).</summary>
 public interface ITopologyProvider
@@ -75,9 +76,12 @@ public sealed class SourceArchitectureTopologyProvider : ITopologyProvider
     public Task ContributeAsync(TopologyContext context, TopologyBuilder builder, CancellationToken ct)
     {
         var snapshots = TopologySnapshots.Latest(context.Snapshots.Where(snapshot => snapshot.Architecture is not null));
+        var awaiting = context.AwaitingBaseline is { Count: > 0 } waitingSources
+            ? $" BASELINE_NOT_SELECTED: {string.Join(", ", waitingSources)} left out (alternative versions, no analysis baseline; select it in Source versions)." : "";
         if (snapshots.Count == 0)
         {
-            builder.Source(new(TopologySource.SourceAnalysis, TopologySourceState.NotAvailable, "No Source Analysis snapshot with architecture evidence exists for this environment."));
+            builder.Source(new(TopologySource.SourceAnalysis, TopologySourceState.NotAvailable, awaiting.Length > 0 ? awaiting.Trim()
+                : "No Source Analysis snapshot with architecture evidence exists for this environment."));
             return Task.CompletedTask;
         }
         foreach (var snapshot in snapshots)
@@ -143,7 +147,7 @@ public sealed class SourceArchitectureTopologyProvider : ITopologyProvider
                 }
             }
         }
-        builder.Source(new(TopologySource.SourceAnalysis, TopologySourceState.Used, $"{snapshots.Count} repository snapshot(s): {string.Join(", ", snapshots.Select(item => item.Archive.FileName))}.",
+        builder.Source(new(TopologySource.SourceAnalysis, TopologySourceState.Used, $"{snapshots.Count} repository snapshot(s): {string.Join(", ", snapshots.Select(item => item.Archive.FileName))}.{awaiting}",
             snapshots.Max(item => item.AnalyzedAt)));
         return Task.CompletedTask;
     }

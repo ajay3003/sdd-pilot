@@ -83,6 +83,8 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
         if (makeCurrent) repository.ProjectName = null;
         var record = lifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == preview.ImportId);
         if (record is null) lifecycle.ProjectImports.Add(record = new SddProjectImportRecord { ImportId = preview.ImportId });
+        // Importing the same bytes again reuses this record: keep what the earlier import produced before the operational fields move on.
+        else if (record.History.Count == 0 && record.SourceSnapshotId is not null) AppendHistory(record, contentFingerprint: null);
         record.ProjectName = preview.ProjectName;
         record.ProjectNameBasis = preview.ProjectNameBasis.ToString();
         record.ArchiveFileName = preview.Archive.FileName;
@@ -94,6 +96,7 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
         record.AmbiguousRoles = discovery.AmbiguousRoles.Select(r => r.Role.ToString()).ToList();
         record.ArtifactDocumentCount = discovery.ArtifactDocuments.Count;
         ApplySource(record, commit?.Source, preview.Source.Detected, commit?.StagingId, commit?.StagedUntil);
+        AppendHistory(record, preview.Archive.ContentSha256);
         RecordGeneratedSet(preview.ImportId, commit?.Source, [.. preview.Documents, .. preview.GeneratedArtifactTexts]);
         var applicationBefore = lifecycle.CurrentApplicationId;
         ApplicationContexts.Assign(lifecycle, record, target, record.ImportedAt);
@@ -129,6 +132,7 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
     {
         if (repository.SddLifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == importId) is not { } record) return;
         ApplySource(record, source, sourceDetected: true, stagingId ?? record.SourceStagingId, stagedUntil);
+        AppendHistory(record, record.History.LastOrDefault()?.ContentFingerprint);
         RecordGeneratedSet(importId, source, documents: null);
         updates?.NotifyMutation();
         repository.NotifyArtifactsChanged();
@@ -240,6 +244,20 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
                 ContentCaptured = captured || previous.TryGetValue(d.RelativePath, out var known) && known.Fingerprint == d.Fingerprint && known.ContentCaptured,
             };
         })];
+    }
+
+    /// <summary>Appends the record's current import facts to its immutable history, unless the newest entry already describes the same snapshot
+    /// (a retry that completes a pending source part, or the same snapshot reused). Earlier entries are never changed.</summary>
+    public static void AppendHistory(SddProjectImportRecord record, string? contentFingerprint)
+    {
+        var last = record.History.LastOrDefault();
+        if (last is not null && last.SourceSnapshotId == record.SourceSnapshotId && last.SourceSnapshotId is not null) return;
+        if (last is not null && last.SourceSnapshotId is null && last.ImportedAt == record.ImportedAt && record.SourceSnapshotId is null) return;
+        record.History.Add(new SddProjectImportEvent
+        {
+            ImportedAt = record.ImportedAt, ArchiveFileName = record.ArchiveFileName, ArchiveSha256 = record.ArchiveSha256, ContentFingerprint = contentFingerprint,
+            SourceState = record.SourceState, SourceSnapshotId = record.SourceSnapshotId, SourceAnalyzedAt = record.SourceAnalyzedAt,
+        });
     }
 
     private static void ApplySource(SddProjectImportRecord record, ProjectImportSourceResult? source, bool sourceDetected, Guid? stagingId, DateTimeOffset? stagedUntil)

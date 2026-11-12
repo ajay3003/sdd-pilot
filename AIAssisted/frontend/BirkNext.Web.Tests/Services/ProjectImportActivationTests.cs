@@ -220,4 +220,39 @@ public sealed class ProjectImportActivationTests
         record.SourceSnapshotId.Should().Be(snapshot);
         record.DetectedRoles.Should().Equal("Specification");
     }
+
+    [Fact] // Snapshot integrity: importing identical bytes again keeps the earlier import's snapshot provenance (append-only history)
+    public void Importing_the_same_archive_again_appends_history_and_never_rewrites_the_earlier_import()
+    {
+        var sha = new string('e', 64);
+        var first = Guid.NewGuid(); var second = Guid.NewGuid();
+        var preview = Preview(sha, source: true) with { Archive = new ProjectImportArchive("M2LB (3).zip", sha, 4096, 12, "content-3") };
+        var record = Activate(preview, ProjectImportSourceState.Created, first);
+        var firstAt = record.ImportedAt;
+        record.History.Should().ContainSingle().Which.Should().Match<SddProjectImportEvent>(e => e.SourceSnapshotId == first && e.ContentFingerprint == "content-3");
+
+        var again = Activate(preview with { StagingId = Guid.NewGuid() }, ProjectImportSourceState.Created, second);
+        again.Should().BeSameAs(record, "the import id is the archive identity; the operational fields show the latest import");
+        again.SourceSnapshotId.Should().Be(second);
+        again.History.Select(e => e.SourceSnapshotId).Should().Equal(first, second);
+        again.History[0].ImportedAt.Should().Be(firstAt, "the earlier import's facts are never rewritten");
+
+        Activate(preview with { StagingId = Guid.NewGuid() }, ProjectImportSourceState.Reused, second);
+        record.History.Should().HaveCount(2, "reusing the same snapshot is not a new version");
+        var json = JsonSerializer.Serialize(_repository.SddLifecycle);
+        JsonSerializer.Deserialize<SddLifecycleState>(json)!.ProjectImports.Single().History.Select(e => e.SourceSnapshotId).Should().Equal(new Guid?[] { first, second }, "history survives a save and reload");
+    }
+
+    [Fact] // A workspace saved before history existed: the first re-import seeds the earlier facts before moving on
+    public void A_legacy_record_without_history_keeps_its_earlier_snapshot_when_imported_again()
+    {
+        var sha = new string('f', 64);
+        var old = Guid.NewGuid();
+        var preview = Preview(sha, source: true);
+        var record = Activate(preview, ProjectImportSourceState.Created, old);
+        record.History.Clear(); // as loaded from an older workspace
+        Activate(preview with { StagingId = Guid.NewGuid() }, ProjectImportSourceState.Created, Guid.NewGuid());
+        record.History.Should().HaveCount(2);
+        record.History[0].SourceSnapshotId.Should().Be(old);
+    }
 }

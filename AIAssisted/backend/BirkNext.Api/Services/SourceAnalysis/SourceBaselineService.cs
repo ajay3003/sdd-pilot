@@ -16,9 +16,13 @@ namespace BirkNext.Api.Services.SourceAnalysis;
 /// grouping by archive name is never presented as verified repository identity.</item>
 /// <item>A person selects the analysis baseline per logical source (append-only <see cref="SourceDecisionRecord"/>; selecting the same snapshot again
 /// records nothing). Importing another archive never changes it.</item>
-/// <item><see cref="ResolveAsync"/> is the shared rule every module uses: exactly one snapshot per logical source — the baseline when selected, the only
-/// or content-identical version otherwise, else the newest import with state NotSelected. Alternative snapshots of one source are never combined.
-/// A selected baseline that no longer exists is not substituted: that source is left out and reported as SelectedUnavailable.</item>
+/// <item><see cref="ResolveAsync"/> is the shared, authoritative rule every module uses: at most one snapshot per logical source — the baseline when
+/// selected, else the only or content-identical version. Alternative versions with different content and no baseline are BASELINE_NOT_SELECTED:
+/// the source is left out of cross-module analysis (import order never decides which branch is analysed or deployed). Alternative snapshots of one
+/// source are never combined. A selected baseline that no longer exists is not substituted: that source is left out and reported as
+/// SelectedUnavailable.</item>
+/// <item>Inventory, history and comparison stay available without a baseline. The newest import is exposed only as a labelled, non-authoritative
+/// preview (<see cref="LogicalSourceView.PreviewSnapshotId"/>) and is never persisted as a decision.</item>
 /// </list>
 /// An analysis baseline is not a deployment baseline: nothing here says what is deployed anywhere.
 /// </summary>
@@ -60,21 +64,38 @@ public sealed class SourceBaselineService(AppDbContext db, IqrSourceStore store)
         return Resolve(list, baselines);
     }
 
-    /// <summary>One snapshot per logical source (see the class summary). Pure; unit-testable.</summary>
-    public static List<IqrSourceSnapshot> Resolve(IEnumerable<IqrSourceSnapshot> snapshots, IReadOnlyDictionary<string, Guid> baselines)
+    /// <summary>At most one authoritative snapshot per logical source (see the class summary). Pure; unit-testable.</summary>
+    public static List<IqrSourceSnapshot> Resolve(IEnumerable<IqrSourceSnapshot> snapshots, IReadOnlyDictionary<string, Guid> baselines) =>
+        [.. snapshots.GroupBy(KeyOf, StringComparer.Ordinal)
+            .Select(g => Authoritative([.. g], s => s.Id, ContentOf, s => s.AnalyzedAt, baselines.TryGetValue(g.Key, out var id) ? id : null))
+            .OfType<IqrSourceSnapshot>()];
+
+    /// <summary>
+    /// The single authoritative-version rule over one logical source's versions, shared by every consumer (also those holding their own projections):
+    /// the selected baseline (null when it is unavailable — never substituted); else, when every version has the same content, the newest import of
+    /// that content; else null — BASELINE_NOT_SELECTED: alternative versions exist and import order must not decide.
+    /// </summary>
+    public static T? Authoritative<T>(IReadOnlyCollection<T> versions, Func<T, Guid> id, Func<T, string> content, Func<T, DateTimeOffset> analyzedAt, Guid? baseline)
+        where T : class
     {
-        var result = new List<IqrSourceSnapshot>();
-        foreach (var group in snapshots.GroupBy(KeyOf, StringComparer.Ordinal))
-        {
-            if (baselines.TryGetValue(group.Key, out var id))
-            {
-                if (group.FirstOrDefault(s => s.Id == id) is { } selected) result.Add(selected);
-                continue; // selected but unavailable: never substitute
-            }
-            result.Add(group.OrderByDescending(s => s.AnalyzedAt).ThenByDescending(s => s.Id).First());
-        }
-        return result;
+        if (versions.Count == 0) return null;
+        if (baseline is { } selected) return versions.FirstOrDefault(v => id(v) == selected);
+        if (versions.Select(content).Distinct(StringComparer.Ordinal).Skip(1).Any()) return null;
+        return versions.OrderByDescending(analyzedAt).ThenByDescending(id).First();
     }
+
+    /// <summary>The newest import: only ever a labelled, non-authoritative preview when no baseline is selected; never a decision.</summary>
+    public static IqrSourceSnapshot? Preview(IEnumerable<IqrSourceSnapshot> versions) => versions.OrderByDescending(s => s.AnalyzedAt).ThenByDescending(s => s.Id).FirstOrDefault();
+
+    /// <summary>Stable machine-readable code of a state (shown and used by the UI and acceptance checks).</summary>
+    public static string StateCodeOf(SourceBaselineState state) => state switch
+    {
+        SourceBaselineState.Selected => "BASELINE_SELECTED",
+        SourceBaselineState.SingleSnapshot => "SINGLE_SNAPSHOT",
+        SourceBaselineState.IdenticalContent => "IDENTICAL_CONTENT",
+        SourceBaselineState.SelectedUnavailable => "BASELINE_UNAVAILABLE",
+        _ => "BASELINE_NOT_SELECTED",
+    };
 
     public static SourceBranchKind BranchKindOf(IqrSourceSnapshot s, string? declared) =>
         !string.IsNullOrWhiteSpace(s.Branch) && !string.Equals(s.Commit, "Unknown", StringComparison.OrdinalIgnoreCase) ? SourceBranchKind.Verified
@@ -110,8 +131,11 @@ public sealed class SourceBaselineService(AppDbContext db, IqrSourceStore store)
                 SourceBaselineState.SingleSnapshot => "One snapshot; it is used for analysis.",
                 SourceBaselineState.IdenticalContent => $"{ordered.Count} imports with identical content; the newest import is used.",
                 SourceBaselineState.SelectedUnavailable => "The selected baseline snapshot is no longer available; this source is left out of analysis until a baseline is selected again. Nothing is substituted.",
-                _ => $"{contents} different versions and no analysis baseline: modules use the newest import until you select one. Implementation-specific results depend on this choice.",
+                _ => $"BASELINE_NOT_SELECTED: {contents} different versions and no analysis baseline. Inventory, history and comparison are available; " +
+                     "cross-module analysis (Integration Topology, Contract Testing, System Understanding, Composite sources, Project Quality) leaves this source out " +
+                     "until you select a baseline. The newest import is only a non-authoritative preview; import order never decides which branch is analysed or deployed.",
             };
+            var previewId = state == SourceBaselineState.NotSelected ? Preview(ordered)?.Id : null;
             var views = ordered.Select(s =>
             {
                 declared.TryGetValue(s.Id, out var label);
@@ -121,10 +145,11 @@ public sealed class SourceBaselineService(AppDbContext db, IqrSourceStore store)
                     s.ProjectImport?.ImportId, hasBaseline && s.Id == baselineId, s.Id == ordered[0].Id, used.Contains(s.Id), s.AnalyzerVersion, s.Archive.FilesAnalyzed,
                     ComponentsOf(s), ordered.Count(o => o.Id != s.Id && ContentOf(o) == ContentOf(s)));
             }).ToList();
-            sources.Add(new LogicalSourceView(group.Key, identity.DisplayName, identity.Basis, state, hasBaseline ? baselineId : null, usedId, detail, ordered.Count, contents, views));
+            sources.Add(new LogicalSourceView(group.Key, identity.DisplayName, identity.Basis, state, hasBaseline ? baselineId : null, usedId, detail, ordered.Count, contents, views,
+                StateCodeOf(state), previewId));
         }
         sources = [.. sources.OrderBy(s => s.DisplayName, StringComparer.OrdinalIgnoreCase)];
-        var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("|", sources.Select(s => $"{s.RepositoryKey}={s.UsedSnapshotId}"))))).ToLowerInvariant()[..16];
+        var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("|", sources.Select(s => $"{s.RepositoryKey}={s.UsedSnapshotId}:{s.State}"))))).ToLowerInvariant()[..16];
         return new SourceContextView(sources, sources.Count, snapshots.Count, sources.Count(s => s.State is SourceBaselineState.NotSelected or SourceBaselineState.SelectedUnavailable), fingerprint);
     }
 

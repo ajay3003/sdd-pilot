@@ -41,3 +41,10 @@
     .scp-actions { align-items: flex-start; flex-direction: row; flex-wrap: wrap; }
     .scp-state { margin-left: 0; }
 }
+.scp-pair { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: flex-end; margin: 0.5rem 0 0; font-size: 0.86rem; }
+.scp-pair label { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+.scp-pair select { max-width: 100%; min-width: 0; }
+/* Text actions inside Source versions: links that are buttons, without browser button chrome (keyboard focus stays visible). */
+button.btn-link { background: none; border: 0; padding: 0.15rem 0; font: inherit; color: var(--clr-primary, #2563eb); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; text-align: left; }
+button.btn-link:disabled { color: var(--clr-text-muted, #64748b); cursor: not-allowed; text-decoration: none; }
+button.btn-link:focus-visible { outline: 2px solid var(--clr-primary, #2563eb); outline-offset: 2px; border-radius: 2px; }

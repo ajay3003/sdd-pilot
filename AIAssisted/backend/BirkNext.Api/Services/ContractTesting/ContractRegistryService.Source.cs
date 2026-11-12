@@ -78,7 +78,7 @@ public sealed partial class ContractRegistryService
         var filter = projectKey is null ? null : await ProjectGroupAsync(projectKey, ct);
         var imported = await db.ApiContractVersions.AsNoTracking().Where(v => v.SourceSnapshotId != null)
             .Join(db.ApiContracts.AsNoTracking(), v => v.ContractId, c => c.Id, (v, c) => new { v.SourceSnapshotId, v.SourcePath, c.Key, v.Version }).ToListAsync(ct);
-        // One snapshot per logical source (the analysis baseline, else the newest import): contracts of alternative branch snapshots are never
+        // At most one snapshot per logical source (the analysis baseline, else the only content; none while BASELINE_NOT_SELECTED): contracts of alternative branch snapshots are never
         // combined, and a contract that only an unselected alternative holds is not offered.
         var snapshots = BirkNext.Api.Services.SourceAnalysis.SourceBaselineService.Resolve(
             (await sources.ListAsync(string.Empty, ct)).OrderByDescending(s => s.AnalyzedAt).Take(100),

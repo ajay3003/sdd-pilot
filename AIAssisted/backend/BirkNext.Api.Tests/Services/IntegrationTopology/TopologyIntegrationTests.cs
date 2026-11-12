@@ -34,6 +34,16 @@ public sealed class TopologyIntegrationTests
         component.Interfaces.Single().Should().Match<TopologyInterface>(item => item.Status == TopologyStatus.Discovered && item.ContractReference == AltinnContractEvolution.ContractId(AltinnTestKit.AppId, "model"));
     }
 
+    [Fact] // Real-archive finding: with M2LB awaiting a baseline the topology said "no snapshot exists", hiding the actual reason
+    public async Task SourceAnalysis_source_names_the_sources_left_out_for_want_of_a_baseline()
+    {
+        var context = new TopologyContext("env", null, "", new IntegrationCatalog(), [], new TopologyRequest(null), ["M2LB"]);
+        var builder = new TopologyBuilder();
+        await new SourceArchitectureTopologyProvider().ContributeAsync(context, builder, default);
+        builder.Build("env", null, DateTimeOffset.UtcNow).Sources.Single(s => s.Source == TopologySource.SourceAnalysis).Detail
+            .Should().StartWith("BASELINE_NOT_SELECTED: M2LB left out").And.NotContain("No Source Analysis snapshot");
+    }
+
     [Fact]
     public async Task TheRealHost_ServesTheTopology_AndDiscoveryNeedsThePermission()
     {

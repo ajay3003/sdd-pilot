@@ -147,6 +147,9 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
         ClassifyTotal = preview.Documents.Count;
         progress.Stage("Detecting document roles", null, 0, ClassifyTotal, "documents");
         Notify();
+        // The page loads the source setup asynchronously; a file chosen before it arrived would otherwise be checked without the stored snapshots, and
+        // a re-zipped archive with the same content would not be recognised. Read it here when it is missing (null again only if unreadable).
+        if (setup is null && !string.IsNullOrWhiteSpace(preview.Archive.ContentSha256)) setup = await ReadSetupAsync();
         Duplicate = ProjectImportHistory.Duplicate(preview.Archive.Sha256, activation.Imports, activation.Current?.ImportId, setup, preview.Archive.ContentSha256);
         Discovery = await ProjectImportArtifactDiscovery.FromAsync(preview, new Progress<(int Done, int Total)>(p =>
         {

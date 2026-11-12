@@ -47,7 +47,12 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
 
         var limitations = new List<string>();
         var changes = Compare(before, after, limitations);
-        if (changes.Count == 0 && !string.Equals(before.Archive.Sha256, after.Archive.Sha256, StringComparison.OrdinalIgnoreCase))
+        // The same files in a different archive (re-zip, rename, other compression) have the same canonical content fingerprint: that is no source
+        // change, so no "unclassified change, review required" is invented. Only differing (or unknown) content can be an unexplained change.
+        var sameContent = before.Archive.ContentSha256 is { Length: > 0 } beforeContent
+            && string.Equals(beforeContent, after.Archive.ContentSha256, StringComparison.OrdinalIgnoreCase);
+        if (sameContent) limitations.Add("Both snapshots have the same content fingerprint (the same files in different archives); no source change.");
+        if (changes.Count == 0 && !sameContent && !string.Equals(before.Archive.Sha256, after.Archive.Sha256, StringComparison.OrdinalIgnoreCase))
             changes.Add(new ImpactChange("unclassified-snapshot-change", ImpactChangeDomain.Unclassified, ImpactChangeKind.Changed,
                 "Unclassified source change", after.Id.ToString(), "Unclassified source change", "Snapshot fingerprints differ, but no supported structured comparison identified the change. Impact is unknown; review required.", []));
         var maxImpactDepth = Math.Clamp(request.MaxImpactDepth, 0, 3);

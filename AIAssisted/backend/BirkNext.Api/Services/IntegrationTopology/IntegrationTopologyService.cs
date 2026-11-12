@@ -93,9 +93,18 @@ public sealed class IntegrationTopologyService(IEnumerable<ITopologyProvider> pr
         var trusted = environments.Resolve(environmentId, out var trustDetail);
         var configured = await catalog.GetAsync(environmentId, trusted?.EnvironmentType, trusted?.TargetUrl, ct);
         var snapshots = sources.SourceAnalysisEnabled ? await sources.ListAsync(environmentId, ct) : [];
-        // One snapshot per logical source (analysis baseline or explicit fallback): alternative branch snapshots are never combined into one topology.
-        if (baselines is not null) snapshots = await baselines.ResolveAsync(snapshots, ct);
-        var context = new TopologyContext(environmentId, trusted, trustDetail, configured, snapshots, request);
+        // At most one snapshot per logical source (the analysis baseline, else its only content): alternative branch snapshots are never combined into
+        // one topology, and a source with BASELINE_NOT_SELECTED is left out and named.
+        IReadOnlyList<string> awaiting = [];
+        if (baselines is not null)
+        {
+            var all = snapshots;
+            snapshots = await baselines.ResolveAsync(snapshots, ct);
+            var kept = snapshots.Select(BirkNext.Api.Services.SourceAnalysis.SourceBaselineService.KeyOf).ToHashSet(StringComparer.Ordinal);
+            awaiting = [.. all.Where(s => !kept.Contains(BirkNext.Api.Services.SourceAnalysis.SourceBaselineService.KeyOf(s)))
+                .Select(s => BirkNext.Api.Services.SourceAnalysis.ReviewSourceEvidenceProvider.Identity(s).DisplayName).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
+        }
+        var context = new TopologyContext(environmentId, trusted, trustDetail, configured, snapshots, request, awaiting);
         var builder = new TopologyBuilder();
         foreach (var provider in providers.OrderBy(item => item.Order)) await provider.ContributeAsync(context, builder, ct);
         var view = builder.Build(environmentId, trusted?.DisplayName, clock.GetUtcNow(), [.. profiles.Select(profile => profile.Id)])

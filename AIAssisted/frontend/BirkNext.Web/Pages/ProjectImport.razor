@@ -441,7 +441,9 @@
                 {
                     <p class="pi-muted">This exact archive (the same bytes, whatever its file name) is already @(duplicate.IsCurrent ? "the current project" : "imported"). Choose what to do; nothing is chosen for you.</p>
                 }
-                <p class="pi-muted" data-testid="pi-duplicate-again-help">Import again updates that same import (no second history entry) and reuses its source analysis unless Source Analysis has changed since. Nothing is deleted.</p>
+                <p class="pi-muted" data-testid="pi-duplicate-again-help">@(duplicate.SameContentDifferentArchive
+                    ? "Import again records this archive as its own import with its own snapshot; the existing import and its snapshot stay unchanged. Nothing is deleted."
+                    : "Import again records another import of the same archive. Its source analysis is reused when it is still the current snapshot; otherwise a new snapshot is created, and the earlier snapshot and its import facts are kept in that import's history. Nothing is deleted or rewritten.")</p>
                 <div class="pi-actions">
                     @if (duplicate.ImportId is { } existingImport && !duplicate.IsCurrent && Activation.Imports.Any(i => i.ImportId == existingImport))
                     {

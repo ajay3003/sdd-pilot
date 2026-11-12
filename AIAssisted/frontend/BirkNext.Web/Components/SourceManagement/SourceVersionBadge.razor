@@ -1,0 +1,48 @@
+@using BirkNext.SourceBaselines
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+
+@* Which version of its logical source a shown snapshot is, from the shared source context: the analysis baseline, an alternative version, or one
+   of several versions while no baseline is selected (BASELINE_NOT_SELECTED). Renders nothing for a source with a single version. Inventory pages
+   (Source Analysis) show any snapshot; this says whether cross-module analysis uses it. *@
+@if (_source is { } s && _view is { } v && s.SnapshotCount > 1)
+{
+    <span class="svb svb-@Code.ToLowerInvariant()" data-testid="source-version-badge" data-code="@Code" title="@Title">@Text</span>
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid SnapshotId { get; set; }
+
+    private LogicalSourceView? _source;
+    private SourceSnapshotView? _view;
+    private Guid _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == SnapshotId) return;
+        _loadedFor = SnapshotId;
+        _source = null; _view = null;
+        if (Services.GetService(typeof(SourceContextApiService)) is not SourceContextApiService api) return;
+        var (context, _) = await api.GetAsync();
+        _source = context?.Sources.FirstOrDefault(x => x.Snapshots.Any(v => v.SnapshotId == SnapshotId));
+        _view = _source?.Snapshots.First(v => v.SnapshotId == SnapshotId);
+    }
+
+    private string Code => _source!.State switch
+    {
+        SourceBaselineState.NotSelected => "BASELINE_NOT_SELECTED",
+        _ when _view!.IsBaseline => "ANALYSIS_BASELINE",
+        _ when _view!.UsedForAnalysis => "USED_FOR_ANALYSIS",
+        _ => "ALTERNATIVE_VERSION",
+    };
+
+    private string Text => Code switch
+    {
+        "BASELINE_NOT_SELECTED" => $"One of {_source!.SnapshotCount} {_source.DisplayName} versions · no analysis baseline selected",
+        "ANALYSIS_BASELINE" => $"{_source!.DisplayName} analysis baseline",
+        "USED_FOR_ANALYSIS" => $"Used for {_source!.DisplayName} analysis (identical content)",
+        _ => $"Alternative {_source!.DisplayName} version · not the analysis baseline",
+    };
+
+    private string Title => "Source Analysis shows the snapshot you open. Cross-module analysis (topology, contracts, System Understanding, Project Quality) uses only the analysis baseline. This says nothing about what is deployed.";
+}

@@ -130,6 +130,17 @@ public sealed class CompositeContextService(AppDbContext db, IqrSourceStore sour
                 problems.Add($"{f.ArchiveFileName} is not recognised as the source of {string.Join(", ", unrecognised)}: a manual association needs a reason.");
             facts[a.SnapshotId] = f;
         }
+        // Component-level composition across versions of ONE logical source (e.g. MM from one M2LB branch archive and SkoleService from another) is not
+        // supported: there is no evidence that such components were ever built or deployed together. Different projects per stage stay allowed; a
+        // content-identical re-import counts as the same version.
+        foreach (var project in request.Associations.Where(a => a.Approval != CompositeApproval.Rejected && facts.ContainsKey(a.SnapshotId))
+                     .GroupBy(a => facts[a.SnapshotId].ProjectKey, StringComparer.Ordinal))
+        {
+            var versions = project.Select(a => facts[a.SnapshotId]).GroupBy(f => f.ContentKey.Length > 0 ? f.ContentKey : "archive:" + f.ArchiveSha256, StringComparer.Ordinal).ToList();
+            if (versions.Count > 1)
+                problems.Add($"{project.Key}: {versions.Count} different versions ({string.Join(", ", versions.Select(v => v.First().ArchiveFileName))}) in one context. " +
+                    "Components from different versions of one source are never combined; choose one version (its analysis baseline) for every stage it covers.");
+        }
         if (problems.Count > 0) return new(null, problems);
 
         var owning = string.IsNullOrWhiteSpace(request.OwningProject)

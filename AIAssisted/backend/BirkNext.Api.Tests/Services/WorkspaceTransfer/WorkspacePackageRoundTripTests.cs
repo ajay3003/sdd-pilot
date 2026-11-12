@@ -363,6 +363,57 @@ public sealed class WorkspacePackageRoundTripTests : IAsyncLifetime
 
     // ───────────── package manipulation (test-side, independent of the product writer) ─────────────
 
+    [Fact] // Project export portability: the analysis-baseline history travels with the project; an import never changes a destination's own choice
+    public async Task Source_baseline_decisions_travel_with_the_project_and_never_override_the_destination()
+    {
+        var snapshots = Ledger.M2lbSnapshots.Select(Guid.Parse).ToList();
+        var t0 = new DateTimeOffset(2026, 11, 12, 8, 0, 0, TimeSpan.Zero);
+        await using (var db = _source.Db())
+        {
+            db.SourceDecisions.AddRange(
+                new BirkNext.Api.Models.SourceDecisionRecord { Id = Guid.NewGuid(), Kind = "AnalysisBaseline", Subject = "m2lb-synth", SnapshotId = snapshots[0], SnapshotLabel = "first", DecidedAt = t0, DecidedBy = "local-session:loopback", Reason = "first choice" },
+                new BirkNext.Api.Models.SourceDecisionRecord { Id = Guid.NewGuid(), Kind = "AnalysisBaseline", Subject = "m2lb-synth", SnapshotId = snapshots[^1], SnapshotLabel = "second", DecidedAt = t0.AddMinutes(5), DecidedBy = "local-session:loopback" },
+                new BirkNext.Api.Models.SourceDecisionRecord { Id = Guid.NewGuid(), Kind = "DeclaredBranch", Subject = snapshots[0].ToString(), SnapshotId = snapshots[0], Value = "feature/norsk", SnapshotLabel = "first", DecidedAt = t0, DecidedBy = "local-session:loopback" },
+                new BirkNext.Api.Models.SourceDecisionRecord { Id = Guid.NewGuid(), Kind = "AnalysisBaseline", Subject = "other-project", SnapshotId = null, DecidedAt = t0, DecidedBy = "x" });
+            await db.SaveChangesAsync();
+
+            // The database itself refuses to rewrite a decision (append-only guard, migration GuardSourceDecisions).
+            var first = await db.SourceDecisions.FirstAsync(d => d.Reason == "first choice");
+            first.Reason = "rewritten";
+            (await FluentActions.Awaiting(() => db.SaveChangesAsync()).Should().ThrowAsync<DbUpdateException>())
+                .Which.InnerException!.Message.Should().Contain("source decisions are append-only", "the guard itself refuses, not an unrelated error");
+        }
+
+        var package = await ExportAsync(new ExportRequest { Kind = TransferKind.ProjectWorkspace, ProjectKey = "m2lb-synth" });
+        var preview = await StageAndPreviewAsync(package);
+        var items = preview.Items.Where(i => i.Type == PackageTypes.SourceDecision).ToList();
+        items.Select(i => i.LogicalId).Should().BeEquivalentTo(["AnalysisBaseline:m2lb-synth", $"DeclaredBranch:{snapshots[0]}"], "only this project's decisions; one entry per subject");
+        items.Should().OnlyContain(i => i.Status == ImportStatus.New);
+        (await ApplyAsync(preview)).State.Should().Be(WorkspacePackageService.Completed);
+
+        var imported = await Read(db => db.SourceDecisions.Where(d => d.Kind == "AnalysisBaseline").OrderBy(d => d.DecidedAt).ToListAsync());
+        imported.Select(d => d.SnapshotId).Should().Equal(snapshots[0], snapshots[^1]);
+        imported.Should().OnlyContain(d => d.DecidedBy == "local-session:loopback", "the original actor is kept");
+        imported[0].Reason.Should().StartWith("first choice").And.Contain("imported from installation");
+        (await Read(db => BirkNext.Api.Services.SourceAnalysis.SourceBaselineService.CurrentBaselinesAsync(db, default)))["m2lb-synth"].Should().Be(snapshots[^1],
+            "the destination interprets the project with the same analysis baseline as the origin");
+
+        var again = await StageAndPreviewAsync(package);
+        again.Items.Where(i => i.Type == PackageTypes.SourceDecision).Should().OnlyContain(i => i.Status == ImportStatus.Identical);
+
+        // A destination with its own baseline is never overridden.
+        await using (var db = _destination.Db())
+        {
+            db.SourceDecisions.Add(new BirkNext.Api.Models.SourceDecisionRecord { Id = Guid.NewGuid(), Kind = "AnalysisBaseline", Subject = "m2lb-synth", SnapshotId = snapshots[0], DecidedAt = t0.AddHours(1), DecidedBy = "local-session:loopback" });
+            await db.SaveChangesAsync();
+        }
+        var conflict = await StageAndPreviewAsync(package);
+        conflict.Items.Single(i => i.LogicalId == "AnalysisBaseline:m2lb-synth").Status.Should().Be(ImportStatus.ConflictingContent);
+        (await ApplyAsync(conflict)).State.Should().Be(WorkspacePackageService.Completed);
+        (await Read(db => BirkNext.Api.Services.SourceAnalysis.SourceBaselineService.CurrentBaselinesAsync(db, default)))["m2lb-synth"].Should().Be(snapshots[0],
+            "the destination's own choice stays");
+    }
+
     private static byte[] Edit(byte[] json, Action<JsonNode> change)
     {
         var node = JsonNode.Parse(json)!;

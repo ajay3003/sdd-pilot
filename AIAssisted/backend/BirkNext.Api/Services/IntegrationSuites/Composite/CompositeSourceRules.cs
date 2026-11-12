@@ -28,6 +28,8 @@ public static partial class CompositeSourceRules
         public string ProjectKey { get; init; } = "";
         public string ArchiveFileName { get; init; } = "";
         public string ArchiveSha256 { get; init; } = "";
+        /// <summary>Canonical content identity (content fingerprint, else "archive:" + archive hash), so content-identical re-imports are one version.</summary>
+        public string ContentKey { get; init; } = "";
         public DateTimeOffset AnalyzedAt { get; init; }
         public string Status { get; init; } = "";
         /// <summary>Top folder → the names that describe it (the folder, its projects and components).</summary>
@@ -91,7 +93,8 @@ public static partial class CompositeSourceRules
         var infra = s.EvidenceDomains?.Infrastructure is { } i && (i.Formats.Count > 0 || i.Resources.Count > 0);
         return new SnapshotFacts
         {
-            Id = s.Id, ProjectKey = projectKey, ArchiveFileName = s.Archive.FileName, ArchiveSha256 = s.Archive.Sha256, AnalyzedAt = s.AnalyzedAt, Status = s.Status.ToString(),
+            Id = s.Id, ProjectKey = projectKey, ArchiveFileName = s.Archive.FileName, ArchiveSha256 = s.Archive.Sha256,
+            ContentKey = BirkNext.Api.Services.SourceAnalysis.SourceBaselineService.ContentOf(s), AnalyzedAt = s.AnalyzedAt, Status = s.Status.ToString(),
             Units = units, HasApplicationCode = s.Projects.Any(p => !p.IsTest) || (s.Architecture?.Components.Count ?? 0) > 0, HasInfrastructure = infra,
             Contracts = contracts, Channels = [.. channels.Distinct()],
             DatasetContracts = [.. datasetContracts.Select(d => (Top(d.Path), d.Name))],
@@ -143,12 +146,21 @@ public static partial class CompositeSourceRules
     public static CompositeDiscovery Discover(IntegrationSuiteScope scope, IReadOnlyList<SnapshotFacts> all, CompositeSourceContext? context,
         IReadOnlyDictionary<string, Guid>? baselines = null)
     {
-        // One candidate per project: its analysis baseline when one is selected (a selected baseline that is unavailable leaves the project out —
-        // nothing is substituted), else the newest snapshot. Alternative branch snapshots of one project never compete as separate candidates.
-        var current = all.Where(f => f.Status != nameof(SourceAnalysisStatus.Failed)).GroupBy(f => f.ProjectKey, StringComparer.Ordinal)
-            .Select(g => (Newest: baselines is not null && baselines.TryGetValue(g.Key, out var b) ? g.FirstOrDefault(x => x.Id == b)
-                : g.OrderByDescending(x => x.AnalyzedAt).ThenByDescending(x => x.Id).First(), Older: g.Count() - 1))
-            .Where(x => x.Newest is not null).Select(x => (Newest: x.Newest!, x.Older)).ToList();
+        // At most one candidate per project, by the shared authoritative rule: its analysis baseline when one is selected (an unavailable baseline
+        // leaves the project out — nothing is substituted), else its only content. Alternative versions without a baseline (BASELINE_NOT_SELECTED)
+        // are not candidates at all: import order never decides. Alternative branch snapshots never compete as separate candidates.
+        var groups = all.Where(f => f.Status != nameof(SourceAnalysisStatus.Failed)).GroupBy(f => f.ProjectKey, StringComparer.Ordinal).ToList();
+        var current = new List<(SnapshotFacts Newest, int Older)>();
+        var notSelected = new List<string>();
+        foreach (var g in groups)
+        {
+            var versions = g.ToList();
+            Guid? baseline = baselines is not null && baselines.TryGetValue(g.Key, out var b) ? b : null;
+            var chosen = BirkNext.Api.Services.SourceAnalysis.SourceBaselineService.Authoritative(versions, x => x.Id,
+                x => x.ContentKey.Length > 0 ? x.ContentKey : "archive:" + x.ArchiveSha256, x => x.AnalyzedAt, baseline);
+            if (chosen is not null) current.Add((chosen, versions.Count - 1));
+            else if (baseline is null) notSelected.Add($"{versions[0].ProjectKey} ({versions.Count} versions)");
+        }
         var stages = new List<CompositeStageDiscovery>();
         var matched = new HashSet<Guid>();
         foreach (var template in scope.Stages)
@@ -207,7 +219,10 @@ public static partial class CompositeSourceRules
         return new CompositeDiscovery
         {
             ScopeId = scope.ScopeId, ScopeName = scope.DisplayName, Stages = stages, Supporting = supporting, SnapshotsConsidered = all.Count,
-            Limitations = ["Recognition uses folder, project and component names and the contracts in those folders; it is static source evidence, not a deployed topology."],
+            Limitations = [
+                "Recognition uses folder, project and component names and the contracts in those folders; it is static source evidence, not a deployed topology.",
+                .. notSelected.Select(n => $"BASELINE_NOT_SELECTED: {n} has alternative versions and no analysis baseline; it is not a candidate until a baseline is selected in Source versions."),
+            ],
         };
     }
 

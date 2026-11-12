@@ -1,0 +1,4 @@
+.svb { display: inline-block; margin-left: 0.5rem; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.8125rem; line-height: 1.5; vertical-align: middle;
+    background: var(--clr-surface); color: var(--clr-text-muted); border: 1px solid var(--clr-border); overflow-wrap: anywhere; }
+.svb-analysis_baseline, .svb-used_for_analysis { background: var(--clr-success-bg); color: var(--clr-success); border-color: var(--clr-success-border); }
+.svb-baseline_not_selected { background: var(--clr-warning-bg); color: var(--clr-warning); border-color: var(--clr-warning-border); }

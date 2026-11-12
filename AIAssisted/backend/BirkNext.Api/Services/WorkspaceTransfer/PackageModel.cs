@@ -31,11 +31,13 @@ public static class PackageTypes
     public const string TestDataValues = "test-data-values";
     public const string Profile = "environment-profile";
     public const string History = "historical-record";
+    /// <summary>The append-only decision history of one subject: a logical source's analysis baselines, or one snapshot's declared branch labels.</summary>
+    public const string SourceDecision = "source-decision";
 
     public static readonly IReadOnlySet<string> Known = new HashSet<string>(StringComparer.Ordinal)
     {
         Snapshot, Contract, ParquetRules, Suite, Composite, Association, ConnectedSystems, Platform, Integration, EvidenceBinding, ContractArtifact,
-        GraphQlSchema, MessageFlows, Flow, Module, TestDataAsset, TestDataValues, Profile, History,
+        GraphQlSchema, MessageFlows, Flow, Module, TestDataAsset, TestDataValues, Profile, History, SourceDecision,
     };
 
     /// <summary>Types bound to the integration's environment: they need an environment mapping on import.</summary>
@@ -47,14 +49,14 @@ public static class PackageTypes
     /// <summary>Apply order: what others depend on first.</summary>
     public static int Order(string type) => type switch
     {
-        Snapshot => 0, Association => 1, Contract => 2, ParquetRules => 3, Suite => 4, Composite => 5, Platform => 6, Integration => 7, EvidenceBinding => 8,
+        Snapshot => 0, Association => 1, SourceDecision => 1, Contract => 2, ParquetRules => 3, Suite => 4, Composite => 5, Platform => 6, Integration => 7, EvidenceBinding => 8,
         ContractArtifact => 9, GraphQlSchema => 10, MessageFlows => 11, TestDataAsset => 12, TestDataValues => 13, ConnectedSystems => 14, Module => 15, Flow => 16,
         Profile => 17, History => 18, _ => 99,
     };
 
     public static string Folder(string type) => type switch
     {
-        Snapshot => "sources", Contract => "contracts", ParquetRules => "test-definitions", Suite => "integration-suites", Composite => "topology",
+        Snapshot or SourceDecision => "sources", Contract => "contracts", ParquetRules => "test-definitions", Suite => "integration-suites", Composite => "topology",
         Association => "reviews", ConnectedSystems => "connected-systems", Platform or Integration or EvidenceBinding or MessageFlows => "connected-systems",
         ContractArtifact or GraphQlSchema => "schemas", Flow or Module => "browser-e2e", TestDataAsset or TestDataValues => "test-data", Profile => "environments",
         History => "evidence", _ => "artifacts",
@@ -65,6 +67,8 @@ public static class PackageTypes
 public sealed record SnapshotPayload(IqrSourceSnapshotRecord Record, SourceSchemaArtifactRecord? Schema, List<SourceContractDocumentRecord> Documents);
 public sealed record ContractPayload(ApiContractRow Contract, List<ApiContractVersionRow> Versions, List<ContractTestRow> Tests, List<ContractTestRevisionRow> TestRevisions,
     List<ContractEndpointBindingRow> Bindings);
+/// <summary>Every decision of one subject (Kind + Subject), oldest first, exactly as recorded at the origin (actor, time and reason kept).</summary>
+public sealed record SourceDecisionPayload(string Kind, string Subject, List<SourceDecisionRecord> Decisions);
 public sealed record ConnectedSystemsPayload(string SetupPackageJson, IReadOnlyList<string> Systems, IReadOnlyList<string> Excluded);
 public sealed record ModulePayload(string EnvironmentId, BirkNext.CriticalE2E.CriticalE2ERegisteredModule Module);
 public sealed record ProfilePayload(string ProfileJson, IReadOnlyList<string> RemovedKeys);
