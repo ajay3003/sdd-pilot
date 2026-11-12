@@ -50,6 +50,27 @@
                 }
             </ol>
         }
+        @if (f.View.View == WorkspaceView.ManualTesting && _plan is { } plan && (plan.Facts.Count > 0 || plan.Actions.Count > 0))
+        {
+            @* Test Plan proposals (persisted drafts and snapshots only): the same facts on Dashboard and Recommended Workflow. *@
+            <div class="wfp-plan" data-testid="wfp-test-plan">
+                <h3 class="wfp-subtitle">Test Plan proposals</h3>
+                <ul class="wfp-counts" aria-label="Test Plan proposal facts">
+                    @foreach (var fact in plan.Facts) { <li data-testid="wfp-plan-fact" data-id="@fact.Id"><strong>@fact.Count</strong> @fact.Label.ToLowerInvariant()</li> }
+                    @if (plan.Latest is { } latest) { <li data-testid="wfp-plan-latest">latest snapshot #@latest.Sequence@(latest.DeliveryLabel is { } dl ? $" · {dl}" : "")</li> }
+                </ul>
+                <ol class="wfp-actions">
+                    @foreach (var action in plan.Actions.Take(Compact ? 2 : 6))
+                    {
+                        <li class="wfp-action wfp-@action.State.ToString().ToLowerInvariant()" data-testid="wfp-plan-action" data-id="@action.Id">
+                            <div class="wfp-action-main"><span class="wfp-action-title">@action.Title</span><span class="wfp-state">@action.StateLabel</span></div>
+                            @if (!Compact) { <p class="wfp-why">@action.Why</p> }
+                            <a href="@action.Route" class="wfp-link">Open @action.Title</a>
+                        </li>
+                    }
+                </ol>
+            </div>
+        }
         @if (Compact) { <a href="getting-started" class="wfp-link wfp-more" data-testid="wfp-more">All next steps in Recommended Workflow</a> }
     </section>
 }
@@ -64,6 +85,8 @@
     private NavigationSectionState? _navigation;
     private SourceContextView? _context;
     private WorkspaceFocusView? _focus;
+    private TestPlanSuggestionsPresentation.PlanFocus? _plan;
+    private bool _planLoaded;
 
     protected override async Task OnInitializedAsync()
     {
@@ -71,13 +94,24 @@
         if (_navigation is not null) _navigation.Changed += OnNavigationChanged;
         if (Services.GetService(typeof(SourceContextApiService)) is SourceContextApiService api) (_context, _) = await api.GetAsync();
         Recompute();
+        await LoadPlanAsync();
+    }
+
+    /// <summary>Test Plan proposals are read once, and only while the Manual Testing view is selected (one call; nothing per card).</summary>
+    private async Task LoadPlanAsync()
+    {
+        if (_planLoaded || _focus?.View.View != WorkspaceView.ManualTesting) return;
+        _planLoaded = true;
+        if (Services.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService plans) return;
+        var (workspace, _) = await plans.SummaryAsync(null);
+        _plan = TestPlanSuggestionsPresentation.Focus(workspace);
     }
 
     protected override void OnParametersSet() => Recompute();
 
     private void Recompute() => _focus = WorkspaceFocus.Of(_navigation?.View ?? WorkspaceView.AllModules, Capabilities, _context);
 
-    private void OnNavigationChanged() => InvokeAsync(() => { Recompute(); StateHasChanged(); });
+    private void OnNavigationChanged() => InvokeAsync(async () => { Recompute(); await LoadPlanAsync(); StateHasChanged(); });
 
     public void Dispose() { if (_navigation is not null) _navigation.Changed -= OnNavigationChanged; }
 }

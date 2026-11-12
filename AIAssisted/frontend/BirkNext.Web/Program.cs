@@ -58,6 +58,7 @@ builder.Services.AddHttpClient<AdminApiService>(client =>
     client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<IBuildInfoApiService, BuildInfoApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ISystemUnderstandingApiService, SystemUnderstandingApiService>(client => client.BaseAddress = backendBase);
+builder.Services.AddHttpClient<ITestPlanSuggestionsApiService, TestPlanSuggestionsApiService>(client => client.BaseAddress = backendBase);
 
 builder.Services.AddSingleton<FeatureVisibilityService>();
 builder.Services.AddSingleton<SchemaStudioService>();

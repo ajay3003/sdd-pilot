@@ -20,3 +20,5 @@
 .wfp-more { display: inline-block; margin-top: 0.75rem; }
 .wfp-empty { margin: 0.75rem 0 0; color: var(--clr-text-muted); }
 .wfp-compact { padding: 0.85rem 1rem; }
+.wfp-plan { display: flex; flex-direction: column; gap: 0.5rem; padding-top: 0.6rem; border-top: 1px solid var(--clr-border-subtle, #eaeef2); }
+.wfp-subtitle { margin: 0; font-size: 1rem; font-weight: 600; }

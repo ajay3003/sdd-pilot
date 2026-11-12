@@ -328,4 +328,21 @@ public sealed class SystemUnderstandingPageTests : BunitContext
         P.Classes([]).Should().Equal(GuideEvidenceClass.NotAssessed);
         P.Badge(GuideEvidenceClass.SourceImplemented).Meaning.Should().Contain("not that the integration works");
     }
+
+    [Fact]
+    public void What_to_test_offers_Prepare_in_Test_Plan_Suggestions_for_one_or_several_scenarios_without_approving_anything()
+    {
+        var cut = Render(new Api(View()), "?tab=tests");
+        cut.Find("[data-testid=su-prepare-selected]").GetAttribute("aria-disabled").Should().Be("true", "nothing selected yet");
+        cut.Find("[data-testid=su-pick-gyldig-rapport]").Change(true);
+        cut.Find("[data-testid=su-pick-manglende-barn]").Change(true);
+        var link = cut.Find("[data-testid=su-prepare-selected]");
+        link.GetAttribute("href").Should().Be("test-plan-suggestions?guide=skolenaervaer&scenarios=gyldig-rapport%2Cmanglende-barn");
+        link.GetAttribute("aria-disabled").Should().BeNull();
+        cut.Find("[data-testid=su-prepare-bar]").TextContent.Should().Contain("Nothing is approved by this");
+
+        cut.Find("[data-testid=su-scenario-periodelaas] .su-card-head").Click();
+        cut.Find("[data-testid=su-prepare-periodelaas]").GetAttribute("href").Should().Be("test-plan-suggestions?guide=skolenaervaer&scenarios=periodelaas");
+        cut.Find("[data-testid=su-scenario-periodelaas]").TextContent.Should().Contain("Suggested", "the guide's own state is unchanged");
+    }
 }

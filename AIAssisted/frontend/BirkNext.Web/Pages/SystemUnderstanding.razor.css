@@ -178,3 +178,13 @@
 @media (prefers-reduced-motion: reduce) {
     .su-step { transition: none; }
 }
+
+/* What to test → Test Plan Suggestions: selection is a reference passed in the link, not an approval */
+.su-card { position: relative; }
+.su-card-pick { position: absolute; top: 0.7rem; right: 0.8rem; display: flex; z-index: 1; }
+.su-card-pick input { width: 1.1rem; height: 1.1rem; margin: 0; cursor: pointer; }
+.su-card-pick input:focus-visible { outline: 2px solid var(--clr-focus, #0969da); outline-offset: 2px; }
+.su-card-pick + .su-card-head { padding-right: 2.4rem; }
+.su-prepare-bar { display: flex; flex-wrap: wrap; gap: 0.5rem 0.9rem; align-items: center; margin: 0.6rem 0 0.2rem; padding: 0.6rem 0.85rem; font-size: 0.88rem;
+    border: 1px solid var(--clr-border, #d0d7de); border-radius: 12px; background: var(--clr-surface, #f6f8fa); }
+.su-prepare-bar .su-btn[aria-disabled="true"] { opacity: 0.55; pointer-events: none; }

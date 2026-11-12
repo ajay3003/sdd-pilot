@@ -132,6 +132,7 @@
     <Compile Include="../../shared/BuildIdentityContracts.cs" Link="Models/BuildIdentityContracts.cs" />
     <Compile Include="../../shared/RuntimeProfileContracts.cs" Link="Models/RuntimeProfileContracts.cs" />
     <Compile Include="../../shared/SystemUnderstandingContracts.cs" Link="Models/SystemUnderstandingContracts.cs" />
+    <Compile Include="../../shared/TestPlanSuggestionContracts.cs" Link="Models/TestPlanSuggestionContracts.cs" />
     <Compile Include="../../shared/ContractTestDataContracts.cs" Link="Models/ContractTestDataContracts.cs" />
     <Compile Include="../../shared/PerformanceLocalExecutionContracts.cs" Link="Models/PerformanceLocalExecutionContracts.cs" />
     <Compile Include="../../shared/PerformanceResourceContracts.cs" Link="Models/PerformanceResourceContracts.cs" />

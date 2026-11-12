@@ -118,6 +118,22 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
         return result;
     }
 
+    /// <summary>The revision readers see (published, else the open one, else the latest) and the review state, without reading any source
+    /// snapshot: for consumers that only need the guide's content (Test Plan Suggestions change detection and summaries).</summary>
+    public async Task<(SystemGuideRevision Shown, string ReviewState)> ShownAsync(string guideKey, CancellationToken ct)
+    {
+        var entry = Entry(guideKey);
+        await EnsureSeededAsync(entry, ct);
+        var rows = await db.SystemGuideRevisions.AsNoTracking().Where(r => r.GuideKey == guideKey).OrderBy(r => r.Revision).ToListAsync(ct);
+        var published = rows.FirstOrDefault(r => r.State == nameof(GuideRevisionState.Published));
+        var open = rows.Where(r => r.State is nameof(GuideRevisionState.Draft) or nameof(GuideRevisionState.InReview) or nameof(GuideRevisionState.Approved))
+            .OrderByDescending(r => r.Revision).FirstOrDefault();
+        return (ToRevision(published ?? open ?? rows.Last()), ReviewState(published, open));
+    }
+
+    /// <summary>The catalog's guide keys (no database or source reads).</summary>
+    public IReadOnlyList<string> GuideKeys => [.. catalog.Select(e => e.GuideKey)];
+
     public async Task<SystemGuideView> GetAsync(string guideKey, bool canEdit, CancellationToken ct)
     {
         var entry = Entry(guideKey);

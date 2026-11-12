@@ -46,6 +46,7 @@ public static class UserGuideContent
         new("project-quality", "Project Quality and the next action", GettingStarted, "project quality dashboard next action recommendation metrics execution evidence score stage workflow imported reviewed tested"),
         new("system-understanding", "System Understanding (the system under test)", GettingStarted, "system understanding systemforstaelse systemforståelse flow how the system works step by step data contracts business rules what to test guide revision review publish evidence class"),
         new("manual-testing", "Manual testing", GettingStarted, "manual testing workspace view functional tester test scenarios what to test test data coverage azure devops test plans test case no frontend xsd manuell testing testscenarioer"),
+        new("test-plan-suggestions", "Test Plan Suggestions", GettingStarted, "test plan suggestions test plan test suite test case draft proposal review snapshot delivery comparison regression export azure devops testplan testsuite testtilfelle leveranse"),
         new("recommended-workflow", "Recommended Workflow", GettingStarted, "next step next action configure project bind evidence review decision", "review-decisions"),
 
         new("project-model", "Project model and binding", ProjectEvidence, "project logical system package bind binding role required optional bound ready partial conflict source-only docs-only contract infrastructure supporting",

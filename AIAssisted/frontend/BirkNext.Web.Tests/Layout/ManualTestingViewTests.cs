@@ -31,7 +31,7 @@ public sealed class ManualTestingViewTests : BunitContext
         ("Project setup", ["project-import", "sources"]),
         ("Understand the system", ["system-understanding"]),
         ("Requirements", ["specification-explorer", "quality/document", "documentation-drift"]),
-        ("Test preparation", ["system-understanding?tab=tests", "test-data"]),
+        ("Test preparation", ["system-understanding?tab=tests", "test-plan-suggestions", "test-data"]),
         ("Coverage & traceability", ["artifact-traceability", "test-coverage-review"]),
         ("Quality & follow-up", ["dashboard", "getting-started", "user-guide"]),
     ];
@@ -82,7 +82,7 @@ public sealed class ManualTestingViewTests : BunitContext
         State.View.Should().Be(WorkspaceView.ManualTesting);
         cut.FindAll("[data-testid^=nav-section-]").Take(6).Select(b => b.TextContent.Trim()).Should().Equal(Expected.Select(e => e.Group));
         cut.Find("[data-testid=nav-section-manual-prepare] + .nav-group").QuerySelectorAll("a").Select(a => a.GetAttribute("href"))
-            .Should().Equal("system-understanding?tab=tests", "test-data");
+            .Should().Equal("system-understanding?tab=tests", "test-plan-suggestions", "test-data");
         cut.Find("[data-testid=nav-workspace-view-help]").TextContent.Should().Contain("prepare scenarios and test data");
         Services.GetRequiredService<NavigationManager>().ToBaseRelativePath(Services.GetRequiredService<NavigationManager>().Uri).Should().Be("source-analysis",
             "switching the view never navigates");

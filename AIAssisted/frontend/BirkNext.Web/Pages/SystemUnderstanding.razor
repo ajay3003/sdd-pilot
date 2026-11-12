@@ -263,6 +263,11 @@
 
     private void ToggleRule(string id) { if (!_openRules.Remove(id)) _openRules.Add(id); }
     private void ToggleScenario(string id) { if (!_openScenarios.Remove(id)) _openScenarios.Add(id); }
+
+    // Scenarios chosen for Test Plan Suggestions: a reference (guide + scenario ids) passed in the link, never stored here and never an approval.
+    private readonly List<string> _prepare = [];
+    private void TogglePrepare(string id, ChangeEventArgs e) { _prepare.Remove(id); if (e.Value is true) _prepare.Add(id); }
+    private string PrepareLink(IEnumerable<string> ids) => BirkNext.Web.Services.TestPlanSuggestionsPresentation.PrepareLink(_guideKey ?? "", ids);
     private void OpenScenario(string id) { _openScenarios.Add(id); Tab("tests"); }
 
     // ── Overview & flow ─────────────────────────────────────────────────────────────────────────────────────────
@@ -548,6 +553,14 @@
     {
         <div class="su-tests" data-testid="su-tests">
             <p class="su-note su-note-info" data-testid="su-guidance-note">Test guidance, not test coverage. A suggested scenario is not a test definition, and an existing test definition is not an executed or verified result.</p>
+            @if (!_editing)
+            {
+                <div class="su-prepare-bar" data-testid="su-prepare-bar">
+                    <span><strong>@_prepare.Count</strong> selected for test preparation</span>
+                    <a class="su-btn @(_prepare.Count > 0 ? "su-btn-primary" : null)" aria-disabled="@(_prepare.Count == 0 ? "true" : null)" href="@(_prepare.Count > 0 ? PrepareLink(_prepare) : null)" data-testid="su-prepare-selected">Prepare in Test Plan Suggestions</a>
+                    <span class="su-muted">Opens the scenarios as Test Case drafts to review. Nothing is approved by this.</span>
+                </div>
+            }
             <ul class="su-cards">
                 @foreach (var s in c.Scenarios.Where(s => Matches(_search.Scenarios, s.Id)))
                 {
@@ -555,6 +568,10 @@
                     var open = _openScenarios.Contains(s.Id);
                     var state = P.ScenarioState(s.State);
                     <li class="su-card @(open ? "is-open" : "")" data-testid="su-scenario-@s.Id">
+                        @if (!_editing)
+                        {
+                            <label class="su-card-pick"><input type="checkbox" checked="@_prepare.Contains(s.Id)" @onchange="e => TogglePrepare(scenarioId, e)" aria-label="Select @s.Title for test preparation" data-testid="su-pick-@s.Id" /></label>
+                        }
                         <button type="button" class="su-card-head" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleScenario(scenarioId)">
                             <span class="su-card-title">@s.Title</span>
                             <span class="su-card-sum">@s.Objective</span>
@@ -576,6 +593,10 @@
                                 {
                                     <div class="su-related"><span class="su-ipo-k">Steps</span>
                                         @foreach (var id in s.StepIds) { var stepId = id; <button type="button" class="su-pill" @onclick="() => GoToStep(stepId)">@id · @(c.Steps.FirstOrDefault(x => x.Id == id)?.Title)</button> }</div>
+                                }
+                                @if (!_editing)
+                                {
+                                    <a class="su-btn" href="@PrepareLink([s.Id])" data-testid="su-prepare-@s.Id">Prepare in Test Plan Suggestions</a>
                                 }
                             </div>
                         }

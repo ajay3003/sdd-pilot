@@ -790,6 +790,7 @@ builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegratio
 // System Understanding: curated, versioned guides of a system under test (one generic service; each guide is a catalog entry with its seed).
 builder.Services.AddSingleton(new BirkNext.Api.Services.SystemUnderstanding.SystemGuideCatalogEntry("skolenaervaer", "SystemGuide.skolenaervaer.guide.json", BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerJourneyPack.Id));
 builder.Services.AddScoped<BirkNext.Api.Services.SystemUnderstanding.SystemGuideService>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.TestPlanSuggestionService>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyPackRegistry, BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyPackRegistry>();
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunner(
     sp.GetServices<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepExecutor>(), sp.GetServices<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepObserver>(), TimeProvider.System));
