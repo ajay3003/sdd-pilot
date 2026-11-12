@@ -21,6 +21,11 @@ public interface ITestPlanSuggestionsApiService
     Task<(TestPlanSnapshot? Snapshot, string? Error)> SnapshotAsync(Guid id, CancellationToken ct = default);
     Task<(DeliveryComparison? Comparison, string? Error)> CompareAsync(Guid from, Guid to, CancellationToken ct = default);
     Task<(TestPlanExport? Export, string? Error)> ExportAsync(Guid snapshotId, CancellationToken ct = default);
+
+    /// <summary>MT-7 reviewed requirement coverage of one project scope (GET requirement-coverage). Read-only. Hosts without it report "not available".</summary>
+    /// <param name="rows">False: counts and associations only (no row per requirement) — what Test Plan Suggestions and the focus panel need.</param>
+    Task<(RequirementCoverageView? Coverage, string? Error)> RequirementCoverageAsync(string scope, CancellationToken ct = default, bool rows = true) =>
+        Task.FromResult<(RequirementCoverageView?, string?)>((null, "Reviewed requirement coverage is not available in this host."));
 }
 
 public sealed class TestPlanSuggestionsApiService(HttpClient http) : ITestPlanSuggestionsApiService
@@ -58,6 +63,9 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http) : ITestPlanSu
 
     public Task<(TestPlanExport?, string?)> ExportAsync(Guid snapshotId, CancellationToken ct = default) =>
         Send<TestPlanExport>(() => http.GetAsync($"{Base}/snapshots/{snapshotId}/export", ct), ct);
+
+    public Task<(RequirementCoverageView?, string?)> RequirementCoverageAsync(string scope, CancellationToken ct = default, bool rows = true) =>
+        Send<RequirementCoverageView>(() => http.GetAsync($"{Base}/requirement-coverage?scope={Uri.EscapeDataString(scope)}{(rows ? "" : "&rows=false")}", ct), ct);
 
     private static async Task<(T? Value, string? Error)> Send<T>(Func<Task<HttpResponseMessage>> call, CancellationToken ct)
     {

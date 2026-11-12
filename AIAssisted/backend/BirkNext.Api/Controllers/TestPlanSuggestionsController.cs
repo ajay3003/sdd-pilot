@@ -62,10 +62,19 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     [HttpGet("snapshots/{id:guid}/export")]
     public Task<ActionResult> Export(Guid id, CancellationToken ct) => Run(async () => Ok(await service.ExportAsync(id, ct)));
 
+    /// <summary>
+    /// MT-7 reviewed requirement coverage of one project scope: specification requirements of the latest relationship interpretation, the
+    /// scenario → requirement associations (decided in Relationship Review) and the tester reviews of those scenarios. Read-only.
+    /// </summary>
+    [HttpGet("requirement-coverage")]
+    public Task<ActionResult> RequirementCoverage([FromQuery] string scope, [FromServices] RequirementCoverageService coverage, CancellationToken ct, [FromQuery] bool rows = true) =>
+        Run(async () => Ok(await coverage.CoverageAsync(scope, ct, rows)));
+
     private async Task<ActionResult> Run(Func<Task<ActionResult>> action)
     {
         try { return await action(); }
         catch (TestPlanException e) { return StatusCode(e.Status, new { code = e.Code, message = e.Message }); }
         catch (SystemGuideException e) { return StatusCode(e.Status, new { code = "guide", message = e.Message }); }
+        catch (BirkNext.Api.Services.CanonicalInterpretation.CanonicalRequestException e) { return BadRequest(new { code = "scope", message = e.Message }); }
     }
 }

@@ -147,3 +147,6 @@ textarea.tps-input { resize: vertical; line-height: 1.45; }
     .tps-input-sm { max-width: 100%; }
     .tps-actionbar .tps-btn { white-space: normal; }
 }
+
+/* MT-7 requirement links: long trust/rule labels wrap at narrow widths. */
+.tps-spec .tps-tone { white-space: normal; }

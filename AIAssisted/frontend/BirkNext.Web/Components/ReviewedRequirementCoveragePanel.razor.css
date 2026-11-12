@@ -1,0 +1,22 @@
+.rrc { border: 1px solid var(--clr-border); border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+.rrc-title { font-size: 1.1rem; margin: 0 0 .5rem; }
+.rrc-muted { color: var(--clr-text-muted); }
+.rrc-small { font-size: .85rem; }
+.rrc-boundary { font-size: .85rem; margin: 0 0 .5rem; }
+.rrc-counts { list-style: none; display: flex; flex-wrap: wrap; gap: .5rem; padding: 0; margin: .5rem 0; }
+.rrc-count { min-height: 32px; padding: .25rem .6rem; border-radius: 6px; border: 1px solid var(--clr-border); background: transparent; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.rrc-count.is-on { outline: 2px solid currentColor; }
+.rrc-rows, .rrc-assoc { list-style: none; padding: 0; margin: 0; }
+.rrc-row { border-top: 1px solid var(--clr-border); padding: .6rem 0; }
+.rrc-row-head { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; justify-content: space-between; }
+.rrc-text { margin: .25rem 0; overflow-wrap: anywhere; }
+.rrc-assoc li { margin: .25rem 0 .25rem 1rem; overflow-wrap: anywhere; }
+.rrc-state, .rrc-trust { display: inline-block; font-size: .8rem; padding: .05rem .45rem; border-radius: 999px; border: 1px solid currentColor; }
+/* Same pill tones as Test Plan Suggestions (filled background, readable in both themes). */
+.rrc-state.rrc-tone-ok, .rrc-count.rrc-tone-ok { background: #dafbe1; color: #116329; border-color: #aceebb; }
+.rrc-state.rrc-tone-info, .rrc-count.rrc-tone-info { background: #ddf4ff; color: #0a3069; border-color: #a6d8ff; }
+.rrc-state.rrc-tone-warn, .rrc-count.rrc-tone-warn, .rrc-trust-SuggestedAssociation { background: #fff8c5; color: #6b4300; border-color: #eac54f; }
+.rrc-state.rrc-tone-muted, .rrc-count.rrc-tone-muted, .rrc-trust { background: var(--clr-surface-raised, #fff); color: var(--clr-text-muted, #57606a); border-color: var(--clr-border, #d0d7de); }
+.rrc-trust-ExplicitSourceReference, .rrc-trust-ReviewedCanonicalAssociation { background: #ddf4ff; color: #0a3069; border-color: #a6d8ff; }
+.rrc-trust-Rejected { text-decoration: line-through; }
+.rrc-link { margin-left: .4rem; display: inline-block; min-height: 24px; }

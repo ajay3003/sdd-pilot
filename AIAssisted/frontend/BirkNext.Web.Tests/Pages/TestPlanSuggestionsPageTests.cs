@@ -5,6 +5,7 @@ using Bunit;
 using FluentAssertions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
 using P = BirkNext.Web.Services.TestPlanSuggestionsPresentation;
 
 namespace BirkNext.Web.Tests.Pages;
@@ -56,6 +57,9 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         public CreateTestPlanDraftRequest? Created { get; private set; }
         public SaveTestPlanDraftRequest? Saved { get; private set; }
         public ReviewTestCaseRequest? Reviewed { get; private set; }
+        public RequirementCoverageView? Coverage { get; init; }
+        public Task<(RequirementCoverageView?, string?)> RequirementCoverageAsync(string scope, CancellationToken ct = default, bool rows = true) =>
+            Task.FromResult<(RequirementCoverageView?, string?)>((Coverage, Coverage is null ? "n/a" : null));
         public Task<(TestPlanWorkspace?, string?)> WorkspaceAsync(string? guideKey, CancellationToken ct = default) => Task.FromResult<(TestPlanWorkspace?, string?)>((workspace, null));
         public Task<(TestPlanWorkspace?, string?)> SummaryAsync(string? guideKey, CancellationToken ct = default) => Task.FromResult<(TestPlanWorkspace?, string?)>((workspace, null));
         public Task<(TestPlanDraft?, string?)> DraftAsync(Guid id, CancellationToken ct = default) => Task.FromResult<(TestPlanDraft?, string?)>((draft, null));
@@ -197,6 +201,49 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
 
     // Found in browser acceptance: a review response that arrived after an edit replaced the working copy, silently dropping the edit.
     // Reviews now start only from a saved state, and edit controls are locked while a request is in flight.
+    [Fact]
+    public void MT7_a_case_shows_verified_and_suggested_specification_requirements_apart_and_accepting_it_approves_no_association()
+    {
+        static RequirementScenarioAssociation A(string req, AssociationTrust trust) => new()
+        {
+            RelationKey = "k-" + req, GuideKey = "skolenaervaer", ScenarioId = "manglende-barn", ScenarioTitle = "Barnet finnes ikke", RequirementKey = $"Requirement|skole/001-skoletjenesten/{req}",
+            RequirementId = req, Trust = trust, RuleId = trust == AssociationTrust.SuggestedAssociation ? "CR-S-VIA-TEST" : "CR-S-EXPLICIT", Reviewer = trust == AssociationTrust.ReviewedCanonicalAssociation ? "reviewer@bufdir" : null,
+        };
+        var coverage = new RequirementCoverageView { Scope = "dev", Known = true, Associations = [A("FR-006", AssociationTrust.ReviewedCanonicalAssociation), A("FR-040", AssociationTrust.SuggestedAssociation), A("FR-041", AssociationTrust.Rejected)] };
+        var context = new Moq.Mock<IFrontendAnalysisContextFactory>();
+        context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new BirkNext.Web.Models.FrontendAnalysisContext
+            { ActiveProfile = new BirkNext.Web.Models.FrontendAnalysisProfile { Id = "dev", Name = "Dev" } });
+        Services.AddSingleton(context.Object);
+        var draft = Draft();
+        var api = new Api(Workspace(drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, 3, 2, 0, 1, 1, 2, 2, "u", DateTimeOffset.UtcNow)]), draft) { Coverage = coverage };
+        var cut = Render(api, $"?draft={draft.Id}&area=review");
+        cut.Find("[data-testid=tps-case-manglende-barn] .tps-case-head").Click();
+        var spec = cut.Find("[data-testid=tps-case-manglende-barn] [data-testid=tps-spec-requirements]");
+        spec.QuerySelector("[data-testid=tps-spec-verified]")!.TextContent.Should().Contain("FR-006").And.Contain("Confirmed in Relationship Review").And.NotContain("FR-040");
+        spec.QuerySelector("[data-testid=tps-spec-suggested]")!.TextContent.Should().Contain("FR-040").And.NotContain("FR-006");
+        spec.QuerySelector("[data-testid=tps-spec-decide]")!.GetAttribute("href").Should().Be("correlation-review?tab=review");
+        spec.QuerySelector("[data-testid=tps-spec-rejected]")!.TextContent.Should().Contain("FR-041");
+        spec.TextContent.Should().Contain("does not approve any requirement association");
+        cut.Find("[data-testid=tps-case-manglende-barn]").TextContent.Should().Contain("Business rules (guide)", "guide rule ids are never called specification requirements");
+
+        cut.Find("[data-testid=tps-accept-manglende-barn]").Click();
+        api.Reviewed!.State.Should().Be(TestCaseReviewState.Accepted);
+        // Accepting goes only to Test Plan Suggestions; there is no call that could change an association (the API has none).
+
+        // The other case has no association at all.
+        cut.Find("[data-testid=tps-case-bufdata-fil] .tps-case-head").Click();
+        cut.Find("[data-testid=tps-case-bufdata-fil] [data-testid=tps-spec-none]").TextContent.Should().Contain("No association");
+    }
+
+    [Fact]
+    public void MT7_without_a_selected_project_requirement_associations_are_unknown_not_absent()
+    {
+        var draft = Draft();
+        var cut = Render(new Api(Workspace(drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, 3, 2, 0, 1, 1, 2, 2, "u", DateTimeOffset.UtcNow)]), draft), $"?draft={draft.Id}&area=review");
+        cut.Find("[data-testid=tps-case-manglende-barn] .tps-case-head").Click();
+        cut.Find("[data-testid=tps-case-manglende-barn] [data-testid=tps-spec-unknown]").TextContent.Should().StartWith("Unknown");
+    }
+
     [Fact]
     public void An_unsaved_edit_blocks_review_decisions_so_a_late_response_can_never_drop_it()
     {

@@ -28,7 +28,7 @@ public sealed class TestPlanException(int status, string code, string message) :
 /// immutable snapshots of the proposal itself.
 /// </summary>
 public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideService guides, SourceBaselineService baselines, TestDataCatalogService testData,
-    IEnumerable<IIntegrationJourneyPack> packs, ICriticalE2EStore e2e, TimeProvider? clock = null)
+    IEnumerable<IIntegrationJourneyPack> packs, ICriticalE2EStore e2e, TimeProvider? clock = null) : IScenarioReviewSource
 {
     public const int MaxCases = 300;
     public const int MaxContentCharacters = 4_000_000;
@@ -73,7 +73,9 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         var options = await GuideOptionsAsync(ct);
         var key = options.FirstOrDefault(g => g.GuideKey == guideKey)?.GuideKey ?? options.FirstOrDefault()?.GuideKey;
         if (key is null) return new TestPlanWorkspace { Guides = options, CanWrite = canWrite, RuleVersion = E.RuleVersion };
-        var view = await guides.GetAsync(key, false, ct);
+        // One load of the stored snapshots for the guide's sources and the baseline context (each load deserializes every snapshot's evidence).
+        var snapshots = await baselines.SnapshotsAsync(ct);
+        var view = await guides.GetAsync(key, false, ct, snapshots);
         var shown = view.Shown!;
         var executables = Executables();
         var candidates = shown.Content.Scenarios.Select(s =>
@@ -90,7 +92,7 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         var drafts = await db.TestPlanDrafts.AsNoTracking().Where(d => d.GuideKey == key).OrderByDescending(d => d.UpdatedAt).ToListAsync(ct);
         return new TestPlanWorkspace
         {
-            Guides = options, GuideKey = key, Basis = await BasisAsync(view, ct), Candidates = candidates,
+            Guides = options, GuideKey = key, Basis = await BasisAsync(view, ct, snapshots), Candidates = candidates,
             Stages = [.. shown.Content.Stages.Select(s => new TestPlanStage(s.Id, s.Title))],
             Drafts = [.. drafts.Select(d => Summary(Read(d)))], Snapshots = await SnapshotsAsync(key, ct), Executables = [.. executables],
             TestData = await TestDataOptionsAsync(ct), CanWrite = canWrite, RuleVersion = E.RuleVersion,
@@ -133,14 +135,15 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
     public async Task<TestPlanDraft> CreateAsync(CreateTestPlanDraftRequest request, string actor, CancellationToken ct)
     {
         var name = Name(request.PlanName);
-        var view = await guides.GetAsync(request.GuideKey, false, ct);
+        var snapshots = await baselines.SnapshotsAsync(ct);
+        var view = await guides.GetAsync(request.GuideKey, false, ct, snapshots);
         var shown = view.Shown ?? throw new TestPlanException(404, "guide-empty", "The system guide has no revision.");
         var ids = Selected(shown.Content, request.ScenarioIds);
         if (ids.Count == 0) throw new TestPlanException(400, "no-scenarios", "Select at least one scenario.");
         var cases = await BuildCasesAsync(request.GuideKey, shown, ids, new Dictionary<string, TestCaseDraft>(StringComparer.Ordinal), ct);
         var plan = new TestPlanDraft
         {
-            Id = Guid.NewGuid(), GuideKey = request.GuideKey, PlanName = name, DeliveryLabel = Label(request.DeliveryLabel), Revision = 1, Basis = await BasisAsync(view, ct),
+            Id = Guid.NewGuid(), GuideKey = request.GuideKey, PlanName = name, DeliveryLabel = Label(request.DeliveryLabel), Revision = 1, Basis = await BasisAsync(view, ct, snapshots),
             Suites = E.ProposeSuites(shown.Content, cases.Select(c => c.Generated)), Cases = cases, RuleVersion = E.RuleVersion,
             CreatedBy = actor, CreatedAt = Now, UpdatedBy = actor, UpdatedAt = Now,
         };
@@ -215,7 +218,8 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         var row = await Row(id, ct);
         if (row.Revision != baseRevision) throw Stale(row);
         var current = Read(row);
-        var view = await guides.GetAsync(current.GuideKey, false, ct);
+        var snapshots = await baselines.SnapshotsAsync(ct);
+        var view = await guides.GetAsync(current.GuideKey, false, ct, snapshots);
         var shown = view.Shown!;
         var known = shown.Content.Scenarios.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
         var ids = current.Cases.Select(c => c.Source.ScenarioId).Where(known.Contains).ToList();
@@ -231,7 +235,7 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         });
         var plan = current with
         {
-            Basis = await BasisAsync(view, ct), Cases = [.. cases, .. gone], Suites = suites, RuleVersion = E.RuleVersion, Revision = row.Revision + 1, UpdatedBy = actor, UpdatedAt = Now,
+            Basis = await BasisAsync(view, ct, snapshots), Cases = [.. cases, .. gone], Suites = suites, RuleVersion = E.RuleVersion, Revision = row.Revision + 1, UpdatedBy = actor, UpdatedAt = Now,
         };
         return await WriteAsync(row, plan, ct);
     }
@@ -278,6 +282,31 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
     }
 
     // ── Building ─────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>The current fingerprint of every scenario of a guide (MT-7 coverage: is a review or an interpretation about this revision?).</summary>
+    public Task<Dictionary<string, string>> ScenarioFingerprintsAsync(string guideKey, CancellationToken ct) => CurrentFingerprintsAsync(guideKey, ct);
+
+    /// <summary>
+    /// For each guide scenario, the tester review from the most recently updated draft that contains it (MT-7). <see cref="ScenarioReviewFact.Current"/>
+    /// is true only when that review was made on the scenario revision readers see now. Reads drafts only; nothing is changed.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<(string, string), ScenarioReviewFact>> ScenarioReviewsAsync(IReadOnlyCollection<string> guideKeys, CancellationToken ct)
+    {
+        var result = new Dictionary<(string, string), ScenarioReviewFact>();
+        foreach (var key in guideKeys.Where(k => guides.GuideKeys.Contains(k, StringComparer.Ordinal)))
+        {
+            var current = await CurrentFingerprintsAsync(key, ct);
+            foreach (var row in await db.TestPlanDrafts.AsNoTracking().Where(d => d.GuideKey == key).OrderByDescending(d => d.UpdatedAt).ToListAsync(ct))
+                foreach (var c in Read(row).Cases.Where(c => c.Source.Kind == ScenarioSourceKind.SystemGuide && c.Review != TestCaseReviewState.Superseded))
+                {
+                    if (result.ContainsKey((key, c.Source.ScenarioId))) continue; // the newest draft wins
+                    var accepted = c.ReviewHistory.LastOrDefault(e => e.State == c.Review);
+                    result[(key, c.Source.ScenarioId)] = new ScenarioReviewFact(key, c.Source.ScenarioId, row.Id, c.Review, c.Source.Fingerprint,
+                        current.TryGetValue(c.Source.ScenarioId, out var now) && now == c.Source.Fingerprint, accepted?.Reviewer, accepted?.At);
+                }
+        }
+        return result;
+    }
 
     /// <summary>The fingerprint of every scenario in the guide revision readers see now (for change detection only).</summary>
     private async Task<Dictionary<string, string>> CurrentFingerprintsAsync(string guideKey, CancellationToken ct)
@@ -375,9 +404,9 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
     }
 
     /// <summary>The guide revision and, per source role, the snapshot analysis uses (the guide's own baseline-resolved reading) with its state.</summary>
-    private async Task<TestPlanSourceBasis> BasisAsync(SystemGuideView view, CancellationToken ct)
+    private async Task<TestPlanSourceBasis> BasisAsync(SystemGuideView view, CancellationToken ct, IReadOnlyList<IqrSourceSnapshot>? snapshots = null)
     {
-        var context = await baselines.ContextAsync(ct);
+        var context = snapshots is null ? await baselines.ContextAsync(ct) : await baselines.ContextAsync(snapshots, ct);
         var stateOf = context.Sources.SelectMany(s => s.Snapshots.Select(x => (x.SnapshotId, s.StateCode))).GroupBy(x => x.SnapshotId).ToDictionary(g => g.Key, g => g.First().StateCode);
         var roles = view.CurrentSources.Select(s => new TestPlanSourceRole(s.Role, s.Label, s.SnapshotId, s.Fingerprint,
             s.SnapshotId is { } id ? stateOf.GetValueOrDefault(id, "USED") : s.Label.Contains("BASELINE_NOT_SELECTED", StringComparison.Ordinal) ? "BASELINE_NOT_SELECTED" : "NOT_IMPORTED")).ToList();

@@ -88,6 +88,12 @@ public sealed class DeliveryCanonicalWorkItemReader(Data.DeliveryReporting.Deliv
             .Select(t => new TaskReferenceInput(t.Module, t.FeatureKey, t.TaskId ?? t.TaskKey, t.Text, $"delivery:{deliverySnapshotId}"))];
 }
 
+/// <summary>System Understanding scenarios for the interpreted sources (MT-7). Readers without guides return none.</summary>
+public interface ICanonicalGuideReader
+{
+    Task<IReadOnlyList<GuideScenarioInput>> ScenariosAsync(IReadOnlyList<IqrSourceSnapshot> interpreted, CancellationToken ct);
+}
+
 /// <summary>Thrown for a request the caller can correct (unknown scope format, unknown target).</summary>
 public sealed class CanonicalRequestException(string message) : Exception(message);
 
@@ -99,7 +105,8 @@ public sealed class CanonicalRequestException(string message) : Exception(messag
 /// </summary>
 public sealed partial class CanonicalInterpretationService(
     CanonicalInterpretationDbContext db, ICanonicalSourceReader sources, TimeProvider clock, ICanonicalWorkItemReader? workItems = null,
-    IEnumerable<IntegrationTopology.ITopologyProfile>? profiles = null, IEnumerable<IntegrationJourneys.IIntegrationJourneyPack>? packs = null)
+    IEnumerable<IntegrationTopology.ITopologyProfile>? profiles = null, IEnumerable<IntegrationJourneys.IIntegrationJourneyPack>? packs = null,
+    ICanonicalGuideReader? guides = null)
 {
     public const string WorkItemRuleSet = WorkItemInterpreter.RuleSetVersion;
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -122,9 +129,11 @@ public sealed partial class CanonicalInterpretationService(
         var inputs = new List<CorrelationInput>();
         var refs = new List<SnapshotReference>();
         var limitations = new List<string>();
+        var read = new List<IqrSourceSnapshot>();
         foreach (var id in request.SourceSnapshotIds.Distinct().Order())
         {
             var snapshot = await sources.FindAsync(id, ct) ?? throw new CanonicalRequestException($"Source Analysis snapshot {id} is not stored.");
+            read.Add(snapshot);
             inputs.Add(CanonicalEvidenceAdapter.FromSourceSnapshot(scope, snapshot));
             refs.Add(new(SnapshotType.SourceAnalysis, id.ToString(), snapshot.Archive.FileName, snapshot.AnalyzerVersion.ToString()));
             if (snapshot.TestInventory is null) limitations.Add($"{snapshot.Archive.FileName}: no test inventory recorded (analyzed before test evidence).");
@@ -143,6 +152,10 @@ public sealed partial class CanonicalInterpretationService(
             });
             refs.Add(new(SnapshotType.Delivery, deliveryId.ToString(), "Delivery snapshot"));
         }
+        // System Understanding scenarios of the system these sources belong to (MT-7): scenario → requirement associations are proposed from what the
+        // guide states only, and count as reviewed coverage only once explicit (published guide) or confirmed in Relationship Review.
+        if (guides is not null && read.Count > 0 && await guides.ScenariosAsync(read, ct) is { Count: > 0 } scenarios)
+            inputs.Add(CorrelationInput.Empty(scope) with { GuideScenarios = scenarios });
         inputs.Add(CorrelationInput.Empty(scope) with { Systems = CanonicalEvidenceAdapter.DeclaredSystems(profiles ?? [], (packs ?? []).SelectMany(p => p.Aliases)) });
 
         var result = CorrelationRules.Correlate(CanonicalEvidenceAdapter.Merge(scope, inputs));

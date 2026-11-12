@@ -326,3 +326,99 @@ public sealed record DeliveryComparison
 
 /// <summary>The structured export (BirkNext's own JSON document plus the same content as copyable text). Not an Azure DevOps import format.</summary>
 public sealed record TestPlanExport(string Format, string FileName, string Json, string Text, List<string> Unresolved, string Boundary);
+
+// ── MT-7: reviewed requirement coverage ─────────────────────────────────────────────────────────────────────
+// Which specification requirements a tester has reviewed scenario coverage for. Read from the shared canonical relationship registry (scenario →
+// requirement VERIFIES relations proposed from what a System Understanding guide states, decided in Relationship Review) and from Test Plan
+// Suggestions reviews. Never test execution: a reviewed scenario says what a tester prepared, not that anything ran or passed.
+
+/// <summary>How far a scenario → requirement association is established.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum AssociationTrust
+{
+    /// <summary>A published (reviewed) guide names the requirement for the scenario.</summary>
+    ExplicitSourceReference,
+    /// <summary>A person confirmed the association in Relationship Review, on the current evidence.</summary>
+    ReviewedCanonicalAssociation,
+    /// <summary>Proposed (a guide draft names it, a named test verifies it, several feature packs define the id) or the evidence changed since a decision.</summary>
+    SuggestedAssociation,
+    /// <summary>A person rejected it; never counted.</summary>
+    Rejected,
+}
+
+/// <summary>A requirement's reviewed-scenario coverage state. Distinct facts, never one readiness colour.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum RequirementCoverageState
+{
+    /// <summary>A verified association to a scenario a tester accepted for preparation, in its current revision.</summary>
+    ReviewedScenarioCoverage,
+    /// <summary>A verified association, but no tester accepted the current scenario revision yet.</summary>
+    AssociationVerifiedScenarioNotReviewed,
+    /// <summary>Only suggested associations (or decisions made on older evidence): Relationship Review decides.</summary>
+    NeedsRelationshipReview,
+    /// <summary>No scenario in the interpreted guides states or suggests coverage (not "never tested": only no documented scenario).</summary>
+    NoDocumentedScenarioCoverage,
+}
+
+/// <summary>One scenario → requirement association with its trust, the decision behind it and the tester review of the scenario.</summary>
+public sealed record RequirementScenarioAssociation
+{
+    public string RelationKey { get; init; } = "";
+    public string GuideKey { get; init; } = "";
+    public string ScenarioId { get; init; } = "";
+    public string ScenarioTitle { get; init; } = "";
+    public string RequirementKey { get; init; } = "";
+    public string RequirementId { get; init; } = "";
+    public AssociationTrust Trust { get; init; }
+    public string RuleId { get; init; } = "";
+    public string Resolution { get; init; } = "";
+    public string ReviewState { get; init; } = "";
+    public string Explanation { get; init; } = "";
+    public string? Reviewer { get; init; }
+    public DateTimeOffset? DecidedAt { get; init; }
+    /// <summary>"Accepted for preparation", "Accepted for an earlier scenario revision", "Not reviewed", "No draft".</summary>
+    public string ScenarioReview { get; init; } = "";
+    public bool ScenarioReviewCurrent { get; init; }
+    public Guid? DraftId { get; init; }
+    public string? ScenarioReviewedBy { get; init; }
+    public DateTimeOffset? ScenarioReviewedAt { get; init; }
+    /// <summary>The guide's scenario changed after the interpretation that proposed this association: re-run Analyze relationships.</summary>
+    public bool InterpretationOutdated { get; init; }
+    [JsonIgnore] public bool Verified => Trust is AssociationTrust.ExplicitSourceReference or AssociationTrust.ReviewedCanonicalAssociation;
+}
+
+public sealed record RequirementCoverageRow
+{
+    public string RequirementKey { get; init; } = "";
+    public string RequirementId { get; init; } = "";
+    public string? Module { get; init; }
+    public string? Feature { get; init; }
+    public string Title { get; init; } = "";
+    public RequirementCoverageState State { get; init; }
+    public string Reason { get; init; } = "";
+    public List<RequirementScenarioAssociation> Associations { get; init; } = [];
+}
+
+/// <summary>Reviewed requirement coverage for one project scope. <see cref="Known"/> is false (and every count is meaningless) when no
+/// interpretation of the scope includes both specification requirements and System Understanding scenarios.</summary>
+public sealed record RequirementCoverageView
+{
+    public string Scope { get; init; } = "";
+    public bool Known { get; init; }
+    public string? UnknownReason { get; init; }
+    public Guid? InterpretationId { get; init; }
+    public DateTimeOffset? InterpretedAt { get; init; }
+    public int Requirements { get; init; }
+    public int Reviewed { get; init; }
+    public int VerifiedNotReviewed { get; init; }
+    public int NeedsReview { get; init; }
+    public int NoScenario { get; init; }
+    public List<RequirementCoverageRow> Rows { get; init; } = [];
+    /// <summary>Every association by scenario (for Test Plan Suggestions), including rejected ones as history.</summary>
+    public List<RequirementScenarioAssociation> Associations { get; init; } = [];
+    /// <summary>Guide scenarios in the interpretation with no association at all (scenario without a requirement).</summary>
+    public List<string> ScenariosWithoutRequirement { get; init; } = [];
+    public string Boundary { get; init; } = RequirementCoverageBoundary;
+
+    public const string RequirementCoverageBoundary = "Reviewed scenario coverage means a tester reviewed a scenario that a verified association links to the requirement. It is not test execution, not a passed test and not an Azure DevOps Test Case.";
+}

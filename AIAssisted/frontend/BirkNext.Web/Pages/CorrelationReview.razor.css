@@ -103,3 +103,8 @@ button.cr-metric:focus-visible { outline: 2px solid var(--clr-primary-focus, var
 .cr-preview-outcome h4 { margin: 0 0 .25rem; font-size: .86rem; }
 .cr-preview-outcome ul { margin: 0; padding-left: 1rem; display: grid; gap: .2rem; }
 .cr-item-history { margin: 0; padding-left: 1.2rem; font-size: .84rem; display: grid; gap: .2rem; }
+
+/* MT-7: evidence and identities can hold long unbroken tokens (content fingerprints, canonical keys): wrap them inside the inspector. */
+.cr-inspect, .cr-inspect li, .cr-inspect p, .cr-inspect-side span { overflow-wrap: anywhere; min-width: 0; }
+/* Filter controls are at least 28 px tall (touch and pointer targets). */
+.cr-filter select { min-height: 1.75rem; }

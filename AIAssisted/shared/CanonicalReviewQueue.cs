@@ -23,6 +23,8 @@ public enum ReviewItemType
     ContractVersion,
     /// <summary>A task names a removed or undefined story (fixed in the tasks file, not by a mapping).</summary>
     StoryReference,
+    /// <summary>A System Understanding scenario may cover a specification requirement (MT-7); counted as reviewed coverage only once confirmed.</summary>
+    ScenarioCoverage,
 }
 
 /// <summary>One review item. <see cref="TargetKey"/> is what a decision is recorded against (relation key or alias target key); null when the resolution
@@ -135,6 +137,7 @@ public static class CanonicalReviewQueue
         CorrelationRules.ContractVersionConflictRule => ReviewItemType.ContractVersion,
         CorrelationRules.AliasConflictRule or CorrelationRules.AcronymAliasRule or CorrelationRules.DeclaredAliasRule => ReviewItemType.AliasConfirmation,
         CorrelationRules.TaskGroupRule => ReviewItemType.StoryReference,
+        CorrelationRules.GuideScenarioExplicitRule or CorrelationRules.GuideScenarioViaTestRule or CorrelationRules.GuideScenarioAmbiguousRule => ReviewItemType.ScenarioCoverage,
         _ => ReviewItemType.SourceSymbol,
     };
 
@@ -170,6 +173,7 @@ public static class CanonicalReviewQueue
         ReviewItemType.SourceSymbol => "Code reference",
         ReviewItemType.TestLink => "Test link",
         ReviewItemType.ContractVersion => "Contract version",
+        ReviewItemType.ScenarioCoverage => "Scenario coverage",
         _ => "Story reference",
     };
 

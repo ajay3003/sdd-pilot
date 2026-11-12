@@ -205,6 +205,7 @@ public static class CanonicalEvidenceAdapter
             [.. all.SelectMany(i => i.WorkItems)], [.. all.SelectMany(i => i.Contracts)], [.. all.SelectMany(i => i.Symbols)], [.. all.SelectMany(i => i.Operations)],
             [.. all.SelectMany(i => i.Tests)], [.. all.SelectMany(i => i.Systems)], [.. all.SelectMany(i => i.AdditionalEntities ?? [])],
             [.. all.SelectMany(i => i.AdditionalRelations ?? [])], [.. all.SelectMany(i => i.Channels ?? [])], [.. all.SelectMany(i => i.Tasks ?? [])],
-            [.. all.SelectMany(i => i.Libraries ?? [])], [.. all.SelectMany(i => i.LibraryUses ?? [])], [.. all.SelectMany(i => i.Structures ?? [])]);
+            [.. all.SelectMany(i => i.Libraries ?? [])], [.. all.SelectMany(i => i.LibraryUses ?? [])], [.. all.SelectMany(i => i.Structures ?? [])],
+            [.. all.SelectMany(i => i.GuideScenarios ?? []).DistinctBy(s => (s.GuideKey, s.ScenarioId))]);
     }
 }

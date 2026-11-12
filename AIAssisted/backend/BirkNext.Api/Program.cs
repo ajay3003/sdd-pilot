@@ -183,6 +183,7 @@ builder.Services.AddDbContext<BirkNext.Api.Data.CanonicalInterpretation.Canonica
     BirkNext.Api.Data.CanonicalInterpretation.CanonicalInterpretationDbContext.Configure(options, databaseConnectionString));
 builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.ICanonicalSourceReader, BirkNext.Api.Services.CanonicalInterpretation.IqrCanonicalSourceReader>();
 builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.ICanonicalWorkItemReader, BirkNext.Api.Services.CanonicalInterpretation.DeliveryCanonicalWorkItemReader>();
+builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.ICanonicalGuideReader, BirkNext.Api.Services.SystemUnderstanding.SystemGuideCanonicalReader>();
 builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.CanonicalInterpretationService>();
 builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.CanonicalInterpretationDataReset>();
 builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.CanonicalAliasSource>();
@@ -791,6 +792,8 @@ builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegratio
 builder.Services.AddSingleton(new BirkNext.Api.Services.SystemUnderstanding.SystemGuideCatalogEntry("skolenaervaer", "SystemGuide.skolenaervaer.guide.json", BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerJourneyPack.Id));
 builder.Services.AddScoped<BirkNext.Api.Services.SystemUnderstanding.SystemGuideService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.TestPlanSuggestionService>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.IScenarioReviewSource>(sp => sp.GetRequiredService<BirkNext.Api.Services.TestPlanning.TestPlanSuggestionService>());
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.RequirementCoverageService>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyPackRegistry, BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyPackRegistry>();
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunner(
     sp.GetServices<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepExecutor>(), sp.GetServices<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepObserver>(), TimeProvider.System));

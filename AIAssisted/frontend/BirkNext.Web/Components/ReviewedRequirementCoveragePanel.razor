@@ -1,0 +1,101 @@
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@using C = BirkNext.Web.Services.RequirementCoveragePresentation
+@inject IServiceProvider Services
+
+@* MT-7: which specification requirements a tester reviewed scenario coverage for. Facts come from Relationship Review (associations) and Test
+   Plan Suggestions (scenario reviews); this panel decides nothing and never calls reviewed coverage a test result. *@
+<section class="rrc" aria-labelledby="rrc-title" data-testid="rrc-panel">
+    <h2 id="rrc-title" class="rrc-title">Reviewed scenario coverage</h2>
+    @if (_loading) { <p class="rrc-muted" role="status">Loading reviewed requirement coverage…</p> }
+    else if (_error is not null) { <p class="rrc-muted" role="status" data-testid="rrc-error">@_error</p> }
+    else if (_view is { Known: false } unknown)
+    {
+        <p class="rrc-state rrc-tone-muted" data-testid="rrc-unknown"><strong>Unknown.</strong> @unknown.UnknownReason</p>
+        <p class="rrc-muted"><a href="@C.RelationshipReviewHref">Open Relationship Review</a> · <a href="test-plan-suggestions">Test Plan Suggestions</a></p>
+    }
+    else if (_view is { } v)
+    {
+        <p class="rrc-muted rrc-boundary" data-testid="rrc-boundary">@v.Boundary</p>
+        <ul class="rrc-counts" data-testid="rrc-counts">
+            <li>@CountButton(RequirementCoverageState.ReviewedScenarioCoverage, v.Reviewed, "reviewed scenario coverage", "reviewed")</li>
+            <li>@CountButton(RequirementCoverageState.AssociationVerifiedScenarioNotReviewed, v.VerifiedNotReviewed, "linked, scenario not reviewed", "verified")</li>
+            <li>@CountButton(RequirementCoverageState.NeedsRelationshipReview, v.NeedsReview, "need relationship review", "needs")</li>
+            <li>@CountButton(RequirementCoverageState.NoDocumentedScenarioCoverage, v.NoScenario, "no documented scenario", "none")</li>
+        </ul>
+        <p class="rrc-muted rrc-small">Of @v.Requirements requirements in the interpretation of @(v.InterpretedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—"). @WithoutRequirement(v)</p>
+        var rows = Rows(v);
+        @if (rows.Count == 0) { <p class="rrc-muted" data-testid="rrc-empty">@(_filter is null ? "No requirement has a scenario association yet. Choose \"no documented scenario\" to list the others." : "No requirement in this state.")</p> }
+        else
+        {
+            <ul class="rrc-rows" data-testid="rrc-rows">
+                @foreach (var r in rows.Take(200))
+                {
+                    <li class="rrc-row" data-testid="rrc-row" data-requirement="@r.RequirementKey" data-state="@r.State">
+                        <div class="rrc-row-head">
+                            <span class="rrc-req"><strong>@r.RequirementId</strong> <span class="rrc-muted">@r.Module/@r.Feature</span></span>
+                            <span class="rrc-state rrc-tone-@C.StateTone(r.State)" data-testid="rrc-row-state">@C.StateLabel(r.State)</span>
+                        </div>
+                        <p class="rrc-text">@r.Title</p>
+                        <p class="rrc-muted rrc-small">@r.Reason</p>
+                        @if (r.Associations.Count > 0)
+                        {
+                            <ul class="rrc-assoc">
+                                @foreach (var a in r.Associations)
+                                {
+                                    <li data-testid="rrc-assoc" data-trust="@a.Trust">
+                                        <a href="@ScenarioHref(a)">@a.ScenarioTitle</a>
+                                        <span class="rrc-trust rrc-trust-@a.Trust">@C.TrustLabel(a.Trust)</span>
+                                        <span class="rrc-muted">· @C.RuleLabel(a.RuleId)@Decided(a) · scenario: @a.ScenarioReview</span>
+                                        @if (a.InterpretationOutdated) { <span class="rrc-muted"> · the guide changed after the interpretation: run Analyze relationships again</span> }
+                                        @if (a.Trust == AssociationTrust.SuggestedAssociation) { <a class="rrc-link" href="@C.RelationshipReviewHref" data-testid="rrc-decide">Decide in Relationship Review</a> }
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </li>
+                }
+            </ul>
+            @if (rows.Count > 200) { <p class="rrc-muted">Showing 200 of @rows.Count.</p> }
+        }
+    }
+</section>
+
+@code {
+    /// <summary>The project scope (Target Environment profile id). When null, the active profile is used.</summary>
+    [Parameter] public string? Scope { get; set; }
+
+    private RequirementCoverageView? _view;
+    private string? _error;
+    private bool _loading = true;
+    private RequirementCoverageState? _filter;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var api = Services.GetService<ITestPlanSuggestionsApiService>();
+        var scope = Scope;
+        if (scope is null && Services.GetService<IFrontendAnalysisContextFactory>() is { } contexts)
+            try { scope = (await contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id; } catch (InvalidOperationException) { }
+        if (api is null) _error = "Reviewed requirement coverage is not available in this host.";
+        else if (string.IsNullOrWhiteSpace(scope)) _error = "Unknown: select a project (Target Environment) to see reviewed requirement coverage.";
+        else (_view, _error) = await api.RequirementCoverageAsync(scope);
+        _loading = false;
+    }
+
+    private RenderFragment CountButton(RequirementCoverageState state, int count, string label, string id) =>
+        @<button type="button" class="rrc-count rrc-tone-@C.StateTone(state) @(_filter == state ? "is-on" : null)" aria-pressed="@(_filter == state ? "true" : "false")" @onclick="() => Toggle(state)" data-testid="@($"rrc-count-{id}")"><strong>@count</strong> @label</button>;
+
+    private static string WithoutRequirement(RequirementCoverageView v) =>
+        v.ScenariosWithoutRequirement.Count > 0 ? $"{v.ScenariosWithoutRequirement.Count} guide scenario(s) have no requirement association." : "";
+
+    private static string ScenarioHref(RequirementScenarioAssociation a) => a.DraftId is { } d ? $"test-plan-suggestions?area=review&draft={d}" : "test-plan-suggestions";
+
+    private static string Decided(RequirementScenarioAssociation a) =>
+        a.Reviewer is { } who && a.Trust != AssociationTrust.SuggestedAssociation ? $" · {who}, {a.DecidedAt?.ToLocalTime():yyyy-MM-dd}" : "";
+
+    private void Toggle(RequirementCoverageState state) => _filter = _filter == state ? null : state;
+
+    private List<RequirementCoverageRow> Rows(RequirementCoverageView v) => _filter is { } f
+        ? [.. v.Rows.Where(r => r.State == f)]
+        : [.. v.Rows.Where(r => r.State != RequirementCoverageState.NoDocumentedScenarioCoverage || r.Associations.Count > 0)];
+}

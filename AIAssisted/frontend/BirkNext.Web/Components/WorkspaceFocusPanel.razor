@@ -104,7 +104,15 @@
         _planLoaded = true;
         if (Services.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService plans) return;
         var (workspace, _) = await plans.SummaryAsync(null);
-        _plan = TestPlanSuggestionsPresentation.Focus(workspace);
+        // MT-7: the same reviewed requirement coverage facts as Requirements Traceability (one read; unknown adds nothing).
+        BirkNext.TestPlanning.RequirementCoverageView? coverage = null;
+        if (Services.GetService(typeof(IFrontendAnalysisContextFactory)) is IFrontendAnalysisContextFactory contexts)
+        {
+            string? scope = null;
+            try { scope = (await contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id; } catch (InvalidOperationException) { }
+            if (!string.IsNullOrWhiteSpace(scope)) (coverage, _) = await plans.RequirementCoverageAsync(scope, rows: false);
+        }
+        _plan = TestPlanSuggestionsPresentation.Focus(workspace, coverage);
     }
 
     protected override void OnParametersSet() => Recompute();

@@ -131,7 +131,28 @@ public static class TestPlanSuggestionsPresentation
     /// Facts and next steps from persisted proposals only (one workspace call): suggestions to review, missing expected results, missing Test Data,
     /// testability blockers, latest snapshot, a pending snapshot or comparison, export. No percentages; nothing is "done" that is not stored.
     /// </summary>
-    public static PlanFocus Focus(TestPlanWorkspace? ws)
+    public static PlanFocus Focus(TestPlanWorkspace? ws, RequirementCoverageView? coverage = null)
+    {
+        var plan = PlanOnly(ws);
+        if (coverage is not { Known: true } c) return plan; // unknown coverage adds no count (no denominator) and no action
+        var facts = plan.Facts.ToList();
+        facts.Add(new("req-reviewed", $"Requirements with reviewed scenario coverage (of {c.Requirements})", c.Reviewed));
+        facts.Add(new("req-needs", "Requirements needing association review", c.NeedsReview));
+        var actions = plan.Actions.ToList();
+        var at = Math.Min(1, actions.Count);
+        if (c.Associations.Any(a => a.InterpretationOutdated))
+            actions.Insert(at, new("req-reinterpret", "Re-run relationship analysis", "A guide scenario changed after the last interpretation; its requirement associations are not verified for the new text.",
+                RequirementCoveragePresentation.RelationshipReviewHref, FocusActionState.CanDoNow, "Ready now", null));
+        if (c.NeedsReview > 0)
+            actions.Insert(at, new("req-associations", "Review requirement/scenario associations", $"{c.NeedsReview} requirement(s) have only suggested scenario associations; nothing is counted until decided.",
+                RequirementCoveragePresentation.RelationshipReviewHref, FocusActionState.CanDoNow, "Ready now", null));
+        if (c.VerifiedNotReviewed > 0)
+            actions.Add(new("req-scenarios", "Review linked scenarios", $"{c.VerifiedNotReviewed} requirement(s) are linked to a scenario no tester has accepted in its current revision.",
+                $"{Route}?area=review", FocusActionState.CanDoNow, "Ready now", null));
+        return new(facts, actions, plan.Latest);
+    }
+
+    private static PlanFocus PlanOnly(TestPlanWorkspace? ws)
     {
         if (ws is null || ws.GuideKey is null) return new([], [], null);
         var draft = ws.Drafts.OrderByDescending(d => d.UpdatedAt).FirstOrDefault();

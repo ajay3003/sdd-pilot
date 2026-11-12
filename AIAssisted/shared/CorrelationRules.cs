@@ -75,7 +75,8 @@ public sealed record CorrelationInput(
     IReadOnlyList<TaskReferenceInput>? Tasks = null,
     IReadOnlyList<LibraryInput>? Libraries = null,
     IReadOnlyList<LibraryUseInput>? LibraryUses = null,
-    IReadOnlyList<WorkItemStructureInput>? Structures = null)
+    IReadOnlyList<WorkItemStructureInput>? Structures = null,
+    IReadOnlyList<GuideScenarioInput>? GuideScenarios = null)
 {
     public static CorrelationInput Empty(string scope) => new(scope, [], [], [], [], [], []);
 }
@@ -145,6 +146,7 @@ public static partial class CorrelationRules
         Libraries(input.Libraries ?? [], input.LibraryUses ?? [], entities, Entity, Relation);
         TaskReferences(input.Tasks ?? [], input.Symbols, entities, Entity, Relation, limitations);
         Tests(input.Tests, entities, Entity, Relation, limitations);
+        GuideScenarios(input.GuideScenarios ?? [], entities, relations, Entity, Relation, limitations);
 
         // A relation whose endpoint was never established is dropped and reported, never pointed at a fabricated entity.
         var dangling = relations.Values.Where(r => !entities.ContainsKey(r.SourceKey) || !entities.ContainsKey(r.TargetKey)).Select(r => r.Key).ToList();

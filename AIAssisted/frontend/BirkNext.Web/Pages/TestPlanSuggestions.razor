@@ -126,6 +126,9 @@
     private Guid? _exportSnapshot;
     private TestPlanExport? _export;
     private string _newSuite = "";
+    // MT-7: scenario → specification requirement associations of the active project (Relationship Review decides them; read-only here).
+    private RequirementCoverageView? _coverage;
+    private string? _coverageNote;
 
     protected override async Task OnInitializedAsync()
     {
@@ -133,6 +136,7 @@
         if (_api is null) { _error = "Test Plan Suggestions is not available in this host."; _loading = false; return; }
         _area = P.AreaOrDefault(AreaQuery);
         await LoadAsync(GuideQuery);
+        await LoadCoverageAsync();
         foreach (var id in P.ParseScenarios(ScenariosQuery).Where(id => _ws?.Candidates.Any(c => c.Source.ScenarioId == id) == true)) _selected.Add(id);
         if (_selected.Count > 0)
         {
@@ -145,6 +149,42 @@
         _deliveryLabel = _draft?.DeliveryLabel ?? "";
         _loading = false;
     }
+
+    private async Task LoadCoverageAsync()
+    {
+        string? scope = null;
+        if (ServiceProvider.GetService(typeof(IFrontendAnalysisContextFactory)) is IFrontendAnalysisContextFactory contexts)
+            try { scope = (await contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id; } catch (InvalidOperationException) { }
+        if (string.IsNullOrWhiteSpace(scope)) { _coverageNote = "Unknown: no project (Target Environment) is selected, so no requirement association can be read."; return; }
+        var (coverage, error) = await _api!.RequirementCoverageAsync(scope, rows: false);
+        _coverage = coverage;
+        _coverageNote = coverage is null ? error : coverage.Known ? null : $"Unknown: {coverage.UnknownReason}";
+    }
+
+    private RenderFragment SpecificationRequirements(TestCaseDraft c) => __builder =>
+    {
+        var (verified, suggested, rejected) = RequirementCoveragePresentation.ForScenario(_coverage, c.Source.Owner, c.Source.ScenarioId);
+        <dt>Specification requirements</dt>
+        <dd class="tps-spec" data-testid="tps-spec-requirements">
+            @if (_coverageNote is not null) { <span class="tps-muted" data-testid="tps-spec-unknown">@_coverageNote</span> }
+            else if (verified.Count + suggested.Count + rejected.Count == 0) { <span class="tps-muted" data-testid="tps-spec-none">No association to a specification requirement: the guide names none and no named test verifies one.</span> }
+            else
+            {
+                @if (verified.Count > 0)
+                {
+                    <ul class="tps-plain" data-testid="tps-spec-verified">@foreach (var a in verified) { <li><strong>@RequirementCoveragePresentation.Requirement(a)</strong> <span class="tps-tone tps-tone-info">@RequirementCoveragePresentation.TrustLabel(a.Trust)</span>@(a.Reviewer is { } who ? $" · {who}, {a.DecidedAt?.ToLocalTime():yyyy-MM-dd}" : "")</li> }</ul>
+                }
+                @if (suggested.Count > 0)
+                {
+                    <p class="tps-k tps-small">Suggested — not verified, not counted</p>
+                    <ul class="tps-plain" data-testid="tps-spec-suggested">@foreach (var a in suggested) { <li>@RequirementCoveragePresentation.Requirement(a) <span class="tps-tone tps-tone-warn">@RequirementCoveragePresentation.RuleLabel(a.RuleId)</span></li> }</ul>
+                    <a href="@RequirementCoveragePresentation.RelationshipReviewHref" data-testid="tps-spec-decide">Decide these associations in Relationship Review</a>
+                }
+                @if (rejected.Count > 0) { <p class="tps-muted tps-small" data-testid="tps-spec-rejected">Rejected in Relationship Review: @string.Join(", ", rejected.Select(RequirementCoveragePresentation.Requirement))</p> }
+                <p class="tps-muted tps-small">Accepting this Test Case for preparation does not approve any requirement association.</p>
+            }
+        </dd>
+    };
 
     private string DefaultPlanName() => $"{_ws?.Guides.FirstOrDefault(g => g.GuideKey == _ws.GuideKey)?.Title ?? "System"} – Funksjonell testing";
 
@@ -463,8 +503,9 @@
                             <div class="tps-case-body">
                                 <dl class="tps-dl">
                                     <dt>Purpose</dt><dd>@c.Generated.Purpose</dd>
-                                    @if (c.Generated.Requirements.Count > 0) { <dt>Requirements</dt><dd><ul class="tps-plain">@foreach (var r in c.Generated.Requirements) { <li><strong>@r.Title</strong>@(r.ExpectedBehavior is { } eb ? $": {eb}" : "") <span class="tps-muted">(@r.RuleId)</span></li> }</ul></dd> }
-                                    else { <dt>Requirements</dt><dd class="tps-bad">No business rule in the guide names this scenario.</dd> }
+                                    @if (c.Generated.Requirements.Count > 0) { <dt>Business rules (guide)</dt><dd><ul class="tps-plain">@foreach (var r in c.Generated.Requirements) { <li><strong>@r.Title</strong>@(r.ExpectedBehavior is { } eb ? $": {eb}" : "") <span class="tps-muted">(@r.RuleId)</span></li> }</ul></dd> }
+                                    else { <dt>Business rules (guide)</dt><dd class="tps-bad">No business rule in the guide names this scenario.</dd> }
+                                    @SpecificationRequirements(c)
                                     @if (c.Generated.FailureCases.Count > 0) { <dt>Failure cases</dt><dd>@string.Join(" · ", c.Generated.FailureCases)</dd> }
                                     @if (c.Generated.NamedExistingTests.Count > 0) { <dt>Tests the guide names</dt><dd>@string.Join(" · ", c.Generated.NamedExistingTests) <span class="tps-muted">(names, not verified identities)</span></dd> }
                                     <dt>Source</dt><dd class="tps-small">@c.Source.Owner · @sid · guide revision @c.Source.Revision · <code>@(c.Source.Fingerprint?[..Math.Min(12, c.Source.Fingerprint.Length)])</code></dd>

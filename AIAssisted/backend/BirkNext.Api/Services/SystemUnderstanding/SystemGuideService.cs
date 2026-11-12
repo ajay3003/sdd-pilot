@@ -131,10 +131,29 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
         return (ToRevision(published ?? open ?? rows.Last()), ReviewState(published, open));
     }
 
+    /// <summary>
+    /// The guides whose source roles recognise at least one of <paramref name="snapshots"/> (by components/projects, as for the guide's current
+    /// sources), each with the revision readers see. Used by the canonical interpretation (MT-7): a guide is read only for the system the interpreted
+    /// sources belong to, so an interpretation of another system never carries its scenarios.
+    /// </summary>
+    public async Task<IReadOnlyList<SystemGuideRevision>> RecognisedGuidesAsync(IReadOnlyList<IqrSourceSnapshot> snapshots, CancellationToken ct)
+    {
+        var result = new List<SystemGuideRevision>();
+        if (snapshots.Count == 0) return result;
+        foreach (var entry in catalog)
+        {
+            var (shown, _) = await ShownAsync(entry.GuideKey, ct);
+            if (Roles(entry, shown.Content).Any(role => snapshots.Any(s => TestPackSources.Recognizes(role, s)))) result.Add(shown);
+        }
+        return result;
+    }
+
     /// <summary>The catalog's guide keys (no database or source reads).</summary>
     public IReadOnlyList<string> GuideKeys => [.. catalog.Select(e => e.GuideKey)];
 
-    public async Task<SystemGuideView> GetAsync(string guideKey, bool canEdit, CancellationToken ct)
+    /// <param name="snapshots">The stored Source Analysis snapshots when the caller already loaded them in this request (one deserialization of
+    /// every snapshot's evidence instead of several); null reads them here, once.</param>
+    public async Task<SystemGuideView> GetAsync(string guideKey, bool canEdit, CancellationToken ct, IReadOnlyList<IqrSourceSnapshot>? snapshots = null)
     {
         var entry = Entry(guideKey);
         await EnsureSeededAsync(entry, ct);
@@ -144,14 +163,15 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
             .OrderByDescending(r => r.Revision).FirstOrDefault();
         var shownRow = published ?? open ?? rows.Last();
         var shown = ToRevision(shownRow);
-        var current = await CurrentSourcesAsync(entry, shown.Content, ct);
+        snapshots ??= await new Integrations.SourceEvidence.IqrSourceStore(db).ListSourceAnalysisIdentitiesAsync(500, ct);
+        var current = await CurrentSourcesAsync(entry, shown.Content, ct, snapshots);
         return new SystemGuideView
         {
             GuideKey = guideKey, Title = shown.Content.Title, Purpose = shown.Content.Purpose, Shown = shown, Draft = open is null ? null : ToRevision(open),
             Revisions = [.. rows.OrderByDescending(r => r.Revision).Select(r => new SystemGuideRevisionSummary(r.Revision, Parse(r.State), r.ContentFingerprint, r.CreatedBy, r.CreatedAt,
                 r.ApprovedBy, r.ApprovedAt, r.PublishedAt, r.ChangeSummary))],
             ReviewState = ReviewState(published, open),
-            SourceChanges = SourceChanges(shown, current, (await new Integrations.SourceEvidence.IqrSourceStore(db).ListSourceAnalysisAsync(500, ct)).Select(s => s.Id).ToHashSet()),
+            SourceChanges = SourceChanges(shown, current, snapshots.Select(s => s.Id).ToHashSet()),
             CurrentSources = current, CanEdit = canEdit, CanApprove = canEdit,
         };
     }
@@ -190,7 +210,8 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
     /// The imported snapshots recognised as each of the guide's source roles (by components/projects, never by archive name) — identity only.
     /// Several snapshots for one role stay separate entries: nothing picks the newest one as "the" source.
     /// </summary>
-    public async Task<List<GuideSourceBasis>> CurrentSourcesAsync(SystemGuideCatalogEntry entry, SystemGuideContent content, CancellationToken ct)
+    public async Task<List<GuideSourceBasis>> CurrentSourcesAsync(SystemGuideCatalogEntry entry, SystemGuideContent content, CancellationToken ct,
+        IReadOnlyList<IqrSourceSnapshot>? loaded = null)
     {
         var roles = Roles(entry, content);
         if (roles.Count == 0) return [];
@@ -198,7 +219,7 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
         // Only the snapshot each logical source is analysed with (its analysis baseline, else its only content): alternative branch snapshots of the
         // same source are never all cited as the guide's basis, and none is cited while BASELINE_NOT_SELECTED. Switching the baseline changes the
         // basis, so affected claims show as source changes.
-        var all = await new Integrations.SourceEvidence.IqrSourceStore(db).ListSourceAnalysisAsync(500, ct);
+        var all = loaded ?? await new Integrations.SourceEvidence.IqrSourceStore(db).ListSourceAnalysisIdentitiesAsync(500, ct);
         var snapshots = SourceAnalysis.SourceBaselineService.Resolve(all, await SourceAnalysis.SourceBaselineService.CurrentBaselinesAsync(db, ct)).OrderBy(s => s.AnalyzedAt).ToList();
         var resolvedKeys = snapshots.Select(SourceAnalysis.SourceBaselineService.KeyOf).ToHashSet(StringComparer.Ordinal);
         var unresolved = all.Where(s => !resolvedKeys.Contains(SourceAnalysis.SourceBaselineService.KeyOf(s))).ToList();
