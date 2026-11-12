@@ -50,7 +50,7 @@
                 }
             </ol>
         }
-        @if (f.View.View == WorkspaceView.ManualTesting && _plan is { } plan && (plan.Facts.Count > 0 || plan.Actions.Count > 0))
+        @if (ShowsTestPreparation(f.View.View) && _plan is { } plan && (plan.Facts.Count > 0 || plan.Actions.Count > 0))
         {
             @* Test Plan proposals (persisted drafts and snapshots only): the same facts on Dashboard and Recommended Workflow. *@
             <div class="wfp-plan" data-testid="wfp-test-plan">
@@ -100,7 +100,7 @@
     /// <summary>Test Plan proposals are read once, and only while the Manual Testing view is selected (one call; nothing per card).</summary>
     private async Task LoadPlanAsync()
     {
-        if (_planLoaded || _focus?.View.View != WorkspaceView.ManualTesting) return;
+        if (_planLoaded || _focus is null || !ShowsTestPreparation(_focus.View.View)) return;
         _planLoaded = true;
         if (Services.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService plans) return;
         var (workspace, _) = await plans.SummaryAsync(null);
@@ -114,6 +114,9 @@
         }
         _plan = TestPlanSuggestionsPresentation.Focus(workspace, coverage);
     }
+
+    /// <summary>Views whose workflow includes functional test preparation (Manual Tester; Test Lead oversees it alongside technical testing).</summary>
+    private static bool ShowsTestPreparation(WorkspaceView view) => view is WorkspaceView.ManualTesting or WorkspaceView.TestLead;
 
     protected override void OnParametersSet() => Recompute();
 

@@ -39,7 +39,7 @@ public sealed class ManualTestingViewTests : BunitContext
     [Fact]
     public void The_view_is_built_in_and_orders_existing_modules_as_the_testing_workflow()
     {
-        WorkspaceViews.All.Should().Contain(v => v.View == WorkspaceView.ManualTesting && v.Label == "Manual Testing");
+        WorkspaceViews.All.Should().Contain(v => v.View == WorkspaceView.ManualTesting && v.Label == "Manual Tester");
         var ordered = WorkspaceViews.Ordered(WorkspaceView.ManualTesting);
         ordered.Take(Expected.Length).Select(s => (s.Label, s.Items.Select(i => i.Route).ToArray()))
             .Should().BeEquivalentTo(Expected, o => o.WithStrictOrdering());
@@ -79,7 +79,7 @@ public sealed class ManualTestingViewTests : BunitContext
         cut.FindAll("[data-testid^=nav-section-]").Take(6).Select(b => b.TextContent.Trim()).Should().Equal(Expected.Select(e => e.Group));
         cut.Find("[data-testid=nav-section-manual-prepare] + .nav-group").QuerySelectorAll("a").Select(a => a.GetAttribute("href"))
             .Should().Equal("test-plan-suggestions", "test-data");
-        cut.Find("[data-testid=nav-workspace-view-help]").TextContent.Should().Contain("prepare scenarios and test data");
+        cut.Find("[data-testid=nav-workspace-view-help]").TextContent.Should().Contain("prepare functional tests and test data");
         Services.GetRequiredService<NavigationManager>().ToBaseRelativePath(Services.GetRequiredService<NavigationManager>().Uri).Should().Be("source-analysis",
             "switching the view never navigates");
         cut.Find("a[href='source-analysis']").GetAttribute("aria-current").Should().Be("page", "the open technical page keeps its row");

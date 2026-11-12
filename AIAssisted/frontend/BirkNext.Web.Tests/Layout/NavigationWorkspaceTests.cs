@@ -68,6 +68,8 @@ public sealed class NavigationWorkspaceTests : BunitContext
     [InlineData(WorkspaceView.TestLead)]
     [InlineData(WorkspaceView.Developer)]
     [InlineData(WorkspaceView.Architect)]
+    [InlineData(WorkspaceView.ManualTesting)]
+    [InlineData(WorkspaceView.TechnicalTester)]
     public void EveryVisibleModule_IsReachableInEveryView_ByShowOtherModulesAndBySearch(WorkspaceView view)
     {
         State.SetView(view);
@@ -78,7 +80,8 @@ public sealed class NavigationWorkspaceTests : BunitContext
         foreach (var section in NavigationCatalog.Sections)
         foreach (var item in section.Items.Where(i => i.Visible(features)))
         {
-            cut.FindAll($"#nav-section-{section.Id} a[href='{item.Route}']").Should().ContainSingle($"{item.Label} stays in the {section.Label} group in {view}");
+            // Focused views put their modules in workflow groups and keep the rest in the catalog groups: every visible module is one row somewhere.
+            cut.FindAll($"[id^='nav-section-'] a[href='{item.Route}']").Should().ContainSingle($"{item.Label} stays reachable exactly once in {view}");
             NavigationModules.Search(item.Label, features, State).Should().Contain(r => r.Item.Route == item.Route && r.Bucket != NavSearchBucket.Disabled);
         }
     }
@@ -89,6 +92,8 @@ public sealed class NavigationWorkspaceTests : BunitContext
     [InlineData(WorkspaceView.TestLead)]
     [InlineData(WorkspaceView.Developer)]
     [InlineData(WorkspaceView.Architect)]
+    [InlineData(WorkspaceView.ManualTesting)]
+    [InlineData(WorkspaceView.TechnicalTester)]
     public void EveryPreset_NamesRealModules_AndRealGroups(WorkspaceView view)
     {
         var definition = WorkspaceViews.Of(view);
@@ -101,7 +106,10 @@ public sealed class NavigationWorkspaceTests : BunitContext
     }
 
     [Theory]
-    [InlineData(WorkspaceView.TestLead, new[] { "artifact-traceability", "test-data", "api-quality-review", "integration-quality-review", "performance-test-review", "critical-e2e-regression", "release-readiness", "delivery-overview" })]
+    [InlineData(WorkspaceView.TestLead, new[] { "artifact-traceability", "test-data", "test-plan-suggestions", "system-understanding", "specification-explorer", "test-coverage-review", "api-quality-review", "api-quality-review/contracts", "integration-quality-review", "performance-test-review", "critical-e2e-regression", "execution-results", "release-readiness" })]
+    [InlineData(WorkspaceView.TechnicalTester, new[] { "api-quality-review/contracts", "api-quality-review", "integration-suites", "execution-results", "critical-e2e-regression", "integration-quality-review", "test-data", "test-coverage-review", "performance-test-review", "integration-topology", "getting-started" })]
+    [InlineData(WorkspaceView.ManualTesting, new[] { "system-understanding", "specification-explorer", "quality/document", "test-plan-suggestions", "test-data", "artifact-traceability", "test-coverage-review", "getting-started" })]
+    [InlineData(WorkspaceView.ScrumMaster, new[] { "delivery-reporting", "delivery-overview", "task-alignment", "getting-started", "release-readiness" })]
     [InlineData(WorkspaceView.ProjectLeader, new[] { "dashboard", "delivery-overview", "delivery-reporting", "getting-started", "release-readiness", "snapshots", "correlation-review" })]
     [InlineData(WorkspaceView.Developer, new[] { "source-analysis", "specification-explorer", "schema-studio", "api-quality-review", "technology-coverage", "dependency-review", "pipeline-review" })]
     [InlineData(WorkspaceView.Architect, new[] { "source-analysis", "integration-topology", "integration-quality-review", "schema-studio", "data-model-explorer" })]
@@ -113,13 +121,71 @@ public sealed class NavigationWorkspaceTests : BunitContext
     }
 
     [Fact]
+    public void Eight_built_in_views_in_selector_order_with_stable_ids_and_audience_labels()
+    {
+        WorkspaceViews.All.Select(v => (v.View, v.Label)).Should().Equal(
+            (WorkspaceView.AllModules, "All Modules"), (WorkspaceView.ProjectLeader, "Project Manager"), (WorkspaceView.ScrumMaster, "Scrum Master"),
+            (WorkspaceView.TestLead, "Test Lead"), (WorkspaceView.ManualTesting, "Manual Tester"), (WorkspaceView.TechnicalTester, "Technical Tester"),
+            (WorkspaceView.Developer, "Developer"), (WorkspaceView.Architect, "Architect"));
+        // Stable stored ids: numbers and names of the existing views never change.
+        ((int)WorkspaceView.ProjectLeader, (int)WorkspaceView.ManualTesting, (int)WorkspaceView.TechnicalTester).Should().Be((1, 6, 7));
+        WorkspaceViews.Of(WorkspaceView.TechnicalTester).Description.Should().Be("Verify APIs, contracts, integrations, E2E flows and performance.");
+        WorkspaceViews.Of(WorkspaceView.ManualTesting).Description.Should().Be("Review requirements, prepare functional tests and test data.");
+        WorkspaceViews.Of((WorkspaceView)99).View.Should().Be(WorkspaceView.AllModules, "an unknown view falls back to All Modules");
+    }
+
+    [Fact]
+    public void Specialized_views_are_distinct_and_reduce_navigation()
+    {
+        var all = NavigationCatalog.Sections.SelectMany(s => s.Items).Count();
+        HashSet<string> Of(WorkspaceView v) => [.. WorkspaceViews.Of(v).Modules];
+        foreach (var view in WorkspaceViews.All.Where(v => !v.IsAllModules))
+            view.Modules.Count.Should().BeLessThan(all / 2, $"{view.Label} narrows the sidebar");
+        var (tech, dev, manual, lead) = (Of(WorkspaceView.TechnicalTester), Of(WorkspaceView.Developer), Of(WorkspaceView.ManualTesting), Of(WorkspaceView.TestLead));
+        tech.SetEquals(dev).Should().BeFalse(); tech.SetEquals(manual).Should().BeFalse();
+        tech.Should().Contain(["integration-suites", "critical-e2e-regression", "execution-results"]).And.NotContain(["plan-explorer", "task-alignment", "pipeline-review"]);
+        dev.Should().Contain(["pipeline-review", "task-explorer", "source-analysis"]).And.NotContain(["integration-suites", "critical-e2e-regression", "test-plan-suggestions"]);
+        manual.Should().NotContain(["source-analysis", "api-quality-review", "pipeline-review", "code-risk-review"], "no developer diagnostics as manual tasks");
+        lead.Should().Contain(["test-plan-suggestions", "test-data"], "Test Lead covers functional preparation")
+            .And.Contain(["critical-e2e-regression", "execution-results", "api-quality-review"], "and technical verification");
+        Of(WorkspaceView.ProjectLeader).Should().NotContain(["source-analysis", "integration-suites", "api-quality-review"], "no low-level runners for the project manager");
+        Of(WorkspaceView.ScrumMaster).SetEquals(Of(WorkspaceView.ProjectLeader)).Should().BeFalse();
+        Of(WorkspaceView.Architect).SetEquals(dev).Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_saved_preference_keeps_its_view_after_the_label_changes_and_Technical_Tester_round_trips()
+    {
+        var state = new NavigationSectionState();
+        state.Restore("""{"View":1,"Choices":{"ProjectLeader":{"pm-status":true}}}""");
+        state.View.Should().Be(WorkspaceView.ProjectLeader, "the stored id is the number/name, never the label");
+        state.SetView(WorkspaceView.TechnicalTester);
+        var copy = new NavigationSectionState(); copy.Restore(state.Serialize());
+        copy.View.Should().Be(WorkspaceView.TechnicalTester);
+        var invalid = new NavigationSectionState(); invalid.Restore("""{"View":42,"Choices":{}}""");
+        invalid.View.Should().Be(WorkspaceView.AllModules, "an invalid saved view fails safely to the default");
+    }
+
+    [Fact]
+    public void The_baseline_risk_has_one_identity_in_every_view_and_audience_wording()
+    {
+        var context = new BirkNext.SourceBaselines.SourceContextView([new("m2lb", "M2LB", "Archive", BirkNext.SourceBaselines.SourceBaselineState.NotSelected, null, null, "x", 2, 2, [], "BASELINE_NOT_SELECTED", null)], 1, 2, 1, "fp");
+        var risks = WorkspaceViews.All.Select(v => WorkspaceFocus.Risks(context, v.View).Single()).ToList();
+        risks.Select(r => (r.Code, r.Route)).Distinct().Should().ContainSingle("same issue, same destination in every view");
+        WorkspaceFocus.Risks(context, WorkspaceView.ManualTesting).Single().Text.Should().StartWith("Select the correct project version before preparing tests.");
+        WorkspaceFocus.Risks(context, WorkspaceView.TechnicalTester).Single().Text.Should().StartWith("Confirm the source and environment baseline");
+        WorkspaceFocus.Risks(context, WorkspaceView.TestLead).Single().Text.Should().StartWith("Resolve the baseline ambiguity");
+        WorkspaceFocus.Risks(context, WorkspaceView.Architect).Single().Text.Should().StartWith("Verify the authoritative");
+    }
+
+    [Fact]
     public void FocusedView_PutsItsGroupsFirst_ShowsItsModules_AndRevealsTheRestOnRequest()
     {
         State.SetView(WorkspaceView.TestLead);
         var cut = Render<NavMenu>();
 
         cut.FindAll("button.nav-section").Select(b => b.GetAttribute("data-testid")).Take(3).Should().Equal(
-            "nav-section-quality-testing", "nav-section-traceability", "nav-section-delivery-reporting");
+            "nav-section-tl-overview", "nav-section-tl-understand", "nav-section-tl-prepare");
         cut.FindAll("[data-testid=nav-more-modules]").Should().BeEmpty("no More modules heading");
         cut.FindAll("a[href='api-quality-review']").Should().ContainSingle();
         cut.FindAll("a[href='source-analysis']").Should().BeEmpty("outside the Test Lead view: hidden from the sidebar, not removed");
@@ -282,7 +348,7 @@ public sealed class NavigationWorkspaceTests : BunitContext
         Services.GetRequiredService<NavigationManager>().NavigateTo("schema-studio");
         var cut = Render<WorkspaceScopeNotice>(p => p.Add(x => x.Sections, State));
 
-        cut.Find("[data-testid=nav-outside-view]").TextContent.Should().Contain("Current module is outside your selected workspace view (Project Leader).");
+        cut.Find("[data-testid=nav-outside-view]").TextContent.Should().Contain("Current module is outside your selected workspace view (Project Manager).");
         cut.Find("[data-testid=nav-outside-add]").Click();
         State.IsAdded("schema-studio").Should().BeTrue();
         cut.FindAll("[data-testid=nav-outside-view]").Should().BeEmpty();

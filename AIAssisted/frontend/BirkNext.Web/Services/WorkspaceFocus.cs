@@ -36,18 +36,31 @@ public static class WorkspaceFocus
             .ThenBy(a => Order(relevant.First(c => c.Id == a.Id), definition))
             .Take(3).ToList();
         return new(definition, primary, relevant.Count, actions.Count(a => a.State == FocusActionState.CanDoNow), actions.Count(a => a.State == FocusActionState.Blocked),
-            actions.Count(a => a.State == FocusActionState.Completed), Risks(sourceContext));
+            actions.Count(a => a.State == FocusActionState.Completed), Risks(sourceContext, view));
     }
 
     /// <summary>The risks every view shows, from the shared source context: a source whose analysed version is not chosen or no longer exists.</summary>
-    public static IReadOnlyList<FocusRisk> Risks(SourceContextView? sourceContext) =>
+    /// <remarks>Same risk identity (code), severity and destination in every view; only the leading sentence speaks to the view's audience.</remarks>
+    public static IReadOnlyList<FocusRisk> Risks(SourceContextView? sourceContext, WorkspaceView view = WorkspaceView.AllModules) =>
     [
         .. (sourceContext?.Sources ?? []).Where(s => s.State == SourceBaselineState.NotSelected).Select(s => new FocusRisk(BaselineNotSelected,
-            $"Choose which {s.DisplayName} version to analyse: {s.DistinctContents} different versions are imported and none is selected, so no implementation-specific result is drawn from {s.DisplayName} yet.",
+            $"{AudienceLead(view)}Choose which {s.DisplayName} version to analyse: {s.DistinctContents} different versions are imported and none is selected, so no implementation-specific result is drawn from {s.DisplayName} yet.",
             "sources#scp-title", "Choose the version")),
         .. (sourceContext?.Sources ?? []).Where(s => s.State == SourceBaselineState.SelectedUnavailable).Select(s => new FocusRisk(BaselineUnavailable,
             $"The chosen {s.DisplayName} version is no longer available; {s.DisplayName} is left out until another version is chosen.", "sources#scp-title", "Choose the version")),
     ];
+
+    /// <summary>Why the baseline risk matters to the selected audience (wording only; the risk and its severity are the same in every view).</summary>
+    public static string AudienceLead(WorkspaceView view) => view switch
+    {
+        WorkspaceView.ManualTesting => "Select the correct project version before preparing tests. ",
+        WorkspaceView.TechnicalTester => "Confirm the source and environment baseline before integration verification. ",
+        WorkspaceView.TestLead => "Resolve the baseline ambiguity before approving test readiness. ",
+        WorkspaceView.Architect => "Verify the authoritative application/component version mapping. ",
+        WorkspaceView.Developer => "Pick the source version your change is reviewed against. ",
+        WorkspaceView.ProjectLeader or WorkspaceView.ScrumMaster => "Release and delivery status depend on the chosen project version. ",
+        _ => "",
+    };
 
     /// <summary>A capability belongs to the view when the view holds the sidebar module of its route (All Modules: every capability).</summary>
     public static bool InView(WorkspaceViewDefinition view, string route)

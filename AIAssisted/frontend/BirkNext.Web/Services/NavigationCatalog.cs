@@ -370,7 +370,7 @@ public static class NavStatusPresentation
 /// add one to the view, and their URLs always open. Feature Visibility alone decides which modules exist. Independent of the selected
 /// project in both directions. Stored as numbers: 4 was "Technical Reviewer" and is now Developer (same source-first focus).
 /// </summary>
-public enum WorkspaceView { AllModules = 0, ProjectLeader = 1, ScrumMaster = 2, TestLead = 3, Developer = 4, Architect = 5, ManualTesting = 6 }
+public enum WorkspaceView { AllModules = 0, ProjectLeader = 1, ScrumMaster = 2, TestLead = 3, Developer = 4, Architect = 5, ManualTesting = 6, TechnicalTester = 7 }
 
 /// <summary>A group of a view that orders its modules by workflow rather than by catalog group (e.g. Manual Testing: set up → understand →
 /// requirements → prepare → coverage → follow up). Routes name existing catalog rows (labels and visibility rules stay the catalog's) or one of
@@ -399,29 +399,69 @@ public static class WorkspaceViews
     /// <summary>Rows every view keeps: the project overview, help and settings.</summary>
     public static IReadOnlyList<string> EveryView { get; } = ["dashboard", "user-guide", "admin/system-settings"];
 
+    /// <summary>
+    /// The eight built-in views, in selector order. Every view is a navigation and presentation preference over the same modules and the same facts:
+    /// never a permission, a feature switch, a project or a source baseline. Ids (<see cref="WorkspaceView"/>, stored by name) are stable; labels may
+    /// change ("Project Leader" is shown as Project Manager, "Manual Testing" as Manual Tester) without touching saved preferences. Membership and
+    /// rationale per module: docs/audits/birknext-workspace-views-capability-matrix.md.
+    /// </summary>
     public static IReadOnlyList<WorkspaceViewDefinition> All { get; } =
     [
-        new(WorkspaceView.AllModules, "All Modules", "Every module, in catalog order.", "dashboard", [], []),
-        new(WorkspaceView.ProjectLeader, "Project Leader", "Delivery status, release decision, snapshots and shared review decisions.", NavigationCatalog.DeliveryOverviewRoute,
-            ["delivery-reporting", "getting-started", "traceability"],
-            [NavigationCatalog.DeliveryOverviewRoute, "delivery-reporting", "getting-started", "release-readiness", "snapshots", "correlation-review", "artifact-traceability"]),
-        new(WorkspaceView.ScrumMaster, "Scrum Master", "Weekly delivery progress, plans, tasks and their alignment.", "delivery-reporting",
-            ["delivery-reporting", "document-review", "getting-started", "traceability"],
-            ["delivery-reporting", NavigationCatalog.DeliveryOverviewRoute, "getting-started", "specification-explorer", "plan-explorer", "task-explorer", "task-alignment",
-             "implementation-traceability"]),
-        new(WorkspaceView.TestLead, "Test Lead", "Requirement coverage, test data, runtime reviews and the release decision.", "test-coverage-review",
-            ["quality-testing", "traceability", "delivery-reporting", "getting-started"],
-            ["artifact-traceability", "release-readiness", NavigationCatalog.DeliveryOverviewRoute, "test-coverage-review", "test-data", "frontend-quality-review",
-             "api-quality-review", "integration-quality-review", "performance-test-review", "critical-e2e-regression", NavigationCatalog.TargetEnvironmentsRoute]),
-        new(WorkspaceView.Developer, "Developer", "Source, specifications, schemas, APIs, dependencies and pipelines.", "source-analysis",
-            ["source-review", "document-review", "quality-testing", "getting-started"],
-            ["source-analysis", "specification-explorer", "schema-studio", "api-quality-review", "technology-coverage", "dependency-review", "pipeline-review",
-             "code-risk-review", "sources", "project-import"]),
-        new(WorkspaceView.Architect, "Architect", "Source structure, integrations, schemas, data models and environment architecture.", "integration-topology",
-            ["source-review", "quality-testing", "document-review", "getting-started"],
-            ["source-analysis", "integration-topology", "integration-quality-review", "schema-studio", "data-model-explorer", "constitution-explorer", "sources",
-             "technology-coverage", NavigationCatalog.GeneratedDocumentationExplorerRoute, "azure-environment"]),
+        new(WorkspaceView.AllModules, "All Modules", "Browse every available module.", "dashboard", [], []),
+        Groups(WorkspaceView.ProjectLeader, "Project Manager", "Monitor project health, risks and delivery readiness.", "dashboard",
+        [
+            new("pm-status", "Status & next steps", "nav-icon-dashboard", ["dashboard", "getting-started"]),
+            new("pm-delivery", "Delivery", "nav-icon-workflow", [NavigationCatalog.DeliveryOverviewRoute, "delivery-reporting"]),
+            new("pm-release", "Release decision", "nav-icon-traceability", ["release-readiness", "snapshots", "correlation-review"]),
+            new("pm-context", "Scope & context", "nav-icon-system-understanding", ["system-understanding", "artifact-traceability", "sources", NavigationCatalog.TargetEnvironmentsRoute]),
+            new("pm-help", "Help", "nav-icon-user-guide", ["user-guide"]),
+        ]),
+        Groups(WorkspaceView.ScrumMaster, "Scrum Master", "Track delivery progress, impediments and follow-up.", "delivery-reporting",
+        [
+            new("sm-progress", "Delivery progress", "nav-icon-workflow", ["delivery-reporting", NavigationCatalog.DeliveryOverviewRoute]),
+            new("sm-work", "Plans & tasks", "nav-icon-task-explorer", ["specification-explorer", "plan-explorer", "task-explorer", "task-alignment", "implementation-traceability"]),
+            new("sm-follow-up", "Impediments & follow-up", "nav-icon-dashboard", ["getting-started", "dashboard", "release-readiness"]),
+            new("sm-help", "Help", "nav-icon-user-guide", ["user-guide"]),
+        ]),
+        Groups(WorkspaceView.TestLead, "Test Lead", "Oversee test coverage, readiness, execution evidence and risk.", "dashboard",
+        [
+            new("tl-overview", "Readiness & follow-up", "nav-icon-dashboard", ["dashboard", "getting-started", "release-readiness"]),
+            new("tl-understand", "System & requirements", "nav-icon-system-understanding", ["system-understanding", "specification-explorer", "quality/document"]),
+            new("tl-prepare", "Functional test preparation", "nav-icon-workflow", ["test-plan-suggestions", "test-data"]),
+            new("tl-coverage", "Coverage & traceability", "nav-icon-artifact-traceability", ["artifact-traceability", "test-coverage-review", "correlation-review"]),
+            new("tl-execution", "Execution & regression", "nav-icon-task-alignment", ["critical-e2e-regression", "execution-results", "integration-suites"]),
+            new("tl-technical", "Technical quality", "nav-icon-constitution-compliance",
+                ["api-quality-review/contracts", "api-quality-review", "integration-quality-review", "performance-test-review", "frontend-quality-review"]),
+            new("tl-environment", "Environments", "nav-icon-target", [NavigationCatalog.TargetEnvironmentsRoute]),
+        ]),
         CreateManualTesting(),
+        Groups(WorkspaceView.TechnicalTester, "Technical Tester", "Verify APIs, contracts, integrations, E2E flows and performance.", "dashboard",
+        [
+            new("tt-context", "Project context", "nav-icon-import", ["sources", "system-understanding"]),
+            new("tt-contracts", "Contracts & APIs", "nav-icon-task-alignment", ["api-quality-review/contracts", "api-quality-review", "schema-studio"]),
+            new("tt-integration", "Integration & E2E", "nav-icon-source-analysis", ["integration-suites", "critical-e2e-regression", "integration-quality-review", "integration-topology"]),
+            new("tt-data", "Test data & execution", "nav-icon-task-alignment", ["test-data", "execution-results", "parquet-viewer"]),
+            new("tt-risk", "Performance & risk", "nav-icon-constitution-compliance", ["performance-test-review", "test-coverage-review", "code-risk-review"]),
+            new("tt-follow-up", "Quality & follow-up", "nav-icon-dashboard", ["dashboard", "getting-started", "artifact-traceability", "user-guide"]),
+        ]),
+        Groups(WorkspaceView.Developer, "Developer", "Review implementation, source changes and code quality.", "source-analysis",
+        [
+            new("dev-source", "Source", "nav-icon-source-analysis", ["sources", "source-analysis", "project-import"]),
+            new("dev-work", "Specifications & tasks", "nav-icon-task-explorer", ["specification-explorer", "task-explorer", "task-alignment", "implementation-traceability"]),
+            new("dev-quality", "Code quality & build", "nav-icon-constitution-compliance", ["code-risk-review", "dependency-review", "pipeline-review", "technology-coverage"]),
+            new("dev-api", "APIs & contracts", "nav-icon-task-alignment", ["api-quality-review", "api-quality-review/contracts", "schema-studio"]),
+            new("dev-impact", "Change impact & tests", "nav-icon-impact-analysis", ["impact-analysis", "execution-results"]),
+            new("dev-follow-up", "Follow-up", "nav-icon-dashboard", ["dashboard", "getting-started", "user-guide"]),
+        ]),
+        Groups(WorkspaceView.Architect, "Architect", "Explore architecture, dependencies and integration boundaries.", "system-understanding",
+        [
+            new("arch-system", "System & integrations", "nav-icon-system-understanding", ["system-understanding", "integration-topology", "integration-quality-review"]),
+            new("arch-source", "Source & structure", "nav-icon-source-analysis",
+                ["sources", "source-analysis", "technology-coverage", "dependency-review", NavigationCatalog.GeneratedDocumentationExplorerRoute]),
+            new("arch-data", "Data & contracts", "nav-icon-data-model-explorer", ["data-model-explorer", "schema-studio", "api-quality-review/contracts", "api-quality-review"]),
+            new("arch-governance", "Governance & environments", "nav-icon-constitution", ["constitution-explorer", "artifact-traceability", "snapshots", "azure-environment"]),
+            new("arch-follow-up", "Follow-up", "nav-icon-dashboard", ["dashboard", "getting-started", "user-guide"]),
+        ]),
     ];
 
     /// <summary>The built-in Manual Testing view (see <see cref="CreateManualTesting"/>).</summary>
@@ -433,8 +473,8 @@ public static class WorkspaceViews
     /// "What to test" (candidates, never Azure DevOps Test Cases or executed tests); requirement review is Document Quality Review. Technical
     /// modules stay one search or "Show other modules" away. A navigation preference only: no permission, feature or source baseline changes.
     /// </summary>
-    private static WorkspaceViewDefinition CreateManualTesting() => Groups(WorkspaceView.ManualTesting, "Manual Testing",
-        "Functional testing: understand the system, review requirements, prepare scenarios and test data, check coverage and follow up.", "system-understanding",
+    private static WorkspaceViewDefinition CreateManualTesting() => Groups(WorkspaceView.ManualTesting, "Manual Tester",
+        "Review requirements, prepare functional tests and test data.", "system-understanding",
         [
             new("manual-setup", "Project setup", "nav-icon-import", ["project-import", "sources"]),
             new("manual-understand", "Understand the system", "nav-icon-system-understanding", ["system-understanding"]),
