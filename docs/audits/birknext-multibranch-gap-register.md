@@ -1,6 +1,6 @@
 # Multi-branch source context — canonical gap register (tasks 14 + 15)
 
-This is the one register for tasks 14 and 15. `birknext-m2lb-multibranch-gap-register.md` points here.
+This is the one register for tasks 14 and 15 (task 14 reports were merged into the multi-branch reports; no separate task-14 files exist).
 
 **Columns:**
 - **Priority:** P0–P3.
@@ -8,11 +8,10 @@ This is the one register for tasks 14 and 15. `birknext-m2lb-multibranch-gap-reg
 
 Root causes are in `birknext-multibranch-source-context-audit.md`.
 
-> **Verification status (2026-11-12):**
-> - FIXED rows are covered by focused tests: backend 271/271, frontend 589/589.
-> - The real five-package browser acceptance was **interrupted**. Four of the five archives were imported through the UI into an isolated install before
->   Claude Code stopped the background services because the machine ran low on memory.
-> - Browser check ids named in this table (BL-*, CMP-*, DUP-*, UI-*, VIS-*) are therefore **NOT RUN** unless a later acceptance report says otherwise.
+> **Verification status (2026-11-12, continuation, code `22710749`):**
+> - The real-archive browser acceptance is complete; see `birknext-multibranch-cross-module-acceptance.md`.
+> - Browser check ids named below ran there; TE-0 is NOT RUN.
+> - Full regression: see `birknext-multibranch-implementation.md`.
 
 | Id | Pri | Category | Module | Kind | Expected | Actual (before) | Fix | Regression test | Status |
 |---|---|---|---|---|---|---|---|---|---|
@@ -22,16 +21,20 @@ Root causes are in `birknext-multibranch-source-context-audit.md`.
 | MB-4 | P1 | PROJECT_QUALITY / RECOMMENDED_WORKFLOW | Technology coverage → Dashboard/Workflow | D | Analysed version | Newest overall | Shared resolver | browser BL-3/5 | FIXED |
 | MB-5 | P1 | BASELINE_RESOLUTION | Composite discovery | D | Baseline or newest, one per project | Newest only | `Discover(..., baselines)` | focused Composite suite | FIXED |
 | MB-6 | P1 | TARGET_ENVIRONMENT / SOURCE_ROLE | Project Evidence | D | One decision ("choose the baseline"); baseline = application source | "Conflict", N reviews, no application source | Version-aware association; main package follows an automatic choice only | `ProjectEvidenceVersionsTests` (4) | FIXED |
-| MB-7 | P1 | BASELINE_RESOLUTION | Analysis baseline | D | Explicit, persisted, history, no implicit "latest" | None | `source_decisions` + `SourceBaselineService` + API + UI | service tests; browser BL-1/6/7 | FIXED |
+| MB-7 | P1 | BASELINE_RESOLUTION | Analysis baseline | D | Explicit, persisted, history, no implicit "latest" | None | `source_decisions` + `SourceBaselineService` + API + UI | service tests; browser BL-1/6/7, RST-1/2 | FIXED |
+| MB-7b | **P0** | BASELINE_RESOLUTION | Fallback when no baseline is chosen | D | Nothing authoritative; never import order | 412f13bb fell back to the newest import ("flagged NotSelected") | Shared `Authoritative` rule: `BASELINE_NOT_SELECTED` leaves the source out of every cross-module conclusion; newest import shown only as a preview, never persisted | `SourceBaselineServiceTests` (4 new), `CompositeSuiteTests`, `SystemGuideTests`, `SourceContextBaselineNotSelectedTests`; browser BNS-1..3, TOP-0, PQ-0, CR-0, SU-0, UI-N-* | FIXED |
 | MB-8 | P2 | SNAPSHOT_INTEGRITY | Fingerprints/duplicates | D | Archive vs content identity distinguished | Archive hash only; misleading duplicate text | Canonical content fingerprint; content duplicate | `SourceContentFingerprintTests`, `ProjectImportContentDuplicateTests`; browser DUP-1/2 | FIXED |
 | MB-9 | P2 | SOURCE_IDENTITY | Branch identity | M | Verified / Declared / Unknown | No declared field | `DeclaredBranch` decisions; Unknown shown | service test; browser UI-2 | FIXED |
 | MB-10 | P1 | UI_UX / SOURCE COMPARISON | Source Change Impact | D | Compare any two versions of one source | Refused across imports; panel not hosted | Rule relaxed; panel hosted in Source versions | `SourceChangeImpactServiceTests`; browser CMP-1..3 | FIXED |
-| MB-11 | P3 | SNAPSHOT_INTEGRITY | Import again | D (minor) | New record per import | Same bytes update the record in place (snapshots stay immutable) | — | — | OPEN (documented) |
+| MB-11 | P2 | SNAPSHOT_INTEGRITY | Import again | D | Earlier import facts preserved | Same bytes updated the record in place, so an earlier snapshot lost its import provenance | Append-only `SddProjectImportRecord.History` (legacy records seeded); duplicate help text corrected | `ProjectImportActivationTests` (2); browser DUP-5 + DB check (two history entries for (3)) | FIXED |
 | MB-12 | P2 | SOURCE_IDENTITY | Grouping basis | A | Verified repository identity | Archive-name basis (no root .sln, no Git metadata) | Basis shown ("not verified repository identity") | browser ID-1 | ACCEPTED (honest presentation) |
 | MB-13 | — | DEPLOYMENT | Deployment baseline | U | Evidence-backed only | None | Nothing inferred; UI says "not a deployment claim" | — | NOT APPLICABLE (no deployment evidence; `DEPLOYMENT_BASELINE_NOT_VERIFIED`) |
-| MB-14 | P2 | SNAPSHOT_INTEGRITY | DB guard | D (hardening) | Append-only enforced in DB | Code is insert-only; no trigger (local data reset deletes rows) | — | — | OPEN |
-| MB-15 | P2 | COMPONENT_OWNERSHIP | Component-level composite baseline | — | Explicit mixing of components from different snapshots | Not implemented (Composite contexts cover explicit multi-source runs) | — | — | OPEN (deliberately not built: no confirmed need; avoids accidental stitching) |
+| MB-14 | P2 | SNAPSHOT_INTEGRITY | DB guard | D (hardening) | Append-only enforced in DB | Code was insert-only; no trigger | Migration `GuardSourceDecisions`: BEFORE UPDATE trigger (DELETE kept for Local Data Reset) | `WorkspacePackageRoundTripTests` (real PostgreSQL, guard message asserted); upgrade of populated `birknext_mb` | FIXED |
+| MB-15 | P2 | COMPONENT_OWNERSHIP | Component-level composite baseline | D (guard) / gap | No silent mixing of MM / SkoleService / SkoleAdapter from different branches | Composite save accepted two different versions of one source in one context | Save refuses different versions of one source (content-identical re-imports allowed). **Safe component-level composition is not built**: it needs evidence that components were built and deployed together (a composition record with its own provenance), which is a new architecture. | `CompositeSuiteTests` (refused mix, allowed re-zip) | GUARD FIXED; COMPOSITION OPEN (documented, P2) |
 | MB-16 | P2 | TEST_DATA / INTEGRATION_SUITE / PROVENANCE | Pins | — | Revisions pinned | Already pinned by existing revision/manifest infrastructure (immutable manifests, DB trigger) | — | existing suites | VERIFIED (no change) |
-| MB-17 | P2 | SPECIFICATION / TRACEABILITY | Per-snapshot review decisions | — | Decisions tied to exact revisions | Existing revision model; not re-tested against the five archives (they contain no `specs/` requirements except in (7)) | — | — | NOT RUN |
-| MB-18 | P2 | BACKUP_TRANSFER | Export of decisions | D | Baselines travel with packages | `source_decisions` are in full backups (database dump), but not in `.birknext` project packages | — | — | OPEN |
-| MB-19 | P3 | UI_UX | Import duration | — | Responsive | Real imports take 1.5–4 min (full analysis) | — | measured | OBSERVED |
+| MB-17 | P2 | SPECIFICATION / TRACEABILITY | Per-snapshot review decisions | — | Decisions tied to exact revisions | Existing revision model | Guide revisions verified on the real install: a revision submitted under (7) keeps (7) as its basis after a switch; the guide reports the difference. Specification review decisions were not exercised against these archives. | browser H-0..H-5 | PARTIALLY VERIFIED |
+| MB-18 | P2 | BACKUP_TRANSFER | Export of decisions | D | Baselines travel with packages | `source_decisions` were in full backups only. Cause: the package closure was written before decisions existed; no type covered them. | New package type `source-decision`: whole history per subject; import New, Identical or Conflict (never overrides the destination); missing snapshots reported | `WorkspacePackageRoundTripTests.Source_baseline_decisions_travel_…` | FIXED |
+| MB-19 | P3 | UI_UX | Import duration | — | Responsive | Real imports take 1.5–4 min (full analysis); the re-zip took 100 s | — | measured | OBSERVED |
+| MB-20 | **P1** | PERSISTENCE / SCALE | Workspace auto-save | D (pre-existing) | Workspace state saved at any realistic size | With 7 large M2LB imports the whole-workspace auto-save body exceeds Kestrel's 30 MB limit ("Request body too large"); the saved lifecycle JSON is 23 MB. Later browser-side state (import records, history) is then not saved, and the Source Management tiles lag ("4 sources" for 7 imports). | Not fixed: needs incremental or per-import persistence; raising the limit would only defer it. | API log, DB size query | OPEN (P1, next) |
+| MB-21 | P2 | TARGET_ENVIRONMENT | TE association with real archives | — | One baseline decision in Project Evidence | Covered by unit tests only | — | `ProjectEvidenceVersionsTests` | NOT RUN in browser (no M2LB Target Application in the isolated install) |
+| MB-22 | P2 | UI_UX / WORDING | Truthful reasons | D | Each module names the real reason | Topology: "no snapshot exists"; guide: "No longer imported" for a still-imported version; re-zip comparison: "unclassified change" | Fixed (see acceptance report) | 3 new tests | FIXED |

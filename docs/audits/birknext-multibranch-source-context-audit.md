@@ -46,3 +46,14 @@ Unchanged and verified:
 Added:
 - Choosing a baseline or declaring a branch requires the backend policy SystemConfigurationWrite; reading is open.
 - Declared labels are restricted to a safe character set.
+
+## Continuation audit (2026-11-12)
+
+| Topic | Finding (root cause) | Decision |
+|---|---|---|
+| Baseline fallback | The first resolver returned the newest import when versions differed and no baseline was chosen. Its "flagged NotSelected" state did not stop modules from drawing implementation-specific conclusions from import order. | Removed. `BASELINE_NOT_SELECTED` leaves the source out of every cross-module conclusion. Inventory, history and comparison remain; the newest import is a preview only. |
+| Identical re-import | The import id is derived from the archive hash, so the browser-side import record is keyed by archive identity. A re-import overwrote its time and snapshot pointer, and an earlier snapshot lost its import provenance. Snapshots themselves were never rewritten. | The record keeps mutable operational fields (the latest import) plus an append-only `History`. No new id scheme, because artifact scopes and revision provenance depend on the import id. |
+| Decision table | Insert-only in code only. | Trigger guard, following the execution-manifest pattern. Validated on fresh and upgraded databases. DELETE stays possible (Local Data Reset). |
+| Component composition | Composite contexts select sources per stage. Nothing stopped two **different versions of the same source** from being combined in one context (e.g. MM from (5) and SkoleService from (7)), and nothing proves that such a combination was ever built or deployed. | Refused at save. Real component-level composition needs a composition record with its own provenance (which components, from which snapshots, and evidence that they belong together). That is a new architecture, kept as open gap MB-15 (P2). |
+| Project export | The `.birknext` closure predates `source_decisions`; full backups carry them only because they dump the database. | New package type `source-decision`, reusing the Workspace Transfer pipeline (closure, dependency manifest, preview statuses, transactional apply). |
+| Workspace auto-save | Found during the real-archive run: the whole workspace, including the document revisions of every import, is posted on each save. With 7 large imports the body exceeds 30 MB. | Not changed in this task. Logged as MB-20 (P1) with evidence. |
