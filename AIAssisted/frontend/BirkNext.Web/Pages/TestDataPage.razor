@@ -113,6 +113,23 @@
                     @if (o.ContractMismatches > 0) { <div><dt>Contract mismatches</dt><dd>@o.ContractMismatches</dd></div> }
                 </dl>
             }
+            @if (_reviewFlags.Count > 0)
+            {
+                <div class="td-review-flags" role="status" data-testid="td-review-flags">
+                    <h3 class="td-review-flags-title">Review required after a source change (@_reviewFlags.Count)</h3>
+                    <p class="td-note">Source Change Impact found a changed schema or data-model entity behind these assets. Re-validate each one; nothing was changed, and approval stays as it is.</p>
+                    <ul>
+                        @foreach (var flag in _reviewFlags)
+                        {
+                            <li data-testid="td-review-flag" data-alias="@flag.Alias">
+                                <strong>@flag.Alias</strong> · @(flag.State == "PotentiallyStale" ? "Potentially stale" : "Review required") — @flag.Reason
+                                <span class="td-note">(@(flag.Project is { } p ? $"{p}, " : "")@flag.FlaggedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</span>
+                                <a href="test-data?asset=@Uri.EscapeDataString(flag.Alias)">Open asset</a> · <a href="impact-analysis">Source Change Impact</a>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            }
             @if (NextAction() is { } next)
             {
                 <div class="td-next" data-testid="td-next">
@@ -644,7 +661,12 @@
         if (_api is null) return;
         (_catalog, _error) = await _api.CatalogAsync();
         (_consumers, _) = await _api.ConsumersAsync();
+        // Hosts and test doubles that do not provide the flags give none (never an error on this page).
+        _reviewFlags = _api.ReviewFlagsAsync() is { } flags ? await flags ?? [] : [];
     }
+
+    // Assets a stored Source Change Impact run marked for review (MT-6). Shown as a reason to re-validate; nothing is changed or cleared here.
+    private IReadOnlyList<TestDataReviewFlag> _reviewFlags = [];
 
     private List<TestDataAssetSummary> Filtered(TestDataCatalogView catalog, IReadOnlyList<TestDataUsageReference> usages, IReadOnlyList<TestDataAssetUsage> workspaceUsages) => catalog.Assets
         .Where(asset => P.Matches(asset, _query, usages))

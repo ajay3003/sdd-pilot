@@ -81,6 +81,9 @@ public interface ITestDataApiService
     Task<(TestDataResourceReadiness? Readiness, string? Error)> ResourceReadinessAsync(string alias, TestDataOperationRef operation, CancellationToken ct = default) =>
         Task.FromResult<(TestDataResourceReadiness?, string?)>((null, Unavailable));
 
+    /// <summary>Assets a stored Source Change Impact run marked for review (GET api/test-data/review-flags). Read-only.</summary>
+    Task<IReadOnlyList<TestDataReviewFlag>> ReviewFlagsAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<TestDataReviewFlag>>([]);
+
     const string Unavailable = "This Test Data action is not available in this host.";
 }
 
@@ -88,6 +91,12 @@ public sealed class TestDataApiService(HttpClient http) : ITestDataApiService
 {
     public const string Title = "Test Data";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    public async Task<IReadOnlyList<TestDataReviewFlag>> ReviewFlagsAsync(CancellationToken ct = default)
+    {
+        try { return await http.GetFromJsonAsync<List<TestDataReviewFlag>>("api/test-data/review-flags", Json, ct) ?? []; }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException or NotSupportedException) { return []; }
+    }
 
     public async Task<IReadOnlyList<TestDataCandidate>?> CandidatesAsync(Guid snapshotId, CancellationToken ct = default)
     {

@@ -32,7 +32,7 @@
 .tps-chip-ok { background: #dafbe1; color: #116329; border-color: #aceebb; }
 .tps-chip-warn { background: #fff8c5; color: #6b4300; border-color: #eac54f; }
 .tps-chip-bad { background: #ffebe9; color: #a40e26; border-color: #ffcecb; }
-.tps-chip-btn { cursor: pointer; font: inherit; font-size: 0.8rem; }
+.tps-chip-btn { cursor: pointer; font: inherit; font-size: 0.82rem; min-height: 1.75rem; padding: 0.2rem 0.7rem; white-space: normal; text-align: left; max-width: 100%; overflow-wrap: anywhere; }
 .tps-chip-btn.is-current { border-color: var(--clr-primary, #0969da); color: var(--clr-primary, #0969da); }
 .tps-count { font-size: 0.85rem; font-weight: 600; color: var(--clr-text-muted, #57606a); margin-left: 0.35rem; }
 
@@ -84,12 +84,12 @@ textarea.tps-input { resize: vertical; line-height: 1.45; }
 .tps-cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); gap: 0.7rem; }
 .tps-card { border: 1px solid var(--clr-border, #d0d7de); border-radius: 12px; padding: 0.75rem 0.9rem; background: var(--clr-surface-raised, #fff); display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
 .tps-card.is-selected { border-color: var(--clr-primary, #0969da); box-shadow: 0 0 0 1px var(--clr-primary, #0969da) inset; }
-.tps-card-select { display: flex; gap: 0.55rem; align-items: flex-start; cursor: pointer; }
-.tps-card-select input { width: 1.1rem; height: 1.1rem; margin-top: 0.15rem; flex: none; }
+.tps-card-select { display: flex; gap: 0.55rem; align-items: flex-start; cursor: pointer; min-height: 1.75rem; }
+.tps-card-select input { width: 1.25rem; height: 1.25rem; margin-top: 0.1rem; flex: none; }
 .tps-card-title { font-weight: 700; font-size: 0.97rem; overflow-wrap: anywhere; }
 .tps-card-sum { margin: 0; font-size: 0.88rem; line-height: 1.45; color: var(--clr-text-muted, #57606a); }
 .tps-card-meta { display: flex; flex-wrap: wrap; gap: 0.3rem; }
-.tps-card-link { font-size: 0.8rem; margin-top: auto; }
+.tps-card-link { font-size: 0.82rem; margin-top: auto; padding: 0.3rem 0; align-self: flex-start; }
 
 /* Suites */
 .tps-suites { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr)); gap: 0.8rem; }

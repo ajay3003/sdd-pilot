@@ -49,6 +49,13 @@ public sealed record TestDataReadiness(string Role, TestDataReadinessState State
 
 public sealed record TestDataImpact(string Alias, TestDataLifecycleState State, string Reason);
 
+/// <summary>
+/// A Test Data asset that a stored Source Change Impact run marked for review (ReviewRequired: its schema changed; PotentiallyStale: its data-model
+/// entity changed). The newest run that names the asset wins. A flag is a reason to re-validate, never a change to the asset, and it is not cleared
+/// automatically: approval and validation stay the asset's own facts.
+/// </summary>
+public sealed record TestDataReviewFlag(string Alias, string State, string Reason, Guid RunId, DateTimeOffset FlaggedAt, string? Project);
+
 public static class TestDataLifecycle
 {
     public const string ControlledReference = "<controlled identity reference — never generated>";

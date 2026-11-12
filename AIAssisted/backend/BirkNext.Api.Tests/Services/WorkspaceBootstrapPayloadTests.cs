@@ -110,14 +110,17 @@ public sealed class WorkspaceBootstrapPayloadTests : IDisposable
 
         await service.AutoSaveAsync(null, "", [], WorkspaceLifecycleDocuments.Manifest(Lifecycle()));
         var afterAutoSave = await service.LoadAsync((await service.GetCurrentWorkspaceIdAsync())!.Value);
-        WorkspaceLifecycleDocuments.Documents(afterAutoSave!.SddLifecycleJson).Revisions.Should().HaveCount(2);
+        // Since task 19C the row holds content addresses and the bodies live in the body store; every reader (load, bootstrap, documents)
+        // puts them back with WithDocumentBodiesAsync, so this test reads the same way.
+        WorkspaceLifecycleDocuments.Documents(afterAutoSave!.SddLifecycleJson).Revisions.Should().BeEmpty("no body is stored inline any more");
+        WorkspaceLifecycleDocuments.Documents(await service.WithDocumentBodiesAsync(afterAutoSave.SddLifecycleJson)).Revisions.Should().HaveCount(2);
 
         await service.SaveCurrentAsync(null, [], WorkspaceLifecycleDocuments.Manifest(Lifecycle()));
         var afterSave = await service.LoadAsync(afterAutoSave.Id);
-        WorkspaceLifecycleDocuments.Documents(afterSave!.SddLifecycleJson).Should().BeEquivalentTo(WorkspaceLifecycleDocuments.Documents(Lifecycle()));
+        WorkspaceLifecycleDocuments.Documents(await service.WithDocumentBodiesAsync(afterSave!.SddLifecycleJson)).Should().BeEquivalentTo(WorkspaceLifecycleDocuments.Documents(Lifecycle()));
 
         var copy = await service.SaveAsAsync("M2LB copy", [], WorkspaceLifecycleDocuments.Manifest(Lifecycle()));
-        WorkspaceLifecycleDocuments.Documents(copy.SddLifecycleJson).Revisions.Should().HaveCount(2, "save-as from a manifest copies the current workspace's bodies");
+        WorkspaceLifecycleDocuments.Documents(await service.WithDocumentBodiesAsync(copy.SddLifecycleJson)).Revisions.Should().HaveCount(2, "save-as from a manifest copies the current workspace's bodies");
     }
 
     [Fact]

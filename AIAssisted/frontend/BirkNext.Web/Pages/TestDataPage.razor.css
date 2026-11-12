@@ -131,3 +131,8 @@
 .td-add-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin: 0 0 0.75rem; }
 .td-add-bar .td-sub { display: inline; }
 .td-asset.is-new > th, .td-asset.is-new > td { background: #ddf4ff; }
+/* MT-6: assets a stored Source Change Impact run marked for review (text label, not colour alone) */
+.td-review-flags { margin-top: .85rem; padding: .7rem .85rem; border-radius: 8px; border: 1px solid #eac54f; background: #fff8c5; color: #3b2300; }
+.td-review-flags-title { margin: 0 0 .25rem; font-size: 1rem; font-weight: 650; }
+.td-review-flags ul { margin: .4rem 0 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .3rem; }
+.td-review-flags li { overflow-wrap: anywhere; }

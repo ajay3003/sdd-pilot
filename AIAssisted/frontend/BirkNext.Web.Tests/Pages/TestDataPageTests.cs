@@ -24,6 +24,8 @@ public sealed class TestDataPageTests : BunitContext
         public TestDataCatalogView Catalog { get; set; } = Mixed();
         public bool Hold { get; set; }
         public List<string> DetailRequests { get; } = [];
+        public List<TestDataReviewFlag> Flags { get; } = [];
+        public Task<IReadOnlyList<TestDataReviewFlag>> ReviewFlagsAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<TestDataReviewFlag>>(Flags);
         public Task<(TestDataCatalogView? Catalog, string? Error)> CatalogAsync(CancellationToken ct = default) =>
             Hold ? Pending.Task : Task.FromResult<(TestDataCatalogView?, string?)>((Catalog, null));
         public Task<(TestDataAssetDetail? Detail, string? Error)> AssetAsync(string id, CancellationToken ct = default)
@@ -156,5 +158,27 @@ public sealed class TestDataPageTests : BunitContext
         // No test pack client in this host: the retry yields no outcome, so the notice goes.
         page.WaitForAssertion(() => page.FindAll("[data-testid=td-auto-draft]").Should().BeEmpty());
         session.AutoDrafts.Should().BeEmpty();
+    }
+
+    // MT-6: the ReviewRequired / PotentiallyStale state set by Source Change Impact was rendered nowhere.
+    [Fact]
+    public void Assets_a_source_change_marked_for_review_are_listed_on_the_overview_without_changing_their_approval()
+    {
+        _api.Flags.Add(new TestDataReviewFlag("normal-report", "ReviewRequired", "schema skolenaervaer.xsd changed", Guid.NewGuid(), DateTimeOffset.Parse("2026-11-12T10:00:00Z"), "Skolenærvær"));
+        _api.Flags.Add(new TestDataReviewFlag("expected-record", "PotentiallyStale", "entity Report changed", Guid.NewGuid(), DateTimeOffset.Parse("2026-11-12T10:00:00Z"), null));
+        Show("overview");
+        var page = Render<TestDataPage>();
+        var flags = page.Find("[data-testid=td-review-flags]");
+        flags.TextContent.Should().Contain("Review required after a source change (2)").And.Contain("approval stays as it is");
+        page.FindAll("[data-testid=td-review-flag]").Select(f => f.GetAttribute("data-alias")).Should().Equal("normal-report", "expected-record");
+        flags.TextContent.Should().Contain("Review required — schema skolenaervaer.xsd changed").And.Contain("Potentially stale — entity Report changed");
+        page.Find("[data-testid=td-review-flag] a").GetAttribute("href").Should().Be("test-data?asset=normal-report");
+    }
+
+    [Fact]
+    public void Without_review_flags_the_overview_shows_no_review_card()
+    {
+        Show("overview");
+        Render<TestDataPage>().FindAll("[data-testid=td-review-flags]").Should().BeEmpty();
     }
 }

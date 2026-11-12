@@ -169,6 +169,25 @@ public sealed class SourceChangeImpactService(AppDbContext db, IReviewSourceEvid
         }).Where(x => x is not null).Cast<ImpactHistorySummary>().ToList();
     }
 
+    /// <summary>Test Data assets the stored runs marked for review (newest run per asset). Reads stored reports only; nothing is re-analysed.</summary>
+    public async Task<IReadOnlyList<BirkNext.TestData.TestDataReviewFlag>> TestDataReviewFlagsAsync(CancellationToken ct)
+    {
+        var records = await db.ImpactAnalysisRuns.AsNoTracking().OrderByDescending(r => r.CreatedAt).Take(50).ToListAsync(ct);
+        return TestDataReviewFlags(records.Select(r => (r.Id, r.CreatedAt, r.ProjectDisplayName, Report: TryLegacyReport(r.ResultJson))).Where(r => r.Report is not null)
+            .Select(r => (r.Id, r.CreatedAt, r.ProjectDisplayName, r.Report!)));
+    }
+
+    /// <summary>The newest flag per asset alias from runs (any order). Pure.</summary>
+    public static IReadOnlyList<BirkNext.TestData.TestDataReviewFlag> TestDataReviewFlags(IEnumerable<(Guid RunId, DateTimeOffset At, string? Project, SourceChangeImpactReport Report)> runs) =>
+        [.. runs.OrderByDescending(r => r.At)
+            .SelectMany(r => r.Report.TechnicalImpacts.Where(i => i.EntityType == "Test data asset").Select(i =>
+            {
+                var cut = i.Reason.IndexOf(": ", StringComparison.Ordinal);
+                var state = cut > 0 ? i.Reason[..cut] : nameof(BirkNext.TestData.TestDataLifecycleState.ReviewRequired);
+                return new BirkNext.TestData.TestDataReviewFlag(i.EntityId, state, cut > 0 ? i.Reason[(cut + 2)..] : i.Reason, r.RunId, r.At, r.Project);
+            }))
+            .GroupBy(f => f.Alias, StringComparer.Ordinal).Select(g => g.First()).OrderBy(f => f.Alias, StringComparer.OrdinalIgnoreCase)];
+
     public async Task<SourceChangeImpactReport?> GetHistoryAsync(Guid runId, CancellationToken ct)
     {
         var record = await db.ImpactAnalysisRuns.AsNoTracking().SingleOrDefaultAsync(r => r.Id == runId, ct);

@@ -108,6 +108,11 @@ public sealed class TestDataController(TestDataSchemaValidationService catalog, 
     public IActionResult Deprecate(string id) => service.Deprecate(id) is { } error ? BadRequest(new { message = error }) : Ok(new { assetId = id });
 
     /// <summary>Consumer requirements and usage references, with the test lead's overview.</summary>
+    /// <summary>Assets a stored Source Change Impact run marked for review (newest run per asset). Read-only; never changes an asset.</summary>
+    [HttpGet("review-flags")]
+    public async Task<ActionResult<IReadOnlyList<TestDataReviewFlag>>> ReviewFlags([FromServices] BirkNext.Api.Services.SourceChangeImpactService impact, CancellationToken ct) =>
+        Ok(await impact.TestDataReviewFlagsAsync(ct));
+
     [HttpGet("consumers")]
     public async Task<ActionResult<TestDataConsumerView>> Consumers(CancellationToken ct) => Ok(await service.ConsumersAsync(ct));
 
