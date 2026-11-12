@@ -14,6 +14,10 @@ on:
       - "bugfix/**"
   workflow_dispatch:
 
+# Least privilege: the jobs only read the repository; artifacts use the run's own artifact token.
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -25,9 +29,26 @@ jobs:
           clean: true
 
       - name: Install .NET SDK
+        id: setup-dotnet
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+
+      # setup-dotnet installs 8.0.x NEXT TO the SDKs already on the runner image, and without a global.json `dotnet` uses the newest one.
+      # The ubuntu images of 2026-11-11 added SDK 11.0.100, and from then on the Razor build failed on unchanged sources. Azure DevOps is
+      # not affected: UseDotNet@2 installs into its own tool directory, so only 8.0.x is visible there. Pin this job to the SDK installed
+      # above (rollForward disabled) so both pipelines compile with the same toolchain; fail loudly if the pin does not take effect.
+      - name: Pin the .NET 8 SDK for this job
+        run: |
+          set -euo pipefail
+          sdk="${{ steps.setup-dotnet.outputs.dotnet-version }}"
+          if [ -e global.json ]; then echo "A committed global.json exists; this step must not overwrite it."; exit 1; fi
+          case "$sdk" in 8.0.*) ;; *) echo "setup-dotnet reported '$sdk', expected an 8.0 SDK."; exit 1 ;; esac
+          printf '{\n  "sdk": {\n    "version": "%s",\n    "rollForward": "disable"\n  }\n}\n' "$sdk" > global.json
+          actual="$(dotnet --version)"
+          echo "Pinned .NET SDK: $actual (installed SDKs below)"
+          dotnet --list-sdks
+          test "$actual" = "$sdk"
 
       # Tests are intentionally not executed in CI. Restore, compilation, and publish remain enabled.
       - name: Restore backend solution
@@ -140,12 +161,19 @@ jobs:
           pwsh -NoProfile -File "$clean_dir/BirkNext/scripts/validate-package.ps1" -PackageRoot "$clean_dir/BirkNext"
           echo "Runnable artifact verified; files: $(find "$package_dir" -type f | wc -l)"
 
-      # A candidate only: testers get the package after the Windows smoke test below has passed.
-      - name: Upload BirkNext tester package candidate
+      # INTERNAL intermediate (not for testers), as in azure-pipelines.yml: the framework-dependent developer package that the Windows smoke
+      # job below validates. Testers use the self-contained BirkNext-Tester-Windows-x64 artifact, which only Azure DevOps builds.
+      # include-hidden-files: upload-artifact@v4 (>= 4.4) silently drops dotfiles and dot-folders, i.e. AIAssisted/.env, .env.example and the
+      # backend's Playwright driver (.playwright/, ~337 files). The package manifest lists them, so the smoke job's validate-package.ps1
+      # failed with "Local environment defaults is missing (AIAssisted/.env)". Azure's PublishPipelineArtifact keeps them. The hidden files
+      # are the same checked-in defaults and runtime files Azure DevOps publishes; no secrets.
+      - name: Upload BirkNext developer package candidate (internal)
         uses: actions/upload-artifact@v4
         with:
           name: birknext-tester-package-candidate
           path: artifact/BirkNext
+          include-hidden-files: true
+          if-no-files-found: error
 
   smoke-test-tester-package:
     needs: build
@@ -174,8 +202,5 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File "$clean\scripts\start-local.ps1" -ValidateOnly -SkipContainers
           if ($LASTEXITCODE -ne 0) { throw "start-local.ps1 -ValidateOnly failed on the tester package." }
 
-      - name: Upload BirkNext tester package (validated)
-        uses: actions/upload-artifact@v4
-        with:
-          name: birknext-tester-package
-          path: candidate
+      # (This job used to re-upload the validated folder as 'birknext-tester-package': a byte-identical copy of the candidate that testers
+      # mistook for the tester download. Azure DevOps stopped publishing it; this workflow follows the same artifact contract.)
