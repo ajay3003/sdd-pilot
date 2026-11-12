@@ -1,8 +1,8 @@
 /* One intent → token mapping for every semantic status badge. Strong colour is reserved for decision-relevant intents (positive, warning, danger);
    info and neutral are quiet. Sentence-case text, no uppercase transform. */
-.ssb { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .5rem; border-radius: 999px; border: 1px solid; font-size: .74rem; font-weight: 600;
+.ssb { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .5rem; border-radius: 999px; border: 1px solid; font-size: .75rem; font-weight: 600;
     line-height: 1.4; white-space: nowrap; max-width: 100%; text-transform: none; letter-spacing: normal; /* never inherit a label's uppercase */ }
-.ssb-icon { font-size: .72rem; }
+.ssb-icon { font-size: .75rem; }
 .ssb-label { overflow: hidden; text-overflow: ellipsis; }
 .ssb-scope { font-weight: 400; }
 .ssb-positive { color: var(--clr-success); background: var(--clr-success-bg-light); border-color: var(--clr-success-border); }

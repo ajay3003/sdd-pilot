@@ -1,5 +1,5 @@
 /* Metadata pills are quiet: outline or soft neutral, distinguished by shape, never by status colour. */
-.mb { display: inline-flex; align-items: center; padding: .05rem .45rem; font-size: .72rem; line-height: 1.4; color: var(--clr-text-body); white-space: nowrap; max-width: 100%;
+.mb { display: inline-flex; align-items: center; padding: .05rem .45rem; font-size: .75rem; line-height: 1.4; color: var(--clr-text-body); white-space: nowrap; max-width: 100%;
     overflow: hidden; text-overflow: ellipsis; }
 .mb-type { border-radius: .3rem; background: #f1f5f9; border: 1px solid #e2e8f0; font-family: var(--font-mono, ui-monospace, monospace); }
 .mb-provenance { border-radius: .3rem; border: 1px dashed var(--clr-border); color: var(--clr-text-muted); }
