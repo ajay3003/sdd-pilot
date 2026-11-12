@@ -56,7 +56,7 @@ jobs:
         run: dotnet restore BirkNext.sln
 
       - name: Validate migration file integrity (every migrations folder) and record migration ids
-        run: pwsh -NoProfile -File scripts/tests/BirkNextPreflight.Tests.ps1 && pwsh -NoProfile -File scripts/check-migrations.ps1 -ManifestOut "${{ runner.temp }}/migrations.json"
+        run: pwsh -NoProfile -File scripts/tests/BirkNextPreflight.Tests.ps1 && pwsh -NoProfile -File scripts/tests/BirkNextPackageHiddenFiles.Tests.ps1 && pwsh -NoProfile -File scripts/check-migrations.ps1 -ManifestOut "${{ runner.temp }}/migrations.json"
 
       - name: Build backend solution
         working-directory: AIAssisted/backend
@@ -159,6 +159,9 @@ jobs:
           rm -rf "$clean_dir" && mkdir -p "$clean_dir"
           cp -r "$package_dir" "$clean_dir/"
           pwsh -NoProfile -File "$clean_dir/BirkNext/scripts/validate-package.ps1" -PackageRoot "$clean_dir/BirkNext"
+          # The upload below includes hidden files; only the allowlisted ones may exist (.env = the checked-in template, .env.example,
+          # the Playwright driver), and no workstation settings, keys or repository metadata.
+          pwsh -NoProfile -File scripts/check-package-hidden-files.ps1 -PackageRoot "$package_dir" -EnvTemplate AIAssisted/.env.example
           echo "Runnable artifact verified; files: $(find "$package_dir" -type f | wc -l)"
 
       # INTERNAL intermediate (not for testers), as in azure-pipelines.yml: the framework-dependent developer package that the Windows smoke
