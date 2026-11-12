@@ -28,7 +28,19 @@ Harness `scratchpad/mb/wv-accept.cjs`:
 - **main:** the selector lists the eight views in order; each view switch keeps the page open and writes nothing to the API; every sidebar destination opens a real page; Dashboard and Workflow focus are shown per view; baseline risks are the same in every view; the view survives a refresh; the source context fingerprint is unchanged;
 - **responsive:** six focused views at five widths.
 
-**Status at commit time: RUNNING.** The user asked not to wait. **No browser result is claimed here.** The result is added in a follow-up commit when the run completes.
+**Result (main phase, completed after the first commit): 28/28 PASS.** 0 console errors; 0 requests outside localhost.
+
+| Check | Result |
+|---|---|
+| WV-01: the selector lists the eight views in order (All Modules, Project Manager, Scrum Master, Test Lead, Manual Tester, Technical Tester, Developer, Architect) | PASS |
+| Switch to each view from an open Test Data page: the page stays, 0 API writes (8 transitions) | PASS ×8 |
+| Every sidebar destination opens a real page: All Modules 48, PM 13, SM 11, TL 22, MT 14, TT 20, Dev 18, Arch 20 | PASS ×8 |
+| Dashboard renders the focus panel of the selected view (`data-view`) | PASS ×8 |
+| WV-02: baseline risks identical in every view (none on this workspace: the baseline is selected) | PASS |
+| WV-03: Technical Tester survives a browser refresh | PASS |
+| WV-04: the source-context fingerprint is unchanged after all switches (`b89ea3d72f2f7566`) | PASS |
+
+**Limitation, not hidden:** Recommended Workflow showed **0 next actions in every view** within the 3.5 s the harness waited. The per-view check therefore proves the projection, not the action content. The audience risk wording is covered by the automated test only, because the real workspace has no open baseline risk. **Responsive phase: NOT RUN.**
 
 ## Regression
 
