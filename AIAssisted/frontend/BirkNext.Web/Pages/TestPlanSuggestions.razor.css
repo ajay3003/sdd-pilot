@@ -151,6 +151,8 @@ textarea.tps-input { resize: vertical; line-height: 1.45; }
 /* MT-7 requirement links: long trust/rule labels wrap at narrow widths. */
 .tps-spec .tps-tone { white-space: normal; }
 
+.tps-area-purpose { margin: 0.35rem 0 0.9rem; font-size: 0.88rem; color: var(--clr-text-muted, #57606a); }
+
 /* Discover (UX consolidation): compact rows grouped by the guide's business-process stages, one sticky action bar. */
 .tps-groups { display: grid; gap: 0.9rem; }
 .tps-group-h { font-size: 0.95rem; font-weight: 700; margin: 0 0 0.35rem; display: flex; gap: 0.5rem; align-items: baseline; }

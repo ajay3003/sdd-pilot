@@ -79,6 +79,7 @@
                 <button type="button" class="tps-area @(_area == id ? "is-current" : null)" aria-current="@(_area == id ? "page" : null)" data-testid="tps-area-@id" @onclick="() => GoArea(id)">@a.Label</button>
             }
         </nav>
+        <p class="tps-area-purpose" data-testid="tps-area-purpose">@P.StepLine(_area)</p>
 
         <div class="tps-body">
             @(_area switch

@@ -232,6 +232,19 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
     }
 
     [Fact]
+    public void Every_preparation_step_says_what_it_is_for_in_order()
+    {
+        P.Areas.Select(a => a.Id).Should().Equal("discover", "plan", "review", "data", "snapshots", "compare", "export");
+        P.Areas.Should().OnlyContain(a => a.Purpose.Length > 10, "each step explains itself");
+        P.StepLine("discover").Should().Be("Step 1 of 7 · Choose the scenarios to include in a proposed test plan.");
+        P.StepLine("review").Should().StartWith("Step 3 of 7 · Review preconditions, test steps and expected results");
+        P.StepLine("export").Should().Contain("nothing is written to Azure DevOps");
+        P.StepLine("unknown").Should().BeEmpty();
+        var cut = Render(new Api(Workspace()), "?guide=skolenaervaer&area=discover");
+        cut.Find("[data-testid=tps-area-purpose]").TextContent.Should().Be(P.StepLine("discover"));
+    }
+
+    [Fact]
     public void Discover_groups_candidates_without_a_stage_under_Other()
     {
         var groups = P.ByStage([

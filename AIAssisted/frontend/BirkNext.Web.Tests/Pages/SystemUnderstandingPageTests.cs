@@ -144,6 +144,9 @@ public sealed class SystemUnderstandingPageTests : BunitContext
         cut.Find("[data-testid=su-rule-r-ukjent-barn]").TextContent.Should().Contain("Implementation: In source").And.Contain("Verification: Not assessed");
         cut.Find("[data-testid=su-tab-tests]").Click();
         cut.Find("[data-testid=su-guidance-note]").TextContent.Should().Contain("not test coverage");
+        // What to test explains and hands off; test plans, suites and Test Case drafts are made in Test Plan Suggestions.
+        cut.Find("[data-testid=su-guidance-note]").TextContent.Should().Contain("Explore the test situations").And.Contain("Test Case drafts are made there");
+        cut.Find("[data-testid=su-guidance-note] a").GetAttribute("href").Should().Be("test-plan-suggestions");
         cut.Find("[data-testid=su-scenario-bufdata-fil]").TextContent.Should().Contain("Needs clarification");
         cut.FindAll("[data-testid^=su-scenario-]").Should().NotContain(e => e.TextContent.Contains("Verified"));
     }

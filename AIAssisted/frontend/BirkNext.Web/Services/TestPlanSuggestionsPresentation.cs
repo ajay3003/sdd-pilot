@@ -10,13 +10,27 @@ public static class TestPlanSuggestionsPresentation
 {
     public const string Route = "test-plan-suggestions";
 
-    public sealed record Area(string Id, string Label);
+    /// <param name="Purpose">One sentence: what this step of test preparation is for (shown under the area bar).</param>
+    public sealed record Area(string Id, string Label, string Purpose = "");
 
+    /// <summary>The preparation steps, in order. Understanding the system stays in System Understanding; these steps prepare how it is tested.</summary>
     public static readonly IReadOnlyList<Area> Areas =
     [
-        new("discover", "Discover"), new("plan", "Suggested Test Plan"), new("review", "Review Test Cases"), new("data", "Test Data & Testability"),
-        new("snapshots", "Saved Snapshots"), new("compare", "Compare Deliveries"), new("export", "Prepare for Azure DevOps"),
+        new("discover", "Discover", "Choose the scenarios to include in a proposed test plan."),
+        new("plan", "Suggested Test Plan", "Organise the chosen scenarios into a test plan and test suites."),
+        new("review", "Review Test Cases", "Review preconditions, test steps and expected results, and record your decision."),
+        new("data", "Test Data & Testability", "Link approved test data and see what still blocks manual execution."),
+        new("snapshots", "Saved Snapshots", "Freeze the proposal as an immutable snapshot for a delivery."),
+        new("compare", "Compare Deliveries", "See what changed between two snapshots and what to retest."),
+        new("export", "Prepare for Azure DevOps", "Export a snapshot as a reviewable proposal; nothing is written to Azure DevOps."),
     ];
+
+    /// <summary>"Step 2 of 7 · Organise …" for the current area. Pure.</summary>
+    public static string StepLine(string area)
+    {
+        var index = Areas.ToList().FindIndex(a => a.Id == area);
+        return index < 0 ? "" : $"Step {index + 1} of {Areas.Count} · {Areas[index].Purpose}";
+    }
 
     public static string AreaOrDefault(string? area) => Areas.Any(a => a.Id == area) ? area! : "discover";
 
