@@ -107,9 +107,17 @@ public sealed class SourceBaselineService(AppDbContext db, IqrSourceStore store)
             .Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(x => x, StringComparer.OrdinalIgnoreCase)];
 
     /// <summary>The source context: every logical source with its snapshots, the selected baseline and the snapshot modules use.</summary>
-    public async Task<SourceContextView> ContextAsync(CancellationToken ct)
+    public async Task<SourceContextView> ContextAsync(CancellationToken ct) => await ContextAsync(await SnapshotsAsync(ct), ct);
+
+    /// <summary>The stored Source Analysis snapshots this service reads (newest first, <see cref="Window"/>): one load a caller can share within a
+    /// request (e.g. with the System Understanding guide) instead of deserializing every snapshot's evidence again. Never cached across requests.</summary>
+    /// <remarks>Identity and recognition members only (<see cref="IqrSourceStore.ListSourceAnalysisIdentitiesAsync"/>): what the context, baseline
+    /// resolution and source-role recognition read.</remarks>
+    public Task<IReadOnlyList<IqrSourceSnapshot>> SnapshotsAsync(CancellationToken ct) => store.ListSourceAnalysisIdentitiesAsync(Window, ct);
+
+    /// <summary>The source context over snapshots the caller already loaded with <see cref="SnapshotsAsync"/> in this request.</summary>
+    public async Task<SourceContextView> ContextAsync(IReadOnlyList<IqrSourceSnapshot> snapshots, CancellationToken ct)
     {
-        var snapshots = await store.ListSourceAnalysisAsync(Window, ct);
         var baselines = await CurrentBaselinesAsync(ct);
         var declared = await DeclaredBranchesAsync(ct);
         var used = (await ResolveAsync(snapshots, ct)).Select(s => s.Id).ToHashSet();

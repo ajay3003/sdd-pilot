@@ -77,6 +77,43 @@ public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? log
         return records.Select(r => JsonSerializer.Deserialize<IqrSourceSnapshot>(r.EvidenceJson, Json)!).ToList();
     }
 
+    /// <summary>The members <see cref="ListSourceAnalysisIdentitiesAsync"/> materializes: identity, provenance and what recognises a snapshot as a
+    /// logical source (projects, architecture components, evidence domains). Everything else stays unread.</summary>
+    public static readonly IReadOnlySet<string> IdentityMembers = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "id", "integrationId", "archive", "commit", "branch", "analyzerVersion", "analyzedAt", "status", "projects", "architecture", "evidenceDomains",
+        "repository", "projectImport", "deploymentCorrelation", "limitations",
+    };
+
+    private static readonly JsonSerializerOptions IdentityJson = new(JsonSerializerDefaults.Web)
+    {
+        TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver
+        {
+            Modifiers =
+            {
+                info =>
+                {
+                    if (info.Type != typeof(IqrSourceSnapshot)) return;
+                    for (var i = info.Properties.Count - 1; i >= 0; i--)
+                        if (!IdentityMembers.Contains(info.Properties[i].Name)) info.Properties.RemoveAt(i);
+                },
+            },
+        },
+    };
+
+    /// <summary>
+    /// The same snapshots as <see cref="ListSourceAnalysisAsync"/>, read for identity and source recognition only (<see cref="IdentityMembers"/>): test
+    /// inventories, database architecture, behaviour evidence and the other large sections are skipped, not materialized (about a sixth of the
+    /// evidence on the real M2LB workspace). For the source context and System Understanding's source roles; never for a consumer of evidence.
+    /// Nothing is cached: every call reads the stored rows.
+    /// </summary>
+    public async Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceAnalysisIdentitiesAsync(int take = 100, CancellationToken ct = default)
+    {
+        var records = await db.IqrSourceSnapshots.AsNoTracking().Where(r => r.IntegrationId == SourceAnalysisOwner)
+            .OrderByDescending(r => r.AnalyzedAt).ThenByDescending(r => r.Id).Take(take).ToListAsync(ct);
+        return records.Select(r => JsonSerializer.Deserialize<IqrSourceSnapshot>(r.EvidenceJson, IdentityJson)!).ToList();
+    }
+
     /// <summary>Lists only Source Analysis snapshot metadata needed by Schema Studio; never returns the large evidence document.</summary>
     public async Task<(IReadOnlyList<SourceSchemaSnapshotIndexItem> Items, bool IsTruncated)> ListSchemaSnapshotIndexAsync(
         int take = 500, CancellationToken ct = default)
