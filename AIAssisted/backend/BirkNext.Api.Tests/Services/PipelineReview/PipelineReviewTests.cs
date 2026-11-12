@@ -51,7 +51,10 @@ public sealed class PipelineReviewTests
         ci.JobDetails.Should().ContainSingle(j => j.Name == "BuildAndPackage");
         ci.Steps.Should().Contain(s => s.Kind == PipelineStepKind.Build);
         ci.Steps.Should().NotContain(s => s.Kind == PipelineStepKind.Test || s.Kind == PipelineStepKind.UnitTest || s.Kind == PipelineStepKind.E2ETest);
-        ci.Steps.Should().Contain(s => s.Kind == PipelineStepKind.Publish && s.ArtifactsPublished.Contains("birknext-tester-package"));
+        // One tester-facing artifact (the self-contained Windows package) and the smoke job's internal candidate (tester distribution contract).
+        ci.Steps.Should().Contain(s => s.Kind == PipelineStepKind.Publish && s.ArtifactsPublished.Contains("BirkNext-Tester-Windows-x64"));
+        ci.Steps.Should().Contain(s => s.Kind == PipelineStepKind.Publish && s.ArtifactsPublished.Contains("birknext-tester-package-candidate"));
+        ci.Steps.Should().NotContain(s => s.ArtifactsPublished.Contains("birknext-tester-package"), "the duplicate validated copy is no longer published");
         ci.Triggers.Should().Contain(t => t.Type == "pull-request");
     }
 

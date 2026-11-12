@@ -29,4 +29,6 @@ Source: `azure-pipelines.yml` (read locally; build 415003 itself was **not downl
 - anyone who downloads by the old names `birknext-windows-tester-package` / `birknext-tester-package-archive` / `birknext-tester-package`;
 - the separate GitHub workflow `.github/workflows/qa-review-studio-ci.yml`, which still publishes the old names in its own CI.
 
+**Consumer found after the change (release-readiness run):** `PipelineReviewTests.Repository_CI_pipeline_remains_readable_by_Source_Analysis_and_Pipeline_Review` parses the real `azure-pipelines.yml` and asserted the old `birknext-tester-package` publication. It failed in the backend regression of `5a4f7605` (partition 5) and was updated to the new contract: `BirkNext-Tester-Windows-x64` + the internal candidate, and no duplicate copy. The task 4 search did list this test; it was wrongly judged to be a fixture of its own and not read. That was a review mistake, not a gap in the search.
+
 **Size:** ~248 MB unpacked for the tester package is mostly the self-contained .NET runtime (backend + launcher), PostgreSQL binaries and k6. Nothing was trimmed, because reliability comes first. Trimming PostgreSQL (e.g. pgAdmin/doc folders, if present) is a follow-up after an inventory of the unpacked archive, which was **not available here**.
