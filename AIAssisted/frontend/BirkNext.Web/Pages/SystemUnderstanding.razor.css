@@ -6,7 +6,7 @@
     border: 1px solid var(--clr-border, #d0d7de); border-radius: 14px; background:
     linear-gradient(135deg, color-mix(in srgb, var(--clr-primary, #0969da) 7%, var(--clr-surface-raised, #fff)) 0%, var(--clr-surface-raised, #fff) 60%); }
 .su-head-main { min-width: 0; flex: 1 1 32rem; }
-.su-eyebrow { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--clr-primary, #0969da); display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+.su-eyebrow { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--clr-primary, #0969da); display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
 .su-title { font-size: 1.75rem; line-height: 1.15; font-weight: 700; margin: 0.3rem 0 0.35rem; letter-spacing: -0.01em; }
 .su-purpose { font-size: 1.02rem; line-height: 1.5; max-width: 60rem; margin: 0 0 0.7rem; color: var(--clr-text, #1f2328); }
 .su-meta { display: flex; flex-wrap: wrap; gap: 0.4rem 0.8rem; align-items: center; }
@@ -80,12 +80,12 @@
 .su-dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.25rem 1rem; margin: 0.6rem 0 0; font-size: 0.86rem; }
 .su-dl dt { color: var(--clr-text-muted, #57606a); font-weight: 600; }
 .su-dl dd { margin: 0; overflow-wrap: anywhere; min-width: 0; line-height: 1.45; }
-.su-tag { display: inline-flex; align-items: center; border-radius: 6px; padding: 0.05rem 0.45rem; font-size: 0.72rem; font-weight: 650; background: var(--clr-surface, #eef1f4); color: var(--clr-text-muted, #57606a); border: 1px solid var(--clr-border, #d0d7de); white-space: nowrap; }
+.su-tag { display: inline-flex; align-items: center; border-radius: 6px; padding: 0.05rem 0.45rem; font-size: 0.75rem; font-weight: 650; background: var(--clr-surface, #eef1f4); color: var(--clr-text-muted, #57606a); border: 1px solid var(--clr-border, #d0d7de); white-space: nowrap; }
 .su-related { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; margin-top: 0.6rem; }
 .su-pill { border: 1px solid var(--clr-border, #d0d7de); background: var(--clr-surface-raised, #fff); border-radius: 999px; padding: 0.15rem 0.6rem; font: inherit; font-size: 0.78rem; cursor: pointer; color: var(--clr-link, #0969da); }
 
 /* Evidence chips (text + glyph) */
-.su-ev { display: inline-flex; gap: 0.25rem; align-items: center; border-radius: 999px; padding: 0.04rem 0.5rem; font-size: 0.71rem; font-weight: 650; border: 1px solid transparent; white-space: nowrap; }
+.su-ev { display: inline-flex; gap: 0.25rem; align-items: center; border-radius: 999px; padding: 0.04rem 0.5rem; font-size: 0.75rem; font-weight: 650; border: 1px solid transparent; white-space: nowrap; }
 .su-ev-ok { background: #dafbe1; color: #116329; border-color: #aceebb; }
 .su-ev-info { background: #ddf4ff; color: #0550ae; border-color: #b6e3ff; }
 .su-ev-warn { background: #fff8c5; color: #7d4e00; border-color: #eac54f; }
@@ -153,7 +153,7 @@
 .su-history { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.4rem; font-size: 0.86rem; }
 .su-history li { display: flex; flex-wrap: wrap; gap: 0.3rem 0.7rem; align-items: center; padding: 0.45rem 0; border-top: 1px solid var(--clr-border-subtle, #eaeef2); }
 .su-hist-sum { flex-basis: 100%; color: var(--clr-text, #1f2328); }
-.su-sha { font-size: 0.74rem; color: var(--clr-text-muted, #57606a); }
+.su-sha { font-size: 0.75rem; color: var(--clr-text-muted, #57606a); }
 .su-empty { border: 1px dashed var(--clr-border, #d0d7de); border-radius: 14px; padding: 1.5rem; margin-top: 1rem; max-width: 46rem; }
 
 @media (max-width: 1024px) {
@@ -181,7 +181,7 @@
 
 /* What to test → Test Plan Suggestions: selection is a reference passed in the link, not an approval */
 .su-card { position: relative; }
-.su-card-pick { position: absolute; top: 0.7rem; right: 0.8rem; display: flex; z-index: 1; }
+.su-card-pick { position: absolute; top: 0.45rem; right: 0.55rem; display: flex; align-items: center; justify-content: center; min-width: 1.75rem; min-height: 1.75rem; cursor: pointer; z-index: 1; }
 .su-card-pick input { width: 1.1rem; height: 1.1rem; margin: 0; cursor: pointer; }
 .su-card-pick input:focus-visible { outline: 2px solid var(--clr-focus, #0969da); outline-offset: 2px; }
 .su-card-pick + .su-card-head { padding-right: 2.4rem; }

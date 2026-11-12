@@ -202,6 +202,47 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
     // Found in browser acceptance: a review response that arrived after an edit replaced the working copy, silently dropping the edit.
     // Reviews now start only from a saved state, and edit controls are locked while a request is in flight.
     [Fact]
+    public void Discover_groups_candidates_by_the_guides_own_stages_and_keeps_hidden_selections_visible()
+    {
+        var api = new Api(Workspace());
+        var cut = Render(api, "?guide=skolenaervaer&scenarios=manglende-barn,periodelaas");
+        // Grouped by the guide's stages, in the guide's order; no invented category.
+        cut.FindAll("[data-testid^=tps-group-]").Select(g => g.GetAttribute("data-testid")).Should().Equal("tps-group-s-inntak", "tps-group-s-laas");
+        cut.Find("[data-testid=tps-group-s-inntak]").TextContent.Should().Contain("Skoletjenesten tar imot").And.Contain("Barnet finnes ikke").And.Contain("Duplikat melding");
+        cut.Find("[data-testid=tps-group-s-laas]").TextContent.Should().Contain("Periodelås").And.Contain("Bufdata-fil");
+
+        // Filtering away a selected scenario keeps it selected and says so.
+        cut.Find("[data-testid=tps-filter-stage]").Change("s-inntak");
+        cut.Find("[data-testid=tps-selected-count]").TextContent.Should().Contain("2");
+        cut.Find("[data-testid=tps-selected-hidden]").TextContent.Should().Contain("1 hidden by filters");
+        cut.FindAll("[data-testid=tps-candidate-periodelaas]").Should().BeEmpty();
+
+        // Select visible adds only what is shown; Clear selection empties it and the primary action explains what to do.
+        cut.Find("[data-testid=tps-select-shown]").TextContent.Should().Contain("Select visible (2)");
+        cut.Find("[data-testid=tps-select-shown]").Click();
+        cut.Find("[data-testid=tps-selected-count]").TextContent.Should().Contain("3");
+        cut.Find("[data-testid=tps-clear-selection]").Click();
+        cut.Find("[data-testid=tps-selected-count]").TextContent.Should().Contain("0");
+        cut.FindAll("[data-testid=tps-selected-hidden]").Should().BeEmpty();
+        cut.Find("[data-testid=tps-generate]").HasAttribute("disabled").Should().BeTrue();
+        cut.Find("[data-testid=tps-generate]").TextContent.Should().Contain("Prepare Test Plan");
+        cut.Find("[data-testid=tps-select-hint]").TextContent.Should().Contain("Select at least one scenario");
+        cut.FindAll(".tps-btn:not(.tps-btn-quiet)").Count(b => b.Closest("[data-testid=tps-discover]") is not null).Should().Be(1, "one primary action on Discover");
+        api.Created.Should().BeNull("selecting and filtering create nothing");
+    }
+
+    [Fact]
+    public void Discover_groups_candidates_without_a_stage_under_Other()
+    {
+        var groups = P.ByStage([
+            new ScenarioCandidate { Source = new ScenarioReference { ScenarioId = "a" }, Title = "A", StageId = "s1" },
+            new ScenarioCandidate { Source = new ScenarioReference { ScenarioId = "b" }, Title = "B", StageId = null },
+            new ScenarioCandidate { Source = new ScenarioReference { ScenarioId = "c" }, Title = "C", StageId = "unknown-stage" }],
+            [new("s0", "Empty stage"), new("s1", "Stage one")]);
+        groups.Select(g => (g.Id, g.Items.Count)).Should().Equal(("s1", 1), ("other", 2));
+    }
+
+    [Fact]
     public void MT7_a_case_shows_verified_and_suggested_specification_requirements_apart_and_accepting_it_approves_no_association()
     {
         static RequirementScenarioAssociation A(string req, AssociationTrust trust) => new()

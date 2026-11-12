@@ -234,19 +234,23 @@
         var ws = _ws!;
         var shown = P.Apply(ws.Candidates, _filter);
         var inDraft = _draft?.Cases.Select(c => c.Source.ScenarioId).ToHashSet(StringComparer.Ordinal) ?? [];
+        var hiddenSelected = _selected.Count(id => shown.All(c => c.Source.ScenarioId != id));
+        var adding = _selected.Count(id => !inDraft.Contains(id));
+        @* Discover is for choosing and preparing: a compact list grouped by the guide's own business-process stages. Explaining the system stays in
+           System Understanding (one "Evidence" link per scenario opens it). *@
         <section class="tps-section" data-testid="tps-discover" aria-labelledby="tps-discover-h">
             <div class="tps-section-head">
-                <h2 id="tps-discover-h" class="tps-h2">Scenario candidates <span class="tps-count">@shown.Count of @ws.Candidates.Count</span></h2>
-                <p class="tps-muted">From the System Understanding guide (curated, versioned content). A candidate is guidance, not a Test Case and not test coverage.</p>
+                <h2 id="tps-discover-h" class="tps-h2">Choose scenarios to prepare <span class="tps-count">@shown.Count of @ws.Candidates.Count</span></h2>
+                <p class="tps-muted">Scenario candidates from the System Understanding guide. A candidate is guidance — not a Test Case, not test coverage. Selecting approves nothing.</p>
             </div>
             <div class="tps-filters" role="search">
-                <label class="tps-field tps-field-grow"><span class="tps-k">Search</span><input class="tps-input" type="search" placeholder="Title, objective or id" value="@_filter.Query" @oninput="SetQuery" data-testid="tps-search" /></label>
+                <label class="tps-field tps-field-grow"><span class="tps-k">Search</span><input class="tps-input" type="search" placeholder="Title, purpose or id" value="@_filter.Query" @oninput="SetQuery" data-testid="tps-search" /></label>
                 <label class="tps-field"><span class="tps-k">Business area</span>
                     <select class="tps-input" @onchange="e => _filter = _filter with { Stage = Empty(e) }" data-testid="tps-filter-stage">
                         <option value="">All</option>
                         @foreach (var s in ws.Stages.Where(s => ws.Candidates.Any(c => c.StageId == s.Id))) { <option value="@s.Id" selected="@(_filter.Stage == s.Id)">@s.Title</option> }
                     </select></label>
-                <label class="tps-field"><span class="tps-k">Requirement</span>
+                <label class="tps-field"><span class="tps-k">Business rule</span>
                     <select class="tps-input" @onchange="e => _filter = _filter with { Requirement = Empty(e) }" data-testid="tps-filter-requirement">
                         <option value="">All</option>
                         @foreach (var r in ws.Candidates.SelectMany(c => c.Requirements).DistinctBy(r => r.RuleId).OrderBy(r => r.Title)) { <option value="@r.RuleId" selected="@(_filter.Requirement == r.RuleId)">@r.Title</option> }
@@ -261,52 +265,64 @@
                         <option value="">All candidates</option><option value="expected">Without expected result</option><option value="data">Without test data description</option>
                         <option value="observe">Without observation method</option><option value="linked">Named executable test</option>
                     </select></label>
-                <div class="tps-field"><span class="tps-k">Source module</span><span class="tps-static">System Understanding · What to test</span></div>
             </div>
-            <div class="tps-selectbar">
-                <span data-testid="tps-selected-count"><strong>@_selected.Count</strong> selected</span>
-                <button type="button" class="tps-btn tps-btn-quiet" @onclick="() => { foreach (var c in shown) _selected.Add(c.Source.ScenarioId); }" data-testid="tps-select-shown">Select shown</button>
-                <button type="button" class="tps-btn tps-btn-quiet" @onclick="() => _selected.Clear()">Clear</button>
+            <div class="tps-selectbar" role="group" aria-label="Selection">
+                <span data-testid="tps-selected-count" aria-live="polite"><strong>@_selected.Count</strong> selected</span>
+                @if (hiddenSelected > 0) { <span class="tps-tone tps-tone-info" data-testid="tps-selected-hidden">@hiddenSelected hidden by filters — still selected</span> }
+                <button type="button" class="tps-btn tps-btn-quiet" disabled="@(shown.Count == 0)" @onclick="() => { foreach (var c in shown) _selected.Add(c.Source.ScenarioId); }" data-testid="tps-select-shown">Select visible (@shown.Count)</button>
+                <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_selected.Count == 0)" @onclick="() => _selected.Clear()" data-testid="tps-clear-selection">Clear selection</button>
             </div>
-            <ul class="tps-cards" data-testid="tps-candidates">
-                @foreach (var c in shown)
+            @if (shown.Count == 0)
+            {
+                <p class="tps-muted" data-testid="tps-no-candidates">@(ws.Candidates.Count == 0 ? "The guide has no scenarios yet." : "No scenario matches these filters.")</p>
+            }
+            <div class="tps-groups" data-testid="tps-candidates">
+                @foreach (var group in P.ByStage(shown, ws.Stages))
                 {
-                    var id = c.Source.ScenarioId;
-                    var state = P.GuideState(c.GuideState);
-                    var selected = _selected.Contains(id);
-                    <li class="tps-card @(selected ? "is-selected" : null)" data-testid="tps-candidate-@id">
-                        <label class="tps-card-select">
-                            <input type="checkbox" checked="@selected" @onchange="e => { if (e.Value is true) _selected.Add(id); else _selected.Remove(id); }" aria-label="Select @c.Title" data-testid="tps-select-@id" />
-                            <span class="tps-card-title">@c.Title</span>
-                        </label>
-                        <p class="tps-card-sum">@c.Objective</p>
-                        <div class="tps-card-meta">
-                            <span class="tps-tone tps-tone-@state.Tone">@state.Text</span>
-                            @if (c.StageTitle is { } st) { <span class="tps-chip">@st</span> }
-                            @if (inDraft.Contains(id)) { <span class="tps-chip tps-chip-ok" data-testid="tps-in-draft">In proposal</span> }
-                            @if (!c.HasExpected) { <span class="tps-chip tps-chip-bad">No expected result</span> }
-                            @if (c.Requirements.Count > 0) { <span class="tps-chip" title="@string.Join("; ", c.Requirements.Select(r => r.Title))">@c.Requirements.Count rule@(c.Requirements.Count == 1 ? "" : "s")</span> }
-                            @foreach (var link in c.Correlations) { <span class="tps-chip @(link.Ambiguous ? "tps-chip-warn" : null)" title="@link.Basis">@(link.Ambiguous ? "Ambiguous: " : "Named: ")@link.Label</span> }
-                        </div>
-                        <a class="tps-card-link" href="system-understanding?tab=tests&guide=@ws.GuideKey">Source evidence in System Understanding</a>
-                    </li>
+                    <section class="tps-group" aria-labelledby="tps-g-@group.Id" data-testid="tps-group-@group.Id">
+                        <h3 id="tps-g-@group.Id" class="tps-group-h">@group.Title <span class="tps-count">@group.Items.Count</span></h3>
+                        <ul class="tps-rows">
+                            @foreach (var c in group.Items)
+                            {
+                                var id = c.Source.ScenarioId;
+                                var state = P.GuideState(c.GuideState);
+                                var selected = _selected.Contains(id);
+                                <li class="tps-row @(selected ? "is-selected" : null)" data-testid="tps-candidate-@id">
+                                    <label class="tps-row-select">
+                                        <input type="checkbox" checked="@selected" @onchange="e => { if (e.Value is true) _selected.Add(id); else _selected.Remove(id); }" aria-describedby="tps-sum-@id" data-testid="tps-select-@id" />
+                                        <span class="tps-row-title">@c.Title</span>
+                                    </label>
+                                    <p class="tps-row-sum" id="tps-sum-@id">@c.Objective</p>
+                                    <div class="tps-row-meta">
+                                        <span class="tps-tone tps-tone-@state.Tone">@state.Text</span>
+                                        @if (inDraft.Contains(id)) { <span class="tps-chip tps-chip-ok" data-testid="tps-in-draft">In proposal</span> }
+                                        @if (!c.HasExpected) { <span class="tps-chip tps-chip-bad">No expected result</span> }
+                                        @if (!c.HasTestData) { <span class="tps-chip">No test data described</span> }
+                                        @if (c.Correlations.Count > 0) { <span class="tps-chip @(c.Correlations.Any(l => l.Ambiguous) ? "tps-chip-warn" : null)" title="@string.Join("; ", c.Correlations.Select(l => l.Label))">Named: @c.Correlations.Count executable</span> }
+                                        <a class="tps-row-link" href="@($"system-understanding?tab=tests&guide={Uri.EscapeDataString(ws.GuideKey!)}")" aria-label="Evidence for @c.Title in System Understanding">Evidence</a>
+                                    </div>
+                                </li>
+                            }
+                        </ul>
+                    </section>
                 }
-            </ul>
+            </div>
             @if (ws.CanWrite)
             {
-                <div class="tps-actionbar" data-testid="tps-create-bar">
+                <div class="tps-actionbar tps-actionbar-sticky" data-testid="tps-create-bar">
                     @if (_draft is null)
                     {
                         <label class="tps-field tps-field-grow"><span class="tps-k">Test Plan name</span><input class="tps-input" @bind="_planName" @bind:event="oninput" data-testid="tps-plan-name" /></label>
                         <label class="tps-field"><span class="tps-k">Delivery label</span><input class="tps-input" @bind="_deliveryLabel" @bind:event="oninput" placeholder="e.g. Release 2026.11" data-testid="tps-delivery" /></label>
-                        <button type="button" class="tps-btn" disabled="@(_busy || _selected.Count == 0 || string.IsNullOrWhiteSpace(_planName))" @onclick="CreateAsync" data-testid="tps-generate">Generate suggested Test Plan (@_selected.Count)</button>
+                        <button type="button" class="tps-btn" disabled="@(_busy || _selected.Count == 0 || string.IsNullOrWhiteSpace(_planName))" @onclick="CreateAsync" data-testid="tps-generate">Prepare Test Plan (@_selected.Count)</button>
+                        @if (_selected.Count == 0) { <span class="tps-muted tps-small" data-testid="tps-select-hint">Select at least one scenario to prepare a Test Plan.</span> }
                     }
                     else
                     {
-                        var adding = _selected.Count(id => !inDraft.Contains(id));
                         <span class="tps-muted">Proposal: <strong>@_draft.PlanName</strong></span>
                         <button type="button" class="tps-btn" disabled="@(_busy || adding == 0)" @onclick="AddSelectedAsync" data-testid="tps-add-selected">Add @adding to proposal</button>
                         <button type="button" class="tps-btn tps-btn-quiet" @onclick="NewProposal" data-testid="tps-new-proposal">Start a new proposal</button>
+                        @if (_selected.Count > 0 && adding == 0) { <span class="tps-muted tps-small">Every selected scenario is already in this proposal.</span> }
                     }
                 </div>
             }

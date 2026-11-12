@@ -71,9 +71,9 @@ public static class NavigationCatalog
     /// <summary>Route of the Target Environments section of System Settings. The sidebar row is a deep link, not a second page.</summary>
     public const string TargetEnvironmentsRoute = "admin/system-settings?section=target-environments";
 
-    /// <summary>Functional test scenarios: System Understanding's "What to test" tab (scenario candidates with preconditions, test data, expected
-    /// outcome and observable evidence, each with its review state). Not a catalog row (tabs stay nested in their page): the Manual Testing view
-    /// shows it as a view shortcut (<see cref="WorkspaceViewLink"/>).</summary>
+    /// <summary>System Understanding's "What to test" tab (scenario candidates with preconditions, test data, expected outcome and observable evidence,
+    /// each with its review state). A deep link, not a catalog row and no longer a sidebar shortcut: the System Understanding row leads to it, and
+    /// scenarios are prepared in Test Plan Suggestions.</summary>
     public const string TestScenariosRoute = "system-understanding?tab=tests";
 
     /// <summary>Canonical route of Generated Documentation Health (project analysis). The former System Settings section redirects here.</summary>
@@ -439,9 +439,9 @@ public static class WorkspaceViews
             new("manual-setup", "Project setup", "nav-icon-import", ["project-import", "sources"]),
             new("manual-understand", "Understand the system", "nav-icon-system-understanding", ["system-understanding"]),
             new("manual-requirements", "Requirements", "nav-icon-task-alignment", ["specification-explorer", "quality/document", "documentation-drift"]),
-            new("manual-prepare", "Test preparation", "nav-icon-constitution-compliance", [NavigationCatalog.TestScenariosRoute, "test-plan-suggestions", "test-data"],
-                [new(NavigationCatalog.TestScenariosRoute, "system-understanding", "Functional Test Scenarios",
-                    "System Understanding → What to test: scenario candidates with preconditions, test data, expected outcome and evidence — not Azure DevOps Test Cases, not executed tests")]),
+            // "Functional Test Scenarios" (a shortcut to System Understanding → What to test) was removed: it duplicated the System Understanding row
+            // and competed with Test Plan Suggestions, the place where scenarios are prepared. The tab and its deep link stay.
+            new("manual-prepare", "Test preparation", "nav-icon-constitution-compliance", ["test-plan-suggestions", "test-data"]),
             new("manual-coverage", "Coverage & traceability", "nav-icon-workflow", ["artifact-traceability", "test-coverage-review"]),
             new("manual-follow-up", "Quality & follow-up", "nav-icon-dashboard", ["dashboard", "getting-started", "user-guide"]),
         ]);

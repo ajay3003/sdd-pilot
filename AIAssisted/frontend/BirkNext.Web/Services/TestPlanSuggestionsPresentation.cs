@@ -131,6 +131,19 @@ public static class TestPlanSuggestionsPresentation
     /// Facts and next steps from persisted proposals only (one workspace call): suggestions to review, missing expected results, missing Test Data,
     /// testability blockers, latest snapshot, a pending snapshot or comparison, export. No percentages; nothing is "done" that is not stored.
     /// </summary>
+    /// <summary>A Discover group: one of the guide's business-process stages (its own order and title), or "Other" for candidates without a stage.</summary>
+    public sealed record StageGroup(string Id, string Title, IReadOnlyList<ScenarioCandidate> Items);
+
+    /// <summary>Candidates grouped by the guide's stages in the guide's order; never an invented category. Empty groups are left out.</summary>
+    public static IReadOnlyList<StageGroup> ByStage(IReadOnlyList<ScenarioCandidate> candidates, IReadOnlyList<TestPlanStage> stages)
+    {
+        var known = stages.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
+        var groups = stages.Select(s => new StageGroup(s.Id, s.Title, [.. candidates.Where(c => c.StageId == s.Id)])).Where(g => g.Items.Count > 0).ToList();
+        var other = candidates.Where(c => c.StageId is null || !known.Contains(c.StageId)).ToList();
+        if (other.Count > 0) groups.Add(new StageGroup("other", "Other scenarios", other));
+        return groups;
+    }
+
     public static PlanFocus Focus(TestPlanWorkspace? ws, RequirementCoverageView? coverage = null)
     {
         var plan = PlanOnly(ws);
