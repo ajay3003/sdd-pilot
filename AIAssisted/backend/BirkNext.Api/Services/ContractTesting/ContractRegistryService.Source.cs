@@ -80,9 +80,13 @@ public sealed partial class ContractRegistryService
             .Join(db.ApiContracts.AsNoTracking(), v => v.ContractId, c => c.Id, (v, c) => new { v.SourceSnapshotId, v.SourcePath, c.Key, v.Version }).ToListAsync(ct);
         // At most one snapshot per logical source (the analysis baseline, else the only content; none while BASELINE_NOT_SELECTED): contracts of alternative branch snapshots are never
         // combined, and a contract that only an unselected alternative holds is not offered.
-        var snapshots = BirkNext.Api.Services.SourceAnalysis.SourceBaselineService.Resolve(
-            (await sources.ListAsync(string.Empty, ct)).OrderByDescending(s => s.AnalyzedAt).Take(100),
+        var listed = (await sources.ListAsync(string.Empty, ct)).OrderByDescending(s => s.AnalyzedAt).Take(100).ToList();
+        var snapshots = BirkNext.Api.Services.SourceAnalysis.SourceBaselineService.Resolve(listed,
             await BirkNext.Api.Services.SourceAnalysis.SourceBaselineService.CurrentBaselinesAsync(db, ct)).OrderByDescending(s => s.AnalyzedAt).Take(20).ToList();
+        // "Seen in N snapshots" is history: every analysed snapshot of the project that holds the contract counts, while the contract itself
+        // is only ever taken from the authoritative snapshot above.
+        int SeenIn(IReadOnlySet<string> projectKeys, string contractId) => listed.Count(s => projectKeys.Contains(ProjectKeyOf(s))
+            && (s.EvidenceDomains?.Contracts.Contracts.Any(c => c.Id == contractId) ?? false));
         var groups = new Dictionary<string, (string Id, HashSet<string> Keys)>(StringComparer.Ordinal);
         var newest = new Dictionary<string, (IqrSourceSnapshot Snapshot, SourceContract Contract, int Count, HashSet<string> Group)>(StringComparer.Ordinal);
         foreach (var snapshot in snapshots)
@@ -93,7 +97,7 @@ public sealed partial class ContractRegistryService
             foreach (var c in snapshot.EvidenceDomains?.Contracts.Contracts.Where(c => c.Type is SourceContractType.OpenApi or SourceContractType.GraphQlSchema) ?? [])
             {
                 var id = g.Id + "|" + c.Id;
-                newest[id] = newest.TryGetValue(id, out var seen) ? (seen.Snapshot, seen.Contract, seen.Count + 1, seen.Group) : (snapshot, c, 1, g.Keys);
+                newest[id] = newest.TryGetValue(id, out var seen) ? seen : (snapshot, c, SeenIn(g.Keys, c.Id), g.Keys);
             }
         }
         var snapshotIds = newest.Values.Select(n => n.Snapshot.Id).Distinct().ToList();

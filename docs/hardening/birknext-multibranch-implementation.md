@@ -65,10 +65,33 @@ was also narrowed to the command's own process tree; before, it also stopped any
 
 ## Final regression
 
-**IN PROGRESS when these reports were committed. No result is claimed here.**
-- Code: commit `22710749`. The scratch build tree was verified identical to it, shared CSS included.
-- Script: `scratchpad/final/regress.ps1` (tag `fin2`): build, backend partitions 1–5, partition 6 split into 6a/6b/6c, then the full frontend suite;
-  sequential and memory-guarded.
-- Available memory at start: 6.2 GB.
-- Exact counts, the build check and the Release build will be added in a follow-up commit.
-- The earlier task-13 regression (partitions 1–5 only; partition 6 aborted; frontend not run) does **not** count as a pass.
+Run on **`22710749`** with `scratchpad/final/regress.ps1` (tag `fin2`). The scratch build tree was verified identical to the commit (107 files
+compared byte for byte, shared CSS included). The run was sequential and memory-guarded; available memory was 6.2 GB at the start, and the lowest
+free memory during the run was 1.9 GB (partition 6c). Both test builds succeeded (`exit=0 aborted=False`) before any count was taken.
+
+| Phase | Passed | Skipped | Failed | Total |
+|---|---|---|---|---|
+| Backend partition 1 | 1 049 | 2 | 0 | 1 051 |
+| Backend partition 2 | 1 098 | 5 | 0 | 1 103 |
+| Backend partition 3 | 840 | 0 | 0 | 840 |
+| Backend partition 4 | 652 | 1 | 0 | 653 |
+| Backend partition 5 | 521 | 3 | 0 | 524 |
+| Backend partition 6a | 139 | 0 | 0 | 139 |
+| Backend partition 6b | 955 | 0 | **1** | 956 |
+| Backend partition 6c | 1 311 | 8 | 0 | 1 319 |
+| **Backend total** | **6 565** | **19** | **1** | **6 585** |
+| **Frontend (full)** | **8 678** | 0 | 0 | 8 678 |
+
+- Blocked: none.
+- Not run: none of the suites.
+
+**The one failure** was `ContractBulkImportTests.Discovery_lists_each_source_contract_once_and_bulk_import_generates_tests_and_data_without_duplicates`.
+- **Introduced by:** `412f13bb`, not by `22710749`. Partition 6 had never run on `412f13bb`.
+- **Root cause:** Contract Testing's "seen in N snapshots" counted only the resolved snapshot, so it was always 1.
+- **Fix** (commit after `22710749`): the contract content still comes only from the authoritative snapshot, and the history count covers all analysed
+  snapshots of the project group.
+- **Verification:** the focused contract suites pass, 16/16. The full backend suite was **not** re-run after this fix; the next full regression
+  covers it.
+
+**Release build** of `BirkNext.Api` and `BirkNext.Web` (`-c Release`, on the tree that includes the fix): both succeeded with 0 errors
+(404 and 92 warnings, as before).
