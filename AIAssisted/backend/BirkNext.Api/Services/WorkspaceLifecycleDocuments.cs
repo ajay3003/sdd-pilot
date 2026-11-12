@@ -24,6 +24,8 @@ public static class WorkspaceLifecycleDocuments
     public const string ContentLengthKey = "ContentLength";
     public const string RevisionIdKey = "RevisionId";
     public const string FingerprintKey = "Fingerprint";
+    /// <summary>Content address of a revision body kept in the body store (<see cref="WorkspaceDocumentBodies"/>).</summary>
+    public const string ContentShaKey = WorkspaceDocumentBodies.ContentShaKey;
     public const string GeneratedContentsKey = "GeneratedDocumentContents";
     public const string GeneratedSetsKey = "GeneratedDocumentationSets";
 
@@ -59,8 +61,9 @@ public static class WorkspaceLifecycleDocuments
     }
 
     /// <summary>
-    /// Completes a lifecycle written from a manifest: a revision without content takes the content of the stored revision with the same id and
-    /// fingerprint (the same immutable document), and a generated document the incoming sets still reference keeps its stored body. Nothing is
+    /// Completes a lifecycle written from a manifest: a revision without content takes the content (legacy inline row) or the content address
+    /// (body store) of the stored revision with the same id and fingerprint (the same immutable document). A revision that cannot be completed
+    /// keeps its <c>ContentLength</c> claim, so the caller can refuse the write instead of storing an empty body. A generated document the incoming sets still reference keeps its stored body. Nothing is
     /// added that the incoming lifecycle does not reference, so removals are kept. Incoming JSON that needs nothing is returned unchanged.
     /// </summary>
     public static string? FillMissing(string? incoming, string? stored)
@@ -70,19 +73,18 @@ public static class WorkspaceLifecycleDocuments
         if (root[RevisionsKey] is JsonArray revisions && previous[RevisionsKey] is JsonArray storedRevisions)
         {
             var bodies = storedRevisions.OfType<JsonObject>()
-                .Select(r => (Id: Text(r, RevisionIdKey), Fingerprint: Text(r, FingerprintKey), Content: Text(r, ContentKey)))
-                .Where(r => r.Id is not null && !string.IsNullOrEmpty(r.Content))
+                .Select(r => (Id: Text(r, RevisionIdKey), Fingerprint: Text(r, FingerprintKey), Content: Text(r, ContentKey), Address: Text(r, ContentShaKey)))
+                .Where(r => r.Id is not null && (!string.IsNullOrEmpty(r.Content) || !string.IsNullOrEmpty(r.Address)))
                 .GroupBy(r => (r.Id!, r.Fingerprint ?? ""))
-                .ToDictionary(g => g.Key, g => g.First().Content!);
+                .ToDictionary(g => g.Key, g => (g.First().Content, g.First().Address));
             foreach (var revision in revisions.OfType<JsonObject>())
             {
                 if (!string.IsNullOrEmpty(Text(revision, ContentKey)) || Text(revision, RevisionIdKey) is not { } id) continue;
-                if (bodies.TryGetValue((id, Text(revision, FingerprintKey) ?? ""), out var content))
-                {
-                    revision[ContentKey] = content;
-                    changed = true;
-                }
-                if (revision.Remove(ContentLengthKey)) changed = true;
+                if (!bodies.TryGetValue((id, Text(revision, FingerprintKey) ?? ""), out var body)) continue; // unresolved: the claim (ContentLength) stays
+                if (!string.IsNullOrEmpty(body.Content)) revision[ContentKey] = body.Content;           // legacy row: inline body
+                else if (Text(revision, ContentShaKey) is null) revision[ContentShaKey] = body.Address;   // stored row: content address
+                revision.Remove(ContentLengthKey);
+                changed = true;
             }
         }
         if (previous[GeneratedContentsKey] is JsonObject storedGenerated && storedGenerated.Count > 0)

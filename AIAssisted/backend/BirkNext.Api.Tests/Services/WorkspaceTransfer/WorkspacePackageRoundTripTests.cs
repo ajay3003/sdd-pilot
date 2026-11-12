@@ -414,6 +414,18 @@ public sealed class WorkspacePackageRoundTripTests : IAsyncLifetime
             "the destination's own choice stays");
     }
 
+    [Fact] // Workspace persistence: a content-addressed document body can never change; the database refuses (migration AddWorkspaceDocumentBodies)
+    public async Task A_stored_workspace_document_body_is_immutable_in_the_database()
+    {
+        await using var db = _source.Db();
+        var bodies = new BirkNext.Api.Services.WorkspaceDocumentBodies(db);
+        await bodies.StoreAsync([new(BirkNext.Api.Services.WorkspaceDocumentBodies.Hash("immutable body"), "immutable body")]);
+        var row = await db.WorkspaceDocumentBodies.SingleAsync();
+        row.Content = "rewritten";
+        (await FluentActions.Awaiting(() => db.SaveChangesAsync()).Should().ThrowAsync<DbUpdateException>())
+            .Which.InnerException!.Message.Should().Contain("workspace document bodies are immutable");
+    }
+
     private static byte[] Edit(byte[] json, Action<JsonNode> change)
     {
         var node = JsonNode.Parse(json)!;

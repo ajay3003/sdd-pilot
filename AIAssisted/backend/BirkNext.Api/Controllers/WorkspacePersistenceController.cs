@@ -41,6 +41,11 @@ public class WorkspacePersistenceController : ControllerBase
             var dto = MapWorkspaceToDto(result, lifecycle: false);
             return Ok(dto);
         }
+        catch (WorkspaceDocumentBodiesMissingException missing)
+        {
+            _logger.LogWarning("Workspace save refused: {Count} document bodies missing", missing.Missing.Count);
+            return Conflict(new { code = "document-bodies-missing", missing = missing.Missing.Take(200), error = missing.Message });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error saving current workspace");
@@ -62,6 +67,11 @@ public class WorkspacePersistenceController : ControllerBase
             var dto = MapWorkspaceToDto(result, lifecycle: false);
             return Ok(dto);
         }
+        catch (WorkspaceDocumentBodiesMissingException missing)
+        {
+            _logger.LogWarning("Workspace save refused: {Count} document bodies missing", missing.Missing.Count);
+            return Conflict(new { code = "document-bodies-missing", missing = missing.Missing.Take(200), error = missing.Message });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error saving workspace as {Name}", request.Name);
@@ -81,6 +91,7 @@ public class WorkspacePersistenceController : ControllerBase
             }
 
             var dto = MapWorkspaceToDto(result);
+            dto.SddLifecycleJson = await _service.WithDocumentBodiesAsync(dto.SddLifecycleJson);
             return Ok(dto);
         }
         catch (Exception ex)
@@ -100,14 +111,15 @@ public class WorkspacePersistenceController : ControllerBase
         var result = await _service.LoadAsync(workspaceId);
         if (result == null) return NotFound(new { error = "Workspace not found" });
         var full = MapWorkspaceToDto(result);
-        var documents = WorkspaceLifecycleDocuments.Documents(result.SddLifecycleJson);
+        var lifecycle = await _service.WithDocumentBodiesAsync(result.SddLifecycleJson);
+        var documents = WorkspaceLifecycleDocuments.Documents(lifecycle);
         var dto = new WorkspaceBootstrapDto
         {
             Id = full.Id, UserId = full.UserId, Name = full.Name, ProjectName = full.ProjectName, Description = full.Description, CreatedAt = full.CreatedAt,
             UpdatedAt = full.UpdatedAt, LastOpenedAt = full.LastOpenedAt, Version = full.Version, ParserVersion = full.ParserVersion,
             ReviewContextVersion = full.ReviewContextVersion, ArtifactSetHash = full.ArtifactSetHash, AutoSaved = full.AutoSaved, Favorite = full.Favorite,
             Artifacts = full.Artifacts,
-            SddLifecycleJson = WorkspaceLifecycleDocuments.Manifest(result.SddLifecycleJson),
+            SddLifecycleJson = WorkspaceLifecycleDocuments.Manifest(lifecycle),
             DocumentsDeferred = documents.Revisions.Count + documents.GeneratedDocuments.Count > 0,
             DeferredDocuments = documents.Revisions.Count + documents.GeneratedDocuments.Count,
             DeferredDocumentCharacters = documents.Revisions.Values.Sum(c => (long)c.Length) + documents.GeneratedDocuments.Values.Sum(c => (long)c.Length),
@@ -120,7 +132,31 @@ public class WorkspacePersistenceController : ControllerBase
     public async Task<ActionResult<WorkspaceDocumentsDto>> Documents(Guid workspaceId)
     {
         var result = await _service.LoadAsync(workspaceId);
-        return result == null ? NotFound(new { error = "Workspace not found" }) : Ok(WorkspaceLifecycleDocuments.Documents(result.SddLifecycleJson));
+        return result == null ? NotFound(new { error = "Workspace not found" }) : Ok(WorkspaceLifecycleDocuments.Documents(await _service.WithDocumentBodiesAsync(result.SddLifecycleJson)));
+    }
+
+    /// <summary>Which content addresses of document bodies are not stored yet (the client uploads only those).</summary>
+    [HttpPost("bodies/missing")]
+    [RequestSizeLimit(4 * 1024 * 1024)]
+    public async Task<ActionResult<DocumentBodiesMissingResponse>> MissingBodies([FromBody] DocumentBodiesMissingRequest? request)
+    {
+        if (request?.Addresses is not { Count: > 0 } addresses) return Ok(new DocumentBodiesMissingResponse());
+        if (addresses.Count > 50_000) return BadRequest(new { error = "At most 50 000 addresses per request." });
+        return Ok(new DocumentBodiesMissingResponse { Missing = [.. await _service.MissingDocumentBodiesAsync(addresses)] });
+    }
+
+    /// <summary>
+    /// Stores one batch of document bodies by content address (verified here; a wrong address refuses the whole batch). Batches are bounded
+    /// (<see cref="WorkspaceDocumentBodies.MaxBatchCharacters"/>), so a large workspace is uploaded in several requests, never one oversized one.
+    /// </summary>
+    [HttpPost("bodies")]
+    [RequestSizeLimit(24 * 1024 * 1024)]
+    public async Task<ActionResult<WorkspaceDocumentBodyUploadResult>> StoreBodies([FromBody] DocumentBodiesUploadRequest? request)
+    {
+        if (StaleAfterReset(request?.ResetEpoch) is { } stale) return stale;
+        if (request?.Bodies is not { Count: > 0 } bodies) return BadRequest(new { error = "No bodies." });
+        try { return Ok(await _service.StoreDocumentBodiesAsync(bodies)); }
+        catch (ArgumentException invalid) { return BadRequest(new { code = "invalid-document-body", error = invalid.Message }); }
     }
 
     [HttpGet("list")]
@@ -243,6 +279,11 @@ public class WorkspacePersistenceController : ControllerBase
             var dto = MapWorkspaceToDto(result, lifecycle: false);
             return Ok(dto);
         }
+        catch (WorkspaceDocumentBodiesMissingException missing)
+        {
+            _logger.LogWarning("Workspace save refused: {Count} document bodies missing", missing.Missing.Count);
+            return Conflict(new { code = "document-bodies-missing", missing = missing.Missing.Take(200), error = missing.Message });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error auto-saving workspace");
@@ -342,6 +383,22 @@ public class WorkspacePersistenceController : ControllerBase
         public List<WorkspaceArtifactDto> Artifacts { get; set; } = new();
         public string? SddLifecycleJson { get; set; }
         /// <summary>The local data reset epoch the client last saw (from current-state or the reset response).</summary>
+        public int? ResetEpoch { get; set; }
+    }
+
+    public sealed class DocumentBodiesMissingRequest
+    {
+        public List<string> Addresses { get; set; } = [];
+    }
+
+    public sealed class DocumentBodiesMissingResponse
+    {
+        public List<string> Missing { get; set; } = [];
+    }
+
+    public sealed class DocumentBodiesUploadRequest
+    {
+        public List<WorkspaceDocumentBodyUpload> Bodies { get; set; } = [];
         public int? ResetEpoch { get; set; }
     }
 

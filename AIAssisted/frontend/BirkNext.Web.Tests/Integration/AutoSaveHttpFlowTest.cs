@@ -95,7 +95,9 @@ public class AutoSaveHttpFlowTest
         _output.WriteLine($"Captured {capturedRequests.Count} HTTP request(s)");
 
         Assert.NotEmpty(capturedRequests);
-        var requestBody = capturedRequests[0];
+        // The save first asks which document bodies the backend lacks (workspace persistence: bodies are content-addressed and uploaded
+        // once), so the auto-save request is the one that carries the artifacts, not necessarily the first request.
+        var requestBody = capturedRequests.Single(r => JsonDocument.Parse(r).RootElement.TryGetProperty("artifacts", out _));
         _output.WriteLine($"Request body: {requestBody}");
 
         // Parse the JSON request

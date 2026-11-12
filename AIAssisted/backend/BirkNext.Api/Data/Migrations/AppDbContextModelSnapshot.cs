@@ -3543,6 +3543,31 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("traceability_suggestions", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.WorkspaceDocumentBodyRecord", b =>
+                {
+                    b.Property<string>("Sha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("sha256");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("content");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("Length")
+                        .HasColumnType("integer")
+                        .HasColumnName("length");
+
+                    b.HasKey("Sha256");
+
+                    b.ToTable("workspace_document_bodies", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.WorkspaceReviewProgress", b =>
                 {
                     b.Property<Guid>("Id")

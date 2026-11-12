@@ -11,8 +11,20 @@ namespace BirkNext.Web.Services;
 /// 2. Throttle to prevent more than one save per 30 seconds
 /// 3. Integrate with workspace persistence backend
 /// </summary>
+/// <summary>Honest save state of the workspace: never "Saved" after a failed save; a failure keeps the local state and offers a retry.</summary>
+public enum WorkspaceSaveState { Idle, Pending, Saving, Saved, Failed }
+
 public interface IWorkspaceAutoSaveService
 {
+    /// <summary>Current save state (see <see cref="WorkspaceSaveState"/>).</summary>
+    WorkspaceSaveState SaveState { get; }
+
+    /// <summary>Why the last save failed (when <see cref="SaveState"/> is Failed).</summary>
+    string? LastSaveError { get; }
+
+    /// <summary>Raised whenever <see cref="SaveState"/> changes.</summary>
+    event EventHandler? SaveStateChanged;
+
     /// <summary>
     /// Start monitoring for auto-save. Call from component OnInitialized.
     /// </summary>
@@ -72,6 +84,25 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
     private readonly SemaphoreSlim _saveGate = new(1, 1);
 
     public event EventHandler? AutoSaveCompleted;
+    public event EventHandler? SaveStateChanged;
+    public WorkspaceSaveState SaveState { get; private set; } = WorkspaceSaveState.Idle;
+    public string? LastSaveError { get; private set; }
+
+    private void SetState(WorkspaceSaveState state, string? error = null)
+    {
+        if (SaveState == state && LastSaveError == error) return;
+        SaveState = state;
+        LastSaveError = error;
+        SaveStateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>After a save attempt: Saved, nothing to save (Idle), or Failed with the persistence layer's reason. Local state is never cleared.</summary>
+    private void SettleAfterSave(bool saved)
+    {
+        if (saved) { SetState(WorkspaceSaveState.Saved); return; }
+        var error = _persistence.LastSaveError;
+        SetState(error is null ? WorkspaceSaveState.Idle : WorkspaceSaveState.Failed, error);
+    }
 
     public bool IsThrottled => !CanAutoSave();
 
@@ -169,6 +200,7 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
         }
 
         // Restart the timer
+        if (SaveState != WorkspaceSaveState.Saving) SetState(WorkspaceSaveState.Pending, LastSaveError);
         ScheduleAutoSave(AutoSaveIntervalMs);
     }
 
@@ -210,7 +242,9 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
         try
         {
             if (_resetInProgress) return false;
+            SetState(WorkspaceSaveState.Saving);
             var result = await _persistence.AutoSaveAsync();
+            SettleAfterSave(result is not null);
             if (result is null)
             {
                 _logger.LogWarning("Immediate workspace save failed: the backend did not accept the save");
@@ -223,6 +257,7 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
         }
         catch (Exception ex)
         {
+            SetState(WorkspaceSaveState.Failed, "The workspace could not be saved.");
             _logger.LogError(ex, "Immediate workspace save failed");
             return false;
         }
@@ -269,7 +304,9 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
             _logger.LogInformation("  Hash={Hash}", repoHash);
             _logger.LogInformation("  Count={Count}", artifactCount);
 
+            SetState(WorkspaceSaveState.Saving);
             var result = await _persistence.AutoSaveAsync();
+            SettleAfterSave(result is not null);
             if (result != null)
             {
                 _lastAutoSaveTime = DateTimeOffset.UtcNow;
@@ -278,6 +315,7 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
         }
         catch (Exception ex)
         {
+            SetState(WorkspaceSaveState.Failed, "The workspace could not be saved.");
             _logger.LogError(ex, "TRACE: Auto-save failed");
         }
         finally

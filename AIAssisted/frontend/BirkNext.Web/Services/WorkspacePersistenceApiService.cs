@@ -29,6 +29,9 @@ public sealed class LocalDataResetEpoch
 
 public interface IWorkspacePersistenceApiService
 {
+    /// <summary>Why the last save failed; null after a successful save or when there was nothing to save.</summary>
+    string? LastSaveError { get; }
+
     // Workspace operations
     Task<SavedWorkspaceDto?> SaveCurrentAsync(string? name = null);
     Task<SavedWorkspaceDto?> SaveAsAsync(string name);
@@ -117,6 +120,36 @@ public class CurrentWorkspaceStateDto
 public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
 {
     private readonly HttpClient _httpClient;
+    private WorkspaceDocumentBodyUploader? _bodies;
+    /// <summary>Document bodies go to the backend's content-addressed store once each; saves carry addresses (see the uploader).</summary>
+    private WorkspaceDocumentBodyUploader Bodies => _bodies ??= new WorkspaceDocumentBodyUploader(_httpClient);
+
+    /// <summary>Why the last save failed (null after a successful save); shown by the auto-save status instead of a false "Saved".</summary>
+    public string? LastSaveError { get; private set; }
+
+    /// <summary>The lifecycle for a save: bodies uploaded, addresses in place. A failed upload ends the save (reported, never "Saved").</summary>
+    private async Task<(string? Json, HttpResponseMessage? Failure)> LifecycleForSaveAsync()
+    {
+        var prepared = await Bodies.PrepareAsync(_artifactRepository.SddLifecycle, _epoch?.Value);
+        if (!prepared.Succeeded)
+        {
+            LastSaveError = prepared.Error;
+            _logger.LogWarning("Workspace save stopped before writing: {Error}", prepared.Error);
+        }
+        return (prepared.Json, prepared.Failure);
+    }
+
+    /// <summary>The reason of a refused save, from the backend's answer (e.g. missing document bodies), for the status line.</summary>
+    private async Task<string> RefusalAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            if (doc.RootElement.TryGetProperty("error", out var error) && error.GetString() is { Length: > 0 } text) return text;
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException) { }
+        return $"The save was refused ({(int)response.StatusCode}).";
+    }
     private readonly ILogger<WorkspacePersistenceApiService> _logger;
     private readonly IWorkspaceArtifactRepository _artifactRepository;
     private readonly LocalDataResetEpoch? _epoch;
@@ -154,17 +187,21 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
         try
         {
             var artifacts = GetArtifactsFromRepository();
+            var (lifecycleJson, failure) = await LifecycleForSaveAsync();
+            if (lifecycleJson is null) { if (failure is not null) await StaleAfterResetAsync(failure); return null; }
             var response = await _httpClient.PostAsJsonAsync(
                 "api/workspace-persistence/save-current",
-                new { name, artifacts, sddLifecycleJson = JsonSerializer.Serialize(_artifactRepository.SddLifecycle), resetEpoch = _epoch?.Value });
+                new { name, artifacts, sddLifecycleJson = lifecycleJson, resetEpoch = _epoch?.Value });
 
             if (await StaleAfterResetAsync(response)) return null;
             if (!response.IsSuccessStatusCode)
             {
+                LastSaveError = await RefusalAsync(response);
                 _logger.LogWarning("SaveCurrent failed with status {StatusCode}", response.StatusCode);
                 return null;
             }
 
+            LastSaveError = null;
             return await response.Content.ReadFromJsonAsync<SavedWorkspaceDto>();
         }
         catch (Exception ex)
@@ -179,16 +216,20 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
         try
         {
             var artifacts = GetArtifactsFromRepository();
+            var (lifecycleJson, _) = await LifecycleForSaveAsync();
+            if (lifecycleJson is null) return null;
             var response = await _httpClient.PostAsJsonAsync(
                 "api/workspace-persistence/save-as",
-                new { name, artifacts, sddLifecycleJson = JsonSerializer.Serialize(_artifactRepository.SddLifecycle) });
+                new { name, artifacts, sddLifecycleJson = lifecycleJson });
 
             if (!response.IsSuccessStatusCode)
             {
+                LastSaveError = await RefusalAsync(response);
                 _logger.LogWarning("SaveAs failed with status {StatusCode}", response.StatusCode);
                 return null;
             }
 
+            LastSaveError = null;
             return await response.Content.ReadFromJsonAsync<SavedWorkspaceDto>();
         }
         catch (Exception ex)
@@ -335,7 +376,9 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
 
             // The project identity is always sent: the slug when a Sample Project is selected, an empty string when the
             // user explicitly cleared the selection (the backend treats null as "not provided" and "" as "cleared").
-            var request = new { generatedName, projectName = _artifactRepository.CurrentProject ?? string.Empty, artifacts, sddLifecycleJson = JsonSerializer.Serialize(_artifactRepository.SddLifecycle), resetEpoch = _epoch?.Value };
+            var (lifecycleJson, failure) = await LifecycleForSaveAsync();
+            if (lifecycleJson is null) { if (failure is not null) await StaleAfterResetAsync(failure); return null; }
+            var request = new { generatedName, projectName = _artifactRepository.CurrentProject ?? string.Empty, artifacts, sddLifecycleJson = lifecycleJson, resetEpoch = _epoch?.Value };
             _logger.LogInformation("DIAG: [AutoSaveAsync] Request object created with {ArtifactCount} artifacts", artifacts.Count);
 
             var response = await _httpClient.PostAsJsonAsync(
@@ -344,22 +387,23 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
 
             _logger.LogInformation("DIAG: [AutoSaveAsync] POST returned status {Status}", response.StatusCode);
             if (await StaleAfterResetAsync(response)) return null;
-            if (response.StatusCode == System.Net.HttpStatusCode.NoContent) return null; // nothing to save yet
+            if (response.StatusCode == System.Net.HttpStatusCode.NoContent) { LastSaveError = null; return null; } // nothing to save yet
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("AutoSave failed with status {StatusCode}", response.StatusCode);
-                var errorContent = await response.Content.ReadAsStringAsync();
-                _logger.LogWarning("  Error response: {Error}", errorContent);
+                LastSaveError = await RefusalAsync(response);
+                _logger.LogWarning("AutoSave failed with status {StatusCode}: {Error}", response.StatusCode, LastSaveError);
                 return null;
             }
 
+            LastSaveError = null;
             var result = await response.Content.ReadFromJsonAsync<SavedWorkspaceDto>();
             _logger.LogInformation("DIAG: [AutoSaveAsync] Response received with {ArtifactCount} artifacts", result?.Artifacts.Count ?? 0);
             return result;
         }
         catch (Exception ex)
         {
+            LastSaveError = "The workspace could not be saved (the backend could not be reached or answered unexpectedly).";
             _logger.LogError(ex, "Error auto-saving workspace");
             return null;
         }

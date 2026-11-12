@@ -1,0 +1,4 @@
+.wsi { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin: 0.5rem 1.5rem 0; padding: 0.5rem 0.75rem; border-radius: 8px; font-size: 0.9375rem;
+    border: 1px solid var(--clr-border); background: var(--clr-surface); color: var(--clr-text-muted); }
+.wsi-failed { background: var(--clr-warning-bg); border-color: var(--clr-warning-border); color: var(--clr-text, inherit); }
+.wsi-text { overflow-wrap: anywhere; min-width: 0; flex: 1 1 16rem; }

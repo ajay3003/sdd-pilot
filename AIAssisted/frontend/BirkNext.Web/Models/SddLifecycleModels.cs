@@ -4,6 +4,14 @@ namespace BirkNext.Web.Models;
 public sealed class SddLifecycleState
 {
     public int SchemaVersion { get; set; } = 1;
+
+    /// <summary>A shallow copy with other revisions (persistence writes revisions without bodies; the live state is never changed).</summary>
+    public SddLifecycleState WithRevisions(List<SddArtifactRevision> revisions)
+    {
+        var copy = (SddLifecycleState)MemberwiseClone();
+        copy.Revisions = revisions;
+        return copy;
+    }
     public List<SddArtifactRevision> Revisions { get; set; } = [];
     public List<SddClarification> Questions { get; set; } = [];
     public List<SddDecision> Decisions { get; set; } = [];
@@ -393,6 +401,19 @@ public sealed class SddArtifactRevision
     public string? Origin { get; set; }
     /// <summary>The Project Import that captured this revision (shared provenance with its source snapshot); null otherwise.</summary>
     public string? ProjectImportId { get; set; }
+    /// <summary>Content address of the body in the backend's document store (lowercase hex SHA-256 of its UTF-8 bytes); set on save. The saved
+    /// lifecycle keeps this address instead of the body, so a save never re-sends every document of every import.</summary>
+    public string? ContentSha256 { get; set; }
+
+    /// <summary>A copy for persistence without the body (the body is in the document store under <paramref name="address"/>).</summary>
+    public SddArtifactRevision WithoutBody(string address)
+    {
+        var copy = (SddArtifactRevision)MemberwiseClone();
+        copy.ContentLength = Content.Length;
+        copy.Content = "";
+        copy.ContentSha256 = address;
+        return copy;
+    }
 }
 
 /// <summary>

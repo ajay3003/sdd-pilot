@@ -112,4 +112,12 @@ public interface IWorkspacePersistenceService
     // Export/Import
     Task<string> ExportJsonAsync(Guid workspaceId);
     Task<SavedWorkspace> ImportJsonAsync(string json);
+
+    // Document bodies (content-addressed; the stored lifecycle keeps addresses — see WorkspaceDocumentBodies)
+    /// <summary>The lifecycle with its document bodies put back, as every reader expects it.</summary>
+    Task<string?> WithDocumentBodiesAsync(string? lifecycleJson);
+    /// <summary>Which of these content addresses are not stored yet.</summary>
+    Task<IReadOnlyList<string>> MissingDocumentBodiesAsync(IReadOnlyList<string> addresses);
+    /// <summary>Stores one verified batch of bodies (idempotent per address).</summary>
+    Task<WorkspaceDocumentBodyUploadResult> StoreDocumentBodiesAsync(IReadOnlyList<WorkspaceDocumentBodyUpload> uploads);
 }

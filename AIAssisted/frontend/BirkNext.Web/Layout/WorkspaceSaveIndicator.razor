@@ -1,0 +1,43 @@
+@using BirkNext.Web.Services
+@implements IDisposable
+@inject IServiceProvider Services
+
+@* Honest workspace save state, next to Activity: shown only while a save runs or after one failed (then with the reason and an explicit
+   retry). It never says "Saved" for a failed save, never clears unsaved local state and never retries in a loop. *@
+@if (_autoSave is { } a && a.SaveState is WorkspaceSaveState.Saving or WorkspaceSaveState.Failed)
+{
+    <div class="wsi wsi-@a.SaveState.ToString().ToLowerInvariant()" role="status" aria-live="polite" data-testid="workspace-save-indicator" data-state="@a.SaveState">
+        @if (a.SaveState == WorkspaceSaveState.Saving)
+        {
+            <span>Saving workspace…</span>
+        }
+        else
+        {
+            <span class="wsi-text"><strong>Not saved.</strong> @a.LastSaveError Your changes are kept in this browser.</span>
+            <button type="button" class="btn-secondary btn-sm" data-testid="workspace-save-retry" disabled="@_retrying" @onclick="RetryAsync">Retry</button>
+        }
+    </div>
+}
+
+@code {
+    private IWorkspaceAutoSaveService? _autoSave;
+    private bool _retrying;
+
+    protected override void OnInitialized()
+    {
+        _autoSave = Services.GetService(typeof(IWorkspaceAutoSaveService)) as IWorkspaceAutoSaveService;
+        if (_autoSave is not null) _autoSave.SaveStateChanged += OnChanged;
+    }
+
+    private void OnChanged(object? sender, EventArgs e) => InvokeAsync(StateHasChanged);
+
+    private async Task RetryAsync()
+    {
+        if (_autoSave is null) return;
+        _retrying = true;
+        try { await _autoSave.SaveNowAsync(); }
+        finally { _retrying = false; }
+    }
+
+    public void Dispose() { if (_autoSave is not null) _autoSave.SaveStateChanged -= OnChanged; }
+}

@@ -11,6 +11,8 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 {
     private readonly AppDbContext _db;
     private readonly ILogger<WorkspacePersistenceService> _logger;
+    /// <summary>Document bodies are stored once by content address; the lifecycle keeps addresses (see <see cref="WorkspaceDocumentBodies"/>).</summary>
+    private WorkspaceDocumentBodies Bodies => new(_db);
     private Guid? _currentWorkspaceId;
     private string? _currentUserId = "default-user"; // TODO: Get from auth context
 
@@ -75,7 +77,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 
         // A client that has not loaded the document bodies sends a manifest: bodies come from the stored lifecycle, never lost.
         if (sddLifecycleJson is not null)
-            workspace.SddLifecycleJson = WorkspaceLifecycleDocuments.FillMissing(sddLifecycleJson, workspace.SddLifecycleJson);
+            workspace.SddLifecycleJson = await Bodies.PrepareForStorageAsync(sddLifecycleJson, workspace.SddLifecycleJson);
 
         workspace.UpdatedAt = DateTimeOffset.UtcNow;
         workspace.AutoSaved = false;
@@ -111,8 +113,9 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         if (sddLifecycleJson is not null && (_currentWorkspaceId ?? await ResolvePersistedCurrentWorkspaceIdAsync()) is { } currentId)
         {
             var stored = await _db.SavedWorkspaces.AsNoTracking().Where(w => w.Id == currentId && !w.IsDeleted).Select(w => w.SddLifecycleJson).FirstOrDefaultAsync();
-            sddLifecycleJson = WorkspaceLifecycleDocuments.FillMissing(sddLifecycleJson, stored);
+            sddLifecycleJson = await Bodies.PrepareForStorageAsync(sddLifecycleJson, stored);
         }
+        else if (sddLifecycleJson is not null) sddLifecycleJson = await Bodies.PrepareForStorageAsync(sddLifecycleJson, null);
 
         var workspace = new SavedWorkspace
         {
@@ -362,7 +365,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             _logger.LogInformation("TRACE: No current workspace ID, calling SaveAsAsync");
             var name = generatedName ?? $"Auto_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
             var workspace = await SaveAsAsync(name, artifacts ?? new());
-            workspace.SddLifecycleJson = sddLifecycleJson;
+            workspace.SddLifecycleJson = sddLifecycleJson is null ? null : await Bodies.PrepareForStorageAsync(sddLifecycleJson, null);
             // null = identity not provided by the caller; "" = the user explicitly cleared the selection.
             if (projectName is not null)
             {
@@ -393,7 +396,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             current.ProjectName = projectName.Trim();
         }
         if (sddLifecycleJson is not null)
-            current.SddLifecycleJson = WorkspaceLifecycleDocuments.FillMissing(sddLifecycleJson, current.SddLifecycleJson);
+            current.SddLifecycleJson = await Bodies.PrepareForStorageAsync(sddLifecycleJson, current.SddLifecycleJson);
 
         // Update artifacts if provided
         if (artifacts != null && artifacts.Any())
@@ -648,6 +651,12 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
     {
         return await _db.SavedWorkspaces.AnyAsync(w => w.Id == workspaceId && !w.IsDeleted);
     }
+
+    public Task<string?> WithDocumentBodiesAsync(string? lifecycleJson) => Bodies.WithBodiesAsync(lifecycleJson);
+
+    public Task<IReadOnlyList<string>> MissingDocumentBodiesAsync(IReadOnlyList<string> addresses) => Bodies.MissingAsync(addresses);
+
+    public Task<WorkspaceDocumentBodyUploadResult> StoreDocumentBodiesAsync(IReadOnlyList<WorkspaceDocumentBodyUpload> uploads) => Bodies.StoreAsync(uploads);
 
     public async Task<string> ExportJsonAsync(Guid workspaceId)
     {

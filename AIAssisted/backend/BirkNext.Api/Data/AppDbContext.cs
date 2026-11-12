@@ -66,6 +66,7 @@ public class AppDbContext : DbContext
     public DbSet<AiCodeReviewRunRecord> AiCodeReviewRuns => Set<AiCodeReviewRunRecord>();
     public DbSet<SourceRepositoryAssociationRecord> SourceRepositoryAssociations => Set<SourceRepositoryAssociationRecord>();
     public DbSet<SourceDecisionRecord> SourceDecisions => Set<SourceDecisionRecord>();
+    public DbSet<WorkspaceDocumentBodyRecord> WorkspaceDocumentBodies => Set<WorkspaceDocumentBodyRecord>();
     public DbSet<TestCoverageReviewRunRecord> TestCoverageReviewRuns => Set<TestCoverageReviewRunRecord>();
     public DbSet<TestCoverageDecisionRecord> TestCoverageDecisions => Set<TestCoverageDecisionRecord>();
     public DbSet<ManualReviewDecisionRecord> ManualReviewDecisions => Set<ManualReviewDecisionRecord>();
@@ -993,6 +994,17 @@ public class AppDbContext : DbContext
             entity.Property(r => r.RevokedAt).HasColumnName("revoked_at");
             entity.Property(r => r.RevokedBy).HasColumnName("revoked_by").HasMaxLength(200);
             entity.HasIndex(r => new { r.RepositoryKeyA, r.RepositoryKeyB }).HasDatabaseName("ix_source_repository_associations_keys");
+        });
+
+        // Content-addressed, immutable document bodies of saved workspaces (see WorkspaceDocumentBodyRecord).
+        modelBuilder.Entity<WorkspaceDocumentBodyRecord>(entity =>
+        {
+            entity.ToTable("workspace_document_bodies");
+            entity.HasKey(r => r.Sha256);
+            entity.Property(r => r.Sha256).HasColumnName("sha256").HasMaxLength(64);
+            entity.Property(r => r.Content).HasColumnName("content").HasColumnType("text").IsRequired();
+            entity.Property(r => r.Length).HasColumnName("length");
+            entity.Property(r => r.CreatedAt).HasColumnName("created_at");
         });
 
         // Append-only source decisions (analysis baselines, declared branch labels); see SourceDecisionRecord.
