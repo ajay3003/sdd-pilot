@@ -315,14 +315,15 @@ public sealed class TesterLauncherTests
     }
 
     [Fact]
-    public void The_browser_gets_a_one_time_token_in_the_fragment_never_the_code_and_falls_back_without_one()
+    public async Task The_browser_gets_a_one_time_token_in_the_fragment_never_the_code_and_falls_back_without_one()
     {
         var token = new string('a', 64);
         LocalAccess.BootstrapUrl("http://localhost:5481/", token).Should().Be("http://localhost:5481/#bootstrap=" + token);
         LocalAccess.BootstrapUrl("http://localhost:5481/#old", token).Should().Be("http://localhost:5481/#bootstrap=" + token);
         // No code (not written yet) or no backend: the plain address; the code stays in the start window.
-        LocalAccess.ConnectedUrlAsync("http://localhost:5481/", 1, null, new LauncherLog(TempDir())).Result.Should().Be("http://localhost:5481/");
-        LocalAccess.ConnectedUrlAsync("http://localhost:5481/", 1, "ABCD-EFGH-JKLM", new LauncherLog(TempDir())).Result
+        // Awaited, never .Result: blocking on the continuation deadlocks under xUnit's single-thread limit (it hung regression partition 6b).
+        (await LocalAccess.ConnectedUrlAsync("http://localhost:5481/", 1, null, new LauncherLog(TempDir()))).Should().Be("http://localhost:5481/");
+        (await LocalAccess.ConnectedUrlAsync("http://localhost:5481/", 1, "ABCD-EFGH-JKLM", new LauncherLog(TempDir())))
             .Should().Be("http://localhost:5481/", "an unreachable backend never blocks the browser and never puts the code in the URL");
     }
 }
