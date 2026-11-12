@@ -46,6 +46,7 @@
         }
     </PageHeader>
     <BirkNext.Web.Components.SourceManagement.SourceContextNotice Purpose="Project Quality" />
+    @if (_workflowReadiness is { } focusReadiness) { <WorkspaceFocusPanel Capabilities="focusReadiness.Capabilities" Compact="true" /> }
 
     @* ══ 1 · Workspace summary ═══════════════════════════════════════════════════
        Driven only by the current-workspace read model (ICurrentWorkspaceProjection), the same one Recommended Workflow reads. *@

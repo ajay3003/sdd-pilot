@@ -1,0 +1,22 @@
+.wfp { margin: 0 0 1.25rem; padding: 1rem 1.25rem; border: 1px solid var(--clr-border); border-radius: 12px; background: var(--clr-surface, #fff); }
+.wfp-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.5rem 1rem; }
+.wfp-title { margin: 0; font-size: 1.125rem; font-weight: 600; }
+.wfp-view { font-weight: 400; color: var(--clr-text-muted); }
+.wfp-counts { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin: 0; padding: 0; list-style: none; font-size: 0.9375rem; color: var(--clr-text-muted); }
+.wfp-counts strong { color: var(--clr-text, inherit); }
+.wfp-risks { margin: 0.75rem 0 0; padding: 0; list-style: none; display: grid; gap: 0.5rem; }
+.wfp-risk { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: baseline; padding: 0.6rem 0.75rem; border-radius: 8px;
+    background: var(--clr-warning-bg); border: 1px solid var(--clr-warning-border); color: var(--clr-text, inherit); font-size: 0.9375rem; }
+.wfp-risk-label { font-weight: 600; color: var(--clr-warning); }
+.wfp-actions { margin: 0.75rem 0 0; padding: 0; list-style: none; display: grid; gap: 0.5rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); }
+.wfp-action { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.75rem; border: 1px solid var(--clr-border); border-radius: 10px; min-width: 0; }
+.wfp-action-main { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem 0.5rem; align-items: baseline; }
+.wfp-action-title { font-weight: 600; overflow-wrap: anywhere; }
+.wfp-state { font-size: 0.875rem; color: var(--clr-text-muted); }
+.wfp-candonow .wfp-state { color: var(--clr-success); }
+.wfp-blocked .wfp-state { color: var(--clr-warning); }
+.wfp-why { margin: 0; font-size: 0.9375rem; color: var(--clr-text-muted); overflow-wrap: anywhere; }
+.wfp-link { font-size: 0.9375rem; overflow-wrap: anywhere; }
+.wfp-more { display: inline-block; margin-top: 0.75rem; }
+.wfp-empty { margin: 0.75rem 0 0; color: var(--clr-text-muted); }
+.wfp-compact { padding: 0.85rem 1rem; }

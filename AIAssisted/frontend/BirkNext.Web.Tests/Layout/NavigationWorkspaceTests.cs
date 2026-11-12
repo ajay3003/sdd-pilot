@@ -33,6 +33,7 @@ public sealed class NavigationWorkspaceTests : BunitContext
     [InlineData(WorkspaceView.TestLead)]
     [InlineData(WorkspaceView.Developer)]
     [InlineData(WorkspaceView.Architect)]
+    [InlineData(WorkspaceView.ManualTesting)]
     [InlineData(WorkspaceView.AllModules)]
     public void SwitchingTheView_StaysOnTheCurrentPage_AndNeverChangesTheSelectedProject(WorkspaceView view)
     {

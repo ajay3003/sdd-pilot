@@ -1,0 +1,83 @@
+@using BirkNext.SourceBaselines
+@using BirkNext.Web.Services
+@implements IDisposable
+@inject IServiceProvider Services
+
+@* Your next steps for the selected workspace view: at most three actions from the shared capabilities (same ids and routes as everywhere),
+   honest counts and the risks every view keeps. A presentation of shared facts only; switching the view re-renders it without reloading
+   anything and records nothing. Renders nothing in All Modules, where the full page already shows everything. *@
+@if (_focus is { } f && !f.View.IsAllModules)
+{
+    <section class="wfp @(Compact ? "wfp-compact" : null)" aria-labelledby="wfp-title-@_id" data-testid="workspace-focus" data-view="@f.View.View">
+        <div class="wfp-head">
+            <h2 id="wfp-title-@_id" class="wfp-title">Your next steps <span class="wfp-view">· @f.View.Label</span></h2>
+            <ul class="wfp-counts" aria-label="Status of the steps in this view">
+                <li data-testid="wfp-ready"><strong>@f.ReadyNow</strong> ready now</li>
+                <li data-testid="wfp-blocked"><strong>@f.Blocked</strong> blocked</li>
+                <li data-testid="wfp-done"><strong>@f.Completed</strong> done</li>
+            </ul>
+        </div>
+        @if (f.Risks.Count > 0)
+        {
+            <ul class="wfp-risks" data-testid="wfp-risks">
+                @foreach (var risk in f.Risks)
+                {
+                    <li class="wfp-risk" data-testid="wfp-risk" data-code="@risk.Code">
+                        <span class="wfp-risk-label">Important</span>
+                        <span>@risk.Text</span>
+                        <a href="@risk.Route" class="wfp-link">@risk.ActionLabel</a>
+                    </li>
+                }
+            </ul>
+        }
+        @if (f.Primary.Count == 0)
+        {
+            <p class="wfp-empty" data-testid="wfp-empty">@(f.Relevant == 0 ? "None of this view's modules has a step to take with the current evidence." : "Every step in this view is done for the current evidence.")</p>
+        }
+        else
+        {
+            <ol class="wfp-actions">
+                @foreach (var action in f.Primary)
+                {
+                    <li class="wfp-action wfp-@action.State.ToString().ToLowerInvariant()" data-testid="wfp-action" data-id="@action.Id" data-state="@action.State">
+                        <div class="wfp-action-main">
+                            <span class="wfp-action-title">@action.Title</span>
+                            <span class="wfp-state">@action.StateLabel</span>
+                        </div>
+                        @if (!Compact) { <p class="wfp-why">@(action.Blocker ?? action.Why)</p> }
+                        <a href="@action.Route" class="wfp-link" data-testid="wfp-open">@(action.State == FocusActionState.Blocked ? "See what is needed" : $"Open {action.Title}")</a>
+                    </li>
+                }
+            </ol>
+        }
+        @if (Compact) { <a href="getting-started" class="wfp-link wfp-more" data-testid="wfp-more">All next steps in Recommended Workflow</a> }
+    </section>
+}
+
+@code {
+    /// <summary>The capabilities the page already loaded (Recommended Workflow / Dashboard share them).</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<ReviewCapability> Capabilities { get; set; } = [];
+    /// <summary>Dashboard preview: titles and states only, with a link to Recommended Workflow.</summary>
+    [Parameter] public bool Compact { get; set; }
+
+    private readonly string _id = Guid.NewGuid().ToString("N")[..8];
+    private NavigationSectionState? _navigation;
+    private SourceContextView? _context;
+    private WorkspaceFocusView? _focus;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _navigation = Services.GetService(typeof(NavigationSectionState)) as NavigationSectionState;
+        if (_navigation is not null) _navigation.Changed += OnNavigationChanged;
+        if (Services.GetService(typeof(SourceContextApiService)) is SourceContextApiService api) (_context, _) = await api.GetAsync();
+        Recompute();
+    }
+
+    protected override void OnParametersSet() => Recompute();
+
+    private void Recompute() => _focus = WorkspaceFocus.Of(_navigation?.View ?? WorkspaceView.AllModules, Capabilities, _context);
+
+    private void OnNavigationChanged() => InvokeAsync(() => { Recompute(); StateHasChanged(); });
+
+    public void Dispose() { if (_navigation is not null) _navigation.Changed -= OnNavigationChanged; }
+}

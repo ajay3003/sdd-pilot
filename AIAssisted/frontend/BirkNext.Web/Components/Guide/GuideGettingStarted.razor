@@ -115,6 +115,27 @@
     </ul>
 </section>
 
+<section id="manual-testing" class="ug-section ug-topic" data-topic="manual-testing" aria-labelledby="manual-testing-title">
+    <h2 id="manual-testing-title" class="ug-section-title" tabindex="-1">Manual testing</h2>
+    <GuideArticleMeta Topic="manual-testing" />
+    <p class="ug-lead">The <strong>Manual Testing</strong> workspace view (sidebar → Workspace view) is for functional testers who understand the business process, review requirements and prepare tests, without working with source code, APIs, message queues or infrastructure. It orders the existing modules as a testing workflow; it adds no module and changes no data.</p>
+    <ol>
+        <li><strong>Project setup</strong> — <em>Import Project</em> shows where BirkNext gets its information; <em>Source Management</em> shows which version of each source is analysed. When several versions of one source exist, choose the analysis baseline there first: without it, BirkNext draws no implementation-specific conclusion from that source.</li>
+        <li><strong>Understand the system</strong> — <em>System Understanding</em>: the business flow, each step, the rules, and what is source-backed versus only documented.</li>
+        <li><strong>Requirements</strong> — <em>Specification Explorer</em> (requirements, user stories, acceptance scenarios), <em>Document Quality Review</em> (clarity, completeness and testability of the requirements) and <em>Documentation Drift</em> (documents that no longer match).</li>
+        <li><strong>Test preparation</strong> — <em>Functional Test Scenarios</em> opens System Understanding → What to test: scenario candidates with preconditions, test data, expected outcome and the evidence to observe, each with its state (suggested, needs clarification, existing definition, executed, verified). <em>Test Data</em> shows which approved test data exists and what is still missing.</li>
+        <li><strong>Coverage &amp; traceability</strong> — <em>Requirements Traceability</em> keeps designed, referenced and executed coverage apart; <em>Test Coverage &amp; Overlap Review</em> finds requirements without tests and overlapping tests.</li>
+        <li><strong>Quality &amp; follow-up</strong> — <em>Project Quality</em>, <em>Recommended Workflow</em> and this guide.</li>
+    </ol>
+    <ul>
+        <li><strong>A view is not a permission.</strong> It only decides which modules the sidebar shows and in which order. Technical modules stay available through the sidebar search, "Show other modules" and their links; Feature Visibility (System Settings) still decides which modules exist, and the backend still decides who may change what. Switching views never changes the project, the analysis baseline or any setting.</li>
+        <li><strong>BirkNext and Azure DevOps Test Plans.</strong> BirkNext helps you understand requirements, find functional scenarios, prepare test data and see coverage and change impact. Formal test plans, test suites, Test Case work items, manual execution, test results and defects stay in Azure DevOps Test Plans. BirkNext does not read or create Test Plans or Test Cases; a scenario in BirkNext is never a Test Case and never an executed test.</li>
+        <li><strong>Testing without a frontend.</strong> A system without its own screens can still be tested manually, but only when there is an authorised way to give input, controlled test data, a known expected result, an observable outcome (for example a status a tester may look at), a suitable environment and a way to keep evidence. A tester does not need to read API payloads or queues; a technical colleague can provide the input or observation channel.</li>
+        <li><strong>XSD validation is not functional testing.</strong> A valid XML message only satisfies the schema's structure and data types. It does not show that a child was identified correctly, that a duplicate or correction was handled, that a reporting period was locked, that the report was stored or that it reached the next system.</li>
+        <li><strong>Example (Skolenærvær).</strong> Import the project material, choose the intended M2LB analysis baseline, follow how an attendance report moves from Altinn through MU/MM to the school service in System Understanding, review the requirement for a child that is not yet known, open What to test for its scenarios and their open questions, check the needed test data, review coverage, and then write the formal Test Cases in Azure DevOps. This is an illustration of the workflow, not a statement that any of these tests has been run.</li>
+    </ul>
+</section>
+
 <section id="recommended-workflow" class="ug-section ug-topic" data-topic="recommended-workflow" aria-labelledby="recommended-workflow-title">
     <h2 id="recommended-workflow-title" class="ug-section-title" tabindex="-1">Recommended Workflow</h2>
     <GuideArticleMeta Topic="recommended-workflow" />

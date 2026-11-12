@@ -80,7 +80,7 @@
             {
                 var rows = Rows(modules, group, location);
                 if (rows.Count == 0) continue;
-                var hasCurrent = rows.Any(m => m.Item.IsCurrentLocation(location));
+                var hasCurrent = rows.Any(m => WorkspaceViews.IsCurrent(_sections.View, m.Item, location));
                 var flyoutId = $"nav-flyout-{group.Id}";
                 <div class="nav-rail-item">
                     <button type="button" id="nav-rail-@group.Id" class="nav-rail-btn @(hasCurrent ? "active" : null) @(_flyout == group.Id ? "nav-rail-open" : null)" data-testid="nav-rail-@group.Id" aria-label="@group.Label" data-label="@group.Label"
@@ -94,7 +94,7 @@
                             <p class="nav-flyout-title" role="presentation">@group.Label</p>
                             @foreach (var module in rows)
                             {
-                                var current = module.Item.IsCurrentLocation(location);
+                                var current = WorkspaceViews.IsCurrent(_sections.View, module.Item, location);
                                 var status = Status(module);
                                 <a role="menuitem" class="nav-flyout-link @(current ? "active" : null) @(module.IsRow ? null : "nav-item-outside")" href="@module.Item.Route" title="@module.Item.Title"
                                    aria-current="@(current ? "page" : null)" data-testid="nav-flyout-link" @onclick="CloseFlyout">
@@ -143,7 +143,7 @@
                     {
                         var item = module.Item;
                         var status = Status(module);
-                        var current = item.IsCurrentLocation(location);
+                        var current = WorkspaceViews.IsCurrent(_sections.View, item, location);
                         <div class="nav-item px-2 @(module.IsRow ? null : "nav-item-outside")">
                             <a class="nav-link @(current ? "active" : null)" href="@item.Route" title="@item.Title" aria-current="@(current ? "page" : null)">
                                 <span class="nav-icon @item.Icon" aria-hidden="true"></span>
@@ -214,11 +214,13 @@
     }
 
     /// <summary>
-    /// The rows of a group: modules of the view (and the person's additions); with "Show other modules", the rest of the group's enabled
-    /// modules; and always the current page's module, so the page that is open is never without its row.
+    /// The rows of a group, in the group's order (a view's workflow group or a catalog group): modules of the view (and the person's additions);
+    /// with "Show other modules", the rest of the group's enabled modules; and always the current page's module, so the page that is open is never
+    /// without its row.
     /// </summary>
     private IReadOnlyList<NavModule> Rows(IReadOnlyList<NavModule> modules, NavSection group, string location) =>
-        [.. modules.Where(m => m.Section == group && m.Enabled && (m.IsRow || _sections.ShowOtherModules || m.Item.IsCurrentLocation(location)))];
+        [.. group.Items.Select(i => modules.FirstOrDefault(m => ReferenceEquals(m.Item, i)) ?? NavigationModules.Resolve(group, i, FeatureViz, _sections))
+            .Where(m => m.Enabled && (m.IsRow || _sections.ShowOtherModules || m.Item.IsCurrentLocation(location)))];
 
     private NavStatus? Status(NavModule module) =>
         module.Item.ReviewId is { } reviewId ? NavStatusPresentation.For(module.Item, _applicability?.For(reviewId)) : null;
@@ -226,7 +228,7 @@
     /// <summary>The current page's section is always open; other sections keep the state the person chose.</summary>
     private void ExpandCurrentSection()
     {
-        if (NavigationCatalog.SectionForLocation(NavigationCatalog.RelativeLocation(Navigation)) is { } section) _sections.Expand(section.Id);
+        if (WorkspaceViews.SectionForLocation(_sections.View, NavigationCatalog.RelativeLocation(Navigation)) is { } section) _sections.Expand(section.Id);
     }
 
     private void OnFeatureVisibilityChanged() => _ = InvokeAsync(StateHasChanged);
