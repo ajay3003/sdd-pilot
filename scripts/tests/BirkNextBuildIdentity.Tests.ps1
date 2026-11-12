@@ -84,7 +84,7 @@ Check "pipeline: the identity is resolved before the first compilation" ($resolv
 $compiles = [regex]::Matches($yaml, 'dotnet (build|publish) ').Count
 $stamped = [regex]::Matches($yaml, 'BirkNextBuildIdentityProps').Count
 Check "pipeline: every dotnet build/publish gets the resolved identity" ($compiles -ge 4 -and $stamped -ge $compiles) "$compiles compilations, $stamped stamped"
-Check "pipeline: the existing artifact names are kept (consumers depend on them)" ($yaml.Contains("artifact: 'birknext-tester-package-candidate'") -and $yaml.Contains("artifact: 'birknext-tester-package'"))
+Check "pipeline: one tester-facing artifact; the smoke job's internal candidate is kept; the duplicate validated copy is gone" ($yaml.Contains("artifact: 'BirkNext-Tester-Windows-x64'") -and $yaml.Contains("artifact: 'birknext-tester-package-candidate'") -and -not $yaml.Contains("artifact: 'birknext-tester-package'") -and $yaml.Contains("artifact: 'birknext-developer-package-archive'"))
 Check "pipeline: the package gets a build manifest and a checksummed versioned archive" ($yaml.Contains("write-build-manifest.ps1") -and $yaml.Contains("package-archive.ps1") -and $yaml.Contains("-RequireBuildManifest"))
 
 if ($script:failures -gt 0) { Write-Host "$script:failures failure(s)" -ForegroundColor Red } else { Write-Host "All build identity checks passed" -ForegroundColor Green }

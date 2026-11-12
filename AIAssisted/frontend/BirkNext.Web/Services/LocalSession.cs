@@ -67,11 +67,30 @@ public sealed class LocalSessionApiService(HttpClient http)
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { return null; }
     }
 
-    public async Task<(bool Connected, string? Message)> ConnectAsync(string code, CancellationToken ct = default)
+    public Task<(bool Connected, string? Message)> ConnectAsync(string code, CancellationToken ct = default) => PostAsync(new { code }, ct);
+
+    /// <summary>Exchanges the one-time token the Start-BirkNext launcher put in this page's URL fragment (automatic connection; never the code).</summary>
+    public Task<(bool Connected, string? Message)> ConnectWithBootstrapAsync(string bootstrapToken, CancellationToken ct = default) =>
+        PostAsync(new { bootstrapToken }, ct);
+
+    /// <summary>The bootstrap token in a URL fragment (<c>#bootstrap=…</c>, 64 hex characters), or null. Pure.</summary>
+    public static string? BootstrapToken(string uri)
+    {
+        var hash = uri.IndexOf('#');
+        if (hash < 0) return null;
+        foreach (var part in uri[(hash + 1)..].Split('&'))
+            if (part.StartsWith("bootstrap=", StringComparison.Ordinal) && part[10..] is { Length: 64 } t && t.All(Uri.IsHexDigit)) return t;
+        return null;
+    }
+
+    /// <summary>The same address without its fragment (the token is removed from the address bar and the history entry).</summary>
+    public static string WithoutFragment(string uri) => uri.IndexOf('#') is var i and >= 0 ? uri[..i] : uri;
+
+    private async Task<(bool Connected, string? Message)> PostAsync(object body, CancellationToken ct)
     {
         try
         {
-            using var response = await http.PostAsJsonAsync("api/local-session", new { code }, ct);
+            using var response = await http.PostAsJsonAsync("api/local-session", body, ct);
             if (response.IsSuccessStatusCode) return (true, null);
             var problem = await response.Content.ReadFromJsonAsync<Problem>(cancellationToken: ct);
             return (false, problem?.Message ?? $"The code was not accepted ({(int)response.StatusCode}).");

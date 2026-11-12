@@ -302,4 +302,27 @@ public sealed class TesterLauncherTests
         using var again = Task.Run(() => SingleInstance.TryAcquire(root)).Result;
         again.Should().NotBeNull("released on exit");
     }
+
+    // ── Startup reliability (tester distribution) ────────────────────────────────────────────────────────
+
+    [Fact]
+    public void QuickEdit_is_switched_off_without_touching_the_other_console_input_flags()
+    {
+        // ENABLE_QUICK_EDIT_MODE (0x40) off, ENABLE_EXTENDED_FLAGS (0x80) on (required for the change), everything else unchanged.
+        ConsoleMode.WithoutQuickEdit(0x01F7).Should().Be(0x01B7);
+        ConsoleMode.WithoutQuickEdit(0x0007).Should().Be(0x0087);
+        (ConsoleMode.WithoutQuickEdit(uint.MaxValue) & 0x40).Should().Be(0);
+    }
+
+    [Fact]
+    public void The_browser_gets_a_one_time_token_in_the_fragment_never_the_code_and_falls_back_without_one()
+    {
+        var token = new string('a', 64);
+        LocalAccess.BootstrapUrl("http://localhost:5481/", token).Should().Be("http://localhost:5481/#bootstrap=" + token);
+        LocalAccess.BootstrapUrl("http://localhost:5481/#old", token).Should().Be("http://localhost:5481/#bootstrap=" + token);
+        // No code (not written yet) or no backend: the plain address; the code stays in the start window.
+        LocalAccess.ConnectedUrlAsync("http://localhost:5481/", 1, null, new LauncherLog(TempDir())).Result.Should().Be("http://localhost:5481/");
+        LocalAccess.ConnectedUrlAsync("http://localhost:5481/", 1, "ABCD-EFGH-JKLM", new LauncherLog(TempDir())).Result
+            .Should().Be("http://localhost:5481/", "an unreachable backend never blocks the browser and never puts the code in the URL");
+    }
 }

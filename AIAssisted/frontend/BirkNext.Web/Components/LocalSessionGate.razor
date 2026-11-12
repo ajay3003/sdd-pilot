@@ -15,7 +15,7 @@
                 <label for="lsg-code">Connection code</label>
                 <input id="lsg-code" class="form-control" autocomplete="off" spellcheck="false" placeholder="XXXX-XXXX-XXXX" @bind="_code" @bind:event="oninput"
                        aria-describedby="@(_error is null ? "lsg-help" : "lsg-error")" data-testid="local-session-code" />
-                <p id="lsg-help" class="lsg-help">Can't find it? It is also in the file <code>App_Data\local-session\launch-code.txt</code> next to the BirkNext backend.</p>
+                <p id="lsg-help" class="lsg-help">Starting BirkNext with <strong>Start-BirkNext.exe</strong> connects this browser automatically. Otherwise: the code is shown in the BirkNext start window; if that window is closed, start <strong>Start-BirkNext.exe</strong> again — it shows the code and opens a connected browser.</p>
                 @if (_error is { } error) { <p id="lsg-error" class="lsg-error" role="alert" data-testid="local-session-error">@error</p> }
                 <button type="submit" class="btn btn-primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_code))" data-testid="local-session-connect">@(_busy ? "Connecting…" : "Connect")</button>
             </form>
@@ -35,6 +35,15 @@
         _api = Services.GetService(typeof(LocalSessionApiService)) as LocalSessionApiService;
         if (_state is null || _api is null) return;
         _state.Changed += OnChanged;
+        // Automatic connection: the launcher opened this page with a one-time token in the fragment. It is removed from the address bar and the
+        // history entry first, then used once; on failure the code dialog explains what to do.
+        if (LocalSessionApiService.BootstrapToken(Navigation.Uri) is { } bootstrap)
+        {
+            Navigation.NavigateTo(LocalSessionApiService.WithoutFragment(Navigation.Uri), replace: true);
+            var (connected, message) = await _api.ConnectWithBootstrapAsync(bootstrap);
+            if (connected) { _state.MarkConnected(); Navigation.Refresh(forceReload: true); return; }
+            _error = message;
+        }
         if (await _api.ConnectedAsync() is false) _state.MarkRequired();
         _show = _state.ConnectRequired;
     }

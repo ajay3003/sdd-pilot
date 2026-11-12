@@ -207,16 +207,17 @@ jobs:
             "$PACKAGE_DIR/scripts/start-local.ps1"
           echo "Artifact file count: $(find "$PACKAGE_DIR" -type f | wc -l)"
 
-    # A candidate only: testers get the package after the Windows smoke test below has passed.
+    # INTERNAL intermediate (not for testers): the framework-dependent developer package, downloaded by the smoke job below. It needs the .NET 8
+    # runtime, Podman/Docker and a manual connection code; testers use the self-contained BirkNext-Tester-Windows-x64 artifact (last job).
     - task: PublishPipelineArtifact@1
-      displayName: 'Publish BirkNext tester package candidate'
+      displayName: 'Publish developer package candidate (internal intermediate)'
       inputs:
         targetPath: '$(Build.ArtifactStagingDirectory)/BirkNext'
         artifact: 'birknext-tester-package-candidate'
         publishLocation: 'pipeline'
 
 - job: SmokeTestTesterPackage
-  displayName: 'Smoke test the tester package on a clean Windows machine, then publish it'
+  displayName: 'Smoke test the developer package on a clean Windows machine, then publish its archive'
   dependsOn: BuildAndPackage
   pool:
     vmImage: windows-latest
@@ -248,12 +249,8 @@ jobs:
         if ($LASTEXITCODE -ne 0) { throw "start-local.ps1 -ValidateOnly failed on the tester package." }
       displayName: 'Validate the package and the launcher preflight from a clean folder'
 
-    - task: PublishPipelineArtifact@1
-      displayName: 'Publish BirkNext tester package (validated)'
-      inputs:
-        targetPath: '$(Pipeline.Workspace)/candidate'
-        artifact: 'birknext-tester-package'
-        publishLocation: 'pipeline'
+    # (The validated folder used to be published again as 'birknext-tester-package': a byte-identical copy of the candidate, ~261 MB, and the
+    # artifact testers mistook for the tester package. It is no longer published; its archive below remains for developers.)
 
     # The downloadable, visibly versioned archive: BirkNext-<build version>.zip (name from the package's build-manifest.json) and its
     # SHA-256 in a separate .sha256 file, computed after the archive is final. The artifact name stays stable for consumers.
@@ -268,10 +265,10 @@ jobs:
       displayName: 'Create the versioned archive and its SHA-256, then verify a fresh extraction'
 
     - task: PublishPipelineArtifact@1
-      displayName: 'Publish BirkNext versioned archive and checksum'
+      displayName: 'Publish developer package archive and checksum (needs .NET 8 + Podman/Docker; not for testers)'
       inputs:
         targetPath: '$(Build.ArtifactStagingDirectory)/archive'
-        artifact: 'birknext-tester-package-archive'
+        artifact: 'birknext-developer-package-archive'
         publishLocation: 'pipeline'
 
 # Windows Tester Package (TesterNative runtime profile): self-contained backend and launcher, the frontend, the pinned native PostgreSQL and k6
@@ -314,9 +311,11 @@ jobs:
         if (-not (Test-Path "$data\config\cluster.json")) { throw "No database cluster was created." }
       displayName: 'Offline package inspection and isolated startup check'
 
+    # THE tester-facing artifact: one self-contained ZIP (Start-BirkNext.exe, backend, frontend, bundled PostgreSQL and k6; no .NET, Node,
+    # containers or manual configuration) and its SHA-256 file.
     - task: PublishPipelineArtifact@1
-      displayName: 'Publish the Windows Tester Package archive and checksum'
+      displayName: 'Publish BirkNext-Tester-Windows-x64 (the tester download: archive and checksum)'
       inputs:
         targetPath: '$(Build.ArtifactStagingDirectory)/tester/archive'
-        artifact: 'birknext-windows-tester-package'
+        artifact: 'BirkNext-Tester-Windows-x64'
         publishLocation: 'pipeline'

@@ -172,9 +172,36 @@ k6 $($lock.k6.version) (Grafana Labs)                                           
         $src = Join-Path $repo "docs/deployment/$doc"
         if (Test-Path $src) { Copy-Item $src (Join-Path $stage "docs/$doc") }
     }
-    [IO.File]::WriteAllText((Join-Path $stage 'README.txt'),
-        "BirkNext Tester (Windows)`r`n`r`nStart BirkNext: double-click Start-BirkNext.exe and keep its window open.`r`nYour data is kept in %LOCALAPPDATA%\BirkNext\TesterNative, outside this folder.`r`nInstallation and upgrade guides: docs\`r`n",
-        (New-Object Text.UTF8Encoding($false)))
+    # One page for the tester: the normal path first, then what to do when something goes wrong.
+    $readme = @(
+        'BirkNext Tester (Windows)',
+        '',
+        'START',
+        '  1. Extract the WHOLE zip to a normal local folder you can write to (for example C:\BirkNext). Do not run it from inside the zip.',
+        '  2. Double-click Start-BirkNext.exe. Keep its window open while you use BirkNext.',
+        '  3. The browser opens BirkNext and is connected automatically. Nothing to install, no code to copy.',
+        '',
+        'ANOTHER BROWSER OR WINDOW',
+        '  Double-click Start-BirkNext.exe again: it opens a connected browser and shows the connection code.',
+        '  Any other browser asks once for that code (also shown in the BirkNext window).',
+        '',
+        'STOP',
+        '  Close the BirkNext window (or press Ctrl+C in it). Your data is kept.',
+        '',
+        'YOUR DATA',
+        '  %LOCALAPPDATA%\BirkNext\TesterNative (outside this folder). A newer package uses the same data;',
+        '  a verified backup is made automatically before a new version updates the database.',
+        '',
+        'IF SOMETHING GOES WRONG',
+        '  The window says what happened and what to do. To send details to the BirkNext owner, run:',
+        '    Start-BirkNext.exe --diagnostics   (writes a zip with logs and state; no passwords or codes)',
+        '  Check the package and this PC without starting:  Start-BirkNext.exe --validate',
+        '  Version:  the window title, or Start-BirkNext.exe --status',
+        '  Azure Virtual Desktop / managed PCs: if Windows blocks Start-BirkNext.exe, ask IT to allow it (do not bypass security).',
+        '',
+        'More: docs\birknext-windows-tester-installation.md and docs\birknext-windows-tester-upgrade-recovery.md'
+    ) -join "`r`n"
+    [IO.File]::WriteAllText((Join-Path $stage 'README.txt'), $readme + "`r`n", (New-Object Text.UTF8Encoding($false)))
 
     Step 'Build manifest'
     $manifest = New-BirkNextBuildManifest $identity $stage

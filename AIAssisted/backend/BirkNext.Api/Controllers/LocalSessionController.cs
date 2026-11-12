@@ -13,7 +13,12 @@ namespace BirkNext.Api.Controllers;
 [Route("api/local-session")]
 public sealed class LocalSessionController(LocalSessionService sessions, IConfiguration configuration) : ControllerBase
 {
-    public sealed record ExchangeRequest(string? Code);
+    public sealed record ExchangeRequest(string? Code, string? BootstrapToken = null);
+    public sealed record BootstrapRequest(string? Code);
+    public sealed record BootstrapResponse(string Token, int ExpiresInSeconds);
+
+    /// <summary>The value of <see cref="LocalSessionService.ClientHeader"/> the Start-BirkNext launcher sends.</summary>
+    public const string LauncherClient = "launcher";
     public sealed record SessionStatus(bool Connected);
 
     [HttpGet, AllowAnonymous]
@@ -27,17 +32,35 @@ public sealed class LocalSessionController(LocalSessionService sessions, IConfig
         var frontend = configuration["FRONTEND_ORIGIN"] ?? "http://localhost:5173";
         if (!LocalRequestGuardMiddleware.SameOrigin(Request.Headers.Origin.ToString(), frontend) || !Request.Headers.ContainsKey(LocalSessionService.ClientHeader))
             return StatusCode(StatusCodes.Status403Forbidden, new { message = "The code can only be entered in the BirkNext application." });
-        var (result, token) = sessions.Exchange(request.Code);
+        var (result, token) = string.IsNullOrEmpty(request.BootstrapToken) ? sessions.Exchange(request.Code) : sessions.ExchangeBootstrap(request.BootstrapToken);
         if (result == LocalSessionService.ExchangeResult.Throttled)
             return StatusCode(StatusCodes.Status429TooManyRequests, new { message = "Too many wrong codes. Wait a minute and try again." });
         if (result == LocalSessionService.ExchangeResult.Rejected)
-            return Unauthorized(new { message = "That code is not right. Use the code shown in the BirkNext start window." });
+            return Unauthorized(new { message = string.IsNullOrEmpty(request.BootstrapToken)
+                ? "That code is not right. Use the code shown in the BirkNext start window."
+                : "The automatic connection link has expired or was already used. Enter the code shown in the BirkNext start window." });
         Response.Cookies.Append(LocalSessionService.CookieName, token!, new CookieOptions
         {
             HttpOnly = true, SameSite = SameSiteMode.Strict, Path = "/", IsEssential = true, Secure = Request.IsHttps,
             MaxAge = LocalSessionService.AbsoluteLifetime,
         });
         return Ok(new SessionStatus(true));
+    }
+
+    /// <summary>
+    /// The launcher (not a browser) exchanges the launch code it read from the owner-only file for a one-time bootstrap token, then opens the
+    /// browser with that token in the URL fragment. Refused with an Origin header (every browser POST carries one) or without the launcher client
+    /// header; loopback Host only (the shared guard). The code itself never leaves the launcher and this request.
+    /// </summary>
+    [HttpPost("bootstrap"), AllowAnonymous]
+    public ActionResult<BootstrapResponse> Bootstrap([FromBody] BootstrapRequest request)
+    {
+        if (Request.Headers.ContainsKey("Origin") || Request.Headers[LocalSessionService.ClientHeader].ToString() != LauncherClient)
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Only the BirkNext launcher may request an automatic connection." });
+        var (result, token) = sessions.IssueBootstrap(request.Code);
+        if (result == LocalSessionService.ExchangeResult.Throttled) return StatusCode(StatusCodes.Status429TooManyRequests, new { message = "Too many wrong codes. Wait a minute and try again." });
+        if (result == LocalSessionService.ExchangeResult.Rejected) return Unauthorized(new { message = "That code is not right." });
+        return new BootstrapResponse(token!, (int)LocalSessionService.BootstrapLifetime.TotalSeconds);
     }
 
     [HttpDelete]

@@ -102,4 +102,34 @@ public sealed class LocalSessionTests : BunitContext
     {
         Render<LocalSessionGate>().Markup.Trim().Should().BeEmpty();
     }
+
+    [Fact]
+    public void A_launcher_bootstrap_token_is_read_only_from_the_fragment_and_removed_from_the_address()
+    {
+        var token = new string('f', 64);
+        LocalSessionApiService.BootstrapToken($"http://localhost:5481/#bootstrap={token}").Should().Be(token);
+        LocalSessionApiService.BootstrapToken($"http://localhost:5481/dashboard#x=1&bootstrap={token}").Should().Be(token);
+        LocalSessionApiService.BootstrapToken($"http://localhost:5481/?bootstrap={token}").Should().BeNull("never from the query string (sent to servers and logs)");
+        LocalSessionApiService.BootstrapToken("http://localhost:5481/#bootstrap=short").Should().BeNull();
+        LocalSessionApiService.BootstrapToken("http://localhost:5481/#bootstrap=" + new string('z', 64)).Should().BeNull("hex only");
+        LocalSessionApiService.WithoutFragment($"http://localhost:5481/dashboard#bootstrap={token}").Should().Be("http://localhost:5481/dashboard");
+    }
+
+    [Fact]
+    public void The_gate_connects_automatically_with_the_token_and_posts_only_the_token()
+    {
+        var token = new string('c', 64);
+        var stub = new Stub(r => r.Method == HttpMethod.Post
+            ? new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { connected = true }) }
+            : new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { connected = false }) });
+        Services.AddSingleton(new LocalSessionState());
+        Services.AddSingleton(new LocalSessionApiService(new HttpClient(stub) { BaseAddress = Backend }));
+        var nav = Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>();
+        nav.NavigateTo($"dashboard#bootstrap={token}");
+        Render<LocalSessionGate>();
+        var post = stub.Requests.Single(r => r.Method == HttpMethod.Post);
+        var body = post.Content!.ReadAsStringAsync().Result;
+        body.Should().Contain(token).And.NotContain("\"code\"", "the code is never sent by the page in the automatic path");
+        nav.Uri.Should().NotContain("bootstrap=", "the token is removed from the address");
+    }
 }

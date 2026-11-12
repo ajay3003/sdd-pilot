@@ -29,6 +29,11 @@ public sealed class LocalSessionService
     private readonly object _gate = new();
     private readonly ConcurrentDictionary<string, (DateTimeOffset Created, DateTimeOffset LastSeen, int Generation)> _sessions = new(StringComparer.Ordinal);
     private readonly Queue<DateTimeOffset> _failures = new();
+    // One-time bootstrap tokens (hash → expiry), in memory only: issued to the launcher for the code it already holds, used once by the browser.
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _bootstrap = new(StringComparer.Ordinal);
+
+    /// <summary>How long a launcher-issued bootstrap token can be used (once) to connect the browser it opened.</summary>
+    public static readonly TimeSpan BootstrapLifetime = TimeSpan.FromMinutes(2);
     private string _code = "";
     private int _generation;
 
@@ -63,18 +68,65 @@ public sealed class LocalSessionService
         var now = _clock.GetUtcNow();
         lock (_gate)
         {
+            var check = CheckCode(code, now);
+            return check == ExchangeResult.Accepted ? (ExchangeResult.Accepted, NewSession(now)) : (check, null);
+        }
+    }
+
+    /// <summary>
+    /// Automatic connection for the browser the launcher opens: the launcher proves possession of the launch code (the same check and throttle as
+    /// <see cref="Exchange"/>) and receives a random one-time token, valid <see cref="BootstrapLifetime"/>. The token — never the launch code — goes in
+    /// the URL fragment of the browser it opens (a fragment is never sent to a server). Only its hash is kept, in memory.
+    /// </summary>
+    public (ExchangeResult Result, string? Token) IssueBootstrap(string? code)
+    {
+        var now = _clock.GetUtcNow();
+        lock (_gate)
+        {
+            var check = CheckCode(code, now);
+            if (check != ExchangeResult.Accepted) return (check, null);
+            foreach (var expired in _bootstrap.Where(b => b.Value <= now).Select(b => b.Key).ToList()) _bootstrap.TryRemove(expired, out _);
+            var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+            _bootstrap[Hash(token)] = now + BootstrapLifetime;
+            return (ExchangeResult.Accepted, token);
+        }
+    }
+
+    /// <summary>A bootstrap token yields a session exactly once and only before it expires; a rotated code invalidates every unused token.</summary>
+    public (ExchangeResult Result, string? Token) ExchangeBootstrap(string? bootstrapToken)
+    {
+        var now = _clock.GetUtcNow();
+        lock (_gate)
+        {
             while (_failures.Count > 0 && now - _failures.Peek() > TimeSpan.FromMinutes(1)) _failures.Dequeue();
             if (_failures.Count >= MaxFailuresPerMinute) return (ExchangeResult.Throttled, null);
-            var given = Normalize(code);
-            if (given.Length == 0 || !CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(given), Encoding.UTF8.GetBytes(Normalize(_code))))
+            if (string.IsNullOrEmpty(bootstrapToken) || bootstrapToken.Length != 64 || !_bootstrap.TryRemove(Hash(bootstrapToken), out var expires) || expires <= now)
             {
                 _failures.Enqueue(now);
                 return (ExchangeResult.Rejected, null);
             }
-            var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
-            _sessions[Hash(token)] = (now, now, _generation);
-            return (ExchangeResult.Accepted, token);
+            return (ExchangeResult.Accepted, NewSession(now));
         }
+    }
+
+    private ExchangeResult CheckCode(string? code, DateTimeOffset now)
+    {
+        while (_failures.Count > 0 && now - _failures.Peek() > TimeSpan.FromMinutes(1)) _failures.Dequeue();
+        if (_failures.Count >= MaxFailuresPerMinute) return ExchangeResult.Throttled;
+        var given = Normalize(code);
+        if (given.Length == 0 || !CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(given), Encoding.UTF8.GetBytes(Normalize(_code))))
+        {
+            _failures.Enqueue(now);
+            return ExchangeResult.Rejected;
+        }
+        return ExchangeResult.Accepted;
+    }
+
+    private string NewSession(DateTimeOffset now)
+    {
+        var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        _sessions[Hash(token)] = (now, now, _generation);
+        return token;
     }
 
     /// <summary>True for a live session of the current code generation (idle and absolute lifetime enforced; a valid use refreshes idle time).</summary>
@@ -107,6 +159,7 @@ public sealed class LocalSessionService
             Write(_code);
             Interlocked.Increment(ref _generation);
             _sessions.Clear();
+            _bootstrap.Clear();
         }
     }
 

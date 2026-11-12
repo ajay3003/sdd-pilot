@@ -73,7 +73,9 @@ public sealed class LocalRequestGuardMiddleware(RequestDelegate next, IConfigura
     }
 
     private static bool IsSessionBootstrap(HttpRequest request) =>
-        request.Path.Equals("/api/local-session", StringComparison.OrdinalIgnoreCase) && (HttpMethods.IsGet(request.Method) || HttpMethods.IsPost(request.Method));
+        request.Path.Equals("/api/local-session", StringComparison.OrdinalIgnoreCase) && (HttpMethods.IsGet(request.Method) || HttpMethods.IsPost(request.Method))
+        // The launcher's one-time token request: the controller requires the launch code, the launcher client header and no Origin.
+        || request.Path.Equals("/api/local-session/bootstrap", StringComparison.OrdinalIgnoreCase) && HttpMethods.IsPost(request.Method);
 
     public static bool IsLoopbackHost(string host) =>
         host.Equals("localhost", StringComparison.OrdinalIgnoreCase) || host == "127.0.0.1" || host is "[::1]" or "::1";

@@ -120,8 +120,13 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
             }
             if (options.Command == "start" && session is not null)
             {
-                ui.Done($"BirkNext is already running: {session.FrontendUrl}");
-                if (!options.NoBrowser) Browser.Open(session.FrontendUrl, log);
+                // Started again (e.g. the browser was closed): show the connection code again and open a connected browser.
+                var running = StateFile.Read<Ports.Assignment>(data.PortsFile);
+                var runningCode = ConnectionCode(data, TimeSpan.Zero);
+                ui.Ready(session.FrontendUrl, runningCode, log.FilePath);
+                ui.Line("  (BirkNext was already running; this window only opened the browser. Use the first BirkNext window to stop it.)");
+                if (!options.NoBrowser)
+                    Browser.Open(running is null ? session.FrontendUrl : await LocalAccess.ConnectedUrlAsync(session.FrontendUrl, running.Backend, runningCode, log), log);
                 return 0;
             }
             throw new LauncherException("BirkNext is already running for this Windows user.", "Use the open BirkNext window, or close it first.", exitCode: 3);
@@ -172,7 +177,7 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
         ui.Step("Applying database updates and starting BirkNext");
         using var backend = new BackendProcess(package, data, log);
         backend.Start(ports, credentials);
-        if (!await backend.WaitHealthyAsync(ports.Backend, TimeSpan.FromMinutes(5), stop))
+        if (!await backend.WaitHealthyAsync(ports.Backend, TimeSpan.FromMinutes(5), stop, elapsed => ui.Step($"Still starting BirkNext ({(int)elapsed.TotalSeconds} s; a first start can take a few minutes)")))
         {
             var reason = backend.StartupFailure();
             backend.Stop();
@@ -188,10 +193,10 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
         var url = $"http://localhost:{ports.Frontend}/";
         StateFile.Write(data.SessionFile, new SessionRecord(url, Environment.ProcessId, DateTimeOffset.UtcNow, build));
         if (File.Exists(data.LastErrorFile)) File.Delete(data.LastErrorFile);
-        var code = ConnectionCode(data);
+        var code = ConnectionCode(data, TimeSpan.FromSeconds(20));
         ui.Ready(url, code, log.FilePath);
         log.Info($"Ready at {url} (database cluster {record.SystemIdentifier}).");
-        if (!options.NoBrowser) Browser.Open(url, log);
+        if (!options.NoBrowser) Browser.Open(await LocalAccess.ConnectedUrlAsync(url, ports.Backend, code, log), log);
 
         try
         {
@@ -320,16 +325,56 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
         return 0;
     }
 
-    private static string? ConnectionCode(DataLayout data)
+    /// <summary>The launch code the backend wrote (owner-only file in the data folder). Waits up to <paramref name="wait"/> for a first start.</summary>
+    private static string? ConnectionCode(DataLayout data, TimeSpan wait)
     {
         var file = Path.Combine(data.AppData, "local-session", "launch-code.txt");
-        for (var i = 0; i < 20 && !File.Exists(file); i++) Thread.Sleep(250);
-        try { return File.Exists(file) ? File.ReadAllText(file).Trim() : null; } catch (IOException) { return null; }
+        var until = DateTime.UtcNow + wait;
+        while (!File.Exists(file) && DateTime.UtcNow < until) Thread.Sleep(250);
+        try { return File.Exists(file) ? File.ReadAllText(file).Trim() : null; } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
     }
 
     public sealed record SessionRecord(string FrontendUrl, int LauncherProcessId, DateTimeOffset StartedAt, string Build);
     public sealed record LastRunRecord(string Build, DateTimeOffset At);
     public sealed record VerifiedRecord(string ManifestSha256, string PackageRoot, DateTimeOffset At, int Files);
+}
+
+/// <summary>
+/// Automatic local access for the browser this launcher opens: the launcher proves possession of the launch code to the backend
+/// (POST api/local-session/bootstrap, launcher client header, no Origin, loopback) and receives a one-time token valid two minutes. The browser
+/// gets the token in the URL fragment (never sent to a server); the page exchanges it once for its session cookie and removes it from the address.
+/// The launch code itself is never put in a URL. Any failure falls back to the plain address and the code shown in this window.
+/// </summary>
+public static class LocalAccess
+{
+    public static async Task<string> ConnectedUrlAsync(string url, int backendPort, string? code, LauncherLog log)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return url;
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"http://localhost:{backendPort}/api/local-session/bootstrap")
+            {
+                Content = System.Net.Http.Json.JsonContent.Create(new { code }),
+            };
+            request.Headers.Add("X-BirkNext-Client", "launcher");
+            using var response = await http.SendAsync(request);
+            if (!response.IsSuccessStatusCode) { log.Warn($"Automatic browser connection not available ({(int)response.StatusCode}); the code is shown instead."); return url; }
+            var token = (await System.Net.Http.Json.HttpContentJsonExtensions.ReadFromJsonAsync<BootstrapResponse>(response.Content))?.Token;
+            // The token is never logged.
+            return token is { Length: 64 } ? BootstrapUrl(url, token) : url;
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            log.Warn($"Automatic browser connection failed ({e.GetType().Name}); the code is shown instead.");
+            return url;
+        }
+    }
+
+    /// <summary>The address with the one-time token in its fragment. Pure.</summary>
+    public static string BootstrapUrl(string url, string token) => $"{url.Split('#')[0]}#bootstrap={token}";
+
+    private sealed record BootstrapResponse(string Token, int ExpiresInSeconds);
 }
 
 /// <summary>One launcher per data folder (a per-user named mutex, held while BirkNext runs).</summary>

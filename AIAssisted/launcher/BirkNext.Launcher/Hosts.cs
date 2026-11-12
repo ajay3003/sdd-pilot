@@ -135,13 +135,17 @@ internal sealed class BackendProcess(PackageLayout package, DataLayout data, Lau
     /// Healthy = the backend answers its API (after startup migrations, which run before it listens). 401 is healthy: the API is up and asks the
     /// browser for its local session. The process must still be ours and alive.
     /// </summary>
-    public async Task<bool> WaitHealthyAsync(int port, TimeSpan timeout, CancellationToken ct)
+    public async Task<bool> WaitHealthyAsync(int port, TimeSpan timeout, CancellationToken ct, Action<TimeSpan>? progress = null)
     {
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-        var deadline = DateTime.UtcNow + timeout;
+        var started = DateTime.UtcNow;
+        var deadline = started + timeout;
+        var nextReport = started + TimeSpan.FromSeconds(15);
         while (DateTime.UtcNow < deadline && !ct.IsCancellationRequested)
         {
             if (HasExited) return false;
+            // A bounded wait that says it is still working (a first start with migrations or a slow virus scan can take minutes).
+            if (progress is not null && DateTime.UtcNow >= nextReport) { progress(DateTime.UtcNow - started); nextReport = DateTime.UtcNow + TimeSpan.FromSeconds(15); }
             try
             {
                 using var r = await http.GetAsync($"http://localhost:{port}/api/system/build-info", ct);
