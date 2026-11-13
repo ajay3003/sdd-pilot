@@ -10,7 +10,13 @@ namespace BirkNext.CriticalE2E;
 // suggestion says NEEDS_EXPECTED_RESULT and has no final assertion.
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum SourceUiControlKind { TextInput, NumberInput, DateInput, Select, Checkbox, TextArea, FileInput, Button, SubmitButton, Link, ValidationMessage, ValidationSummary, Heading, Component }
+public enum SourceUiControlKind { TextInput, NumberInput, DateInput, Select, Checkbox, TextArea, FileInput, Button, SubmitButton, Link, ValidationMessage, ValidationSummary, Heading, Component,
+    /// <summary>A data grid, table or list that renders results (RadzenDataGrid, MudTable, QuickGrid, a table with @foreach rows).</summary>
+    ResultList }
+
+/// <summary>What a control is for, read from its handler, label, text, binding or test id. A hint for suggestions, never a runtime fact.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SourceUiIntent { None, Search, Clear, Filter, Save, Delete, Open }
 
 /// <summary>One control as the UI source declares it. Candidate facts only: the rendered DOM is verified separately.</summary>
 public sealed record SourceUiControl
@@ -30,6 +36,15 @@ public sealed record SourceUiControl
     public string? InputType { get; init; }
     public string? Href { get; init; }
     public string? Handler { get; init; }
+    /// <summary>A key handler on an input (@onkeyup/@onkeydown/@onkeypress, e.g. Enter starts a search).</summary>
+    public string? KeyHandler { get; init; }
+    public SourceUiIntent Intent { get; init; }
+    /// <summary>The component library the control comes from (Radzen, MudBlazor, FluentUI, Telerik, Syncfusion); null for HTML / built-in Blazor.</summary>
+    public string? Library { get; init; }
+    /// <summary>The file that declares the control when it comes from a composed component; null when it is the page file itself.</summary>
+    public string? SourceFile { get; init; }
+    /// <summary>A static Disabled/disabled expression (e.g. "_isSearching"): the control may be disabled in some states.</summary>
+    public string? DisabledWhen { get; init; }
     public string? FormId { get; init; }
     public bool Required { get; init; }
     public int? MinLength { get; init; }
@@ -63,8 +78,21 @@ public sealed record SourceUiPage
     public List<SourceUiControl> Controls { get; init; } = [];
     /// <summary>Requirement references written in the page source (comments, attributes) — recorded, never inferred.</summary>
     public List<string> RequirementRefs { get; init; } = [];
+    /// <summary>Components this file uses by tag (e.g. PersonSearchComponent), with whether the usage is conditional or repeated.</summary>
+    public List<SourceUiComponentUse> ComponentUses { get; init; } = [];
+    /// <summary>Component files whose controls were included into this page (bounded depth), in the order they were composed.</summary>
+    public List<string> ComposedFrom { get; init; } = [];
+    /// <summary>Static messages declared in the markup that look like empty-result or error states ("Ingen treff", "No results"), with file:line.</summary>
+    public List<SourceUiMessage> Messages { get; init; } = [];
     public List<string> Limitations { get; init; } = [];
 }
+
+public sealed record SourceUiComponentUse(string Component, int Line, bool Conditional, bool Repeated);
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SourceUiMessageKind { EmptyResult, Error, Loading }
+
+public sealed record SourceUiMessage(SourceUiMessageKind Kind, string Text, string File, int Line, bool Conditional);
 
 /// <summary>The UI surface of a source snapshot: facts extracted once at analysis, never the markup.</summary>
 public sealed record SourceUiSurface
@@ -77,7 +105,44 @@ public sealed record SourceUiSurface
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum SuggestionKind { PageOpens, Navigation, RequiredFields, InvalidInput, ValidSubmission }
+public enum SuggestionKind { PageOpens, Navigation, RequiredFields, InvalidInput, ValidSubmission,
+    /// <summary>Search for a known record (Test Data) and see it in the result.</summary>
+    Search,
+    /// <summary>Search for something that matches nothing and see the empty-result state.</summary>
+    SearchNoMatch,
+    /// <summary>Start a search with an empty search field.</summary>
+    SearchEmpty,
+    /// <summary>Clear a filled search and see the field and result reset.</summary>
+    ClearSearch,
+    /// <summary>A user action (button with a handler) outside a form: what it does is not known from source.</summary>
+    UserAction }
+
+/// <summary>What kind of test a suggestion is. UI Smoke = the page is there; UI Functional = the page's behaviour (search, validation, actions)
+/// in the browser; Business E2E = an outcome beyond the UI (stored data, a message to another system). UI source alone never yields Business E2E.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SuggestionCategory { UiSmoke, UiFunctional, BusinessE2E }
+
+/// <summary>Where a suggestion's input values come from.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SuggestionTestDataState { NotNeeded, SyntheticGenerated, NeedsApprovedTestData, ProvidedByReviewer }
+
+/// <summary>A manual tester's review of a suggestion — made without the Edge Companion and without reading source.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ManualReviewDecision { Draft, ReadyForManualTest, Rejected }
+
+public sealed record SuggestionManualReview
+{
+    /// <summary>The expected result in the tester's words (what the page should show).</summary>
+    public string? ExpectedResult { get; init; }
+    /// <summary>Which Test Data to use: an approved alias or a description ("the synthetic child in Test Data set A"). Never a real person's data.</summary>
+    public string? TestData { get; init; }
+    public string? Notes { get; init; }
+    public ManualReviewDecision Decision { get; init; }
+    public string ReviewedBy { get; init; } = "";
+    public DateTimeOffset ReviewedAt { get; init; }
+}
+
+public sealed record SuggestionManualReviewRequest(Guid SnapshotId, string SuggestionId, string EnvironmentId, string? ExpectedResult, string? TestData, string? Notes, ManualReviewDecision Decision);
 
 /// <summary>Where a suggestion's behaviour comes from (several can apply).</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -85,7 +150,7 @@ public enum SuggestionOrigin { RequirementDerived, SourceImplementationDerived, 
 
 /// <summary>Readiness of a suggestion. Separate from any execution result.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum SuggestionState { Suggested, NeedsDomVerification, NeedsTestData, NeedsExpectedResult, ReadyForReview, Approved, Executable, Executed }
+public enum SuggestionState { Suggested, NeedsDomVerification, NeedsTestData, NeedsExpectedResult, ReadyForReview, Approved, Executable, Executed, ReadyForManualTest, Rejected }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SuggestionCoverage { NewSuggestion, PartiallyCovered, AlreadyCovered, OverlapRequiresReview }
@@ -144,6 +209,8 @@ public sealed record TestSuggestion
     public string Module { get; init; } = "";
     public string Feature { get; init; } = "";
     public SuggestionKind Kind { get; init; }
+    public SuggestionCategory Category { get; init; }
+    public SuggestionTestDataState TestDataState { get; init; }
     public List<SuggestionOrigin> Origins { get; init; } = [];
     public string Route { get; init; } = "";
     public string Title { get; init; } = "";
@@ -155,6 +222,9 @@ public sealed record TestSuggestion
     /// <summary>The expected result and where it comes from; null when unknown (the suggestion then has no final assertion).</summary>
     public string? ExpectedResult { get; init; }
     public string? ExpectedBasis { get; init; }
+    /// <summary>A proposed expected result for a person to confirm (e.g. a static "Ingen treff" message in source). Never an assertion by itself.</summary>
+    public string? ExpectedHint { get; init; }
+    public string? ExpectedHintBasis { get; init; }
     public List<string> TestDataNeeds { get; init; } = [];
     public List<string> Prerequisites { get; init; } = [];
     public string Confidence { get; init; } = "";
@@ -167,10 +237,12 @@ public sealed record TestSuggestion
     /// <summary>The saved Critical E2E flow after approval (the only executable form).</summary>
     public string? ApprovedFlowId { get; init; }
     public int? ApprovedFlowVersion { get; init; }
+    public SuggestionManualReview? ManualReview { get; init; }
     public List<string> Limitations { get; init; } = [];
 }
 
-public sealed record SuggestionSummary(int Suggestions, int ExistingReused, int NewSuggested, int MissingDomMappings, int MissingExpectedResults, int MissingTestData, int ReadyForApproval, int Approved);
+public sealed record SuggestionSummary(int Suggestions, int ExistingReused, int NewSuggested, int MissingDomMappings, int MissingExpectedResults, int MissingTestData, int ReadyForApproval, int Approved,
+    int UiSmoke = 0, int UiFunctional = 0, int ReadyForManualTest = 0);
 
 public sealed record SuggestionGenerationResult
 {

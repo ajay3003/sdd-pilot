@@ -48,3 +48,12 @@
     .sg-table tr { display: grid; gap: 0.1rem; padding: 0.3rem 0; border-bottom: 1px solid var(--clr-border, #d0d7de); }
     .sg-table td, .sg-table th { border: 0; padding: 0.05rem 0; }
 }
+.sg-filter { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.sg-chip { border: 1px solid var(--clr-border, #d0d7de); border-radius: 999px; background: var(--clr-surface-white, #fff); padding: 0.2rem 0.65rem; font: inherit; font-size: 0.8rem; cursor: pointer; color: var(--clr-text, #1f2328); }
+.sg-chip.is-active { border-color: var(--clr-primary, #0969da); background: var(--clr-primary-bg, #ddf4ff); font-weight: 600; }
+.sg-chip:focus-visible { outline: 2px solid var(--clr-primary, #0969da); outline-offset: 1px; }
+.sg-cat { background: var(--clr-surface, #f6f8fa); }
+.sg-manual { display: grid; gap: 0.5rem; padding: 0.75rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; background: var(--clr-surface, #f6f8fa); min-width: 0; }
+.sg-manual h4, .sg-subhead { margin: 0; font-size: 0.95rem; }
+.sg-manual-steps { margin: 0; padding-left: 1.4rem; display: grid; gap: 0.2rem; overflow-wrap: anywhere; }
+.sg-manual textarea, .sg-manual input { width: 100%; max-width: 100%; }

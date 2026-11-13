@@ -4,11 +4,11 @@
 
 @* Suggested tests inside Critical E2E Regression: DRAFT flows from the imported source (offline), locators verified on the attended Edge page
    (identity only), reviewed by a person, approved into a Diagnostic flow that runs through the existing runner. Nothing here runs a test. *@
-<section class="sg" aria-labelledby="sg-heading" data-testid="sg-panel" aria-busy="@(_busy ? "true" : "false")">
+<section id="sg-panel" class="sg" aria-labelledby="sg-heading" data-testid="sg-panel" aria-busy="@(_busy ? "true" : "false")">
     <div class="sg-head">
         <div>
             <h2 id="sg-heading">Suggested tests</h2>
-            <p class="sg-muted">Drafts from an imported source snapshot. Locators count only after the Edge Companion verifies them on the attended page.</p>
+            <p class="sg-muted">Drafts from an imported source snapshot: page checks, search, forms and user actions — including controls inside composed components. Review any suggestion as a manual test case without the Edge Companion; for automation, locators count only after the Edge Companion verifies them on the attended page.</p>
         </div>
         <div class="sg-actions">
             <label class="sg-field">Source snapshot
@@ -36,6 +36,8 @@
             @Count("expected", "Missing expected results", r.Summary.MissingExpectedResults)
             @Count("data", "Missing Test Data", r.Summary.MissingTestData)
             @Count("ready", "Ready for approval", r.Summary.ReadyForApproval)
+            @Count("functional", "UI Functional", r.Summary.UiFunctional)
+            @Count("manual", "Ready for manual test", r.Summary.ReadyForManualTest)
         </dl>
         <nav class="sg-areas" role="tablist" aria-label="Suggested tests areas">
             @foreach (var (key, label) in Areas)
@@ -54,8 +56,17 @@
         @if (_area == "suggestions")
         {
             @if (r.Suggestions.Count == 0) { <p class="sg-muted" data-testid="sg-empty">No suggestion: @(r.Limitations.FirstOrDefault() ?? "the snapshot has no routable page with supported controls.")</p> }
+            else
+            {
+                <div class="sg-filter" role="group" aria-label="Kind of test" data-testid="sg-category-filter">
+                    @foreach (var (key, label) in Categories)
+                    {
+                        <button type="button" class="sg-chip @(_category == key ? "is-active" : "")" aria-pressed="@(_category == key ? "true" : "false")" data-testid="sg-category" data-category="@(key?.ToString() ?? "All")" @onclick="() => _category = key">@label (@(key is null ? r.Suggestions.Count : r.Suggestions.Count(x => x.Category == key)))</button>
+                    }
+                </div>
+            }
             <ul class="sg-list" data-testid="sg-list">
-                @foreach (var s in r.Suggestions)
+                @foreach (var s in Visible(r))
                 {
                     <li class="sg-item @(s.SuggestionId == _selectedId ? "is-selected" : "")" data-testid="sg-item" data-kind="@s.Kind" data-coverage="@s.Coverage" data-id="@s.SuggestionId">
                         <div class="sg-item-main">
@@ -63,6 +74,7 @@
                             <span class="sg-sub">@KindLabel(s.Kind) · @s.Route · @s.Steps.Count step(s) · confidence @s.Confidence@(s.RequirementRefs.Count > 0 ? $" · {string.Join(", ", s.RequirementRefs)}" : "")</span>
                         </div>
                         <div class="sg-badges">
+                            <span class="sg-badge sg-cat" data-testid="sg-category-badge" data-category="@s.Category">@CategoryLabel(s.Category)</span>
                             <span class="sg-badge sg-cov-@s.Coverage" data-testid="sg-coverage">@CoverageLabel(s.Coverage)</span>
                             @foreach (var st in s.States) { <span class="sg-badge sg-state" data-testid="sg-state" data-state="@st">@StateLabel(st)</span> }
                         </div>
@@ -74,11 +86,11 @@
         {
             <table class="sg-table" data-testid="sg-readiness">
                 <caption class="visually-hidden">Readiness of every suggestion</caption>
-                <thead><tr><th scope="col">Suggestion</th><th scope="col">Readiness</th><th scope="col">Test Data needed</th><th scope="col">Prerequisites</th></tr></thead>
+                <thead><tr><th scope="col">Suggestion</th><th scope="col">Readiness</th><th scope="col">Test Data</th><th scope="col">Test Data needed</th><th scope="col">Prerequisites</th></tr></thead>
                 <tbody>
                     @foreach (var s in r.Suggestions)
                     {
-                        <tr data-testid="sg-readiness-row" data-id="@s.SuggestionId"><th scope="row">@s.Title</th><td>@string.Join(", ", s.States.Select(StateLabel))</td>
+                        <tr data-testid="sg-readiness-row" data-id="@s.SuggestionId"><th scope="row">@s.Title</th><td>@string.Join(", ", s.States.Select(StateLabel))</td><td data-testid="sg-data-state">@DataStateLabel(s.TestDataState)</td>
                             <td>@(s.TestDataNeeds.Count == 0 ? "none" : string.Join("; ", s.TestDataNeeds))</td><td>@(s.Preconditions.Count == 0 ? "–" : string.Join("; ", s.Preconditions))</td></tr>
                     }
                 </tbody>
@@ -123,6 +135,13 @@
     [Parameter] public EventCallback OnApproved { get; set; }
 
     private static readonly (string Key, string Label)[] Areas = [("suggestions", "Test Suggestions"), ("mapping", "DOM Mapping"), ("data", "Test Data & Readiness"), ("results", "Execution Results")];
+    private static readonly (SuggestionCategory? Key, string Label)[] Categories = [(null, "All"), (SuggestionCategory.UiFunctional, "UI Functional"), (SuggestionCategory.UiSmoke, "UI Smoke")];
+    private SuggestionCategory? _category;
+    private string? _manualExpected, _manualData, _manualNotes;
+
+    // Functional behaviour first: a page check is the least a test can say.
+    private IEnumerable<TestSuggestion> Visible(SuggestionGenerationResult r) =>
+        r.Suggestions.Where(s => _category is null || s.Category == _category).OrderBy(s => s.Category == SuggestionCategory.UiSmoke ? 1 : 0);
     private List<SuggestionSnapshotOption> _snapshots = [];
     private Guid? _snapshotId;
     private SuggestionGenerationResult? _result;
@@ -155,7 +174,42 @@
         _busy = false;
     }
 
-    private void Select(TestSuggestion s) { _selectedId = s.SuggestionId; _expectedRoute = null; }
+    private void Select(TestSuggestion s)
+    {
+        _selectedId = s.SuggestionId; _expectedRoute = null;
+        _manualExpected = s.ManualReview?.ExpectedResult; _manualData = s.ManualReview?.TestData; _manualNotes = s.ManualReview?.Notes;
+    }
+
+    private void UseHint(TestSuggestion s) => _manualExpected = s.ExpectedHint;
+
+    private async Task ManualReviewAsync(TestSuggestion s, ManualReviewDecision decision)
+    {
+        if (_snapshotId is not { } id) return;
+        _busy = true; _error = null; _message = null;
+        try
+        {
+            var (updated, problem) = await Api.ManualReviewSuggestionAsync(new SuggestionManualReviewRequest(id, s.SuggestionId, EnvironmentId, _manualExpected, _manualData, _manualNotes, decision));
+            if (updated is not null)
+            {
+                Replace(updated);
+                _message = decision switch
+                {
+                    ManualReviewDecision.ReadyForManualTest => "Ready for manual test. Run it by hand; it is not an automated test and nothing was executed.",
+                    ManualReviewDecision.Rejected => "Rejected: the suggestion stays listed as rejected.",
+                    _ => "Manual review saved as a draft.",
+                };
+            }
+            else _error = problem;
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { _error = "The manual review was not saved."; }
+        _busy = false;
+    }
+
+    /// <summary>A step in a tester's words: Test Data placeholders become "the Test Data …", never a value.</summary>
+    private static string ManualStep(SuggestedStep step) =>
+        step.Value is { } v && v.StartsWith("${data:", StringComparison.Ordinal) ? $"{step.Description} with {step.ValueBasis ?? "the agreed Test Data"}"
+        : step.Value is { } value && step.Action is CompanionActionKind.Fill or CompanionActionKind.Select ? $"{step.Description}: \"{value}\""
+        : step.Description;
 
     private void Replace(TestSuggestion updated)
     {
@@ -238,6 +292,8 @@
                 <label class="sg-field">Expected route after the last step (reviewer-stated)
                     <input class="form-control" data-testid="sg-expected-route" placeholder="/children" value="@_expectedRoute" @oninput="e => _expectedRoute = e.Value?.ToString()" /></label>
             }
+            @Manual(s)
+            <h4 class="sg-subhead">Automation (optional) — needs the Edge Companion</h4>
             <ol class="sg-steps" data-testid="sg-steps">
                 @foreach (var step in s.Steps)
                 {
@@ -279,6 +335,46 @@
         </article>
     };
 
+    private RenderFragment Manual(TestSuggestion s) => __builder =>
+    {
+        var review = s.ManualReview;
+        <section class="sg-manual" data-testid="sg-manual" aria-labelledby="sg-manual-heading" data-decision="@(review?.Decision.ToString() ?? "None")">
+            <h4 id="sg-manual-heading">Prepare manual test case</h4>
+            <p class="sg-muted">No Edge Companion and no source needed: read the steps, state what should happen and which Test Data to use.</p>
+            <dl class="sg-facts">
+                <div><dt>Kind</dt><dd>@CategoryLabel(s.Category) · @KindLabel(s.Kind)</dd></div>
+                <div><dt>Start page</dt><dd>@s.Route</dd></div>
+                @if (s.Preconditions.Count > 0) { <div><dt>Before you start</dt><dd>@string.Join("; ", s.Preconditions)</dd></div> }
+                <div><dt>Test Data</dt><dd data-testid="sg-manual-data-state">@DataStateLabel(s.TestDataState)@(s.TestDataNeeds.Count > 0 ? $" — {string.Join("; ", s.TestDataNeeds)}" : "")</dd></div>
+            </dl>
+            <ol class="sg-manual-steps" data-testid="sg-manual-steps">
+                @foreach (var step in s.Steps) { <li>@ManualStep(step)</li> }
+            </ol>
+            @if (s.ExpectedResult is { } known)
+            {
+                <p class="sg-note" data-testid="sg-manual-known">Expected (from source): @known</p>
+            }
+            else if (s.ExpectedHint is { } hint)
+            {
+                <p class="sg-note" data-testid="sg-manual-hint">Suggested expected result — confirm or change: <em>@hint</em>@(s.ExpectedHintBasis is { } hb ? $" ({hb})" : "")
+                    <button type="button" class="btn-secondary sg-small" data-testid="sg-manual-use-hint" disabled="@_busy" @onclick="() => UseHint(s)">Use this</button></p>
+            }
+            <label class="sg-field">Expected result
+                <textarea class="form-control" rows="2" maxlength="600" data-testid="sg-manual-expected" placeholder="What should the page show after the last step?" value="@_manualExpected" @oninput="e => _manualExpected = e.Value?.ToString()"></textarea></label>
+            <label class="sg-field">Test Data to use
+                <input class="form-control" maxlength="600" data-testid="sg-manual-data" placeholder="Approved alias or description — never a real person's data" value="@_manualData" @oninput="e => _manualData = e.Value?.ToString()" /></label>
+            <label class="sg-field">Notes
+                <textarea class="form-control" rows="2" maxlength="600" data-testid="sg-manual-notes" value="@_manualNotes" @oninput="e => _manualNotes = e.Value?.ToString()"></textarea></label>
+            <div class="sg-actions">
+                <button type="button" class="btn btn-secondary" data-testid="sg-manual-save" disabled="@_busy" @onclick="() => ManualReviewAsync(s, ManualReviewDecision.Draft)">Save draft</button>
+                <button type="button" class="btn btn-primary" data-testid="sg-manual-ready" disabled="@_busy" @onclick="() => ManualReviewAsync(s, ManualReviewDecision.ReadyForManualTest)">Ready for manual test</button>
+                <button type="button" class="btn btn-secondary" data-testid="sg-manual-reject" disabled="@_busy" @onclick="() => ManualReviewAsync(s, ManualReviewDecision.Rejected)">Reject suggestion</button>
+                <a class="btn-secondary" href="test-plan-suggestions" data-testid="sg-manual-plan">Add to a test plan</a>
+            </div>
+            @if (review is not null) { <p class="sg-sub" data-testid="sg-manual-reviewed">@ManualDecisionLabel(review.Decision) · @review.ReviewedBy · @review.ReviewedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</p> }
+        </section>
+    };
+
     private static RenderFragment Count(string key, string label, int value) => __builder =>
     {
         <div class="sg-count" data-testid="@($"sg-count-{key}")"><dt>@label</dt><dd>@value</dd></div>
@@ -287,7 +383,24 @@
     private static string KindLabel(SuggestionKind k) => k switch
     {
         SuggestionKind.PageOpens => "Page opens", SuggestionKind.Navigation => "Navigation", SuggestionKind.RequiredFields => "Required fields",
-        SuggestionKind.InvalidInput => "Invalid input", _ => "Valid submission",
+        SuggestionKind.InvalidInput => "Invalid input", SuggestionKind.ValidSubmission => "Valid submission", SuggestionKind.Search => "Search",
+        SuggestionKind.SearchNoMatch => "Search: no match", SuggestionKind.SearchEmpty => "Search: empty field", SuggestionKind.ClearSearch => "Clear search", _ => "User action",
+    };
+
+    private static string CategoryLabel(SuggestionCategory c) => c switch
+    {
+        SuggestionCategory.UiSmoke => "UI Smoke", SuggestionCategory.UiFunctional => "UI Functional", _ => "Business E2E",
+    };
+
+    private static string DataStateLabel(SuggestionTestDataState d) => d switch
+    {
+        SuggestionTestDataState.NotNeeded => "No input needed", SuggestionTestDataState.SyntheticGenerated => "Synthetic values (generated)",
+        SuggestionTestDataState.NeedsApprovedTestData => "Needs approved Test Data", _ => "Test Data named by the reviewer",
+    };
+
+    private static string ManualDecisionLabel(ManualReviewDecision d) => d switch
+    {
+        ManualReviewDecision.ReadyForManualTest => "Ready for manual test", ManualReviewDecision.Rejected => "Rejected", _ => "Draft",
     };
 
     private static string CoverageLabel(SuggestionCoverage c) => c switch
@@ -299,7 +412,7 @@
     private static string StateLabel(SuggestionState s) => s switch
     {
         SuggestionState.NeedsDomVerification => "Needs DOM verification", SuggestionState.NeedsTestData => "Needs Test Data", SuggestionState.NeedsExpectedResult => "Needs expected result",
-        SuggestionState.ReadyForReview => "Ready for review", _ => s.ToString(),
+        SuggestionState.ReadyForReview => "Ready for review", SuggestionState.ReadyForManualTest => "Ready for manual test", _ => s.ToString(),
     };
 
     private static string VerificationLabel(LocatorVerification v) => v switch

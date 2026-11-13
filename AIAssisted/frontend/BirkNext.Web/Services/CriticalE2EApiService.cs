@@ -31,6 +31,7 @@ public interface ICriticalE2EApiService
     Task<SuggestionVerifyResult> VerifySuggestionAsync(SuggestionVerifyRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     Task<(TestSuggestion? Suggestion, string? Problem)> DecideSuggestionAsync(SuggestionDecisionRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     Task<SuggestionApproveResult> ApproveSuggestionAsync(SuggestionApproveRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task<(TestSuggestion? Suggestion, string? Problem)> ManualReviewSuggestionAsync(SuggestionManualReviewRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 }
 
 public sealed class CriticalE2EApiService(HttpClient http) : ICriticalE2EApiService
@@ -95,6 +96,14 @@ public sealed class CriticalE2EApiService(HttpClient http) : ICriticalE2EApiServ
     public async Task<(TestSuggestion? Suggestion, string? Problem)> DecideSuggestionAsync(SuggestionDecisionRequest request, CancellationToken ct = default)
     {
         using var response = await http.PostAsJsonAsync("api/critical-e2e/suggestions/decide", request, ct);
+        if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<TestSuggestion>(cancellationToken: ct), null);
+        var error = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement?>(cancellationToken: ct);
+        return (null, error is { } e && e.TryGetProperty("message", out var m) ? m.GetString() : $"Refused ({(int)response.StatusCode}).");
+    }
+
+    public async Task<(TestSuggestion? Suggestion, string? Problem)> ManualReviewSuggestionAsync(SuggestionManualReviewRequest request, CancellationToken ct = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/critical-e2e/suggestions/manual-review", request, ct);
         if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<TestSuggestion>(cancellationToken: ct), null);
         var error = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement?>(cancellationToken: ct);
         return (null, error is { } e && e.TryGetProperty("message", out var m) ? m.GetString() : $"Refused ({(int)response.StatusCode}).");

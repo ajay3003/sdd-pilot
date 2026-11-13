@@ -3,6 +3,7 @@ using BirkNext.Api.Services.ContractTesting;
 using BirkNext.Api.Services.Integrations.SourceEvidence;
 using BirkNext.CriticalE2E;
 using BirkNext.Integrations;
+using System.Text.RegularExpressions;
 
 namespace BirkNext.Api.Services.CriticalE2E.Suggestions;
 
@@ -12,7 +13,7 @@ namespace BirkNext.Api.Services.CriticalE2E.Suggestions;
 /// accepts, chooses or rejects each mapping; approval saves a Diagnostic flow in the existing flow format, which then runs only through the
 /// existing Critical E2E runner after explicit authorization. Nothing here executes a test or writes to the target application.
 /// </summary>
-public sealed class CriticalE2ESuggestionService(
+public sealed partial class CriticalE2ESuggestionService(
     IqrSourceStore sources,
     ICriticalE2EStore flows,
     ICriticalE2EService critical,
@@ -54,9 +55,9 @@ public sealed class CriticalE2ESuggestionService(
         var verifications = (record?.Verifications ?? []).Select(v => v.SourceSnapshotId == snapshotId ? v
             : v with { State = LocatorVerification.Stale, Note = "Verified for another source snapshot; verify again." }).ToList();
         var decisions = record?.SnapshotId == snapshotId ? record.Decisions : [];
-        var merged = s with { Verifications = verifications, Decisions = decisions, ApprovedFlowId = record?.ApprovedFlowId, ApprovedFlowVersion = record?.ApprovedFlowVersion };
+        var merged = s with { Verifications = verifications, Decisions = decisions, ApprovedFlowId = record?.ApprovedFlowId, ApprovedFlowVersion = record?.ApprovedFlowVersion, ManualReview = record?.ManualReview };
         var executed = merged.ApprovedFlowId is { } fid && flows.FlowHistory(fid).Count > 0;
-        return merged with { States = SuggestionEngine.States(merged, executed) };
+        return merged with { States = SuggestionEngine.States(merged, executed), TestDataState = SuggestionEngine.TestDataStateOf(merged) };
     }
 
     public async Task<SuggestionGenerationResult?> GenerateAsync(SuggestionGenerateRequest request, CancellationToken ct)
@@ -71,7 +72,10 @@ public sealed class CriticalE2ESuggestionService(
             MissingExpectedResults: s.Count(x => x.States.Contains(SuggestionState.NeedsExpectedResult)),
             MissingTestData: s.Count(x => x.States.Contains(SuggestionState.NeedsTestData)),
             ReadyForApproval: s.Count(x => x.States.Contains(SuggestionState.ReadyForReview)),
-            Approved: s.Count(x => x.States.Contains(SuggestionState.Approved)));
+            Approved: s.Count(x => x.States.Contains(SuggestionState.Approved)),
+            UiSmoke: s.Count(x => x.Category == SuggestionCategory.UiSmoke),
+            UiFunctional: s.Count(x => x.Category == SuggestionCategory.UiFunctional),
+            ReadyForManualTest: s.Count(x => x.States.Contains(SuggestionState.ReadyForManualTest)));
         return new SuggestionGenerationResult
         {
             ProjectKey = loaded.ProjectKey, SnapshotId = loaded.Snapshot.Id, ArchiveFileName = loaded.Snapshot.Archive.FileName, Summary = summary, Suggestions = s,
@@ -207,6 +211,40 @@ public sealed class CriticalE2ESuggestionService(
         var updated = (await LoadAsync(request.SnapshotId, request.EnvironmentId, ct))!.Suggestions.First(s => s.SuggestionId == request.SuggestionId);
         return (updated, null);
     }
+
+    public const int MaxManualText = 600;
+
+    /// <summary>
+    /// A manual tester reviews a suggestion without the Edge Companion and without source: states the expected result in their own words,
+    /// which Test Data to use and notes, and decides Draft / Ready for manual test / Rejected. Ready for manual test needs an expected result
+    /// (the tester's, or one the source states) and, when the suggestion needs Test Data, a Test Data reference. Text that looks like a
+    /// national identity number is refused: Test Data is named by an approved alias or description, never pasted as personal data. This is
+    /// not an automation approval and never runs anything.
+    /// </summary>
+    public async Task<(TestSuggestion? Suggestion, string? Problem)> ManualReviewAsync(SuggestionManualReviewRequest request, CancellationToken ct)
+    {
+        var loaded = await LoadAsync(request.SnapshotId, request.EnvironmentId, ct);
+        var suggestion = loaded?.Suggestions.FirstOrDefault(s => s.SuggestionId == request.SuggestionId);
+        if (suggestion is null) return (null, "Suggestion not found for this snapshot.");
+        static string? Clean(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim()[..Math.Min(MaxManualText, text.Trim().Length)];
+        var expected = Clean(request.ExpectedResult);
+        var data = Clean(request.TestData);
+        var notes = Clean(request.Notes);
+        if (new[] { expected, data, notes }.Any(t => t is not null && NationalIdLike().IsMatch(t)))
+            return (null, "That text looks like a national identity number. Name the Test Data by its approved alias or describe it (\"the synthetic child in set A\") instead.");
+        if (request.Decision == ManualReviewDecision.ReadyForManualTest)
+        {
+            if (expected is null && suggestion.ExpectedResult is null) return (null, "State the expected result first: what should the page show after the last step?");
+            if (suggestion.TestDataNeeds.Count > 0 && data is null) return (null, $"Name the Test Data first: {string.Join("; ", suggestion.TestDataNeeds)}.");
+        }
+        var review = new SuggestionManualReview { ExpectedResult = expected, TestData = data, Notes = notes, Decision = request.Decision, ReviewedBy = Reviewer, ReviewedAt = time.GetUtcNow() };
+        reviews.Update(suggestion.SuggestionId, request.SnapshotId, r => r with { ManualReview = review });
+        logger?.LogInformation("Suggested test {SuggestionId}: manual review {Decision}.", suggestion.SuggestionId, request.Decision);
+        var updated = (await LoadAsync(request.SnapshotId, request.EnvironmentId, ct))!.Suggestions.First(s => s.SuggestionId == request.SuggestionId);
+        return (updated, null);
+    }
+
+    [GeneratedRegex(@"(?<!\d)\d{6}\s?\d{5}(?!\d)")] private static partial Regex NationalIdLike();
 
     public async Task<SuggestionApproveResult> ApproveAsync(SuggestionApproveRequest request, CancellationToken ct)
     {

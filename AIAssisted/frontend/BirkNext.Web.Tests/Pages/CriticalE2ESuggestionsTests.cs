@@ -130,4 +130,57 @@ public sealed class CriticalE2ESuggestionsTests : BunitContext
         cut.Find("[data-testid=sg-open-existing]").GetAttribute("href").Should().EndWith("#e2e-flow-flow-9");
         cut.Find("[data-testid=sg-approve]").HasAttribute("disabled").Should().BeTrue("already approved");
     }
+
+    private static TestSuggestion Search() => new()
+    {
+        SuggestionId = "sug-search", Title = "Personsøk: search finds a known person", Kind = SuggestionKind.Search, Category = SuggestionCategory.UiFunctional, Route = "/person", Confidence = "Medium",
+        RuleVersion = "suggest-v2", TestDataState = SuggestionTestDataState.NeedsApprovedTestData, TestDataNeeds = ["Søk etter person: a known synthetic person that exists in the target environment (approved Test Data — never a real person)"],
+        Steps =
+        [
+            new() { StepId = "s1", Description = "Open /person", Action = CompanionActionKind.Navigate, Value = "/person" },
+            new() { StepId = "s2", Description = "Fill Søk etter person", Action = CompanionActionKind.Fill, ControlId = "c1", Value = "${data:search.known-person}", ValueBasis = "approved Test Data: a known synthetic person that exists in the target environment" },
+            new() { StepId = "s3", Description = "Click \"Søk\"", Action = CompanionActionKind.Click, ControlId = "c2" },
+        ],
+        ExpectedHint = "The known person is shown in the search result.", ExpectedHintBasis = "Inferred from the search control (SearchAsync)",
+        States = [SuggestionState.NeedsDomVerification, SuggestionState.NeedsTestData, SuggestionState.NeedsExpectedResult],
+    };
+
+    [Fact]
+    public void A_manual_tester_prepares_a_functional_search_test_case_without_the_companion()
+    {
+        var smoke = Valid() with { SuggestionId = "sug-opens", Title = "Personsøk opens", Kind = SuggestionKind.PageOpens, Category = SuggestionCategory.UiSmoke, TestDataNeeds = [] };
+        _api.Setup(a => a.GenerateSuggestionsAsync(It.IsAny<SuggestionGenerateRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync(Result(smoke, Search()));
+        SuggestionManualReviewRequest? sent = null;
+        _api.Setup(a => a.ManualReviewSuggestionAsync(It.IsAny<SuggestionManualReviewRequest>(), It.IsAny<CancellationToken>()))
+            .Callback((SuggestionManualReviewRequest r, CancellationToken _) => sent = r)
+            .ReturnsAsync((SuggestionManualReviewRequest r, CancellationToken _) => (Search() with
+            {
+                ManualReview = new SuggestionManualReview { ExpectedResult = r.ExpectedResult, TestData = r.TestData, Decision = r.Decision, ReviewedBy = "Local session", ReviewedAt = DateTimeOffset.UnixEpoch },
+                TestDataState = SuggestionTestDataState.ProvidedByReviewer, States = [.. Search().States, SuggestionState.ReadyForManualTest],
+            }, (string?)null));
+        var cut = Open(route: null);
+
+        cut.FindAll("[data-testid=sg-item]").Select(i => i.GetAttribute("data-id")).Should().Equal(["sug-search", "sug-opens"], "functional behaviour is listed before page checks");
+        cut.Find("[data-testid=sg-category][data-category=UiSmoke]").Click();
+        cut.FindAll("[data-testid=sg-item]").Select(i => i.GetAttribute("data-id")).Should().Equal("sug-opens");
+        cut.Find("[data-testid=sg-category][data-category=All]").Click();
+
+        cut.Find("[data-testid=sg-item][data-id=sug-search] [data-testid=sg-review]").Click();
+        var manual = cut.Find("[data-testid=sg-manual]");
+        manual.TextContent.Should().Contain("Needs approved Test Data");
+        cut.FindAll("[data-testid=sg-manual-steps] li").Select(li => li.TextContent).Should().Equal(
+            "Open /person", "Fill Søk etter person with approved Test Data: a known synthetic person that exists in the target environment", "Click \"Søk\"");
+        manual.TextContent.Should().NotContain("${data:", "the tester reads words, not placeholders");
+
+        cut.Find("[data-testid=sg-manual-use-hint]").Click();
+        cut.Find("[data-testid=sg-manual-expected]").GetAttribute("value").Should().Be("The known person is shown in the search result.");
+        cut.Find("[data-testid=sg-manual-data]").Input("Test Data alias barn-a");
+        cut.Find("[data-testid=sg-manual-ready]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sg-message]").TextContent.Should().Contain("Ready for manual test").And.Contain("nothing was executed"));
+        sent.Should().Match<SuggestionManualReviewRequest>(r => r.Decision == ManualReviewDecision.ReadyForManualTest && r.TestData == "Test Data alias barn-a" && r.ExpectedResult == "The known person is shown in the search result.");
+        cut.Find("[data-testid=sg-manual]").GetAttribute("data-decision").Should().Be("ReadyForManualTest");
+        cut.Find("[data-testid=sg-manual-plan]").GetAttribute("href").Should().Be("test-plan-suggestions");
+        _api.Verify(a => a.VerifySuggestionAsync(It.IsAny<SuggestionVerifyRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
 }

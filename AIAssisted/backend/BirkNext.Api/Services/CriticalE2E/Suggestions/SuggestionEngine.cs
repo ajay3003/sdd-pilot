@@ -17,14 +17,28 @@ namespace BirkNext.Api.Services.CriticalE2E.Suggestions;
 ///   valid synthetic value; asserted like required fields.</item>
 /// <item>Valid submission — every field valid, submit; the expected result is NOT known from source, so there is no final assertion and the
 ///   suggestion needs one from a reviewer or a requirement.</item>
+/// <item>Search (suggest-v2) — a text input and a search button in the same file (the page's own markup or a composed component), recognised
+///   from handler, label, text or test id ("SearchAsync", "Start søk"). Four functional scenarios: a known record (value from approved Test Data),
+///   no match (synthetic, or Test Data when the field is identifier-like), empty search, and clear. What the result shows is not known from
+///   source: a static empty-result/error text in the markup is offered as an expected-result HINT for a person to confirm, never asserted.</item>
+/// <item>User action — a button with a handler and static text outside a form; its effect is unknown, so it needs an expected result.</item>
 /// </list>
+/// Categories: Page opens and Navigation are UI Smoke; every other kind is UI Functional. UI source alone never yields Business E2E.
 /// Values are synthetic and generated from the declared constraints; identifiers (ids, national numbers, references) and patterns are never
 /// generated — they need Test Data. Controls inside @if/@foreach are marked; unrelated controls are never chained into a flow.
 /// </summary>
 public static partial class SuggestionEngine
 {
-    public const string RuleVersion = "suggest-v1";
+    public const string RuleVersion = "suggest-v2";
     public const int MaxNavigationPerPage = 5;
+    public const int MaxSearchesPerPage = 2;
+    public const int MaxActionsPerPage = 5;
+
+    [GeneratedRegex(@"retry|pr[øo]v igjen|try again|avbryt|cancel|\blukk|\bclose|dismiss", RegexOptions.IgnoreCase)]
+    private static partial Regex NoEffectOfItsOwn();
+
+    [GeneratedRegex(@"treff|s[øo]k|search|match|funnet|found", RegexOptions.IgnoreCase)]
+    private static partial Regex SearchWords();
 
     [GeneratedRegex(@"(^|[^a-z])(id|nr|nummer|fnr|fodselsnummer|fødselsnummer|personnummer|ssn|orgnr|organisasjonsnummer|reference|referanse|token|password|passord|secret)([^a-z]|$)", RegexOptions.IgnoreCase)]
     private static partial Regex IdentifierLike();
@@ -78,7 +92,54 @@ public static partial class SuggestionEngine
         return max is { } mx && v.Length > mx ? v[..Math.Max(1, mx)] : v;
     }
 
-    private static string Ref(SourceUiPage p, SourceUiControl c) => $"{p.File}:{c.Line}";
+    private static string Ref(SourceUiPage p, SourceUiControl c) => $"{c.SourceFile ?? p.File}:{c.Line}";
+
+    public static SuggestionCategory CategoryOf(SuggestionKind kind) => kind is SuggestionKind.PageOpens or SuggestionKind.Navigation ? SuggestionCategory.UiSmoke : SuggestionCategory.UiFunctional;
+
+    /// <summary>Where the values come from: approved Test Data needed, synthetic values generated from constraints, or no input at all.</summary>
+    public static SuggestionTestDataState TestDataStateOf(TestSuggestion s) =>
+        s.TestDataNeeds.Count > 0 ? (s.ManualReview?.TestData is { Length: > 0 } ? SuggestionTestDataState.ProvidedByReviewer : SuggestionTestDataState.NeedsApprovedTestData)
+        : s.Steps.Any(st => st.Value is not null && st.Action is CompanionActionKind.Fill or CompanionActionKind.Select) ? SuggestionTestDataState.SyntheticGenerated
+        : SuggestionTestDataState.NotNeeded;
+
+    private static bool TextField(SourceUiControl c) => c.Kind is SourceUiControlKind.TextInput or SourceUiControlKind.NumberInput && c.InputType != "password";
+
+    /// <summary>What the search looks for, in plain words, from the page/component names and the field's own words.</summary>
+    private static string Noun(SourceUiPage page, SourceUiControl input) =>
+        NounOf($"{input.Label} {input.Binding} {input.Handler}") ?? NounOf($"{page.File} {string.Join(" ", page.ComposedFrom)} {page.Title}") ?? "record";
+
+    // The field's own words win: "Søk etter roller" on a page about children searches roles.
+    private static string? NounOf(string words) =>
+        Regex.IsMatch(words, @"rolle|\brole", RegexOptions.IgnoreCase) ? "role"
+        : Regex.IsMatch(words, "person|barn|child|elev|pupil|f[øo]dsel", RegexOptions.IgnoreCase) ? "person"
+        : Regex.IsMatch(words, "bruker|user|ansatt|employee", RegexOptions.IgnoreCase) ? "user" : null;
+
+    /// <summary>Search pairs: (input, search button, clear button?) declared in the same file; a search-as-you-type input (search intent and an
+    /// input handler, no search button in its file) is a pair without a button. Inputs and buttons inside @foreach are skipped.</summary>
+    internal static List<(SourceUiControl Input, SourceUiControl? Button, SourceUiControl? Clear)> SearchPairs(SourceUiPage page)
+    {
+        var pairs = new List<(SourceUiControl, SourceUiControl?, SourceUiControl?)>();
+        var controls = page.Controls.Where(c => !c.Repeated).ToList();
+        foreach (var button in controls.Where(c => c.Kind is SourceUiControlKind.Button or SourceUiControlKind.SubmitButton && c.Intent == SourceUiIntent.Search))
+        {
+            var file = button.SourceFile ?? page.File;
+            var sameFile = controls.Where(c => (c.SourceFile ?? page.File) == file).ToList();
+            var fields = sameFile.Where(TextField).Where(c => c.FormId == button.FormId || button.FormId is null || c.FormId is null).ToList();
+            var input = fields.FirstOrDefault(c => c.Intent == SourceUiIntent.Search) ?? fields.FirstOrDefault(c => c.KeyHandler is not null) ?? (fields.Count == 1 ? fields[0] : null);
+            if (input is null || pairs.Any(p => p.Item1.Id == input.Id)) continue;
+            var clear = sameFile.FirstOrDefault(c => c.Kind == SourceUiControlKind.Button && c.Intent == SourceUiIntent.Clear);
+            pairs.Add((input, button, clear));
+            if (pairs.Count >= MaxSearchesPerPage) break;
+        }
+        foreach (var input in controls.Where(c => TextField(c) && c.Intent == SourceUiIntent.Search && c.Handler is not null && c.FormId is null))
+        {
+            if (pairs.Count >= MaxSearchesPerPage || pairs.Any(p => p.Item1.Id == input.Id)) continue;
+            var file = input.SourceFile ?? page.File;
+            if (controls.Any(c => (c.SourceFile ?? page.File) == file && c.Kind is SourceUiControlKind.Button or SourceUiControlKind.SubmitButton && c.Intent == SourceUiIntent.Search)) continue;
+            pairs.Add((input, null, controls.FirstOrDefault(c => (c.SourceFile ?? page.File) == file && c.Kind == SourceUiControlKind.Button && c.Intent == SourceUiIntent.Clear)));
+        }
+        return pairs;
+    }
 
     private static SuggestedStep Navigate(string route) => new() { StepId = "s1", Description = $"Open {route}", Action = CompanionActionKind.Navigate, Value = route };
 
@@ -96,7 +157,7 @@ public static partial class SuggestionEngine
             TestSuggestion Base(SuggestionKind kind, string title, IEnumerable<string> keyParts) => new()
             {
                 SuggestionId = Id([RuleVersion, projectKey, route, kind.ToString(), .. keyParts]), RuleVersion = RuleVersion, ProjectKey = projectKey, SourceSnapshotId = snapshotId,
-                Module = page.Module, Feature = feature, Kind = kind, Route = route, Title = title, RequirementRefs = page.RequirementRefs, Preconditions = preconditions,
+                Module = page.Module, Feature = feature, Kind = kind, Category = CategoryOf(kind), Route = route, Title = title, RequirementRefs = page.RequirementRefs, Preconditions = preconditions,
                 Origins = page.RequirementRefs.Count > 0 ? [SuggestionOrigin.SourceImplementationDerived, SuggestionOrigin.RequirementDerived] : [SuggestionOrigin.SourceImplementationDerived],
                 Limitations = [.. page.Limitations.Take(3)],
             };
@@ -230,8 +291,119 @@ public static partial class SuggestionEngine
                     });
                 }
             }
+            Searches(page, route, feature, Base, result);
+            Actions(page, route, feature, Base, result);
         }
-        return [.. result.Select(s => Covered(s, flows))];
+        return [.. result.Select(s => Covered(s, flows)).Select(s => s with { TestDataState = TestDataStateOf(s) })];
+    }
+
+    private static void Searches(SourceUiPage page, string route, string feature, Func<SuggestionKind, string, IEnumerable<string>, TestSuggestion> Base, List<TestSuggestion> result)
+    {
+        var pairs = SearchPairs(page);
+        foreach (var (input, button, clear) in pairs)
+        {
+            var noun = Noun(page, input);
+            var field = input.Label ?? input.Binding ?? "the search field";
+            // Two searches on one page are told apart by their field.
+            var subject = pairs.Count > 1 ? $"{feature} ({field})" : feature;
+            var live = button is null;
+            var buttonName = button?.Text ?? button?.Label ?? "search";
+            var file = (button ?? input).SourceFile ?? page.File;
+            var refs = live ? new List<string> { Ref(page, input) } : new List<string> { Ref(page, input), Ref(page, button!) };
+            var resultList = page.Controls.FirstOrDefault(c => c.Kind == SourceUiControlKind.ResultList && (c.SourceFile ?? page.File) == file)
+                ?? page.Controls.FirstOrDefault(c => c.Kind == SourceUiControlKind.ResultList);
+            var notes = new List<string>();
+            if (input.Conditional || button?.Conditional == true) notes.Add("The search field or button is inside @if in source: it may be hidden in some states (e.g. while a search runs).");
+            if (live) notes.Add($"Search as you type: the field reacts while typing ({input.Handler}); there is no search button.");
+            if (input.KeyHandler is { } key && !live) notes.Add($"The field also reacts to keys ({key}): pressing Enter instead of \"{buttonName}\" is a manual variant; the browser step vocabulary has no key action.");
+            if (input.SourceFile is { } composedFile) notes.Add($"Declared in the composed component {composedFile}, not in the page file.");
+            var identifier = IdentifierLike().IsMatch($"{input.Binding} {input.Label}");
+            SuggestedStep FillStep(string id, string value, string basis) => new() { StepId = id, Description = $"Fill {field}", Action = CompanionActionKind.Fill, ControlId = input.Id, Locators = Locators(input), Value = value, ValueBasis = basis };
+            // The search's own steps after filling: click the button, or nothing for search-as-you-type.
+            List<SuggestedStep> Start(string id) => live ? [] : [new() { StepId = id, Description = $"Click \"{buttonName}\"", Action = CompanionActionKind.Click, ControlId = button!.Id, Locators = Locators(button) }];
+            // An empty-result text belongs to this search only when it is declared in the search's own file or names a search ("Ingen treff"); a
+            // department's "no children registered" is another state and is never offered as this search's result.
+            var empty = page.Messages.FirstOrDefault(m => m.Kind == SourceUiMessageKind.EmptyResult && m.File == file)
+                ?? page.Messages.FirstOrDefault(m => m.Kind == SourceUiMessageKind.EmptyResult && SearchWords().IsMatch(m.Text));
+            var error = page.Messages.FirstOrDefault(m => m.Kind == SourceUiMessageKind.Error && m.File == file);
+
+            var pairKey = button?.Id ?? "live";
+            result.Add(Base(SuggestionKind.Search, $"{subject}: search finds a known {noun}", [input.Id, pairKey, "known"]) with
+            {
+                SourceRefs = resultList is null ? refs : [.. refs, Ref(page, resultList)],
+                Steps = [Navigate(route), FillStep("s2", $"${{data:search.known-{noun}}}", $"approved Test Data: a known synthetic {noun} that exists in the target environment"), .. Start("s3")],
+                TestDataNeeds = [$"{field}: a known synthetic {noun} that exists in the target environment (approved Test Data — never a real person)"],
+                ExpectedHint = $"The known {noun} is shown in the search result{(resultList is not null ? $" ({resultList.Text})" : "")}; say which details identify it (name, date of birth, id).",
+                ExpectedHintBasis = $"Inferred from the search control ({button?.Handler ?? input.Handler ?? buttonName}); what a hit shows is not stated in source",
+                Confidence = "Medium", Limitations = [.. notes],
+            });
+
+            var noMatchValue = identifier ? $"${{data:search.no-match-{noun}}}" : Fit("ZzSyntheticNoMatch", input.MinLength, input.MaxLength);
+            result.Add(Base(SuggestionKind.SearchNoMatch, $"{subject}: search with no match shows the empty result", [input.Id, pairKey, "no-match"]) with
+            {
+                SourceRefs = empty is null ? refs : [.. refs, $"{empty.File}:{empty.Line}"],
+                Steps = [Navigate(route), FillStep("s2", noMatchValue, identifier ? $"approved Test Data: a well-formed value that matches no {noun}" : "synthetic value that should match nothing"), .. Start("s3")],
+                TestDataNeeds = identifier ? [$"{field}: a well-formed value that matches no {noun} (approved Test Data; the field looks like an identifier)"] : [],
+                ExpectedHint = empty is not null ? $"\"{empty.Text}\" is shown." : "An empty result or a 'no match' message is shown — confirm the exact text.",
+                ExpectedHintBasis = empty is not null ? $"Static text in source ({empty.File}:{empty.Line}){(empty.Conditional ? ", shown conditionally" : "")}" : "No empty-result text is declared in source",
+                Confidence = empty is not null ? "Medium" : "Low", Limitations = [.. notes],
+            });
+
+            if (!live)
+            result.Add(Base(SuggestionKind.SearchEmpty, $"{subject}: search with an empty field", [input.Id, pairKey, "empty"]) with
+            {
+                SourceRefs = refs,
+                Steps = [Navigate(route), .. Start("s2")],
+                ExpectedHint = button!.DisabledWhen is { } disabled
+                    ? $"\"{buttonName}\" cannot be used while the field is empty or a search runs (Disabled=\"{disabled}\" in source); nothing is searched."
+                    : error is not null ? $"Nothing is searched, or \"{error.Text}\" is shown." : "Nothing is searched, or a message asks for a search term.",
+                ExpectedHintBasis = button.DisabledWhen is not null ? $"The button's Disabled expression in source ({Ref(page, button)}); the condition is not evaluated" : "Not stated in source",
+                Confidence = "Low", Limitations = [.. notes],
+            });
+
+            if (clear is not null)
+                result.Add(Base(SuggestionKind.ClearSearch, $"{subject}: \"{clear.Text ?? clear.Label ?? "clear"}\" resets the search", [input.Id, clear.Id, "clear"]) with
+                {
+                    SourceRefs = [.. refs, Ref(page, clear)],
+                    Steps = [Navigate(route), FillStep("s2", Fit("Synthetic", input.MinLength, input.MaxLength), "synthetic value generated from the declared constraints"),
+                        new SuggestedStep { StepId = "s3", Description = $"Click \"{clear.Text ?? clear.Label ?? "clear"}\"", Action = CompanionActionKind.Click, ControlId = clear.Id, Locators = Locators(clear) }],
+                    ExpectedHint = $"{field} is empty again and no earlier result is shown.",
+                    ExpectedHintBasis = $"Inferred from the handler name ({clear.Handler ?? clear.Text}); the handler is not evaluated",
+                    Confidence = "Low", Limitations = [.. notes],
+                });
+        }
+    }
+
+    /// <summary>Buttons with a handler and static text outside forms and search: one suggestion each (bounded). What they do is unknown.</summary>
+    private static void Actions(SourceUiPage page, string route, string feature, Func<SuggestionKind, string, IEnumerable<string>, TestSuggestion> Base, List<TestSuggestion> result)
+    {
+        // Not suggested: buttons inside @foreach, buttons of a dialog/modal component (they need the dialog open first), and retry/cancel/close
+        // buttons, which have no observable effect of their own. A button inside @if is kept and marked: pages often wrap all content in a
+        // loading guard.
+        foreach (var button in page.Controls.Where(c => c.Kind == SourceUiControlKind.Button && c.FormId is null && !c.Repeated && c.Handler is not null && (c.Text ?? c.Label) is not null
+                     && !Regex.IsMatch(System.IO.Path.GetFileNameWithoutExtension(c.SourceFile ?? ""), "Dialog|Modal|Confirm", RegexOptions.IgnoreCase)
+                     && c.Intent is not (SourceUiIntent.Search or SourceUiIntent.Clear) && !NoEffectOfItsOwn().IsMatch($"{c.Text} {c.Label} {c.Handler}")).DistinctBy(c => c.Text ?? c.Label).Take(MaxActionsPerPage))
+        {
+            var name = button.Text ?? button.Label!;
+            var mutating = button.Intent is SourceUiIntent.Save or SourceUiIntent.Delete;
+            var b = Base(SuggestionKind.UserAction, $"{feature}: \"{name}\"", [button.Id, "action"]);
+            result.Add(b with
+            {
+                SourceRefs = [Ref(page, button)],
+                Steps = [Navigate(route), new SuggestedStep { StepId = "s2", Description = $"Click \"{name}\"", Action = CompanionActionKind.Click, ControlId = button.Id, Locators = Locators(button), Mutating = mutating }],
+                ExpectedHint = button.Intent switch
+                {
+                    SourceUiIntent.Open => "Something opens (a dialog, a panel or another view) — say what.",
+                    SourceUiIntent.Delete => "A confirmation is asked before anything is removed — confirm.",
+                    SourceUiIntent.Filter => "The list is filtered — say by what.",
+                    _ => null,
+                },
+                ExpectedHintBasis = button.Intent is SourceUiIntent.None ? null : $"Inferred from the words of the button ({button.Handler}); the handler is not evaluated",
+                Preconditions = mutating ? [.. b.Preconditions, "Changes data: run only against approved synthetic test data"] : b.Preconditions,
+                Confidence = "Low",
+                Limitations = button.Conditional ? ["The button is inside @if in source: it may be absent in some states (loading, empty, no permission)."] : [],
+            });
+        }
     }
 
     /// <summary>Existing flows are reused, never duplicated: same route + every control selector already in a flow = covered; same route and some
@@ -261,6 +433,7 @@ public static partial class SuggestionEngine
     /// <summary>Readiness states from the suggestion and its recorded verification/decisions. Readiness never implies an execution result.</summary>
     public static List<SuggestionState> States(TestSuggestion s, bool executed)
     {
+        if (s.ManualReview is { Decision: ManualReviewDecision.Rejected }) return [SuggestionState.Rejected];
         var states = new List<SuggestionState>();
         // Validation output exists only after a submission: it is verified when the approved test runs, not during mapping.
         var controlSteps = s.Steps.Where(st => st.ControlId is not null && !st.Locators.All(l => l.Basis.Contains("Validation", StringComparison.Ordinal))).ToList();
@@ -272,6 +445,8 @@ public static partial class SuggestionEngine
         if (s.ApprovedFlowId is not null) { states.Add(SuggestionState.Approved); states.Add(executed ? SuggestionState.Executed : SuggestionState.Executable); }
         else if (states.Count == 0) states.Add(SuggestionState.ReadyForReview);
         if (states.Count == 0) states.Add(SuggestionState.Suggested);
+        // Manual readiness is its own state: a tester can run it by hand; automation still needs locators, Test Data values and an assertion.
+        if (s.ManualReview is { Decision: ManualReviewDecision.ReadyForManualTest }) states.Add(SuggestionState.ReadyForManualTest);
         return states;
     }
 

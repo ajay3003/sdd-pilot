@@ -16,6 +16,9 @@ public static partial class SourceUiExtractor
 {
     public const int MaxControlsPerPage = 200;
     public const int MaxPages = 400;
+    /// <summary>How deep a page's composed components are followed (page → component → component …), and how many per page.</summary>
+    public const int MaxCompositionDepth = 3;
+    public const int MaxComposedComponents = 12;
 
     [GeneratedRegex(@"^\s*@page\s+""(?<route>[^""]+)""", RegexOptions.Multiline)] private static partial Regex PageDirective();
     [GeneratedRegex(@"<(?<close>/)?(?<tag>[A-Za-z][\w.:-]*)\b(?<attrs>(?:[^>""']|""[^""]*""|'[^']*')*?)(?<self>/)?>", RegexOptions.Singleline)] private static partial Regex Tag();
@@ -28,6 +31,16 @@ public static partial class SourceUiExtractor
     [GeneratedRegex(@"class\s+(?<name>\w+)")] private static partial Regex ClassDeclaration();
     [GeneratedRegex(@"(?<attrs>(?:\[[^\]]+\]\s*)+)public\s+[\w<>\[\]?,. ]+?\s+(?<prop>\w+)\s*\{", RegexOptions.Singleline)] private static partial Regex AttributedProperty();
     [GeneratedRegex(@"@(?:if|foreach|for|while)\b|\belse\b")] private static partial Regex ControlFlow();
+    [GeneratedRegex(@"^(?<lib>Radzen|Mud|Fluent|Telerik|Sf)(?<base>[A-Z]\w*)$")] private static partial Regex LibraryTag();
+    [GeneratedRegex(@"\b(clear|reset|nullstill|t[øo]m|t[øo]mme)\b|clear|reset", RegexOptions.IgnoreCase)] private static partial Regex ClearIntent();
+    [GeneratedRegex(@"search|s[øo]k|\bfinn\b|\bfind\b|lookup|oppslag|query", RegexOptions.IgnoreCase)] private static partial Regex SearchIntent();
+    [GeneratedRegex(@"filter", RegexOptions.IgnoreCase)] private static partial Regex FilterIntent();
+    [GeneratedRegex(@"delete|remove|slett|fjern", RegexOptions.IgnoreCase)] private static partial Regex DeleteIntent();
+    [GeneratedRegex(@"save|lagre|submit|\bsend|registrer|create|opprett|update|oppdater|godkjenn|approve", RegexOptions.IgnoreCase)] private static partial Regex SaveIntent();
+    [GeneratedRegex(@"\bopen|[åa]pne|\bvis\b|\bshow|detail|detalj|\bview", RegexOptions.IgnoreCase)] private static partial Regex OpenIntent();
+    [GeneratedRegex(@"ingen treff|ingen resultat|fant ingen|fant ikke|ikke funnet|ingen (?:personer|barn|elever|brukere|data)|no results?\b|no matches|nothing found|not found|no records|no data", RegexOptions.IgnoreCase)] private static partial Regex EmptyText();
+    [GeneratedRegex(@"\bfeil\b|noe gikk galt|kunne ikke|something went wrong|\berror\b|failed", RegexOptions.IgnoreCase)] private static partial Regex ErrorText();
+    [GeneratedRegex(@"laster|s[øo]ker\.\.\.|s[øo]ker…|loading|searching", RegexOptions.IgnoreCase)] private static partial Regex LoadingText();
 
     private static readonly Dictionary<string, (SourceUiControlKind Kind, string? Role, string? InputType)> Builtins = new(StringComparer.Ordinal)
     {
@@ -41,6 +54,72 @@ public static partial class SourceUiExtractor
         ["textarea"] = (SourceUiControlKind.TextArea, "textbox", null),
         ["select"] = (SourceUiControlKind.Select, "combobox", null),
     };
+
+    /// <summary>Component-library controls by the name after the library prefix (RadzenTextBox → TextBox, MudTextField → TextField). A library
+    /// component renders real DOM controls; which element and role is the library's business, so locators stay label/text/test-id based.</summary>
+    private static readonly Dictionary<string, (SourceUiControlKind Kind, string? Role, string? InputType)> LibraryControls = new(StringComparer.Ordinal)
+    {
+        ["Button"] = (SourceUiControlKind.Button, "button", null), ["IconButton"] = (SourceUiControlKind.Button, "button", null), ["SplitButton"] = (SourceUiControlKind.Button, "button", null),
+        ["TextBox"] = (SourceUiControlKind.TextInput, "textbox", "text"), ["TextField"] = (SourceUiControlKind.TextInput, "textbox", "text"), ["Search"] = (SourceUiControlKind.TextInput, "searchbox", "search"),
+        ["AutoComplete"] = (SourceUiControlKind.TextInput, "combobox", "text"), ["Autocomplete"] = (SourceUiControlKind.TextInput, "combobox", "text"), ["Mask"] = (SourceUiControlKind.TextInput, "textbox", "text"),
+        ["MaskedTextBox"] = (SourceUiControlKind.TextInput, "textbox", "text"), ["Password"] = (SourceUiControlKind.TextInput, "textbox", "password"), ["PasswordBox"] = (SourceUiControlKind.TextInput, "textbox", "password"),
+        ["TextArea"] = (SourceUiControlKind.TextArea, "textbox", null),
+        ["Numeric"] = (SourceUiControlKind.NumberInput, "spinbutton", "number"), ["NumericField"] = (SourceUiControlKind.NumberInput, "spinbutton", "number"),
+        ["NumberField"] = (SourceUiControlKind.NumberInput, "spinbutton", "number"), ["NumericTextBox"] = (SourceUiControlKind.NumberInput, "spinbutton", "number"),
+        ["DatePicker"] = (SourceUiControlKind.DateInput, "textbox", "date"), ["DateTimePicker"] = (SourceUiControlKind.DateInput, "textbox", "date"),
+        ["DropDown"] = (SourceUiControlKind.Select, "combobox", null), ["DropDownList"] = (SourceUiControlKind.Select, "combobox", null), ["Select"] = (SourceUiControlKind.Select, "combobox", null),
+        ["Combobox"] = (SourceUiControlKind.Select, "combobox", null), ["ComboBox"] = (SourceUiControlKind.Select, "combobox", null),
+        ["CheckBox"] = (SourceUiControlKind.Checkbox, "checkbox", "checkbox"), ["Checkbox"] = (SourceUiControlKind.Checkbox, "checkbox", "checkbox"), ["Switch"] = (SourceUiControlKind.Checkbox, "switch", "checkbox"),
+        ["DataGrid"] = (SourceUiControlKind.ResultList, null, null), ["Grid"] = (SourceUiControlKind.ResultList, null, null), ["Table"] = (SourceUiControlKind.ResultList, null, null),
+        ["DataList"] = (SourceUiControlKind.ResultList, null, null), ["SimpleTable"] = (SourceUiControlKind.ResultList, null, null),
+        ["Upload"] = (SourceUiControlKind.FileInput, null, "file"), ["FileUpload"] = (SourceUiControlKind.FileInput, null, "file"), ["FileInput"] = (SourceUiControlKind.FileInput, null, "file"),
+        ["Link"] = (SourceUiControlKind.Link, "link", null), ["NavLink"] = (SourceUiControlKind.Link, "link", null),
+    };
+
+    private static readonly HashSet<string> FormTags = new(StringComparer.Ordinal) { "EditForm", "form", "RadzenTemplateForm", "MudForm", "FluentEditForm", "TelerikForm", "SfDataForm" };
+
+    private static string? LibraryName(string prefix) => prefix switch
+    {
+        "Radzen" => "Radzen", "Mud" => "MudBlazor", "Fluent" => "FluentUI", "Telerik" => "Telerik", "Sf" => "Syncfusion", _ => null,
+    };
+
+    /// <summary>What a control is for, from its own words (handler, text, label, binding, test id, id). Clear before Search ("ClearSearch"),
+    /// Delete before Save. A hint for suggestions only.</summary>
+    internal static SourceUiIntent IntentOf(SourceUiControl c)
+    {
+        var words = string.Join(" ", new[] { c.Handler, c.Text, c.Label, c.Binding, c.TestId, c.ElementId }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        if (words.Length == 0) return SourceUiIntent.None;
+        if (ClearIntent().IsMatch(words)) return SourceUiIntent.Clear;
+        if (SearchIntent().IsMatch(words)) return SourceUiIntent.Search;
+        if (FilterIntent().IsMatch(words)) return SourceUiIntent.Filter;
+        if (DeleteIntent().IsMatch(words)) return SourceUiIntent.Delete;
+        if (SaveIntent().IsMatch(words)) return SourceUiIntent.Save;
+        if (OpenIntent().IsMatch(words)) return SourceUiIntent.Open;
+        return SourceUiIntent.None;
+    }
+
+    private static string? Expr(string? value)
+    {
+        var v = value?.Trim().Trim('@').Trim();
+        if (string.IsNullOrEmpty(v)) return null;
+        if (v.StartsWith('(') && v.EndsWith(')')) v = v[1..^1].Trim();
+        return v.Length is 0 or > 120 ? null : v;
+    }
+
+    private static string? Handler(string? value)
+    {
+        var v = Expr(value);
+        if (v is null) return null;
+        // "() => SearchAsync()" / "e => Select(e)" / "SearchAsync": the method name is the fact; a lambda body is never evaluated.
+        // "e => _query = e.Value?.ToString()" / "() => _q = string.Empty" assigns a field: "set _query", not the last call in the body.
+        if (Regex.Match(v, @"=>\s*(?<target>[A-Za-z_][\w.]*)\s*=(?!=)") is { Success: true } assignment) return $"set {assignment.Groups["target"].Value}";
+        var m = Regex.Match(v, @"(?:=>\s*)?(?:await\s+)?(?<name>[A-Za-z_][\w.]*)\s*(?:\(|$)");
+        return m.Success ? m.Groups["name"].Value : v;
+    }
+
+    /// <summary>An icon-font ligature ("close", "arrow_back", "search") is what the markup says, not the button's accessible name.</summary>
+    private static string? ButtonName(string? text, string? ariaLabel) =>
+        text is not null && ariaLabel is not null && Regex.IsMatch(text, "^[a-z]+(?:_[a-z]+)*$") ? ariaLabel : text ?? ariaLabel;
 
     /// <summary>Model constraints from DataAnnotations: class → property → constraint facts.</summary>
     public sealed record PropertyRules(bool Required, int? MinLength, int? MaxLength, string? RangeMin, string? RangeMax, string? Pattern, string? RequiredMessage, string? ConstraintMessage, string? InputType);
@@ -60,15 +139,80 @@ public static partial class SourceUiExtractor
             try { pages.Add(Page(file, codeBehind.GetValueOrDefault(file.Path), models)); }
             catch (Exception ex) when (ex is not OperationCanceledException) { failed.Add($"{file.Path.Replace('\\', '/')}({ex.GetType().Name})"); }
         }
+        pages = Compose(pages);
         var limitations = new List<string>
         {
             "Facts from UI source only: routes, controls, labels and test ids are candidates until the Edge Companion verifies them on the attended page.",
-            "Razor expressions are not evaluated; custom components are listed as components, not as DOM elements.",
+            "Razor expressions are not evaluated. A component used by a page is followed when its file is in this archive (bounded depth); component-library controls (Radzen, MudBlazor, FluentUI, Telerik, Syncfusion) are recognised by name and parameters.",
         };
         if (uiFiles.Count > MaxPages) limitations.Add($"Only the first {MaxPages} UI files were analysed.");
         if (skipped > 0) limitations.Add($"{skipped} UI file(s) were not read (size, binary content or the file limit).");
         if (failed.Count > 0) limitations.Add($"{failed.Count} UI file(s) could not be analysed: {string.Join(", ", failed.Take(5))}{(failed.Count > 5 ? ", …" : "")}.");
         return new SourceUiSurface { Pages = pages, FilesRead = uiFiles.Count, FilesSkipped = skipped, Limitations = limitations };
+    }
+
+    /// <summary>
+    /// Pages compose components: /person renders &lt;PersonSearchComponent /&gt;, whose input and search button are the page's real behaviour. A
+    /// routed page takes the controls, forms and messages of every component it uses whose .razor file is in the archive, followed to
+    /// <see cref="MaxCompositionDepth"/> and at most <see cref="MaxComposedComponents"/> per page; each component once per page (cycle-safe).
+    /// A component used inside @if/@foreach makes its controls conditional/repeated. Two files with the same component name are ambiguous and
+    /// are not composed. Component parameters are not evaluated.
+    /// </summary>
+    internal static List<SourceUiPage> Compose(List<SourceUiPage> pages)
+    {
+        var components = pages.Where(p => p.Routes.Count == 0 && p.File.EndsWith(".razor", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(p => System.IO.Path.GetFileNameWithoutExtension(p.File), StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+        if (components.Count == 0) return pages;
+        return [.. pages.Select(p => p.Routes.Count == 0 || p.ComponentUses.Count == 0 ? p : ComposePage(p, components))];
+    }
+
+    private static SourceUiPage ComposePage(SourceUiPage page, Dictionary<string, List<SourceUiPage>> components)
+    {
+        var controls = page.Controls.ToList();
+        var forms = page.Forms.ToList();
+        var messages = page.Messages.ToList();
+        var limitations = page.Limitations.ToList();
+        var composed = new List<string>();
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { page.File };
+        void Visit(SourceUiPage host, int depth, bool conditional, bool repeated)
+        {
+            foreach (var use in host.ComponentUses)
+            {
+                if (!components.TryGetValue(use.Component, out var matches)) continue;
+                if (matches.Count > 1)
+                {
+                    limitations.Add($"<{use.Component}> matches {matches.Count} component files: not composed (ambiguous).");
+                    continue;
+                }
+                var component = matches[0];
+                if (!visited.Add(component.File)) continue;
+                if (depth >= MaxCompositionDepth || composed.Count >= MaxComposedComponents)
+                {
+                    limitations.Add($"<{use.Component}> was not followed (composition limit: depth {MaxCompositionDepth}, {MaxComposedComponents} components).");
+                    continue;
+                }
+                composed.Add(component.File);
+                var prefix = System.IO.Path.GetFileNameWithoutExtension(component.File);
+                var c = conditional || use.Conditional;
+                var r = repeated || use.Repeated;
+                forms.AddRange(component.Forms.Select(f => f with { Id = $"{prefix}.{f.Id}" }));
+                foreach (var control in component.Controls)
+                {
+                    if (controls.Count >= MaxControlsPerPage) break;
+                    controls.Add(control with
+                    {
+                        SourceFile = control.SourceFile ?? component.File, FormId = control.FormId is null ? null : $"{prefix}.{control.FormId}",
+                        Conditional = control.Conditional || c, Repeated = control.Repeated || r,
+                    });
+                }
+                messages.AddRange(component.Messages.Select(m => m with { Conditional = m.Conditional || c }));
+                Visit(component, depth + 1, c, r);
+            }
+        }
+        Visit(page, 0, false, false);
+        if (composed.Count == 0) return page;
+        limitations.Insert(0, $"Includes {composed.Count} composed component(s): {string.Join(", ", composed.Select(System.IO.Path.GetFileNameWithoutExtension))}. Their parameters are not evaluated.");
+        return page with { Controls = controls, Forms = forms, Messages = messages, ComposedFrom = composed, Limitations = limitations };
     }
 
     internal static Dictionary<string, Dictionary<string, PropertyRules>> ModelRules(IReadOnlyList<SourceFile> codeFiles)
@@ -146,17 +290,21 @@ public static partial class SourceUiExtractor
 
         var controls = new List<SourceUiControl>();
         var forms = new List<SourceUiForm>();
+        var uses = new List<SourceUiComponentUse>();
+        var names = new Dictionary<int, string>();
+        var validators = new List<(string Component, string Tag, string? Text, int? Max)>();
         string? currentForm = null;
         string? formModelType = null;
         string? title = Regex.Match(markup, @"<PageTitle>(?<t>[^<]*)</PageTitle>") is { Success: true } pt ? Static(pt.Groups["t"].Value) : null;
         var tags = Tag().Matches(markup).ToList();
+        var messageFacts = new List<SourceUiMessage>();
         for (var i = 0; i < tags.Count && controls.Count < MaxControlsPerPage; i++)
         {
             var t = tags[i];
             var tag = t.Groups["tag"].Value;
             if (t.Groups["close"].Success)
             {
-                if (tag is "EditForm" or "form") currentForm = null;
+                if (FormTags.Contains(tag)) currentForm = null;
                 continue;
             }
             // First occurrence wins, as in the browser. A Razor expression with nested quotes in a value (class="@(x ? "a" : "")") is
@@ -171,13 +319,19 @@ public static partial class SourceUiExtractor
                 ? Static(Regex.Replace(m.Groups["inner"].Value, "<[^>]+>", " ")) : null;
             var testId = A("data-testid") is { } tid && !tid.Contains('@') ? tid : null;
             var elementId = A("id") is { } eid && !eid.Contains('@') ? eid : null;
-            if (tag is "EditForm" or "form")
+            if (FormTags.Contains(tag))
             {
                 currentForm = $"form{forms.Count + 1}";
-                var modelExpr = (A("Model") ?? A("EditContext") ?? "").Trim('@', '(', ')', ' ');
+                var modelExpr = (A("Model") ?? A("EditContext") ?? A("Data") ?? "").Trim('@', '(', ')', ' ');
                 formModelType = fieldTypes.GetValueOrDefault(modelExpr.Split('.')[0]);
-                forms.Add(new SourceUiForm(currentForm, formModelType, (A("OnValidSubmit") ?? A("OnSubmit") ?? A("@onsubmit"))?.Trim('@'),
-                    Regex.IsMatch(markup, @"<DataAnnotationsValidator\b"), line));
+                forms.Add(new SourceUiForm(currentForm, formModelType, Handler(A("OnValidSubmit") ?? A("OnSubmit") ?? A("@onsubmit") ?? A("Submit")),
+                    Regex.IsMatch(markup, @"<DataAnnotationsValidator\b") || Regex.IsMatch(markup, @"<(?:Radzen\w*Validator|MudForm)\b"), line));
+                continue;
+            }
+            // Radzen validators name the control they validate (Component="Name"): applied to that control after the loop.
+            if (tag is "RadzenRequiredValidator" or "RadzenLengthValidator" && A("Component") is { } validated)
+            {
+                validators.Add((validated, tag, Static(A("Text")), int.TryParse(A("Max"), out var vmax) ? vmax : null));
                 continue;
             }
             SourceUiControl? control = null;
@@ -213,15 +367,44 @@ public static partial class SourceUiExtractor
                     RangeMin = A("min") ?? rules?.RangeMin, RangeMax = A("max") ?? rules?.RangeMax, Pattern = A("pattern") ?? rules?.Pattern, ErrorMessage = rules?.RequiredMessage, ConstraintMessage = rules?.ConstraintMessage,
                     Text = kind is SourceUiControlKind.SubmitButton or SourceUiControlKind.Button ? Static(A("value")) : null,
                     Label = label ?? (kind is SourceUiControlKind.SubmitButton or SourceUiControlKind.Button ? null : Static(A("placeholder"))), Options = options,
+                    Handler = Handler(A("@oninput") ?? A("@onchange") ?? A("ValueChanged") ?? A("@onclick")), KeyHandler = Handler(A("@onkeyup") ?? A("@onkeydown") ?? A("@onkeypress")),
+                    DisabledWhen = Expr(A("disabled")) is { } dis && dis != "false" ? dis : null,
                 };
             }
+            else if (LibraryTag().Match(tag) is { Success: true } lib && LibraryControls.TryGetValue(lib.Groups["base"].Value, out var lc))
+            {
+                var library = LibraryName(lib.Groups["lib"].Value);
+                var isButton = lc.Kind == SourceUiControlKind.Button;
+                var submit = isButton && Regex.IsMatch(A("ButtonType") ?? A("Type") ?? "", @"Submit", RegexOptions.IgnoreCase);
+                var inputType = lc.InputType == "text" && Regex.IsMatch(A("InputType") ?? A("Type") ?? "", "Password", RegexOptions.IgnoreCase) ? "password" : lc.InputType;
+                var ariaLabel = Static(A("aria-label") ?? A("AriaLabel"));
+                control = new SourceUiControl
+                {
+                    Kind = submit ? SourceUiControlKind.SubmitButton : lc.Kind, Role = lc.Role, InputType = rules?.InputType ?? inputType, Binding = member, Library = library,
+                    Text = isButton || lc.Kind is SourceUiControlKind.Link ? ButtonName(Static(A("Text")) ?? Inner(), ariaLabel) : lc.Kind == SourceUiControlKind.ResultList ? tag : null,
+                    Label = isButton ? ariaLabel ?? Static(A("Title")) : label ?? Static(A("Label")) ?? ariaLabel ?? Static(A("Placeholder")),
+                    Handler = Handler(A("Click") ?? A("OnClick") ?? A("@onclick") ?? A("Change") ?? A("ValueChanged") ?? A("@oninput") ?? A("@onchange")),
+                    KeyHandler = Handler(A("@onkeyup") ?? A("@onkeydown") ?? A("@onkeypress") ?? A("OnKeyUp") ?? A("OnKeyDown")),
+                    Href = lc.Kind == SourceUiControlKind.Link && (A("Path") ?? A("Href") ?? A("href")) is { } lh && !lh.Contains('@') ? lh : null,
+                    Required = string.Equals(A("Required"), "true", StringComparison.OrdinalIgnoreCase) || rules?.Required == true,
+                    MaxLength = int.TryParse(A("MaxLength") ?? A("maxlength"), out var lmx) ? lmx : rules?.MaxLength, MinLength = rules?.MinLength,
+                    RangeMin = A("Min") ?? rules?.RangeMin, RangeMax = A("Max") ?? rules?.RangeMax, Pattern = rules?.Pattern, ErrorMessage = rules?.RequiredMessage, ConstraintMessage = rules?.ConstraintMessage,
+                    DisabledWhen = Expr(A("Disabled")) is { } ld && ld != "false" ? ld : null,
+                };
+                if (A("Name") is { } nm && !nm.Contains('@')) names[controls.Count] = nm;
+                // A grid's empty text is the page's own empty-result message.
+                if (lc.Kind == SourceUiControlKind.ResultList && Static(A("EmptyText") ?? A("NoRecordsText") ?? A("NoDataText")) is { } empty)
+                    messageFacts.Add(new SourceUiMessage(SourceUiMessageKind.EmptyResult, empty, path, line, conditional));
+            }
+            else if (tag is "QuickGrid" || (tag is "table" && Regex.IsMatch(markup[(t.Index + t.Length)..].Split("</table>")[0], @"@foreach\b")))
+                control = new SourceUiControl { Kind = SourceUiControlKind.ResultList, Text = tag };
             else if (tag is "button")
             {
                 var type = (A("type") ?? (currentForm is not null ? "submit" : "button")).ToLowerInvariant();
                 control = new SourceUiControl
                 {
-                    Kind = type == "submit" ? SourceUiControlKind.SubmitButton : SourceUiControlKind.Button, Role = "button", Text = Inner() ?? Static(A("aria-label")),
-                    Handler = A("@onclick")?.Trim('@', '(', ')', ' '), Label = Static(A("aria-label")),
+                    Kind = type == "submit" ? SourceUiControlKind.SubmitButton : SourceUiControlKind.Button, Role = "button", Text = ButtonName(Inner(), Static(A("aria-label"))),
+                    Handler = Handler(A("@onclick")), Label = Static(A("aria-label")), DisabledWhen = Expr(A("disabled")) is { } bd && bd != "false" ? bd : null,
                 };
             }
             else if (tag is "a" or "NavLink" && A("href") is { } href)
@@ -238,24 +421,46 @@ public static partial class SourceUiExtractor
                 control = new SourceUiControl { Kind = SourceUiControlKind.Heading, Role = "heading", Text = Inner() };
                 title ??= control.Text;
             }
-            else if (char.IsUpper(tag[0]) && currentForm is not null && !tag.Contains('.') && tag is not ("DataAnnotationsValidator" or "PageTitle" or "label"))
+            else if (char.IsUpper(tag[0]) && !tag.Contains('.') && !LibraryTag().IsMatch(tag) && tag is not ("DataAnnotationsValidator" or "PageTitle" or "label"))
             {
-                control = new SourceUiControl { Kind = SourceUiControlKind.Component, Text = tag };
-                limitations.Add($"<{tag}> at line {line} is a component: its rendered controls are not known from this file.");
+                // A component this file uses: composed later when its .razor file is in the archive.
+                if (uses.Count < 100 && !uses.Any(u => u.Component == tag && u.Line == line)) uses.Add(new SourceUiComponentUse(tag, line, conditional, repeated));
+                if (currentForm is not null)
+                {
+                    control = new SourceUiControl { Kind = SourceUiControlKind.Component, Text = tag };
+                    limitations.Add($"<{tag}> at line {line} is a component: its rendered controls are not known from this file alone.");
+                }
             }
             if (control is null) continue;
+            control = control with { Intent = IntentOf(control) };
             controls.Add(control with
             {
                 Id = $"{System.IO.Path.GetFileNameWithoutExtension(path)}:{line}:{controls.Count + 1}", TestId = testId, ElementId = elementId, FormId = currentForm, Line = line,
                 Conditional = conditional, Repeated = repeated, Confidence = testId is not null ? "High (test id in source)" : control.Label is not null || control.Text is not null ? "Medium (label or text)" : "Low",
             });
         }
+        foreach (var (component, vtag, vtext, vmax) in validators)
+        {
+            var index = names.FirstOrDefault(n => n.Value == component).Key;
+            if (!names.ContainsValue(component) || index >= controls.Count) continue;
+            controls[index] = vtag == "RadzenRequiredValidator"
+                ? controls[index] with { Required = true, ErrorMessage = vtext ?? controls[index].ErrorMessage }
+                : controls[index] with { MaxLength = vmax ?? controls[index].MaxLength, ConstraintMessage = vtext ?? controls[index].ConstraintMessage };
+        }
+        // Static text that names an empty result, an error or a loading state (shown conditionally in practice). Text only, no markup.
+        foreach (Match m in Regex.Matches(markup, @">(?<t>[^<>@{}]{3,120})<"))
+        {
+            var said = Static(m.Groups["t"].Value);
+            if (said is null) continue;
+            var kind = EmptyText().IsMatch(said) ? SourceUiMessageKind.EmptyResult : ErrorText().IsMatch(said) ? SourceUiMessageKind.Error : LoadingText().IsMatch(said) ? SourceUiMessageKind.Loading : (SourceUiMessageKind?)null;
+            if (kind is { } k && messageFacts.Count < 20) messageFacts.Add(new SourceUiMessage(k, said, path, LineOf(text, m.Index), regions(m.Index).Conditional));
+        }
         if (controls.Count >= MaxControlsPerPage) limitations.Add($"Only the first {MaxControlsPerPage} controls of this file were recorded.");
         if (routes.Count == 0) limitations.Add("No @page route: a component, not directly navigable.");
         return new SourceUiPage
         {
             File = path, Module = path.Contains('/') ? path[..path.IndexOf('/')] : "", Routes = routes, Title = title, RequiresAuthorization = auth.Success, Roles = roles,
-            Forms = forms, Controls = controls, RequirementRefs = requirements, Limitations = limitations,
+            Forms = forms, Controls = controls, RequirementRefs = requirements, Limitations = limitations, ComponentUses = uses, Messages = messageFacts,
         };
     }
 

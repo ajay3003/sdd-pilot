@@ -18,6 +18,8 @@ public sealed record SuggestionReviewRecord
     public DateTimeOffset? ApprovedAt { get; init; }
     public string? ApprovedBy { get; init; }
     public string? ReviewerExpected { get; init; }
+    /// <summary>The manual tester's review (expected result, Test Data, notes, decision). Human content: kept across snapshots, unlike locator verification.</summary>
+    public SuggestionManualReview? ManualReview { get; init; }
 }
 
 public interface ICriticalE2ESuggestionStore

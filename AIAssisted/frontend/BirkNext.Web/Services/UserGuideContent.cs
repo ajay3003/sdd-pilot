@@ -81,7 +81,7 @@ public static class UserGuideContent
         new("contract-testing", "Contract Testing", Testing, "contract openapi swagger graphql schema version test revision assertion impact coverage archive retention"),
         new("integration-suites", "Integration Test Suites and multi-source E2E", IntegrationE2E, "integration suite composite source context multi-source end-to-end e2e stage altinn mu mm skolenaervaer bufdata subflow full e2e correlation readiness kode 6 7 schema namespace",
             "mu-mm-contract-risk"),
-        new("suggested-e2e", "Suggested E2E tests and the Edge Companion", IntegrationE2E, "suggested tests critical e2e regression browser companion edge attended session pairing dom locator verification approve diagnostic flow route form razor",
+        new("suggested-e2e", "Suggested E2E tests and the Edge Companion", IntegrationE2E, "suggested tests critical e2e regression browser companion edge attended session pairing dom locator verification approve diagnostic flow route form razor search søk component radzen functional smoke manual test case expected result user action",
             "dom-verification", "companion-pairing"),
         new("execution-results", "Test Execution & Evidence", Testing, "execution evidence results runs outcome passed failed not assessed partial run call attempt request response assertion graphql retry redacted export timeline traceability compare report retention journey performance parquet static assessment"),
         new("parquet-viewer", "Parquet Quality Review", Testing, "parquet dataset data file bufdata validation rules profile compare baseline schema"),
@@ -136,7 +136,7 @@ public static class UserGuideContent
     {
         ["execution-results"] = new("2026-11-11", "BirkNext 1.0.0", "Execution Results areas and the Executed against panel; execution manifest acceptance AV-01–AV-33"),
         ["integration-suites"] = new("2026-11-11", "BirkNext 1.0.0", "Integration Test Suites headings; MU → MM gap report MM-G1"),
-        ["suggested-e2e"] = new("2026-11-11", "BirkNext 1.0.0", "Critical E2E Regression → Suggested tests actions; Browser Companion pairing contracts"),
+        ["suggested-e2e"] = new("2026-11-13", "BirkNext 1.0.0", "Critical E2E Regression → Suggested tests actions (functional discovery, manual test case); Browser Companion pairing contracts"),
         ["versioning"] = new("2026-11-11", "BirkNext 1.0.0", "Artifact versioning acceptance AV-*; application versioning acceptance CI-*, RT-*, BV-*"),
         ["whats-new"] = new("2026-11-11", "BirkNext 1.0.0", "No release-notes source exists in this build"),
         ["status-reference"] = new("2026-11-11", "BirkNext 1.0.0", "ExecutionState and ResultApplicability contracts"),

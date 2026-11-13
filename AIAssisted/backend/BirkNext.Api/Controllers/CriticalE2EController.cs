@@ -93,6 +93,10 @@ public sealed class CriticalE2EController(ICriticalE2EService service) : Control
     public async Task<IActionResult> DecideSuggestionAsync([FromServices] CriticalE2ESuggestionService suggestions, SuggestionDecisionRequest request, CancellationToken ct) =>
         await RunAsync(async () => await suggestions.DecideAsync(request, ct) is var (s, problem) && s is not null ? Ok(s) : BadRequest(new { message = problem }));
 
+    [HttpPost("suggestions/manual-review")]
+    public async Task<IActionResult> ManualReviewSuggestionAsync([FromServices] CriticalE2ESuggestionService suggestions, SuggestionManualReviewRequest request, CancellationToken ct) =>
+        await RunAsync(async () => await suggestions.ManualReviewAsync(request, ct) is var (s, problem) && s is not null ? Ok(s) : BadRequest(new { message = problem }));
+
     [HttpPost("suggestions/approve")]
     public async Task<IActionResult> ApproveSuggestionAsync([FromServices] CriticalE2ESuggestionService suggestions, SuggestionApproveRequest request, CancellationToken ct) =>
         await RunAsync(async () => await suggestions.ApproveAsync(request, ct) is var r && r.Flow is not null ? Ok(r) : UnprocessableEntity(r));
