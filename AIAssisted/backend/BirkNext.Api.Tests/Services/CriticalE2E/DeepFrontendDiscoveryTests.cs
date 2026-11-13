@@ -130,7 +130,7 @@ public sealed class DeepFrontendDiscoveryTests : IDisposable
         mine.Single(s => s.Kind == SuggestionKind.ClearSearch).Steps.Last().Description.Should().Be("Click \"Nullstill\"");
         mine.Should().ContainSingle(s => s.Kind == SuggestionKind.UserAction && s.Title == "Personsøk: \"Åpne siste\"", "the repeated \"Vis detaljer\" is not an action of the page");
         all.Select(s => s.SuggestionId).Should().OnlyHaveUniqueItems();
-        all.Should().OnlyContain(s => s.RuleVersion == "suggest-v2");
+        all.Should().OnlyContain(s => s.RuleVersion == SuggestionEngine.RuleVersion);
     }
 
     [Fact]

@@ -34,7 +34,9 @@ public static partial class SourceUiExtractor
     [GeneratedRegex(@"^(?<lib>Radzen|Mud|Fluent|Telerik|Sf)(?<base>[A-Z]\w*)$")] private static partial Regex LibraryTag();
     [GeneratedRegex(@"\b(clear|reset|nullstill|t[øo]m|t[øo]mme)\b|clear|reset", RegexOptions.IgnoreCase)] private static partial Regex ClearIntent();
     [GeneratedRegex(@"search|s[øo]k|\bfinn\b|\bfind\b|lookup|oppslag|query", RegexOptions.IgnoreCase)] private static partial Regex SearchIntent();
-    [GeneratedRegex(@"filter", RegexOptions.IgnoreCase)] private static partial Regex FilterIntent();
+    [GeneratedRegex(@"filte?r", RegexOptions.IgnoreCase)] private static partial Regex FilterIntent();
+    [GeneratedRegex(@"NavigateTo\(\s*(?<interp>\$)?@?""(?<route>/[^""]*)""")] private static partial Regex NavigateCall();
+    [GeneratedRegex(@"\b(?<m>[A-Z]\w*)\s*\([^()]*\)\s*(?:=>|\{)")] private static partial Regex MethodHeader();
     [GeneratedRegex(@"delete|remove|slett|fjern", RegexOptions.IgnoreCase)] private static partial Regex DeleteIntent();
     [GeneratedRegex(@"save|lagre|submit|\bsend|registrer|create|opprett|update|oppdater|godkjenn|approve", RegexOptions.IgnoreCase)] private static partial Regex SaveIntent();
     [GeneratedRegex(@"\bopen|[åa]pne|\bvis\b|\bshow|detail|detalj|\bview", RegexOptions.IgnoreCase)] private static partial Regex OpenIntent();
@@ -262,7 +264,13 @@ public static partial class SourceUiExtractor
         var text = file.Content;
         // The @code block is C#, not markup.
         var code = "";
-        if (CodeBlock().Match(text) is { Success: true } cb) { code = text[cb.Index..]; text = text[..cb.Index]; }
+        var navigations = new List<SourceUiNavigation>();
+        if (CodeBlock().Match(text) is { Success: true } cb)
+        {
+            code = text[cb.Index..]; text = text[..cb.Index];
+            navigations.AddRange(Navigations(code, path, LineOf(file.Content, cb.Index) - 1));
+        }
+        if (codeBehind is not null) navigations.AddRange(Navigations(codeBehind, path + ".cs", 0));
         code += "\n" + (codeBehind ?? "");
         var limitations = new List<string>();
         var routes = PageDirective().Matches(text).Select(m => m.Groups["route"].Value).Distinct().ToList();
@@ -424,7 +432,10 @@ public static partial class SourceUiExtractor
             else if (char.IsUpper(tag[0]) && !tag.Contains('.') && !LibraryTag().IsMatch(tag) && tag is not ("DataAnnotationsValidator" or "PageTitle" or "label"))
             {
                 // A component this file uses: composed later when its .razor file is in the archive.
-                if (uses.Count < 100 && !uses.Any(u => u.Component == tag && u.Line == line)) uses.Add(new SourceUiComponentUse(tag, line, conditional, repeated));
+                // Event callbacks bound to a host method (OnChildSelected="@NavigateToChild"): names only, never evaluated.
+                var callbacks = attrs.Where(a => a.Key.StartsWith("On", StringComparison.Ordinal) && Handler(a.Value) is { } h && Regex.IsMatch(h, @"^[A-Za-z_]\w*$"))
+                    .Select(a => new SourceUiCallback(a.Key, Handler(a.Value)!)).Take(10).ToList();
+                if (uses.Count < 100 && !uses.Any(u => u.Component == tag && u.Line == line)) uses.Add(new SourceUiComponentUse(tag, line, conditional, repeated) { Callbacks = callbacks });
                 if (currentForm is not null)
                 {
                     control = new SourceUiControl { Kind = SourceUiControlKind.Component, Text = tag };
@@ -457,11 +468,41 @@ public static partial class SourceUiExtractor
         }
         if (controls.Count >= MaxControlsPerPage) limitations.Add($"Only the first {MaxControlsPerPage} controls of this file were recorded.");
         if (routes.Count == 0) limitations.Add("No @page route: a component, not directly navigable.");
+        var resultNavigations = uses.SelectMany(u => u.Callbacks.Select(c => (u, c)))
+            .SelectMany(x => navigations.Where(n => n.Handler == x.c.Handler).Select(n => new SourceUiResultNavigation(x.u.Component, x.c.Parameter, n.Handler, n.Route, n.File, n.Line)))
+            .DistinctBy(r => (r.Component, r.Parameter, r.Route)).Take(20).ToList();
         return new SourceUiPage
         {
+            Navigations = navigations, ResultNavigations = resultNavigations,
             File = path, Module = path.Contains('/') ? path[..path.IndexOf('/')] : "", Routes = routes, Title = title, RequiresAuthorization = auth.Success, Roles = roles,
             Forms = forms, Controls = controls, RequirementRefs = requirements, Limitations = limitations, ComponentUses = uses, Messages = messageFacts,
         };
+    }
+
+    /// <summary>
+    /// Methods that call <c>NavigateTo("/…")</c>, with the route as written: an interpolation in a path segment stays a template
+    /// (<c>/person/{childId}</c>); a query string, or an interpolation that builds one, is cut off. The enclosing method is the nearest method
+    /// header before the call (approximate: C# is not parsed).
+    /// </summary>
+    internal static List<SourceUiNavigation> Navigations(string code, string file, int lineOffset)
+    {
+        var list = new List<SourceUiNavigation>();
+        var headers = MethodHeader().Matches(code).Where(m => m.Groups["m"].Value is not ("NavigateTo" or "InvokeAsync")).ToList();
+        foreach (Match call in NavigateCall().Matches(code))
+        {
+            var route = call.Groups["route"].Value;
+            var cut = route.IndexOf('?');
+            if (cut >= 0) route = route[..cut];
+            var interpolated = call.Groups["interp"].Success;
+            // "/admin/audit-log{BuildQueryString(…)}": an interpolation that does not start a path segment builds the query, not the path.
+            if (interpolated && Regex.Match(route, @"(?<!/)\{") is { Success: true } brace) route = route[..brace.Index];
+            if (!interpolated) route = route.Replace("{", "").Replace("}", "");
+            if (route.Length == 0) continue;
+            var owner = headers.LastOrDefault(h => h.Index < call.Index)?.Groups["m"].Value;
+            if (owner is null || list.Count >= 20) continue;
+            list.Add(new SourceUiNavigation(owner, route.Length > 1 ? route.TrimEnd('/') : route, file, lineOffset + LineOf(code, call.Index)));
+        }
+        return list;
     }
 
     /// <summary>For an index in the markup: is it inside an @if/else (conditional) or @foreach/@for/@while (repeated) block? Brace counting,

@@ -57,3 +57,5 @@
 .sg-manual h4, .sg-subhead { margin: 0; font-size: 0.95rem; }
 .sg-manual-steps { margin: 0; padding-left: 1.4rem; display: grid; gap: 0.2rem; overflow-wrap: anywhere; }
 .sg-manual textarea, .sg-manual input { width: 100%; max-width: 100%; }
+.sg-bindings { display: grid; gap: 0.4rem; margin: 0 0 0.6rem; padding: 0.5rem 0.75rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; min-width: 0; }
+.sg-bindings legend { font-size: 0.85rem; font-weight: 600; padding: 0 0.25rem; }

@@ -31,11 +31,33 @@ If the M2LB Frontend contains search, forms, validation and user actions, BirkNe
 - **Frontend**: `CriticalE2ESuggestionsTests` adds a manual-test-case test (filter, order, plain steps without `${data:`, use hint, ready request, no Verify call).
 - **Real M2LB archive (offline, read-only)**: `testdata/M2LB.zip` was run through the extractor and engine by a scratch-only probe that is not committed. Result: 59 UI files, 13 routed pages, **45 suggestions = 11 page checks + 34 UI Functional**. That covers search on `/person` and `/` (known / no match / empty / clear), search-as-you-type on `/admin/child-specific-roles`, `/admin/general-roles` (two searches, told apart by field) and `/admin/user-access`, and 14 user actions (Opprett, Tildel rolle, Lagre, Neste side, …). Before this change the same archive yielded page checks only.
 
+## Follow-up: gap closure (`suggest-v3`, 2026-11-13)
+
+This follow-up closes three gaps from the first pass.
+
+| Gap | Closed by |
+|---|---|
+| Filter panels got no filter scenario | **FilterList**: a filter control outside forms (its own words say filter/filtrer; "Filtrer" did not match the old `filter` pattern, which was the root cause) gives one suggestion per filter, at most 5 per page. A date filter gets a synthetic date, a select gets its first declared option, and anything else needs approved Test Data (`${data:filter.<field>}`). A component-library dropdown is stated as not native, so the Select step must be checked when the test runs. What the list then shows is a hint, never an assertion. |
+| Multi-step flows were not chained | **SearchOpensResult**: the extractor now records the methods that call `NavigateTo` (route template as written; a query string, or an interpolation that builds one, is cut off), the component callbacks bound to host methods (`OnChildSelected="@NavigateToChild"`), and the combination as `ResultNavigations`. A search whose component hands a choice to a navigating method gives "search → open a found record". Its **expected result comes from source** (the address starts with `/person/`). Which result element opens the record depends on the Test Data record, so the suggestion carries an `AutomationBlocker`: it is a manual test until a person picks the element in the flow editor. |
+| Automation approval could not use Test Data values | Every `${data:…}` placeholder is listed as a `DataVariable`. Approval takes one approved Test Data alias per placeholder (`SuggestionApproveRequest.TestData`), writes the flow's `DataMappings` (alias plus stable asset id), and runs `CriticalE2ETestData.Issues`, the rules a run applies (unknown, unapproved, wrong type, other environment, no value), **before** anything is saved. The value is never returned to the client or stored in the flow. The UI offers only approved assets for this environment. Identifier and pattern form fields now become `${data:form.<field>}` placeholders. Credential and file fields never do, and they block automation with a stated reason. |
+
+Other changes:
+
+- The search hint names details that fit the record, so a role search no longer asks for a date of birth.
+- Suggestion ids keep the `suggest-v2` seed (`IdVersion`), so reviews, decisions and approvals stay attached; `RuleVersion` reports `suggest-v3`.
+
+**Verification:**
+
+- `FunctionalFlowSuggestionTests` (synthetic fixture, 6 tests): navigation facts, open-result, filters, form placeholders and a credential blocker, the role hint, and approval refusing a missing or unapproved alias and accepting an approved one without storing its value.
+- The frontend approval test covers which aliases are offered, the request bindings, and a blocked suggestion with Approve disabled.
+- Focused runs: backend Critical E2E 196/196, frontend Critical E2E 106/106.
+- **Real M2LB archive (offline, read-only, scratch probe not committed):** 59 suggestions = 11 page checks + 48 UI Functional. That includes 12 filter scenarios (`/admin/audit-log` and `/admin/emergency-access` with 5 each, the department filter on `/` and `/person`) and 2 search → open a person (`/` and `/person`, route `/person/{childId}` from `NavigateToChild`).
+
 ## Not done (remaining)
 
-- No browser acceptance against the running M2LB frontend, and no Edge Companion verification of the new locators. Every suggestion stays NeedsDomVerification until verified.
-- Filter panels (e.g. audit-log filters with `EmitChange`) are recognised as controls but get no filter scenario yet.
-- An automation approval of a search still needs Test Data **values**. The `${data:…}` alias is named, but approval is refused while Test Data needs are open, and wiring the central Test Data resolver into suggestion approval is not done.
+- No browser acceptance against the running M2LB frontend, and no Edge Companion verification of the new locators. Every suggestion stays NeedsDomVerification until it is verified.
+- Opening a found record is not automatable from source: the result element needs a locator picked in the flow editor (by design, stated as `AutomationBlocker`).
+- Whether a Radzen dropdown can be driven by the Select step has not been verified in a browser.
 - No key action in the browser vocabulary: "Enter starts the search" is a manual variant, stated as a limitation.
-- Component parameters are not evaluated: a component that renders differently per use is described once.
-- Multi-step flows across pages (search → open detail) are not chained. Business E2E needs evidence beyond UI source.
+- Component parameters are not evaluated: a component that renders differently per use is described once. Navigation is followed one hop, from a page's own callback to its own method; callbacks forwarded through nested components are not.
+- Business E2E needs evidence beyond UI source.

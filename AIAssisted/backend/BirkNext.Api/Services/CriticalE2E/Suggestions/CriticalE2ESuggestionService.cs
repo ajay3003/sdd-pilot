@@ -1,6 +1,7 @@
 using BirkNext.Api.Services.BrowserCompanion;
 using BirkNext.Api.Services.ContractTesting;
 using BirkNext.Api.Services.Integrations.SourceEvidence;
+using BirkNext.Api.Services.TestData;
 using BirkNext.CriticalE2E;
 using BirkNext.Integrations;
 using System.Text.RegularExpressions;
@@ -20,7 +21,8 @@ public sealed partial class CriticalE2ESuggestionService(
     ICriticalE2ESuggestionStore reviews,
     IBrowserCompanionService companion,
     TimeProvider time,
-    ILogger<CriticalE2ESuggestionService>? logger = null)
+    ILogger<CriticalE2ESuggestionService>? logger = null,
+    TestDataCatalog? catalog = null)
 {
     public const string Reviewer = "Local session";
 
@@ -263,7 +265,19 @@ public sealed partial class CriticalE2ESuggestionService(
             else if (validationOnly && step.Locators.FirstOrDefault() is { } conv) mapping[step.StepId] = (conv.Selector, true);   // verified when the test runs
             else problems.Add($"Step {step.StepId} ({step.Description}): no accepted locator.");
         }
-        if (s.TestDataNeeds.Count > 0) problems.Add($"Test Data needed first: {string.Join("; ", s.TestDataNeeds)}.");
+        if (s.AutomationBlocker is { } blocker) problems.Add(blocker);
+        // Each ${data:…} placeholder is mapped to an approved Test Data alias chosen by the reviewer; the value stays in Test Data and is revealed
+        // to the backend only while a run executes. A need that no placeholder carries cannot be mapped here.
+        var bindings = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var variable in s.DataVariables)
+        {
+            var alias = request.TestData?.FirstOrDefault(b => string.Equals(b.Variable, variable.Variable, StringComparison.Ordinal))?.Alias?.Trim();
+            if (string.IsNullOrEmpty(alias)) problems.Add($"Choose approved Test Data for ${{data:{variable.Variable}}} ({variable.Description}).");
+            else bindings[variable.Variable] = alias;
+        }
+        if (s.TestDataNeeds.Count > 0 && s.DataVariables.Count == 0) problems.Add($"Test Data needed first: {string.Join("; ", s.TestDataNeeds)}.");
+        foreach (var unaddressed in s.Steps.Where(st => st.ControlId is null && st.Action is CompanionActionKind.Click or CompanionActionKind.Fill or CompanionActionKind.Select))
+            problems.Add($"Step {unaddressed.StepId} ({unaddressed.Description}) has no element from source: pick it in the flow editor.");
         var steps = s.Steps.ToList();
         if (!steps.Any(st => st.IsFinalAssertion))
         {
@@ -287,6 +301,9 @@ public sealed partial class CriticalE2ESuggestionService(
             Kind = CriticalE2EFlowKind.Diagnostic, Mode = CriticalE2EExecutionMode.CompanionBrowser, ProfileId = request.ProfileId, EnvironmentId = request.EnvironmentId,
             Steps = [.. steps.Select(Map)], Source = CriticalE2EFlowSource.SuggestedFromSource, RequirementRef = s.RequirementRefs.FirstOrDefault(),
             Tags = [$"suggestion:{s.SuggestionId}", $"snapshot:{s.SourceSnapshotId}", $"project:{s.ProjectKey}", s.RuleVersion],
+            DataMappings = bindings.Count == 0 ? null : [.. bindings.Select(b => new CriticalE2EDataMapping(b.Key, [b.Value], BirkNext.TestData.TestDataDataType.SimpleValues,
+                steps.FirstOrDefault(st => CriticalE2EVariables.DataPlaceholders(st.Value).Contains(b.Key))?.Description ?? b.Key)
+                { AssetIds = catalog is null ? null : [TestDataReferenceResolver.Resolve(catalog, b.Value, null).AssetId] })],
             AutomationBoundary = "Browser UI only: what the application does after the submission is not verified by this flow.",
             FinalOutcome = final.Action switch
             {
@@ -296,6 +313,13 @@ public sealed partial class CriticalE2ESuggestionService(
             },
         };
         if (flow.ConfigurationProblem() is { } problem) return new(null, [problem]);
+        // The same Test Data rules a run applies, checked before anything is saved: unknown, unapproved, wrong type, other environment, no value.
+        if (bindings.Count > 0)
+        {
+            var issues = catalog is null ? ["Test Data review required: the Test Data catalog is unavailable."]
+                : CriticalE2ETestData.Issues(flow, catalog, time.GetUtcNow(), request.EnvironmentName, request.EnvironmentType);
+            if (issues.Count > 0) return new(null, issues);
+        }
         var saved = critical.SaveFlow(flow);
         reviews.Update(s.SuggestionId, request.SnapshotId, r => r with
         {

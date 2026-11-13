@@ -22,6 +22,11 @@ namespace BirkNext.Api.Services.CriticalE2E.Suggestions;
 ///   no match (synthetic, or Test Data when the field is identifier-like), empty search, and clear. What the result shows is not known from
 ///   source: a static empty-result/error text in the markup is offered as an expected-result HINT for a person to confirm, never asserted.</item>
 /// <item>User action — a button with a handler and static text outside a form; its effect is unknown, so it needs an expected result.</item>
+/// <item>Search opens a result (suggest-v3) — the search's component hands a chosen item to a host method that calls NavigateTo with a route
+///   template (<c>OnChildSelected="@NavigateToChild"</c> → <c>/person/{childId}</c>): search for the known record, open it, and the browser is on
+///   that route. The expected route comes from source; which element opens the record does not, so it is a manual test until a person picks it.</item>
+/// <item>Filter (suggest-v3) — a filter control outside forms (its own words say filter/filtrer): set one value and see the list narrowed. A date
+///   gets a synthetic date, a select its first declared option, anything else approved Test Data.</item>
 /// </list>
 /// Categories: Page opens and Navigation are UI Smoke; every other kind is UI Functional. UI source alone never yields Business E2E.
 /// Values are synthetic and generated from the declared constraints; identifiers (ids, national numbers, references) and patterns are never
@@ -29,7 +34,11 @@ namespace BirkNext.Api.Services.CriticalE2E.Suggestions;
 /// </summary>
 public static partial class SuggestionEngine
 {
-    public const string RuleVersion = "suggest-v2";
+    public const string RuleVersion = "suggest-v3";
+    /// <summary>The rule generation that seeds suggestion ids. Additive rule versions keep it, so reviews, decisions and approvals of the same
+    /// suggestion stay attached; it changes only when an existing rule's meaning changes.</summary>
+    public const string IdVersion = "suggest-v2";
+    public const int MaxFiltersPerPage = 5;
     public const int MaxNavigationPerPage = 5;
     public const int MaxSearchesPerPage = 2;
     public const int MaxActionsPerPage = 5;
@@ -94,6 +103,27 @@ public static partial class SuggestionEngine
 
     private static string Ref(SourceUiPage p, SourceUiControl c) => $"{c.SourceFile ?? p.File}:{c.Line}";
 
+    /// <summary>A placeholder-safe name from a label ("Filtrer på aktør-ID" → "filtrer-pa-aktor-id"): ASCII letters, digits and dashes only.</summary>
+    internal static string Slug(string text)
+    {
+        var t = text.ToLowerInvariant().Replace("æ", "ae").Replace("ø", "o").Replace("å", "a");
+        t = Regex.Replace(t, "[^a-z0-9]+", "-").Trim('-');
+        t = t.Length > 40 ? t[..40].Trim('-') : t;
+        return t.Length == 0 ? "value" : t;
+    }
+
+    /// <summary>The ${data:…} placeholders the steps use, each with what it must be (the step's value basis).</summary>
+    public static List<SuggestionDataVariable> DataVariablesOf(TestSuggestion s) =>
+        [.. s.Steps.Where(st => st.Value is not null)
+            .SelectMany(st => CriticalE2EVariables.DataPlaceholders(st.Value).Select(v => new SuggestionDataVariable(v, st.ValueBasis ?? st.Description)))
+            .DistinctBy(v => v.Variable)];
+
+    /// <summary>What identifies a found record of this kind, in the tester's terms.</summary>
+    private static string IdentifyingDetails(string noun) => noun switch
+    {
+        "person" => "name, date of birth, id", "role" => "role name, description", "user" => "name, user name", _ => "the details you searched by",
+    };
+
     public static SuggestionCategory CategoryOf(SuggestionKind kind) => kind is SuggestionKind.PageOpens or SuggestionKind.Navigation ? SuggestionCategory.UiSmoke : SuggestionCategory.UiFunctional;
 
     /// <summary>Where the values come from: approved Test Data needed, synthetic values generated from constraints, or no input at all.</summary>
@@ -156,7 +186,7 @@ public static partial class SuggestionEngine
             if (page.RequiresAuthorization) preconditions.Add(page.Roles.Count > 0 ? $"Signed in with a role: {string.Join(", ", page.Roles)}" : "Signed in (the page requires authorization)");
             TestSuggestion Base(SuggestionKind kind, string title, IEnumerable<string> keyParts) => new()
             {
-                SuggestionId = Id([RuleVersion, projectKey, route, kind.ToString(), .. keyParts]), RuleVersion = RuleVersion, ProjectKey = projectKey, SourceSnapshotId = snapshotId,
+                SuggestionId = Id([IdVersion, projectKey, route, kind.ToString(), .. keyParts]), RuleVersion = RuleVersion, ProjectKey = projectKey, SourceSnapshotId = snapshotId,
                 Module = page.Module, Feature = feature, Kind = kind, Category = CategoryOf(kind), Route = route, Title = title, RequirementRefs = page.RequirementRefs, Preconditions = preconditions,
                 Origins = page.RequirementRefs.Count > 0 ? [SuggestionOrigin.SourceImplementationDerived, SuggestionOrigin.RequirementDerived] : [SuggestionOrigin.SourceImplementationDerived],
                 Limitations = [.. page.Limitations.Take(3)],
@@ -224,22 +254,37 @@ public static partial class SuggestionEngine
                             "The validation message is shown.", $"The only ValidationMessage of the form in source ({Ref(page, single[0])})");
                     return (null, null, null);
                 }
-                List<SuggestedStep> Fill(IEnumerable<SourceUiControl> controls, int start, List<string> needs)
+                // A value the constraints cannot produce comes from approved Test Data through a ${data:form.…} placeholder, mapped at approval.
+                // Credentials and files are never placeholders here: a credential belongs to the attended session and the browser step vocabulary
+                // has no upload, so such a form stays a manual test case (blockers).
+                List<SuggestedStep> Fill(IEnumerable<SourceUiControl> controls, int start, List<string> needs, List<string> blockers)
                 {
                     var steps = new List<SuggestedStep>();
                     foreach (var f in controls)
                     {
                         var v = ValidValue(f);
+                        var basis = "synthetic value generated from the declared constraints";
+                        var name = f.Label ?? f.Binding ?? f.Id;
                         if (v is null)
                         {
-                            if (f.Kind != SourceUiControlKind.Checkbox) needs.Add($"{f.Label ?? f.Binding ?? f.Id}: a value from approved Test Data ({(f.InputType == "password" ? "credential" : f.Pattern is not null ? "pattern-constrained" : f.Kind == SourceUiControlKind.FileInput ? "file" : "identifier-like")})");
-                            continue;
+                            if (f.Kind == SourceUiControlKind.Checkbox) continue;
+                            var why = f.InputType == "password" ? "credential" : f.Pattern is not null ? "pattern-constrained" : f.Kind == SourceUiControlKind.FileInput ? "file" : "identifier-like";
+                            needs.Add($"{name}: a value from approved Test Data ({why})");
+                            if (why is "credential" or "file")
+                            {
+                                blockers.Add(why == "credential"
+                                    ? $"{name} is a credential field: it is filled in the attended session, never by a suggested flow. Run this test by hand."
+                                    : $"{name} is a file upload: the browser step vocabulary has no upload. Run this test by hand.");
+                                continue;
+                            }
+                            v = $"${{data:form.{Slug(name)}}}";
+                            basis = $"approved Test Data ({why}) for {name}";
                         }
                         steps.Add(new SuggestedStep
                         {
                             StepId = $"s{start + steps.Count}", Description = $"{(f.Kind == SourceUiControlKind.Select ? "Select" : "Fill")} {f.Label ?? f.Binding}",
                             Action = f.Kind == SourceUiControlKind.Select ? CompanionActionKind.Select : CompanionActionKind.Fill, ControlId = f.Id, Locators = Locators(f), Value = v,
-                            ValueBasis = "synthetic value generated from the declared constraints",
+                            ValueBasis = basis,
                         });
                     }
                     return steps;
@@ -260,7 +305,8 @@ public static partial class SuggestionEngine
                 foreach (var f in fields.Where(f => f.MaxLength is not null || f.RangeMax is not null).Take(3))
                 {
                     var needs = new List<string>();
-                    var others = Fill(required.Where(r => r.Id != f.Id), 2, needs);
+                    var blockers = new List<string>();
+                    var others = Fill(required.Where(r => r.Id != f.Id), 2, needs, blockers);
                     var invalid = f.MaxLength is { } max ? new string('x', max + 1)
                         : decimal.TryParse(f.RangeMax, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var top) ? (top + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) : null;
                     if (invalid is null) continue;
@@ -274,17 +320,19 @@ public static partial class SuggestionEngine
                     result.Add(Base(SuggestionKind.InvalidInput, $"{formTitle}: {f.Label ?? f.Binding} rejects {violation}", [form.Id, f.Id, "invalid"]) with
                     {
                         SourceRefs = refs, Steps = steps, ExpectedResult = expected, ExpectedBasis = basis, TestDataNeeds = needs, Confidence = assert is null ? "Low" : "Medium",
+                        AutomationBlocker = blockers.FirstOrDefault(),
                     });
                 }
 
                 {
                     var needs = new List<string>();
+                    var blockers = new List<string>();
                     var steps = new List<SuggestedStep> { Navigate(route) };
-                    steps.AddRange(Fill(fields, 2, needs));
+                    steps.AddRange(Fill(fields, 2, needs, blockers));
                     steps.Add(submitStep($"s{steps.Count + 1}"));
                     result.Add(Base(SuggestionKind.ValidSubmission, $"{formTitle}: a valid submission", [form.Id, "valid"]) with
                     {
-                        SourceRefs = refs, Steps = steps, TestDataNeeds = needs, Confidence = "Low",
+                        SourceRefs = refs, Steps = steps, TestDataNeeds = needs, Confidence = "Low", AutomationBlocker = blockers.FirstOrDefault(),
                         // What a successful submission shows is not stated in source: never invented.
                         ExpectedResult = null, ExpectedBasis = null,
                         Limitations = [$"The expected result of a successful submission is not known from source ({form.SubmitHandler ?? "no handler"}); a reviewer or a requirement must state it."],
@@ -292,9 +340,10 @@ public static partial class SuggestionEngine
                 }
             }
             Searches(page, route, feature, Base, result);
+            Filters(page, route, feature, Base, result);
             Actions(page, route, feature, Base, result);
         }
-        return [.. result.Select(s => Covered(s, flows)).Select(s => s with { TestDataState = TestDataStateOf(s) })];
+        return [.. result.Select(s => Covered(s, flows)).Select(s => s with { TestDataState = TestDataStateOf(s), DataVariables = DataVariablesOf(s) })];
     }
 
     private static void Searches(SourceUiPage page, string route, string feature, Func<SuggestionKind, string, IEnumerable<string>, TestSuggestion> Base, List<TestSuggestion> result)
@@ -333,10 +382,34 @@ public static partial class SuggestionEngine
                 SourceRefs = resultList is null ? refs : [.. refs, Ref(page, resultList)],
                 Steps = [Navigate(route), FillStep("s2", $"${{data:search.known-{noun}}}", $"approved Test Data: a known synthetic {noun} that exists in the target environment"), .. Start("s3")],
                 TestDataNeeds = [$"{field}: a known synthetic {noun} that exists in the target environment (approved Test Data — never a real person)"],
-                ExpectedHint = $"The known {noun} is shown in the search result{(resultList is not null ? $" ({resultList.Text})" : "")}; say which details identify it (name, date of birth, id).",
+                ExpectedHint = $"The known {noun} is shown in the search result{(resultList is not null ? $" ({resultList.Text})" : "")}; say which details identify it ({IdentifyingDetails(noun)}).",
                 ExpectedHintBasis = $"Inferred from the search control ({button?.Handler ?? input.Handler ?? buttonName}); what a hit shows is not stated in source",
                 Confidence = "Medium", Limitations = [.. notes],
             });
+
+            // Choosing a found item navigates: the component's callback reaches a host method with NavigateTo("/person/{childId}").
+            var component = System.IO.Path.GetFileNameWithoutExtension(input.SourceFile ?? "");
+            if (page.ResultNavigations.FirstOrDefault(n => n.Route.Contains('{') && string.Equals(n.Component, component, StringComparison.Ordinal)) is { } opens)
+            {
+                var prefix = opens.Route[..opens.Route.IndexOf('{')];
+                var start = Start("s3");
+                result.Add(Base(SuggestionKind.SearchOpensResult, $"{subject}: open a found {noun}", [input.Id, pairKey, "open"]) with
+                {
+                    SourceRefs = [.. refs, $"{opens.File}:{opens.Line}"],
+                    Steps =
+                    [
+                        Navigate(route), FillStep("s2", $"${{data:search.known-{noun}}}", $"approved Test Data: a known synthetic {noun} that exists in the target environment"), .. start,
+                        new SuggestedStep { StepId = $"s{3 + start.Count}", Description = $"Open the known {noun} from the search result", Action = CompanionActionKind.Click },
+                        new SuggestedStep { StepId = $"s{4 + start.Count}", Description = $"The browser is on the {noun}'s page ({opens.Route})", Action = CompanionActionKind.AssertRoute,
+                            Expected = prefix, Match = CompanionTextMatch.Contains, IsFinalAssertion = true },
+                    ],
+                    TestDataNeeds = [$"{field}: a known synthetic {noun} that exists in the target environment (approved Test Data — never a real person)"],
+                    ExpectedResult = $"The {noun}'s own page opens: the address starts with {prefix} ({opens.Route}).",
+                    ExpectedBasis = $"<{opens.Component} {opens.Parameter}> calls {opens.Handler}, which navigates to {opens.Route} ({opens.File}:{opens.Line})",
+                    AutomationBlocker = $"Which element in the result opens the {noun} depends on the Test Data record, and the source gives it no locator. Run it by hand, or approve \"search finds a known {noun}\" and add the open step in the flow editor with a picked element.",
+                    Confidence = "Medium", Limitations = [.. notes],
+                });
+            }
 
             var noMatchValue = identifier ? $"${{data:search.no-match-{noun}}}" : Fit("ZzSyntheticNoMatch", input.MinLength, input.MaxLength);
             result.Add(Base(SuggestionKind.SearchNoMatch, $"{subject}: search with no match shows the empty result", [input.Id, pairKey, "no-match"]) with
@@ -371,6 +444,50 @@ public static partial class SuggestionEngine
                     ExpectedHintBasis = $"Inferred from the handler name ({clear.Handler ?? clear.Text}); the handler is not evaluated",
                     Confidence = "Low", Limitations = [.. notes],
                 });
+        }
+    }
+
+    /// <summary>Filter controls outside forms (their own words say filter), not the field of a search: set one value, see the list narrowed.
+    /// What the list then shows is not evaluated from source, so it is a hint for a person to confirm.</summary>
+    private static void Filters(SourceUiPage page, string route, string feature, Func<SuggestionKind, string, IEnumerable<string>, TestSuggestion> Base, List<TestSuggestion> result)
+    {
+        var searchInputs = SearchPairs(page).Select(p => p.Input.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var f in page.Controls.Where(c => c.Intent == SourceUiIntent.Filter && !c.Repeated && c.FormId is null && !searchInputs.Contains(c.Id) && (c.Label ?? c.Binding) is not null
+                     && c.Kind is SourceUiControlKind.TextInput or SourceUiControlKind.NumberInput or SourceUiControlKind.DateInput or SourceUiControlKind.Select)
+                     .DistinctBy(c => c.Label ?? c.Binding).Take(MaxFiltersPerPage))
+        {
+            var name = f.Label ?? f.Binding!;
+            var select = f.Kind == SourceUiControlKind.Select;
+            string value, basis;
+            var needs = new List<string>();
+            if (f.Kind == SourceUiControlKind.DateInput) { value = "2026-01-15"; basis = "synthetic date"; }
+            else if (select && f.Options.FirstOrDefault() is { } option) { value = option; basis = "the first option declared in source"; }
+            else
+            {
+                value = $"${{data:filter.{Slug(name)}}}";
+                basis = $"approved Test Data: a value of \"{name}\" that some but not all rows have";
+                needs.Add($"{name}: a value that some but not all rows have (approved Test Data)");
+            }
+            var limits = new List<string>();
+            if (f.Conditional) limits.Add("The filter is inside @if in source: it may be absent in some states (loading, empty list).");
+            if (select && f.Library is { } library) limits.Add($"A {library} dropdown is not a native <select>: the browser Select step may not drive it. Check when the test runs, or run it by hand.");
+            if (f.SourceFile is { } composedFile) limits.Add($"Declared in the composed component {composedFile}, not in the page file.");
+            result.Add(Base(SuggestionKind.FilterList, $"{feature}: filter by \"{name}\"", [f.Id, "filter"]) with
+            {
+                SourceRefs = [Ref(page, f)],
+                Steps =
+                [
+                    Navigate(route),
+                    new SuggestedStep { StepId = "s2", Description = $"{(select ? "Select" : "Fill")} {name}", Action = select ? CompanionActionKind.Select : CompanionActionKind.Fill,
+                        ControlId = f.Id, Locators = Locators(f), Value = value, ValueBasis = basis },
+                ],
+                TestDataNeeds = needs,
+                ExpectedHint = f.Kind == SourceUiControlKind.DateInput
+                    ? $"Only rows within the date set in \"{name}\" are shown; clearing it shows all rows again."
+                    : $"Only rows matching the value set in \"{name}\" are shown; clearing it shows all rows again.",
+                ExpectedHintBasis = $"Inferred from the filter's words ({f.Handler ?? f.Binding ?? name}); the filtering itself is not evaluated",
+                Confidence = "Low", Limitations = limits,
+            });
         }
     }
 

@@ -258,7 +258,8 @@
         }
 
         @* ── Suggested tests: drafts from the imported source, verified on the attended page, approved into flows above. ── *@
-        <CriticalE2ESuggestions EnvironmentId="@_environmentId" ProfileId="@_profileId" CurrentRoute="@_overview?.Attended?.CurrentRoute" OnApproved="RefreshAsync" />
+        <CriticalE2ESuggestions EnvironmentId="@_environmentId" ProfileId="@_profileId" CurrentRoute="@_overview?.Attended?.CurrentRoute" OnApproved="RefreshAsync"
+                                TestDataAssets="@_testDataAssets" EnvironmentName="@_environmentName" EnvironmentType="@_environmentType" />
 
         @if (_lastRun is { } run)
         {

@@ -133,6 +133,17 @@
     [Parameter] public string? ProfileId { get; set; }
     [Parameter] public string? CurrentRoute { get; set; }
     [Parameter] public EventCallback OnApproved { get; set; }
+    /// <summary>Central Test Data summaries (never values): the approved aliases a placeholder can be mapped to at approval.</summary>
+    [Parameter] public IReadOnlyList<BirkNext.TestData.TestDataAssetSummary> TestDataAssets { get; set; } = [];
+    [Parameter] public string? EnvironmentName { get; set; }
+    [Parameter] public string? EnvironmentType { get; set; }
+    private readonly Dictionary<string, string> _bindings = new(StringComparer.Ordinal);
+
+    /// <summary>Approved assets usable in this environment (any-environment assets included). Unapproved ones are never offered.</summary>
+    private IEnumerable<BirkNext.TestData.TestDataAssetSummary> Usable => TestDataAssets
+        .Where(a => a.Approval == BirkNext.TestData.TestDataApproval.Approved
+            && (a.Environment is null || new[] { EnvironmentId, EnvironmentName, EnvironmentType }.Any(e => string.Equals(e, a.Environment, StringComparison.OrdinalIgnoreCase))))
+        .OrderBy(a => a.Alias, StringComparer.OrdinalIgnoreCase);
 
     private static readonly (string Key, string Label)[] Areas = [("suggestions", "Test Suggestions"), ("mapping", "DOM Mapping"), ("data", "Test Data & Readiness"), ("results", "Execution Results")];
     private static readonly (SuggestionCategory? Key, string Label)[] Categories = [(null, "All"), (SuggestionCategory.UiFunctional, "UI Functional"), (SuggestionCategory.UiSmoke, "UI Smoke")];
@@ -176,11 +187,16 @@
 
     private void Select(TestSuggestion s)
     {
-        _selectedId = s.SuggestionId; _expectedRoute = null;
+        _selectedId = s.SuggestionId; _expectedRoute = null; _bindings.Clear();
         _manualExpected = s.ManualReview?.ExpectedResult; _manualData = s.ManualReview?.TestData; _manualNotes = s.ManualReview?.Notes;
     }
 
     private void UseHint(TestSuggestion s) => _manualExpected = s.ExpectedHint;
+
+    private void Bind(string variable, string? alias)
+    {
+        if (string.IsNullOrWhiteSpace(alias)) _bindings.Remove(variable); else _bindings[variable] = alias;
+    }
 
     private async Task ManualReviewAsync(TestSuggestion s, ManualReviewDecision decision)
     {
@@ -251,7 +267,9 @@
         try
         {
             var expected = string.IsNullOrWhiteSpace(_expectedRoute) ? null : _expectedRoute.Trim();
-            var result = await Api.ApproveSuggestionAsync(new SuggestionApproveRequest(id, s.SuggestionId, EnvironmentId, ProfileId, expected, expected is null ? null : CriticalE2EOutcomeKind.UrlEquals));
+            var data = s.DataVariables.Where(v => _bindings.ContainsKey(v.Variable)).Select(v => new SuggestionTestDataBinding(v.Variable, _bindings[v.Variable])).ToList();
+            var result = await Api.ApproveSuggestionAsync(new SuggestionApproveRequest(id, s.SuggestionId, EnvironmentId, ProfileId, expected, expected is null ? null : CriticalE2EOutcomeKind.UrlEquals,
+                data.Count == 0 ? null : data, EnvironmentName, EnvironmentType));
             if (result.Flow is { } flow)
             {
                 // Refresh first, then say what happened: the refresh must not replace the approval message.
@@ -273,7 +291,7 @@
                 <h3 id="sg-detail-heading">@s.Title</h3>
                 <div class="sg-actions">
                     <button type="button" class="btn btn-secondary" data-testid="sg-verify" disabled="@(_busy || s.ApprovedFlowId is not null)" @onclick="() => VerifyAsync(s)">Verify DOM in Edge</button>
-                    <button type="button" class="btn btn-primary" data-testid="sg-approve" disabled="@(_busy || s.ApprovedFlowId is not null)" @onclick="() => ApproveAsync(s)">Approve test</button>
+                    <button type="button" class="btn btn-primary" data-testid="sg-approve" disabled="@(_busy || s.ApprovedFlowId is not null || s.AutomationBlocker is not null)" title="@s.AutomationBlocker" @onclick="() => ApproveAsync(s)">Approve test</button>
                     @if (s.CoveredByFlowId is { } covered) { <a class="btn-secondary" href="@($"critical-e2e-regression#e2e-flow-{covered}")" data-testid="sg-open-existing">Open existing test</a> }
                 </div>
             </div>
@@ -294,6 +312,23 @@
             }
             @Manual(s)
             <h4 class="sg-subhead">Automation (optional) — needs the Edge Companion</h4>
+            @if (s.AutomationBlocker is { } blocker) { <p class="sg-note" data-testid="sg-automation-blocker">Manual test only for now: @blocker</p> }
+            @if (s.DataVariables.Count > 0 && s.ApprovedFlowId is null)
+            {
+                <fieldset class="sg-bindings" data-testid="sg-data-bindings">
+                    <legend>Test Data for the automated test</legend>
+                    <p class="sg-muted">Each placeholder is filled from approved Test Data when the test runs; the value is never shown here or stored in the flow.</p>
+                    @if (!Usable.Any()) { <p class="sg-note" data-testid="sg-data-none">No approved Test Data is available for this environment. Add and approve it in Test Data first.</p> }
+                    @foreach (var variable in s.DataVariables)
+                    {
+                        <label class="sg-field" data-testid="sg-data-binding" data-variable="@variable.Variable">@variable.Description
+                            <select class="form-control" value="@(_bindings.GetValueOrDefault(variable.Variable) ?? "")" @onchange="e => Bind(variable.Variable, e.Value?.ToString())">
+                                <option value="">Choose approved Test Data…</option>
+                                @foreach (var asset in Usable) { <option value="@asset.Alias">@(asset.Label is { Length: > 0 } label ? $"{asset.Alias} — {label}" : asset.Alias)</option> }
+                            </select></label>
+                    }
+                </fieldset>
+            }
             <ol class="sg-steps" data-testid="sg-steps">
                 @foreach (var step in s.Steps)
                 {
@@ -384,7 +419,8 @@
     {
         SuggestionKind.PageOpens => "Page opens", SuggestionKind.Navigation => "Navigation", SuggestionKind.RequiredFields => "Required fields",
         SuggestionKind.InvalidInput => "Invalid input", SuggestionKind.ValidSubmission => "Valid submission", SuggestionKind.Search => "Search",
-        SuggestionKind.SearchNoMatch => "Search: no match", SuggestionKind.SearchEmpty => "Search: empty field", SuggestionKind.ClearSearch => "Clear search", _ => "User action",
+        SuggestionKind.SearchNoMatch => "Search: no match", SuggestionKind.SearchEmpty => "Search: empty field", SuggestionKind.ClearSearch => "Clear search",
+        SuggestionKind.SearchOpensResult => "Search: open a result", SuggestionKind.FilterList => "Filter", _ => "User action",
     };
 
     private static string CategoryLabel(SuggestionCategory c) => c switch

@@ -84,10 +84,27 @@ public sealed record SourceUiPage
     public List<string> ComposedFrom { get; init; } = [];
     /// <summary>Static messages declared in the markup that look like empty-result or error states ("Ingen treff", "No results"), with file:line.</summary>
     public List<SourceUiMessage> Messages { get; init; } = [];
+    /// <summary>Methods of this file that navigate, with the route template they navigate to (string literal or interpolation, never evaluated).</summary>
+    public List<SourceUiNavigation> Navigations { get; init; } = [];
+    /// <summary>Component callbacks that reach one of <see cref="Navigations"/>: choosing an item in that component opens another page.</summary>
+    public List<SourceUiResultNavigation> ResultNavigations { get; init; } = [];
     public List<string> Limitations { get; init; } = [];
 }
 
-public sealed record SourceUiComponentUse(string Component, int Line, bool Conditional, bool Repeated);
+public sealed record SourceUiComponentUse(string Component, int Line, bool Conditional, bool Repeated)
+{
+    /// <summary>Event-callback parameters this use binds to a method of the host ("OnChildSelected" → "NavigateToChild"). Names only.</summary>
+    public List<SourceUiCallback> Callbacks { get; init; } = [];
+}
+
+/// <summary>A component parameter bound to a host method: <c>OnChildSelected="@NavigateToChild"</c>.</summary>
+public sealed record SourceUiCallback(string Parameter, string Handler);
+
+/// <summary>A host method that navigates (<c>NavigationManager.NavigateTo($"/person/{childId}")</c>): the route template as written, file:line.</summary>
+public sealed record SourceUiNavigation(string Handler, string Route, string File, int Line);
+
+/// <summary>Choosing an item in a composed component navigates: the component's callback reaches a host method that calls NavigateTo.</summary>
+public sealed record SourceUiResultNavigation(string Component, string Parameter, string Handler, string Route, string File, int Line);
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SourceUiMessageKind { EmptyResult, Error, Loading }
@@ -115,7 +132,11 @@ public enum SuggestionKind { PageOpens, Navigation, RequiredFields, InvalidInput
     /// <summary>Clear a filled search and see the field and result reset.</summary>
     ClearSearch,
     /// <summary>A user action (button with a handler) outside a form: what it does is not known from source.</summary>
-    UserAction }
+    UserAction,
+    /// <summary>Search for a known record, open it from the result and land on its page (the route comes from NavigateTo in source).</summary>
+    SearchOpensResult,
+    /// <summary>Set one filter of a list (outside forms) and see the list narrowed.</summary>
+    FilterList }
 
 /// <summary>What kind of test a suggestion is. UI Smoke = the page is there; UI Functional = the page's behaviour (search, validation, actions)
 /// in the browser; Business E2E = an outcome beyond the UI (stored data, a message to another system). UI source alone never yields Business E2E.</summary>
@@ -226,6 +247,11 @@ public sealed record TestSuggestion
     public string? ExpectedHint { get; init; }
     public string? ExpectedHintBasis { get; init; }
     public List<string> TestDataNeeds { get; init; } = [];
+    /// <summary>The ${data:variable} placeholders the steps use, with what each one must be. Approval maps each to an approved Test Data alias.</summary>
+    public List<SuggestionDataVariable> DataVariables { get; init; } = [];
+    /// <summary>Why this suggestion cannot become an automated flow as it stands (e.g. a step whose element depends on the Test Data record, a
+    /// file upload). Null when it can. It stays a manual test case either way.</summary>
+    public string? AutomationBlocker { get; init; }
     public List<string> Prerequisites { get; init; } = [];
     public string Confidence { get; init; } = "";
     public SuggestionCoverage Coverage { get; init; }
@@ -268,7 +294,14 @@ public sealed record SuggestionVerifyResult(TestSuggestion? Suggestion, string M
 public sealed record SuggestionDecisionRequest(Guid SnapshotId, string SuggestionId, string EnvironmentId, string StepId, LocatorDecision Decision, CompanionSelector? Selector, string? Reason);
 /// <summary>Approval saves the suggestion as a Diagnostic Critical E2E flow (never release evidence until a person makes it Critical). A reviewer
 /// may supply the expected route of a submission (UrlEquals/UrlContains) when the source does not state one.</summary>
-public sealed record SuggestionApproveRequest(Guid SnapshotId, string SuggestionId, string EnvironmentId, string ProfileId, string? Expected, CriticalE2EOutcomeKind? OutcomeKind);
+public sealed record SuggestionApproveRequest(Guid SnapshotId, string SuggestionId, string EnvironmentId, string ProfileId, string? Expected, CriticalE2EOutcomeKind? OutcomeKind,
+    List<SuggestionTestDataBinding>? TestData = null, string? EnvironmentName = null, string? EnvironmentType = null);
+
+/// <summary>One placeholder of a suggestion and the approved Test Data alias that fills it at run time (the value never leaves the backend).</summary>
+public sealed record SuggestionTestDataBinding(string Variable, string Alias);
+
+/// <summary>A ${data:variable} placeholder of a suggestion and what it must be, in plain words.</summary>
+public sealed record SuggestionDataVariable(string Variable, string Description);
 public sealed record SuggestionApproveResult(CriticalE2EFlowDefinition? Flow, List<string> Problems);
 public sealed record SuggestionSnapshotOption(Guid SnapshotId, string ProjectKey, string ArchiveFileName, DateTimeOffset AnalyzedAt, bool HasUiSurface, int Pages, int Routes, int Controls);
 

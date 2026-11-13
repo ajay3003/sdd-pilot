@@ -183,4 +183,42 @@ public sealed class CriticalE2ESuggestionsTests : BunitContext
         cut.Find("[data-testid=sg-manual-plan]").GetAttribute("href").Should().Be("test-plan-suggestions");
         _api.Verify(a => a.VerifySuggestionAsync(It.IsAny<SuggestionVerifyRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    [Fact]
+    public void Approval_maps_each_Test_Data_placeholder_to_an_approved_alias_and_a_blocked_suggestion_stays_manual()
+    {
+        var search = Search() with { DataVariables = [new("search.known-person", "approved Test Data: a known synthetic person that exists in the target environment")] };
+        var open = Search() with
+        {
+            SuggestionId = "sug-open", Title = "Personsøk: open a found person", Kind = SuggestionKind.SearchOpensResult,
+            AutomationBlocker = "Which element in the result opens the person depends on the Test Data record, and the source gives it no locator.",
+        };
+        _api.Setup(a => a.GenerateSuggestionsAsync(It.IsAny<SuggestionGenerateRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync(Result(search, open));
+        SuggestionApproveRequest? sent = null;
+        _api.Setup(a => a.ApproveSuggestionAsync(It.IsAny<SuggestionApproveRequest>(), It.IsAny<CancellationToken>()))
+            .Callback((SuggestionApproveRequest r, CancellationToken _) => sent = r).ReturnsAsync(new SuggestionApproveResult(null, ["No expected result: the source does not state one."]));
+        BirkNext.TestData.TestDataAssetSummary Asset(string alias, BirkNext.TestData.TestDataApproval approval, string? env = null) =>
+            new() { Alias = alias, Label = $"{alias} label", Approval = approval, Environment = env };
+        var cut = Render<CriticalE2ESuggestions>(p => p.Add(x => x.EnvironmentId, "env-1").Add(x => x.ProfileId, "p1").Add(x => x.EnvironmentName, "QA")
+            .Add(x => x.TestDataAssets, [Asset("synthetic-child-a", BirkNext.TestData.TestDataApproval.Approved), Asset("draft-child", BirkNext.TestData.TestDataApproval.Unapproved),
+                Asset("qa-child", BirkNext.TestData.TestDataApproval.Approved, "QA"), Asset("prod-child", BirkNext.TestData.TestDataApproval.Approved, "Production")]));
+        cut.Find("[data-testid=sg-generate]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sg-summary]"));
+
+        cut.Find("[data-testid=sg-item][data-id=sug-search] [data-testid=sg-review]").Click();
+        var binding = cut.Find("[data-testid=sg-data-binding][data-variable='search.known-person']");
+        binding.TextContent.Should().Contain("a known synthetic person");
+        cut.FindAll("[data-testid=sg-data-binding] option").Select(o => o.GetAttribute("value")).Should().Equal(["", "qa-child", "synthetic-child-a"],
+            "only approved Test Data for this environment (or any environment) is offered");
+        cut.Find("[data-testid=sg-data-binding] select").Change("synthetic-child-a");
+        cut.Find("[data-testid=sg-approve]").Click();
+        cut.WaitForAssertion(() => sent.Should().NotBeNull());
+        sent!.TestData.Should().ContainSingle().Which.Should().Be(new SuggestionTestDataBinding("search.known-person", "synthetic-child-a"));
+        sent.EnvironmentName.Should().Be("QA");
+
+        cut.Find("[data-testid=sg-item][data-id=sug-open] [data-testid=sg-review]").Click();
+        cut.Find("[data-testid=sg-automation-blocker]").TextContent.Should().Contain("Manual test only for now").And.Contain("depends on the Test Data record");
+        cut.Find("[data-testid=sg-approve]").HasAttribute("disabled").Should().BeTrue("a blocked suggestion cannot become an automated flow");
+        cut.Find("[data-testid=sg-manual]").TextContent.Should().Contain("Search: open a result");
+    }
 }
