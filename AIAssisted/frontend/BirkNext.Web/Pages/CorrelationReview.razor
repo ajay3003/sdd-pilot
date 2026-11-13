@@ -579,11 +579,15 @@
                     </div>
                 }
             </div>
-            @* Source evidence for a human decision: each entity's declared identity, aliases (and who declared them) and occurrences, side by side. *@
-            <div class="cr-conflict-evidence" data-testid="cr-conflict-evidence">
-                <RelationshipEntityInspector Scope="@(_scope!)" EntityId="conflict.Source.Id" Compact="true" TestId="cr-conflict-source" />
-                <RelationshipEntityInspector Scope="@(_scope!)" EntityId="conflict.Target.Id" Compact="true" TestId="cr-conflict-target" />
-            </div>
+            @* Source evidence for a human decision: each entity's declared identity, aliases (and who declared them) and occurrences, side by side —
+               one disclosure, so the options, rationale and decision stay right below the issue instead of after two long inspectors. *@
+            <details class="cr-conflict-evidence-more" data-testid="cr-conflict-evidence-more">
+                <summary>Inspect source evidence for both entities (declarations, aliases, located occurrences)</summary>
+                <div class="cr-conflict-evidence" data-testid="cr-conflict-evidence">
+                    <RelationshipEntityInspector Scope="@(_scope!)" EntityId="conflict.Source.Id" Compact="true" TestId="cr-conflict-source" />
+                    <RelationshipEntityInspector Scope="@(_scope!)" EntityId="conflict.Target.Id" Compact="true" TestId="cr-conflict-target" />
+                </div>
+            </details>
             <ul class="cr-conflict-options cr-small">
                 <li><strong>Same entity</strong> — the alias is valid; both names mean one thing. Consumers merge them.</li>
                 <li><strong>Separate entities</strong> — the alias declaration is wrong or ambiguous; they stay apart.</li>

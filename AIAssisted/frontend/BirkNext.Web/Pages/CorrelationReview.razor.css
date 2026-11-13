@@ -108,3 +108,9 @@ button.cr-metric:focus-visible { outline: 2px solid var(--clr-primary-focus, var
 .cr-inspect, .cr-inspect li, .cr-inspect p, .cr-inspect-side span { overflow-wrap: anywhere; min-width: 0; }
 /* Filter controls are at least 28 px tall (touch and pointer targets). */
 .cr-filter select { min-height: 1.75rem; }
+
+
+/* Identity conflict: the evidence of both entities is one disclosure between the summary and the decision. */
+.cr-conflict-evidence-more { margin: .5rem 0; }
+.cr-conflict-evidence-more > summary { cursor: pointer; font-weight: 600; color: var(--clr-link, #1d4ed8); }
+.cr-conflict-evidence-more[open] > .cr-conflict-evidence { margin-top: .5rem; }

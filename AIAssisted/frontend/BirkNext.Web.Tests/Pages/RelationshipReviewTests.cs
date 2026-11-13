@@ -329,6 +329,12 @@ public sealed class RelationshipReviewTests : BunitContext
         cut.FindAll("[data-testid=cr-conflict-source-relation]").Should().BeEmpty("beside a conflict the inspector shows identity and source evidence only");
         api.Verify(a => a.DecideAsync(It.IsAny<string>(), It.IsAny<ReviewDecisionRequest>(), It.IsAny<CancellationToken>()), Times.Never, "showing evidence never resolves the conflict");
         cut.Find("[data-testid=cr-conflict-same]").HasAttribute("disabled").Should().BeTrue("a decision needs a written rationale");
+        // The long evidence of both entities is one disclosure between the summary and the decision; rationale and options follow directly.
+        var conflictCard = cut.Find("[data-testid=cr-conflict]");
+        conflictCard.QuerySelector("[data-testid=cr-conflict-evidence-more] [data-testid=cr-conflict-evidence]").Should().NotBeNull();
+        var markup = conflictCard.InnerHtml;
+        markup.IndexOf("cr-conflict-evidence-more", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("cr-rationale", StringComparison.Ordinal));
+        cut.Find("[data-testid=cr-conflict-source-occurrences] summary").TextContent.Should().StartWith("Located in source ·", "an occurrence is a located appearance, not every piece of evidence");
     }
 
     [Fact]

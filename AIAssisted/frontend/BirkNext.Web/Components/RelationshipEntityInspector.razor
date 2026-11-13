@@ -45,8 +45,9 @@
         }
 
         <details class="rei-more" open="@(!Compact)" data-testid="@($"{TestId}-occurrences")">
-            <summary>Source evidence · @d.Occurrences.Count occurrence@(d.Occurrences.Count == 1 ? "" : "s")</summary>
-            @if (d.Occurrences.Count == 0) { <p class="rei-muted">No source occurrence recorded.</p> }
+            @* An occurrence is a located appearance in an analysed source snapshot; declarations and aliases (above) are evidence of their own. *@
+            <summary>Located in source · @d.Occurrences.Count occurrence@(d.Occurrences.Count == 1 ? "" : "s")</summary>
+            @if (d.Occurrences.Count == 0) { <p class="rei-muted" data-testid="@($"{TestId}-no-occurrence")">No located appearance in an analysed source snapshot is recorded. This does not mean there is no evidence: the declaration and aliases above are evidence.</p> }
             else
             {
                 <ul class="rei-list">
