@@ -366,8 +366,8 @@ public static class NavStatusPresentation
 /// <summary>
 /// Navigation emphasis presets. A Workspace View is a navigation preference only — never a security role or permission. It picks the modules
 /// a role usually needs, puts their groups first and suggests a starting page (switching never navigates). Modules outside the view are
-/// only left out of the sidebar: search lists them under "Available in other workspaces", "Show other modules" reveals them, the person can
-/// add one to the view, and their URLs always open. Feature Visibility alone decides which modules exist. Independent of the selected
+/// only left out of the sidebar (never appended to it): search lists them under "Outside current view", All Modules lists every module, the
+/// person can add one to the view, and their URLs and contextual links always open. Feature Visibility alone decides which modules exist. Independent of the selected
 /// project in both directions. Stored as numbers: 4 was "Technical Reviewer" and is now Developer (same source-first focus).
 /// </summary>
 public enum WorkspaceView { AllModules = 0, ProjectLeader = 1, ScrumMaster = 2, TestLead = 3, Developer = 4, Architect = 5, ManualTesting = 6, TechnicalTester = 7 }
@@ -384,7 +384,7 @@ public sealed record WorkspaceViewLink(string Route, string PageRoute, string La
 /// <param name="FocusSections">Group order: these groups first, the others after in catalog order.</param>
 /// <param name="Modules">Routes of the modules in the view (All Modules: every module).</param>
 /// <param name="Groups">Optional workflow groups. When set they come first, in this order, and the view's modules are exactly their routes; the
-/// catalog groups follow with only the modules not already placed (for "Show other modules", additions and Help &amp; Settings).</param>
+/// catalog groups follow with only the modules not already placed (for the person's additions and Help &amp; Settings).</param>
 public sealed record WorkspaceViewDefinition(WorkspaceView View, string Label, string Description, string LandingRoute, IReadOnlyList<string> FocusSections,
     IReadOnlyList<string> Modules, IReadOnlyList<WorkspaceViewGroup>? Groups = null)
 {
@@ -471,7 +471,7 @@ public static class WorkspaceViews
     /// Manual Testing: functional testers who understand the business process, review requirements and prepare tests, without working with source
     /// code, APIs or infrastructure. Ordered as the testing workflow. Every row is an existing module: scenarios are System Understanding's
     /// "What to test" (candidates, never Azure DevOps Test Cases or executed tests); requirement review is Document Quality Review. Technical
-    /// modules stay one search or "Show other modules" away. A navigation preference only: no permission, feature or source baseline changes.
+    /// modules stay one search (or All Modules) away. A navigation preference only: no permission, feature or source baseline changes.
     /// </summary>
     private static WorkspaceViewDefinition CreateManualTesting() => Groups(WorkspaceView.ManualTesting, "Manual Tester",
         "Review requirements, prepare functional tests and test data.", "system-understanding",
@@ -535,7 +535,7 @@ public static class WorkspaceViews
     public static NavSection? SectionForLocation(WorkspaceView view, string relativeLocation) =>
         Ordered(view).FirstOrDefault(s => s.Items.Any(i => i.IsCurrentLocation(relativeLocation)));
 
-    /// <summary>The focused views (not All Modules) whose preset holds the module, for "Available in other workspaces".</summary>
+    /// <summary>The focused views (not All Modules) whose preset holds the module, for the "Outside current view" search results.</summary>
     public static IReadOnlyList<WorkspaceViewDefinition> Holding(NavItem item) =>
         [.. All.Where(v => !v.IsAllModules && !WorkspaceViews.EveryView.Contains(item.Route) && v.Modules.Contains(item.Route))];
 }
@@ -547,7 +547,7 @@ public enum ModuleReach
     InView,
     /// <summary>Outside the view's preset, added to the view by the person.</summary>
     AddedByYou,
-    /// <summary>Outside the view: not a row (search and "Show other modules" find it; its URL opens). Not a permission.</summary>
+    /// <summary>Outside the view: not a row (search and All Modules find it; its URL and links open). Not a permission.</summary>
     HiddenByWorkspaceView,
     /// <summary>Turned off in System Settings → Feature Visibility: no row in any view.</summary>
     DisabledByFeatureVisibility,
@@ -624,7 +624,6 @@ public sealed class NavigationSectionState
     public const string PreferencesKey = "birknext.navigation.v1";
 
     private readonly Dictionary<WorkspaceView, Dictionary<string, bool>> _choices = [];
-    private readonly HashSet<WorkspaceView> _showOther = [];
     private readonly Dictionary<WorkspaceView, HashSet<string>> _added = [];
 
     public WorkspaceView View { get; private set; } = WorkspaceView.AllModules;
@@ -669,15 +668,6 @@ public sealed class NavigationSectionState
         Changed?.Invoke();
     }
 
-    /// <summary>Modules outside the current view are shown as rows too (marked outside the view).</summary>
-    public bool ShowOtherModules => _showOther.Contains(View);
-
-    public void ToggleShowOtherModules()
-    {
-        if (!_showOther.Remove(View)) _showOther.Add(View);
-        Changed?.Invoke();
-    }
-
     public bool IsAdded(string route) => _added.TryGetValue(View, out var routes) && routes.Contains(route);
 
     /// <summary>The person's own addition to the current view (precedence 4: never shows a module Feature Visibility turned off).</summary>
@@ -693,10 +683,12 @@ public sealed class NavigationSectionState
         Changed?.Invoke();
     }
 
+    // ShowOther: the former "Show other modules" choice. Still read (older saved preferences stay valid) but ignored and no longer written: a
+    // specialized view never lists modules outside it in the sidebar.
     private sealed record Stored(WorkspaceView View, Dictionary<WorkspaceView, Dictionary<string, bool>> Choices, bool SidebarCollapsed = false,
         WorkspaceView[]? ShowOther = null, Dictionary<WorkspaceView, string[]>? Added = null);
 
-    public string Serialize() => System.Text.Json.JsonSerializer.Serialize(new Stored(View, _choices, SidebarCollapsed, [.. _showOther],
+    public string Serialize() => System.Text.Json.JsonSerializer.Serialize(new Stored(View, _choices, SidebarCollapsed, null,
         _added.ToDictionary(a => a.Key, a => a.Value.ToArray())));
 
     /// <summary>Restores remembered preferences; unreadable or unknown values are ignored (defaults stay). Earlier preferences stay valid:
@@ -712,8 +704,6 @@ public sealed class NavigationSectionState
             SidebarCollapsed = stored.SidebarCollapsed;
             _choices.Clear();
             foreach (var (view, choices) in stored.Choices ?? []) if (Enum.IsDefined(view)) _choices[view] = new(choices, StringComparer.Ordinal);
-            _showOther.Clear();
-            foreach (var view in stored.ShowOther ?? []) if (Enum.IsDefined(view)) _showOther.Add(view);
             _added.Clear();
             foreach (var (view, routes) in stored.Added ?? []) if (Enum.IsDefined(view)) _added[view] = new(routes ?? [], StringComparer.Ordinal);
             Changed?.Invoke();

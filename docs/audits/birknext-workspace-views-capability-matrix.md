@@ -4,7 +4,7 @@ Source of truth: `WorkspaceViews.All` in `AIAssisted/frontend/BirkNext.Web/Servi
 
 **Legend:**
 - **P** = in the view's preset (a sidebar row, in the view's workflow group);
-- **·** = outside the view (still reachable by search, "Show other modules", a deep link or All Modules);
+- **·** = outside the view (not a sidebar row; reachable by search under "Outside current view", a deep link, a contextual link or All Modules);
 - **E** = in every view (`WorkspaceViews.EveryView`: Project Quality, User Guide, System Settings);
 - All Modules = every module the Feature Visibility settings allow (**A**).
 

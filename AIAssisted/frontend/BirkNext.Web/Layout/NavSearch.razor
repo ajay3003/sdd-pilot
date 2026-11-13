@@ -125,7 +125,7 @@
     private static string BucketLabel(NavSearchBucket bucket, WorkspaceViewDefinition view) => bucket switch
     {
         NavSearchBucket.CurrentWorkspace => view.IsAllModules ? "All modules" : $"In current workspace ({view.Label})",
-        NavSearchBucket.OtherWorkspaces => "Available in other workspaces",
+        NavSearchBucket.OtherWorkspaces => "Outside current view",
         _ => "Disabled in Feature Visibility",
     };
 

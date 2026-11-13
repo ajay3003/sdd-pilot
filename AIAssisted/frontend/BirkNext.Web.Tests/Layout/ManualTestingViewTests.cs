@@ -101,14 +101,20 @@ public sealed class ManualTestingViewTests : BunitContext
     }
 
     [Fact]
-    public void Every_enabled_module_is_reachable_in_Manual_Testing_by_Show_other_modules()
+    public void Manual_Testing_lists_exactly_its_modules_and_finds_every_other_enabled_module_by_search()
     {
         State.SetView(WorkspaceView.ManualTesting);
-        State.ToggleShowOtherModules();
         var cut = Render<NavMenu>();
         var features = Services.GetRequiredService<FeatureVisibilityService>();
-        foreach (var item in NavigationCatalog.Sections.SelectMany(s => s.Items).Where(i => i.Visible(features)))
-            cut.FindAll($"#nav-groups a[href='{item.Route}']").Should().ContainSingle($"{item.Label} is reachable exactly once in Manual Testing");
+        var catalogue = NavigationCatalog.Sections.SelectMany(s => s.Items).ToList();
+        var rendered = cut.FindAll("#nav-groups a").Select(a => a.GetAttribute("href")).ToList();
+        rendered.Should().BeEquivalentTo(new[] { "project-import", "sources", "system-understanding", "specification-explorer", "quality/document", "documentation-drift",
+            "test-plan-suggestions", "test-data", "artifact-traceability", "test-coverage-review", "dashboard", "getting-started", "user-guide", "admin/system-settings" }
+            .Where(r => catalogue.Single(i => i.Route == r).Visible(features)),
+            "the Manual Tester preset plus Dashboard, User Guide and System Settings, nothing appended");
+        foreach (var item in catalogue.Where(i => i.Visible(features) && !rendered.Contains(i.Route)))
+            NavigationModules.Search(item.Label, features, State).Should().Contain(r => r.Item.Route == item.Route && r.Bucket == NavSearchBucket.OtherWorkspaces,
+                $"{item.Label} is found by search, outside the current view");
     }
 
     [Fact]

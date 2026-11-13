@@ -70,19 +70,31 @@ public sealed class NavigationWorkspaceTests : BunitContext
     [InlineData(WorkspaceView.Architect)]
     [InlineData(WorkspaceView.ManualTesting)]
     [InlineData(WorkspaceView.TechnicalTester)]
-    public void EveryVisibleModule_IsReachableInEveryView_ByShowOtherModulesAndBySearch(WorkspaceView view)
+    public void TheSidebarListsOnlyTheViewsModules_AndEveryOtherVisibleModuleIsFoundBySearch(WorkspaceView view)
     {
+        // Matrix B-I + J: a specialized view's sidebar is its preset (plus Dashboard, User Guide, System Settings) and nothing else - no "Other view"
+        // rows, no toggle that appends the catalogue. Every other visible module stays reachable by search, under "Outside current view".
         State.SetView(view);
+        var definition = WorkspaceViews.Of(view);
         var features = Services.GetRequiredService<FeatureVisibilityService>();
         var cut = Render<NavMenu>();
-        if (view != WorkspaceView.AllModules) cut.Find("[data-testid=nav-show-other]").Click();
+        cut.FindAll("[data-testid=nav-show-other]").Should().BeEmpty("there is no control that appends other modules to the sidebar");
+        cut.FindAll("[data-testid=nav-outside-badge]").Should().BeEmpty("no Other view badges");
+        cut.FindAll("[data-outside=true]").Should().BeEmpty("the open page (dashboard) is in every view");
+        var rendered = cut.FindAll("[id^='nav-section-'] a").Select(a => a.GetAttribute("href")).ToList();
+        rendered.Should().OnlyHaveUniqueItems();
 
         foreach (var section in NavigationCatalog.Sections)
         foreach (var item in section.Items.Where(i => i.Visible(features)))
         {
-            // Focused views put their modules in workflow groups and keep the rest in the catalog groups: every visible module is one row somewhere.
-            cut.FindAll($"[id^='nav-section-'] a[href='{item.Route}']").Should().ContainSingle($"{item.Label} stays reachable exactly once in {view}");
-            NavigationModules.Search(item.Label, features, State).Should().Contain(r => r.Item.Route == item.Route && r.Bucket != NavSearchBucket.Disabled);
+            if (definition.Contains(item))
+                rendered.Should().ContainSingle(r => r == item.Route, $"{item.Label} is part of {view}");
+            else
+            {
+                rendered.Should().NotContain(item.Route, $"{item.Label} is outside {view}: not a sidebar row");
+                NavigationModules.Search(item.Label, features, State).Should().Contain(r => r.Item.Route == item.Route && r.Bucket == NavSearchBucket.OtherWorkspaces,
+                    $"{item.Label} is still found by search in {view}");
+            }
         }
     }
 
@@ -137,7 +149,7 @@ public sealed class NavigationWorkspaceTests : BunitContext
         rendered.Should().Contain(["test-data", "test-plan-suggestions", "system-understanding", "dashboard", "getting-started", "artifact-traceability",
             "correlation-review", "critical-e2e-regression", "integration-suites", "execution-results", "performance-test-review"]);
         cut.FindAll("[data-testid=nav-outside-badge]").Should().BeEmpty("nothing is outside All Modules");
-        cut.FindAll("[data-testid=nav-show-other]").Should().BeEmpty();
+        cut.FindAll("[data-outside=true]").Should().BeEmpty();
         catalogue.Where(i => !i.Visible(features)).Select(i => i.Route).Should().NotIntersectWith(rendered, "Feature Visibility still decides what exists");
         // Every specialized view stays a strict subset of the eligible catalogue.
         foreach (var view in WorkspaceViews.All.Where(v => !v.IsAllModules))
@@ -203,7 +215,7 @@ public sealed class NavigationWorkspaceTests : BunitContext
     }
 
     [Fact]
-    public void FocusedView_PutsItsGroupsFirst_ShowsItsModules_AndRevealsTheRestOnRequest()
+    public void FocusedView_PutsItsGroupsFirst_ShowsOnlyItsModules_AndAllModulesShowsTheRest()
     {
         State.SetView(WorkspaceView.TestLead);
         var cut = Render<NavMenu>();
@@ -216,14 +228,11 @@ public sealed class NavigationWorkspaceTests : BunitContext
         cut.FindAll("a[href='admin/system-settings']").Should().ContainSingle("settings are in every view");
         cut.FindAll(".nav-group[hidden]").Should().BeEmpty("groups start expanded");
 
-        cut.Find("[data-testid=nav-show-other]").Click();
-        cut.Find("a[href='source-analysis']").ParentElement!.ClassList.Should().Contain("nav-item-outside");
-        cut.Find("[data-testid=nav-show-other]").TextContent.Should().Be("Hide other modules");
+        cut.FindAll("[data-testid=nav-show-other]").Should().BeEmpty("no Show other modules control");
 
         cut.Find("[data-testid=nav-workspace-view]").Change(nameof(WorkspaceView.AllModules));
-        cut.FindAll("[data-testid=nav-show-other]").Should().BeEmpty();
         cut.FindAll(".nav-item-outside").Should().BeEmpty();
-        cut.FindAll("a[href='source-analysis']").Should().ContainSingle();
+        cut.FindAll("a[href='source-analysis']").Should().ContainSingle("All Modules lists every eligible module");
     }
 
     [Fact]
@@ -278,7 +287,7 @@ public sealed class NavigationWorkspaceTests : BunitContext
 
         cut.Find("[data-testid=nav-search]").Input("quality review");
         cut.FindAll("[data-testid=nav-search-bucket]").Select(h => h.TextContent).Should().Equal(
-            "In current workspace (Developer)", "Available in other workspaces", "Disabled in Feature Visibility");
+            "In current workspace (Developer)", "Outside current view", "Disabled in Feature Visibility");
         var input = cut.Find("[data-testid=nav-search]");
         input.GetAttribute("role").Should().Be("combobox");
         input.GetAttribute("aria-expanded").Should().Be("true");
@@ -403,7 +412,6 @@ public sealed class NavigationWorkspaceTests : BunitContext
     public void CollapseChoices_AreRememberedPerView_AndSurviveSerialization()
     {
         State.SetView(WorkspaceView.ScrumMaster);
-        State.ToggleShowOtherModules();
         State.AddToView("schema-studio");
         State.Toggle("delivery-reporting");
         State.IsCollapsed("delivery-reporting").Should().BeTrue();
@@ -415,7 +423,7 @@ public sealed class NavigationWorkspaceTests : BunitContext
         restored.View.Should().Be(WorkspaceView.AllModules);
         restored.SetView(WorkspaceView.ScrumMaster);
         restored.IsCollapsed("delivery-reporting").Should().BeTrue();
-        restored.ShowOtherModules.Should().BeTrue();
+        State.Serialize().Should().NotContain("\"ShowOther\":[", "the former Show other modules choice is no longer written");
         restored.IsAdded("schema-studio").Should().BeTrue();
 
         var broken = new NavigationSectionState();
@@ -434,7 +442,7 @@ public sealed class NavigationWorkspaceTests : BunitContext
     }
 
     [Fact]
-    public void TheCurrentPagesGroup_IsExpanded_AndAPageOutsideTheViewKeepsItsRow()
+    public void TheCurrentPagesGroup_IsExpanded_AndAPageOutsideTheViewKeepsOneUnbadgedRowWhileOpen()
     {
         State.SetView(WorkspaceView.TestLead);
         State.Toggle("delivery-reporting");
@@ -444,8 +452,13 @@ public sealed class NavigationWorkspaceTests : BunitContext
         var row = cut.Find("a[href='delivery-reporting']");
         row.GetAttribute("aria-current").Should().Be("page");
         row.ParentElement!.ClassList.Should().Contain("nav-item-outside");
-        row.QuerySelector("[data-testid=nav-outside-badge]")!.TextContent.Should().Be("Other view");
+        row.QuerySelector("[data-testid=nav-outside-badge]").Should().BeNull("no Other view badge");
+        row.TextContent.Should().Contain("open page outside this workspace view", "screen readers hear why the row is there");
         cut.FindAll("a.active").Should().ContainSingle();
+        cut.FindAll("[data-outside=true]").Should().ContainSingle("only the open page, no other module outside the view");
+
+        Services.GetRequiredService<NavigationManager>().NavigateTo("dashboard");
+        cut.WaitForAssertion(() => cut.FindAll("a[href='delivery-reporting']").Should().BeEmpty("the row leaves with the page"));
     }
 
     [Theory]
@@ -512,5 +525,19 @@ public sealed class NavigationWorkspaceTests : BunitContext
         Services.GetRequiredService<FeatureVisibilityService>().ApplyLocalFlags(new FeatureVisibilityDto { ImplementationReview = false, PlanExplorer = true, TaskExplorer = true });
         Services.GetRequiredService<NavigationManager>().NavigateTo("plan-explorer");
         Render<SharedWorkspaceTabs>().FindAll("[data-testid=shared-workspace-tab]").Select(a => a.GetAttribute("href")).Should().Equal("plan-explorer", "task-explorer");
+    }
+
+    [Fact] // The reported defect: a browser that once chose "Show other modules" kept the whole catalogue under the view, marked "Other view".
+    public void A_saved_Show_other_modules_choice_no_longer_appends_the_catalogue_to_a_specialized_view()
+    {
+        State.Restore("""{"View":6,"Choices":{},"SidebarCollapsed":false,"ShowOther":[6,3],"Added":{}}""");
+        State.View.Should().Be(WorkspaceView.ManualTesting, "the saved view itself is kept");
+        var cut = Render<NavMenu>();
+        cut.FindAll("[data-testid=nav-outside-badge]").Should().BeEmpty();
+        cut.FindAll("[data-outside=true]").Should().BeEmpty();
+        foreach (var route in new[] { NavigationCatalog.DeliveryOverviewRoute, "delivery-reporting", "constitution-explorer", "data-model-explorer", "plan-explorer",
+                     "task-explorer", "correlation-review", "release-readiness", "snapshots", "source-analysis", "schema-studio", "api-quality-review/contracts",
+                     "integration-suites", "api-quality-review", "integration-quality-review" })
+            cut.FindAll($"#nav-groups a[href='{route}']").Should().BeEmpty($"{route} is outside Manual Tester (the modules from the defect report)");
     }
 }

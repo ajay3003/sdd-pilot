@@ -213,15 +213,8 @@
 .nav-view:focus-visible { outline: 2px solid #93c5fd; outline-offset: 0; }
 .nav-view-help { margin: 0 0 .2rem; color: #94a3b8; font-size: .75rem; line-height: 1.35; }
 
-/* A module outside the Workspace View (shown with "Show other modules", or the page that is open): quieter, never hidden. */
+/* The open page when it is outside the Workspace View: one quieter row while it is open (no badge; WorkspaceScopeNotice explains). */
 .nav-item-outside ::deep a, .nav-flyout-link.nav-item-outside { color: #8d9bb0; }
-.nav-status-outside { border-style: dotted; }
-.nav-show-other {
-    display: block; width: calc(100% - 1rem); margin: .6rem .5rem 0; padding: .35rem .5rem; border: 1px dashed #475569; border-radius: 6px;
-    background: transparent; color: #cbd5e1; font-size: .78rem; text-align: left; cursor: pointer;
-}
-.nav-show-other:hover { background: rgba(255, 255, 255, .06); }
-.nav-show-other:focus-visible { outline: 2px solid #93c5fd; outline-offset: 0; }
 
 /* ── Top row: brand, desktop collapse control, mobile drawer trigger ─────────── */
 .nav-top { display: flex; align-items: center; gap: .4rem; flex-wrap: nowrap; }

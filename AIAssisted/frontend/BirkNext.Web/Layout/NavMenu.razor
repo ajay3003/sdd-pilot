@@ -8,8 +8,9 @@
 
 @* Rows and sections come from NavigationCatalog; which rows exist from the one resolution model (NavigationModules: Feature Visibility,
    then the Workspace View, then the person's additions); statuses from the shared applicability evaluation (NavStatusPresentation). Each
-   row is [icon] [label] [status]. The Workspace View is a navigation preference, never a permission: modules outside it are found by
-   search, shown with "Show other modules", and open by URL. Desktop: expanded (labels) or collapsed (icons, group flyouts, compact search),
+   row is [icon] [label] [status]. The Workspace View is a navigation preference, never a permission: a specialized view lists only its own
+   modules (and the person's additions); modules outside it are found by search ("Outside current view"), listed in All Modules, and open by
+   URL or contextual link (WorkspaceScopeNotice marks such a page). Desktop: expanded (labels) or collapsed (icons, group flyouts, compact search),
    remembered in this browser. Mobile: an overlay drawer (not remembered). None of it touches the page, the project or running work. *@
 <div class="top-row ps-3 navbar navbar-dark @(Rail ? "nav-top-collapsed" : null)">
     <div class="container-fluid nav-top">
@@ -105,7 +106,7 @@
                                         <span class="nav-applicability nav-status-@status.Kind.ToString().ToLowerInvariant()" aria-hidden="true">@status.Text</span>
                                         <span class="visually-hidden">, @status.Spoken</span>
                                     }
-                                    @if (!module.IsRow) { <span class="visually-hidden">, outside this workspace view</span> }
+                                    @if (!module.IsRow) { <span class="visually-hidden">, open page outside this workspace view</span> }
                                 </a>
                             }
                         </div>
@@ -144,7 +145,7 @@
                         var item = module.Item;
                         var status = Status(module);
                         var current = WorkspaceViews.IsCurrent(_sections.View, item, location);
-                        <div class="nav-item px-2 @(module.IsRow ? null : "nav-item-outside")">
+                        <div class="nav-item px-2 @(module.IsRow ? null : "nav-item-outside")" data-outside="@(module.IsRow ? null : "true")">
                             <a class="nav-link @(current ? "active" : null)" href="@item.Route" title="@item.Title" aria-current="@(current ? "page" : null)">
                                 <span class="nav-icon @item.Icon" aria-hidden="true"></span>
                                 <span class="nav-label@(item.WrapLabel ? " nav-label-wrap" : "")">@item.Label</span>
@@ -154,21 +155,11 @@
                                           data-testid="nav-applicability-@item.ReviewId" data-kind="@status.Kind" title="@status.Tooltip">@status.Text</span>
                                     <span class="visually-hidden">, @status.Spoken</span>
                                 }
-                                else if (!module.IsRow)
-                                {
-                                    <span class="nav-applicability nav-status-outside" aria-hidden="true" data-testid="nav-outside-badge" title="Not part of the @view.Label workspace view">Other view</span>
-                                }
-                                @if (!module.IsRow) { <span class="visually-hidden">, outside this workspace view</span> }
+                                @if (!module.IsRow) { <span class="visually-hidden">, open page outside this workspace view</span> }
                             </a>
                         </div>
                     }
                 </div>
-            }
-            @{ var hidden = modules.Count(m => m.Reach == ModuleReach.HiddenByWorkspaceView); }
-            @if (!view.IsAllModules && hidden > 0)
-            {
-                <button type="button" class="nav-show-other" data-testid="nav-show-other" aria-pressed="@(_sections.ShowOtherModules ? "true" : "false")"
-                        @onclick="_sections.ToggleShowOtherModules">@(_sections.ShowOtherModules ? "Hide other modules" : $"Show {hidden} other module{(hidden == 1 ? "" : "s")}")</button>
             }
         </nav>
         @* This frontend's own compiled version (never read from the backend); details are in System Settings → General. *@
@@ -214,13 +205,15 @@
     }
 
     /// <summary>
-    /// The rows of a group, in the group's order (a view's workflow group or a catalog group): modules of the view (and the person's additions);
-    /// with "Show other modules", the rest of the group's enabled modules; and always the current page's module, so the page that is open is never
-    /// without its row.
+    /// The rows of a group, in the group's order (a view's workflow group or a catalog group): only the view's modules and the person's additions
+    /// (All Modules: every enabled module). Modules outside a specialized view are never appended to the sidebar: search ("Outside current view"),
+    /// All Modules, links and URLs reach them. The one exception is the page that is open right now — it keeps a single, unbadged row while it is
+    /// open (orientation and aria-current), and WorkspaceScopeNotice explains it is outside the view. Feature Visibility still removes disabled
+    /// modules from every view; nothing here is a permission.
     /// </summary>
     private IReadOnlyList<NavModule> Rows(IReadOnlyList<NavModule> modules, NavSection group, string location) =>
         [.. group.Items.Select(i => modules.FirstOrDefault(m => ReferenceEquals(m.Item, i)) ?? NavigationModules.Resolve(group, i, FeatureViz, _sections))
-            .Where(m => m.Enabled && (m.IsRow || _sections.ShowOtherModules || m.Item.IsCurrentLocation(location)))];
+            .Where(m => m.Enabled && (m.IsRow || m.Item.IsCurrentLocation(location)))];
 
     private NavStatus? Status(NavModule module) =>
         module.Item.ReviewId is { } reviewId ? NavStatusPresentation.For(module.Item, _applicability?.For(reviewId)) : null;
@@ -264,7 +257,7 @@
                 await _sections.EnsureRestoredAsync(_js);
                 ExpandCurrentSection();
             }
-            await Js("birknextNav.attachArrows", "nav-panel", ".nav-section, .nav-item a, .nav-show-other");
+            await Js("birknextNav.attachArrows", "nav-panel", ".nav-section, .nav-item a");
             await Js("birknextNav.revealActive", "nav-panel");
         }
         if (_flyoutJustOpened is { } opened)
