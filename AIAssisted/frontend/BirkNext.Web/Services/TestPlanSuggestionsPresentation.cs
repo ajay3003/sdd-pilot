@@ -210,4 +210,36 @@ public static class TestPlanSuggestionsPresentation
         if (latest is not null) actions.Add(new("tps-export", "Prepare Azure DevOps export", $"From snapshot {latest.Sequence} (a reviewable proposal, not written to Azure DevOps).", draftLink + "&area=export", FocusActionState.CanDoNow, "Ready now", null));
         return new(facts, actions, latest);
     }
+
+    // ── Test type, execution method and performance wording (plain language for manual testers) ────────────────────
+
+    public static string TypeLabel(TestCaseType type) => type switch
+    {
+        TestCaseType.Functional => "Functional",
+        TestCaseType.Integration => "Integration",
+        TestCaseType.EndToEnd => "End-to-end",
+        TestCaseType.Performance => "Performance",
+        TestCaseType.Security => "Security",
+        TestCaseType.ApiContract => "API / contract",
+        _ => "Not classified yet",
+    };
+
+    public static string MethodLabel(TestExecutionMethod method) => method switch
+    {
+        TestExecutionMethod.Manual => "Manual",
+        TestExecutionMethod.ToolAssisted => "Tool-assisted",
+        TestExecutionMethod.Automated => "Automated",
+        _ => "Not decided",
+    };
+
+    public static string SubtypeLabel(PerformanceTestSubtype subtype) => subtype switch
+    {
+        PerformanceTestSubtype.Load => "Load (expected normal traffic)",
+        PerformanceTestSubtype.Stress => "Stress (beyond normal traffic)",
+        PerformanceTestSubtype.Spike => "Spike (sudden burst)",
+        PerformanceTestSubtype.Soak => "Soak / endurance (long duration)",
+        PerformanceTestSubtype.Capacity => "Capacity (how much the system can take)",
+        PerformanceTestSubtype.Baseline => "Baseline / benchmark",
+        _ => "Not chosen",
+    };
 }

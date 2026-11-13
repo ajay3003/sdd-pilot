@@ -187,4 +187,39 @@ public sealed class TestPlanSuggestionEngineTests
             Summary = new TestPlanSnapshotSummary(Guid.NewGuid(), plan.Id, plan.GuideKey, sequence, plan.PlanName, null, 1, E.ContentFingerprint(plan), plan.RuleVersion, 1, plan.Cases.Count, "t", DateTimeOffset.UtcNow, null),
         };
     }
+    // ── Test type, execution method and performance cases ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void A_performance_case_without_thresholds_workload_or_environment_says_so_and_nothing_is_assumed()
+    {
+        var draft = new TestCaseDraft { Generated = E.Generate(Guide, S("gyldig-rapport"), true), Edits = new TestCaseEdits { TestType = TestCaseType.Performance } };
+        var open = E.Assess(draft).Missing;
+        open.Should().Contain("Acceptance criteria not defined — review required (performance thresholds)")
+            .And.Contain(m => m.StartsWith("Workload: not described")).And.Contain("Performance environment: not confirmed");
+
+        var described = draft with { Edits = draft.Edits with { Performance = new PerformanceCaseDetails
+        {
+            Subtype = PerformanceTestSubtype.Load, Workload = "Schools submit reports at the end of a period", AcceptanceCriteria = "p95 under 2 s", TargetEnvironment = "Test",
+        } } };
+        E.Assess(described).Missing.Should().NotContain(m => m.Contains("Acceptance criteria") || m.StartsWith("Workload:") || m.StartsWith("Performance environment"));
+
+        E.Assess(draft with { Edits = new TestCaseEdits { TestType = TestCaseType.Functional } }).Missing.Should().NotContain(m => m.Contains("Acceptance criteria"),
+            "performance questions apply only to performance cases");
+        draft.EffectiveExecutionMethod.Should().Be(TestExecutionMethod.NotDecided, "a performance type never implies automated execution");
+    }
+
+    [Fact]
+    public void Performance_details_are_exported_as_stated_and_type_method_and_workload_changes_are_compared()
+    {
+        E.PerformanceText(null).Should().BeEmpty();
+        E.PerformanceText(new PerformanceCaseDetails { Workload = "50 schools" }).Should().Be("- Workload: 50 schools\n- Acceptance criteria: NOT DEFINED — review required",
+            "only what the tester wrote, and an undefined threshold is said, never filled in");
+
+        var plan = Plan("skolenaervaer", ("gyldig-rapport", "200", TestCaseReviewState.Generated));
+        var before = plan with { Cases = [plan.Cases[0] with { Edits = new TestCaseEdits { TestType = TestCaseType.Performance, Performance = new PerformanceCaseDetails { Workload = "50 schools" } } }] };
+        var after = plan with { Cases = [plan.Cases[0] with { Edits = new TestCaseEdits { TestType = TestCaseType.Performance, ExecutionMethod = TestExecutionMethod.ToolAssisted,
+            Performance = new PerformanceCaseDetails { Workload = "200 schools" } } }] };
+        var changes = E.Compare(Snap(1, before, true), Snap(2, after, true)).Cases.Single().Changes.Select(c => c.Category);
+        changes.Should().Contain("Performance").And.Contain("ExecutionMethod").And.NotContain("TestType");
+    }
 }

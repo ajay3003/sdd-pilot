@@ -141,6 +141,15 @@ public static partial class TestPlanSuggestionEngine
         if (string.IsNullOrWhiteSpace(draft.EffectiveObservation)) missing.Add("Observation method: how to see the result is not described");
         if (draft.EffectiveSteps.Count == 0) missing.Add("Test steps: none in the source");
         if (draft.EffectivePreconditions is null) missing.Add("Preconditions: not described");
+        if (draft.EffectiveType == TestCaseType.Performance)
+        {
+            // A performance case is documented in the tester's words; what is not stated stays open — no default load or threshold is assumed.
+            var p = draft.Edits.Performance;
+            if (string.IsNullOrWhiteSpace(p?.AcceptanceCriteria)) missing.Add("Acceptance criteria not defined — review required (performance thresholds)");
+            if (string.IsNullOrWhiteSpace(p?.Workload) && string.IsNullOrWhiteSpace(p?.Concurrency) && string.IsNullOrWhiteSpace(p?.ArrivalRate))
+                missing.Add("Workload: not described (how many users or requests, and over what time)");
+            if (string.IsNullOrWhiteSpace(p?.TargetEnvironment)) missing.Add("Performance environment: not confirmed");
+        }
 
         var confirmed = draft.Correlations.Where(c => c.State == CorrelationState.Confirmed).ToList();
         var input = confirmed.Count > 0 ? TestabilityFact.Known : TestabilityFact.NeedsAssistance;
@@ -251,6 +260,9 @@ public static partial class TestPlanSuggestionEngine
         Diff("Steps", string.Join("\n", b.EffectiveSteps), string.Join("\n", a.EffectiveSteps));
         Diff("Observation", b.EffectiveObservation, a.EffectiveObservation);
         Diff("Risk", b.Risk.ToString(), a.Risk.ToString());
+        Diff("TestType", b.EffectiveType.ToString(), a.EffectiveType.ToString());
+        Diff("ExecutionMethod", b.EffectiveExecutionMethod.ToString(), a.EffectiveExecutionMethod.ToString());
+        Diff("Performance", PerformanceText(b.Edits.Performance), PerformanceText(a.Edits.Performance));
         Diff("Testability", b.Testability.Summary + Facts(b.Testability), a.Testability.Summary + Facts(a.Testability));
         Diff("Review", b.Review.ToString(), a.Review.ToString());
         Diff("Suite", sb.GetValueOrDefault(b.SuiteId, b.SuiteId), sa.GetValueOrDefault(a.SuiteId, a.SuiteId));
@@ -317,6 +329,9 @@ public static partial class TestPlanSuggestionEngine
                     steps = c.EffectiveSteps, expected = c.EffectiveExpected, expectedBasis = c.Edits.ExpectedResult is not null ? nameof(ExpectedResultBasis.ReviewerClarified) : c.Generated.ExpectedBasis.ToString(),
                     requirements = c.Generated.Requirements, testData = c.TestData.Select(d => new { d.AssetId, d.Alias, d.Fingerprint, d.Approval }), requiredTestData = c.Generated.RequiredTestData,
                     observation = c.EffectiveObservation, testability = c.Testability.Summary, unresolved = c.Missing, azureDevOpsTestCaseId = c.VerifiedAzureDevOpsTestCaseId,
+                    // Type and method are separate; performance details travel whole (no Azure DevOps field holds them, so they are a structured
+                    // section of the case description and never dropped). Empty when not stated — nothing is assumed.
+                    testType = c.EffectiveType.ToString(), executionMethod = c.EffectiveExecutionMethod.ToString(), performance = c.Edits.Performance,
                 }),
             }),
             unresolved,
@@ -331,19 +346,35 @@ public static partial class TestPlanSuggestionEngine
             text.AppendLine($"## Suite: {suite.Name}");
             foreach (var c in inSuite)
             {
-                text.AppendLine($"### {c.EffectiveTitle}  [{c.Review}; risk {c.Risk}]");
+                text.AppendLine($"### {c.EffectiveTitle}  [{c.Review}; risk {c.Risk}; type {c.EffectiveType}; method {c.EffectiveExecutionMethod}]");
                 if (c.EffectivePreconditions is { } pre) text.AppendLine($"Preconditions: {pre}");
                 var i = 1;
                 foreach (var step in c.EffectiveSteps) text.AppendLine($"{i++}. {step}");
                 text.AppendLine($"Expected: {c.EffectiveExpected ?? "NEEDS CLARIFICATION"}");
                 if (c.Generated.Requirements.Count > 0) text.AppendLine("Requirements: " + string.Join("; ", c.Generated.Requirements.Select(r => $"{r.RuleId} {r.Title}")));
                 text.AppendLine("Test Data: " + (c.TestData.Count == 0 ? "none linked" : string.Join(", ", c.TestData.Select(d => $"{d.Alias} ({d.Approval})"))));
+                if (PerformanceText(c.Edits.Performance) is { Length: > 0 } perf) text.AppendLine("Performance details:").AppendLine(perf);
                 foreach (var m in c.Missing) text.AppendLine($"Open: {m}");
                 text.AppendLine();
             }
         }
         var file = $"test-plan-proposal-{Slug(plan.PlanName)}-{snapshot.Summary.Sequence}.json";
         return new TestPlanExport(ExportFormat, file, JsonSerializer.Serialize(document, new JsonSerializerOptions(Json) { WriteIndented = true }), text.ToString(), unresolved, Boundary);
+    }
+
+    /// <summary>A performance case's stated details as labelled lines (only what the tester wrote); empty when nothing is stated.</summary>
+    public static string PerformanceText(PerformanceCaseDetails? p)
+    {
+        if (p is null || p.IsEmpty) return "";
+        var lines = new (string Label, string? Value)[]
+        {
+            ("Kind", p.Subtype == PerformanceTestSubtype.NotSet ? null : p.Subtype.ToString()), ("Operation", p.OperationUnderTest), ("Workload", p.Workload),
+            ("Concurrency", p.Concurrency), ("Arrival rate", p.ArrivalRate), ("Ramp-up", p.RampUp), ("Steady state", p.SteadyStateDuration), ("Ramp-down", p.RampDown),
+            ("Environment", p.TargetEnvironment), ("Data volume", p.DataVolume), ("Measurements", p.Measurements),
+            ("Acceptance criteria", p.AcceptanceCriteria ?? "NOT DEFINED — review required"), ("Threshold source", p.ThresholdSource), ("Monitoring", p.Monitoring),
+            ("Responsible role", p.ResponsibleRole), ("Cleanup", p.Cleanup), ("Performance Test Review", p.PerformanceReviewReference),
+        };
+        return string.Join("\n", lines.Where(l => !string.IsNullOrWhiteSpace(l.Value)).Select(l => $"- {l.Label}: {l.Value}"));
     }
 
     private static string Slug(string value)

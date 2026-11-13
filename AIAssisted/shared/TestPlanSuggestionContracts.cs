@@ -21,6 +21,47 @@ public enum TestCaseReviewState { Generated, UnderReview, NeedsClarification, Ac
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TestCaseRisk { NotAssessed, Low, Medium, High }
 
+/// <summary>What a test case verifies. Independent of <see cref="TestExecutionMethod"/>: a performance case is not "automated" by type.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TestCaseType { NotClassified, Functional, Integration, EndToEnd, Performance, Security, ApiContract }
+
+/// <summary>How a test case is carried out. Independent of <see cref="TestCaseType"/>.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TestExecutionMethod { NotDecided, Manual, ToolAssisted, Automated }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum PerformanceTestSubtype { NotSet, Load, Stress, Spike, Soak, Capacity, Baseline }
+
+/// <summary>
+/// A performance test case in a tester's words: every field is optional free text, so a manual tester can describe the business workload and
+/// leave the technical parts for a performance tester. Nothing is generated or assumed (no default users, durations or thresholds), and
+/// nothing here is executed. Execution and its evidence belong to Performance Test Review.
+/// </summary>
+public sealed record PerformanceCaseDetails
+{
+    public PerformanceTestSubtype Subtype { get; init; }
+    public string? OperationUnderTest { get; init; }
+    public string? Workload { get; init; }
+    public string? Concurrency { get; init; }
+    public string? ArrivalRate { get; init; }
+    public string? RampUp { get; init; }
+    public string? SteadyStateDuration { get; init; }
+    public string? RampDown { get; init; }
+    public string? TargetEnvironment { get; init; }
+    public string? DataVolume { get; init; }
+    public string? Measurements { get; init; }
+    /// <summary>Explicit thresholds and conditions (e.g. "p95 under 800 ms at 50 users"); empty = not defined, review required.</summary>
+    public string? AcceptanceCriteria { get; init; }
+    public string? ThresholdSource { get; init; }
+    public string? Monitoring { get; init; }
+    public string? ResponsibleRole { get; init; }
+    public string? Cleanup { get; init; }
+    /// <summary>A reference to the Performance Test Review scenario that refines/executes this case (its owner keeps execution evidence).</summary>
+    public string? PerformanceReviewReference { get; init; }
+    [JsonIgnore] public bool IsEmpty => Subtype == PerformanceTestSubtype.NotSet && new[] { OperationUnderTest, Workload, Concurrency, ArrivalRate, RampUp, SteadyStateDuration,
+        RampDown, TargetEnvironment, DataVolume, Measurements, AcceptanceCriteria, ThresholdSource, Monitoring, ResponsibleRole, Cleanup, PerformanceReviewReference }.All(string.IsNullOrWhiteSpace);
+}
+
 /// <summary>How an expected result is established: by a reviewed (published) guide revision, by an unreviewed curated draft, by a reviewer's
 /// own clarification, or not at all. Implementation behaviour is never a basis.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -93,7 +134,13 @@ public sealed record TestCaseEdits
     public string? ExpectedResult { get; init; }
     public string? ObservationMethod { get; init; }
     public string? EnvironmentPrerequisites { get; init; }
-    [JsonIgnore] public bool IsEmpty => Title is null && Preconditions is null && Steps is null && ExpectedResult is null && ObservationMethod is null && EnvironmentPrerequisites is null;
+    /// <summary>The reviewer's classification (null = not classified yet; never inferred from the scenario text).</summary>
+    public TestCaseType? TestType { get; init; }
+    public TestExecutionMethod? ExecutionMethod { get; init; }
+    /// <summary>Only meaningful for <see cref="TestCaseType.Performance"/>; kept if the type changes so nothing a tester wrote is lost.</summary>
+    public PerformanceCaseDetails? Performance { get; init; }
+    [JsonIgnore] public bool IsEmpty => Title is null && Preconditions is null && Steps is null && ExpectedResult is null && ObservationMethod is null && EnvironmentPrerequisites is null
+        && TestType is null && ExecutionMethod is null && (Performance is null || Performance.IsEmpty);
 }
 
 public sealed record TestCaseReviewEvent(TestCaseReviewState State, string Reviewer, string? Rationale, DateTimeOffset At);
@@ -154,6 +201,8 @@ public sealed record TestCaseDraft
     [JsonIgnore] public List<string> EffectiveSteps => Edits.Steps ?? Generated.Steps;
     [JsonIgnore] public string? EffectiveObservation => Edits.ObservationMethod ?? Generated.ObservationMethod;
     [JsonIgnore] public string? EffectiveEnvironment => Edits.EnvironmentPrerequisites ?? Generated.EnvironmentPrerequisites;
+    [JsonIgnore] public TestCaseType EffectiveType => Edits.TestType ?? TestCaseType.NotClassified;
+    [JsonIgnore] public TestExecutionMethod EffectiveExecutionMethod => Edits.ExecutionMethod ?? TestExecutionMethod.NotDecided;
 }
 
 /// <summary>A suite of the proposal. Origin "stage" = proposed from the guide's business-process stage; "reviewer" = created by a person.</summary>

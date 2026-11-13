@@ -313,4 +313,24 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         cut.Find("[data-testid=tps-save]").Click();
         api.Saved!.Cases.Single(c => c.ScenarioId == "manglende-barn").Edits.ExpectedResult.Should().Be("Rapporten holdes til barnet finnes");
     }
+
+    [Fact]
+    public void A_manual_tester_can_classify_a_case_and_describe_a_performance_test_without_a_script()
+    {
+        var draft = Draft();
+        var api = new Api(Workspace(drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, 3, 2, 0, 0, 1, 2, 2, "t", DateTimeOffset.UtcNow)]), draft);
+        var cut = Render(api, $"?draft={draft.Id}&area=review");
+        cut.Find("[data-testid=tps-case-bufdata-fil] .tps-case-head").Click();
+
+        cut.FindAll("[data-testid=tps-perf-bufdata-fil]").Should().BeEmpty("performance fields appear only for a performance case");
+        cut.Find("[data-testid=tps-type-bufdata-fil]").Change(nameof(TestCaseType.Performance));
+        cut.Find("[data-testid=tps-perf-bufdata-fil]");
+        cut.Find("[data-testid=tps-perf-criteria-missing-bufdata-fil]").TextContent.Should().Be("Acceptance criteria not defined — review required.");
+        cut.Find("[data-testid=tps-method-bufdata-fil] option[selected]").TextContent.Should().Be("Not decided", "the type never implies how it is executed");
+
+        cut.Find("[data-testid=tps-perf-workload-bufdata-fil]").Change("All schools report on the last day of the period");
+        cut.Find("[data-testid=tps-perf-subtype-bufdata-fil]").Change(nameof(PerformanceTestSubtype.Load));
+        cut.Find("[data-testid=tps-perf-criteria-missing-bufdata-fil]");
+        cut.Markup.Should().NotContain("k6", "no script is asked for");
+    }
 }

@@ -542,7 +542,17 @@
                                             <select class="tps-input" @onchange="e => Change(P.WithCase(d, sid, x => x with { Risk = Enum.TryParse<TestCaseRisk>(e.Value?.ToString(), out var r) ? r : x.Risk }))" data-testid="tps-risk-@sid">
                                                 @foreach (var r in Enum.GetValues<TestCaseRisk>()) { <option value="@r" selected="@(r == c.Risk)">@(r == TestCaseRisk.NotAssessed ? "Not assessed" : r.ToString())</option> }
                                             </select></label>
+                                        @* Test type and execution method are separate choices: a performance case is not automated by type, a functional case not manual. *@
+                                        <label class="tps-field"><span class="tps-k">Test type</span>
+                                            <select class="tps-input" @onchange="e => Change(P.WithCase(d, sid, x => x with { Edits = x.Edits with { TestType = Enum.TryParse<TestCaseType>(e.Value?.ToString(), out var t) && t != TestCaseType.NotClassified ? t : null } }))" data-testid="tps-type-@sid">
+                                                @foreach (var t in Enum.GetValues<TestCaseType>()) { <option value="@t" selected="@(t == c.EffectiveType)">@P.TypeLabel(t)</option> }
+                                            </select></label>
+                                        <label class="tps-field"><span class="tps-k">Execution method</span>
+                                            <select class="tps-input" @onchange="e => Change(P.WithCase(d, sid, x => x with { Edits = x.Edits with { ExecutionMethod = Enum.TryParse<TestExecutionMethod>(e.Value?.ToString(), out var m) && m != TestExecutionMethod.NotDecided ? m : null } }))" data-testid="tps-method-@sid">
+                                                @foreach (var m in Enum.GetValues<TestExecutionMethod>()) { <option value="@m" selected="@(m == c.EffectiveExecutionMethod)">@P.MethodLabel(m)</option> }
+                                            </select></label>
                                     </div>
+                                    @if (c.EffectiveType == TestCaseType.Performance) { @PerformanceFields(d, c, sid) }
                                     <div class="tps-actionbar">@SaveBar()</div>
                                     </fieldset>
                                     @if (_dirty) { <p class="tps-muted tps-small" data-testid="tps-review-needs-save">Save or discard your changes before recording a review decision.</p> }
@@ -569,6 +579,52 @@
                 }
             </ul>
         </section>
+    };
+
+    /// <summary>
+    /// A performance test case in plain words: the tester describes purpose, workload, environment, measurements and acceptance criteria; any of
+    /// them can stay open. Nothing is assumed or executed here — a performance tester refines and runs it in Performance Test Review.
+    /// </summary>
+    private RenderFragment PerformanceFields(TestPlanDraft d, TestCaseDraft c, string sid) => __builder =>
+    {
+        var perf = c.Edits.Performance ?? new PerformanceCaseDetails();
+        void Set(Func<PerformanceCaseDetails, PerformanceCaseDetails> f) => Change(P.WithCase(d, sid, x => x with { Edits = x.Edits with { Performance = f(x.Edits.Performance ?? new PerformanceCaseDetails()) } }));
+        <section class="tps-perf" aria-labelledby="@($"tps-perf-h-{sid}")" data-testid="tps-perf-@sid">
+            <h4 id="@($"tps-perf-h-{sid}")" class="tps-h4">Performance test details</h4>
+            <p class="tps-muted tps-small">Describe what you know in your own words — no script is needed. Leave anything unknown empty: it is shown as open for a performance tester, never filled in with a guess.</p>
+            @if (string.IsNullOrWhiteSpace(perf.AcceptanceCriteria)) { <p class="tps-chip tps-chip-bad" role="status" data-testid="tps-perf-criteria-missing-@sid">Acceptance criteria not defined — review required.</p> }
+            <div class="tps-edit-grid">
+                <label class="tps-field"><span class="tps-k">Kind of performance test</span>
+                    <select class="tps-input" @onchange="e => Set(p => p with { Subtype = Enum.TryParse<PerformanceTestSubtype>(e.Value?.ToString(), out var st) ? st : PerformanceTestSubtype.NotSet })" data-testid="tps-perf-subtype-@sid">
+                        @foreach (var st in Enum.GetValues<PerformanceTestSubtype>()) { <option value="@st" selected="@(st == perf.Subtype)">@P.SubtypeLabel(st)</option> }
+                    </select></label>
+                @PerfField(sid, "operation", "System or operation under test", perf.OperationUnderTest, v => Set(p => p with { OperationUnderTest = v }), false)
+                @PerfField(sid, "workload", "Workload (what users do, how many, how often)", perf.Workload, v => Set(p => p with { Workload = v }), true)
+                @PerfField(sid, "concurrency", "Users at the same time", perf.Concurrency, v => Set(p => p with { Concurrency = v }), false)
+                @PerfField(sid, "rate", "Requests or arrivals per second/minute", perf.ArrivalRate, v => Set(p => p with { ArrivalRate = v }), false)
+                @PerfField(sid, "rampup", "Ramp-up", perf.RampUp, v => Set(p => p with { RampUp = v }), false)
+                @PerfField(sid, "duration", "Steady-state duration", perf.SteadyStateDuration, v => Set(p => p with { SteadyStateDuration = v }), false)
+                @PerfField(sid, "rampdown", "Ramp-down", perf.RampDown, v => Set(p => p with { RampDown = v }), false)
+                @PerfField(sid, "environment", "Target environment", perf.TargetEnvironment, v => Set(p => p with { TargetEnvironment = v }), false)
+                @PerfField(sid, "volume", "Test data volume", perf.DataVolume, v => Set(p => p with { DataVolume = v }), false)
+                @PerfField(sid, "measurements", "What to measure (e.g. response time, p95, throughput, error rate)", perf.Measurements, v => Set(p => p with { Measurements = v }), true)
+                @PerfField(sid, "criteria", "Acceptance criteria (thresholds and conditions)", perf.AcceptanceCriteria, v => Set(p => p with { AcceptanceCriteria = v }), true)
+                @PerfField(sid, "threshold-source", "Where the thresholds come from", perf.ThresholdSource, v => Set(p => p with { ThresholdSource = v }), false)
+                @PerfField(sid, "monitoring", "Monitoring needed", perf.Monitoring, v => Set(p => p with { Monitoring = v }), true)
+                @PerfField(sid, "role", "Responsible role", perf.ResponsibleRole, v => Set(p => p with { ResponsibleRole = v }), false)
+                @PerfField(sid, "cleanup", "Cleanup / reset", perf.Cleanup, v => Set(p => p with { Cleanup = v }), true)
+                @PerfField(sid, "ptr", "Performance Test Review reference", perf.PerformanceReviewReference, v => Set(p => p with { PerformanceReviewReference = v }), false)
+            </div>
+            <p class="tps-muted tps-small">Execution and results belong to <a href="performance-test-review">Performance Test Review</a>; this draft is a description, not a run.</p>
+        </section>
+    };
+
+    private RenderFragment PerfField(string sid, string key, string label, string? value, Action<string?> set, bool multi) => __builder =>
+    {
+        <label class="tps-field @(multi ? "tps-field-wide" : null)"><span class="tps-k">@label</span>
+            @if (multi) { <textarea class="tps-input" rows="2" value="@value" @onchange="e => set(string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString())" data-testid="@($"tps-perf-{key}-{sid}")"></textarea> }
+            else { <input class="tps-input" value="@value" @onchange="e => set(string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString())" data-testid="@($"tps-perf-{key}-{sid}")" /> }
+        </label>
     };
 
     private RenderFragment EditField(TestCaseDraft c, string label, string? generated, string? effective, Func<string?, TestCaseDraft> apply, bool multi) => __builder =>

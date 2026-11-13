@@ -383,7 +383,23 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         {
             Title = T(e.Title, 300), Preconditions = T(e.Preconditions, 4000), Steps = steps is { Count: > 0 } ? steps : null, ExpectedResult = T(e.ExpectedResult, 4000),
             ObservationMethod = T(e.ObservationMethod, 2000), EnvironmentPrerequisites = T(e.EnvironmentPrerequisites, 2000),
+            TestType = e.TestType is TestCaseType.NotClassified ? null : e.TestType,
+            ExecutionMethod = e.ExecutionMethod is TestExecutionMethod.NotDecided ? null : e.ExecutionMethod,
+            Performance = e.Performance is null ? null : CleanPerformance(e.Performance),
         };
+
+        static PerformanceCaseDetails? CleanPerformance(PerformanceCaseDetails p)
+        {
+            var cleaned = new PerformanceCaseDetails
+            {
+                Subtype = p.Subtype, OperationUnderTest = T(p.OperationUnderTest, 500), Workload = T(p.Workload, 2000), Concurrency = T(p.Concurrency, 200),
+                ArrivalRate = T(p.ArrivalRate, 200), RampUp = T(p.RampUp, 200), SteadyStateDuration = T(p.SteadyStateDuration, 200), RampDown = T(p.RampDown, 200),
+                TargetEnvironment = T(p.TargetEnvironment, 500), DataVolume = T(p.DataVolume, 500), Measurements = T(p.Measurements, 2000),
+                AcceptanceCriteria = T(p.AcceptanceCriteria, 2000), ThresholdSource = T(p.ThresholdSource, 500), Monitoring = T(p.Monitoring, 1000),
+                ResponsibleRole = T(p.ResponsibleRole, 200), Cleanup = T(p.Cleanup, 1000), PerformanceReviewReference = T(p.PerformanceReviewReference, 300),
+            };
+            return cleaned.IsEmpty ? null : cleaned;
+        }
     }
 
     private static List<TestSuiteDraft> Suites(IReadOnlyList<TestSuiteDraft> requested, SystemGuideContent guide, IReadOnlyList<string> ids)
