@@ -24,7 +24,12 @@
    Source Analysis snapshot. The two stay separate evidence domains; they share only the import identity and the archive fingerprint. *@
 <PageTitle>Import Project</PageTitle>
 <div class="pi-page">
-    <PageHeader Title="Import Project" Description="Import a real project. Upload one ZIP containing source code, supported project documents, or both.">
+    <PageHeader Title="Import Project" Description="Import source code, project documents or additional evidence. Upload one ZIP containing source code, supported project documents, or both.">
+        @* The primary import action is always here, before and after the first import (never only at the end of the page). It opens the one
+           existing upload flow below; nothing is imported until a file is chosen and its preview confirmed. *@
+        <button type="button" class="btn btn-primary" id="pi-header-import" data-testid="pi-header-import" aria-controls="pi-choose"
+                aria-expanded="@(_phase == Phase.Choose && (Activation.Current is null || _showUpload) ? "true" : "false")"
+                disabled="@Session.IsBusy" title="@(Session.IsBusy ? "An import is running" : null)" @onclick="ImportZipFromHeader">Import ZIP</button>
         @if (_phase == Phase.Result)
         {
             @* Same place as Back in the review pages' post-run headers. Secondary: the next steps below stay the primary actions. *@
@@ -35,6 +40,60 @@
 
     @if (_phase == Phase.Choose)
     {
+        @* ── Upload: shown without a current project, or after Import ZIP / Import more evidence / Import another application. It sits right under
+           the header so the action and its form are together; the current import below stays as it is until a new import succeeds. ── *@
+        @if (Activation.Current is null || _showUpload)
+        {
+        <section class="pi-card pi-choose" id="pi-choose" aria-labelledby="pi-choose-heading" data-testid="pi-choose">
+            <h2 id="pi-choose-heading" tabindex="-1">@UploadHeading</h2>
+            <p>Upload one ZIP containing project source, project documents, or both. BirkNext shows what it found before anything is imported.</p>
+            @if (Activation.Current is { } keep)
+            {
+                <p class="pi-muted" data-testid="pi-choose-keeps">@keep.ProjectName stays the current import until the new import succeeds. Imported packages remain available in history.</p>
+            }
+            @if (Activation.CurrentApplication is { } targetApplication)
+            {
+                <fieldset class="pi-intent" data-testid="pi-intent" disabled="@Session.IsBusy">
+                    <legend>What is this ZIP?</legend>
+                    <label class="pi-intent-option"><input type="radio" name="pi-intent" value="current" data-testid="pi-intent-current"
+                           checked="@(Session.Target == ImportTarget.CurrentApplication)" @onchange="() => SetTarget(ImportTarget.CurrentApplication)" />
+                        <span><strong>Add evidence to current application</strong> <span class="pi-muted">Add source code or documents to @targetApplication.Name.</span></span></label>
+                    <label class="pi-intent-option"><input type="radio" name="pi-intent" value="new" data-testid="pi-intent-new"
+                           checked="@(Session.Target == ImportTarget.NewApplication)" @onchange="() => SetTarget(ImportTarget.NewApplication)" />
+                        <span><strong>Import another application</strong> <span class="pi-muted">Start a different application; @targetApplication.Name stays as it is.</span></span></label>
+                </fieldset>
+                <p class="pi-muted" data-testid="pi-choose-target" data-target="@Session.Target">@(Session.Target == ImportTarget.NewApplication
+                    ? $"The package starts a new application. {targetApplication.Name} and its evidence stay as they are."
+                    : $"The package is added as evidence for {targetApplication.Name}. Nothing already imported is replaced; a supporting package never replaces the application's primary documents.")</p>
+            }
+            <div class="pi-methods">
+                <div class="pi-method" data-testid="pi-method-zip">
+                    <h3>Manual ZIP import</h3>
+                    <p class="pi-muted">Import an exported source repository ZIP from your computer. No Git connection required.</p>
+                <ul class="pi-outcomes" data-testid="pi-outcomes">
+                    <li>Project documents</li>
+                    <li>Source code</li>
+                    <li>Contracts and schemas</li>
+                    <li>Infrastructure configuration</li>
+                </ul>
+                <p class="pi-muted" data-testid="pi-candidates-note">If several documents could be the same document for one feature, you choose which one after import.</p>
+                <div class="pi-actions">
+                    <label class="pi-file-button">
+                        <InputFile @key="_inputGeneration" id="pi-choose-file" class="pi-file-input" accept=".zip" OnChange="ChooseAsync" aria-label="Choose project ZIP (maximum 50 MB)" data-testid="pi-choose-file" data-generation="@_inputGeneration" />
+                        <span aria-hidden="true">Choose project ZIP</span>
+                    </label>
+                    <span class="pi-muted">ZIP · maximum 50 MB · documents up to 1 MB each</span>
+                    @if (Activation.Current is not null) { <button type="button" class="btn-secondary" data-testid="pi-choose-cancel" @onclick="CloseUpload">Cancel</button> }
+                </div>
+                </div>
+                <div class="pi-method" data-testid="pi-method-git">
+                    @if (GitSources is not null) { <BirkNext.Web.Components.GitImportWizard OnImport="StartGitQueueAsync" /> }
+                    else { <h3>Azure DevOps Git import</h3><p class="pi-muted">Not available in this BirkNext instance.</p> }
+                </div>
+            </div>
+            <p class="pi-muted" data-testid="pi-source-only-note"><a href="demo-projects">Demo Projects</a> remain available as optional examples. To analyze a source archive on its own, upload it in <a href="source-analysis">Source Analysis</a>: it creates the same source analysis, but no project documents, and it does not become the current project. It is still listed below with the imported sources.</p>
+        </section>
+        }
         @if (Activation.Current is { } current)
         {
             var currentSource = ProjectImportPresentation.CurrentSource(current, DateTimeOffset.UtcNow);
@@ -160,8 +219,8 @@
                     {
                         <button type="button" class="btn-secondary" data-testid="pi-current-retry-source" disabled="@_retrying" @onclick="() => RetryCurrentSourceAsync(current)">@(_retrying ? "Retrying…" : "Retry creating source analysis")</button>
                     }
-                    <button type="button" class="btn-secondary" id="pi-current-import-another" data-testid="pi-current-import-another" aria-expanded="@(_showUpload && Session.Target == ImportTarget.CurrentApplication ? "true" : "false")" aria-controls="pi-choose" @onclick="() => ShowUpload(ImportTarget.CurrentApplication)">Import more evidence</button>
-                    <button type="button" class="btn-secondary" id="pi-current-import-application" data-testid="pi-current-import-application" aria-expanded="@(_showUpload && Session.Target == ImportTarget.NewApplication ? "true" : "false")" aria-controls="pi-choose" @onclick="() => ShowUpload(ImportTarget.NewApplication)">Import another application</button>
+                    <button type="button" class="btn-secondary" id="pi-current-import-another" data-testid="pi-current-import-another" aria-expanded="@(_showUpload && Session.Target == ImportTarget.CurrentApplication ? "true" : "false")" aria-controls="pi-choose" @onclick="ImportMoreEvidence">Import more evidence</button>
+                    <button type="button" class="btn-secondary" id="pi-current-import-application" data-testid="pi-current-import-application" aria-expanded="@(_showUpload && Session.Target == ImportTarget.NewApplication ? "true" : "false")" aria-controls="pi-choose" @onclick="ImportAnotherApplication">Import another application</button>
                     <a href="sources" class="btn-secondary" data-testid="pi-manage-sources">Manage sources</a>
                     <button type="button" class="btn-secondary" data-testid="pi-close" @onclick="CloseCurrent">Clear current import</button>
                 </div>
@@ -312,50 +371,6 @@
             </section>
         }
 
-        @* ── H · Import another project: the full upload block only without a current project, or after "Import another project" ── *@
-        @if (Activation.Current is null || _showUpload)
-        {
-        <section class="pi-card pi-choose" id="pi-choose" aria-labelledby="pi-choose-heading" data-testid="pi-choose">
-            <h2 id="pi-choose-heading" tabindex="-1">@UploadHeading</h2>
-            <p>Upload one ZIP containing project source, project documents, or both. BirkNext shows what it found before anything is imported.</p>
-            @if (Activation.Current is { } keep)
-            {
-                <p class="pi-muted" data-testid="pi-choose-keeps">@keep.ProjectName stays the current import until the new import succeeds. Imported packages remain available in history.</p>
-            }
-            @if (Activation.CurrentApplication is { } targetApplication)
-            {
-                <p class="pi-muted" data-testid="pi-choose-target" data-target="@Session.Target">@(Session.Target == ImportTarget.NewApplication
-                    ? $"The package starts a new application. {targetApplication.Name} and its evidence stay as they are."
-                    : $"The package is added as evidence for {targetApplication.Name}. Nothing already imported is replaced; a supporting package never replaces the application's primary documents.")</p>
-            }
-            <div class="pi-methods">
-                <div class="pi-method" data-testid="pi-method-zip">
-                    <h3>Manual ZIP import</h3>
-                    <p class="pi-muted">Import an exported source repository ZIP from your computer. No Git connection required.</p>
-                <ul class="pi-outcomes" data-testid="pi-outcomes">
-                    <li>Project documents</li>
-                    <li>Source code</li>
-                    <li>Contracts and schemas</li>
-                    <li>Infrastructure configuration</li>
-                </ul>
-                <p class="pi-muted" data-testid="pi-candidates-note">If several documents could be the same document for one feature, you choose which one after import.</p>
-                <div class="pi-actions">
-                    <label class="pi-file-button">
-                        <InputFile @key="_inputGeneration" id="pi-choose-file" class="pi-file-input" accept=".zip" OnChange="ChooseAsync" aria-label="Choose project ZIP (maximum 50 MB)" data-testid="pi-choose-file" data-generation="@_inputGeneration" />
-                        <span aria-hidden="true">Choose project ZIP</span>
-                    </label>
-                    <span class="pi-muted">ZIP · maximum 50 MB · documents up to 1 MB each</span>
-                    @if (Activation.Current is not null) { <button type="button" class="btn-secondary" data-testid="pi-choose-cancel" @onclick="CloseUpload">Cancel</button> }
-                </div>
-                </div>
-                <div class="pi-method" data-testid="pi-method-git">
-                    @if (GitSources is not null) { <BirkNext.Web.Components.GitImportWizard OnImport="StartGitQueueAsync" /> }
-                    else { <h3>Azure DevOps Git import</h3><p class="pi-muted">Not available in this BirkNext instance.</p> }
-                </div>
-            </div>
-            <p class="pi-muted" data-testid="pi-source-only-note"><a href="demo-projects">Demo Projects</a> remain available as optional examples. To analyze a source archive on its own, upload it in <a href="source-analysis">Source Analysis</a>: it creates the same source analysis, but no project documents, and it does not become the current project. It is still listed below with the imported sources.</p>
-        </section>
-        }
         @if (_failure is { } failure) { <ProjectImportFailure Failure="failure" /> }
     }
     else if (_phase is Phase.Validating or Phase.Classifying or Phase.Importing)
@@ -785,6 +800,29 @@
         _focusId = "pi-choose-file";
     }
 
+    /// <summary>Header "Import ZIP": the same upload flow from anywhere on the page, including the result of an import. Keeps the chosen intent
+    /// (Add evidence is the default for an existing application; nothing is replaced). Never starts an import by itself.</summary>
+    private void ImportZipFromHeader()
+    {
+        if (Session.IsBusy) return;
+        if (_phase == Phase.Result) BackToImportProject();
+        _uploadOrigin = "pi-header-import";
+        ShowUpload(Session.Target);
+    }
+
+    private void ImportMoreEvidence() { _uploadOrigin = "pi-current-import-another"; ShowUpload(ImportTarget.CurrentApplication); }
+
+    private void ImportAnotherApplication() { _uploadOrigin = "pi-current-import-application"; ShowUpload(ImportTarget.NewApplication); }
+
+    /// <summary>The import intent chosen in the upload form (only before a file is chosen; an import in progress keeps its target).</summary>
+    private void SetTarget(ImportTarget target)
+    {
+        if (!Session.IsBusy) Session.Target = target;
+    }
+
+    /// <summary>Where focus returns when the upload is cancelled: the control that opened it.</summary>
+    private string _uploadOrigin = "pi-current-import-another";
+
     private string UploadHeading => Activation.CurrentApplication is not { } application ? "Choose a project archive"
         : Session.Target == ImportTarget.NewApplication ? "Import another application" : $"Import more evidence for {application.Name}";
 
@@ -827,7 +865,8 @@
         Reset();
         _failure = null;
         _showUpload = false;
-        _focusId = "pi-current-import-another";
+        _focusId = Activation.Current is null ? "pi-header-import" : _uploadOrigin;
+        _uploadOrigin = "pi-current-import-another";
         // Leave import mode in the address too, so a reload does not reopen it.
         if (ServiceProvider.GetService<NavigationManager>() is { } navigation && ImportRequested(navigation.Uri))
         {

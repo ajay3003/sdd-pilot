@@ -201,3 +201,10 @@ p.pi-tone-neutral { border-left: 0; }
 .pi-method { min-width: 0; padding: .875rem 1rem; border: 1px solid var(--clr-border); border-radius: .5rem; background: var(--clr-surface); overflow-wrap: anywhere; }
 .pi-method h3 { margin: 0 0 .25rem; font-size: 1.0625rem; }
 .pi-next-repo { margin: .5rem 0; padding: .5rem .75rem; border-left: .25rem solid var(--clr-primary, var(--clr-success)); }
+
+/* Import intent (shown only when an application already exists): two native radios, label text always visible. */
+.pi-intent { margin: .75rem 0; padding: .6rem .8rem; border: 1px solid var(--clr-border); border-radius: .5rem; display: grid; gap: .4rem; }
+.pi-intent legend { font-weight: 600; font-size: .95rem; padding: 0 .25rem; }
+.pi-intent-option { display: flex; gap: .5rem; align-items: flex-start; cursor: pointer; line-height: 1.4; }
+.pi-intent-option input { margin-top: .25rem; flex: none; }
+.pi-intent-option .pi-muted { display: block; }

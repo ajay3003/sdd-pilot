@@ -182,4 +182,64 @@ public sealed class ProjectImportAnotherTests : BunitContext
         cut.Find("[data-testid=pi-current-archive]").TextContent.Should().Be("orders-a.zip");
         _activation.Imports.Should().ContainSingle();
     }
+
+    // ── Import ZIP is always the primary action at the top (2026-11-13) ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Import_ZIP_is_the_header_action_before_the_first_import_and_opens_nothing_new()
+    {
+        var cut = Render<ProjectImportPage>();
+        var header = cut.Find("[data-testid=pi-header-import]");
+        header.TextContent.Trim().Should().Be("Import ZIP");
+        header.ClassList.Should().Contain("btn-primary");
+        header.GetAttribute("aria-controls").Should().Be("pi-choose");
+        header.GetAttribute("aria-expanded").Should().Be("true", "without a current import the upload form is already shown");
+        cut.FindAll("[data-testid=pi-intent]").Should().BeEmpty("no application exists yet: the first import needs no intent choice");
+        header.Click();
+        cut.WaitForAssertion(() => JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Last().Arguments.Single().Should().Be("pi-choose-file"));
+        _api.Verify(a => a.PreviewAsync(It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<CancellationToken>()), Times.Never, "the header action never starts an import");
+    }
+
+    [Fact]
+    public void After_an_import_Import_ZIP_stays_in_the_header_and_opens_the_upload_above_the_current_import()
+    {
+        var cut = ImportFirst();
+        cut.Find("[data-testid=pi-header-import]").TextContent.Trim().Should().Be("Import ZIP", "also on the result of an import");
+        cut.Dispose();
+        var page = Render<ProjectImportPage>();
+        page.FindAll("[data-testid=pi-choose]").Should().BeEmpty("with a current import the form is collapsed until asked for");
+        var header = page.Find("[data-testid=pi-header-import]");
+        header.GetAttribute("aria-expanded").Should().Be("false");
+        header.Click();
+        page.Find("[data-testid=pi-header-import]").GetAttribute("aria-expanded").Should().Be("true");
+        var markup = page.Markup;
+        markup.IndexOf("data-testid=\"pi-choose\"", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("data-testid=\"pi-current\"", StringComparison.Ordinal),
+            "the opened form sits right under the header, not after the current-import details");
+        page.WaitForAssertion(() => JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Last().Arguments.Single().Should().Be("pi-choose-file"));
+        _activation.Current!.ArchiveFileName.Should().Be("orders-a.zip", "opening the form changes nothing");
+    }
+
+    [Fact]
+    public void With_an_application_the_import_intent_is_explicit_and_cancel_returns_to_Import_ZIP()
+    {
+        ImportFirst().Dispose();
+        _activation.CurrentApplication.Should().NotBeNull("the first import created the application");
+        var page = Render<ProjectImportPage>();
+        page.Find("[data-testid=pi-header-import]").Click();
+        var intent = page.Find("[data-testid=pi-intent]");
+        intent.QuerySelector("legend")!.TextContent.Should().Be("What is this ZIP?");
+        page.Find("[data-testid=pi-intent-current]").HasAttribute("checked").Should().BeTrue("adding evidence to the current application is the safe default: nothing is replaced");
+        page.Find("[data-testid=pi-intent-current]").ParentElement!.TextContent.Should().Contain("Add evidence to current application").And.Contain(_activation.CurrentApplication!.Name);
+        page.Find("[data-testid=pi-choose-target]").GetAttribute("data-target").Should().Be("CurrentApplication");
+
+        page.Find("[data-testid=pi-intent-new]").Change(true);
+        page.Find("[data-testid=pi-choose-target]").GetAttribute("data-target").Should().Be("NewApplication");
+        page.Find("#pi-choose-heading").TextContent.Should().Be("Import another application");
+
+        page.Find("[data-testid=pi-choose-cancel]").Click();
+        page.FindAll("[data-testid=pi-choose]").Should().BeEmpty();
+        page.WaitForAssertion(() => JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Last().Arguments.Single().Should().Be("pi-header-import"));
+        _activation.Current!.ArchiveFileName.Should().Be("orders-a.zip", "cancel changes no application, import or history");
+        _activation.Imports.Should().ContainSingle();
+    }
 }
