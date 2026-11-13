@@ -1530,6 +1530,24 @@ public class ViewBehaviorTests : BunitContext
         traceLink.GetAttribute("href").Should().Be("/traceability");
     }
 
+    [Fact] // Focus view: a full-width, naturally scrolling card (no 280px side panel); Back to structure closes it, the tree stays as it was
+    public void SpecExplorer_OpensTheSelectedItemAsAFocusView_AndBackToStructureKeepsTheTree()
+    {
+        var cut = RenderSpecExplorerWithTraceability();
+        var rowsBefore = cut.FindAll(".se-row").Count;
+        cut.FindAll(".se-row").First(r => r.TextContent.Contains("expose search APIs")).Click();
+        var focus = cut.Find("[data-testid='se-focus']");
+        focus.TagName.Should().Be("SECTION");
+        focus.GetAttribute("aria-labelledby").Should().Be("se-details-title");
+        cut.Find("#se-details-title").GetAttribute("tabindex").Should().Be("-1", "focus moves to the item heading when it opens");
+        cut.Find("[data-testid='se-back-to-structure']").TextContent.Should().Be("Back to structure");
+
+        cut.Find("[data-testid='se-back-to-structure']").Click();
+        cut.FindAll("[data-testid='se-focus']").Should().BeEmpty();
+        cut.Find(".se-main").GetAttribute("class").Should().NotContain("has-details");
+        cut.FindAll(".se-row").Should().HaveCount(rowsBefore, "expanded nodes and the tree position are kept");
+    }
+
     [Fact]
     public void SpecExplorer_ShowsRequirementDetails()
     {

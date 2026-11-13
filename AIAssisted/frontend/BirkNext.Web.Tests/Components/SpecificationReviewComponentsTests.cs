@@ -252,4 +252,18 @@ public sealed class SpecificationReviewComponentsTests : BunitContext
         ClassificationSignal = ClassificationSignal.Default,
         SourceBlockType = BlockType.UnorderedListItem,
     };
+
+    [Fact] // BDD spacing: no whitespace node between steps (it rendered as a blank gap above Then under pre-wrap); step text is unchanged
+    public void Given_When_Then_steps_follow_each_other_without_blank_text_and_keep_their_own_line_breaks()
+    {
+        var then = "the report is stored" + Environment.NewLine.Replace("\r", "") + "and the reporter is notified";
+        var cut = Render<BirkNext.Web.Components.TraceabilityItemText>(p => p
+            .Add(x => x.ItemType, "Test scenario").Add(x => x.Text, "x")
+            .Add(x => x.Given, "a valid report").Add(x => x.When, "it arrives").Add(x => x.Then, then));
+        var rest = cut.Find(".traceability-item__scenario-rest");
+        rest.ChildNodes.Where(n => n.NodeType == AngleSharp.Dom.NodeType.Text).Should().OnlyContain(n => n.TextContent.Length == 0,
+            "a whitespace text node between When and Then is rendered as blank lines by the pre-wrap container");
+        cut.FindAll(".traceability-item__scenario-body").Select(b => b.TextContent).Should().Equal(["a valid report", "it arrives", then],
+            "the scenario text is rendered exactly as written (no trimming or rewriting)");
+    }
 }

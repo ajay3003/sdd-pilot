@@ -8,7 +8,12 @@
 /* Collapsed text shows a fixed preview (the rest is hidden in markup), so Show more always reveals more. */
 .traceability-item__text.is-collapsed::after { content: "…"; }
 .traceability-item__rest[hidden], .traceability-item__scenario-rest[hidden] { display: none; }
-.traceability-item__scenario-part { min-width: 0; }
+/* Given/When/Then: steps follow each other with no blank line. Only a step's own text keeps its line breaks (pre-wrap); whitespace between the
+   step elements is ignored, so formatting of the markup can never open a gap between steps. */
+.traceability-item__scenario-rest, .traceability-item__scenario-part { white-space: normal; }
+.traceability-item__scenario-part { min-width: 0; margin: 0; }
+.traceability-item__scenario-part + .traceability-item__scenario-part, .traceability-item__scenario-part + .traceability-item__scenario-rest { margin-top: .15rem; }
+.traceability-item__scenario-body { white-space: pre-wrap; }
 .traceability-item__keyword { font-weight: 700; }
 /* Scenario keywords: Given blue, When indigo, Then teal. Never red, and Then is not the Passed/success colour. */
 .traceability-item__given { color: var(--traceability-given, #1d4ed8); }

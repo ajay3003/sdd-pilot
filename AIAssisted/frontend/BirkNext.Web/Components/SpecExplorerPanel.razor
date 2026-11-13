@@ -223,13 +223,15 @@
                     var selectedHealth = selected.HeadingLevel > 0 ? GetSectionSummary(selected) : null;
                     var selectedRequirement = selected.HeadingLevel == 0 ? GetRequirementDetail(selected) : null;
 
-                    <div class="se-details">
+                    @* Focus view: a full-width, naturally scrolling card (no 280px side panel with its own scrollbar). Opening it moves focus to its
+                       heading; Back to structure returns focus to the same tree row — expansion, search and selection are kept. *@
+                    <section class="se-details" data-testid="se-focus" aria-labelledby="se-details-title">
                         <div class="se-details-header">
                             <span class="se-details-type">@NodeTypeLabel(selected.NodeType)</span>
-                            <button class="se-details-close" @onclick='() => _selectedNodeId = null' aria-label="Close details panel">Close</button>
+                            <button type="button" class="se-details-close" data-testid="se-back-to-structure" @onclick="BackToStructure">Back to structure</button>
                         </div>
 
-                        <h3 class="se-details-title">@selected.Title</h3>
+                        <h3 id="se-details-title" class="se-details-title" tabindex="-1" @ref="_detailsTitleRef">@selected.Title</h3>
 
                         @if (selected.SpecItemId is not null)
                         {
@@ -507,7 +509,7 @@
                                 <a href="/documentation-drift" class="se-action-link">Documentation Drift</a>
                             </div>
                         </details>
-                    </div>
+                    </section>
                 }
             }
         </div>
@@ -649,6 +651,33 @@
     private void HandleNodeClick(SpecNode node)
     {
         _selectedNodeId = _selectedNodeId == node.Id ? null : node.Id;
+        _focusDetails = _selectedNodeId is not null;
+    }
+
+    private ElementReference _detailsTitleRef;
+    private bool _focusDetails;
+    private string? _focusRowId;
+
+    /// <summary>Leaves the focus view: the item stays the remembered position and focus returns to its tree row (expansion and search are kept).</summary>
+    private void BackToStructure()
+    {
+        _focusRowId = _selectedNodeId;
+        _selectedNodeId = null;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+        if (_focusDetails && _selectedNodeId is not null)
+        {
+            _focusDetails = false;
+            try { await _detailsTitleRef.FocusAsync(); } catch (Exception ex) when (ex is InvalidOperationException or Microsoft.JSInterop.JSException) { }
+        }
+        else if (_focusRowId is { } rowId && _treeItemRefs.TryGetValue(rowId, out var row))
+        {
+            _focusRowId = null;
+            try { await row.FocusAsync(); } catch (Exception ex) when (ex is InvalidOperationException or Microsoft.JSInterop.JSException) { }
+        }
     }
 
     private async Task HandleTreeKeyDown(KeyboardEventArgs e, SpecNode currentNode)

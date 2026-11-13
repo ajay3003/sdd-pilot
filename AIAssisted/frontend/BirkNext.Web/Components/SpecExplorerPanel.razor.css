@@ -313,8 +313,9 @@
     min-height: 300px;
 }
 
+/* The selected item opens as a full-width focus view below the structure (was a 280px side panel with its own scrollbar). */
 .se-main.has-details {
-    grid-template-columns: 1fr 280px;
+    grid-template-columns: 1fr;
 }
 
 /* ── Tree view ───────────────────────────────────────────────────────────── */
@@ -574,9 +575,7 @@
     border: 1px solid var(--clr-border);
     border-radius: 0.5rem;
     background: var(--clr-bg-card);
-    padding: 0.875rem;
-    overflow: auto;
-    max-height: 600px;
+    padding: 1rem 1.25rem;
     display: flex;
     flex-direction: column;
     gap: 0;
@@ -1161,3 +1160,10 @@
 
 /* Readable on every row background (WCAG AA): the hide control keeps its own light surface. */
 .se-hide-btn { color: #334155; background: #ffffff; }
+
+
+/* Focus view: comfortable reading width for the item text; the heading receives focus when an item opens. */
+.se-details .se-details-content, .se-details .se-details-excerpt, .se-details .traceability-item { max-width: 75rem; }
+.se-details-title:focus { outline: none; }
+.se-details-title:focus-visible { outline: 2px solid var(--clr-info, #1d4ed8); outline-offset: 2px; }
+.se-details-close { font-weight: 600; }
