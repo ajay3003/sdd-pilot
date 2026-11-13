@@ -120,7 +120,18 @@
             else { <p class="gdh-note" data-testid="gdh-autodoc-no-reasons">No review reason in this module's diagnostics.</p> }
             @if (ExplorerHref is not null && fm.GeneratedOutputPresent)
             {
-                <p><a class="btn-secondary btn-small" data-testid="gdh-autodoc-explorer" href="@($"{ExplorerHref}&module={Uri.EscapeDataString(fm.Name)}")">Browse this module's generated documents (@fm.ArtifactCount)</a></p>
+                @if (fm.ArtifactPaths.Count > 0)
+                {
+                    @* Each generated document opens directly in the Explorer (Read view) — the link names the document it opens. *@
+                    <h5 class="gdh-h5">Generated documents (@fm.ArtifactPaths.Count)</h5>
+                    <ul class="gdh-plain gdh-doc-links" data-testid="gdh-autodoc-documents">
+                        @foreach (var path in fm.ArtifactPaths)
+                        {
+                            <li><a data-testid="gdh-autodoc-document" href="@($"{ExplorerHref}&module={Uri.EscapeDataString(fm.Name)}&document={Uri.EscapeDataString(path)}")"><code class="gdh-wrap">@path</code></a></li>
+                        }
+                    </ul>
+                }
+                <p><a class="btn-link" data-testid="gdh-autodoc-explorer" href="@($"{ExplorerHref}&module={Uri.EscapeDataString(fm.Name)}")">Browse this module's generated documents (@fm.ArtifactCount)</a></p>
             }
                                 <dl class="gdh-facts">
                                     <div><dt>Generated docs</dt><dd>@AutodocPresentation.Usage(fm.Usage) — @fm.UsageReason</dd></div>

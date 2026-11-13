@@ -59,3 +59,11 @@
 .gde-outline-list { list-style: none; padding: 0; margin: .5rem 0 1rem; display: grid; gap: .15rem; }
 .gde-outline-l2 { padding-left: 1rem; } .gde-outline-l3 { padding-left: 2rem; } .gde-outline-l4 { padding-left: 3rem; }
 .gde-structured > summary { cursor: pointer; font-weight: 600; margin: .5rem 0; }
+
+/* Source: the original text with line numbers (CSS counters; the numbers are not part of the text or the copy). */
+.gde-source-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
+.gde-source-bar p { margin: 0; }
+.gde-lines { list-style: none; margin: 0; padding: 0; counter-reset: gde-line; font-family: var(--font-mono, ui-monospace, monospace); font-size: .85rem; }
+.gde-lines li { counter-increment: gde-line; display: grid; grid-template-columns: 3.5rem 1fr; }
+.gde-lines li::before { content: counter(gde-line); color: var(--clr-text-muted); text-align: right; padding-right: .75rem; user-select: none; }
+.gde-lines code { white-space: pre-wrap; overflow-wrap: anywhere; background: none; padding: 0; }

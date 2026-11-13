@@ -258,6 +258,10 @@ public static partial class GeneratedDocumentationExplorer
         _ => null,
     };
 
+    /// <summary>The source's lines for the numbered view (the text itself is never altered).</summary>
+    public static IReadOnlyList<string> SourceLines(string? content) =>
+        string.IsNullOrEmpty(content) ? [] : content.Replace("\r\n", "\n").Split('\n');
+
     public static string ViewSlug(string tab) => tab == "Structure" ? "outline" : tab.ToLowerInvariant();
 
     /// <summary>

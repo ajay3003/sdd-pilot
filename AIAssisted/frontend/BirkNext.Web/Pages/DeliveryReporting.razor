@@ -574,7 +574,7 @@
                 @if (shownSnapshots.Count == 0) { <p class="dlr-muted" data-testid="dlr-snapshots-none">No snapshot matches the search.</p> }
                 <div class="dlr-table-wrap">
                     <table class="dlr-table" data-testid="dlr-snapshot-table">
-                        <thead><tr><th scope="col">Snapshot</th><th scope="col">Effective date</th><th scope="col">Imported</th><th scope="col">Source</th><th scope="col">Features</th><th scope="col">Tasks</th><th scope="col">Role</th><th scope="col">Coverage</th><th scope="col">Actions</th></tr></thead>
+                        <thead><tr><th scope="col">Snapshot</th><th scope="col">Effective date</th><th scope="col">Imported</th><th scope="col">Source</th><th scope="col">Features</th><th scope="col" title="Checked tasks in tasks.md — checklist progress, not verified delivery">Tasks (checklist)</th><th scope="col">Role</th><th scope="col">Coverage</th><th scope="col">Actions</th></tr></thead>
                         <tbody>
                             @foreach (var s in shownSnapshots)
                             {
@@ -605,7 +605,7 @@
                                     <td>@P.DayTime(s.ImportedAt)</td>
                                     <td data-testid="dlr-snapshot-source">@DeliveryReportingText.Source(s.SourceType)<br /><span class="dlr-muted">@(s.AzureDevOps is { } ado ? $"{ado.Project} / {ado.Repository} / {ado.Branch} · {ado.ShortCommit}" : s.SourceFileName)</span></td>
                                     <td>@s.FeatureCount</td>
-                                    <td>@(s.TaskCount == 0 ? "No tasks" : $"{s.CompletedTaskCount}/{s.TaskCount}")</td>
+                                    <td data-testid="dlr-snapshot-tasks">@(s.TaskCount == 0 ? "No tasks" : $"{s.CompletedTaskCount}/{s.TaskCount} checked")</td>
                                     <td>
                                         <label class="visually-hidden" for="dlr-role-@s.Id">Role of @s.Label</label>
                                         <select id="dlr-role-@s.Id" data-testid="dlr-snapshot-role" value="@s.Role" @onchange="e => ChangeRole(s, e.Value?.ToString())">

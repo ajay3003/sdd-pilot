@@ -202,6 +202,7 @@ public sealed class GeneratedDocumentationDiagnosticService(IqrSourceStore store
             {
                 Name = name, Identity = identity, ProjectPath = path, ModuleType = type, TypeBasis = typeBasis, ApiCapable = api, Usage = usage, UsageReason = reason,
                 GeneratedOutputPresent = true, ArtifactCount = documents.Count, ArtifactKinds = [.. documents.Select(d => d.DocumentKind).Distinct().Order()],
+                ArtifactPaths = [.. documents.Select(d => d.SafeRelativePath).Distinct().Order(StringComparer.Ordinal)], MissingExpectedDocumentNames = [.. module.MissingExpectedDocs],
                 GeneratedModuleId = module.ModuleId, OutputPath = module.GeneratedDirectory,
                 Generator = generators.Count == 0 ? "Unknown generator" : string.Join(", ", generators.Select(g => g.GeneratorName ?? "Unknown generator").Distinct()),
                 WorkflowSources = [.. generators.Select(g => g.Path).Distinct()], Freshness = module.Freshness, Health = result.Status, ParseErrors = invalid,

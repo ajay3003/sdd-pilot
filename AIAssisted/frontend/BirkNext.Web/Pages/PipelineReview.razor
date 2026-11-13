@@ -1025,7 +1025,7 @@
         <section class="sd-panel" aria-labelledby="pr-changes-h" data-testid="pr-changes">
             <h2 id="pr-changes-h">Pipeline changes</h2>
             <p class="sd-muted" data-testid="pr-changes-purpose">Pipeline changes compares two immutable Source Analysis snapshots. It detects source-definition changes in pipelines, triggers, tests/checks, gating, deployments, artifacts and templates. It does not compare runtime execution outcomes, deployment success/failure or Azure DevOps approval history.</p>
-            @if (_sources.Snapshots.Count < 2) { <p class="sd-empty" data-testid="pr-compare-empty">Select another Source Analysis snapshot to compare pipeline definitions. Only one Source Analysis snapshot exists for this Target Environment; analyze a newer or older archive in Source Analysis first.</p> }
+            @if (_sources.Snapshots.Count < 2) { <p class="sd-empty" data-testid="pr-compare-empty">Select another Source Analysis snapshot to compare pipeline definitions. Only one Source Analysis snapshot exists for this Target Environment; analyze a newer or older archive in Source Analysis first. <a class="prv-link" href="source-management" data-testid="pr-compare-import">Import or select another source snapshot</a></p> }
             else
             {
                 <div class="sd-filterbar">

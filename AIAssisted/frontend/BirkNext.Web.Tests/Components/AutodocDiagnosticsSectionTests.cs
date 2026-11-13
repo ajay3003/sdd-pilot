@@ -236,7 +236,29 @@ public sealed class AutodocDiagnosticsSectionTests : BunitContext
         };
         var cut = Render<AutodocDiagnosticsSection>(p => p.Add(x => x.Diagnostics, diagnostics));
         cut.Find("[data-testid=gdh-overview-state]").TextContent.Should().Be("Partial");
-        cut.Find("[data-testid=gdh-overview-state-reason]").TextContent.Should().Be("1 module has partial generated output (declared outputs incomplete): Persons.");
+        cut.Find("[data-testid=gdh-overview-state-reason]").TextContent.Should().Be("1 module has partial generated documentation (required output missing or generator not traced — see each module): Persons.");
+        cut.FindAll("[data-testid=gdh-review-item]").Should().NotContain(i => i.GetAttribute("data-module") == "Persons", "Partial alone is not a review item");
         Section().Find("[data-testid=gdh-overview-state-reason]").TextContent.Should().Contain("has its declared outputs").And.Contain("says nothing about freshness");
+    }
+
+    [Fact]
+    public void The_module_focus_names_the_missing_documents_and_links_each_generated_document()
+    {
+        var diagnostics = Diagnostics() with
+        {
+            Modules = [.. Diagnostics().Modules.Select(m => m.Name == "Skole"
+                ? m with { MissingExpectedDocs = 1, MissingExpectedDocumentNames = ["Data flow"], ArtifactPaths = ["Skole/autodoc/README.md", "Skole/autodoc/architecture.md"] }
+                : m.Name == "Persons" ? m with { Usage = AutodocUsage.Partial, UsageReason = "Generated output present; the generator/workflow for this module could not be traced." } : m)],
+        };
+        var cut = Render<AutodocDiagnosticsSection>(p => p.Add(x => x.Diagnostics, diagnostics).Add(x => x.ExplorerHref, "generated-documentation-explorer?import=imp-1"));
+
+        cut.FindAll("[data-testid=gdh-autodoc-row]").Single(r => r.GetAttribute("data-module") == "Skole").QuerySelector("[data-testid=gdh-autodoc-toggle]")!.Click();
+        cut.Find("[data-testid=gdh-autodoc-reasons]").TextContent.Should().Contain("1 required generated document is missing: Data flow.");
+        cut.FindAll("[data-testid=gdh-autodoc-document]").Select(a => a.GetAttribute("href")).Should().Equal(
+            "generated-documentation-explorer?import=imp-1&module=Skole&document=Skole%2Fautodoc%2FREADME.md",
+            "generated-documentation-explorer?import=imp-1&module=Skole&document=Skole%2Fautodoc%2Farchitecture.md");
+
+        AutodocPresentation.ReviewReasons(diagnostics.Modules.Single(m => m.Name == "Persons")).Should()
+            .Equal(["Generated output present; the generator/workflow for this module could not be traced."], "the module's own reason, not a generic 'outputs incomplete'");
     }
 }

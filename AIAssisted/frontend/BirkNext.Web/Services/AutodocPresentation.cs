@@ -70,13 +70,13 @@ public static class AutodocPresentation
 
     /// <summary>
     /// Why the overall state is what it is, from the same rule as <see cref="State"/>: Partial names the modules whose generated output is partial
-    /// (declared outputs incomplete) — having generated documentation in every module does not make it complete.
+    /// (a required output is missing, or the generator could not be traced) — having generated documentation in every module does not make it complete.
     /// </summary>
     public static string StateReason(AutodocDiagnostics diagnostics)
     {
         var partial = diagnostics.Modules.Where(m => m.Usage == AutodocUsage.Partial).Select(m => m.Name).ToList();
         return diagnostics.ModulesUsingAutodoc == 0 ? "No module-specific generated documentation was detected (neutral)."
-            : partial.Count > 0 ? $"{partial.Count} module{(partial.Count == 1 ? " has" : "s have")} partial generated output (declared outputs incomplete): {string.Join(", ", partial)}."
+            : partial.Count > 0 ? $"{partial.Count} module{(partial.Count == 1 ? " has" : "s have")} partial generated documentation (required output missing or generator not traced — see each module): {string.Join(", ", partial)}."
             : $"Every module with generated documentation ({diagnostics.ModulesUsingAutodoc}) has its declared outputs. Availability says nothing about freshness or correctness.";
     }
 
@@ -89,9 +89,10 @@ public static class AutodocPresentation
         var reasons = new List<string>();
         if (m.Usage == AutodocUsage.Error) reasons.Add($"Generated output is in error: {m.UsageReason}");
         if (m.ParseErrors > 0) reasons.Add($"{m.ParseErrors} generated document{(m.ParseErrors == 1 ? " does" : "s do")} not parse.");
-        if (m.MissingExpectedDocs > 0) reasons.Add($"{m.MissingExpectedDocs} required generated document{(m.MissingExpectedDocs == 1 ? " is" : "s are")} missing.");
+        if (m.MissingExpectedDocs > 0) reasons.Add($"{m.MissingExpectedDocs} required generated document{(m.MissingExpectedDocs == 1 ? " is" : "s are")} missing{(m.MissingExpectedDocumentNames.Count > 0 ? $": {string.Join(", ", m.MissingExpectedDocumentNames)}" : "")}.");
         if (m.Freshness == GeneratedDocumentationFreshnessStatus.Stale) reasons.Add("Potentially stale: relevant source evidence of the same scope is newer than the generated documentation.");
-        if (m.Usage == AutodocUsage.Partial) reasons.Add("Generated output is present, but the declared outputs are incomplete.");
+        // Partial has more than one cause (a required output missing, or no traceable generator): the module's own reason says which.
+        if (m.Usage == AutodocUsage.Partial && m.MissingExpectedDocs == 0) reasons.Add(m.UsageReason);
         if (m.DiscrepancyCandidates > 0) reasons.Add($"{m.DiscrepancyCandidates} source-consistency candidate{(m.DiscrepancyCandidates == 1 ? "" : "s")} — review suggested, not a confirmed defect.");
         if (reasons.Count == 0 && IsReviewItem(m)) reasons.Add($"Health suggests review: {m.UsageReason}");
         return reasons;

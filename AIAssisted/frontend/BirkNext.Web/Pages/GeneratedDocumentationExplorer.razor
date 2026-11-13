@@ -122,7 +122,14 @@
     private string _importId = "", _module = "", _selectedPath = "", _tab = "Read", _search = "", _outlineFilter = "";
     private IReadOnlyList<GeneratedReadSegment> _segments = [];
     private IReadOnlyList<GeneratedOutlineItem> _outline = [];
-    private string? _pendingAnchor;
+    private string? _pendingAnchor, _copyStatus;
+
+    /// <summary>Copies the imported source exactly (read-only: nothing is changed).</summary>
+    private async Task CopySourceAsync(string? content)
+    {
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", content ?? ""); _copyStatus = "Copied."; }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or TaskCanceledException) { _copyStatus = "Copy is not available in this browser."; }
+    }
     private GeneratedDocumentView? _view;
     private BirkNext.SourceDomains.SourceContract? _contract;
     private bool _contractLoading, _focusDocument;
@@ -373,8 +380,17 @@
     private RenderFragment Source(GeneratedDocumentView v) => __builder =>
     {
         <div data-testid="gde-source">
-            <p class="gde-muted" data-testid="gde-source-language">Raw @Gde.SourceLanguage(v.Document.Path) · @v.LineCount lines · @v.ByteSize bytes</p>
-            <pre class="gde-code gde-raw" data-testid="gde-raw">@v.Content</pre>
+            <div class="gde-source-bar">
+                <p class="gde-muted" data-testid="gde-source-language">Raw @Gde.SourceLanguage(v.Document.Path) · @v.LineCount lines · @v.ByteSize bytes</p>
+                <button type="button" class="btn-secondary btn-small" data-testid="gde-source-copy" @onclick="() => CopySourceAsync(v.Content)">Copy source</button>
+                @if (_copyStatus is not null) { <span class="gde-muted" role="status" data-testid="gde-source-copied">@_copyStatus</span> }
+            </div>
+            @* The original text, unchanged, with line numbers beside it (the numbers are not part of the copied source). *@
+            <div class="gde-code gde-raw" data-testid="gde-raw">
+                <ol class="gde-lines" data-testid="gde-source-lines" aria-label="@($"{v.Document.RoleLabel} source with line numbers")">
+                    @foreach (var line in Gde.SourceLines(v.Content)) { <li><code>@line</code></li> }
+                </ol>
+            </div>
             <p class="gde-muted">Read-only. Generated documentation is never edited here.</p>
         </div>
     };

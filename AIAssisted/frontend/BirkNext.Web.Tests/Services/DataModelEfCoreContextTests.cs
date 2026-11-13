@@ -114,4 +114,33 @@ public sealed class DataModelEfCoreContextTests
         var doc = new DataModelAnalysisService().Parse($"{heading}\n\n### order_header (OrderHeader)\n\n| Column | Type | Nullable | Constraints |\n|---|---|---|---|\n| order_id | uniqueidentifier | No | PK |\n");
         doc.Entities.Should().BeEmpty("only an explicitly named EF Core context declares tables");
     }
+
+    [Fact]
+    public void Inline_IX_and_composite_UQ_declarations_become_indexes_and_unique_keys_once()
+    {
+        const string md = """
+            ## Context: ReportsDbContext (schema reports)
+
+            ### report (Report)
+
+            | Column | Type | Nullable | Constraints |
+            |---|---|---|---|
+            | report_id | uniqueidentifier | No | PK |
+            | child_id | uniqueidentifier | No | UQ (child_id, period) |
+            | period | char(7) | No | in UQ; IX (period, status) |
+            | status | tinyint | No | in IX (period, status) |
+            | chain_id | uniqueidentifier | No | IX |
+            | reporter | varchar(11) | No | in UQ (EXC-03) |
+            """;
+        var doc = new DataModelAnalysisService().Parse(md);
+
+        doc.Indexes.Select(i => (i.EntityName, string.Join(",", i.Columns), i.Name)).Should().BeEquivalentTo(new[]
+        {
+            ("report", "period,status", "IX (period, status)"),
+            ("report", "chain_id", "IX (chain_id)"),
+        });
+        doc.Constraints.Should().ContainSingle(c => c.ConstraintType == "UNIQUE").Which.Name.Should().Be("UQ (child_id, period)");
+        doc.Constraints.Should().NotContain(c => c.Name.Contains("EXC-03"), "a note in parentheses is not a key");
+        doc.Entities.Single().Columns.Single(c => c.Name == "child_id").IsUnique.Should().BeFalse("a composite key does not make one column unique");
+    }
 }

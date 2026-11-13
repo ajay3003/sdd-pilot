@@ -425,6 +425,10 @@ public sealed record AutodocModuleInventory
     public int ArtifactCount { get; init; }
     /// <summary>The existing generated-document classification of this module's artifacts (types present), never a second classifier.</summary>
     public List<GeneratedDocumentKind> ArtifactKinds { get; init; } = [];
+    /// <summary>Snapshot-relative paths of the module's generated documents (for opening each one in the Explorer). Empty for older results.</summary>
+    public List<string> ArtifactPaths { get; init; } = [];
+    /// <summary>The required generated documents that are absent (names as established by the requirement/profile). Empty for older results.</summary>
+    public List<string> MissingExpectedDocumentNames { get; init; } = [];
     public string? GeneratedModuleId { get; init; }
     public string? OutputPath { get; init; }
     /// <summary>The generator name only when a workflow names it; "Unknown generator" when output exists without one; null when not configured.</summary>

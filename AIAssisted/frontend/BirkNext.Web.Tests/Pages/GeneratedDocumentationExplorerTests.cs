@@ -159,7 +159,9 @@ public sealed class GeneratedDocumentationExplorerTests : BunitContext
         cut.FindAll("[data-testid=gde-tab]").Single(t => t.GetAttribute("data-tab") == "Structure").Click();
         cut.FindAll("[data-testid=gde-entity]").Should().HaveCount(2);
         cut.FindAll("[data-testid=gde-tab]").Single(t => t.GetAttribute("data-tab") == "Source").Click();
-        cut.Find("[data-testid=gde-raw]").TextContent.Should().Be(DataModel);
+        // The original text, line by line and unchanged (line numbers are CSS counters, not part of the text).
+        string.Join("\n", cut.FindAll("[data-testid=gde-source-lines] li").Select(l => l.TextContent)).Should().Be(DataModel.Replace("\r\n", "\n"));
+        cut.Find("[data-testid=gde-source-copy]").TextContent.Should().Be("Copy source");
         cut.FindAll("[data-testid=gde-tab]").Single(t => t.GetAttribute("data-tab") == "Provenance").Click();
         cut.Find("[data-testid=gde-fingerprint]").TextContent.Should().Be("fp-Person-data-model.md");
         cut.Find("[data-testid=gde-search]").Input("BarnType");

@@ -500,6 +500,11 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                                     });
                             }
 
+                            // Indexes and composite unique keys declared inline in the Constraints column ("IX", "IX (period, status)",
+                            // "UQ (a, b)"); "in IX/UQ …" names a key declared on another row and is not repeated.
+                            if (token.TableCells!.Count > 3 && currentEntityName is not null)
+                                AddInlineKeys(token.TableCells![3], col.Name, currentEntityName, source, currentEntityIndexes, currentEntityConstraints);
+
                             // Extract traceability refs from Notes and Constraints columns using RefIdRe.
                             var lastCell = token.TableCells!.Count - 1;
                             for (var ci = Math.Max(0, token.TableCells!.Count - 2); ci <= lastCell; ci++)
@@ -962,6 +967,39 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
     }
 
     private static readonly Regex SingleIdentifierRe = new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.Compiled);
+
+    // "IX", "IX (period, status)", "UQ (a, b)" — one constraint-cell part; "in IX …"/"in UQ …" are references to a key declared on another row.
+    private static readonly Regex InlineKeyRe = new(@"^(?<kind>IX|UQ)\b\s*(?:\((?<cols>[^)]*)\))?", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Indexes and composite unique keys a field table declares in its Constraints cell. A bare "IX" indexes this column; "IX (a, b)" and
+    /// "UQ (a, b)" declare a key over the named columns (only when every name is an identifier — "UQ (EXC-03)" is a note, not a key). A bare "UQ"
+    /// is the column-unique flag (handled on the column). Each key is added once per structure.
+    /// </summary>
+    private static void AddInlineKeys(string cell, string column, string entity, SourceRangeProvenance source, List<DataIndex> indexes, List<DataConstraint> constraints)
+    {
+        foreach (var part in NormalizeStructuredName(cell).Split(';').Select(p => p.Trim()))
+        {
+            var m = InlineKeyRe.Match(part);
+            if (!m.Success) continue;
+            var kind = m.Groups["kind"].Value;
+            var columns = m.Groups["cols"].Success
+                ? m.Groups["cols"].Value.Split(',').Select(c => c.Trim()).Where(c => c.Length > 0).ToList()
+                : kind == "IX" ? [column] : [];
+            if (columns.Count == 0 || !columns.All(SingleIdentifierRe.IsMatch)) continue;
+            var label = $"{kind} ({string.Join(", ", columns)})";
+            if (kind == "IX")
+            {
+                if (indexes.Any(i => i.EntityName == entity && i.Columns.SequenceEqual(columns, StringComparer.OrdinalIgnoreCase))) continue;
+                indexes.Add(new DataIndex { Provenance = ProjectionProvenance.Create("Data Model", "Index", $"{entity}:{label}", source), Name = label, EntityName = entity, Columns = columns });
+            }
+            else if (columns.Count > 1 && !constraints.Any(c => c.EntityName == entity && c.Name == label))
+            {
+                constraints.Add(new DataConstraint { Provenance = ProjectionProvenance.Create("Data Model", "Constraint", $"{entity}:{label}", source), Name = label, EntityName = entity,
+                    ConstraintType = "UNIQUE", Definition = $"Unique key over {string.Join(", ", columns)}" });
+            }
+        }
+    }
 
     // "Context: SkolenaervaerDbContext (schema skolenaervaer)", "SkolenaervaerDbContext", "DbContext: AppDbContext (schema: app)" — an EF Core
     // context is named explicitly (the name ends in DbContext); a bare "Context" heading is not one.
