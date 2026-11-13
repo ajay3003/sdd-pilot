@@ -40,7 +40,10 @@ public sealed class DependencyHealthPageTests : BunitContext
         public Task<IReadOnlyList<DependencyReviewRunSummary>> HistoryAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<DependencyReviewRunSummary>>([]);
         public Task<DependencyReviewResult?> GetAsync(Guid runId, CancellationToken ct = default) => Task.FromResult<DependencyReviewResult?>(null);
         public Task<(PolicySimulation? Simulation, string? Error)> SimulateAsync(PolicySimulationRequest request, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<IReadOnlyList<InventorySummary>> InventoriesAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<InventorySummary>>(Inventories.ToList());
+        /// <summary>When set, reading the stored inventories fails like an unreachable/erroring backend.</summary>
+        public bool InventoriesFail { get; set; }
+        public Task<IReadOnlyList<InventorySummary>> InventoriesAsync(CancellationToken ct = default) =>
+            InventoriesFail ? throw new HttpRequestException("500") : Task.FromResult<IReadOnlyList<InventorySummary>>(Inventories.ToList());
 
         public Task<InventoryImportResult> ImportInventoryAsync(string fileName, Stream content, SbomRole role, string? environment, string? name, CancellationToken ct = default)
         {
@@ -802,5 +805,24 @@ public sealed class DependencyHealthPageTests : BunitContext
             new[] { step.Label, step.Reason, step.Status }.Should().NotContain(t => ResultWords.Any(w => t.Contains(w, StringComparison.OrdinalIgnoreCase)));
         steps.Where(s => !s.Ready).Select(s => s.Tone).Should().OnlyContain(t => t == "muted" || t == "attention");
         steps[6].Tone.Should().Be("attention", "only an invalid SBOM is a problem — still not a failed review");
+    }
+
+    [Fact]
+    public void A_failed_inventory_request_is_never_shown_as_no_stored_inventory()
+    {
+        _api.Inventories.Clear();
+        _api.InventoriesFail = true;
+        var cut = Render<DependencyReview>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=dh-inventory] option").TextContent.Should().Be("Stored inventories could not be loaded"));
+        cut.Find("[data-testid=dh-status]").TextContent.Should().NotBeNullOrWhiteSpace("the reason is shown");
+    }
+
+    [Fact]
+    public void An_empty_inventory_list_says_what_creates_one()
+    {
+        _api.Inventories.Clear();
+        var cut = Render<DependencyReview>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=dh-inventory] option").TextContent.Should().StartWith("No stored inventory yet").And.Contain("completed source review"));
     }
 }

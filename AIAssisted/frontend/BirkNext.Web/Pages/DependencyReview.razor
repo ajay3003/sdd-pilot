@@ -117,7 +117,7 @@
             <p class="dr-muted">Run registry, security and license checks without uploading source, on a stored inventory: a previous source review, an SBOM, a lock file or deployed evidence.</p>
             <label class="dr-field">Inventory
                 <select @ref="_inventorySelect" class="form-control" data-testid="dh-inventory" value="@(_inventoryId?.ToString() ?? "")" @onchange="PickInventory" disabled="@_busy">
-                    <option value="">@(_inventories.Count == 0 ? "No stored inventory yet" : "Choose an inventory")</option>
+                    <option value="">@InventoryPlaceholder</option>
                     @foreach (var inventory in _inventories) { <option value="@inventory.Id">@DependencyHealthPresentation.InventoryOption(inventory)</option> }
                 </select>
             </label>
@@ -262,7 +262,7 @@
                 <li>
                     <label class="dr-field">Known inventory — what we expect
                         <select class="form-control" data-testid="dh-deployed-known" value="@(_inventoryId?.ToString() ?? "")" @onchange="PickKnownInventory" disabled="@_busy">
-                            <option value="">@(_inventories.Count == 0 ? "No stored inventory yet" : "Choose an inventory")</option>
+                            <option value="">@InventoryPlaceholder</option>
                             @foreach (var inventory in _inventories.Where(i => i.Stage != InventoryStage.Deployed)) { <option value="@inventory.Id">@DependencyHealthPresentation.InventoryOption(inventory)</option> }
                         </select>
                     </label>
@@ -1475,6 +1475,18 @@
     private string? _targetUrl;
     private string? _targetEnvironment;
     private string? _healthStatus;
+    /// <summary>Null until the stored inventories were read; the reason when reading failed (never shown as "no inventory").</summary>
+    private string? _inventoriesError;
+    private bool _inventoriesLoaded;
+
+    /// <summary>
+    /// The inventory picker's empty option. A failed request is not "no stored inventory": every stored source review is itself a declared
+    /// inventory, so an empty list after a review means the list could not be read, and says so.
+    /// </summary>
+    private string InventoryPlaceholder => _inventoriesError is not null ? "Stored inventories could not be loaded"
+        : !_inventoriesLoaded ? "Loading stored inventories…"
+        : _inventories.Count == 0 ? "No stored inventory yet — a completed source review or an imported SBOM/lock file creates one"
+        : "Choose an inventory";
     private string? _healthError;
 
     private InventorySummary? SelectedInventory => _inventories.FirstOrDefault(i => i.Id == _inventoryId);
@@ -1488,9 +1500,16 @@
         try
         {
             _inventories = await Api.InventoriesAsync();
+            _inventoriesError = null;
+            _inventoriesLoaded = true;
             _healthHistory = await Api.HealthHistoryAsync();
         }
-        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _healthStatus = BackendRequestClassifier.FromException("Stored inventories", ex).UserMessage; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex))
+        {
+            var message = BackendRequestClassifier.FromException("Stored inventories", ex).UserMessage;
+            if (!_inventoriesLoaded) _inventoriesError = message;
+            _healthStatus = message;
+        }
     }
 
     /// <summary>Choosing an inventory in the Existing inventory panel is choosing that evidence (when no mode is chosen yet).</summary>
