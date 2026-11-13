@@ -70,7 +70,16 @@
         {
             <BirkNext.Web.Components.SourceManagement.SourceContextPanel OnChanged="ReloadAsync" />
         }
-        <ul class="sm-tiles" data-testid="sm-summary" aria-label="Imported package summary — choose a tile to filter the list">
+        @if (summary.Total == 1 && _facts.Count == 1)
+        {
+            var only = _facts[0];
+            <p class="sm-single" data-testid="sm-summary-single">
+                <strong>1 imported source</strong> · @(summary.Applications == 1 ? "1 application" : summary.Applications == 0 ? "no application yet" : $"{summary.Applications} applications")
+                · Source Analysis: <strong>@SourceManagementPresentation.BucketLabel(only.Bucket)</strong>
+                · @(summary.NeedsReview == 0 ? "No open source-review decisions" : "1 source-review decision open")
+            </p>
+        }
+        <ul class="sm-tiles @(summary.Total == 1 && _facts.Count == 1 ? "visually-hidden" : null)" data-testid="sm-summary" aria-label="Imported package summary — choose a tile to filter the list">
             <li>@Tile("sm-summary-total", summary.Total, summary.Total == 1 ? "source" : "sources", $"{summary.Zip} ZIP · {summary.Git} Git imported packages (each version is one)", null, () => _filter = new() { Sort = _filter.Sort })</li>
             <li>@Tile("sm-summary-review", summary.NeedsReview, "requiring review", summary.NeedsReview == 0 ? "No open decisions" : "Role or association to decide",
                 summary.NeedsReview > 0 ? "attention" : null, () => _filter = _filter with { ReviewOnly = true })</li>
@@ -84,6 +93,11 @@
             <li>@Tile("sm-summary-not-analyzed", summary.NotAnalyzed, "not analyzed", "No snapshot, or nothing analyzable", null, () => _filter = _filter with { Analysis = nameof(SourceAnalysisBucket.NotAnalyzed) })</li>
             <li>@Tile("sm-summary-applications", summary.Applications, summary.Applications == 1 ? "application" : "applications", "Distinct applications these sources serve", null, null)</li>
         </ul>
+        @if (_facts.Count > 1)
+        {
+            <p class="sm-quiet sm-small sm-summary-note" data-testid="sm-summary-note"><strong>Requiring review</strong> counts decisions a person must make (a role or an application association).
+                <strong>Analyzed</strong>, <strong>partly analyzed</strong> and <strong>not analyzed</strong> say how much BirkNext could analyse. They are independent: no open review does not mean the analysis is complete.</p>
+        }
         <span class="visually-hidden" data-testid="sm-summary-zip">@summary.Zip ZIP</span>
         <span class="visually-hidden" data-testid="sm-summary-git">@summary.Git Git</span>
 
@@ -93,6 +107,8 @@
         <div class="sm-workspace @(SelectedFacts is not null ? "has-inspector" : null)">
             <section class="sm-list-panel" aria-labelledby="sm-list-heading">
                 <h2 id="sm-list-heading" class="visually-hidden">Sources</h2>
+                @if (_facts.Count > 1)
+                {
                 <div class="sm-toolbar" role="search" data-testid="sm-toolbar">
                     <label class="sm-search"><span class="visually-hidden">Search sources by name</span>
                         <input type="search" placeholder="Search by name" value="@_filter.Search" @oninput="e => _filter = _filter with { Search = e.Value?.ToString() ?? string.Empty }" data-testid="sm-search" /></label>
@@ -127,6 +143,7 @@
                     <span class="sm-count" role="status" data-testid="sm-count">@(_filter.IsActive ? $"{shown.Count} of {_facts.Count}" : $"{_facts.Count}") shown</span>
                     @if (_filter.IsActive) { <button type="button" class="btn-link" @onclick="() => _filter = new() { Sort = _filter.Sort }" data-testid="sm-clear-filters">Clear filters</button> }
                 </div>
+                }
 
                 @if (shown.Count == 0)
                 {
@@ -152,7 +169,7 @@
                                         @if (f.Capabilities.Count > 4) { <span class="sm-chip sm-chip-more" title="@string.Join(", ", f.Capabilities.Skip(4))">+@(f.Capabilities.Count - 4)</span> }
                                     </span></div>
                                 <div class="sm-facet"><span class="sm-facet-label">Analysis</span>
-                                    <span class="sm-chips" data-testid="sm-analysis" data-bucket="@f.Bucket">@AnalysisChips(f)</span></div>
+                                    <span class="sm-chips" data-testid="sm-analysis" data-bucket="@f.Bucket">@RowAnalysis(f)</span></div>
                             </div>
                             <div class="sm-item-meta">
                                 <span data-testid="sm-associated">@(f.Applications.Count > 0 ? string.Join(", ", f.Applications.Select(a => $"{a.Application} ({a.Environment})")) : "No application yet")</span>
@@ -336,6 +353,18 @@
             <span class="sm-quiet">confirmed</span>
         }
         else { <span class="sm-quiet">Role detected from content</span> }
+    };
+
+    /// <summary>A row's analysis: the overall state once ("Source Analysis: Partly analyzed"), and the per-area states behind "View analysis details"
+    /// (the same chips the inspector shows). Five equal "Partial" chips per row repeated one fact and hid the overall state.</summary>
+    private RenderFragment RowAnalysis(SourceRowFacts f) => __builder =>
+    {
+        if (f.Analysis.Count == 0) { <span class="sm-quiet">@f.AnalysisNote</span> return; }
+        <span class="sm-chip sm-status sm-status-@SourceManagementPresentation.BucketTone(f.Bucket)" data-testid="sm-analysis-summary"><span class="sm-status-dot" aria-hidden="true"></span>Source Analysis: @SourceManagementPresentation.BucketLabel(f.Bucket)</span>
+        <details class="sm-area-details" data-testid="sm-analysis-areas">
+            <summary>View analysis details <span class="sm-quiet">(@f.Analysis.Count @(f.Analysis.Count == 1 ? "area" : "areas"))</span></summary>
+            <span class="sm-chips">@AnalysisChips(f)</span>
+        </details>
     };
 
     private RenderFragment AnalysisChips(SourceRowFacts f) => __builder =>

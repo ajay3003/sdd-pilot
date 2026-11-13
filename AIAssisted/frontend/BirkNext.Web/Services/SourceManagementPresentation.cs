@@ -62,6 +62,15 @@ public static class SourceManagementPresentation
             _ => SourceAnalysisBucket.NothingAnalyzable,
         };
 
+    /// <summary>The tone of a source's overall analysis (the same tones as the per-area chips; presentation only).</summary>
+    public static string BucketTone(SourceAnalysisBucket bucket) => bucket switch
+    {
+        SourceAnalysisBucket.Analyzed => "ok",
+        SourceAnalysisBucket.Partial => "partial",
+        SourceAnalysisBucket.Failed => "failed",
+        _ => "unsupported",
+    };
+
     public static string BucketLabel(SourceAnalysisBucket bucket) => bucket switch
     {
         SourceAnalysisBucket.Analyzed => "Analyzed",

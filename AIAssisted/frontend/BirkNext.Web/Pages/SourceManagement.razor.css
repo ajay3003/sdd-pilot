@@ -151,3 +151,10 @@ button.sm-tile:focus-visible { outline: 2px solid var(--clr-primary-focus, var(-
 .sm-detail-title h2:focus { outline: none; }
 .sm-detail-title h2:focus-visible { outline: 2px solid var(--clr-primary-focus, var(--clr-primary)); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .sm-item { transition: none; } }
+
+/* One overall analysis state per row; per-area states on request (the inspector keeps the full list). */
+.sm-area-details { display: inline-block; margin-left: .35rem; }
+.sm-area-details > summary { cursor: pointer; color: var(--clr-link, #1d4ed8); font-size: .85rem; }
+.sm-area-details[open] > .sm-chips { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .35rem; }
+.sm-single { margin: .75rem 0 1rem; padding: .6rem .85rem; border: 1px solid var(--clr-border); border-radius: .5rem; background: var(--clr-surface); }
+.sm-summary-note { margin: .4rem 0 .9rem; }

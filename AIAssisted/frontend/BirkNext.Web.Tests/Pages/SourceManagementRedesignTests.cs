@@ -178,4 +178,45 @@ public sealed class SourceManagementRedesignTests : BunitContext
         cut.Find("[data-testid=sm-close]").Click();
         cut.FindAll("[data-testid=sm-detail]").Should().BeEmpty();
     }
+
+    // ── 2026-11-13: compact single-source summary, review vs analysis said once, one overall analysis state per row ──────────────────
+
+    [Fact]
+    public void One_source_is_one_summary_line_without_tiles_or_toolbar()
+    {
+        _git.Setup(g => g.LinksAsync("dev", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(((IReadOnlyList<GitSourceLink>)[Link("r1", "M2LB-language")], (string?)null));
+        Register();
+        var cut = Render<SourceManagementPage>();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=sm-row]").Should().ContainSingle());
+        cut.Find("[data-testid=sm-summary-single]").TextContent.Should().Contain("1 imported source").And.Contain("Source Analysis:").And.Contain("No open source-review decisions");
+        cut.Find("[data-testid=sm-summary]").ClassList.Should().Contain("visually-hidden", "six tiles for one source repeat the same fact; they stay readable by screen readers");
+        cut.FindAll("[data-testid=sm-toolbar]").Should().BeEmpty("nothing to search or filter with one source");
+        cut.FindAll("[data-testid=sm-summary-note]").Should().BeEmpty();
+        cut.Find("[data-testid=sm-import]").TextContent.Should().Be("Import source");
+        cut.Find("[data-testid=sm-registry]").GetAttribute("href").Should().Be("snapshots");
+    }
+
+    [Fact]
+    public void Several_sources_keep_tiles_and_filters_and_say_review_is_not_analysis()
+    {
+        _git.Setup(g => g.LinksAsync("dev", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(((IReadOnlyList<GitSourceLink>)[Link("r1", "M2LB.Common"), Link("r2", "M2LB-language")], (string?)null));
+        Register();
+        var cut = Render<SourceManagementPage>();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=sm-row]").Should().HaveCount(2));
+        cut.FindAll("[data-testid=sm-summary-single]").Should().BeEmpty();
+        cut.Find("[data-testid=sm-summary]").ClassList.Should().NotContain("visually-hidden");
+        cut.Find("[data-testid=sm-toolbar]");
+        cut.Find("[data-testid=sm-summary-note]").TextContent.Should().Contain("They are independent: no open review does not mean the analysis is complete");
+    }
+
+    [Fact]
+    public void The_overall_analysis_tone_follows_the_bucket()
+    {
+        SourceManagementPresentation.BucketTone(SourceAnalysisBucket.Analyzed).Should().Be("ok");
+        SourceManagementPresentation.BucketTone(SourceAnalysisBucket.Partial).Should().Be("partial");
+        SourceManagementPresentation.BucketTone(SourceAnalysisBucket.Failed).Should().Be("failed");
+        SourceManagementPresentation.BucketTone(SourceAnalysisBucket.NotAnalyzed).Should().Be("unsupported");
+    }
 }
