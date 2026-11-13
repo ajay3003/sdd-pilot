@@ -285,6 +285,7 @@ public sealed class TesterLauncherTests
         env["FRONTEND_ORIGIN"].Should().Be("http://localhost:5481");
         env["BIRKNEXT_APP_DATA_DIR"].Should().StartWith(data.Root, "mutable files live in the user's data folder, never in the package");
         env["LoggingSettings__LogPath"].Should().StartWith(data.Root);
+        env["DOTNET_gcServer"].Should().Be("0", "a single-user desktop backend uses Workstation GC (Server GC held 3.2 GB on a 24-thread machine)");
         env.Keys.Should().NotContain(k => k.Contains("Podman", StringComparison.OrdinalIgnoreCase) || k.Contains("Container", StringComparison.OrdinalIgnoreCase));
     }
 

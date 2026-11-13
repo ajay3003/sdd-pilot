@@ -93,6 +93,10 @@ internal sealed class BackendProcess(PackageLayout package, DataLayout data, Lau
         ["BIRKNEXT_APP_DATA_DIR"] = data.AppData,
         ["LoggingSettings__LogPath"] = Path.Combine(data.Logs, "backend"),
         ["GitSources__SettingsDirectory"] = Path.Combine(data.AppData, "git-sources"),
+        // A single-user desktop backend: Workstation GC. The published API defaults to Server GC (one heap per logical processor), which on a
+        // 24-thread machine held 3.2 GB after two rounds of the Recommended Workflow calls where Workstation GC stayed at 1.0-1.3 GB. Hosted
+        // deployments keep their own setting; only the Tester Package's backend is changed.
+        ["DOTNET_gcServer"] = "0",
     };
 
     public void Start(Ports.Assignment ports, DatabaseCredentials credentials)
