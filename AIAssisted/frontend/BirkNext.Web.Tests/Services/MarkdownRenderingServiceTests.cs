@@ -313,8 +313,9 @@ public sealed class MarkdownRenderingServiceTests
 
         // Link text should be present
         Assert.Contains("Click me", html);
-        // Markdig URL-encodes the URL, which makes it harmless even if not explicitly blocked
-        Assert.Contains("<a href=", html);  // Link is present but safe
+        // URL-encoding does not make a javascript: URL harmless: the scheme itself is blocked.
+        Assert.Contains("<a href=\"#\"", html);
+        Assert.DoesNotContain("javascript", html, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -323,8 +324,8 @@ public sealed class MarkdownRenderingServiceTests
         var markdown = "[Click](data:text/html,<script>alert('xss')</script>)";
         var html = _service.Render(markdown);
 
-        // Link should exist but URL is sanitized/encoded
-        Assert.Contains("<a href=", html);
+        Assert.Contains("<a href=\"#\"", html);
+        Assert.DoesNotContain("href=\"data:", html, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Click", html);
     }
 
@@ -334,9 +335,30 @@ public sealed class MarkdownRenderingServiceTests
         var markdown = "[Click](vbscript:msgbox('xss'))";
         var html = _service.Render(markdown);
 
-        // Link should exist but URL is sanitized/encoded
-        Assert.Contains("<a href=", html);
+        Assert.Contains("<a href=\"#\"", html);
+        Assert.DoesNotContain("vbscript", html, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Click", html);
+    }
+
+    [Theory]
+    [InlineData("[a](JavaScript:alert(1))")]
+    [InlineData("[a](%6Aavascript:alert(1))")]
+    [InlineData("[a](file:///etc/passwd)")]
+    public void Render_AnyNonWebScheme_IsBlocked(string markdown)
+    {
+        var html = _service.Render(markdown);
+        Assert.Contains("<a href=\"#\"", html);
+    }
+
+    [Theory]
+    [InlineData("[a](docs/readme.md)", "docs/readme.md")]
+    [InlineData("[a](#section-2)", "#section-2")]
+    [InlineData("[a](../x?y=1:2)", "../x?y=1:2")]
+    [InlineData("[a](https://example.test/a:b)", "https://example.test/a:b")]
+    public void Render_RelativeAndWebLinks_AreKept(string markdown, string href)
+    {
+        var html = _service.Render(markdown);
+        Assert.Contains($"<a href=\"{href}\"", html);
     }
 
     // ── BLOCKQUOTE TESTS ────────────────────────────────────────────────────

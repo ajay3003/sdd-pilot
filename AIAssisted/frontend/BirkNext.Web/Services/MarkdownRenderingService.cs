@@ -1,4 +1,5 @@
 using Markdig;
+using Markdig.Syntax;
 using System.Text.RegularExpressions;
 
 namespace BirkNext.Web.Services;
@@ -57,6 +58,43 @@ public sealed class MarkdownRenderingService
         return html;
     }
 
+    // Imported (untrusted) documents: raw HTML in the Markdown is never HTML here — it is shown as text — and headings get ids for navigation.
+    private static readonly MarkdownPipeline UntrustedPipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions().UsePipeTables().UseTaskLists().UseAutoIdentifiers().DisableHtml().Build();
+
+    /// <summary>
+    /// Render an imported document for reading: raw HTML is escaped (never interpreted), links keep only safe schemes, and images that point
+    /// outside the application are not loaded (their alt text is shown instead) — reading an imported document never contacts a remote host.
+    /// </summary>
+    public static string RenderUntrusted(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown)) return string.Empty;
+        var html = Markdown.ToHtml(markdown, UntrustedPipeline);
+        html = SanitizeHtmlLinks(html);
+        html = StripDangerousHtml(html);
+        return RemoteImageRe.Replace(html, m => $"<span class=\"md-external-image\">[image not loaded: {System.Net.WebUtility.HtmlEncode(System.Net.WebUtility.HtmlDecode(AltRe.Match(m.Value).Groups["alt"].Value))}]</span>");
+    }
+
+    /// <summary>The headings of an imported document with the ids <see cref="RenderUntrusted"/> gives them (same pipeline), in order.</summary>
+    public static IReadOnlyList<(int Level, string Text, string Id)> UntrustedHeadings(string markdown)
+    {
+        if (string.IsNullOrWhiteSpace(markdown)) return [];
+        var document = Markdown.Parse(markdown, UntrustedPipeline);
+        return [.. document.Descendants<Markdig.Syntax.HeadingBlock>().Select(h => (h.Level, InlineText(h.Inline), Markdig.Renderers.Html.HtmlAttributesExtensions.GetAttributes(h).Id ?? ""))];
+    }
+
+    private static string InlineText(Markdig.Syntax.Inlines.ContainerInline? inline) =>
+        inline is null ? "" : string.Concat(inline.Descendants<Markdig.Syntax.Inlines.Inline>().Select(i => i switch
+        {
+            Markdig.Syntax.Inlines.LiteralInline literal => literal.Content.ToString(),
+            Markdig.Syntax.Inlines.CodeInline code => code.Content,
+            _ => "",
+        })).Trim();
+
+    // <img src="http(s)://…" or "//…"> — any image that is not a relative application path.
+    private static readonly Regex RemoteImageRe = new(@"<img\b[^>]*?\bsrc=""(?:https?:)?//[^""]*""[^>]*>", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex AltRe = new(@"\balt=""(?<alt>[^""]*)""", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     /// <summary>
     /// Sanitize link URLs in rendered HTML to only allow safe schemes.
     /// Allows: http://, https://, mailto:, relative paths (/)
@@ -108,22 +146,23 @@ public sealed class MarkdownRenderingService
         if (string.IsNullOrEmpty(url))
             return true; // Empty href is safe
 
-        var lower = url.ToLowerInvariant().TrimStart();
+        // Browsers ignore whitespace and control characters inside a scheme ("java\tscript:"), and the href is HTML-encoded in the markup:
+        // decode both and drop those characters before deciding.
+        var normalized = new string(System.Net.WebUtility.HtmlDecode(url).Where(c => !char.IsWhiteSpace(c) && !char.IsControl(c)).ToArray()).ToLowerInvariant();
 
         // Allow http, https, mailto
-        if (lower.StartsWith("http://") ||
-            lower.StartsWith("https://") ||
-            lower.StartsWith("mailto:"))
+        if (normalized.StartsWith("http://") ||
+            normalized.StartsWith("https://") ||
+            normalized.StartsWith("mailto:"))
             return true;
 
-        // Allow relative paths
-        if (lower.StartsWith("/") ||
-            lower.StartsWith("../") ||
-            lower.StartsWith("./") ||
-            !lower.Contains("://"))  // No scheme = relative
-            return true;
-
-        // Block javascript:, data:, vbscript:, and others
-        return false;
+        // Any other scheme ("javascript:", "data:", "vbscript:", "file:" …) is blocked. A scheme is letters/digits/+.- before the first ':' that
+        // comes before any '/', '?' or '#'; without one the URL is relative ("docs/a.md", "#section", "../x"). Previously a URL without "://"
+        // counted as relative, which let "javascript:alert(1)" through.
+        var colon = normalized.IndexOf(':');
+        var firstDelimiter = normalized.IndexOfAny(['/', '?', '#']);
+        var hasScheme = colon > 0 && (firstDelimiter < 0 || colon < firstDelimiter)
+            && normalized[..colon].All(c => char.IsAsciiLetterOrDigit(c) || c is '+' or '-' or '.');
+        return !hasScheme;
     }
 }
