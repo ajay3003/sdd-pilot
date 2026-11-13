@@ -157,4 +157,75 @@ public sealed class ProjectGlossaryAnalyzerTests
         b.Entries.Single(e => e.Term == "barn").PreferredForm.Should().Be("`Child`");
         a.Glossaries.Single(x => x.SourcePath == "docs/glossary.md").ContentHash.Should().NotBe(b.Glossaries.Single(x => x.SourcePath == "docs/glossary.md").ContentHash);
     }
+    // A real glossary also holds tables that are not terms: naming conventions (§1), pinned-name owner groups (§3), known inconsistencies (§7) and
+    // its sources (§8). Those rows stay evidence under their own section, but are never terms and never resolve as terminology.
+    private const string Structured = """
+        # M2LB domain glossary
+
+        This is the **single list for the whole platform**, required by PS-10 and ADR-029.
+
+        ## 1. How to name something
+
+        Conventions for the English part:
+
+        | Kind | Convention | Example |
+        |---|---|---|
+        | Timestamp | ends in `At` / `_at` | `opprettet_tidspunkt` → `created_at` |
+        | Date | ends in `Date` / `_date` | `fra_dato` → `from_date` |
+        | Plural | English plural, also on kept nouns | `reports` |
+        | Kept noun in snake/kebab case | transliterated, lower case | `fravaer_line` |
+        | Raw `æ`, `ø`, `å` | never in identifiers | |
+
+        ## 2. Kept domain nouns
+
+        ### 2.1 The child and identity
+
+        | Norwegian | Code form | Meaning | Used in | Notes |
+        |---|---|---|---|---|
+        | barn | `Barn` | child; the person the platform exists for | all modules | ✅ `BarnId` |
+
+        ## 3. Pinned names (owned elsewhere, never renamed)
+
+        | Owner | Names | Examples |
+        |---|---|---|
+        | BiRK | tables, columns, values | `Fødselsnummer`, `BarnPK` |
+
+        ## 5. Words with two meanings
+
+        | Word | Domain meaning (kept) | Generic meaning (translated) |
+        |---|---|---|
+        | tiltak | child-welfare measure | action |
+
+        ## 7. Known inconsistencies in the code today
+
+        | Issue | Where | Suggested direction |
+        |---|---|---|
+        | Seed value spelled `Ufodt` | Person seed data | keep until migration |
+
+        ## 8. Sources
+
+        | Source | Status |
+        |---|---|
+        | `docs/analysis/skolenaervaer-reference.md` | business glossary |
+        """;
+
+    [Fact]
+    public void Structural_glossary_tables_are_classified_by_their_header_and_are_never_terms()
+    {
+        var g = Analyze("M2LB-language", ("docs/glossary.md", Structured), ("a/spec.md", "see docs/glossary.md"), ("b/spec.md", "see docs/glossary.md"));
+
+        g.AnalyzerVersion.Should().Be(2);
+        g.Entries.Where(e => e.Kind == GlossaryRowKind.NamingConvention).Select(e => e.Term)
+            .Should().Equal("Timestamp", "Date", "Plural", "Kept noun in snake/kebab case", "Raw æ, ø, å");
+        g.Entries.Single(e => e.Term == "BiRK").Kind.Should().Be(GlossaryRowKind.PinnedNames);
+        g.Entries.Single(e => e.Term.StartsWith("Seed value")).Kind.Should().Be(GlossaryRowKind.KnownInconsistency);
+        g.Entries.Single(e => e.Term.Contains("skolenaervaer-reference")).Kind.Should().Be(GlossaryRowKind.Source);
+        g.Entries.Single(e => e.Term == "Timestamp").Category.Should().Be("1. How to name something", "the row keeps its source section and line");
+
+        ProjectTerminology.AuthoritativeTerms(g).Select(e => e.Term).Should().Equal("barn", "tiltak");
+        ProjectTerminology.KnownInconsistencies(g).Select(e => e.Term).Should().ContainSingle().Which.Should().StartWith("Seed value");
+        ProjectTerminology.StructuralRows(g).Should().Equal((GlossaryRowKind.NamingConvention, 5), (GlossaryRowKind.PinnedNames, 1), (GlossaryRowKind.Source, 1));
+        ProjectTerminology.Resolve(g, "Timestamp").Should().BeEmpty("a naming convention is not a term");
+        ProjectTerminology.Resolve(g, "barn").Should().ContainSingle();
+    }
 }

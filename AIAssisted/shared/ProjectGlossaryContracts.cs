@@ -23,6 +23,21 @@ public enum GlossaryAuthority
     Conflict,
 }
 
+/// <summary>
+/// What a glossary table row is, from its table's own term-column header. A glossary document also holds tables that are not terms: naming
+/// conventions ("Kind | Convention | Example"), pinned-name owner groups ("Owner | Names | Examples"), known inconsistencies ("Issue | Where | …")
+/// and its sources ("Source | Status"). Those rows stay evidence under their own section but are never terms. Any other header is a term table.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum GlossaryRowKind
+{
+    Term,
+    NamingConvention,
+    PinnedNames,
+    KnownInconsistency,
+    Source,
+}
+
 /// <summary>One glossary-like document of the project's snapshot, with why it has its authority.</summary>
 public sealed record ProjectGlossaryArtifact
 {
@@ -57,6 +72,9 @@ public sealed record ProjectGlossaryEntry
     public string? Decision { get; init; }
     public Dictionary<string, string> Columns { get; init; } = [];
     public int Line { get; init; }
+    /// <summary>Term, or a structural row of the glossary (convention, pinned-name group, known inconsistency, source). Snapshots analyzed before
+    /// analyzer v2 carry Term for every row.</summary>
+    public GlossaryRowKind Kind { get; init; } = GlossaryRowKind.Term;
 }
 
 /// <summary>The project's glossary evidence of one Source Analysis snapshot.</summary>
@@ -86,13 +104,13 @@ public static class ProjectTerminology
 {
     public const string NoGlossary = "No project glossary detected. BirkNext still analyzes the project; a glossary only enriches terminology checks.";
 
-    /// <summary>Authoritative terms only (proposals and conflicts never resolve as approved terminology).</summary>
+    /// <summary>Authoritative terms only (proposals and conflicts never resolve as approved terminology; structural rows are not terms).</summary>
     public static IReadOnlyList<ProjectTermResolution> Resolve(ProjectGlossarySnapshot? glossary, string text)
     {
         if (glossary is null || string.IsNullOrWhiteSpace(text)) return [];
         var key = Normalize(text);
         var authoritative = glossary.Authoritative.ToDictionary(g => g.GlossaryId, StringComparer.Ordinal);
-        return [.. glossary.Entries.Where(e => authoritative.ContainsKey(e.GlossaryId))
+        return [.. glossary.Entries.Where(e => authoritative.ContainsKey(e.GlossaryId) && e.Kind == GlossaryRowKind.Term)
             .Select(e => Normalize(e.Term) == key ? new ProjectTermResolution(e, authoritative[e.GlossaryId], "term")
                 : Forms(e.PreferredForm).Any(f => Normalize(f) == key) ? new ProjectTermResolution(e, authoritative[e.GlossaryId], "preferred form") : null)
             .OfType<ProjectTermResolution>()];
@@ -107,6 +125,31 @@ public static class ProjectTerminology
 
     public static IEnumerable<ProjectGlossaryEntry> TermsOf(ProjectGlossarySnapshot? glossary, GlossaryAuthority authority) =>
         glossary is null ? [] : glossary.Entries.Where(e => glossary.Glossaries.Any(g => g.GlossaryId == e.GlossaryId && g.Authority == authority));
+
+    /// <summary>Terms of the authoritative glossary: Term rows only, never a convention, pinned-name group, known inconsistency or source row.
+    /// A snapshot from analyzer v1 (every row Term) falls back to the source section for known inconsistencies.</summary>
+    public static IEnumerable<ProjectGlossaryEntry> AuthoritativeTerms(ProjectGlossarySnapshot? glossary) =>
+        TermsOf(glossary, GlossaryAuthority.Authoritative).Where(e => e.Kind == GlossaryRowKind.Term && !IsLegacyInconsistency(e));
+
+    public static IEnumerable<ProjectGlossaryEntry> KnownInconsistencies(ProjectGlossarySnapshot? glossary) =>
+        TermsOf(glossary, GlossaryAuthority.Authoritative).Where(e => e.Kind == GlossaryRowKind.KnownInconsistency || IsLegacyInconsistency(e));
+
+    /// <summary>Structural rows of the authoritative glossary by kind (conventions, pinned-name groups, sources) — evidence, not terms.</summary>
+    public static IReadOnlyList<(GlossaryRowKind Kind, int Count)> StructuralRows(ProjectGlossarySnapshot? glossary) =>
+        [.. TermsOf(glossary, GlossaryAuthority.Authoritative).Where(e => e.Kind is GlossaryRowKind.NamingConvention or GlossaryRowKind.PinnedNames or GlossaryRowKind.Source)
+            .GroupBy(e => e.Kind).OrderBy(g => g.Key).Select(g => (g.Key, g.Count()))];
+
+    public static string RowKindLabel(GlossaryRowKind kind) => kind switch
+    {
+        GlossaryRowKind.NamingConvention => "naming convention",
+        GlossaryRowKind.PinnedNames => "pinned-name group",
+        GlossaryRowKind.KnownInconsistency => "known inconsistency",
+        GlossaryRowKind.Source => "source",
+        _ => "term",
+    };
+
+    private static bool IsLegacyInconsistency(ProjectGlossaryEntry e) =>
+        e.Kind == GlossaryRowKind.Term && e.Category.Contains("inconsisten", StringComparison.OrdinalIgnoreCase);
 
     public static IReadOnlyList<string> Forms(string? cell) =>
         string.IsNullOrWhiteSpace(cell) ? [] : [.. cell.Split([',', ';', '/'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)

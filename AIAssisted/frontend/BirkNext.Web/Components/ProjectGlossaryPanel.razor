@@ -45,6 +45,15 @@
                     </li>
                 }
             </ul>
+            @if (ProjectTerminology.StructuralRows(Glossary) is { Count: > 0 } structural)
+            {
+                @* Glossary structure, not terms: kept as evidence under its own section, never listed or resolved as terminology. *@
+                <p class="pg-muted" data-testid="pg-structural">Also in the authoritative glossary, not counted as terms: @string.Join(", ", structural.Select(s => $"{s.Count} {ProjectTerminology.RowKindLabel(s.Kind)} row{(s.Count == 1 ? "" : "s")}")).</p>
+            }
+            @if (Glossary.AnalyzerVersion < 2)
+            {
+                <p class="pg-muted" data-testid="pg-legacy-rows">Analyzed with glossary analyzer v@(Glossary.AnalyzerVersion): naming-convention, pinned-name and source tables may be listed as terms. Analyze the source again to separate them.</p>
+            }
         }
         else
         {
@@ -109,8 +118,9 @@
         IEnumerable<ProjectGlossaryEntry> rows = _tab switch
         {
             "proposals" => ProjectTerminology.Proposals(Glossary),
-            "inconsistencies" => ProjectTerminology.TermsOf(Glossary, GlossaryAuthority.Authoritative).Where(e => e.Category.Contains("inconsisten", StringComparison.OrdinalIgnoreCase)),
-            _ => ProjectTerminology.TermsOf(Glossary, GlossaryAuthority.Authoritative).Where(e => !e.Category.Contains("inconsisten", StringComparison.OrdinalIgnoreCase)),
+            "inconsistencies" => ProjectTerminology.KnownInconsistencies(Glossary),
+            // Terms only: naming conventions, pinned-name groups and source rows are glossary structure, listed under Sources & authority.
+            _ => ProjectTerminology.AuthoritativeTerms(Glossary),
         };
         if (_search.Length > 0)
             rows = rows.Where(e => new[] { e.Term, e.PreferredForm, e.Meaning, e.Category }.Any(v => v?.Contains(_search, StringComparison.OrdinalIgnoreCase) == true));

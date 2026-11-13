@@ -56,4 +56,26 @@ public sealed class ProjectGlossaryPanelTests : BunitContext
         cut.Find("[data-testid=pg-conflict]").TextContent.Should().Contain("needs review");
         cut.FindAll("[data-testid=pg-term]").Should().BeEmpty("no glossary is treated as approved until the conflict is reviewed");
     }
+    [Fact]
+    public void Naming_conventions_pinned_names_and_sources_are_glossary_structure_not_terms()
+    {
+        var g = M2lb() with
+        {
+            AnalyzerVersion = 2,
+            Entries =
+            [
+                .. M2lb().Entries.Select(e => e.EntryId == "b" ? e with { Kind = GlossaryRowKind.KnownInconsistency } : e),
+                new() { EntryId = "d", GlossaryId = "docs/glossary.md", Term = "Timestamp", Category = "1. How to name something", Line = 34, Kind = GlossaryRowKind.NamingConvention },
+                new() { EntryId = "e", GlossaryId = "docs/glossary.md", Term = "BiRK", Category = "3. Pinned names", Line = 183, Kind = GlossaryRowKind.PinnedNames },
+            ],
+        };
+        var cut = Render<ProjectGlossaryPanel>(p => p.Add(x => x.Glossary, g));
+
+        cut.FindAll("[data-testid=pg-term]").Select(r => r.QuerySelector("th")!.TextContent).Should().Equal(["barn"], "a naming convention or pinned-name group is not a term");
+        cut.FindAll("[data-testid=pg-tab]").Single(t => t.GetAttribute("data-tab") == "inconsistencies").Click();
+        cut.FindAll("[data-testid=pg-term]").Single().TextContent.Should().Contain("Ufodt");
+        cut.FindAll("[data-testid=pg-tab]").Single(t => t.GetAttribute("data-tab") == "sources").Click();
+        cut.Find("[data-testid=pg-structural]").TextContent.Should().Contain("1 naming convention row").And.Contain("1 pinned-name group row");
+        cut.FindAll("[data-testid=pg-legacy-rows]").Should().BeEmpty();
+    }
 }

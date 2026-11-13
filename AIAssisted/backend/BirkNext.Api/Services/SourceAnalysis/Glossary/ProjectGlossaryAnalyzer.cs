@@ -22,7 +22,8 @@ namespace BirkNext.Api.Services.SourceAnalysis.Glossary;
 /// </summary>
 public static partial class ProjectGlossaryAnalyzer
 {
-    public const int Version = 1;
+    /// <summary>v2: rows are classified by their table's term-column header (structural tables are not terms).</summary>
+    public const int Version = 2;
     private const int MaxEntries = 5_000;
 
     public static ProjectGlossarySnapshot Analyze(Guid snapshotId, string projectName, DateTimeOffset analyzedAt, IReadOnlyList<(string Path, string Content)> documents)
@@ -118,6 +119,7 @@ public static partial class ProjectGlossaryAnalyzer
             var preferred = headers.FindIndex(h => PreferredHeaderRe().IsMatch(h));
             var meaning = headers.FindIndex(h => MeaningHeaderRe().IsMatch(h));
             var status = headers.FindIndex(h => StatusHeaderRe().IsMatch(h));
+            var kind = RowKind(headers[termColumn]);
             var category = h3 is null ? h2 ?? "" : h2 is null ? h3 : $"{h2} › {h3}";
             for (i += 2; i < tokens.Count && tokens[i].Kind == MarkdownTokenKind.TableRow; i++)
             {
@@ -133,12 +135,26 @@ public static partial class ProjectGlossaryAnalyzer
                     PreferredForm = preferred >= 0 && preferred != termColumn && Cell(preferred) is { Length: > 0 } p ? p : null,
                     Meaning = meaning >= 0 && meaning != termColumn && Cell(meaning) is { Length: > 0 } m ? m : null,
                     Category = category, Decision = Decision(status >= 0 ? Cell(status) : null, cells), Columns = columns, Line = tokens[i].LineIndex + 1,
+                    Kind = kind,
                 });
             }
             i--;
         }
         return result;
     }
+
+    /// <summary>
+    /// What a table's rows are, from its term-column header only: "Kind" (naming conventions), "Owner" (pinned-name groups), "Issue" (known
+    /// inconsistencies) and "Source" (the glossary's inputs) are structural; any other header ("Norwegian", "Word", "Term", …) is a term table.
+    /// </summary>
+    private static GlossaryRowKind RowKind(string termHeader) => termHeader.Trim().ToLowerInvariant() switch
+    {
+        "kind" or "convention" => GlossaryRowKind.NamingConvention,
+        "owner" or "eier" => GlossaryRowKind.PinnedNames,
+        "issue" or "inconsistency" or "avvik" => GlossaryRowKind.KnownInconsistency,
+        "source" or "sources" or "kilde" => GlossaryRowKind.Source,
+        _ => GlossaryRowKind.Term,
+    };
 
     /// <summary>The row's own decision: its Status/Decision cell, else a leading marker (✅ approved, ⚠ caution, ❌ rejected) — never inferred.</summary>
     private static string? Decision(string? statusCell, IReadOnlyList<string> cells)
