@@ -163,8 +163,16 @@ public sealed class AutodocDiagnosticsSectionTests : BunitContext
     public void Explorer_link_is_offered_only_for_modules_with_generated_output()
     {
         var cut = Render<AutodocDiagnosticsSection>(p => p.Add(x => x.Diagnostics, Diagnostics()).Add(x => x.ExplorerHref, "generated-documentation-explorer?import=imp-1"));
-        cut.FindAll("[data-testid=gdh-autodoc-explorer]").Select(a => a.GetAttribute("href")).Should().Equal(
-            "generated-documentation-explorer?import=imp-1&module=Persons", "generated-documentation-explorer?import=imp-1&module=Skole", "generated-documentation-explorer?import=imp-1&module=Jobs");
+        cut.FindAll("[data-testid=gdh-autodoc-explorer]").Should().BeEmpty("the inventory has no per-row Explorer link; a module's focus offers it");
+        cut.FindAll("[data-testid=gdh-autodoc-table] thead th").Select(h => h.TextContent).Should().NotContain("Action");
+        string? LinkOf(string module)
+        {
+            cut.FindAll("[data-testid=gdh-autodoc-row]").Single(r => r.GetAttribute("data-module") == module).QuerySelector("[data-testid=gdh-autodoc-toggle]")!.Click();
+            return cut.FindAll("[data-testid=gdh-autodoc-detail] [data-testid=gdh-autodoc-explorer]").SingleOrDefault()?.GetAttribute("href");
+        }
+        LinkOf("Persons").Should().Be("generated-documentation-explorer?import=imp-1&module=Persons");
+        LinkOf("Jobs").Should().Be("generated-documentation-explorer?import=imp-1&module=Jobs");
+        LinkOf("Mu").Should().BeNull("no generated output to open");
     }
 
     [Fact]
@@ -197,5 +205,38 @@ public sealed class AutodocDiagnosticsSectionTests : BunitContext
     {
         public Task<GeneratedDocumentationDiagnosticRun?> RunAsync(GeneratedDocumentationDiagnosticRequest request, CancellationToken ct = default) =>
             Task.FromResult<GeneratedDocumentationDiagnosticRun?>(run);
+    }
+
+    [Fact]
+    public void Review_items_state_their_factual_reasons_and_open_the_one_module_focus()
+    {
+        var diagnostics = Diagnostics() with
+        {
+            Modules = [.. Diagnostics().Modules.Select(m => m.Name == "Skole" ? m with { MissingExpectedDocs = 2, DiscrepancyCandidates = 1 } : m)],
+        };
+        var cut = Render<AutodocDiagnosticsSection>(p => p.Add(x => x.Diagnostics, diagnostics));
+
+        var skole = cut.FindAll("[data-testid=gdh-review-item]").Single(i => i.GetAttribute("data-module") == "Skole");
+        skole.TextContent.Should().Contain("2 required generated documents are missing").And.Contain("Potentially stale").And.Contain("not a confirmed defect");
+        cut.FindAll("[data-testid=gdh-review-item]").Single(i => i.GetAttribute("data-module") == "Jobs").TextContent.Should().Contain("1 generated document does not parse");
+        skole.QuerySelector("[data-testid=gdh-review-open]")!.Click();
+        cut.FindAll("[data-testid=gdh-autodoc-detail]").Should().ContainSingle();
+        cut.Find("#gdh-autodoc-focus-title").TextContent.Should().Be("Skole");
+        cut.Find("[data-testid=gdh-autodoc-reasons]").TextContent.Should().Contain("2 required generated documents are missing");
+        cut.Find("[data-testid=gdh-autodoc-close]").Click();
+        cut.FindAll("[data-testid=gdh-autodoc-detail]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Overall_partial_names_the_modules_with_partial_output()
+    {
+        var diagnostics = Diagnostics() with
+        {
+            Modules = [.. Diagnostics().Modules.Select(m => m.Name == "Persons" ? m with { Usage = AutodocUsage.Partial } : m)],
+        };
+        var cut = Render<AutodocDiagnosticsSection>(p => p.Add(x => x.Diagnostics, diagnostics));
+        cut.Find("[data-testid=gdh-overview-state]").TextContent.Should().Be("Partial");
+        cut.Find("[data-testid=gdh-overview-state-reason]").TextContent.Should().Be("1 module has partial generated output (declared outputs incomplete): Persons.");
+        Section().Find("[data-testid=gdh-overview-state-reason]").TextContent.Should().Contain("has its declared outputs").And.Contain("says nothing about freshness");
     }
 }

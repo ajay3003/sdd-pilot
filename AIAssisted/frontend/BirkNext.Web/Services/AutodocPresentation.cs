@@ -68,6 +68,35 @@ public static class AutodocPresentation
 
     public static IReadOnlyList<AutodocModuleInventory> ReviewItems(AutodocDiagnostics diagnostics) => [.. diagnostics.Modules.Where(IsReviewItem)];
 
+    /// <summary>
+    /// Why the overall state is what it is, from the same rule as <see cref="State"/>: Partial names the modules whose generated output is partial
+    /// (declared outputs incomplete) — having generated documentation in every module does not make it complete.
+    /// </summary>
+    public static string StateReason(AutodocDiagnostics diagnostics)
+    {
+        var partial = diagnostics.Modules.Where(m => m.Usage == AutodocUsage.Partial).Select(m => m.Name).ToList();
+        return diagnostics.ModulesUsingAutodoc == 0 ? "No module-specific generated documentation was detected (neutral)."
+            : partial.Count > 0 ? $"{partial.Count} module{(partial.Count == 1 ? " has" : "s have")} partial generated output (declared outputs incomplete): {string.Join(", ", partial)}."
+            : $"Every module with generated documentation ({diagnostics.ModulesUsingAutodoc}) has its declared outputs. Availability says nothing about freshness or correctness.";
+    }
+
+    /// <summary>
+    /// The factual reasons a module needs review, from its own diagnostics only (never from its name): generated output in error, parse errors,
+    /// missing required documents, potentially stale evidence, partial output, source-consistency candidates. Empty when nothing applies.
+    /// </summary>
+    public static IReadOnlyList<string> ReviewReasons(AutodocModuleInventory m)
+    {
+        var reasons = new List<string>();
+        if (m.Usage == AutodocUsage.Error) reasons.Add($"Generated output is in error: {m.UsageReason}");
+        if (m.ParseErrors > 0) reasons.Add($"{m.ParseErrors} generated document{(m.ParseErrors == 1 ? " does" : "s do")} not parse.");
+        if (m.MissingExpectedDocs > 0) reasons.Add($"{m.MissingExpectedDocs} required generated document{(m.MissingExpectedDocs == 1 ? " is" : "s are")} missing.");
+        if (m.Freshness == GeneratedDocumentationFreshnessStatus.Stale) reasons.Add("Potentially stale: relevant source evidence of the same scope is newer than the generated documentation.");
+        if (m.Usage == AutodocUsage.Partial) reasons.Add("Generated output is present, but the declared outputs are incomplete.");
+        if (m.DiscrepancyCandidates > 0) reasons.Add($"{m.DiscrepancyCandidates} source-consistency candidate{(m.DiscrepancyCandidates == 1 ? "" : "s")} — review suggested, not a confirmed defect.");
+        if (reasons.Count == 0 && IsReviewItem(m)) reasons.Add($"Health suggests review: {m.UsageReason}");
+        return reasons;
+    }
+
     /// <summary>Overall generated-documentation state of the snapshot: Available, Partial or Not configured (neutral).</summary>
     public static string State(AutodocDiagnostics diagnostics) =>
         diagnostics.ModulesUsingAutodoc == 0 ? "Not configured"

@@ -1,0 +1,7 @@
+/* Module focus: one full-width panel below the inventory (no inline expanded rows, no narrow side panel). */
+.gdh-focus { margin: 1rem 0; padding: .9rem 1rem; border: 1px solid var(--clr-border); border-radius: 8px; background: var(--clr-surface-white); }
+.gdh-focus:focus { outline: none; }
+.gdh-focus-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: .5rem; }
+.gdh-reasons { margin: .5rem 0 .75rem; padding-left: 1.1rem; list-style: disc; }
+.gdh-module-button { font-weight: 600; text-align: left; padding: 0; }
+tr.is-selected > th, tr.is-selected > td { background: var(--clr-surface-subtle, #f1f5f9); }
