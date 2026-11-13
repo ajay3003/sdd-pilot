@@ -62,6 +62,15 @@
     <ReviewDisclosure Text="Advanced details: archive handling" CollapseText="Hide advanced details" TestId="ug-source-advanced">
         <p>Safe ZIPs up to 50 MB compressed and 100 MB expanded, including nested folders, several services, document-only archives and unsupported technologies (reported as an analysis limitation). No traversal paths or symbolic links; archives are read in memory, never extracted to disk.</p>
     </ReviewDisclosure>
+    <h3 id="source-management" class="ug-subtitle">Source Management: which version is analysed</h3>
+    <p><a href="/sources">Source Management</a> lists every imported source with its capabilities (read from its content), its role, the application it belongs to and how far it is analysed. <em>Import source</em> and <em>Upload new version</em> add evidence; <em>Snapshot Registry</em> shows the stored snapshots and their history. Import Project brings evidence in; Source Management is where you inspect it.</p>
+    <ul class="ug-list">
+        <li><strong>Analysis status and review are different things.</strong> <em>Analyzed</em>, <em>Partly analyzed</em> and <em>Not analyzed</em> say how much of a source BirkNext could analyse (per area under <em>Analysis by area</em>). <em>Requires review</em> means a person must decide something, such as a role or an application association. Zero items requiring review does not mean the analysis is complete.</li>
+        <li><strong>Analysis baseline.</strong> When one source has several imported versions (another ZIP, another branch), choose which one BirkNext analyses. The newest import never becomes the baseline by itself, and without a choice BirkNext draws no implementation-specific conclusion from that source. With one version, that version is used.</li>
+        <li><strong>The analysis baseline is not the deployed version.</strong> It says what BirkNext reads, not what runs in an environment.</li>
+        <li><strong>Identity.</strong> A ZIP without repository metadata is grouped by its archive name, and the page says so; that is an inferred identity, not verified Git provenance.</li>
+    </ul>
+
     <h3 id="technology-coverage" class="ug-subtitle">Technology Coverage</h3>
     <p><a href="/technology-coverage">Technology Coverage</a> shows detected technologies and what BirkNext supports per dimension — configuration, source analysis, contracts, runtime observation, active tests, test plans. Unsupported is an analyzer or provider limitation; it does not reduce project quality.</p>
 </section>
@@ -115,4 +124,23 @@
         <article class="ug-card"><h3><a href="/implementation-traceability">Change Traceability</a></h3><p>Optional. Traces Azure DevOps work items through pull requests, commits and files. Without Azure DevOps it reads <em>Not configured</em>; change provenance never proves a requirement is implemented correctly.</p></article>
     </div>
     <p>Imported test results such as TRX are execution records. Source-discovered test definitions, planned tests, execution records, results and requirement links remain separate.</p>
+
+    <h3 id="relationship-review" class="ug-subtitle">Relationship Review</h3>
+    <p><a href="/correlation-review">Relationship Review</a> (Traceability &amp; impact) is where relationships between project evidence — requirements, user stories, source code, APIs, contracts and tests — are found and decided once, for every module that uses them.</p>
+    <ul class="ug-list">
+        <li><strong>Overview</strong>: run <em>analyze relationships</em> for the current workspace. Until then the page says <em>Not analyzed</em> and has nothing to decide.</li>
+        <li><strong>Needs Review</strong>: <em>Required decisions</em> change or block an interpretation elsewhere; <em>Optional suggestions</em> count nowhere until someone confirms them. Confirm or reject each one; your decision names the evidence it was made on.</li>
+        <li><strong>Relationships</strong> and <strong>History &amp; Governance</strong>: what is established, who decided and when. A decision made on older evidence becomes a suggestion again when that evidence changes.</li>
+    </ul>
+    <GuideCallout Kind="CalloutKind.Important"><p>A suggestion is never treated as established, and a confirmed relationship is not proof that anything was implemented, executed or passed.</p></GuideCallout>
+
+    <h3 id="reviewed-coverage" class="ug-subtitle">Reviewed requirement coverage</h3>
+    <p>Test Plan Suggestions, Project Quality and Recommended Workflow show how many requirements have <strong>reviewed scenario coverage</strong>. A requirement counts only when all of this holds:</p>
+    <ol class="ug-list">
+        <li>it is a requirement the specification itself defines (an id only seen in a test reference does not count);</li>
+        <li>its link to a scenario is verified — named by the published system guide, or confirmed in Relationship Review on the current evidence;</li>
+        <li>a tester accepted the <em>current</em> revision of that scenario for preparation in Test Plan Suggestions;</li>
+        <li>the scenario has not changed since (a link proposed on older scenario text is not verified for the new one).</li>
+    </ol>
+    <p>Otherwise the requirement shows <em>Association verified · scenario not reviewed</em>, <em>Needs relationship review</em> or <em>No documented scenario coverage</em>. Similar wording never counts, and reviewed coverage is preparation, not execution: only Test Execution &amp; Evidence says a test ran.</p>
 </section>

@@ -30,6 +30,19 @@
         <li><span class="ug-step-title">Follow Recommended Workflow</span><span class="ug-step-text">It names the next action for your actual evidence. <a href="/getting-started">Recommended Workflow</a></span></li>
         <li><span class="ug-step-title">Run the relevant reviews and tests</span><span class="ug-step-text">Only those that apply to your project; Not applicable is never a failure.</span></li>
     </ol>
+
+    <h3 id="tester-package" class="ug-subtitle">Start BirkNext on Windows (Tester Package)</h3>
+    <p>Testers use the <strong>Windows Tester Package</strong> (<code>BirkNext-Tester-Windows-x64-&lt;version&gt;.zip</code>) from the approved distribution. It contains everything BirkNext needs: its own local database and k6, so no Docker, Podman, .NET or database installation is needed. Developers who run BirkNext from source use a different setup; testers should not.</p>
+    <ol class="ug-steps ug-steps-compact">
+        <li><span class="ug-step-title">Extract the whole ZIP to a short folder</span><span class="ug-step-text">For example <code>C:\BirkNext</code>. Use <em>Extract All</em>; do not run BirkNext from inside the ZIP. The package has deep folders: keep the extract folder short (well under 140 characters), or Windows may silently leave files out.</span></li>
+        <li><span class="ug-step-title">Start <code>Start-BirkNext.exe</code></span><span class="ug-step-text">A window shows each step. The first start prepares the local database and can take a minute or more; later starts are faster.</span></li>
+        <li><span class="ug-step-title">Use the browser that opens</span><span class="ug-step-text">The browser BirkNext opens is connected automatically. Keep the BirkNext window open while you work; closing it (or Ctrl+C) stops BirkNext.</span></li>
+    </ol>
+    <ul class="ug-list">
+        <li><strong>Connection code.</strong> The start window shows a code such as <code>ABCD-EFGH-JKLM</code>. You only need it for a browser BirkNext did not open itself, for a link opened more than two minutes after start, or after BirkNext restarts. A link that opens BirkNext works once; the code can be typed in any browser on this PC.</li>
+        <li><strong>Your data</strong> is kept per Windows user in <code>%LOCALAPPDATA%\BirkNext\TesterNative</code>, outside the package, so replacing the package with a newer version keeps it. Starting <code>Start-BirkNext.exe</code> again while it runs opens the running BirkNext instead of a second copy.</li>
+        <li><strong>If something goes wrong</strong>, the window says what happened and what to do, and stays open until you press Enter. <code>Start-BirkNext.exe --diagnostics</code> creates a diagnostics file without passwords to send to the BirkNext owner. See <a href="@UserGuideContent.Href("troubleshooting")">Troubleshooting</a> for the common start-up problems.</li>
+    </ul>
 </section>
 
 <section id="concepts" class="ug-section ug-topic" data-topic="concepts" aria-labelledby="concepts-title">
@@ -121,9 +134,8 @@
     <p class="ug-lead">The <strong>Manual Tester</strong> workspace view (sidebar → Workspace view) is for functional testers who understand the business process, review requirements and prepare tests, without working with source code, APIs, message queues or infrastructure. It orders the existing modules as a testing workflow; it adds no module and changes no data.</p>
     <ol>
         <li><strong>Project setup</strong> — <em>Import Project</em> shows where BirkNext gets its information; <em>Source Management</em> shows which version of each source is analysed. When several versions of one source exist, choose the analysis baseline there first: without it, BirkNext draws no implementation-specific conclusion from that source.</li>
-        <li><strong>Understand the system</strong> — <em>System Understanding</em>: the business flow, each step, the rules, and what is source-backed versus only documented.</li>
+        <li><strong>Understand the system</strong> — <em>System Understanding</em>: the business flow, each step, the data, the rules and the gaps, and what is source-backed versus only documented. Its <em>What to test</em> tab shows the test situations the guide describes (preconditions, test data, expected outcome, evidence to observe, each with its state). Select one or more there and choose <em>Prepare in Test Plan Suggestions</em>.</li>
         <li><strong>Requirements</strong> — <em>Specification Explorer</em> (requirements, user stories, acceptance scenarios), <em>Document Quality Review</em> (clarity, completeness and testability of the requirements) and <em>Documentation Drift</em> (documents that no longer match).</li>
-        <li><strong>Understand the system</strong> — <em>System Understanding</em> is where you learn how the system works: flow, steps, data, business rules and gaps. Its <em>What to test</em> tab shows the test situations the guide describes (preconditions, test data, expected outcome, evidence to observe, each with its state). Select one or more there and choose <em>Prepare in Test Plan Suggestions</em>.</li>
         <li><strong>Test preparation</strong> — <em>Test Plan Suggestions</em> is where manual tests are prepared: choose scenarios (grouped by business area), turn them into reviewable Test Plan, Suite and Case drafts, review them, link Test Data, save snapshots, compare deliveries and prepare an Azure DevOps export (see <a href="@UserGuideContent.Href("test-plan-suggestions")">Test Plan Suggestions</a>). <em>Test Data</em> shows which approved test data exists and what is still missing. Formal Test Plans and execution stay in Azure DevOps.</li>
         <li><strong>Coverage &amp; traceability</strong> — <em>Requirements Traceability</em> keeps designed, referenced and executed coverage apart; <em>Test Coverage &amp; Overlap Review</em> finds requirements without tests and overlapping tests.</li>
         <li><strong>Quality &amp; follow-up</strong> — <em>Project Quality</em>, <em>Recommended Workflow</em> and this guide.</li>

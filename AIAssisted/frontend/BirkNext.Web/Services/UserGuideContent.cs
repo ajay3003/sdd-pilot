@@ -39,7 +39,8 @@ public static class UserGuideContent
     public static readonly IReadOnlyList<GuideTopic> Topics =
     [
         new("overview", "What BirkNext does", GettingStarted, "introduction home purpose quick start tasks"),
-        new("start-here", "Start here", GettingStarted, "first time onboarding steps order setup path"),
+        new("start-here", "Start here", GettingStarted, "first time onboarding steps order setup path windows tester package zip extract start-birknext exe launcher connection code browser start stop data folder",
+            "tester-package"),
         new("concepts", "Core concepts", GettingStarted, "applicability coverage quality evidence maturity snapshot provenance analyzer provider engine extension"),
         new("getting-started", "Import a project", GettingStarted, "import zip archive package demo project documents modules artifact candidates selection workspace",
             "project-inputs", "project-import", "multiple-documents", "sample-project-discovery", "current-workspace"),
@@ -51,10 +52,12 @@ public static class UserGuideContent
 
         new("project-model", "Project model and binding", ProjectEvidence, "project logical system package bind binding role required optional bound ready partial conflict source-only docs-only contract infrastructure supporting",
             "package-types", "project-readiness", "project-tab"),
-        new("source-analysis", "Source Analysis", ProjectEvidence, "snapshot source zip analyze fingerprint technology coverage", "technology-coverage"),
+        new("source-analysis", "Source Analysis", ProjectEvidence, "snapshot source zip analyze fingerprint technology coverage source management analysis baseline version branch partly analyzed requires review snapshot registry",
+            "technology-coverage", "source-management"),
         new("explorers", "Explorers and documents", ProjectEvidence, "specification constitution plan task data model explorer documents module", "task-explorer", "specification-review"),
         new("generated-documentation", "Generated documentation", ProjectEvidence, "autodoc generated docs explorer health freshness implementation-derived"),
-        new("traceability", "Traceability", ProjectEvidence, "requirements traceability task alignment change traceability azure devops implementation evidence", "implementation-review"),
+        new("traceability", "Traceability", ProjectEvidence, "requirements traceability task alignment change traceability azure devops implementation evidence relationship review correlation suggested confirmed rejected decision reviewed requirement coverage mt-7 scenario association",
+            "implementation-review", "relationship-review", "reviewed-coverage"),
 
         new("target-environment", "Target Environment", TestSetup, "environment tabs general project target application authentication endpoint browser thresholds core web vitals validation"),
         new("connected-systems", "Connected Systems", TestSetup, "altinn system provider detect needs attention blocked review required manual automated readiness",
@@ -102,7 +105,8 @@ public static class UserGuideContent
         new("workspace-transfer", "Backup & Transfer", VersionsWorkspace, "backup restore export import package birknext move project integration disaster recovery passphrase encryption"),
         new("feature-matrix", "Feature matrix", Reference, "all features navigation purpose boundary", "where", "workflows"),
         new("discovery", "Navigation badges", Reference, "badge partial setup no evidence backend connectivity", "backend-connectivity", "validation"),
-        new("about", "About and limitations", Reference, "ecosystem optional extension limitations", "ecosystem", "optional-capabilities", "feature-details"),
+        new("about", "About and limitations", Reference, "ecosystem optional extension limitations story behind birknext credits ajay anand claude ai-assisted development testers",
+            "ecosystem", "optional-capabilities", "feature-details", "story"),
     ];
 
     /// <summary>The three audience areas of the Help Center. User guides are the default landing area.</summary>
@@ -330,6 +334,16 @@ public static class UserGuideContent
             "Open the run's Executed against panel to see which dependency moved, then run the current definitions to get a current result.", "/execution-results", "Open Test Execution & Evidence"),
         new("An import reports conflicts or needs revalidation", "The package holds objects that already exist with other content, or environment-bound objects that need a destination environment.",
             "Review each conflict in Backup & Transfer → Import, choose an environment explicitly, then revalidate the imported (disabled) systems and flows before using them.", "/workspace-transfer", "Open Backup & Transfer"),
+        new("BirkNext (Tester Package) says the package is incomplete or damaged", "The ZIP was not fully extracted: it was opened without Extract All, the download was cut short, or the extract folder path was too long and Windows left deep files out.",
+            "Download the Tester Package again, use Extract All into a short folder such as C:\\BirkNext, and start Start-BirkNext.exe from there.", Href("tester-package"), "Read: Start BirkNext on Windows"),
+        new("BirkNext (Tester Package) cannot write to its data folder", "Your Windows user may not write to the data folder (a read-only, managed or synchronised location).",
+            "Make sure you can write to %LOCALAPPDATA%\\BirkNext, or start with another folder: Start-BirkNext.exe --data-dir <full path>.", Href("tester-package"), "Read: Start BirkNext on Windows"),
+        new("The browser asks for a connection code", "This browser was not opened by BirkNext, the link was opened more than two minutes after start, or BirkNext was restarted.",
+            "Enter the code shown in the BirkNext start window. A link that opens BirkNext works once; the code works in any browser on this PC.", Href("tester-package"), "Read: Start BirkNext on Windows"),
+        new("Start-BirkNext.exe says BirkNext is already running", "BirkNext is already running for this Windows user (perhaps in another window).",
+            "Use the open BirkNext window (or the browser it opened). Close that window first if you want to restart BirkNext.", Href("tester-package"), "Read: Start BirkNext on Windows"),
+        new("The first start of the Tester Package takes long", "The first start creates the local database and prepares the application; antivirus scanning can add time.",
+            "Wait while the window still reports progress. If it stops with a message, follow it; Start-BirkNext.exe --diagnostics collects details without passwords.", Href("tester-package"), "Read: Start BirkNext on Windows"),
         new("Generated documentation is unavailable", "The imported project has no generated documentation folders, or they were not captured.",
             "Generated documentation is optional. Re-import a package that contains it if you need Health or Drift.", "/generated-documentation-health", "Open Generated Documentation Health"),
     ];

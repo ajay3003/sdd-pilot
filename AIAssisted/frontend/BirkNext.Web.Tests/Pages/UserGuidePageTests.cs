@@ -249,4 +249,28 @@ public sealed class UserGuidePageTests : BunitContext
         findings.Should().NotContain(f => f.Severity == "Fail");
         findings.Should().NotContain(f => f.Category == "Legacy terminology");
     }
+
+    [Fact] // Content task 2026-11-13: product-origin credit, tester start-up guidance, MT-7 and Relationship Review are in the existing guide
+    public void Guide_content_2026_11_13_story_tester_package_relationship_review_and_reviewed_coverage()
+    {
+        var text = Normalize(Source);
+        // The Story Behind BirkNext: inside the existing About article (no new topic, route or component), credits as requested.
+        UserGuideContent.TopicFor("story")!.Id.Should().Be("about");
+        text.Should().Contain("The Story Behind BirkNext").And.Contain("Built with curiosity. Tested with suspicion.")
+            .And.Contain("Concept, vision &amp; requirements:</strong> Ajay Anand").And.Contain("AI-assisted development:</strong> Claude")
+            .And.Contain("If you find a bug, congratulations. You're using the tool correctly.");
+        text.Should().NotContainAny(["Claude is the author", "owned by Claude", "copyright"], "a product-origin credit, not an ownership claim");
+        // Tester Package start-up: the real launcher name, short extract folder, automatic connection, code and diagnostics.
+        UserGuideContent.TopicFor("tester-package")!.Id.Should().Be("start-here");
+        text.Should().Contain("Start-BirkNext.exe").And.Contain("Extract All").And.Contain("--diagnostics").And.Contain("connected automatically");
+        UserGuideContent.Troubleshooting.Where(t => t.Href == UserGuideContent.Href("tester-package")).Should().HaveCount(5);
+        // Relationship Review and MT-7 reviewed coverage are explained; reviewed coverage is never execution.
+        UserGuideContent.TopicFor("relationship-review")!.Id.Should().Be("traceability");
+        UserGuideContent.TopicFor("reviewed-coverage")!.Id.Should().Be("traceability");
+        text.Should().Contain("Similar wording never counts, and reviewed coverage is preparation, not execution");
+        UserGuideContent.TopicFor("source-management")!.Id.Should().Be("source-analysis");
+        text.Should().Contain("The newest import never becomes the baseline by itself");
+        // The Manual testing workflow lists "Understand the system" once.
+        Regex.Matches(text, "<li><strong>Understand the system</strong>").Count.Should().Be(1);
+    }
 }
