@@ -64,33 +64,52 @@ public sealed class TechnologyCoverageUxTests : BunitContext
         return cut;
     }
 
+    /// <summary>Opens one of the three tabs through the URL (as a link or Back/Forward would).</summary>
+    private void Tab(IRenderedComponent<TechnologyCoverage> cut, string tab)
+    {
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"technology-coverage?tab={tab}");
+        cut.WaitForAssertion(() => cut.Find($"[data-testid=tc-tab][data-tab={tab}]").GetAttribute("aria-selected").Should().Be("true"));
+    }
+
     [Fact]
-    public void ProjectCoverageComesBeforeTheCollapsedSupportReference()
+    public void Three_tabs_project_coverage_first_then_detected_technologies_then_BirkNext_capabilities()
     {
         var cut = RenderLoaded(OrderService());
 
+        cut.FindAll("[data-testid=tc-tab]").Select(t => t.TextContent).Should().Equal("Project coverage", "Detected technologies", "BirkNext capabilities");
+        cut.Find("[data-testid=tc-tab][aria-selected=true]").GetAttribute("data-tab").Should().Be("project", "project coverage is the entry point");
         var markup = cut.Markup;
         markup.IndexOf("data-testid=\"tc-attention\"", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("data-testid=\"tc-reviews\"", StringComparison.Ordinal));
-        markup.IndexOf("data-testid=\"tc-detected\"", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("data-testid=\"tc-registry\"", StringComparison.Ordinal));
-        cut.Find("[data-testid=tc-registry]").HasAttribute("open").Should().BeFalse("the product reference is secondary and collapsed by default");
+        cut.FindAll("[data-testid=tc-detected], [data-testid=tc-registry]").Should().BeEmpty("detected technologies and the general reference have their own tabs");
+        cut.Find("#tc-project-h").TextContent.Should().Be("Project coverage");
+
+        Tab(cut, "detected");
+        cut.Find("[data-testid=tc-detected]");
+        cut.FindAll("[data-testid=tc-reviews], [data-testid=tc-registry]").Should().BeEmpty();
+
+        Tab(cut, "capabilities");
+        cut.Find("[data-testid=tc-registry]").HasAttribute("open").Should().BeTrue("on its own tab the reference is the content");
         cut.FindAll(".tc-category").Should().OnlyContain(c => !c.HasAttribute("open"), "categories start collapsed");
         cut.Find("#tc-reference-h").TextContent.Should().Be("BirkNext capability reference");
-        cut.Find("#tc-project-h").TextContent.Should().Be("Project coverage");
+        cut.FindAll("[data-testid=tc-detected]").Should().BeEmpty("the general reference never lists project detections");
     }
 
     [Fact]
     public void DetectedTechnologiesListOnlyProjectTechnologies_AndTheReferenceStaysComplete()
     {
         var cut = RenderLoaded(OrderService());
+        Tab(cut, "detected");
 
         cut.Find("[data-testid=tc-detected]").QuerySelectorAll("tbody tr[data-testid^=tc-tech-]").Should().HaveCount(4);
         cut.FindAll("[data-testid=tc-tech-lang\\.java]").Should().BeEmpty("the global catalog does not leak into the project list");
-        cut.FindAll("[data-testid^=tc-ref-]").Select(r => r.GetAttribute("data-testid"))
-            .Should().BeEquivalentTo(["tc-ref-lang.csharp", "tc-ref-lang.python", "tc-ref-integration.servicebus", "tc-ref-pipeline.azuredevops"], "the reference starts on this project's technologies");
-        cut.Find("[data-testid=tc-reference-project-only]").Change(false);
-        cut.FindAll("[data-testid^=tc-ref-]").Should().HaveCount(TechnologySupportRegistry.Technologies.Count, "the full reference is complete");
         cut.Find("[data-testid=tc-detected]").QuerySelectorAll("thead th").Select(th => th.TextContent)
             .Should().Equal("Technology", "Evidence", "BirkNext support", "What works", "Main limitation", "Next action");
+
+        Tab(cut, "capabilities");
+        cut.FindAll("[data-testid^=tc-ref-]").Should().HaveCount(TechnologySupportRegistry.Technologies.Count, "the general reference is complete by default");
+        cut.Find("[data-testid=tc-reference-project-only]").Change(true);
+        cut.FindAll("[data-testid^=tc-ref-]").Select(r => r.GetAttribute("data-testid"))
+            .Should().BeEquivalentTo(["tc-ref-lang.csharp", "tc-ref-lang.python", "tc-ref-integration.servicebus", "tc-ref-pipeline.azuredevops"], "it can be narrowed to this project's technologies");
     }
 
     [Fact]
@@ -98,16 +117,18 @@ public sealed class TechnologyCoverageUxTests : BunitContext
     {
         var cut = RenderLoaded(OrderService());
 
+        cut.FindAll(".sd-pill-attention").Should().BeEmpty();
+        cut.Find("[data-testid=tc-attention-unanalyzed]").ClassName.Should().Contain("tc-neutral");
+        cut.Find("[data-testid=tc-attention-unanalyzed]").TextContent.Should().Contain("4 source files were not analyzed (BirkNext limitation)");
+        var split = cut.Find("[data-testid=tc-review-source-analysis] [data-testid=tc-source-split]").TextContent;
+        split.Should().Contain("Analyzed").And.Contain("C#").And.Contain("Detection only").And.Contain("Python");
+
+        Tab(cut, "detected");
         var python = cut.Find("[data-testid=tc-tech-lang\\.python]");
         python.QuerySelector("[data-testid=tc-overall]")!.TextContent.Should().Be("Detection only");
         python.QuerySelector("[data-testid=tc-overall]")!.ClassName.Should().Contain("sd-pill-muted");
         cut.Find("[data-testid=tc-tech-lang\\.csharp] [data-testid=tc-overall]").TextContent.Should().Be("Supported");
         cut.FindAll(".sd-pill-attention").Should().BeEmpty();
-        cut.Find("[data-testid=tc-attention-unanalyzed]").ClassName.Should().Contain("tc-neutral");
-        cut.Find("[data-testid=tc-attention-unanalyzed]").TextContent.Should().Contain("4 source files were not analyzed (BirkNext limitation)");
-
-        var split = cut.Find("[data-testid=tc-review-source-analysis] [data-testid=tc-source-split]").TextContent;
-        split.Should().Contain("Analyzed").And.Contain("C#").And.Contain("Detection only").And.Contain("Python");
     }
 
     [Fact]
@@ -176,6 +197,7 @@ public sealed class TechnologyCoverageUxTests : BunitContext
     public void SupportDetailsShowEveryCapabilityDimension_WithRuntimeKeptSeparate()
     {
         var cut = RenderLoaded(OrderService());
+        Tab(cut, "detected");
 
         cut.Find("[data-testid=tc-tech-integration\\.servicebus] [data-testid=tc-details-toggle]").Click();
         var details = cut.Find("[data-testid=tc-details-integration\\.servicebus]");
@@ -189,6 +211,7 @@ public sealed class TechnologyCoverageUxTests : BunitContext
     public void DetectedTechnologyFiltersNarrowTheProjectList()
     {
         var cut = RenderLoaded(OrderService());
+        Tab(cut, "detected");
 
         cut.Find("[data-testid=tc-detected-state]").Change("None");
         cut.Find("[data-testid=tc-detected]").QuerySelectorAll("tbody tr[data-testid^=tc-tech-]").Select(r => r.GetAttribute("data-testid")).Should().Equal("tc-tech-lang.python");
@@ -201,8 +224,8 @@ public sealed class TechnologyCoverageUxTests : BunitContext
     public void SupportReferenceSearchCategoryAndCapabilityFiltersWork()
     {
         var cut = RenderLoaded(OrderService());
+        Tab(cut, "capabilities");
 
-        cut.Find("[data-testid=tc-reference-project-only]").Change(false);
         cut.Find("[data-testid=tc-reference-search]").Input("kafka");
         cut.FindAll("[data-testid^=tc-ref-]").Select(r => r.GetAttribute("data-testid")).Should().Equal("tc-ref-integration.kafka");
         cut.FindAll(".tc-category").Should().ContainSingle().Which.HasAttribute("open").Should().BeTrue("a filtered category opens to show its match");
@@ -228,7 +251,7 @@ public sealed class TechnologyCoverageUxTests : BunitContext
         row.GetAttribute("data-status").Should().Be("NotApplicable");
         row.QuerySelector("[data-testid=tc-review-action]").Should().BeNull("domain extensions are never one click away from the coverage page");
         cut.Find("[data-testid=tc-extensions]").TextContent.Should().Be("None");
-        cut.Find("[data-testid=tc-project-type]").TextContent.Should().Be("Generic project");
+        cut.Find("[data-testid=tc-project-type]").TextContent.Should().Be("General project profile — multiple technologies detected", "no domain profile matched; not a guessed type");
         row.TextContent.Should().Contain("Optional: Apply the M2LB integration template only if this is an M2LB environment.");
     }
 
@@ -271,7 +294,7 @@ public sealed class TechnologyCoverageUxTests : BunitContext
     {
         var cut = RenderLoaded(OrderService());
 
-        cut.Find("[data-testid=tc-reviews] thead").TextContent.Should().Contain("Applicability").And.Contain("Readiness").And.Contain("Coverage");
+        cut.Find("[data-testid=tc-reviews] thead").TextContent.Should().Contain("Applicability").And.Contain("Readiness").And.Contain("Capability coverage");
         var api = cut.Find("[data-testid=tc-review-api-quality-review]");
         api.QuerySelector("[data-testid=tc-review-applicability]")!.TextContent.Should().Be("Applicable");
         api.QuerySelector("[data-testid=tc-review-readiness]")!.TextContent.Should().Be("Needs configuration");
@@ -280,7 +303,10 @@ public sealed class TechnologyCoverageUxTests : BunitContext
         frontend.QuerySelector("[data-testid=tc-review-applicability]")!.TextContent.Should().Be("Not applicable");
         frontend.QuerySelector("[data-testid=tc-review-readiness] .sd-pill")!.ClassName.Should().Contain("sd-pill-muted");
 
-        TechnologyCoverageGuidance.Dimensions(ApplicabilityStatus.PartiallyApplicable).Should().Be(new ReviewDimensions("Applicable", "Ready", "Partial"));
+        TechnologyCoverageGuidance.Dimensions(ApplicabilityStatus.PartiallyApplicable).Should().Be(new ReviewDimensions("Applicable", "Ready to run", "Partial capability"));
+        TechnologyCoverageGuidance.Dimensions(ApplicabilityStatus.Applicable).Should().Be(new ReviewDimensions("Applicable", "Ready to run", "Full capability"), "ready to run is not a completed review; full capability is not test coverage");
+        TechnologyCoverageGuidance.ProjectProfile(["Skolenærvær"], 3).Should().Be("Domain project (Skolenærvær)");
+        TechnologyCoverageGuidance.ProjectProfile([], 1).Should().Be("General project profile");
         TechnologyCoverageGuidance.Dimensions(ApplicabilityStatus.Unsupported).Readiness.Should().Be("Not supported by BirkNext");
         TechnologyCoverageGuidance.Dimensions(ApplicabilityStatus.NotEnoughEvidence).Applicability.Should().Be("Not determined");
     }
@@ -305,12 +331,14 @@ public sealed class TechnologyCoverageUxTests : BunitContext
     public void DetectedTechnologiesSeparateSourceEvidenceFromSupport_AndNeverDeadEnd()
     {
         var cut = RenderLoaded(OrderService());
+        Tab(cut, "detected");
 
         cut.Find("[data-testid=tc-tech-lang\\.csharp] [data-testid=tc-evidence]").TextContent.Should().StartWith("Detected in source");
         cut.Find("[data-testid=tc-tech-integration\\.servicebus] [data-testid=tc-evidence]").TextContent.Should().StartWith("Inferred from source");
         cut.Find("[data-testid=tc-tech-lang\\.python] [data-testid=tc-what-works]").TextContent.Should().Be("Detection only");
         cut.Find("[data-testid=tc-tech-lang\\.python] [data-testid=tc-no-action]").TextContent.Should().Be("No Source Analysis action available");
         cut.Markup.Should().NotContain("No BirkNext action");
+        Tab(cut, "capabilities");
         cut.FindAll("[data-testid=tc-reference-providers-cell]").Should().BeEmpty("implementation details are hidden by default");
         cut.Find("[data-testid=tc-reference-show-providers]").Change(true);
         cut.FindAll("[data-testid=tc-reference-providers-cell]").Should().NotBeEmpty();

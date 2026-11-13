@@ -77,3 +77,9 @@
 .tc-check { display: inline-flex; gap: .35rem; align-items: center; font-size: .9rem; }
 .tc-cell-na { color: #4b5563; }
 @media (max-width: 900px) { .tc-coverage-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* Three views: Project coverage (default), Detected technologies, BirkNext capabilities. */
+.tc-tabs { display: flex; flex-wrap: wrap; gap: .25rem; border-bottom: 1px solid var(--clr-border); margin: 1rem 0; }
+.tc-tab { padding: .5rem .9rem; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; text-decoration: none; color: inherit; font-weight: 600; }
+.tc-tab.is-current { border-color: var(--clr-border); background: var(--clr-surface-white); margin-bottom: -1px; }
+.tc-tab:focus-visible { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; }

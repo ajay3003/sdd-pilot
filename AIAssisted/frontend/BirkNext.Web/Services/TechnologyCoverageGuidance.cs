@@ -70,14 +70,23 @@ public static class TechnologyCoverageGuidance
     /// </summary>
     public static ReviewDimensions Dimensions(ApplicabilityStatus status) => status switch
     {
-        ApplicabilityStatus.Applicable => new("Applicable", "Ready", "Full"),
-        ApplicabilityStatus.PartiallyApplicable => new("Applicable", "Ready", "Partial"),
+        ApplicabilityStatus.Applicable => new("Applicable", "Ready to run", "Full capability"),
+        ApplicabilityStatus.PartiallyApplicable => new("Applicable", "Ready to run", "Partial capability"),
         ApplicabilityStatus.NeedsConfiguration => new("Applicable", "Needs configuration", "Not assessed"),
         ApplicabilityStatus.NeedsRefresh => new("Applicable", "Needs refresh", "Not assessed"),
         ApplicabilityStatus.NotEnoughEvidence => new("Not determined", "Needs evidence", "Not assessed"),
         ApplicabilityStatus.Unsupported => new("Applicable", "Not supported by BirkNext", "Not assessed"),
         _ => new("Not applicable", "—", "—"),
     };
+
+    /// <summary>
+    /// The project profile from the canonical rule (a domain extension applies, or not). "General" is not a defect or a guess: it says no
+    /// specialised profile matched; the detected technologies are listed separately.
+    /// </summary>
+    public static string ProjectProfile(IReadOnlyCollection<string>? domainExtensions, int detectedTechnologies) =>
+        domainExtensions is { Count: > 0 } ? $"Domain project ({string.Join(", ", domainExtensions)})"
+        : detectedTechnologies > 1 ? "General project profile — multiple technologies detected"
+        : "General project profile";
 
     /// <summary>Ready / needs setup / partial / not applicable counts for the compact readiness summary.</summary>
     public static (int Ready, int NeedSetup, int Partial, int NotApplicable) ReadinessCounts(IEnumerable<ReviewApplicability?> reviews)

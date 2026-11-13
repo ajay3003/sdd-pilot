@@ -86,9 +86,9 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
     public void CoveragePage_ShowsUnsupportedTechnologiesNeutrally_AndPerDimension()
     {
         Register(PaymentHub());
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("technology-coverage?tab=detected");
         var cut = Render<TechnologyCoverage>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=tc-tech-integration\\.kafka]"));
-        cut.Find("[data-testid=tc-unsupported-files]").TextContent.Should().Be("3");
         var kafka = cut.Find("[data-testid=tc-tech-integration\\.kafka]");
         kafka.GetAttribute("data-overall").Should().Be("Partial");
         kafka.TextContent.Should().Contain("Inferred");
@@ -100,6 +100,8 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
         details.QuerySelectorAll(".sd-pill").Select(p => p.TextContent).Should().Contain(["Partial", "Not available in BirkNext"]);
         cut.Find("[data-testid=tc-tech-lang\\.java]").GetAttribute("data-overall").Should().Be("Unsupported");
         cut.FindAll(".sd-pill-attention").Should().BeEmpty("unsupported is a tool limitation, never the failure tone");
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("technology-coverage");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tc-unsupported-files]").TextContent.Should().Be("3"));
         cut.Find("[data-testid=tc-review-source-analysis]").GetAttribute("data-status").Should().Be("Unsupported");
         cut.Find("[data-testid=tc-review-dependency-review]").TextContent.Should().Contain("SBOM");
         cut.Find("[data-testid=tc-extensions]").TextContent.Should().Be("None");
@@ -112,6 +114,7 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
         coverage = coverage with { Source = coverage.Source! with { Technologies = [.. coverage.Source.Technologies,
             new("iac.terraform", "Terraform", TechnologyArea.Cloud, BirkNext.Applicability.DetectionConfidence.Confirmed, 1, ["PaymentHub/infra/main.tf"])] } };
         Register(coverage);
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("technology-coverage?tab=detected");
         var cut = Render<TechnologyCoverage>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=tc-tech-iac\\.terraform]"));
 
@@ -148,9 +151,12 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
     public void CoveragePage_DocumentOnlyProject_SaysWhatIsMissing()
     {
         Register(new ProjectTechnologyCoverage { EnvironmentId = "doc", Notices = ["No source archive has been analyzed for this environment."] });
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("technology-coverage?tab=detected");
         var cut = Render<TechnologyCoverage>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=tc-no-technologies]"));
         cut.Find("[data-testid=tc-notice]").TextContent.Should().Contain("No source archive");
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("technology-coverage");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tc-review-source-analysis]"));
         cut.Find("[data-testid=tc-review-source-analysis]").GetAttribute("data-status").Should().Be("NotEnoughEvidence");
         cut.Find("[data-testid=tc-review-pipeline-review]").GetAttribute("data-status").Should().Be("NotEnoughEvidence");
     }
