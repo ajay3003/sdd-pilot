@@ -98,14 +98,8 @@
 
     private string Key() => $"{Scope}|{Version}|{_action}|{string.Join(",", Modules ?? [])}";
 
-    private static string Icon(GateDecision d) => d switch
-    {
-        GateDecision.Ready => "✓",
-        GateDecision.ReadyWithLimitations => "!",
-        GateDecision.PassedWithException => "✓!",
-        GateDecision.Blocked => "✕",
-        _ => "?",
-    };
+    // One icon mapping for gate decisions and finding levels (ReleaseReadinessPresentation, from StatusVocabulary): no bare "?".
+    private static string Icon(GateDecision d) => ReleaseReadinessPresentation.Icon(d);
 
-    private static string LevelIcon(FindingLevel l) => l switch { FindingLevel.Blocking => "✕", FindingLevel.Warning => "!", FindingLevel.NotAssessed => "?", _ => "i" };
+    private static string LevelIcon(FindingLevel l) => ReleaseReadinessPresentation.LevelIcon(l);
 }

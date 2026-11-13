@@ -99,7 +99,7 @@
                 @if (!Prepared(_assessment))
                 {
                     <section class="rr-card rr-decision rr-notassessed" aria-labelledby="rr-decision-h" data-testid="rr-decision" data-decision="@_assessment.Decision">
-                        <h2 id="rr-decision-h"><span class="rr-icon" aria-hidden="true">?</span> Release Readiness — Not assessed</h2>
+                        <h2 id="rr-decision-h"><span class="rr-icon" aria-hidden="true">@ReleaseReadinessPresentation.Icon(GateDecision.NotAssessed)</span> Release Readiness — Not assessed</h2>
                         <p data-testid="rr-reason">Required relationship evidence has not been prepared.</p>
                         <p class="rr-muted rr-small">Readiness reads requirements, tests and findings from the project's relationship analysis. Analyze the project's relationships first;
                             nothing is assessed (and nothing counts as zero) until then.</p>
@@ -245,14 +245,7 @@
         _ => o.ToString(),
     };
 
-    private static string Icon(GateDecision d) => d switch
-    {
-        GateDecision.Ready => "✓",
-        GateDecision.ReadyWithLimitations => "!",
-        GateDecision.PassedWithException => "✓!",
-        GateDecision.Blocked => "✕",
-        _ => "?",
-    };
+    private static string Icon(GateDecision d) => ReleaseReadinessPresentation.Icon(d);
 
     /// <summary>Imported TRX results in the workspace (reported as found, never as execution of the release scope).</summary>
     private ReleaseExecutionEvidence? Execution => Services.GetService(typeof(WorkspaceArtifactRepository)) is WorkspaceArtifactRepository repository
@@ -319,8 +312,11 @@
         <section class="rr-card" aria-labelledby="rr-dims-h" data-testid="rr-dimensions">
             <h2 id="rr-dims-h">Evidence dimensions</h2>
             <p class="rr-muted rr-small rr-legend" data-testid="rr-legend">
-                <span class="rr-chip is-ready">✓ Ready</span> <span class="rr-chip is-limited">! Ready with limitations</span> <span class="rr-chip is-blocked">✕ Blocked</span>
-                <span class="rr-chip is-notassessed">? Not assessed</span> — a required dimension that is Blocked blocks the release; one that is Not assessed keeps it Not assessed.</p>
+                @foreach (var legend in new[] { GateDecision.Ready, GateDecision.ReadyWithLimitations, GateDecision.Blocked, GateDecision.NotAssessed })
+                {
+                    <span class="rr-chip is-@ReleaseReadinessPresentation.Tone(legend)" data-testid="rr-legend-chip" data-decision="@legend"><span aria-hidden="true">@ReleaseReadinessPresentation.Icon(legend) </span>@GovernancePolicies.DecisionLabel(legend)</span>@(" ")
+                }
+                — a required dimension that is Blocked blocks the release; one that is Not assessed keeps it Not assessed.</p>
             @foreach (var g in ReleaseReadinessPresentation.Groups(a))
             {
                 <div class="rr-dim-group" data-testid="rr-dim-group" data-applicability="@g.Applicability">

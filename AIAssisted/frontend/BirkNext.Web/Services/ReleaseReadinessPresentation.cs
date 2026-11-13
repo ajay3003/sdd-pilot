@@ -136,6 +136,30 @@ public static class ReleaseReadinessPresentation
     public static string Tally(IEnumerable<ReadinessDimension> dims) =>
         string.Join(" · ", dims.GroupBy(d => d.State).OrderBy(g => Array.IndexOf(StateOrder, g.Key)).Select(g => $"{g.Count()} {GovernancePolicies.DecisionLabel(g.Key)}"));
 
+    /// <summary>
+    /// The status icon of a gate decision, from the one status vocabulary (<see cref="StatusVocabulary"/>): Not assessed is the neutral outlined circle,
+    /// never a bare "?" (which reads as a missing icon). Ready with limitations takes the vocabulary's warning icon so it is never mistaken for Ready;
+    /// Passed with exception keeps its own mark. Decorative only: every consumer shows the decision label next to it (aria-hidden), so meaning never
+    /// depends on the icon or its colour. An undefined value falls back to the neutral Not assessed icon. Presentation only — no decision changes.
+    /// </summary>
+    public static string Icon(GateDecision d) => d switch
+    {
+        GateDecision.Ready => StatusVocabulary.Of(SemanticStatus.Ready).Icon,
+        GateDecision.ReadyWithLimitations => StatusVocabulary.Of(SemanticStatus.Warning).Icon,
+        GateDecision.PassedWithException => "✓!",
+        GateDecision.Blocked => StatusVocabulary.Of(SemanticStatus.Blocked).Icon,
+        _ => StatusVocabulary.Of(SemanticStatus.NotAssessed).Icon,
+    };
+
+    /// <summary>The icon of a finding level (Governance gates); Not assessed is the same neutral icon as the decision's.</summary>
+    public static string LevelIcon(FindingLevel l) => l switch
+    {
+        FindingLevel.Blocking => "✕",
+        FindingLevel.Warning => "!",
+        FindingLevel.NotAssessed => StatusVocabulary.Of(SemanticStatus.NotAssessed).Icon,
+        _ => "i",
+    };
+
     public static string Tone(GateDecision d) => d switch
     {
         GateDecision.Ready => "ready",

@@ -58,7 +58,7 @@ public sealed class ReleaseReadinessPageTests : BunitContext
         var api = await Setup();
         var cut = Render<ReleaseReadiness>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=rr-decision]").GetAttribute("data-decision").Should().Be("ReadyWithLimitations"));
-        cut.Find("[data-testid=rr-decision]").TextContent.Should().Contain("!").And.Contain("Ready with limitations");
+        cut.Find("[data-testid=rr-decision]").TextContent.Should().Contain("⚠").And.Contain("Ready with limitations");
         var perf = cut.FindAll("[data-testid=rr-dimension]").Single(d => d.GetAttribute("data-key") == "Performance");
         perf.TextContent.Should().Contain("Not assessed").And.Contain("Open Performance Test Review");
         perf.Closest("[data-testid=rr-dim-group]")!.GetAttribute("data-applicability").Should().Be("Optional", "dimensions are grouped Required / Optional");
@@ -142,6 +142,10 @@ public sealed class ReleaseReadinessPageTests : BunitContext
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=rr-decision]").TextContent.Should().Contain("Release Readiness — Not assessed")
             .And.Contain("Required relationship evidence has not been prepared."));
+        // Status icon: the neutral outlined circle of the status vocabulary, never a bare "?"; decorative (the heading text carries the meaning).
+        var icon = cut.Find("[data-testid=rr-decision] .rr-icon");
+        icon.TextContent.Trim().Should().Be("○");
+        icon.GetAttribute("aria-hidden").Should().Be("true");
         cut.Find("[data-testid=rr-application]").TextContent.Should().Be("M2LB", "the release is about the Target Application, not the environment name");
         cut.Find("[data-testid=rr-intro]").TextContent.Should().Contain("Assess whether a release is ready");
         cut.Find("[data-testid=rr-analyze]").GetAttribute("href").Should().Be("correlation-review");
@@ -209,6 +213,10 @@ public sealed class ReleaseReadinessPageTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=rr-dimensions]"));
         cut.FindAll("[data-testid=rr-dim-group]").Select(g => g.GetAttribute("data-applicability")).Should().Equal("Required", "Optional");
         cut.Find("[data-testid=rr-legend]").TextContent.Should().Contain("Ready").And.Contain("Ready with limitations").And.Contain("Blocked").And.Contain("Not assessed");
+        // The legend uses the same icons as the decision and the dimension chips; no bare "?" anywhere in the legend or the chips.
+        cut.FindAll("[data-testid=rr-legend-chip]").Select(c => (c.GetAttribute("data-decision"), c.TextContent.Trim())).Should().Equal(
+            ("Ready", "✓Ready"), ("ReadyWithLimitations", "⚠Ready with limitations"), ("Blocked", "⛔Blocked"), ("NotAssessed", "○Not assessed")); // icon span + label; the chip's CSS gap spaces them
+        cut.Find("[data-testid=rr-dimensions]").TextContent.Should().NotContain("?");
         cut.FindAll("[data-testid=rr-metric]").Select(m => m.GetAttribute("data-key")).Should().Equal("packs", "requirements", "tested", "executed", "blocking", "decisions", "gaps");
         cut.Find("[data-testid=rr-fact-packs]").TextContent.Should().Be("1");
     }

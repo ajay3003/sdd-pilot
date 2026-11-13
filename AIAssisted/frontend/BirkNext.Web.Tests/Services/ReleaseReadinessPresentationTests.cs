@@ -193,4 +193,22 @@ public sealed class ReleaseReadinessPresentationTests
         rows["FR-004"].Mapping.Should().Be("1 by confirmed test name");
         rows["FR-005"].State.Should().Be(RequirementEvidenceState.NotExecuted, "a confirmed test without a result is not executed");
     }
+
+    [Fact] // Status icons come from the status vocabulary; Not assessed and an undefined value are the neutral circle, never a bare "?"
+    public void Every_gate_decision_has_a_vocabulary_icon_and_none_is_a_bare_question_mark()
+    {
+        ReleaseReadinessPresentation.Icon(GateDecision.Ready).Should().Be(StatusVocabulary.Of(SemanticStatus.Ready).Icon);
+        ReleaseReadinessPresentation.Icon(GateDecision.ReadyWithLimitations).Should().Be(StatusVocabulary.Of(SemanticStatus.Warning).Icon, "never the same mark as Ready");
+        ReleaseReadinessPresentation.Icon(GateDecision.Blocked).Should().Be(StatusVocabulary.Of(SemanticStatus.Blocked).Icon);
+        ReleaseReadinessPresentation.Icon(GateDecision.NotAssessed).Should().Be("○").And.Be(StatusVocabulary.Of(SemanticStatus.NotAssessed).Icon);
+        ReleaseReadinessPresentation.Icon((GateDecision)99).Should().Be("○", "an unsupported value falls back to the neutral icon");
+        foreach (var d in Enum.GetValues<GateDecision>())
+        {
+            ReleaseReadinessPresentation.Icon(d).Should().NotBe("?").And.NotBeNullOrWhiteSpace();
+            GovernancePolicies.DecisionLabel(d).Should().NotBeNullOrWhiteSpace("the label is always shown beside the icon");
+        }
+        Enum.GetValues<GateDecision>().Select(ReleaseReadinessPresentation.Icon).Distinct().Should().HaveCount(Enum.GetValues<GateDecision>().Length, "each decision is visually distinct");
+        ReleaseReadinessPresentation.LevelIcon(FindingLevel.NotAssessed).Should().Be("○");
+        foreach (var l in Enum.GetValues<FindingLevel>()) ReleaseReadinessPresentation.LevelIcon(l).Should().NotBe("?");
+    }
 }

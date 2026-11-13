@@ -30,7 +30,7 @@ public sealed class GovernanceGatePanelTests : BunitContext
 
         var cut = Render<GovernanceGatePanel>(p => p.Add(x => x.Scope, "dev"));
         cut.WaitForAssertion(() => cut.Find("[data-testid=ggp-decision]").GetAttribute("data-decision").Should().Be("Blocked"));
-        cut.Find("[data-testid=ggp-decision]").TextContent.Should().Contain("✕").And.Contain("Blocked").And.Contain("1 blocking finding for release readiness");
+        cut.Find("[data-testid=ggp-decision]").TextContent.Should().Contain("⛔").And.Contain("Blocked").And.Contain("1 blocking finding for release readiness");
         var cards = cut.FindAll("[data-testid=ggp-finding]");
         cards[0].GetAttribute("data-policy").Should().Be("gov.identity.conflict");
         cards[0].TextContent.Should().Contain("Blocking").And.Contain("Found in: Buf.Meldingsutveksler.Service → Meldingsutveksleren")
