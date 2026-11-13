@@ -1,0 +1,26 @@
+/* Systems & Scopes: compact lists, one editor below the list (no side panel). */
+.psc-header h1 { margin: 0 0 .25rem; }
+.psc-muted { color: var(--clr-text-muted); }
+.psc-error { color: var(--clr-danger, #b91c1c); }
+.psc-notice { color: var(--clr-text); background: var(--clr-surface-subtle, #f1f5f9); padding: .4rem .6rem; border-radius: 6px; }
+.psc-tabs { display: flex; flex-wrap: wrap; gap: .25rem; border-bottom: 1px solid var(--clr-border); margin: 1rem 0; }
+.psc-tab { padding: .5rem .9rem; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; text-decoration: none; color: inherit; font-weight: 600; }
+.psc-tab.is-current { border-color: var(--clr-border); background: var(--clr-surface-white); margin-bottom: -1px; }
+.psc-h2 { font-size: 1.15rem; margin: .5rem 0; }
+.psc-h3 { font-size: 1.05rem; margin: .25rem 0 .5rem; }
+.psc-h4 { font-size: .95rem; margin: .75rem 0 .35rem; }
+.psc-head-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .5rem; }
+.psc-list { list-style: none; padding: 0; margin: .5rem 0; display: grid; gap: .35rem; }
+.psc-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .6rem; padding: .45rem .6rem; border: 1px solid var(--clr-border); border-radius: 6px; background: var(--clr-surface-white); }
+.psc-pill { font-size: .78rem; padding: .05rem .45rem; border-radius: 999px; background: var(--clr-surface-subtle, #f1f5f9); border: 1px solid var(--clr-border); }
+.psc-field { display: grid; gap: .2rem; font-weight: 600; font-size: .88rem; }
+.psc-field input, .psc-field select { font-weight: 400; }
+.psc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .6rem; }
+.psc-wide { grid-column: 1 / -1; }
+.psc-editor { margin-top: 1rem; padding: .9rem 1rem; border: 1px solid var(--clr-border); border-radius: 8px; background: var(--clr-surface-white); }
+.psc-chips { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: .35rem; }
+.psc-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .15rem .5rem; border: 1px solid var(--clr-border); border-radius: 999px; }
+.psc-picker { margin: .6rem 0; }
+.psc-picker > summary { cursor: pointer; font-weight: 600; }
+.psc-checklist { list-style: none; padding: 0; margin: .4rem 0; max-height: 18rem; overflow: auto; display: grid; gap: .2rem; }
+.psc-actions, .psc-approve { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; margin-top: .75rem; }

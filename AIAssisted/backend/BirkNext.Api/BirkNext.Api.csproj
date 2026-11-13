@@ -90,6 +90,7 @@
     <Compile Include="../../shared/DeliveryReportingContracts.cs" Link="Models/DeliveryReportingContracts.cs" />
     <Compile Include="../../shared/WorkItemInterpretation.cs" Link="Models/WorkItemInterpretation.cs" />
     <Compile Include="../../shared/SnapshotContracts.cs" Link="Models/SnapshotContracts.cs" />
+    <Compile Include="../../shared/ScopeRegistryContracts.cs" Link="Models/ScopeRegistryContracts.cs" />
     <Compile Include="../../shared/SnapshotSelection.cs" Link="Models/SnapshotSelection.cs" />
     <Compile Include="../../shared/FunctionalQualityScope.cs" Link="Models/FunctionalQualityScope.cs" />
     <Compile Include="../../shared/TestScenarioIntelligence.cs" Link="Models/TestScenarioIntelligence.cs" />

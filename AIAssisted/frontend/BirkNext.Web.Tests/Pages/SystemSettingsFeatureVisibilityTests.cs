@@ -47,7 +47,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
         cut.Find(".fvp-sub").TextContent.Should().Be("Explore available BirkNext capabilities, their visibility and requirements.");
         Metric(cut, "switches").Should().Be("25");
         cut.Find("[data-testid=fv-metric-switches] .fvp-md").TextContent.Should().Contain("each gating a sidebar entry").And.Contain("4 platform").And.Contain("8 retired");
-        Metric(cut, "shown").Should().StartWith("49").And.EndWith("of 55");
+        Metric(cut, "shown").Should().StartWith("50").And.EndWith("of 56");
         Metric(cut, "hidden").Should().Be("6");
         cut.Find("[data-testid=fv-metric-navigation]").GetAttribute("data-state").Should().Be("consistent");
         cut.FindAll("[data-testid=fv-issues]").Should().BeEmpty();
@@ -91,7 +91,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
         cut.Find("[data-testid=fv-filter-unavailable]").Click();
         cut.FindAll("[data-testid=fv-entry]").Select(r => r.GetAttribute("data-route")).Should().Equal("azure-environment");
         cut.Find("[data-testid=fv-filter-shown]").Click();
-        cut.FindAll("[data-testid=fv-entry]").Should().HaveCount(49);
+        cut.FindAll("[data-testid=fv-entry]").Should().HaveCount(50);
     }
 
     [Fact]

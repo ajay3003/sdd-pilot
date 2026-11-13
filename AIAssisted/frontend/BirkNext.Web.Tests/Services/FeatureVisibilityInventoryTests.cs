@@ -66,7 +66,7 @@ public sealed class FeatureVisibilityInventoryTests
         inv.SwitchCount.Should().Be(25, "19 core + 6 advanced configurable switches (platform keys excluded; 5 no-effect switches retired)");
         inv.Switches.Where(s => !s.Platform).Should().OnlyContain(s => s.HasEffect, "every configurable switch gates a sidebar entry");
         inv.PlatformCount.Should().Be(4);
-        inv.Entries.Should().HaveCount(55, "sidebar rows, including deep links and shared entries");
+        inv.Entries.Should().HaveCount(56, "sidebar rows, including deep links and shared entries");
         inv.HiddenEntries.Should().Be(6);
         inv.Entries.Where(e => !e.Shown).Select(e => e.Route).Should().BeEquivalentTo(
             "implementation-traceability", "impact-analysis", "traceability", "traceability/suggestions", "code-traceability", "ai-change-auditor");

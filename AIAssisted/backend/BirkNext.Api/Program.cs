@@ -187,6 +187,10 @@ builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.ICanoni
 builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.CanonicalInterpretationService>();
 builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.CanonicalInterpretationDataReset>();
 builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.CanonicalAliasSource>();
+// Shared Scope Registry: its own schema (scope_registry); project-scoped scopes with immutable revisions of typed member references.
+builder.Services.AddDbContext<BirkNext.Api.Data.ScopeRegistry.ScopeRegistryDbContext>(options =>
+    BirkNext.Api.Data.ScopeRegistry.ScopeRegistryDbContext.Configure(options, databaseConnectionString));
+builder.Services.AddScoped<BirkNext.Api.Services.ScopeRegistry.ScopeRegistryService>();
 // Shared Snapshot Registry: its own schema (snapshot_registry); metadata synced from each owner store by adapters, payloads never copied.
 builder.Services.AddDbContext<BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext>(options =>
     BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext.Configure(options, databaseConnectionString));
@@ -1050,7 +1054,8 @@ try
         foreach (var (name, context) in new (string, Microsoft.EntityFrameworkCore.DbContext)[] { ("Application", db),
                      ("Delivery reporting", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.DeliveryReporting.DeliveryReportingDbContext>()),
                      ("Canonical interpretation", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.CanonicalInterpretation.CanonicalInterpretationDbContext>()),
-                     ("Snapshot registry", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext>()) })
+                     ("Snapshot registry", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext>()),
+                     ("Scope registry", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.ScopeRegistry.ScopeRegistryDbContext>()) })
         {
             var schema = await BirkNext.Api.Services.SystemInfo.BuildInfoService.SchemaAsync(name, context, CancellationToken.None);
             if (schema.Status != BirkNext.BuildInfo.SchemaCompatibility.AheadOfBuild) continue;
@@ -1063,6 +1068,7 @@ try
         await DatabaseMigrationLock.MigrateAsync(scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.DeliveryReporting.DeliveryReportingDbContext>());
         await DatabaseMigrationLock.MigrateAsync(scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.CanonicalInterpretation.CanonicalInterpretationDbContext>());
         await DatabaseMigrationLock.MigrateAsync(scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext>());
+        await DatabaseMigrationLock.MigrateAsync(scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.ScopeRegistry.ScopeRegistryDbContext>());
     }
     // Saved Target Environment Altinn settings are read synchronously by the execution policy: load them once at startup.
     await scope.ServiceProvider.GetRequiredService<BirkNext.Api.Services.AltinnTesting.AltinnEnvironmentSettingsStore>().WarmAsync();
