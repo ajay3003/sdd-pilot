@@ -27,6 +27,12 @@ public interface IScopeRegistryApiService
     /// <summary>A searchable page of one member kind from its owning catalog.</summary>
     Task<(ScopeCatalogPage? Page, string? Error)> CatalogAsync(ScopeMemberKind kind, string? catalogScope, string? search, int skip = 0, int take = 25, CancellationToken ct = default) =>
         Task.FromResult<(ScopeCatalogPage?, string?)>((null, "Member catalogs are not available."));
+    /// <summary>The confirmed members of one kind in every scope of the project (newest revision), in one call.</summary>
+    Task<(IReadOnlyList<ScopeMembershipSummary> Items, string? Error)> MembershipAsync(string projectKey, ScopeMemberKind kind, CancellationToken ct = default) =>
+        Task.FromResult<(IReadOnlyList<ScopeMembershipSummary>, string?)>(([], "Scope membership is not available."));
+    /// <summary>Scenarios linked to requirements by established canonical Verifies relations (never candidates).</summary>
+    Task<(IReadOnlyList<ScopeScenarioLink> Items, string? Error)> VerifyingScenariosAsync(ScopeScenarioLinkRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(IReadOnlyList<ScopeScenarioLink>, string?)>(([], "Requirement links are not available."));
     /// <summary>Systems, services and connections for one Target Environment (canonical interpretation + Integration Topology, offline).</summary>
     Task<(SystemsOverviewView? Overview, string? Error)> SystemsAsync(string catalogScope, CancellationToken ct = default) =>
         Task.FromResult<(SystemsOverviewView?, string?)>((null, "The systems overview is not available."));
@@ -105,6 +111,23 @@ public sealed class ScopeRegistryApiService(HttpClient http) : IScopeRegistryApi
     {
         try { return (await http.GetFromJsonAsync<SystemsOverviewView>($"api/scopes/systems?catalogScope={Uri.EscapeDataString(catalogScope)}", Json, ct), null); }
         catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { return (null, BackendRequestClassifier.FromException("Systems", ex).UserMessage); }
+    }
+
+    public async Task<(IReadOnlyList<ScopeMembershipSummary> Items, string? Error)> MembershipAsync(string projectKey, ScopeMemberKind kind, CancellationToken ct = default)
+    {
+        try { return (await http.GetFromJsonAsync<List<ScopeMembershipSummary>>($"api/scopes/membership?projectKey={Uri.EscapeDataString(projectKey)}&kind={kind}", Json, ct) ?? [], null); }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { return ([], BackendRequestClassifier.FromException("Scope membership", ex).UserMessage); }
+    }
+
+    public async Task<(IReadOnlyList<ScopeScenarioLink> Items, string? Error)> VerifyingScenariosAsync(ScopeScenarioLinkRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.PostAsJsonAsync("api/scopes/verifying-scenarios", request, Json, ct);
+            if (!response.IsSuccessStatusCode) return ([], await ReadMessage(response, ct) ?? $"Requirement links could not be read (HTTP {(int)response.StatusCode}).");
+            return (await response.Content.ReadFromJsonAsync<List<ScopeScenarioLink>>(Json, ct) ?? [], null);
+        }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { return ([], BackendRequestClassifier.FromException("Requirement links", ex).UserMessage); }
     }
 
     private static async Task<(ScopeDetail?, string?, bool)> Write(Func<Task<HttpResponseMessage>> send, CancellationToken ct)

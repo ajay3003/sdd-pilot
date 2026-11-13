@@ -170,6 +170,15 @@ public sealed record ScopeMemberStatus(string Key, ScopeMemberCheck Check, strin
 
 public sealed record ScopeMemberCheckRequest(List<ScopeMember> Members, string? CatalogScope);
 
+/// <summary>The confirmed members of one kind in each scope's newest revision (one call for a whole project, no request per scope).</summary>
+public sealed record ScopeMembershipSummary(Guid ScopeId, string Name, ScopeState State, int Revision, List<string> TargetIds);
+
+/// <summary>A scenario linked to a requirement of a scope by an established canonical Verifies relation (explicit, derived or confirmed by a
+/// person). Candidates never appear: a requirement only filters scenarios through relations someone can stand behind.</summary>
+public sealed record ScopeScenarioLink(string RequirementKey, string ScenarioKey, string Basis);
+
+public sealed record ScopeScenarioLinkRequest(string CatalogScope, List<string> RequirementKeys);
+
 // ── Systems overview: systems, services and their connections for one interpretation scope, with evidence states ────────────────────────
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -248,6 +257,9 @@ public sealed record SystemsOverviewView
     public List<SystemOverviewItem> Systems { get; init; } = [];
     public List<SystemConnectionView> Connections { get; init; } = [];
     public List<SystemIdentityQuestion> IdentityQuestions { get; init; } = [];
+    /// <summary>Set while an analysis of this Target Environment is running in this BirkNext instance (the list shows the previous result).</summary>
+    public DateTimeOffset? AnalysisRunningSince { get; init; }
+    public string? AnalysisRunningTrigger { get; init; }
     /// <summary>Which sources were read ("Integration Topology: used" …) and what is missing, so an empty list is never read as "nothing exists".</summary>
     public List<string> Sources { get; init; } = [];
     public List<string> Limitations { get; init; } = [];

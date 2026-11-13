@@ -354,4 +354,31 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         cut.Find("[data-testid=scf-clear]").Click();
         cut.WaitForAssertion(() => cut.FindAll("input[type=checkbox][data-testid^=tps-select-]").Should().HaveCount(4, "without a scope nothing is filtered"));
     }
+
+    [Fact]
+    public async Task A_scope_requirement_adds_only_the_scenarios_that_verify_it_through_established_links()
+    {
+        var scopeId = Guid.NewGuid();
+        var scopes = new Moq.Mock<IScopeRegistryApiService>();
+        scopes.Setup(s => s.ListAsync("import:m2lb", It.IsAny<CancellationToken>())).ReturnsAsync(([new BirkNext.Scopes.ScopeSummary
+            { Id = scopeId, Name = "Intake", State = BirkNext.Scopes.ScopeState.Approved, ApprovedRevision = 1, CurrentRevision = 1 }], (string?)null));
+        var requirement = new BirkNext.Scopes.ScopeMember { Kind = BirkNext.Scopes.ScopeMemberKind.Requirement, TargetId = "Requirement|skole/001/fr-001", Label = "FR-001" };
+        scopes.Setup(s => s.SelectionAsync("import:m2lb", It.IsAny<IReadOnlyList<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new BirkNext.Scopes.ScopeSelection { ProjectKey = "import:m2lb", Scopes = [new(scopeId, "Intake", 1)], Members = [new(requirement, [new(scopeId, "Intake", 1)])] }, (string?)null));
+        scopes.Setup(s => s.VerifyingScenariosAsync(It.Is<BirkNext.Scopes.ScopeScenarioLinkRequest>(r => r.RequirementKeys.Single() == "Requirement|skole/001/fr-001"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(([new BirkNext.Scopes.ScopeScenarioLink("Requirement|skole/001/fr-001", "Scenario|system-understanding/skolenaervaer/duplikat-melding", "stated by the source")], (string?)null));
+        Services.AddSingleton(scopes.Object);
+        Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Imported", "import:m2lb", "M2LB")).Object);
+        var storage = new BirkNext.Web.Tests.Services.ActiveTargetEnvironmentTests.Storage();
+        var settings = new FrontendAnalysisSettingsService();
+        await settings.LoadAsync(storage);
+        settings.Settings.ActiveProfileId = "dev";
+        Services.AddSingleton<Microsoft.JSInterop.IJSRuntime>(storage);
+        Services.AddSingleton<IFrontendAnalysisSettingsService>(settings);
+        Services.AddSingleton<IFrontendAnalysisContextFactory>(BirkNext.Web.Tests.Services.ActiveTargetEnvironmentTests.Factory(settings, storage));
+
+        var cut = Render(new Api(Workspace()), $"?guide=skolenaervaer&scope={scopeId}");
+        cut.WaitForAssertion(() => cut.FindAll("input[type=checkbox][data-testid^=tps-select-]").Select(e => e.GetAttribute("data-testid")).Should().Equal("tps-select-duplikat-melding"));
+        cut.Find("[data-testid=tps-scope-via-requirement]").TextContent.Should().Contain("1 more through the scope's requirements");
+    }
 }

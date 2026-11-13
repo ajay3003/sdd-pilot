@@ -11,6 +11,8 @@ public enum SystemsPageState
     NoEnvironment,
     NoSource,
     NotInterpreted,
+    /// <summary>An analysis is running and there is no earlier result to show yet.</summary>
+    Analysing,
     ZeroSystems,
     Ready,
     Error,
@@ -24,7 +26,8 @@ public static class SystemsScopesPresentation
         : !hasProject ? SystemsPageState.NoProject
         : string.IsNullOrWhiteSpace(environmentScope) ? SystemsPageState.NoEnvironment
         : overview is null ? (error is null ? SystemsPageState.Loading : SystemsPageState.Error)
-        : overview.InterpretationId is null ? (sourceCount == 0 ? SystemsPageState.NoSource : SystemsPageState.NotInterpreted)
+        : overview.InterpretationId is null ? (overview.AnalysisRunningSince is not null ? SystemsPageState.Analysing
+            : sourceCount == 0 ? SystemsPageState.NoSource : SystemsPageState.NotInterpreted)
         : overview.Systems.Count == 0 ? SystemsPageState.ZeroSystems
         : SystemsPageState.Ready;
 

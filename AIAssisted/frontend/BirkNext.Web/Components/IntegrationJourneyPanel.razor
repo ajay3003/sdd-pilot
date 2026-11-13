@@ -59,11 +59,18 @@
         <div id="@($"{_id}-panel")" role="@(Embedded ? null : "tabpanel")" aria-labelledby="@(Embedded ? null : TabId(_tab))" class="ijp-tabpanel" data-testid="ijp-tabpanel" data-tab="@_tab" tabindex="@(Embedded ? null : "0")">
             @if (_tab == "overview")
             {
+                @if (!Embedded) { <BirkNext.Web.Components.Scopes.ScopeFilter SelectionChanged="s => _scopeSelection = s" /> }
+                @if (_scopeSelection is { } scopeSel && !Embedded)
+                {
+                    var named = scopeSel.Members.Count(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.Journey && m.Member.TargetId.StartsWith(pack.PackId + ":", StringComparison.Ordinal));
+                    <p class="ijp-muted" data-testid="ijp-scope-summary">Showing the @named journey@(named == 1 ? "" : "s") of this pack that the selected scope names.@(named == 0 ? " The scope names none: add journeys to it in Systems & Scopes." : "")</p>
+                }
                 <div class="ijp-table" tabindex="0" role="region" aria-label="Journey overview" data-testid="ijp-overview">
                     <table>
                         <thead><tr><th scope="col">Journey</th><th scope="col">Configuration</th><th scope="col">Source evidence</th><th scope="col">Execution readiness</th><th scope="col">Last run</th><th scope="col">Verification</th></tr></thead>
                         <tbody>
-                            @foreach (var view in pack.Journeys)
+                            @foreach (var view in pack.Journeys.Where(v => Embedded || _scopeSelection is null
+                                || _scopeSelection.Members.Any(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.Journey && m.Member.TargetId == $"{v.Journey.PackId}:{v.Journey.JourneyId}")))
                             {
                                 <tr data-testid="ijp-overview-row" data-journey="@view.Journey.JourneyId" data-readiness="@view.Readiness">
                                     <th scope="row">@view.Journey.DisplayName</th>
@@ -404,6 +411,7 @@
 </section>
 
 @code {
+    private BirkNext.Scopes.ScopeSelection? _scopeSelection;
     [Parameter, EditorRequired] public FrontendAnalysisProfile Profile { get; set; } = default!;
     /// <summary>A journey tab to open first (e.g. from a domain page section), or "history". Unknown ids leave the overview open.</summary>
     [Parameter] public string? InitialJourneyId { get; set; }

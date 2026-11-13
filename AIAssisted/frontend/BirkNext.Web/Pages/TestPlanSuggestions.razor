@@ -231,14 +231,33 @@
     // ── Discover ─────────────────────────────────────────────────────────────────────────────────────────────
 
     private BirkNext.Scopes.ScopeSelection? _scopeSelection;
-    private void ScopeSelected(BirkNext.Scopes.ScopeSelection? selection) => _scopeSelection = selection;
+    private IReadOnlyList<BirkNext.Scopes.ScopeScenarioLink> _viaRequirement = [];
+    private string? _requirementNotice;
+
+    /// <summary>A selected scope names scenarios directly, and its requirements add the scenarios that verify them through an established canonical
+    /// Verifies relation of the active Target Environment's interpretation (explicit, derived or confirmed by a person — never a candidate).</summary>
+    private async Task ScopeSelected(BirkNext.Scopes.ScopeSelection? selection)
+    {
+        (_scopeSelection, _viaRequirement, _requirementNotice) = (selection, [], null);
+        var requirements = selection?.Members.Where(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.Requirement).Select(m => m.Member.TargetId).ToList() ?? [];
+        if (requirements.Count == 0) return;
+        var scope = ServiceProvider.GetService<IFrontendAnalysisContextFactory>() is { } factory ? CorrelationPresentation.Scope((await factory.GetActiveContextAsync()).ActiveProfileOrNull?.Id) : null;
+        if (scope is null || ServiceProvider.GetService<IScopeRegistryApiService>() is not { } registry) { _requirementNotice = "requirements need an active Target Environment to find their scenarios"; return; }
+        var (links, error) = await registry.VerifyingScenariosAsync(new BirkNext.Scopes.ScopeScenarioLinkRequest(scope, requirements));
+        (_viaRequirement, _requirementNotice) = (links, error);
+    }
 
     /// <summary>A guide scenario is in the selected scope when the scope names its canonical scenario identity (the id the interpretation gives
     /// the same guide scenario). No selection keeps every candidate; nothing is matched by title.</summary>
-    private bool InScope(ScenarioCandidate c) => _scopeSelection is null || c.Source.Kind == ScenarioSourceKind.SystemGuide
-        && _scopeSelection.Members.Any(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.Scenario
-            && m.Member.TargetId == BirkNext.Interpretation.CanonicalKeys.EntityKey(BirkNext.Interpretation.CanonicalEntityType.Scenario,
-                BirkNext.Interpretation.CorrelationRules.GuideScenarioIdentity(c.Source.Owner, c.Source.ScenarioId)));
+    private bool InScope(ScenarioCandidate c)
+    {
+        if (_scopeSelection is null) return true;
+        if (c.Source.Kind != ScenarioSourceKind.SystemGuide) return false;
+        var key = BirkNext.Interpretation.CanonicalKeys.EntityKey(BirkNext.Interpretation.CanonicalEntityType.Scenario,
+            BirkNext.Interpretation.CorrelationRules.GuideScenarioIdentity(c.Source.Owner, c.Source.ScenarioId));
+        return _scopeSelection.Members.Any(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.Scenario && m.Member.TargetId == key)
+            || _viaRequirement.Any(l => l.ScenarioKey == key);
+    }
 
     private RenderFragment Discover() => __builder =>
     {
@@ -258,9 +277,10 @@
             @if (_scopeSelection is { } scopeSel)
             {
                 var scenarios = scopeSel.Members.Count(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.Scenario);
-                var others = scopeSel.Members.Count(m => m.Member.Kind is BirkNext.Scopes.ScopeMemberKind.Requirement or BirkNext.Scopes.ScopeMemberKind.UserStory or BirkNext.Scopes.ScopeMemberKind.Feature);
+                var others = scopeSel.Members.Count(m => m.Member.Kind is BirkNext.Scopes.ScopeMemberKind.UserStory or BirkNext.Scopes.ScopeMemberKind.Feature);
                 <p class="tps-muted" data-testid="tps-scope-summary">Showing the scenarios the selected scope names (@scenarios in the scope).
-                    @if (others > 0) { <span>Its @others requirement/story/feature member@(others == 1 ? "" : "s") do not filter scenarios yet (no reviewed scenario link is used for that).</span> }
+                    @if (_viaRequirement.Count > 0) { <span data-testid="tps-scope-via-requirement">@_viaRequirement.Select(l => l.ScenarioKey).Distinct().Count() more through the scope's requirements (established Verifies links only).</span> }
+                    @if (others > 0) { <span>Story and feature members do not filter scenarios@(_requirementNotice is { } rn ? $"; {rn}" : "").</span> }
                     @if (scenarios == 0) { <span data-testid="tps-scope-no-scenarios">The scope names no scenarios, so no candidate is shown; add scenarios to it in Systems &amp; Scopes.</span> }</p>
             }
             <div class="tps-filters" role="search">

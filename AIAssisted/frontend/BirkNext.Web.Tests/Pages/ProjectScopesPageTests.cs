@@ -65,6 +65,9 @@ public sealed class ProjectScopesPageTests : BunitContext
         else _scopes.Setup(s => s.SystemsAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync((overview ?? M2lb(), (string?)null));
         _scopes.Setup(s => s.ListAsync(Project, It.IsAny<CancellationToken>())).ReturnsAsync(() => ([.. _stored.Select(d => d.Scope)], (string?)null));
         _scopes.Setup(s => s.GetAsync(Project, It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync((string _, Guid id, CancellationToken _) => (_stored.FirstOrDefault(d => d.Scope.Id == id), (string?)null));
+        _scopes.Setup(s => s.MembershipAsync(Project, ScopeMemberKind.System, It.IsAny<CancellationToken>())).ReturnsAsync(() => ([.. _stored.Select(d =>
+            new ScopeMembershipSummary(d.Scope.Id, d.Scope.Name, d.Scope.State, d.Scope.CurrentRevision,
+                [.. d.Revisions.First().Members.Where(m => m.Kind == ScopeMemberKind.System).Select(m => m.TargetId)]))], (string?)null));
         _scopes.Setup(s => s.CheckAsync(Project, It.IsAny<Guid>(), It.IsAny<int?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string _, Guid id, int? _, string? _, CancellationToken _) => ([.. _stored.Single(d => d.Scope.Id == id).Revisions.First().Members
                 .Select(m => new ScopeMemberStatus(m.Key, m.TargetId.Contains("removed") ? ScopeMemberCheck.Missing : ScopeMemberCheck.Current, "checked"))], (string?)null));
@@ -250,5 +253,27 @@ public sealed class ProjectScopesPageTests : BunitContext
         SystemsScopesPresentation.FilterConnections(connections, null, "both", "established", "all", null).Select(c => c.Id).Should().Equal("c1");
         SystemsScopesPresentation.FilterConnections(connections, "Service|m2lb.person.api", "in", "active", "all", null).Should().BeEmpty();
         SystemsScopesPresentation.FilterConnections(connections, "Service|m2lb.person.api", "out", "active", "all", null).Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task A_running_analysis_is_announced_and_an_unfinished_first_analysis_is_never_shown_as_empty()
+    {
+        await Setup(new SystemsOverviewView { Scope = "dev", AnalysisRunningSince = DateTimeOffset.UtcNow, AnalysisRunningTrigger = "Relationship Review" });
+        var cut = Render<ProjectScopes>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=psc-state]").GetAttribute("data-state").Should().Be(nameof(SystemsPageState.Analysing)));
+        cut.Find("[data-testid=psc-analysing]").TextContent.Should().Contain("Relationship Review");
+        cut.Markup.Should().NotContain("No systems found");
+    }
+
+    [Fact]
+    public async Task System_scope_membership_is_read_with_one_call_not_one_per_scope()
+    {
+        _stored.Add(Detail("Person flow", ScopePurpose.Test, [new() { Kind = ScopeMemberKind.System, TargetId = "System|person", Label = "Person" }]));
+        _stored.Add(Detail("Altinn intake", ScopePurpose.Test, [new() { Kind = ScopeMemberKind.System, TargetId = "System|altinn", Label = "Altinn" }]));
+        await Setup();
+        var cut = Render<ProjectScopes>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=psc-system][data-key='System|person']").TextContent.Should().Contain("In 1 scope"));
+        _scopes.Verify(s => s.MembershipAsync(Project, ScopeMemberKind.System, It.IsAny<CancellationToken>()), Times.Once);
+        _scopes.Verify(s => s.GetAsync(Project, It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

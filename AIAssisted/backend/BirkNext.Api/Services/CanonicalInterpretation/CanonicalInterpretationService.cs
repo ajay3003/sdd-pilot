@@ -120,9 +120,17 @@ public sealed partial class CanonicalInterpretationService(
 
     // ---------------------------------------------------------------- interpretation
 
+    /// <summary>Runs one interpretation and records, while it runs, that this scope is being analysed (read by the Systems overview so a running
+    /// analysis is never shown as "not analysed" or as an empty result).</summary>
     public async Task<InterpretationSnapshotView> InterpretAsync(string scope, InterpretRequest request, CancellationToken ct)
     {
         scope = ValidScope(scope);
+        using var running = InterpretationRuns.Start(scope, request.Trigger ?? "Interpret");
+        return await InterpretCoreAsync(scope, request, ct);
+    }
+
+    private async Task<InterpretationSnapshotView> InterpretCoreAsync(string scope, InterpretRequest request, CancellationToken ct)
+    {
         if (request.SourceSnapshotIds.Count == 0 && request.DeliverySnapshotId is null)
             throw new CanonicalRequestException("Choose at least one Source Analysis snapshot or a Delivery snapshot to interpret.");
 

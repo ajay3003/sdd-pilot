@@ -253,4 +253,49 @@ public sealed class SystemsAndScopesTests
         submitted.Scope!.Revisions.First().State.Should().Be(ScopeRevisionState.InReview);
         submitted.Scope.Scope.State.Should().Be(ScopeState.Approved, "revision 1 stays the approved membership while revision 2 is in review");
     }
+
+    [Fact]
+    public async Task A_running_analysis_is_reported_with_the_previous_result_and_cleared_when_it_ends()
+    {
+        var f = await M2lbLike();
+        (await f.Canonical.SystemsOverviewAsync(Scope, default)).AnalysisRunningSince.Should().BeNull();
+        using (InterpretationRuns.Start(Scope, "Relationship Review"))
+        {
+            var during = await f.Canonical.SystemsOverviewAsync(Scope, default);
+            during.AnalysisRunningSince.Should().NotBeNull();
+            during.AnalysisRunningTrigger.Should().Be("Relationship Review");
+            during.Systems.Should().NotBeEmpty("the previous result stays visible while a new analysis runs");
+        }
+        (await f.Canonical.SystemsOverviewAsync(Scope, default)).AnalysisRunningSince.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Requirements_reach_scenarios_only_through_established_Verifies_relations()
+    {
+        var f = await M2lbLike();
+        f.Entity("Scenario", "system-understanding/skole/s2", "Duplicate report is held");
+        f.Entity("Scenario", "system-understanding/skole/s3", "Late report is flagged");
+        f.Relation("Scenario|system-understanding/skole/s1", "Verifies", "Requirement|skole/001/fr-001", "Explicit");
+        f.Relation("Scenario|system-understanding/skole/s2", "Verifies", "Requirement|skole/001/fr-001", "Candidate");
+        f.Relation("Scenario|system-understanding/skole/s3", "Verifies", "Requirement|skole/001/fr-001", "Candidate", review: "Confirmed");
+        await f.Db.SaveChangesAsync();
+
+        var links = await f.Canonical.ScenariosVerifyingAsync(Scope, ["Requirement|skole/001/fr-001", "System|altinn"], default);
+        links!.Select(l => (l.ScenarioKey, l.Basis)).Should().Equal(
+            ("Scenario|system-understanding/skole/s1", "stated by the source"), ("Scenario|system-understanding/skole/s3", "confirmed by a person"));
+        (await f.Canonical.ScenariosVerifyingAsync(Scope, ["Requirement|unknown"], default)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Membership_of_every_scope_is_read_in_one_call_from_the_newest_revision()
+    {
+        var f = await M2lbLike();
+        var registry = Registry(new ScopeMemberCatalogService(f.Canonical));
+        await registry.CreateAsync(new CreateScopeRequest("import:m2lb", "B", null, ScopePurpose.Test, null, [M(ScopeMemberKind.System, "System|altinn"), M(ScopeMemberKind.Scenario, "Scenario|system-understanding/skole/s1")], Scope), "t");
+        await registry.CreateAsync(new CreateScopeRequest("import:m2lb", "A", null, ScopePurpose.Test, null, [M(ScopeMemberKind.System, "System|person")], Scope), "t");
+        await registry.CreateAsync(new CreateScopeRequest("import:other", "C", null, ScopePurpose.Test, null, [M(ScopeMemberKind.System, "System|mu")], Scope), "t");
+
+        var membership = await registry.MembershipAsync("import:m2lb", ScopeMemberKind.System);
+        membership.Select(m => (m.Name, string.Join(",", m.TargetIds))).Should().Equal(("A", "System|person"), ("B", "System|altinn"));
+    }
 }

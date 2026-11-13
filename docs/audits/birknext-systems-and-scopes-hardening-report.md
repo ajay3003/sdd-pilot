@@ -107,9 +107,9 @@
   | 3 | 852 | 0 | 0 |
   | 4 | 652 | 1 | 0 |
   | 5 | 521 | 3 | 0 |
-  | 6 | **not run** | | |
+  | 6 | not run in this pass; see section 5 | | |
 
-  Partition 6 is the rest: root Services, Unit, Controllers and DeliveryReporting. Claude Code stopped it because the machine was low on memory, so its result is unknown. The new Scope Registry and systems tests ran in the focused run (12/12).
+  Partition 6 is the rest: root Services, Unit, Controllers and DeliveryReporting. Claude Code stopped it here because the machine was low on memory; it ran in the gap-closure pass (section 5).
 - **Release publish** of the API and web app (Release configuration): succeeded.
 - **Browser acceptance (Edge, isolated):**
   - API on :5097 with the disposable database `birknext_scopes_acc_20261113`, published web on :5197. Ports 5000 and 5173 were not used. Requests to other hosts were blocked and recorded: none were attempted.
@@ -134,14 +134,31 @@
   - first render of the Systems tab after navigation 3.2–5.5 s (includes the WASM app start);
   - in-page system search ~0.36 s.
 
-## 5. Remaining gaps (honest)
+## 5. Gap closure (follow-up commit)
 
-- **"Interpretation running"** is not observable from this page. The analysis runs inside a Relationship Review request, and there is no shared job state, so another tab's running analysis shows as the last finished state.
+- **Analysis running:** `InterpretationRuns` records an analysis while it runs inside its request, in memory in this API instance. The overview carries `AnalysisRunningSince` and `AnalysisRunningTrigger`. The page shows *Analysis running*, never an empty result, when no earlier result exists; otherwise it shows the previous result with a note and a Refresh button. A restart or a second instance does not see a run.
+- **Membership in one call:** `GET api/scopes/membership?kind=System` returns each scope's confirmed members of the newest revision. The Systems tab no longer reads one scope detail per scope.
+- **Requirement → scenario filtering:** `POST api/scopes/verifying-scenarios` returns Scenario —Verifies→ Requirement links of the latest interpretation that are explicit, derived or confirmed by a person. Candidates, ambiguous and rejected links are excluded. Test Plan Suggestions adds those scenarios to a selected scope's own scenarios and says how many came through requirements.
+- **Integration Journeys:** the journey overview (not the embedded Skolenærvær views) has the shared scope filter and shows the journeys a scope names (`packId:journeyId`).
+
+**Gap-closure verification:**
+
+- **Backend focused** (ScopeRegistry, SystemsAndScopes, CanonicalInterpretation): 122/122. This includes 3 new tests: running analysis reported and cleared; Verifies links established-only (an explicit link and a confirmed candidate are included, an unreviewed candidate is excluded); project membership in one call with project isolation.
+- **Frontend focused** (Systems & Scopes, Test Data, Test Plan Suggestions, Integration Journeys and Quality Review, Skolenærvær, Relationship Review): 247/247. This includes 3 new tests: the *Analysis running* state is never "no systems"; membership comes from one call with no per-scope detail request; a scope requirement adds only its established-link scenarios.
+- **Backend partition 4:** 652 passed, 1 skipped.
+- **Backend partition 6** (not run before): 2470 passed, 8 skipped, 2 failed under memory load:
+  - `ManagedEdgeConnectorTests.AdvertisedWebSocketMustRemainAtValidatedEndpoint`;
+  - `ScenariosQueryTests…WarmedP95CompletesWithinTwoSeconds` (one 13.7 s outlier).
+
+  Neither touches this work. Re-run alone, both passed (4/4 including theory cases).
+- **Release publish** of the API and web app succeeded. **Browser re-acceptance:** 36/36 on the same disposable database, with membership read through `api/scopes/membership` and the "All scopes" link left-aligned.
+- **Not re-run after the gap changes:** the full frontend suite and backend partitions 1, 2, 3 and 5. They ran green before these changes (section 4), and the changed code is covered by the focused runs above.
+
+## 6. Remaining gaps (honest)
 - **Project ↔ Target Environment:** scopes are per project and systems are per Target Environment. There is no binding between the two. Each member records the environment it was chosen in, and a member from another environment shows as "From another environment". A project with several environments must pick the right active one.
+- **Analysis running** is per API instance and in memory (no shared job store).
 - **Integration Topology on the real M2LB copy:** in the acceptance database the environment was not a trusted Target Environment, so topology contributed no connections there. The merge is covered by unit tests only.
 - **Real-data connections:** the real M2LB interpretation holds only 1 system-to-system connection (a message channel). The page reports what the evidence states and adds nothing.
-- **Not consuming scopes yet:** Integration Journeys, Critical E2E, Test Coverage & Overlap, Requirements Traceability, Impact Analysis, Unified Impact Analysis, Delivery Overview / Reports and Recommended Workflow. Each still uses its own context. Scope selection is never an execution authorization.
-- **Requirement → scenario filtering** in Test Plan Suggestions needs reviewed canonical Verifies relations. It is stated in the UI, not inferred.
+- **Not consuming scopes yet:** Critical E2E (flows have no scope member kind), Test Coverage & Overlap, Requirements Traceability, Impact Analysis, Unified Impact Analysis, Delivery Overview / Reports and Recommended Workflow. Each still uses its own context. Scope selection is never an execution authorization.
 - **Visual graph:** there is no graph canvas. The focused incoming/outgoing map is an accessible list, and no new graph library was added.
-- **Membership per scope** on the Systems tab is loaded with one detail request per scope. This is fine for tens of scopes; a summary endpoint would be needed for hundreds.
 - **Task-30 audit documents:** the five scope audit documents in `docs/audits` are untracked files from another session and were not edited. This report and the committed implementation report record the actual state.

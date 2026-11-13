@@ -47,6 +47,11 @@
         }
     </nav>
 
+    @if (_overview?.AnalysisRunningSince is { } runningSince && _tab != "scopes")
+    {
+        <p class="psc-notice" role="status" data-testid="psc-analysing">An analysis (@(_overview.AnalysisRunningTrigger ?? "Analyze relationships")) has been running since @runningSince.ToLocalTime().ToString("t").@(_overview.InterpretationId is null ? "" : " The list below is the previous result until it finishes.")
+            <button type="button" class="psc-link" data-testid="psc-refresh" @onclick="LoadAsync">Refresh</button></p>
+    }
     @if (_notice is not null) { <p class="psc-notice" role="status" data-testid="psc-notice">@_notice</p> }
     @if (_actionError is not null) { <p class="psc-error" role="alert" data-testid="psc-error">@_actionError</p> }
 
@@ -160,14 +165,13 @@
     private IEnumerable<ScopeSummary> ScopesWith(string key) => _scopes.Where(s => _membership.TryGetValue(s.Id, out var keys) && keys.Contains(key));
     private Dictionary<Guid, HashSet<string>> _membership = [];
 
+    /// <summary>Which systems each scope holds: one membership call for the whole project (no request per scope).</summary>
     private async Task EnsureMembershipAsync()
     {
         if (_membership.Count == _scopes.Count || _projectKey is null) return;
-        var map = new Dictionary<Guid, HashSet<string>>();
-        foreach (var s in _scopes)
-            if (await DetailAsync(s.Id) is { } d && d.Revisions.FirstOrDefault(r => r.Number == s.CurrentRevision) is { } r)
-                map[s.Id] = [.. r.Members.Where(m => m.Inclusion == ScopeMemberInclusion.Confirmed && m.Kind == ScopeMemberKind.System).Select(m => m.TargetId)];
-        _membership = map;
+        var (items, error) = await Scopes.MembershipAsync(_projectKey, ScopeMemberKind.System);
+        if (error is not null) { _scopesError ??= error; return; }
+        _membership = items.ToDictionary(i => i.ScopeId, i => i.TargetIds.ToHashSet(StringComparer.Ordinal));
     }
 
     private RenderFragment StatePanel() => __builder =>
@@ -177,11 +181,16 @@
             SystemsPageState.Loading => ("", "", "", ""),
             SystemsPageState.NoEnvironment => ("Choose a Target Environment", "Systems are discovered per Target Environment, from the source imported for it. No Target Environment is active.", "target-environments", "Open Target Environments"),
             SystemsPageState.NoSource => ("No source imported yet", "Import the project's source for this Target Environment; BirkNext then finds systems, services and their connections in it.", "project-import", "Import Project"),
+            SystemsPageState.Analysing => ("Analysis running", "Relationships are being analysed for this Target Environment. Refresh when it has finished; nothing is shown as empty in the meantime.", "", ""),
             SystemsPageState.NotInterpreted => ("Source imported, not analysed yet", "Source is available but relationships have not been analysed. Run Analyze relationships once in Relationship Review; this page never starts an analysis by itself.", "correlation-review", "Open Relationship Review"),
             SystemsPageState.ZeroSystems => ("No systems found", "The latest analysis finished and found no systems or services in the imported source. If you expected some, check which sources were analysed (Technical details) or import more.", "correlation-review", "Open Relationship Review"),
             _ => ("Systems could not be loaded", _loadError ?? "The systems overview could not be read.", "", ""),
         };
         @if (State == SystemsPageState.Loading) { <p class="psc-muted" role="status" data-testid="psc-loading">Loading systems…</p> }
+        else if (State == SystemsPageState.Analysing)
+        {
+            <div class="psc-empty" data-testid="psc-state" data-state="@State"><h2>@title</h2><p>@text</p><button type="button" class="btn-secondary" data-testid="psc-refresh" @onclick="LoadAsync">Refresh</button></div>
+        }
         else
         {
             <div class="psc-empty" data-testid="psc-state" data-state="@State">

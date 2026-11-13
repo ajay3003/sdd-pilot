@@ -117,6 +117,22 @@ public sealed class ScopeRegistryService(ScopeRegistryDbContext db, TimeProvider
         return new(await DetailAsync(scope, ct), null);
     }
 
+    /// <summary>The confirmed members of one kind in each scope's newest revision: one read for the whole project (no request per scope).</summary>
+    public async Task<IReadOnlyList<ScopeMembershipSummary>> MembershipAsync(string projectKey, ScopeMemberKind kind, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(projectKey)) return [];
+        var scopes = await db.Scopes.AsNoTracking().Where(s => s.ProjectKey == projectKey).ToListAsync(ct);
+        var ids = scopes.Select(s => s.Id).ToList();
+        var revisions = await db.Revisions.AsNoTracking().Where(r => ids.Contains(r.ScopeId)).ToListAsync(ct);
+        return [.. scopes.OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase).Select(s =>
+        {
+            var current = revisions.FirstOrDefault(r => r.ScopeId == s.Id && r.Number == s.CurrentRevision);
+            var members = current is null ? [] : JsonSerializer.Deserialize<List<ScopeMember>>(current.MembersJson, Json) ?? [];
+            return new ScopeMembershipSummary(s.Id, s.Name, Enum.TryParse<ScopeState>(s.State, out var st) ? st : ScopeState.Draft, s.CurrentRevision,
+                [.. members.Where(m => m.Kind == kind && m.Inclusion == ScopeMemberInclusion.Confirmed).Select(m => m.TargetId)]);
+        })];
+    }
+
     /// <summary>Marks the newest draft revision as ready for review (no approval; saving it again returns it to draft).</summary>
     public async Task<ScopeWriteResult> SubmitAsync(string projectKey, Guid scopeId, ScopeDecisionRequest request, CancellationToken ct = default)
     {

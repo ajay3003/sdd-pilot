@@ -25,6 +25,13 @@ public sealed partial class CanonicalInterpretationService
     public async Task<SystemsOverviewView> SystemsOverviewAsync(string scope, CancellationToken ct)
     {
         scope = ValidScope(scope);
+        var running = InterpretationRuns.Current(scope);
+        var view = await SystemsOverviewCoreAsync(scope, ct);
+        return view with { AnalysisRunningSince = running?.Started, AnalysisRunningTrigger = running?.Trigger };
+    }
+
+    async Task<SystemsOverviewView> SystemsOverviewCoreAsync(string scope, CancellationToken ct)
+    {
         var latest = await db.Snapshots.AsNoTracking().Where(s => s.Scope == scope).OrderByDescending(s => s.CreatedAt).FirstOrDefaultAsync(ct);
         if (latest is null)
             return new SystemsOverviewView { Scope = scope, Limitations = ["No interpretation has been run for this Target Environment yet."] };
@@ -72,6 +79,30 @@ public sealed partial class CanonicalInterpretationService
         return new([.. rows.Select(View)], total, skip, take);
     }
 
+    /// <summary>
+    /// Scenarios that verify these requirements by an established relation of the latest interpretation: Scenario —Verifies→ Requirement that is
+    /// explicit, derived or confirmed by a person and not rejected. Candidates and ambiguous links are left out. Null when no interpretation exists.
+    /// </summary>
+    public async Task<IReadOnlyList<ScopeScenarioLink>?> ScenariosVerifyingAsync(string scope, IReadOnlyCollection<string> requirementKeys, CancellationToken ct)
+    {
+        scope = ValidScope(scope);
+        var latest = await db.Snapshots.AsNoTracking().Where(s => s.Scope == scope).OrderByDescending(s => s.CreatedAt).Select(s => (Guid?)s.Id).FirstOrDefaultAsync(ct);
+        if (latest is null) return null;
+        var identities = requirementKeys.Where(k => k.StartsWith("Requirement|", StringComparison.Ordinal)).Select(k => k["Requirement|".Length..]).Distinct().ToList();
+        if (identities.Count == 0) return [];
+        var rows = await (from m in db.SnapshotRelations.AsNoTracking()
+                          join r in db.Relations.AsNoTracking() on m.RelationId equals r.Id
+                          join s in db.Entities.AsNoTracking() on r.SourceEntityId equals s.Id
+                          join t in db.Entities.AsNoTracking() on r.TargetEntityId equals t.Id
+                          where m.SnapshotId == latest && r.Active && r.RelationType == "Verifies" && s.EntityType == "Scenario" && t.EntityType == "Requirement"
+                                && identities.Contains(t.IdentityKey) && r.ReviewState != "Rejected"
+                          select new { Requirement = t.IdentityKey, Scenario = s.IdentityKey, r.Resolution, r.ReviewState }).ToListAsync(ct);
+        return [.. rows.Where(r => r.ReviewState == "Confirmed" || r.Resolution is "Explicit" or "Derived" or "Confirmed")
+            .Select(r => new ScopeScenarioLink("Requirement|" + r.Requirement, "Scenario|" + r.Scenario,
+                r.ReviewState == "Confirmed" ? "confirmed by a person" : r.Resolution == "Explicit" ? "stated by the source" : "derived from the source"))
+            .DistinctBy(l => (l.RequirementKey, l.ScenarioKey)).OrderBy(l => l.RequirementKey, StringComparer.Ordinal).ThenBy(l => l.ScenarioKey, StringComparer.Ordinal)];
+    }
+
     /// <summary>Which of these entity keys ("Type|identity") are members of the latest interpretation, with their current names. Null when no
     /// interpretation exists.</summary>
     public async Task<IReadOnlyDictionary<string, string>?> LatestEntityNamesAsync(string scope, IReadOnlyCollection<string> keys, CancellationToken ct)
@@ -88,6 +119,27 @@ public sealed partial class CanonicalInterpretationService
         return rows.Select(r => (Key: $"{r.EntityType}|{r.IdentityKey}", r.DisplayName)).Where(r => wanted.Contains(r.Key))
             .GroupBy(r => r.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First().DisplayName, StringComparer.Ordinal);
     }
+}
+
+/// <summary>
+/// Analyses running in this API instance, per canonical scope (the analysis runs inside one request; there is no shared job store). In memory only:
+/// a restart forgets it, and a second instance would not see it.
+/// </summary>
+public static class InterpretationRuns
+{
+    public sealed record Run(DateTimeOffset Started, string Trigger);
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Run> Running = new(StringComparer.Ordinal);
+
+    public static Run? Current(string scope) => Running.TryGetValue(scope, out var run) ? run : null;
+
+    public static IDisposable Start(string scope, string trigger)
+    {
+        var run = new Run(DateTimeOffset.UtcNow, trigger);
+        Running[scope] = run;
+        return new Done(() => Running.TryRemove(new KeyValuePair<string, Run>(scope, run)));
+    }
+
+    sealed class Done(Action action) : IDisposable { public void Dispose() => action(); }
 }
 
 /// <summary>The pure projection behind <see cref="CanonicalInterpretationService.SystemsOverviewAsync"/> (testable without a database).</summary>

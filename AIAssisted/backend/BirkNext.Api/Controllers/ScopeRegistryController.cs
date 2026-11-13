@@ -47,6 +47,21 @@ public sealed class ScopeRegistryController(ScopeRegistryService scopes, LocalTr
     public async Task<ActionResult<ScopeComparison>> Compare(Guid scopeId, [FromQuery] string projectKey, [FromQuery] int from, [FromQuery] int to, CancellationToken ct) =>
         await scopes.CompareAsync(projectKey, scopeId, from, to, ct) is { } comparison ? Ok(comparison) : NotFound();
 
+    /// <summary>The confirmed members of one kind in every scope of the project (newest revision), in one call.</summary>
+    [HttpGet("membership")]
+    public async Task<ActionResult<IReadOnlyList<ScopeMembershipSummary>>> Membership([FromQuery] string projectKey, [FromQuery] ScopeMemberKind kind, CancellationToken ct) =>
+        string.IsNullOrWhiteSpace(projectKey) ? BadRequest(new { message = "projectKey is required." }) : Ok(await scopes.MembershipAsync(projectKey, kind, ct));
+
+    /// <summary>Scenarios linked to the given requirements by established canonical Verifies relations (never candidates).</summary>
+    [HttpPost("verifying-scenarios")]
+    public async Task<ActionResult<IReadOnlyList<ScopeScenarioLink>>> VerifyingScenarios([FromServices] CanonicalInterpretationService canonical,
+        [FromBody] ScopeScenarioLinkRequest request, CancellationToken ct)
+    {
+        if (request.RequirementKeys is null || request.RequirementKeys.Count > ScopeRegistryRules.MaxMembers) return BadRequest(new { message = "Between 0 and 2000 requirements." });
+        try { return Ok(await canonical.ScenariosVerifyingAsync(request.CatalogScope, request.RequirementKeys, ct) ?? []); }
+        catch (CanonicalRequestException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
     /// <summary>Marks the newest draft revision as ready for review (not an approval).</summary>
     [HttpPost("{scopeId:guid}/submit")]
     public async Task<ActionResult<ScopeDetail>> Submit(Guid scopeId, [FromQuery] string projectKey, [FromBody] ScopeDecisionRequest request, CancellationToken ct) =>
