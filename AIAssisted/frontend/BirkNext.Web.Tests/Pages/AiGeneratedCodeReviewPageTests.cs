@@ -3,6 +3,7 @@ using BirkNext.SourceEvidence;
 using BirkNext.Web.Models;
 using BirkNext.Web.Pages;
 using BirkNext.Web.Services;
+using BirkNext.Integrations;
 using Bunit;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -251,5 +252,61 @@ public sealed class AiGeneratedCodeReviewPageTests : BunitContext
         var empty = AiCodeReviewPresentation.WorkspaceEvidence(_workspace, [], null);
         empty.SpecificationAvailable.Should().BeFalse();
         empty.TestExecution.Should().BeNull("no imported results means not executed, never zero failures");
+    }
+    // ── Baseline import from Code Risk Review (shared Source Analysis upload) ─────────────────────────────────────────
+
+    private static readonly Guid Imported = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000009");
+
+    private Mock<IIntegrationCatalogApiService> Upload(IqrSourceSnapshot? result, SourceUploadFailure? failure = null)
+    {
+        var upload = new Mock<IIntegrationCatalogApiService>();
+        upload.Setup(u => u.AnalyzeSourceSnapshotDetailedAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((result, failure));
+        Services.AddSingleton(upload.Object);
+        return upload;
+    }
+
+    private static void Choose(IRenderedComponent<AiGeneratedCodeReview> page) =>
+        page.FindComponents<Microsoft.AspNetCore.Components.Forms.InputFile>()
+            .Single(f => (string?)f.Instance.AdditionalAttributes?["data-testid"] == "aic-import-file")
+            .UploadFiles(InputFileContent.CreateFromText("zip", "Shop-older.zip"));
+
+    [Fact]
+    public void An_imported_compatible_baseline_is_stored_by_Source_Analysis_and_selected()
+    {
+        _api.SetupSequence(x => x.SourcesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new ReviewSourceOptions { Snapshots = [Snap(Current, "Shop", 0, latest: true)] }, (string?)null))
+            .ReturnsAsync((new ReviewSourceOptions { Snapshots = [Snap(Current, "Shop", 0, latest: true), Snap(Imported, "Shop", 0, latest: false)] }, (string?)null));
+        var upload = Upload(new IqrSourceSnapshot { Id = Imported });
+        var page = Render<AiGeneratedCodeReview>();
+        page.WaitForAssertion(() => page.Find("[data-testid=aic-import-baseline]"));
+
+        page.Find("[data-testid=aic-import-baseline]").Click();
+        Choose(page);
+
+        page.WaitForAssertion(() => page.Find("[data-testid=aic-import-notice]").TextContent.Should().Contain("selected as baseline"));
+        page.Find("[data-testid=aic-baseline]").GetAttribute("value").Should().Be(Imported.ToString());
+        page.FindAll("[data-testid=aic-import-panel]").Should().BeEmpty();
+        upload.Verify(u => u.AnalyzeSourceSnapshotDetailedAsync(It.IsAny<string>(), "Shop-older.zip", It.IsAny<Stream>(), It.IsAny<CancellationToken>()), Times.Once,
+            "the shared Source Analysis upload is reused — no second import path");
+    }
+
+    [Fact]
+    public void A_failed_baseline_import_explains_itself_and_changes_no_selection()
+    {
+        Sources(Snap(Current, "Shop", 0, latest: true), Snap(Older, "Shop", 2, latest: false));
+        Upload(null, new SourceUploadFailure("ARCHIVE_REJECTED", "validation", "The archive is not a valid ZIP."));
+        var page = Render<AiGeneratedCodeReview>();
+        page.WaitForAssertion(() => page.Find("[data-testid=aic-import-baseline]"));
+        page.Find("[data-testid=aic-baseline]").Change(Older.ToString());
+
+        page.Find("[data-testid=aic-import-baseline]").Click();
+        Choose(page);
+
+        page.WaitForAssertion(() => page.Find("[data-testid=aic-import-error]").TextContent.Should().Contain("not a valid ZIP").And.Contain("selections are unchanged"));
+        page.Find("[data-testid=aic-baseline]").GetAttribute("value").Should().Be(Older.ToString(), "a failed import never replaces the chosen baseline");
+        page.Find("[data-testid=aic-current]").GetAttribute("value").Should().Be(Current.ToString());
+        page.Find("[data-testid=aic-import-cancel]").Click();
+        page.FindAll("[data-testid=aic-import-panel]").Should().BeEmpty();
     }
 }

@@ -54,6 +54,27 @@
             </div>
             <BaselineEligibilityNote Snapshots="Snapshots" Current="CurrentSnapshot" Selected="_baselineId" @bind-Confirmed="_baselineConfirmed" @bind-Remember="_rememberAssociation"
                                      Associations="Associations" AssociationRevoked="AssociationRevoked" TestId="aic-baseline-note" />
+            @* Import a baseline here: the shared Source Analysis upload creates an ordinary immutable snapshot (available to every module), then the
+               list is reloaded and the new snapshot is offered as baseline through the same eligibility rules. Nothing else is selected or changed. *@
+            @if (SourceUpload is not null)
+            {
+                @if (!_importOpen)
+                {
+                    <p><button type="button" class="btn-secondary btn-small" data-testid="aic-import-baseline" disabled="@(_busy || _importing || CurrentSnapshot is null)" @onclick="() => { _importOpen = true; _importError = null; _importNotice = null; }">Import baseline ZIP</button></p>
+                }
+                else
+                {
+                    <section class="aic-import" aria-labelledby="aic-import-h" data-testid="aic-import-panel">
+                        <h3 id="aic-import-h" class="aic-h4">Import an earlier revision as baseline</h3>
+                        <p class="aic-muted">The ZIP is analyzed by Source Analysis and stored as a new immutable snapshot, then offered as the baseline for <strong>@CurrentSnapshot?.Repository</strong>. The import time is recorded; it does not prove which revision is older.</p>
+                        <InputFile accept=".zip" OnChange="ImportBaselineAsync" disabled="@_importing" aria-label="Choose the baseline source ZIP (maximum 50 MB)" data-testid="aic-import-file" />
+                        @if (_importing) { <p class="aic-muted" role="status" data-testid="aic-import-progress">Analyzing @_importName… The current and baseline selections are unchanged until it completes.</p> }
+                        @if (_importError is not null) { <p class="aic-error" role="alert" data-testid="aic-import-error">@_importError</p> }
+                        <p><button type="button" class="btn-link" data-testid="aic-import-cancel" @onclick="CancelImport">@(_importing ? "Cancel" : "Close")</button></p>
+                    </section>
+                }
+                @if (_importNotice is not null) { <p class="aic-muted" role="status" data-testid="aic-import-notice">@_importNotice</p> }
+            }
             @if (_baselineId is null && CurrentSnapshot is { } cur && T.SuggestedBaseline(Snapshots, cur) is { } suggested)
             {
                 @* A proposal: the previous snapshot of the same repository. Nothing is selected until the user says so. *@
@@ -485,6 +506,51 @@
     private void UseBaseline(Guid snapshotId)
     {
         if (BaselineOptions.Any(s => s.SnapshotId == snapshotId)) _baselineId = snapshotId;
+    }
+
+    // ── Baseline import (shared Source Analysis upload; no second import path) ──────────────────────────────────────────
+    private IIntegrationCatalogApiService? SourceUpload => Services.GetService(typeof(IIntegrationCatalogApiService)) as IIntegrationCatalogApiService;
+    private bool _importOpen, _importing;
+    private string? _importName, _importError, _importNotice;
+    private CancellationTokenSource? _importCts;
+
+    private async Task ImportBaselineAsync(InputFileChangeEventArgs args)
+    {
+        if (SourceUpload is not { } upload || CurrentSnapshot is not { } current) return;
+        _importing = true; _importError = null; _importNotice = null; _importName = args.File.Name;
+        _importCts = new CancellationTokenSource();
+        try
+        {
+            var environment = (Services.GetService(typeof(IFrontendAnalysisSettingsService)) as IFrontendAnalysisSettingsService)?.ActiveProfile?.Id ?? "";
+            await using var stream = args.File.OpenReadStream(50 * 1024 * 1024, _importCts.Token);
+            var (snapshot, failure) = await upload.AnalyzeSourceSnapshotDetailedAsync(environment, args.File.Name, stream, _importCts.Token);
+            if (snapshot is null) { _importError = $"{failure?.Message ?? "The source upload could not be completed."} The current and baseline selections are unchanged."; return; }
+            var (options, error) = await Api.SourcesAsync(_cts.Token);
+            if (options is null) { _importError = $"The snapshot was stored, but the source list could not be reloaded ({error}). Reload the page to select it."; return; }
+            _sources = options;
+            _scope.Options = options;
+            var candidate = Candidates.FirstOrDefault(c => c.Snapshot.SnapshotId == snapshot.Id);
+            if (snapshot.Id == current.SnapshotId || candidate is null)
+                _importNotice = $"{args.File.Name} was stored as a source snapshot, but it is not offered as a baseline for {current.Repository} ({(snapshot.Id == current.SnapshotId ? "it is the current snapshot" : "not a comparable source")}). The baseline was not changed.";
+            else
+            {
+                (_baselineId, _baselineConfirmed) = (snapshot.Id, false);
+                _importNotice = candidate.Eligible
+                    ? $"{args.File.Name} was stored as a new immutable snapshot and selected as baseline."
+                    : $"{args.File.Name} was stored and selected as baseline, but its repository identity differs: confirm it below before running ({candidate.Reason}).";
+                _importOpen = false;
+            }
+        }
+        catch (OperationCanceledException) { _importError = "Import cancelled. The current and baseline selections are unchanged; if the server finished, the snapshot appears in the list after a reload."; }
+        catch (IOException) { _importError = "The selected ZIP could not be read (the upload limit is 50 MB). The selections are unchanged."; }
+        catch (HttpRequestException ex) { _importError = $"{BackendRequestClassifier.FromException("Baseline import", ex).UserMessage} The selections are unchanged."; }
+        finally { _importing = false; _importCts?.Dispose(); _importCts = null; }
+    }
+
+    private void CancelImport()
+    {
+        if (_importing) _importCts?.Cancel();
+        else _importOpen = false;
     }
 
     private void ToggleCategory(AiCodeReviewCategory category) => _category = _category == category ? null : category;
