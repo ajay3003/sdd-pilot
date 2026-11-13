@@ -52,10 +52,7 @@
 .sb-small { font-size: .8125rem; }
 .sb-workspace { display: grid; gap: 1rem; min-width: 0; }
 .sb-list-col { display: grid; gap: .5rem; min-width: 0; }
-@media (min-width: 80rem) {
-    .sb-workspace.has-inspector { grid-template-columns: minmax(0, 1fr) minmax(26rem, 34rem); align-items: start; }
-    .sb-workspace.has-inspector .sb-detail { position: sticky; top: 1rem; max-height: calc(100vh - 2rem); overflow: auto; }
-}
+/* The selected snapshot opens as a full-width focus view below the list (no sticky side column with its own scrollbar). */
 .sb-close { padding: 0 .4rem; border: 0; background: none; color: var(--clr-text-muted); font-size: 1.4rem; line-height: 1; cursor: pointer; border-radius: 4px; }
 .sb-close:hover, .sb-close:focus-visible { color: var(--clr-text); background: var(--clr-surface-muted, #f1f5f9); }
 .sb-tab:focus-visible { outline: 2px solid var(--clr-primary-focus, var(--clr-primary)); outline-offset: -2px; }
@@ -73,12 +70,10 @@
 .sb-chain { display: flex; flex-wrap: wrap; gap: .3rem .6rem; margin: 0 0 .5rem; padding: 0; list-style: none; }
 .sb-chain li { padding: .2rem .6rem; border: 1px solid var(--clr-border); border-radius: 999px; font-size: .8125rem; }
 .sb-chain li + li::before { content: "→"; margin: 0 .5rem 0 -.35rem; color: var(--clr-text-muted); }
-/* With the inspector open, the table keeps what identifies and qualifies a row; type and project are in the inspector. */
-@media (min-width: 80rem) {
-    .sb-workspace.has-inspector .sb-table th:nth-child(2), .sb-workspace.has-inspector .sb-table td:nth-child(2),
-    .sb-workspace.has-inspector .sb-table th:nth-child(3), .sb-workspace.has-inspector .sb-table td:nth-child(3),
-    .sb-workspace.has-inspector .sb-table th:nth-child(7), .sb-workspace.has-inspector .sb-table td:nth-child(7) { display: none; }
-}
+/* Lifecycle: read-only checks and state-changing actions are separate, labelled groups. */
+.sb-action-group { display: grid; gap: .35rem; margin: .6rem 0 0; padding: .6rem .75rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md, 6px); }
+.sb-action-group > .sb-facet-label { margin: 0; }
+.sb-action-group.is-mutating { border-color: var(--clr-warning, #b45309); }
 .sb-table td:nth-child(4) { white-space: nowrap; }
 
 /* Filters: one grid, equal control heights, the search wider; nothing overflows at 390px. */

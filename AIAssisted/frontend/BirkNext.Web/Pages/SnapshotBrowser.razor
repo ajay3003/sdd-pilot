@@ -378,7 +378,7 @@
 
     private static string ReferenceText(SnapshotListItem item) => item.ReferencedBy > 0
         ? $"{item.ReferencedBy} saved reference{(item.ReferencedBy == 1 ? "" : "s")}"
-        : item.Metadata.Type == SnapshotType.SourceAnalysis ? "None recorded · not all stores checked" : "No saved references";
+        : item.Metadata.Type == SnapshotType.SourceAnalysis ? "Reference discovery incomplete — none recorded in the checked stores; other consumers may exist" : "No saved references";
 
     private SourceSetupSnapshot? SetupOf(SnapshotMetadata m) =>
         m.Type == SnapshotType.SourceAnalysis && Guid.TryParse(m.Id, out var id) ? _setup.FirstOrDefault(s => s.SnapshotId == id) : null;
@@ -528,6 +528,15 @@
                             @foreach (var p in pointers) { <MetaBadge Kind="BadgeKind.Scope" Text="@SnapshotPresentation.Pointer(p)" /> }
                             @if (s.Retention == SnapshotRetentionClass.Protected) { <MetaBadge Kind="BadgeKind.Scope" Text="Protected" /> }
                         </div>
+                        <div class="sb-action-group" data-testid="sb-checks" role="group" aria-label="Read-only checks">
+                            <span class="sb-facet-label">Read-only check</span>
+                            <div class="sb-actions">
+                                <BusyButton Class="btn btn-secondary btn-sm" Text="Check deletion eligibility" BusyText="Checking…" Disabled="_busy" OnClick="CheckDeletionAsync" TestId="sb-deletion-check" />
+                                <span class="sb-muted sb-small">Nothing is deleted or changed.</span>
+                            </div>
+                        </div>
+                        <div class="sb-action-group is-mutating" data-testid="sb-lifecycle-actions" role="group" aria-label="Lifecycle actions (change state, confirmation required)">
+                            <span class="sb-facet-label">Lifecycle actions · change state, confirmation required</span>
                         <div class="sb-actions">
                             <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" data-testid="sb-set-current"
                                     @onclick='() => Ask("current", "Make current", $"Makes this the current {SnapshotPresentation.Type(s.Type)} snapshot of {s.Module} for {s.Project ?? "this workspace"}. Reviews that follow the current snapshot read it from now on; the snapshot itself and earlier results are unchanged.", () => PointAsync(SnapshotPointerKind.CurrentSelected))'>Make current</button>
@@ -541,7 +550,7 @@
                             else if (s.Retention != SnapshotRetentionClass.FrozenReportEvidence)
                             { <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" data-testid="sb-protect"
                                       @onclick='() => Ask("protect", "Protect", "Blocks deletion of this snapshot in every owning module until protection is removed. Its contents are not changed.", () => RetainAsync(SnapshotRetentionClass.Protected))'>Protect</button> }
-                            <BusyButton Class="btn btn-secondary btn-sm" Text="Can it be deleted?" BusyText="Checking…" Disabled="_busy" OnClick="CheckDeletionAsync" TestId="sb-deletion-check" />
+                        </div>
                         </div>
                         @if (_confirm is { } pending)
                         {

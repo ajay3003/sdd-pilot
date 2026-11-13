@@ -69,7 +69,7 @@ public sealed class SnapshotBrowserTests : BunitContext
         terraform.QuerySelector(".ssb")!.GetAttribute("data-status").Should().Be(nameof(SemanticStatus.Partial));
         terraform.TextContent.Should().Contain("Analysis: Partial", "a dimension-labelled status, never a bare Failed").And.Contain("Latest");
         terraform.QuerySelector("[data-testid=sb-project-cell]")!.TextContent.Should().Be("Unassigned", "imported, but no Project Evidence associates it — never guessed from its name");
-        terraform.QuerySelector("[data-testid=sb-references]")!.TextContent.Should().Be("None recorded · not all stores checked",
+        terraform.QuerySelector("[data-testid=sb-references]")!.TextContent.Should().Be("Reference discovery incomplete — none recorded in the checked stores; other consumers may exist",
             "zero recorded references is not 'nothing uses it' while payload and browser stores are unchecked");
         terraform.QuerySelector("[data-testid=sb-references]")!.GetAttribute("data-state").Should().Be("partially-assessed");
         var report = cut.FindAll("[data-testid=sb-row]")[1];
@@ -142,6 +142,12 @@ public sealed class SnapshotBrowserTests : BunitContext
 
         _api.Verify(a => a.SetPointerAsync(It.IsAny<SnapshotPointerRequest>(), It.IsAny<CancellationToken>()), Times.Never, "viewing never moves a pointer");
         cut.Find("[data-testid=sb-tab][data-tab=overview]").Click();
+        // Read-only check and state-changing actions are separate, labelled groups.
+        cut.Find("[data-testid=sb-checks]").TextContent.Should().Contain("Read-only check").And.Contain("Check deletion eligibility").And.Contain("Nothing is deleted or changed");
+        cut.Find("[data-testid=sb-checks] [data-testid=sb-deletion-check]");
+        cut.Find("[data-testid=sb-lifecycle-actions]").GetAttribute("aria-label").Should().Contain("change state, confirmation required");
+        cut.FindAll("[data-testid=sb-lifecycle-actions] [data-testid=sb-deletion-check]").Should().BeEmpty();
+        cut.Find("[data-testid=sb-lifecycle-actions] [data-testid=sb-set-current]");
         cut.Find("[data-testid=sb-set-current]").Click();
         cut.Find("[data-testid=sb-confirm]").TextContent.Should().Contain("the snapshot itself and earlier results are unchanged");
         _api.Verify(a => a.SetPointerAsync(It.IsAny<SnapshotPointerRequest>(), It.IsAny<CancellationToken>()), Times.Never, "the first click only explains the effect");
