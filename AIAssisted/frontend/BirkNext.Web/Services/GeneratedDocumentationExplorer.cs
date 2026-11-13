@@ -244,4 +244,78 @@ public static partial class GeneratedDocumentationExplorer
     public static IReadOnlyList<(int Line, string Text)> Search(string? content, string term) =>
         string.IsNullOrWhiteSpace(content) || string.IsNullOrWhiteSpace(term) ? []
         : [.. content.Split('\n').Select((l, i) => (i + 1, l.TrimEnd())).Where(x => x.Item2.Contains(term.Trim(), StringComparison.OrdinalIgnoreCase)).Take(50)];
+
+    /// <summary>The document views: Read (default), Outline (id "Structure", kept for existing links), Source, Provenance.</summary>
+    public static readonly IReadOnlyList<(string Id, string Label)> ViewTabs = [("Read", "Read"), ("Structure", "Outline"), ("Source", "Source"), ("Provenance", "Provenance")];
+
+    /// <summary>A view named in <c>?view=</c>; the former Overview (document metadata) is now part of Provenance. Null for anything else.</summary>
+    public static string? ViewFromQuery(string? value) => value?.Trim().ToLowerInvariant() switch
+    {
+        "read" => "Read",
+        "outline" or "structure" => "Structure",
+        "source" => "Source",
+        "provenance" or "overview" => "Provenance",
+        _ => null,
+    };
+
+    public static string ViewSlug(string tab) => tab == "Structure" ? "outline" : tab.ToLowerInvariant();
+
+    /// <summary>
+    /// The document in reading order: Markdown runs, and every fenced block that is a recognised diagram as its own segment (so it can be drawn).
+    /// Every line of the source lands in exactly one segment, in order — nothing is dropped; other code fences stay in the Markdown.
+    /// </summary>
+    public static IReadOnlyList<GeneratedReadSegment> ReadSegments(string? content)
+    {
+        if (string.IsNullOrEmpty(content)) return [];
+        var lines = content.Replace("\r\n", "\n").Split('\n');
+        var segments = new List<GeneratedReadSegment>();
+        var markdown = new List<string>();
+        void FlushMarkdown() { if (markdown.Count > 0) { segments.Add(new(string.Join('\n', markdown), null)); markdown.Clear(); } }
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var fence = FenceOpen().Match(lines[i]);
+            if (!fence.Success) { markdown.Add(lines[i]); continue; }
+            var marker = fence.Groups["m"].Value;
+            var end = i + 1;
+            while (end < lines.Length && !lines[end].TrimStart().StartsWith(marker, StringComparison.Ordinal)) end++;
+            var body = string.Join('\n', lines[(i + 1)..Math.Min(end, lines.Length)]);
+            var closed = end < lines.Length;
+            if (closed && GeneratedDiagrams.IsDiagram(body))
+            {
+                FlushMarkdown();
+                segments.Add(new(null, body));
+            }
+            else
+            {
+                markdown.AddRange(lines[i..Math.Min(end + 1, lines.Length)]);
+            }
+            i = Math.Min(end, lines.Length - 1);
+        }
+        FlushMarkdown();
+        return segments;
+    }
+
+    /// <summary>Headings of the Read view with the anchor ids it renders (per Markdown segment, in order).</summary>
+    public static IReadOnlyList<GeneratedOutlineItem> Outline(IReadOnlyList<GeneratedReadSegment> segments) =>
+        [.. segments.Select((s, index) => (s, index)).Where(x => x.s.Markdown is not null)
+            .SelectMany(x => MarkdownRenderingService.UntrustedHeadings(x.s.Markdown!).Select(h => new GeneratedOutlineItem(h.Level, h.Text, AnchorId(x.index, h.Id))))];
+
+    /// <summary>A heading's element id in the Read view: segment-scoped so headings in different segments never collide.</summary>
+    public static string AnchorId(int segment, string headingId) => $"gde-s{segment}-{headingId}";
+
+    /// <summary>Rendered HTML of one Markdown segment with its heading ids made segment-scoped (matching <see cref="AnchorId"/>).</summary>
+    public static string RenderSegment(int segment, string markdown) =>
+        HeadingId().Replace(MarkdownRenderingService.RenderUntrusted(markdown), m => $"{m.Groups["open"].Value}id=\"{AnchorId(segment, m.Groups["id"].Value)}\"");
+
+    [GeneratedRegex(@"^\s{0,3}(?<m>```+|~~~+)")]
+    private static partial Regex FenceOpen();
+
+    [GeneratedRegex(@"(?<open><h[1-6]\s+)id=""(?<id>[^""]*)""")]
+    private static partial Regex HeadingId();
 }
+
+/// <summary>One part of a document in reading order: Markdown, or a diagram's source (exactly one is set).</summary>
+public sealed record GeneratedReadSegment(string? Markdown, string? Diagram);
+
+/// <summary>One heading of the Read view and the id of its element.</summary>
+public sealed record GeneratedOutlineItem(int Level, string Text, string AnchorId);

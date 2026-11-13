@@ -46,12 +46,14 @@
                 @foreach (var d in ModuleDocuments)
                 {
                     var doc = d;
+                    @* One control per document: selecting the card opens it in Read (no separate Open button). *@
                     <li class="gde-card @(doc.Path == _selectedPath ? "is-selected" : "") @(doc.ContentAvailable ? "" : "is-unavailable")" data-testid="gde-document-card" data-role="@doc.Role"
                         data-state="@(doc.ContentAvailable ? "available" : "unavailable")" aria-current="@(doc.Path == _selectedPath ? "true" : null)">
-                        <p><strong>@doc.RoleLabel</strong>@if (doc.Path == _selectedPath) { <span class="gde-selected-mark"> · Selected</span> }</p>
-                        <p class="gde-muted gde-wrap"><code>@doc.Path</code></p>
-                        <p class="gde-card-state gde-state-@(doc.ContentAvailable ? "available" : "unavailable")" data-testid="gde-card-state">@Gde.Availability(doc)</p>
-                        <button type="button" class="@(doc.ContentAvailable ? "btn-primary" : "btn-secondary") btn-small" data-testid="gde-open" @onclick="() => Select(doc.Path)">@(doc.ContentAvailable ? "Open" : "Details")<span class="visually-hidden"> @doc.Path</span></button>
+                        <button type="button" class="gde-card-button" data-testid="gde-open" aria-pressed="@(doc.Path == _selectedPath ? "true" : "false")" @onclick="() => Select(doc.Path)">
+                            <strong class="gde-card-title">@doc.RoleLabel</strong>
+                            <span class="gde-muted gde-wrap gde-card-path"><code>@doc.Path</code></span>
+                            <span class="gde-card-state gde-state-@(doc.ContentAvailable ? "available" : "unavailable")" data-testid="gde-card-state">@Gde.Availability(doc)</span>
+                        </button>
                     </li>
                 }
             </ul>
@@ -80,10 +82,10 @@
                     }
                 </p>
                 <div class="gde-tabs gde-sticky" role="tablist" aria-label="Document views" data-testid="gde-tabs">
-                    @foreach (var tab in new[] { "Overview", "Structure", "Source", "Provenance" })
+                    @foreach (var (tab, label) in Gde.ViewTabs)
                     {
                         var t = tab;
-                        <button type="button" role="tab" class="@(_tab == t ? "is-current" : "")" aria-selected="@(_tab == t ? "true" : "false")" aria-controls="gde-tabpanel" data-testid="gde-tab" data-tab="@t" @onclick="() => _tab = t">@t</button>
+                        <button type="button" role="tab" class="@(_tab == t ? "is-current" : "")" aria-selected="@(_tab == t ? "true" : "false")" aria-controls="gde-tabpanel" data-testid="gde-tab" data-tab="@t" @onclick="() => SetTab(t)">@label</button>
                     }
                 </div>
                 <label class="gde-field gde-search">Search this document <input type="search" @bind="_search" @bind:event="oninput" data-testid="gde-search" /></label>
@@ -92,7 +94,7 @@
                     <ul class="gde-plain" data-testid="gde-search-results">@foreach (var (line, text) in Gde.Search(view.Content, _search)) { <li><span class="gde-muted">L@(line)</span> @text</li> }</ul>
                 }
                 <div id="gde-tabpanel" role="tabpanel" aria-label="@_tab">
-                @if (view.State == GeneratedDocumentParseState.ContentUnavailable && _tab is "Structure" or "Source")
+                @if (view.State == GeneratedDocumentParseState.ContentUnavailable && _tab is "Read" or "Structure" or "Source")
                 {
                     <p class="gde-note" role="status" data-testid="gde-content-unavailable"><strong>Detected — content unavailable.</strong> @Gde.ContentUnavailableText</p>
                 }
@@ -100,8 +102,8 @@
                 {
                     @switch (_tab)
                     {
-                        case "Overview": @Overview(view) break;
-                        case "Structure": @Structure(view) break;
+                        case "Read": @Read(view) break;
+                        case "Structure": @Outline(view) break;
                         case "Source": @Source(view) break;
                         default: @Provenance(view) break;
                     }
@@ -117,7 +119,10 @@
     private static readonly DataModelAnalysisService Parser = new();
     private IReadOnlyList<DriftDocument> _catalog = [];
     private IReadOnlyList<DriftImport> _imports = [];
-    private string _importId = "", _module = "", _selectedPath = "", _tab = "Overview", _search = "";
+    private string _importId = "", _module = "", _selectedPath = "", _tab = "Read", _search = "", _outlineFilter = "";
+    private IReadOnlyList<GeneratedReadSegment> _segments = [];
+    private IReadOnlyList<GeneratedOutlineItem> _outline = [];
+    private string? _pendingAnchor;
     private GeneratedDocumentView? _view;
     private BirkNext.SourceDomains.SourceContract? _contract;
     private bool _contractLoading, _focusDocument;
@@ -139,19 +144,55 @@
         _importId = query.TryGetValue("import", out var import) && _imports.Any(i => i.ImportId == import.ToString()) ? import.ToString()
             : _imports.FirstOrDefault(i => i.ImportId == state.CurrentProjectImportId)?.ImportId ?? _imports.LastOrDefault()?.ImportId ?? "";
         _module = query.TryGetValue("module", out var module) && Modules.Contains(module.ToString()) ? module.ToString() : Modules.FirstOrDefault() ?? "";
-        if (query.TryGetValue("document", out var document) && ModuleDocuments.Any(d => d.Path == document.ToString())) Select(document.ToString());
+        if (query.TryGetValue("document", out var document) && ModuleDocuments.Any(d => d.Path == document.ToString()))
+        {
+            Select(document.ToString(), updateUrl: false);
+            // An explicit ?view= (read, outline/structure, source, provenance; the former overview opens Provenance) is honoured once, on arrival.
+            if (query.TryGetValue("view", out var requested) && Gde.ViewFromQuery(requested.ToString()) is { } explicitView) _tab = explicitView;
+        }
+    }
+
+    private void SetTab(string tab)
+    {
+        _tab = tab;
+        SyncUrl();
+    }
+
+    /// <summary>The selected document and view in the URL (replace: refresh and shared links reopen it; no history entry per tab click).</summary>
+    private void SyncUrl()
+    {
+        if (_selectedPath.Length == 0) return;
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(new Dictionary<string, object?>
+        {
+            ["import"] = _importId, ["module"] = _module, ["document"] = _selectedPath, ["view"] = _tab == "Read" ? null : Gde.ViewSlug(_tab),
+        }), replace: true);
+    }
+
+    /// <summary>Outline → the heading in Read: switch to Read, then scroll to the heading once it is rendered.</summary>
+    private void GoToHeading(string anchorId)
+    {
+        _tab = "Read";
+        _pendingAnchor = anchorId;
+        SyncUrl();
     }
 
     private void ImportChanged(ChangeEventArgs e) { _importId = e.Value?.ToString() ?? ""; _module = Modules.FirstOrDefault() ?? ""; _view = null; _selectedPath = ""; }
     private void ModuleChanged(ChangeEventArgs e) { _module = e.Value?.ToString() ?? ""; _view = null; _selectedPath = ""; }
 
-    private void Select(string path)
+    private void Select(string path) => Select(path, updateUrl: true);
+
+    private void Select(string path, bool updateUrl)
     {
         if (Repository?.SddLifecycle is not { } state || ModuleDocuments.FirstOrDefault(d => d.Path == path) is not { } doc) return;
-        _selectedPath = path; _tab = "Overview"; _search = ""; _contract = null;
+        // Opening a document reads it: Read is the default view (metadata lives under Provenance).
+        _selectedPath = path; _tab = "Read"; _search = ""; _outlineFilter = ""; _contract = null; _pendingAnchor = null;
         var content = DocumentationDrift.Text(state, doc.Document);
         _view = Gde.View(doc, content, Parser);
+        // Parsed once per selection, never per tab switch.
+        _segments = DocumentationDrift.IsMarkdown(doc.Path) ? Gde.ReadSegments(content) : [];
+        _outline = Gde.Outline(_segments);
         _focusDocument = true;
+        if (updateUrl) SyncUrl();
         // OpenAPI / GraphQL: the backend's Source Analysis readers give the structure (stateless; no remote refs, no introspection).
         if (doc.Role is GeneratedDocumentRole.ApiContract or GeneratedDocumentRole.GraphQlSchema && content is not null && !DocumentationDrift.IsMarkdown(doc.Path)
             && ServiceProvider.GetService(typeof(IGeneratedDocumentationApiService)) is IGeneratedDocumentationApiService api)
@@ -168,40 +209,89 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_pendingAnchor is { } anchor)
+        {
+            _pendingAnchor = null;
+            try { await JS.InvokeVoidAsync("birknextFocusElement", anchor); } catch (JSException) { }
+            return;
+        }
         if (!_focusDocument) return;
         _focusDocument = false;
         try { await JS.InvokeVoidAsync("birknextFocusElement", "gde-doc-h"); } catch (JSException) { }
     }
 
+    /// <summary>
+    /// Read: the document itself, in source order — Markdown rendered safely (raw HTML shown as text, no remote images, safe links) and every
+    /// recognised diagram drawn from its own source. Non-Markdown artifacts (OpenAPI/GraphQL files) are read through their structure.
+    /// </summary>
+    private RenderFragment Read(GeneratedDocumentView v) => __builder =>
+    {
+        if (!DocumentationDrift.IsMarkdown(v.Document.Path))
+        {
+            <div data-testid="gde-read" data-format="structured">@Structure(v)</div>
+            return;
+        }
+        <article class="gde-read markdown-content" data-testid="gde-read" data-format="markdown" aria-label="@($"{v.Document.RoleLabel} document")">
+            @for (var i = 0; i < _segments.Count; i++)
+            {
+                var segment = _segments[i];
+                if (segment.Diagram is { } diagram)
+                {
+                    <BirkNext.Web.Components.GeneratedDiagramView Source="@diagram" Heading="@HeadingBefore(i)" />
+                }
+                else
+                {
+                    @((MarkupString)Gde.RenderSegment(i, segment.Markdown!))
+                }
+            }
+        </article>
+        @if (v.State == GeneratedDocumentParseState.PartiallyParsed)
+        {
+            <p class="gde-muted gde-read-note" data-testid="gde-partial-read">All of this document is shown above. Some of it has no structured interpretation (see Outline); that is not an error in the document.</p>
+        }
+    };
+
+    /// <summary>The nearest heading before a segment (the diagram's caption), from the outline already computed.</summary>
+    private string HeadingBefore(int segment)
+    {
+        var prefix = $"gde-s";
+        var before = _outline.LastOrDefault(o => int.TryParse(o.AnchorId[prefix.Length..o.AnchorId.IndexOf('-', prefix.Length)], out var s) && s < segment);
+        return before?.Text ?? _view?.Document.RoleLabel ?? "Document";
+    }
+
+    /// <summary>Outline: the document's own headings (click to read that section), then the structured interpretation on request.</summary>
+    private RenderFragment Outline(GeneratedDocumentView v) => __builder =>
+    {
+        var items = _outline.Where(o => _outlineFilter.Trim().Length == 0 || o.Text.Contains(_outlineFilter.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+        <nav class="gde-outline" aria-label="Document outline" data-testid="gde-outline">
+            @if (_outline.Count > 0)
+            {
+                <label class="gde-field gde-outline-filter">Filter headings <input type="search" data-testid="gde-outline-filter" @bind="_outlineFilter" @bind:event="oninput" /></label>
+                <p class="gde-muted" role="status" data-testid="gde-outline-count">@items.Count of @_outline.Count headings</p>
+                <ol class="gde-outline-list">
+                    @foreach (var item in items)
+                    {
+                        <li class="gde-outline-l@(Math.Min(item.Level, 4))"><button type="button" class="btn-link" data-testid="gde-outline-item" data-anchor="@item.AnchorId" @onclick="() => GoToHeading(item.AnchorId)">@item.Text</button></li>
+                    }
+                </ol>
+            }
+            else { <p class="gde-muted" data-testid="gde-outline-empty">This document has no headings to navigate.</p> }
+        </nav>
+        <details class="gde-structured" data-testid="gde-structured" open="@(!DocumentationDrift.IsMarkdown(v.Document.Path) || v.DataModel is not null || v.ChangeLog.Count > 0)">
+            <summary>Structured interpretation (@v.StateLabel)</summary>
+            @Structure(v)
+        </details>
+    };
+
     /// <summary>A fenced block: a recognised diagram as participants/steps or nodes/edges (source behind a disclosure); other code as code.</summary>
     private static RenderFragment CodeBlock(string block, string heading) => __builder =>
     {
         if (!GeneratedDiagrams.IsDiagram(block)) { <pre class="gde-code">@block</pre> return; }
-        var diagram = GeneratedDiagrams.Read(block);
-        <div class="gde-diagram" data-testid="gde-diagram" data-kind="@(diagram?.Kind.ToString() ?? "Unavailable")">
-            @if (diagram is null)
-            {
-                <p class="gde-muted" data-testid="gde-diagram-unavailable">Diagram preview unavailable for this diagram type. Its source is kept below and in the Source tab.</p>
-            }
-            else if (diagram.Kind == GeneratedDiagramKind.Sequence)
-            {
-                <p class="gde-diagram-facts"><strong>Participants (@diagram.Participants.Count)</strong> @string.Join(" · ", diagram.Participants)</p>
-                <ol class="gde-steps" data-testid="gde-diagram-steps" aria-label="@($"{heading} sequence steps")">
-                    @foreach (var step in diagram.Steps) { <li>@step.From → @step.To: @step.Message@if (step.Branch is { } branch) { <span class="gde-muted"> (@branch)</span> }</li> }
-                </ol>
-                @if (diagram.Branches.Count > 0) { <p class="gde-diagram-facts" data-testid="gde-diagram-branches"><strong>Alternative / failure paths</strong> @string.Join(" · ", diagram.Branches)</p> }
-            }
-            else
-            {
-                @if (diagram.Groups.Count > 0) { <ul class="gde-plain" data-testid="gde-diagram-groups">@foreach (var (name, members) in diagram.Groups) { <li><strong>@name</strong>: @string.Join(", ", members)</li> }</ul> }
-                <p class="gde-diagram-facts"><strong>Components (@diagram.Nodes.Count)</strong></p>
-                <ul class="gde-plain" data-testid="gde-diagram-edges" aria-label="@($"{heading} relationships")">@foreach (var edge in diagram.Edges) { <li>@edge.From → @edge.To@(edge.Label is { Length: > 0 } label ? $" ({label})" : "")</li> }</ul>
-            }
-            <ReviewDisclosure Text="Show diagram source" CollapseText="Hide diagram source" Class="disclosure-inline disclosure-small"><pre class="gde-code gde-raw">@block</pre></ReviewDisclosure>
-        </div>
+        <BirkNext.Web.Components.GeneratedDiagramView Source="@block" Heading="@heading" InitialMode="steps" />
     };
 
-    private RenderFragment Overview(GeneratedDocumentView v) => __builder =>
+    /// <summary>Document facts (formerly the Overview tab): technical metadata, shown with the provenance — never before the content.</summary>
+    private RenderFragment DocumentFacts(GeneratedDocumentView v) => __builder =>
     {
         <dl class="gde-facts" data-testid="gde-overview">
             <div><dt>Title</dt><dd>@(v.Title ?? "Not stated")</dd></div>
@@ -337,6 +427,7 @@
     private RenderFragment Provenance(GeneratedDocumentView v) => __builder =>
     {
         var d = v.Document.Document;
+        @DocumentFacts(v)
         <p data-testid="gde-provenance-summary">Generated by @(d.Generator ?? "an unidentified generator") from Source Analysis snapshot @(d.SourceSnapshotId is { } snap ? snap.ToString()[..8] : "(not known)")@(d.ImportedAt is { } importedAt ? $", imported {importedAt.ToLocalTime():g}" : "").</p>
         <dl class="gde-facts" data-testid="gde-provenance">
             <div><dt>Project / import</dt><dd>@(d.ProjectRevision ?? "—")</dd></div>

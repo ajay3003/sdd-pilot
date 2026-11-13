@@ -1,0 +1,133 @@
+@using BirkNext.Web.Services
+@* A diagram from generated documentation, drawn as SVG from the deterministic reading (GeneratedDiagrams): a sequence diagram as lifelines and
+   ordered messages, a graph/flowchart as a left-to-right layered layout. Every label is text (Blazor-escaped) — nothing from the document is
+   interpreted as HTML or script and nothing remote is loaded. Only what the diagram source declares is drawn; an unsupported or oversized
+   diagram is said so and its source stays available. Diagram · Steps · Source are three views of the same block. *@
+
+<figure class="gdv" data-testid="gde-diagram" data-kind="@(_diagram?.Kind.ToString() ?? "Unavailable")" aria-label="@Caption">
+    <div class="gdv-toolbar" role="toolbar" aria-label="@($"{Caption} view")">
+        <div class="gdv-modes" role="group" aria-label="Diagram views">
+            @foreach (var (id, label) in Modes)
+            {
+                <button type="button" class="gdv-mode @(_mode == id ? "is-current" : "")" aria-pressed="@(_mode == id ? "true" : "false")" data-testid="gdv-mode" data-mode="@id" @onclick="() => _mode = id">@label</button>
+            }
+        </div>
+        @if (_mode == "diagram" && Drawable)
+        {
+            <div class="gdv-zoom" role="group" aria-label="Zoom">
+                <button type="button" class="btn-secondary btn-small" data-testid="gdv-zoom-out" aria-label="Zoom out" disabled="@(_zoom <= MinZoom)" @onclick="() => Zoom(-0.25)">−</button>
+                <span class="gdv-zoom-value" data-testid="gdv-zoom-value" aria-live="polite">@(_fit ? "Fit" : $"{_zoom * 100:0}%")</span>
+                <button type="button" class="btn-secondary btn-small" data-testid="gdv-zoom-in" aria-label="Zoom in" disabled="@(!_fit && _zoom >= MaxZoom)" @onclick="() => Zoom(0.25)">+</button>
+                <button type="button" class="btn-secondary btn-small" data-testid="gdv-fit" aria-pressed="@(_fit ? "true" : "false")" @onclick="FitToWidth">Fit</button>
+                <button type="button" class="btn-secondary btn-small" data-testid="gdv-expand" aria-pressed="@(_expanded ? "true" : "false")" @onclick="() => _expanded = !_expanded">@(_expanded ? "Collapse" : "Expand")</button>
+            </div>
+        }
+    </div>
+
+    @if (_mode == "source")
+    {
+        <pre class="gde-code gde-raw" data-testid="gdv-source">@Source</pre>
+    }
+    else if (_diagram is null)
+    {
+        <p class="gde-muted" data-testid="gde-diagram-unavailable">Diagram preview unavailable for this diagram type. Its source is kept under Source.</p>
+        <pre class="gde-code gde-raw">@Source</pre>
+    }
+    else if (_mode == "steps" || !Drawable)
+    {
+        @if (!Drawable && _mode == "diagram") { <p class="gde-note" role="status" data-testid="gdv-too-large">This diagram is too large to draw readably (@Size elements; the limit is @MaxElements). Its steps and source are shown instead.</p> }
+        @Steps()
+    }
+    else
+    {
+        <div class="gdv-canvas @(_expanded ? "is-expanded" : "")" tabindex="0" role="region" aria-label="@($"{Caption} — scroll to pan")" data-testid="gdv-canvas">
+            <svg class="gdv-svg" data-testid="gdv-svg" viewBox="0 0 @_layout.Width @_layout.Height" width="@(_fit ? "100%" : $"{_layout.Width * _zoom:0}")"
+                 preserveAspectRatio="xMinYMin meet" role="img" aria-labelledby="@($"{_id}-title")">
+                <title id="@($"{_id}-title")">@Caption — @Summary</title>
+                <defs>
+                    <marker id="@($"{_id}-arrow")" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="gdv-arrowhead" /></marker>
+                </defs>
+                @foreach (var line in _layout.Lines)
+                {
+                    <line x1="@F(line.X1)" y1="@F(line.Y1)" x2="@F(line.X2)" y2="@F(line.Y2)" class="@line.Class" marker-end="@(line.Arrow ? $"url(#{_id}-arrow)" : null)" />
+                }
+                @foreach (var box in _layout.Boxes)
+                {
+                    <g class="gdv-node" data-testid="gdv-node"><title>@box.Full</title>
+                        <rect x="@F(box.X)" y="@F(box.Y)" width="@F(box.W)" height="@F(box.H)" rx="6" class="@box.Class" />
+                        <text x="@F(box.X + box.W / 2)" y="@F(box.Y + box.H / 2 + 4)" text-anchor="middle" class="gdv-node-text">@box.Text</text>
+                    </g>
+                }
+                @foreach (var label in _layout.Labels)
+                {
+                    <g class="gdv-label-group"><text x="@F(label.X)" y="@F(label.Y)" text-anchor="middle" class="gdv-label" data-testid="gdv-label"><title>@label.Full</title>@label.Text</text></g>
+                }
+            </svg>
+        </div>
+        <figcaption class="gde-muted gdv-caption">Drawn from the diagram source in this generated document — a documentation diagram, not verified runtime architecture.</figcaption>
+    }
+</figure>
+
+@code {
+    [Parameter, EditorRequired] public string Source { get; set; } = "";
+    [Parameter] public string Heading { get; set; } = "";
+    /// <summary>"diagram" (Read) or "steps" (the structured Outline reading).</summary>
+    [Parameter] public string InitialMode { get; set; } = "diagram";
+
+    protected override void OnInitialized() => _mode = InitialMode;
+
+    private const int MaxElements = 80;
+    private const double MinZoom = 0.5, MaxZoom = 2.5;
+    private static readonly (string Id, string Label)[] Modes = [("diagram", "Diagram"), ("steps", "Steps"), ("source", "Source")];
+    private static int _counter;
+    private readonly string _id = $"gdv{System.Threading.Interlocked.Increment(ref _counter)}";
+    private GeneratedDiagram? _diagram;
+    private DiagramLayout _layout = DiagramLayout.Empty;
+    private string _mode = "diagram", _lastSource = "";
+    private double _zoom = 1;
+    private bool _fit = true, _expanded;
+
+    private string Caption => _diagram?.Kind == GeneratedDiagramKind.Sequence ? $"{Label} sequence diagram" : $"{Label} diagram";
+    private string Label => string.IsNullOrWhiteSpace(Heading) ? "Document" : Heading;
+    private int Size => _diagram is null ? 0 : _diagram.Kind == GeneratedDiagramKind.Sequence ? _diagram.Participants.Count + _diagram.Steps.Count : _diagram.Nodes.Count + _diagram.Edges.Count;
+    private bool Drawable => _diagram is not null && Size > 0 && Size <= MaxElements;
+    private string Summary => _diagram is null ? "" : _diagram.Kind == GeneratedDiagramKind.Sequence
+        ? $"{_diagram.Participants.Count} participants, {_diagram.Steps.Count} messages"
+        : $"{_diagram.Nodes.Count} components, {_diagram.Edges.Count} connections";
+
+    protected override void OnParametersSet()
+    {
+        if (Source == _lastSource) return; // parse and lay out once per diagram source (not on every render, zoom or pan)
+        _lastSource = Source;
+        _diagram = GeneratedDiagrams.Read(Source);
+        _layout = Drawable ? DiagramLayout.Of(_diagram!) : DiagramLayout.Empty;
+    }
+
+    private void Zoom(double delta)
+    {
+        if (_fit) { _fit = false; _zoom = 1; }
+        _zoom = Math.Clamp(_zoom + delta, MinZoom, MaxZoom);
+    }
+
+    private void FitToWidth() { _fit = true; _zoom = 1; }
+
+    private static string F(double value) => value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+
+    private RenderFragment Steps() => __builder =>
+    {
+        if (_diagram!.Kind == GeneratedDiagramKind.Sequence)
+        {
+            <p class="gde-diagram-facts"><strong>Participants (@_diagram.Participants.Count)</strong> @string.Join(" · ", _diagram.Participants)</p>
+            <ol class="gde-steps" data-testid="gde-diagram-steps" aria-label="@($"{Label} sequence steps")">
+                @foreach (var step in _diagram.Steps) { <li>@step.From → @step.To: @step.Message@if (step.Branch is { } branch) { <span class="gde-muted"> (@branch)</span> }</li> }
+            </ol>
+            @if (_diagram.Branches.Count > 0) { <p class="gde-diagram-facts" data-testid="gde-diagram-branches"><strong>Alternative / failure paths</strong> @string.Join(" · ", _diagram.Branches)</p> }
+        }
+        else
+        {
+            @if (_diagram.Groups.Count > 0) { <ul class="gde-plain" data-testid="gde-diagram-groups">@foreach (var (name, members) in _diagram.Groups) { <li><strong>@name</strong>: @string.Join(", ", members)</li> }</ul> }
+            <p class="gde-diagram-facts"><strong>Components (@_diagram.Nodes.Count)</strong></p>
+            <ul class="gde-plain" data-testid="gde-diagram-edges" aria-label="@($"{Label} relationships")">@foreach (var edge in _diagram.Edges) { <li>@edge.From → @edge.To@(edge.Label is { Length: > 0 } label ? $" ({label})" : "")</li> }</ul>
+        }
+    };
+}

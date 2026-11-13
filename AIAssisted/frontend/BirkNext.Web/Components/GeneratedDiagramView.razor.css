@@ -1,0 +1,19 @@
+/* A diagram from generated documentation: toolbar, scrollable canvas (pan by scrolling), SVG drawn from the diagram source. */
+.gdv { margin: 1rem 0; border: 1px solid var(--clr-border); border-radius: 8px; background: var(--clr-surface-white); padding: .5rem .75rem .75rem; }
+.gdv-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; align-items: center; margin-bottom: .5rem; }
+.gdv-modes, .gdv-zoom { display: inline-flex; flex-wrap: wrap; gap: .25rem; align-items: center; }
+.gdv-mode { border: 1px solid var(--clr-border); background: transparent; border-radius: 999px; padding: .2rem .7rem; font-size: .85rem; cursor: pointer; color: inherit; }
+.gdv-mode.is-current { background: var(--clr-primary, #1d4ed8); border-color: var(--clr-primary, #1d4ed8); color: #fff; }
+.gdv-zoom-value { min-width: 3.2rem; text-align: center; font-size: .85rem; font-variant-numeric: tabular-nums; }
+.gdv-canvas { overflow: auto; max-height: 34rem; border-radius: 6px; background: var(--clr-surface-subtle, #f8fafc); padding: .25rem; }
+.gdv-canvas.is-expanded { max-height: none; }
+.gdv-canvas:focus-visible { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; }
+.gdv-svg { display: block; height: auto; max-width: none; font-family: inherit; }
+.gdv-svg .gdv-box { fill: var(--clr-surface-white, #fff); stroke: var(--clr-primary, #1d4ed8); stroke-width: 1.4; }
+.gdv-svg .gdv-node-text { font-size: 13px; font-weight: 600; fill: var(--clr-text, #0f172a); }
+.gdv-svg .gdv-lifeline { stroke: var(--clr-border-strong, #94a3b8); stroke-dasharray: 4 4; }
+.gdv-svg .gdv-message, .gdv-svg .gdv-edge { stroke: var(--clr-text-muted, #475569); stroke-width: 1.4; fill: none; }
+.gdv-svg .gdv-branch { stroke-dasharray: 6 3; }
+.gdv-svg .gdv-arrowhead { fill: var(--clr-text-muted, #475569); }
+.gdv-svg .gdv-label { font-size: 12px; fill: var(--clr-text, #0f172a); paint-order: stroke; stroke: var(--clr-surface-subtle, #f8fafc); stroke-width: 3px; }
+.gdv-caption { margin: .4rem 0 0; font-size: .82rem; }

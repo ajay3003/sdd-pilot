@@ -105,7 +105,7 @@ public sealed class GeneratedDocumentationStructureTests : BunitContext
         var cards = cut.FindAll("[data-testid=gde-document-card]");
         var graphql = cards.Single(c => c.TextContent.Contains("schema.graphql"));
         graphql.QuerySelector("[data-testid=gde-card-state]")!.TextContent.Should().Be("Detected — content unavailable");
-        graphql.QuerySelector("[data-testid=gde-open]")!.TextContent.Should().StartWith("Details");
+        graphql.GetAttribute("data-state").Should().Be("unavailable", "the card itself opens the document's details; no separate Open/Details button");
         cards.Single(c => c.GetAttribute("aria-current") == "true").TextContent.Should().Contain("dataflow.md");
         JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == "gde-doc-h");
     }
@@ -119,7 +119,7 @@ public sealed class GeneratedDocumentationStructureTests : BunitContext
         diagram.GetAttribute("data-kind").Should().Be("Sequence");
         cut.FindAll("[data-testid=gde-diagram-steps] li").Should().HaveCount(4);
         cut.Find("[data-testid=gde-diagram-branches]").TextContent.Should().Contain("alt unauthorized");
-        diagram.QuerySelector(".disclosure-body")!.HasAttribute("hidden").Should().BeTrue("raw Mermaid is not the primary view");
+        diagram.QuerySelectorAll("[data-testid=gdv-source]").Should().BeEmpty("raw Mermaid is not the primary view");
 
         Tab(cut, "Source");
         cut.Find("[data-testid=gde-raw]").TextContent.Should().Contain("sequenceDiagram");
@@ -153,5 +153,113 @@ public sealed class GeneratedDocumentationStructureTests : BunitContext
         Tab(cut, "Source");
         cut.Find("[data-testid=gde-source-language]").TextContent.Should().StartWith("Raw YAML");
         cut.Find("[data-testid=gde-raw]").TextContent.Should().Contain("openapi: 3.0.1");
+    }
+    // ── Read (default), drawn diagrams, safe rendering, outline, deep links ────────────────────────────────────────
+
+    [Fact]
+    public void Opening_a_document_reads_it_with_its_diagram_drawn_from_its_own_source()
+    {
+        var cut = Open("dataflow.md");
+
+        cut.Find("[data-testid=gde-tab][aria-selected=true]").GetAttribute("data-tab").Should().Be("Read", "opening a document reads it; metadata is under Provenance");
+        cut.FindAll("[data-testid=gde-tab]").Select(t => t.TextContent).Should().Equal("Read", "Outline", "Source", "Provenance");
+        var read = cut.Find("[data-testid=gde-read]");
+        read.QuerySelector("h2")!.TextContent.Should().Be("REST Ingestion Flow");
+        read.TextContent.Should().NotContain("sequenceDiagram", "the diagram is drawn, its source is one click away");
+        var diagram = cut.Find("[data-testid=gde-diagram]");
+        diagram.GetAttribute("data-kind").Should().Be("Sequence");
+        diagram.GetAttribute("aria-label").Should().Be("REST Ingestion Flow sequence diagram");
+        cut.FindAll("[data-testid=gdv-svg] [data-testid=gdv-node]").Should().HaveCount(3, "one box per declared participant");
+        cut.FindAll("[data-testid=gdv-label]").Select(l => l.QuerySelector("title")!.TextContent).Should().StartWith(["1. PersonAdapter → API: PUT /api/person/v1/innmating/barn"]);
+        cut.Find("figcaption").TextContent.Should().Contain("not verified runtime architecture");
+
+        diagram.QuerySelectorAll("[data-testid=gdv-mode]").Single(b => b.GetAttribute("data-mode") == "source").Click();
+        cut.Find("[data-testid=gdv-source]").TextContent.Should().Contain("sequenceDiagram").And.Contain("PA->>API");
+    }
+
+    [Fact]
+    public void Zoom_and_fit_change_only_the_view()
+    {
+        var cut = Open("dataflow.md");
+        cut.Find("[data-testid=gdv-zoom-value]").TextContent.Should().Be("Fit");
+        cut.Find("[data-testid=gdv-zoom-in]").Click();
+        cut.Find("[data-testid=gdv-zoom-value]").TextContent.Should().Be("125%");
+        cut.Find("[data-testid=gdv-svg]").GetAttribute("width").Should().NotBe("100%");
+        cut.Find("[data-testid=gdv-fit]").Click();
+        cut.Find("[data-testid=gdv-svg]").GetAttribute("width").Should().Be("100%");
+    }
+
+    [Fact]
+    public void Imported_markdown_is_rendered_without_executable_html_or_remote_images()
+    {
+        Add("README.md", "Overview", "# Overview\n\n<script>alert('x')</script>\n\n<img src=\"x\" onerror=\"alert(1)\">\n\n![logo](https://example.test/logo.png)\n\n[bad](javascript:alert(1)) and [ok](https://example.test)\n\n| A | B |\n|---|---|\n| 1 | 2 |\n", true);
+        var cut = Open("README.md");
+
+        var read = cut.Find("[data-testid=gde-read]");
+        read.QuerySelectorAll("script, img").Should().BeEmpty("raw HTML is text and remote images are not loaded");
+        read.TextContent.Should().Contain("<script>", "the raw HTML stays visible as text — nothing is silently dropped");
+        read.TextContent.Should().Contain("[image not loaded: logo]");
+        read.QuerySelectorAll("a").Select(a => a.GetAttribute("href")).Should().NotContain(h => h != null && h.StartsWith("javascript", StringComparison.OrdinalIgnoreCase));
+        read.QuerySelector("table td")!.TextContent.Should().Be("1");
+    }
+
+    [Fact]
+    public void The_outline_lists_the_headings_and_opens_the_section_in_Read()
+    {
+        var cut = Open("CHANGELOG.md");
+        Tab(cut, "Structure");
+
+        var items = cut.FindAll("[data-testid=gde-outline-item]");
+        items.Select(i => i.TextContent).Should().Equal("Changelog", "[1.2.0] - 2026-10-01", "Added", "[1.1.0] - 2026-09-01", "Fixed");
+        cut.Find("[data-testid=gde-outline-filter]").Input("1.1");
+        cut.FindAll("[data-testid=gde-outline-item]").Should().ContainSingle();
+        cut.Find("[data-testid=gde-structured]").TextContent.Should().Contain("latest 1.2.0", "the structured release reading stays in Outline");
+        var anchor = cut.Find("[data-testid=gde-outline-item]").GetAttribute("data-anchor")!;
+        cut.Find("[data-testid=gde-outline-item]").Click();
+
+        cut.Find("[data-testid=gde-tab][aria-selected=true]").GetAttribute("data-tab").Should().Be("Read");
+        cut.Find($"[data-testid=gde-read] #{anchor}").TextContent.Should().Contain("1.1.0");
+        JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == anchor);
+    }
+
+    [Theory]
+    [InlineData("source", "Source")]
+    [InlineData("provenance", "Provenance")]
+    [InlineData("overview", "Provenance")]
+    [InlineData("structure", "Structure")]
+    [InlineData("nonsense", "Read")]
+    public void An_explicit_view_deep_link_is_honoured_and_unknown_views_read(string view, string expected)
+    {
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"generated-documentation-explorer?import=i1&module=Person&document={Uri.EscapeDataString("Person/autodoc/dataflow.md")}&view={view}");
+        var cut = Render<ExplorerPage>();
+        cut.Find("[data-testid=gde-tab][aria-selected=true]").GetAttribute("data-tab").Should().Be(expected);
+    }
+
+    [Fact]
+    public void Provenance_holds_the_former_overview_facts_and_selecting_another_document_never_shows_stale_content()
+    {
+        var cut = Open("dataflow.md");
+        Tab(cut, "Provenance");
+        cut.Find("[data-testid=gde-overview]").TextContent.Should().Contain("Headings");
+        cut.Find("[data-testid=gde-provenance]").TextContent.Should().Contain("fp-dataflow.md");
+        Services.GetRequiredService<NavigationManager>().Uri.Should().Contain("view=provenance");
+
+        cut.FindAll("[data-testid=gde-document-card]").Single(c => c.TextContent.Contains("CHANGELOG.md")).QuerySelector("[data-testid=gde-open]")!.Click();
+        cut.Find("[data-testid=gde-tab][aria-selected=true]").GetAttribute("data-tab").Should().Be("Read");
+        cut.Find("[data-testid=gde-read]").TextContent.Should().Contain("1.2.0").And.NotContain("REST Ingestion Flow");
+        Services.GetRequiredService<NavigationManager>().Uri.Should().Contain(Uri.EscapeDataString("Person/autodoc/CHANGELOG.md")).And.NotContain("view=");
+    }
+
+    [Fact]
+    public void Read_segments_keep_every_line_in_order_and_only_diagram_fences_become_diagrams()
+    {
+        var doc = $"# T\n\nIntro\n\n```bash\ndotnet run\n```\n\n```mermaid\n{Graph}\n```\n\nAfter\n```mermaid\nnot a diagram\n```\n";
+        var segments = BirkNext.Web.Services.GeneratedDocumentationExplorer.ReadSegments(doc);
+        segments.Select(s => s.Diagram is null ? "md" : "diagram").Should().Equal("md", "diagram", "md");
+        segments[0].Markdown.Should().Contain("dotnet run", "an ordinary code fence stays in the Markdown");
+        segments[2].Markdown.Should().Contain("After").And.Contain("not a diagram");
+        var layout = DiagramLayout.Of(GeneratedDiagrams.Read(segments[1].Diagram!)!);
+        layout.Boxes.Select(b => b.Full).Should().Contain(["Web app", "M2LB.Person.Api", "PersonDb", "Service Bus"]);
+        layout.Lines.Count(l => l.Arrow).Should().Be(3, "one arrow per declared edge — nothing invented");
     }
 }
