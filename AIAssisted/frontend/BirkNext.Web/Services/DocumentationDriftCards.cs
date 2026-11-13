@@ -54,11 +54,11 @@ public static class DocumentationDriftCards
         _ => state.ToString(),
     };
 
-    /// <summary>Semantic tone (CSS suffix): green consistent, blue ready, amber difference/review, red conflict, grey absence/not comparable.</summary>
+    /// <summary>Semantic tone (CSS suffix): green consistent (a completed comparison without differences), amber difference/review, red conflict,
+    /// grey for everything not compared yet. Ready to compare is input readiness — never a result — so it is neutral, not a coloured status.</summary>
     public static string Tone(DriftCardState state) => state switch
     {
         DriftCardState.Consistent => "consistent",
-        DriftCardState.ReadyToCompare => "ready",
         DriftCardState.Difference or DriftCardState.ReviewRequired => "attention",
         DriftCardState.Conflict => "conflict",
         _ => "neutral",

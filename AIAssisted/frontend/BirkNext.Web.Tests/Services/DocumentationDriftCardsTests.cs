@@ -43,7 +43,7 @@ public sealed class DocumentationDriftCardsTests
         DocumentationDriftCards.From(Group("Frontend", DriftGroupState.GeneratedNotPresent, generated: false), []).Should().Match<DriftCard>(c =>
             c.State == DriftCardState.GeneratedMissing && c.GeneratedText == "Missing" && c.Differences == 0, "missing generated documentation is not a difference");
         DocumentationDriftCards.From(Group("X", DriftGroupState.AuthoredNotPresent, authored: false), []).Should().Match<DriftCard>(c => c.State == DriftCardState.AuthoredMissing && c.AuthoredText == "Missing");
-        DocumentationDriftCards.Tone(DriftCardState.ReadyToCompare).Should().Be("ready");
+        DocumentationDriftCards.Tone(DriftCardState.ReadyToCompare).Should().Be("neutral", "ready to compare is input readiness, not a result: no coloured status before a comparison");
         DocumentationDriftCards.Tone(DriftCardState.GeneratedMissing).Should().Be("neutral", "absence is neutral");
         DocumentationDriftCards.Tone(DriftCardState.Conflict).Should().Be("conflict");
         DocumentationDriftCards.Tone(DriftCardState.Consistent).Should().Be("consistent");

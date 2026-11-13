@@ -1204,9 +1204,10 @@
         _ => "Not supported",
     };
 
+    // Not compared (ready) is neutral; Compared is information (its findings say whether anything differs) — green is not a consistency verdict here.
     private static string AreaTone(QualityAreaStatus s) => s switch
     {
-        QualityAreaStatus.Compared => "green", QualityAreaStatus.NotAssessed => "blue", QualityAreaStatus.Ambiguous => "amber", _ => "grey",
+        QualityAreaStatus.Compared => "blue", QualityAreaStatus.Ambiguous => "amber", _ => "grey",
     };
 
     private RenderFragment QualityOverview() => __builder =>
@@ -1261,11 +1262,19 @@
                     var open = findings.Count(f => f.Module == module.Key && f.IsDifference && !f.Closed);
                     <li class="dq-area-row" data-testid="dq-area-module" data-module="@module.Key">
                         <strong>@module.Key</strong>
-                        <span class="dq-chips">@foreach (var a in module) { <span class="dd-status dd-status-@AreaTone(a.Status)" title="@a.Reason" data-testid="dq-area" data-status="@a.Status" data-concern="@a.Concern">@DocumentationDriftComposite.ConcernLabel(a.Concern): @AreaLabel(a.Status)</span> }</span>
+                        @* Unsupported areas are summarised once below the list instead of repeating a "Not supported" chip in every module. *@
+                        <span class="dq-chips">@foreach (var a in module.Where(a => a.Status != QualityAreaStatus.NotSupported)) { <span class="dd-status dd-status-@AreaTone(a.Status)" title="@a.Reason" data-testid="dq-area" data-status="@a.Status" data-concern="@a.Concern">@DocumentationDriftComposite.ConcernLabel(a.Concern): @AreaLabel(a.Status)</span> }
+                            @if (module.All(a => a.Status == QualityAreaStatus.NotSupported)) { <span class="dd-note">Only areas BirkNext cannot compare yet</span> }</span>
                         @if (open > 0) { <button type="button" class="btn-link" data-testid="dq-area-findings" @onclick='() => { _findingModule = module.Key; OnViewChange.InvokeAsync("findings"); }'>@open open finding(s)</button> }
                     </li>
                 }
             </ul>
+            @{ var unsupported = areas.Where(a => a.Status == QualityAreaStatus.NotSupported).ToList(); }
+            @if (unsupported.Count > 0)
+            {
+                <p class="dd-note" data-testid="dq-unsupported" data-count="@unsupported.Count">Not compared because BirkNext has no comparison for these documentation areas yet (a capability limitation — not missing documentation, not drift):
+                    @string.Join(", ", unsupported.Select(a => DocumentationDriftComposite.ConcernLabel(a.Concern)).Distinct(StringComparer.OrdinalIgnoreCase)) · @unsupported.Count area@(unsupported.Count == 1 ? "" : "s") across @unsupported.Select(a => a.Module).Distinct(StringComparer.OrdinalIgnoreCase).Count() module(s).</p>
+            }
         </section>
     };
 
