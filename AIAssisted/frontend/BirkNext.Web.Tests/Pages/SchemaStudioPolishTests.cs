@@ -56,6 +56,7 @@ public sealed class SchemaStudioPolishTests : BunitContext
     {
         Studio(("report.xsd", Rooted));
         var page = Render<SchemaStudio>();
+        page.FindAll("[data-testid=ss-view]").Single(b => b.GetAttribute("data-view") == "Overview").Click(); // Overview is one click away; the Schema tree opens first.
         page.Find("[data-testid=ss-root-element]").TextContent.Should().Be("Report");
         page.Find("[data-testid=ss-root-xsd]").TextContent.Should().StartWith("report.xsd");
         page.Find("[data-testid=ss-overview-status]").TextContent.Should().Be("XSD package structurally valid");

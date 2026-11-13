@@ -11,7 +11,9 @@ public sealed record SchemaStudioGroup(string Name, string Purpose, IReadOnlyLis
 /// </summary>
 public static class SchemaStudioNavigation
 {
-    public const string DefaultView = "Overview";
+    /// <summary>Opening a package (import, selection, the Understand area) shows the actual XSD structure first: every global element and reusable
+    /// definition by file. An explicit <c>?view=</c> deep link (Overview, Designer, Compare, …) is still honoured.</summary>
+    public const string DefaultView = "Schema Tree";
 
     /// <summary>The former "Struktur" view: the business structure with types and origin (a mode of Business structure, not its own view).</summary>
     public const string TechnicalStructureAlias = "Struktur";
@@ -19,7 +21,7 @@ public static class SchemaStudioNavigation
     public static readonly IReadOnlyList<SchemaStudioGroup> Groups =
     [
         new("Understand", "What the schema looks like: summary, structure as a tester reads it, declarations by file and the resolved structure.",
-            ["Overview", "Forretning", "Schema Tree", "Effective Schema"]),
+            ["Schema Tree", "Overview", "Forretning", "Effective Schema"]),
         new("Schema", "Fields, types, constraints and namespaces as the XSD defines them.", ["Felt og regler", "Types", "Constraints", "Namespaces"]),
         new("Inspect", "How files relate and the source XSD as imported.", ["References", "Schema dependencies", "Raw XSD"]),
         new("Design & Compare", "Draft changes in a working copy and compare package versions.", ["Designer", "Compare"]),

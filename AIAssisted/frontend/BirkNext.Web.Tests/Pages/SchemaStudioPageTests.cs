@@ -45,10 +45,10 @@ public sealed class SchemaStudioPageTests : BunitContext
         var page = Render<SchemaStudio>();
 
         Assert.Contains("generic", page.Markup);
-        // Five areas at the first level; only the selected area's views at the second (default: Understand → Overview).
+        // Five areas at the first level; only the selected area's views at the second (default: Understand → Schema tree).
         Assert.Equal(["Understand", "Schema", "Inspect", "Design & Compare", "Validate & Test"], page.FindAll("[data-testid=ss-group]").Select(b => b.TextContent).ToArray());
-        Assert.Equal(["Overview", "Business structure", "Schema tree", "Effective structure"], page.FindAll("[data-testid=ss-view]").Select(b => b.TextContent).ToArray());
-        Assert.Equal("page", page.FindAll("[data-testid=ss-view]").Single(b => b.GetAttribute("data-view") == "Overview").GetAttribute("aria-current"));
+        Assert.Equal(["Schema tree", "Overview", "Business structure", "Effective structure"], page.FindAll("[data-testid=ss-view]").Select(b => b.TextContent).ToArray());
+        Assert.Equal("page", page.FindAll("[data-testid=ss-view]").Single(b => b.GetAttribute("data-view") == "Schema Tree").GetAttribute("aria-current"));
         // Every former view stays reachable through its area.
         foreach (var view in new[] { "Forretning", "Schema dependencies", "Effective Schema", "Generated Tests" })
         {

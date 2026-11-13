@@ -102,6 +102,7 @@ public sealed class SchemaStudioHierarchyTests : BunitContext
     {
         Studio(("report.xsd", Rooted));
         var page = Render<SchemaStudio>();
+        page.FindAll("[data-testid=ss-view]").Single(b => b.GetAttribute("data-view") == "Overview").Click(); // Overview is one click away; the Schema tree opens first.
         page.Find("[data-testid=ss-shortcut-business]").TextContent.Should().Contain("Understand structure");
         page.Find("[data-testid=ss-shortcut-business]").Click();
         Current(page).Should().Be("Forretning");
@@ -125,6 +126,7 @@ public sealed class SchemaStudioHierarchyTests : BunitContext
     {
         Studio(("lib.xsd", Library));
         var page = Render<SchemaStudio>();
+        page.FindAll("[data-testid=ss-view]").Single(b => b.GetAttribute("data-view") == "Overview").Click(); // Overview is one click away; the Schema tree opens first.
         page.Find("[data-testid=ss-validity]").TextContent.Should().Be("Valid", "no root element never makes an XSD invalid");
         page.Find("[data-testid=ss-root-element]").TextContent.Should().Be("None");
         page.Find("[data-testid=ss-root-xsd]").TextContent.Should().StartWith("Not defined");
@@ -193,5 +195,59 @@ public sealed class SchemaStudioHierarchyTests : BunitContext
         select.Change(other);
         page.Find("[data-testid=ss-package-select]").GetAttribute("value").Should().Be(other);
         page.Find("#ss-current-title").TextContent.Should().NotBeNullOrWhiteSpace();
+    }
+    // ── P0: opening a schema shows its structure (Schema Tree), not the Overview ─────────────────────────────────
+
+    [Fact]
+    public void Opening_a_library_XSD_shows_its_reusable_definitions_in_the_Schema_Tree_without_a_click()
+    {
+        Studio(("lib.xsd", Library));
+        var page = Render<SchemaStudio>();
+
+        Current(page).Should().Be("Schema Tree", "opening a package shows the actual XSD structure first");
+        page.FindAll("[data-testid=ss-view]").Select(b => b.GetAttribute("data-view")).Should().StartWith(["Schema Tree"]);
+        page.FindAll("[data-testid=ss-tree-node]").Select(n => n.GetAttribute("data-name")).Should().BeEquivalentTo("CodeType", "PartyType");
+        var entry = page.Find("[data-testid=ss-tree-entry]");
+        entry.GetAttribute("data-library").Should().Be("true");
+        entry.TextContent.Should().Contain("reusable types but no complete message element", "a library is not reported as invalid and no message root is invented");
+    }
+
+    [Fact]
+    public void Opening_a_message_XSD_shows_its_global_element_and_entry_point_in_the_Schema_Tree()
+    {
+        Studio(("report.xsd", Rooted));
+        var page = Render<SchemaStudio>();
+
+        Current(page).Should().Be("Schema Tree");
+        page.FindAll("[data-testid=ss-tree-node]").Select(n => n.GetAttribute("data-name")).Should().Contain("Report");
+        page.Find("[data-testid=ss-tree-entry]").GetAttribute("data-library").Should().Be("false");
+        page.Find("[data-testid=ss-tree-entry]").TextContent.Should().Contain("Report");
+    }
+
+    [Fact]
+    public void The_Understand_area_opens_the_Schema_Tree_from_another_area()
+    {
+        Studio(("report.xsd", Rooted));
+        var page = Render<SchemaStudio>();
+        OpenView(page, "Designer");
+        Current(page).Should().Be("Designer");
+
+        page.FindAll("[data-testid=ss-group]").Single(b => b.TextContent == "Understand").Click();
+
+        Current(page).Should().Be("Schema Tree");
+    }
+
+    [Theory]
+    [InlineData("overview", "Overview")]
+    [InlineData("designer", "Designer")]
+    [InlineData("compare", "Compare")]
+    [InlineData("generated-tests", "Generated Tests")]
+    public void An_explicit_view_deep_link_is_still_honoured(string slug, string view)
+    {
+        Studio(("report.xsd", Rooted));
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"schema-studio?view={slug}");
+        var page = Render<SchemaStudio>();
+
+        Current(page).Should().Be(view);
     }
 }

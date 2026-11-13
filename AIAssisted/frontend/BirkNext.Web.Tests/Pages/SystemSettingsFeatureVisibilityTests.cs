@@ -91,7 +91,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
         cut.Find("[data-testid=fv-filter-unavailable]").Click();
         cut.FindAll("[data-testid=fv-entry]").Select(r => r.GetAttribute("data-route")).Should().Equal("azure-environment");
         cut.Find("[data-testid=fv-filter-shown]").Click();
-        cut.FindAll("[data-testid=fv-entry]").Should().HaveCount(48);
+        cut.FindAll("[data-testid=fv-entry]").Should().HaveCount(49);
     }
 
     [Fact]

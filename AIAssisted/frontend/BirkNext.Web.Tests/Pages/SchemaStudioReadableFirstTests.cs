@@ -90,6 +90,7 @@ public sealed class SchemaStudioReadableFirstTests : BunitContext
     public void Overview_UsesPackageTerminology_AndKeepsNamespaceUrisSecondary()
     {
         var page = ThreeFilePackage();
+        page.FindAll("[data-testid=ss-view]").Single(b => b.GetAttribute("data-view") == "Overview").Click(); // Overview is one click away; the Schema tree opens first.
         page.Find("[data-testid=ss-root-element]").TextContent.Should().Be("Kvittering");
         page.Find("[data-testid=ss-root-xsd]").TextContent.Should().StartWith("kvittering.v2.xsd");
         page.Find("[data-testid=ss-overview-supporting]").TextContent.Should().StartWith("2");
@@ -105,6 +106,7 @@ public sealed class SchemaStudioReadableFirstTests : BunitContext
     {
         Studio(("lib.xsd", LibraryOnly));
         var page = Render<SchemaStudio>();
+        page.FindAll("[data-testid=ss-view]").Single(b => b.GetAttribute("data-view") == "Overview").Click(); // Overview is one click away; the Schema tree opens first.
         page.Find("[data-testid=ss-root-element]").TextContent.Should().Be("None");
         page.Find("[data-testid=ss-meaning]").TextContent.Should().Contain("reusable schema library");
         OpenView(page, "Generated Tests");

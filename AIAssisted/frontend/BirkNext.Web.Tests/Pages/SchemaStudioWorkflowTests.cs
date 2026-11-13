@@ -54,7 +54,7 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
         Assert.Equal(15, SchemaStudioNavigation.AllViews.Count);
         Assert.Equal(SchemaStudioNavigation.AllViews.Count, SchemaStudioNavigation.AllViews.Distinct().Count());
         // Structure is reachable from Understand; the former flat views keep their place under named groups.
-        Assert.Equal(["Overview", "Business structure", "Schema tree", "Effective structure"], SchemaStudioNavigation.Groups[0].Views.Select(SchemaStudioNavigation.Label));
+        Assert.Equal(["Schema tree", "Overview", "Business structure", "Effective structure"], SchemaStudioNavigation.Groups[0].Views.Select(SchemaStudioNavigation.Label));
         Assert.Equal(["Fields and rules", "Types", "Constraints", "Namespaces"], SchemaStudioNavigation.Groups[1].Views.Select(SchemaStudioNavigation.Label));
         Assert.Equal(["References", "Dependencies", "Raw XSD"], SchemaStudioNavigation.Groups[2].Views.Select(SchemaStudioNavigation.Label));
         Assert.Equal(["Designer", "Compare"], SchemaStudioNavigation.Groups[3].Views.Select(SchemaStudioNavigation.Label));
@@ -114,7 +114,7 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
         // With a package active, importing is a secondary action: open it first.
         page.Find("[data-testid=ss-import-another]").Click();
         page.FindComponent<Microsoft.AspNetCore.Components.Forms.InputFile>().UploadFiles(InputFileContent.CreateFromText(Order, "order-copy.xsd"));
-        page.WaitForAssertion(() => Assert.Equal("Overview", page.Find("[data-testid=ss-view][aria-current=page]").GetAttribute("data-view")));
+        page.WaitForAssertion(() => Assert.Equal("Schema Tree", page.Find("[data-testid=ss-view][aria-current=page]").GetAttribute("data-view")));
     }
 
     [Fact]
@@ -160,6 +160,7 @@ public sealed class SchemaStudioWorkflowTests : BunitContext
     {
         ImportOrder(out var package);
         var page = Render<SchemaStudio>();
+        page.FindAll("[data-testid=ss-view]").Single(b => b.GetAttribute("data-view") == "Overview").Click(); // Overview is one click away; the Schema tree opens first.
 
         var fingerprint = page.Find("[data-testid=ss-fingerprint]");
         Assert.Equal(package.Fingerprint, fingerprint.GetAttribute("title"));

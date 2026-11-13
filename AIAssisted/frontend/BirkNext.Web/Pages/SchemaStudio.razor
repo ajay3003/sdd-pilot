@@ -306,6 +306,10 @@
                     </details>
                     break;
                 case "Schema Tree":
+                    @* What this package is, once: a library has reusable definitions and no message root (not an error); a message schema names its entry point. *@
+                    <p class="ss-tree-entry" data-testid="ss-tree-entry" data-library="@(SchemaStudioPresentation.IsLibrary(package) ? "true" : "false")">@(SchemaStudioPresentation.IsLibrary(package)
+                        ? "This schema defines reusable types but no complete message element. Its definitions are listed below by file."
+                        : SchemaStudioPresentation.EntryPoint(package).Text)</p>
                     <div class="ss-tree-toolbar"><button type="button" class="btn-secondary ss-compact" data-testid="ss-tree-expand" @onclick="() => SetTreeExpanded(true)">Expand all</button><button type="button" class="btn-secondary ss-compact" data-testid="ss-tree-collapse" @onclick="() => SetTreeExpanded(false)">Collapse all</button>
                         <label class="ss-check"><input type="checkbox" @bind="_treeCompact" data-testid="ss-tree-compact" /> Compact rows</label></div>
                     <div @key="_treeGeneration" data-testid="ss-schema-tree" class="ss-explorer @(_treeCompact ? "is-compact" : "")">
