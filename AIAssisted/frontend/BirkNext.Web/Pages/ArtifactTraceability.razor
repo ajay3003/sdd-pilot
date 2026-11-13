@@ -282,7 +282,8 @@
                             {
                                 <li data-testid="at-transition" data-key="@t.Key" data-assessed="@(t.Assessed ? "true" : "false")">
                                     <span class="at-transition-name">@t.Name</span>
-                                    <SemanticStatusBadge Status="@(t.Assessed ? SemanticStatus.Completed : SemanticStatus.NotAssessed)" QualifiedLabel="@(t.Assessed ? "Assessed" : "Not assessed")" />
+                                    @* "Assessment completed" means every item was examined for explicit references — informational, never a green success or approved coverage. *@
+                                    <SemanticStatusBadge Status="@(t.Assessed ? SemanticStatus.InventoryComplete : SemanticStatus.NotAssessed)" QualifiedLabel="@(t.Assessed ? "Assessment completed" : "Not assessed")" />
                                     <span class="at-transition-detail">@t.Detail</span>
                                 </li>
                             }

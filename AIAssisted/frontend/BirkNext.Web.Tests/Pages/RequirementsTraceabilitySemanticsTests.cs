@@ -82,6 +82,14 @@ public sealed class RequirementsTraceabilitySemanticsTests : BunitContext
         var transitions = cut.FindAll("[data-testid='at-transition']");
         transitions.Single(t => t.GetAttribute("data-key") == "plan-task").GetAttribute("data-assessed").Should().Be("false");
         transitions.Count(t => t.GetAttribute("data-assessed") == "true").Should().Be(3);
+        // Assessed = every item examined for references: informational, never a green success that reads as approved coverage.
+        foreach (var assessed in transitions.Where(t => t.GetAttribute("data-assessed") == "true"))
+        {
+            var badge = assessed.QuerySelector(".ssb")!;
+            badge.GetAttribute("data-status").Should().Be(nameof(SemanticStatus.InventoryComplete));
+            badge.ClassList.Should().NotContain("ssb-positive");
+            badge.TextContent.Should().Contain("Assessment completed");
+        }
         cut.Find("[data-testid='at-plan-task-overview']").TextContent.Should().Contain("Not assessed").And.NotContain("%");
         cut.FindAll(".at-coverage-bar-fill.is-error, .at-coverage-bar-fill.is-warning").Should().BeEmpty("a low explicit-reference percentage is never red or amber");
     }
