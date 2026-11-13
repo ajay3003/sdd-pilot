@@ -95,7 +95,7 @@
             <ul class="tco-cards" data-testid="tco-overview-cards">
                 <li data-testid="tco-card-tests"><span class="tco-card-value">@r.Inventory.TestsDiscovered</span><span>Tests found</span><span class="tco-muted">@r.Inventory.TestsAnalyzed analyzed · @r.Inventory.TestsWithExecutionEvidence with results</span></li>
                 <li data-testid="tco-card-journeys"><span class="tco-card-value">@r.Journeys.Count</span><span>Journeys found</span><span class="tco-muted">@r.Journeys.Count(j => j.Weakest is ConnectionEvidence.Suggested or ConnectionEvidence.NeedsConfirmation) need confirmation</span></li>
-                <li data-testid="tco-card-duplicates"><span class="tco-card-value">@r.Overlaps.Count(o => o.Kind == OverlapKind.HighConfidenceOverlap)</span><span>Possible duplicates</span><span class="tco-muted">@(r.QaTests.Count == 0 ? "No QA tests to compare" : $"{r.QaTests.Count} QA tests compared")</span></li>
+                <li data-testid="tco-card-duplicates"><span class="tco-card-value">@r.Overlaps.Count</span><span>Overlap observations</span><span class="tco-muted" data-testid="tco-card-duplicates-breakdown">@P.OverlapBreakdown(r)</span></li>
                 <li data-testid="tco-card-gaps"><span class="tco-card-value">@r.Gaps.Count</span><span>Remaining gaps</span><span class="tco-muted">@r.Gaps.Count(g => g.Attention == "Needs attention") need attention</span></li>
                 <li data-testid="tco-card-review"><span class="tco-card-value">@r.QaScope.NeedsReview.Count</span><span>Needs review</span><span class="tco-muted">Tester or test-lead decision</span></li>
             </ul>
@@ -115,10 +115,10 @@
                 <h3 id="tco-reco-heading">QA recommendation</h3>
                 <div class="tco-reco-grid">
                     <div><p class="tco-label">Focus on</p>@RecoList(r.QaScope.Keep, "tco-reco-focus", "Nothing specific identified from the current evidence.")</div>
-                    <div><p class="tco-label">Probably do not need to repeat</p>@RecoList(r.QaScope.ProbablyUnnecessary, "tco-reco-not-repeat", "None identified from the current evidence.")</div>
+                    <div><p class="tco-label">Potential overlap — test-lead review required</p>@RecoList(r.QaScope.ProbablyUnnecessary, "tco-reco-not-repeat", "None identified from the current evidence.")</div>
                     <div><p class="tco-label">Needs confirmation</p>@RecoList(r.QaScope.NeedsReview, "tco-reco-confirm", "Nothing waiting for a decision.")</div>
                 </div>
-                <p class="tco-muted">Generated from this review's evidence. A recommendation never removes a test; "probably do not need to repeat" means review whether QA duplication is necessary.</p>
+                <p class="tco-muted">Generated from this review's evidence. A recommendation never removes a test; "potential overlap" means review whether QA duplication is necessary.</p>
                 <button type="button" class="tco-link" data-testid="tco-reco-open-scope" @onclick='() => _view = "scope"'>Open Remaining QA Scope</button>
             </section>
 
@@ -432,7 +432,7 @@
     private static readonly (string Key, string Label)[] Views =
     [
         ("overview", "Overview"), ("journeys", "By Journey"), ("components", "By Component"), ("requirements", "By Requirement / Risk"),
-        ("duplicates", "Possible Duplicate Tests"), ("scope", "Remaining QA Scope"), ("documentation", "Covered Tests Documentation"),
+        ("duplicates", "Overlap Review"), ("scope", "Remaining QA Scope"), ("documentation", "Covered Tests Documentation"),
     ];
     private static readonly string[] PhaseNames = ["Discovering test projects", "Analyzing tests", "Finding system journeys", "Mapping tests to journeys", "Checking overlaps", "Finding remaining gaps", "Preparing documentation"];
     private ReviewSourceOptions? _sources;

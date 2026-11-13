@@ -92,9 +92,18 @@ public static class TestCoveragePresentation
 
     public static string Overlap(OverlapKind kind) => kind switch
     {
-        OverlapKind.HighConfidenceOverlap => "Possible duplicate test", OverlapKind.PartialOverlap => "Partly overlapping", OverlapKind.ComplementaryCoverage => "Adds coverage",
-        OverlapKind.DifferentBoundary => "Different level — not a duplicate", OverlapKind.NeedsTesterReview => "Needs tester review", _ => "Not enough information",
+        OverlapKind.HighConfidenceOverlap => "Exact duplicate candidate", OverlapKind.PartialOverlap => "Partial behavioral overlap", OverlapKind.ComplementaryCoverage => "Distinct verification purpose",
+        OverlapKind.DifferentBoundary => "Similar behavior at a different test level", OverlapKind.NeedsTesterReview => "Needs tester review", _ => "Insufficient evidence",
     };
+
+    /// <summary>
+    /// The Overview's overlap card subtitle: the same observations the Overlap Review lists, broken down by kind (exact duplicate candidates are
+    /// one kind among several, never the whole count). Without QA tests there is nothing to compare.
+    /// </summary>
+    public static string OverlapBreakdown(TestCoverageReviewResult r) =>
+        r.QaTests.Count == 0 ? "No QA tests to compare"
+        : r.Overlaps.Count == 0 ? $"{r.QaTests.Count} QA tests compared · none overlap"
+        : $"{r.QaTests.Count} QA tests compared · " + string.Join(" · ", r.Overlaps.GroupBy(o => o.Kind).OrderBy(g => g.Key).Select(g => $"{g.Count()} {Overlap(g.Key).ToLowerInvariant()}"));
 
     public static string Strength(EvidenceStrength strength) => strength switch
     {
@@ -181,7 +190,7 @@ public static class TestCoveragePresentation
             md.AppendLine("## Remaining QA scope");
             md.AppendLine("### What testers should focus on");
             foreach (var k in r.QaScope.Keep) md.AppendLine($"- {k}");
-            md.AppendLine("### Tests testers probably do not need to repeat");
+            md.AppendLine("### Potential overlap — test-lead review required");
             foreach (var k in r.QaScope.ProbablyUnnecessary) md.AppendLine($"- {k}");
             if (r.QaScope.ProbablyUnnecessary.Count == 0) md.AppendLine("- None identified from the current evidence.");
             md.AppendLine("### Needs tester review");
@@ -243,7 +252,7 @@ public static class TestCoveragePresentation
         if (!coveredOnly)
         {
             h.Append("<h2>Remaining QA scope</h2><h3>What testers should focus on</h3><ul>").Append(string.Concat(r.QaScope.Keep.Select(k => $"<li>{E(k)}</li>"))).Append("</ul>");
-            h.Append("<h3>Tests testers probably do not need to repeat</h3><ul>").Append(r.QaScope.ProbablyUnnecessary.Count == 0 ? "<li>None identified from the current evidence.</li>" : string.Concat(r.QaScope.ProbablyUnnecessary.Select(k => $"<li>{E(k)}</li>"))).Append("</ul>");
+            h.Append("<h3>Potential overlap — test-lead review required</h3><ul>").Append(r.QaScope.ProbablyUnnecessary.Count == 0 ? "<li>None identified from the current evidence.</li>" : string.Concat(r.QaScope.ProbablyUnnecessary.Select(k => $"<li>{E(k)}</li>"))).Append("</ul>");
             h.Append("<h3>Needs tester review</h3><ul>").Append(string.Concat(r.QaScope.NeedsReview.Select(k => $"<li>{E(k)}</li>"))).Append("</ul>");
             h.Append("<h2>Possible duplicate tests</h2><ul>");
             foreach (var o in r.Overlaps) h.Append($"<li><strong>{E(o.QaTitle)}</strong>: {E(Overlap(o.Kind))} ({E(Strength(o.Strength))}). {E(o.Recommendation)} {E(o.RemainingRisk)}</li>");

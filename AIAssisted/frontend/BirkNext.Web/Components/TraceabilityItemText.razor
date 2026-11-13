@@ -50,9 +50,9 @@
     {
         if (HasStructuredScenario)
         {
-            @ScenarioPart("Given", Given, "given")
-            @* Collapsed, a long scenario shows its Given; When and Then follow on Show more. *@
-            <div class="traceability-item__scenario-rest" hidden="@(CanExpand && !Expanded)">
+            @* Collapsed, a long scenario shows its Given; When and Then follow on Show more. Given and the rest are on one line on purpose: the
+               container is pre-wrap, so a line break between them would render as a blank line above When. *@
+            @ScenarioPart("Given", Given, "given")<div class="traceability-item__scenario-rest" hidden="@(CanExpand && !Expanded)">
                 @* One line on purpose: a line break between two expressions is a whitespace text node, and the container is pre-wrap — it rendered
                    as a blank gap above Then. *@
                 @ScenarioPart("When", When, "when")@ScenarioPart("Then", Then, "then")

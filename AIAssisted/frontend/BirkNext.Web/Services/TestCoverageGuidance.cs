@@ -89,7 +89,7 @@ public static class TestCoverageGuidance
             new("connections", "Connections needing confirmation", "Suggested from source and names — not confirmed architecture. Confirm or reject each.", [], [], connections.Count),
             new("decisions", "Tester decisions", "Items that need human judgement (possible overlaps, insufficient evidence).", [], decisions, decisions.Count),
             new("unknown-level", "Unknown test classification", "Tests whose level could not be determined from setup or source evidence — a review limitation, not a quality failure.", [], [], unknown),
-            new("not-repeat", "Probably do not need to repeat", "Developer automation already covers this isolated logic; review whether QA duplication is necessary and keep one system/journey test for the real flow.", [], r.QaScope.ProbablyUnnecessary, r.QaScope.ProbablyUnnecessary.Count),
+            new("not-repeat", "Potential overlap — test-lead review required", "Developer automation already covers this isolated logic; review whether QA duplication is necessary and keep one system/journey test for the real flow.", [], r.QaScope.ProbablyUnnecessary, r.QaScope.ProbablyUnnecessary.Count),
             new("other", "Other remaining gaps", "Remaining gaps of other kinds (no tests, unit only, changed without test change, …).", other, [], other.Count),
         ];
     }

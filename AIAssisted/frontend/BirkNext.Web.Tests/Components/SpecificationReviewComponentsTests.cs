@@ -263,6 +263,9 @@ public sealed class SpecificationReviewComponentsTests : BunitContext
         var rest = cut.Find(".traceability-item__scenario-rest");
         rest.ChildNodes.Where(n => n.NodeType == AngleSharp.Dom.NodeType.Text).Should().OnlyContain(n => n.TextContent.Length == 0,
             "a whitespace text node between When and Then is rendered as blank lines by the pre-wrap container");
+        var given = cut.Find(".traceability-item__scenario-part");
+        given.NextSibling!.NodeType.Should().Be(AngleSharp.Dom.NodeType.Element, "no whitespace text node between Given and the When/Then block either (a blank line above When)");
+        ((AngleSharp.Dom.IElement)given.NextSibling).ClassList.Should().Contain("traceability-item__scenario-rest");
         cut.FindAll(".traceability-item__scenario-body").Select(b => b.TextContent).Should().Equal(["a valid report", "it arrives", then],
             "the scenario text is rendered exactly as written (no trimming or rewriting)");
     }

@@ -675,7 +675,7 @@ public static partial class TestCoverageReviewEngine
                 RemainingRisk = remaining.Count == 0 ? "No unverified journey step was found for the components this test covers; runtime behaviour is still not verified." : "Not covered by the developer test: " + string.Join("; ", remaining) + ".",
                 Recommendation = kind switch
                 {
-                    OverlapKind.HighConfidenceOverlap => "Probably does not need to be repeated at the same test level. Keep QA effort for the parts of the journey that are not verified.",
+                    OverlapKind.HighConfidenceOverlap => "Potential overlap — test-lead review required. The developer test may already verify this at the same test level; if confirmed, keep QA effort for the parts of the journey that are not verified.",
                     OverlapKind.DifferentBoundary => "Not a duplicate: the developer test checks this at a lower level. Do not repeat the isolated logic check; keep the QA test for the real system journey.",
                     OverlapKind.PartialOverlap => "Partly overlaps: similar behaviour, but a different expected result or level. Review whether both cases are needed.",
                     OverlapKind.ComplementaryCoverage => "Same requirement, different behaviour. Both tests add coverage.",

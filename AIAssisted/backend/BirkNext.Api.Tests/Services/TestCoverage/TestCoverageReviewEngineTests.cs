@@ -103,7 +103,7 @@ public sealed class TestCoverageReviewEngineTests : IDisposable
     {
         var r = Review(await CurrentAsync());
         r.Overlaps.Single(o => o.QaTestId == "AS-1").Should().Match<TestOverlap>(o => o.Kind == OverlapKind.HighConfidenceOverlap && o.Dimensions.SameLevel && o.Dimensions.SameOutcome && o.Dimensions.SameRequirement);
-        r.Overlaps.Single(o => o.QaTestId == "AS-1").Recommendation.Should().StartWith("Probably does not need to be repeated at the same test level");
+        r.Overlaps.Single(o => o.QaTestId == "AS-1").Recommendation.Should().StartWith("Potential overlap — test-lead review required");
         r.Overlaps.Single(o => o.QaTestId == "AS-2").Kind.Should().Be(OverlapKind.DifferentBoundary, "developer tests do not reach the event flow the QA scenario runs through");
         r.Overlaps.Single(o => o.QaTestId == "AS-3").Kind.Should().Be(OverlapKind.ComplementaryCoverage, "the same requirement alone is never a duplicate");
         r.Overlaps.Should().NotContain(o => o.QaTestId == "AS-4", "no developer test relates to the confirmation email");

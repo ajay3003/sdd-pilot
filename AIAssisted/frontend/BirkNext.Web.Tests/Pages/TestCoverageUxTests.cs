@@ -122,7 +122,7 @@ public sealed class TestCoverageUxTests : BunitContext
         var cut = Run();
         var text = cut.Find("[data-testid=tco-recommendation]").TextContent;
 
-        text.Should().Contain("Focus on").And.Contain("Probably do not need to repeat").And.Contain("Needs confirmation").And.Contain("never removes a test");
+        text.Should().Contain("Focus on").And.Contain("Potential overlap — test-lead review required").And.Contain("Needs confirmation").And.Contain("never removes a test");
         cut.Markup.Should().NotContainAny("Delete this", "delete the test", "Remove this test");
     }
 
@@ -226,5 +226,18 @@ public sealed class TestCoverageUxTests : BunitContext
         preview.TextContent.Should().Contain("northwind.zip", "the snapshot identity stays in the documentation");
         cut.Find("[data-testid=tco-doc-raw-details]").HasAttribute("open").Should().BeFalse();
         cut.Find("[data-testid=tco-doc-raw]").TextContent.Should().Contain("#");
+    }
+
+    [Fact]
+    public void The_overview_overlap_count_is_the_same_population_the_overlap_review_lists()
+    {
+        var cut = Run(Result(withQaTests: true, withOverlap: true));
+        var card = cut.Find("[data-testid=tco-card-duplicates]");
+        var shown = int.Parse(card.QuerySelector(".tco-card-value")!.TextContent);
+        card.TextContent.Should().Contain("Overlap observations").And.NotContain("Possible duplicates", "one exact-duplicate kind was presented as the whole count");
+        cut.Find("[data-testid=tco-tab-duplicates]").TextContent.Should().Be("Overlap Review");
+        cut.Find("[data-testid=tco-tab-duplicates]").Click();
+        cut.FindAll("[data-testid=tco-overlap]").Should().HaveCount(shown, "the summary counter reconciles with its detail list");
+        cut.Find("[data-testid=tco-card-duplicates-breakdown]").TextContent.Should().Contain("QA tests compared");
     }
 }

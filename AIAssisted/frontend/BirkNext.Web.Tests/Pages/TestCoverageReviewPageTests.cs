@@ -63,7 +63,7 @@ public sealed class TestCoverageReviewPageTests : BunitContext
         ],
         Components = [new ComponentCoverage { ComponentId = "c1", Name = "Orders.Api", Tests = 1, Dimensions = [new("Messaging", DimensionStatus.Partial, "1 test(s), but only with mocks.", ["t1"]), new("Performance", DimensionStatus.NotAssessed, "No performance tests found; not assessed.", [])] }],
         Overlaps = [new TestOverlap { Id = "o1", QaTestId = "AS-1", QaTitle = "Duplicate order is rejected by the API", Kind = OverlapKind.HighConfidenceOverlap, Strength = EvidenceStrength.Some,
-            Recommendation = "Probably does not need to be repeated at the same test level.", RemainingRisk = "Not covered by the developer test: Orders.Adapter → Orders.Api (HTTP dependency).", Same = ["requirement", "behaviour"], Different = ["execution (no proof the developer test ran)"], Reasons = ["same requirement"], DeveloperTestIds = ["t1"] }],
+            Recommendation = "Potential overlap — test-lead review required. The developer test may already verify this at the same test level.", RemainingRisk = "Not covered by the developer test: Orders.Adapter → Orders.Api (HTTP dependency).", Same = ["requirement", "behaviour"], Different = ["execution (no proof the developer test ran)"], Reasons = ["same requirement"], DeveloperTestIds = ["t1"] }],
         Behaviors = [new BehaviorCoverage { Id = "req:FR-002", Title = "FR-002 — Duplicate orders must be rejected", Status = "Partly covered", AlreadyTested = ["Test appears to check \"create duplicate\""], NotVerifiedYet = ["A real message arriving on orders-inbound"], ForTesters = "Do not repeat the developer's isolated checks." }],
         Gaps = [new CoverageGap { Id = "g1", Kind = GapKind.MockOnly, Title = "Messaging in Orders.Api is tested with mocks or in-memory substitutes only", Explanation = "The real broker path is not verified.", Attention = "Needs attention" }],
         QaScope = new(["One system test through Upstream → orders-inbound → Orders.Adapter"], ["Repeating \"Duplicate order is rejected by the API\" at the same level — developer automation already checks it"], ["Confirm the connection Upstream → orders-inbound (NeedsConfirmation)"]),
@@ -122,7 +122,7 @@ public sealed class TestCoverageReviewPageTests : BunitContext
         steps[1].TextContent.Should().Contain("Covered by mocks only").And.Contain("Strongly supported by source");
         cut.FindAll("[data-testid=tco-confirm]").Should().ContainSingle("only unconfirmed connections can be confirmed");
         cut.Find("[data-testid=tco-tab-duplicates]").Click();
-        cut.Find("[data-testid=tco-overlap]").TextContent.Should().Contain("Possible duplicate test").And.Contain("Probably does not need to be repeated at the same test level").And.Contain("Remaining risk");
+        cut.Find("[data-testid=tco-overlap]").TextContent.Should().Contain("Exact duplicate candidate").And.Contain("Potential overlap — test-lead review required").And.Contain("Remaining risk");
         cut.Find("[data-testid=tco-tab-scope]").Click();
         cut.Find("[data-testid=tco-scope-keep]").TextContent.Should().Contain("One system test");
         cut.Find("[data-testid=tco-gap]").GetAttribute("data-kind").Should().Be("MockOnly");
@@ -165,7 +165,7 @@ public sealed class TestCoverageReviewPageTests : BunitContext
     {
         var r = Result();
         var md = TestCoveragePresentation.Markdown(r);
-        md.Should().Contain("## Remaining QA scope").And.Contain("### Tests testers probably do not need to repeat").And.Contain("What testers should focus on").And.Contain("## Technical details");
+        md.Should().Contain("## Remaining QA scope").And.Contain("### Potential overlap — test-lead review required").And.Contain("What testers should focus on").And.Contain("## Technical details");
         md.Should().Contain("northwind.zip").And.NotContain("%");
         TestCoveragePresentation.Markdown(r, scopeOnly: true).Should().StartWith("# Remaining QA Scope").And.NotContain("## By journey");
         var html = TestCoveragePresentation.Html(r, coveredOnly: true);
