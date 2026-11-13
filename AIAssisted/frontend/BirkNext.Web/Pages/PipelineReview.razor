@@ -71,7 +71,7 @@
                 <div><dt>Source coverage</dt><dd data-testid="pr-source-coverage">@Pill(D.SourceStatus(source?.Status), "Source Analysis coverage")</dd></div>
                 <div><dt>Runtime metadata</dt><dd data-testid="pr-runtime-metadata">@Pill(D.MetadataStatus(_metadata, _result?.Metadata), "Azure DevOps runtime metadata")</dd></div>
             </dl>
-            <p class="prv-muted" data-testid="pr-ready-meaning">Review ready means the source contains enough pipeline evidence to analyze the definitions. It does not mean the pipelines passed, deployments succeeded, or all gaps are resolved. Source coverage can be Partial at the same time.</p>
+            <p class="prv-muted" data-testid="pr-ready-meaning">Source analysis complete means the source contains enough pipeline evidence to analyze the definitions. It does not mean the pipelines passed, deployments succeeded, or all gaps are resolved. Source coverage can be Partial at the same time.</p>
             <div class="prv-evidence-actions" data-testid="pr-scope">
                 <label class="prv-select">Change source
                     <select value="@_snapshotId" @onchange="SelectSnapshot" data-testid="pr-snapshot">

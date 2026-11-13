@@ -131,7 +131,7 @@ public sealed class PipelineReviewDashboardTests : BunitContext
         var clean = Shop() with { UnresolvedTemplates = [], Findings = [.. PipelineReviewScoring.QualityFindings(Shop().Findings)] };
         var page = Page(Option(ciCd: 2, pipelines: 4, ciCdStatus: "Partial", repository: "shop"), clean);
 
-        Status(page).Should().Be("Review ready", "the CI/CD domain's static-reader 'Partial' disclaimer is not partial coverage");
+        Status(page).Should().Be("Source analysis complete", "the CI/CD domain's static-reader 'Partial' disclaimer is not partial coverage");
     }
 
     [Fact]

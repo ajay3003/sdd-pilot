@@ -54,7 +54,7 @@ public sealed class PipelineReviewTestLeadTests : BunitContext
         _review = Shop() with { UnresolvedTemplates = [], Findings = [.. PipelineReviewScoring.QualityFindings(Shop().Findings)] };
         var page = Page();
 
-        page.Find("[data-testid=pr-review-readiness]").TextContent.Should().Contain("Review ready");
+        page.Find("[data-testid=pr-review-readiness]").TextContent.Should().Contain("Source analysis complete");
         page.Find("[data-testid=pr-source-coverage]").TextContent.Should().Contain("Partial", "review readiness and source coverage are separate and may differ");
         page.Find("[data-testid=pr-runtime-metadata]").TextContent.Should().Contain("Not included");
         page.Find("[data-testid=pr-ready-meaning]").TextContent.Should().Contain("does not mean the pipelines passed");
