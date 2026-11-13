@@ -58,6 +58,30 @@ Runner: GitHub-hosted, labels `ubuntu-latest` / `windows-latest`. The image vers
 
 From at least `110afb72` on, the build job passed this step. No change was made for it.
 
+### Hidden-file security review (follow-up, b88a25e0)
+
+`include-hidden-files: true` is not trusted on its own. The exact staged folder, built the way the workflow does from the Release publish of the current tree, contains these hidden entries and no others:
+
+| Entry | Content | Needed | Secret? |
+|---|---|---|---|
+| `AIAssisted/.env` | copied in the workflow from the checked-in `.env.example` (a real `.env` is git-ignored and absent in a clean checkout); keys `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` = the public local-development default, the same value already in the checked-in `appsettings.json` | yes: docker-compose / `start-local.ps1`, and `validate-package.ps1` requires it | no: a published dev default for a loopback container database; the README says to change it before any shared or exposed use |
+| `AIAssisted/.env.example` | the same template | yes | no |
+| `AIAssisted/backend/.playwright/` (337 files) | Playwright driver (Node runtime, package, licences) | yes, for browser automation | no |
+| `AIAssisted/frontend/.graphqlrc.json` | StrawberryShake client config, `http://localhost:5000/graphql` | no, a build input copied by publish; harmless | no |
+| `AIAssisted/frontend/wwwroot/.gitkeep` | empty | no | no |
+
+Values were inspected by key and shape only and are never printed.
+
+**Gate added:** `scripts/check-package-hidden-files.ps1` runs right before the upload. It fails the job on:
+
+- any hidden file or folder that is not on the allowlist above;
+- a `.env` that is not byte-identical to the checked-in `.env.example`, so a workstation `.env` can never ship;
+- anywhere in the package: `appsettings.Local.json`, `appsettings.Development.json`, user-secrets `secrets.json`, `*.pfx`/`*.p12`/`*.key`/`*.pem` (also inside the allowed Playwright folder), or a `.git` folder.
+
+It reports paths only, never content. `scripts/tests/BirkNextPackageHiddenFiles.Tests.ps1` has 10 synthetic cases; all 10 PASS, and they run in the workflow's preflight step. The real staged package passes the gate (exit 0).
+
+The same gate is not added to Azure DevOps, whose YAML stays untouched. It could be added there later by the same one-line call.
+
 ## Other changes
 
 - `permissions: contents: read` at workflow level (least privilege). Artifacts use the run's own token.
@@ -103,7 +127,12 @@ On the next push or manual run, check that:
 
 1. the "Pin the .NET 8 SDK for this job" step reports an 8.0.4xx SDK and the backend and frontend builds pass;
 2. the candidate artifact contains `AIAssisted/.env` and `AIAssisted/backend/.playwright/`;
-3. the smoke job passes.
+3. the smoke job passes;
+4. `BirkNextPackageHiddenFiles.Tests.ps1` and the hidden-file gate pass under pwsh on Linux; locally they were run under Windows PowerShell 5.1 only;
+5. download the candidate artifact and confirm no hidden entry outside the allowlist and no secrets;
+6. no `birknext-tester-package` artifact appears.
+
+Azure DevOps remains the authoritative tester distribution (`BirkNext-Tester-Windows-x64`). GitHub Actions is secondary CI validation and does not produce a tester release.
 
 GitHub Actions is **not** claimed to be passing.
 

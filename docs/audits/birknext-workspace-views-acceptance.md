@@ -40,8 +40,51 @@ Harness `scratchpad/mb/wv-accept.cjs`:
 | WV-03: Technical Tester survives a browser refresh | PASS |
 | WV-04: the source-context fingerprint is unchanged after all switches (`b89ea3d72f2f7566`) | PASS |
 
-**Limitation, not hidden:** Recommended Workflow showed **0 next actions in every view** within the 3.5 s the harness waited. The per-view check therefore proves the projection, not the action content. The audience risk wording is covered by the automated test only, because the real workspace has no open baseline risk. **Responsive phase: NOT RUN.**
+**Earlier limitation (superseded below):** the first run showed 0 next actions in every view within a fixed 3.5 s wait. It proved the projection, not the action content.
+
+### Final release acceptance (2026-11-13, isolated Release API with `bc8a893b`)
+
+Setup:
+- harness `scratchpad/mb/rr-accept.cjs workflow`: a fresh Edge profile, non-localhost requests aborted;
+- wiring guard `probe-net.cjs` first: 5 calls to :5496, 0 failed, session connected. An earlier run had silently used the web app's default backend :5000 after a republish; its results were discarded;
+- each view waits for a terminal state (actions or a stated empty message), never a fixed delay.
+
+**Result: 8/8 PASS**, 0 console errors, 0 blocked requests.
+
+| View | Next steps (ready / blocked) | First actions shown |
+|---|---|---|
+| All Modules | no focus panel (by design) | — |
+| Project Manager | 0 / 1 | Requirements Traceability (blocked) |
+| Scrum Master | 0 / 4 | Specification, Plan, Task Explorer (blocked) |
+| Test Lead | 1 / 7 | Document Quality Review (ready now) |
+| Manual Tester | 2 / 2, plus 6 Test Plan proposal steps | Document Quality Review, Documentation Drift (ready now) |
+| Technical Tester | 1 / 5 | Code Risk Review (ready); API Quality Review and Critical E2E (blocked) |
+| Developer | 4 / 4 | Source Analysis, Code Risk Review, Dependency Review (ready) |
+| Architect | 2 / 5 | Source Analysis, Dependency Review (ready); Integration Quality Review (blocked) |
+
+- The first view needed 17 s: its data loads cold. The other views switch without new requests.
+- Screenshots are in `scratchpad/mb/out/rr-workflow-<view>.png`. The Manual Tester one shows "Your next steps · Manual Tester" and the Test Plan proposals.
+- All Modules (`rr-accept.cjs all`) is 7/7 PASS: 48 destinations, no duplicates; the specialized menus have PM 13, SM 11, TL 22, MT 14, TT 20, Dev 18 and Arch 20 entries; it survives a refresh. Scaling is 1/1 PASS.
+- **Memory during this run:** the isolated API peaked at 2.9 GB private (Workstation GC) and settled to 1.27 GB. See the performance report, gap TPS-P2.
+
+### Responsive (`scratchpad/mb/resp.cjs`, `resp-toggle.cjs`)
+
+Each page was loaded once and then resized to 1440, 1280, 1024, 768 and 390 px.
+
+| Page | Horizontal overflow | MetaBadge / SemanticStatusBadge | Workspace selector |
+|---|---|---|---|
+| Recommended Workflow | none at any width | none on this page | visible ≥ 768 px; behind the menu button at 390 px |
+| Dashboard | none | 13–14 badges, minimum 12 px, 0 clipped at all widths | same |
+| Test Plan Suggestions | none | none on this page | same |
+| Relationship Review | none | none: the workspace's relationships are **not analyzed** ("Not analyzed — analyze relationships on the Overview tab"). The earlier `rr-accept badges` check counted 0 badges there and **FAILED as a harness/data issue**, not a product result | same |
+| Source Analysis | none | 13 badges, minimum 12 px, 0 clipped | same |
+| Requirements Traceability | none | none | same |
+
+- At 390 px the menu button opens the navigation. The selector is then visible, and switching to Developer works without horizontal scroll.
+- Screenshots are in `scratchpad/mb/out/resp-<page>-<width>.png`.
+- The 338 existing sub-12 px rules were not sweep-fixed, as instructed.
+- **Not verified:** badges inside Relationship Review. Analyzing relationships would write to the workspace, and that wasn't run.
 
 ## Regression
 
-The full frontend and backend partition-6c rerun was stopped before it started: it would have shared build outputs with this task's build. It must be run on the final tree. Its status is **NOT RUN** at this commit.
+Final release acceptance (`a6598fb7`): frontend **8 735/8 735 passed**. Backend: 6 322 passed, 0 failed, 13 skipped; partition 6c3 is BLOCKED by system memory (see `birknext-release-readiness-final.md`).
