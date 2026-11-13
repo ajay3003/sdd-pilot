@@ -39,6 +39,12 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         string?         currentEnumDesc           = null;
         var             currentEnumValues         = new List<string>();
         var             currentSection            = string.Empty;
+        // "## Context: SkolenaervaerDbContext (schema skolenaervaer)": an explicit EF Core context section; its H3s are tables.
+        string?         currentDbContext          = null;
+        string?         currentDbSchema           = null;
+        // A relationship table's header ("From | Cardinality | To | Foreign Key"): column positions, -1 until a header is read.
+        int             relFromCol = -1, relToCol = -1, relCardCol = -1, relKeyCol = -1;
+        var             relKeyIsFk = false;
         var             currentEntitySectionKind = string.Empty; // "persistent", "runtime", etc.
         var             globalRelationships       = new List<DataRelationship>();
         var             globalIndexes             = new List<DataIndex>();
@@ -134,8 +140,20 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                     FlushEnum();
 
                     var h2 = token.Content;
+                    currentDbContext = null;
+                    currentDbSchema  = null;
+                    relFromCol = relToCol = relCardCol = relKeyCol = -1;
+                    relKeyIsFk = false;
 
-                    if (h2.StartsWith("Entity:", StringComparison.OrdinalIgnoreCase))
+                    if (DbContextSectionRe.Match(NormalizeStructuredName(h2)) is { Success: true } dbContext)
+                    {
+                        // Explicit EF Core context: persistent, and every "### table (ClrType)" below it declares a table.
+                        currentDbContext = dbContext.Groups["ctx"].Value;
+                        currentDbSchema  = dbContext.Groups["schema"].Success ? dbContext.Groups["schema"].Value : null;
+                        currentSection = "entity-section";
+                        currentEntitySectionKind = "persistent";
+                    }
+                    else if (h2.StartsWith("Entity:", StringComparison.OrdinalIgnoreCase))
                     {
                         currentEntityName    = NormalizeStructuredName(h2[7..].Trim());
                         currentEntityStartLine = token.LineIndex;
@@ -250,6 +268,28 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                         // Pattern: "### EntityName" or "### EntityName — tableName description"
                         FlushEntity();
                         FlushEnum();
+
+                        if (currentDbContext is not null && DbTableHeadingRe.Match(NormalizeStructuredName(h3).Trim()) is { Success: true } tableHeading)
+                        {
+                            // "### report (Report)", "### fravaer_line (FravaerLine, owned by ReportVersion)", "### a / b (SharedType)":
+                            // the table name is the identity (FK targets name tables); one CLR type over several tables keeps the type name.
+                            var tables = tableHeading.Groups["tables"].Value.Split('/').Select(t => t.Trim()).ToList();
+                            var clr    = tableHeading.Groups["clr"].Value;
+                            var name   = tables.Count == 1 ? tables[0] : clr;
+                            // The same table name in another context (each context has its own schema) is qualified, never merged.
+                            if (currentDbSchema is not null && entities.Any(e => string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase)))
+                                name = $"{name} ({currentDbSchema})";
+                            currentEntityName      = name;
+                            currentEntityStartLine = token.LineIndex;
+                            currentEntityEndLine   = token.LineIndex;
+                            currentEntityIsTable   = true;
+                            currentEntityKind      = DataStructureKind.Table;
+                            var qualifier = tableHeading.Groups["qual"].Success ? $"; {tableHeading.Groups["qual"].Value.Trim()}" : "";
+                            currentEntityDesc = $"EF Core entity {clr} in {currentDbContext}" + (currentDbSchema is null ? "" : $" (schema {currentDbSchema})")
+                                + (tables.Count > 1 ? $"; tables: {string.Join(", ", tables)}" : "") + qualifier + ".";
+                            currentSection = string.Empty;
+                            continue;
+                        }
 
                         var (entityName, tableName) = ExtractEntityAndTableName(h3);
                         currentEntityName    = NormalizeStructuredName(entityName);
@@ -490,6 +530,30 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                         else if (!string.IsNullOrWhiteSpace(token.Content))
                         {
                             unsupportedRelationshipNotation = true;
+                        }
+                    }
+                    else if (token.Kind == MarkdownTokenKind.TableRow && token.TableCells is { } relCells)
+                    {
+                        var lower = relCells.Select(c => c.Trim().ToLowerInvariant()).ToList();
+                        if (lower.Contains("from") && lower.Contains("to"))
+                        {
+                            relFromCol = lower.IndexOf("from");
+                            relToCol   = lower.IndexOf("to");
+                            relCardCol = lower.FindIndex(c => c is "cardinality" or "type" or "relationship");
+                            relKeyCol  = lower.FindIndex(c => c is "foreign key" or "fk" or "key" or "column" or "via");
+                            relKeyIsFk = relKeyCol >= 0 && lower[relKeyCol] is "foreign key" or "fk";
+                        }
+                        else
+                        {
+                            var source = ProjectionProvenance.Source(documentFingerprint, token.LineIndex + 1, token.LineIndex + 1, "DataRelationship", token.RawLine);
+                            var rel = relFromCol >= 0
+                                ? ParseRelationshipTableRow(relCells, relFromCol, relToCol, relCardCol, relKeyCol, relKeyIsFk, source)
+                                : null;
+                            if (rel is null)
+                                unsupportedRelationshipNotation = true;
+                            else if (!globalRelationships.Any(r => string.Equals(r.Source, rel.Source, StringComparison.OrdinalIgnoreCase)
+                                                                 && string.Equals(r.TargetEntity, rel.TargetEntity, StringComparison.OrdinalIgnoreCase)))
+                                globalRelationships.Add(rel);
                         }
                     }
                     break;
@@ -817,7 +881,8 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         var declaredFk = descLow.Contains("foreign key") || Regex.IsMatch(descLow, @"\bfk\b");
         var isPk     = declaredPk || nameLow == "id" || nameLow.EndsWith(".id");
         var isFk     = declaredFk || (nameLow.EndsWith("_id") && nameLow.Length > 3);
-        var isUnique = descLow.Contains("unique");
+        // "UQ" on its own declares a single-column unique key; "in UQ" and "UQ (a, b, …)" are parts of a composite key, not column-unique.
+        var isUnique = descLow.Contains("unique") || (desc ?? "").Split(';').Any(part => part.Trim() == "UQ");
 
         return new DataColumn
         {
@@ -868,6 +933,47 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
             RelationshipType = relType,
         };
     }
+
+    // One row of a relationship table ("| report_version | N:1 | report | report_id (Restrict) |"). Only a row whose From and To each name one
+    // structure (and whose key, when given, names one column) is a relationship; lists, wildcards and prose ("every x", "a, b") stay unsupported.
+    private static DataRelationship? ParseRelationshipTableRow(IReadOnlyList<string> cells, int fromCol, int toCol, int cardCol, int keyCol, bool keyIsForeignKey,
+        SourceRangeProvenance provenance)
+    {
+        string? Cell(int i) => i >= 0 && i < cells.Count ? NormalizeStructuredName(cells[i]).Trim() : null;
+        static string StripParenthetical(string v) => v.IndexOf('(') is var open and > 0 ? v[..open].Trim() : v;
+
+        var from = Cell(fromCol);
+        var to   = Cell(toCol);
+        if (from is null || to is null || !SingleIdentifierRe.IsMatch(from) || !SingleIdentifierRe.IsMatch(to)) return null;
+        var key = Cell(keyCol) is { Length: > 0 } rawKey ? StripParenthetical(rawKey) : null;
+        if (key is not null && !SingleIdentifierRe.IsMatch(key)) return null;
+        var cardinality = Cell(cardCol);
+        // "N:1 (logical)" is a declared logical reference, not a database foreign key; a foreign key is claimed only under a "Foreign Key" header.
+        var logical = cardinality?.Contains("logical", StringComparison.OrdinalIgnoreCase) == true;
+        var type = logical ? cardinality : keyIsForeignKey && key is not null ? "FK" : string.IsNullOrWhiteSpace(cardinality) ? null : cardinality;
+        var source = key is null ? from : $"{from}.{key}";
+        return new DataRelationship
+        {
+            Provenance       = ProjectionProvenance.Create("Data Model", "Relationship", $"{source}->{to}", provenance),
+            Source           = source,
+            Target           = to,
+            RelationshipType = type,
+        };
+    }
+
+    private static readonly Regex SingleIdentifierRe = new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.Compiled);
+
+    // "Context: SkolenaervaerDbContext (schema skolenaervaer)", "SkolenaervaerDbContext", "DbContext: AppDbContext (schema: app)" — an EF Core
+    // context is named explicitly (the name ends in DbContext); a bare "Context" heading is not one.
+    private static readonly Regex DbContextSectionRe = new(
+        @"^(?:(?:EF\s+Core\s+)?(?:Db)?Context\s*:\s*)?(?<ctx>[A-Za-z_]\w*DbContext)\s*(?:\((?:schema\s*:?\s*)?(?<schema>[A-Za-z_]\w*)\))?\s*$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    // "report (Report)", "fravaer_line (FravaerLine, owned by ReportVersion)", "a_version / b_version (RecordVersion)": snake_case table name(s)
+    // with the CLR type (and an optional qualifier) in parentheses.
+    private static readonly Regex DbTableHeadingRe = new(
+        @"^(?<tables>[a-z][a-z0-9_]*(?:\s*/\s*[a-z][a-z0-9_]*)*)\s*\((?<clr>[A-Z]\w*)(?:\s*,\s*(?<qual>[^)]+))?\)$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static DataIndex? ParseIndexLine(string text, string entityName, SourceRangeProvenance source)
     {
