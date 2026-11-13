@@ -96,7 +96,7 @@ public static class DeliveryIntelligenceHistory
     {
         DeliveryRole.ScrumMaster => "Scrum Master",
         DeliveryRole.TestLead => "Test Lead",
-        _ => "Project Leader",
+        _ => "Project Manager",
     };
 
     // The role is a per-browser convenience (which view opens first), kept in localStorage; a failure to read or write it changes nothing else.

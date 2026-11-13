@@ -48,9 +48,12 @@ public sealed class DeliveryReportingPageTests : BunitContext
             Task.FromResult(ProjectsError is { } error ? (new List<DeliveryProject>(), (string?)error) : (Projects, (string?)null));
         public Task<(DeliveryProject? Project, string? Error)> CreateProjectAsync(string name, string? description, CancellationToken ct = default) =>
             Task.FromResult<(DeliveryProject?, string?)>((new(Guid.NewGuid(), name, description, Friday, Friday, 0, 0), null));
+        /// <summary>What the next ZIP preview / confirmation returns (default: not used).</summary>
+        public DeliveryImportPreview? NextPreview { get; set; }
+        public DeliveryImportCommitResult NextCommit { get; set; } = new(null, null, "not used");
         public Task<(DeliveryImportPreview? Preview, string? Error)> PreviewAsync(Guid? projectId, string fileName, Stream content, CancellationToken ct = default) =>
-            Task.FromResult<(DeliveryImportPreview?, string?)>((null, "not used"));
-        public Task<DeliveryImportCommitResult> CommitAsync(Guid stagingId, DeliveryImportCommitRequest request, CancellationToken ct = default) => Task.FromResult(new DeliveryImportCommitResult(null, null, "not used"));
+            Task.FromResult<(DeliveryImportPreview?, string?)>(NextPreview is { } next ? (next, null) : (null, "not used"));
+        public Task<DeliveryImportCommitResult> CommitAsync(Guid stagingId, DeliveryImportCommitRequest request, CancellationToken ct = default) => Task.FromResult(NextCommit);
         public Task DiscardAsync(Guid stagingId, CancellationToken ct = default) => Task.CompletedTask;
         public Task<List<DeliverySnapshotSummary>> SnapshotsAsync(Guid projectId, CancellationToken ct = default) => Task.FromResult(Snapshots.ToList());
         public Task<DeliverySnapshotDetail?> SnapshotAsync(Guid projectId, Guid snapshotId, CancellationToken ct = default) => Task.FromResult<DeliverySnapshotDetail?>(null);
@@ -224,7 +227,8 @@ public sealed class DeliveryReportingPageTests : BunitContext
     public void NoReportingProject_ShowsCreateProject_NotAnImportProjectRedirect()
     {
         _api.Projects.Clear();
-        var page = RenderAt("");
+        Services.GetRequiredService<NavigationManager>().NavigateTo(DeliveryReportingPresentation.SnapshotsRoute);
+        var page = Render<DeliveryReportingPage>();
 
         page.WaitForAssertion(() => page.Find("[data-testid=dlr-no-project]"));
         page.Markup.Should().NotContain("project-import");
@@ -469,5 +473,92 @@ public sealed class DeliveryReportingPageTests : BunitContext
         page.FindAll("[data-testid=dws-item]").First(i => i.TextContent.Contains(feature.Title)).Click();
         page.WaitForAssertion(() => page.Services.GetRequiredService<NavigationManager>().Uri.Should().Contain("&item=" + Uri.EscapeDataString(BirkNext.Web.Services.DeliveryWorkItems.FeatureId(feature.FeatureKey))));
         page.Find("[data-testid=dws-detail-title]").TextContent.Should().Be(feature.Title);
+    }
+    // ── Delivery Snapshots destination ───────────────────────────────────────────────────────────────────────────
+
+    private string Location => Services.GetRequiredService<NavigationManager>().Uri;
+
+    [Fact]
+    public void A_legacy_reports_snapshots_link_lands_on_Delivery_Snapshots_with_the_same_project_and_its_readiness()
+    {
+        var page = RenderAt($"?project={ProjectId}&tab=snapshots");
+
+        page.WaitForAssertion(() => page.FindAll("[data-testid=dlr-snapshot-row]").Should().HaveCount(2));
+        Location.Should().EndWith($"delivery-snapshots?project={ProjectId}");
+        page.Find("[data-testid=dlr-page-title]").TextContent.Should().Be("Delivery Snapshots");
+        page.FindAll(".dlr-tabs").Should().BeEmpty("Delivery Snapshots is its own destination, not a Reports tab");
+        page.Find("[data-testid=dlr-import-open]").TextContent.Should().Be("Import snapshot");
+        var readiness = page.Find("[data-testid=dlr-snapshot-readiness]");
+        readiness.GetAttribute("data-state").Should().Be("comparable");
+        readiness.TextContent.Should().Contain("2 snapshots are stored");
+        page.Find("[data-testid=dlr-next-compare]").GetAttribute("href").Should().StartWith($"delivery-reporting?project={ProjectId}&tab=overview");
+        page.Find("[data-testid=dlr-next-overview]").GetAttribute("href").Should().Be($"delivery-overview?project={ProjectId}");
+    }
+
+    [Fact]
+    public void Delivery_Reports_has_no_snapshot_tab_or_import_and_links_to_Delivery_Snapshots()
+    {
+        var page = RenderAt($"?project={ProjectId}&tab=history");
+
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-history]"));
+        page.Find("[data-testid=dlr-page-title]").TextContent.Should().Be("Delivery Reports");
+        page.FindAll(".dlr-tab").Select(t => t.TextContent).Should().Equal("Summary", "Change board", "Features & stories", "Report history", "Functional Quality Scope");
+        page.FindAll("[data-testid=dlr-import-open]").Should().BeEmpty("one primary import action, on Delivery Snapshots");
+        page.Find("[data-testid=dlr-manage-snapshots]").GetAttribute("href").Should().Be($"delivery-snapshots?project={ProjectId}");
+    }
+
+    [Theory]
+    [InlineData(0, "none", "Import first snapshot")]
+    [InlineData(1, "one", "Import comparison snapshot")]
+    public void Readiness_follows_the_stored_snapshots_only(int stored, string state, string label)
+    {
+        while (_api.Snapshots.Count > stored) _api.Snapshots.RemoveAt(0);
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"delivery-snapshots?project={ProjectId}");
+        var page = Render<DeliveryReportingPage>();
+
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-snapshot-readiness]").GetAttribute("data-state").Should().Be(state));
+        page.Find("[data-testid=dlr-next-import]").TextContent.Should().Be(label);
+        page.FindAll("[data-testid=dlr-next-compare]").Should().BeEmpty("comparison needs two distinct stored snapshots");
+        if (stored == 1) page.Find("[data-testid=dlr-snapshot-readiness]").TextContent.Should().Contain("comparing changes needs a second, distinct snapshot");
+    }
+
+    [Fact]
+    public void A_failed_confirmation_is_reported_next_to_the_action_and_long_preview_lists_are_collapsed_and_grouped()
+    {
+        _api.NextPreview = new DeliveryImportPreview
+        {
+            StagingId = Guid.NewGuid(), FileName = "M2LB-language.zip", SourceType = DeliverySourceType.ZipUpload, TaskTotal = 10, TaskCompleted = 7,
+            Features = [new("001", "Feature A", "Core", true, true, 10, 7, "InProgress")],
+            Warnings = [new("SourceEncoding", "a.md was not valid UTF-8", "A/a.md"), new("SourceEncoding", "b.md was not valid UTF-8", "B/b.md"), new("MissingTasks", "No tasks.md", "C")],
+        };
+        _api.NextCommit = new(null, null, "The preview expired. Choose the ZIP again.");
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"delivery-snapshots?project={ProjectId}");
+        var page = Render<DeliveryReportingPage>();
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-import-open]"));
+        page.Find("[data-testid=dlr-import-open]").Click();
+        page.FindComponent<Microsoft.AspNetCore.Components.Forms.InputFile>().UploadFiles(InputFileContent.CreateFromText("zip", "M2LB-language.zip"));
+
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-import-preview]"));
+        page.Find("[data-testid=dlr-preview-features-more]").HasAttribute("open").Should().BeFalse("long lists are collapsed by default");
+        var warnings = page.Find("[data-testid=dlr-preview-warnings-more]");
+        warnings.HasAttribute("open").Should().BeFalse();
+        warnings.QuerySelector("summary")!.TextContent.Should().Be("Warnings (3) · SourceEncoding ×2, MissingTasks ×1");
+        page.FindAll("[data-testid=dlr-preview-warning-group]").Select(g => g.TextContent).Should().Equal("SourceEncoding (2)", "MissingTasks (1)");
+        warnings.TextContent.Should().Contain("A/a.md").And.Contain("B/b.md", "every original warning and its path is kept");
+
+        page.Find("[data-testid=dlr-import-confirm]").Click();
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-import-footer] [data-testid=dlr-import-error]").TextContent.Should().Be("The preview expired. Choose the ZIP again."));
+        page.FindAll("[data-testid=dlr-import-dialog]").Should().ContainSingle("a failed import keeps the dialog and its context");
+        page.FindAll("[data-testid=dlr-snapshot-row]").Should().HaveCount(2, "nothing was stored, so the list is unchanged");
+        page.FindAll("[data-testid=dlr-notice]").Should().BeEmpty("no success message before persistence");
+    }
+
+    [Fact]
+    public void Delivery_Snapshots_is_the_first_Delivery_Management_destination()
+    {
+        var section = NavigationCatalog.Sections.Single(s => s.Label == "Delivery Management");
+        section.Items.Select(i => i.Label).Should().Equal("Delivery Snapshots", "Delivery Overview", "Delivery Reports");
+        section.Items[0].Route.Should().Be(DeliveryReportingPresentation.SnapshotsRoute);
+        DeliveryIntelligenceHistory.Label(DeliveryRole.ProjectLeader).Should().Be("Project Manager");
     }
 }

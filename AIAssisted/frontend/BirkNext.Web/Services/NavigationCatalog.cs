@@ -110,6 +110,10 @@ public static class NavigationCatalog
         // DELIVERY MANAGEMENT: for Project Leaders and Scrum Masters — its own projects, snapshots and frozen reports (never current BirkNext state).
         new("delivery-reporting", "Delivery Management",
         [
+            // Delivery Snapshots first: importing and choosing the snapshots is what Overview and Reports read (one canonical store).
+            new(DeliverySnapshotsRoute, "Delivery Snapshots", "nav-icon-import", Always,
+                Hint: "import, inspect and choose the immutable delivery snapshots (baseline and current) that Delivery Overview and Delivery Reports read",
+                Aliases: ["Delivery snapshot import", "Import delivery snapshot", "Baseline snapshot", "Current snapshot"]),
             new(DeliveryOverviewRoute, "Delivery Overview", "nav-icon-dashboard", Always,
                 Hint: "virtual SDD backlog: features, user stories and acceptance criteria with their delivery status from imported snapshots",
                 Aliases: ["SDD backlog", "Backlog", "Delivery status"]),
@@ -226,6 +230,7 @@ public static class NavigationCatalog
     ];
 
     public const string DeliveryOverviewRoute = "delivery-overview";
+    public const string DeliverySnapshotsRoute = DeliveryReportingPresentation.SnapshotsRoute;
 
     /// <summary>
     /// Shared workspaces: sibling pages shown as tabs above each other (links between the existing routes — no route changes). A page
@@ -233,7 +238,7 @@ public static class NavigationCatalog
     /// </summary>
     public static IReadOnlyList<SharedWorkspace> SharedWorkspaces { get; } =
     [
-        new("delivery", "Delivery Management", [DeliveryOverviewRoute, "delivery-reporting"]),
+        new("delivery", "Delivery Management", [DeliverySnapshotsRoute, DeliveryOverviewRoute, "delivery-reporting"]),
         new("plan-tasks", "Plan & Tasks", ["plan-explorer", "task-explorer", "task-alignment"]),
         new("data-models-schemas", "Data Models & Schemas", ["data-model-explorer", "schema-studio"]),
         new("api-integration-quality", "API & Integration Quality", ["api-quality-review", "integration-topology", "integration-quality-review"]),
@@ -411,14 +416,14 @@ public static class WorkspaceViews
         Groups(WorkspaceView.ProjectLeader, "Project Manager", "Monitor project health, risks and delivery readiness.", "dashboard",
         [
             new("pm-status", "Status & next steps", "nav-icon-dashboard", ["dashboard", "getting-started"]),
-            new("pm-delivery", "Delivery", "nav-icon-workflow", [NavigationCatalog.DeliveryOverviewRoute, "delivery-reporting"]),
+            new("pm-delivery", "Delivery", "nav-icon-workflow", [NavigationCatalog.DeliverySnapshotsRoute, NavigationCatalog.DeliveryOverviewRoute, "delivery-reporting"]),
             new("pm-release", "Release decision", "nav-icon-traceability", ["release-readiness", "snapshots", "correlation-review"]),
             new("pm-context", "Scope & context", "nav-icon-system-understanding", ["system-understanding", "artifact-traceability", "sources", NavigationCatalog.TargetEnvironmentsRoute]),
             new("pm-help", "Help", "nav-icon-user-guide", ["user-guide"]),
         ]),
         Groups(WorkspaceView.ScrumMaster, "Scrum Master", "Track delivery progress, impediments and follow-up.", "delivery-reporting",
         [
-            new("sm-progress", "Delivery progress", "nav-icon-workflow", ["delivery-reporting", NavigationCatalog.DeliveryOverviewRoute]),
+            new("sm-progress", "Delivery progress", "nav-icon-workflow", [NavigationCatalog.DeliverySnapshotsRoute, "delivery-reporting", NavigationCatalog.DeliveryOverviewRoute]),
             new("sm-work", "Plans & tasks", "nav-icon-task-explorer", ["specification-explorer", "plan-explorer", "task-explorer", "task-alignment", "implementation-traceability"]),
             new("sm-follow-up", "Impediments & follow-up", "nav-icon-dashboard", ["getting-started", "dashboard", "release-readiness"]),
             new("sm-help", "Help", "nav-icon-user-guide", ["user-guide"]),

@@ -1,4 +1,5 @@
 @page "/delivery-reporting"
+@page "/delivery-snapshots"
 @* Delivery data is read from the Delivery Reporting API only, never from workspace documents: no wait for document bodies. *@
 @attribute [BirkNext.Web.Services.WorkspaceDocumentsNotRead]
 @using BirkNext.DeliveryReporting
@@ -16,13 +17,20 @@
 @* Delivery Reporting: a standalone weekly delivery report for Scrum Masters and Project Leaders. Everything on this page comes from
    Delivery Reporting's own projects, snapshots and frozen reports — never from the current workspace, Target Environment or Source Analysis. *@
 
-<PageTitle>Delivery Reporting</PageTitle>
+<PageTitle>@(OnSnapshotsRoute ? "Delivery Snapshots" : "Delivery Reports")</PageTitle>
 
 <div class="sd-workspace dlr-page" data-testid="dlr-page" aria-busy="@(_loaded ? "false" : "true")">
     @* One header for every tab (sticky while scrolling): which report, which period, what it holds, and the project/import actions. *@
     <div class="dlr-sticky" data-testid="dlr-sticky-header" data-sticky-offset>
     <header class="dlr-header">
         <div>
+            @if (OnSnapshotsRoute)
+            {
+                <h1 class="dlr-page-title" data-testid="dlr-page-title">Delivery Snapshots</h1>
+                <p class="dlr-lead" data-testid="dlr-lead">Import, inspect and choose the immutable snapshots that Delivery Overview and Delivery Reports read.</p>
+            }
+            else
+            {
             <h1 class="dlr-page-title" data-testid="dlr-page-title">Delivery Reports</h1>
             <p class="dlr-lead" data-testid="dlr-lead">Understand what changed between delivery snapshots.
                 <span class="dlr-info" tabindex="0" title="@CoverageHelp" aria-label="@CoverageHelp">ⓘ</span></p>
@@ -38,6 +46,7 @@
             {
                 <p class="dlr-muted dlr-clarify" data-testid="dlr-clarification">Change reporting reflects the selected snapshots. Same-day comparisons are not full weekly reports.</p>
             }
+            }
         </div>
         <div class="dlr-header-actions">
             <label class="dlr-field dlr-project-field">
@@ -50,7 +59,15 @@
             <DeliveryRolePicker Role="_role" OnChange="SetRoleAsync" TestId="dlr-role" />
             <button type="button" class="btn-secondary" data-testid="dlr-new-project" aria-expanded="@(_newProjectOpen ? "true" : "false")" aria-controls="dlr-new-project-form"
                     @onclick="ToggleNewProject">+ New reporting project</button>
-            <button type="button" class="btn-primary" data-testid="dlr-import-open" disabled="@(_projectId is null)" @onclick="OpenImport">Import snapshot</button>
+            @* One primary import action, on Delivery Snapshots; Delivery Reports links there instead of managing snapshots itself. *@
+            @if (OnSnapshotsRoute)
+            {
+                <button type="button" class="btn-primary" data-testid="dlr-import-open" disabled="@(_projectId is null)" @onclick="OpenImport">Import snapshot</button>
+            }
+            else if (_projectId is not null)
+            {
+                <a class="btn-secondary" href="@P.SnapshotsHref(_projectId)" data-testid="dlr-manage-snapshots">Manage Delivery Snapshots</a>
+            }
             @if (PendingPreview is { } pending)
             {
                 <button type="button" class="btn-secondary" data-testid="dlr-import-pending" @onclick="ReviewPending">Review prepared import (@(pending.Preview.AzureDevOps?.ShortCommit ?? pending.Preview.FileName))</button>
@@ -73,7 +90,7 @@
         </form>
     }
 
-    @if (_loaded && _projectId is not null)
+    @if (_loaded && _projectId is not null && !OnSnapshotsRoute)
     {
         <nav class="dlr-tabs" aria-label="Delivery Reporting sections">
             @foreach (var (id, label) in P.Tabs)
@@ -504,9 +521,33 @@
     private RenderFragment Snapshots() => __builder =>
     {
         <section class="dlr-card" data-testid="dlr-snapshots">
-            <div class="dlr-report-title">
-                <h2 class="dlr-h2">Snapshots</h2>
-                <button type="button" class="btn-primary" @onclick="OpenImport">Import snapshot</button>
+            <h2 class="dlr-h2">Stored snapshots</h2>
+            @{ var (readiness, readinessText) = P.Readiness(_snapshots); }
+            @* Readiness from the canonical stored list only: a preview or an unconfirmed import never counts. *@
+            <div class="dlr-readiness" data-testid="dlr-snapshot-readiness" data-state="@readiness" role="status">
+                <p>@readinessText</p>
+                <div class="dlr-actions" data-testid="dlr-snapshot-next">
+                    @if (readiness == "none")
+                    {
+                        <button type="button" class="btn-primary" data-testid="dlr-next-import" @onclick="OpenImport">Import first snapshot</button>
+                    }
+                    else
+                    {
+                        <a class="btn-secondary" href="@OverviewHref" data-testid="dlr-next-overview">Open Delivery Overview</a>
+                        @if (readiness == "one")
+                        {
+                            <button type="button" class="btn-secondary" data-testid="dlr-next-import" @onclick="OpenImport">Import comparison snapshot</button>
+                        }
+                        else
+                        {
+                            <a class="btn-secondary" href="@TabHref("overview")" data-testid="dlr-next-compare">Compare snapshots</a>
+                        }
+                        @if (LatestReportId is { } latestReport)
+                        {
+                            <a class="btn-link" href="@ReportHrefOn("overview", latestReport)" data-testid="dlr-next-latest-report">Open latest change report</a>
+                        }
+                    }
+                </div>
             </div>
             <p class="dlr-muted">Only snapshots imported into Delivery Reporting for this project are listed. Imported snapshots never change; you can rename them, change their role or delete them.</p>
             @if (_snapshots.Count == 0) { <p data-testid="dlr-snapshots-empty">No snapshots yet. Import a repository ZIP to create the first one.</p> }
@@ -708,8 +749,6 @@
                 @if (!_fromAzureDevOps) { <p class="dlr-hint">Need an earlier baseline? Export the repository at the desired Git commit or date and import the ZIP here with that effective date, or choose Import from Azure DevOps.</p> }
 
                 @if (_busy && _preview is null) { <InlineLoading Text="Reading the archive…" TestId="dlr-import-reading" /> }
-                @if (_importError is not null) { <p class="dlr-error" role="alert" data-testid="dlr-import-error">@_importError</p> }
-
                 @if (_preview is { } preview)
                 {
                     <section class="dlr-preview" aria-label="Import preview" data-testid="dlr-import-preview">
@@ -735,16 +774,30 @@
                             <p class="dlr-muted" data-testid="dlr-preview-suggested">The archive suggests @P.DayTime(suggested). @preview.SuggestedEffectiveReason
                                 <button type="button" class="btn-link" @onclick="() => _effectiveInput = P.LocalInput(suggested)">Use this date</button></p>
                         }
+                        @* Long lists stay one click away so the confirm action stays in reach. *@
                         @if (preview.Features.Count > 0)
                         {
-                            <ul class="dlr-list dlr-compact dlr-preview-features">
-                                @foreach (var f in preview.Features) { <li><strong>@f.Title</strong> <span class="dlr-muted">(@f.Module)</span> — @f.Status · @DeliveryReportStories.Progress(f.TaskCompleted, f.TaskTotal)@(f.HasSpecification ? "" : " · no spec.md")@(f.HasTasks ? "" : " · no tasks.md")</li> }
-                            </ul>
+                            <details class="dlr-preview-more" data-testid="dlr-preview-features-more">
+                                <summary>@preview.Features.Count detected feature@(preview.Features.Count == 1 ? "" : "s")</summary>
+                                <ul class="dlr-list dlr-compact dlr-preview-features">
+                                    @foreach (var f in preview.Features) { <li><strong>@f.Title</strong> <span class="dlr-muted">(@f.Module)</span> — @f.Status · @DeliveryReportStories.Progress(f.TaskCompleted, f.TaskTotal)@(f.HasSpecification ? "" : " · no spec.md")@(f.HasTasks ? "" : " · no tasks.md")</li> }
+                                </ul>
+                            </details>
                         }
                         @if (preview.Warnings.Count > 0)
                         {
-                            <h4 class="dlr-h4">Warnings (@preview.Warnings.Count)</h4>
-                            <ul class="dlr-list dlr-compact" data-testid="dlr-preview-warnings">@foreach (var w in preview.Warnings) { <li>@w.Message</li> }</ul>
+                            var warningGroups = P.WarningGroups(preview.Warnings);
+                            @* Grouped by the warning code the import recorded (no invented categories); every original warning and path stays listed. *@
+                            <details class="dlr-preview-more" data-testid="dlr-preview-warnings-more">
+                                <summary>Warnings (@preview.Warnings.Count) · @P.WarningGroupSummary(warningGroups)</summary>
+                                <div data-testid="dlr-preview-warnings">
+                                    @foreach (var group in warningGroups)
+                                    {
+                                        <h4 class="dlr-h4" data-testid="dlr-preview-warning-group">@group.Code (@group.Items.Count)</h4>
+                                        <ul class="dlr-list dlr-compact">@foreach (var w in group.Items) { <li>@w.Message@if (w.Path is { } path) { <span class="dlr-muted"> · @path</span> }</li> }</ul>
+                                    }
+                                </div>
+                            </details>
                         }
                         @if (preview.DuplicateWarning is { } duplicate)
                         {
@@ -756,9 +809,14 @@
                     </section>
                 }
 
-                <div class="dlr-actions">
-                    <button type="button" class="btn-primary" data-testid="dlr-import-confirm" disabled="@(_busy || _preview is null || (_preview.DuplicateWarning is not null && !_confirmDuplicate) || P.ParseLocalInput(_effectiveInput) is null)" @onclick="CommitImport">Import snapshot</button>
-                    <button type="button" class="btn-secondary" data-testid="dlr-import-cancel" @onclick="CloseImport">Cancel</button>
+                @* Sticky footer: the action, its progress and its failure stay in view. A failed confirmation (e.g. an expired preview) is never
+                   reported above a long preview where it goes unseen. *@
+                <div class="dlr-dialog-footer" data-testid="dlr-import-footer">
+                    @if (_importError is not null) { <p class="dlr-error" role="alert" data-testid="dlr-import-error">@_importError</p> }
+                    <div class="dlr-actions">
+                        <button type="button" class="btn-primary" data-testid="dlr-import-confirm" aria-busy="@(Importing ? "true" : "false")" disabled="@(_busy || _preview is null || (_preview.DuplicateWarning is not null && !_confirmDuplicate) || P.ParseLocalInput(_effectiveInput) is null)" @onclick="CommitImport">@(Importing ? "Importing…" : "Import snapshot")</button>
+                        <button type="button" class="btn-secondary" data-testid="dlr-import-cancel" @onclick="CloseImport">Cancel</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -850,6 +908,12 @@
     private List<DeliveryProject> _projects = [];
     private Guid? _projectId;
     private string _tab = "overview";
+    /// <summary>The Delivery Snapshots destination (same component and state as Delivery Reports, another destination).</summary>
+    private bool OnSnapshotsRoute => Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].Equals(P.SnapshotsRoute, StringComparison.OrdinalIgnoreCase);
+    private bool Importing => _busy && _preview is not null;
+    private string OverviewHref => $"{NavigationCatalog.DeliveryOverviewRoute}?project={_projectId}";
+    private Guid? LatestReportId => _reports.Count == 0 ? null : _reports.MaxBy(r => r.GeneratedAt)!.Id;
+    private string ReportHrefOn(string tab, Guid reportId) => $"{P.Route}?project={_projectId}&tab={tab}&report={reportId}";
     private List<DeliverySnapshotSummary> _snapshots = [];
     private List<DeliveryReportSummaryRow> _reports = [];
     private DeliveryRole _role = DeliveryRole.ProjectLeader;
@@ -862,7 +926,7 @@
     {
         if (!firstRender || await DeliveryIntelligenceHistory.ReadRoleAsync(JS) is not { } role || role == _role) return;
         _role = role;
-        if (TabQuery is null) { _tab = DeliveryIntelligenceHistory.DefaultReportsTab(role); StateHasChanged(); }
+        if (TabQuery is null && !OnSnapshotsRoute) { _tab = DeliveryIntelligenceHistory.DefaultReportsTab(role); StateHasChanged(); }
     }
 
     private async Task SetRoleAsync(DeliveryRole role)
@@ -939,7 +1003,13 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        _tab = TabQuery is null ? DeliveryIntelligenceHistory.DefaultReportsTab(_role) : P.TabOrDefault(TabQuery);
+        if (!OnSnapshotsRoute && string.Equals(TabQuery, "snapshots", StringComparison.OrdinalIgnoreCase))
+        {
+            // A saved "Delivery Reports → Snapshots" link lands on the Delivery Snapshots destination (same project).
+            Nav.NavigateTo(Guid.TryParse(ProjectQuery, out var legacyProject) ? P.SnapshotsHref(legacyProject) : P.SnapshotsRoute, replace: true);
+            return;
+        }
+        _tab = OnSnapshotsRoute ? "snapshots" : TabQuery is null ? DeliveryIntelligenceHistory.DefaultReportsTab(_role) : P.TabOrDefault(TabQuery);
         if (!_loaded)
         {
             var (projects, error) = await Api.ProjectsAsync();
@@ -1066,7 +1136,7 @@
         _newProjectOpen = false;
         _newName = _newDescription = "";
         _notice = $"Reporting project “{project.Name}” created.";
-        Nav.NavigateTo($"{P.Route}?project={project.Id}&tab=snapshots");
+        Nav.NavigateTo(P.SnapshotsHref(project.Id));
     }
 
     private void Toggle(string key)
@@ -1259,7 +1329,7 @@
             @if (pv.NewFeatures.Count > 0) { <details data-testid="dlr-preview-new"><summary>@pv.NewFeatures.Count feature@(pv.NewFeatures.Count == 1 ? "" : "s") only in the current snapshot</summary><ul class="dlr-list dlr-compact">@foreach (var f in pv.NewFeatures) { <li>@f</li> }</ul></details> }
             <p class="dlr-preview-actions">
                 <button type="button" class="btn-secondary" data-testid="dlr-swap" @onclick="Swap">Swap Baseline / Current</button>
-                <a class="dlr-link" href="@TabHref("snapshots")" data-testid="dlr-preview-snapshots">Review snapshot details</a>
+                <a class="dlr-link" href="@P.SnapshotsHref(_projectId)" data-testid="dlr-preview-snapshots">Review snapshot details</a>
             </p>
             @if (pv.RequiresConfirmation)
             {

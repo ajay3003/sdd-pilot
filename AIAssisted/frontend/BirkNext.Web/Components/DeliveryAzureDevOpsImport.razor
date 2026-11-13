@@ -260,7 +260,7 @@
             (DeliveryImportPreview Preview, string? Note)? ready = null;
             var run = Operations.Start(new(BirkNext.Web.Services.Operations.OperationKind.DeliveryAzureDevOpsImport, $"Azure DevOps snapshot {commit.ShortCommit}",
                 new(ProjectName ?? "Delivery project", projectId.ToString()) { Repository = $"{commit.Project}/{commit.Repository}", Branch = commit.Branch, Revision = commit.ShortCommit },
-                $"{P.Route}?project={projectId}&tab=snapshots")
+                P.SnapshotsHref(projectId))
             {
                 IdempotencyKey = $"delivery-ado:{projectId}:{commit.CommitId}", Cancellable = true,
             }, async (progress, ct) =>
@@ -271,7 +271,7 @@
                 ct.ThrowIfCancellationRequested();
                 ready = (preview, note);
                 Session.SetPending(projectId, preview, note);
-                return BirkNext.Web.Services.Operations.OperationOutcome.Success($"{P.Route}?project={projectId}&tab=snapshots", "Review prepared import");
+                return BirkNext.Web.Services.Operations.OperationOutcome.Success(P.SnapshotsHref(projectId), "Review prepared import");
             });
             var done = await run.Completion;
             if (_disposed) return;

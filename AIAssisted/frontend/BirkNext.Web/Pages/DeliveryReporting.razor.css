@@ -142,3 +142,17 @@
 .dlr-small { font-size: .8125rem; }
 .dlr-history-table th[scope=row] { font-weight: 400; }
 .dlr-history-table tr.is-open { background: var(--clr-surface-alt, rgba(127,127,127,.08)); }
+
+/* Import dialog: the body scrolls inside the viewport and the footer (action, progress, failure) stays visible. */
+.dlr-backdrop:has(.dlr-dialog-footer) { align-items: center; padding: 1.5rem 1rem; }
+.dlr-dialog:has(.dlr-dialog-footer) { max-height: calc(100vh - 3rem); overflow-y: auto; padding-bottom: 0; }
+.dlr-dialog-footer { position: sticky; bottom: 0; background: var(--clr-surface-white); border-top: 1px solid var(--clr-border); margin: 1rem -1.5rem 0; padding: .75rem 1.5rem; display: grid; gap: .5rem; }
+.dlr-dialog-footer .dlr-error { margin: 0; }
+.dlr-dialog-footer .dlr-actions { margin: 0; }
+.dlr-preview-more { margin: .5rem 0; }
+.dlr-preview-more > summary { cursor: pointer; font-weight: 600; }
+
+/* Delivery Snapshots: what the stored snapshots allow next. */
+.dlr-readiness { border: 1px solid var(--clr-border); border-radius: 8px; padding: .75rem 1rem; margin: .5rem 0 1rem; display: grid; gap: .5rem; }
+.dlr-readiness p { margin: 0; }
+.dlr-readiness .dlr-actions { margin: 0; flex-wrap: wrap; }

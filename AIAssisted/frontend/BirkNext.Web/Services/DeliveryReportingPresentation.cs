@@ -7,11 +7,38 @@ namespace BirkNext.Web.Services;
 public static class DeliveryReportingPresentation
 {
     public const string Route = "delivery-reporting";
+    /// <summary>Delivery Snapshots: the first Delivery Management destination. The same page component and the same snapshot store as Delivery Reports —
+    /// only the destination differs, so there is never a second snapshot list with its own state.</summary>
+    public const string SnapshotsRoute = "delivery-snapshots";
 
+    /// <summary>Delivery Reports' own sections. Snapshot management is its own destination (<see cref="SnapshotsRoute"/>), never a Reports tab.</summary>
     public static readonly IReadOnlyList<(string Id, string Label)> Tabs =
-        [("overview", "Summary"), ("changes", "Change board"), ("stories", "Features & stories"), ("snapshots", "Snapshots"), ("history", "Report history"), ("scope", "Functional Quality Scope")];
+        [("overview", "Summary"), ("changes", "Change board"), ("stories", "Features & stories"), ("history", "Report history"), ("scope", "Functional Quality Scope")];
 
     public static string TabOrDefault(string? tab) => Tabs.Any(t => t.Id == tab) ? tab! : "overview";
+
+    /// <summary>The Delivery Snapshots destination of a reporting project (also where a legacy <c>delivery-reporting?tab=snapshots</c> link lands).</summary>
+    public static string SnapshotsHref(Guid? projectId) => projectId is { } id ? $"{SnapshotsRoute}?project={id}" : SnapshotsRoute;
+
+    /// <summary>
+    /// What the stored snapshots allow, from the canonical list only: none → import a first one; one → Overview works, comparison needs a second
+    /// distinct snapshot; two or more → a baseline/current pair can be compared. Never counts a preview or an unconfirmed import.
+    /// </summary>
+    /// <summary>Import warnings grouped by the code the import recorded, largest group first; every original warning is kept in its group.</summary>
+    public static IReadOnlyList<(string Code, IReadOnlyList<DeliveryImportWarning> Items)> WarningGroups(IEnumerable<DeliveryImportWarning> warnings) =>
+        [.. warnings.GroupBy(w => string.IsNullOrWhiteSpace(w.Code) ? "Other" : w.Code)
+            .Select(g => (g.Key, (IReadOnlyList<DeliveryImportWarning>)[.. g]))
+            .OrderByDescending(g => g.Item2.Count).ThenBy(g => g.Key, StringComparer.Ordinal)];
+
+    public static string WarningGroupSummary(IReadOnlyList<(string Code, IReadOnlyList<DeliveryImportWarning> Items)> groups) =>
+        string.Join(", ", groups.Select(g => $"{g.Code} ×{g.Items.Count}"));
+
+    public static (string State, string Message) Readiness(IReadOnlyCollection<DeliverySnapshotSummary> snapshots) => snapshots.Count switch
+    {
+        0 => ("none", "No snapshot is stored yet. Import a first snapshot to see the current delivery state in Delivery Overview."),
+        1 => ("one", "One snapshot is stored. Delivery Overview can show it; comparing changes needs a second, distinct snapshot."),
+        _ => ("comparable", $"{snapshots.Count} snapshots are stored. Choose a baseline and a current snapshot to compare them in Delivery Reports."),
+    };
 
     /// <summary>Story filters. The default is "changed this week + active attention"; unchanged old stories only appear under All.</summary>
     public static readonly IReadOnlyList<(string Id, string Label)> StoryFilters =

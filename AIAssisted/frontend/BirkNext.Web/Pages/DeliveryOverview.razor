@@ -50,7 +50,7 @@
         {
             <section class="do-card" data-testid="do-no-snapshot">
                 <h2>No snapshot imported</h2>
-                <p>Import a repository snapshot for this project in <a href="@($"delivery-reporting?project={_projectId}&tab=snapshots")">Delivery Reports</a>.</p>
+                <p>Import a repository snapshot for this project in <a href="@BirkNext.Web.Services.DeliveryReportingPresentation.SnapshotsHref(_projectId)" data-testid="do-manage-snapshots">Delivery Snapshots</a>.</p>
             </section>
         }
         else if (_report is not null && FeatureQuery is { Length: > 0 } feature && _report.Stories.Any(s => s.FeatureKey == feature))
