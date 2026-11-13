@@ -62,145 +62,6 @@
         </div>
     }
 
-    @* Source-backed feature readiness (implementation evidence), kept apart from the documentation readiness this review assesses. *@
-    <div data-testid="qr-feature-readiness"><BirkNext.Web.Components.ImplementationGapExplorer ReadinessOnly="true" /></div>
-
-    @if (sharedEvidence is not null)
-    {
-        <section class="qr-sdd-evidence" aria-labelledby="sdd-evidence-title" data-testid="qr-shared-evidence">
-            <div class="qr-section-head">
-                <h2 id="sdd-evidence-title" class="qr-section-title">Shared SDD evidence</h2>
-                <span class="qr-policy-chip" data-testid="qr-policy-significance"><span class="qr-policy-chip-label">Policy significance</span> @sharedEvidence.PolicySignificance</span>
-            </div>
-            <p class="qr-section-desc">Lifecycle evidence reused from <a href="/traceability">Requirements Traceability</a>. <em>Not assessed</em> means no current evidence is linked; it is not a failure or a quality finding.</p>
-
-            <dl class="qr-evidence-metrics">
-                <div class="qr-evidence-metric">
-                    <dt>Requirements evaluated</dt>
-                    <dd><strong class="qr-evidence-number" data-testid="qr-requirements-evaluated">@sharedEvidence.RequirementsEvaluated</strong></dd>
-                </div>
-                @foreach (var category in sharedEvidence.Categories)
-                {
-                    <div class="qr-evidence-metric" data-testid="qr-evidence-category" data-category="@category.Category">
-                        <dt>@category.Title</dt>
-                        @foreach (var group in category.Groups)
-                        {
-                            <dd class="qr-evidence-line">
-                                <strong class="qr-evidence-number">@group.RequirementCount</strong>
-                                <span>requirement@(group.RequirementCount == 1 ? "" : "s")</span>
-                                <span class="qr-state is-@ToneClass(group.Tone)">@group.StatusLabel</span>
-                                @if (category.Groups.Count > 1)
-                                {
-                                    <span class="qr-evidence-line-title">@group.Title</span>
-                                }
-                            </dd>
-                        }
-                    </div>
-                }
-            </dl>
-
-            @if (!sharedEvidence.HasObservations)
-            {
-                <p role="status" class="qr-section-desc">No lifecycle evidence gaps were identified.</p>
-            }
-            <p class="qr-policy-note">@sharedEvidence.PolicySignificanceExplanation</p>
-
-            <div class="qr-evidence-actions">
-                <button type="button" class="qr-disclosure" aria-expanded="@(_evidenceDetailsOpen ? "true" : "false")" aria-controls="qr-evidence-details"
-                        data-testid="qr-evidence-details-toggle" @onclick="() => _evidenceDetailsOpen = !_evidenceDetailsOpen">
-                    @(_evidenceDetailsOpen ? "Hide evidence details" : "Review evidence details")
-                </button>
-                <a class="qr-evidence-link" href="/implementation-review">Review evidence gaps</a>
-            </div>
-
-            @if (_evidenceDetailsOpen)
-            {
-                <div id="qr-evidence-details" class="qr-evidence-details" data-testid="qr-evidence-details">
-                    @{ var groupIndex = 0; }
-                    @foreach (var category in sharedEvidence.Categories)
-                    {
-                        @foreach (var group in category.Groups)
-                        {
-                            var groupKey = $"g{groupIndex++}";
-                            var groupOpen = _openEvidenceGroups.Contains(groupKey);
-                            <div class="qr-evidence-group" data-testid="qr-evidence-group">
-                                <button type="button" class="qr-evidence-group-head" aria-expanded="@(groupOpen ? "true" : "false")" aria-controls="qr-evidence-@groupKey"
-                                        @onclick="() => Toggle(_openEvidenceGroups, groupKey)">
-                                    <span class="qr-evidence-group-title">@group.Title</span>
-                                    <span class="qr-evidence-group-count">@group.RequirementCount requirement@(group.RequirementCount == 1 ? "" : "s")</span>
-                                    <span class="qr-state is-@ToneClass(group.Tone)">@group.StatusLabel</span>
-                                </button>
-                                @if (groupOpen)
-                                {
-                                    <div id="qr-evidence-@groupKey" class="qr-evidence-group-body">
-                                        <p class="qr-evidence-group-expl">@group.Explanation</p>
-                                        <ul class="qr-evidence-reqs" aria-label="@group.Title: requirements">
-                                            @foreach (var requirement in group.Requirements)
-                                            {
-                                                var reqKey = $"{groupKey}:{requirement.RequirementId}";
-                                                var reqOpen = _openEvidenceRequirements.Contains(reqKey);
-                                                <li>
-                                                    <button type="button" class="qr-req-chip @(reqOpen ? "is-open" : "")" aria-expanded="@(reqOpen ? "true" : "false")"
-                                                            data-testid="qr-evidence-requirement" @onclick="() => Toggle(_openEvidenceRequirements, reqKey)">
-                                                        @requirement.RequirementId
-                                                    </button>
-                                                </li>
-                                            }
-                                        </ul>
-                                        @foreach (var requirement in group.Requirements.Where(r => _openEvidenceRequirements.Contains($"{groupKey}:{r.RequirementId}")))
-                                        {
-                                            var techKey = $"{groupKey}:{requirement.RequirementId}";
-                                            var techOpen = _openEvidenceTechnical.Contains(techKey);
-                                            <div class="qr-evidence-req-detail" data-testid="qr-evidence-requirement-detail">
-                                                <div class="qr-evidence-req-head"><strong>@requirement.RequirementId</strong> <span class="qr-state is-@ToneClass(group.Tone)">@group.StatusLabel</span></div>
-                                                @foreach (var observation in requirement.Observations)
-                                                {
-                                                    <p class="qr-evidence-req-message">@observation.Message <a href="@SddFindingHref(observation)">Review evidence</a></p>
-                                                }
-                                                <button type="button" class="qr-disclosure qr-disclosure--small" aria-expanded="@(techOpen ? "true" : "false")"
-                                                        data-testid="qr-evidence-technical-toggle" @onclick="() => Toggle(_openEvidenceTechnical, techKey)">
-                                                    @(techOpen ? "Hide technical details" : "Technical details")
-                                                </button>
-                                                @if (techOpen)
-                                                {
-                                                    <dl class="qr-tech-details" data-testid="qr-evidence-technical">
-                                                        @foreach (var observation in requirement.Observations)
-                                                        {
-                                                            <div><dt>Rule ID</dt><dd><code>@observation.Code</code></dd></div>
-                                                            <div><dt>Evidence reference</dt><dd><code>@observation.EvidenceReference</code></dd></div>
-                                                        }
-                                                    </dl>
-                                                }
-                                            </div>
-                                        }
-                                    </div>
-                                }
-                            </div>
-                        }
-                    }
-                    <div class="qr-evidence-technical-summary">
-                        <button type="button" class="qr-disclosure qr-disclosure--small" aria-expanded="@(_evidenceTechnicalOpen ? "true" : "false")"
-                                @onclick="() => _evidenceTechnicalOpen = !_evidenceTechnicalOpen">
-                            @(_evidenceTechnicalOpen ? "Hide technical details" : "Technical details")
-                        </button>
-                        @if (_evidenceTechnicalOpen)
-                        {
-                            <dl class="qr-tech-details">
-                                <div><dt>Evidence observations</dt><dd>@sharedEvidence.ObservationCount</dd></div>
-                                <div><dt>Projection</dt><dd>@SddProjectionMode</dd></div>
-                            </dl>
-                            @foreach (var run in SddWorkspace!.SddLifecycle.QualityReviewRuns.OrderByDescending(x => x.RanAt))
-                            {
-                                var runMode = Enum.TryParse<LifecycleProjectionMode>(run.ProjectionMode, out var parsedMode) ? parsedMode : LifecycleProjectionMode.ActiveWorkspace;
-                                var stale = run.LifecycleGraphFingerprint != SddGraph!.Fingerprint(SddWorkspace, runMode, run.BaselineId);
-                                <p class="qr-tech-run">SDD evidence snapshot @run.RanAt.ToLocalTime().ToString("g") · @(stale ? "Historical / stale" : run.Currentness) · @run.ProjectionMode@(run.BaselineId is null ? "" : $" ({run.BaselineId})") · @run.Findings.Count observation(s)</p>
-                            }
-                        }
-                    </div>
-                </div>
-            }
-        </section>
-    }
 
     <!-- ── No project selected state ────────────────────────────────────── -->
     @if (!HasWorkspaceArtifacts)
@@ -446,6 +307,152 @@
     {
         <ArtifactPackReviewPanel Packs="modulePacks" ReviewPackIds="@_selectedPacks.ToList()" ModuleLabel="@ReviewModuleLabel" />
     }
+
+    @* Review-first: scope (1) → Review Packs (2) → readiness and Run (3) come first. Feature delivery readiness and the shared SDD evidence are
+       supporting context — not documentation findings and not assessed by the Review Packs — so they follow the Run action instead of preceding it. *@
+    <section class="qr-supporting" aria-labelledby="qr-supporting-title" data-testid="qr-supporting-evidence">
+        <h2 id="qr-supporting-title" class="qr-section-title">Supporting evidence</h2>
+        <p class="qr-section-desc">Context for this review, read from Requirements Traceability and source analysis. It is not a documentation finding, and a checked task is not verified implementation.</p>
+    @* Source-backed feature readiness (implementation evidence), kept apart from the documentation readiness this review assesses. *@
+    <div data-testid="qr-feature-readiness"><BirkNext.Web.Components.ImplementationGapExplorer ReadinessOnly="true" /></div>
+
+    @if (sharedEvidence is not null)
+    {
+        <section class="qr-sdd-evidence" aria-labelledby="sdd-evidence-title" data-testid="qr-shared-evidence">
+            <div class="qr-section-head">
+                <h2 id="sdd-evidence-title" class="qr-section-title">Shared SDD evidence</h2>
+                <span class="qr-policy-chip" data-testid="qr-policy-significance"><span class="qr-policy-chip-label">Policy significance</span> @sharedEvidence.PolicySignificance</span>
+            </div>
+            <p class="qr-section-desc">Lifecycle evidence reused from <a href="/traceability">Requirements Traceability</a>. <em>Not assessed</em> means no current evidence is linked; it is not a failure or a quality finding.</p>
+
+            <dl class="qr-evidence-metrics">
+                <div class="qr-evidence-metric">
+                    <dt>Requirements evaluated</dt>
+                    <dd><strong class="qr-evidence-number" data-testid="qr-requirements-evaluated">@sharedEvidence.RequirementsEvaluated</strong></dd>
+                </div>
+                @foreach (var category in sharedEvidence.Categories)
+                {
+                    <div class="qr-evidence-metric" data-testid="qr-evidence-category" data-category="@category.Category">
+                        <dt>@category.Title</dt>
+                        @foreach (var group in category.Groups)
+                        {
+                            <dd class="qr-evidence-line">
+                                <strong class="qr-evidence-number">@group.RequirementCount</strong>
+                                <span>requirement@(group.RequirementCount == 1 ? "" : "s")</span>
+                                <span class="qr-state is-@ToneClass(group.Tone)">@group.StatusLabel</span>
+                                @if (category.Groups.Count > 1)
+                                {
+                                    <span class="qr-evidence-line-title">@group.Title</span>
+                                }
+                            </dd>
+                        }
+                    </div>
+                }
+            </dl>
+
+            @if (!sharedEvidence.HasObservations)
+            {
+                <p role="status" class="qr-section-desc">No lifecycle evidence gaps were identified.</p>
+            }
+            <p class="qr-policy-note">@sharedEvidence.PolicySignificanceExplanation</p>
+
+            <div class="qr-evidence-actions">
+                <button type="button" class="qr-disclosure" aria-expanded="@(_evidenceDetailsOpen ? "true" : "false")" aria-controls="qr-evidence-details"
+                        data-testid="qr-evidence-details-toggle" @onclick="() => _evidenceDetailsOpen = !_evidenceDetailsOpen">
+                    @(_evidenceDetailsOpen ? "Hide evidence details" : "Review evidence details")
+                </button>
+                <a class="qr-evidence-link" href="/implementation-review">Review evidence gaps</a>
+            </div>
+
+            @if (_evidenceDetailsOpen)
+            {
+                <div id="qr-evidence-details" class="qr-evidence-details" data-testid="qr-evidence-details">
+                    @{ var groupIndex = 0; }
+                    @foreach (var category in sharedEvidence.Categories)
+                    {
+                        @foreach (var group in category.Groups)
+                        {
+                            var groupKey = $"g{groupIndex++}";
+                            var groupOpen = _openEvidenceGroups.Contains(groupKey);
+                            <div class="qr-evidence-group" data-testid="qr-evidence-group">
+                                <button type="button" class="qr-evidence-group-head" aria-expanded="@(groupOpen ? "true" : "false")" aria-controls="qr-evidence-@groupKey"
+                                        @onclick="() => Toggle(_openEvidenceGroups, groupKey)">
+                                    <span class="qr-evidence-group-title">@group.Title</span>
+                                    <span class="qr-evidence-group-count">@group.RequirementCount requirement@(group.RequirementCount == 1 ? "" : "s")</span>
+                                    <span class="qr-state is-@ToneClass(group.Tone)">@group.StatusLabel</span>
+                                </button>
+                                @if (groupOpen)
+                                {
+                                    <div id="qr-evidence-@groupKey" class="qr-evidence-group-body">
+                                        <p class="qr-evidence-group-expl">@group.Explanation</p>
+                                        <ul class="qr-evidence-reqs" aria-label="@group.Title: requirements">
+                                            @foreach (var requirement in group.Requirements)
+                                            {
+                                                var reqKey = $"{groupKey}:{requirement.RequirementId}";
+                                                var reqOpen = _openEvidenceRequirements.Contains(reqKey);
+                                                <li>
+                                                    <button type="button" class="qr-req-chip @(reqOpen ? "is-open" : "")" aria-expanded="@(reqOpen ? "true" : "false")"
+                                                            data-testid="qr-evidence-requirement" @onclick="() => Toggle(_openEvidenceRequirements, reqKey)">
+                                                        @requirement.RequirementId
+                                                    </button>
+                                                </li>
+                                            }
+                                        </ul>
+                                        @foreach (var requirement in group.Requirements.Where(r => _openEvidenceRequirements.Contains($"{groupKey}:{r.RequirementId}")))
+                                        {
+                                            var techKey = $"{groupKey}:{requirement.RequirementId}";
+                                            var techOpen = _openEvidenceTechnical.Contains(techKey);
+                                            <div class="qr-evidence-req-detail" data-testid="qr-evidence-requirement-detail">
+                                                <div class="qr-evidence-req-head"><strong>@requirement.RequirementId</strong> <span class="qr-state is-@ToneClass(group.Tone)">@group.StatusLabel</span></div>
+                                                @foreach (var observation in requirement.Observations)
+                                                {
+                                                    <p class="qr-evidence-req-message">@observation.Message <a href="@SddFindingHref(observation)">Review evidence</a></p>
+                                                }
+                                                <button type="button" class="qr-disclosure qr-disclosure--small" aria-expanded="@(techOpen ? "true" : "false")"
+                                                        data-testid="qr-evidence-technical-toggle" @onclick="() => Toggle(_openEvidenceTechnical, techKey)">
+                                                    @(techOpen ? "Hide technical details" : "Technical details")
+                                                </button>
+                                                @if (techOpen)
+                                                {
+                                                    <dl class="qr-tech-details" data-testid="qr-evidence-technical">
+                                                        @foreach (var observation in requirement.Observations)
+                                                        {
+                                                            <div><dt>Rule ID</dt><dd><code>@observation.Code</code></dd></div>
+                                                            <div><dt>Evidence reference</dt><dd><code>@observation.EvidenceReference</code></dd></div>
+                                                        }
+                                                    </dl>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                    <div class="qr-evidence-technical-summary">
+                        <button type="button" class="qr-disclosure qr-disclosure--small" aria-expanded="@(_evidenceTechnicalOpen ? "true" : "false")"
+                                @onclick="() => _evidenceTechnicalOpen = !_evidenceTechnicalOpen">
+                            @(_evidenceTechnicalOpen ? "Hide technical details" : "Technical details")
+                        </button>
+                        @if (_evidenceTechnicalOpen)
+                        {
+                            <dl class="qr-tech-details">
+                                <div><dt>Evidence observations</dt><dd>@sharedEvidence.ObservationCount</dd></div>
+                                <div><dt>Projection</dt><dd>@SddProjectionMode</dd></div>
+                            </dl>
+                            @foreach (var run in SddWorkspace!.SddLifecycle.QualityReviewRuns.OrderByDescending(x => x.RanAt))
+                            {
+                                var runMode = Enum.TryParse<LifecycleProjectionMode>(run.ProjectionMode, out var parsedMode) ? parsedMode : LifecycleProjectionMode.ActiveWorkspace;
+                                var stale = run.LifecycleGraphFingerprint != SddGraph!.Fingerprint(SddWorkspace, runMode, run.BaselineId);
+                                <p class="qr-tech-run">SDD evidence snapshot @run.RanAt.ToLocalTime().ToString("g") · @(stale ? "Historical / stale" : run.Currentness) · @run.ProjectionMode@(run.BaselineId is null ? "" : $" ({run.BaselineId})") · @run.Findings.Count observation(s)</p>
+                            }
+                        }
+                    </div>
+                </div>
+            }
+        </section>
+    }
+    </section>
 
     <!-- ── Results ───────────────────────────────────────────────────────── -->
     @if (_runError is { } runError)
