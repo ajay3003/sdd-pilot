@@ -32,7 +32,9 @@ public sealed class TechnologyCoverageController(IqrSourceStore sources, IIntegr
         else if (baselines is null) latest = (await sources.ListSourceAnalysisAsync(1, ct)).FirstOrDefault();
         else
         {
-            var window = await sources.ListSourceAnalysisAsync(BirkNext.Api.Services.SourceAnalysis.SourceBaselineService.Window, ct);
+            // Resolution needs identity only (repository + archive): the window is read without its evidence, and only the one resolved snapshot is
+            // then read in full. Reading the whole window in full allocated every snapshot's evidence per request (hundreds of MB on a real workspace).
+            var window = await sources.ListSourceAnalysisIdentitiesAsync(BirkNext.Api.Services.SourceAnalysis.SourceBaselineService.Window, ct);
             var resolved = await baselines.ResolveAsync(window, ct);
             var newest = window.OrderByDescending(s => s.AnalyzedAt).ThenByDescending(s => s.Id).FirstOrDefault();
             var key = newest is null ? null : BirkNext.Api.Services.SourceAnalysis.SourceBaselineService.KeyOf(newest);
@@ -42,7 +44,7 @@ public sealed class TechnologyCoverageController(IqrSourceStore sources, IIntegr
                 notices.Add($"BASELINE_NOT_SELECTED: {Services.SourceAnalysis.ReviewSourceEvidenceProvider.Identity(newest).DisplayName} has alternative source versions and no analysis baseline. " +
                     "Select it in Source Management → Source versions; no coverage is derived from import order.");
             }
-            else latest = resolved.MaxBy(s => s.AnalyzedAt);
+            else latest = resolved.MaxBy(s => s.AnalyzedAt) is { } chosen ? await sources.FindSourceAnalysisAsync(chosen.Id, ct) : null;
         }
         var hasTarget = !string.IsNullOrWhiteSpace(environmentId);
         // No environment type: a read-only check never upgrades or applies a template.

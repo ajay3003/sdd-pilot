@@ -212,6 +212,20 @@ public sealed class SourceBaselineServiceTests : IDisposable
         await Service().SelectBaselineAsync("m2lb", older.Id, "local-session:loopback", null, default);
         Coverage(await controller.Get(null, default)).SourceSnapshotId.Should().Be(older.Id);
     }
+
+    [Fact] // Memory: the window is resolved from identities only; the one resolved snapshot is then read in full (its evidence is reported)
+    public async Task Technology_coverage_reports_the_full_evidence_of_the_resolved_snapshot_only()
+    {
+        await Store(Snap("M2LB (5).zip", "c5", 3) with { TechnologyCoverage = new BirkNext.Technology.SourceTechnologyCoverage { TotalFiles = 5 } });
+        var newest = await Store(Snap("M2LB (6).zip", "c5", 4) with { TechnologyCoverage = new BirkNext.Technology.SourceTechnologyCoverage { TotalFiles = 6 } });
+        var catalog = new Moq.Mock<BirkNext.Api.Services.Integrations.IIntegrationCatalogService>(Moq.MockBehavior.Strict);
+        var result = await new BirkNext.Api.Controllers.TechnologyCoverageController(new IqrSourceStore(_db), catalog.Object, Service()).Get(null, default);
+        var coverage = (result.Result as Microsoft.AspNetCore.Mvc.OkObjectResult)?.Value as BirkNext.Technology.ProjectTechnologyCoverage ?? result.Value!;
+
+        coverage.SourceSnapshotId.Should().Be(newest.Id, "same content: the newest import of it");
+        coverage.Source.Should().NotBeNull("technology coverage is not an identity member: it is only present when the resolved snapshot is read in full");
+        coverage.Source!.TotalFiles.Should().Be(6);
+    }
 }
 
 /// <summary>Canonical content fingerprint: content identity independent of archive name, entry order, compression and root folder; any byte change counts.</summary>
