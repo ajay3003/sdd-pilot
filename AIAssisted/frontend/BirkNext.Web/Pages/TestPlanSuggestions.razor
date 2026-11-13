@@ -230,10 +230,20 @@
 
     // ── Discover ─────────────────────────────────────────────────────────────────────────────────────────────
 
+    private BirkNext.Scopes.ScopeSelection? _scopeSelection;
+    private void ScopeSelected(BirkNext.Scopes.ScopeSelection? selection) => _scopeSelection = selection;
+
+    /// <summary>A guide scenario is in the selected scope when the scope names its canonical scenario identity (the id the interpretation gives
+    /// the same guide scenario). No selection keeps every candidate; nothing is matched by title.</summary>
+    private bool InScope(ScenarioCandidate c) => _scopeSelection is null || c.Source.Kind == ScenarioSourceKind.SystemGuide
+        && _scopeSelection.Members.Any(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.Scenario
+            && m.Member.TargetId == BirkNext.Interpretation.CanonicalKeys.EntityKey(BirkNext.Interpretation.CanonicalEntityType.Scenario,
+                BirkNext.Interpretation.CorrelationRules.GuideScenarioIdentity(c.Source.Owner, c.Source.ScenarioId)));
+
     private RenderFragment Discover() => __builder =>
     {
         var ws = _ws!;
-        var shown = P.Apply(ws.Candidates, _filter);
+        var shown = P.Apply(ws.Candidates, _filter).Where(InScope).ToList();
         var inDraft = _draft?.Cases.Select(c => c.Source.ScenarioId).ToHashSet(StringComparer.Ordinal) ?? [];
         var hiddenSelected = _selected.Count(id => shown.All(c => c.Source.ScenarioId != id));
         var adding = _selected.Count(id => !inDraft.Contains(id));
@@ -244,6 +254,15 @@
                 <h2 id="tps-discover-h" class="tps-h2">Choose scenarios to prepare <span class="tps-count">@shown.Count of @ws.Candidates.Count</span></h2>
                 <p class="tps-muted">Scenario candidates from the System Understanding guide. A candidate is guidance — not a Test Case, not test coverage. Selecting approves nothing.</p>
             </div>
+            <BirkNext.Web.Components.Scopes.ScopeFilter SelectionChanged="ScopeSelected" />
+            @if (_scopeSelection is { } scopeSel)
+            {
+                var scenarios = scopeSel.Members.Count(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.Scenario);
+                var others = scopeSel.Members.Count(m => m.Member.Kind is BirkNext.Scopes.ScopeMemberKind.Requirement or BirkNext.Scopes.ScopeMemberKind.UserStory or BirkNext.Scopes.ScopeMemberKind.Feature);
+                <p class="tps-muted" data-testid="tps-scope-summary">Showing the scenarios the selected scope names (@scenarios in the scope).
+                    @if (others > 0) { <span>Its @others requirement/story/feature member@(others == 1 ? "" : "s") do not filter scenarios yet (no reviewed scenario link is used for that).</span> }
+                    @if (scenarios == 0) { <span data-testid="tps-scope-no-scenarios">The scope names no scenarios, so no candidate is shown; add scenarios to it in Systems &amp; Scopes.</span> }</p>
+            }
             <div class="tps-filters" role="search">
                 <label class="tps-field tps-field-grow"><span class="tps-k">Search</span><input class="tps-input" type="search" placeholder="Title, purpose or id" value="@_filter.Query" @oninput="SetQuery" data-testid="tps-search" /></label>
                 <label class="tps-field"><span class="tps-k">Business area</span>

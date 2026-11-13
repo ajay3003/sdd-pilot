@@ -190,6 +190,9 @@ builder.Services.AddScoped<BirkNext.Api.Services.CanonicalInterpretation.Canonic
 // Shared Scope Registry: its own schema (scope_registry); project-scoped scopes with immutable revisions of typed member references.
 builder.Services.AddDbContext<BirkNext.Api.Data.ScopeRegistry.ScopeRegistryDbContext>(options =>
     BirkNext.Api.Data.ScopeRegistry.ScopeRegistryDbContext.Configure(options, databaseConnectionString));
+builder.Services.AddScoped<BirkNext.Api.Services.ScopeRegistry.ScopeMemberCatalogService>();
+builder.Services.AddScoped<BirkNext.Api.Services.ScopeRegistry.IScopeMemberResolver>(sp => sp.GetRequiredService<BirkNext.Api.Services.ScopeRegistry.ScopeMemberCatalogService>());
+builder.Services.AddScoped<BirkNext.Api.Services.ScopeRegistry.SystemsOverviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.ScopeRegistry.ScopeRegistryService>();
 // Shared Snapshot Registry: its own schema (snapshot_registry); metadata synced from each owner store by adapters, payloads never copied.
 builder.Services.AddDbContext<BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext>(options =>

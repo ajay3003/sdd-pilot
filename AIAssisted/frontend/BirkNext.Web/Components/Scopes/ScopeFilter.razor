@@ -1,0 +1,84 @@
+@using BirkNext.Scopes
+@using BirkNext.Web.Services
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceProvider Services
+@inject NavigationManager Nav
+
+@* The shared scope filter for consumer pages: one or several approved scopes of the current project. It narrows what the page lists; it never
+   authorizes running anything, and without a selection the page behaves exactly as before. The choice is kept in the URL (?scope=…). *@
+@if (_projectKey is not null && _scopes.Count > 0)
+{
+    <div class="scf" data-testid="scf">
+        <details class="scf-menu">
+            <summary data-testid="scf-toggle">@SummaryText</summary>
+            <fieldset class="scf-options">
+                <legend class="visually-hidden">Approved scopes to filter by</legend>
+                @foreach (var s in _scopes)
+                {
+                    var scope = s;
+                    <label class="scf-option"><input type="checkbox" checked="@_selected.Contains(scope.Id)" data-testid="scf-option" data-id="@scope.Id"
+                                                     @onchange="e => ToggleAsync(scope.Id, e.Value is true)" /> @scope.Name
+                        <span class="scf-muted">@SystemsScopesPresentation.PurposeLabel(scope.Purpose) · rev. @scope.ApprovedRevision</span></label>
+                }
+            </fieldset>
+        </details>
+        @if (_selection is { } sel)
+        {
+            <span class="scf-muted" data-testid="scf-summary">@sel.UniqueCount unique member@(sel.UniqueCount == 1 ? "" : "s") from @sel.Scopes.Count scope@(sel.Scopes.Count == 1 ? "" : "s") (approved revisions)</span>
+            <button type="button" class="scf-link" data-testid="scf-clear" @onclick="ClearAsync">Clear scope filter</button>
+            @foreach (var n in sel.Notices) { <span class="scf-muted" data-testid="scf-notice">@n</span> }
+        }
+        @if (_error is not null) { <span class="scf-error" role="alert">@_error</span> }
+    </div>
+}
+
+@code {
+    /// <summary>Raised with the combined selection (null when no scope is selected).</summary>
+    [Parameter] public EventCallback<ScopeSelection?> SelectionChanged { get; set; }
+    [SupplyParameterFromQuery(Name = "scope")] public string[]? ScopeQuery { get; set; }
+
+    private IScopeRegistryApiService? Scopes;
+    private string? _projectKey, _error;
+    private List<ScopeSummary> _scopes = [];
+    private readonly HashSet<Guid> _selected = [];
+    private ScopeSelection? _selection;
+
+    private string SummaryText => _selected.Count == 0 ? "Filter by scope" : $"Scope: {string.Join(", ", _scopes.Where(s => _selected.Contains(s.Id)).Select(s => s.Name))}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Optional everywhere it is embedded: without the registry or a project the page simply shows no scope filter.
+        Scopes = Services.GetService<IScopeRegistryApiService>();
+        if (Scopes is null || Services.GetService<ICurrentWorkspaceProjection>() is not { } workspace) return;
+        _projectKey = (await workspace.GetAsync()).ProjectSlug;
+        if (_projectKey is null) return;
+        var (items, error) = await Scopes.ListAsync(_projectKey);
+        _error = error;
+        // Only approved membership is offered: a draft is not a selection anyone has agreed on.
+        _scopes = [.. items.Where(s => s.ApprovedRevision is not null && s.State != ScopeState.Archived).OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)];
+        foreach (var id in ScopeQuery ?? []) if (Guid.TryParse(id, out var g) && _scopes.Any(s => s.Id == g)) _selected.Add(g);
+        if (_selected.Count > 0) await ApplyAsync(updateUrl: false);
+    }
+
+    private async Task ToggleAsync(Guid id, bool on)
+    {
+        if (on) _selected.Add(id); else _selected.Remove(id);
+        await ApplyAsync(updateUrl: true);
+    }
+
+    private async Task ClearAsync() { _selected.Clear(); await ApplyAsync(updateUrl: true); }
+
+    private async Task ApplyAsync(bool updateUrl)
+    {
+        _error = null;
+        if (_selected.Count == 0) _selection = null;
+        else
+        {
+            var (selection, error) = await Scopes!.SelectionAsync(_projectKey!, [.. _selected]);
+            (_selection, _error) = (selection, error);
+        }
+        if (updateUrl)
+            Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["scope"] = _selected.Count == 0 ? null : _selected.Select(g => g.ToString()).ToArray() }), replace: true);
+        await SelectionChanged.InvokeAsync(_selection);
+    }
+}

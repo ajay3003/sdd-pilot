@@ -1,0 +1,130 @@
+@using BirkNext.Scopes
+@using BirkNext.Web.Services
+@inject IScopeRegistryApiService Scopes
+
+@* Catalog-driven member selection: one kind at a time, server-side search, multi-select with a selected tray. Ids stay hidden (shown only in
+   Technical details); an id typed by hand under Advanced is checked against its catalog before it is added. *@
+<div class="smp" data-testid="smp">
+    <div class="smp-kinds" role="tablist" aria-label="What to add">
+        @foreach (var kind in SystemsScopesPresentation.CatalogKinds)
+        {
+            var k = kind;
+            var count = Selected.Count(m => m.Kind == k);
+            <button type="button" role="tab" class="smp-kind @(k == _kind ? "is-current" : "")" aria-selected="@(k == _kind ? "true" : "false")"
+                    data-testid="smp-kind" data-kind="@k" @onclick="() => KindAsync(k)">@SystemsScopesPresentation.KindLabel(k, plural: true)@(count > 0 ? $" ({count})" : "")</button>
+        }
+    </div>
+
+    <div class="smp-search">
+        <label class="visually-hidden" for="smp-search-input">Search @SystemsScopesPresentation.KindLabel(_kind, plural: true)</label>
+        <input id="smp-search-input" type="search" placeholder="Search @SystemsScopesPresentation.KindLabel(_kind, plural: true).ToLowerInvariant() by name" value="@_search"
+               @oninput="SearchChanged" data-testid="smp-search" autocomplete="off" />
+    </div>
+
+    @if (_loading) { <p class="smp-muted" role="status" data-testid="smp-loading">Loading…</p> }
+    else if (_error is not null) { <p class="smp-error" role="alert" data-testid="smp-error">@_error</p> }
+    else if (_page is { } pg)
+    {
+        @foreach (var notice in pg.Notices) { <p class="smp-muted" data-testid="smp-notice">@notice</p> }
+        @if (pg.Items.Count == 0 && pg.Notices.Count == 0)
+        {
+            <p class="smp-muted" data-testid="smp-empty">@(string.IsNullOrWhiteSpace(_search) ? $"No {SystemsScopesPresentation.KindLabel(_kind, plural: true).ToLowerInvariant()} in this catalog yet." : "Nothing matches the search.")</p>
+        }
+        <ul class="smp-results" aria-label="@SystemsScopesPresentation.KindLabel(_kind, plural: true) to add" data-testid="smp-results">
+            @foreach (var item in pg.Items)
+            {
+                var it = item;
+                var on = Selected.Any(m => m.Kind == it.Kind && m.TargetId == it.TargetId);
+                <li class="smp-item">
+                    <label>
+                        <input type="checkbox" checked="@on" data-testid="smp-pick" data-id="@it.TargetId" @onchange="e => ToggleAsync(it, e.Value is true)" />
+                        <span class="smp-item-text">
+                            <span class="smp-item-label">@it.Label</span>
+                            <span class="smp-muted">@(it.Description)@(it.State is { Length: > 0 } st ? $" · {st}" : "")</span>
+                        </span>
+                    </label>
+                </li>
+            }
+        </ul>
+        @if (pg.Total > pg.Skip + pg.Items.Count || pg.Skip > 0)
+        {
+            <div class="smp-pager">
+                <button type="button" class="btn-secondary btn-small" disabled="@(pg.Skip == 0)" @onclick="() => PageAsync(-1)" data-testid="smp-prev">Previous</button>
+                <span class="smp-muted">@(pg.Skip + 1)–@(pg.Skip + pg.Items.Count) of @pg.Total</span>
+                <button type="button" class="btn-secondary btn-small" disabled="@(pg.Total <= pg.Skip + pg.Items.Count)" @onclick="() => PageAsync(1)" data-testid="smp-next">Next</button>
+            </div>
+        }
+    }
+
+    <details class="smp-advanced" data-testid="smp-advanced">
+        <summary>Advanced: add by stable id</summary>
+        <p class="smp-muted">For experts who already know an id. It is checked against the @SystemsScopesPresentation.KindLabel(_kind).ToLowerInvariant() catalog first; an id the catalog does not confirm is not added.</p>
+        <div class="smp-advanced-row">
+            <label class="smp-field">Stable id <input data-testid="smp-id" @bind="_manualId" /></label>
+            <button type="button" class="btn-secondary btn-small" data-testid="smp-id-add" disabled="@(string.IsNullOrWhiteSpace(_manualId) || _checking)" @onclick="AddManualAsync">Check and add</button>
+        </div>
+        @if (_manualMessage is not null) { <p class="smp-muted" role="status" data-testid="smp-id-result">@_manualMessage</p> }
+    </details>
+</div>
+
+@code {
+    [Parameter] public string? CatalogScope { get; set; }
+    [Parameter] public List<ScopeMember> Selected { get; set; } = [];
+    [Parameter] public EventCallback SelectedChanged { get; set; }
+
+    private ScopeMemberKind _kind = ScopeMemberKind.System;
+    private string _search = "", _manualId = "";
+    private string? _error, _manualMessage;
+    private ScopeCatalogPage? _page;
+    private bool _loading, _checking;
+    private int _skip, _generation;
+    private const int Take = 20;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task KindAsync(ScopeMemberKind kind) { (_kind, _skip, _search, _manualMessage) = (kind, 0, "", null); await LoadAsync(); }
+
+    private async Task SearchChanged(ChangeEventArgs e) { _search = e.Value?.ToString() ?? ""; _skip = 0; await LoadAsync(); }
+
+    private async Task PageAsync(int direction) { _skip = Math.Max(0, _skip + direction * Take); await LoadAsync(); }
+
+    /// <summary>Only the newest request may change the list (typing fast never shows an older result).</summary>
+    private async Task LoadAsync()
+    {
+        var generation = ++_generation;
+        _loading = true; _error = null;
+        var (page, error) = await Scopes.CatalogAsync(_kind, CatalogScope, _search, _skip, Take);
+        if (generation != _generation) return;
+        (_page, _error, _loading) = (page, error, false);
+    }
+
+    private async Task ToggleAsync(ScopeCatalogItem item, bool on)
+    {
+        Selected.RemoveAll(m => m.Kind == item.Kind && m.TargetId == item.TargetId);
+        if (on) Selected.Add(new ScopeMember { Kind = item.Kind, TargetId = item.TargetId, Label = item.Label, CatalogScope = item.CatalogScope,
+            Provenance = $"Selected by a person from {item.SourceModule}" });
+        await SelectedChanged.InvokeAsync();
+    }
+
+    private async Task AddManualAsync()
+    {
+        var id = _manualId.Trim();
+        _checking = true; _manualMessage = null;
+        try
+        {
+            var member = new ScopeMember { Kind = _kind, TargetId = id, Label = id, Provenance = "Added by a person by id (checked against its catalog)" };
+            var (items, error) = await Scopes.CheckMembersAsync(new ScopeMemberCheckRequest([member], CatalogScope));
+            var status = items.FirstOrDefault();
+            if (error is not null) { _manualMessage = error; return; }
+            if (status is not { Check: ScopeMemberCheck.Current }) { _manualMessage = $"Not added: {status?.Detail ?? "the catalog could not confirm it."}"; return; }
+            Selected.RemoveAll(m => m.Key == member.Key);
+            // Canonical kinds remember the interpretation they were checked in; Test Data and journeys have one global catalog.
+            var catalogScope = _kind is ScopeMemberKind.TestDataAsset or ScopeMemberKind.Journey ? null : CatalogScope;
+            Selected.Add(member with { Label = status.CurrentLabel ?? id, CatalogScope = catalogScope });
+            _manualMessage = $"Added {status.CurrentLabel ?? id}.";
+            _manualId = "";
+            await SelectedChanged.InvokeAsync();
+        }
+        finally { _checking = false; }
+    }
+}

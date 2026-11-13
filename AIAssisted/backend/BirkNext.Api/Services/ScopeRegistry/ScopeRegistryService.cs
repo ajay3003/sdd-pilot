@@ -13,7 +13,7 @@ public sealed record ScopeWriteResult(ScopeDetail? Scope, string? Error, bool Co
 /// (an edit starts a new draft revision); every write names the version it was based on, so a stale edit is refused, not merged.
 /// Approval pins membership — it does not mean tests passed or that runtime execution is authorized.
 /// </summary>
-public sealed class ScopeRegistryService(ScopeRegistryDbContext db, TimeProvider clock)
+public sealed class ScopeRegistryService(ScopeRegistryDbContext db, TimeProvider clock, IScopeMemberResolver? resolver = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -38,6 +38,9 @@ public sealed class ScopeRegistryService(ScopeRegistryDbContext db, TimeProvider
         if (string.IsNullOrWhiteSpace(request.Name)) return new(null, "A scope needs a name.");
         var name = request.Name.Trim()[..Math.Min(200, request.Name.Trim().Length)];
         if (await db.Scopes.AnyAsync(s => s.ProjectKey == request.ProjectKey && s.Name == name, ct)) return new(null, $"This project already has a scope named \"{name}\".");
+        var (checkedMembers, memberError) = await CheckNewMembersAsync(request.Members, [], request.CatalogScope, ct);
+        if (memberError is not null) return new(null, memberError);
+        request = request with { Members = checkedMembers };
         var now = clock.GetUtcNow();
         var scope = new ScopeRecord
         {
@@ -63,7 +66,10 @@ public sealed class ScopeRegistryService(ScopeRegistryDbContext db, TimeProvider
             return new(null, $"This project already has a scope named \"{name}\".");
         var now = clock.GetUtcNow();
         var current = await db.Revisions.FirstAsync(r => r.ScopeId == scopeId && r.Number == scope.CurrentRevision, ct);
-        var members = ScopeRegistryRules.Normalize(request.Members);
+        var previous = JsonSerializer.Deserialize<List<ScopeMember>>(current.MembersJson, Json) ?? [];
+        var (checkedMembers, memberError) = await CheckNewMembersAsync(request.Members, previous, request.CatalogScope, ct);
+        if (memberError is not null) return new(null, memberError);
+        var members = ScopeRegistryRules.Normalize(checkedMembers);
         if (current.State is nameof(ScopeRevisionState.Draft) or nameof(ScopeRevisionState.InReview))
         {
             current.MembersJson = JsonSerializer.Serialize(members, Json);
@@ -95,6 +101,8 @@ public sealed class ScopeRegistryService(ScopeRegistryDbContext db, TimeProvider
         var revision = await db.Revisions.FirstAsync(r => r.ScopeId == scopeId && r.Number == request.Revision, ct);
         if (revision.State == nameof(ScopeRevisionState.Approved)) return new(null, "This revision is already approved.");
         if (scope.State == nameof(ScopeState.Archived)) return new(null, "An archived scope cannot be approved.");
+        if (!(JsonSerializer.Deserialize<List<ScopeMember>>(revision.MembersJson, Json) ?? []).Any(m => m.Inclusion == ScopeMemberInclusion.Confirmed))
+            return new(null, "An empty scope cannot be approved: add at least one member first. (An empty draft can be saved.)");
         var now = clock.GetUtcNow();
         if (scope.ApprovedRevision is { } previous)
         {
@@ -107,6 +115,59 @@ public sealed class ScopeRegistryService(ScopeRegistryDbContext db, TimeProvider
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException) { return new(null, "The scope was changed since you opened it. Reload it before approving.", Conflict: true); }
         return new(await DetailAsync(scope, ct), null);
+    }
+
+    /// <summary>Marks the newest draft revision as ready for review (no approval; saving it again returns it to draft).</summary>
+    public async Task<ScopeWriteResult> SubmitAsync(string projectKey, Guid scopeId, ScopeDecisionRequest request, CancellationToken ct = default)
+    {
+        var scope = await db.Scopes.FirstOrDefaultAsync(s => s.Id == scopeId && s.ProjectKey == projectKey, ct);
+        if (scope is null) return new(null, "Scope not found in this project.");
+        if (scope.Version != request.ExpectedVersion) return new(null, "The scope was changed since you opened it. Reload it first.", Conflict: true);
+        if (scope.State == nameof(ScopeState.Archived)) return new(null, "An archived scope is read-only.");
+        if (request.Revision != scope.CurrentRevision) return new(null, "Only the newest revision can be submitted for review.");
+        var revision = await db.Revisions.FirstAsync(r => r.ScopeId == scopeId && r.Number == request.Revision, ct);
+        if (revision.State != nameof(ScopeRevisionState.Draft)) return new(null, $"Revision {revision.Number} is {revision.State}, not a draft.");
+        revision.State = nameof(ScopeRevisionState.InReview);
+        if (scope.ApprovedRevision is null) scope.State = nameof(ScopeState.InReview);
+        scope.Version++; scope.UpdatedAt = clock.GetUtcNow();
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException) { return new(null, "The scope was changed since you opened it. Reload it first.", Conflict: true); }
+        return new(await DetailAsync(scope, ct), null);
+    }
+
+    /// <summary>The current catalog state of every member of a revision (stale members are shown for review, never replaced).</summary>
+    public async Task<IReadOnlyList<ScopeMemberStatus>?> CheckAsync(string projectKey, Guid scopeId, int? revision, string? catalogScope, CancellationToken ct = default)
+    {
+        var detail = await GetAsync(projectKey, scopeId, ct);
+        var chosen = detail?.Revisions.FirstOrDefault(r => r.Number == (revision ?? detail.Scope.CurrentRevision));
+        if (chosen is null) return null;
+        if (resolver is null) return [.. chosen.Members.Select(m => new ScopeMemberStatus(m.Key, ScopeMemberCheck.NotCheckable, "No catalog is available in this host."))];
+        return await resolver.CheckAsync(chosen.Members, catalogScope, ct);
+    }
+
+    /// <summary>
+    /// Every member that is new compared with <paramref name="previous"/> must exist in its catalog now (right kind, this project's catalog
+    /// context). Members carried over from an earlier revision are kept as they are, even when their catalog no longer lists them (that is
+    /// shown as stale, never silently dropped). New members get the catalog context they were checked in.
+    /// </summary>
+    private async Task<(List<ScopeMember> Members, string? Error)> CheckNewMembersAsync(IReadOnlyList<ScopeMember> members, IReadOnlyList<ScopeMember> previous,
+        string? catalogScope, CancellationToken ct)
+    {
+        if (resolver is null) return ([.. members], null);
+        var known = previous.ToDictionary(m => m.Key, StringComparer.Ordinal);
+        var fresh = members.Select(m => m with { TargetId = (m.TargetId ?? "").Trim() })
+            .Where(m => m.TargetId.Length > 0 && !known.ContainsKey(m.Key)).GroupBy(m => m.Key).Select(g => g.Last()).ToList();
+        if (fresh.Count == 0) return ([.. members.Select(m => known.TryGetValue(m.Key, out var k) && m.CatalogScope is null ? m with { CatalogScope = k.CatalogScope } : m)], null);
+        var statuses = (await resolver.CheckAsync(fresh, catalogScope, ct)).ToDictionary(s => s.Key, StringComparer.Ordinal);
+        var refused = fresh.Where(m => statuses.GetValueOrDefault(m.Key) is not { Check: ScopeMemberCheck.Current }).ToList();
+        if (refused.Count > 0)
+            return ([], "These members cannot be added because their catalog does not confirm them: "
+                + string.Join("; ", refused.Take(5).Select(m => $"{(string.IsNullOrWhiteSpace(m.Label) ? m.TargetId : m.Label)} ({statuses.GetValueOrDefault(m.Key)?.Detail ?? "not checked"})"))
+                + (refused.Count > 5 ? $"; and {refused.Count - 5} more" : "") + ". Nothing was saved.");
+        var freshKeys = fresh.ToDictionary(m => m.Key, StringComparer.Ordinal);
+        return ([.. members.Select(m => m with { TargetId = m.TargetId.Trim() }).Select(m => freshKeys.ContainsKey(m.Key)
+            ? m with { CatalogScope = m.CatalogScope ?? (ScopeMemberCatalogService.CanonicalTypes(m.Kind) is null ? null : catalogScope) }
+            : known.TryGetValue(m.Key, out var k) && m.CatalogScope is null ? m with { CatalogScope = k.CatalogScope } : m)], null);
     }
 
     public async Task<ScopeWriteResult> ArchiveAsync(string projectKey, Guid scopeId, ScopeDecisionRequest request, CancellationToken ct = default)

@@ -42,3 +42,7 @@ There is one canonical system identity and one shared scope identity, and each m
 3. A relationship-member picker on the Connections tab, and a stale-member check when a canonical entity disappears after re-interpretation.
 4. Archive in the UI. Functional Quality Scope stays a Delivery-owned projection, and its linkage to a scope is still open.
 5. Browser acceptance against an isolated backend; no active user database.
+
+## Follow-up (2026-11-13)
+
+Stages 3–4 in part: catalog-driven members with validation, systems overview with evidence states and Integration Topology connections, submit/archive/compare in the UI, and the first consumers (Test Data, Test Plan Suggestions). See `birknext-systems-and-scopes-hardening-report.md`.

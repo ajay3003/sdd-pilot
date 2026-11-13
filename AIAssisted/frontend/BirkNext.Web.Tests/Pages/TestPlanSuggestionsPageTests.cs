@@ -333,4 +333,25 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         cut.Find("[data-testid=tps-perf-criteria-missing-bufdata-fil]");
         cut.Markup.Should().NotContain("k6", "no script is asked for");
     }
+
+    [Fact]
+    public void A_selected_approved_scope_narrows_candidates_to_the_scenarios_it_names_by_canonical_identity()
+    {
+        var scopeId = Guid.NewGuid();
+        var scopes = new Moq.Mock<IScopeRegistryApiService>();
+        scopes.Setup(s => s.ListAsync("import:m2lb", It.IsAny<CancellationToken>())).ReturnsAsync(([new BirkNext.Scopes.ScopeSummary
+            { Id = scopeId, Name = "Period lock", State = BirkNext.Scopes.ScopeState.Approved, ApprovedRevision = 1, CurrentRevision = 1 }], (string?)null));
+        var member = new BirkNext.Scopes.ScopeMember { Kind = BirkNext.Scopes.ScopeMemberKind.Scenario, TargetId = "Scenario|system-understanding/skolenaervaer/periodelaas", Label = "Periodelås" };
+        scopes.Setup(s => s.SelectionAsync("import:m2lb", It.Is<IReadOnlyList<Guid>>(ids => ids.Single() == scopeId), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new BirkNext.Scopes.ScopeSelection { ProjectKey = "import:m2lb", Scopes = [new(scopeId, "Period lock", 1)],
+                Members = [new(member, [new(scopeId, "Period lock", 1)])] }, (string?)null));
+        Services.AddSingleton(scopes.Object);
+        Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Imported", "import:m2lb", "M2LB")).Object);
+
+        var cut = Render(new Api(Workspace()), $"?guide=skolenaervaer&scope={scopeId}");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tps-scope-summary]").TextContent.Should().Contain("1 in the scope"));
+        cut.FindAll("input[type=checkbox][data-testid^=tps-select-]").Select(e => e.GetAttribute("data-testid")).Should().Equal("tps-select-periodelaas");
+        cut.Find("[data-testid=scf-clear]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("input[type=checkbox][data-testid^=tps-select-]").Should().HaveCount(4, "without a scope nothing is filtered"));
+    }
 }

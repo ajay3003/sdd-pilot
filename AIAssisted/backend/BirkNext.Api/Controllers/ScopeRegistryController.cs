@@ -1,4 +1,5 @@
 using BirkNext.Api.Services.ActiveEventTesting;
+using BirkNext.Api.Services.CanonicalInterpretation;
 using BirkNext.Api.Services.LocalSecurity;
 using BirkNext.Api.Services.ScopeRegistry;
 using BirkNext.Scopes;
@@ -45,6 +46,41 @@ public sealed class ScopeRegistryController(ScopeRegistryService scopes, LocalTr
     [HttpGet("{scopeId:guid}/compare")]
     public async Task<ActionResult<ScopeComparison>> Compare(Guid scopeId, [FromQuery] string projectKey, [FromQuery] int from, [FromQuery] int to, CancellationToken ct) =>
         await scopes.CompareAsync(projectKey, scopeId, from, to, ct) is { } comparison ? Ok(comparison) : NotFound();
+
+    /// <summary>Marks the newest draft revision as ready for review (not an approval).</summary>
+    [HttpPost("{scopeId:guid}/submit")]
+    public async Task<ActionResult<ScopeDetail>> Submit(Guid scopeId, [FromQuery] string projectKey, [FromBody] ScopeDecisionRequest request, CancellationToken ct) =>
+        Result(await scopes.SubmitAsync(projectKey, scopeId, request, ct));
+
+    /// <summary>Each member of a revision checked against its catalog now: current, missing (stale), another context, or not checkable.</summary>
+    [HttpGet("{scopeId:guid}/check")]
+    public async Task<ActionResult<IReadOnlyList<ScopeMemberStatus>>> Check(Guid scopeId, [FromQuery] string projectKey, [FromQuery] int? revision,
+        [FromQuery] string? catalogScope, CancellationToken ct) =>
+        await scopes.CheckAsync(projectKey, scopeId, revision, catalogScope, ct) is { } statuses ? Ok(statuses) : NotFound();
+
+    /// <summary>Checks members before they are added (the advanced by-id entry): only ids their catalog confirms can be saved.</summary>
+    [HttpPost("check-members")]
+    public async Task<ActionResult<IReadOnlyList<ScopeMemberStatus>>> CheckMembers([FromServices] IScopeMemberResolver resolver, [FromBody] ScopeMemberCheckRequest request,
+        CancellationToken ct) =>
+        request.Members is null || request.Members.Count > ScopeRegistryRules.MaxMembers ? BadRequest(new { message = "Between 0 and 2000 members can be checked." })
+            : Ok(await resolver.CheckAsync(request.Members, request.CatalogScope, ct));
+
+    /// <summary>A searchable page of what can be added to a scope (systems, requirements, scenarios, Test Data …), read from the owning stores.</summary>
+    [HttpGet("catalog")]
+    public async Task<ActionResult<ScopeCatalogPage>> Catalog([FromServices] ScopeMemberCatalogService catalog, [FromQuery] ScopeMemberKind kind, [FromQuery] string? catalogScope,
+        [FromQuery] string? search, [FromQuery] int skip = 0, [FromQuery] int take = 25, CancellationToken ct = default)
+    {
+        try { return Ok(await catalog.SearchAsync(kind, catalogScope, search, skip, take, ct)); }
+        catch (CanonicalRequestException ex) { return BadRequest(new { message = ex.Message }); }
+    }
+
+    /// <summary>Systems, services and their connections (canonical interpretation + Integration Topology, offline) for one Target Environment.</summary>
+    [HttpGet("systems")]
+    public async Task<ActionResult<SystemsOverviewView>> Systems([FromServices] SystemsOverviewService systems, [FromQuery] string catalogScope, CancellationToken ct)
+    {
+        try { return Ok(await systems.OverviewAsync(catalogScope, ct)); }
+        catch (CanonicalRequestException ex) { return BadRequest(new { message = ex.Message }); }
+    }
 
     /// <summary>The confirmed members of one or several scopes (approved revisions unless drafts=true), de-duplicated with attribution.</summary>
     [HttpGet("selection")]

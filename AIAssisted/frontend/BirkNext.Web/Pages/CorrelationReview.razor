@@ -14,6 +14,7 @@
 
 <div class="cr" data-testid="correlation-review">
     <header class="cr-head">
+        @if (ReturnTo is { } back) { <p><a href="@back" data-testid="cr-return">← Back to Systems &amp; Scopes</a></p> }
         <h1>Relationship Review</h1>
         <p class="cr-lead" data-testid="cr-intro">Discover, validate and govern relationships across project evidence.</p>
         <p class="cr-muted cr-lead">Requirements, user stories, source code, APIs, contracts and tests — decisions made here are shared by every BirkNext module, so a relationship is reviewed once.
@@ -72,6 +73,9 @@
     [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
     /// <summary>Opens the queue on one item type (?tab=review&amp;type=IdentityConflict), e.g. from a blocked governance gate.</summary>
     [SupplyParameterFromQuery(Name = "type")] public string? QueueType { get; set; }
+    /// <summary>Where a "Back" link returns to (?from=project-scopes…): only a local Systems &amp; Scopes address is honoured.</summary>
+    [SupplyParameterFromQuery(Name = "from")] public string? From { get; set; }
+    private string? ReturnTo => From is { Length: > 0 } f && f.StartsWith("project-scopes", StringComparison.Ordinal) && !f.Contains("//") && !f.Contains(':') ? f : null;
 
     private string _tab = "overview";
     private string? _applicationName, _environmentName;

@@ -280,6 +280,16 @@
             var shown = Filtered(catalog, usages, workspaceUsages);
             <section class="td-card" aria-labelledby="td-assets-heading" data-testid="td-assets">
                 <h2 id="td-assets-heading">Test Data assets <span class="td-count" data-testid="td-count">(@shown.Count of @catalog.Assets.Count)</span></h2>
+                <BirkNext.Web.Components.Scopes.ScopeFilter SelectionChanged="ScopeSelected" />
+                @if (_scopeSelection is { } scopeSel)
+                {
+                    var wanted = scopeSel.Members.Where(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.TestDataAsset).ToList();
+                    var missing = wanted.Count(m => catalog.Assets.All(a => a.AssetId != m.Member.TargetId));
+                    var scenarios = scopeSel.Members.Count(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.Scenario);
+                    <p class="td-scope-summary" data-testid="td-scope-summary">Scope filter: @wanted.Count Test Data asset@(wanted.Count == 1 ? "" : "s") in the selected scope@(scopeSel.Scopes.Count == 1 ? "" : "s")@(scenarios > 0 ? $", linked to {scenarios} scenario{(scenarios == 1 ? "" : "s")} in the same scope" : "").
+                        @if (missing > 0) { <strong data-testid="td-scope-missing"> @missing listed in the scope but not in this catalog — review the scope.</strong> }
+                        @if (wanted.Count == 0) { <span> The scope names no Test Data yet: add assets to it in Systems &amp; Scopes.</span> }</p>
+                }
                 <div class="td-filters" role="group" aria-label="Filter assets" data-testid="td-filters">
                     <label>Search <input type="search" class="form-control" data-testid="td-search" placeholder="Name, role, applies to, type, contract, consumer, field" @bind="_query" @bind:event="oninput" /></label>
                     @Filter("Data type", "td-filter-type", _type, v => _type = v, catalog.Assets.Select(P.DataType).Distinct().Order().Select(t => (t.ToString(), TestDataDataTypes.Label(t))))
@@ -667,9 +677,13 @@
 
     // Assets a stored Source Change Impact run marked for review (MT-6). Shown as a reason to re-validate; nothing is changed or cleared here.
     private IReadOnlyList<TestDataReviewFlag> _reviewFlags = [];
+    private BirkNext.Scopes.ScopeSelection? _scopeSelection;
+    private void ScopeSelected(BirkNext.Scopes.ScopeSelection? selection) => _scopeSelection = selection;
 
     private List<TestDataAssetSummary> Filtered(TestDataCatalogView catalog, IReadOnlyList<TestDataUsageReference> usages, IReadOnlyList<TestDataAssetUsage> workspaceUsages) => catalog.Assets
         .Where(asset => P.Matches(asset, _query, usages))
+        // A selected scope narrows the list to the assets it names (by immutable asset id); without one, nothing changes.
+        .Where(asset => _scopeSelection is null || asset.AssetId is { } assetId && _scopeSelection.Members.Any(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.TestDataAsset && m.Member.TargetId == assetId))
         .Where(asset => _type.Length == 0 || P.DataType(asset).ToString() == _type)
         .Where(asset => _status.Length == 0 || P.Status(asset).ToString() == _status)
         .Where(asset => _role.Length == 0 || (asset.SemanticRole ?? NoRole) == _role)

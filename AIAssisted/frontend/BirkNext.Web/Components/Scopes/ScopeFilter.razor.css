@@ -1,0 +1,12 @@
+.scf { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .75rem; margin: .5rem 0; }
+.scf-menu { position: relative; }
+.scf-menu > summary { cursor: pointer; list-style: none; border: 1px solid var(--clr-border); border-radius: 999px; padding: .3rem .8rem; background: var(--clr-surface-white); font-size: .9rem; }
+.scf-menu > summary::-webkit-details-marker { display: none; }
+.scf-menu > summary:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; }
+.scf-options { position: absolute; z-index: 20; margin: .3rem 0 0; min-width: 18rem; max-width: min(28rem, 90vw); max-height: 18rem; overflow-y: auto; padding: .5rem; border: 1px solid var(--clr-border); border-radius: 8px; background: var(--clr-surface-white); box-shadow: 0 6px 18px rgba(0, 0, 0, .12); display: grid; gap: .3rem; }
+.scf-option { display: grid; grid-template-columns: auto 1fr; column-gap: .45rem; font-size: .9rem; }
+.scf-option .scf-muted { grid-column: 2; }
+.scf-muted { color: var(--clr-text-muted); font-size: .85rem; }
+.scf-error { color: var(--clr-danger); font-size: .85rem; }
+.scf-link { background: none; border: none; padding: 0; color: var(--clr-primary); font: inherit; font-size: .88rem; cursor: pointer; }
+.scf-link:hover { text-decoration: underline; }

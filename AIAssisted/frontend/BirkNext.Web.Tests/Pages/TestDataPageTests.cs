@@ -181,4 +181,30 @@ public sealed class TestDataPageTests : BunitContext
         Show("overview");
         Render<TestDataPage>().FindAll("[data-testid=td-review-flags]").Should().BeEmpty();
     }
+
+    [Fact]
+    public void A_selected_approved_scope_shows_only_its_assets_by_asset_id_and_reports_members_missing_from_the_catalog()
+    {
+        var mixed = Mixed();
+        _api.Catalog = mixed with { Assets = [.. mixed.Assets.Select(a => a with { AssetId = "tda_" + a.Alias })] };
+        var scopeId = Guid.NewGuid();
+        var scopes = new Moq.Mock<IScopeRegistryApiService>();
+        scopes.Setup(x => x.ListAsync("import:m2lb", It.IsAny<CancellationToken>())).ReturnsAsync(([new BirkNext.Scopes.ScopeSummary
+            { Id = scopeId, Name = "Report intake", State = BirkNext.Scopes.ScopeState.Approved, ApprovedRevision = 2, CurrentRevision = 2 }], (string?)null));
+        BirkNext.Scopes.ScopeSelectionMember M(BirkNext.Scopes.ScopeMemberKind kind, string id) => new(new() { Kind = kind, TargetId = id, Label = id }, [new(scopeId, "Report intake", 2)]);
+        scopes.Setup(x => x.SelectionAsync("import:m2lb", It.IsAny<IReadOnlyList<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new BirkNext.Scopes.ScopeSelection { ProjectKey = "import:m2lb", Scopes = [new(scopeId, "Report intake", 2)],
+                Members = [M(BirkNext.Scopes.ScopeMemberKind.TestDataAsset, "tda_normal-report"), M(BirkNext.Scopes.ScopeMemberKind.TestDataAsset, "tda_gone"),
+                    M(BirkNext.Scopes.ScopeMemberKind.Scenario, "Scenario|system-understanding/skole/s1")] }, (string?)null));
+        Services.AddSingleton(scopes.Object);
+        Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Imported", "import:m2lb", "M2LB")).Object);
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo($"test-data?section=assets&scope={scopeId}");
+
+        var page = Render<TestDataPage>();
+        page.WaitForAssertion(() => page.FindAll("[data-testid=td-asset]").Select(r => r.GetAttribute("data-alias")).Should().Equal("normal-report"));
+        page.Find("[data-testid=td-scope-summary]").TextContent.Should().Contain("2 Test Data assets").And.Contain("linked to 1 scenario");
+        page.Find("[data-testid=td-scope-missing]").TextContent.Should().Contain("1 listed in the scope but not in this catalog");
+        page.Find("[data-testid=scf-clear]").Click();
+        page.WaitForAssertion(() => page.FindAll("[data-testid=td-asset]").Should().HaveCount(4, "without a scope the page behaves as before"));
+    }
 }
