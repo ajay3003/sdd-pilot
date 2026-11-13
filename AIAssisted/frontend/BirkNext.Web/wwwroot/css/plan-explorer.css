@@ -855,7 +855,7 @@
     color: var(--clr-text-body);
     line-height: 1.65;
     margin: 0;
-    white-space: pre-wrap;
+    white-space: normal; /* rendered Markdown: pre-wrap would turn the line breaks between HTML blocks into blank gaps */
 }
 
 /* ── Gate table (constitution check) ───────────────── */
@@ -1349,3 +1349,9 @@
 .pe-phase-us { color: #1e3a8a; border-color: #93c5fd; background: #eff6ff; }
 .pe-gate-verification, .pe-check-verification { font-size: 0.78rem; color: #475569; }
 .pe-check-verification { margin-left: 0.4rem; }
+
+/* Rendered Markdown inside the summary: paragraphs and lists keep the summary's compact rhythm. */
+.pe-summary-text > :first-child { margin-top: 0; }
+.pe-summary-text > :last-child { margin-bottom: 0; }
+.pe-summary-text p { margin: 0 0 .5rem; }
+.pe-summary-text ul, .pe-summary-text ol { margin: 0 0 .5rem 1.25rem; padding: 0; }

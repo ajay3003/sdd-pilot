@@ -76,6 +76,26 @@ public class TaskExplorerPageTests : BunitContext
         cut.Find(".te-main").GetAttribute("class").Should().Contain("has-details");
     }
 
+    [Fact] // Focus view: full-width labelled section (no 300px side panel); Back to tasks closes it and keeps the tree as it was
+    public void TaskDetails_OpenAsAFocusView_AndBackToTasksKeepsTheTree()
+    {
+        var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SampleTasks));
+        var rowsBefore = cut.FindAll(".te-row").Count;
+        ClickTaskRow(cut, "T001");
+
+        var focus = cut.Find("[data-testid='te-focus']");
+        focus.TagName.Should().Be("SECTION");
+        focus.GetAttribute("tabindex").Should().Be("-1", "focus moves to the details when a task opens");
+        focus.GetAttribute("aria-label").Should().EndWith("details");
+        cut.Find("[data-testid='te-back-to-tasks']").TextContent.Should().Be("Back to tasks");
+        cut.FindAll(".te-row").Should().OnlyContain(r => r.Id!.StartsWith("te-row-"), "rows are focus targets for Back to tasks");
+
+        cut.Find("[data-testid='te-back-to-tasks']").Click();
+        cut.FindAll("[data-testid='te-focus']").Should().BeEmpty();
+        cut.Find(".te-main").GetAttribute("class").Should().NotContain("has-details");
+        cut.FindAll(".te-row").Should().HaveCount(rowsBefore, "expansion and filters are kept");
+    }
+
     [Fact]
     public void TaskDetails_HidesWhenSwitchingTreeToImpact()
     {

@@ -219,7 +219,9 @@
                     {
                         <div class="pe-summary-block">
                             <div class="pe-summary-kicker">Plan Summary</div>
-                            <p class="pe-summary-text">@_plan.Summary</p>
+                            @* The summary is authored Markdown: rendered with the shared safe renderer (raw HTML escaped, only safe link schemes) instead
+                               of showing **markers** as text. The source text itself is unchanged. *@
+                            <div class="pe-summary-text markdown-content" data-testid="pe-summary-text">@((MarkupString)SummaryMarkdown.Render(_plan.Summary))</div>
                         </div>
                     }
 
@@ -1136,6 +1138,8 @@
 <MarkdownSourceNotesPanel Blocks="@(_plan?.UnmappedSourceBlocks)" Context="@UnmappedSourceContext.For(_plan)" />
 
 @code {
+    private static readonly MarkdownRenderingService SummaryMarkdown = new();
+
     [Parameter] public string PlanText { get; set; } = string.Empty;
     [Parameter] public PlanDocument? ParsedPlan { get; set; }
     [Parameter] public PlanSemanticModel? SemanticModel { get; set; }

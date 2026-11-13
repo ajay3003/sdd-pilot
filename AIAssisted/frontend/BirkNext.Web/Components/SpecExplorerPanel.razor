@@ -671,12 +671,12 @@
         if (_focusDetails && _selectedNodeId is not null)
         {
             _focusDetails = false;
-            try { await _detailsTitleRef.FocusAsync(); } catch (Exception ex) when (ex is InvalidOperationException or Microsoft.JSInterop.JSException) { }
+            try { await _detailsTitleRef.FocusAsync(); } catch (Exception) { /* moving focus is a convenience; a host without JS focus support keeps working */ }
         }
         else if (_focusRowId is { } rowId && _treeItemRefs.TryGetValue(rowId, out var row))
         {
             _focusRowId = null;
-            try { await row.FocusAsync(); } catch (Exception ex) when (ex is InvalidOperationException or Microsoft.JSInterop.JSException) { }
+            try { await row.FocusAsync(); } catch (Exception) { /* moving focus is a convenience; a host without JS focus support keeps working */ }
         }
     }
 

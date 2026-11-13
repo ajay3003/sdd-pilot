@@ -240,8 +240,9 @@
     min-height: 300px;
 }
 
+/* The selected task opens as a full-width focus view below the structure (was a 300px side panel). */
 .te-main.has-details {
-    grid-template-columns: 1fr 300px;
+    grid-template-columns: 1fr;
 }
 
 /* ── Tree view ───────────────────────────────────────────────────────────── */
@@ -799,9 +800,7 @@ button.te-ref-chip:hover {
     border: 1px solid var(--clr-border);
     border-radius: 0.5rem;
     background: var(--clr-bg-card);
-    padding: 0.875rem;
-    overflow: auto;
-    max-height: 620px;
+    padding: 1rem 1.25rem;
     display: flex;
     flex-direction: column;
     gap: 0;
@@ -2261,3 +2260,9 @@ button.te-ref-chip:hover {
 .te-summary-declared dd { color: #1f2937; }
 .te-summary-advanced dt { color: #475569; }
 .te-advanced-metrics > summary { cursor: pointer; color: #1d4ed8; font-size: 0.82rem; }
+
+
+.te-details:focus { outline: none; }
+.te-details:focus-visible { outline: 2px solid var(--clr-info, #1d4ed8); outline-offset: 2px; }
+.te-details-close { font-weight: 600; }
+.te-row:focus-visible { outline: 2px solid var(--clr-info, #1d4ed8); outline-offset: -2px; }

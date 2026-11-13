@@ -41,3 +41,18 @@
 .msn-source pre, .msn-gap pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
 .msn-wrap { overflow-wrap: anywhere; }
 .msn-source-toggle { border: 0; background: none; padding: 0; font-size: .82rem; cursor: pointer; }
+
+
+/* Compact potential-gap rows. */
+.msn-gap-list { list-style: none; margin: .4rem 0; padding: 0; display: grid; gap: .4rem; }
+.msn-gap-list .msn-gap { margin: 0; }
+.msn-gap-reason { margin-top: .1rem; }
+
+/* Technical raw source reader: one row per preserved block, a small line gutter, the verbatim text. No heading per block. */
+.msn-reader { list-style: none; margin: .5rem 0; padding: 0; border: 1px solid var(--clr-border); border-radius: .5rem; background: var(--clr-surface); }
+.msn-line { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); gap: .5rem; padding: .05rem .5rem; border-top: 1px solid transparent; }
+.msn-line + .msn-line { border-top-color: var(--clr-border-subtle, rgba(148, 163, 184, .25)); }
+.msn-line:hover, .msn-line:focus-within { background: var(--clr-surface-hover, #f1f5f9); }
+.msn-gutter { color: var(--clr-text-muted); font: .75rem/1.6 var(--font-mono, ui-monospace, monospace); text-align: right; user-select: none; }
+.msn-line-text { margin: 0; font: .8125rem/1.6 var(--font-mono, ui-monospace, monospace); white-space: pre-wrap; overflow-wrap: anywhere; background: none; border: 0; padding: 0; }
+.msn-line-structural .msn-line-text { color: var(--clr-text-muted); }

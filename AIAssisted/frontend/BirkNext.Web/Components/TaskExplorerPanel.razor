@@ -759,6 +759,7 @@
                         var isPhase = node.NodeType == TaskNodeType.Phase;
 
                         <div class="te-row @(isSelected ? "is-selected" : "") @TreeFilterMatchClass(isMatch) @(isHeading || node.NodeType == TaskNodeType.TableSection ? "is-heading" : "is-item")"
+                             id="@RowDomId(node.Id)" tabindex="-1"
                              data-birknext-projection-id="@(node.Provenance?.ProjectionId)"
                              data-birknext-projection-kind="@(node.Provenance?.ProjectionKind)"
                              style="--te-depth: @depth"
@@ -955,10 +956,12 @@
                 var selected = SelectedNode;
                 @if (selected is not null)
                 {
-                    <div class="te-details">
+                    @* Focus view: a full-width, naturally scrolling card below the task structure (was a 300px side panel with its own 620px scroll).
+                       Opening moves focus here; Back to tasks returns focus to the same row — expansion, filters and search are kept. *@
+                    <section class="te-details" data-testid="te-focus" tabindex="-1" aria-label="@($"{NodeTypeLabel(selected.NodeType)} details")" @ref="_detailsRef">
                         <div class="te-details-header">
                             <span class="te-details-type">@NodeTypeLabel(selected.NodeType)</span>
-                            <button class="te-details-close" @onclick='() => _selectedNodeId = null' aria-label="Close details">×</button>
+                            <button type="button" class="te-details-close" data-testid="te-back-to-tasks" @onclick="BackToTasks">Back to tasks</button>
                         </div>
 
                         @if (selected.TaskId is not null)
@@ -1369,7 +1372,7 @@
                                 </div>
                             </div>
                         }
-                    </div>
+                    </section>
                 }
             }
         </div>
@@ -1670,6 +1673,16 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_focusDetails && _selectedNodeId is not null)
+        {
+            _focusDetails = false;
+            try { await _detailsRef.FocusAsync(); } catch (Exception) { /* moving focus is a convenience; a host without JS focus support keeps working */ }
+        }
+        else if (_returnRowDomId is { } rowId)
+        {
+            _returnRowDomId = null;
+            try { await JS.InvokeVoidAsync("birknextFocusElement", rowId); } catch (Exception) { /* moving focus is a convenience; a host without JS focus support keeps working */ }
+        }
         if (!_isMapView || _mapContainer.Context is null)
             return;
         try
@@ -1844,7 +1857,22 @@
     private void HandleNodeClick(TaskNode node)
     {
         _selectedNodeId = _selectedNodeId == node.Id ? null : node.Id;
+        _focusDetails = _selectedNodeId is not null;
         StateHasChanged();
+    }
+
+    private ElementReference _detailsRef;
+    private bool _focusDetails;
+    private string? _returnRowDomId;
+
+    /// <summary>A DOM id for a tree row (task ids may hold characters an id should not).</summary>
+    private static string RowDomId(string nodeId) => "te-row-" + Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(nodeId)).ToLowerInvariant();
+
+    /// <summary>Leaves the focus view and returns focus to the row it came from.</summary>
+    private void BackToTasks()
+    {
+        if (_selectedNodeId is { } id) _returnRowDomId = RowDomId(id);
+        _selectedNodeId = null;
     }
 
     private void ToggleExpand(string id)

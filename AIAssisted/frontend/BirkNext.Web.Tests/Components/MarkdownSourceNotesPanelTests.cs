@@ -44,7 +44,7 @@ public sealed class MarkdownSourceNotesPanelTests : BunitContext
         cut.FindAll("[data-testid=markdown-source-notes-detail]").Should().BeEmpty("the technical raw source is collapsed by default");
 
         cut.Find("[data-testid=markdown-source-notes-toggle]").Click();
-        cut.FindAll("article[data-source-block-id]").Select(x => x.GetAttribute("data-source-block-id")).Should().Equal(blocks.Select(b => b.BlockId));
+        cut.FindAll("[data-testid=markdown-source-reader] li[data-source-block-id]").Select(x => x.GetAttribute("data-source-block-id")).Should().Equal(blocks.Select(b => b.BlockId));
         cut.Find("[data-testid=markdown-source-notes-detail]").TextContent.Should().Contain("Lines 30–30 · FencedCodeStart · Structural")
             .And.Contain("Trailing prose BEGIN-VISIBLE").And.Contain("END-VISIBLE complete text at EOF");
     }
@@ -109,6 +109,37 @@ public sealed class MarkdownSourceNotesPanelTests : BunitContext
             panel.Markup.Should().Contain(tail, "the authored text is preserved verbatim");
         }
         Check(spec, tail); Check(constitution, tail); Check(plan, tail); Check(tasks, tail); Check(dataModel, tail);
-        spec.Find("article[data-source-block-id]").GetAttribute("data-source-block-id").Should().NotBeNullOrWhiteSpace();
+        spec.Find("li[data-source-block-id]").GetAttribute("data-source-block-id").Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact] // Compact reader: one row per block (no heading per block), in order, rendered in chunks on request — nothing dropped
+    public void Technical_raw_source_is_a_compact_reader_in_order_and_every_block_is_reachable()
+    {
+        var blocks = Enumerable.Range(1, 250).Select(i => Note(i * 2, $"Paragraph {i} æøå")).ToArray();
+        var cut = Render<MarkdownSourceNotesPanel>(p => p.Add(x => x.Blocks, blocks));
+        cut.Find("[data-testid=markdown-source-notes-toggle]").Click();
+        var rows = cut.FindAll("[data-testid=markdown-source-reader] li[data-source-block-id]");
+        rows.Should().HaveCount(200, "rows render in chunks");
+        cut.FindAll("[data-testid=markdown-source-notes-detail] h4").Should().BeEmpty("no heading per block");
+        rows[0].QuerySelector(".msn-gutter")!.TextContent.Should().Be("2");
+        rows[0].QuerySelector("pre")!.TextContent.Should().Be("Paragraph 1 æøå", "verbatim text");
+        rows[0].GetAttribute("title").Should().Contain("Lines 2–2");
+        cut.Find("[data-testid=markdown-source-reader-more]").TextContent.Should().Contain("Show next 50 blocks").And.Contain("50 of 250 not shown yet");
+        cut.Find("[data-testid=markdown-source-reader-more]").Click();
+        cut.FindAll("[data-testid=markdown-source-reader] li[data-source-block-id]").Select(r => r.GetAttribute("data-source-block-id"))
+            .Should().Equal(blocks.Select(b => b.BlockId), "every block, in source order");
+        cut.FindAll("[data-testid=markdown-source-reader-more]").Should().BeEmpty();
+    }
+
+    [Fact] // Plan Explorer: the Plan Summary is rendered Markdown (no raw ** markers), safely (raw HTML escaped)
+    public void Plan_summary_is_rendered_markdown_not_raw_markers()
+    {
+        // The parser takes the summary from the text between the title and the first section heading.
+        var plan = string.Join('\n', "# Implementation Plan", "", "**Names:** Report and ReportVersion <script>alert(1)</script>", "", "## Technical Context", "", "Language: C#", "");
+        var cut = Render<PlanExplorerPanel>(p => p.Add(x => x.PlanText, plan));
+        var summary = cut.Find("[data-testid=pe-summary-text]");
+        summary.QuerySelector("strong")!.TextContent.Should().Be("Names:");
+        summary.TextContent.Should().NotContain("**").And.Contain("Report and ReportVersion");
+        summary.QuerySelector("script").Should().BeNull("raw HTML in authored text is never executed");
     }
 }

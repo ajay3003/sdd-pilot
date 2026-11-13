@@ -197,7 +197,7 @@ public sealed class DataModelModelViewTests : BunitContext
 
         var primary = cut.Find("[data-testid=dme-model]").TextContent + cut.Find("[data-testid=dme-model-summary]").TextContent;
         primary.Should().NotContainAny("FencedCodeLine", "FencedCodeStart", "Heading ·", "Lines 1-1");
-        cut.FindAll("article[data-source-block-id]").Should().BeEmpty("parser structure is technical detail, rendered only on request");
+        cut.FindAll("li[data-source-block-id]").Should().BeEmpty("parser structure is technical detail, rendered only on request");
     }
 
     [Fact]
@@ -231,6 +231,6 @@ public sealed class DataModelModelViewTests : BunitContext
         cut.Find("[data-testid=dme-model-partial]").TextContent.Should().Contain("Some document content is not represented in the structured view.")
             .And.Contain("preserved outside the structured view").And.Contain("BirkNext does not infer missing model facts");
         cut.Find("[data-testid=markdown-source-notes-toggle]").Click();
-        cut.FindAll("article[data-source-block-id]").Should().NotBeEmpty();
+        cut.FindAll("li[data-source-block-id]").Should().NotBeEmpty();
     }
 }

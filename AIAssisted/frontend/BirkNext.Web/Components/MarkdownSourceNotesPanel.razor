@@ -35,16 +35,22 @@
         {
             <section class="msn-gaps" aria-label="Potential mapping gaps" data-testid="markdown-source-notes-gaps">
                 <h4 class="msn-h4">Potential mapping gaps</h4>
-                <p class="msn-muted">Review observations: the source appears relevant to this Explorer but was not mapped. Nothing is added to the structured view.</p>
-                @foreach (var gap in gaps)
+                <p class="msn-muted">Review observations: the source appears relevant to this Explorer but was not mapped. Nothing is added to the structured view, and none of them is approved.</p>
+                <ul class="msn-gap-list">
+                @foreach (var gap in _allGaps ? gaps : gaps.Take(GapPreview))
                 {
-                    <article class="msn-gap" data-testid="markdown-source-gap" data-source-block-id="@gap.Block.BlockId" data-potential-kind="@gap.PotentialKind">
-                        <p class="msn-gap-kind"><span class="msn-tag">Potential mapping gap</span> · @gap.PotentialKind</p>
+                    <li class="msn-gap" data-testid="markdown-source-gap" data-source-block-id="@gap.Block.BlockId" data-potential-kind="@gap.PotentialKind">
+                        <p class="msn-gap-kind"><span class="msn-tag">Potential mapping gap</span> · @gap.PotentialKind <span class="msn-muted">· Source: @Lines(gap.Block.StartLine, gap.Block.EndLine)@(gap.Section is { } s ? $" · under “{s}”" : "")</span></p>
                         <p class="msn-gap-text">@UnmappedSourceContent.Readable(gap.Block.Text)</p>
-                        <p class="msn-muted">Reason: @gap.Reason</p>
-                        <p class="msn-muted">Source: @Lines(gap.Block.StartLine, gap.Block.EndLine)@(gap.Section is { } s ? $" · under “{s}”" : "")</p>
+                        <p class="msn-muted msn-gap-reason">Reason: @gap.Reason</p>
                         @SourceToggle(gap.Block.BlockId, [gap], "Show source for this potential mapping gap")
-                    </article>
+                    </li>
+                }
+                </ul>
+                @if (gaps.Count > GapPreview)
+                {
+                    <button type="button" class="btn-secondary btn-small" data-testid="markdown-source-gaps-all" aria-expanded="@(_allGaps ? "true" : "false")"
+                            @onclick="() => _allGaps = !_allGaps">@(_allGaps ? "Show fewer" : $"Show all {gaps.Count} potential mapping gaps")</button>
                 }
             </section>
         }
@@ -83,13 +89,22 @@
             @if (_rawOpen)
             {
                 <div id="@_id" data-testid="markdown-source-notes-detail">
-                    <p class="msn-muted">Raw source: every preserved block verbatim, with its line range, parser block type and presentation category.</p>
-                    @foreach (var block in content.Blocks)
+                    <p class="msn-muted">Raw source: every preserved block verbatim and in order. The gutter shows each block's source line range; hover or focus a row for its parser block type and presentation category.</p>
+                    <ol class="msn-reader" data-testid="markdown-source-reader" aria-label="Technical raw source">
+                    @foreach (var block in content.Blocks.Take(_rawShown))
                     {
-                        <article class="markdown-source-note" data-source-block-id="@block.Block.BlockId" data-source-start-line="@block.Block.StartLine" data-source-end-line="@block.Block.EndLine">
-                            <h4>Lines @block.Block.StartLine–@block.Block.EndLine · @block.Block.BlockType · @UnmappedSourceContent.Label(block.Category)</h4>
-                            <pre>@block.Block.Text</pre>
-                        </article>
+                        var meta = $"Lines {block.Block.StartLine}–{block.Block.EndLine} · {block.Block.BlockType} · {UnmappedSourceContent.Label(block.Category)}";
+                        <li class="markdown-source-note msn-line msn-line-@Css(block.Category)" data-source-block-id="@block.Block.BlockId" data-source-start-line="@block.Block.StartLine"
+                            data-source-end-line="@block.Block.EndLine" data-block-type="@block.Block.BlockType" data-category="@block.Category" title="@meta">
+                            <span class="msn-gutter" aria-hidden="true">@(block.Block.StartLine == block.Block.EndLine ? $"{block.Block.StartLine}" : $"{block.Block.StartLine}–{block.Block.EndLine}")</span>
+                            <span class="visually-hidden">@meta: </span><pre class="msn-line-text">@block.Block.Text</pre>
+                        </li>
+                    }
+                    </ol>
+                    @if (content.Blocks.Count > _rawShown)
+                    {
+                        <button type="button" class="btn-secondary btn-small" data-testid="markdown-source-reader-more" @onclick="() => _rawShown += RawChunk">
+                            Show next @Math.Min(RawChunk, content.Blocks.Count - _rawShown) blocks (@(content.Blocks.Count - _rawShown) of @content.Blocks.Count not shown yet)</button>
                     }
                 </div>
             }
@@ -115,6 +130,11 @@
     private IReadOnlyList<MarkdownSourceNote>? _classifiedBlocks;
     private object? _classifiedModel;
     private bool _rawOpen;
+    // Large documents (hundreds of blocks): rows render in chunks on request — never dropped, always counted.
+    private const int RawChunk = 200;
+    private int _rawShown = RawChunk;
+    private const int GapPreview = 6;
+    private bool _allGaps;
     private readonly HashSet<SourceContentCategory> _openCategories = [];
     private readonly HashSet<string> _openSources = new(StringComparer.Ordinal);
     private readonly string _id = "msn-" + Guid.NewGuid().ToString("N")[..8];
