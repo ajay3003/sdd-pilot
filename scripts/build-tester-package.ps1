@@ -91,6 +91,10 @@ try {
     Step 'Publish frontend (WebAssembly)'
     Invoke-Checked 'dotnet' @('publish', (Join-Path $ai 'frontend/BirkNext.Web/BirkNext.Web.csproj'), '-c', $Configuration, '-o', (Join-Path $stage 'AIAssisted/frontend'),
         "-p:BirkNextBuildIdentityProps=$props", '-nologo', '-v', 'q')
+    # The browser enforces blazor.boot.json's SHA-256 values: a stale incremental publish (newer runtime pack, older dotnet.native.wasm kept)
+    # yields a package whose app never starts. Fail here instead of shipping it.
+    & (Join-Path $PSScriptRoot 'check-blazor-integrity.ps1') -Wwwroot (Join-Path $stage 'AIAssisted/frontend/wwwroot')
+    if ($LASTEXITCODE -ne 0) { throw 'The published frontend fails its own integrity manifest (see above); the browser would refuse it' }
     Step 'Publish launcher (self-contained single file)'
     $launcherOut = Join-Path $OutDir 'launcher-publish'
     Invoke-Checked 'dotnet' @('publish', (Join-Path $ai 'launcher/BirkNext.Launcher/BirkNext.Launcher.csproj'), '-c', $Configuration, '-r', 'win-x64', '--self-contained', 'true',

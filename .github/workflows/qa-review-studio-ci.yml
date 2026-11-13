@@ -56,7 +56,7 @@ jobs:
         run: dotnet restore BirkNext.sln
 
       - name: Validate migration file integrity (every migrations folder) and record migration ids
-        run: pwsh -NoProfile -File scripts/tests/BirkNextPreflight.Tests.ps1 && pwsh -NoProfile -File scripts/tests/BirkNextPackageHiddenFiles.Tests.ps1 && pwsh -NoProfile -File scripts/check-migrations.ps1 -ManifestOut "${{ runner.temp }}/migrations.json"
+        run: pwsh -NoProfile -File scripts/tests/BirkNextPreflight.Tests.ps1 && pwsh -NoProfile -File scripts/tests/BirkNextPackageHiddenFiles.Tests.ps1 && pwsh -NoProfile -File scripts/tests/BirkNextBlazorIntegrity.Tests.ps1 && pwsh -NoProfile -File scripts/check-migrations.ps1 -ManifestOut "${{ runner.temp }}/migrations.json"
 
       - name: Build backend solution
         working-directory: AIAssisted/backend
