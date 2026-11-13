@@ -88,3 +88,26 @@ Each page was loaded once and then resized to 1440, 1280, 1024, 768 and 390 px.
 ## Regression
 
 Final release acceptance (`a6598fb7`): frontend **8 735/8 735 passed**. Backend: 6 322 passed, 0 failed, 13 skipped; partition 6c3 is BLOCKED by system memory (see `birknext-release-readiness-final.md`).
+
+## Sidebar "Other view" clutter removed — browser acceptance (2026-11-13, `e757d5ca`)
+
+**Setup:**
+- isolated Release web published fresh into `mb/web2` (Blazor integrity 86/86) with `BackendUrl` :5496, plus the isolated API (Workstation GC) under the memory watchdog;
+- harness `scratchpad/mb/nav-accept.cjs`, with the expected sidebars parsed from the presets in `NavigationCatalog.cs` (`scratchpad/nav/presets.json`);
+- fresh Edge profile; non-localhost requests aborted; wiring probe: 12 calls to :5496, session connected.
+
+| Check | Result |
+|---|---|
+| A: All Modules | 48 modules, each once, none marked outside; the twelve named modules present |
+| B–H: each specialized view's sidebar is exactly its preset plus Dashboard, User Guide and System Settings | **7/7 PASS**. PM 13, SM 11, TL 22, MT 14, TT 20, Dev 18, Arch 20 rows; no extra, none missing |
+| I: no "Other view" rows, badges or show-other control | 7/7 PASS |
+| I: a stored `ShowOther:[6,3]` preference (the reported defect) | Manual Tester shows its 14 rows, nothing appended (PASS in both full runs) |
+| J, M, N: search, then open a module outside the view | 7/7 PASS. Found under "Outside current view"; it opens with no redirect and no 403; the view is unchanged; the scope notice shows; exactly one unbadged row for the open page, gone after leaving |
+| U, T: Project Quality and Recommended Workflow per view | 7/7 PASS, with view-specific next steps |
+| O, P: refresh | 7/7 PASS, the view persists |
+| Responsive, Manual Tester at 1440/1280/1024/768/390 | PASS: no overflow, no clipped label, selector reachable (through the menu at 390 px) |
+| Console | 0 errors, 0 page errors, 0 external requests |
+
+**Harness notes (not product results):**
+- In the first full run, the isolated API was stopped by the watchdog at **3.2 GB** while the Architect view loaded, and again in the Architect-only rerun (3.15 GB after about 90 s). Checks that ran after the API stopped showed "No workspace loaded", a "No evidence" badge clipping "Document Quality …" and connection-refused console errors. Architect was rerun on a fresh API (7/7 PASS), and so were the responsive and console checks (PASS).
+- The API memory growth is the open gap **TPS-P2** (see the performance report). It is not caused by the navigation change: the API is unchanged since `bc8a893b`.
