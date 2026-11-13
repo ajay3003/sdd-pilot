@@ -319,6 +319,7 @@
         </div>
         var visible = VisibleSources.ToList();
         if (visible.Count == 0) { <p class="ct-muted" data-testid="ct-source-filtered">No contract matches. @(_sourceState == "actionable" ? "Everything found is already imported and up to date — choose Show: All to see it." : "")</p> }
+        <p class="ct-muted" role="status" data-testid="ct-source-summary">@ContractSourceVariants.Summary(visible)</p>
         <div class="ct-groups" data-testid="ct-source-list">
             @foreach (var group in visible.GroupBy(c => c.Module))
             {
@@ -332,8 +333,13 @@
                         }
                         <strong>@group.Key</strong> <span class="ct-muted">@group.Count() contract(s) · @group.Sum(c => c.OperationCount) operations</span>
                     </summary>
+                    @* Within a module, REST and GraphQL files are candidate logical APIs (grouped by module and protocol — a proposal, not a confirmed
+                       identity). Each file shows the role its location suggests; the registry's identity rules decide continuation. *@
+                    @foreach (var api in group.GroupBy(ContractSourceVariants.ProtocolLabel).OrderBy(g => g.Key))
+                    {
+                    <p class="ct-api-head" data-testid="ct-source-api" data-protocol="@api.Key"><strong>@group.Key · @api.Key API</strong> <span class="ct-muted">candidate logical API · @api.Count() file@(api.Count() == 1 ? "" : "s")</span></p>
                     <ul class="ct-list">
-                        @foreach (var c in group)
+                        @foreach (var c in api)
                         {
                             var actionable = Actionable(c);
                             <li data-testid="ct-source-contract" data-file="@c.File" data-state="@c.State" class="ct-source-row">
@@ -342,13 +348,15 @@
                                     <strong>@c.Name</strong> <span class="ct-pill">@(c.Type == "OpenApi" ? "REST" : "GraphQL")</span>
                                     <span class="ct-pill ct-src-@c.State.ToString().ToLowerInvariant()" data-testid="ct-source-state-pill">@StateLabel(c)</span>
                                 </span>
-                                <span class="ct-muted">@SourceFacts(c)@(c.HasDocument ? "" : " · structural validation only")</span>
+                                <span class="ct-muted"><span class="ct-pill" data-testid="ct-source-role" title="Suggested by the file's location only">@ContractSourceVariants.RoleHint(c.File) (by location)</span> @SourceFacts(c)@(c.HasDocument ? "" : " · structural validation only")</span>
+                                @if (ContractSourceVariants.IsFragment(c)) { <span class="ct-muted" data-testid="ct-source-fragment">No root operations: a fragment or extension of a parent schema. Its types can matter, but no endpoint tests are generated from it on its own.</span> }
                                 @if (!actionable && c.ImportedAs is { } done) { <span class="ct-muted" data-testid="ct-source-imported">Imported as @done</span> }
                                 else if (actionable) { <button class="btn btn-link btn-sm" data-testid="ct-source-import" disabled="@_busy" @onclick="() => ImportSourceAsync(c)">Import only this one</button> }
                                 @if (c.State == SourceContractCandidateState.NeedsReview) { @IdentityReview(c) }
                             </li>
                         }
                     </ul>
+                    }
                 </details>
             }
         </div>
