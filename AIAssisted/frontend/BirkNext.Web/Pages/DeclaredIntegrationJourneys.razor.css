@@ -1,0 +1,13 @@
+/* Declared Integration Journeys: one compact form and a list; wraps on phones. */
+.ijd-page { max-width: 64rem; display: grid; gap: 1rem; }
+.ijd-card { border: 1px solid var(--clr-border); border-radius: .75rem; padding: 1rem; display: grid; gap: .6rem; }
+.ijd-card h2 { font-size: 1.05rem; margin: 0; }
+.ijd-field { display: grid; gap: .25rem; }
+.ijd-field input, .ijd-field textarea { width: 100%; max-width: 40rem; }
+.ijd-actions { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; }
+.ijd-muted { color: var(--clr-text-muted); font-size: .9rem; }
+.ijd-notice { border-left: 3px solid var(--clr-border); padding: .4rem .75rem; }
+.ijd-error { color: var(--clr-danger, #b42318); }
+.ijd-journeys { list-style: none; padding: 0; margin: 0; display: grid; gap: .5rem; }
+.ijd-journeys li { display: flex; flex-wrap: wrap; gap: .25rem .6rem; align-items: center; border: 1px solid var(--clr-border); border-radius: .5rem; padding: .45rem .6rem; overflow-wrap: anywhere; }
+.ijd-chain { flex-basis: 100%; }

@@ -237,11 +237,20 @@
                             @* Source-derived journey ids ("journey:a>b") and scope journeys ("packId:journeyId"): tied only by the same id or a reviewer-confirmed association. *@
                             <p class="tco-notice" data-testid="tco-journeys-scope-note">These journeys come from source connections; a scope names Integration Journeys by pack id. A journey counts in scope only by the same id or an association a reviewer confirmed — never by a similar name. Candidates are proposals and never count.</p>
                         }
+                        @if (r.Journeys.Count > 0)
+                        {
+                            @* Integration Journeys are declared by their owner (per project); a declared chain that equals or contains a source journey's chain becomes a candidate on the next run. *@
+                            <p class="tco-muted" data-testid="tco-declare-journey-note">Candidates come from Integration Journeys whose declared component chain equals or contains a source journey's chain. <a href="integration-journeys/declare" data-testid="tco-declare-journey">Declare an Integration Journey for this project</a>, then run the review again.</p>
+                        }
                         @if (r.Journeys.Any(j => j.AssociationCandidates.Count > 0))
                         {
                             <div class="tco-association-reviewer" data-testid="tco-association-reviewer-row">
                                 @if (AssociationUnavailableReason is { } unavailable) { <p class="tco-muted" data-testid="tco-association-unavailable">@unavailable</p> }
-                                else { <label class="tco-field tco-inline">Reviewer name <input data-testid="tco-association-reviewer" @bind="_reviewer" @bind:event="oninput" maxlength="120" /></label> }
+                                else
+                                {
+                                    <label class="tco-field tco-inline">Reviewer name <input data-testid="tco-association-reviewer" @bind="_reviewer" @bind:event="oninput" maxlength="120" /></label>
+                                    <label class="tco-field tco-inline">Rationale <span class="tco-muted">(recorded with the decision)</span> <input data-testid="tco-association-rationale" @bind="_rationale" @bind:event="oninput" maxlength="2000" /></label>
+                                }
                                 @if (_associationError is not null) { <p class="tco-error" role="alert" data-testid="tco-association-error">@_associationError</p> }
                                 @if (_associationStatus is not null) { <p class="tco-muted" role="status" data-testid="tco-association-status">@_associationStatus</p> }
                             </div>
@@ -262,7 +271,7 @@
                                             <ul class="tco-list">
                                                 @foreach (var link in links)
                                                 {
-                                                    <li data-testid="tco-journey-association" data-kind="@link.Kind" data-target="@link.IntegrationJourneyId">@(link.Kind == JourneyAssociationKind.Confirmed ? "Association confirmed" : "Association rejected (never counted)"): <code>@link.IntegrationJourneyId</code> <span class="tco-muted">— @link.Reviewer, @(link.DecidedAt?.ToLocalTime().ToString("g"))</span></li>
+                                                    <li data-testid="tco-journey-association" data-kind="@link.Kind" data-target="@link.IntegrationJourneyId">@(link.Kind == JourneyAssociationKind.Confirmed ? "Association confirmed" : "Association rejected (never counted)"): <code>@link.IntegrationJourneyId</code> <span class="tco-muted">— @link.Reviewer, @(link.DecidedAt?.ToLocalTime().ToString("g"))</span>@if (LatestNote(j, link.IntegrationJourneyId, latestAssociations) is { Length: > 0 } note) { <span class="tco-muted" data-testid="tco-journey-association-note"> · @note</span> }</li>
                                                 }
                                             </ul>
                                         }
@@ -272,6 +281,8 @@
                                                 <span class="tco-pill" data-testid="tco-candidate-label">@S.CandidateLabel</span>
                                                 <span><strong>@c.DisplayName</strong> <code>@c.IntegrationJourneyId</code></span>
                                                 <span class="tco-muted">@c.Basis</span>
+                                                @if (c.SourceChain is { Count: > 0 } sourceChain) { <span class="tco-chain" data-testid="tco-candidate-source-chain"><span class="tco-label">Source journey chain</span> @string.Join(" → ", sourceChain)</span> }
+                                                @if (c.DeclaredChain is { Count: > 0 } declaredChain) { <span class="tco-chain" data-testid="tco-candidate-declared-chain"><span class="tco-label">Declared chain</span> @string.Join(" → ", declaredChain)</span> }
                                                 <span class="tco-confirm" role="group" aria-label="Review association with @c.DisplayName">
                                                     <button type="button" class="btn-secondary btn-small" data-testid="tco-association-confirm" disabled="@(!CanRecordAssociation(j))" @onclick="() => RecordAssociationAsync(j, c.IntegrationJourneyId, true)">Confirm association<span class="visually-hidden"> with @c.DisplayName</span></button>
                                                     <button type="button" class="btn-secondary btn-small" data-testid="tco-association-reject" disabled="@(!CanRecordAssociation(j))" @onclick="() => RecordAssociationAsync(j, c.IntegrationJourneyId, false)">Reject<span class="visually-hidden"> association with @c.DisplayName</span></button>
@@ -421,11 +432,23 @@
                         </details>
                         var assetUses = S.Assets(r, _scopeSelection);
                         <details class="tco-details" data-testid="tco-qa-test-data"><summary>Test Data of QA tests (@r.QaTests.Count(q => q.DataNeed == CoverageDataNeed.Linked) linked · @assetUses.Count asset@(assetUses.Count == 1 ? "" : "s"))</summary>
-                            <p class="tco-muted">Linked by immutable Test Data asset id from the Critical E2E flow definition or a Test Plan case confirmed against the flow. "Not assessed" means no link was recorded — it never means the test needs no data.</p>
+                            <p class="tco-muted">Linked by immutable Test Data asset id from the Critical E2E flow definition, a Test Plan case confirmed against the flow, or a Test Data consumer reference for the QA test (requirement and bound revision, owned by Test Data). "Not assessed" means no link was recorded — it never means the test needs no data. A link whose revision is deprecated, invalid or changed since it was bound is shown as unresolved, never as linked.</p>
+                            <label class="tco-field tco-inline">Data type to request <select data-testid="tco-qa-data-type" @bind="_requestDataType">@foreach (var t in Enum.GetValues<BirkNext.TestData.TestDataDataType>()) { <option value="@t">@BirkNext.TestData.TestDataDataTypes.Label(t)</option> }</select></label>
                             <ul class="tco-list">
                                 @foreach (var q in r.QaTests)
                                 {
-                                    <li data-testid="tco-qa-data-need" data-test="@q.Id" data-state="@q.DataNeed"><strong>@q.Title</strong> — @S.DataNeed(q)@if (q.DataNeedBasis is { Length: > 0 } basis) { <span class="tco-muted"> · @basis</span> }</li>
+                                    <li data-testid="tco-qa-data-need" data-test="@q.Id" data-state="@q.DataNeed"><strong>@q.Title</strong> — @S.DataNeed(q)@if (q.DataNeedBasis is { Length: > 0 } basis) { <span class="tco-muted"> · @basis</span> }
+                                        <a class="tco-link" href="@S.TestDataHref(q, _projectKey, _requestDataType)" data-testid="tco-qa-data-link">Request or link Test Data<span class="visually-hidden"> for @q.Title</span></a>
+                                        @if (q.TestData.Count > 0)
+                                        {
+                                            <ul class="tco-list" data-testid="tco-qa-data-links">
+                                                @foreach (var l in q.TestData)
+                                                {
+                                                    <li data-testid="tco-qa-data-link-item" data-asset="@l.AssetId" data-state="@(l.State ?? "Resolved")" data-resolved="@(l.Resolved ? "true" : "false")"><code>@l.AssetId</code>@(l.Alias is { } la ? $" ({la})" : "") · <span data-testid="tco-qa-data-revision">revision @(l.Fingerprint is { Length: > 0 } fp ? Short(fp) : "not recorded")</span> · <span data-testid="tco-qa-data-readiness">@S.LinkState(l)</span> <span class="tco-muted">— @l.Source</span></li>
+                                                }
+                                            </ul>
+                                        }
+                                    </li>
                                 }
                             </ul>
                             @if (assetUses.Count > 0)
@@ -433,7 +456,7 @@
                                 <ul class="tco-list" data-testid="tco-assets">
                                     @foreach (var a in assetUses)
                                     {
-                                        <li data-testid="tco-asset" data-asset="@a.AssetId" data-in-scope="@(a.InScope ? "true" : "false")"><code>@a.AssetId</code>@(a.Alias is { } alias ? $" ({alias})" : "") — used by @string.Join(", ", a.Tests)@if (_scopeSelection is not null) { <span class="tco-muted" data-testid="tco-asset-scopes"> · @(a.InScope ? $"in scope: {string.Join(", ", a.Scopes)}" : "not named by the selected scopes")</span> }@if (a.Fingerprints.Count > 0) { <span class="tco-muted"> · version @string.Join(", ", a.Fingerprints.Select(Short))</span> }</li>
+                                        <li data-testid="tco-asset" data-asset="@a.AssetId" data-in-scope="@(a.InScope ? "true" : "false")" data-unresolved="@(a.Unresolved ? "true" : "false")"><code>@a.AssetId</code>@(a.Alias is { } alias ? $" ({alias})" : "") — used by @string.Join(", ", a.Tests)@if (_scopeSelection is not null) { <span class="tco-muted" data-testid="tco-asset-scopes"> · @(a.InScope ? $"in scope: {string.Join(", ", a.Scopes)}" : "not named by the selected scopes")</span> }@if (a.Fingerprints.Count > 0) { <span class="tco-muted"> · version @string.Join(", ", a.Fingerprints.Select(Short))</span> }</li>
                                     }
                                 </ul>
                             }
@@ -646,7 +669,7 @@
             var context = Services.GetService<IReviewContextProvider>()?.GetCurrent();
             await LoadSpecificationAsync(_cts.Token);
             var evidence = P.WorkspaceEvidence(Workspace, context, _projectName, _specification);
-            var (result, error) = await Api.RunAsync(new TestCoverageReviewRequest { CurrentSnapshotId = _currentId!.Value, BaselineSnapshotId = _baselineId, BaselineSameRepositoryConfirmed = _baselineConfirmed, RememberRepositoryAssociation = _baselineConfirmed && _rememberAssociation, EnvironmentId = _environmentId, Workspace = evidence }, _cts.Token);
+            var (result, error) = await Api.RunAsync(new TestCoverageReviewRequest { CurrentSnapshotId = _currentId!.Value, BaselineSnapshotId = _baselineId, BaselineSameRepositoryConfirmed = _baselineConfirmed, RememberRepositoryAssociation = _baselineConfirmed && _rememberAssociation, EnvironmentId = _environmentId, Workspace = evidence, ProjectKey = _projectKey }, _cts.Token);
             if (result is null) { _runError = error ?? "The review could not be run."; return; }
             _result = result; _view = "overview";
             _history = await Api.HistoryAsync(_cts.Token);
@@ -669,7 +692,12 @@
     private string? _projectKey;
     private IReadOnlyList<BirkNext.ManualReview.ManualReviewDecisionView> _associationDecisions = [];
     private bool _associationsUnavailable;
-    private string _reviewer = "";
+    private string _reviewer = "", _rationale = "";
+    private BirkNext.TestData.TestDataDataType _requestDataType = BirkNext.TestData.TestDataDataType.SimpleValues;
+
+    /// <summary>The rationale recorded with the latest decision on this pair (shown next to the decision).</summary>
+    private static string? LatestNote(Journey j, string integrationJourneyId, IReadOnlyDictionary<(string Subject, string AppliesTo), BirkNext.ManualReview.ManualReviewDecisionView> latest) =>
+        latest.TryGetValue((j.Id, integrationJourneyId), out var d) ? d.Note : null;
     private string? _associationError, _associationStatus;
 
     private string? AssociationUnavailableReason =>
@@ -696,7 +724,7 @@
             Module = BirkNext.ManualReview.ManualReviewModules.JourneyAssociation, ScopeKey = _projectKey!, SubjectKey = journey.Id, AppliesTo = integrationJourneyId,
             Reviewer = _reviewer.Trim(),
             Decision = confirm ? BirkNext.ManualReview.ManualReviewDecisionValue.Acceptable : BirkNext.ManualReview.ManualReviewDecisionValue.IssueFound,
-            Note = confirm ? null : "Association rejected: this Integration Journey does not describe the source journey.",
+            Note = _rationale.Trim() is { Length: > 0 } rationale ? rationale : confirm ? null : "Association rejected: this Integration Journey does not describe the source journey.",
         }, _cts.Token);
         if (decision is null) { (_associationError, _associationStatus) = (error ?? "The decision could not be recorded.", null); return; }
         _associationError = null;

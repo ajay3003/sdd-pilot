@@ -27,6 +27,10 @@ public interface ITestDataApiService
         Task.FromResult<(ConsumerTestDataRequirement?, string?)>((null, Unavailable));
     Task<(List<TestDataMatch>? Matches, string? Error)> MatchesAsync(ConsumerTestDataRequirement requirement, CancellationToken ct = default) => Task.FromResult<(List<TestDataMatch>?, string?)>((null, Unavailable));
     Task<(TestDataUsageReference? Usage, string? Error)> BindAsync(TestDataUsageReference usage, CancellationToken ct = default) => Task.FromResult<(TestDataUsageReference?, string?)>((null, Unavailable));
+    /// <summary>Removes one usage reference (DELETE api/test-data/usages/{id}); the asset and the consumer's requirement stay.</summary>
+    Task<string?> UnbindAsync(string usageId, CancellationToken ct = default) => Task.FromResult<string?>(Unavailable);
+    /// <summary>Removes one consumer requirement (DELETE api/test-data/requirements/{id}); bound usages stay until unbound.</summary>
+    Task<string?> RemoveRequirementAsync(string requirementId, CancellationToken ct = default) => Task.FromResult<string?>(Unavailable);
 
     /// <summary>
     /// Sends a value (with <see cref="EditAsync"/>, the only calls that do): a Live Discovery value, in the POST body only, for a backend-only comparison with approved Test Data. The
@@ -187,6 +191,20 @@ public sealed class TestDataApiService(HttpClient http) : ITestDataApiService
     {
         var (body, error) = await PostAsync("api/test-data/usages", usage, ct);
         return (body?.Deserialize<TestDataUsageReference>(Json), error);
+    }
+
+    public Task<string?> UnbindAsync(string usageId, CancellationToken ct = default) => DeleteByIdAsync($"api/test-data/usages/{Uri.EscapeDataString(usageId)}", "The usage reference", ct);
+
+    public Task<string?> RemoveRequirementAsync(string requirementId, CancellationToken ct = default) => DeleteByIdAsync($"api/test-data/requirements/{Uri.EscapeDataString(requirementId)}", "The requirement", ct);
+
+    private async Task<string?> DeleteByIdAsync(string url, string what, CancellationToken ct)
+    {
+        try
+        {
+            using var response = await http.DeleteAsync(url, ct);
+            return response.IsSuccessStatusCode ? null : response.StatusCode == System.Net.HttpStatusCode.NotFound ? $"{what} no longer exists." : $"{what} was not removed ({(int)response.StatusCode}).";
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException) { return $"{what} was not removed: the backend could not be reached."; }
     }
 
     public async Task<(ObservedValueMatchResult? Result, string? Error)> MatchObservedValueAsync(ObservedValueMatchRequest request, CancellationToken ct = default)

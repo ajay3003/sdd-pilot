@@ -31,7 +31,9 @@ public sealed record TestCoverageOutcome(TestCoverageReviewResult? Result, int S
 /// to its exact snapshot ids. Reviewer decisions are review metadata per repository; they never overwrite source evidence.
 /// </summary>
 public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvidenceProvider sources, ICriticalE2EStore? e2e = null,
-    SourceRepositoryAssociationService? associations = null, BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyPackRegistry? journeyPacks = null) : ITestCoverageReviewService
+    SourceRepositoryAssociationService? associations = null, BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyPackRegistry? journeyPacks = null,
+    BirkNext.Api.Services.IntegrationJourneys.DeclaredIntegrationJourneyStore? declaredJourneys = null,
+    BirkNext.Api.Services.TestData.TestDataCatalogService? testData = null) : ITestCoverageReviewService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly HashSet<string> AllowedValues = new(StringComparer.Ordinal) { "Confirmed", "Rejected", "DeveloperAutomated", "QaAutomated", "Unknown", "Accepted" };
@@ -68,7 +70,8 @@ public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvid
         var repositoryKey = ReviewSourceEvidenceProvider.Identity(current).Key;
         var decisions = await DecisionsAsync(repositoryKey, ct);
         var flows = await FlowsAsync(request.EnvironmentId, ct);
-        var result = TestCoverageReviewEngine.Review(current, baseline, request, decisions, flows, DateTimeOffset.UtcNow, ct, IntegrationJourneyCatalog()) with { BaselineRelation = relation };
+        var result = TestCoverageReviewEngine.Review(current, baseline, request, decisions, flows, DateTimeOffset.UtcNow, ct, IntegrationJourneyCatalog(request.ProjectKey)) with { BaselineRelation = relation };
+        result = await WithTestDataReferencesAsync(result, request.ProjectKey, ct);
         var label = $"{result.Current.Repository} · {result.Inventory.TestsDiscovered} test(s) · {result.Journeys.Count} journey(s)";
         db.TestCoverageReviewRuns.Add(new TestCoverageReviewRunRecord
         {
@@ -124,11 +127,31 @@ public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvid
         return drafts;
     }
 
-    /// <summary>Integration Journey definitions (global pack registry) as design-level edges, for structural association candidates only. Only the
-    /// declared From/To components are used (a step without them contributes nothing to the chain; the owner is not substituted).</summary>
-    private IReadOnlyList<BirkNext.Integrations.IntegrationJourneyCatalogEntry> IntegrationJourneyCatalog() => journeyPacks is null ? [] :
-        [.. journeyPacks.Packs.SelectMany(pack => pack.Journeys.OrderBy(j => j.Order).Select(j => new BirkNext.Integrations.IntegrationJourneyCatalogEntry(pack.PackId, j.JourneyId, j.DisplayName,
-            [.. j.Steps.Select(step => new BirkNext.Integrations.JourneyEdge(step.StepId, step.Label, step.Kind, step.FromComponent ?? "", step.ToComponent ?? "", step.Owner))])))];
+    /// <summary>Integration Journey definitions (global pack registry, then the journeys declared for this project) as design-level edges, for
+    /// structural association candidates only. Only the declared From/To components are used (a step without them contributes nothing to the
+    /// chain; the owner is not substituted). Another project's declared journeys are never read.</summary>
+    private IReadOnlyList<BirkNext.Integrations.IntegrationJourneyCatalogEntry> IntegrationJourneyCatalog(string? projectKey) =>
+        [.. (journeyPacks?.Packs ?? []).SelectMany(pack => pack.Journeys.OrderBy(j => j.Order).Select(j => new BirkNext.Integrations.IntegrationJourneyCatalogEntry(pack.PackId, j.JourneyId, j.DisplayName,
+            [.. j.Steps.Select(step => new BirkNext.Integrations.JourneyEdge(step.StepId, step.Label, step.Kind, step.FromComponent ?? "", step.ToComponent ?? "", step.Owner))]))),
+         .. (declaredJourneys?.ForProject(projectKey) ?? []).Select(DeclaredIntegrationJourneyRules.CatalogEntry)];
+
+    /// <summary>Test Data's consumer references for this project's QA tests (usages with their current state, requirements), merged by
+    /// <see cref="TestCoverageDataLinks.WithConsumerReferences"/>. Read-only here; when Test Data cannot be read, the QA tests keep their other
+    /// sources and a limitation says so (never "no data needed").</summary>
+    private async Task<TestCoverageReviewResult> WithTestDataReferencesAsync(TestCoverageReviewResult result, string? projectKey, CancellationToken ct)
+    {
+        if (testData is null || result.QaTests.Count == 0) return result;
+        try
+        {
+            var consumers = await testData.ConsumersAsync(ct);
+            var assets = (await testData.ViewAsync(ct)).Assets;
+            return result with { QaTests = TestCoverageDataLinks.WithConsumerReferences(result.QaTests, projectKey, consumers.Usages, consumers.Requirements, assets) };
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException)
+        {
+            return result with { Limitations = [.. result.Limitations, "Test Data consumer references could not be read; QA test data needs come from the Critical E2E flows and Test Plan cases only."] };
+        }
+    }
 
     public async Task<IReadOnlyList<TestCoverageRunSummary>> HistoryAsync(CancellationToken ct = default) =>
         (await db.TestCoverageReviewRuns.AsNoTracking().OrderByDescending(r => r.CompletedAt).Take(20).ToListAsync(ct))

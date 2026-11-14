@@ -213,6 +213,15 @@
                                 }
                             </div>
                             <p class="td-note">Needs @TestDataDataTypes.Label(r.RequestedDataType) for @r.Usage@(r.RequestedFields.Count > 0 ? $" ({string.Join(", ", r.RequestedFields)})" : "") · @(r.Required ? "required" : "optional") · @TestDataCatalogRules.ScopeLabel(r.EnvironmentId)@(r.BoundAssetId is { } bound ? $" · bound to {bound}" : "")</p>
+                            @* The bindings of this requirement (asset + bound revision + state), each removable: removing a binding or the requirement is
+                               the consumer's explicit choice; the asset itself never changes. *@
+                            @foreach (var u in consumerView.Usages.Where(u => u.RequirementId == r.Id))
+                            {
+                                var usage = u;
+                                <p class="td-note" data-testid="td-requirement-usage" data-usage="@u.Id" data-asset="@u.AssetId" data-status="@u.Status">Bound: <span class="td-mono">@u.AssetId</span>@(u.AssetFingerprint is { Length: > 0 } fp ? $" · revision {(fp.Length > 12 ? fp[..12] + "…" : fp)}" : "") · @(u.Status == TestDataUsageStatus.Resolved ? "Resolved" : "Needs review")@(u.StatusReason is { } why ? $" — {why}" : "")
+                                    <button type="button" class="btn-link" data-testid="td-unbind" disabled="@_busy" @onclick="() => UnbindAsync(usage)">Remove binding<span class="visually-hidden"> of @u.AssetId from @P.Consumer(r.Consumer)</span></button></p>
+                            }
+                            <button type="button" class="btn-link" data-testid="td-requirement-remove" disabled="@_busy" @onclick="() => RemoveRequirementAsync(requirement)">Remove requirement<span class="visually-hidden"> of @P.Consumer(r.Consumer)</span></button>
                             <button type="button" class="btn-secondary btn-small" data-testid="td-requirement-find" aria-expanded="@(_matchesFor == r.Id ? "true" : "false")" @onclick="() => FindMatchesAsync(requirement)">@(_matchesFor == r.Id ? "Hide matches" : "Find matching Test Data")</button>
                             @if (_matchesFor == r.Id && _matches is { } found)
                             {
@@ -737,6 +746,32 @@
         {
             var error = await _api.DeprecateAsync(asset.Id);
             _actionStatus = error ?? $"{asset.Alias} deprecated: kept for history and existing references, no longer offered for new usage.";
+            if (error is null) await ReloadAsync(null);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task UnbindAsync(TestDataUsageReference usage)
+    {
+        if (_api is null) return;
+        _busy = true;
+        try
+        {
+            var error = await _api.UnbindAsync(usage.Id);
+            _actionStatus = error ?? $"Binding of {usage.AssetId} removed from {P.Consumer(usage.Consumer)}. The asset is unchanged; the requirement stays open.";
+            if (error is null) await ReloadAsync(null);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task RemoveRequirementAsync(ConsumerTestDataRequirement requirement)
+    {
+        if (_api is null) return;
+        _busy = true;
+        try
+        {
+            var error = await _api.RemoveRequirementAsync(requirement.Id);
+            _actionStatus = error ?? $"Requirement of {P.Consumer(requirement.Consumer)} removed. Bindings made for it stay until removed.";
             if (error is null) await ReloadAsync(null);
         }
         finally { _busy = false; }

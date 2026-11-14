@@ -17,11 +17,11 @@ public interface IScopeMemberResolver
 /// The member catalogs of the Scope Registry as thin adapters over the owning stores — nothing is copied:
 /// systems/services, requirements, user stories, features, scenarios and contracts from the latest canonical interpretation of the active Target
 /// Environment; Test Data assets (immutable asset id, never values) from the Test Data catalog; journeys from the registered Integration Journey
-/// packs; Critical E2E flows (flow definition id) from the Critical E2E store of the active Target Environment. Kinds with no catalog that can
+/// packs and the project-declared Integration Journeys ("project.{projectKey}:{journeyId}"); Critical E2E flows (flow definition id) from the Critical E2E store of the active Target Environment. Kinds with no catalog that can
 /// confirm an id (relationship, acceptance criterion, test suite, test case) cannot be added.
 /// </summary>
 public sealed class ScopeMemberCatalogService(CanonicalInterpretationService canonical, TestDataCatalog? testData = null,
-    IIntegrationJourneyPackRegistry? journeys = null, ICriticalE2EStore? criticalE2E = null) : IScopeMemberResolver
+    IIntegrationJourneyPackRegistry? journeys = null, ICriticalE2EStore? criticalE2E = null, DeclaredIntegrationJourneyStore? declaredJourneys = null) : IScopeMemberResolver
 {
     public const string CriticalE2EModule = "Critical E2E Regression";
 
@@ -72,7 +72,7 @@ public sealed class ScopeMemberCatalogService(CanonicalInterpretationService can
         }
         if (kind == ScopeMemberKind.Journey)
         {
-            if (journeys is null) return new(kind, [], 0, skip, take) { Available = false, Notices = ["Integration Journeys are not available in this host."] };
+            if (journeys is null && declaredJourneys is null) return new(kind, [], 0, skip, take) { Available = false, Notices = ["Integration Journeys are not available in this host."] };
             var items = JourneyItems().Where(i => Matches(i, search)).ToList();
             return new(kind, [.. items.Skip(skip).Take(take)], items.Count, skip, take);
         }
@@ -104,8 +104,9 @@ public sealed class ScopeMemberCatalogService(CanonicalInterpretationService can
                     : TestDataItems().FirstOrDefault(i => i.TargetId == m.TargetId) is { } asset ? new(m.Key, ScopeMemberCheck.Current, "In the Test Data catalog.", asset.Label)
                     : new(m.Key, ScopeMemberCheck.Missing, "No Test Data asset has this asset id."));
             else if (m.Kind == ScopeMemberKind.Journey)
-                result.Add(journeys is null ? new(m.Key, ScopeMemberCheck.NotCheckable, "Integration Journeys are not available here.")
-                    : JourneyItems().FirstOrDefault(i => i.TargetId == m.TargetId) is { } journey ? new(m.Key, ScopeMemberCheck.Current, "A registered journey.", journey.Label)
+                result.Add(journeys is null && declaredJourneys is null ? new(m.Key, ScopeMemberCheck.NotCheckable, "Integration Journeys are not available here.")
+                    : JourneyItems().FirstOrDefault(i => i.TargetId == m.TargetId) is { } journey
+                        ? new(m.Key, ScopeMemberCheck.Current, journey.SourceModule == DeclaredJourneyModule ? "A journey declared for the project." : "A registered journey.", journey.Label)
                     : new(m.Key, ScopeMemberCheck.Missing, "No registered journey has this id."));
             else if (m.Kind == ScopeMemberKind.CriticalE2EFlow)
                 result.Add(CheckFlow(m, catalogScope));
@@ -147,12 +148,20 @@ public sealed class ScopeMemberCatalogService(CanonicalInterpretationService can
             SourceModule = "Test Data", State = $"{a.Approval} · {a.Validation}", SubKind = a.Kind.ToString(),
         });
 
-    IEnumerable<ScopeCatalogItem> JourneyItems() => journeys!.Packs.SelectMany(p => p.Journeys.OrderBy(j => j.Order).Select(j => new ScopeCatalogItem
+    /// <summary>Registered pack journeys, then project-declared journeys (each id carries its project, so ids never collide across projects).</summary>
+    IEnumerable<ScopeCatalogItem> JourneyItems() => (journeys?.Packs ?? []).SelectMany(p => p.Journeys.OrderBy(j => j.Order).Select(j => new ScopeCatalogItem
     {
         Kind = ScopeMemberKind.Journey, TargetId = $"{p.PackId}:{j.JourneyId}", Label = j.DisplayName,
         Description = string.IsNullOrWhiteSpace(j.Description) ? p.DisplayName : $"{p.DisplayName} · {j.Description}",
         SourceModule = "Integration Journeys", State = "Registered journey", SubKind = p.PackId,
+    })).Concat((declaredJourneys?.All() ?? []).Select(j => new ScopeCatalogItem
+    {
+        Kind = ScopeMemberKind.Journey, TargetId = j.Id, Label = j.DisplayName,
+        Description = $"Project {j.ProjectKey} · {string.Join(" → ", j.Components)}",
+        SourceModule = DeclaredJourneyModule, State = $"Declared by {j.DeclaredBy}", SubKind = j.PackId,
     }));
+
+    public const string DeclaredJourneyModule = "Integration Journeys (declared for the project)";
 
     ScopeMemberStatus CheckFlow(ScopeMember m, string? catalogScope)
     {

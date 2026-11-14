@@ -144,17 +144,36 @@ public sealed record QaTestCandidate
 
 /// <summary>Data need of a QA test as its source states it. Absence of a link is <see cref="NotAssessed"/>, never "no data needed".</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum CoverageDataNeed { NotAssessed, Linked, RequiredButMissing }
+public enum CoverageDataNeed { NotAssessed, Linked, RequiredButMissing, LinkNeedsReview }
 
 /// <summary>One Test Data asset a QA test is linked to. <see cref="Source"/> names the owner of the link ("Critical E2E flow definition",
-/// "Test Plan draft …"); <see cref="Fingerprint"/> is the asset version seen when linked, when the source recorded one.</summary>
-public sealed record CoverageTestDataLink(string AssetId, string? Alias, string? Fingerprint, string Source);
+/// "Test Plan draft …", "Test Data consumer reference …"); <see cref="Fingerprint"/> is the asset revision bound when linked, when the source recorded
+/// one. <see cref="State"/> is the Test Data usage state of a consumer reference ("Resolved" or "NeedsReview": deprecated, no longer approved,
+/// invalid or changed since it was bound); null for sources without a usage state (counted as resolved).</summary>
+public sealed record CoverageTestDataLink(string AssetId, string? Alias, string? Fingerprint, string Source, string? State = null, string? StateReason = null)
+{
+    /// <summary>The link points at the revision that is approved and current now. An unresolved link is shown, never counted as linked.</summary>
+    public bool Resolved => State is null || State == "Resolved";
+}
+
+/// <summary>How a Test Coverage QA test is named as a Test Data consumer (Test Data → requirements and usage references). The consumer id is
+/// project-scoped ("{projectKey}/{qaTestId}") so the same acceptance-scenario id in two projects never shares a link.</summary>
+public static class CoverageTestDataConsumers
+{
+    public const string ConsumerType = "Test Coverage QA test";
+
+    public static string ConsumerId(string? projectKey, string qaTestId) =>
+        string.IsNullOrWhiteSpace(projectKey) ? qaTestId : $"{projectKey.Trim()}/{qaTestId}";
+}
 
 /// <summary>An Integration Journey whose declared component chain equals or contains this source journey's chain (structure only). A candidate is
 /// never an association: it is shown "Candidate — needs review" and counts for nothing until a reviewer confirms it.</summary>
 /// <param name="IntegrationJourneyId">"packId:journeyId" (the Scope Registry Journey member id).</param>
 /// <param name="Match">"Equal" (same chain) or "Contains" (the integration journey's chain contains this one contiguously).</param>
-public sealed record JourneyAssociationCandidate(string IntegrationJourneyId, string DisplayName, string Match, string Basis);
+/// <param name="SourceChain">The source journey's node names in order (evidence shown to the reviewer).</param>
+/// <param name="DeclaredChain">The Integration Journey's declared component chain in order, as declared (consecutive duplicates collapsed).</param>
+public sealed record JourneyAssociationCandidate(string IntegrationJourneyId, string DisplayName, string Match, string Basis,
+    IReadOnlyList<string>? SourceChain = null, IReadOnlyList<string>? DeclaredChain = null);
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum OverlapKind { HighConfidenceOverlap, PartialOverlap, ComplementaryCoverage, DifferentBoundary, InsufficientEvidence, NeedsTesterReview }
@@ -385,6 +404,9 @@ public sealed record TestCoverageReviewRequest
     /// <summary>Optional Target Environment whose Critical E2E flows count as QA automated tests (definitions and recorded runs only; nothing runs).</summary>
     public string? EnvironmentId { get; init; }
     public CoverageWorkspaceEvidence? Workspace { get; init; }
+    /// <summary>The loaded project's key: project-declared Integration Journeys and project-scoped Test Data consumer references of this project
+    /// are read; null reads neither.</summary>
+    public string? ProjectKey { get; init; }
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

@@ -1,0 +1,130 @@
+@page "/integration-journeys/declare"
+@using BirkNext.Integrations
+@implements IDisposable
+@inject ICurrentWorkspaceProjection CurrentWorkspace
+@inject IServiceProvider Services
+
+<PageTitle>Declared Integration Journeys</PageTitle>
+
+@* Integration Journeys owner: a person declares, per project, a journey's name and the ordered component chain it runs through (names as Source
+   Analysis shows them). Design metadata only — nothing runs, binds or is associated here. Test Coverage proposes association candidates from the
+   declared chain (structure only, a reviewer confirms); the Scope Registry can name a declared journey as a Journey member. *@
+<div class="ijd-page" data-testid="ijd-page" aria-busy="@(_loaded ? "false" : "true")">
+    <PageHeader Title="Declared Integration Journeys" Description="Declare the component chain an integration journey runs through, for this project. Test Coverage proposes it to matching source journeys; a reviewer confirms." />
+
+    @if (!_loaded)
+    {
+        <p class="ijd-muted" data-testid="ijd-loading">Loading…</p>
+    }
+    else if (_projectKey is null)
+    {
+        <p class="ijd-notice" role="status" data-testid="ijd-no-project">Load a project first: declared journeys belong to one project.</p>
+    }
+    else if (_api is null)
+    {
+        <p class="ijd-notice" role="status" data-testid="ijd-unavailable">Declared Integration Journeys are not available in this session.</p>
+    }
+    else
+    {
+        <p class="ijd-muted" data-testid="ijd-project">Project: <strong>@(_projectName ?? _projectKey)</strong> <code>@_projectKey</code></p>
+        <section class="ijd-card" aria-labelledby="ijd-form-heading" data-testid="ijd-form">
+            <h2 id="ijd-form-heading">Declare a journey</h2>
+            <label class="ijd-field">Journey name <input data-testid="ijd-name" @bind="_name" @bind:event="oninput" maxlength="@DeclaredIntegrationJourneyRules.MaxName" /></label>
+            <label class="ijd-field">Components in order <span class="ijd-muted">(one per line, as Source Analysis names them — e.g. a project, channel or database name)</span>
+                <textarea data-testid="ijd-components" rows="5" @bind="_components" @bind:event="oninput"></textarea>
+            </label>
+            <label class="ijd-field">Description <span class="ijd-muted">(optional)</span> <input data-testid="ijd-description" @bind="_description" @bind:event="oninput" maxlength="@DeclaredIntegrationJourneyRules.MaxDescription" /></label>
+            <label class="ijd-field">Declared by <input data-testid="ijd-declared-by" @bind="_declaredBy" @bind:event="oninput" maxlength="@DeclaredIntegrationJourneyRules.MaxDeclaredBy" /></label>
+            @if (Chain.Count > 0) { <p class="ijd-muted" data-testid="ijd-preview">Chain: @string.Join(" → ", Chain)</p> }
+            <div class="ijd-actions">
+                <button type="button" class="btn-primary" data-testid="ijd-save" disabled="@(_busy || Invalid is not null)" @onclick="DeclareAsync">Declare journey</button>
+                @if (Invalid is { } why && (_name.Length > 0 || _components.Length > 0)) { <span class="ijd-muted" data-testid="ijd-invalid">@why</span> }
+            </div>
+            @if (_error is not null) { <p class="ijd-error" role="alert" data-testid="ijd-error">@_error</p> }
+            @if (_status is not null) { <p class="ijd-muted" role="status" data-testid="ijd-status">@_status</p> }
+        </section>
+
+        <section class="ijd-card" aria-labelledby="ijd-list-heading" data-testid="ijd-list">
+            <h2 id="ijd-list-heading">Declared for this project (@_journeys.Count)</h2>
+            @if (_loadError is not null) { <p class="ijd-error" role="alert" data-testid="ijd-load-error">@_loadError</p> }
+            else if (_journeys.Count == 0) { <p class="ijd-muted" data-testid="ijd-empty">No journey is declared for this project yet.</p> }
+            <ul class="ijd-journeys">
+                @foreach (var j in _journeys)
+                {
+                    var journey = j;
+                    <li data-testid="ijd-journey" data-id="@j.Id">
+                        <strong>@j.DisplayName</strong> <code data-testid="ijd-journey-id">@j.Id</code>
+                        <span class="ijd-chain" data-testid="ijd-journey-chain">@string.Join(" → ", j.Components)</span>
+                        <span class="ijd-muted">Declared by @j.DeclaredBy, @j.DeclaredAt.ToLocalTime().ToString("g")@(j.Description is { Length: > 0 } d ? $" · {d}" : "")</span>
+                        <button type="button" class="btn-secondary btn-small" data-testid="ijd-remove" disabled="@_busy" @onclick="() => RemoveAsync(journey)">Remove<span class="visually-hidden"> @j.DisplayName</span></button>
+                    </li>
+                }
+            </ul>
+            <p class="ijd-muted"><a href="test-coverage-review" data-testid="ijd-test-coverage">Open Test Coverage &amp; Overlap Review</a> and run it again to see association candidates.</p>
+        </section>
+    }
+</div>
+
+@code {
+    private readonly CancellationTokenSource _cts = new();
+    private IDeclaredIntegrationJourneyApiService? _api;
+    private string? _projectKey, _projectName, _error, _status, _loadError;
+    private string _name = "", _components = "", _description = "", _declaredBy = "";
+    private IReadOnlyList<DeclaredIntegrationJourney> _journeys = [];
+    private bool _loaded, _busy;
+
+    private List<string> Chain => DeclaredIntegrationJourneyRules.Chain(_components.Split('\n'));
+
+    private DeclaredIntegrationJourneyRequest Request => new()
+    {
+        ProjectKey = _projectKey ?? "", DisplayName = _name, Description = string.IsNullOrWhiteSpace(_description) ? null : _description, Components = Chain, DeclaredBy = _declaredBy,
+    };
+
+    private string? Invalid => DeclaredIntegrationJourneyRules.Validate(Request);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _api = Services.GetService<IDeclaredIntegrationJourneyApiService>();
+        var workspace = await CurrentWorkspace.GetAsync();
+        _projectKey = string.IsNullOrWhiteSpace(workspace.ProjectSlug) ? null : workspace.ProjectSlug;
+        _projectName = workspace.ProjectName;
+        if (_projectKey is not null && _api is not null) await LoadAsync();
+        _loaded = true;
+    }
+
+    private async Task LoadAsync()
+    {
+        var (journeys, error) = await _api!.ListAsync(_projectKey!, _cts.Token);
+        (_journeys, _loadError) = (journeys ?? _journeys, error);
+    }
+
+    private async Task DeclareAsync()
+    {
+        if (_api is null || Invalid is not null) return;
+        _busy = true; _error = null; _status = null;
+        try
+        {
+            var (journey, error) = await _api.DeclareAsync(Request, _cts.Token);
+            if (journey is null) { _error = error ?? "The journey was not saved."; return; }
+            _status = $"Declared {journey.DisplayName} ({journey.Id}).";
+            (_name, _components, _description) = ("", "", "");
+            await LoadAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task RemoveAsync(DeclaredIntegrationJourney journey)
+    {
+        if (_api is null) return;
+        _busy = true; _error = null; _status = null;
+        try
+        {
+            if (await _api.RemoveAsync(journey.ProjectKey, journey.JourneyId, _cts.Token) is { } error) { _error = error; return; }
+            _status = $"Removed {journey.DisplayName}. Recorded association decisions and scope members that name it are kept and read as missing.";
+            await LoadAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    public void Dispose() { _cts.Cancel(); _cts.Dispose(); }
+}

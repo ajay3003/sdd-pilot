@@ -1,5 +1,6 @@
 using BirkNext.CriticalE2E;
 using BirkNext.TestCoverage;
+using BirkNext.TestData;
 using BirkNext.TestPlanning;
 
 namespace BirkNext.Api.Services.TestCoverage;
@@ -11,12 +12,57 @@ namespace BirkNext.Api.Services.TestCoverage;
 /// <see cref="CriticalE2EFlowDefinition.DataMappings"/>). An alias-only (legacy) reference states a data need without a stable id.</item>
 /// <item>A Test Plan draft case linked to the flow — its source is the flow, or a reviewer Confirmed its correlation to the flow — with its
 /// <see cref="TestCaseDataLink.AssetId"/>s. A case that describes required test data but links no asset states a need without a link.</item>
+/// <item>Test Data's own consumer references for the QA test (consumer type <see cref="CoverageTestDataConsumers.ConsumerType"/>, project-scoped
+/// consumer id): a usage binds an approved asset revision (fingerprint) and carries Test Data's usage state; a requirement states a need.</item>
 /// </list>
 /// Nothing found is <see cref="CoverageDataNeed.NotAssessed"/>: absence never means "no data needed".
 /// </summary>
 public static class TestCoverageDataLinks
 {
     public const string FlowSource = "Critical E2E flow definition";
+    public const string ConsumerSource = "Test Data consumer reference";
+
+    /// <summary>
+    /// Adds Test Data's consumer references to the QA tests (pure). For each QA test, the usages and requirements whose consumer is that test
+    /// (type <see cref="CoverageTestDataConsumers.ConsumerType"/>, id <see cref="CoverageTestDataConsumers.ConsumerId"/>) are read:
+    /// a usage becomes a link by the asset's immutable id with the bound revision and Test Data's usage state; a required requirement without any
+    /// bound usage is a stated need without a link. The data need is then, most conservative first: RequiredButMissing (a required need has no
+    /// binding) › LinkNeedsReview (a link is not resolved: deprecated, invalid, no longer approved or changed since bound) › Linked. A QA test
+    /// without references keeps what its other sources stated.
+    /// </summary>
+    public static List<QaTestCandidate> WithConsumerReferences(IReadOnlyList<QaTestCandidate> qaTests, string? projectKey, IReadOnlyList<TestDataUsageReference> usages,
+        IReadOnlyList<ConsumerTestDataRequirement> requirements, IReadOnlyList<TestDataAssetSummary> assets)
+    {
+        var byId = assets.GroupBy(a => a.Id, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var byAssetId = assets.Where(a => !string.IsNullOrWhiteSpace(a.AssetId)).GroupBy(a => a.AssetId!, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        return [.. qaTests.Select(q =>
+        {
+            var consumerId = CoverageTestDataConsumers.ConsumerId(projectKey, q.Id);
+            bool Mine(TestDataConsumer c) => string.Equals(c.ConsumerType.Trim(), CoverageTestDataConsumers.ConsumerType, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(c.ConsumerId.Trim(), consumerId, StringComparison.Ordinal);
+            var own = usages.Where(u => Mine(u.Consumer)).ToList();
+            var needs = requirements.Where(r => Mine(r.Consumer)).ToList();
+            if (own.Count == 0 && needs.Count == 0) return q;
+            var links = own.Select(u =>
+            {
+                var asset = byId.GetValueOrDefault(u.AssetId) ?? byAssetId.GetValueOrDefault(u.AssetId);
+                return new CoverageTestDataLink(asset?.AssetId is { Length: > 0 } stable ? stable : u.AssetId, asset?.Alias, u.AssetFingerprint,
+                    $"{ConsumerSource} ({(string.IsNullOrWhiteSpace(u.Usage) ? "Unspecified" : u.Usage)})", u.Status.ToString(), u.StatusReason);
+            });
+            var all = q.TestData.Concat(links).DistinctBy(l => (l.AssetId, l.Source, l.Fingerprint)).ToList();
+            var missing = needs.Where(r => r.Required && own.All(u => u.RequirementId != r.Id)).ToList();
+            var unresolved = all.Where(l => !l.Resolved).ToList();
+            var notes = new List<string>();
+            if (q.DataNeedBasis is { Length: > 0 } earlier) notes.Add(earlier);
+            notes.AddRange(missing.Select(r => $"Test Data requirement \"{r.Usage}\" ({TestDataDataTypes.Label(r.RequestedDataType)}) is registered for this test, but no asset is bound."));
+            notes.AddRange(unresolved.Select(l => $"{l.AssetId}: {l.StateReason ?? "the link needs review"}"));
+            var need = missing.Count > 0 ? CoverageDataNeed.RequiredButMissing
+                : unresolved.Count > 0 ? CoverageDataNeed.LinkNeedsReview
+                : all.Count > 0 ? CoverageDataNeed.Linked
+                : q.DataNeed;
+            return q with { TestData = all, DataNeed = need, DataNeedBasis = notes.Count == 0 ? null : string.Join(" ", notes.Distinct(StringComparer.Ordinal)) };
+        })];
+    }
 
     public static E2EFlowEvidence With(E2EFlowEvidence flow, CriticalE2EFlowDefinition? definition, IEnumerable<TestPlanDraft> drafts, string? environmentId)
     {

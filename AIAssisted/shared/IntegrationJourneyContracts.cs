@@ -778,3 +778,98 @@ public sealed record IntegrationTemplateView(string Key, string DisplayName, str
     /// <summary>The integration requirement's producer → consumer ("Altinn → MU"), from the pack definition.</summary>
     public string? Flow { get; init; }
 }
+
+// ── Project-declared Integration Journeys ───────────────────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// An Integration Journey a person declared for one project: a name and the ordered component chain it runs through (by component / channel
+/// name, as Source Analysis names them). It is a design-level declaration only — nothing runs from it — and it is what a source-derived journey
+/// can be associated with (Test Coverage, after a reviewer confirms) and what a scope can name (Scope Registry Journey member <see cref="Id"/>).
+/// </summary>
+public sealed record DeclaredIntegrationJourney
+{
+    public string ProjectKey { get; init; } = "";
+    /// <summary>Stable slug of the display name at declaration time (never re-derived on rename).</summary>
+    public string JourneyId { get; init; } = "";
+    public string DisplayName { get; init; } = "";
+    public string? Description { get; init; }
+    /// <summary>The declared component chain in order (at least two components).</summary>
+    public List<string> Components { get; init; } = [];
+    public string DeclaredBy { get; init; } = "";
+    public DateTimeOffset DeclaredAt { get; init; }
+    /// <summary>"project.{projectKey}" — the pack id of the project's declared journeys.</summary>
+    public string PackId => DeclaredIntegrationJourneyRules.PackId(ProjectKey);
+    /// <summary>"project.{projectKey}:{journeyId}" — the Integration Journey id (Scope Registry Journey member id, association target).</summary>
+    public string Id => $"{PackId}:{JourneyId}";
+}
+
+/// <summary>Declare an Integration Journey for a project. Components are names, one per step boundary, in order.</summary>
+public sealed record DeclaredIntegrationJourneyRequest
+{
+    public string ProjectKey { get; init; } = "";
+    public string DisplayName { get; init; } = "";
+    public string? Description { get; init; }
+    public List<string> Components { get; init; } = [];
+    public string DeclaredBy { get; init; } = "";
+}
+
+public static class DeclaredIntegrationJourneyRules
+{
+    public const string PackPrefix = "project.";
+    public const string Source = "Declared for the project";
+    public const int MaxComponents = 20, MaxName = 120, MaxComponent = 160, MaxDescription = 1000, MaxDeclaredBy = 120;
+    private static readonly System.Text.RegularExpressions.Regex ProjectKeyPattern = new("^[A-Za-z0-9][A-Za-z0-9._:-]{0,149}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    private static readonly string[] SecretMarkers = ["password=", "pwd=", "secret=", "token=", "apikey=", "api_key=", "sharedaccesskey", "bearer "];
+
+    public static string PackId(string projectKey) => PackPrefix + projectKey.Trim();
+
+    public static bool IsDeclaredPack(string packId) => packId.StartsWith(PackPrefix, StringComparison.Ordinal);
+
+    /// <summary>Lowercase letters and digits joined by single hyphens (at most 60); "journey" when nothing is left.</summary>
+    public static string Slug(string name)
+    {
+        var chars = new System.Text.StringBuilder();
+        foreach (var c in name.Trim().ToLowerInvariant())
+        {
+            if (c is >= 'a' and <= 'z' or >= '0' and <= '9') chars.Append(c);
+            else if (chars.Length > 0 && chars[^1] != '-') chars.Append('-');
+        }
+        var slug = chars.ToString().Trim('-');
+        if (slug.Length > 60) slug = slug[..60].Trim('-');
+        return slug.Length == 0 ? "journey" : slug;
+    }
+
+    /// <summary>Components trimmed, blanks removed, consecutive duplicates collapsed (order kept).</summary>
+    public static List<string> Chain(IEnumerable<string> components)
+    {
+        var chain = new List<string>();
+        foreach (var c in components.Select(c => (c ?? "").Trim()).Where(c => c.Length > 0))
+            if (chain.Count == 0 || !string.Equals(chain[^1], c, StringComparison.OrdinalIgnoreCase)) chain.Add(c);
+        return chain;
+    }
+
+    /// <summary>Null when valid; otherwise why not. Names only: a component is never a URL, connection string or credential.</summary>
+    public static string? Validate(DeclaredIntegrationJourneyRequest r)
+    {
+        if (string.IsNullOrWhiteSpace(r.ProjectKey) || !ProjectKeyPattern.IsMatch(r.ProjectKey.Trim())) return "Load a project first: a declared journey belongs to one project.";
+        if (string.IsNullOrWhiteSpace(r.DisplayName) || r.DisplayName.Trim().Length > MaxName || r.DisplayName.Contains('\n')) return $"A journey name is required (one line, at most {MaxName} characters).";
+        if (string.IsNullOrWhiteSpace(r.DeclaredBy) || r.DeclaredBy.Trim().Length > MaxDeclaredBy || r.DeclaredBy.Contains('\n')) return $"Who declares the journey is required (one line, at most {MaxDeclaredBy} characters).";
+        if (r.Description is { Length: > MaxDescription }) return $"The description is too long (at most {MaxDescription} characters).";
+        var chain = Chain(r.Components);
+        if (chain.Count < 2) return "Declare at least two components in order (one per line).";
+        if (chain.Count > MaxComponents) return $"At most {MaxComponents} components.";
+        if (chain.Any(c => c.Length > MaxComponent || c.Contains("://", StringComparison.Ordinal) || c.Any(char.IsControl)))
+            return $"A component is a name (at most {MaxComponent} characters), never a URL.";
+        var text = string.Join("\n", new[] { r.DisplayName, r.Description ?? "" }.Concat(chain)).ToLowerInvariant();
+        if (SecretMarkers.Any(text.Contains)) return "Remove credentials or connection strings: a journey declares names only.";
+        return null;
+    }
+
+    /// <summary>The design-level catalog entry (one edge per consecutive component pair) other reviews read.</summary>
+    public static IntegrationJourneyCatalogEntry CatalogEntry(DeclaredIntegrationJourney j)
+    {
+        var chain = Chain(j.Components);
+        return new(j.PackId, j.JourneyId, j.DisplayName,
+            [.. chain.Zip(chain.Skip(1)).Select((p, i) => new JourneyEdge($"s{i + 1}", $"{p.First} → {p.Second}", JourneyStepKind.MessageTransport, p.First, p.Second, p.First))]);
+    }
+}

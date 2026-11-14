@@ -99,3 +99,6 @@
 .tco-candidate { display: flex; flex-wrap: wrap; gap: .25rem .6rem; align-items: center; border: 1px dashed var(--clr-border); border-radius: .5rem; padding: .3rem .55rem; font-size: .86rem; overflow-wrap: anywhere; }
 .tco-candidate .tco-confirm { margin: 0; }
 .tco-association-reviewer { display: flex; flex-wrap: wrap; gap: .3rem 1rem; align-items: flex-end; margin: .3rem 0 .5rem; }
+/* Candidate evidence: both chains on their own lines, wrapping on phones. */
+.tco-candidate .tco-chain { flex-basis: 100%; overflow-wrap: anywhere; }
+.tco-candidate .tco-chain .tco-label { display: inline; margin-right: .35rem; }

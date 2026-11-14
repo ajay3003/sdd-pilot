@@ -505,9 +505,19 @@ public static partial class TestCoverageReviewEngine
             var equal = chain.Count == source.Count;
             result.Add(new JourneyAssociationCandidate($"{entry.PackId}:{entry.JourneyId}", entry.DisplayName, equal ? "Equal" : "Contains",
                 equal ? "The Integration Journey declares the same component chain as this source journey (structure only; needs review)."
-                      : $"The Integration Journey's declared component chain contains this source journey's chain (components {at + 1}–{at + source.Count} of {chain.Count}; structure only; needs review)."));
+                      : $"The Integration Journey's declared component chain contains this source journey's chain (components {at + 1}–{at + source.Count} of {chain.Count}; structure only; needs review).",
+                [.. journey.Nodes.Select(n => n.Name)], DeclaredChainNames(entry)));
         }
         return [.. result.DistinctBy(c => c.IntegrationJourneyId).OrderBy(c => c.Match == "Equal" ? 0 : 1).ThenBy(c => c.IntegrationJourneyId, StringComparer.Ordinal)];
+    }
+
+    /// <summary>The integration journey's declared component chain as declared (display names), with the same collapsing as <see cref="IntegrationChain"/>.</summary>
+    internal static List<string> DeclaredChainNames(IntegrationJourneyCatalogEntry entry)
+    {
+        var chain = new List<string>();
+        void Add(string component) { if (Normal(component).Length > 0 && (chain.Count == 0 || Normal(chain[^1]) != Normal(component))) chain.Add(component.Trim()); }
+        foreach (var edge in entry.Edges) { Add(edge.FromComponent); Add(edge.ToComponent); }
+        return chain;
     }
 
     /// <summary>The integration journey's declared component chain, normalized, consecutive duplicates collapsed (e.g. a self "state" step).</summary>

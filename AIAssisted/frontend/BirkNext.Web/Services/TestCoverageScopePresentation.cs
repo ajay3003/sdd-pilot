@@ -38,7 +38,9 @@ public enum JourneyScopeReason { SameIdentity, ConfirmedAssociation, NoCandidate
 public sealed record JourneyScopeState(CoverageScopeAssociation Association, JourneyScopeReason Reason, string Text, IReadOnlyList<string> Members, IReadOnlyList<string> Scopes);
 
 /// <summary>One Test Data asset linked to QA tests in this review (deduplicated by asset id), with the tests and selected scopes that use it.</summary>
-public sealed record CoverageAssetUse(string AssetId, string? Alias, IReadOnlyList<string> Fingerprints, IReadOnlyList<string> Tests, IReadOnlyList<string> Sources, bool InScope, IReadOnlyList<string> Scopes);
+/// <param name="Unresolved">Every link to this asset is unresolved (deprecated, invalid, no longer approved or changed since bound): shown, never counted as in scope.</param>
+public sealed record CoverageAssetUse(string AssetId, string? Alias, IReadOnlyList<string> Fingerprints, IReadOnlyList<string> Tests, IReadOnlyList<string> Sources, bool InScope, IReadOnlyList<string> Scopes,
+    bool Unresolved = false);
 
 /// <summary>
 /// The shared scope filter on Test Coverage &amp; Overlap Review. Items are tied to the selected scopes only through identities a scope member can
@@ -181,8 +183,23 @@ public static class TestCoverageScopePresentation
     {
         CoverageDataNeed.Linked => $"Linked ({string.Join(", ", q.TestData.Select(l => l.AssetId).Distinct(StringComparer.Ordinal))})",
         CoverageDataNeed.RequiredButMissing => "Required but missing",
+        CoverageDataNeed.LinkNeedsReview => $"Linked revision not usable — needs review ({string.Join(", ", q.TestData.Where(l => !l.Resolved).Select(l => l.AssetId).Distinct(StringComparer.Ordinal))})",
         _ => "Not assessed",
     };
+
+    /// <summary>Plain state of one link: the bound revision is current and approved, or it needs review (with Test Data's reason).</summary>
+    public static string LinkState(CoverageTestDataLink link) => link.Resolved ? "Resolved" : $"Unresolved — {link.StateReason ?? "needs review"}";
+
+    /// <summary>
+    /// Opens Test Data with this QA test as the consumer (Test Data owns requirements and bindings): it shows matching approved assets, records
+    /// the requirement ("Add to requested Test Data") and binds an asset revision ("Use for this requirement"). The consumer id is project-scoped.
+    /// </summary>
+    public static string TestDataHref(QaTestCandidate q, string? projectKey, BirkNext.TestData.TestDataDataType dataType, string? environmentId = null) =>
+        "test-data?consumer=" + Uri.EscapeDataString(CoverageTestDataConsumers.ConsumerId(projectKey, q.Id))
+        + "&consumerType=" + Uri.EscapeDataString(CoverageTestDataConsumers.ConsumerType)
+        + "&consumerName=" + Uri.EscapeDataString(string.IsNullOrWhiteSpace(q.Title) ? q.Id : q.Title)
+        + "&dataType=" + dataType
+        + (string.IsNullOrWhiteSpace(environmentId) ? "" : "&environment=" + Uri.EscapeDataString(environmentId));
 
     /// <summary>Every Test Data asset linked to a QA test in this review, once per asset id, with the tests (and, with a selection, the scopes) that use it.</summary>
     public static IReadOnlyList<CoverageAssetUse> Assets(TestCoverageReviewResult r, ScopeSelection? selection)
@@ -194,7 +211,8 @@ public static class TestCoverageScopePresentation
             return new CoverageAssetUse(g.Key, g.Select(x => x.Link.Alias).FirstOrDefault(a => !string.IsNullOrWhiteSpace(a)),
                 [.. g.Select(x => x.Link.Fingerprint).Where(f => !string.IsNullOrWhiteSpace(f)).Select(f => f!).Distinct(StringComparer.Ordinal)],
                 [.. g.Select(x => x.Test.Title).Distinct(StringComparer.Ordinal)], [.. g.Select(x => x.Link.Source).Distinct(StringComparer.Ordinal)],
-                named.Count > 0, [.. named.SelectMany(m => m.ContributedBy).Select(c => c.ScopeName).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)]);
+                named.Count > 0, [.. named.SelectMany(m => m.ContributedBy).Select(c => c.ScopeName).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)],
+                g.All(x => !x.Link.Resolved));
         })];
     }
 
@@ -231,7 +249,8 @@ public static class TestCoverageScopePresentation
             new("journeys", "Journeys", Count(journeyStates.Select(s => s.Association), CoverageScopeAssociation.InScope),
                 Count(journeyStates.Select(s => s.Association), CoverageScopeAssociation.NotConfirmed), journeyStates.Count,
                 journeyMembers > 0 ? $"The scope names {journeyMembers} Integration Journey{(journeyMembers == 1 ? "" : "s")}; a source journey counts only by the same id or a reviewer-confirmed association ({journeyStates.Count(s => s.Reason == JourneyScopeReason.CandidateNotReviewed)} with a candidate not reviewed, {journeyStates.Count(s => s.Reason == JourneyScopeReason.Rejected)} rejected)." : null),
-            new("test-data", "Test Data assets", assets.Count(a => a.InScope), 0, assets.Count, TestDataNote(assetMembers.Count, assetsUnlinked, notAssessed)),
+            // An asset whose every link is unresolved is named by the scope but not usable: reported as not confirmed, never counted as in scope.
+            new("test-data", "Test Data assets", assets.Count(a => a.InScope && !a.Unresolved), assets.Count(a => a.InScope && a.Unresolved), assets.Count, TestDataNote(assetMembers.Count, assetsUnlinked, notAssessed)),
         };
         static string? TestDataNote(int named, int unlinked, int notAssessed)
         {
