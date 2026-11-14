@@ -60,7 +60,11 @@ public sealed record AvailableScope(string Key, string Name, string Kind, string
 
 /// <summary><paramref name="Environment"/>: the Target Environment (canonical interpretation scope) whose test and schema evidence is used;
 /// <see cref="ScopeEnvironments.All"/> aggregates every environment (labelled as such); null = the only environment with evidence, if exactly one.</summary>
-public sealed record ScopeQuery(string? ScopeKey, Guid? CustomScopeId, bool IncludeRelated, bool IncludeTechnical = false, ScopeDefinition? Draft = null, string? Environment = null);
+public sealed record ScopeQuery(string? ScopeKey, Guid? CustomScopeId, bool IncludeRelated, bool IncludeTechnical = false, ScopeDefinition? Draft = null, string? Environment = null)
+{
+    /// <summary>Optional: the shared Scope Registry selection active when a snapshot is frozen (recorded with it, never used to resolve membership).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DeliveryScopeProvenance? ScopeProvenance { get; init; }
+}
 
 public sealed record ScopeResolution(ScopeDefinition Scope, Guid? SnapshotId, string? SnapshotLabel, string RuleSetVersion, IReadOnlyList<ScopeItem> Items, ScopeSummary Summary,
     IReadOnlyList<ScopeRelatedModule> RelatedModules, IReadOnlyList<string> Limitations, string PrecedenceNote)
@@ -138,7 +142,11 @@ public sealed record ScopeReferenceRequest(string ItemKey, ScopeInclusion Mode);
 public sealed record TestDesignAssessmentView(string ItemKey, TestabilityClassification Testability, List<string> VerificationTypes, List<string> RequiredTestDataAssetIds,
     string? Comment, DateTimeOffset? ReviewedAt);
 
-public sealed record ScopeSnapshotView(Guid Id, Guid? ScopeId, string ScopeName, int ScopeVersion, Guid? DeliverySnapshotId, string RuleSetVersion, int ItemCount, DateTimeOffset CreatedAt);
+public sealed record ScopeSnapshotView(Guid Id, Guid? ScopeId, string ScopeName, int ScopeVersion, Guid? DeliverySnapshotId, string RuleSetVersion, int ItemCount, DateTimeOffset CreatedAt)
+{
+    /// <summary>The shared scope selection the snapshot was frozen under; null for snapshots frozen before scope support (or without a selection).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DeliveryScopeProvenance? ScopeProvenance { get; init; }
+}
 
 /// <summary>
 /// Deterministic quality classification of specification text (rule set <see cref="RuleSetVersion"/>). Technical work (migrations, framework
@@ -332,4 +340,84 @@ public static class FunctionalQualityScopeText
         TestabilityClassification.Technical => "Technical verification",
         _ => t.ToString(),
     };
+}
+
+// ── Shared scope provenance of frozen Delivery snapshots and reports ─────────────────────────────────────────────────────────
+// Which shared Scope Registry scopes (exact approved revision number and revision id) were selected when a Functional Quality Scope snapshot was
+// frozen or a delivery report was generated. Additive and optional: records created before scope support carry none and say so; nothing is
+// back-filled or guessed. A revision id that could not be resolved stays null — never invented.
+
+/// <param name="RevisionId">The Scope Registry revision id (ScopeRevisionView.Id); null when it could not be resolved at creation.</param>
+public sealed record DeliveryScopeProvenanceEntry(Guid ScopeId, string ScopeName, int RevisionNumber, Guid? RevisionId);
+
+public sealed record DeliveryScopeProvenance
+{
+    public const string DefaultMembershipResolution = "approved revisions; canonical key match type+module+feature+id";
+    public List<DeliveryScopeProvenanceEntry> Scopes { get; init; } = [];
+    /// <summary>How membership was resolved from the selected scopes (recorded as text so a later rule change never rewrites old records).</summary>
+    public string MembershipResolution { get; init; } = DefaultMembershipResolution;
+    /// <summary>When the snapshot or report carrying this provenance was created (stamped by the server).</summary>
+    public DateTimeOffset CreatedAt { get; init; }
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum DeliveryScopeProvenanceMatch { SameRevision, DifferentRevisions, MissingFirst, MissingSecond, MissingBoth }
+
+/// <summary>Whether two compared deliveries used the same shared scope revisions. Only <see cref="LikeForLike"/> comparisons may show percentage deltas.</summary>
+public sealed record DeliveryScopeProvenanceComparison(DeliveryScopeProvenanceMatch Match, string Notice)
+{
+    public bool LikeForLike => Match == DeliveryScopeProvenanceMatch.SameRevision;
+}
+
+public static class DeliveryScopeProvenanceText
+{
+    public const string NotRecorded = "Scope provenance not recorded (created before scope support)";
+    public const string SameRevision = "Same scope revision";
+    public const string PercentNotLikeForLike = "percentage not shown: not like-for-like";
+
+    public static bool Recorded(DeliveryScopeProvenance? p) => p is { Scopes.Count: > 0 };
+
+    /// <summary>"Release 1 rev 3, Payments rev 1".</summary>
+    public static string Revisions(DeliveryScopeProvenance p) => string.Join(", ", p.Scopes.Select(s => $"{s.ScopeName} rev {s.RevisionNumber}"));
+
+    /// <summary>"Release 1 rev 3 · approved revisions; canonical key match …", or the not-recorded text for older records.</summary>
+    public static string Describe(DeliveryScopeProvenance? p) => Recorded(p) ? $"{Revisions(p!)} · {p!.MembershipResolution}" : NotRecorded;
+
+    /// <summary>Exact ids for evidence: "Release 1: scope {id}, revision 3 (revision id {id} | revision id not recorded)".</summary>
+    public static IEnumerable<string> IdLines(DeliveryScopeProvenance p) => p.Scopes.Select(s =>
+        $"{s.ScopeName}: scope {s.ScopeId}, revision {s.RevisionNumber} ({(s.RevisionId is { } id ? $"revision id {id}" : "revision id not recorded")})");
+
+    /// <summary>The provenance as stored: unusable entries dropped, one entry per scope id, names trimmed, server time stamped. Null when nothing usable.</summary>
+    public static DeliveryScopeProvenance? Normalize(DeliveryScopeProvenance? p, DateTimeOffset createdAt)
+    {
+        if (p is null) return null;
+        var scopes = (p.Scopes ?? []).Where(s => s is not null && s.ScopeId != Guid.Empty && s.RevisionNumber > 0).GroupBy(s => s.ScopeId).Select(g => g.First())
+            .Select(s => s with { ScopeName = Cap((s.ScopeName ?? "").Trim(), 200), RevisionId = s.RevisionId == Guid.Empty ? null : s.RevisionId })
+            .OrderBy(s => s.ScopeName, StringComparer.OrdinalIgnoreCase).ThenBy(s => s.ScopeId).ToList();
+        if (scopes.Count == 0) return null;
+        var note = string.IsNullOrWhiteSpace(p.MembershipResolution) ? DeliveryScopeProvenance.DefaultMembershipResolution : Cap(p.MembershipResolution.Trim(), 500);
+        return new DeliveryScopeProvenance { Scopes = scopes, MembershipResolution = note, CreatedAt = createdAt };
+    }
+
+    /// <summary>
+    /// Same scope ids with the same revision numbers (and the same revision ids where both sides recorded one) = like-for-like. Anything else —
+    /// another scope, another revision, or a side without provenance — is not like-for-like and is said so.
+    /// </summary>
+    public static DeliveryScopeProvenanceComparison Compare(DeliveryScopeProvenance? first, DeliveryScopeProvenance? second, string firstLabel = "A", string secondLabel = "B")
+    {
+        var (a, b) = (Recorded(first), Recorded(second));
+        if (!a && !b) return new(DeliveryScopeProvenanceMatch.MissingBoth, $"Scope provenance not recorded for {firstLabel} and {secondLabel}");
+        if (!a) return new(DeliveryScopeProvenanceMatch.MissingFirst, $"Scope provenance not recorded for {firstLabel}");
+        if (!b) return new(DeliveryScopeProvenanceMatch.MissingSecond, $"Scope provenance not recorded for {secondLabel}");
+        var left = first!.Scopes.GroupBy(s => s.ScopeId).ToDictionary(g => g.Key, g => g.First());
+        var right = second!.Scopes.GroupBy(s => s.ScopeId).ToDictionary(g => g.Key, g => g.First());
+        var same = left.Count == right.Count && left.All(l => right.TryGetValue(l.Key, out var r) && r.RevisionNumber == l.Value.RevisionNumber
+            && (l.Value.RevisionId is null || r.RevisionId is null || l.Value.RevisionId == r.RevisionId));
+        return same
+            ? new(DeliveryScopeProvenanceMatch.SameRevision, $"{SameRevision}: {Revisions(first)}")
+            : new(DeliveryScopeProvenanceMatch.DifferentRevisions,
+                $"Compared deliveries used different scope revisions: {firstLabel} {Revisions(first)} vs {secondLabel} {Revisions(second)} — membership may differ; percentages are not like-for-like");
+    }
+
+    private static string Cap(string value, int length) => value.Length > length ? value[..length] : value;
 }

@@ -33,6 +33,7 @@ public static class DeliveryReportExporter
         md.AppendLine($"**Current:** {SnapshotLine(report.Current, zone)}  ");
         md.AppendLine($"**Coverage:** {report.Coverage}{(report.CoverageText.Length > 0 ? $" · {Md(report.CoverageText)}" : "")}  ");
         if (report.Direction is { } direction) md.AppendLine($"**Snapshot direction:** {direction.State}{(direction.Confirmed ? " (explicitly confirmed)" : "")}  ");
+        md.AppendLine($"**Scope provenance:** {Md(DeliveryScopeProvenanceText.Describe(report.ScopeProvenance))}  ");
         md.AppendLine($"**Generated:** {Time(report.GeneratedAt, zone)}").AppendLine();
         foreach (var note in report.CoverageNotes) md.AppendLine($"> **Coverage note:** {Md(note)}").AppendLine();
         foreach (var warning in report.ComparisonWarnings) md.AppendLine($"> **Comparison warning:** {Md(warning)}").AppendLine();
@@ -119,6 +120,12 @@ public static class DeliveryReportExporter
             md.AppendLine("## Appendix: evidence").AppendLine();
             md.AppendLine($"- Baseline source: {Md(report.Baseline.SourceFileName)}{(report.Baseline.GitCommit is { } bc ? $", commit `{bc}`" : "")}, fingerprint `{report.Baseline.Fingerprint}`, imported {Time(report.Baseline.ImportedAt, zone)}");
             md.AppendLine($"- Current source: {Md(report.Current.SourceFileName)}{(report.Current.GitCommit is { } cc ? $", commit `{cc}`" : "")}, fingerprint `{report.Current.Fingerprint}`, imported {Time(report.Current.ImportedAt, zone)}");
+            if (report.ScopeProvenance is { Scopes.Count: > 0 } sp)
+            {
+                foreach (var line in DeliveryScopeProvenanceText.IdLines(sp)) md.AppendLine($"- Shared scope: {Md(line)}");
+                md.AppendLine($"- Scope provenance recorded {Time(sp.CreatedAt, zone)}");
+            }
+            else md.AppendLine($"- {DeliveryScopeProvenanceText.NotRecorded}");
             md.AppendLine();
             foreach (var s in stories)
             {
@@ -146,6 +153,7 @@ public static class DeliveryReportExporter
         Meta(h, "Current", SnapshotLine(report.Current, zone));
         Meta(h, "Coverage", report.CoverageText.Length > 0 ? $"{report.Coverage} · {report.CoverageText}" : report.Coverage.ToString());
         if (report.Direction is { } dir) Meta(h, "Snapshot direction", $"{dir.State}{(dir.Confirmed ? " (explicitly confirmed)" : "")}");
+        Meta(h, "Scope provenance", DeliveryScopeProvenanceText.Describe(report.ScopeProvenance));
         Meta(h, "Generated", Time(report.GeneratedAt, zone));
         h.AppendLine("</dl></header>");
         foreach (var note in report.CoverageNotes) h.AppendLine($"<p class=\"note\" role=\"note\"><strong>Coverage note:</strong> {E(note)}</p>");
@@ -223,6 +231,12 @@ public static class DeliveryReportExporter
             h.AppendLine("<section class=\"appendix\"><h2>Appendix: evidence</h2><ul>");
             h.AppendLine($"<li>Baseline source: {E(report.Baseline.SourceFileName)}{(report.Baseline.GitCommit is { } bc ? $", commit <code>{E(bc)}</code>" : "")}, fingerprint <code>{E(report.Baseline.Fingerprint)}</code>, imported {E(Time(report.Baseline.ImportedAt, zone))}</li>");
             h.AppendLine($"<li>Current source: {E(report.Current.SourceFileName)}{(report.Current.GitCommit is { } cc ? $", commit <code>{E(cc)}</code>" : "")}, fingerprint <code>{E(report.Current.Fingerprint)}</code>, imported {E(Time(report.Current.ImportedAt, zone))}</li>");
+            if (report.ScopeProvenance is { Scopes.Count: > 0 } sp)
+            {
+                foreach (var line in DeliveryScopeProvenanceText.IdLines(sp)) h.AppendLine($"<li>Shared scope: {E(line)}</li>");
+                h.AppendLine($"<li>Scope provenance recorded {E(Time(sp.CreatedAt, zone))}</li>");
+            }
+            else h.AppendLine($"<li>{E(DeliveryScopeProvenanceText.NotRecorded)}</li>");
             h.AppendLine("</ul>");
             foreach (var s in stories)
             {

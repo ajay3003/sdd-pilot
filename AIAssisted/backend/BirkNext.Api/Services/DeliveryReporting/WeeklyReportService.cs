@@ -70,6 +70,8 @@ public sealed class WeeklyReportService(DeliveryReportingDbContext db, DeliveryS
             if (scoped is null) return new(null, error ?? "The selected scope could not be applied.", StatusCodes.Status400BadRequest);
             report = scoped;
         }
+        // Shared scope provenance is frozen inside the report document (ContentJson): no schema change; older reports simply carry none.
+        if (DeliveryScopeProvenanceText.Normalize(request.ScopeProvenance, now) is { } provenance) report = report with { ScopeProvenance = provenance };
 
         var comparisonRecord = new DeliverySnapshotComparisonRecord
         {

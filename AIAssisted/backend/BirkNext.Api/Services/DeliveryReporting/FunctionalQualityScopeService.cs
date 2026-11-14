@@ -698,22 +698,46 @@ public sealed class FunctionalQualityScopeService(DeliveryReportingDbContext db,
         JsonSerializer.Deserialize<List<string>>(a.VerificationTypesJson, Json) ?? [], JsonSerializer.Deserialize<List<string>>(a.RequiredTestDataJson, Json) ?? [], a.Comment, a.ReviewedAt);
 
     /// <summary>Freezes the scope's exact membership now (for a report or finalized review). The live scope keeps evolving; this never changes.</summary>
+    /// <remarks>
+    /// Shared scope provenance (<see cref="ScopeQuery.ScopeProvenance"/>) is recorded additively in the existing items jsonb payload, without a
+    /// schema change: without provenance the payload stays the plain item array (as before); with it the payload is
+    /// <c>{"items":[…],"scopeProvenance":{…}}</c>. Snapshots frozen before scope support keep their array and read as "not recorded".
+    /// </remarks>
     public async Task<ScopeSnapshotView> FreezeAsync(Guid projectId, ScopeQuery query, CancellationToken ct)
     {
         var resolution = await ResolveAsync(projectId, query, ct);
+        var now = clock.GetUtcNow();
+        var provenance = DeliveryScopeProvenanceText.Normalize(query.ScopeProvenance, now);
+        var items = resolution.Items.Select(i => new { i.Key, i.Type, i.Category, i.Relation, i.Inclusion, i.Coverage }).ToList();
         var record = new DeliveryScopeSnapshotRecord
         {
             Id = Guid.NewGuid(), ProjectId = projectId, ScopeId = resolution.Scope.Id, ScopeName = resolution.Scope.Name, ScopeVersion = resolution.Scope.Version,
             DeliverySnapshotId = resolution.SnapshotId, RuleSetVersion = $"{resolution.RuleSetVersion};{WorkItemInterpreter.RuleSetVersion}",
-            ItemsJson = JsonSerializer.Serialize(resolution.Items.Select(i => new { i.Key, i.Type, i.Category, i.Relation, i.Inclusion, i.Coverage }), Json),
-            ItemCount = resolution.Items.Count, CreatedAt = clock.GetUtcNow(),
+            ItemsJson = provenance is null ? JsonSerializer.Serialize(items, Json) : JsonSerializer.Serialize(new { items, scopeProvenance = provenance }, Json),
+            ItemCount = resolution.Items.Count, CreatedAt = now,
         };
         db.ScopeSnapshots.Add(record);
         await db.SaveChangesAsync(ct);
-        return new(record.Id, record.ScopeId, record.ScopeName, record.ScopeVersion, record.DeliverySnapshotId, record.RuleSetVersion, record.ItemCount, record.CreatedAt);
+        return SnapshotView(record);
     }
 
     public async Task<IReadOnlyList<ScopeSnapshotView>> SnapshotsAsync(Guid projectId, CancellationToken ct) =>
-        [.. (await db.ScopeSnapshots.AsNoTracking().Where(s => s.ProjectId == projectId).OrderByDescending(s => s.CreatedAt).Take(50).ToListAsync(ct))
-            .Select(s => new ScopeSnapshotView(s.Id, s.ScopeId, s.ScopeName, s.ScopeVersion, s.DeliverySnapshotId, s.RuleSetVersion, s.ItemCount, s.CreatedAt))];
+        [.. (await db.ScopeSnapshots.AsNoTracking().Where(s => s.ProjectId == projectId).OrderByDescending(s => s.CreatedAt).Take(50).ToListAsync(ct)).Select(SnapshotView)];
+
+    private static ScopeSnapshotView SnapshotView(DeliveryScopeSnapshotRecord s) =>
+        new(s.Id, s.ScopeId, s.ScopeName, s.ScopeVersion, s.DeliverySnapshotId, s.RuleSetVersion, s.ItemCount, s.CreatedAt) { ScopeProvenance = ScopeProvenanceOf(s.ItemsJson) };
+
+    /// <summary>The recorded shared scope provenance of a frozen snapshot's items payload; null for the legacy plain array or anything unreadable.</summary>
+    internal static DeliveryScopeProvenance? ScopeProvenanceOf(string? itemsJson)
+    {
+        if (string.IsNullOrWhiteSpace(itemsJson) || !itemsJson.TrimStart().StartsWith('{')) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(itemsJson);
+            return doc.RootElement.TryGetProperty("scopeProvenance", out var p) && p.ValueKind == JsonValueKind.Object
+                ? p.Deserialize<DeliveryScopeProvenance>(Json) is { Scopes.Count: > 0 } found ? found : null
+                : null;
+        }
+        catch (JsonException) { return null; }
+    }
 }

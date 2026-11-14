@@ -209,6 +209,8 @@
                     </p>
                 }
                 <p class="dlr-muted" data-testid="dlr-report-kind">@(report.Kind == DeliveryReportKind.Weekly ? "Weekly report: the baseline covers this week." : "Delivery change report: compares two snapshots; not a full weekly period.") Baseline @P.DayTime(report.Baseline.EffectiveAt) (imported @P.DayTime(report.Baseline.ImportedAt)) → current @P.DayTime(report.Current.EffectiveAt) (imported @P.DayTime(report.Current.ImportedAt)).</p>
+                @* Shared scope provenance frozen with the report (one selection for both sides); reports generated before scope support say so. *@
+                <p class="dlr-muted" data-testid="dlr-scope-provenance" data-recorded="@(DeliveryScopeProvenanceText.Recorded(report.ScopeProvenance) ? "true" : "false")">@(DeliveryScopeProvenanceText.Recorded(report.ScopeProvenance) ? $"Shared scope provenance (baseline and current): {DeliveryScopeProvenanceText.Describe(report.ScopeProvenance)}" : DeliveryScopeProvenanceText.NotRecorded)</p>
                 <ExportMenu TestId="dlr-export" Options="ExportOptions(report.ReportId)" />
             </div>
             <dl class="dlr-meta">
@@ -407,6 +409,10 @@
                     }
                     <button type="button" class="btn-primary" data-testid="dlr-generate-run" disabled="@(_busy || RunningGeneration is not null || _baselineId is null || _currentId is null || _comparison is { CanGenerate: false } || _comparison is { RequiresConfirmation: true } && !_confirmDirection)" @onclick="Generate">@(_comparison is { RequiresConfirmation: true } && _confirmDirection ? "Generate anyway" : "Generate report")</button>
                 </div>
+                @if (_projectId is { } provenanceProject && Session.ScopeProvenance(provenanceProject) is { } selectedScope)
+                {
+                    <p class="dlr-muted" data-testid="dlr-generate-scope-provenance">Shared scope recorded with the report: @DeliveryScopeProvenanceText.Revisions(selectedScope) (selected in Functional Quality Scope; provenance only — it does not narrow the report).</p>
+                }
                 <p class="dlr-muted dlr-sort-note">@BirkNext.Snapshots.SnapshotSelectionLabels.SortExplanation “Current” marks the newest snapshot imported as current.</p>
                 @if (_selectionNotice is not null) { <p class="dlr-warning" role="status" data-testid="dlr-selection-notice">@_selectionNotice</p> }
                 @PreviewPanel()
@@ -1367,6 +1373,7 @@
         _error = null;
         var confirm = _confirmDirection;
         var (source, scope) = (_generateSource, _generateScope);
+        var scopeProvenance = Session.ScopeProvenance(id);
         var baselineLabel = _snapshots.FirstOrDefault(s => s.Id == baseline) is { } b ? P.DisplayName(b) : null;
         var currentLabel = _snapshots.FirstOrDefault(s => s.Id == current) is { } c ? P.DisplayName(c) : null;
         WeeklyDeliveryReport? generated = null;
@@ -1381,7 +1388,7 @@
             }, async (progress, ct) =>
             {
                 progress.Stage("Comparing snapshots and generating the report", $"{baselineLabel} → {currentLabel}");
-                var (report, error) = await Api.GenerateAsync(new GenerateWeeklyReportRequest(id, baseline, current) { ConfirmDirection = confirm, SourceId = source, FunctionalScopeId = scope });
+                var (report, error) = await Api.GenerateAsync(new GenerateWeeklyReportRequest(id, baseline, current) { ConfirmDirection = confirm, SourceId = source, FunctionalScopeId = scope, ScopeProvenance = scopeProvenance });
                 if (report is null) return BirkNext.Web.Services.Operations.OperationOutcome.Failure(error ?? "The report could not be generated.");
                 generated = report;
                 return BirkNext.Web.Services.Operations.OperationOutcome.Success($"{P.Route}?project={id}&tab=overview&report={report.ReportId}", $"Open report {report.WeekLabel}");

@@ -261,6 +261,42 @@ public sealed class FunctionalQualityScopeTests
         edges.Should().ContainSingle().Which.Should().Match<SnapshotLineageEdge>(e => e.Kind == SnapshotLineageKind.DerivedFrom && e.To.Id == snapshot.ToString());
     }
 
+    [Fact]
+    public async Task A_frozen_snapshot_records_shared_scope_provenance_and_a_legacy_snapshot_still_loads_without_it()
+    {
+        await using var db = Db();
+        var (project, snapshot) = await SeedAllAsync(db);
+        var service = Service(db);
+        var (scopeId, revisionId) = (Guid.NewGuid(), Guid.NewGuid());
+        // Frozen before scope support: the items payload is the plain array, no provenance.
+        var legacy = new DeliveryScopeSnapshotRecord { Id = Guid.NewGuid(), ProjectId = project, ScopeName = "Old", ScopeVersion = 1, DeliverySnapshotId = snapshot, RuleSetVersion = "old",
+            ItemsJson = "[]", ItemCount = 0, CreatedAt = Monday.AddDays(-7) };
+        db.ScopeSnapshots.Add(legacy);
+        await db.SaveChangesAsync();
+
+        var query = new ScopeQuery("profile:skolenaervaer", null, true)
+        {
+            ScopeProvenance = new() { Scopes = [new(scopeId, "Release 1", 3, revisionId)], CreatedAt = DateTimeOffset.MinValue },
+        };
+        var frozen = await service.FreezeAsync(project, query, default);
+
+        frozen.ScopeProvenance!.Scopes.Should().ContainSingle().Which.Should().Be(new DeliveryScopeProvenanceEntry(scopeId, "Release 1", 3, revisionId));
+        frozen.ScopeProvenance.MembershipResolution.Should().Be(DeliveryScopeProvenance.DefaultMembershipResolution);
+        frozen.ScopeProvenance.CreatedAt.Should().Be(Monday, "stamped by the server when frozen, never taken from the client");
+
+        var listed = await service.SnapshotsAsync(project, default);
+        listed.Single(s => s.Id == frozen.Id).ScopeProvenance.Should().BeEquivalentTo(frozen.ScopeProvenance);
+        listed.Single(s => s.Id == legacy.Id).ScopeProvenance.Should().BeNull("snapshots frozen before scope support load unchanged");
+        DeliveryScopeProvenanceText.Describe(listed.Single(s => s.Id == legacy.Id).ScopeProvenance).Should().Be("Scope provenance not recorded (created before scope support)");
+
+        using var payload = JsonDocument.Parse((await db.ScopeSnapshots.AsNoTracking().SingleAsync(s => s.Id == frozen.Id)).ItemsJson);
+        payload.RootElement.GetProperty("items").GetArrayLength().Should().Be(frozen.ItemCount, "membership is unchanged; provenance is recorded beside it");
+
+        var plain = await service.FreezeAsync(project, new ScopeQuery("profile:skolenaervaer", null, true), default);
+        plain.ScopeProvenance.Should().BeNull();
+        (await db.ScopeSnapshots.AsNoTracking().SingleAsync(s => s.Id == plain.Id)).ItemsJson.TrimStart().Should().StartWith("[", "without a selection the payload keeps its original shape");
+    }
+
     // ── Canonical coverage and capability relations ──────────────────────────────────────────────────────────────────
 
     private static CanonicalEntityRecord Entity(CanonicalEntityType type, string identity, string name) =>

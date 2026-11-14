@@ -32,9 +32,31 @@ public sealed class DeliveryReportingSession(TimeProvider? clock = null)
         }
     }
 
+    private readonly Dictionary<Guid, DeliveryScopeProvenance> _scopeProvenance = [];
+
+    /// <summary>
+    /// The shared Scope Registry selection (with resolved revision ids) currently applied in the Functional Quality Scope view of a project, so a
+    /// report generated in this browser tab records which scope revisions were selected. Null clears it. Provenance only: it never narrows a report.
+    /// </summary>
+    public void SetScopeProvenance(Guid projectId, DeliveryScopeProvenance? provenance)
+    {
+        lock (_scopeProvenance)
+        {
+            if (provenance is { Scopes.Count: > 0 }) _scopeProvenance[projectId] = provenance;
+            else _scopeProvenance.Remove(projectId);
+        }
+        Changed?.Invoke();
+    }
+
+    public DeliveryScopeProvenance? ScopeProvenance(Guid projectId)
+    {
+        lock (_scopeProvenance) return _scopeProvenance.TryGetValue(projectId, out var p) ? p : null;
+    }
+
     /// <summary>After a Delivery Management (or full) reset: every staged preview is gone on the backend, so none is offered again.</summary>
     public void ClearAll()
     {
+        lock (_scopeProvenance) _scopeProvenance.Clear();
         lock (_pending) _pending.Clear();
         Changed?.Invoke();
     }

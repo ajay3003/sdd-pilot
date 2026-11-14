@@ -164,7 +164,54 @@
         _canonicalScope = selection;
         _canonicalKeys = selection is null ? new(StringComparer.OrdinalIgnoreCase)
             : new(selection.Members.Select(m => m.Member.TargetId), StringComparer.OrdinalIgnoreCase);
+        _scopeProvenance = ScopeProvenanceAsync(selection, ++_provenanceGeneration);
     }
+
+    // ── Shared scope provenance (recorded with a frozen snapshot or a generated report) ─────────────────────────────────
+
+    private Task<DeliveryScopeProvenance?> _scopeProvenance = Task.FromResult<DeliveryScopeProvenance?>(null);
+    private int _provenanceGeneration;
+    /// <summary>Scope revision → revision id, resolved once from the Scope Registry (ScopeDetail.Revisions); never guessed.</summary>
+    private readonly Dictionary<(Guid ScopeId, int Revision), Guid?> _revisionIds = [];
+
+    /// <summary>
+    /// The selected shared scopes with their exact approved revision numbers and the revision ids the Scope Registry reports for them (one
+    /// GetAsync per scope revision not resolved before). An id the registry does not return stays null. The result is offered to report
+    /// generation in this browser tab (DeliveryReportingSession); a newer selection always wins over a slower earlier one.
+    /// </summary>
+    private async Task<DeliveryScopeProvenance?> ScopeProvenanceAsync(BirkNext.Scopes.ScopeSelection? selection, int generation)
+    {
+        DeliveryScopeProvenance? provenance = null;
+        if (selection is { Scopes.Count: > 0 })
+        {
+            var registry = Services.GetService(typeof(IScopeRegistryApiService)) as IScopeRegistryApiService;
+            var projectKey = selection.ProjectKey is { Length: > 0 } key ? key
+                : Services.GetService(typeof(ICurrentWorkspaceProjection)) is ICurrentWorkspaceProjection workspace ? (await workspace.GetAsync()).ProjectSlug : null;
+            var entries = new List<DeliveryScopeProvenanceEntry>();
+            foreach (var scope in selection.Scopes)
+            {
+                if (!_revisionIds.TryGetValue((scope.ScopeId, scope.Revision), out var revisionId) && registry is not null && projectKey is { Length: > 0 })
+                {
+                    BirkNext.Scopes.ScopeDetail? detail = null;
+                    try { (detail, _) = await registry.GetAsync(projectKey, scope.ScopeId); }
+                    catch (HttpRequestException) { detail = null; }
+                    revisionId = detail?.Revisions.FirstOrDefault(r => r.Number == scope.Revision)?.Id is { } id && id != Guid.Empty ? id : null;
+                    if (detail is not null) _revisionIds[(scope.ScopeId, scope.Revision)] = revisionId;
+                }
+                entries.Add(new(scope.ScopeId, scope.ScopeName, scope.Revision, revisionId));
+            }
+            provenance = new DeliveryScopeProvenance { Scopes = entries, MembershipResolution = DeliveryScopeProvenance.DefaultMembershipResolution, CreatedAt = DateTimeOffset.UtcNow };
+        }
+        if (generation == _provenanceGeneration)
+            (Services.GetService(typeof(DeliveryReportingSession)) as DeliveryReportingSession)?.SetScopeProvenance(ProjectId, provenance);
+        return provenance;
+    }
+
+    // ── Frozen snapshot comparison (A vs B, with their scope provenance) ────────────────────────────────────────────────
+
+    private Guid? _compareA, _compareB;
+
+    private static string Percent(int from, int to) => from == 0 ? "" : $", {(to - from) * 100.0 / from:+0.0;-0.0;0.0}%";
 
     /// <summary>
     /// The canonical key of a Delivery scope item: its type and the identity the canonical interpretation gives the same document item
@@ -681,10 +728,12 @@
 
     private async Task Freeze()
     {
-        var (snapshot, error) = await Api.FreezeAsync(ProjectId, new ScopeQuery(_scopeKey, CustomId, _includeRelated, _includeTechnical, Environment: _environment));
+        // The shared scope selection in force (revision ids resolved once) is recorded with the snapshot; without one nothing is recorded.
+        var provenance = _canonicalScope is null ? null : await _scopeProvenance;
+        var (snapshot, error) = await Api.FreezeAsync(ProjectId, new ScopeQuery(_scopeKey, CustomId, _includeRelated, _includeTechnical, Environment: _environment) { ScopeProvenance = provenance });
         _error = error;
         if (snapshot is null) return;
-        _notice = $"Scope snapshot frozen: {snapshot.ItemCount} items (scope version {snapshot.ScopeVersion}).";
+        _notice = $"Scope snapshot frozen: {snapshot.ItemCount} items (scope version {snapshot.ScopeVersion}).{(provenance is null ? "" : $" Shared scope recorded: {DeliveryScopeProvenanceText.Revisions(provenance)}.")}";
         _snapshots = await Api.SnapshotsAsync(ProjectId);
     }
 
@@ -696,9 +745,38 @@
                 @foreach (var s in _snapshots)
                 {
                     <li data-testid="fqs-snapshot-row">@s.ScopeName v@(s.ScopeVersion) · @s.ItemCount items · @s.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
-                        <span class="fqs-muted fqs-small">@s.RuleSetVersion</span></li>
+                        <span class="fqs-muted fqs-small">@s.RuleSetVersion</span>
+                        <span class="fqs-muted fqs-small" data-testid="fqs-snapshot-provenance">@DeliveryScopeProvenanceText.Describe(s.ScopeProvenance)</span></li>
                 }
             </ul>
+            @if (_snapshots.Count > 1)
+            {
+                <div class="fqs-snapshot-compare" data-testid="fqs-snapshot-compare">
+                    <label class="fqs-field"><span>Compare A</span>
+                        <select data-testid="fqs-compare-a" value="@(_compareA?.ToString() ?? "")" @onchange="e => _compareA = Guid.TryParse(e.Value?.ToString(), out var g) ? g : null">
+                            <option value="">Choose a frozen snapshot</option>
+                            @foreach (var s in _snapshots) { <option value="@s.Id">@s.ScopeName v@(s.ScopeVersion) · @s.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</option> }
+                        </select>
+                    </label>
+                    <label class="fqs-field"><span>with B</span>
+                        <select data-testid="fqs-compare-b" value="@(_compareB?.ToString() ?? "")" @onchange="e => _compareB = Guid.TryParse(e.Value?.ToString(), out var g) ? g : null">
+                            <option value="">Choose a frozen snapshot</option>
+                            @foreach (var s in _snapshots) { <option value="@s.Id">@s.ScopeName v@(s.ScopeVersion) · @s.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</option> }
+                        </select>
+                    </label>
+                    @if (_snapshots.FirstOrDefault(x => x.Id == _compareA) is { } a && _snapshots.FirstOrDefault(x => x.Id == _compareB) is { } b && a.Id != b.Id)
+                    {
+                        var match = DeliveryScopeProvenanceText.Compare(a.ScopeProvenance, b.ScopeProvenance);
+                        <div data-testid="fqs-snapshot-comparison" data-match="@match.Match">
+                            <p class="fqs-small" data-testid="fqs-compare-side-a"><strong>A</strong> · @a.ScopeName v@(a.ScopeVersion) · @a.ItemCount items · @DeliveryScopeProvenanceText.Describe(a.ScopeProvenance)</p>
+                            <p class="fqs-small" data-testid="fqs-compare-side-b"><strong>B</strong> · @b.ScopeName v@(b.ScopeVersion) · @b.ItemCount items · @DeliveryScopeProvenanceText.Describe(b.ScopeProvenance)</p>
+                            <p class="@(match.LikeForLike ? "fqs-notice" : "fqs-limit")" role="@(match.LikeForLike ? "status" : "note")" data-testid="fqs-scope-provenance-notice">@match.Notice</p>
+                            @* A percentage change is shown only like-for-like (same scope ids and revisions); otherwise the raw counts stay, labelled. *@
+                            <p class="fqs-small" data-testid="fqs-compare-delta">Items A → B: @a.ItemCount → @b.ItemCount (@((b.ItemCount - a.ItemCount).ToString("+0;-0;0"))@(match.LikeForLike ? Percent(a.ItemCount, b.ItemCount) : $"; {DeliveryScopeProvenanceText.PercentNotLikeForLike}"))</p>
+                        </div>
+                    }
+                </div>
+            }
             <a href="snapshots?module=functional-scope-snapshot" class="fqs-link">Open in Snapshots</a>
         </details>
     };

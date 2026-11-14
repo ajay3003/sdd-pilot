@@ -285,6 +285,8 @@ public sealed record GenerateWeeklyReportRequest(Guid ProjectId, Guid BaselineSn
     /// <summary>Optional work type / quality category the report covers (shared feature classification).</summary>
     public DeliveryWorkType? WorkType { get; init; }
     public QualityCategory? Quality { get; init; }
+    /// <summary>Optional shared Scope Registry selection (scope ids, revision numbers and ids) active when the report was created; frozen with it.</summary>
+    public DeliveryScopeProvenance? ScopeProvenance { get; init; }
 }
 
 /// <summary>Full-period: the baseline covers the reporting week. Partial-period: part of it. Same-day: both snapshots on one day — a change report,
@@ -679,6 +681,9 @@ public sealed record WeeklyDeliveryReport
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? QualityRuleSet { get; init; }
     /// <summary>Set when the report covers one Source and/or Functional scope only (exact ids, frozen); null = the whole comparison.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DeliveryReportScope? Scope { get; init; }
+    /// <summary>The shared Scope Registry selection (exact revisions) active when the report was generated; null in reports generated before
+    /// scope support, which read "Scope provenance not recorded (created before scope support)".</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DeliveryScopeProvenance? ScopeProvenance { get; init; }
 }
 
 public static class DeliveryReportTitles
