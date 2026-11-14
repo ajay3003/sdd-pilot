@@ -231,5 +231,33 @@ public sealed class ImplementationGapExplorerTests : BunitContext
         cut.FindAll("[data-testid=ig-canonical-req]").Select(e => e.GetAttribute("data-resolved")).Should().Equal("true", "false");
         cut.Find("[data-testid=ig-alignment]").TextContent.Should().Contain("Not assessed", "no Task Alignment result exists for this tasks document");
         cut.Find("[data-testid=ig-shared-evidence]").TextContent.Should().Contain("not implementation or verification evidence");
+        cut.FindAll("[data-testid=ig-unscoped-requirements]").Should().BeEmpty("scoped identities exist");
+    }
+
+    [Fact]
+    public async Task A_source_only_interpretation_with_unscoped_requirements_says_why_nothing_resolves_and_never_guesses_a_feature()
+    {
+        var storage = new BirkNext.Web.Tests.Services.ActiveTargetEnvironmentTests.Storage();
+        var settings = new FrontendAnalysisSettingsService();
+        await settings.LoadAsync(storage);
+        settings.Settings.ActiveProfileId = "dev";
+        Services.AddSingleton<Microsoft.JSInterop.IJSRuntime>(storage);
+        Services.AddSingleton<IFrontendAnalysisSettingsService>(settings);
+        Services.AddSingleton<IFrontendAnalysisContextFactory>(BirkNext.Web.Tests.Services.ActiveTargetEnvironmentTests.Factory(settings, storage));
+        var scopes = new Mock<IScopeRegistryApiService>();
+        scopes.Setup(x => x.CatalogAsync(BirkNext.Scopes.ScopeMemberKind.Requirement, "dev", null, 0, 100, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new BirkNext.Scopes.ScopeCatalogPage(BirkNext.Scopes.ScopeMemberKind.Requirement,
+                [new BirkNext.Scopes.ScopeCatalogItem { Kind = BirkNext.Scopes.ScopeMemberKind.Requirement, TargetId = "Requirement|FR-019", Label = "FR-019", Description = "FR-019" },
+                 new BirkNext.Scopes.ScopeCatalogItem { Kind = BirkNext.Scopes.ScopeMemberKind.Requirement, TargetId = "Requirement|FR-020", Label = "FR-020", Description = "FR-020" }], 2, 0, 100), (string?)null));
+        scopes.Setup(x => x.VerifyingScenariosAsync(It.IsAny<BirkNext.Scopes.ScopeScenarioLinkRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(((IReadOnlyList<BirkNext.Scopes.ScopeScenarioLink>)[], (string?)null));
+        scopes.Setup(x => x.ListAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(([], (string?)null));
+        Services.AddSingleton(scopes.Object);
+        Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Imported", "import:m2lb", "M2LB")).Object);
+
+        var cut = Render<ImplementationGapExplorer>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ig-unscoped-requirements]").TextContent.Should().Contain("2"));
+        cut.Find("[data-testid=ig-unscoped-action]").GetAttribute("href").Should().Contain("correlation-review");
+        cut.Find("[data-testid=ig-overview-canonical]").TextContent.Should().StartWith("0 of", "an unscoped FR-019 is never matched to a feature by display id");
     }
 }

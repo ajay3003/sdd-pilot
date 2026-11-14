@@ -2,6 +2,20 @@
 
 **Date:** 2026-11-14 · branch `008-traceability-first` · local commits only. No push, no deployment, no remote environment contacted. `appsettings.Local.json` and `AIAssisted/testdata/` were not touched.
 
+## Follow-up
+
+The open items below were closed or re-scoped in `birknext-canonical-identity-and-evidence-closure.md` on the same date:
+- **Rows 2, 7 and 8:** Task Alignment, Impact and Delivery scope are now **Verified fixed** in the browser.
+- **Row 6:** journeys get person-confirmed association candidates, and Test Data gets asset ids and a data-need state. Both are implemented; the real data shows honest empty states.
+- **Rows 5 and 13 and the Explorer search:**
+  - Critical E2E has a test type separate from criticality.
+  - Health deep links focus the module.
+  - Authored drift is part of the health summary.
+  - Library search works without an open document.
+- **Delivery:** frozen snapshots and reports record scope revisions.
+
+The table below is kept as it was recorded.
+
 ## Gap closure
 
 Statuses: **Verified fixed** (automated and browser verification on the final build) · **Implemented, not fully verified** · **Blocked by documented technical dependency** · **Not implemented**.
@@ -68,6 +82,8 @@ No new registry, scope engine, correlation engine, search backend or decision st
   - Screenshots: session scratchpad `acc/shots-gap/`.
 
 ## Remaining limitations (honest)
+
+_Superseded where noted in the follow-up above; see the closure report for what remains._
 
 - **Unscoped canonical requirements.** The copied M2LB interpretation was built from Source Analysis only; its requirements are `Requirement|FR-012` with no module or feature. Feature Readiness, Test Coverage and Delivery therefore confirm no scope association on real data. Interpreting with the Delivery snapshot (Relationship Review → include Delivery) gives scoped identities. This was not done in the isolated run.
 - **Critical E2E classification.** A flow stores only Critical vs Diagnostic. UI Smoke and UI Functional suggestions both become Diagnostic and are counted together as "never counts".

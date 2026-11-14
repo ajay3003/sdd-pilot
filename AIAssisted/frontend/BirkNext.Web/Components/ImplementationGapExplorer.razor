@@ -80,6 +80,10 @@
         <p class="ig-note">Derived from source evidence: an unresolved mandatory gate blocks; a checked task is not code; a declared package is not behaviour; a test definition is not an execution.</p>
         @if (!ReadinessOnly) { <BirkNext.Web.Components.Scopes.ScopeFilter SelectionChanged="ScopeSelected" /> }
         @if (_sharedNote is not null) { <p class="ig-note" data-testid="ig-shared-note">@_sharedNote</p> }
+        @if (_canonicalLoaded && _unscopedRequirements > 0 && _canonicalRequirements.Count == _unscopedRequirements)
+        {
+            <p class="ig-note" data-testid="ig-unscoped-requirements">The canonical interpretation holds @_unscopedRequirements requirement id@(_unscopedRequirements == 1 ? "" : "s") without a module or feature (a source-only analysis), so no requirement can be tied to a feature or scope here — the same id exists in several Artifact Packs. To resolve them, include a Delivery snapshot when you run Analyze relationships in <a href="correlation-review?tab=overview" data-testid="ig-unscoped-action">Relationship Review</a>. Nothing is matched by the id alone in the meantime.</p>
+        }
         @if (_scopeSelection is not null)
         {
             var assoc = FeaturesIn(e).GroupBy(ScopeAssociation).ToDictionary(g => g.Key, g => g.Count());
@@ -386,6 +390,7 @@
     private readonly Dictionary<string, string> _canonicalRequirements = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<BirkNext.Scopes.ScopeScenarioLink> _verifying = [];
     private bool _canonicalLoaded;
+    private int _unscopedRequirements;
     private string? _sharedNote;
 
     private void ScopeSelected(BirkNext.Scopes.ScopeSelection? selection) => _scopeSelection = selection;
@@ -431,7 +436,7 @@
     /// <summary>Requirement identities from the shared member catalog (latest canonical interpretation of the active Target Environment).</summary>
     private async Task LoadSharedEvidenceAsync()
     {
-        _canonicalRequirements.Clear(); _canonicalLoaded = false; _verifying = [];
+        _canonicalRequirements.Clear(); _canonicalLoaded = false; _verifying = []; _unscopedRequirements = 0;
         if (Services.GetService(typeof(IScopeRegistryApiService)) is not IScopeRegistryApiService registry
             || Services.GetService(typeof(IFrontendAnalysisContextFactory)) is not IFrontendAnalysisContextFactory factory)
         { _sharedNote = null; return; }
@@ -442,7 +447,8 @@
             var (page, error) = await registry.CatalogAsync(BirkNext.Scopes.ScopeMemberKind.Requirement, scope, null, skip, 100);
             if (page is null) { _sharedNote = error ?? "Canonical requirements could not be read."; return; }
             if (page.Notices.Count > 0 && page.Items.Count == 0) { _sharedNote = string.Join(" ", page.Notices); return; }
-            foreach (var item in page.Items) if (item.Description is { Length: > 0 } identity) _canonicalRequirements.TryAdd(identity, item.TargetId);
+            foreach (var item in page.Items)
+                if (item.Description is { Length: > 0 } identity && _canonicalRequirements.TryAdd(identity, item.TargetId) && !identity.Contains('/')) _unscopedRequirements++;
             if (skip + page.Items.Count >= page.Total || page.Items.Count == 0) break;
         }
         _canonicalLoaded = true;
