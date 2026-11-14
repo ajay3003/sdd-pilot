@@ -80,7 +80,10 @@ public static class FeatureVisibilityTaxonomy
         new("task-deltas", ContextualRouteKind.Redirect, "task-explorer", "Retired Task Deltas; redirects to Task Explorer → Changes."),
         new("quality/source", ContextualRouteKind.Redirect, "source-analysis", "Earlier source quality page; redirects to Source Analysis."),
         new("source-analysis/application-messaging", ContextualRouteKind.Contextual, "source-analysis", "Application messaging detail, opened from Source Analysis."),
-        new("integration-journeys/declare", ContextualRouteKind.Contextual, "test-coverage-review", "Declare a project Integration Journey, opened from the Test Coverage journeys tab."),
+        new("integration-journeys", ContextualRouteKind.Contextual, "integration-quality-review",
+            "Integration Journeys declared for the project, with revision history; opened from Integration Quality Review (Journeys) and Test Coverage."),
+        new("integration-journeys/declare", ContextualRouteKind.Contextual, "test-coverage-review",
+            "Declare or edit (new revision) a project Integration Journey, opened from Integration Journeys and the Test Coverage journeys tab."),
         new("implementation-review", ContextualRouteKind.Contextual, "task-explorer",
             "Implementation Evidence Review, opened from Task Explorer and requirement evidence."),
     ];

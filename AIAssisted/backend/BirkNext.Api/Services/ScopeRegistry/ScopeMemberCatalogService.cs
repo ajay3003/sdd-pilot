@@ -73,7 +73,7 @@ public sealed class ScopeMemberCatalogService(CanonicalInterpretationService can
         if (kind == ScopeMemberKind.Journey)
         {
             if (journeys is null && declaredJourneys is null) return new(kind, [], 0, skip, take) { Available = false, Notices = ["Integration Journeys are not available in this host."] };
-            var items = JourneyItems().Where(i => Matches(i, search)).ToList();
+            var items = (await JourneyItemsAsync(ct)).Where(i => Matches(i, search)).ToList();
             return new(kind, [.. items.Skip(skip).Take(take)], items.Count, skip, take);
         }
         if (kind == ScopeMemberKind.CriticalE2EFlow)
@@ -96,6 +96,7 @@ public sealed class ScopeMemberCatalogService(CanonicalInterpretationService can
     {
         var result = new List<ScopeMemberStatus>();
         var canonicalMembers = new List<ScopeMember>();
+        var journeyItems = members.Any(m => m.Kind == ScopeMemberKind.Journey) && (journeys is not null || declaredJourneys is not null) ? await JourneyItemsAsync(ct) : [];
         foreach (var m in members)
         {
             if (CanonicalTypes(m.Kind) is not null) { canonicalMembers.Add(m); continue; }
@@ -105,8 +106,10 @@ public sealed class ScopeMemberCatalogService(CanonicalInterpretationService can
                     : new(m.Key, ScopeMemberCheck.Missing, "No Test Data asset has this asset id."));
             else if (m.Kind == ScopeMemberKind.Journey)
                 result.Add(journeys is null && declaredJourneys is null ? new(m.Key, ScopeMemberCheck.NotCheckable, "Integration Journeys are not available here.")
-                    : JourneyItems().FirstOrDefault(i => i.TargetId == m.TargetId) is { } journey
+                    : journeyItems.FirstOrDefault(i => i.TargetId == m.TargetId) is { } journey
                         ? new(m.Key, ScopeMemberCheck.Current, journey.SourceModule == DeclaredJourneyModule ? "A journey declared for the project." : "A registered journey.", journey.Label)
+                    : declaredJourneys is not null && await declaredJourneys.FindByIdAsync(m.TargetId, ct) is { RetiredAt: not null } retired
+                        ? new(m.Key, ScopeMemberCheck.Missing, "This declared journey was removed from its project (its revision history is kept). Review before changing the scope.", retired.DisplayName)
                     : new(m.Key, ScopeMemberCheck.Missing, "No registered journey has this id."));
             else if (m.Kind == ScopeMemberKind.CriticalE2EFlow)
                 result.Add(CheckFlow(m, catalogScope));
@@ -148,18 +151,19 @@ public sealed class ScopeMemberCatalogService(CanonicalInterpretationService can
             SourceModule = "Test Data", State = $"{a.Approval} · {a.Validation}", SubKind = a.Kind.ToString(),
         });
 
-    /// <summary>Registered pack journeys, then project-declared journeys (each id carries its project, so ids never collide across projects).</summary>
-    IEnumerable<ScopeCatalogItem> JourneyItems() => (journeys?.Packs ?? []).SelectMany(p => p.Journeys.OrderBy(j => j.Order).Select(j => new ScopeCatalogItem
+    /// <summary>Registered pack journeys, then current project-declared journeys (each id carries its project, so ids never collide across projects;
+    /// a retired declared journey is not listed).</summary>
+    async Task<List<ScopeCatalogItem>> JourneyItemsAsync(CancellationToken ct) => [.. (journeys?.Packs ?? []).SelectMany(p => p.Journeys.OrderBy(j => j.Order).Select(j => new ScopeCatalogItem
     {
         Kind = ScopeMemberKind.Journey, TargetId = $"{p.PackId}:{j.JourneyId}", Label = j.DisplayName,
         Description = string.IsNullOrWhiteSpace(j.Description) ? p.DisplayName : $"{p.DisplayName} · {j.Description}",
         SourceModule = "Integration Journeys", State = "Registered journey", SubKind = p.PackId,
-    })).Concat((declaredJourneys?.All() ?? []).Select(j => new ScopeCatalogItem
+    })).Concat((declaredJourneys is null ? [] : await declaredJourneys.AllAsync(ct)).Select(j => new ScopeCatalogItem
     {
         Kind = ScopeMemberKind.Journey, TargetId = j.Id, Label = j.DisplayName,
         Description = $"Project {j.ProjectKey} · {string.Join(" → ", j.Components)}",
-        SourceModule = DeclaredJourneyModule, State = $"Declared by {j.DeclaredBy}", SubKind = j.PackId,
-    }));
+        SourceModule = DeclaredJourneyModule, State = $"Declared by {j.DeclaredBy} · revision {j.Revision}", SubKind = j.PackId,
+    }))];
 
     public const string DeclaredJourneyModule = "Integration Journeys (declared for the project)";
 

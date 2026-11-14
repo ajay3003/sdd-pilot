@@ -4,23 +4,34 @@ using BirkNext.Integrations;
 
 namespace BirkNext.Web.Services;
 
-/// <summary>Project-declared Integration Journeys (name + ordered component chain). Design metadata only: nothing runs or is associated from here.</summary>
+/// <summary>Project-declared Integration Journeys (name + ordered component chain), stored by the backend with append-only revisions. Design
+/// metadata only: nothing runs or is associated from here.</summary>
 public interface IDeclaredIntegrationJourneyApiService
 {
     Task<(IReadOnlyList<DeclaredIntegrationJourney>? Journeys, string? Error)> ListAsync(string projectKey, CancellationToken ct = default);
     Task<(DeclaredIntegrationJourney? Journey, string? Error)> DeclareAsync(DeclaredIntegrationJourneyRequest request, CancellationToken ct = default);
-    Task<string?> RemoveAsync(string projectKey, string journeyId, CancellationToken ct = default);
+    /// <summary>Edits a journey: the backend appends the next revision (earlier revisions never change).</summary>
+    Task<(DeclaredIntegrationJourney? Journey, string? Error)> ReviseAsync(string projectKey, string journeyId, DeclaredIntegrationJourneyRequest request, CancellationToken ct = default);
+    /// <summary>The journey with every revision, newest first (also when retired).</summary>
+    Task<(DeclaredIntegrationJourneyHistory? History, string? Error)> HistoryAsync(string projectKey, string journeyId, CancellationToken ct = default);
+    /// <summary>Removes (retires) a journey; its history is kept.</summary>
+    Task<string?> RemoveAsync(string projectKey, string journeyId, string? retiredBy, CancellationToken ct = default);
+    /// <summary>The legacy JSON import report, limited to this project's entries; null when it cannot be read.</summary>
+    Task<DeclaredIntegrationJourneyMigrationReport?> MigrationReportAsync(string projectKey, CancellationToken ct = default);
 }
 
 public sealed class DeclaredIntegrationJourneyApiService(HttpClient http) : IDeclaredIntegrationJourneyApiService
 {
+    private const string Base = "api/integration-journeys/declared";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    private static string E(string value) => Uri.EscapeDataString(value);
 
     public async Task<(IReadOnlyList<DeclaredIntegrationJourney>? Journeys, string? Error)> ListAsync(string projectKey, CancellationToken ct = default)
     {
         try
         {
-            using var response = await http.GetAsync($"api/integration-journeys/declared?projectKey={Uri.EscapeDataString(projectKey)}", ct);
+            using var response = await http.GetAsync($"{Base}?projectKey={E(projectKey)}", ct);
             if (!response.IsSuccessStatusCode) return (null, await MessageAsync(response, "Declared journeys could not be loaded", ct));
             return (await response.Content.ReadFromJsonAsync<List<DeclaredIntegrationJourney>>(Json, ct) ?? [], null);
         }
@@ -33,21 +44,55 @@ public sealed class DeclaredIntegrationJourneyApiService(HttpClient http) : IDec
         if (DeclaredIntegrationJourneyRules.Validate(request) is { } invalid) return (null, invalid);
         try
         {
-            using var response = await http.PostAsJsonAsync("api/integration-journeys/declared", request, Json, ct);
+            using var response = await http.PostAsJsonAsync(Base, request, Json, ct);
             if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<DeclaredIntegrationJourney>(Json, ct), null);
             return (null, await MessageAsync(response, "The journey was not saved", ct));
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return (null, "The journey was not saved: the backend could not be reached."); }
     }
 
-    public async Task<string?> RemoveAsync(string projectKey, string journeyId, CancellationToken ct = default)
+    public async Task<(DeclaredIntegrationJourney? Journey, string? Error)> ReviseAsync(string projectKey, string journeyId, DeclaredIntegrationJourneyRequest request, CancellationToken ct = default)
+    {
+        if (DeclaredIntegrationJourneyRules.Validate(request) is { } invalid) return (null, invalid);
+        try
+        {
+            using var response = await http.PutAsJsonAsync($"{Base}/{E(projectKey)}/{E(journeyId)}", request, Json, ct);
+            if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<DeclaredIntegrationJourney>(Json, ct), null);
+            return (null, await MessageAsync(response, "The new revision was not saved", ct));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return (null, "The new revision was not saved: the backend could not be reached."); }
+    }
+
+    public async Task<(DeclaredIntegrationJourneyHistory? History, string? Error)> HistoryAsync(string projectKey, string journeyId, CancellationToken ct = default)
     {
         try
         {
-            using var response = await http.DeleteAsync($"api/integration-journeys/declared/{Uri.EscapeDataString(projectKey)}/{Uri.EscapeDataString(journeyId)}", ct);
+            using var response = await http.GetAsync($"{Base}/{E(projectKey)}/{E(journeyId)}/revisions", ct);
+            if (!response.IsSuccessStatusCode) return (null, await MessageAsync(response, "The revision history could not be loaded", ct));
+            return (await response.Content.ReadFromJsonAsync<DeclaredIntegrationJourneyHistory>(Json, ct), null);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return (null, "The revision history could not be loaded: the backend could not be reached."); }
+    }
+
+    public async Task<string?> RemoveAsync(string projectKey, string journeyId, string? retiredBy, CancellationToken ct = default)
+    {
+        try
+        {
+            var query = string.IsNullOrWhiteSpace(retiredBy) ? "" : $"?retiredBy={E(retiredBy.Trim())}";
+            using var response = await http.DeleteAsync($"{Base}/{E(projectKey)}/{E(journeyId)}{query}", ct);
             return response.IsSuccessStatusCode ? null : await MessageAsync(response, "The journey was not removed", ct);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { return "The journey was not removed: the backend could not be reached."; }
+    }
+
+    public async Task<DeclaredIntegrationJourneyMigrationReport?> MigrationReportAsync(string projectKey, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.GetAsync($"{Base}/migration-report?projectKey={E(projectKey)}", ct);
+            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<DeclaredIntegrationJourneyMigrationReport>(Json, ct) : null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return null; }
     }
 
     private static async Task<string> MessageAsync(HttpResponseMessage response, string fallback, CancellationToken ct)

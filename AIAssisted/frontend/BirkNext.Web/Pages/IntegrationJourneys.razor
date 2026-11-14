@@ -1,0 +1,146 @@
+@page "/integration-journeys"
+@using BirkNext.Integrations
+@implements IDisposable
+@inject ICurrentWorkspaceProjection CurrentWorkspace
+@inject IServiceProvider Services
+
+<PageTitle>Integration Journeys</PageTitle>
+
+@* Integration Journeys owner page (no sidebar entry; opened from Integration Quality Review, Test Coverage and the declare form). Lists the
+   journeys declared for the current project with their revision history, and leads to declaring a new one. Registered test-pack journeys (which
+   can run) stay in Integration Quality Review → Test & Verify. Declared journeys are design metadata: nothing runs from here. *@
+<div class="ijl-page" data-testid="ijl-page" aria-busy="@(_loaded ? "false" : "true")">
+    <PageHeader Title="Integration Journeys" Description="The integration journeys declared for this project: name and ordered component chain, with every revision. Test Coverage proposes them to matching source journeys; scopes can name them." />
+
+    @if (!_loaded)
+    {
+        <p class="ijl-muted" data-testid="ijl-loading">Loading…</p>
+    }
+    else if (_projectKey is null)
+    {
+        <p class="ijl-notice" role="status" data-testid="ijl-no-project">Load a project first: declared journeys belong to one project.</p>
+    }
+    else if (_api is null)
+    {
+        <p class="ijl-notice" role="status" data-testid="ijl-unavailable">Declared Integration Journeys are not available in this session.</p>
+    }
+    else
+    {
+        <section class="ijl-card" aria-labelledby="ijl-declared-heading" data-testid="ijl-declared">
+            <div class="ijl-head">
+                <h2 id="ijl-declared-heading">Declared for @(_projectName ?? _projectKey) (@_journeys.Count)</h2>
+                <a class="btn-primary" href="integration-journeys/declare" data-testid="ijl-declare">Declare journey</a>
+            </div>
+            <p class="ijl-muted" data-testid="ijl-project">Project <code>@_projectKey</code>. Revisions are append-only: an edit adds a revision and the latest is current; earlier revisions never change.</p>
+            @if (_loadError is not null) { <p class="ijl-error" role="alert" data-testid="ijl-load-error">@_loadError</p> }
+            else if (_journeys.Count == 0) { <p class="ijl-muted" data-testid="ijl-empty">No journey is declared for this project yet. Use <strong>Declare journey</strong> to add the first.</p> }
+            <ul class="ijl-journeys">
+                @foreach (var j in _journeys)
+                {
+                    var journey = j;
+                    var open = _open.Contains(j.JourneyId);
+                    <li data-testid="ijl-journey" data-id="@j.Id">
+                        <div class="ijl-row">
+                            <strong data-testid="ijl-journey-name">@j.DisplayName</strong>
+                            <span class="ijl-pill" data-testid="ijl-journey-revision">Revision @j.Revision</span>
+                            <code class="ijl-id">@j.Id</code>
+                        </div>
+                        <span class="ijl-chain" data-testid="ijl-journey-chain">@string.Join(" → ", j.Components)</span>
+                        <span class="ijl-muted">@(j.Revision > 1 ? "Last changed" : "Declared") by @j.DeclaredBy, @j.DeclaredAt.ToLocalTime().ToString("g")@(j.Description is { Length: > 0 } d ? $" · {d}" : "")</span>
+                        <div class="ijl-actions">
+                            <button type="button" class="btn-secondary btn-small" aria-expanded="@(open ? "true" : "false")" data-testid="ijl-revisions-toggle" @onclick="() => ToggleAsync(journey)">
+                                @(open ? "Hide revisions" : "Revisions")<span class="visually-hidden"> of @j.DisplayName</span>
+                            </button>
+                            <a class="btn-secondary btn-small" href="@($"integration-journeys/declare?journey={Uri.EscapeDataString(j.JourneyId)}")" data-testid="ijl-edit">Edit (new revision)<span class="visually-hidden"> @j.DisplayName</span></a>
+                        </div>
+                        @if (open)
+                        {
+                            @if (_histories.GetValueOrDefault(j.JourneyId) is { } history)
+                            {
+                                <ol class="ijl-revisions" data-testid="ijl-revisions" aria-label="@($"Revisions of {j.DisplayName}")">
+                                    @foreach (var r in history.Revisions)
+                                    {
+                                        <li data-testid="ijl-revision" data-revision="@r.Revision">
+                                            <strong>Revision @r.Revision</strong>@(r.Revision == history.Journey.Revision ? " (current)" : "") · @OriginLabel(r.Origin) by @r.DeclaredBy, @r.DeclaredAt.ToLocalTime().ToString("g")
+                                            <span class="ijl-chain">@r.DisplayName: @string.Join(" → ", r.Components)</span>
+                                            @if (r.Description is { Length: > 0 } rd) { <span class="ijl-muted">@rd</span> }
+                                        </li>
+                                    }
+                                </ol>
+                            }
+                            else if (_historyErrors.GetValueOrDefault(j.JourneyId) is { } historyError) { <p class="ijl-error" role="alert" data-testid="ijl-revisions-error">@historyError</p> }
+                            else { <p class="ijl-muted" role="status">Loading revisions…</p> }
+                        }
+                    </li>
+                }
+            </ul>
+        </section>
+
+        @if (_migration is { Status: not ("NotRun" or "NoLegacyFile") } migration)
+        {
+            <section class="ijl-card" aria-labelledby="ijl-migration-heading" data-testid="ijl-migration">
+                <h2 id="ijl-migration-heading">Imported from the earlier local file</h2>
+                <p class="ijl-muted" data-testid="ijl-migration-summary">@MigrationSummary(migration)</p>
+                @if (migration.Items.Where(i => i.Outcome is DeclaredIntegrationJourneyRules.Conflict or DeclaredIntegrationJourneyRules.Invalid).ToList() is { Count: > 0 } issues)
+                {
+                    <ul class="ijl-issues" data-testid="ijl-migration-issues">
+                        @foreach (var i in issues) { <li data-testid="ijl-migration-issue" data-outcome="@i.Outcome"><strong>@i.Outcome</strong> <code>@i.Id</code> — @i.Detail</li> }
+                    </ul>
+                }
+            </section>
+        }
+
+        <p class="ijl-muted">Journeys of registered test packs (which can run) are in <a href="integration-quality-review" data-testid="ijl-registered">Integration Quality Review → Test &amp; Verify</a>.
+            Declared journeys become association candidates in <a href="test-coverage-review" data-testid="ijl-test-coverage">Test Coverage &amp; Overlap Review</a> on its next run.</p>
+    }
+</div>
+
+@code {
+    private readonly CancellationTokenSource _cts = new();
+    private IDeclaredIntegrationJourneyApiService? _api;
+    private string? _projectKey, _projectName, _loadError;
+    private IReadOnlyList<DeclaredIntegrationJourney> _journeys = [];
+    private DeclaredIntegrationJourneyMigrationReport? _migration;
+    private readonly HashSet<string> _open = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DeclaredIntegrationJourneyHistory> _histories = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _historyErrors = new(StringComparer.Ordinal);
+    private bool _loaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _api = Services.GetService<IDeclaredIntegrationJourneyApiService>();
+        var workspace = await CurrentWorkspace.GetAsync();
+        _projectKey = string.IsNullOrWhiteSpace(workspace.ProjectSlug) ? null : workspace.ProjectSlug;
+        _projectName = workspace.ProjectName;
+        if (_projectKey is not null && _api is not null)
+        {
+            var (journeys, error) = await _api.ListAsync(_projectKey, _cts.Token);
+            (_journeys, _loadError) = (journeys ?? [], error);
+            _migration = await _api.MigrationReportAsync(_projectKey, _cts.Token);
+        }
+        _loaded = true;
+    }
+
+    private async Task ToggleAsync(DeclaredIntegrationJourney journey)
+    {
+        if (!_open.Add(journey.JourneyId)) { _open.Remove(journey.JourneyId); return; }
+        _historyErrors.Remove(journey.JourneyId);
+        var (history, error) = await _api!.HistoryAsync(journey.ProjectKey, journey.JourneyId, _cts.Token);
+        if (history is not null) _histories[journey.JourneyId] = history;
+        else _historyErrors[journey.JourneyId] = error ?? "The revision history could not be loaded.";
+    }
+
+    internal static string OriginLabel(string origin) => origin switch
+    {
+        DeclaredIntegrationJourneyRules.OriginEdited => "edited",
+        DeclaredIntegrationJourneyRules.OriginReactivated => "declared again",
+        DeclaredIntegrationJourneyRules.OriginLegacyImport => "imported from the earlier local file; declared",
+        _ => "declared",
+    };
+
+    private static string MigrationSummary(DeclaredIntegrationJourneyMigrationReport r) =>
+        $"{r.Status}: {r.Imported} imported, {r.AlreadyPresent} already present, {r.Conflicts} conflict(s), {r.Invalid} invalid, {r.DuplicatesInFile} duplicate(s) across all projects"
+        + $"{(r.RanAt is { } at ? $" (checked {at.ToLocalTime():g})" : "")}. The earlier file is only read — never changed or deleted; a conflict keeps the database version.";
+
+    public void Dispose() { _cts.Cancel(); _cts.Dispose(); }
+}

@@ -810,7 +810,13 @@ builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.IScenarioReviewSou
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.RequirementCoverageService>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyPackRegistry, BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyPackRegistry>();
 // Project-declared Integration Journeys (name + ordered component chain; design metadata only): Test Coverage association candidates, Scope Registry Journey members.
-builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.DeclaredIntegrationJourneyStore>();
+// Project-declared Integration Journeys: their own schema (integration_journeys); append-only revisions per project. The earlier JSON file is
+// imported once per start (idempotent, read only — never changed or deleted); the report is kept in memory.
+builder.Services.AddDbContext<BirkNext.Api.Data.IntegrationJourneys.IntegrationJourneysDbContext>(options =>
+    BirkNext.Api.Data.IntegrationJourneys.IntegrationJourneysDbContext.Configure(options, databaseConnectionString));
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.DeclaredIntegrationJourneyStore>();
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.DeclaredIntegrationJourneyLegacyImport>();
+builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.DeclaredIntegrationJourneyMigrationReports>();
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunner(
     sp.GetServices<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepExecutor>(), sp.GetServices<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepObserver>(), TimeProvider.System));
 builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunStore>();
@@ -1068,7 +1074,8 @@ try
                      ("Canonical interpretation", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.CanonicalInterpretation.CanonicalInterpretationDbContext>()),
                      ("Snapshot registry", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext>()),
                      ("Scope registry", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.ScopeRegistry.ScopeRegistryDbContext>()),
-                     ("Task alignment", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.TaskAlignment.TaskAlignmentDbContext>()) })
+                     ("Task alignment", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.TaskAlignment.TaskAlignmentDbContext>()),
+                     ("Integration journeys", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.IntegrationJourneys.IntegrationJourneysDbContext>()) })
         {
             var schema = await BirkNext.Api.Services.SystemInfo.BuildInfoService.SchemaAsync(name, context, CancellationToken.None);
             if (schema.Status != BirkNext.BuildInfo.SchemaCompatibility.AheadOfBuild) continue;
@@ -1083,6 +1090,10 @@ try
         await DatabaseMigrationLock.MigrateAsync(scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext>());
         await DatabaseMigrationLock.MigrateAsync(scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.ScopeRegistry.ScopeRegistryDbContext>());
         await DatabaseMigrationLock.MigrateAsync(scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.TaskAlignment.TaskAlignmentDbContext>());
+        await DatabaseMigrationLock.MigrateAsync(scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.IntegrationJourneys.IntegrationJourneysDbContext>());
+        // Declared Integration Journeys: idempotent import of the earlier JSON file (read only; conflicts reported, never overwritten). Never fails startup.
+        await scope.ServiceProvider.GetRequiredService<BirkNext.Api.Services.IntegrationJourneys.DeclaredIntegrationJourneyLegacyImport>().ImportAtStartupAsync(
+            BirkNext.Api.Services.IntegrationJourneys.DeclaredIntegrationJourneyLegacyImport.DefaultPath(app.Environment), DateTimeOffset.UtcNow);
     }
     // Saved Target Environment Altinn settings are read synchronously by the execution policy: load them once at startup.
     await scope.ServiceProvider.GetRequiredService<BirkNext.Api.Services.AltinnTesting.AltinnEnvironmentSettingsStore>().WarmAsync();

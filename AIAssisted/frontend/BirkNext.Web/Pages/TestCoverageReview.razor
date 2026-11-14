@@ -240,7 +240,7 @@
                         @if (r.Journeys.Count > 0)
                         {
                             @* Integration Journeys are declared by their owner (per project); a declared chain that equals or contains a source journey's chain becomes a candidate on the next run. *@
-                            <p class="tco-muted" data-testid="tco-declare-journey-note">Candidates come from Integration Journeys whose declared component chain equals or contains a source journey's chain. <a href="integration-journeys/declare" data-testid="tco-declare-journey">Declare an Integration Journey for this project</a>, then run the review again.</p>
+                            <p class="tco-muted" data-testid="tco-declare-journey-note">Candidates come from Integration Journeys whose declared component chain equals or contains a source journey's chain. <a href="integration-journeys/declare" data-testid="tco-declare-journey">Declare an Integration Journey for this project</a>, then run the review again. <a href="integration-journeys" data-testid="tco-declared-journeys">See the declared journeys and their revisions</a>.</p>
                         }
                         @if (r.Journeys.Any(j => j.AssociationCandidates.Count > 0))
                         {

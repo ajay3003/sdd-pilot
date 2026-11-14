@@ -795,15 +795,24 @@ public sealed record DeclaredIntegrationJourney
     public string? Description { get; init; }
     /// <summary>The declared component chain in order (at least two components).</summary>
     public List<string> Components { get; init; } = [];
+    /// <summary>Who declared the current revision, and when.</summary>
     public string DeclaredBy { get; init; } = "";
     public DateTimeOffset DeclaredAt { get; init; }
+    /// <summary>The current revision number (1 = as first declared). Revisions are append-only; the latest is current.</summary>
+    public int Revision { get; init; } = 1;
+    /// <summary>Who first declared the journey, and when (revision 1).</summary>
+    public string? CreatedBy { get; init; }
+    public DateTimeOffset? CreatedAt { get; init; }
+    /// <summary>Set when the journey was removed (retired): it is no longer listed or proposed, and its history is kept.</summary>
+    public DateTimeOffset? RetiredAt { get; init; }
     /// <summary>"project.{projectKey}" — the pack id of the project's declared journeys.</summary>
     public string PackId => DeclaredIntegrationJourneyRules.PackId(ProjectKey);
     /// <summary>"project.{projectKey}:{journeyId}" — the Integration Journey id (Scope Registry Journey member id, association target).</summary>
     public string Id => $"{PackId}:{JourneyId}";
 }
 
-/// <summary>Declare an Integration Journey for a project. Components are names, one per step boundary, in order.</summary>
+/// <summary>Declare an Integration Journey for a project (POST), or edit one (PUT: a new revision). Components are names, one per step
+/// boundary, in order.</summary>
 public sealed record DeclaredIntegrationJourneyRequest
 {
     public string ProjectKey { get; init; } = "";
@@ -811,12 +820,75 @@ public sealed record DeclaredIntegrationJourneyRequest
     public string? Description { get; init; }
     public List<string> Components { get; init; } = [];
     public string DeclaredBy { get; init; } = "";
+    /// <summary>Edit only: the revision the editor started from. When the journey has a newer revision the edit is refused (409), never merged.</summary>
+    public int? ExpectedRevision { get; init; }
+}
+
+/// <summary>One immutable revision of a declared journey. A revision is never changed or deleted after it is written.</summary>
+public sealed record DeclaredIntegrationJourneyRevision
+{
+    public int Revision { get; init; }
+    public string DisplayName { get; init; } = "";
+    public string? Description { get; init; }
+    public List<string> Components { get; init; } = [];
+    public string DeclaredBy { get; init; } = "";
+    public DateTimeOffset DeclaredAt { get; init; }
+    /// <summary>How the revision came to be: see <see cref="DeclaredIntegrationJourneyRules"/> (Declared, Edited, Reactivated, LegacyImport).</summary>
+    public string Origin { get; init; } = DeclaredIntegrationJourneyRules.OriginDeclared;
+}
+
+/// <summary>A declared journey with its full revision history, newest first (also for a retired journey).</summary>
+public sealed record DeclaredIntegrationJourneyHistory
+{
+    public DeclaredIntegrationJourney Journey { get; init; } = new();
+    public string? RetiredBy { get; init; }
+    public List<DeclaredIntegrationJourneyRevision> Revisions { get; init; } = [];
+}
+
+/// <summary>One legacy-file entry's outcome in the declared-journey migration (JSON file → database).</summary>
+public sealed record DeclaredIntegrationJourneyMigrationItem
+{
+    public string ProjectKey { get; init; } = "";
+    public string JourneyId { get; init; } = "";
+    public string DisplayName { get; init; } = "";
+    /// <summary>Imported, AlreadyPresent, Conflict, DuplicateInFile or Invalid (see <see cref="DeclaredIntegrationJourneyRules"/>).</summary>
+    public string Outcome { get; init; } = "";
+    public string Detail { get; init; } = "";
+    public string Id => ProjectKey.Length == 0 ? JourneyId : $"{DeclaredIntegrationJourneyRules.PackId(ProjectKey)}:{JourneyId}";
+}
+
+/// <summary>
+/// The report of the idempotent import of the earlier machine-local JSON file (App_Data/integration-journeys/declared-journeys.json) into the
+/// database. The file is only read — never changed, moved or deleted. Existing database journeys are never overwritten: a different journey with
+/// the same id is a Conflict.
+/// </summary>
+public sealed record DeclaredIntegrationJourneyMigrationReport
+{
+    /// <summary>NotRun, NoLegacyFile, Completed, CompletedWithIssues, Unreadable or Failed.</summary>
+    public string Status { get; init; } = "NotRun";
+    public string? SourcePath { get; init; }
+    public string? SourceSha256 { get; init; }
+    public long? SourceBytes { get; init; }
+    public DateTimeOffset? SourceLastWriteUtc { get; init; }
+    public DateTimeOffset? RanAt { get; init; }
+    public int Read { get; init; }
+    public int Imported { get; init; }
+    public int AlreadyPresent { get; init; }
+    public int Conflicts { get; init; }
+    public int DuplicatesInFile { get; init; }
+    public int Invalid { get; init; }
+    public string? Error { get; init; }
+    public List<DeclaredIntegrationJourneyMigrationItem> Items { get; init; } = [];
 }
 
 public static class DeclaredIntegrationJourneyRules
 {
     public const string PackPrefix = "project.";
     public const string Source = "Declared for the project";
+    /// <summary>Revision origins.</summary>
+    public const string OriginDeclared = "Declared", OriginEdited = "Edited", OriginReactivated = "Reactivated", OriginLegacyImport = "LegacyImport";
+    /// <summary>Legacy migration outcomes.</summary>
+    public const string Imported = "Imported", AlreadyPresent = "AlreadyPresent", Conflict = "Conflict", DuplicateInFile = "DuplicateInFile", Invalid = "Invalid";
     public const int MaxComponents = 20, MaxName = 120, MaxComponent = 160, MaxDescription = 1000, MaxDeclaredBy = 120;
     private static readonly System.Text.RegularExpressions.Regex ProjectKeyPattern = new("^[A-Za-z0-9][A-Za-z0-9._:-]{0,149}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
     private static readonly string[] SecretMarkers = ["password=", "pwd=", "secret=", "token=", "apikey=", "api_key=", "sharedaccesskey", "bearer "];
@@ -847,6 +919,15 @@ public static class DeclaredIntegrationJourneyRules
             if (chain.Count == 0 || !string.Equals(chain[^1], c, StringComparison.OrdinalIgnoreCase)) chain.Add(c);
         return chain;
     }
+
+    /// <summary>True when <paramref name="journeyId"/> is a slug as <see cref="Slug"/> makes them (a stored id is kept, never re-derived).</summary>
+    public static bool IsJourneyId(string? journeyId) => !string.IsNullOrEmpty(journeyId) && Slug(journeyId) == journeyId;
+
+    /// <summary>Same declared content: name, description (blank = none) and component chain (ordinal, in order). Who declared it is not content.</summary>
+    public static bool SameContent(string name, string? description, IEnumerable<string> components, string otherName, string? otherDescription, IEnumerable<string> otherComponents) =>
+        string.Equals(name.Trim(), otherName.Trim(), StringComparison.Ordinal)
+        && string.Equals(string.IsNullOrWhiteSpace(description) ? null : description.Trim(), string.IsNullOrWhiteSpace(otherDescription) ? null : otherDescription.Trim(), StringComparison.Ordinal)
+        && Chain(components).SequenceEqual(Chain(otherComponents), StringComparer.Ordinal);
 
     /// <summary>Null when valid; otherwise why not. Names only: a component is never a URL, connection string or credential.</summary>
     public static string? Validate(DeclaredIntegrationJourneyRequest r)

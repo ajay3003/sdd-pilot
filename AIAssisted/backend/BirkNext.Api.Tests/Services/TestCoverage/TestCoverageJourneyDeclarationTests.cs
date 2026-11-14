@@ -1,4 +1,5 @@
 using BirkNext.Api.Data.CanonicalInterpretation;
+using BirkNext.Api.Data.IntegrationJourneys;
 using BirkNext.Api.Services.CanonicalInterpretation;
 using BirkNext.Api.Services.Integrations.SourceEvidence;
 using BirkNext.Api.Services.IntegrationJourneys;
@@ -11,12 +12,11 @@ using BirkNext.TestCoverage;
 using BirkNext.TestData;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace BirkNext.Api.Tests.Services.TestCoverage;
 
 /// <summary>
-/// Project-declared Integration Journeys (persisted, project-scoped, names only) feed Test Coverage association candidates only by exact component
+/// Project-declared Integration Journeys (persisted in the database, project-scoped, names only) feed Test Coverage association candidates only by exact component
 /// chain; the Scope Registry lists and checks them as Journey members. Test Data consumer references of a QA test give its asset id, bound revision
 /// and readiness: an unresolved (deprecated / changed / invalid) revision is never "Linked", a registered need without a binding is
 /// RequiredButMissing, and nothing recorded stays NotAssessed. The source fixture mirrors scratchpad acc/make-journey-fixture.py.
@@ -24,17 +24,15 @@ namespace BirkNext.Api.Tests.Services.TestCoverage;
 public sealed class TestCoverageJourneyDeclarationTests : IDisposable
 {
     private const string Project = "import:acc-journeys";
-    private readonly string _dir = Path.Combine(Path.GetTempPath(), "birknext-declared-journeys-" + Guid.NewGuid().ToString("N"));
+    private readonly string _journeyDatabase = $"declared-journeys-{Guid.NewGuid():N}";
     private readonly BirkNext.Api.Data.AppDbContext _db = TestCoverageFixture.Db();
     private static readonly DateTimeOffset Now = new(2026, 11, 14, 12, 0, 0, TimeSpan.Zero);
 
-    public void Dispose()
-    {
-        _db.Dispose();
-        try { Directory.Delete(_dir, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
-    }
+    public void Dispose() => _db.Dispose();
 
-    private DeclaredIntegrationJourneyStore Store() => new(_dir, NullLogger<DeclaredIntegrationJourneyStore>.Instance);
+    /// <summary>A new store (new context) over the same in-memory database each time — a "reload".</summary>
+    private DeclaredIntegrationJourneyStore Store() =>
+        new(new IntegrationJourneysDbContext(new DbContextOptionsBuilder<IntegrationJourneysDbContext>().UseInMemoryDatabase(_journeyDatabase).Options));
 
     private static DeclaredIntegrationJourneyRequest Request(string name, params string[] components) =>
         new() { ProjectKey = Project, DisplayName = name, Components = [.. components], DeclaredBy = "Kari", Description = "Acceptance" };
@@ -45,38 +43,41 @@ public sealed class TestCoverageJourneyDeclarationTests : IDisposable
     // ── Declared journeys: owner store ─────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void A_declared_journey_is_persisted_per_project_with_a_stable_id_and_never_overwritten()
+    public async Task A_declared_journey_is_persisted_per_project_with_a_stable_id_and_never_overwritten()
     {
         var store = Store();
-        var (journey, _, error) = store.Declare(Request("Order notification", [.. Notification, "Orders.Notifier"]), Now);
-        error.Should().BeNull();
-        journey!.Id.Should().Be($"project.{Project}:order-notification");
+        var declared = await store.DeclareAsync(Request("Order notification", [.. Notification, "Orders.Notifier"]), Now);
+        declared.Error.Should().BeNull();
+        var journey = declared.Journey!;
+        journey.Id.Should().Be($"project.{Project}:order-notification");
         journey.Components.Should().Equal(Notification, "consecutive duplicates collapse");
+        journey.Revision.Should().Be(1);
 
-        var (_, existing, conflict) = store.Declare(Request("Order  Notification!", "A", "B"), Now);
-        existing!.Id.Should().Be(journey.Id, "the same slug in the same project is the same journey");
-        conflict.Should().Contain("already declares");
-        store.Declare(Request("Order notification", "A", "B") with { ProjectKey = "import:other" }, Now).Journey.Should().NotBeNull("another project has its own journeys");
+        var conflict = await store.DeclareAsync(Request("Order  Notification!", "A", "B"), Now);
+        (conflict.Status, conflict.ExistingId).Should().Be((409, journey.Id), "the same slug in the same project is the same journey");
+        conflict.Error.Should().Contain("already declares");
+        (await store.DeclareAsync(Request("Order notification", "A", "B") with { ProjectKey = "import:other" }, Now)).Journey.Should().NotBeNull("another project has its own journeys");
 
         var reopened = Store();
-        reopened.ForProject(Project).Should().ContainSingle().Which.Should().Match<DeclaredIntegrationJourney>(j => j.Id == journey.Id && j.DeclaredBy == "Kari" && j.Components.SequenceEqual(Notification));
-        reopened.ForProject("import:other").Should().ContainSingle();
-        reopened.ForProject(null).Should().BeEmpty();
-        reopened.Remove(Project, "order-notification").Should().BeTrue();
-        Store().ForProject(Project).Should().BeEmpty();
+        (await reopened.ForProjectAsync(Project)).Should().ContainSingle().Which.Should().Match<DeclaredIntegrationJourney>(j => j.Id == journey.Id && j.DeclaredBy == "Kari" && j.Components.SequenceEqual(Notification));
+        (await reopened.ForProjectAsync("import:other")).Should().ContainSingle();
+        (await reopened.ForProjectAsync(null)).Should().BeEmpty();
+        (await reopened.RetireAsync(Project, "order-notification", "Kari", Now)).Should().BeTrue();
+        (await Store().ForProjectAsync(Project)).Should().BeEmpty();
+        (await Store().HistoryAsync(Project, "order-notification"))!.Journey.RetiredAt.Should().NotBeNull("removing retires the journey and keeps its history");
     }
 
     [Theory]
     [InlineData("", "Load a project")]
     [InlineData(Project, "at least two components")]
-    public void Invalid_declarations_are_refused_and_nothing_is_stored(string projectKey, string reason)
+    public async Task Invalid_declarations_are_refused_and_nothing_is_stored(string projectKey, string reason)
     {
         var store = Store();
-        store.Declare(Request("Single", "Orders.Api") with { ProjectKey = projectKey }, Now).Error.Should().Contain(reason);
-        store.Declare(Request("Url", "Orders.Api", "https://orders.example/api"), Now).Error.Should().Contain("never a URL");
-        store.Declare(Request("Secret", "Orders.Api", "Endpoint=sb://x;SharedAccessKey=abc"), Now).Error.Should().NotBeNull();
-        store.Declare(Request("Nobody", "A", "B") with { DeclaredBy = " " }, Now).Error.Should().Contain("Who declares");
-        store.All().Should().BeEmpty();
+        (await store.DeclareAsync(Request("Single", "Orders.Api") with { ProjectKey = projectKey }, Now)).Error.Should().Contain(reason);
+        (await store.DeclareAsync(Request("Url", "Orders.Api", "https://orders.example/api"), Now)).Error.Should().Contain("never a URL");
+        (await store.DeclareAsync(Request("Secret", "Orders.Api", "Endpoint=sb://x;SharedAccessKey=abc"), Now)).Error.Should().NotBeNull();
+        (await store.DeclareAsync(Request("Nobody", "A", "B") with { DeclaredBy = " " }, Now)).Error.Should().Contain("Who declares");
+        (await store.AllAsync()).Should().BeEmpty();
     }
 
     // ── Test Coverage candidates from the declared chain (real Source Analysis pipeline) ───────────────────────────────────
@@ -117,8 +118,8 @@ public sealed class TestCoverageJourneyDeclarationTests : IDisposable
     {
         var snapshot = await TestCoverageFixture.AnalyzeAsync(_db, TestCoverageFixture.Zip(JourneyFixtureFiles()), "journey-fixture.zip");
         var store = Store();
-        store.Declare(Request("Order notification", Notification), Now).Error.Should().BeNull();
-        store.Declare(Request("Order archive", Archive), Now).Error.Should().BeNull();
+        (await store.DeclareAsync(Request("Order notification", Notification), Now)).Error.Should().BeNull();
+        (await store.DeclareAsync(Request("Order archive", Archive), Now)).Error.Should().BeNull();
         var service = new TestCoverageReviewService(_db, new ReviewSourceEvidenceProvider(new IqrSourceStore(_db)), declaredJourneys: store);
 
         var r = (await service.RunAsync(new TestCoverageReviewRequest { CurrentSnapshotId = snapshot.Id, Workspace = new CoverageWorkspaceEvidence(), ProjectKey = Project })).Result!;
@@ -156,7 +157,7 @@ public sealed class TestCoverageJourneyDeclarationTests : IDisposable
     public async Task The_scope_catalog_lists_and_checks_declared_journeys_by_their_project_scoped_id()
     {
         var store = Store();
-        var (journey, _, _) = store.Declare(Request("Order notification", Notification), Now);
+        var journey = (await store.DeclareAsync(Request("Order notification", Notification), Now)).Journey;
         var catalog = Catalog(store);
 
         var page = await catalog.SearchAsync(ScopeMemberKind.Journey, "env-1", null, 0, 25, default);
@@ -171,8 +172,15 @@ public sealed class TestCoverageJourneyDeclarationTests : IDisposable
         statuses[0].Should().Match<ScopeMemberStatus>(s => s.Check == ScopeMemberCheck.Current && s.CurrentLabel == "Order notification");
         statuses[1].Check.Should().Be(ScopeMemberCheck.Missing);
 
-        store.Remove(Project, journey.JourneyId);
-        (await catalog.CheckAsync([M(journey.Id)], "env-1", default)).Single().Check.Should().Be(ScopeMemberCheck.Missing, "a removed journey reads as missing; the scope is not changed");
+        (await store.ReviseAsync(Project, journey.JourneyId, Request("Order notification (v2)", [.. Notification, "Orders.Archiver"]), Now.AddMinutes(1))).Journey!.Revision.Should().Be(2);
+        var revised = await catalog.CheckAsync([M(journey.Id)], "env-1", default);
+        revised.Single().Should().Match<ScopeMemberStatus>(s => s.Check == ScopeMemberCheck.Current && s.CurrentLabel == "Order notification (v2)", "an edit keeps the id; the member stays current");
+
+        (await store.RetireAsync(Project, journey.JourneyId, "Kari", Now.AddMinutes(2))).Should().BeTrue();
+        var removed = (await catalog.CheckAsync([M(journey.Id)], "env-1", default)).Single();
+        removed.Check.Should().Be(ScopeMemberCheck.Missing, "a removed journey reads as missing; the scope is not changed");
+        removed.Detail.Should().Contain("removed");
+        (await catalog.SearchAsync(ScopeMemberKind.Journey, "env-1", null, 0, 25, default)).Items.Should().BeEmpty("a retired journey is not offered");
         (await Catalog(null).SearchAsync(ScopeMemberKind.Journey, "env-1", null, 0, 25, default)).Available.Should().BeFalse();
     }
 

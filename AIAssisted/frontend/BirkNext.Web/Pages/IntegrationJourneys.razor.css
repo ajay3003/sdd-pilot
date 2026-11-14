@@ -1,0 +1,15 @@
+/* Integration Journeys (declared for the project): one list card with per-journey revision history; wraps on phones. */
+.ijl-page { max-width: 64rem; display: grid; gap: 1rem; }
+.ijl-card { border: 1px solid var(--clr-border); border-radius: .75rem; padding: 1rem; display: grid; gap: .6rem; }
+.ijl-card h2 { font-size: 1.05rem; margin: 0; }
+.ijl-head { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; justify-content: space-between; }
+.ijl-muted { color: var(--clr-text-muted); font-size: .9rem; }
+.ijl-notice { border-left: 3px solid var(--clr-border); padding: .4rem .75rem; }
+.ijl-error { color: var(--clr-danger, #b42318); }
+.ijl-journeys, .ijl-issues { list-style: none; padding: 0; margin: 0; display: grid; gap: .5rem; }
+.ijl-journeys > li { display: grid; gap: .3rem; border: 1px solid var(--clr-border); border-radius: .5rem; padding: .5rem .65rem; overflow-wrap: anywhere; }
+.ijl-row, .ijl-actions { display: flex; flex-wrap: wrap; gap: .25rem .6rem; align-items: center; }
+.ijl-pill { border: 1px solid var(--clr-border); border-radius: 999px; padding: 0 .5rem; font-size: .8rem; }
+.ijl-id { font-size: .8rem; }
+.ijl-revisions { margin: .25rem 0 0; padding-left: 1.25rem; display: grid; gap: .35rem; }
+.ijl-revisions li { display: grid; gap: .1rem; }

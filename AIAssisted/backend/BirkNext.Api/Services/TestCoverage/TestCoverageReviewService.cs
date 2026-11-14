@@ -70,7 +70,7 @@ public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvid
         var repositoryKey = ReviewSourceEvidenceProvider.Identity(current).Key;
         var decisions = await DecisionsAsync(repositoryKey, ct);
         var flows = await FlowsAsync(request.EnvironmentId, ct);
-        var result = TestCoverageReviewEngine.Review(current, baseline, request, decisions, flows, DateTimeOffset.UtcNow, ct, IntegrationJourneyCatalog(request.ProjectKey)) with { BaselineRelation = relation };
+        var result = TestCoverageReviewEngine.Review(current, baseline, request, decisions, flows, DateTimeOffset.UtcNow, ct, await IntegrationJourneyCatalogAsync(request.ProjectKey, ct)) with { BaselineRelation = relation };
         result = await WithTestDataReferencesAsync(result, request.ProjectKey, ct);
         var label = $"{result.Current.Repository} · {result.Inventory.TestsDiscovered} test(s) · {result.Journeys.Count} journey(s)";
         db.TestCoverageReviewRuns.Add(new TestCoverageReviewRunRecord
@@ -129,11 +129,11 @@ public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvid
 
     /// <summary>Integration Journey definitions (global pack registry, then the journeys declared for this project) as design-level edges, for
     /// structural association candidates only. Only the declared From/To components are used (a step without them contributes nothing to the
-    /// chain; the owner is not substituted). Another project's declared journeys are never read.</summary>
-    private IReadOnlyList<BirkNext.Integrations.IntegrationJourneyCatalogEntry> IntegrationJourneyCatalog(string? projectKey) =>
+    /// chain; the owner is not substituted). Another project's declared journeys are never read, and a retired (removed) one is not proposed.</summary>
+    private async Task<IReadOnlyList<BirkNext.Integrations.IntegrationJourneyCatalogEntry>> IntegrationJourneyCatalogAsync(string? projectKey, CancellationToken ct) =>
         [.. (journeyPacks?.Packs ?? []).SelectMany(pack => pack.Journeys.OrderBy(j => j.Order).Select(j => new BirkNext.Integrations.IntegrationJourneyCatalogEntry(pack.PackId, j.JourneyId, j.DisplayName,
             [.. j.Steps.Select(step => new BirkNext.Integrations.JourneyEdge(step.StepId, step.Label, step.Kind, step.FromComponent ?? "", step.ToComponent ?? "", step.Owner))]))),
-         .. (declaredJourneys?.ForProject(projectKey) ?? []).Select(DeclaredIntegrationJourneyRules.CatalogEntry)];
+         .. (declaredJourneys is null ? [] : await declaredJourneys.ForProjectAsync(projectKey, ct)).Select(DeclaredIntegrationJourneyRules.CatalogEntry)];
 
     /// <summary>Test Data's consumer references for this project's QA tests (usages with their current state, requirements), merged by
     /// <see cref="TestCoverageDataLinks.WithConsumerReferences"/>. Read-only here; when Test Data cannot be read, the QA tests keep their other

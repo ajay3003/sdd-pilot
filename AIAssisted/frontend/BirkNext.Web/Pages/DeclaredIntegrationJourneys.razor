@@ -7,10 +7,12 @@
 <PageTitle>Declared Integration Journeys</PageTitle>
 
 @* Integration Journeys owner: a person declares, per project, a journey's name and the ordered component chain it runs through (names as Source
-   Analysis shows them). Design metadata only — nothing runs, binds or is associated here. Test Coverage proposes association candidates from the
-   declared chain (structure only, a reviewer confirms); the Scope Registry can name a declared journey as a Journey member. *@
+   Analysis shows them), or edits one (?journey={id}: a new revision; earlier revisions never change). Design metadata only — nothing runs, binds or
+   is associated here. Test Coverage proposes association candidates from the declared chain (structure only, a reviewer confirms); the Scope
+   Registry can name a declared journey as a Journey member. The overview with revision history is /integration-journeys. *@
 <div class="ijd-page" data-testid="ijd-page" aria-busy="@(_loaded ? "false" : "true")">
     <PageHeader Title="Declared Integration Journeys" Description="Declare the component chain an integration journey runs through, for this project. Test Coverage proposes it to matching source journeys; a reviewer confirms." />
+    <p class="ijd-muted"><a href="integration-journeys" data-testid="ijd-overview">← All Integration Journeys of this project</a></p>
 
     @if (!_loaded)
     {
@@ -27,21 +29,43 @@
     else
     {
         <p class="ijd-muted" data-testid="ijd-project">Project: <strong>@(_projectName ?? _projectKey)</strong> <code>@_projectKey</code></p>
-        <section class="ijd-card" aria-labelledby="ijd-form-heading" data-testid="ijd-form">
-            <h2 id="ijd-form-heading">Declare a journey</h2>
+        <section class="ijd-card" aria-labelledby="ijd-form-heading" data-testid="ijd-form" data-mode="@(_editing is null ? "declare" : "edit")">
+            @if (_editing is { } editing)
+            {
+                <h2 id="ijd-form-heading">Edit @editing.Journey.DisplayName</h2>
+                <p class="ijd-muted" data-testid="ijd-editing">Editing <code>@editing.Journey.Id</code> (revision @editing.Journey.Revision). Saving adds revision @(editing.Journey.Revision + 1); the id stays and earlier revisions never change.
+                    <button type="button" class="btn-link" data-testid="ijd-cancel-edit" @onclick="CancelEdit">Declare a new journey instead</button></p>
+            }
+            else
+            {
+                <h2 id="ijd-form-heading">Declare a journey</h2>
+            }
             <label class="ijd-field">Journey name <input data-testid="ijd-name" @bind="_name" @bind:event="oninput" maxlength="@DeclaredIntegrationJourneyRules.MaxName" /></label>
             <label class="ijd-field">Components in order <span class="ijd-muted">(one per line, as Source Analysis names them — e.g. a project, channel or database name)</span>
                 <textarea data-testid="ijd-components" rows="5" @bind="_components" @bind:event="oninput"></textarea>
             </label>
             <label class="ijd-field">Description <span class="ijd-muted">(optional)</span> <input data-testid="ijd-description" @bind="_description" @bind:event="oninput" maxlength="@DeclaredIntegrationJourneyRules.MaxDescription" /></label>
-            <label class="ijd-field">Declared by <input data-testid="ijd-declared-by" @bind="_declaredBy" @bind:event="oninput" maxlength="@DeclaredIntegrationJourneyRules.MaxDeclaredBy" /></label>
+            <label class="ijd-field">@(_editing is null ? "Declared by" : "Changed by") <input data-testid="ijd-declared-by" @bind="_declaredBy" @bind:event="oninput" maxlength="@DeclaredIntegrationJourneyRules.MaxDeclaredBy" /></label>
             @if (Chain.Count > 0) { <p class="ijd-muted" data-testid="ijd-preview">Chain: @string.Join(" → ", Chain)</p> }
             <div class="ijd-actions">
-                <button type="button" class="btn-primary" data-testid="ijd-save" disabled="@(_busy || Invalid is not null)" @onclick="DeclareAsync">Declare journey</button>
+                <button type="button" class="btn-primary" data-testid="ijd-save" disabled="@(_busy || Invalid is not null)" @onclick="SaveAsync">@(_editing is null ? "Declare journey" : "Save new revision")</button>
                 @if (Invalid is { } why && (_name.Length > 0 || _components.Length > 0)) { <span class="ijd-muted" data-testid="ijd-invalid">@why</span> }
             </div>
             @if (_error is not null) { <p class="ijd-error" role="alert" data-testid="ijd-error">@_error</p> }
             @if (_status is not null) { <p class="ijd-muted" role="status" data-testid="ijd-status">@_status</p> }
+            @if (_editing is { } shown)
+            {
+                <div data-testid="ijd-revisions">
+                    <h3 class="ijd-subheading">Revisions (newest first)</h3>
+                    <ol class="ijd-revisions">
+                        @foreach (var r in shown.Revisions)
+                        {
+                            <li data-testid="ijd-revision" data-revision="@r.Revision"><strong>Revision @r.Revision</strong>@(r.Revision == shown.Journey.Revision ? " (current)" : "") · @IntegrationJourneys.OriginLabel(r.Origin) by @r.DeclaredBy, @r.DeclaredAt.ToLocalTime().ToString("g")
+                                <span class="ijd-chain">@r.DisplayName: @string.Join(" → ", r.Components)</span></li>
+                        }
+                    </ol>
+                </div>
+            }
         </section>
 
         <section class="ijd-card" aria-labelledby="ijd-list-heading" data-testid="ijd-list">
@@ -53,9 +77,10 @@
                 {
                     var journey = j;
                     <li data-testid="ijd-journey" data-id="@j.Id">
-                        <strong>@j.DisplayName</strong> <code data-testid="ijd-journey-id">@j.Id</code>
+                        <strong>@j.DisplayName</strong> <span class="ijd-muted" data-testid="ijd-journey-revision">revision @j.Revision</span> <code data-testid="ijd-journey-id">@j.Id</code>
                         <span class="ijd-chain" data-testid="ijd-journey-chain">@string.Join(" → ", j.Components)</span>
-                        <span class="ijd-muted">Declared by @j.DeclaredBy, @j.DeclaredAt.ToLocalTime().ToString("g")@(j.Description is { Length: > 0 } d ? $" · {d}" : "")</span>
+                        <span class="ijd-muted">@(j.Revision > 1 ? "Last changed" : "Declared") by @j.DeclaredBy, @j.DeclaredAt.ToLocalTime().ToString("g")@(j.Description is { Length: > 0 } d ? $" · {d}" : "")</span>
+                        <button type="button" class="btn-secondary btn-small" data-testid="ijd-edit" disabled="@_busy" @onclick="() => EditAsync(journey.JourneyId)">Edit<span class="visually-hidden"> @j.DisplayName</span></button>
                         <button type="button" class="btn-secondary btn-small" data-testid="ijd-remove" disabled="@_busy" @onclick="() => RemoveAsync(journey)">Remove<span class="visually-hidden"> @j.DisplayName</span></button>
                     </li>
                 }
@@ -66,11 +91,15 @@
 </div>
 
 @code {
+    /// <summary>?journey={journeyId}: open that journey of the current project for editing (a new revision).</summary>
+    [SupplyParameterFromQuery(Name = "journey")] public string? JourneyParam { get; set; }
+
     private readonly CancellationTokenSource _cts = new();
     private IDeclaredIntegrationJourneyApiService? _api;
-    private string? _projectKey, _projectName, _error, _status, _loadError;
+    private string? _projectKey, _projectName, _error, _status, _loadError, _openedParam;
     private string _name = "", _components = "", _description = "", _declaredBy = "";
     private IReadOnlyList<DeclaredIntegrationJourney> _journeys = [];
+    private DeclaredIntegrationJourneyHistory? _editing;
     private bool _loaded, _busy;
 
     private List<string> Chain => DeclaredIntegrationJourneyRules.Chain(_components.Split('\n'));
@@ -78,6 +107,7 @@
     private DeclaredIntegrationJourneyRequest Request => new()
     {
         ProjectKey = _projectKey ?? "", DisplayName = _name, Description = string.IsNullOrWhiteSpace(_description) ? null : _description, Components = Chain, DeclaredBy = _declaredBy,
+        ExpectedRevision = _editing?.Journey.Revision,
     };
 
     private string? Invalid => DeclaredIntegrationJourneyRules.Validate(Request);
@@ -92,21 +122,56 @@
         _loaded = true;
     }
 
+    protected override async Task OnParametersSetAsync()
+    {
+        // Also when the query changes on this page (e.g. from the overview's Edit link while already here).
+        if (_projectKey is null || _api is null || string.IsNullOrWhiteSpace(JourneyParam) || JourneyParam == _openedParam) return;
+        _openedParam = JourneyParam;
+        await EditAsync(JourneyParam);
+    }
+
     private async Task LoadAsync()
     {
         var (journeys, error) = await _api!.ListAsync(_projectKey!, _cts.Token);
         (_journeys, _loadError) = (journeys ?? _journeys, error);
     }
 
-    private async Task DeclareAsync()
+    private async Task EditAsync(string journeyId)
+    {
+        if (_api is null || _projectKey is null) return;
+        _error = null; _status = null;
+        var (history, error) = await _api.HistoryAsync(_projectKey, journeyId, _cts.Token);
+        if (history is null) { _error = error ?? "The journey could not be opened for editing."; return; }
+        if (history.Journey.RetiredAt is not null) { _error = $"{history.Journey.DisplayName} was removed. Declare it again with the same name to reactivate it (its history is kept)."; return; }
+        _editing = history;
+        (_name, _components, _description) = (history.Journey.DisplayName, string.Join("\n", history.Journey.Components), history.Journey.Description ?? "");
+    }
+
+    private void CancelEdit()
+    {
+        _editing = null; _error = null; _status = null;
+        (_name, _components, _description) = ("", "", "");
+    }
+
+    private async Task SaveAsync()
     {
         if (_api is null || Invalid is not null) return;
         _busy = true; _error = null; _status = null;
         try
         {
+            if (_editing is { } editing)
+            {
+                var (revised, reviseError) = await _api.ReviseAsync(editing.Journey.ProjectKey, editing.Journey.JourneyId, Request, _cts.Token);
+                if (revised is null) { _error = reviseError ?? "The new revision was not saved."; return; }
+                _status = $"Saved revision {revised.Revision} of {revised.DisplayName} ({revised.Id}).";
+                var (history, _) = await _api.HistoryAsync(revised.ProjectKey, revised.JourneyId, _cts.Token);
+                _editing = history ?? editing;
+                await LoadAsync();
+                return;
+            }
             var (journey, error) = await _api.DeclareAsync(Request, _cts.Token);
             if (journey is null) { _error = error ?? "The journey was not saved."; return; }
-            _status = $"Declared {journey.DisplayName} ({journey.Id}).";
+            _status = journey.Revision > 1 ? $"Declared {journey.DisplayName} again ({journey.Id}, revision {journey.Revision}; its earlier history is kept)." : $"Declared {journey.DisplayName} ({journey.Id}).";
             (_name, _components, _description) = ("", "", "");
             await LoadAsync();
         }
@@ -119,8 +184,9 @@
         _busy = true; _error = null; _status = null;
         try
         {
-            if (await _api.RemoveAsync(journey.ProjectKey, journey.JourneyId, _cts.Token) is { } error) { _error = error; return; }
-            _status = $"Removed {journey.DisplayName}. Recorded association decisions and scope members that name it are kept and read as missing.";
+            if (await _api.RemoveAsync(journey.ProjectKey, journey.JourneyId, string.IsNullOrWhiteSpace(_declaredBy) ? null : _declaredBy, _cts.Token) is { } error) { _error = error; return; }
+            if (_editing?.Journey.JourneyId == journey.JourneyId) CancelEdit();
+            _status = $"Removed {journey.DisplayName}. Its revision history is kept; recorded association decisions and scope members that name it are kept and read as missing.";
             await LoadAsync();
         }
         finally { _busy = false; }

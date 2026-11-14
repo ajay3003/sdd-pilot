@@ -535,6 +535,7 @@
                     }
                     else { <p class="iqr-muted" role="status">@(_testSummaryError ?? "Loading the integration journey summary…")</p> }
                     <p class="iqr-muted">Configured ≠ source verified ≠ executable ≠ runtime verified. Execution ready means a journey may be started after confirmation, never that it passed.</p>
+                    <p class="iqr-muted" data-testid="iqr-declared-journeys-note">Journeys declared for the project (name and component chain, with revisions) are design metadata: <a class="iqr-link" href="integration-journeys" data-testid="iqr-declared-journeys">Open Integration Journeys</a>.</p>
                     <ReviewDisclosure Text="Open integration journeys" CollapseText="Close integration journeys" TestId="iqr-open-journeys" @bind-Expanded="_journeysOpen">
                         @if (_journeysOpen) { <IntegrationJourneyPanel Profile="profile" /> }
                     </ReviewDisclosure>
