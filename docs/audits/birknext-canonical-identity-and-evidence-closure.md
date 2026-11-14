@@ -9,6 +9,18 @@ Statuses:
 - **Implemented, browser shows honest empty state:** the behaviour is unit-tested; the real data has nothing to show.
 - **Not implemented**, with the reason.
 
+## Follow-up
+
+The open items below were closed in `birknext-persistent-evidence-delivery-scope-e2e-closure.md` on the same date:
+- Task Alignment results are persisted and survive a reload, with stale detection, including across imports.
+- Delivery has an explicit Scope context vs Filter by scope; filtered snapshots and reports change items and metrics.
+- Report-vs-report comparison exists, with like-for-like gating.
+- Journey and Test Data links are verified end to end in the browser.
+- The Critical E2E gate is versioned and uses test type.
+- A guided Relationship Review identity workflow resolves unscoped requirement ids.
+
+The table below is kept as it was recorded.
+
 ## Gap closure
 
 | # | Gap | Root cause | Fix | Automated | Browser (Release, isolated DB) | Status |
