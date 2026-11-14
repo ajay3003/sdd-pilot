@@ -40,6 +40,16 @@
                 <option value="@CriticalE2EFlowKind.Diagnostic">Smoke / diagnostic</option>
             </select>
         </label>
+        @* Test type is a classification, separate from criticality. Changing it is a definition edit (saved as a new version); it never runs anything. *@
+        <label>Test type
+            <select data-testid="e2e-editor-test-type" value="@_draft.TestType" @onchange="e => _draft.TestType = Enum.Parse<CriticalE2ETestType>(e.Value!.ToString()!)" aria-describedby="e2e-editor-test-type-help">
+                @foreach (var type in Enum.GetValues<CriticalE2ETestType>())
+                {
+                    <option value="@type">@CriticalE2EPresentation.TestTypeLabel(type)</option>
+                }
+            </select>
+            <span class="e2e-help" id="e2e-editor-test-type-help" data-testid="e2e-editor-test-type-help">@CriticalE2EPresentation.TestTypeHelp(_draft.TestType)</span>
+        </label>
         <label>Execution
             <select data-testid="e2e-editor-mode" value="@_draft.Mode" @onchange="ModeChanged" disabled="@(_picking is not null)" aria-describedby="e2e-editor-mode-help">
                 @foreach (var mode in new[] { CriticalE2EExecutionMode.CompanionBrowser, CriticalE2EExecutionMode.AutomatedIntegration })

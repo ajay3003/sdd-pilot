@@ -52,6 +52,7 @@ public static class CriticalE2ECoverage
             Name = flow.Name,
             Module = flow.Module,
             Kind = flow.Kind,
+            TestType = flow.TestType,
             Mode = flow.Mode,
             StepCount = flow.Steps.Count,
             Enabled = flow.Enabled,

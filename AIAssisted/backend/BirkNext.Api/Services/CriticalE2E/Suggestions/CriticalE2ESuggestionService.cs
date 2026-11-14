@@ -298,7 +298,9 @@ public sealed partial class CriticalE2ESuggestionService(
         var flow = new CriticalE2EFlowDefinition
         {
             Module = s.Module.Length > 0 ? s.Module : s.ProjectKey, Name = s.Title, Description = $"Suggested from source ({s.RuleVersion}): {s.Kind}. Expected: {s.ExpectedResult ?? request.Expected} — basis: {s.ExpectedBasis ?? "stated by the reviewer"}.",
-            Kind = CriticalE2EFlowKind.Diagnostic, Mode = CriticalE2EExecutionMode.CompanionBrowser, ProfileId = request.ProfileId, EnvironmentId = request.EnvironmentId,
+            // Criticality and test type are independent: the flow stays Diagnostic (as before), its test type follows the suggestion's category.
+            Kind = CriticalE2EFlowKind.Diagnostic, TestType = CriticalE2ETestTypes.FromSuggestion(s.Category),
+            Mode = CriticalE2EExecutionMode.CompanionBrowser, ProfileId = request.ProfileId, EnvironmentId = request.EnvironmentId,
             Steps = [.. steps.Select(Map)], Source = CriticalE2EFlowSource.SuggestedFromSource, RequirementRef = s.RequirementRefs.FirstOrDefault(),
             Tags = [$"suggestion:{s.SuggestionId}", $"snapshot:{s.SourceSnapshotId}", $"project:{s.ProjectKey}", s.RuleVersion],
             DataMappings = bindings.Count == 0 ? null : [.. bindings.Select(b => new CriticalE2EDataMapping(b.Key, [b.Value], BirkNext.TestData.TestDataDataType.SimpleValues,

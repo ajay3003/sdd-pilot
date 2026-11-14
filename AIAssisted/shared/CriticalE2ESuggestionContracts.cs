@@ -143,6 +143,18 @@ public enum SuggestionKind { PageOpens, Navigation, RequiredFields, InvalidInput
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SuggestionCategory { UiSmoke, UiFunctional, BusinessE2E }
 
+public static class CriticalE2ETestTypes
+{
+    /// <summary>The test type an approved suggestion's flow gets. Criticality is decided separately (an approved suggestion stays Diagnostic).</summary>
+    public static CriticalE2ETestType FromSuggestion(SuggestionCategory category) => category switch
+    {
+        SuggestionCategory.UiSmoke => CriticalE2ETestType.UiSmoke,
+        SuggestionCategory.UiFunctional => CriticalE2ETestType.UiFunctional,
+        SuggestionCategory.BusinessE2E => CriticalE2ETestType.BusinessE2E,
+        _ => CriticalE2ETestType.Other,
+    };
+}
+
 /// <summary>Where a suggestion's input values come from.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SuggestionTestDataState { NotNeeded, SyntheticGenerated, NeedsApprovedTestData, ProvidedByReviewer }

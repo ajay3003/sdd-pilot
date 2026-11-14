@@ -37,7 +37,8 @@ public sealed record CriticalE2EFlowRow(
     DateTimeOffset? LastRunAt, string Result, CriticalE2ETone ResultTone, string? ResultDetail,
     bool Runnable, string? RunBlockedReason,
     string Outcome = "", int ActionSteps = 0, int Assertions = 0, string TestData = "Not required", string Boundary = "Not explicit",
-    bool ModuleResolved = true, string? ReleaseStatus = null, string? ReleaseBlocker = null, string? BoundaryText = null);
+    bool ModuleResolved = true, string? ReleaseStatus = null, string? ReleaseBlocker = null, string? BoundaryText = null,
+    CriticalE2ETestType TestType = CriticalE2ETestType.Unknown);
 
 /// <summary>The one global run action, or none. Never a large disabled control with nothing to run behind it.</summary>
 public sealed record CriticalE2ERunAction(CriticalE2EExecutionMode Mode, string Label, int FlowCount, bool Enabled, string? Reason);
@@ -156,6 +157,28 @@ public static class CriticalE2EPresentation
 
     public static int Count(CriticalE2EOverview overview, CriticalE2EFlowKind kind) => overview.Flows.Count(f => f.Kind == kind);
 
+    /// <summary>The one short label a flow row shows for its test type. Unknown is every flow stored before classification existed.</summary>
+    public static string TestTypeLabel(CriticalE2ETestType type) => type switch
+    {
+        CriticalE2ETestType.UiSmoke => "UI smoke",
+        CriticalE2ETestType.UiFunctional => "UI functional",
+        CriticalE2ETestType.BusinessE2E => "Business E2E",
+        CriticalE2ETestType.IntegrationApi => "Integration/API",
+        CriticalE2ETestType.Other => "Other",
+        _ => "Not classified",
+    };
+
+    /// <summary>What the test type means for coverage. Criticality is a separate choice; neither ever starts a run.</summary>
+    public static string TestTypeHelp(CriticalE2ETestType type) => type switch
+    {
+        CriticalE2ETestType.UiSmoke => "UI smoke never counts toward Business E2E or release coverage.",
+        CriticalE2ETestType.UiFunctional => "UI functional counts as functional coverage only, never as Business E2E.",
+        CriticalE2ETestType.BusinessE2E => "Counts toward Business E2E coverage when the flow is also Critical.",
+        CriticalE2ETestType.IntegrationApi => "Counts toward integration/API coverage when the flow is also Critical.",
+        CriticalE2ETestType.Other => "Counted as other; never as Business E2E.",
+        _ => "Legacy / not classified: shown separately and never counted as Business E2E until a person classifies it.",
+    };
+
     /// <summary>Critical flows, plus smoke/diagnostic ones only when the reader asked for them — always after the critical ones.</summary>
     public static List<CriticalE2EFlowRow> Rows(CriticalE2EOverview overview, bool includeDiagnostic = true) =>
         overview.Flows
@@ -176,7 +199,8 @@ public static class CriticalE2EPresentation
                     Outcome: flow.Outcome.Length > 0 ? flow.Outcome : "No final outcome", ActionSteps: flow.ActionSteps, Assertions: flow.Assertions,
                     TestData: readiness.TestDataStatus, Boundary: flow.BoundaryStatus, ModuleResolved: readiness.ModuleResolved,
                     ReleaseStatus: flow.Kind == CriticalE2EFlowKind.Critical && flow.RequiredForRelease ? readiness.ReleaseReady ? "Release-ready" : "Not release-ready" : null,
-                    ReleaseBlocker: flow.RequiredForRelease ? readiness.Blockers.FirstOrDefault()?.Text : null, BoundaryText: flow.BoundaryText);
+                    ReleaseBlocker: flow.RequiredForRelease ? readiness.Blockers.FirstOrDefault()?.Text : null, BoundaryText: flow.BoundaryText,
+                    TestType: flow.TestType);
             }).ToList();
 
     /// <summary>

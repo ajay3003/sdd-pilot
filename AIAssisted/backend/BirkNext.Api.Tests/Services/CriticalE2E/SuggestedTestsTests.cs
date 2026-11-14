@@ -300,9 +300,16 @@ public sealed class SuggestedTestsTests : IDisposable
         approved.Problems.Should().BeEmpty();
         approved.Flow!.Should().Match<CriticalE2EFlowDefinition>(f => f.Kind == CriticalE2EFlowKind.Diagnostic && f.Source == CriticalE2EFlowSource.SuggestedFromSource && f.RequirementRef == "FR-012"
             && f.Tags.Contains($"suggestion:{opens.SuggestionId}") && f.FinalOutcome!.Kind == CriticalE2EOutcomeKind.ElementVisible && f.ConfigurationProblem() == null);
+        // Test type follows the suggestion's category; criticality is unchanged (Diagnostic) and independent of it.
+        opens.Category.Should().Be(SuggestionCategory.UiSmoke);
+        approved.Flow!.TestType.Should().Be(CriticalE2ETestType.UiSmoke);
+        flows.Flow(approved.Flow.Id)!.Should().Match<CriticalE2EFlowDefinition>(f => f.TestType == CriticalE2ETestType.UiSmoke && f.Kind == CriticalE2EFlowKind.Diagnostic, "the test type is persisted with the flow");
         var regenerated = (await svc.GenerateAsync(new(snap, "env-1"), default))!;
         regenerated.Suggestions.Single(s => s.SuggestionId == opens.SuggestionId).Should().Match<TestSuggestion>(s => s.Coverage == SuggestionCoverage.AlreadyCovered && s.States.Contains(SuggestionState.Approved));
-        (await svc.ApproveAsync(new(snap, required.SuggestionId, "env-1", "p1", null, null), default)).Flow.Should().NotBeNull("required-field suggestion: mapped submit + validation convention");
+        var requiredFlow = (await svc.ApproveAsync(new(snap, required.SuggestionId, "env-1", "p1", null, null), default)).Flow;
+        requiredFlow.Should().NotBeNull("required-field suggestion: mapped submit + validation convention");
+        required.Category.Should().Be(SuggestionCategory.UiFunctional);
+        requiredFlow!.Should().Match<CriticalE2EFlowDefinition>(f => f.TestType == CriticalE2ETestType.UiFunctional && f.Kind == CriticalE2EFlowKind.Diagnostic);
 
         // A valid submission has no expected result until a reviewer states one.
         var valid = regenerated.Suggestions.Single(s => s.Kind == SuggestionKind.ValidSubmission);

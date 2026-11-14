@@ -178,6 +178,7 @@ public sealed class ScopeMemberCatalogService(CanonicalInterpretationService can
             {
                 string.IsNullOrWhiteSpace(f.Module) ? "No module" : f.Module,
                 FlowClassification(f),
+                TestTypeDescription(f.TestType),
                 f.Mode == BirkNext.CriticalE2E.CriticalE2EExecutionMode.CompanionBrowser ? "Attended browser" : "Automated API",
             }),
             SourceModule = CriticalE2EModule,
@@ -190,6 +191,17 @@ public sealed class ScopeMemberCatalogService(CanonicalInterpretationService can
         : f.Source == BirkNext.CriticalE2E.CriticalE2EFlowSource.SuggestedFromSource
             ? "Smoke / diagnostic, suggested from UI source (never Business E2E)"
             : "Smoke / diagnostic (never counts toward release coverage)";
+
+    /// <summary>The flow's test type, independent of its criticality. Unknown = stored before classification existed; never reclassified here.</summary>
+    public static string TestTypeDescription(BirkNext.CriticalE2E.CriticalE2ETestType type) => type switch
+    {
+        BirkNext.CriticalE2E.CriticalE2ETestType.UiSmoke => "UI smoke",
+        BirkNext.CriticalE2E.CriticalE2ETestType.UiFunctional => "UI functional",
+        BirkNext.CriticalE2E.CriticalE2ETestType.BusinessE2E => "Business E2E",
+        BirkNext.CriticalE2E.CriticalE2ETestType.IntegrationApi => "Integration/API",
+        BirkNext.CriticalE2E.CriticalE2ETestType.Other => "Other test type",
+        _ => "Test type not classified",
+    };
 
     static bool Matches(ScopeCatalogItem i, string? search) => string.IsNullOrWhiteSpace(search)
         || i.Label.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase) || (i.Description ?? "").Contains(search.Trim(), StringComparison.OrdinalIgnoreCase);

@@ -15,7 +15,21 @@ public sealed record CriticalE2EScopeClassCounts(int Named, int Prepared, int Ex
 /// <param name="MissingIds">Named flow ids this environment does not have (removed, or chosen in another environment).</param>
 /// <param name="SharedByScopes">Flows named by more than one selected scope (still counted once).</param>
 public sealed record CriticalE2EScopeCounts(int Named, IReadOnlyList<string> MissingIds, int SharedByScopes,
-    CriticalE2EScopeClassCounts Critical, CriticalE2EScopeClassCounts Diagnostic);
+    CriticalE2EScopeClassCounts Critical, CriticalE2EScopeClassCounts Diagnostic)
+{
+    /// <summary>
+    /// The same named flows by test type (a partition: each present flow is in exactly one row). Only Business E2E and Integration/API flows
+    /// that are also Critical count as Business E2E / integration coverage; UI functional counts only as functional coverage; UI smoke and
+    /// Other never count; legacy flows without a test type are "not classified".
+    /// </summary>
+    public IReadOnlyList<CriticalE2EScopeTypeCounts> ByTestType { get; init; } = [];
+
+    public CriticalE2EScopeClassCounts TestTypeRow(string key) => ByTestType.FirstOrDefault(r => r.Key == key)?.Counts ?? new(0, 0, 0, 0, 0);
+}
+
+/// <param name="Key">Stable key used in data-testids (business-e2e, integration-api, ui-functional, ui-smoke, other, typed-not-critical, not-classified).</param>
+/// <param name="Dimension">The coverage dimension the row counts toward, or "Never counts" / "Not classified".</param>
+public sealed record CriticalE2EScopeTypeCounts(string Key, string Label, string Dimension, CriticalE2EScopeClassCounts Counts);
 
 /// <summary>
 /// The shared scope filter on Critical E2E Regression. A selected scope narrows the flow list to the flows it names by flow id
@@ -27,6 +41,15 @@ public static class CriticalE2EScopePresentation
 {
     public const string SmokeNote = "UI Smoke and other smoke / diagnostic flows (including flows approved from UI suggestions) never count toward Business E2E or release coverage; they are counted separately.";
     public const string FilterOnlyNote = "The scope is a filter only: it never starts, enables or authorizes a run.";
+    public const string TestTypeNote = "Business E2E coverage counts only Critical flows classified Business E2E (integration coverage: Critical Integration/API flows). UI functional counts only as functional coverage; UI smoke never counts. Legacy flows without a test type are shown as not classified until a person classifies them. Executed and passed come from recorded runs only.";
+
+    public const string BusinessE2EKey = "business-e2e";
+    public const string IntegrationApiKey = "integration-api";
+    public const string UiFunctionalKey = "ui-functional";
+    public const string UiSmokeKey = "ui-smoke";
+    public const string OtherKey = "other";
+    public const string TypedNotCriticalKey = "typed-not-critical";
+    public const string NotClassifiedKey = "not-classified";
 
     /// <summary>The flow ids the selection names, or null when no scope is selected (the page then behaves exactly as before).</summary>
     public static HashSet<string>? FlowIds(ScopeSelection? selection) => selection is null ? null
@@ -44,9 +67,10 @@ public static class CriticalE2EScopePresentation
         var flows = overview.Flows.Where(f => ids.Contains(f.FlowId)).ToList();
         var runnable = CriticalE2EPresentation.Rows(overview, includeDiagnostic: true).Where(r => r.Runnable).Select(r => r.FlowId).ToHashSet(StringComparer.Ordinal);
         var buildNamed = !string.IsNullOrWhiteSpace(overview.Release.BuildId);
-        CriticalE2EScopeClassCounts Of(CriticalE2EFlowKind kind)
+        CriticalE2EScopeClassCounts Of(CriticalE2EFlowKind kind) => Matching(f => f.Kind == kind);
+        CriticalE2EScopeClassCounts Matching(Func<CriticalE2EFlowSummary, bool> predicate)
         {
-            var of = flows.Where(f => f.Kind == kind).ToList();
+            var of = flows.Where(predicate).ToList();
             return new(of.Count, of.Count(f => f.Configured), of.Count(f => runnable.Contains(f.FlowId)),
                 of.Count(f => f.LastStatus is not CriticalE2EStatus.NotRun and not CriticalE2EStatus.Running),
                 of.Count(f => f.LastStatus == CriticalE2EStatus.Passed && !f.LastRunStale && (!buildNamed || f.LastResultMatchesRelease)));
@@ -54,6 +78,21 @@ public static class CriticalE2EScopePresentation
         var present = flows.Select(f => f.FlowId).ToHashSet(StringComparer.Ordinal);
         return new(ids.Count, [.. ids.Where(id => !present.Contains(id)).Order(StringComparer.Ordinal)],
             members.Count(m => m.ContributedBy.Select(c => c.ScopeId).Distinct().Count() > 1),
-            Of(CriticalE2EFlowKind.Critical), Of(CriticalE2EFlowKind.Diagnostic));
+            Of(CriticalE2EFlowKind.Critical), Of(CriticalE2EFlowKind.Diagnostic))
+        {
+            ByTestType =
+            [
+                new(BusinessE2EKey, "Business E2E · Critical", "Business E2E coverage",
+                    Matching(f => f.TestType == CriticalE2ETestType.BusinessE2E && f.Kind == CriticalE2EFlowKind.Critical)),
+                new(IntegrationApiKey, "Integration/API · Critical", "Integration coverage",
+                    Matching(f => f.TestType == CriticalE2ETestType.IntegrationApi && f.Kind == CriticalE2EFlowKind.Critical)),
+                new(UiFunctionalKey, "UI functional", "Functional coverage only", Matching(f => f.TestType == CriticalE2ETestType.UiFunctional)),
+                new(UiSmokeKey, "UI smoke", "Never counts", Matching(f => f.TestType == CriticalE2ETestType.UiSmoke)),
+                new(OtherKey, "Other test type", "Never counts", Matching(f => f.TestType == CriticalE2ETestType.Other)),
+                new(TypedNotCriticalKey, "Business E2E or Integration/API · smoke / diagnostic", "Never counts (not Critical)",
+                    Matching(f => f.TestType is CriticalE2ETestType.BusinessE2E or CriticalE2ETestType.IntegrationApi && f.Kind != CriticalE2EFlowKind.Critical)),
+                new(NotClassifiedKey, "Not classified (legacy)", "Not classified", Matching(f => f.TestType == CriticalE2ETestType.Unknown)),
+            ],
+        };
     }
 }

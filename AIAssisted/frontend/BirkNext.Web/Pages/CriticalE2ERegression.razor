@@ -135,7 +135,7 @@
                 <table class="e2e-table e2e-table-compact" data-testid="e2e-scope-counts">
                     <thead><tr><th scope="col">Classification</th><th scope="col">Named</th><th scope="col">Prepared</th><th scope="col">Executable now</th><th scope="col">Executed</th><th scope="col">Passed</th></tr></thead>
                     <tbody>
-                        @foreach (var (label, key, c) in new[] { ("Critical flows (can count toward Business E2E / release coverage)", "critical", sc.Critical), ("Smoke / diagnostic flows (never count)", "diagnostic", sc.Diagnostic) })
+                        @foreach (var (label, key, c) in new[] { ("Critical flows (any test type; only Business E2E typed ones count as Business E2E)", "critical", sc.Critical), ("Smoke / diagnostic flows (never count)", "diagnostic", sc.Diagnostic) })
                         {
                             <tr data-testid="e2e-scope-counts-@key">
                                 <th scope="row">@label</th>
@@ -148,6 +148,24 @@
                         }
                     </tbody>
                 </table>
+                <table class="e2e-table e2e-table-compact" data-testid="e2e-scope-type-counts">
+                    <thead><tr><th scope="col">Test type</th><th scope="col">Counts toward</th><th scope="col">Named</th><th scope="col">Prepared</th><th scope="col">Executable now</th><th scope="col">Executed</th><th scope="col">Passed</th></tr></thead>
+                    <tbody>
+                        @foreach (var t in sc.ByTestType)
+                        {
+                            <tr data-testid="e2e-scope-type-counts-@t.Key">
+                                <th scope="row">@t.Label</th>
+                                <td data-testid="@($"e2e-scope-type-{t.Key}-dimension")">@t.Dimension</td>
+                                <td data-testid="@($"e2e-scope-type-{t.Key}-named")">@t.Counts.Named</td>
+                                <td data-testid="@($"e2e-scope-type-{t.Key}-prepared")">@t.Counts.Prepared</td>
+                                <td data-testid="@($"e2e-scope-type-{t.Key}-executable")">@t.Counts.Executable</td>
+                                <td data-testid="@($"e2e-scope-type-{t.Key}-executed")">@t.Counts.Executed</td>
+                                <td data-testid="@($"e2e-scope-type-{t.Key}-passed")">@t.Counts.Passed</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <p class="e2e-muted" data-testid="e2e-scope-test-type-note">@CriticalE2EScopePresentation.TestTypeNote</p>
                 <p class="e2e-muted" data-testid="e2e-scope-smoke-note">@CriticalE2EScopePresentation.SmokeNote</p>
                 <p class="e2e-muted" data-testid="e2e-scope-filter-note">@CriticalE2EScopePresentation.FilterOnlyNote Prepared = definition complete; executable = enabled, configured and its engine ready; executed = has a result; passed = latest result passed@(string.IsNullOrWhiteSpace(overview.Release.BuildId) ? "" : " on the named build"). Run actions above the table still cover the whole environment.</p>
             </section>
@@ -252,6 +270,7 @@
                                     <th scope="row" data-label="Critical flow">
                                         @if (diagnostic) { <span class="e2e-badge e2e-badge-smoke" data-testid="e2e-kind-@row.FlowId">Smoke</span> }
                                         <span class="e2e-flow-name">@row.Name</span>
+                                        <span class="e2e-badge e2e-badge-muted" data-testid="e2e-test-type" data-flow-id="@row.FlowId" data-test-type="@row.TestType">@CriticalE2EPresentation.TestTypeLabel(row.TestType)</span>
                                         @if (CriticalE2EScopePresentation.Contributors(_scopeSelection, row.FlowId) is > 1 and var contributors) { <span class="e2e-row-detail" data-testid="e2e-scope-from-@row.FlowId">from @contributors scopes</span> }
                                         @if (!row.Enabled) { <span class="e2e-badge e2e-badge-muted" data-testid="e2e-enabled-@row.FlowId">Disabled</span> }
                                         @if (row.ConfigurationProblem is { Length: > 0 } problem) { <span class="e2e-row-detail e2e-tone-warning" data-testid="e2e-problem-@row.FlowId">Needs attention: @problem</span> }

@@ -184,6 +184,23 @@ public enum CriticalE2EFlowKind
     Diagnostic,
 }
 
+/// <summary>
+/// What kind of test a flow is — independent of <see cref="CriticalE2EFlowKind"/> (criticality). Only a Critical flow whose test type is
+/// <see cref="BusinessE2E"/> (or <see cref="IntegrationApi"/> in an integration dimension) can count as Business E2E coverage; UI Smoke never
+/// does and UI Functional counts only as functional coverage. <see cref="Unknown"/> is every flow stored before the classification existed
+/// ("Legacy / not classified"): it is never reclassified automatically, only by a person in the flow editor.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CriticalE2ETestType
+{
+    Unknown,
+    UiSmoke,
+    UiFunctional,
+    BusinessE2E,
+    IntegrationApi,
+    Other,
+}
+
 /// <summary>Why a pick ended the way it did. Each is its own outcome; none of them is a test result.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum CriticalE2EPickOutcome
@@ -425,6 +442,12 @@ public sealed record CriticalE2EFlowDefinition
     public string Description { get; init; } = "";
     /// <summary>Critical (default, counts toward release coverage) or Diagnostic (never does).</summary>
     public CriticalE2EFlowKind Kind { get; init; } = CriticalE2EFlowKind.Critical;
+    /// <summary>
+    /// The kind of test (UI smoke, UI functional, Business E2E …), independent of <see cref="Kind"/>. Absent in records stored before it
+    /// existed, which therefore load as <see cref="CriticalE2ETestType.Unknown"/>. Not written while Unknown, so a legacy definition's
+    /// material content (and its fingerprint, which earlier runs are tied to) is unchanged until a person classifies it.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public CriticalE2ETestType TestType { get; init; } = CriticalE2ETestType.Unknown;
     public CriticalE2EExecutionMode Mode { get; init; }
     public string ProfileId { get; init; } = "";
     public string EnvironmentId { get; init; } = "";
@@ -714,6 +737,8 @@ public sealed record CriticalE2EFlowSummary
     public string Name { get; init; } = "";
     public string Module { get; init; } = "";
     public CriticalE2EFlowKind Kind { get; init; } = CriticalE2EFlowKind.Critical;
+    /// <summary>The definition's test type; <see cref="CriticalE2ETestType.Unknown"/> = legacy / not classified.</summary>
+    public CriticalE2ETestType TestType { get; init; } = CriticalE2ETestType.Unknown;
     public CriticalE2EExecutionMode Mode { get; init; }
     public int StepCount { get; init; }
     public bool Enabled { get; init; }
