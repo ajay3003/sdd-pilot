@@ -25,7 +25,7 @@ public sealed class FunctionalQualityScopeException(string message) : Exception(
 /// the test-design assessment's stable asset ids. Nothing is copied: saved scopes hold roots and explicit item references only.
 /// </summary>
 public sealed class FunctionalQualityScopeService(DeliveryReportingDbContext db, TimeProvider clock, IEnumerable<ITopologyProfile>? profiles = null,
-    CanonicalInterpretationDbContext? canonical = null, TestData.TestDataCatalog? testData = null)
+    CanonicalInterpretationDbContext? canonical = null, TestData.TestDataCatalog? testData = null, DeliveryScopeFilterService? scopeFilter = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly IReadOnlyList<ITopologyProfile> _profiles = [.. profiles ?? []];
@@ -702,19 +702,36 @@ public sealed class FunctionalQualityScopeService(DeliveryReportingDbContext db,
     /// Shared scope provenance (<see cref="ScopeQuery.ScopeProvenance"/>) is recorded additively in the existing items jsonb payload, without a
     /// schema change: without provenance the payload stays the plain item array (as before); with it the payload is
     /// <c>{"items":[…],"scopeProvenance":{…}}</c>. Snapshots frozen before scope support keep their array and read as "not recorded".
+    /// With <see cref="DeliveryScopeMode.Filter"/> the shared scope's confirmed members (pinned approved revisions, resolved here on the server) restrict
+    /// the frozen items to matching canonical keys (children follow their parent), and the provenance records Filtered, the basis and the counts.
+    /// A later membership change never alters this snapshot: it needs a new one.
     /// </remarks>
     public async Task<ScopeSnapshotView> FreezeAsync(Guid projectId, ScopeQuery query, CancellationToken ct)
     {
         var resolution = await ResolveAsync(projectId, query, ct);
         var now = clock.GetUtcNow();
-        var provenance = DeliveryScopeProvenanceText.Normalize(query.ScopeProvenance, now);
-        var items = resolution.Items.Select(i => new { i.Key, i.Type, i.Category, i.Relation, i.Inclusion, i.Coverage }).ToList();
+        // Without a selection the snapshot still records that none was chosen (never "created before scope support").
+        var provenance = DeliveryScopeProvenanceText.Normalize(query.ScopeProvenance, now) ?? DeliveryScopeProvenanceText.WholePopulation(now);
+        IReadOnlyList<ScopeItem> frozen = resolution.Items;
+        if (provenance is { Mode: DeliveryScopeMode.Filter })
+        {
+            var (membership, error) = await (scopeFilter ?? new DeliveryScopeFilterService()).ResolveAsync(provenance, ct);
+            if (membership is null) throw new FunctionalQualityScopeException(error ?? "The selected scope could not be resolved.");
+            var filter = DeliveryScopeMembership.FilterItems(resolution.Items, membership.MemberKeys, membership.MembersNotApplicable);
+            frozen = filter.Items;
+            provenance = membership.Provenance with
+            {
+                Filtered = true, Counts = filter.Counts, MembershipResolution = DeliveryScopeFilterService.MembershipRule,
+                FilterBasis = $"Functional Quality Scope \"{resolution.Scope.Name}\" v{resolution.Scope.Version} on Delivery snapshot {resolution.SnapshotLabel ?? resolution.SnapshotId?.ToString() ?? "none"}; membership resolved at freeze",
+            };
+        }
+        var items = frozen.Select(i => new { i.Key, i.Type, i.Category, i.Relation, i.Inclusion, i.Coverage }).ToList();
         var record = new DeliveryScopeSnapshotRecord
         {
             Id = Guid.NewGuid(), ProjectId = projectId, ScopeId = resolution.Scope.Id, ScopeName = resolution.Scope.Name, ScopeVersion = resolution.Scope.Version,
             DeliverySnapshotId = resolution.SnapshotId, RuleSetVersion = $"{resolution.RuleSetVersion};{WorkItemInterpreter.RuleSetVersion}",
             ItemsJson = provenance is null ? JsonSerializer.Serialize(items, Json) : JsonSerializer.Serialize(new { items, scopeProvenance = provenance }, Json),
-            ItemCount = resolution.Items.Count, CreatedAt = now,
+            ItemCount = frozen.Count, CreatedAt = now,
         };
         db.ScopeSnapshots.Add(record);
         await db.SaveChangesAsync(ct);
@@ -735,7 +752,7 @@ public sealed class FunctionalQualityScopeService(DeliveryReportingDbContext db,
         {
             using var doc = JsonDocument.Parse(itemsJson);
             return doc.RootElement.TryGetProperty("scopeProvenance", out var p) && p.ValueKind == JsonValueKind.Object
-                ? p.Deserialize<DeliveryScopeProvenance>(Json) is { Scopes.Count: > 0 } found ? found : null
+                ? p.Deserialize<DeliveryScopeProvenance>(Json) is { } found && (found.Scopes.Count > 0 || DeliveryScopeProvenanceText.IsWholePopulation(found)) ? found : null
                 : null;
         }
         catch (JsonException) { return null; }

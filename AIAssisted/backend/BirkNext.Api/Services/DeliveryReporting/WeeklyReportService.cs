@@ -12,7 +12,14 @@ public sealed record WeeklyReportOutcome(WeeklyDeliveryReport? Report, string? E
 /// result as one document plus its comparison rows (feature deltas, status events, report items), all in delivery_reporting. Opening and
 /// exporting a report read only the frozen document, never the snapshots again.
 /// </summary>
-public sealed class WeeklyReportService(DeliveryReportingDbContext db, DeliverySnapshotStore snapshots, TimeProvider clock, IConfiguration configuration)
+/// <remarks>
+/// Shared scope selection (<see cref="GenerateWeeklyReportRequest.ScopeProvenance"/>): in <see cref="DeliveryScopeMode.Context"/> (the default) it is
+/// recorded only. In <see cref="DeliveryScopeMode.Filter"/> the membership is resolved here, at generation time, from the pinned approved revisions
+/// (<see cref="DeliveryScopeFilterService"/>) and the report is restricted to the in-scope items before it is frozen (<see cref="DeliveryReportScopeFilter"/>).
+/// A later membership change never alters a frozen report: it needs a new report.
+/// </remarks>
+public sealed class WeeklyReportService(DeliveryReportingDbContext db, DeliverySnapshotStore snapshots, TimeProvider clock, IConfiguration configuration,
+    DeliveryScopeFilterService? scopeFilter = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -71,7 +78,23 @@ public sealed class WeeklyReportService(DeliveryReportingDbContext db, DeliveryS
             report = scoped;
         }
         // Shared scope provenance is frozen inside the report document (ContentJson): no schema change; older reports simply carry none.
-        if (DeliveryScopeProvenanceText.Normalize(request.ScopeProvenance, now) is { } provenance) report = report with { ScopeProvenance = provenance };
+        if (DeliveryScopeProvenanceText.Normalize(request.ScopeProvenance, now) is { } provenance)
+        {
+            if (provenance.Mode == DeliveryScopeMode.Filter)
+            {
+                var (membership, filterError) = await (scopeFilter ?? new DeliveryScopeFilterService()).ResolveAsync(provenance, ct);
+                if (membership is null) return new(null, filterError ?? "The selected scope could not be resolved.", StatusCodes.Status400BadRequest);
+                var (filtered, counts) = DeliveryReportScopeFilter.Apply(report, membership.MemberKeys, membership.MembersNotApplicable);
+                provenance = membership.Provenance with
+                {
+                    Filtered = true, Counts = counts, MembershipResolution = DeliveryScopeFilterService.MembershipRule,
+                    FilterBasis = $"Report items (requirements, user stories, scenarios) of {baseline.Ref.Label} → {current.Ref.Label}; membership resolved at generation",
+                };
+                report = filtered;
+            }
+            report = report with { ScopeProvenance = provenance };
+        }
+        else report = report with { ScopeProvenance = DeliveryScopeProvenanceText.WholePopulation(now) };
 
         var comparisonRecord = new DeliverySnapshotComparisonRecord
         {
@@ -133,8 +156,21 @@ public sealed class WeeklyReportService(DeliveryReportingDbContext db, DeliveryS
                 PairKey = $"{r.BaselineSnapshotId?.ToString() ?? report?.Baseline.SnapshotId.ToString()}→{r.CurrentSnapshotId?.ToString() ?? report?.Current.SnapshotId.ToString()}",
                 Direction = report?.Direction?.State, DirectionConfirmed = report?.Direction?.Confirmed == true, CalculationVersion = report?.CalculationVersion ?? 0,
                 ScopeLabel = report?.Scope?.Label ?? "",
+                ScopeFilterLabel = report?.ScopeProvenance is { Filtered: true } filtered ? $"Filtered by scope: {DeliveryScopeProvenanceText.Revisions(filtered)}" : "",
             };
         }).ToList();
+    }
+
+    /// <summary>
+    /// Compares two frozen reports of one project (<paramref name="baselineId"/> = reference, <paramref name="currentId"/> = later report). Both are read
+    /// as frozen; nothing is regenerated. Null when either report is not part of the project.
+    /// </summary>
+    public async Task<(DeliveryReportComparison? Comparison, string? Error)> CompareAsync(Guid projectId, Guid baselineId, Guid currentId, CancellationToken ct)
+    {
+        if (baselineId == currentId) return (null, "Choose two different reports to compare.");
+        var baseline = await GetAsync(projectId, baselineId, ct);
+        var current = await GetAsync(projectId, currentId, ct);
+        return baseline is null || current is null ? (null, "Both reports must belong to this reporting project.") : (DeliveryReportComparer.Compare(baseline, current), null);
     }
 
     /// <summary>The frozen report exactly as generated.</summary>

@@ -156,3 +156,15 @@
 .dlr-readiness { border: 1px solid var(--clr-border); border-radius: 8px; padding: .75rem 1rem; margin: .5rem 0 1rem; display: grid; gap: .5rem; }
 .dlr-readiness p { margin: 0; }
 .dlr-readiness .dlr-actions { margin: 0; flex-wrap: wrap; }
+/* Scope mode, scope filter and report-vs-report comparison */
+.dlr-scope-mode { display: flex; flex-wrap: wrap; gap: .35rem 1rem; align-items: center; margin: .25rem 0 .5rem; font-size: .9rem; }
+.dlr-scope-mode label { display: inline-flex; gap: .35rem; align-items: center; }
+.dlr-scope-filter { margin: .5rem 0; padding: .6rem .8rem; border: 1px solid var(--clr-border, #e2e8f0); border-radius: 8px; background: var(--clr-surface-subtle, #f8fafc); font-size: .9rem; min-width: 0; }
+.dlr-compare { display: grid; gap: .6rem; margin: .75rem 0; min-width: 0; }
+.dlr-compare-pick { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: end; }
+.dlr-compare-pick .dlr-field { flex: 1 1 16rem; min-width: 0; max-width: 28rem; }
+.dlr-compare-pick select { width: 100%; max-width: 100%; }
+.dlr-compare-result { display: grid; gap: .6rem; min-width: 0; }
+.dlr-compare-metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: .35rem .9rem; padding: 0; list-style: none; }
+.dlr-compare-metrics li { display: flex; justify-content: space-between; gap: .5rem; padding: .3rem .5rem; border-bottom: 1px solid var(--clr-border, #e2e8f0); font-size: .9rem; font-variant-numeric: tabular-nums; }
+.dlr-compare-findings, .dlr-compare-provenance { font-size: .9rem; min-width: 0; overflow-wrap: anywhere; }

@@ -92,3 +92,9 @@
 .fqs-test { display: flex; flex-wrap: wrap; gap: .375rem; align-items: center; }
 .fqs-test-detail { display: grid; gap: .5rem; }
 .fqs-h5 { margin: .5rem 0 .25rem; font-size: .875rem; }
+/* Scope mode and frozen-snapshot comparison */
+.fqs-toggle { display: inline-flex; flex-wrap: wrap; gap: .35rem 1rem; align-items: center; font-size: .9rem; }
+.fqs-snapshot-compare { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: end; margin-top: .5rem; }
+.fqs-snapshot-compare .fqs-field { flex: 1 1 16rem; max-width: 28rem; }
+.fqs-snapshot-compare .fqs-field select { width: 100%; }
+.fqs-snapshot-compare > div { flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; }

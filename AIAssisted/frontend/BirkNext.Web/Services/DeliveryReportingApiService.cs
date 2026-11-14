@@ -28,6 +28,15 @@ public interface IDeliveryReportingApiService
     Task<WeeklyDeliveryReport?> ReportAsync(Guid projectId, Guid reportId, CancellationToken ct = default);
     Task<(DeliveryReportExport? Export, string? Error)> ExportAsync(Guid projectId, Guid reportId, DeliveryExportFormat format, bool appendix, bool unchanged, CancellationToken ct = default);
     Task<string?> DeleteReportAsync(Guid projectId, Guid reportId, CancellationToken ct = default);
+    /// <summary>Two frozen reports of one project compared (backend: GET reports/compare). The default compares the two frozen documents with the same
+    /// shared rules (<see cref="DeliveryReportComparer"/>), so a client without the endpoint still gets an identical answer.</summary>
+    async Task<(DeliveryReportComparison? Comparison, string? Error)> CompareReportsAsync(Guid projectId, Guid baselineId, Guid currentId, CancellationToken ct = default)
+    {
+        if (baselineId == currentId) return (null, "Choose two different reports to compare.");
+        var baseline = await ReportAsync(projectId, baselineId, ct);
+        var current = await ReportAsync(projectId, currentId, ct);
+        return baseline is null || current is null ? (null, "Both reports must belong to this reporting project.") : (DeliveryReportComparer.Compare(baseline, current), null);
+    }
     /// <summary>Source + Functional scope over a report (or a snapshot without a report): options, notices and the scoped projection. Null when
     /// the scope cannot be read (the page then shows the unscoped view and says so).</summary>
     Task<DeliveryScopeView?> ScopeAsync(Guid projectId, Guid? reportId, Guid? snapshotId, BirkNext.Interpretation.CanonicalScopeFilter filter, CancellationToken ct = default,
@@ -172,6 +181,17 @@ public sealed class DeliveryReportingApiService(HttpClient http) : IDeliveryRepo
         if (work?.Quality is { } quality) query.Add($"quality={quality}");
         try { return await http.GetFromJsonAsync<DeliveryScopeView>($"{Base}/projects/{projectId}/scope?{string.Join('&', query)}", Json, ct); }
         catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e)) { return null; }
+    }
+
+    public async Task<(DeliveryReportComparison? Comparison, string? Error)> CompareReportsAsync(Guid projectId, Guid baselineId, Guid currentId, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.GetAsync($"{Base}/projects/{projectId}/reports/compare?baseline={baselineId}&current={currentId}", ct);
+            return response.IsSuccessStatusCode ? (await response.Content.ReadFromJsonAsync<DeliveryReportComparison>(Json, ct), null) : (null, await MessageAsync(response, ct));
+        }
+        catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e))
+        { return (null, BackendRequestClassifier.FromException(DeliveryReportingText.Title, e, $"GET {Base}/projects/{{projectId}}/reports/compare", ct).UserMessage); }
     }
 
     public async Task<WeeklyDeliveryReport?> ReportAsync(Guid projectId, Guid reportId, CancellationToken ct = default)

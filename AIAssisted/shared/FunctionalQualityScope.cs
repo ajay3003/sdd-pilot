@@ -62,7 +62,8 @@ public sealed record AvailableScope(string Key, string Name, string Kind, string
 /// <see cref="ScopeEnvironments.All"/> aggregates every environment (labelled as such); null = the only environment with evidence, if exactly one.</summary>
 public sealed record ScopeQuery(string? ScopeKey, Guid? CustomScopeId, bool IncludeRelated, bool IncludeTechnical = false, ScopeDefinition? Draft = null, string? Environment = null)
 {
-    /// <summary>Optional: the shared Scope Registry selection active when a snapshot is frozen (recorded with it, never used to resolve membership).</summary>
+    /// <summary>Optional: the shared Scope Registry selection active when a snapshot is frozen. Recorded with it; with
+    /// <see cref="DeliveryScopeProvenance.Mode"/> = Filter the server also restricts the frozen items to its confirmed members (approved revisions).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DeliveryScopeProvenance? ScopeProvenance { get; init; }
 }
 
@@ -350,6 +351,14 @@ public static class FunctionalQualityScopeText
 /// <param name="RevisionId">The Scope Registry revision id (ScopeRevisionView.Id); null when it could not be resolved at creation.</param>
 public sealed record DeliveryScopeProvenanceEntry(Guid ScopeId, string ScopeName, int RevisionNumber, Guid? RevisionId);
 
+/// <summary>
+/// How a shared scope selection is used when a snapshot is frozen or a report generated. <see cref="Context"/> (the default, the behaviour before
+/// filtering existed): the selection is recorded as provenance only; items and metrics stay the whole population. <see cref="Filter"/>: membership
+/// is resolved on the server from the pinned approved revisions and only matching items (and the metrics computed from them) are frozen.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum DeliveryScopeMode { Context, Filter }
+
 public sealed record DeliveryScopeProvenance
 {
     public const string DefaultMembershipResolution = "approved revisions; canonical key match type+module+feature+id";
@@ -358,10 +367,41 @@ public sealed record DeliveryScopeProvenance
     public string MembershipResolution { get; init; } = DefaultMembershipResolution;
     /// <summary>When the snapshot or report carrying this provenance was created (stamped by the server).</summary>
     public DateTimeOffset CreatedAt { get; init; }
+    /// <summary>Requested use of the selection. Records written before filtering existed read as <see cref="DeliveryScopeMode.Context"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public DeliveryScopeMode Mode { get; init; }
+    /// <summary>The Scope Registry project key the scopes belong to (the workspace project slug); needed to resolve membership on the server.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? ProjectKey { get; init; }
+    /// <summary>Set by the server only: true when items and metrics were actually restricted to the scope members (never taken from a request).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool Filtered { get; init; }
+    /// <summary>What the filter was applied to and how ("Functional Quality Scope 'X' on snapshot Y; confirmed members of approved revisions …").</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? FilterBasis { get; init; }
+    /// <summary>Included / excluded / unresolved counts of a filtered snapshot or report (server-computed).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DeliveryScopeFilterCounts? Counts { get; init; }
+}
+
+/// <summary>
+/// Counts of one scope filter. <see cref="Included"/>/<see cref="Excluded"/>: items of the Delivery population inside / outside the scope.
+/// <see cref="MembersUnresolved"/>: confirmed requirement, user story or scenario members the scope names that are not present in this population.
+/// <see cref="MembersNotApplicable"/>: confirmed members of other kinds (systems, contracts, Test Data …) — not Delivery items, never counted.
+/// </summary>
+public sealed record DeliveryScopeFilterCounts
+{
+    public int Included { get; init; }
+    public int Excluded { get; init; }
+    public int MembersMatched { get; init; }
+    public int MembersUnresolved { get; init; }
+    public int MembersNotApplicable { get; init; }
+    /// <summary>The first unresolved member keys (canonical keys, capped), for review.</summary>
+    public List<string> UnresolvedMemberKeys { get; init; } = [];
+    /// <summary>Reports only: features that own at least one included item.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public int IncludedFeatures { get; init; }
+    /// <summary>Reports only: metric labels that cannot be restricted to the scope's items (shown as "Not scope-resolvable", never as whole-project numbers).</summary>
+    public List<string> NotScopeResolvable { get; init; } = [];
+    [JsonIgnore] public bool NoApplicableItems => Included == 0;
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum DeliveryScopeProvenanceMatch { SameRevision, DifferentRevisions, MissingFirst, MissingSecond, MissingBoth }
+public enum DeliveryScopeProvenanceMatch { SameRevision, DifferentRevisions, MissingFirst, MissingSecond, MissingBoth, DifferentMode }
 
 /// <summary>Whether two compared deliveries used the same shared scope revisions. Only <see cref="LikeForLike"/> comparisons may show percentage deltas.</summary>
 public sealed record DeliveryScopeProvenanceComparison(DeliveryScopeProvenanceMatch Match, string Notice)
@@ -369,25 +409,112 @@ public sealed record DeliveryScopeProvenanceComparison(DeliveryScopeProvenanceMa
     public bool LikeForLike => Match == DeliveryScopeProvenanceMatch.SameRevision;
 }
 
+/// <summary>The result of filtering a Functional Quality Scope population by scope members (canonical keys only — never names).</summary>
+public sealed record DeliveryScopeItemFilter(IReadOnlyList<ScopeItem> Items, DeliveryScopeFilterCounts Counts);
+
+/// <summary>
+/// Membership of Delivery items in a shared scope. A Delivery item is in the scope when its canonical key (type + module + feature + id, the
+/// identity the canonical interpretation gives the same document item) is a confirmed member key; acceptance criteria and test cases follow their
+/// parent. Display names are never compared. Shared by the server (freeze, report generation) and the browser preview so both count alike.
+/// </summary>
+public static class DeliveryScopeMembership
+{
+    public const int UnresolvedKeyCap = 50;
+
+    public static string? CanonicalKeyOf(ScopeArtifactType type, string module, string featureKey, string displayId) => type switch
+    {
+        ScopeArtifactType.Requirement => CanonicalKey(BirkNext.Interpretation.CanonicalEntityType.Requirement, module, featureKey, displayId),
+        ScopeArtifactType.UserStory => CanonicalKey(BirkNext.Interpretation.CanonicalEntityType.UserStory, module, featureKey, displayId),
+        ScopeArtifactType.Scenario => CanonicalKey(BirkNext.Interpretation.CanonicalEntityType.Scenario, module, featureKey, displayId),
+        _ => null,
+    };
+
+    public static string? CanonicalKeyOf(ScopeItem item) => CanonicalKeyOf(item.Type, item.Module, item.FeatureKey, item.DisplayId);
+
+    private static string CanonicalKey(BirkNext.Interpretation.CanonicalEntityType type, string module, string featureKey, string id) =>
+        BirkNext.Interpretation.CanonicalKeys.EntityKey(type, BirkNext.Interpretation.CorrelationRules.Scoped(module, featureKey, id));
+
+    /// <summary>A story heading is a scenario when its kind says so (or, for snapshots without a kind, when its key starts with S) — the FQS rule.</summary>
+    public static bool IsScenario(string? kind, string key) => kind == "Scenario" || (kind is null && key.StartsWith('S'));
+
+    /// <summary>
+    /// Restricts a Functional Quality Scope population to the member keys. <paramref name="memberKeys"/>: confirmed requirement / user story /
+    /// scenario member keys (deduplicated here, case-insensitive); <paramref name="membersNotApplicable"/>: confirmed members of other kinds.
+    /// </summary>
+    public static DeliveryScopeItemFilter FilterItems(IReadOnlyList<ScopeItem> items, IEnumerable<string> memberKeys, int membersNotApplicable = 0)
+    {
+        var keys = new HashSet<string>(memberKeys.Where(k => !string.IsNullOrWhiteSpace(k)), StringComparer.OrdinalIgnoreCase);
+        var byKey = items.GroupBy(i => i.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        bool In(ScopeItem i) => CanonicalKeyOf(i) is { } k ? keys.Contains(k)
+            : i.ParentKey is { } p && byKey.TryGetValue(p, out var parent) && CanonicalKeyOf(parent) is { } pk && keys.Contains(pk);
+        var included = items.Where(In).ToList();
+        var matched = items.Select(CanonicalKeyOf).OfType<string>().Where(keys.Contains).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return new(included, Counts(included.Count, items.Count - included.Count, keys, matched, membersNotApplicable));
+    }
+
+    public static DeliveryScopeFilterCounts Counts(int included, int excluded, IReadOnlySet<string> keys, IReadOnlySet<string> matched, int membersNotApplicable)
+    {
+        var unresolved = keys.Where(k => !matched.Contains(k)).Order(StringComparer.OrdinalIgnoreCase).ToList();
+        return new()
+        {
+            Included = included, Excluded = excluded, MembersMatched = keys.Count - unresolved.Count, MembersUnresolved = unresolved.Count,
+            MembersNotApplicable = membersNotApplicable, UnresolvedMemberKeys = [.. unresolved.Take(UnresolvedKeyCap)],
+        };
+    }
+}
+
 public static class DeliveryScopeProvenanceText
 {
     public const string NotRecorded = "Scope provenance not recorded (created before scope support)";
+    /// <summary>A snapshot or report created with scope support but without a shared scope selection.</summary>
+    public const string NoSelection = "No shared scope selected — whole Delivery population";
     public const string SameRevision = "Same scope revision";
     public const string PercentNotLikeForLike = "percentage not shown: not like-for-like";
+    public const string NotScopeResolvable = "Not scope-resolvable";
+    public const string NoApplicableItems = "Scope has no applicable items in this Delivery population";
+    public const string ContextLabel = "Scope context (provenance only)";
+    public const string FilterLabel = "Filter by scope (restricts items and metrics)";
+    public const string ContextHint = "Records the selected scope revisions; items and metrics stay the whole population.";
+    public const string FilterHint = "Keeps only items whose canonical key is a confirmed member of the pinned approved revisions; metrics are computed from them.";
 
     public static bool Recorded(DeliveryScopeProvenance? p) => p is { Scopes.Count: > 0 };
+
+    /// <summary>Recorded with scope support, no shared scope selected (server-stamped; older records have no provenance at all).</summary>
+    public static bool IsWholePopulation(DeliveryScopeProvenance? p) => p is { Scopes.Count: 0 } && p.CreatedAt != default;
+
+    /// <summary>The provenance stored when nothing was selected, so a new record never reads as "created before scope support".</summary>
+    public static DeliveryScopeProvenance WholePopulation(DateTimeOffset createdAt) => new() { Scopes = [], CreatedAt = createdAt };
+
+    public static string ModeLabel(DeliveryScopeMode mode) => mode == DeliveryScopeMode.Filter ? FilterLabel : ContextLabel;
 
     /// <summary>"Release 1 rev 3, Payments rev 1".</summary>
     public static string Revisions(DeliveryScopeProvenance p) => string.Join(", ", p.Scopes.Select(s => $"{s.ScopeName} rev {s.RevisionNumber}"));
 
-    /// <summary>"Release 1 rev 3 · approved revisions; canonical key match …", or the not-recorded text for older records.</summary>
-    public static string Describe(DeliveryScopeProvenance? p) => Recorded(p) ? $"{Revisions(p!)} · {p!.MembershipResolution}" : NotRecorded;
+    /// <summary>"Release 1 rev 3 · approved revisions; canonical key match …" (scope context), "Filtered by scope: Release 1 rev 3 · …" (filtered),
+    /// or the not-recorded text for older records.</summary>
+    public static string Describe(DeliveryScopeProvenance? p) =>
+        IsWholePopulation(p) ? NoSelection : !Recorded(p) ? NotRecorded : p!.Filtered ? $"Filtered by scope: {Revisions(p)} · {p.MembershipResolution}" : $"{Revisions(p)} · {p.MembershipResolution}";
+
+    /// <summary>"12 included · 30 excluded (outside scope) · 2 scope members unresolved (named by the scope, not in this Delivery population)".</summary>
+    public static string CountsText(DeliveryScopeFilterCounts c)
+    {
+        var parts = new List<string>
+        {
+            $"{c.Included} included", $"{c.Excluded} excluded (outside scope)",
+            $"{c.MembersUnresolved} scope member{(c.MembersUnresolved == 1 ? "" : "s")} unresolved (named by the scope, not in this Delivery population)",
+        };
+        if (c.MembersNotApplicable > 0) parts.Add($"{c.MembersNotApplicable} member{(c.MembersNotApplicable == 1 ? "" : "s")} of other kinds not applicable to Delivery items");
+        return string.Join(" · ", parts);
+    }
 
     /// <summary>Exact ids for evidence: "Release 1: scope {id}, revision 3 (revision id {id} | revision id not recorded)".</summary>
     public static IEnumerable<string> IdLines(DeliveryScopeProvenance p) => p.Scopes.Select(s =>
         $"{s.ScopeName}: scope {s.ScopeId}, revision {s.RevisionNumber} ({(s.RevisionId is { } id ? $"revision id {id}" : "revision id not recorded")})");
 
-    /// <summary>The provenance as stored: unusable entries dropped, one entry per scope id, names trimmed, server time stamped. Null when nothing usable.</summary>
+    /// <summary>
+    /// The provenance as requested, ready to store: unusable entries dropped, one entry per scope id, names trimmed, server time stamped. The requested
+    /// mode and project key are kept; Filtered, basis and counts are server results and are always cleared here. Null when nothing usable.
+    /// </summary>
     public static DeliveryScopeProvenance? Normalize(DeliveryScopeProvenance? p, DateTimeOffset createdAt)
     {
         if (p is null) return null;
@@ -396,21 +523,33 @@ public static class DeliveryScopeProvenanceText
             .OrderBy(s => s.ScopeName, StringComparer.OrdinalIgnoreCase).ThenBy(s => s.ScopeId).ToList();
         if (scopes.Count == 0) return null;
         var note = string.IsNullOrWhiteSpace(p.MembershipResolution) ? DeliveryScopeProvenance.DefaultMembershipResolution : Cap(p.MembershipResolution.Trim(), 500);
-        return new DeliveryScopeProvenance { Scopes = scopes, MembershipResolution = note, CreatedAt = createdAt };
+        return new DeliveryScopeProvenance
+        {
+            Scopes = scopes, MembershipResolution = note, CreatedAt = createdAt, Mode = p.Mode == DeliveryScopeMode.Filter ? DeliveryScopeMode.Filter : DeliveryScopeMode.Context,
+            ProjectKey = string.IsNullOrWhiteSpace(p.ProjectKey) ? null : Cap(p.ProjectKey.Trim(), 200),
+        };
     }
 
     /// <summary>
-    /// Same scope ids with the same revision numbers (and the same revision ids where both sides recorded one) = like-for-like. Anything else —
-    /// another scope, another revision, or a side without provenance — is not like-for-like and is said so.
+    /// Same scope ids with the same revision numbers (and the same revision ids where both sides recorded one) and the same mode (filtered or
+    /// context) = like-for-like. Anything else — another scope, another revision, another mode, or a side without provenance — is said so.
     /// </summary>
     public static DeliveryScopeProvenanceComparison Compare(DeliveryScopeProvenance? first, DeliveryScopeProvenance? second, string firstLabel = "A", string secondLabel = "B")
     {
         var (a, b) = (Recorded(first), Recorded(second));
-        if (!a && !b) return new(DeliveryScopeProvenanceMatch.MissingBoth, $"Scope provenance not recorded for {firstLabel} and {secondLabel}");
-        if (!a) return new(DeliveryScopeProvenanceMatch.MissingFirst, $"Scope provenance not recorded for {firstLabel}");
-        if (!b) return new(DeliveryScopeProvenanceMatch.MissingSecond, $"Scope provenance not recorded for {secondLabel}");
-        var left = first!.Scopes.GroupBy(s => s.ScopeId).ToDictionary(g => g.Key, g => g.First());
-        var right = second!.Scopes.GroupBy(s => s.ScopeId).ToDictionary(g => g.Key, g => g.First());
+        var (wa, wb) = (IsWholePopulation(first), IsWholePopulation(second));
+        if (wa && wb) return new(DeliveryScopeProvenanceMatch.SameRevision, $"Same scope basis: {NoSelection}");
+        if ((wa && b) || (wb && a))
+            return new(DeliveryScopeProvenanceMatch.DifferentRevisions,
+                $"Compared deliveries used different scope bases: {firstLabel} {(wa ? NoSelection : Revisions(first!))} vs {secondLabel} {(wb ? NoSelection : Revisions(second!))} — percentages are not like-for-like");
+        if (!a && !wa && !b && !wb) return new(DeliveryScopeProvenanceMatch.MissingBoth, $"Scope provenance not recorded for {firstLabel} and {secondLabel}");
+        if (!a && !wa) return new(DeliveryScopeProvenanceMatch.MissingFirst, $"Scope provenance not recorded for {firstLabel}");
+        if (!b && !wb) return new(DeliveryScopeProvenanceMatch.MissingSecond, $"Scope provenance not recorded for {secondLabel}");
+        if (first!.Filtered != second!.Filtered)
+            return new(DeliveryScopeProvenanceMatch.DifferentMode,
+                $"Compared deliveries used different scope modes: {firstLabel} {ModeShort(first)} vs {secondLabel} {ModeShort(second)} — percentages are not like-for-like");
+        var left = first.Scopes.GroupBy(s => s.ScopeId).ToDictionary(g => g.Key, g => g.First());
+        var right = second.Scopes.GroupBy(s => s.ScopeId).ToDictionary(g => g.Key, g => g.First());
         var same = left.Count == right.Count && left.All(l => right.TryGetValue(l.Key, out var r) && r.RevisionNumber == l.Value.RevisionNumber
             && (l.Value.RevisionId is null || r.RevisionId is null || l.Value.RevisionId == r.RevisionId));
         return same
@@ -418,6 +557,8 @@ public static class DeliveryScopeProvenanceText
             : new(DeliveryScopeProvenanceMatch.DifferentRevisions,
                 $"Compared deliveries used different scope revisions: {firstLabel} {Revisions(first)} vs {secondLabel} {Revisions(second)} — membership may differ; percentages are not like-for-like");
     }
+
+    private static string ModeShort(DeliveryScopeProvenance p) => p.Filtered ? "filtered by scope" : "scope context only";
 
     private static string Cap(string value, int length) => value.Length > length ? value[..length] : value;
 }

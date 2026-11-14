@@ -353,6 +353,8 @@ public sealed record DeliveryReportSummaryRow(Guid Id, string Title, string Week
     public int CalculationVersion { get; init; }
     /// <summary>Source / Functional scope the report was generated for ("M2LB-language · ADR-029: Translate English"); empty = whole comparison.</summary>
     public string ScopeLabel { get; init; } = "";
+    /// <summary>"Filtered by scope: Release 1 rev 3" when the report was restricted to a shared scope's items; empty otherwise (whole population).</summary>
+    public string ScopeFilterLabel { get; init; } = "";
 }
 
 public sealed record DeliveryReportSnapshotRef
@@ -774,4 +776,165 @@ public static class DeliveryMetrics
     /// <summary>Checklist completion: checked ÷ all checklist tasks in scope, truncated to a whole percent (never shows 100 % before every task is
     /// checked). Null when there are no tasks — "no checklist", never 0 %.</summary>
     public static int? ChecklistPercent(long completed, long total) => total <= 0 ? null : (int)(100 * completed / total);
+}
+
+// ── Report vs report comparison ─────────────────────────────────────────────────────────────────────────────────────────────
+// Two frozen reports of one project, compared as frozen (nothing is regenerated). Percentage changes are shown only like-for-like: same project,
+// same report kind, same rule sets (calculation, interpretation, quality, content version) and the same scope basis (whole population, the same
+// Source/Functional scope, or filtered by the same scope revisions). Otherwise every mismatch is named and raw counts are shown without percentages.
+
+/// <summary>One side of a report comparison: what was compared and how it was produced (provenance).</summary>
+public sealed record DeliveryReportComparisonSide
+{
+    public Guid ReportId { get; init; }
+    public string DisplayTitle { get; init; } = "";
+    public DeliveryReportKind Kind { get; init; }
+    public int Version { get; init; }
+    public int CalculationVersion { get; init; }
+    public string? InterpretationRuleSet { get; init; }
+    public string? QualityRuleSet { get; init; }
+    public DateTimeOffset GeneratedAt { get; init; }
+    public DeliveryReportSnapshotRef Baseline { get; init; } = new();
+    public DeliveryReportSnapshotRef Current { get; init; } = new();
+    /// <summary>The Source / Functional scope / work filter the report was generated for ("" = whole comparison).</summary>
+    public string ScopeLabel { get; init; } = "";
+    /// <summary>The shared scope provenance in words (or "Scope provenance not recorded (created before scope support)").</summary>
+    public string ScopeProvenance { get; init; } = "";
+    public bool Filtered { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DeliveryScopeFilterCounts? FilterCounts { get; init; }
+
+    /// <summary>"calculation v3 · interpretation work-items/2 · quality functional-quality/3 · content v4".</summary>
+    [JsonIgnore] public string RuleSet =>
+        $"calculation v{CalculationVersion} · interpretation {InterpretationRuleSet ?? "not recorded"} · quality {QualityRuleSet ?? "not recorded"} · content v{Version}";
+}
+
+/// <summary>One figure in both reports. Null = absent on that side (with <see cref="Note"/> saying why). <see cref="PercentChange"/> only like-for-like.</summary>
+public sealed record DeliveryReportMetricDifference(string Key, string Label, string Group, int? Baseline, int? Current)
+{
+    public int? Delta { get; init; }
+    public double? PercentChange { get; init; }
+    public string? Note { get; init; }
+    [JsonIgnore] public bool Changed => Baseline != Current;
+}
+
+public sealed record DeliveryReportComparison
+{
+    public Guid ProjectId { get; init; }
+    public DeliveryReportComparisonSide Baseline { get; init; } = new();
+    public DeliveryReportComparisonSide Current { get; init; } = new();
+    public bool LikeForLike { get; init; }
+    /// <summary>Why the reports are not like-for-like (empty when they are).</summary>
+    public List<string> Mismatches { get; init; } = [];
+    public DeliveryScopeProvenanceComparison ScopeProvenance { get; init; } = new(DeliveryScopeProvenanceMatch.MissingBoth, "");
+    public List<DeliveryReportMetricDifference> Metrics { get; init; } = [];
+    public List<DeliveryAttentionItem> AddedAttention { get; init; } = [];
+    public List<DeliveryAttentionItem> RemovedAttention { get; init; } = [];
+    /// <summary>Features explicitly Blocked in the current report and not in the baseline report (and the reverse).</summary>
+    public List<string> AddedBlockers { get; init; } = [];
+    public List<string> RemovedBlockers { get; init; } = [];
+    public List<string> Summary { get; init; } = [];
+}
+
+public static class DeliveryReportComparer
+{
+    public const string LikeForLikeText = "Like-for-like: same project, report kind, rule sets and scope basis — percentage changes are shown.";
+    public const string NotLikeForLikeText = "Not like-for-like: raw counts only, no percentages.";
+
+    public static DeliveryReportComparisonSide Side(WeeklyDeliveryReport r) => new()
+    {
+        ReportId = r.ReportId, DisplayTitle = DeliveryReportTitles.Display(r), Kind = r.Kind, Version = r.Version, CalculationVersion = r.CalculationVersion,
+        InterpretationRuleSet = r.InterpretationRuleSet, QualityRuleSet = r.QualityRuleSet, GeneratedAt = r.GeneratedAt, Baseline = r.Baseline, Current = r.Current,
+        ScopeLabel = r.Scope?.Label ?? "", ScopeProvenance = DeliveryScopeProvenanceText.Describe(r.ScopeProvenance),
+        Filtered = r.ScopeProvenance?.Filtered == true, FilterCounts = r.ScopeProvenance?.Filtered == true ? r.ScopeProvenance.Counts : null,
+    };
+
+    /// <summary>Why two reports are not like-for-like (empty = like-for-like).</summary>
+    public static List<string> Mismatches(WeeklyDeliveryReport a, WeeklyDeliveryReport b)
+    {
+        var m = new List<string>();
+        if (a.ProjectId != b.ProjectId) m.Add("The reports belong to different reporting projects.");
+        if (a.Kind != b.Kind) m.Add($"Different report kinds: {Kind(a.Kind)} vs {Kind(b.Kind)}.");
+        if (a.CalculationVersion != b.CalculationVersion) m.Add($"Different calculation rules: v{a.CalculationVersion} vs v{b.CalculationVersion}.");
+        if (a.Version != b.Version) m.Add($"Different report content versions: v{a.Version} vs v{b.Version}.");
+        if (!string.Equals(a.InterpretationRuleSet, b.InterpretationRuleSet, StringComparison.Ordinal))
+            m.Add($"Different interpretation rule sets: {a.InterpretationRuleSet ?? "not recorded"} vs {b.InterpretationRuleSet ?? "not recorded"}.");
+        if (!string.Equals(a.QualityRuleSet, b.QualityRuleSet, StringComparison.Ordinal))
+            m.Add($"Different quality rule sets: {a.QualityRuleSet ?? "not recorded"} vs {b.QualityRuleSet ?? "not recorded"}.");
+        if (!SameReportScope(a.Scope, b.Scope))
+            m.Add($"Different Source / Functional scope: {Label(a.Scope)} vs {Label(b.Scope)}.");
+        var (fa, fb) = (a.ScopeProvenance?.Filtered == true, b.ScopeProvenance?.Filtered == true);
+        if (fa != fb) m.Add($"Different scope modes: {(fa ? "filtered by scope" : "whole population")} vs {(fb ? "filtered by scope" : "whole population")}.");
+        else if (fa && DeliveryScopeProvenanceText.Compare(a.ScopeProvenance, b.ScopeProvenance, "baseline report", "current report") is { LikeForLike: false } scope)
+            m.Add($"{scope.Notice}.");
+        return m;
+    }
+
+    /// <summary>Compares two frozen reports (<paramref name="baseline"/> = the earlier/reference report, <paramref name="current"/> = the later one).</summary>
+    public static DeliveryReportComparison Compare(WeeklyDeliveryReport baseline, WeeklyDeliveryReport current)
+    {
+        var mismatches = Mismatches(baseline, current);
+        var like = mismatches.Count == 0;
+        var notResolvableA = (baseline.ScopeProvenance?.Filtered == true ? baseline.ScopeProvenance.Counts?.NotScopeResolvable : null) ?? [];
+        var notResolvableB = (current.ScopeProvenance?.Filtered == true ? current.ScopeProvenance.Counts?.NotScopeResolvable : null) ?? [];
+        var a = baseline.Metrics.GroupBy(x => x.Key).ToDictionary(g => g.Key, g => g.First());
+        var b = current.Metrics.GroupBy(x => x.Key).ToDictionary(g => g.Key, g => g.First());
+        var keys = current.Metrics.Select(x => x.Key).Concat(baseline.Metrics.Select(x => x.Key)).Distinct().ToList();
+        static string Missing(DeliveryReportMetric present, IReadOnlyList<string> notResolvable, string side) =>
+            notResolvable.Contains(present.Label) ? $"{DeliveryScopeProvenanceText.NotScopeResolvable} in the {side} report" : $"Not in the {side} report";
+        var metrics = keys.Select(k =>
+        {
+            a.TryGetValue(k, out var x);
+            b.TryGetValue(k, out var y);
+            var any = (y ?? x)!;
+            var d = new DeliveryReportMetricDifference(k, any.Label, any.Group, x?.Value, y?.Value);
+            if (x is null) return d with { Note = Missing(y!, notResolvableA, "baseline") };
+            if (y is null) return d with { Note = Missing(x, notResolvableB, "current") };
+            var delta = y.Value - x.Value;
+            if (!like) return d with { Delta = delta, Note = delta == 0 ? null : DeliveryScopeProvenanceText.PercentNotLikeForLike };
+            // A percentage needs a known, non-zero denominator: 0 → n is a change in count only, never "+∞ %" or "0 %".
+            return d with
+            {
+                Delta = delta, PercentChange = x.Value == 0 ? null : Math.Round(delta * 100.0 / x.Value, 1),
+                Note = x.Value == 0 && delta != 0 ? "no percentage: the baseline value is 0" : null,
+            };
+        }).ToList();
+
+        static string Key(DeliveryAttentionItem i) => $"{i.Kind}|{i.FeatureKey}|{i.Title}";
+        var aKeys = baseline.Attention.Select(Key).ToHashSet(StringComparer.Ordinal);
+        var bKeys = current.Attention.Select(Key).ToHashSet(StringComparer.Ordinal);
+        var added = current.Attention.Where(i => !aKeys.Contains(Key(i))).DistinctBy(Key).ToList();
+        var removed = baseline.Attention.Where(i => !bKeys.Contains(Key(i))).DistinctBy(Key).ToList();
+        static Dictionary<string, string> Blocked(WeeklyDeliveryReport r) => r.Stories.Where(s => !s.RemovedFeature && s.CurrentStatus == DeliveryStatus.Blocked)
+            .GroupBy(s => s.FeatureKey, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First().Title, StringComparer.Ordinal);
+        var (blockedA, blockedB) = (Blocked(baseline), Blocked(current));
+        var addedBlockers = blockedB.Where(kv => !blockedA.ContainsKey(kv.Key)).Select(kv => kv.Value).Order(StringComparer.OrdinalIgnoreCase).ToList();
+        var removedBlockers = blockedA.Where(kv => !blockedB.ContainsKey(kv.Key)).Select(kv => kv.Value).Order(StringComparer.OrdinalIgnoreCase).ToList();
+
+        var both = metrics.Count(x => x.Baseline is not null && x.Current is not null);
+        var oneSided = metrics.Count - both;
+        var summary = new List<string>
+        {
+            like ? LikeForLikeText : $"{NotLikeForLikeText} {string.Join(" ", mismatches)}",
+            $"{metrics.Count(x => x.Baseline is not null && x.Current is not null && x.Changed)} of {both} figures changed" +
+                (oneSided > 0 ? $"; {oneSided} figure{(oneSided == 1 ? "" : "s")} in one report only" : "") + ".",
+            $"Needs attention: {added.Count} added, {removed.Count} no longer listed. Blocked features: {addedBlockers.Count} new, {removedBlockers.Count} no longer blocked.",
+        };
+        return new()
+        {
+            ProjectId = current.ProjectId, Baseline = Side(baseline), Current = Side(current), LikeForLike = like, Mismatches = mismatches,
+            ScopeProvenance = DeliveryScopeProvenanceText.Compare(baseline.ScopeProvenance, current.ScopeProvenance, "baseline report", "current report"),
+            Metrics = metrics, AddedAttention = added, RemovedAttention = removed, AddedBlockers = addedBlockers, RemovedBlockers = removedBlockers, Summary = summary,
+        };
+    }
+
+    /// <summary>"+12.5 %" / "-3.0 %" / "" (no percentage).</summary>
+    public static string Percent(double? value) => value is { } v ? $"{v.ToString("+0.0;-0.0;0.0", System.Globalization.CultureInfo.InvariantCulture)} %" : "";
+
+    private static bool SameReportScope(DeliveryReportScope? x, DeliveryReportScope? y) =>
+        x is null || y is null ? x is null && y is null
+        : x.SourceId == y.SourceId && x.FunctionalScopeId == y.FunctionalScopeId && x.WorkType == y.WorkType && x.Quality == y.Quality;
+
+    private static string Label(DeliveryReportScope? s) => s is null || s.Label.Length == 0 ? "whole comparison" : s.Label;
+
+    private static string Kind(DeliveryReportKind k) => k == DeliveryReportKind.Weekly ? "weekly report" : "delivery change report";
 }

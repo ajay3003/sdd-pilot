@@ -140,6 +140,24 @@
     /// <summary>A frozen metric's value, or "–" when the report does not carry it (never a 0 for an unknown).</summary>
     private static string Fig(WeeklyDeliveryReport r, string key) => r.Metrics.FirstOrDefault(m => m.Key == key)?.Value.ToString() ?? "–";
 
+    /// <summary>
+    /// The Baseline → current KPIs. In a report filtered by scope the feature counts cover the features that contain in-scope items (labelled so), and the
+    /// task checklist — counted per feature, with shared tasks that belong to no scope item — reads "Not scope-resolvable" instead of a feature-wide number.
+    /// </summary>
+    private static IReadOnlyList<DeliveryKpi> ComparisonKpis(WeeklyDeliveryReport report)
+    {
+        var kpis = DeliveryIntelligence.Comparison(report);
+        if (report.ScopeProvenance?.Filtered != true) return kpis;
+        if (report.ScopeProvenance.Counts?.NoApplicableItems == true)
+            return [new("scope", DeliveryScopeProvenanceText.NoApplicableItems, "Features in scope", "No requirement, user story or scenario of this comparison is a confirmed scope member", DeliveryDashboardTone.Neutral)];
+        return [.. kpis.Select(k => k.Key switch
+        {
+            "checklist" => k with { Value = DeliveryScopeProvenanceText.NotScopeResolvable, Detail = "Task checklists are per feature and include shared tasks — not restricted to the scope's items" },
+            "verified" => k,
+            _ => k with { Detail = $"{k.Detail} · features containing in-scope items" },
+        })];
+    }
+
     private static string CriteriaNow(WeeklyDeliveryReport r) =>
         r.Stories.Any(s => s.Hierarchy is not null) ? r.Stories.Where(s => !s.RemovedFeature).Sum(s => s.Hierarchy?.CriteriaCurrent ?? 0).ToString() : "–";
 
@@ -210,7 +228,22 @@
                 }
                 <p class="dlr-muted" data-testid="dlr-report-kind">@(report.Kind == DeliveryReportKind.Weekly ? "Weekly report: the baseline covers this week." : "Delivery change report: compares two snapshots; not a full weekly period.") Baseline @P.DayTime(report.Baseline.EffectiveAt) (imported @P.DayTime(report.Baseline.ImportedAt)) → current @P.DayTime(report.Current.EffectiveAt) (imported @P.DayTime(report.Current.ImportedAt)).</p>
                 @* Shared scope provenance frozen with the report (one selection for both sides); reports generated before scope support say so. *@
-                <p class="dlr-muted" data-testid="dlr-scope-provenance" data-recorded="@(DeliveryScopeProvenanceText.Recorded(report.ScopeProvenance) ? "true" : "false")">@(DeliveryScopeProvenanceText.Recorded(report.ScopeProvenance) ? $"Shared scope provenance (baseline and current): {DeliveryScopeProvenanceText.Describe(report.ScopeProvenance)}" : DeliveryScopeProvenanceText.NotRecorded)</p>
+                <p class="dlr-muted" data-testid="dlr-scope-provenance" data-recorded="@(DeliveryScopeProvenanceText.Recorded(report.ScopeProvenance) ? "true" : "false")" data-filtered="@(report.ScopeProvenance?.Filtered == true ? "true" : "false")">@(DeliveryScopeProvenanceText.Recorded(report.ScopeProvenance) ? $"Shared scope provenance (baseline and current): {DeliveryScopeProvenanceText.Describe(report.ScopeProvenance)}" : DeliveryScopeProvenanceText.Describe(report.ScopeProvenance))</p>
+                @if (report.ScopeProvenance is { Filtered: true } filteredBy)
+                {
+                    <div class="dlr-scope-filter" data-testid="dlr-scope-filter" data-no-items="@(filteredBy.Counts?.NoApplicableItems == true ? "true" : "false")">
+                        @if (filteredBy.Counts is { } fc)
+                        {
+                            <p data-testid="dlr-scope-filter-counts"><strong>Filtered by scope:</strong> @DeliveryScopeProvenanceText.CountsText(fc)@(fc.IncludedFeatures > 0 ? $" · {fc.IncludedFeatures} feature{(fc.IncludedFeatures == 1 ? " contains" : "s contain")} in-scope items" : "")</p>
+                            @if (fc.NoApplicableItems) { <p class="dlr-warning" role="status" data-testid="dlr-scope-filter-empty">@DeliveryScopeProvenanceText.NoApplicableItems — no figures are shown (not 0).</p> }
+                            @if (fc.NotScopeResolvable.Count > 0)
+                            {
+                                <p class="dlr-muted" data-testid="dlr-not-scope-resolvable">@DeliveryScopeProvenanceText.NotScopeResolvable (feature-wide or shared figures, not shown under a scope): @string.Join(", ", fc.NotScopeResolvable)</p>
+                            }
+                        }
+                        @if (filteredBy.FilterBasis is { } basis) { <p class="dlr-muted" data-testid="dlr-scope-filter-basis">@basis</p> }
+                    </div>
+                }
                 <ExportMenu TestId="dlr-export" Options="ExportOptions(report.ReportId)" />
             </div>
             <dl class="dlr-meta">
@@ -246,7 +279,7 @@
         @* Scrum Master summary (NEXT53): the shared Delivery Intelligence figures in comparison mode — scope, change, declared and verified
            completion and the checklist apart — then the change charts. Same calculations as Delivery Overview. *@
         <h3 class="dd-h" id="dlr-comparison-h">Baseline → current</h3>
-        <DeliveryKpiGrid Kpis="DeliveryIntelligence.Comparison(report)" Label="Baseline compared with current" TestId="dlr-comparison" />
+        <DeliveryKpiGrid Kpis="ComparisonKpis(report)" Label="Baseline compared with current" TestId="dlr-comparison" />
         @if (DeliveryDashboard.ChangeNotComparable(report) is { } notComparable)
         {
             <p class="dlr-card dlr-muted" data-testid="dlr-not-comparable">@notComparable</p>
@@ -255,7 +288,14 @@
         {
             <div class="dd-grid">
                 <section class="dd-card" aria-label="Feature changes" data-testid="dlr-chart-features"><h3 class="dd-card-h">Feature changes</h3><DeliveryBarChart Bars="DeliveryDashboard.FeatureChanges(report)" TestId="dlr-change-bar" /></section>
-                <section class="dd-card" aria-label="Task changes" data-testid="dlr-chart-tasks"><h3 class="dd-card-h">Task checklist changes</h3><DeliveryBarChart Bars="DeliveryDashboard.TaskChanges(report)" TestId="dlr-change-bar" Signed="true" /></section>
+                @if (report.ScopeProvenance?.Filtered == true)
+                {
+                    <section class="dd-card" aria-label="Task changes" data-testid="dlr-chart-tasks"><h3 class="dd-card-h">Task checklist changes</h3><p class="dlr-muted" data-testid="dlr-chart-tasks-not-resolvable">@DeliveryScopeProvenanceText.NotScopeResolvable: task changes are counted per feature and shared tasks belong to no scope item.</p></section>
+                }
+                else
+                {
+                    <section class="dd-card" aria-label="Task changes" data-testid="dlr-chart-tasks"><h3 class="dd-card-h">Task checklist changes</h3><DeliveryBarChart Bars="DeliveryDashboard.TaskChanges(report)" TestId="dlr-change-bar" Signed="true" /></section>
+                }
             </div>
         }
         <p class="dlr-muted dd-trend" data-testid="dlr-trend">@(_reports.Count > 1 ? $"{_reports.Count} saved reports — see Report history for earlier periods; each report is one baseline → current comparison, not a trend line." : "A baseline and a current snapshot are two points, not a trend.") <a href="@TabHref("changes")" data-testid="dlr-open-board">Open the change board</a></p>
@@ -411,7 +451,15 @@
                 </div>
                 @if (_projectId is { } provenanceProject && Session.ScopeProvenance(provenanceProject) is { } selectedScope)
                 {
-                    <p class="dlr-muted" data-testid="dlr-generate-scope-provenance">Shared scope recorded with the report: @DeliveryScopeProvenanceText.Revisions(selectedScope) (selected in Functional Quality Scope; provenance only — it does not narrow the report).</p>
+                    @* Explicit: the shared scope is recorded only (default, unchanged behaviour) or restricts the report's items and metrics. *@
+                    <fieldset class="dlr-scope-mode" data-testid="dlr-generate-scope-mode">
+                        <legend>Shared scope (@DeliveryScopeProvenanceText.Revisions(selectedScope))</legend>
+                        <label title="@DeliveryScopeProvenanceText.ContextHint"><input type="radio" name="dlr-generate-scope-mode" checked="@(_generateScopeMode == DeliveryScopeMode.Context)" @onchange="() => _generateScopeMode = DeliveryScopeMode.Context" data-testid="dlr-generate-scope-mode-context" /> @DeliveryScopeProvenanceText.ContextLabel</label>
+                        <label title="@DeliveryScopeProvenanceText.FilterHint"><input type="radio" name="dlr-generate-scope-mode" checked="@(_generateScopeMode == DeliveryScopeMode.Filter)" @onchange="() => _generateScopeMode = DeliveryScopeMode.Filter" data-testid="dlr-generate-scope-mode-filter" /> @DeliveryScopeProvenanceText.FilterLabel</label>
+                    </fieldset>
+                    <p class="dlr-muted" data-testid="dlr-generate-scope-provenance" data-mode="@_generateScopeMode">@(_generateScopeMode == DeliveryScopeMode.Filter
+                        ? $"Filter by scope: {DeliveryScopeProvenanceText.Revisions(selectedScope)} (selected in Functional Quality Scope). Only requirements, user stories and scenarios that are confirmed members of these approved revisions are kept; membership is resolved when the report is generated, and figures that cannot be restricted read “{DeliveryScopeProvenanceText.NotScopeResolvable}”."
+                        : $"Shared scope recorded with the report: {DeliveryScopeProvenanceText.Revisions(selectedScope)} (selected in Functional Quality Scope; provenance only — it does not narrow the report).")</p>
                 }
                 <p class="dlr-muted dlr-sort-note">@BirkNext.Snapshots.SnapshotSelectionLabels.SortExplanation “Current” marks the newest snapshot imported as current.</p>
                 @if (_selectionNotice is not null) { <p class="dlr-warning" role="status" data-testid="dlr-selection-notice">@_selectionNotice</p> }
@@ -713,6 +761,82 @@
                     </tbody>
                 </table>
                 </div>
+                @if (_reports.Count > 1) { @ReportComparison() }
+            }
+        </section>
+    };
+
+    // ── Report vs report comparison (compact: summary, changed figures, attention/blocker changes, provenance) ─────────────
+
+    private static string ReportOption(DeliveryReportSummaryRow r) =>
+        $"{r.DisplayTitle} · {P.DayTime(r.GeneratedAt)}{(r.ScopeLabel.Length > 0 ? $" · {r.ScopeLabel}" : "")}{(r.ScopeFilterLabel.Length > 0 ? $" · {r.ScopeFilterLabel}" : "")}";
+
+    private RenderFragment ReportComparison() => __builder =>
+    {
+        <section class="dlr-compare" data-testid="dlr-compare" aria-labelledby="dlr-compare-h">
+            <h3 class="dlr-h3" id="dlr-compare-h">Compare two reports</h3>
+            <p class="dlr-muted">Both reports are read as frozen. Percentage changes are shown only when they are like-for-like (same report kind, rule sets and scope basis).</p>
+            <div class="dlr-compare-pick" role="group" aria-label="Reports to compare">
+                <label class="dlr-field"><span>Baseline report</span>
+                    <select data-testid="dlr-compare-baseline" value="@(_compareBaselinePick?.ToString() ?? "")" @onchange="e => PickCompare(true, e.Value?.ToString())">
+                        <option value="">Choose a report</option>
+                        @foreach (var r in _reports) { <option value="@r.Id">@ReportOption(r)</option> }
+                    </select>
+                </label>
+                <label class="dlr-field"><span>Current report</span>
+                    <select data-testid="dlr-compare-current" value="@(_compareCurrentPick?.ToString() ?? "")" @onchange="e => PickCompare(false, e.Value?.ToString())">
+                        <option value="">Choose a report</option>
+                        @foreach (var r in _reports) { <option value="@r.Id">@ReportOption(r)</option> }
+                    </select>
+                </label>
+                @if (_compareIds is not null) { <button type="button" class="btn-link" data-testid="dlr-compare-clear" @onclick="ClearCompare">Clear comparison</button> }
+            </div>
+            @if (_compareLoading) { <p class="dlr-muted" role="status" data-testid="dlr-compare-loading">Comparing the two frozen reports…</p> }
+            @if (_reportComparisonError is not null) { <p class="dlr-error" role="alert" data-testid="dlr-compare-error">@_reportComparisonError</p> }
+            @if (_reportComparison is { } cmp)
+            {
+                var changed = cmp.Metrics.Where(m => m.Changed).ToList();
+                <div class="dlr-compare-result" data-testid="dlr-compare-result" data-like-for-like="@(cmp.LikeForLike ? "true" : "false")">
+                    <ul class="dlr-list" data-testid="dlr-compare-summary">@foreach (var line in cmp.Summary) { <li>@line</li> }</ul>
+                    @if (cmp.Mismatches.Count > 0)
+                    {
+                        <ul class="dlr-list dlr-warning" data-testid="dlr-compare-mismatches">@foreach (var m in cmp.Mismatches) { <li data-testid="dlr-compare-mismatch">@m</li> }</ul>
+                    }
+                    <p class="dlr-muted" data-testid="dlr-compare-scope" data-match="@cmp.ScopeProvenance.Match">@cmp.ScopeProvenance.Notice</p>
+                    <h4 class="dlr-h4">Changed figures (@changed.Count of @cmp.Metrics.Count)</h4>
+                    @if (changed.Count == 0) { <p class="dlr-muted" data-testid="dlr-compare-no-change">No figure differs between the two reports.</p> }
+                    else
+                    {
+                        <ul class="dlr-list dlr-compare-metrics" data-testid="dlr-compare-metrics">
+                            @foreach (var m in changed)
+                            {
+                                <li data-testid="dlr-compare-metric" data-key="@m.Key"><strong>@m.Label</strong>: @(m.Baseline?.ToString() ?? "–") → @(m.Current?.ToString() ?? "–")@if (m.Delta is { } delta) { <span data-testid="dlr-compare-delta"> (@delta.ToString("+0;-0;0"))</span> }@if (m.PercentChange is { } pct) { <span data-testid="dlr-compare-percent"> @DeliveryReportComparer.Percent(pct)</span> }@if (m.Note is { } note) { <span class="dlr-muted" data-testid="dlr-compare-note"> · @note</span> }</li>
+                            }
+                        </ul>
+                    }
+                    @if (cmp.AddedAttention.Count + cmp.RemovedAttention.Count + cmp.AddedBlockers.Count + cmp.RemovedBlockers.Count > 0)
+                    {
+                        <details class="dlr-compare-findings" data-testid="dlr-compare-findings">
+                            <summary>Attention and blockers: +@(cmp.AddedAttention.Count + cmp.AddedBlockers.Count) / -@(cmp.RemovedAttention.Count + cmp.RemovedBlockers.Count)</summary>
+                            <ul class="dlr-list">
+                                @foreach (var b in cmp.AddedBlockers) { <li data-testid="dlr-compare-blocker-added">New blocker: @b</li> }
+                                @foreach (var b in cmp.RemovedBlockers) { <li data-testid="dlr-compare-blocker-removed">No longer blocked: @b</li> }
+                                @foreach (var a in cmp.AddedAttention) { <li data-testid="dlr-compare-attention-added">Added: @DeliveryReportingText.Attention(a.Kind) — @a.Title</li> }
+                                @foreach (var a in cmp.RemovedAttention) { <li data-testid="dlr-compare-attention-removed">No longer listed: @DeliveryReportingText.Attention(a.Kind) — @a.Title</li> }
+                            </ul>
+                        </details>
+                    }
+                    <dl class="dlr-compare-provenance" data-testid="dlr-compare-provenance">
+                        @foreach (var (label, side) in new[] { ("Baseline report", cmp.Baseline), ("Current report", cmp.Current) })
+                        {
+                            <div data-testid="dlr-compare-side" data-report="@side.ReportId">
+                                <dt>@label</dt>
+                                <dd><a href="@ReportHrefOn("overview", side.ReportId)" data-testid="dlr-compare-open">@side.DisplayTitle</a>
+                                    <span class="dlr-muted">· generated @P.DayTime(side.GeneratedAt) · snapshots @side.Baseline.Label → @side.Current.Label · @side.RuleSet@(side.ScopeLabel.Length > 0 ? $" · scope {side.ScopeLabel}" : "") · @side.ScopeProvenance</span></dd>
+                            </div>
+                        }
+                    </dl>
+                </div>
             }
         </section>
     };
@@ -857,6 +981,50 @@
     [SupplyParameterFromQuery(Name = "f")] public string? OpenFeatureQuery { get; set; }
     [SupplyParameterFromQuery(Name = "chg")] public string? ChangeQuery { get; set; }
     [SupplyParameterFromQuery(Name = "mod")] public string? ModuleQuery { get; set; }
+    /// <summary>Report comparison in Report history: "?compare={baselineReportId},{currentReportId}" (kept in the URL so it can be shared and reopened).</summary>
+    [SupplyParameterFromQuery(Name = "compare")] public string? CompareQuery { get; set; }
+    /// <summary>Generate: Scope context (default — provenance only) or Filter by scope (restricts items and metrics).</summary>
+    private DeliveryScopeMode _generateScopeMode = DeliveryScopeMode.Context;
+    private (Guid Baseline, Guid Current)? _compareIds;
+    private DeliveryReportComparison? _reportComparison;
+    private string? _reportComparisonError;
+    private bool _compareLoading;
+
+    /// <summary>"a,b" → (a, b) when both are report ids; anything else is no comparison.</summary>
+    public static (Guid Baseline, Guid Current)? ParseCompare(string? value)
+    {
+        var parts = (value ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 2 && Guid.TryParse(parts[0], out var a) && Guid.TryParse(parts[1], out var b) ? (a, b) : null;
+    }
+
+    /// <summary>Choosing a side updates the URL once both differ (?compare=baseline,current); the comparison is then loaded from it.</summary>
+    private void PickCompare(bool baseline, string? value)
+    {
+        var id = Guid.TryParse(value, out var g) ? g : (Guid?)null;
+        if (baseline) _compareBaselinePick = id; else _compareCurrentPick = id;
+        if (_compareBaselinePick is { } b && _compareCurrentPick is { } c && b != c) SetQuery("compare", $"{b},{c}");
+    }
+
+    private void ClearCompare()
+    {
+        (_compareBaselinePick, _compareCurrentPick) = (null, null);
+        SetQuery("compare", null);
+    }
+
+    private Guid? _compareBaselinePick, _compareCurrentPick;
+
+    private async Task LoadReportComparisonAsync()
+    {
+        var ids = ParseCompare(CompareQuery);
+        if (ids == _compareIds && (_reportComparison is not null || _reportComparisonError is not null || ids is null)) return;
+        _compareIds = ids;
+        (_reportComparison, _reportComparisonError) = (null, null);
+        if (ids is not { } pair || _projectId is not { } project) return;
+        (_compareBaselinePick, _compareCurrentPick) = (pair.Baseline, pair.Current);
+        _compareLoading = true;
+        try { (_reportComparison, _reportComparisonError) = await Api.CompareReportsAsync(project, pair.Baseline, pair.Current); }
+        finally { _compareLoading = false; }
+    }
     /// <summary>Stories layout: shared feature cards by default; the work-item explorer and drill-down are advanced (a deep-linked item opens the explorer).</summary>
     private string StoriesMode => ModeQuery is "workitems" or "drilldown" ? ModeQuery : ItemQuery is not null && ModeQuery is null ? "workitems" : "features";
     private string ChangeFilter => ChangeQuery is "changed" or "new" or "removed" or "review" ? ChangeQuery : "all";
@@ -1032,6 +1200,7 @@
         {
             _report = await Api.ReportAsync(id, r);
         }
+        if (!OnSnapshotsRoute) await LoadReportComparisonAsync();
         _loaded = true;
     }
 
@@ -1373,7 +1542,8 @@
         _error = null;
         var confirm = _confirmDirection;
         var (source, scope) = (_generateSource, _generateScope);
-        var scopeProvenance = Session.ScopeProvenance(id);
+        var scopeMode = _generateScopeMode;
+        var scopeProvenance = Session.ScopeProvenance(id) is { } selected ? selected with { Mode = scopeMode } : null;
         var baselineLabel = _snapshots.FirstOrDefault(s => s.Id == baseline) is { } b ? P.DisplayName(b) : null;
         var currentLabel = _snapshots.FirstOrDefault(s => s.Id == current) is { } c ? P.DisplayName(c) : null;
         WeeklyDeliveryReport? generated = null;
@@ -1382,7 +1552,7 @@
             var run = Operations.Start(new(BirkNext.Web.Services.Operations.OperationKind.DeliveryReportGeneration, "Generating weekly report",
                 new(ProjectName ?? "Delivery project", id.ToString()) { Baseline = baselineLabel, Revision = currentLabel }, $"{P.Route}?project={id}&tab=history")
             {
-                IdempotencyKey = $"delivery-report:{id}:{baseline}:{current}:{source}:{scope}",
+                IdempotencyKey = $"delivery-report:{id}:{baseline}:{current}:{source}:{scope}{(scopeProvenance is { Mode: DeliveryScopeMode.Filter } ? $":filter:{DeliveryScopeProvenanceText.Revisions(scopeProvenance)}" : "")}",
                 // The backend generates and saves in one request; it is not cancellable once sent.
                 Cancellable = false,
             }, async (progress, ct) =>

@@ -143,4 +143,23 @@ public sealed class DeliveryScopeProvenanceTests
         DeliveryScopeProvenanceText.Compare(Provenance(3, RevisionA3), null).Match.Should().Be(DeliveryScopeProvenanceMatch.MissingSecond);
         DeliveryScopeProvenanceText.Compare(null, null).LikeForLike.Should().BeFalse();
     }
+
+    [Fact]
+    public void A_record_without_a_selection_says_so_and_is_never_read_as_created_before_scope_support()
+    {
+        var at = new DateTimeOffset(2026, 11, 14, 12, 0, 0, TimeSpan.Zero);
+        var whole = DeliveryScopeProvenanceText.WholePopulation(at);
+        DeliveryScopeProvenanceText.Describe(whole).Should().Be(DeliveryScopeProvenanceText.NoSelection);
+        DeliveryScopeProvenanceText.Describe(null).Should().Be(DeliveryScopeProvenanceText.NotRecorded, "only records from before scope support carry none");
+        DeliveryScopeProvenanceText.Describe(new DeliveryScopeProvenance()).Should().Be(DeliveryScopeProvenanceText.NotRecorded, "an empty record without a server stamp is not evidence");
+
+        var roundTrip = JsonSerializer.Deserialize<DeliveryScopeProvenance>(JsonSerializer.Serialize(whole, Json), Json);
+        DeliveryScopeProvenanceText.IsWholePopulation(roundTrip).Should().BeTrue();
+
+        DeliveryScopeProvenanceText.Compare(whole, DeliveryScopeProvenanceText.WholePopulation(at.AddDays(1))).LikeForLike.Should().BeTrue("both are the whole population");
+        var mixed = DeliveryScopeProvenanceText.Compare(whole, Provenance(3, RevisionA3));
+        mixed.LikeForLike.Should().BeFalse();
+        mixed.Notice.Should().Contain("different scope bases").And.Contain(DeliveryScopeProvenanceText.NoSelection);
+        DeliveryScopeProvenanceText.Compare(whole, null).Match.Should().Be(DeliveryScopeProvenanceMatch.MissingSecond, "a legacy side stays not recorded");
+    }
 }

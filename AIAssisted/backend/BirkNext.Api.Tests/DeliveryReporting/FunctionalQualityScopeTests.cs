@@ -293,8 +293,61 @@ public sealed class FunctionalQualityScopeTests
         payload.RootElement.GetProperty("items").GetArrayLength().Should().Be(frozen.ItemCount, "membership is unchanged; provenance is recorded beside it");
 
         var plain = await service.FreezeAsync(project, new ScopeQuery("profile:skolenaervaer", null, true), default);
-        plain.ScopeProvenance.Should().BeNull();
-        (await db.ScopeSnapshots.AsNoTracking().SingleAsync(s => s.Id == plain.Id)).ItemsJson.TrimStart().Should().StartWith("[", "without a selection the payload keeps its original shape");
+        DeliveryScopeProvenanceText.Describe(plain.ScopeProvenance).Should().Be(DeliveryScopeProvenanceText.NoSelection, "a new snapshot says no scope was selected, never 'created before scope support'");
+        plain.ScopeProvenance!.CreatedAt.Should().Be(Monday);
+        using var plainPayload = JsonDocument.Parse((await db.ScopeSnapshots.AsNoTracking().SingleAsync(s => s.Id == plain.Id)).ItemsJson);
+        plainPayload.RootElement.GetProperty("items").GetArrayLength().Should().Be(plain.ItemCount, "the whole population is frozen");
+    }
+
+    private static async Task<BirkNext.Scopes.ScopeDetail> RegistryScopeAsync(BirkNext.Api.Services.ScopeRegistry.ScopeRegistryService registry, string name, bool approve,
+        params BirkNext.Scopes.ScopeMember[] members)
+    {
+        var created = (await registry.CreateAsync(new BirkNext.Scopes.CreateScopeRequest("import:m2lb", name, null, BirkNext.Scopes.ScopePurpose.ReleaseDelivery, null, [.. members]), "tester")).Scope!;
+        return approve ? (await registry.ApproveAsync("import:m2lb", created.Scope.Id, new BirkNext.Scopes.ScopeDecisionRequest(created.Scope.Version, 1, null), "lead")).Scope! : created;
+    }
+
+    private static BirkNext.Scopes.ScopeMember Member(BirkNext.Scopes.ScopeMemberKind kind, string id, BirkNext.Scopes.ScopeMemberInclusion inclusion = BirkNext.Scopes.ScopeMemberInclusion.Confirmed) =>
+        new() { Kind = kind, TargetId = id, Label = id, Inclusion = inclusion };
+
+    [Fact]
+    public async Task Filter_by_scope_freezes_only_confirmed_members_of_approved_revisions_and_never_changes_an_earlier_snapshot()
+    {
+        await using var db = Db();
+        var (project, _) = await SeedAllAsync(db);
+        var registry = new BirkNext.Api.Services.ScopeRegistry.ScopeRegistryService(new BirkNext.Api.Data.ScopeRegistry.ScopeRegistryDbContext(
+            new DbContextOptionsBuilder<BirkNext.Api.Data.ScopeRegistry.ScopeRegistryDbContext>().UseInMemoryDatabase(_name + "-scopes").Options), TimeProvider.System);
+        var us1 = DeliveryScopeMembership.CanonicalKeyOf(ScopeArtifactType.UserStory, "SkoleService", "001-rapport", "US1")!;
+        var us2 = DeliveryScopeMembership.CanonicalKeyOf(ScopeArtifactType.UserStory, "SkoleService", "001-rapport", "US2")!;
+        var fr1 = DeliveryScopeMembership.CanonicalKeyOf(ScopeArtifactType.Requirement, "SkoleService", "001-rapport", "FR-001")!;
+        var release = await RegistryScopeAsync(registry, "Release 1", true, Member(BirkNext.Scopes.ScopeMemberKind.UserStory, us1),
+            Member(BirkNext.Scopes.ScopeMemberKind.Requirement, fr1), Member(BirkNext.Scopes.ScopeMemberKind.UserStory, us2, BirkNext.Scopes.ScopeMemberInclusion.Candidate),
+            Member(BirkNext.Scopes.ScopeMemberKind.UserStory, "UserStory|skoleservice/001-rapport/US9"), Member(BirkNext.Scopes.ScopeMemberKind.System, "System|altinn"));
+        var payments = await RegistryScopeAsync(registry, "Payments", true, Member(BirkNext.Scopes.ScopeMemberKind.UserStory, us1));
+        var draft = await RegistryScopeAsync(registry, "Draft", false, Member(BirkNext.Scopes.ScopeMemberKind.UserStory, us2));
+        var service = new FunctionalQualityScopeService(db, _clock, [new SkoleNaervaerTopologyProfile()], null, null, new DeliveryScopeFilterService(registry));
+        DeliveryScopeProvenance Selection(DeliveryScopeMode mode, params BirkNext.Scopes.ScopeDetail[] scopes) => new()
+        {
+            Mode = mode, ProjectKey = "import:m2lb", Scopes = [.. scopes.Select(s => new DeliveryScopeProvenanceEntry(s.Scope.Id, s.Scope.Name, s.Scope.CurrentRevision, null))],
+        };
+
+        var context = await service.FreezeAsync(project, new ScopeQuery("module:SkoleService", null, false) { ScopeProvenance = Selection(DeliveryScopeMode.Context, release) }, default);
+        var contextJson = (await db.ScopeSnapshots.AsNoTracking().SingleAsync(s => s.Id == context.Id)).ItemsJson;
+        context.ScopeProvenance!.Filtered.Should().BeFalse("scope context records the selection only (the default)");
+
+        var filtered = await service.FreezeAsync(project, new ScopeQuery("module:SkoleService", null, false) { ScopeProvenance = Selection(DeliveryScopeMode.Filter, release, payments) }, default);
+
+        filtered.ItemCount.Should().Be(4, "US1 with its two acceptance criteria, and FR-001 — the candidate US2 and other items are not members");
+        filtered.ScopeProvenance!.Should().Match<DeliveryScopeProvenance>(p => p.Filtered && p.Mode == DeliveryScopeMode.Filter && p.FilterBasis!.Contains("membership resolved at freeze"));
+        filtered.ScopeProvenance.Counts.Should().Match<DeliveryScopeFilterCounts>(c => c.Included == 4 && c.Excluded == context.ItemCount - 4 && c.MembersMatched == 2
+            && c.MembersUnresolved == 1 && c.MembersNotApplicable == 1);
+        filtered.ScopeProvenance.Scopes.Should().OnlyContain(s => s.RevisionId != null);
+        using (var payload = JsonDocument.Parse((await db.ScopeSnapshots.AsNoTracking().SingleAsync(s => s.Id == filtered.Id)).ItemsJson))
+            payload.RootElement.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("key").GetString()).Should().BeEquivalentTo(
+                "story:SkoleService/001-rapport/US1", "ac:SkoleService/001-rapport/AC-1", "ac:SkoleService/001-rapport/AC-2", "req:SkoleService/001-rapport/FR-001");
+        (await db.ScopeSnapshots.AsNoTracking().SingleAsync(s => s.Id == context.Id)).ItemsJson.Should().Be(contextJson, "a frozen snapshot never changes");
+
+        var refused = () => service.FreezeAsync(project, new ScopeQuery("module:SkoleService", null, false) { ScopeProvenance = Selection(DeliveryScopeMode.Filter, draft) }, default);
+        await refused.Should().ThrowAsync<FunctionalQualityScopeException>().WithMessage("*not approved*");
     }
 
     // ── Canonical coverage and capability relations ──────────────────────────────────────────────────────────────────

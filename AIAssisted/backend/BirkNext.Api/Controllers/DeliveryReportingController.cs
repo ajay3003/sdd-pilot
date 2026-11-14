@@ -125,6 +125,14 @@ public sealed class DeliveryReportingController(DeliverySnapshotStore store, Del
 
     private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    /// <summary>Compares two frozen reports of the project (percentages only like-for-like; mismatches named). Nothing is regenerated.</summary>
+    [HttpGet("projects/{projectId:guid}/reports/compare")]
+    public async Task<IActionResult> CompareReports(Guid projectId, [FromQuery] Guid baseline, [FromQuery] Guid current, CancellationToken ct)
+    {
+        var (comparison, error) = await reports.CompareAsync(projectId, baseline, current, ct);
+        return comparison is null ? (baseline == current ? BadRequest(new { message = error }) : NotFound(new { message = error })) : Ok(comparison);
+    }
+
     [HttpGet("projects/{projectId:guid}/reports/{reportId:guid}")]
     public async Task<IActionResult> Report(Guid projectId, Guid reportId, CancellationToken ct) =>
         await reports.GetAsync(projectId, reportId, ct) is { } report ? Ok(report) : NotFound();

@@ -53,6 +53,16 @@ public sealed class DeliveryScopeProvenancePageTests : BunitContext
     }
 
     [Fact]
+    public void A_new_report_without_a_selection_says_no_shared_scope_was_selected_never_created_before_scope_support()
+    {
+        _api.Report = SampleReport() with { ScopeProvenance = DeliveryScopeProvenanceText.WholePopulation(new DateTimeOffset(2026, 11, 14, 12, 0, 0, TimeSpan.Zero)) };
+        var page = RenderAt($"?project={ProjectId}");
+
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-scope-provenance]"));
+        page.Find("[data-testid=dlr-scope-provenance]").TextContent.Trim().Should().Be(DeliveryScopeProvenanceText.NoSelection);
+    }
+
+    [Fact]
     public void A_report_with_frozen_scope_provenance_shows_the_exact_scope_revision()
     {
         _api.Report = SampleReport() with { ScopeProvenance = Provenance() };

@@ -34,6 +34,11 @@ public static class DeliveryReportExporter
         md.AppendLine($"**Coverage:** {report.Coverage}{(report.CoverageText.Length > 0 ? $" · {Md(report.CoverageText)}" : "")}  ");
         if (report.Direction is { } direction) md.AppendLine($"**Snapshot direction:** {direction.State}{(direction.Confirmed ? " (explicitly confirmed)" : "")}  ");
         md.AppendLine($"**Scope provenance:** {Md(DeliveryScopeProvenanceText.Describe(report.ScopeProvenance))}  ");
+        if (report.ScopeProvenance is { Filtered: true, Counts: { } fc })
+        {
+            md.AppendLine($"**Scope filter:** {Md(DeliveryScopeProvenanceText.CountsText(fc))}  ");
+            if (fc.NotScopeResolvable.Count > 0) md.AppendLine($"**{DeliveryScopeProvenanceText.NotScopeResolvable}:** {Md(string.Join(", ", fc.NotScopeResolvable))}  ");
+        }
         md.AppendLine($"**Generated:** {Time(report.GeneratedAt, zone)}").AppendLine();
         foreach (var note in report.CoverageNotes) md.AppendLine($"> **Coverage note:** {Md(note)}").AppendLine();
         foreach (var warning in report.ComparisonWarnings) md.AppendLine($"> **Comparison warning:** {Md(warning)}").AppendLine();
@@ -125,7 +130,7 @@ public static class DeliveryReportExporter
                 foreach (var line in DeliveryScopeProvenanceText.IdLines(sp)) md.AppendLine($"- Shared scope: {Md(line)}");
                 md.AppendLine($"- Scope provenance recorded {Time(sp.CreatedAt, zone)}");
             }
-            else md.AppendLine($"- {DeliveryScopeProvenanceText.NotRecorded}");
+            else md.AppendLine($"- {DeliveryScopeProvenanceText.Describe(report.ScopeProvenance)}");
             md.AppendLine();
             foreach (var s in stories)
             {
@@ -154,6 +159,11 @@ public static class DeliveryReportExporter
         Meta(h, "Coverage", report.CoverageText.Length > 0 ? $"{report.Coverage} · {report.CoverageText}" : report.Coverage.ToString());
         if (report.Direction is { } dir) Meta(h, "Snapshot direction", $"{dir.State}{(dir.Confirmed ? " (explicitly confirmed)" : "")}");
         Meta(h, "Scope provenance", DeliveryScopeProvenanceText.Describe(report.ScopeProvenance));
+        if (report.ScopeProvenance is { Filtered: true, Counts: { } hc })
+        {
+            Meta(h, "Scope filter", DeliveryScopeProvenanceText.CountsText(hc));
+            if (hc.NotScopeResolvable.Count > 0) Meta(h, DeliveryScopeProvenanceText.NotScopeResolvable, string.Join(", ", hc.NotScopeResolvable));
+        }
         Meta(h, "Generated", Time(report.GeneratedAt, zone));
         h.AppendLine("</dl></header>");
         foreach (var note in report.CoverageNotes) h.AppendLine($"<p class=\"note\" role=\"note\"><strong>Coverage note:</strong> {E(note)}</p>");
@@ -236,7 +246,7 @@ public static class DeliveryReportExporter
                 foreach (var line in DeliveryScopeProvenanceText.IdLines(sp)) h.AppendLine($"<li>Shared scope: {E(line)}</li>");
                 h.AppendLine($"<li>Scope provenance recorded {E(Time(sp.CreatedAt, zone))}</li>");
             }
-            else h.AppendLine($"<li>{E(DeliveryScopeProvenanceText.NotRecorded)}</li>");
+            else h.AppendLine($"<li>{E(DeliveryScopeProvenanceText.Describe(report.ScopeProvenance))}</li>");
             h.AppendLine("</ul>");
             foreach (var s in stories)
             {
