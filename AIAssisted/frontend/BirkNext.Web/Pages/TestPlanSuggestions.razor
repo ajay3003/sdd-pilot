@@ -281,7 +281,7 @@
                 <p class="tps-muted" data-testid="tps-scope-summary">Showing the scenarios the selected scope names (@scenarios in the scope).
                     @if (_viaRequirement.Count > 0) { <span data-testid="tps-scope-via-requirement">@_viaRequirement.Select(l => l.ScenarioKey).Distinct().Count() more through the scope's requirements (established Verifies links only).</span> }
                     @if (others > 0) { <span>Story and feature members do not filter scenarios@(_requirementNotice is { } rn ? $"; {rn}" : "").</span> }
-                    @if (scenarios == 0) { <span data-testid="tps-scope-no-scenarios">The scope names no scenarios, so no candidate is shown; add scenarios to it in Systems &amp; Scopes.</span> }</p>
+                    @if (scenarios == 0) { <span data-testid="tps-scope-no-scenarios">The scope names no scenarios, so no candidate is shown; add scenarios to it in Project Test Setup.</span> }</p>
             }
             <div class="tps-filters" role="search">
                 <label class="tps-field tps-field-grow"><span class="tps-k">Search</span><input class="tps-input" type="search" placeholder="Title, purpose or id" value="@_filter.Query" @oninput="SetQuery" data-testid="tps-search" /></label>

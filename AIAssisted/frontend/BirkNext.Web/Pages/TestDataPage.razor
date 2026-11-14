@@ -297,7 +297,7 @@
                     var scenarios = scopeSel.Members.Count(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.Scenario);
                     <p class="td-scope-summary" data-testid="td-scope-summary">Scope filter: @wanted.Count Test Data asset@(wanted.Count == 1 ? "" : "s") in the selected scope@(scopeSel.Scopes.Count == 1 ? "" : "s")@(scenarios > 0 ? $", linked to {scenarios} scenario{(scenarios == 1 ? "" : "s")} in the same scope" : "").
                         @if (missing > 0) { <strong data-testid="td-scope-missing"> @missing listed in the scope but not in this catalog — review the scope.</strong> }
-                        @if (wanted.Count == 0) { <span> The scope names no Test Data yet: add assets to it in Systems &amp; Scopes.</span> }</p>
+                        @if (wanted.Count == 0) { <span> The scope names no Test Data yet: add assets to it in Project Test Setup.</span> }</p>
                 }
                 <div class="td-filters" role="group" aria-label="Filter assets" data-testid="td-filters">
                     <label>Search <input type="search" class="form-control" data-testid="td-search" placeholder="Name, role, applies to, type, contract, consumer, field" @bind="_query" @bind:event="oninput" /></label>

@@ -12,4 +12,6 @@
 .gsl-evidence { margin: .125rem 0 0; font-size: .85rem; color: var(--clr-text-muted); overflow-wrap: anywhere; }
 .gsl-reason { margin: .125rem 0 0; font-size: .85rem; color: var(--clr-warning-text, #8a5300); }
 .gsl-action { white-space: nowrap; align-self: center; }
-@media (max-width: 640px) { .gsl-step { grid-template-columns: 1.75rem minmax(0, 1fr); } .gsl-action { grid-column: 2; justify-self: start; } }
+.gsl-heading { margin: 0; font-size: .95rem; font-weight: 700; }
+.gsl-actions { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; justify-content: flex-end; align-self: start; max-width: 22rem; }
+@media (max-width: 640px) { .gsl-step { grid-template-columns: 1.75rem minmax(0, 1fr); } .gsl-action, .gsl-actions { grid-column: 2; justify-self: start; justify-content: flex-start; } }

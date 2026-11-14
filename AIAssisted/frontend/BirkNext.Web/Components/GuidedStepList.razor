@@ -1,20 +1,39 @@
 @using BirkNext.Web.Services
 
 @* A guided workflow as numbered steps (✓ when done): title, state, one sentence, evidence and a reason when the step's action is unavailable.
-   Steps stay visible after completion and can be revisited. Step actions are secondary: the host page owns its one primary action. *@
+   Steps stay visible after completion and can be revisited. Step actions are secondary: the host page owns its one primary action.
+   Optional slots (all off by default, so existing hosts render exactly as before): a heading level for step titles, a per-step body
+   (StepContent) and a per-step action area (StepActions) that replaces the single default action. *@
 <ol class="gsl" data-testid="@TestId" aria-label="@Label">
     @foreach (var (step, index) in Steps.Select((s, i) => (s, i + 1)))
     {
-        <li class="gsl-step gsl-step-@step.State.ToString().ToLowerInvariant()" data-testid="gsl-step" data-step="@step.Id" data-state="@step.State"
+        <li class="gsl-step gsl-step-@step.State.ToString().ToLowerInvariant()" data-testid="@StepTestId" data-step="@step.Id" data-state="@(step.StateKey ?? step.State.ToString())"
             aria-current="@(step == Next ? "step" : null)">
             <span class="gsl-n" aria-hidden="true">@(step.State == GuidedStepState.Done ? "✓" : index.ToString())</span>
             <div class="gsl-body">
-                <p class="gsl-title"><strong>@step.Title</strong><SemanticStatusBadge Status="@GuidedWorkflow.Status(step.State)" QualifiedLabel="@step.StatusLabel" TestId="gsl-status" /></p>
+                @if (TitleLevel is 2 or 3 or 4)
+                {
+                    <div class="gsl-title">
+                        @if (TitleLevel == 2) { <h2 class="gsl-heading"><span class="visually-hidden">Step @index: </span>@step.Title</h2> }
+                        else if (TitleLevel == 3) { <h3 class="gsl-heading"><span class="visually-hidden">Step @index: </span>@step.Title</h3> }
+                        else { <h4 class="gsl-heading"><span class="visually-hidden">Step @index: </span>@step.Title</h4> }
+                        <SemanticStatusBadge Status="@(step.Status ?? GuidedWorkflow.Status(step.State))" QualifiedLabel="@step.StatusLabel" TestId="gsl-status" />
+                    </div>
+                }
+                else
+                {
+                    <p class="gsl-title"><strong>@step.Title</strong><SemanticStatusBadge Status="@(step.Status ?? GuidedWorkflow.Status(step.State))" QualifiedLabel="@step.StatusLabel" TestId="gsl-status" /></p>
+                }
                 <p class="gsl-text">@step.Explanation</p>
                 @if (step.Evidence is { Length: > 0 } evidence) { <p class="gsl-evidence" data-testid="gsl-evidence">@evidence</p> }
                 @if (step.DisabledReason is { } why) { <p class="gsl-reason" data-testid="gsl-reason">@why</p> }
+                @if (StepContent is not null) { @StepContent(step) }
             </div>
-            @if (step.Href is { } href && step.ActionLabel is { } linkLabel)
+            @if (StepActions is not null)
+            {
+                <div class="gsl-actions">@StepActions(step)</div>
+            }
+            else if (step.Href is { } href && step.ActionLabel is { } linkLabel)
             {
                 <a class="btn btn-secondary btn-sm gsl-action" href="@href" data-testid="gsl-action" data-action="@step.Id">@linkLabel</a>
             }
@@ -33,5 +52,13 @@
     [Parameter] public bool Busy { get; set; }
     [Parameter] public string TestId { get; set; } = "gsl";
     [Parameter] public string Label { get; set; } = "Workflow steps";
+    /// <summary>The test id of each step item (default <c>gsl-step</c>).</summary>
+    [Parameter] public string StepTestId { get; set; } = "gsl-step";
+    /// <summary>When 2–4, each step title is a real heading of that level (for pages where the steps are the page's main structure).</summary>
+    [Parameter] public int? TitleLevel { get; set; }
+    /// <summary>Optional extra body per step (evidence lists, a compact table), rendered under the explanation.</summary>
+    [Parameter] public RenderFragment<GuidedStep>? StepContent { get; set; }
+    /// <summary>Optional action area per step; when set it replaces the single default action.</summary>
+    [Parameter] public RenderFragment<GuidedStep>? StepActions { get; set; }
     private GuidedStep? Next => GuidedWorkflow.Next(Steps);
 }

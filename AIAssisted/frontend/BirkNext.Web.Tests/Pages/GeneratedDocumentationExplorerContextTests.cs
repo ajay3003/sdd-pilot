@@ -99,7 +99,8 @@ public sealed class GeneratedDocumentationExplorerContextTests : BunitContext
         snippet.QuerySelector("mark")!.TextContent.Should().Be("Barnetrygd");
 
         cut.Find("[data-testid=gde-search-all-type]").Change("Architecture");
-        cut.FindAll("[data-testid=gde-search-result]").Select(r => r.GetAttribute("data-path")).Should().Equal("Order/autodoc/architecture.md");
+        // The type filter re-runs the (asynchronous) search: wait for the filtered result instead of reading it on the same tick.
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=gde-search-result]").Select(r => r.GetAttribute("data-path")).Should().Equal("Order/autodoc/architecture.md"));
     }
 
     [Fact]
@@ -381,7 +382,7 @@ public sealed class GeneratedDocumentationExplorerContextTests : BunitContext
         results[0].QuerySelector("[data-testid=gde-library-search-snippet] mark")!.TextContent.Should().Be("Barnetrygd");
 
         cut.Find("[data-testid=gde-library-search-type]").Change("Architecture");
-        cut.FindAll("[data-testid=gde-library-search-result]").Select(r => r.GetAttribute("data-path")).Should().Equal("Order/autodoc/architecture.md");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=gde-library-search-result]").Select(r => r.GetAttribute("data-path")).Should().Equal("Order/autodoc/architecture.md"));
         cut.Find("[data-testid=gde-library-search-open]").Click();
 
         cut.Find("#gde-doc-h").TextContent.Should().StartWith("Order architecture");

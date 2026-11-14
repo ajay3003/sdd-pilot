@@ -3,8 +3,10 @@
 @using BirkNext.Interpretation
 @using BirkNext.Scopes
 @using BirkNext.Web.Services
+@using BirkNext.Web.Components
 @using BirkNext.Web.Components.Scopes
 @using P = BirkNext.Web.Services.SystemsScopesPresentation
+@using T = BirkNext.Web.Services.ProjectTestSetupPresentation
 @inject IScopeRegistryApiService Scopes
 @inject ICanonicalInterpretationApiService Canonical
 @inject ICurrentWorkspaceProjection CurrentWorkspace
@@ -12,22 +14,32 @@
 @inject IServiceProvider Services
 @inject NavigationManager Nav
 
-<PageTitle>Systems &amp; Scopes</PageTitle>
+<PageTitle>Project Test Setup</PageTitle>
 
-@* Systems and connections come from the canonical interpretation of the active Target Environment plus the connections Integration Topology resolves
-   (read offline); scopes come from the shared Scope Registry of the current project. Identity and relationship decisions use the shared review
-   decisions (Relationship Review is the authoritative review flow). An approved scope pins membership: it never means tests passed and never
-   authorizes running anything. *@
-<div class="sd-workspace psc-page" data-testid="psc-page">
+@* Project Test Setup: a guided, plain-language view of the shared Scope Registry ("test areas") for manual testers and test leads. Systems and
+   connections come from the canonical interpretation of the active Target Environment plus the connections Integration Topology resolves
+   (read offline); test areas are the shared scopes of the current project. Every step state is derived from that data on each render; nothing
+   here is a new store. Identity and relationship decisions use the shared review decisions (Relationship Review is the authoritative review
+   flow). An approved test area pins membership: it never means tests passed and never authorizes running anything. *@
+<div class="sd-workspace psc-page pts-page" data-testid="pts-page" data-view="@_view">
     <header class="psc-header">
-        <div>
-            <h1>Systems &amp; Scopes</h1>
+        <div class="pts-head">
+            <h1>@T.Title</h1>
             <p class="psc-sub" data-testid="psc-context">
                 <span data-testid="psc-project">@(_projectName ?? "No project loaded")</span>
                 @if (_environmentLabel is not null) { <span class="psc-dot" aria-hidden="true">·</span><span data-testid="psc-environment">@_environmentLabel</span> }
             </p>
+            <p class="pts-purpose" data-testid="pts-purpose">@T.Purpose</p>
+            @if (_loaded && _projectKey is not null)
+            {
+                <ul class="pts-summary" data-testid="pts-summary" aria-label="Project summary">
+                    <li data-testid="pts-summary-systems"><strong>@(_overview is { InterpretationId: not null } o1 ? o1.Systems.Count.ToString() : "—")</strong> systems and services discovered</li>
+                    <li data-testid="pts-summary-connections"><strong>@(_overview is { InterpretationId: not null } o2 ? T.Active(o2).Count.ToString() : "—")</strong> connections found in source</li>
+                    <li data-testid="pts-summary-areas"><strong>@(_scopesLoaded ? ActiveAreas.Count.ToString() : "—")</strong> test areas</li>
+                </ul>
+            }
         </div>
-        <details class="psc-tech" data-testid="psc-technical">
+        <details class="psc-tech" data-testid="pts-technical">
             <summary>Technical details</summary>
             <dl>
                 <dt>Project key</dt><dd>@(_projectKey ?? "—")</dd>
@@ -35,64 +47,107 @@
                 <dt>Interpretation</dt><dd>@(_overview?.InterpretationId?.ToString() ?? "none")@(_overview?.InterpretedAt is { } at ? $" · {at.ToLocalTime():g}" : "")</dd>
                 <dt>Sources analysed</dt><dd>@(_overview is { SourceLabels.Count: > 0 } o ? string.Join(", ", o.SourceLabels) : "—")</dd>
                 <dt>Evidence read</dt><dd>@(_overview is { } ov ? string.Join(" · ", ov.Sources) : "—")</dd>
+                @if (SelectedDetail is { } sd)
+                {
+                    <dt>Test area id</dt><dd data-testid="pts-technical-area">@sd.Scope.Id</dd>
+                    <dt>Revision fingerprint</dt><dd>@(T.Newest(sd)?.ContentFingerprint is { Length: > 0 } fp ? fp : "—")</dd>
+                    <dt>Concurrency version</dt><dd>@sd.Scope.Version</dd>
+                }
             </dl>
         </details>
     </header>
 
-    <nav class="psc-tabs" role="tablist" aria-label="Systems and scopes views" data-testid="psc-tabs">
-        @foreach (var (id, label) in Tabs)
-        {
-            <a role="tab" class="psc-tab @(_tab == id ? "is-current" : "")" aria-selected="@(_tab == id ? "true" : "false")" href="@TabHref(id)" data-testid="psc-tab" data-tab="@id">
-                @label<span class="psc-count">@TabCount(id)</span></a>
-        }
-    </nav>
+    @if (_loaded && _projectKey is not null)
+    {
+        <nav class="pts-viewnav" aria-label="Project Test Setup views" data-testid="pts-viewnav">
+            @foreach (var (id, label) in NavViews)
+            {
+                <a class="pts-viewnav-link @(_view == id ? "is-current" : "")" aria-current="@(_view == id ? "page" : null)" href="@ViewHref(id, keepScope: id != "areas")" data-testid="pts-nav" data-view="@id">@label</a>
+            }
+        </nav>
+    }
 
-    @if (_overview?.AnalysisRunningSince is { } runningSince && _tab != "scopes")
+    @if (_overview?.AnalysisRunningSince is { } runningSince && _view is "setup" or "systems" or "connections")
     {
         <p class="psc-notice" role="status" data-testid="psc-analysing">An analysis (@(_overview.AnalysisRunningTrigger ?? "Analyze relationships")) has been running since @runningSince.ToLocalTime().ToString("t").@(_overview.InterpretationId is null ? "" : " The list below is the previous result until it finishes.")
             <button type="button" class="psc-link" data-testid="psc-refresh" @onclick="LoadAsync">Refresh</button></p>
     }
-    @if (_notice is not null) { <p class="psc-notice" role="status" data-testid="psc-notice">@_notice</p> }
+    <div aria-live="polite">
+        @if (_notice is not null) { <p class="psc-notice" role="status" data-testid="psc-notice">@_notice</p> }
+    </div>
     @if (_actionError is not null) { <p class="psc-error" role="alert" data-testid="psc-error">@_actionError</p> }
 
-    @if (!_loaded) { <p class="psc-muted" role="status" data-testid="psc-loading">Loading systems and scopes…</p> }
+    @if (!_loaded) { <p class="psc-muted" role="status" data-testid="psc-loading">Loading Project Test Setup…</p> }
     else if (_projectKey is null)
     {
-        <div class="psc-empty" data-testid="psc-no-project"><h2>No project loaded</h2><p>Scopes belong to one project. Import or open a project first.</p><a class="btn-primary" href="project-import">Import Project</a></div>
+        <div class="psc-empty" data-testid="pts-no-project">
+            <h2>No project loaded</h2>
+            <p>Test areas belong to one project. Import or open a project first; BirkNext then finds its systems, requirements and scenarios.</p>
+            <a class="btn-primary" href="project-import" data-testid="pts-next-action" data-action="import">Import project</a>
+        </div>
     }
-    else if (_tab == "scopes") { @ScopesView() }
-    else if (State != SystemsPageState.Ready) { @StatePanel() }
-    else if (_tab == "connections") { @ConnectionsView() }
-    else { @SystemsView() }
+    else if (_view == "setup") { @SetupView() }
+    else
+    {
+        <a class="pts-back" href="@ViewHref("setup")" data-testid="pts-back">← Back to Project Test Setup</a>
+        @if (_view == "areas") { @ScopesView() }
+        else if (_view == "create") { @CreateView() }
+        else if (State != SystemsPageState.Ready) { @StatePanel() }
+        else if (_view == "connections") { @ConnectionsView() }
+        else { @SystemsView() }
+    }
 </div>
 
 @code {
+    [SupplyParameterFromQuery(Name = "view")] public string? ViewQuery { get; set; }
     [SupplyParameterFromQuery(Name = "tab")] public string? TabQuery { get; set; }
     [SupplyParameterFromQuery(Name = "system")] public string? SystemQuery { get; set; }
     [SupplyParameterFromQuery(Name = "scope")] public string? ScopeQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "step")] public string? StepQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "kind")] public string? KindQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "status")] public string? StatusQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "inarea")] public string? InAreaQuery { get; set; }
 
-    private static readonly (string Id, string Label)[] Tabs = [("systems", "Systems"), ("connections", "Connections"), ("scopes", "Scopes")];
-    private string _tab => TabQuery is "connections" or "scopes" ? TabQuery : "systems";
-    private string TabHref(string tab) => Nav.GetUriWithQueryParameters("project-scopes", new Dictionary<string, object?>
-        { ["tab"] = tab == "systems" ? null : tab, ["system"] = tab == "scopes" ? null : SystemQuery, ["scope"] = tab == "scopes" ? ScopeQuery : null });
+    private static readonly (string Id, string Label)[] NavViews = [("setup", "Setup steps"), ("systems", "Systems"), ("connections", "Connections"), ("areas", "My test areas")];
+
+    /// <summary>The view: ?view= wins; the old ?tab=systems|connections|scopes deep links still open the matching view.</summary>
+    private string _view => T.ViewOf(ViewQuery, TabQuery);
+
+    private string Here(Dictionary<string, object?> query) => Nav.GetUriWithQueryParameters(T.Route, query);
+
+    /// <summary>A link to a view of this page. The selected test area travels along (except to the list of test areas) so its context survives.</summary>
+    private string ViewHref(string view, string? system = null, Guid? scope = null, bool keepScope = true) => Here(new Dictionary<string, object?>
+    {
+        ["view"] = view == "setup" ? null : view,
+        ["scope"] = (scope ?? (keepScope ? SelectedId : null))?.ToString(),
+        ["system"] = system,
+    });
 
     private string? _projectKey, _projectName, _catalogScope, _environmentLabel, _loadError, _notice, _actionError;
     private SystemsOverviewView? _overview;
     private int? _sourceCount;
-    private bool _loaded, _overviewLoading;
+    private bool _loaded, _overviewLoading, _scopesLoaded;
     private int _generation;
     private IReadOnlyList<ScopeSummary> _scopes = [];
     private readonly Dictionary<Guid, ScopeDetail> _details = [];
+    private readonly Dictionary<Guid, IReadOnlyList<ScopeMemberStatus>> _checksById = [];
+    private string? _paramsKey, _kindSeen = "", _statusSeen = "";
 
     private SystemsPageState State => P.StateOf(_overviewLoading, _projectKey is not null, _catalogScope, _loadError, _overview, _sourceCount);
 
-    private string TabCount(string tab) => tab switch
-    {
-        "systems" when _overview is { InterpretationId: not null } o => $" {o.Systems.Count}",
-        "connections" when _overview is { InterpretationId: not null } o => $" {o.Connections.Count(c => c.State != SystemConnectionState.Rejected)}",
-        "scopes" when _loaded && _projectKey is not null => $" {_scopes.Count(s => s.State != ScopeState.Archived)}",
-        _ => "",
-    };
+    private List<ScopeSummary> ActiveAreas => [.. _scopes.Where(s => s.State != ScopeState.Archived)];
+
+    /// <summary>The test area steps 4–6 talk about: the one in the URL when it belongs to this project, otherwise the most recently updated one.
+    /// A scope id from another project is never used (the list is the current project's).</summary>
+    private Guid? SelectedId => ScopeQuery is { } q && Guid.TryParse(q, out var id) && _scopes.Any(s => s.Id == id) ? id
+        : ActiveAreas.OrderByDescending(s => s.UpdatedAt).ThenBy(s => s.Name, StringComparer.OrdinalIgnoreCase).Select(s => (Guid?)s.Id).FirstOrDefault();
+
+    private ScopeDetail? SelectedDetail => SelectedId is { } id ? _details.GetValueOrDefault(id) : null;
+
+    private IReadOnlyList<ScopeMemberStatus> ChecksOf(Guid id) => _checksById.GetValueOrDefault(id) ?? [];
+
+    private SetupFacts Facts() => new(_projectKey is not null, State, _overview, _scopesLoaded, _scopesError, ActiveAreas, SelectedDetail,
+        SelectedId is { } id ? ChecksOf(id) : []);
 
     protected override async Task OnInitializedAsync()
     {
@@ -101,6 +156,28 @@
     }
 
     public void Dispose() => CurrentWorkspace.Changed -= WorkspaceChanged;
+
+    /// <summary>The URL drives the view, the selected test area and the filters, so Back/Forward restores them.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        if (KindQuery != _kindSeen) { _kindSeen = KindQuery; _kindFilter = KindQuery is "system" or "service" ? KindQuery : "all"; }
+        if (StatusQuery != _statusSeen) { _statusSeen = StatusQuery; _stateFilter = StatusQuery is "established" or "review" or "rejected" or "all" ? StatusQuery : "active"; }
+        if (!_scopesLoaded) return;
+        var key = $"{_view}|{ScopeQuery}";
+        if (key == _paramsKey) return;
+        _paramsKey = key;
+        await SyncSelectionAsync();
+    }
+
+    private async Task SyncSelectionAsync()
+    {
+        if (_view == "setup") await EnsureSelectedAsync();
+        else if (_view == "areas")
+        {
+            if (ScopeQuery is { } q && Guid.TryParse(q, out var id) && _scopes.Any(s => s.Id == id)) { if (_openScope != id) await OpenScopeAsync(id, updateUrl: false); }
+            else if (_step == 0) _openScope = null;
+        }
+    }
 
     /// <summary>A project or environment switch reloads everything; an answer for the previous project is discarded (generation check).</summary>
     private void WorkspaceChanged() => _ = InvokeAsync(async () => { await LoadAsync(); StateHasChanged(); });
@@ -111,9 +188,13 @@
         var workspace = await CurrentWorkspace.GetAsync();
         var profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull;
         if (generation != _generation) return;
+        var previousProject = _projectKey;
+        var catalogScope = CorrelationPresentation.Scope(profile?.Id);
+        var projectChanged = _loaded && !string.Equals(previousProject, workspace.ProjectSlug, StringComparison.Ordinal);
+        if (projectChanged || !string.Equals(catalogScope, _catalogScope, StringComparison.Ordinal)) ResetProjectState();
         _projectKey = workspace.ProjectSlug;
         _projectName = workspace.ProjectName ?? workspace.ProjectSlug;
-        _catalogScope = CorrelationPresentation.Scope(profile?.Id);
+        _catalogScope = catalogScope;
         var saved = profile is null ? null : Services.GetService<IFrontendAnalysisSettingsService>()?.Settings.Profiles.FirstOrDefault(p => p.Id == profile.Id);
         var application = BirkNext.Web.Services.ProjectEvidence.TargetApplications.Of(saved)?.Name;
         _environmentLabel = profile is null ? null
@@ -121,8 +202,22 @@
         (_overview, _loadError, _sourceCount) = (null, null, null);
         _overviewLoading = _catalogScope is not null;
         _loaded = true;
-        if (_projectKey is null) return;
-        await Task.WhenAll(LoadOverviewAsync(generation), LoadScopesAsync(generation));
+        if (_projectKey is null) { _overviewLoading = false; return; }
+        await Task.WhenAll(LoadOverviewAsync(generation), LoadScopesAsync(generation, projectChanged));
+    }
+
+    /// <summary>Nothing of the previous project (or environment catalog) is kept: details, checks, membership, an open test area or a draft.</summary>
+    private void ResetProjectState()
+    {
+        _scopes = [];
+        _scopesLoaded = false;
+        _scopesError = null;
+        _details.Clear();
+        _checksById.Clear();
+        _membership = [];
+        (_openScope, _step, _editingId, _members, _comparison) = (null, 0, null, [], null);
+        _draft = new();
+        (_createError, _notice, _actionError, _paramsKey) = (null, null, null, null);
     }
 
     private async Task LoadOverviewAsync(int generation)
@@ -140,14 +235,23 @@
         StateHasChanged();
     }
 
-    private async Task LoadScopesAsync(int generation)
+    private async Task LoadScopesAsync(int generation, bool projectChanged)
     {
         var (scopes, error) = await Scopes.ListAsync(_projectKey!);
         if (generation != _generation) return;
         _scopes = scopes;
         _scopesError = error;
+        _scopesLoaded = true;
         _details.Clear();
-        if (ScopeQuery is { } q && Guid.TryParse(q, out var id) && _scopes.Any(s => s.Id == id)) await OpenScopeAsync(id, updateUrl: false);
+        _checksById.Clear();
+        // A test area id that is not one of this project's (e.g. from another project or an old link) is dropped from the URL rather than
+        // shown next to another area. Kept only when the list could not be read (it cannot be checked then).
+        if ((projectChanged || error is null) && ScopeQuery is { } stale && !_scopes.Any(s => string.Equals(s.Id.ToString(), stale, StringComparison.OrdinalIgnoreCase)))
+        {
+            Nav.NavigateTo(Here(new Dictionary<string, object?> { ["scope"] = null, ["view"] = ViewQuery, ["tab"] = TabQuery }), replace: true);
+        }
+        _paramsKey = $"{_view}|{ScopeQuery}";
+        await SyncSelectionAsync();
         await EnsureMembershipAsync();
         if (generation != _generation) return;
         StateHasChanged();
@@ -161,17 +265,254 @@
         return detail;
     }
 
-    /// <summary>Scopes whose newest revision holds this member as confirmed (from the loaded details; the list itself carries counts only).</summary>
+    private async Task LoadChecksAsync(Guid id)
+    {
+        var (checks, _) = await Scopes.CheckAsync(_projectKey!, id, null, _catalogScope);
+        _checksById[id] = checks;
+    }
+
+    /// <summary>Loads the selected test area's detail and member checks (setup view only; other views never read a scope one by one).</summary>
+    private async Task EnsureSelectedAsync()
+    {
+        if (SelectedId is not { } id || _projectKey is null) return;
+        if (await DetailAsync(id) is null) return;
+        if (!_checksById.ContainsKey(id)) await LoadChecksAsync(id);
+    }
+
+    /// <summary>Test areas whose newest revision holds this member as confirmed (from the loaded details; the list itself carries counts only).</summary>
     private IEnumerable<ScopeSummary> ScopesWith(string key) => _scopes.Where(s => _membership.TryGetValue(s.Id, out var keys) && keys.Contains(key));
     private Dictionary<Guid, HashSet<string>> _membership = [];
 
-    /// <summary>Which systems each scope holds: one membership call for the whole project (no request per scope).</summary>
+    /// <summary>Which systems each test area holds: one membership call for the whole project (no request per test area).</summary>
     private async Task EnsureMembershipAsync()
     {
         if (_membership.Count == _scopes.Count || _projectKey is null) return;
         var (items, error) = await Scopes.MembershipAsync(_projectKey, ScopeMemberKind.System);
         if (error is not null) { _scopesError ??= error; return; }
         _membership = items.ToDictionary(i => i.ScopeId, i => i.TargetIds.ToHashSet(StringComparer.Ordinal));
+    }
+
+    // ── Guided setup ────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment SetupView() => __builder =>
+    {
+        var facts = Facts();
+        var steps = T.Steps(facts);
+        var next = T.NextAction(facts);
+        var (done, total) = T.Progress(steps);
+        <section class="pts-next" aria-labelledby="pts-next-h" data-testid="pts-next-action" data-action="@next.Id">
+            <h2 id="pts-next-h" class="pts-h2">Recommended next step</h2>
+            <p class="pts-next-text"><strong data-testid="pts-next-label">@next.Label</strong> — @next.Explanation</p>
+            <div class="pts-actions">
+                @if (next.Href is { } href) { <a class="btn-primary" href="@href" data-testid="pts-next-action-go">@next.Label</a> }
+                else if (next.ActionId is { } action) { <button type="button" class="btn-primary" data-testid="pts-next-action-go" disabled="@_busy" @onclick="() => RunAsync(action)">@next.Label</button> }
+                @if (next.Id == "plan" && SelectedDetail is { } planned)
+                {
+                    <a class="btn-secondary" href="@($"test-coverage-review?scope={planned.Scope.Id}")" data-testid="pts-next-secondary">Review coverage</a>
+                }
+            </div>
+        </section>
+        <div class="pts-status-row">
+            <p class="pts-progress" data-testid="pts-progress">Setup progress: <strong>@done of @total</strong> steps completed</p>
+            <p class="pts-confidence" data-testid="pts-confidence">Evidence confidence: @ConfidenceText()</p>
+        </div>
+        <h2 class="visually-hidden">Setup steps</h2>
+        <GuidedStepList Steps="@steps" TestId="pts-steps" StepTestId="pts-step" Label="Project Test Setup steps" TitleLevel="3" Busy="_busy"
+                        StepContent="@StepBodyFragment" StepActions="@StepActionsFragment" />
+    };
+
+    private string ConfidenceText()
+    {
+        if (State != SystemsPageState.Ready) return "no analysed connections yet. A test area does not need them.";
+        var found = T.Active(_overview).Count;
+        if (found == 0) return "no connections were found in the source.";
+        var observed = T.ObservedAtRuntime(_overview);
+        return $"{T.Confirmed(_overview)} of {found} connections confirmed by a reviewer, {T.MayNeedReview(_overview)} may need review (optional)."
+            + (observed > 0 ? $" {observed} observed at runtime." : " None has been observed in a running environment.");
+    }
+
+    private RenderFragment<GuidedStep> StepBodyFragment => StepBody;
+    private RenderFragment<GuidedStep> StepActionsFragment => StepActions;
+
+    private RenderFragment StepBody(GuidedStep step) => __builder =>
+    {
+        switch (step.Id)
+        {
+            case "1":
+                if (_overview is { InterpretationId: not null } o && (o.Limitations.Count > 0 || o.SourceLabels.Count > 0))
+                {
+                    <details class="pts-more" data-testid="pts-limitations">
+                        <summary>Sources and limitations</summary>
+                        @if (o.SourceLabels.Count > 0) { <p class="pts-small">Analysed: @string.Join(", ", o.SourceLabels)</p> }
+                        @if (o.Limitations.Count > 0) { <ul class="pts-small">@foreach (var l in o.Limitations) { <li>@l</li> }</ul> }
+                    </details>
+                }
+                break;
+            case "3":
+                if (ActiveAreas.Count > 0) { @AreaList(6) }
+                break;
+            case "4":
+                if (SelectedDetail is { } d4) { @Coverage(d4) }
+                break;
+            case "5":
+                if (SelectedDetail is { } d5) { @SavedState(d5) }
+                break;
+            case "6":
+                if (SelectedDetail is { } d6 && d6.Scope.State != ScopeState.Archived) { @UseLinks(d6) }
+                break;
+        }
+    };
+
+    private RenderFragment StepActions(GuidedStep step) => __builder =>
+    {
+        var selected = SelectedDetail;
+        switch (step.Id)
+        {
+            case "1":
+                <button type="button" class="btn-secondary btn-small" data-testid="pts-view-systems" disabled="@(State != SystemsPageState.Ready)" @onclick='() => Go(ViewHref("systems"))'>Explore systems</button>
+                break;
+            case "2":
+                if (State == SystemsPageState.Ready)
+                {
+                    <button type="button" class="btn-secondary btn-small" data-testid="pts-view-connections" @onclick='() => Go(ViewHref("connections"))'>View connections</button>
+                    if (T.MayNeedReview(_overview) > 0)
+                    {
+                        <a class="btn-secondary btn-small" href="@ReviewHref()" data-testid="pts-review-relationships">Review uncertain relationships<span class="visually-hidden"> (optional)</span></a>
+                    }
+                }
+                break;
+            case "3":
+                <button type="button" class="@(ActiveAreas.Count == 0 ? "btn-primary" : "btn-secondary btn-small")" data-testid="pts-create" @onclick="StartCreate">@(ActiveAreas.Count == 0 ? "Create test area" : "Create another")</button>
+                if (_scopes.Count > 0) { <button type="button" class="btn-secondary btn-small" data-testid="pts-view-areas" @onclick='() => Go(ViewHref("areas", keepScope: false))'>My test areas</button> }
+                break;
+            case "4":
+                if (selected is not null && selected.Scope.State != ScopeState.Archived)
+                {
+                    <button type="button" class="btn-secondary btn-small" data-testid="pts-review-selection" @onclick="@(() => Go(ViewHref("areas", scope: selected.Scope.Id)))">Review selection</button>
+                    <button type="button" class="btn-secondary btn-small" data-testid="pts-edit-members" @onclick="() => EditFromSetupAsync(selected)">Add or remove items</button>
+                }
+                break;
+            case "5":
+                if (selected is not null && selected.Scope.State != ScopeState.Archived && T.Newest(selected) is { } newest)
+                {
+                    if (newest.State == ScopeRevisionState.Draft)
+                    {
+                        <button type="button" class="btn-secondary btn-small" data-testid="pts-submit" disabled="@_busy" @onclick="() => SubmitAsync(selected)">Submit for review</button>
+                    }
+                    if (newest.State is ScopeRevisionState.Draft or ScopeRevisionState.InReview)
+                    {
+                        <button type="button" class="btn-secondary btn-small" data-testid="pts-approve" disabled="@(_busy || newest.Members.Count == 0)" @onclick="() => ApproveAsync(selected)">Approve revision @newest.Number</button>
+                    }
+                }
+                break;
+        }
+    };
+
+    private RenderFragment AreaList(int max) => __builder =>
+    {
+        var selectedId = SelectedId;
+        var areas = ActiveAreas.OrderByDescending(s => s.UpdatedAt).ThenBy(s => s.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        <ul class="pts-areas" data-testid="pts-area-list" aria-label="Test areas">
+            @foreach (var s in areas.Take(max))
+            {
+                var area = s;
+                var isSelected = s.Id == selectedId;
+                <li class="pts-area @(isSelected ? "is-selected" : "")" data-testid="pts-area" data-id="@s.Id" data-state="@s.State">
+                    <span class="pts-area-name">@s.Name</span>@if (isSelected) { <span class="pts-small pts-muted" data-testid="pts-area-selected"> (used in steps 4–6)</span> }
+                    <span class="pts-muted pts-small">@P.PurposeLabel(s.Purpose) · @T.Plural(s.MemberCount, "item", "items") · <span class="psc-chip tone-@(s.State == ScopeState.Approved ? "ok" : "attention")">@P.StateLabel(s)</span> · updated @s.UpdatedAt.ToLocalTime().ToString("g")</span>
+                    <span class="pts-row-actions">
+                        @if (!isSelected) { <button type="button" class="pts-link" data-testid="pts-area-select" @onclick="@(() => Go(ViewHref("setup", scope: area.Id)))">Use in steps 4–6<span class="visually-hidden">: @s.Name</span></button> }
+                        <a class="pts-link" href="@ViewHref("areas", scope: s.Id)" data-testid="pts-area-open">Open<span class="visually-hidden"> @s.Name</span></a>
+                    </span>
+                </li>
+            }
+        </ul>
+        @if (areas.Count > max) { <a class="pts-link pts-small" href="@ViewHref("areas", keepScope: false)" data-testid="pts-area-more">All @areas.Count test areas</a> }
+    };
+
+    private RenderFragment Coverage(ScopeDetail d) => __builder =>
+    {
+        var checks = ChecksOf(d.Scope.Id);
+        var members = T.Members(d).ToList();
+        <div class="pts-coverage" data-testid="pts-coverage" data-id="@d.Scope.Id">
+            <p class="pts-small"><strong>@d.Scope.Name</strong> · revision @(T.Newest(d)?.Number ?? d.Scope.CurrentRevision)</p>
+            @if (members.Count == 0) { <p class="pts-muted pts-small" data-testid="pts-coverage-empty">No items yet. Use Add or remove items to choose systems, scenarios, requirements or Test Data.</p> }
+            @foreach (var kind in T.ReviewKinds.Concat(members.Select(m => m.Kind)).Distinct())
+            {
+                var group = members.Where(m => m.Kind == kind).OrderBy(m => m.Label, StringComparer.OrdinalIgnoreCase).ToList();
+                if (group.Count == 0) continue;
+                <div class="pts-group" data-testid="pts-coverage-group" data-kind="@kind">
+                    <span class="psc-tray-kind">@P.KindLabel(kind, plural: true) (@group.Count)</span>
+                    <ul class="pts-member-list">
+                        @foreach (var m in group.Take(8))
+                        {
+                            var check = checks.FirstOrDefault(c => c.Key == m.Key);
+                            var state = T.MemberState(m, check);
+                            <li data-testid="pts-member" data-key="@m.Key">
+                                <span class="pts-member-name">@(check?.CurrentLabel ?? m.Label)</span>
+                                <span class="psc-chip @(state is AreaMemberState.Unresolved or AreaMemberState.Candidate ? "tone-attention" : "tone-ok")" data-testid="pts-member-state" data-state="@state"
+                                      title="@(check is { Check: not ScopeMemberCheck.Current } c ? c.Detail : m.Provenance)">@T.MemberStateLabel(state)</span>
+                                @if (state == AreaMemberState.Unresolved && check is { } unresolved) { <span class="pts-small pts-muted">@P.CheckLabel(unresolved.Check)</span> }
+                            </li>
+                        }
+                    </ul>
+                    @if (group.Count > 8) { <span class="pts-small pts-muted">and @(group.Count - 8) more</span> }
+                </div>
+            }
+        </div>
+    };
+
+    private RenderFragment SavedState(ScopeDetail d) => __builder =>
+    {
+        var unresolved = T.Unresolved(d, ChecksOf(d.Scope.Id));
+        <div class="pts-saved">
+            <p data-testid="pts-saved-revision" role="status" aria-live="polite"><strong>@d.Scope.Name</strong>: @T.RevisionText(d.Scope)</p>
+            <p class="pts-small pts-muted">@P.PurposeLabel(d.Scope.Purpose) · @T.Plural(d.Scope.MemberCount, "item", "items")@(unresolved > 0 ? $" · {T.Plural(unresolved, "item", "items")} unresolved" : "")</p>
+            @if (d.Scope.ApprovedRevision is { } a && a != d.Scope.CurrentRevision) { <p class="psc-warning pts-small" data-testid="pts-stale-revision">Revision @d.Scope.CurrentRevision is newer than the approved revision @a. Approve it to make other modules use it.</p> }
+            @if (T.Newest(d) is { Members.Count: 0 }) { <p class="pts-small pts-muted">An empty test area cannot be approved.</p> }
+        </div>
+    };
+
+    private RenderFragment UseLinks(ScopeDetail d) => __builder =>
+    {
+        var approved = d.Scope.ApprovedRevision is not null;
+        var links = T.UseLinks(d);
+        <ul class="pts-use" data-testid="pts-use-links" aria-label="Modules that use this test area">
+            @foreach (var link in links)
+            {
+                <li class="pts-use-item">
+                    @if (link.Behaviour == "context" || approved)
+                    {
+                        <a href="@link.Href" data-testid="pts-use-link" data-module="@link.Module" data-behaviour="@link.Behaviour">@link.Label</a>
+                    }
+                    else { <span class="pts-use-pending" data-testid="pts-use-pending" data-module="@link.Module">@link.Label</span> }
+                    <span class="psc-chip @(link.Behaviour == "filters" ? "tone-info" : "")">@(link.Behaviour == "filters" ? "Filters by this test area" : "Shows this test area as context")</span>
+                    <span class="pts-small pts-muted">@link.Explanation@(link.Behaviour == "filters" && !approved ? " Available after approval." : "")</span>
+                </li>
+            }
+        </ul>
+    };
+
+    private void Go(string href) => Nav.NavigateTo(href);
+
+    private async Task RunAsync(string action)
+    {
+        switch (action)
+        {
+            case "create": StartCreate(); break;
+            case "areas": Go(ViewHref("areas", keepScope: false)); break;
+            case "review": if (SelectedId is { } id) Go(ViewHref("areas", scope: id)); break;
+            case "edit": if (SelectedDetail is { } d) await EditFromSetupAsync(d); break;
+            case "retry": await LoadAsync(); break;
+        }
+    }
+
+    private async Task EditFromSetupAsync(ScopeDetail d)
+    {
+        if (!_checksById.ContainsKey(d.Scope.Id)) await LoadChecksAsync(d.Scope.Id);
+        _openScope = d.Scope.Id;
+        await EditAsync(d);
+        Go(ViewHref("areas", scope: d.Scope.Id));
     }
 
     private RenderFragment StatePanel() => __builder =>
@@ -183,7 +524,7 @@
             SystemsPageState.NoSource => ("No source imported yet", "Import the project's source for this Target Environment; BirkNext then finds systems, services and their connections in it.", "project-import", "Import Project"),
             SystemsPageState.Analysing => ("Analysis running", "Relationships are being analysed for this Target Environment. Refresh when it has finished; nothing is shown as empty in the meantime.", "", ""),
             SystemsPageState.NotInterpreted => ("Source imported, not analysed yet", "Source is available but relationships have not been analysed. Run Analyze relationships once in Relationship Review; this page never starts an analysis by itself.", "correlation-review", "Open Relationship Review"),
-            SystemsPageState.ZeroSystems => ("No systems found", "The latest analysis finished and found no systems or services in the imported source. If you expected some, check which sources were analysed (Technical details) or import more.", "correlation-review", "Open Relationship Review"),
+            SystemsPageState.ZeroSystems => ("No systems found", "The latest analysis finished and found no systems or services in the imported source. If you expected some, check which sources were analysed (Technical details) or import more. Test areas can still be built from requirements and scenarios.", "correlation-review", "Open Relationship Review"),
             _ => ("Systems could not be loaded", _loadError ?? "The systems overview could not be read.", "", ""),
         };
         @if (State == SystemsPageState.Loading) { <p class="psc-muted" role="status" data-testid="psc-loading">Loading systems…</p> }
@@ -209,6 +550,13 @@
     private int _systemsShown = 40;
     private bool Filtering => _search.Trim().Length > 0 || _kindFilter != "all" || _reviewFilter != "all" || _scopeFilter != "all";
 
+    private void KindChanged(ChangeEventArgs e)
+    {
+        _kindFilter = e.Value?.ToString() is "system" or "service" ? e.Value.ToString()! : "all";
+        _kindSeen = _kindFilter == "all" ? null : _kindFilter;
+        Nav.NavigateTo(Nav.GetUriWithQueryParameter("kind", _kindSeen), replace: true);
+    }
+
     private RenderFragment SystemsView() => __builder =>
     {
         var o = _overview!;
@@ -216,19 +564,20 @@
         var shown = P.Filter(o.Systems, _search, _kindFilter, _reviewFilter, _scopeFilter, k => ScopesWith(k).Count());
         var review = o.Systems.Count(s => s.NeedsReview > 0);
         <section aria-labelledby="psc-systems-h" data-testid="psc-systems">
-            <h2 id="psc-systems-h" class="visually-hidden">Systems</h2>
+            <h2 id="psc-systems-h" class="psc-h2">Systems and services</h2>
+            <p class="psc-muted">What BirkNext found in the imported source. Names and groupings come from the source; nothing is described beyond what the evidence says.</p>
             <div class="psc-toolbar" role="search">
                 <label class="psc-search"><span class="visually-hidden">Search systems and services</span>
                     <input type="search" placeholder="Search systems, services and their other names" value="@_search" @oninput="e => _search = e.Value?.ToString() ?? string.Empty" data-testid="psc-system-search" /></label>
                 <label class="psc-filter">Kind
-                    <select value="@_kindFilter" @onchange="e => _kindFilter = e.Value?.ToString() ?? string.Empty" data-testid="psc-kind-filter">
+                    <select value="@_kindFilter" @onchange="KindChanged" data-testid="psc-kind-filter">
                         <option value="all">All</option><option value="system">Systems</option><option value="service">Services</option></select></label>
                 <label class="psc-filter">Review
                     <select value="@_reviewFilter" @onchange="e => _reviewFilter = e.Value?.ToString() ?? string.Empty" data-testid="psc-review-filter">
                         <option value="all">All</option><option value="needs-review">Needs a decision</option><option value="no-review">Nothing to decide</option></select></label>
-                <label class="psc-filter">Scope
+                <label class="psc-filter">Test area
                     <select value="@_scopeFilter" @onchange="e => _scopeFilter = e.Value?.ToString() ?? string.Empty" data-testid="psc-scope-filter">
-                        <option value="all">All</option><option value="in-scope">In a scope</option><option value="no-scope">In no scope</option></select></label>
+                        <option value="all">All</option><option value="in-scope">In a test area</option><option value="no-scope">In no test area</option></select></label>
             </div>
             <p class="psc-muted" data-testid="psc-system-count">Showing @Math.Min(shown.Count, _systemsShown) of @shown.Count@(shown.Count != o.Systems.Count ? $" (filtered from {o.Systems.Count})" : "") · from the analysis of @(o.InterpretedAt?.ToLocalTime().ToString("g") ?? "—")
                 @if (review > 0) { <span> · <button type="button" class="psc-link" data-testid="psc-review-hint" @onclick="@(() => _reviewFilter = "needs-review")">@review need a decision</button></span> }</p>
@@ -270,7 +619,7 @@
                 @if (Filtering && parent is not null) { <span class="psc-muted">part of @parent.Name</span> }
                 <span class="psc-muted">@(s.Outgoing + s.Incoming) connection@(s.Outgoing + s.Incoming == 1 ? "" : "s")</span>
                 @if (s.NeedsReview > 0) { <span class="psc-chip tone-attention" data-testid="psc-system-review">@s.NeedsReview to decide</span> }
-                @if (inScopes.Count > 0) { <span class="psc-chip tone-info">In @inScopes.Count scope@(inScopes.Count == 1 ? "" : "s")</span> }
+                @if (inScopes.Count > 0) { <span class="psc-chip tone-info">In @inScopes.Count test area@(inScopes.Count == 1 ? "" : "s")</span> }
             </button>
             @if (open) { <div id="@($"psc-d-{s.Id}")" class="psc-detail" data-testid="psc-system-detail">@SystemDetail(s, parent, byKey, inScopes)</div> }
         </li>
@@ -298,13 +647,13 @@
                 <dd data-testid="psc-services">@string.Join(", ", s.ServiceKeys.Select(k => byKey.GetValueOrDefault(k)?.Name ?? k)) <span class="psc-muted">(each named by @s.Name's declared aliases)</span></dd>
             }
             <dt>Connections</dt>
-            <dd>@outgoing.Count outgoing · @incoming.Count incoming
+            <dd>@outgoing.Count outgoing · @incoming.Count incoming@(questions.Count > 0 ? $" · {questions.Count} review item{(questions.Count == 1 ? "" : "s")}" : "")
                 <a href="@ConnectionsHref(s.Key)" data-testid="psc-system-connections">Show connections<span class="visually-hidden"> of @s.Name</span></a></dd>
             <dt>Target Environment</dt>
             <dd>@(s.ConfiguredLocation is { } loc ? $"Configured at {loc} (configuration only — not a verified connection)" : "No configured location for this system in the active Target Environment.")</dd>
-            <dt>Scopes</dt>
-            <dd data-testid="psc-system-scopes">@(inScopes.Count == 0 ? "In no scope" : string.Join(", ", inScopes.Select(x => x.Name)))
-                <button type="button" class="psc-link" data-testid="psc-add-to-new-scope" @onclick="() => StartNewWith(s)">Start a scope with @s.Name</button></dd>
+            <dt>Test areas</dt>
+            <dd data-testid="psc-system-scopes">@(inScopes.Count == 0 ? "In no test area" : string.Join(", ", inScopes.Select(x => x.Name)))
+                <button type="button" class="psc-link" data-testid="psc-add-to-new-scope" @onclick="() => StartCreateWith(s)">Start a test area with @s.Name</button></dd>
         </dl>
         @if (questions.Count > 0)
         {
@@ -326,8 +675,11 @@
         }
     };
 
-    private string ConnectionsHref(string key) => Nav.GetUriWithQueryParameters("project-scopes", new Dictionary<string, object?> { ["tab"] = "connections", ["system"] = key });
-    private string ReviewHref() => $"correlation-review?tab=review&from={Uri.EscapeDataString(Nav.ToBaseRelativePath(Nav.Uri))}";
+    private string ConnectionsHref(string key) => ViewHref("connections", system: key);
+    // The return path always names this page (with its current view state), so Relationship Review can bring the user back.
+    private string ReviewHref() => $"correlation-review?tab=review&from={Uri.EscapeDataString(ReturnPath())}";
+    private string ReturnPath() => Nav.ToBaseRelativePath(Nav.Uri) is { Length: > 0 } relative && relative.StartsWith("project-scopes", StringComparison.OrdinalIgnoreCase)
+        ? relative : "project-scopes" + (Nav.ToBaseRelativePath(Nav.Uri) is { } r && r.IndexOf('?') is var q and >= 0 ? r[q..] : "");
 
     private bool _busy;
 
@@ -350,19 +702,32 @@
     private string _connSearch = "", _systemPick = "", _direction = "both", _stateFilter = "active", _originFilter = "all";
     private string? _openConnection;
 
+    private void StatusChanged(ChangeEventArgs e)
+    {
+        _stateFilter = e.Value?.ToString() is "established" or "review" or "rejected" or "all" ? e.Value.ToString()! : "active";
+        _statusSeen = _stateFilter == "active" ? null : _stateFilter;
+        Nav.NavigateTo(Nav.GetUriWithQueryParameter("status", _statusSeen), replace: true);
+    }
+
+    private bool InArea => InAreaQuery is "1" or "true";
+
     private RenderFragment ConnectionsView() => __builder =>
     {
         var o = _overview!;
         var focus = SystemQuery is { } key ? o.Systems.FirstOrDefault(s => s.Key == key) : null;
-        var shown = P.FilterConnections(o.Connections, focus?.Key, _direction, _stateFilter, _originFilter, focus is null ? _connSearch : null);
+        var area = SelectedId is { } aid ? _scopes.FirstOrDefault(s => s.Id == aid) : null;
+        var areaSystems = area is not null && _membership.TryGetValue(area.Id, out var keys) ? keys : null;
+        var shown = P.FilterConnections(o.Connections, focus?.Key, _direction, _stateFilter, _originFilter, focus is null ? _connSearch : null)
+            .Where(c => !InArea || areaSystems is null || areaSystems.Contains(c.SourceKey) || areaSystems.Contains(c.TargetKey)).ToList();
         var active = o.Connections.Where(c => c.State != SystemConnectionState.Rejected).ToList();
         var matches = _systemPick.Trim().Length == 0 ? [] : o.Systems.Where(s => s.Name.Contains(_systemPick.Trim(), StringComparison.OrdinalIgnoreCase)).OrderBy(s => s.Name).Take(8).ToList();
         <section aria-labelledby="psc-conn-h" data-testid="psc-connections">
-            <h2 id="psc-conn-h" class="visually-hidden">Connections</h2>
+            <h2 id="psc-conn-h" class="psc-h2">Connections</h2>
+            <p class="psc-muted">Source-discovered connections are not proof that integrations work in a running environment. Reviewing them is optional.</p>
             <ul class="psc-summary" data-testid="psc-conn-summary">
-                <li><strong>@active.Count(c => c.State is SystemConnectionState.FromSourceEvidence)</strong> from source evidence</li>
-                <li><strong>@active.Count(c => c.State is SystemConnectionState.ConfirmedByPerson)</strong> confirmed by a person</li>
-                <li><strong>@active.Count(c => c.State is SystemConnectionState.Candidate or SystemConnectionState.NeedsReview)</strong> need review</li>
+                <li><strong>@active.Count(c => c.State is SystemConnectionState.FromSourceEvidence)</strong> found in source</li>
+                <li><strong>@active.Count(c => c.State is SystemConnectionState.ConfirmedByPerson)</strong> confirmed by a reviewer</li>
+                <li><strong>@active.Count(c => c.State is SystemConnectionState.Candidate or SystemConnectionState.NeedsReview)</strong> need review (optional)</li>
                 <li><strong>@active.Count(c => c.State is SystemConnectionState.ObservedAtRuntime)</strong> observed at runtime</li>
             </ul>
 
@@ -400,14 +765,23 @@
                     <label class="psc-search"><span class="visually-hidden">Search connections</span>
                         <input type="search" placeholder="Search connections" value="@_connSearch" @oninput="e => _connSearch = e.Value?.ToString() ?? string.Empty" data-testid="psc-conn-search" /></label>
                 }
-                <label class="psc-filter">Evidence
-                    <select value="@_stateFilter" @onchange="e => _stateFilter = e.Value?.ToString() ?? string.Empty" data-testid="psc-conn-state">
+                <label class="psc-filter">Status
+                    <select value="@_stateFilter" @onchange="StatusChanged" data-testid="psc-conn-state">
                         <option value="active">All except rejected</option><option value="established">Established</option><option value="review">Needs review</option>
                         <option value="rejected">Rejected</option><option value="all">All</option></select></label>
                 <label class="psc-filter">Found by
                     <select value="@_originFilter" @onchange="e => _originFilter = e.Value?.ToString() ?? string.Empty" data-testid="psc-conn-origin">
                         <option value="all">Any source</option><option value="canonical">Source analysis</option><option value="topology">Integration Topology</option></select></label>
+                @if (area is not null)
+                {
+                    <label class="pts-check"><input type="checkbox" checked="@InArea" data-testid="pts-conn-area-only"
+                                                    @onchange='e => Nav.NavigateTo(Nav.GetUriWithQueryParameter("inarea", e.Value is true ? "1" : null), replace: true)' /> Only connections of @area.Name</label>
+                }
             </div>
+            @if (InArea && area is not null && (areaSystems is null || areaSystems.Count == 0))
+            {
+                <p class="psc-muted" data-testid="pts-conn-area-none">@area.Name names no systems, so no connection is specific to it. All connections are listed.</p>
+            }
 
             @if (focus is not null)
             {
@@ -434,6 +808,7 @@
                     {
                         <p><strong>No relationship evidence for @focus.Name.</strong> Neither the source analysis nor Integration Topology states a connection to or from it. BirkNext does not add one from expectations or similar names.</p>
                     }
+                    else if (active.Count == 0) { <p>No connections were found in the source. A test area does not need them.</p> }
                     else { <p>No connection matches these filters.</p> }
                     <p><a href="@ReviewHref()" data-testid="psc-conn-review">Review candidate relationships in Relationship Review</a> · <a href="integration-topology">Open Integration Topology</a></p>
                 </div>
@@ -463,7 +838,7 @@
                                     <p class="psc-muted">Not proven: @c.Unverified</p>
                                     @if (ScopesWith(c.SourceKey).Concat(ScopesWith(c.TargetKey)).DistinctBy(s => s.Id).ToList() is { Count: > 0 } related)
                                     {
-                                        <p class="psc-muted">In scopes: @string.Join(", ", related.Select(s => s.Name))</p>
+                                        <p class="psc-muted">In test areas: @string.Join(", ", related.Select(s => s.Name))</p>
                                     }
                                     <p>@if (c.Origin == "Integration Topology") { <a href="integration-topology">Review in Integration Topology</a> }
                                        else { <a href="@ReviewHref()" data-testid="psc-conn-review">Review in Relationship Review</a> }</p>
@@ -484,20 +859,75 @@
 
     private int ConnectionCount(string key) => _overview!.Connections.Count(c => c.SourceKey == key || c.TargetKey == key);
 
-    private void ClearFocus() => Nav.NavigateTo(Nav.GetUriWithQueryParameters("project-scopes", new Dictionary<string, object?> { ["tab"] = "connections", ["system"] = null }));
+    private void ClearFocus() => Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["system"] = null, ["view"] = "connections", ["tab"] = null }));
 
-    // ── Scopes ──────────────────────────────────────────────────────────────────────────────────────────────────────
+    // ── Create test area ────────────────────────────────────────────────────────────────────────────────────────────
+
+    private TestAreaDraft _draft = new();
+    private string? _createError;
+
+    private string CreateStep => _draft.Started ? T.CreateStepOf(StepQuery) : "choose";
+
+    private string CreateHref(string step) => Here(new Dictionary<string, object?> { ["view"] = "create", ["step"] = step == "choose" ? null : step });
+
+    private void StartCreate()
+    {
+        _draft = new();
+        _createError = null;
+        Go(CreateHref("choose"));
+    }
+
+    private void StartCreateWith(SystemOverviewItem s)
+    {
+        _draft = new() { Started = true };
+        _draft.Kept.Add(new ScopeMember { Kind = ScopeMemberKind.System, TargetId = s.Key, Label = s.Name, CatalogScope = _catalogScope,
+            Provenance = "Selected by a person from Canonical interpretation (Source Analysis)" });
+        _createError = null;
+        Go(CreateHref("select"));
+    }
+
+    private RenderFragment CreateView() => __builder =>
+    {
+        <TestAreaCreateFlow Draft="_draft" ProjectKey="@(_projectKey!)" CatalogScope="@_catalogScope" Systems="@(_overview?.Systems ?? [])" Step="@CreateStep"
+                            OnStep="step => Go(CreateHref(step))" OnSave="SaveCreateAsync" OnCancel="CancelCreate" Busy="_busy" SaveError="@_createError" />
+    };
+
+    private void CancelCreate()
+    {
+        _draft = new();
+        _createError = null;
+        Go(ViewHref("setup"));
+    }
+
+    /// <summary>Saves the kept members only, as confirmed membership, through the existing create API (draft revision 1).</summary>
+    private async Task SaveCreateAsync()
+    {
+        _busy = true; _createError = null; _notice = null;
+        try
+        {
+            var members = _draft.Kept.Select(m => m with { Inclusion = ScopeMemberInclusion.Confirmed }).ToList();
+            var description = _draft.Description.Trim();
+            var (detail, error, _) = await Scopes.CreateAsync(new CreateScopeRequest(_projectKey!, _draft.Name.Trim(), description.Length == 0 ? null : description, _draft.Purpose, null, members, _catalogScope));
+            if (detail is null) { _createError = error ?? "The test area could not be saved."; return; }
+            _draft = new();
+            await ReloadAfterWriteAsync(detail);
+            _notice = $"Saved \"{detail.Scope.Name}\" — revision {detail.Scope.CurrentRevision} (draft). Other modules use it only after it is approved.";
+            Go(ViewHref("setup", scope: detail.Scope.Id));
+        }
+        finally { _busy = false; }
+    }
+
+    // ── My test areas ───────────────────────────────────────────────────────────────────────────────────────────────
 
     private string? _scopesError;
     private string _scopeSearch = "", _scopeStateFilter = "active";
     private Guid? _openScope;
     private ScopeComparison? _comparison;
-    private IReadOnlyList<ScopeMemberStatus> _checks = [];
     private int _compareFrom, _compareTo;
     private string _rationale = "";
     private bool _confirmArchive;
 
-    // Wizard
+    // Edit (an existing test area): members → review; details stay reachable with Back.
     private int _step; // 0 = closed, 1 details, 2 members, 3 review
     private Guid? _editingId;
     private string _name = "", _description = "";
@@ -510,10 +940,10 @@
     {
         <section aria-labelledby="psc-scopes-h" data-testid="psc-scopes">
             <div class="psc-head-row">
-                <h2 id="psc-scopes-h" class="psc-h2">Scopes</h2>
-                @if (_step == 0) { <button type="button" class="btn-primary" data-testid="psc-new-scope" @onclick="StartNew">Create scope</button> }
+                <h2 id="psc-scopes-h" class="psc-h2">My test areas</h2>
+                @if (_step == 0) { <button type="button" class="btn-primary" data-testid="psc-new-scope" @onclick="StartCreate">Create test area</button> }
             </div>
-            @if (_scopesError is not null) { <p class="psc-error" role="alert" data-testid="psc-scopes-error">@_scopesError</p> }
+            @if (_scopesError is not null) { <p class="psc-error" role="alert" data-testid="psc-scopes-error">@_scopesError <button type="button" class="psc-link" data-testid="pts-areas-retry" @onclick="LoadAsync">Try again</button></p> }
             @if (_step > 0) { @Wizard() }
             else if (_openScope is { } open && _details.GetValueOrDefault(open) is { } detail) { @ScopeDetailView(detail) }
             else { @ScopeList() }
@@ -532,23 +962,23 @@
         @if (_scopes.Count == 0)
         {
             <div class="psc-empty" data-testid="psc-scopes-empty">
-                <h3>No scopes yet</h3>
-                <p>A scope is a named, reusable selection of what you test together: systems, scenarios, requirements, journeys, contracts and Test Data. Test Data and Test Plan Suggestions can then be filtered by it. You can start a scope even when no systems have been discovered.</p>
-                <button type="button" class="btn-primary" @onclick="StartNew">Create scope</button>
+                <h3>No test areas have been created yet</h3>
+                <p>A test area is a named, reusable selection of what you test together: systems, scenarios, requirements, journeys, contracts and Test Data. Modules such as Test Data and Test Plan Suggestions can then be filtered by it. You can create one even when no systems have been discovered.</p>
+                <button type="button" class="btn-primary" @onclick="StartCreate">Create test area</button>
             </div>
         }
         else
         {
             <div class="psc-toolbar">
-                <label class="psc-search"><span class="visually-hidden">Search scopes</span>
-                    <input type="search" placeholder="Search scopes" value="@_scopeSearch" @oninput="e => _scopeSearch = e.Value?.ToString() ?? string.Empty" data-testid="psc-scope-search" /></label>
+                <label class="psc-search"><span class="visually-hidden">Search test areas</span>
+                    <input type="search" placeholder="Search test areas" value="@_scopeSearch" @oninput="e => _scopeSearch = e.Value?.ToString() ?? string.Empty" data-testid="psc-scope-search" /></label>
                 <label class="psc-filter">Status
                     <select value="@_scopeStateFilter" @onchange="e => _scopeStateFilter = e.Value?.ToString() ?? string.Empty" data-testid="psc-scope-state">
                         <option value="active">Active</option><option value="draft">Draft or in review</option><option value="approved">Approved</option><option value="archived">Archived</option><option value="all">All</option></select></label>
             </div>
             <div class="psc-table-wrap">
                 <table class="psc-table" data-testid="psc-scope-list">
-                    <thead><tr><th scope="col">Scope</th><th scope="col">Status</th><th scope="col">Members</th><th scope="col">Updated</th></tr></thead>
+                    <thead><tr><th scope="col">Test area</th><th scope="col">Status</th><th scope="col">Items</th><th scope="col">Updated</th></tr></thead>
                     <tbody>
                         @foreach (var s in shown)
                         {
@@ -562,7 +992,7 @@
                                 <td class="psc-muted">@s.UpdatedAt.ToLocalTime().ToString("g")</td>
                             </tr>
                         }
-                        @if (shown.Count == 0) { <tr><td colspan="4" class="psc-muted">No scope matches.</td></tr> }
+                        @if (shown.Count == 0) { <tr><td colspan="4" class="psc-muted">No test area matches.</td></tr> }
                     </tbody>
                 </table>
             </div>
@@ -573,8 +1003,9 @@
     {
         var editing = _editingId is { } eid ? _details.GetValueOrDefault(eid) : null;
         <div class="psc-wizard" data-testid="psc-editor">
+            <h3 class="psc-h2">Edit @(editing?.Scope.Name ?? "test area")</h3>
             <ol class="psc-steps" aria-label="Steps">
-                @foreach (var (n, label) in new[] { (1, "Details"), (2, "Members"), (3, "Review") })
+                @foreach (var (n, label) in new[] { (1, "Details"), (2, "Items"), (3, "Review") })
                 {
                     <li class="@(n == _step ? "is-current" : n < _step ? "is-done" : "")" aria-current="@(n == _step ? "step" : null)">@n. @label</li>
                 }
@@ -582,18 +1013,18 @@
             @if (_step == 1)
             {
                 <div class="psc-form">
-                    <label class="psc-field">Scope name <input data-testid="psc-name" @bind="_name" @bind:event="oninput" maxlength="200" required aria-required="true" /></label>
+                    <label class="psc-field">Test area name <input data-testid="psc-name" @bind="_name" @bind:event="oninput" maxlength="200" required aria-required="true" aria-invalid="@(_name.Trim().Length == 0 ? "true" : "false")" /></label>
                     <label class="psc-field">Purpose
                         <select data-testid="psc-purpose" value="@_purpose" @onchange="e => _purpose = Enum.TryParse<ScopePurpose>(e.Value?.ToString(), out var p) ? p : ScopePurpose.Test">
                             @foreach (var p in Enum.GetValues<ScopePurpose>()) { <option value="@p">@P.PurposeLabel(p)</option> }
                         </select></label>
                     <label class="psc-field psc-wide">Description (optional) <textarea data-testid="psc-description" @bind="_description" maxlength="2000" rows="2"></textarea></label>
                 </div>
-                @if (_name.Trim().Length == 0) { <p class="psc-muted" data-testid="psc-name-hint">A name is required.</p> }
+                @if (_name.Trim().Length == 0) { <p class="psc-muted" role="alert" data-testid="psc-name-hint">A name is required.</p> }
             }
             else if (_step == 2)
             {
-                <p class="psc-muted">Choose what belongs in this scope. Every kind is optional — a scope of only scenarios or requirements is fine. Selected: <strong data-testid="psc-member-count">@_members.Count</strong>.</p>
+                <p class="psc-muted">Choose what belongs in this test area. Every kind is optional — a test area of only scenarios or requirements is fine. Selected: <strong data-testid="psc-member-count">@_members.Count</strong>.</p>
                 <ScopeMemberPicker CatalogScope="@_catalogScope" Selected="_members" SelectedChanged="StateHasChanged" />
                 @SelectedTray()
             }
@@ -607,10 +1038,10 @@
                         <dt>Revision</dt><dd>@(editing is null ? "Creates draft revision 1" : editing.Scope.ApprovedRevision == editing.Scope.CurrentRevision ? $"Creates draft revision {editing.Scope.CurrentRevision + 1}; approved revision {editing.Scope.ApprovedRevision} stays as it is" : $"Updates draft revision {editing.Scope.CurrentRevision}")</dd>
                     </dl>
                     @SelectedTray()
-                    @if (_members.Count == 0) { <p class="psc-muted" data-testid="psc-empty-draft">This draft has no members yet. It can be saved and filled later, but it cannot be approved while it is empty.</p> }
+                    @if (_members.Count == 0) { <p class="psc-muted" data-testid="psc-empty-draft">This draft has no items yet. It can be saved and filled later, but it cannot be approved while it is empty.</p> }
                     @if (_wizardChecks.Any(c => c.Check != ScopeMemberCheck.Current))
                     {
-                        <p class="psc-warning" data-testid="psc-review-warnings">@_wizardChecks.Count(c => c.Check != ScopeMemberCheck.Current) member(s) are not current in their catalog; they are kept and marked for review.</p>
+                        <p class="psc-warning" data-testid="psc-review-warnings">@_wizardChecks.Count(c => c.Check != ScopeMemberCheck.Current) item(s) are not current in their catalog; they are kept and marked for review.</p>
                     }
                     <p class="psc-muted">Saving creates a draft. A draft is not approved membership: other modules use only approved revisions.</p>
                 </div>
@@ -618,7 +1049,7 @@
             <div class="psc-actions">
                 @if (_step > 1) { <button type="button" class="btn-secondary" data-testid="psc-back" @onclick="() => _step--">Back</button> }
                 @if (_step < 3) { <button type="button" class="btn-primary" data-testid="psc-next" disabled="@(_name.Trim().Length == 0)" @onclick="NextAsync">Next</button> }
-                else { <button type="button" class="btn-primary" data-testid="psc-save" disabled="@(_busy || _name.Trim().Length == 0)" @onclick="SaveAsync">@(editing is null ? "Create draft" : "Save draft")</button> }
+                else { <button type="button" class="btn-primary" data-testid="psc-save" disabled="@(_busy || _name.Trim().Length == 0)" @onclick="SaveAsync">Save draft</button> }
                 <button type="button" class="psc-link" data-testid="psc-cancel" @onclick="CloseWizard">Cancel</button>
             </div>
         </div>
@@ -656,27 +1087,13 @@
         }
     }
 
-    private void StartNew()
-    {
-        (_editingId, _step, _name, _description, _purpose, _members, _wizardChecks, _notice, _actionError) = (null, 1, "", "", ScopePurpose.Test, [], [], null, null);
-        _openScope = null;
-    }
-
-    private void StartNewWith(SystemOverviewItem s)
-    {
-        StartNew();
-        _members.Add(new ScopeMember { Kind = ScopeMemberKind.System, TargetId = s.Key, Label = s.Name, CatalogScope = _catalogScope,
-            Provenance = "Selected by a person from Canonical interpretation (Source Analysis)" });
-        Nav.NavigateTo(TabHref("scopes"));
-    }
-
     private void CloseWizard() { _step = 0; _members = []; }
 
     private async Task EditAsync(ScopeDetail d)
     {
         (_editingId, _name, _description, _purpose, _expectedVersion) = (d.Scope.Id, d.Scope.Name, d.Scope.Description ?? "", d.Scope.Purpose, d.Scope.Version);
-        _members = [.. d.Revisions.First().Members];
-        _wizardChecks = _checks;
+        _members = [.. (T.Newest(d) ?? d.Revisions.First()).Members];
+        _wizardChecks = ChecksOf(d.Scope.Id);
         _step = 2;
         await Task.CompletedTask;
     }
@@ -692,20 +1109,29 @@
             if (detail is null) { _actionError = error + (conflict ? " Your selection is kept on screen." : ""); return; }
             _step = 0;
             await ReloadScopesAsync(detail);
-            _notice = $"Saved \"{detail.Scope.Name}\" as draft revision {detail.Scope.CurrentRevision}. Other modules use it only after it is approved.";
+            _notice = $"Saved \"{detail.Scope.Name}\" — revision {detail.Scope.CurrentRevision} (draft). Other modules use it only after it is approved.";
         }
         finally { _busy = false; }
     }
 
-    private async Task ReloadScopesAsync(ScopeDetail current)
+    /// <summary>After a write: the newest list, the written test area's detail and checks, and the system membership again.</summary>
+    private async Task ReloadAfterWriteAsync(ScopeDetail current)
     {
         var (scopes, error) = await Scopes.ListAsync(_projectKey!);
-        (_scopes, _scopesError) = (scopes, error);
+        (_scopes, _scopesError, _scopesLoaded) = (scopes, error, true);
         _details.Clear();
+        _checksById.Clear();
         _membership = [];
         _details[current.Scope.Id] = current;
-        await OpenScopeAsync(current.Scope.Id, updateUrl: true);
+        await LoadChecksAsync(current.Scope.Id);
         await EnsureMembershipAsync();
+    }
+
+    private async Task ReloadScopesAsync(ScopeDetail current)
+    {
+        await ReloadAfterWriteAsync(current);
+        if (_view == "setup") { _paramsKey = null; return; }
+        await OpenScopeAsync(current.Scope.Id, updateUrl: true);
     }
 
     private async Task OpenScopeAsync(Guid id, bool updateUrl)
@@ -713,44 +1139,46 @@
         if (await DetailAsync(id) is not { } d) return;
         (_openScope, _comparison, _rationale, _confirmArchive) = (id, null, "", false);
         (_compareFrom, _compareTo) = (d.Scope.ApprovedRevision is { } a && a != d.Scope.CurrentRevision ? a : Math.Max(1, d.Scope.CurrentRevision - 1), d.Scope.CurrentRevision);
-        var (checks, _) = await Scopes.CheckAsync(_projectKey!, id, null, _catalogScope);
-        _checks = checks;
-        if (updateUrl) Nav.NavigateTo(Nav.GetUriWithQueryParameters("project-scopes", new Dictionary<string, object?> { ["tab"] = "scopes", ["scope"] = id.ToString() }));
+        if (!_checksById.ContainsKey(id)) await LoadChecksAsync(id);
+        if (updateUrl) Nav.NavigateTo(ViewHref("areas", scope: id));
     }
 
     private void CloseScope()
     {
         _openScope = null;
-        Nav.NavigateTo(Nav.GetUriWithQueryParameters("project-scopes", new Dictionary<string, object?> { ["tab"] = "scopes", ["scope"] = null }));
+        Nav.NavigateTo(ViewHref("areas", keepScope: false));
     }
 
     private RenderFragment ScopeDetailView(ScopeDetail d) => __builder =>
     {
-        var newest = d.Revisions.First();
-        var approved = d.Revisions.FirstOrDefault(r => r.State == ScopeRevisionState.Approved);
+        var newest = T.Newest(d) ?? d.Revisions.First();
         var archived = d.Scope.State == ScopeState.Archived;
+        var checks = ChecksOf(d.Scope.Id);
         <article class="psc-scope-detail" data-testid="psc-scope-detail" data-state="@d.Scope.State">
-            <button type="button" class="psc-link" data-testid="psc-scope-back" @onclick="CloseScope">← All scopes</button>
+            <button type="button" class="psc-link" data-testid="psc-scope-back" @onclick="CloseScope">← All test areas</button>
             <header class="psc-scope-head">
                 <h3>@d.Scope.Name</h3>
                 <span class="psc-pill">@P.PurposeLabel(d.Scope.Purpose)</span>
                 <span class="psc-chip tone-@(d.Scope.State == ScopeState.Approved ? "ok" : archived ? "muted" : "attention")" data-testid="psc-scope-state">@P.StateLabel(d.Scope)</span>
+                @if (!archived) { <a class="psc-link" href="@ViewHref("setup", scope: d.Scope.Id)" data-testid="pts-area-setup">Use in setup steps</a> }
             </header>
             @if (d.Scope.Description is { Length: > 0 } desc) { <p>@desc</p> }
-            <p class="psc-muted">Can be selected in Test Data and Test Plan Suggestions (approved revision only). Approval pins membership; it does not mean tests passed and never authorizes running tests.</p>
+            <p class="psc-muted">Modules such as Test Data and Test Plan Suggestions can filter by it (approved revision only). Approval pins membership; it does not mean tests passed and never authorizes running tests.</p>
 
             <section aria-labelledby="psc-members-h">
-                <h4 id="psc-members-h" class="psc-h4">Members of revision @newest.Number (@newest.Members.Count)</h4>
-                @if (newest.Members.Count == 0) { <p class="psc-muted" data-testid="psc-members-empty">No members yet. Use Edit members to add systems, scenarios, requirements or Test Data.</p> }
+                <h4 id="psc-members-h" class="psc-h4">Items of revision @newest.Number (@newest.Members.Count)</h4>
+                @if (newest.Members.Count == 0) { <p class="psc-muted" data-testid="psc-members-empty">No items yet. Use Edit items to add systems, scenarios, requirements or Test Data.</p> }
                 @foreach (var group in newest.Members.GroupBy(m => m.Kind).OrderBy(g => g.Key))
                 {
                     <div class="psc-tray-group"><span class="psc-tray-kind">@P.KindLabel(group.Key, plural: true) (@group.Count())</span>
                         <ul class="psc-member-list">
                             @foreach (var m in group.OrderBy(m => m.Label))
                             {
-                                var check = _checks.FirstOrDefault(c => c.Key == m.Key);
+                                var check = checks.FirstOrDefault(c => c.Key == m.Key);
+                                var state = T.MemberState(m, check);
                                 <li data-testid="psc-scope-member" data-key="@m.Key" data-check="@(check?.Check)">
                                     <span>@(check?.CurrentLabel ?? m.Label)</span>
+                                    <span class="psc-chip @(state is AreaMemberState.Unresolved or AreaMemberState.Candidate ? "tone-attention" : "tone-ok")" data-testid="pts-member-state" data-state="@state">@T.MemberStateLabel(state)</span>
                                     @if (check is { } c && c.Check != ScopeMemberCheck.Current) { <span class="psc-chip tone-attention" title="@c.Detail">@P.CheckLabel(c.Check)</span> }
                                     <span class="psc-muted psc-small">@m.Provenance</span>
                                 </li>
@@ -762,7 +1190,7 @@
             @if (!archived)
             {
                 <div class="psc-actions">
-                    <button type="button" class="btn-secondary" data-testid="psc-edit" @onclick="() => EditAsync(d)">@(newest.State == ScopeRevisionState.Approved ? "Edit as new revision" : "Edit members")</button>
+                    <button type="button" class="btn-secondary" data-testid="psc-edit" @onclick="() => EditAsync(d)">@(newest.State == ScopeRevisionState.Approved ? "Edit as new revision" : "Edit items")</button>
                     @if (newest.State == ScopeRevisionState.Draft) { <button type="button" class="btn-secondary" data-testid="psc-submit" disabled="@_busy" @onclick="() => SubmitAsync(d)">Submit for review</button> }
                 </div>
                 @if (newest.State is ScopeRevisionState.Draft or ScopeRevisionState.InReview)
@@ -770,7 +1198,7 @@
                     <div class="psc-approve" data-testid="psc-approve-panel">
                         <label class="psc-field psc-wide">Why approve (recorded with the decision) <input data-testid="psc-rationale" @bind="_rationale" /></label>
                         <button type="button" class="btn-primary" data-testid="psc-approve" disabled="@(_busy || newest.Members.Count == 0)" @onclick="() => ApproveAsync(d)">Approve revision @newest.Number</button>
-                        @if (newest.Members.Count == 0) { <span class="psc-muted">An empty scope cannot be approved.</span> }
+                        @if (newest.Members.Count == 0) { <span class="psc-muted">An empty test area cannot be approved.</span> }
                     </div>
                 }
                 else { <p class="psc-muted" data-testid="psc-approved-note">Revision @newest.Number is approved@(newest.ApprovedBy is { } by ? $" by {by}" : "")@(newest.ApprovedAt is { } at ? $" on {at.ToLocalTime():g}" : "")@(newest.ApprovalRationale is { } why ? $": {why}" : ""). It never changes; editing creates revision @(newest.Number + 1).</p> }
@@ -781,7 +1209,7 @@
                 <ul class="psc-list">
                     @foreach (var r in d.Revisions)
                     {
-                        <li data-testid="psc-revision" data-state="@r.State">Revision @r.Number · @r.State · @r.Members.Count member@(r.Members.Count == 1 ? "" : "s") · @r.CreatedBy, @r.CreatedAt.ToLocalTime().ToString("g")@(r.ChangeSummary is { } cs ? $" · {cs}" : "")</li>
+                        <li data-testid="psc-revision" data-state="@r.State">Revision @r.Number · @r.State · @r.Members.Count item@(r.Members.Count == 1 ? "" : "s") · @r.CreatedBy, @r.CreatedAt.ToLocalTime().ToString("g")@(r.ChangeSummary is { } cs ? $" · {cs}" : "")</li>
                     }
                 </ul>
                 @if (d.Revisions.Count > 1)
@@ -810,7 +1238,7 @@
             @if (!archived)
             {
                 <div class="psc-archive">
-                    @if (!_confirmArchive) { <button type="button" class="psc-link" data-testid="psc-archive" @onclick="() => _confirmArchive = true">Archive scope…</button> }
+                    @if (!_confirmArchive) { <button type="button" class="psc-link" data-testid="psc-archive" @onclick="() => _confirmArchive = true">Archive test area…</button> }
                     else
                     {
                         <span>Archive "@d.Scope.Name"? It becomes read-only and is no longer offered as a filter; its revisions stay readable.</span>

@@ -63,7 +63,7 @@
                 @if (_scopeSelection is { } scopeSel && !Embedded)
                 {
                     var named = scopeSel.Members.Count(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.Journey && m.Member.TargetId.StartsWith(pack.PackId + ":", StringComparison.Ordinal));
-                    <p class="ijp-muted" data-testid="ijp-scope-summary">Showing the @named journey@(named == 1 ? "" : "s") of this pack that the selected scope names.@(named == 0 ? " The scope names none: add journeys to it in Systems & Scopes." : "")</p>
+                    <p class="ijp-muted" data-testid="ijp-scope-summary">Showing the @named journey@(named == 1 ? "" : "s") of this pack that the selected scope names.@(named == 0 ? " The scope names none: add journeys to it in Project Test Setup." : "")</p>
                 }
                 <div class="ijp-table" tabindex="0" role="region" aria-label="Journey overview" data-testid="ijp-overview">
                     <table>
