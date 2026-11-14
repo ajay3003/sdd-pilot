@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace BirkNext.Web.Tests.Pages;
 
 /// <summary>Execution Results: run history, run KPIs, filters kept in the URL, call evidence tabs, GraphQL errors, blocked calls, attempt comparison. Reading never executes.</summary>
+[Collection(BirkNext.Web.Tests.ProcessCultureCollection.Name)]
 public sealed class ExecutionResultsPageTests : BunitContext
 {
     private static readonly Guid Run = Guid.NewGuid();

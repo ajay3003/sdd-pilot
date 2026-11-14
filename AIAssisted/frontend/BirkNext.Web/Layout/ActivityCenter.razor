@@ -97,13 +97,19 @@
         if (Operations is null) return;
         _all = Operations.Operations;
         _active = [.. _all.Where(o => o.IsActive)];
-        // Announce only transitions to a finished state (not every progress tick).
+        // Announce only transitions to a finished state (not every progress tick). Changed is marshalled with InvokeAsync, so one Refresh can
+        // observe several operations that finished since the previous one (e.g. a cancel and a completion landing back to back). All of them
+        // are announced in the order they finished — never just whichever the list (active first, newest started first) happens to visit last,
+        // which used to let an older "Cancelled" overwrite a newer "Completed".
+        var finished = new List<OperationSnapshot>();
         foreach (var op in _all)
         {
             if (_known.TryGetValue(op.Id, out var before) && before != op.Status && !op.IsActive)
-                _announcement = $"{op.Title}: {StatusText(op.Status)}";
+                finished.Add(op);
             _known[op.Id] = op.Status;
         }
+        if (finished.Count > 0)
+            _announcement = string.Join(". ", finished.OrderBy(o => o.CompletedAt).Select(o => $"{o.Title}: {StatusText(o.Status)}"));
     }
 
     /// <summary>"M2LB — Importing project · 65%", "2 operations running", or "Activity" when nothing runs.</summary>

@@ -234,6 +234,8 @@ public sealed class BrowserDeliveryTrustConfigurationTests : BunitContext
         Assert.DoesNotContain("Discoveries are stale", cut.Markup);
         Assert.DoesNotContain("target URL changed", cut.Markup);
         OpenTab(cut, "Validation");
+        // The Validation tab renders after the click; wait for its freshness row instead of reading it on the same tick.
+        cut.WaitForAssertion(() => Assert.Single(cut.FindAll(".fa-dl-row"), r => r.TextContent.Contains("Target check freshness")));
         var freshness = cut.FindAll(".fa-dl-row").Single(r => r.TextContent.Contains("Target check freshness")).TextContent;
         Assert.Contains("Current", freshness);
         Assert.DoesNotContain("Stale", freshness);

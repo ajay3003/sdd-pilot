@@ -181,7 +181,9 @@ public class ScenarioService
         string projectId,
         CancellationToken ct = default)
     {
+        // Read-only (the GraphQL `scenarios` list): one SELECT, no change-tracking snapshots or identity resolution for every row.
         return await _dbContext.Scenarios
+            .AsNoTracking()
             .Where(s => s.ProjectId == projectId)
             .OrderBy(s => s.Kind == ScenarioKind.Test ? s.DisplayOrder : int.MaxValue)
             .ThenByDescending(s => s.CreatedAt)

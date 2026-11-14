@@ -18,6 +18,7 @@ namespace BirkNext.Web.Tests.Pages;
 /// pinned binding, running only selected tests (data-changing calls need the explicit confirmation), the latest result linking to Execution
 /// Results, and the version comparison with per-test impact. Opening the page never runs anything.
 /// </summary>
+[Collection(BirkNext.Web.Tests.ProcessCultureCollection.Name)]
 public sealed class ContractTestingPageTests : BunitContext
 {
     private static readonly Guid GetTest = Guid.NewGuid(), PostTest = Guid.NewGuid(), Run = Guid.NewGuid(), Call = Guid.NewGuid();
