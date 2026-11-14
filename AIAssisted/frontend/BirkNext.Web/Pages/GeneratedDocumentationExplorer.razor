@@ -39,23 +39,36 @@
             </label>
         </div>
 
-        @* Only documents the module actually has: absence of a document type is neutral, never "Missing". *@
-        <section aria-labelledby="gde-docs-h" data-testid="gde-module-documents">
-            <h2 id="gde-docs-h">@_module · generated documentation</h2>
-            <ul class="gde-cards">
-                @foreach (var d in ModuleDocuments)
+        @* Only documents the module actually has: absence of a document type is neutral, never "Missing". A compact library: the document's own
+           title first, its type and availability beside it, the path on demand. *@
+        <section class="gde-library" aria-labelledby="gde-docs-h" data-testid="gde-module-documents">
+            <div class="gde-library-head">
+                <h2 id="gde-docs-h">@_module · @ModuleDocuments.Count generated document@(ModuleDocuments.Count == 1 ? "" : "s")</h2>
+                <label class="gde-field gde-inline"><span class="visually-hidden">Find a document</span>
+                    <input type="search" placeholder="Find a document" value="@_docSearch" @oninput="e => _docSearch = e.Value?.ToString() ?? string.Empty" data-testid="gde-doc-search" /></label>
+                <label class="gde-field gde-inline"><span class="visually-hidden">Document type</span>
+                    <select data-testid="gde-doc-type" @onchange="e => _docType = e.Value?.ToString() ?? string.Empty">
+                        <option value="">All types</option>
+                        @foreach (var role in ModuleDocuments.Select(d => d.Role).Distinct().OrderBy(r => r)) { <option value="@role" selected="@(_docType == role.ToString())">@Gde.RoleLabel(role)</option> }
+                    </select></label>
+            </div>
+            <ul class="gde-doclist" role="list">
+                @foreach (var d in LibraryDocuments)
                 {
                     var doc = d;
-                    @* One control per document: selecting the card opens it in Read (no separate Open button). *@
-                    <li class="gde-card @(doc.Path == _selectedPath ? "is-selected" : "") @(doc.ContentAvailable ? "" : "is-unavailable")" data-testid="gde-document-card" data-role="@doc.Role"
-                        data-state="@(doc.ContentAvailable ? "available" : "unavailable")" aria-current="@(doc.Path == _selectedPath ? "true" : null)">
-                        <button type="button" class="gde-card-button" data-testid="gde-open" aria-pressed="@(doc.Path == _selectedPath ? "true" : "false")" @onclick="() => Select(doc.Path)">
-                            <strong class="gde-card-title">@doc.RoleLabel</strong>
-                            <span class="gde-muted gde-wrap gde-card-path"><code>@doc.Path</code></span>
+                    var selected = doc.Path == _selectedPath;
+                    @* One control per document: selecting it opens it in Read (no separate Open button). *@
+                    <li class="gde-card @(selected ? "is-selected" : "") @(doc.ContentAvailable ? "" : "is-unavailable")" data-testid="gde-document-card" data-role="@doc.Role"
+                        data-state="@(doc.ContentAvailable ? "available" : "unavailable")" aria-current="@(selected ? "true" : null)">
+                        <button type="button" class="gde-card-button" data-testid="gde-open" aria-pressed="@(selected ? "true" : "false")" title="@doc.Path" @onclick="() => Select(doc.Path)">
+                            <strong class="gde-card-title" data-testid="gde-card-title">@TitleOf(doc)</strong>
+                            <span class="gde-pill">@doc.RoleLabel</span>
                             <span class="gde-card-state gde-state-@(doc.ContentAvailable ? "available" : "unavailable")" data-testid="gde-card-state">@Gde.Availability(doc)</span>
+                            <span class="gde-muted gde-wrap gde-card-path"><code>@doc.Path</code></span>
                         </button>
                     </li>
                 }
+                @if (LibraryDocuments.Count == 0) { <li class="gde-muted" data-testid="gde-doc-none">No document matches.</li> }
             </ul>
         </section>
 
@@ -63,7 +76,7 @@
         {
             var d = view.Document;
             <section class="gde-document" aria-labelledby="gde-doc-h" data-testid="gde-document">
-                <h2 id="gde-doc-h" tabindex="-1">@d.Module · Generated @d.RoleLabel</h2>
+                <h2 id="gde-doc-h" tabindex="-1">@TitleOf(d) <span class="gde-pill">Generated @d.RoleLabel</span></h2>
                 <dl class="gde-facts">
                     <div><dt>Source</dt><dd><code class="gde-wrap" data-testid="gde-source-path">@d.Path</code></dd></div>
                     <div><dt>Origin</dt><dd data-testid="gde-origin">@Gde.Origin</dd></div>
@@ -81,17 +94,34 @@
                         <a class="btn-link" data-testid="gde-open-source" href="@($"source-analysis?snapshot={snapshot}")">Related Source Analysis snapshot</a>
                     }
                 </p>
-                <div class="gde-tabs gde-sticky" role="tablist" aria-label="Document views" data-testid="gde-tabs">
-                    @foreach (var (tab, label) in Gde.ViewTabs)
-                    {
-                        var t = tab;
-                        <button type="button" role="tab" class="@(_tab == t ? "is-current" : "")" aria-selected="@(_tab == t ? "true" : "false")" aria-controls="gde-tabpanel" data-testid="gde-tab" data-tab="@t" @onclick="() => SetTab(t)">@label</button>
-                    }
+                <div class="gde-toolbar gde-sticky" data-testid="gde-toolbar">
+                    <div class="gde-tabs" role="tablist" aria-label="Document views" data-testid="gde-tabs">
+                        @foreach (var (tab, label) in Gde.ViewTabs)
+                        {
+                            var t = tab;
+                            <button type="button" role="tab" class="@(_tab == t ? "is-current" : "")" aria-selected="@(_tab == t ? "true" : "false")" aria-controls="gde-tabpanel" data-testid="gde-tab" data-tab="@t" @onclick="() => SetTab(t)">@label</button>
+                        }
+                    </div>
+                    <div class="gde-find" role="search">
+                        <label class="visually-hidden" for="gde-search-input">Search this document</label>
+                        <input id="gde-search-input" type="search" placeholder="Search this document" value="@_searchInput" @oninput="SearchInput" @onkeydown="SearchKey" data-testid="gde-search" />
+                        @if (!string.IsNullOrWhiteSpace(_search))
+                        {
+                            <span class="gde-muted" role="status" data-testid="gde-search-count">@(_hits == 0 ? "No match" : $"{_hitIndex + 1} of {_hits}")</span>
+                            <button type="button" class="btn-secondary btn-small" aria-label="Previous match" disabled="@(_hits == 0)" data-testid="gde-search-prev" @onclick="() => StepHit(-1)">↑</button>
+                            <button type="button" class="btn-secondary btn-small" aria-label="Next match" disabled="@(_hits == 0)" data-testid="gde-search-next" @onclick="() => StepHit(1)">↓</button>
+                            <button type="button" class="btn-link" data-testid="gde-search-clear" @onclick="ClearSearch">Clear</button>
+                        }
+                    </div>
+                    <div class="gde-tools">
+                        <button type="button" class="btn-secondary btn-small" data-testid="gde-wide" aria-pressed="@(_wide ? "true" : "false")" @onclick="() => _wide = !_wide">@(_wide ? "Standard width" : "Wide reader")</button>
+                        <button type="button" class="btn-secondary btn-small" data-testid="gde-copy-link" @onclick="CopyLinkAsync">Copy link</button>
+                        @if (_linkStatus is not null) { <span class="gde-muted" role="status" data-testid="gde-link-status">@_linkStatus</span> }
+                    </div>
                 </div>
-                <label class="gde-field gde-search">Search this document <input type="search" @bind="_search" @bind:event="oninput" data-testid="gde-search" /></label>
-                @if (!string.IsNullOrWhiteSpace(_search))
+                @if (!string.IsNullOrWhiteSpace(_search) && _tab is not ("Read" or "Source"))
                 {
-                    <ul class="gde-plain" data-testid="gde-search-results">@foreach (var (line, text) in Gde.Search(view.Content, _search)) { <li><span class="gde-muted">L@(line)</span> @text</li> }</ul>
+                    <p class="gde-muted" data-testid="gde-search-where">Matches are highlighted in Read and Source.</p>
                 }
                 <div id="gde-tabpanel" role="tabpanel" aria-label="@_tab">
                 @if (view.State == GeneratedDocumentParseState.ContentUnavailable && _tab is "Read" or "Structure" or "Source")
@@ -122,7 +152,99 @@
     private string _importId = "", _module = "", _selectedPath = "", _tab = "Read", _search = "", _outlineFilter = "";
     private IReadOnlyList<GeneratedReadSegment> _segments = [];
     private IReadOnlyList<GeneratedOutlineItem> _outline = [];
-    private string? _pendingAnchor, _copyStatus;
+    private string? _pendingAnchor, _copyStatus, _linkStatus, _section, _systemsNote;
+    private string _docSearch = "", _docType = "", _searchInput = "";
+    private bool _wide;
+    private int _hits, _hitIndex, _searchGeneration;
+    private readonly Dictionary<string, string?> _titles = [];
+    private IReadOnlyList<string> _rendered = [];
+    private string _renderedTerm = "\u0000";
+    private IReadOnlyList<BirkNext.Scopes.SystemOverviewItem>? _systems;
+
+    private IReadOnlyList<GeneratedExplorerDocument> LibraryDocuments => ModuleDocuments
+        .Where(d => _docType.Length == 0 || d.Role.ToString() == _docType)
+        .Where(d => _docSearch.Trim().Length == 0 || TitleOf(d).Contains(_docSearch.Trim(), StringComparison.OrdinalIgnoreCase)
+            || d.Path.Contains(_docSearch.Trim(), StringComparison.OrdinalIgnoreCase) || d.RoleLabel.Contains(_docSearch.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+
+    /// <summary>The document's own first heading as its title (read once per document), else its type — never the file name.</summary>
+    private string TitleOf(GeneratedExplorerDocument doc)
+    {
+        if (!_titles.TryGetValue(doc.Path, out var title))
+        {
+            title = Repository?.SddLifecycle is { } state && DocumentationDrift.IsMarkdown(doc.Path) ? GeneratedDocumentationReader.Title(DocumentationDrift.Text(state, doc.Document)) : null;
+            _titles[doc.Path] = title;
+        }
+        return title ?? $"{doc.RoleLabel} ({doc.Module})";
+    }
+
+    /// <summary>Rendered Markdown per segment with the current search highlighted — rebuilt only when the (debounced) term changes.</summary>
+    private string RenderedSegment(int i)
+    {
+        if (_renderedTerm != _search || _rendered.Count != _segments.Count)
+        {
+            var list = new List<string>(_segments.Count);
+            var total = 0;
+            for (var k = 0; k < _segments.Count; k++)
+            {
+                var html = _segments[k].Markdown is { } md ? Gde.RenderSegment(k, md) : "";
+                list.Add(GeneratedDocumentationReader.Highlight(html, _search, total, out var count));
+                total += count;
+            }
+            (_rendered, _renderedTerm, _hits) = (list, _search, total);
+            if (_hitIndex >= _hits) _hitIndex = 0;
+        }
+        return _rendered[i];
+    }
+
+    /// <summary>Debounced search: the document is re-highlighted 250 ms after typing stops (no re-render per keystroke).</summary>
+    private async Task SearchInput(ChangeEventArgs e)
+    {
+        _searchInput = e.Value?.ToString() ?? "";
+        var generation = ++_searchGeneration;
+        await Task.Delay(250);
+        if (generation != _searchGeneration) return;
+        if (_search == _searchInput) return; // the same term: keep the current match position
+        _search = _searchInput;
+        _hitIndex = 0;
+        if (_segments.Count > 0) _ = RenderedSegment(0);
+    }
+
+    private void SearchKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") StepHit(e.ShiftKey ? -1 : 1);
+        else if (e.Key == "Escape") ClearSearch();
+    }
+
+    private void StepHit(int direction)
+    {
+        if (_segments.Count > 0) _ = RenderedSegment(0);
+        if (_hits == 0) return;
+        _hitIndex = ((_hitIndex + direction) % _hits + _hits) % _hits;
+        if (_tab != "Read") { _tab = "Read"; SyncUrl(); }
+        _pendingAnchor = $"gde-hit-{_hitIndex}";
+    }
+
+    private void ClearSearch() { _search = _searchInput = ""; _hits = _hitIndex = 0; _searchGeneration++; }
+
+    private async Task CopyLinkAsync()
+    {
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", Navigation.Uri); _linkStatus = "Link copied."; }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or TaskCanceledException) { _linkStatus = "Copy is not available; use the address bar."; }
+    }
+
+    /// <summary>The registered systems of the active Target Environment (one call; the page works without them).</summary>
+    private async Task LoadSystemsAsync()
+    {
+        if (ServiceProvider.GetService(typeof(IScopeRegistryApiService)) is not IScopeRegistryApiService registry
+            || ServiceProvider.GetService(typeof(IFrontendAnalysisContextFactory)) is not IFrontendAnalysisContextFactory factory)
+        { _systemsNote = "The system registry is not available here."; return; }
+        var scope = CorrelationPresentation.Scope((await factory.GetActiveContextAsync()).ActiveProfileOrNull?.Id);
+        if (scope is null) { _systemsNote = "Choose an active Target Environment to link systems named in documents."; return; }
+        var (overview, error) = await registry.SystemsAsync(scope);
+        if (overview is null || overview.InterpretationId is null) { _systemsNote = error ?? "No analysed systems for the active Target Environment yet."; return; }
+        _systems = overview.Systems;
+        StateHasChanged();
+    }
 
     /// <summary>Copies the imported source exactly (read-only: nothing is changed).</summary>
     private async Task CopySourceAsync(string? content)
@@ -150,14 +272,23 @@
         var query = QueryHelpers.ParseQuery(Navigation.ToAbsoluteUri(Navigation.Uri).Query);
         _importId = query.TryGetValue("import", out var import) && _imports.Any(i => i.ImportId == import.ToString()) ? import.ToString()
             : _imports.FirstOrDefault(i => i.ImportId == state.CurrentProjectImportId)?.ImportId ?? _imports.LastOrDefault()?.ImportId ?? "";
-        _module = query.TryGetValue("module", out var module) && Modules.Contains(module.ToString()) ? module.ToString() : Modules.FirstOrDefault() ?? "";
+        // Health links name the repository level "(repository)"; the Explorer calls it "Repository level".
+        var requestedModule = query.TryGetValue("module", out var module) ? (module.ToString() == "(repository)" ? Gde.RepositoryLevel : module.ToString()) : "";
+        _module = Modules.Contains(requestedModule) ? requestedModule : Modules.FirstOrDefault() ?? "";
         if (query.TryGetValue("document", out var document) && ModuleDocuments.Any(d => d.Path == document.ToString()))
         {
             Select(document.ToString(), updateUrl: false);
             // An explicit ?view= (read, outline/structure, source, provenance; the former overview opens Provenance) is honoured once, on arrival.
             if (query.TryGetValue("view", out var requested) && Gde.ViewFromQuery(requested.ToString()) is { } explicitView) _tab = explicitView;
+            // A deep link to a section opens Read at that heading (only an anchor the document really has).
+            if (query.TryGetValue("section", out var section) && _outline.Any(o => o.AnchorId == section.ToString()))
+            {
+                (_tab, _section, _pendingAnchor, _focusDocument) = ("Read", section.ToString(), section.ToString(), false);
+            }
         }
     }
+
+    protected override Task OnInitializedAsync() => LoadSystemsAsync();
 
     private void SetTab(string tab)
     {
@@ -172,6 +303,7 @@
         Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(new Dictionary<string, object?>
         {
             ["import"] = _importId, ["module"] = _module, ["document"] = _selectedPath, ["view"] = _tab == "Read" ? null : Gde.ViewSlug(_tab),
+            ["section"] = _tab == "Read" ? _section : null,
         }), replace: true);
     }
 
@@ -180,6 +312,7 @@
     {
         _tab = "Read";
         _pendingAnchor = anchorId;
+        _section = anchorId;
         SyncUrl();
     }
 
@@ -192,7 +325,8 @@
     {
         if (Repository?.SddLifecycle is not { } state || ModuleDocuments.FirstOrDefault(d => d.Path == path) is not { } doc) return;
         // Opening a document reads it: Read is the default view (metadata lives under Provenance).
-        _selectedPath = path; _tab = "Read"; _search = ""; _outlineFilter = ""; _contract = null; _pendingAnchor = null;
+        _selectedPath = path; _tab = "Read"; _search = _searchInput = ""; _hits = _hitIndex = 0; _outlineFilter = ""; _contract = null; _pendingAnchor = null; _section = null;
+        _rendered = []; _renderedTerm = "\u0000";
         var content = DocumentationDrift.Text(state, doc.Document);
         _view = Gde.View(doc, content, Parser);
         // Parsed once per selection, never per tab switch.
@@ -238,7 +372,7 @@
             <div data-testid="gde-read" data-format="structured">@Structure(v)</div>
             return;
         }
-        <article class="gde-read markdown-content" data-testid="gde-read" data-format="markdown" aria-label="@($"{v.Document.RoleLabel} document")">
+        <article class="gde-read markdown-content @(_wide ? "is-wide" : "")" data-testid="gde-read" data-format="markdown" aria-label="@($"{v.Document.RoleLabel} document")">
             @for (var i = 0; i < _segments.Count; i++)
             {
                 var segment = _segments[i];
@@ -248,7 +382,7 @@
                 }
                 else
                 {
-                    @((MarkupString)Gde.RenderSegment(i, segment.Markdown!))
+                    @((MarkupString)RenderedSegment(i))
                 }
             }
         </article>
@@ -278,7 +412,7 @@
                 <ol class="gde-outline-list">
                     @foreach (var item in items)
                     {
-                        <li class="gde-outline-l@(Math.Min(item.Level, 4))"><button type="button" class="btn-link" data-testid="gde-outline-item" data-anchor="@item.AnchorId" @onclick="() => GoToHeading(item.AnchorId)">@item.Text</button></li>
+                        <li class="gde-outline-l@(Math.Min(item.Level, 6)) @(item.AnchorId == _section ? "is-current" : "")"><button type="button" class="gde-link" data-testid="gde-outline-item" data-anchor="@item.AnchorId" aria-current="@(item.AnchorId == _section ? "location" : null)" @onclick="() => GoToHeading(item.AnchorId)">@item.Text</button></li>
                     }
                 </ol>
             }
@@ -388,7 +522,11 @@
             @* The original text, unchanged, with line numbers beside it (the numbers are not part of the copied source). *@
             <div class="gde-code gde-raw" data-testid="gde-raw">
                 <ol class="gde-lines" data-testid="gde-source-lines" aria-label="@($"{v.Document.RoleLabel} source with line numbers")">
-                    @foreach (var line in Gde.SourceLines(v.Content)) { <li><code>@line</code></li> }
+                    @foreach (var line in Gde.SourceLines(v.Content))
+                    {
+                        var hit = _search.Trim().Length >= 2 && line.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase);
+                        <li class="@(hit ? "is-hit" : null)" data-hit="@(hit ? "true" : null)"><code>@line</code></li>
+                    }
                 </ol>
             </div>
             <p class="gde-muted">Read-only. Generated documentation is never edited here.</p>
@@ -443,6 +581,10 @@
     private RenderFragment Provenance(GeneratedDocumentView v) => __builder =>
     {
         var d = v.Document.Document;
+        <p class="gde-note" data-testid="gde-evidence-kind"><strong>Implementation-derived documentation</strong> (generated from source by @(d.Generator ?? "an unidentified generator")). Not an approved specification, not imported source documentation, not runtime-verified.@(v.State == GeneratedDocumentParseState.PartiallyParsed ? " Partially parsed: some content has no structured interpretation." : "")</p>
+        @SystemsReferenced(v)
+        @Revisions(v)
+        <details class="gde-technical" data-testid="gde-technical"><summary>Technical details</summary>
         @DocumentFacts(v)
         <p data-testid="gde-provenance-summary">Generated by @(d.Generator ?? "an unidentified generator") from Source Analysis snapshot @(d.SourceSnapshotId is { } snap ? snap.ToString()[..8] : "(not known)")@(d.ImportedAt is { } importedAt ? $", imported {importedAt.ToLocalTime():g}" : "").</p>
         <dl class="gde-facts" data-testid="gde-provenance">
@@ -457,6 +599,71 @@
             <div><dt>Source snapshot</dt><dd><code>@(d.SourceSnapshotId?.ToString() ?? "Not known")</code></dd></div>
             <div><dt>Imported at</dt><dd>@(d.ImportedAt?.ToLocalTime().ToString("g") ?? "—")</dd></div>
         </dl>
+        </details>
+    };
+
+    /// <summary>Registered systems the document names exactly, linked to Systems &amp; Scopes; nothing when no registry or no active environment.</summary>
+    private RenderFragment SystemsReferenced(GeneratedDocumentView v) => __builder =>
+    {
+        <section class="gde-context" aria-labelledby="gde-systems-h" data-testid="gde-systems">
+            <h3 id="gde-systems-h" class="gde-h3">Systems named in this document</h3>
+            @if (_systems is null) { <p class="gde-muted" data-testid="gde-systems-unavailable">@(_systemsNote ?? "Loading the registered systems…")</p> }
+            else
+            {
+                var mentions = GeneratedDocumentationReader.SystemMentions(v.Content, _systems);
+                @if (mentions.Count == 0) { <p class="gde-muted" data-testid="gde-systems-none">No registered system or service is named here by its exact name. Similar names are not linked.</p> }
+                else
+                {
+                    <ul class="gde-chips">
+                        @foreach (var (system, mention) in mentions)
+                        {
+                            <li><a class="gde-chip" data-testid="gde-system-link" data-key="@system.Key" href="@($"project-scopes?tab=connections&system={Uri.EscapeDataString(system.Key)}")">@system.Name</a>
+                                @if (mention != system.Name) { <span class="gde-muted"> (named “@mention”)</span> }</li>
+                        }
+                    </ul>
+                    <p class="gde-muted">Exact names of systems the shared registry holds for the active Target Environment. A name in a document is a reference, not a verified relationship.</p>
+                }
+            }
+        </section>
+    };
+
+    /// <summary>The same document in other imports (Documentation Drift's own version list), with a heading/diagram comparison as a reading aid.</summary>
+    private RenderFragment Revisions(GeneratedDocumentView v) => __builder =>
+    {
+        var versions = DocumentationDrift.Versions(_catalog, v.Document.Document);
+        <section class="gde-context" aria-labelledby="gde-rev-h" data-testid="gde-revisions">
+            <h3 id="gde-rev-h" class="gde-h3">Revisions</h3>
+            @if (versions.Count <= 1) { <p class="gde-muted" data-testid="gde-revisions-none">No other import holds this document, so there is nothing to compare with yet.</p> }
+            else
+            {
+                var index = versions.ToList().FindIndex(x => x.Id == v.Document.Document.Id);
+                var previous = index > 0 ? versions[index - 1] : null;
+                <ol class="gde-plain" data-testid="gde-revision-list">
+                    @foreach (var r in versions)
+                    {
+                        <li data-current="@(r.Id == v.Document.Document.Id ? "true" : "false")">@(r.ProjectRevision ?? r.ProjectImportId) · @(r.ImportedAt?.ToLocalTime().ToString("g") ?? "date not known")@(r.Id == v.Document.Document.Id ? " · this one" : r.Fingerprint == v.Document.Document.Fingerprint ? " · same content" : " · different content")</li>
+                    }
+                </ol>
+                @if (previous is not null && Repository?.SddLifecycle is { } state)
+                {
+                    var diff = GeneratedDocumentationReader.CompareOutline(DocumentationDrift.Text(state, previous), v.Content);
+                    <div data-testid="gde-revision-diff">
+                        @if (previous.Fingerprint == v.Document.Document.Fingerprint) { <p class="gde-muted">Same content as the previous import.</p> }
+                        else
+                        {
+                            <p>Compared with the previous import: <strong>@diff.Added.Count</strong> heading@(diff.Added.Count == 1 ? "" : "s") added, <strong>@diff.Removed.Count</strong> removed, diagrams @(diff.DiagramsChanged ? $"changed ({diff.DiagramsBefore} → {diff.DiagramsAfter})" : "unchanged").</p>
+                            @if (diff.Added.Count > 0) { <p class="gde-muted">Added: @string.Join(" · ", diff.Added.Take(12))</p> }
+                            @if (diff.Removed.Count > 0) { <p class="gde-muted">Removed: @string.Join(" · ", diff.Removed.Take(12))</p> }
+                            <p class="gde-muted">A reading aid from headings and diagram sources; wording changes inside sections are not listed. Documentation Drift owns the comparison.</p>
+                        }
+                    </div>
+                }
+            }
+            @if (Gde.DriftConcernOf(v.Document.Role) is { } concern && !v.Document.RepositoryLevel)
+            {
+                <p><a class="gde-link" data-testid="gde-revisions-drift" href="@($"documentation-drift?tab=compare&import={Uri.EscapeDataString(_importId)}&module={Uri.EscapeDataString(v.Document.Module)}&concern={concern}")">Compare in Documentation Drift</a></p>
+            }
+        </section>
     };
 
     private static string Short(string fingerprint) => fingerprint.Length > 12 ? fingerprint[..12] : fingerprint;

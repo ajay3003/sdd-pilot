@@ -47,7 +47,15 @@
 .gde-card-title { font-size: 1rem; }
 
 /* Read: the document itself, comfortable reading width; tables scroll inside their own box. */
-.gde-read { max-width: 60rem; line-height: 1.6; }
+/* Prose keeps a comfortable line length; tables, code and diagrams may use the full reader width. "Wide reader" lifts the prose limit. */
+.gde-read { line-height: 1.65; font-size: 1rem; }
+.gde-read ::deep > p, .gde-read ::deep > ul, .gde-read ::deep > ol, .gde-read ::deep > blockquote, .gde-read ::deep > h1, .gde-read ::deep > h2,
+.gde-read ::deep > h3, .gde-read ::deep > h4, .gde-read ::deep > h5, .gde-read ::deep > h6, .gde-read ::deep > dl { max-width: 62rem; }
+.gde-read.is-wide ::deep > * { max-width: none; }
+.gde-read ::deep table thead th { position: sticky; top: 0; background: var(--clr-surface, #f8fafc); }
+.gde-read ::deep td code, .gde-read ::deep th code { overflow-wrap: anywhere; }
+.gde-read ::deep mark.gde-hit, .gde-raw li.is-hit code { background: #fde68a; color: inherit; border-radius: 2px; }
+.gde-read ::deep mark.gde-hit:focus { outline: 2px solid var(--clr-primary, #2563eb); background: #f59e0b; }
 .gde-read ::deep h1, .gde-read ::deep h2, .gde-read ::deep h3, .gde-read ::deep h4 { scroll-margin-top: 6rem; margin: 1.4rem 0 .5rem; }
 .gde-read ::deep table { display: block; overflow-x: auto; border-collapse: collapse; margin: .75rem 0; }
 .gde-read ::deep th, .gde-read ::deep td { border: 1px solid var(--clr-border); padding: .35rem .6rem; vertical-align: top; }
@@ -67,3 +75,28 @@
 .gde-lines li { counter-increment: gde-line; display: grid; grid-template-columns: 3.5rem 1fr; }
 .gde-lines li::before { content: counter(gde-line); color: var(--clr-text-muted); text-align: right; padding-right: .75rem; user-select: none; }
 .gde-lines code { white-space: pre-wrap; overflow-wrap: anywhere; background: none; padding: 0; }
+
+/* Library: compact rows — the document's own title first, type and availability beside it, the path quiet. */
+.gde-library-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
+.gde-library-head h2 { margin: 0; font-size: 1.05rem; flex: 1 1 16rem; }
+.gde-inline input, .gde-inline select { padding: .35rem .55rem; border: 1px solid var(--clr-border); border-radius: 6px; font-weight: 400; }
+.gde-doclist { list-style: none; padding: 0; margin: .5rem 0 0; display: grid; gap: .35rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); }
+.gde-doclist .gde-card-button { grid-template-columns: 1fr auto; align-items: baseline; column-gap: .5rem; }
+.gde-doclist .gde-card-title, .gde-doclist .gde-card-path { grid-column: 1 / -1; }
+.gde-pill { display: inline-block; font-size: .75rem; font-weight: 600; padding: .05rem .5rem; border-radius: 999px; background: var(--clr-surface, #f1f5f9); border: 1px solid var(--clr-border, #e2e8f0); color: var(--clr-text-muted, #475467); vertical-align: middle; }
+.gde-card-path { font-size: .78rem; }
+/* Toolbar: views, search with next/previous, reader tools — one sticky row. */
+.gde-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; border-bottom: 1px solid var(--clr-border, #e2e8f0); }
+.gde-find { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; flex: 1 1 18rem; }
+.gde-find input { flex: 1 1 12rem; max-width: 22rem; padding: .35rem .55rem; border: 1px solid var(--clr-border); border-radius: 6px; }
+.gde-tools { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.gde-link { background: none; border: 0; padding: 0; color: var(--clr-primary, #2563eb); font: inherit; cursor: pointer; text-align: left; }
+.gde-link:hover { text-decoration: underline; }
+.gde-outline-l5 { padding-left: 4rem; } .gde-outline-l6 { padding-left: 5rem; }
+.gde-outline-list li.is-current > .gde-link { font-weight: 700; }
+/* Provenance: evidence first, technical identifiers on request. */
+.gde-context { border-top: 1px solid var(--clr-border, #e2e8f0); padding-top: .5rem; }
+.gde-h3 { font-size: .95rem; margin: .25rem 0 .4rem; }
+.gde-chips { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: .35rem; }
+.gde-chip { display: inline-block; padding: .1rem .6rem; border: 1px solid var(--clr-border); border-radius: 999px; text-decoration: none; }
+.gde-technical > summary { cursor: pointer; font-weight: 600; margin: .5rem 0; }

@@ -321,5 +321,100 @@ public static partial class GeneratedDocumentationExplorer
 /// <summary>One part of a document in reading order: Markdown, or a diagram's source (exactly one is set).</summary>
 public sealed record GeneratedReadSegment(string? Markdown, string? Diagram);
 
+/// <summary>Presentation helpers for the reader: titles, in-document search highlighting, system mentions, outline comparison. Pure.</summary>
+public static partial class GeneratedDocumentationReader
+{
+    /// <summary>The document's own title: its first level-1 heading (else the first heading); null when it has none (the caller falls back to the type).</summary>
+    public static string? Title(string? content)
+    {
+        if (string.IsNullOrEmpty(content)) return null;
+        string? first = null;
+        foreach (var raw in content.Split('\n').Take(400))
+        {
+            var line = raw.TrimEnd('\r');
+            var m = HeadingRe().Match(line);
+            if (!m.Success) continue;
+            var text = m.Groups[2].Value.Trim().Trim('#').Trim();
+            if (text.Length == 0) continue;
+            if (m.Groups[1].Value.Length == 1) return text;
+            first ??= text;
+        }
+        return first;
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^(#{1,6})\s+(.+)$")]
+    private static partial System.Text.RegularExpressions.Regex HeadingRe();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"(<[^>]*>)|([^<]+)")]
+    private static partial System.Text.RegularExpressions.Regex HtmlTokenRe();
+
+    /// <summary>
+    /// Marks every case-insensitive occurrence of <paramref name="term"/> in the TEXT of already-sanitized HTML (tags and attributes are never
+    /// touched; the term is matched against HTML-encoded text, so markup cannot be injected). Ids continue from <paramref name="start"/>.
+    /// </summary>
+    public static string Highlight(string html, string term, int start, out int count)
+    {
+        count = 0;
+        if (string.IsNullOrWhiteSpace(term) || term.Trim().Length < 2) return html;
+        var needle = System.Net.WebUtility.HtmlEncode(term.Trim());
+        var sb = new System.Text.StringBuilder(html.Length + 64);
+        var n = start;
+        var inCode = 0;
+        foreach (System.Text.RegularExpressions.Match token in HtmlTokenRe().Matches(html))
+        {
+            if (token.Groups[1].Success)
+            {
+                var tag = token.Value;
+                if (tag.StartsWith("<script", StringComparison.OrdinalIgnoreCase) || tag.StartsWith("<style", StringComparison.OrdinalIgnoreCase)) inCode++;
+                else if (tag.StartsWith("</script", StringComparison.OrdinalIgnoreCase) || tag.StartsWith("</style", StringComparison.OrdinalIgnoreCase)) inCode--;
+                sb.Append(tag);
+                continue;
+            }
+            var text = token.Value;
+            if (inCode > 0) { sb.Append(text); continue; }
+            var i = 0;
+            while (true)
+            {
+                var at = text.IndexOf(needle, i, StringComparison.OrdinalIgnoreCase);
+                if (at < 0) { sb.Append(text, i, text.Length - i); break; }
+                sb.Append(text, i, at - i);
+                sb.Append($"<mark class=\"gde-hit\" id=\"gde-hit-{n}\" tabindex=\"-1\">").Append(text, at, needle.Length).Append("</mark>");
+                n++; count++;
+                i = at + needle.Length;
+            }
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Registered systems and services the document names exactly (whole word, case-sensitive name or explicit/confirmed alias). A mention is a
+    /// reference to an identity the shared registry already holds — never a relationship, and never a guess from a similar name.
+    /// </summary>
+    public static IReadOnlyList<(BirkNext.Scopes.SystemOverviewItem System, string Mention)> SystemMentions(string? content, IEnumerable<BirkNext.Scopes.SystemOverviewItem> systems)
+    {
+        if (string.IsNullOrEmpty(content)) return [];
+        var found = new List<(BirkNext.Scopes.SystemOverviewItem, string)>();
+        foreach (var s in systems)
+        {
+            var names = s.Aliases.Where(a => a.State is BirkNext.Interpretation.AliasState.Explicit or BirkNext.Interpretation.AliasState.Confirmed).Select(a => a.Alias).Prepend(s.Name)
+                .Where(n => n.Length >= 3).Distinct(StringComparer.Ordinal);
+            foreach (var name in names)
+                if (System.Text.RegularExpressions.Regex.IsMatch(content, $@"(?<![\w.]){System.Text.RegularExpressions.Regex.Escape(name)}(?![\w])"))
+                { found.Add((s, name)); break; }
+        }
+        return [.. found.OrderBy(f => f.Item1.Name, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    /// <summary>Headings present in one revision and not the other (text, case-sensitive), and whether the diagram sources differ. Formatting-only
+    /// changes are not reported as structural change; this is a reading aid, not a drift verdict (Documentation Drift owns comparison).</summary>
+    public static (IReadOnlyList<string> Added, IReadOnlyList<string> Removed, int DiagramsBefore, int DiagramsAfter, bool DiagramsChanged) CompareOutline(string? before, string? after)
+    {
+        static List<string> Headings(string? c) => [.. (c ?? "").Split('\n').Select(l => HeadingRe().Match(l.TrimEnd('\r'))).Where(m => m.Success).Select(m => m.Groups[2].Value.Trim())];
+        static List<string> Diagrams(string? c) => [.. GeneratedDocumentationExplorer.ReadSegments(c).Where(s => s.Diagram is not null).Select(s => string.Join('\n', s.Diagram!.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0)))];
+        var (hb, ha, db, da) = (Headings(before), Headings(after), Diagrams(before), Diagrams(after));
+        return ([.. ha.Except(hb, StringComparer.Ordinal)], [.. hb.Except(ha, StringComparer.Ordinal)], db.Count, da.Count, !db.SequenceEqual(da, StringComparer.Ordinal));
+    }
+}
+
 /// <summary>One heading of the Read view and the id of its element.</summary>
 public sealed record GeneratedOutlineItem(int Level, string Text, string AnchorId);

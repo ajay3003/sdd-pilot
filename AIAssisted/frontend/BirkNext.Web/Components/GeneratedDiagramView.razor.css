@@ -1,12 +1,20 @@
 /* A diagram from generated documentation: toolbar, scrollable canvas (pan by scrolling), SVG drawn from the diagram source. */
-.gdv { margin: 1rem 0; border: 1px solid var(--clr-border); border-radius: 8px; background: var(--clr-surface-white); padding: .5rem .75rem .75rem; }
+.gdv { min-width: 0; max-width: 100%; box-sizing: border-box; margin: 1rem 0; border: 1px solid var(--clr-border); border-radius: 8px; background: var(--clr-surface-white); padding: .5rem .75rem .75rem; }
 .gdv-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; align-items: center; margin-bottom: .5rem; }
 .gdv-modes, .gdv-zoom { display: inline-flex; flex-wrap: wrap; gap: .25rem; align-items: center; }
 .gdv-mode { border: 1px solid var(--clr-border); background: transparent; border-radius: 999px; padding: .2rem .7rem; font-size: .85rem; cursor: pointer; color: inherit; }
 .gdv-mode.is-current { background: var(--clr-primary, #1d4ed8); border-color: var(--clr-primary, #1d4ed8); color: #fff; }
 .gdv-zoom-value { min-width: 3.2rem; text-align: center; font-size: .85rem; font-variant-numeric: tabular-nums; }
-.gdv-canvas { overflow: auto; max-height: 34rem; border-radius: 6px; background: var(--clr-surface-subtle, #f8fafc); padding: .25rem; }
-.gdv-canvas.is-expanded { max-height: none; }
+/* Fit: as wide as the reader. Zoomed: a bounded viewport panned by drag/keys (overflow hidden: no nested scrollbars). */
+.gdv-canvas { border-radius: 6px; background: var(--clr-surface-subtle, #f8fafc); padding: .25rem; touch-action: none; }
+.gdv-canvas.is-zoomed { overflow: hidden; cursor: grab; position: relative; width: 100%; max-width: 100%; box-sizing: border-box; contain: inline-size; }
+.gdv-canvas.is-dragging { cursor: grabbing; user-select: none; }
+.gdv-canvas.is-expanded { max-height: calc(100vh - 9rem); }
+.gdv-overlay { position: fixed; inset: 0; z-index: 1000; background: rgba(15, 23, 42, .55); display: grid; place-items: center; padding: 1.5rem; }
+.gdv-dialog { width: min(96vw, 110rem); max-height: calc(100vh - 3rem); overflow: hidden; display: grid; grid-template-rows: auto 1fr auto; gap: .5rem; background: var(--clr-surface-white, #fff); border-radius: 10px; padding: .75rem 1rem; box-shadow: 0 20px 50px rgba(0, 0, 0, .35); }
+.gdv-dialog:focus-visible { outline: 3px solid var(--clr-primary, #2563eb); }
+.gdv-dialog-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+.gdv-dialog-title { margin: 0; font-size: 1.05rem; }
 .gdv-canvas:focus-visible { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; }
 .gdv-svg { display: block; height: auto; max-width: none; font-family: inherit; }
 .gdv-svg .gdv-box { fill: var(--clr-surface-white, #fff); stroke: var(--clr-primary, #1d4ed8); stroke-width: 1.4; }

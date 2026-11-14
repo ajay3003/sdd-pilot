@@ -1,4 +1,5 @@
 @using BirkNext.Web.Services
+@using Microsoft.JSInterop
 @* A diagram from generated documentation, drawn as SVG from the deterministic reading (GeneratedDiagrams): a sequence diagram as lifelines and
    ordered messages, a graph/flowchart as a left-to-right layered layout. Every label is text (Blazor-escaped) — nothing from the document is
    interpreted as HTML or script and nothing remote is loaded. Only what the diagram source declares is drawn; an unsupported or oversized
@@ -12,15 +13,10 @@
                 <button type="button" class="gdv-mode @(_mode == id ? "is-current" : "")" aria-pressed="@(_mode == id ? "true" : "false")" data-testid="gdv-mode" data-mode="@id" @onclick="() => _mode = id">@label</button>
             }
         </div>
+        @if (_mode == "diagram" && Drawable && !_expanded) { @ZoomControls() }
         @if (_mode == "diagram" && Drawable)
         {
-            <div class="gdv-zoom" role="group" aria-label="Zoom">
-                <button type="button" class="btn-secondary btn-small" data-testid="gdv-zoom-out" aria-label="Zoom out" disabled="@(_zoom <= MinZoom)" @onclick="() => Zoom(-0.25)">−</button>
-                <span class="gdv-zoom-value" data-testid="gdv-zoom-value" aria-live="polite">@(_fit ? "Fit" : $"{_zoom * 100:0}%")</span>
-                <button type="button" class="btn-secondary btn-small" data-testid="gdv-zoom-in" aria-label="Zoom in" disabled="@(!_fit && _zoom >= MaxZoom)" @onclick="() => Zoom(0.25)">+</button>
-                <button type="button" class="btn-secondary btn-small" data-testid="gdv-fit" aria-pressed="@(_fit ? "true" : "false")" @onclick="FitToWidth">Fit</button>
-                <button type="button" class="btn-secondary btn-small" data-testid="gdv-expand" aria-pressed="@(_expanded ? "true" : "false")" @onclick="() => _expanded = !_expanded">@(_expanded ? "Collapse" : "Expand")</button>
-            </div>
+            <button type="button" class="btn-secondary btn-small" data-testid="gdv-expand" aria-haspopup="dialog" @ref="_expandButton" @onclick="OpenExpanded">Expand</button>
         }
     </div>
 
@@ -40,31 +36,23 @@
     }
     else
     {
-        <div class="gdv-canvas @(_expanded ? "is-expanded" : "")" tabindex="0" role="region" aria-label="@($"{Caption} — scroll to pan")" data-testid="gdv-canvas">
-            <svg class="gdv-svg" data-testid="gdv-svg" viewBox="0 0 @_layout.Width @_layout.Height" width="@(_fit ? "100%" : $"{_layout.Width * _zoom:0}")"
-                 preserveAspectRatio="xMinYMin meet" role="img" aria-labelledby="@($"{_id}-title")">
-                <title id="@($"{_id}-title")">@Caption — @Summary</title>
-                <defs>
-                    <marker id="@($"{_id}-arrow")" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="gdv-arrowhead" /></marker>
-                </defs>
-                @foreach (var line in _layout.Lines)
-                {
-                    <line x1="@F(line.X1)" y1="@F(line.Y1)" x2="@F(line.X2)" y2="@F(line.Y2)" class="@line.Class" marker-end="@(line.Arrow ? $"url(#{_id}-arrow)" : null)" />
-                }
-                @foreach (var box in _layout.Boxes)
-                {
-                    <g class="gdv-node" data-testid="gdv-node"><title>@box.Full</title>
-                        <rect x="@F(box.X)" y="@F(box.Y)" width="@F(box.W)" height="@F(box.H)" rx="6" class="@box.Class" />
-                        <text x="@F(box.X + box.W / 2)" y="@F(box.Y + box.H / 2 + 4)" text-anchor="middle" class="gdv-node-text">@box.Text</text>
-                    </g>
-                }
-                @foreach (var label in _layout.Labels)
-                {
-                    <g class="gdv-label-group"><text x="@F(label.X)" y="@F(label.Y)" text-anchor="middle" class="gdv-label" data-testid="gdv-label"><title>@label.Full</title>@label.Text</text></g>
-                }
-            </svg>
-        </div>
-        <figcaption class="gde-muted gdv-caption">Drawn from the diagram source in this generated document — a documentation diagram, not verified runtime architecture.</figcaption>
+        @if (!_expanded) { @Canvas(false) }
+        else
+        {
+            <div class="gdv-overlay" data-testid="gdv-overlay">
+                <div class="gdv-dialog" role="dialog" aria-modal="true" aria-labelledby="@($"{_id}-dialog-title")" tabindex="-1" @ref="_dialog" @onkeydown="OnDialogKey" data-testid="gdv-dialog">
+                    <div class="gdv-dialog-head">
+                        <h2 id="@($"{_id}-dialog-title")" class="gdv-dialog-title">@Caption</h2>
+                        @ZoomControls()
+                        <button type="button" class="btn-primary btn-small" data-testid="gdv-close" @onclick="CloseExpanded">Close <span class="visually-hidden">(Escape)</span></button>
+                    </div>
+                    @Canvas(true)
+                    <p class="gde-muted gdv-caption">Drag to pan · mouse wheel or + / − to zoom · 0 resets · arrow keys move · Escape closes. @Summary.</p>
+                </div>
+            </div>
+            <p class="gde-muted" data-testid="gdv-expanded-note">Shown in the expanded view.</p>
+        }
+        <figcaption class="gde-muted gdv-caption" data-testid="gdv-caption">@KindLabel@(string.IsNullOrWhiteSpace(Heading) ? "" : $" · section “{Heading}”") · drawn from this generated document's own diagram source — documentation, not verified runtime architecture.</figcaption>
     }
 </figure>
 
@@ -77,15 +65,17 @@
     protected override void OnInitialized() => _mode = InitialMode;
 
     private const int MaxElements = 80;
-    private const double MinZoom = 0.5, MaxZoom = 2.5;
+    private const double MinZoom = 0.25, MaxZoom = 3;
+    private const double PanStep = 60;
     private static readonly (string Id, string Label)[] Modes = [("diagram", "Diagram"), ("steps", "Steps"), ("source", "Source")];
     private static int _counter;
     private readonly string _id = $"gdv{System.Threading.Interlocked.Increment(ref _counter)}";
     private GeneratedDiagram? _diagram;
     private DiagramLayout _layout = DiagramLayout.Empty;
     private string _mode = "diagram", _lastSource = "";
-    private double _zoom = 1;
-    private bool _fit = true, _expanded;
+    private double _zoom = 1, _panX, _panY, _dragX, _dragY;
+    private bool _fit = true, _expanded, _dragging, _focusDialog, _focusExpand;
+    private ElementReference _dialog, _expandButton;
 
     private string Caption => _diagram?.Kind == GeneratedDiagramKind.Sequence ? $"{Label} sequence diagram" : $"{Label} diagram";
     private string Label => string.IsNullOrWhiteSpace(Heading) ? "Document" : Heading;
@@ -103,13 +93,116 @@
         _layout = Drawable ? DiagramLayout.Of(_diagram!) : DiagramLayout.Empty;
     }
 
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    private string KindLabel => _diagram?.Kind == GeneratedDiagramKind.Sequence ? "Sequence diagram" : _diagram is null ? "Diagram" : "Flow / component diagram";
+
+    /// <summary>Zoom keeps the drawing anchored at the top-left; it never re-parses or re-lays out the diagram.</summary>
     private void Zoom(double delta)
     {
         if (_fit) { _fit = false; _zoom = 1; }
-        _zoom = Math.Clamp(_zoom + delta, MinZoom, MaxZoom);
+        _zoom = Math.Round(Math.Clamp(_zoom + delta, MinZoom, MaxZoom), 2);
     }
 
-    private void FitToWidth() { _fit = true; _zoom = 1; }
+    private void FitToWidth() { _fit = true; _zoom = 1; _panX = _panY = 0; }
+    private void Reset() { _fit = false; _zoom = 1; _panX = _panY = 0; }
+
+    private void Pan(double dx, double dy)
+    {
+        if (_fit) { _fit = false; _zoom = 1; }
+        _panX += dx; _panY += dy;
+    }
+
+    private void PointerDown(PointerEventArgs e) { if (e.Button != 0) return; _dragging = true; _dragX = e.ClientX; _dragY = e.ClientY; }
+    private void PointerMove(PointerEventArgs e)
+    {
+        if (!_dragging) return;
+        Pan(e.ClientX - _dragX, e.ClientY - _dragY);
+        _dragX = e.ClientX; _dragY = e.ClientY;
+    }
+    private void PointerUp(PointerEventArgs e) => _dragging = false;
+
+    /// <summary>Wheel zoom only inside the expanded view (inline, the wheel keeps scrolling the document).</summary>
+    private void Wheel(WheelEventArgs e) { if (_expanded) Zoom(e.DeltaY < 0 ? 0.1 : -0.1); }
+
+    private void Key(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "+" or "=": Zoom(0.25); break;
+            case "-" or "_": Zoom(-0.25); break;
+            case "0": Reset(); break;
+            case "f" or "F": FitToWidth(); break;
+            case "ArrowLeft": Pan(PanStep, 0); break;
+            case "ArrowRight": Pan(-PanStep, 0); break;
+            case "ArrowUp": Pan(0, PanStep); break;
+            case "ArrowDown": Pan(0, -PanStep); break;
+        }
+    }
+
+    private void OpenExpanded() { _expanded = true; _focusDialog = true; }
+    private void CloseExpanded() { _expanded = false; _dragging = false; _focusExpand = true; }
+    private void OnDialogKey(KeyboardEventArgs e) { if (e.Key == "Escape") CloseExpanded(); }
+
+    /// <summary>Focus moves into the expanded view when it opens and back to its Expand button when it closes (the reading position is unchanged).</summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            if (_focusDialog) { _focusDialog = false; await _dialog.FocusAsync(); }
+            else if (_focusExpand) { _focusExpand = false; await _expandButton.FocusAsync(); }
+        }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException) { }
+    }
+
+    private RenderFragment ZoomControls() => __builder =>
+    {
+        <div class="gdv-zoom" role="group" aria-label="Zoom">
+            <button type="button" class="btn-secondary btn-small" data-testid="gdv-zoom-out" aria-label="Zoom out" disabled="@(!_fit && _zoom <= MinZoom)" @onclick="() => Zoom(-0.25)">−</button>
+            <span class="gdv-zoom-value" data-testid="gdv-zoom-value" aria-live="polite">@(_fit ? "Fit" : $"{_zoom * 100:0}%")</span>
+            <button type="button" class="btn-secondary btn-small" data-testid="gdv-zoom-in" aria-label="Zoom in" disabled="@(!_fit && _zoom >= MaxZoom)" @onclick="() => Zoom(0.25)">+</button>
+            <button type="button" class="btn-secondary btn-small" data-testid="gdv-fit" aria-pressed="@(_fit ? "true" : "false")" @onclick="FitToWidth">Fit</button>
+            <button type="button" class="btn-secondary btn-small" data-testid="gdv-reset" @onclick="Reset">Reset</button>
+        </div>
+    };
+
+    /// <summary>
+    /// The drawing. Fit: as wide as the reader (no inner scrollbars). Zoomed: a viewport the size of the drawing (bounded) that is panned by
+    /// dragging or the arrow keys — never nested scroll areas.
+    /// </summary>
+    private RenderFragment Canvas(bool expanded) => __builder =>
+    {
+        var height = _fit ? (double?)null : Math.Min(_layout.Height * _zoom + 8, expanded ? 2000 : 640);
+        <div class="gdv-canvas @(_fit ? "is-fit" : "is-zoomed") @(_dragging ? "is-dragging" : "") @(expanded ? "is-expanded" : "")" tabindex="0" role="region"
+             aria-label="@($"{Caption} — drag or use arrow keys to pan, + and − to zoom")" data-testid="gdv-canvas"
+             style="@(height is { } h ? $"height:{F(h)}px" : null)"
+             @onpointerdown="PointerDown" @onpointermove="PointerMove" @onpointerup="PointerUp" @onpointerleave="PointerUp"
+             @onwheel="Wheel" @onwheel:preventDefault="expanded" @onkeydown="Key">
+            <svg class="gdv-svg" data-testid="gdv-svg" viewBox="0 0 @_layout.Width @_layout.Height" width="@(_fit ? "100%" : F(_layout.Width * _zoom))"
+                 style="@(_fit ? null : $"transform:translate({F(_panX)}px,{F(_panY)}px)")"
+                 preserveAspectRatio="xMinYMin meet" role="img" aria-labelledby="@($"{_id}-title{(expanded ? "-x" : "")}")">
+                <title id="@($"{_id}-title{(expanded ? "-x" : "")}")">@Caption — @Summary</title>
+                <defs>
+                    <marker id="@($"{_id}{(expanded ? "x" : "")}-arrow")" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="gdv-arrowhead" /></marker>
+                </defs>
+                @foreach (var line in _layout.Lines)
+                {
+                    <line x1="@F(line.X1)" y1="@F(line.Y1)" x2="@F(line.X2)" y2="@F(line.Y2)" class="@line.Class" marker-end="@(line.Arrow ? $"url(#{_id}{(expanded ? "x" : "")}-arrow)" : null)" />
+                }
+                @foreach (var box in _layout.Boxes)
+                {
+                    <g class="gdv-node" data-testid="gdv-node"><title>@box.Full</title>
+                        <rect x="@F(box.X)" y="@F(box.Y)" width="@F(box.W)" height="@F(box.H)" rx="6" class="@box.Class" />
+                        <text x="@F(box.X + box.W / 2)" y="@F(box.Y + box.H / 2 + 4)" text-anchor="middle" class="gdv-node-text">@box.Text</text>
+                    </g>
+                }
+                @foreach (var label in _layout.Labels)
+                {
+                    <g class="gdv-label-group"><text x="@F(label.X)" y="@F(label.Y)" text-anchor="middle" class="gdv-label" data-testid="gdv-label"><title>@label.Full</title>@label.Text</text></g>
+                }
+            </svg>
+        </div>
+    };
 
     private static string F(double value) => value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
 

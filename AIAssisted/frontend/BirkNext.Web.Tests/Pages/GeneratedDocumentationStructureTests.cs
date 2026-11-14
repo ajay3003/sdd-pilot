@@ -262,4 +262,116 @@ public sealed class GeneratedDocumentationStructureTests : BunitContext
         layout.Boxes.Select(b => b.Full).Should().Contain(["Web app", "M2LB.Person.Api", "PersonDb", "Service Bus"]);
         layout.Lines.Count(l => l.Arrow).Should().Be(3, "one arrow per declared edge — nothing invented");
     }
+
+    // ── reader: library, search, sections, diagram viewer, evidence ────────────────────────────────────────────────
+
+    [Fact]
+    public void The_library_titles_documents_by_their_own_heading_and_filters_by_type_and_text()
+    {
+        var cut = Open("dataflow.md");
+        cut.FindAll("[data-testid=gde-card-title]").Select(t => t.TextContent).Should().Contain(["Data flow", "Changelog"]);
+        cut.Find("#gde-doc-h").TextContent.Should().StartWith("Data flow");
+        cut.Find("[data-testid=gde-doc-type]").Change("ChangeLog");
+        cut.FindAll("[data-testid=gde-document-card]").Select(c => c.GetAttribute("data-role")).Should().Equal("ChangeLog");
+        cut.Find("[data-testid=gde-doc-type]").Change("");
+        cut.Find("[data-testid=gde-doc-search]").Input("openapi");
+        cut.FindAll("[data-testid=gde-document-card]").Select(c => c.GetAttribute("data-role")).Should().Equal("ApiContract");
+        cut.Find("[data-testid=gde-doc-search]").Input("nothing like this");
+        cut.Find("[data-testid=gde-doc-none]");
+    }
+
+    [Fact]
+    public void Search_highlights_matches_in_Read_counts_them_and_steps_through_them()
+    {
+        var cut = Open("dataflow.md");
+        cut.Find("[data-testid=gde-search]").Input("flow");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gde-search-count]").TextContent.Should().Be("1 of 2"));
+        cut.FindAll("[data-testid=gde-read] mark.gde-hit").Should().HaveCount(2, "the H1 'Data flow' and the H2 'REST Ingestion Flow'");
+        cut.Find("[data-testid=gde-search-next]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gde-search-count]").TextContent.Should().Be("2 of 2"));
+        JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == "gde-hit-1");
+        Tab(cut, "Source");
+        cut.FindAll("[data-testid=gde-source-lines] li[data-hit=true]").Should().HaveCount(2);
+        cut.Find("[data-testid=gde-search-clear]").Click();
+        cut.FindAll("[data-testid=gde-search-count]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_section_deep_link_opens_Read_at_that_heading_and_the_outline_marks_it()
+    {
+        var anchor = BirkNext.Web.Services.GeneratedDocumentationExplorer.Outline(BirkNext.Web.Services.GeneratedDocumentationExplorer.ReadSegments(
+            $"# Data flow\n\n## REST Ingestion Flow\n\n```mermaid\n{Sequence}\n```\n")).Single(o => o.Text == "REST Ingestion Flow").AnchorId;
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"generated-documentation-explorer?import=i1&module=Person&document={Uri.EscapeDataString("Person/autodoc/dataflow.md")}&section={anchor}");
+        var cut = Render<ExplorerPage>();
+        cut.Find("[data-testid=gde-read]");
+        JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == anchor);
+        Tab(cut, "Structure");
+        cut.Find($"[data-testid=gde-outline-item][data-anchor='{anchor}']").GetAttribute("aria-current").Should().Be("location");
+    }
+
+    [Fact]
+    public void A_diagram_zooms_and_pans_by_keyboard_resets_and_opens_in_an_expanded_dialog_that_Escape_closes()
+    {
+        var cut = Open("dataflow.md");
+        var canvas = cut.Find("[data-testid=gde-read] [data-testid=gdv-canvas]");
+        canvas.ClassList.Should().Contain("is-fit");
+        canvas.KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "+" });
+        cut.Find("[data-testid=gdv-zoom-value]").TextContent.Should().Be("125%");
+        cut.Find("[data-testid=gdv-canvas]").KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "ArrowRight" });
+        cut.Find("[data-testid=gdv-svg]").GetAttribute("style").Should().Contain("translate(-60px,0px)");
+        cut.Find("[data-testid=gdv-reset]").Click();
+        cut.Find("[data-testid=gdv-zoom-value]").TextContent.Should().Be("100%");
+        cut.Find("[data-testid=gdv-caption]").TextContent.Should().Contain("Sequence diagram").And.Contain("REST Ingestion Flow").And.Contain("not verified runtime architecture");
+
+        cut.Find("[data-testid=gdv-expand]").Click();
+        var dialog = cut.Find("[data-testid=gdv-dialog]");
+        dialog.GetAttribute("role").Should().Be("dialog");
+        dialog.GetAttribute("aria-modal").Should().Be("true");
+        dialog.QuerySelector("[data-testid=gdv-svg]").Should().NotBeNull();
+        dialog.KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "Escape" });
+        cut.FindAll("[data-testid=gdv-dialog]").Should().BeEmpty();
+        cut.Find("[data-testid=gde-read] [data-testid=gdv-canvas]");
+    }
+
+    [Fact]
+    public void Highlighting_marks_text_only_and_never_injects_markup()
+    {
+        var html = "<p>Flow and <a href=\"flow.md\">flow</a> &lt;script&gt;</p>";
+        var marked = BirkNext.Web.Services.GeneratedDocumentationReader.Highlight(html, "flow", 0, out var count);
+        count.Should().Be(2);
+        marked.Should().Contain("href=\"flow.md\"", "attributes are untouched");
+        BirkNext.Web.Services.GeneratedDocumentationReader.Highlight(html, "<script>", 0, out var scripts).Should().NotContain("<script>");
+        scripts.Should().Be(1, "the encoded text is found, and the result stays encoded");
+        BirkNext.Web.Services.GeneratedDocumentationReader.Highlight(html, "f", 0, out var tooShort).Should().Be(html);
+        tooShort.Should().Be(0);
+    }
+
+    [Fact]
+    public void Only_exact_registered_names_become_system_links_and_outline_comparison_reports_structure_only()
+    {
+        BirkNext.Scopes.SystemOverviewItem S(string key, string name, params string[] aliases) => new()
+        {
+            Key = key, Name = name, Aliases = [.. aliases.Select(a => new BirkNext.Scopes.SystemAliasInfo(a, BirkNext.Interpretation.AliasState.Explicit, "profile"))],
+        };
+        var systems = new[] { S("Service|m2lb.person.api", "M2LB.Person.Api"), S("System|person", "Person"), S("System|mu", "MU", "Meldingsutveksleren") };
+        var mentions = BirkNext.Web.Services.GeneratedDocumentationReader.SystemMentions("M2LB.Person.Api publishes to the bus. M2LB.PersonBiRKAdapter.Worker reads it. Meldingsutveksleren forwards.", systems);
+        mentions.Select(m => (m.System.Key, m.Mention)).Should().Equal(("Service|m2lb.person.api", "M2LB.Person.Api"), ("System|mu", "Meldingsutveksleren"));
+
+        var diff = BirkNext.Web.Services.GeneratedDocumentationReader.CompareOutline(
+            "# A\n\n## Old\n\n```mermaid\ngraph TB\n  A --> B\n```\n", "# A\n\n## New\n\n```mermaid\ngraph TB\n    A --> B\n```\n");
+        diff.Added.Should().Equal("New");
+        diff.Removed.Should().Equal("Old");
+        diff.DiagramsChanged.Should().BeFalse("indentation is not a change of the diagram");
+    }
+
+    [Fact]
+    public void Provenance_leads_with_the_evidence_kind_and_keeps_identifiers_under_technical_details()
+    {
+        var cut = Open("dataflow.md");
+        Tab(cut, "Provenance");
+        cut.Find("[data-testid=gde-evidence-kind]").TextContent.Should().Contain("Implementation-derived").And.Contain("not runtime-verified");
+        cut.Find("[data-testid=gde-technical] [data-testid=gde-fingerprint]").TextContent.Should().Be("fp-dataflow.md");
+        cut.Find("[data-testid=gde-revisions-none]");
+        cut.Find("[data-testid=gde-systems-unavailable]").TextContent.Should().Contain("not available");
+    }
 }

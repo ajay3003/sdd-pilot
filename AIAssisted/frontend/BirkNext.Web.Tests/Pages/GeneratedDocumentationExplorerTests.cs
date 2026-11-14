@@ -165,7 +165,8 @@ public sealed class GeneratedDocumentationExplorerTests : BunitContext
         cut.FindAll("[data-testid=gde-tab]").Single(t => t.GetAttribute("data-tab") == "Provenance").Click();
         cut.Find("[data-testid=gde-fingerprint]").TextContent.Should().Be("fp-Person-data-model.md");
         cut.Find("[data-testid=gde-search]").Input("BarnType");
-        cut.Find("[data-testid=gde-search-results]").TextContent.Should().Contain("BarnType");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gde-search-count]").TextContent.Should().NotBe("No match"));
+        cut.Find("[data-testid=gde-search-where]").TextContent.Should().Contain("highlighted in Read and Source");
     }
 
     [Fact]
