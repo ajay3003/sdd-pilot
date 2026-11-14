@@ -20,6 +20,8 @@ public sealed class CriticalE2EBuildEvidenceTests
         {
             Id = id, Module = module, Name = id, Mode = CriticalE2EExecutionMode.CompanionBrowser, ProfileId = "dev", EnvironmentId = "env-1",
             Enabled = enabled, RequiredForRelease = required, Kind = kind,
+            // Gate policy 2: these release rules are about Business E2E flows (a legacy, unclassified flow needs review instead).
+            TestType = CriticalE2ETestType.BusinessE2E,
             Boundary = new CriticalE2EAutomationBoundary { Start = "Approved application page", End = "Status visible" },
             Steps = [new CriticalE2EStepDefinition { StepId = "s1", BrowserAction = CompanionActionKind.AssertVisible,
                 Selector = new CompanionSelector { Kind = CompanionSelectorKind.TestId, Value = "status" }, IsFinalAssertion = true }],

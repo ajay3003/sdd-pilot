@@ -264,6 +264,112 @@ public static class CriticalE2EReleaseRules
 }
 
 /// <summary>
+/// Versioned release gate policy. <see cref="Legacy"/> ("critical-e2e-gate/1") is the gate as it was before test types: every critical,
+/// release-ready required flow that passed on the build counts. <see cref="Current"/> ("critical-e2e-gate/2") adds the test type:
+/// <list type="bullet">
+/// <item>UI smoke never satisfies Business E2E; UI functional is functional coverage only; Integration/API is integration coverage only.</item>
+/// <item>Business E2E counts only when the flow is Critical AND release-ready AND has passed execution evidence on the named build.</item>
+/// <item>Criticality alone never overrides the test type. No passed execution evidence, no passed-flow credit.</item>
+/// <item>Unknown (stored before test types) is never silently Business E2E: "Legacy classification requires review" — never PASS.</item>
+/// </list>
+/// Historical results stay as they were: the policy is chosen per build from the evidence recorded on it. Runs record the policy in force
+/// (<see cref="CriticalE2ERunResult.GatePolicyVersion"/>); a build whose evidence is only runs without it is evaluated by the legacy policy.
+/// Pure: nothing here starts a run, stores anything or contacts anything.
+/// </summary>
+public static class CriticalE2EGatePolicy
+{
+    public const string Legacy = "critical-e2e-gate/1";
+    public const string Current = "critical-e2e-gate/2";
+
+    public static bool IsLegacy(string? version) => version == Legacy;
+
+    /// <summary>"critical-e2e-gate/2 · test type aware" / "critical-e2e-gate/1 · legacy (criticality only)".</summary>
+    public static string Label(string? version) => IsLegacy(version)
+        ? $"{Legacy} · legacy (criticality only, evidence recorded before test types)"
+        : $"{Current} · test type aware";
+
+    /// <summary>
+    /// The policy that evaluates a build. No build, or no run recorded on it: <see cref="Current"/>. Only runs recorded before versioned
+    /// policies (no <see cref="CriticalE2ERunResult.GatePolicyVersion"/>): <see cref="Legacy"/>, so that build's verdict is what it was.
+    /// Any run recorded under a versioned policy makes it a new evaluation under <see cref="Current"/>.
+    /// </summary>
+    public static string ForBuild(IEnumerable<CriticalE2ERunResult> history, string? buildId)
+    {
+        if (string.IsNullOrWhiteSpace(buildId)) return Current;
+        var onBuild = history.Where(r => string.Equals(r.BuildId?.Trim(), buildId.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+        return onBuild.Count > 0 && onBuild.All(r => string.IsNullOrWhiteSpace(r.GatePolicyVersion)) ? Legacy : Current;
+    }
+
+    /// <summary>"counts", "functional-only", "integration-only", "never", "legacy-review", "not-executed", "not-ready".</summary>
+    public static string Token(CriticalE2EGateEligibilityKind kind) => kind switch
+    {
+        CriticalE2EGateEligibilityKind.Counts => "counts",
+        CriticalE2EGateEligibilityKind.FunctionalOnly => "functional-only",
+        CriticalE2EGateEligibilityKind.IntegrationOnly => "integration-only",
+        CriticalE2EGateEligibilityKind.Never => "never",
+        CriticalE2EGateEligibilityKind.LegacyReview => "legacy-review",
+        CriticalE2EGateEligibilityKind.NotReady => "not-ready",
+        _ => "not-executed",
+    };
+
+    /// <summary>The short badge text; the reason carries the why.</summary>
+    public static string ShortLabel(CriticalE2EGateEligibilityKind kind) => kind switch
+    {
+        CriticalE2EGateEligibilityKind.Counts => "Counts toward Business E2E",
+        CriticalE2EGateEligibilityKind.FunctionalOnly => "Functional only",
+        CriticalE2EGateEligibilityKind.IntegrationOnly => "Integration only",
+        CriticalE2EGateEligibilityKind.Never => "Never counts",
+        CriticalE2EGateEligibilityKind.LegacyReview => "Legacy review",
+        CriticalE2EGateEligibilityKind.NotReady => "Not release-ready",
+        _ => "No passed run",
+    };
+
+    public const string LegacyReviewReason = "Legacy classification requires review — classify the flow's test type in the editor before it can count toward Business E2E";
+
+    /// <param name="policyVersion">The policy evaluating the build (<see cref="ForBuild"/>).</param>
+    /// <param name="evidenceStatus">The status of the run that is release evidence for the named build (latest on it, current definition,
+    /// release evidence when recorded); null when there is none.</param>
+    public static CriticalE2EGateEligibility Evaluate(string policyVersion, CriticalE2EFlowKind kind, CriticalE2ETestType testType,
+        CriticalE2EFlowReadiness readiness, bool buildNamed, CriticalE2EStatus? evidenceStatus)
+    {
+        var legacy = IsLegacy(policyVersion);
+        CriticalE2EGateEligibility Result(CriticalE2EGateEligibilityKind eligibility, string reason, bool counts) =>
+            new() { PolicyVersion = legacy ? Legacy : Current, Eligibility = eligibility, Reason = reason, CountsTowardBusinessE2E = counts };
+
+        if (kind != CriticalE2EFlowKind.Critical)
+            return Result(CriticalE2EGateEligibilityKind.Never, legacy ? "Diagnostic flow — never release evidence"
+                : "Diagnostic flow — never counts toward Business E2E, whatever its test type", false);
+
+        if (!legacy)
+        {
+            // The test type decides what a critical flow can prove; criticality never overrides it.
+            switch (testType)
+            {
+                case CriticalE2ETestType.UiSmoke: return Result(CriticalE2EGateEligibilityKind.Never, "UI smoke — never counts toward Business E2E", false);
+                case CriticalE2ETestType.UiFunctional: return Result(CriticalE2EGateEligibilityKind.FunctionalOnly, "UI functional — counts as functional coverage only, not Business E2E", false);
+                case CriticalE2ETestType.IntegrationApi: return Result(CriticalE2EGateEligibilityKind.IntegrationOnly, "Integration/API — counts toward integration coverage only, not Business E2E", false);
+                case CriticalE2ETestType.Other: return Result(CriticalE2EGateEligibilityKind.Never, "Other test type — never counts toward Business E2E", false);
+                case CriticalE2ETestType.Unknown: return Result(CriticalE2EGateEligibilityKind.LegacyReview, LegacyReviewReason, false);
+            }
+        }
+
+        var subject = legacy ? "Critical flow (legacy policy)" : "Business E2E";
+        if (!readiness.ReleaseReady)
+            return Result(CriticalE2EGateEligibilityKind.NotReady, $"{subject} — definition not release-ready: {readiness.Blockers.FirstOrDefault()?.Text ?? "see blockers"}", true);
+        if (!buildNamed) return Result(CriticalE2EGateEligibilityKind.NotExecuted, $"{subject} — no build selected, so no passed-run credit", true);
+        return evidenceStatus switch
+        {
+            CriticalE2EStatus.Passed => Result(CriticalE2EGateEligibilityKind.Counts, legacy
+                ? "Counts — critical, release-ready and passed on this build (legacy policy: evidence recorded before test types)"
+                : "Counts — Business E2E, critical, release-ready and passed on this build", true),
+            CriticalE2EStatus.Failed => Result(CriticalE2EGateEligibilityKind.NotExecuted, $"{subject} — failed on this build, no credit", true),
+            null or CriticalE2EStatus.NotRun => Result(CriticalE2EGateEligibilityKind.NotExecuted, $"{subject} — no passed run on this build, no credit", true),
+            { } status => Result(CriticalE2EGateEligibilityKind.NotExecuted, $"{subject} — {status.ToString().ToLowerInvariant()} on this build, no credit", true),
+        };
+    }
+}
+
+/// <summary>
 /// Boundary proposals from Integration Topology. A browser flow normally ends at browser-visible acceptance; what happens downstream
 /// (messaging, resources, external systems) belongs to the providers that verify it. A proposal only — the author applies or edits it.
 /// </summary>

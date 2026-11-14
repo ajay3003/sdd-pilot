@@ -19,6 +19,8 @@ public sealed class CriticalE2ECoverageTests
         {
             Id = id, Module = module, Name = id, Mode = mode, ProfileId = "dev", EnvironmentId = "env-1",
             Enabled = enabled, RequiredForRelease = required,
+            // Gate policy 2: these release rules are about Business E2E flows (a legacy, unclassified flow needs review instead).
+            TestType = CriticalE2ETestType.BusinessE2E,
             Boundary = new CriticalE2EAutomationBoundary { Start = "Approved application page", End = "Status visible" },
             // A real assertion names the element it asserts about; one that does not cannot run, which is exactly what
             // the wellFormed: false case exercises.

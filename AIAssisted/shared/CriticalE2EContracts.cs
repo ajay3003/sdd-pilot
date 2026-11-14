@@ -201,6 +201,44 @@ public enum CriticalE2ETestType
     Other,
 }
 
+/// <summary>
+/// Whether a flow counts toward Business E2E release coverage under the gate policy that evaluated it, and if not, why. Shown per flow
+/// beside the release gate; never a run result. The first value is the safe default: no passed-run credit.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CriticalE2EGateEligibilityKind
+{
+    /// <summary>Would count, but there is no passed execution evidence on the named build (not run, failed, blocked, no build).</summary>
+    NotExecuted,
+    /// <summary>Critical Business E2E (or any critical flow under the legacy policy), release-ready, passed on the named build.</summary>
+    Counts,
+    /// <summary>UI functional: functional coverage only, never Business E2E.</summary>
+    FunctionalOnly,
+    /// <summary>Integration/API: integration coverage only, never Business E2E.</summary>
+    IntegrationOnly,
+    /// <summary>UI smoke, Other, or a diagnostic flow: never counts toward Business E2E.</summary>
+    Never,
+    /// <summary>Stored before test types existed (Unknown): a person must classify it in the editor before it can count. Never PASS.</summary>
+    LegacyReview,
+    /// <summary>Business E2E, but the definition is not release-ready (module, outcome, boundary, selector, Test Data …).</summary>
+    NotReady,
+}
+
+/// <summary>One flow's eligibility under one gate policy, with its provenance (the policy version that decided it).</summary>
+public sealed record CriticalE2EGateEligibility
+{
+    /// <summary>The gate policy that evaluated this flow (<see cref="CriticalE2EGatePolicy.Legacy"/> or <see cref="CriticalE2EGatePolicy.Current"/>).</summary>
+    public string PolicyVersion { get; init; } = CriticalE2EGatePolicy.Legacy;
+    public CriticalE2EGateEligibilityKind Eligibility { get; init; } = CriticalE2EGateEligibilityKind.NotExecuted;
+    /// <summary>"UI smoke — never counts toward Business E2E", "Legacy classification requires review — …".</summary>
+    public string Reason { get; init; } = "";
+    /// <summary>
+    /// Definition-level: can this flow carry Business E2E coverage at all (independent of any run)? Under the legacy policy every critical
+    /// flow could; under policy 2 only a Critical Business E2E flow can. Default true so payloads without it read as before.
+    /// </summary>
+    public bool CountsTowardBusinessE2E { get; init; } = true;
+}
+
 /// <summary>Why a pick ended the way it did. Each is its own outcome; none of them is a test result.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum CriticalE2EPickOutcome
@@ -606,6 +644,9 @@ public sealed record CriticalE2ERunResult
     /// <summary>The stable TestDataAssetIds the run actually used. Null in runs recorded before stable ids: their identity is "not recorded" and is
     /// never inferred from today's asset with the same alias.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public List<string>? TestDataAssetIds { get; init; }
+    /// <summary>The release gate policy in force when the run was recorded (<see cref="CriticalE2EGatePolicy.Current"/>). Null = recorded before
+    /// gate policies were versioned: a build whose evidence is only such runs keeps being evaluated by <see cref="CriticalE2EGatePolicy.Legacy"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? GatePolicyVersion { get; init; }
     /// <summary>The Companion page the run was bound to (identity only).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? CompanionPageId { get; init; }
 
@@ -725,8 +766,10 @@ public sealed record CriticalE2EModuleCoverage
     public List<CriticalE2EFlowSummary> Flows { get; init; } = [];
     /// <summary>A registered delivery module. Manual labels are listed separately and never count.</summary>
     public bool Registered { get; init; } = true;
-    /// <summary>Covered only by a required, enabled, critical flow whose definition is release-ready.</summary>
-    public bool Covered => Registered && Flows.Any(f => f.RequiredForRelease && f.Enabled && f.Kind == CriticalE2EFlowKind.Critical && f.Readiness.ReleaseReady);
+    /// <summary>Covered only by a required, enabled, critical flow whose definition is release-ready and that can carry Business E2E coverage
+    /// under the gate policy that evaluated it (policy 2: test type Business E2E; legacy policy: any critical flow).</summary>
+    public bool Covered => Registered && Flows.Any(f => f.RequiredForRelease && f.Enabled && f.Kind == CriticalE2EFlowKind.Critical && f.Readiness.ReleaseReady
+        && f.Gate.CountsTowardBusinessE2E);
     /// <summary>"M01 · required flow ready · no build selected" style text.</summary>
     public string Status { get; init; } = "";
 }
@@ -767,6 +810,8 @@ public sealed record CriticalE2EFlowSummary
     public string? LastResultLabel { get; init; }
     /// <summary>The last run executed an older definition version: "Review required" before it is read as current.</summary>
     public bool LastRunStale { get; init; }
+    /// <summary>Whether (and why) this flow counts toward Business E2E under the gate policy that evaluated it, with that policy's version.</summary>
+    public CriticalE2EGateEligibility Gate { get; init; } = new();
 }
 
 /// <summary>The release verdict. Incomplete and Blocked are different answers and must not be merged into "not ready".</summary>
@@ -787,6 +832,11 @@ public enum CriticalE2EReleaseDisposition
     /// Appended so existing values keep their meaning.
     /// </summary>
     NotEvaluated,
+    /// <summary>
+    /// Gate policy 2 only: a required critical flow was stored before test types existed and must be classified by a person before it can
+    /// count toward Business E2E. Nothing failed, nothing passed by default. Never Ready. Appended so existing values keep their meaning.
+    /// </summary>
+    ReviewRequired,
 }
 
 public sealed record CriticalE2EReleaseStatus
@@ -808,6 +858,13 @@ public sealed record CriticalE2EReleaseStatus
     public int RequiredFlowsNotReady { get; init; }
     /// <summary>"Manual" or "Delivery evidence".</summary>
     public string? BuildSource { get; init; }
+    /// <summary>The gate policy that produced this verdict (provenance). A build whose evidence was recorded before versioned policies is
+    /// evaluated by <see cref="CriticalE2EGatePolicy.Legacy"/>, so its verdict is unchanged; anything else by <see cref="CriticalE2EGatePolicy.Current"/>.</summary>
+    public string PolicyVersion { get; init; } = CriticalE2EGatePolicy.Legacy;
+    /// <summary>Policy 2: required critical flows that need a person to classify their test type ("Legacy classification requires review").</summary>
+    public int RequiredFlowsLegacyReview { get; init; }
+    /// <summary>Required flows that count toward Business E2E on this build (passed, release-ready, Critical, Business E2E under policy 2).</summary>
+    public int BusinessE2EFlowsCounted { get; init; }
 }
 
 // ── Page contracts (BirkNext UI ⇄ backend) ─────────────────────────────────────

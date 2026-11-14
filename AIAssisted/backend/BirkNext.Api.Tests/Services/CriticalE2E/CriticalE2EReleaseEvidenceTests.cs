@@ -47,6 +47,8 @@ public sealed class CriticalE2EReleaseEvidenceTests : IDisposable
         {
             Id = "m01-roles", Module = "M01", Name = "Open general roles", Mode = CriticalE2EExecutionMode.CompanionBrowser, ProfileId = "dev", EnvironmentId = Env,
             RequiredForRelease = true, Steps = [Click()], Boundary = BrowserOnly,
+            // Gate policy 2: release evidence here is about a Business E2E flow (a legacy, unclassified flow needs review instead).
+            TestType = CriticalE2ETestType.BusinessE2E,
             FinalOutcome = new CriticalE2EFinalOutcome { Kind = CriticalE2EOutcomeKind.UrlEquals, Expected = "/admin/general-roles" },
         };
         return change is null ? flow : change(flow);
@@ -308,6 +310,7 @@ public sealed class CriticalE2EReleaseEvidenceTests : IDisposable
         var (run, _) = await RunAsync(flow, _ => CriticalE2EStatus.Passed);
         run.ReleaseEvidence.Should().BeTrue();
         run.FlowVersion.Should().Be(1);
+        run.GatePolicyVersion.Should().Be(CriticalE2EGatePolicy.Current, "the run records the gate policy in force (provenance)");
         run.DownstreamVerified.Should().BeFalse();
         run.DownstreamOutcome.Should().Be("Not verified by this flow · Service Bus / Bufdata verified separately");
         CriticalE2EReleaseRules.ResultLabel(run).Should().Be("Browser journey passed · downstream not verified by this flow");

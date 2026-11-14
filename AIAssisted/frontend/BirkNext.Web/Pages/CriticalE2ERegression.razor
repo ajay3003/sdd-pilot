@@ -83,6 +83,7 @@
             <section class="e2e-headline e2e-tone-@headline.Tone.ToString().ToLowerInvariant()" data-testid="e2e-verdict" aria-label="Release regression">
                 <h2 data-testid="e2e-verdict-label">@headline.Label</h2>
                 <p data-testid="e2e-verdict-detail">@headline.Detail</p>
+                <p class="e2e-row-detail" data-testid="e2e-gate-policy" data-policy="@overview.Release.PolicyVersion">@CriticalE2EPresentation.GatePolicyLabel(overview.Release)</p>
             </section>
         }
 
@@ -271,6 +272,12 @@
                                         @if (diagnostic) { <span class="e2e-badge e2e-badge-smoke" data-testid="e2e-kind-@row.FlowId">Smoke</span> }
                                         <span class="e2e-flow-name">@row.Name</span>
                                         <span class="e2e-badge e2e-badge-muted" data-testid="e2e-test-type" data-flow-id="@row.FlowId" data-test-type="@row.TestType">@CriticalE2EPresentation.TestTypeLabel(row.TestType)</span>
+                                        @if (row.Gate is { } gate)
+                                        {
+                                            @* Whether this flow counts toward Business E2E under the gate policy that evaluated it, and why. Never a result. *@
+                                            <span class="e2e-row-detail e2e-tone-@gate.Tone.ToString().ToLowerInvariant()" data-testid="e2e-gate-eligibility" data-flow-id="@row.FlowId"
+                                                  data-eligibility="@gate.Token" data-policy="@gate.PolicyVersion" title="@gate.Label">@gate.Reason</span>
+                                        }
                                         @if (CriticalE2EScopePresentation.Contributors(_scopeSelection, row.FlowId) is > 1 and var contributors) { <span class="e2e-row-detail" data-testid="e2e-scope-from-@row.FlowId">from @contributors scopes</span> }
                                         @if (!row.Enabled) { <span class="e2e-badge e2e-badge-muted" data-testid="e2e-enabled-@row.FlowId">Disabled</span> }
                                         @if (row.ConfigurationProblem is { Length: > 0 } problem) { <span class="e2e-row-detail e2e-tone-warning" data-testid="e2e-problem-@row.FlowId">Needs attention: @problem</span> }

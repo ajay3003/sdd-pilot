@@ -76,6 +76,8 @@ public sealed class CriticalE2ERunner(IEnumerable<ICriticalE2EStepExecutor> exec
                 Boundary = flow.Boundary,
                 TestDataAliases = CriticalE2ETestData.Aliases(flow) is { Count: > 0 } aliases ? [.. aliases] : null,
                 CompanionPageId = flow.Mode == CriticalE2EExecutionMode.CompanionBrowser ? boundPage : null,
+                // Provenance: the gate policy in force when this evidence was recorded. Runs without it predate versioned policies.
+                GatePolicyVersion = CriticalE2EGatePolicy.Current,
             };
         }
 

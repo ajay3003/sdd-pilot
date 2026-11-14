@@ -38,7 +38,10 @@ public sealed record CriticalE2EFlowRow(
     bool Runnable, string? RunBlockedReason,
     string Outcome = "", int ActionSteps = 0, int Assertions = 0, string TestData = "Not required", string Boundary = "Not explicit",
     bool ModuleResolved = true, string? ReleaseStatus = null, string? ReleaseBlocker = null, string? BoundaryText = null,
-    CriticalE2ETestType TestType = CriticalE2ETestType.Unknown);
+    CriticalE2ETestType TestType = CriticalE2ETestType.Unknown, CriticalE2EGateView? Gate = null);
+
+/// <summary>Whether a flow counts toward Business E2E under the gate policy that evaluated it: token (data-eligibility), short label, reason, tone.</summary>
+public sealed record CriticalE2EGateView(string Token, string Label, string Reason, CriticalE2ETone Tone, string PolicyVersion);
 
 /// <summary>The one global run action, or none. Never a large disabled control with nothing to run behind it.</summary>
 public sealed record CriticalE2ERunAction(CriticalE2EExecutionMode Mode, string Label, int FlowCount, bool Enabled, string? Reason);
@@ -104,9 +107,26 @@ public static class CriticalE2EPresentation
             CriticalE2EReleaseDisposition.Ready => new("Release regression ready", CriticalE2ETone.Good, release.Summary),
             // Incomplete is not a failure. Nothing is known to be wrong; nobody has looked yet.
             CriticalE2EReleaseDisposition.Incomplete => new("Release regression incomplete", CriticalE2ETone.Warning, release.Summary),
+            // Gate policy 2: an unclassified (legacy) required flow is never read as a pass, nor as a failure.
+            CriticalE2EReleaseDisposition.ReviewRequired => new("Release regression needs review", CriticalE2ETone.Warning, release.Summary),
             _ => new("Release regression blocked", CriticalE2ETone.Bad, release.Summary),
         };
     }
+
+    /// <summary>"Gate policy critical-e2e-gate/2 · test type aware" — the policy that produced the verdict (provenance).</summary>
+    public static string GatePolicyLabel(CriticalE2EReleaseStatus release) => $"Gate policy {CriticalE2EGatePolicy.Label(release.PolicyVersion)}";
+
+    /// <summary>One flow's Business E2E eligibility, as the row shows it. Never a run result.</summary>
+    public static CriticalE2EGateView GateView(CriticalE2EGateEligibility gate) => new(
+        CriticalE2EGatePolicy.Token(gate.Eligibility), CriticalE2EGatePolicy.ShortLabel(gate.Eligibility),
+        gate.Reason.Length > 0 ? gate.Reason : CriticalE2EGatePolicy.ShortLabel(gate.Eligibility),
+        gate.Eligibility switch
+        {
+            CriticalE2EGateEligibilityKind.Counts => CriticalE2ETone.Good,
+            CriticalE2EGateEligibilityKind.LegacyReview or CriticalE2EGateEligibilityKind.NotReady or CriticalE2EGateEligibilityKind.NotExecuted => CriticalE2ETone.Warning,
+            _ => CriticalE2ETone.Neutral,
+        },
+        gate.PolicyVersion);
 
     /// <summary>"0 / 4 modules covered" — registered delivery modules covered by release-ready required flows. A typed module label never counts.</summary>
     public static string Coverage(CriticalE2EReleaseStatus release) =>
@@ -200,7 +220,7 @@ public static class CriticalE2EPresentation
                     TestData: readiness.TestDataStatus, Boundary: flow.BoundaryStatus, ModuleResolved: readiness.ModuleResolved,
                     ReleaseStatus: flow.Kind == CriticalE2EFlowKind.Critical && flow.RequiredForRelease ? readiness.ReleaseReady ? "Release-ready" : "Not release-ready" : null,
                     ReleaseBlocker: flow.RequiredForRelease ? readiness.Blockers.FirstOrDefault()?.Text : null, BoundaryText: flow.BoundaryText,
-                    TestType: flow.TestType);
+                    TestType: flow.TestType, Gate: GateView(flow.Gate));
             }).ToList();
 
     /// <summary>
