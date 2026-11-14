@@ -106,7 +106,7 @@ public sealed class CanonicalRequestException(string message) : Exception(messag
 public sealed partial class CanonicalInterpretationService(
     CanonicalInterpretationDbContext db, ICanonicalSourceReader sources, TimeProvider clock, ICanonicalWorkItemReader? workItems = null,
     IEnumerable<IntegrationTopology.ITopologyProfile>? profiles = null, IEnumerable<IntegrationJourneys.IIntegrationJourneyPack>? packs = null,
-    ICanonicalGuideReader? guides = null)
+    ICanonicalGuideReader? guides = null, BirkNext.Api.Services.CriticalE2E.ICriticalE2EService? criticalE2E = null)
 {
     public const string WorkItemRuleSet = WorkItemInterpreter.RuleSetVersion;
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);

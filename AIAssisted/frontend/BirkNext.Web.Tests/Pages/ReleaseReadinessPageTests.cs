@@ -45,8 +45,8 @@ public sealed class ReleaseReadinessPageTests : BunitContext
             new Dictionary<string, string> { ["module"] = "SkoleAdapter" }, Now, Now);
         var api = new Mock<ICanonicalInterpretationApiService>();
         api.Setup(a => a.TraceFeaturesAsync("dev", null, It.IsAny<CancellationToken>())).ReturnsAsync(([new TraceFeatureRow(feature, 1, 1, 1, 0, 0, 1, 0)], (string?)null));
-        api.Setup(a => a.ReleaseReadinessAsync("dev", It.IsAny<IReadOnlyList<string>>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string _, IReadOnlyList<string>? modules, string? _, CancellationToken _) => (A(modules is { Count: > 0 } ? GateDecision.Blocked : GateDecision.ReadyWithLimitations, [.. modules ?? []]), (string?)null));
+        api.Setup(a => a.ReleaseReadinessAsync("dev", It.IsAny<IReadOnlyList<string>>(), It.IsAny<string?>(), It.IsAny<ReleaseEvaluationContext?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string _, IReadOnlyList<string>? modules, string? _, ReleaseEvaluationContext? _, CancellationToken _) => (A(modules is { Count: > 0 } ? GateDecision.Blocked : GateDecision.ReadyWithLimitations, [.. modules ?? []]), (string?)null));
         api.Setup(a => a.ReleaseReportsAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(([], (string?)null));
         Services.AddSingleton(api.Object);
         return api;
@@ -73,7 +73,7 @@ public sealed class ReleaseReadinessPageTests : BunitContext
         cut.Find("[data-testid=rr-module-search]").Input("skole");
         cut.Find("[data-testid=rr-module][data-module=SkoleAdapter]").Change(true);
         cut.WaitForAssertion(() => cut.Find("[data-testid=rr-scope-label]").TextContent.Should().Be("SkoleAdapter"));
-        api.Verify(a => a.ReleaseReadinessAsync("dev", It.Is<IReadOnlyList<string>>(m => m.SequenceEqual(new[] { "SkoleAdapter" })), It.IsAny<string?>(), It.IsAny<CancellationToken>()));
+        api.Verify(a => a.ReleaseReadinessAsync("dev", It.Is<IReadOnlyList<string>>(m => m.SequenceEqual(new[] { "SkoleAdapter" })), It.IsAny<string?>(), It.IsAny<ReleaseEvaluationContext?>(), It.IsAny<CancellationToken>()));
         cut.Find("[data-testid=rr-tab-overview]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=rr-decision]").GetAttribute("data-decision").Should().Be("Blocked"));
         cut.Find("[data-testid=rr-blockers]").TextContent.Should().Contain("Identity conflict");
@@ -83,7 +83,7 @@ public sealed class ReleaseReadinessPageTests : BunitContext
         cut.Find("[data-testid=rr-tab-scope]").Click();
         cut.Find("[data-testid=rr-scope-entire]").Change(true);
         cut.WaitForAssertion(() => cut.Find("[data-testid=rr-scope-label]").TextContent.Should().Be("Entire project"));
-        api.Verify(a => a.ReleaseReadinessAsync("dev", It.Is<IReadOnlyList<string>>(m => m.Count == 0), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.AtLeast(2));
+        api.Verify(a => a.ReleaseReadinessAsync("dev", It.Is<IReadOnlyList<string>>(m => m.Count == 0), It.IsAny<string?>(), It.IsAny<ReleaseEvaluationContext?>(), It.IsAny<CancellationToken>()), Times.AtLeast(2));
     }
 
     [Fact]
@@ -124,7 +124,7 @@ public sealed class ReleaseReadinessPageTests : BunitContext
         var cut = Render<ReleaseReadiness>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=rr-report-error]").TextContent.Should().Contain("404"));
         cut.FindAll("[data-testid=rr-decision]").Should().BeEmpty();
-        api.Verify(a => a.ReleaseReadinessAsync(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never());
+        api.Verify(a => a.ReleaseReadinessAsync(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>(), It.IsAny<string?>(), It.IsAny<ReleaseEvaluationContext?>(), It.IsAny<CancellationToken>()), Times.Never());
     }
 
     [Fact]
@@ -136,7 +136,7 @@ public sealed class ReleaseReadinessPageTests : BunitContext
                 "Required relationship evidence has not been prepared: no relationship analysis exists for this project yet, so the release scope is unknown.", [],
                 "Analyze relationships in Relationship Review.", "correlation-review")],
             [], ["Scope: Analyze relationships in Relationship Review."], "release/1", "governance/1", Now);
-        api.Setup(a => a.ReleaseReadinessAsync("dev", It.IsAny<IReadOnlyList<string>>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync((unprepared, (string?)null));
+        api.Setup(a => a.ReleaseReadinessAsync("dev", It.IsAny<IReadOnlyList<string>>(), It.IsAny<string?>(), It.IsAny<ReleaseEvaluationContext?>(), It.IsAny<CancellationToken>())).ReturnsAsync((unprepared, (string?)null));
 
         var cut = Render<ReleaseReadiness>();
 

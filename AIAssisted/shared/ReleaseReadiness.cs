@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using BirkNext.CriticalE2E;
 
 namespace BirkNext.Governance;
 
@@ -20,7 +21,78 @@ public enum ReadinessDimensionKey
 
 public sealed record ReadinessDimension(
     ReadinessDimensionKey Key, string Title, DimensionApplicability Applicability, GateDecision State, string Summary, IReadOnlyList<string> Evidence,
-    string? NextAction, string? Href);
+    string? NextAction, string? Href)
+{
+    /// <summary>
+    /// Critical E2E dimension only: the authoritative, versioned Critical E2E gate evaluation it was read from (policy, disposition, build, environment,
+    /// per-flow eligibility). Null for every other dimension, and in reports frozen before it was recorded. A frozen report keeps it exactly as recorded.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public CriticalE2EReadinessEvaluation? CriticalE2E { get; init; }
+}
+
+/// <summary>
+/// What the release is assessed against beyond its project scope: the build being released and the environment's name and type (the same context the
+/// Critical E2E page sends). Without a build, build-bound release evidence (Critical E2E) is Not assessed — never Passed.
+/// </summary>
+public sealed record ReleaseEvaluationContext(string? BuildId, string? EnvironmentName = null, string? EnvironmentType = null);
+
+/// <summary>How the Critical E2E gate evaluation reads in release readiness. Stale = evaluated for another build or environment than the readiness.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CriticalE2EReadinessState { NotAssessed, Passed, Blocked, Incomplete, Stale }
+
+/// <summary>One required Critical E2E flow as the gate evaluated it for the readiness's build: classification, readiness, execution evidence, eligibility.</summary>
+public sealed record CriticalE2EReadinessFlow
+{
+    public string FlowId { get; init; } = "";
+    public string Name { get; init; } = "";
+    public string Module { get; init; } = "";
+    public CriticalE2ETestType TestType { get; init; } = CriticalE2ETestType.Unknown;
+    /// <summary>Criticality (Critical / Diagnostic).</summary>
+    public CriticalE2EFlowKind Criticality { get; init; } = CriticalE2EFlowKind.Critical;
+    public bool RequiredForRelease { get; init; }
+    /// <summary>Whether the definition is release-ready, and if not, its first blocker.</summary>
+    public bool ReleaseReady { get; init; }
+    public string Readiness { get; init; } = "";
+    /// <summary>The result of the run that is release evidence on the evaluated build; NotRun when there is none (a run on another build is not evidence).</summary>
+    public CriticalE2EStatus ExecutionResult { get; init; } = CriticalE2EStatus.NotRun;
+    /// <summary>The evidence run (only when it is release evidence on the evaluated build).</summary>
+    public string? RunId { get; init; }
+    public DateTimeOffset? RunAt { get; init; }
+    public CriticalE2EGateEligibilityKind Eligibility { get; init; } = CriticalE2EGateEligibilityKind.NotExecuted;
+    public string EligibilityReason { get; init; } = "";
+    /// <summary>Can this flow contribute Business E2E coverage under the evaluating policy (UI smoke: never).</summary>
+    public bool BusinessE2EContribution { get; init; }
+    /// <summary>The flow blocks the release gate on this build (for example a failed required flow of any test type).</summary>
+    public bool MandatoryReleaseBlocker { get; init; }
+    public string? BlockerReason { get; init; }
+}
+
+/// <summary>
+/// The Critical E2E gate evaluation recorded in release readiness: produced by the same evaluation as the Critical E2E page (never a second gate engine),
+/// for the readiness's environment and build, with its provenance. A frozen report keeps it unchanged; nothing re-evaluates it.
+/// </summary>
+public sealed record CriticalE2EReadinessEvaluation
+{
+    public CriticalE2EReadinessState State { get; init; } = CriticalE2EReadinessState.NotAssessed;
+    /// <summary>The gate policy that produced the verdict (critical-e2e-gate/1 for builds whose evidence predates versioned policies).</summary>
+    public string PolicyVersion { get; init; } = "";
+    public CriticalE2EReleaseDisposition Disposition { get; init; } = CriticalE2EReleaseDisposition.NotEvaluated;
+    /// <summary>What the gate evaluated.</summary>
+    public string EnvironmentId { get; init; } = "";
+    public string? BuildId { get; init; }
+    public string? BuildSource { get; init; }
+    /// <summary>What the readiness asked for. Different from the evaluated environment or build = Stale (never Passed).</summary>
+    public string ReadinessEnvironmentId { get; init; } = "";
+    public string? ReadinessBuildId { get; init; }
+    public DateTimeOffset EvaluatedAt { get; init; }
+    /// <summary>The gate's own summary sentence.</summary>
+    public string GateSummary { get; init; } = "";
+    public string? StaleReason { get; init; }
+    public int RequiredFlows { get; init; }
+    public int BlockingFlows { get; init; }
+    public int BusinessE2EFlowsCounted { get; init; }
+    public List<CriticalE2EReadinessFlow> Flows { get; init; } = [];
+}
 
 /// <summary>What the assessment covers: a project (canonical scope) and, optionally, its modules. References only — never copied entities.</summary>
 public sealed record ReleaseScopeReference(string Scope, string Name, IReadOnlyList<string> Modules, Guid? InterpretationId);
@@ -35,6 +107,9 @@ public sealed record ReleaseReadinessAssessment(
     /// <summary>The counts behind the dimensions for the scope. Null when nothing is analyzed (and in reports frozen before release/1 recorded them):
     /// an unknown count is never shown as 0.</summary>
     public ReleaseReadinessFacts? Facts { get; init; }
+
+    /// <summary>The build the assessment was made for (null = none selected). Recorded so a frozen report says which build its execution evidence was about.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? BuildId { get; init; }
 }
 
 /// <summary>
@@ -56,7 +131,8 @@ public sealed record ReleaseReadinessReport(Guid Id, string Name, DateTimeOffset
 public sealed record ReleaseReadinessReportSummary(Guid Id, string Name, DateTimeOffset FrozenAt, GateDecision Decision, IReadOnlyList<string> Modules, Guid? InterpretationId,
     SignOffOutcome? LatestSignOff);
 
-public sealed record FreezeReleaseReadinessRequest(string Name, IReadOnlyList<string>? Modules);
+/// <param name="BuildId">The build being released (optional): build-bound evidence such as Critical E2E is evaluated for it and frozen with it.</param>
+public sealed record FreezeReleaseReadinessRequest(string Name, IReadOnlyList<string>? Modules, string? BuildId = null, string? EnvironmentName = null, string? EnvironmentType = null);
 
 public sealed record ReleaseSignOffRequest(SignOffOutcome Outcome, string? Note);
 

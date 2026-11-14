@@ -18,6 +18,11 @@
 
     @* An action that failed (run, save, history) is reported here; it never replaces the page. *@
     <BackendRequestNotice Error="_actionError" TestId="e2e-action-error" />
+    @* Opened from another surface (Release Readiness) for an environment that is not the active one: said, never switched silently. *@
+    @if (!string.IsNullOrWhiteSpace(LinkEnvironment) && !string.IsNullOrWhiteSpace(_environmentId) && !string.Equals(LinkEnvironment.Trim(), _environmentId, StringComparison.OrdinalIgnoreCase))
+    {
+        <p class="e2e-muted" role="status" data-testid="e2e-environment-mismatch">This link is for environment @LinkEnvironment.Trim(), but the active Target Environment is @_environmentName. The results below are for the active environment.</p>
+    }
     @* The shared scope filter (approved scopes only): it narrows the flow list to the flows a scope names; it never runs or enables anything. *@
     <BirkNext.Web.Components.Scopes.ScopeFilter SelectionChanged="ScopeSelected" />
     @if (_profile is not null)
@@ -681,10 +686,19 @@
     private string _environmentName = "";
     private string? _environmentType;
     private string _buildId = "";
+
+    /// <summary>The build to evaluate (?build=), for example from Release Readiness' drill-down. Prefills the Build field once; typing changes it as before.</summary>
+    [SupplyParameterFromQuery(Name = "build")] public string? Build { get; set; }
+    /// <summary>The environment the link was made for (?environment=). Never switches the active Target Environment; a mismatch is shown.</summary>
+    [SupplyParameterFromQuery(Name = "environment")] public string? LinkEnvironment { get; set; }
     private string _releaseId = "";
     private string _commitSha = "";
 
-    protected override async Task OnInitializedAsync() => await RefreshAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(Build)) _buildId = Build.Trim();
+        await RefreshAsync();
+    }
 
     // Modules are not echoed back: the ones shown are derived from critical flows, and sending them back used to make
     // every label ever seen — a smoke module included — a permanent delivery module.

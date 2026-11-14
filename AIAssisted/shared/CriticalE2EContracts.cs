@@ -792,6 +792,8 @@ public sealed record CriticalE2EFlowSummary
     public CriticalE2EStatus LastStatus { get; init; } = CriticalE2EStatus.NotRun;
     public DateTimeOffset? LastRunAt { get; init; }
     public string? LastBuildId { get; init; }
+    /// <summary>The run reported in <see cref="LastStatus"/> (its release evidence when <see cref="LastResultMatchesRelease"/>). Null when never run.</summary>
+    public string? LastRunId { get; init; }
     /// <summary>
     /// True only when a build is named and the most recent result belongs to it. With no build named nothing matches a
     /// release: the latest result is still reported (LastStatus), it just is not release evidence.
@@ -865,7 +867,15 @@ public sealed record CriticalE2EReleaseStatus
     public int RequiredFlowsLegacyReview { get; init; }
     /// <summary>Required flows that count toward Business E2E on this build (passed, release-ready, Critical, Business E2E under policy 2).</summary>
     public int BusinessE2EFlowsCounted { get; init; }
+    /// <summary>The required flows this verdict evaluated (enabled, required for release, Critical), whatever their test type.</summary>
+    public List<string> RequiredFlowIds { get; init; } = [];
+    /// <summary>The required flows that block this verdict and why (a failed required flow of any test type, one that cannot run, one not release-ready).
+    /// Empty when no build is named: nothing is evaluated then.</summary>
+    public List<CriticalE2EBlockingFlow> BlockingFlows { get; init; } = [];
 }
+
+/// <summary>A required flow that is a mandatory release blocker on the evaluated build, with the reason.</summary>
+public sealed record CriticalE2EBlockingFlow(string FlowId, string Reason);
 
 // ── Page contracts (BirkNext UI ⇄ backend) ─────────────────────────────────────
 

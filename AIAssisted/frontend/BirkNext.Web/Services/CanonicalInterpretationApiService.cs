@@ -40,9 +40,9 @@ public interface ICanonicalInterpretationApiService
     Task<(BirkNext.Governance.GateResult? Result, string? Error)> GovernanceAsync(string scope, BirkNext.Governance.GateAction action, IReadOnlyList<string>? modules = null,
         CancellationToken ct = default) =>
         Task.FromResult<(BirkNext.Governance.GateResult?, string?)>((null, "Governance is not available."));
-    /// <summary>Release readiness (release/1) as of now, for the project or some of its modules.</summary>
+    /// <summary>Release readiness (release/1) as of now, for the project or some of its modules, and the build being released (<paramref name="context"/>).</summary>
     Task<(BirkNext.Governance.ReleaseReadinessAssessment? Assessment, string? Error)> ReleaseReadinessAsync(string scope, IReadOnlyList<string>? modules, string? name,
-        CancellationToken ct = default) => Task.FromResult<(BirkNext.Governance.ReleaseReadinessAssessment?, string?)>((null, "Release readiness is not available."));
+        BirkNext.Governance.ReleaseEvaluationContext? context, CancellationToken ct = default) => Task.FromResult<(BirkNext.Governance.ReleaseReadinessAssessment?, string?)>((null, "Release readiness is not available."));
     Task<(BirkNext.Governance.ReleaseReadinessReport? Report, string? Error)> FreezeReleaseAsync(string scope, BirkNext.Governance.FreezeReleaseReadinessRequest request,
         CancellationToken ct = default) => Task.FromResult<(BirkNext.Governance.ReleaseReadinessReport?, string?)>((null, "Release readiness is not available."));
     Task<(IReadOnlyList<BirkNext.Governance.ReleaseReadinessReportSummary> Items, string? Error)> ReleaseReportsAsync(string scope, CancellationToken ct = default) =>
@@ -89,13 +89,16 @@ public sealed class CanonicalInterpretationApiService(HttpClient http) : ICanoni
         GetAsync<CanonicalImpactView>($"{Base(scope)}/impact?entity={Uri.EscapeDataString(entityKey)}", ct);
 
     public Task<(BirkNext.Governance.ReleaseReadinessAssessment?, string?)> ReleaseReadinessAsync(string scope, IReadOnlyList<string>? modules, string? name,
-        CancellationToken ct = default) =>
-        GetAsync<BirkNext.Governance.ReleaseReadinessAssessment>($"{Base(scope)}/release-readiness{Query(modules, name)}", ct);
+        BirkNext.Governance.ReleaseEvaluationContext? context, CancellationToken ct = default) =>
+        GetAsync<BirkNext.Governance.ReleaseReadinessAssessment>($"{Base(scope)}/release-readiness{Query(modules, name, context)}", ct);
 
-    private static string Query(IReadOnlyList<string>? modules, string? name)
+    private static string Query(IReadOnlyList<string>? modules, string? name, BirkNext.Governance.ReleaseEvaluationContext? context = null)
     {
         var parts = (modules ?? []).Select(m => $"module={Uri.EscapeDataString(m)}").ToList();
         if (!string.IsNullOrWhiteSpace(name)) parts.Add($"name={Uri.EscapeDataString(name)}");
+        if (!string.IsNullOrWhiteSpace(context?.BuildId)) parts.Add($"build={Uri.EscapeDataString(context.BuildId.Trim())}");
+        if (!string.IsNullOrWhiteSpace(context?.EnvironmentName)) parts.Add($"environmentName={Uri.EscapeDataString(context.EnvironmentName)}");
+        if (!string.IsNullOrWhiteSpace(context?.EnvironmentType)) parts.Add($"environmentType={Uri.EscapeDataString(context.EnvironmentType)}");
         return parts.Count == 0 ? "" : "?" + string.Join("&", parts);
     }
 

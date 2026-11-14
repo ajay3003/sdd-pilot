@@ -10,6 +10,11 @@ namespace BirkNext.Api.Services.CriticalE2E;
 public interface ICriticalE2EService
 {
     CriticalE2EOverview Overview(CriticalE2EOverviewRequest request);
+    /// <summary>
+    /// Only the release gate of the overview — release verdict, module coverage and flow summaries — computed by exactly the code the overview uses,
+    /// without engine readiness, history or the companion wake-up. What other surfaces (Release Readiness) read instead of evaluating the gate themselves.
+    /// </summary>
+    CriticalE2EOverview ReleaseGate(CriticalE2EOverviewRequest request);
     IReadOnlyList<CriticalE2EFlowDefinition> Flows(string environmentId);
     CriticalE2EFlowDefinition SaveFlow(CriticalE2EFlowDefinition flow);
     bool DeleteFlow(string flowId);
@@ -102,16 +107,20 @@ public sealed class CriticalE2EService(
     /// <summary>Most recent runs sent with the overview, per archive state.</summary>
     public const int ActiveHistoryShown = 100, ArchivedHistoryShown = 50;
 
-    /// <summary>The overview without its side effects: what history actions return, so managing history never wakes the companion.</summary>
-    private CriticalE2EOverview Snapshot(CriticalE2EOverviewRequest request)
+    public CriticalE2EOverview ReleaseGate(CriticalE2EOverviewRequest request)
     {
         var flows = store.Flows(request.EnvironmentId);
         var history = store.History(request.EnvironmentId, CriticalE2EStore.MaxHistoryPerEnvironment);
+        return Gate(request, flows, history, store.RegisteredModules(request.EnvironmentId));
+    }
+
+    /// <summary>The one gate evaluation: the overview and <see cref="ReleaseGate"/> both read it, so they can never disagree.</summary>
+    private CriticalE2EOverview Gate(CriticalE2EOverviewRequest request, IReadOnlyList<CriticalE2EFlowDefinition> flows, IReadOnlyList<CriticalE2ERunResult> history,
+        IReadOnlyList<CriticalE2ERegisteredModule> registered)
+    {
         // Only registered modules are authoritative. Modules the page names (project evidence) are suggestions until registered.
-        var registered = store.RegisteredModules(request.EnvironmentId);
         var modules = registered.Select(m => m.Name).ToList();
         CriticalE2ECoverage.TestDataIssues testData = flow => TestDataIssues(flow, request);
-
         return new CriticalE2EOverview
         {
             EnvironmentId = request.EnvironmentId,
@@ -120,6 +129,19 @@ public sealed class CriticalE2EService(
             Modules = CriticalE2ECoverage.Modules(flows, history, modules, request.BuildId, testData),
             Flows = flows.Select(f => CriticalE2ECoverage.Summarize(f, history, request.BuildId, modules, testData)).ToList(),
             RegisteredModules = [.. registered],
+        };
+    }
+
+    /// <summary>The overview without its side effects: what history actions return, so managing history never wakes the companion.</summary>
+    private CriticalE2EOverview Snapshot(CriticalE2EOverviewRequest request)
+    {
+        var flows = store.Flows(request.EnvironmentId);
+        var history = store.History(request.EnvironmentId, CriticalE2EStore.MaxHistoryPerEnvironment);
+        var registered = store.RegisteredModules(request.EnvironmentId);
+        var modules = registered.Select(m => m.Name).ToList();
+
+        return Gate(request, flows, history, registered) with
+        {
             ModuleSuggestions = [.. request.Modules.Where(m => !string.IsNullOrWhiteSpace(m)).Select(m => m.Trim())
                 .Where(m => !modules.Contains(m, StringComparer.OrdinalIgnoreCase)).Distinct(StringComparer.OrdinalIgnoreCase)
                 .Select(m => new CriticalE2EModuleSuggestion(m, "Project module"))],

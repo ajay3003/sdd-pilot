@@ -66,6 +66,7 @@ public static class CriticalE2ECoverage
             LastStatus = latest?.Status ?? CriticalE2EStatus.NotRun,
             LastRunAt = latest?.StartedAt,
             LastBuildId = latest?.BuildId,
+            LastRunId = latest?.RunId,
             // A green run from a build nobody is shipping says nothing about the build they are; nor does a run of an older
             // definition, or a run that was not release evidence when it ran (diagnostic, definition not release-ready).
             LastResultMatchesRelease = matchesRelease,
@@ -150,6 +151,22 @@ public static class CriticalE2ECoverage
         _ => "not release-ready",
     };
 
+    /// <summary>
+    /// Why a required flow blocks the gate on the named build, or null when it does not. The same conditions <see cref="Release"/> counts as
+    /// failed / blocked / unconfigured / not release-ready — whatever the flow's test type: under policy 2 a failed required UI smoke flow still blocks,
+    /// it just never contributes Business E2E coverage.
+    /// </summary>
+    public static string? BlockingReason(CriticalE2EFlowSummary required)
+    {
+        var status = required.LastResultMatchesRelease ? required.LastStatus : CriticalE2EStatus.NotRun;
+        if (status == CriticalE2EStatus.Failed) return "Failed required flow on this build";
+        if (status is CriticalE2EStatus.Blocked or CriticalE2EStatus.Cancelled or CriticalE2EStatus.Inconclusive)
+            return $"Required flow {status.ToString().ToLowerInvariant()} on this build";
+        if (!required.Configured) return $"Required flow cannot run as configured: {required.ConfigurationProblem}";
+        if (!required.Readiness.ReleaseReady) return $"Required flow not release-ready: {required.Readiness.Blockers.FirstOrDefault()?.Text ?? "see blockers"}";
+        return null;
+    }
+
     public static CriticalE2EReleaseStatus Release(IReadOnlyList<CriticalE2EFlowDefinition> flows, IReadOnlyList<CriticalE2ERunResult> history,
         IReadOnlyList<string> registeredModules, string environmentId, string? buildId, string? releaseId, TestDataIssues? testData = null, string? buildSource = null)
     {
@@ -182,6 +199,7 @@ public static class CriticalE2ECoverage
                 RequiredFlowsNotReady = notReady,
                 PolicyVersion = policy,
                 RequiredFlowsLegacyReview = legacyReview,
+                RequiredFlowIds = [.. required.Select(r => r.FlowId)],
                 Summary = $"No build is selected, so release evidence is not evaluated. {required.Count} required flow(s) are configured"
                     + (notReady > 0 ? $", {notReady} not release-ready." : ".")
                     + (legacyReview > 0 ? $" {legacyReview} need legacy classification review before they can count toward Business E2E." : ""),
@@ -230,6 +248,8 @@ public static class CriticalE2ECoverage
             PolicyVersion = policy,
             RequiredFlowsLegacyReview = legacyReview,
             BusinessE2EFlowsCounted = businessCounted,
+            RequiredFlowIds = [.. required.Select(r => r.FlowId)],
+            BlockingFlows = [.. required.Select(r => (r.FlowId, Reason: BlockingReason(r))).Where(b => b.Reason is not null).Select(b => new CriticalE2EBlockingFlow(b.FlowId, b.Reason!))],
             Summary = disposition switch
             {
                 CriticalE2EReleaseDisposition.NotConfigured when required.Count > 0 =>

@@ -11,9 +11,13 @@ namespace BirkNext.Api.Services.CanonicalInterpretation;
 /// </summary>
 public sealed partial class CanonicalInterpretationService
 {
-    public async Task<ReleaseReadinessAssessment> AssessReleaseAsync(string scope, IReadOnlyCollection<string>? modules, string? name, CancellationToken ct)
+    /// <param name="context">The build being released and the environment's name and type. Build-bound evidence (Critical E2E) is evaluated for exactly
+    /// that build in this scope's environment; without a build it is Not assessed.</param>
+    public async Task<ReleaseReadinessAssessment> AssessReleaseAsync(string scope, IReadOnlyCollection<string>? modules, string? name, CancellationToken ct,
+        ReleaseEvaluationContext? context = null)
     {
         scope = ValidScope(scope);
+        var buildId = context?.BuildId is { } typed && !string.IsNullOrWhiteSpace(typed) ? typed.Trim() : null;
         var moduleSet = modules is { Count: > 0 } ? new HashSet<string>(modules.Where(m => !string.IsNullOrWhiteSpace(m)).Select(m => m.Trim()), StringComparer.OrdinalIgnoreCase) : null;
         bool InScope(string? module) => moduleSet is null || (module is not null && moduleSet.Contains(module));
         var gate = await GovernanceAsync(scope, GateAction.ReleaseReadiness, moduleSet, ct);
@@ -26,7 +30,9 @@ public sealed partial class CanonicalInterpretationService
             dims.Add(new(ReadinessDimensionKey.ScopeClarity, "Scope", DimensionApplicability.Required, GateDecision.NotAssessed,
                 "Required relationship evidence has not been prepared: no relationship analysis exists for this project yet, so the release scope is unknown.", [],
                 "Analyze relationships in Relationship Review (the project's Delivery and source snapshots).", "correlation-review"));
-            return Assessment(scopeRef, dims, gate, [], null);
+            // Critical E2E evidence is environment- and build-bound, not interpretation-bound: shown even before relationships are analysed.
+            if (criticalE2E is not null) dims.Add(CriticalE2EDimension(scope, context));
+            return Assessment(scopeRef, dims, gate, [], null) with { BuildId = buildId };
         }
 
         var members = await (from m in db.SnapshotEntities.AsNoTracking()
@@ -117,16 +123,29 @@ public sealed partial class CanonicalInterpretationService
             (ReadinessDimensionKey.IntegrationReview, "Integration review", "integration-quality-review"),
             (ReadinessDimensionKey.FrontendReview, "Frontend review", "frontend-quality-review"),
             (ReadinessDimensionKey.Performance, "Performance", "performance-test-review"),
-            (ReadinessDimensionKey.CriticalE2E, "Critical E2E", "critical-e2e-regression"),
         })
             dims.Add(new(key, title, DimensionApplicability.Optional, GateDecision.NotAssessed,
                 href is null ? "Test execution evidence is not read into release readiness: a linked test is not an executed or passed test. Functional Quality Scope shows each requirement's imported results."
                     : $"Not read into release readiness yet: open {title} for its own readiness and results.",
                 [], null, href ?? "delivery-reporting?tab=scope"));
+        dims.Add(criticalE2E is null ? BirkNext.Api.Services.CriticalE2E.CriticalE2EReleaseReadiness.Unavailable() : CriticalE2EDimension(scope, context));
         var facts = new ReleaseReadinessFacts(features.Count, requirements.Count, requirements.Count - untested - suggestedOnly, suggestedOnly, untested, tasks.Count, withCode,
             gate.Findings.Where(f => f.Level == FindingLevel.Blocking && f.Waiver is null).Sum(f => f.Finding.Count),
             gate.Findings.Where(f => f.Level == FindingLevel.Warning).Sum(f => f.Finding.Count), decisions);
-        return Assessment(scopeRef, dims, gate, available, facts);
+        return Assessment(scopeRef, dims, gate, available, facts) with { BuildId = buildId };
+    }
+
+    /// <summary>
+    /// The Critical E2E dimension from the authoritative gate evaluation (<see cref="BirkNext.Api.Services.CriticalE2E.ICriticalE2EService.ReleaseGate"/>,
+    /// the code behind the Critical E2E page) for this scope's environment — the canonical scope is the Target Environment profile id, which is also the
+    /// Critical E2E environment id — and the readiness's build. Mapped, never re-evaluated here.
+    /// </summary>
+    private ReadinessDimension CriticalE2EDimension(string scope, ReleaseEvaluationContext? context)
+    {
+        var request = BirkNext.Api.Services.CriticalE2E.CriticalE2EReleaseReadiness.Request(scope, context);
+        var gate = criticalE2E!.ReleaseGate(request);
+        return BirkNext.Api.Services.CriticalE2E.CriticalE2EReleaseReadiness.Dimension(
+            BirkNext.Api.Services.CriticalE2E.CriticalE2EReleaseReadiness.Evaluate(gate, scope, request.BuildId, clock.GetUtcNow()));
     }
 
     /// <summary>
@@ -162,13 +181,14 @@ public sealed partial class CanonicalInterpretationService
     public async Task<ReleaseReadinessReport> FreezeReleaseAsync(string scope, FreezeReleaseReadinessRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Name)) throw new CanonicalRequestException("Name the release readiness report (for example the release or sprint).");
-        var assessment = await AssessReleaseAsync(scope, request.Modules, request.Name, ct);
+        var assessment = await AssessReleaseAsync(scope, request.Modules, request.Name, ct,
+            new ReleaseEvaluationContext(request.BuildId, request.EnvironmentName, request.EnvironmentType));
         // One frozen report per name and exact evidence: freezing the same name over the same interpretation, modules, policy and evaluated dimensions
         // again (a double click, a second reviewer) would only duplicate it. A new interpretation, scope, policy version or changed evidence (a review
         // decision since) is a new report.
         var modulesJson = System.Text.Json.JsonSerializer.Serialize(assessment.ScopeReference.Modules, ReportJson);
         var name = request.Name.Trim();
-        var dimensions = System.Text.Json.JsonSerializer.Serialize(assessment.Dimensions, ReportJson);
+        var dimensions = ComparableDimensions(assessment.Dimensions);
         // The duplicate check and the insert run as one serialised step per scope: two concurrent freezes (two tabs, two reviewers) cannot both pass
         // the check and store the same report twice.
         return await Persistence.ScopedWriteLock.RunAsync(db, $"release-freeze|{assessment.ScopeReference.Scope}", async () =>
@@ -176,7 +196,7 @@ public sealed partial class CanonicalInterpretationService
         var sameEvidence = await db.ReleaseReports.AsNoTracking().Where(r => r.Scope == assessment.ScopeReference.Scope && r.Name == name && r.ModulesJson == modulesJson
                 && r.InterpretationId == assessment.ScopeReference.InterpretationId && r.PolicySetVersion == assessment.PolicySetVersion && r.Decision == assessment.Decision.ToString())
             .Select(r => r.AssessmentJson).ToListAsync(ct);
-        if (sameEvidence.Any(json => System.Text.Json.JsonSerializer.Serialize(System.Text.Json.JsonSerializer.Deserialize<ReleaseReadinessAssessment>(json, ReportJson)!.Dimensions, ReportJson) == dimensions))
+        if (sameEvidence.Any(json => ComparableDimensions(System.Text.Json.JsonSerializer.Deserialize<ReleaseReadinessAssessment>(json, ReportJson)!.Dimensions) == dimensions))
             throw new CanonicalRequestException($"A report named \"{name}\" already freezes this scope with the same analysis and policy version. Open it from the history, or use another name.");
         var record = new Data.CanonicalInterpretation.ReleaseReadinessReportRecord
         {
@@ -190,6 +210,10 @@ public sealed partial class CanonicalInterpretationService
         return new ReleaseReadinessReport(record.Id, record.Name, record.FrozenAt, assessment, []);
         }, ct);
     }
+
+    /// <summary>Dimensions as evidence for the duplicate check: the time a gate was read is provenance, not evidence, so it never makes a report "new".</summary>
+    static string ComparableDimensions(IReadOnlyList<ReadinessDimension> dimensions) => System.Text.Json.JsonSerializer.Serialize(
+        dimensions.Select(d => d.CriticalE2E is { } e ? d with { CriticalE2E = e with { EvaluatedAt = default } } : d), ReportJson);
 
     public async Task<IReadOnlyList<ReleaseReadinessReportSummary>> ReleaseReportsAsync(string scope, int take, CancellationToken ct)
     {

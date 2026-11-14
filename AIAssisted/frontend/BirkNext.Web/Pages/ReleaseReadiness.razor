@@ -1,4 +1,5 @@
 @page "/release-readiness"
+@using BirkNext.CriticalE2E
 @using BirkNext.Governance
 @using BirkNext.Interpretation
 @using BirkNext.Web.Components
@@ -51,6 +52,7 @@
             </section>
             @Summary(_report.Assessment)
             @Dimensions(_report.Assessment)
+            @CriticalE2ESection(_report.Assessment, frozen: true)
             <section class="rr-card" aria-labelledby="rr-signoff-h" data-testid="rr-signoff">
                 <h2 id="rr-signoff-h">Release decision</h2>
                 <p class="rr-muted">A release decision records a person's go/no-go about this frozen assessment. It never changes the assessment's evidence or computed result,
@@ -114,6 +116,7 @@
                     @Summary(_assessment)
                 }
                 @Dimensions(_assessment)
+                @CriticalE2ESection(_assessment, frozen: false)
             }
         </div>
     }
@@ -125,9 +128,12 @@
     [SupplyParameterFromQuery(Name = "report")] public Guid? ReportId { get; set; }
     /// <summary>Opens a tab directly (?tab=scope|findings|history).</summary>
     [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
+    /// <summary>The build being released (?build=): build-bound evidence (Critical E2E) is evaluated for it.</summary>
+    [SupplyParameterFromQuery(Name = "build")] public string? Build { get; set; }
 
     private bool _initialising = true, _busy, _selectModules;
     private string _tab = "overview";
+    private string? _build, _buildInput, _environmentType;
     private string? _scope, _applicationName, _environmentName, _error, _freezeError, _reportError, _signError, _name, _signNote, _moduleFilter;
     private SignOffOutcome _signOutcome = SignOffOutcome.Accepted;
     private List<string> _modules = [];
@@ -146,6 +152,8 @@
         // environment id; the application is what the release is about).
         var saved = profile is null ? null : Services.GetService<IFrontendAnalysisSettingsService>()?.Settings.Profiles.FirstOrDefault(p => p.Id == profile.Id);
         (_applicationName, _environmentName) = (TargetApplications.Of(saved)?.Name, profile?.Name);
+        _environmentType = profile?.EnvironmentType.ToString();
+        _build = _buildInput = string.IsNullOrWhiteSpace(Build) ? null : Build.Trim();
         _initialising = false;
     }
 
@@ -184,7 +192,7 @@
     {
         if (_scope is null) return;
         (_assessment, _error) = (null, null);
-        (_assessment, _error) = await Api.ReleaseReadinessAsync(_scope, [.. _selected], _name);
+        (_assessment, _error) = await Api.ReleaseReadinessAsync(_scope, [.. _selected], _name, EvaluationContext());
         if (_assessment is { AvailableModules.Count: > 0 } a) _modules = [.. a.AvailableModules];
         _findingsVersion++;
     }
@@ -199,11 +207,91 @@
     {
         if (_scope is null || string.IsNullOrWhiteSpace(_name)) return;
         (_busy, _freezeError) = (true, null);
-        var (report, error) = await Api.FreezeReleaseAsync(_scope, new(_name.Trim(), [.. _selected]));
+        var (report, error) = await Api.FreezeReleaseAsync(_scope, new(_name.Trim(), [.. _selected], _build, _environmentName, _environmentType));
         _busy = false;
         if (report is null) { _freezeError = error ?? "The assessment could not be frozen."; return; }
         Nav.NavigateTo($"release-readiness?report={report.Id}");
     }
+
+    /// <summary>The build and environment context sent with every assessment (the same context the Critical E2E page evaluates with).</summary>
+    private ReleaseEvaluationContext EvaluationContext() => new(_build, _environmentName, _environmentType);
+
+    /// <summary>Assess for the typed build (or none). Build-bound evidence is re-read for it; nothing else about the scope changes.</summary>
+    private async Task ApplyBuildAsync()
+    {
+        _build = string.IsNullOrWhiteSpace(_buildInput) ? null : _buildInput.Trim();
+        await AssessAsync();
+    }
+
+    /// <summary>
+    /// The Critical E2E release gate as release readiness recorded it: state, gate policy version, verdict, build, environment, evaluation time and
+    /// every required flow with its eligibility. Live: the build can be chosen. Frozen: exactly what was recorded, never re-evaluated.
+    /// </summary>
+    private RenderFragment CriticalE2ESection(ReleaseReadinessAssessment a, bool frozen) => __builder =>
+    {
+        var d = a.Dimensions.FirstOrDefault(x => x.Key == ReadinessDimensionKey.CriticalE2E);
+        var e = d?.CriticalE2E;
+        var href = CriticalE2EReleaseReadinessView.Href(d, _scope, frozen ? e?.ReadinessBuildId ?? a.BuildId : _build);
+        <section class="rr-card rr-e2e" aria-labelledby="rr-e2e-h" data-testid="rr-e2e-dimension" data-state="@CriticalE2EReleaseReadinessView.Token(e)" data-frozen="@(frozen ? "true" : "false")">
+            <h2 id="rr-e2e-h">Critical E2E release gate <span class="rr-chip is-@CriticalE2EReleaseReadinessView.Tone(e)" data-testid="rr-e2e-state">@CriticalE2EReleaseReadinessView.Label(e)</span></h2>
+            <p class="rr-muted rr-small">Read from the Critical E2E gate evaluation for this environment and build — the same verdict Critical E2E Regression shows. Release
+                evidence is build-bound: without a build nothing is evaluated, and a flow that is defined but has not passed on this build is never a pass.</p>
+            @if (!frozen)
+            {
+                <div class="rr-form">
+                    <label class="rr-grow">Build being released
+                        <input class="form-control" @bind="_buildInput" @bind:event="oninput" data-testid="rr-e2e-build-input" placeholder="e.g. 2026.11.14.3" />
+                    </label>
+                    <button type="button" class="btn btn-secondary" disabled="@_busy" @onclick="ApplyBuildAsync" data-testid="rr-e2e-build-apply">Assess for this build</button>
+                </div>
+            }
+            @if (e is null)
+            {
+                <p data-testid="rr-e2e-summary">@(d?.Summary ?? "Not assessed: Critical E2E is not part of this assessment.")</p>
+                @if (frozen) { <p class="rr-muted rr-small" data-testid="rr-e2e-frozen">This report was frozen before Critical E2E was read into release readiness; it stays as recorded.</p> }
+            }
+            else
+            {
+                <dl class="rr-e2e-facts" data-testid="rr-e2e-facts">
+                    <div><dt>Gate policy</dt><dd data-testid="rr-e2e-policy">@e.PolicyVersion</dd></div>
+                    <div><dt>Verdict</dt><dd data-testid="rr-e2e-disposition">@CriticalE2EReleaseReadinessView.Disposition(e.Disposition)</dd></div>
+                    <div><dt>Build</dt><dd data-testid="rr-e2e-build">@(e.BuildId ?? "None selected")@(e.BuildSource is { } source ? $" · {source}" : "")</dd></div>
+                    <div><dt>Environment</dt><dd data-testid="rr-e2e-environment">@e.EnvironmentId</dd></div>
+                    <div><dt>Required flows</dt><dd data-testid="rr-e2e-required">@e.RequiredFlows</dd></div>
+                    <div><dt>Blocking flows</dt><dd data-testid="rr-e2e-blocking">@e.BlockingFlows</dd></div>
+                    <div><dt>Evaluated</dt><dd data-testid="rr-e2e-evaluated">@e.EvaluatedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC@(frozen ? " · frozen, never re-evaluated" : "")</dd></div>
+                </dl>
+                <p data-testid="rr-e2e-summary">@d!.Summary</p>
+                @if (e.StaleReason is { } stale) { <p class="rr-warning rr-small" role="status" data-testid="rr-e2e-stale">@stale</p> }
+                @if (d.NextAction is { } next) { <p class="rr-small" data-testid="rr-e2e-next">@next</p> }
+                @if (e.Flows.Count > 0)
+                {
+                    <div class="rr-table-wrap">
+                        <table class="rr-table" data-testid="rr-e2e-flows">
+                            <thead><tr><th scope="col">Required flow</th><th scope="col">Test type · criticality</th><th scope="col">Readiness</th><th scope="col">Result on build</th>
+                                <th scope="col">Eligibility</th><th scope="col">Business E2E contribution</th><th scope="col">Mandatory release blocker</th></tr></thead>
+                            <tbody>
+                                @foreach (var f in e.Flows)
+                                {
+                                    <tr data-testid="rr-e2e-flow" data-flow-id="@f.FlowId" data-eligibility="@CriticalE2EGatePolicy.Token(f.Eligibility)" data-blocker="@(f.MandatoryReleaseBlocker ? "true" : "false")">
+                                        <th scope="row">@f.Name <span class="rr-muted rr-small">@f.Module</span></th>
+                                        <td>@CriticalE2EPresentation.TestTypeLabel(f.TestType) · @f.Criticality</td>
+                                        <td class="rr-small">@f.Readiness</td>
+                                        <td data-testid="rr-e2e-flow-result">@CriticalE2EReleaseReadinessView.Result(f)</td>
+                                        <td class="rr-small"><strong>@CriticalE2EGatePolicy.ShortLabel(f.Eligibility)</strong> <span class="rr-muted">@f.EligibilityReason</span></td>
+                                        <td data-testid="rr-e2e-flow-business">Business E2E contribution: @CriticalE2EReleaseReadinessView.BusinessE2E(f)</td>
+                                        <td data-testid="rr-e2e-flow-blocker">Mandatory release blocker: @CriticalE2EReleaseReadinessView.Blocker(f)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+            <p><a href="@href" data-testid="rr-e2e-open">Open Critical E2E Regression for this environment and build</a></p>
+        </section>
+    };
+
 
     private async Task SignOffAsync()
     {
@@ -647,6 +735,9 @@
                 var againstName = _compareWith is { } cw ? $"“{cw.Name}”" : "the current draft";
                 <h4 class="rr-sub" data-testid="rr-compare-title">Compared with @againstName</h4>
                 var changes = ReleaseReadinessPresentation.Compare(frozen, against);
+                var e2eIncompatible = CriticalE2EReleaseReadinessView.Incompatibility(frozen.Dimensions.FirstOrDefault(d => d.Key == ReadinessDimensionKey.CriticalE2E)?.CriticalE2E,
+                    against.Dimensions.FirstOrDefault(d => d.Key == ReadinessDimensionKey.CriticalE2E)?.CriticalE2E);
+                @if (e2eIncompatible is not null) { <p class="rr-warning rr-small" data-testid="rr-e2e-compare" data-state="stale">@e2eIncompatible</p> }
                 <p class="rr-muted rr-small" data-testid="rr-compare-summary">@(changes.Count(c => c.Changed) is var n and > 0 ? $"{n} dimension{(n == 1 ? " differs" : "s differ")}." : "No dimension differs.")
                     Result then: <strong>@GovernancePolicies.DecisionLabel(frozen.Decision)</strong> · @(_compareWith is null ? "now" : "in the other assessment"): <strong>@GovernancePolicies.DecisionLabel(against.Decision)</strong>. Frozen assessments never change.</p>
                 <ul class="rr-dim-list">

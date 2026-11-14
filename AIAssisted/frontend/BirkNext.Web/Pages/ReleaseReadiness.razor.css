@@ -100,3 +100,7 @@ details summary { cursor: pointer; font-size: .8125rem; }
 .rr-feature-btn { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; display: grid; gap: .1rem; padding: .45rem .65rem; }
 .rr-feature-btn:focus-visible { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; }
 .rr-feature .rr-table-wrap { padding: 0 .65rem .5rem; }
+/* Critical E2E release gate (read from the gate evaluation): compact facts, the per-flow table reuses .rr-table. */
+.rr-e2e-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr)); gap: .5rem; margin: .5rem 0; }
+.rr-e2e-facts dt { font-size: .75rem; color: var(--clr-text-muted); }
+.rr-e2e-facts dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }

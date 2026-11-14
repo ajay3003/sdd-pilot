@@ -37,10 +37,12 @@ public sealed class CanonicalInterpretationController(CanonicalInterpretationSer
     public Task<ActionResult<BirkNext.Governance.GateResult>> Governance(string scope, [FromQuery] BirkNext.Governance.GateAction action = BirkNext.Governance.GateAction.ReleaseReadiness,
         [FromQuery] string[]? module = null, CancellationToken ct = default) => Run(() => service.GovernanceAsync(scope, action, module, ct));
 
-    /// <summary>Release readiness (release/1) of the project or some of its modules, as of now (not stored).</summary>
+    /// <summary>Release readiness (release/1) of the project or some of its modules, as of now (not stored). <c>build</c> names the build being released:
+    /// build-bound evidence (Critical E2E) is evaluated for it; <c>environmentName</c>/<c>environmentType</c> are the environment context the Critical E2E page sends.</summary>
     [HttpGet("release-readiness")]
     public Task<ActionResult<BirkNext.Governance.ReleaseReadinessAssessment>> ReleaseReadiness(string scope, [FromQuery] string[]? module = null, [FromQuery] string? name = null,
-        CancellationToken ct = default) => Run(() => service.AssessReleaseAsync(scope, module, name, ct));
+        [FromQuery] string? build = null, [FromQuery] string? environmentName = null, [FromQuery] string? environmentType = null, CancellationToken ct = default) =>
+        Run(() => service.AssessReleaseAsync(scope, module, name, ct, new BirkNext.Governance.ReleaseEvaluationContext(build, environmentName, environmentType)));
 
     /// <summary>Freezes the current assessment as an immutable report.</summary>
     [HttpPost("release-readiness/reports")]
