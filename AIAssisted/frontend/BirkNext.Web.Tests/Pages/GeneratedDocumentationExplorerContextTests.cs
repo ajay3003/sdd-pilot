@@ -109,7 +109,7 @@ public sealed class GeneratedDocumentationExplorerContextTests : BunitContext
         cut.FindAll("[data-testid=gde-search-result]").Single(r => r.GetAttribute("data-path") == "Order/autodoc/architecture.md")
             .QuerySelector("[data-testid=gde-search-result-open]")!.Click();
 
-        cut.Find("#gde-doc-h").TextContent.Should().StartWith("Order architecture");
+        cut.WaitForAssertion(() => cut.Find("#gde-doc-h").TextContent.Should().StartWith("Order architecture"));
         cut.Find("[data-testid=gde-module] option[selected]").TextContent.Should().Be("Order", "the module follows the opened document");
         cut.Find("[data-testid=gde-tab][aria-selected=true]").GetAttribute("data-tab").Should().Be("Read");
         cut.FindAll("[data-testid=gde-read] mark.gde-hit").Should().ContainSingle().Which.TextContent.Should().Be("Barnetrygd");
@@ -120,7 +120,7 @@ public sealed class GeneratedDocumentationExplorerContextTests : BunitContext
         var back = cut.Find("[data-testid=gde-search-back]");
         back.TextContent.Should().Contain("Back to Data flow");
         back.Click();
-        cut.Find("#gde-doc-h").TextContent.Should().StartWith("Data flow");
+        cut.WaitForAssertion(() => cut.Find("#gde-doc-h").TextContent.Should().StartWith("Data flow"));
         cut.Find("[data-testid=gde-module] option[selected]").TextContent.Should().Be("Person");
         cut.FindAll("[data-testid=gde-search-back]").Should().BeEmpty();
     }
@@ -262,14 +262,22 @@ public sealed class GeneratedDocumentationExplorerContextTests : BunitContext
         Count("parse").Should().Be("1");
         Count("missing").Should().Be("1");
         Count("source").Should().Be("1", "the README candidate names another document");
-        Count("drift").Should().Be("0");
+        var authored = cut.Find("[data-testid=gde-health-authored]");
+        authored.GetAttribute("data-state").Should().Be("not-assessed", "the run compared no authored artifact");
+        authored.QuerySelector("h4")!.TextContent.Should().Be("Authored documentation drift");
+        cut.Find("[data-testid=gde-health-authored-not-assessed]").TextContent.Should().StartWith("Drift not assessed.");
+        cut.Find("[data-testid=gde-health]").TextContent.Should().NotContain("No drift").And.NotContain("no drift");
+        cut.Find("[data-testid=gde-health-generated] h4").TextContent.Should().Be("Generated documentation health");
+        cut.Find("[data-testid=gde-health-source] h4").TextContent.Should().Be("Source/document mismatch");
         cut.Find("[data-testid=gde-health-summary]").TextContent.Should().Contain("3 findings").And.NotContain("healthy");
         var detail = cut.Find("[data-testid=gde-health-detail]");
         detail.QuerySelector("[data-testid=gde-health-parse]")!.TextContent.Should().Be("Unclosed fence at line 9");
         detail.QuerySelector("[data-testid=gde-health-missing]")!.TextContent.Should().Be("messaging.md");
         detail.QuerySelectorAll("[data-testid=gde-health-candidate]").Select(c => c.GetAttribute("data-id")).Should().Equal("d1");
         detail.TextContent.Should().NotContain("order-only.md").And.NotContain("Order entity");
-        cut.Find("[data-testid=gde-health-open]").GetAttribute("href").Should().Be($"generated-documentation-health?import=i1&snapshot={Snapshot1}");
+        var healthHref = $"generated-documentation-health?import=i1&snapshot={Snapshot1}&module=Person&document={Uri.EscapeDataString("Person/autodoc/dataflow.md")}";
+        cut.Find("[data-testid=gde-health-open]").GetAttribute("href").Should().Be(healthHref, "the link names the Health module (its root path) and the document");
+        cut.Find("[data-testid=gde-open-health]").GetAttribute("href").Should().Be(healthHref);
 
         Tab(cut, "Read");
         Tab(cut, "Provenance");
@@ -297,6 +305,105 @@ public sealed class GeneratedDocumentationExplorerContextTests : BunitContext
         GeneratedDocumentationExplorerContext.SamePath("M2LB/Person/autodoc/dataflow.md", "Person/autodoc/dataflow.md").Should().BeTrue();
         GeneratedDocumentationExplorerContext.SamePath("Person/autodoc/dataflow.md", "Person/autodoc/flow.md").Should().BeFalse();
         GeneratedDocumentationExplorerContext.SamePath("Person/autodoc/xdataflow.md", "dataflow.md").Should().BeFalse();
+    }
+
+    [Fact]
+    public void Authored_documentation_drift_of_this_document_is_shown_apart_from_health_and_source_mismatch()
+    {
+        var run = HealthRun();
+        run = run with
+        {
+            Authored = new AuthoredComparisonState(true, "Compared with the selected authored artifacts.", ["spec.md"]),
+            Modules = [run.Modules[0] with { CrossArtifactDrift = ["a1", "a2"] }, run.Modules[1]],
+            Drift =
+            [
+                .. run.Drift,
+                new CrossArtifactDriftCandidate { Id = "a1", DriftType = CrossArtifactDriftType.SpecificationDrift, Family = "Entities", StructuredKey = "Child", Explanation = "Specification names Child; dataflow.md names Kid",
+                    LeftEvidence = [new DriftEvidenceRef("Authored", "spec", "specs/001-x/spec.md")], RightEvidence = [new DriftEvidenceRef("Generated", "dataflow", "Person/autodoc/dataflow.md")] },
+                new CrossArtifactDriftCandidate { Id = "a2", DriftType = CrossArtifactDriftType.PlanDrift, Family = "Modules", StructuredKey = "Readme",
+                    LeftEvidence = [new DriftEvidenceRef("Authored", "plan", "specs/001-x/plan.md")], RightEvidence = [new DriftEvidenceRef("Generated", "readme", "Person/autodoc/README.md")] },
+            ],
+        };
+        _api.Setup(a => a.RunAsync(It.IsAny<GeneratedDocumentationDiagnosticRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync(run);
+        var cut = Open("Person", "dataflow.md", "provenance");
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gde-health]").GetAttribute("data-state").Should().Be("evaluated"));
+        var authored = cut.Find("[data-testid=gde-health-authored]");
+        authored.GetAttribute("data-state").Should().Be("assessed");
+        authored.QuerySelector("[data-kind=drift] strong")!.TextContent.Should().Be("1", "the Plan candidate names another document of the module");
+        cut.Find("[data-testid=gde-health-authored-basis]").TextContent.Should().Contain("spec.md");
+        var detail = cut.Find("[data-testid=gde-health-detail]");
+        detail.QuerySelectorAll("[data-testid=gde-health-authored-candidate]").Select(c => c.GetAttribute("data-id")).Should().Equal("a1");
+        detail.QuerySelector("[data-testid=gde-health-authored-candidate]")!.TextContent.Should().StartWith("Authored/generated consistency · Specification");
+        detail.QuerySelectorAll("[data-testid=gde-health-candidate]").Select(c => c.GetAttribute("data-id")).Should().Equal("d1");
+        detail.TextContent.Should().Contain("Source/document mismatch").And.Contain("Authored documentation drift");
+    }
+
+    [Fact]
+    public void Health_module_identity_is_the_Health_modules_id_or_root_path_never_a_display_name()
+    {
+        var run = new GeneratedDocumentationDiagnosticRun
+        {
+            Modules =
+            [
+                new GeneratedDocumentationHealthResult { Module = "Person API", ModuleId = "module:person", RootPath = "M2LB/Person" },
+                new GeneratedDocumentationHealthResult { Module = "Repository", ModuleId = "module:root", RootPath = "" },
+                new GeneratedDocumentationHealthResult { Module = "Api", ModuleId = "module:a-api", RootPath = "a/src/Api" },
+                new GeneratedDocumentationHealthResult { Module = "Api", ModuleId = "module:b-api", RootPath = "b/src/Api" },
+            ],
+        };
+        GeneratedDocumentationExplorerContext.HealthModule(run, "module:person")!.ModuleId.Should().Be("module:person");
+        GeneratedDocumentationExplorerContext.HealthModule(run, "Person")!.ModuleId.Should().Be("module:person", "the archive's top-level folder is not part of the Explorer root");
+        GeneratedDocumentationExplorerContext.HealthModule(run, "(repository)")!.ModuleId.Should().Be("module:root");
+        GeneratedDocumentationExplorerContext.HealthModule(run, "Person API").Should().BeNull("a display name is not a module identity");
+        GeneratedDocumentationExplorerContext.HealthModule(run, "src/Api").Should().BeNull("ambiguous roots are not guessed");
+        GeneratedDocumentationExplorerContext.HealthModule(run, "Unknown").Should().BeNull();
+    }
+
+    // ── library search (no open document) ───────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Library_search_runs_without_an_open_document_opens_a_result_and_returns_to_the_results()
+    {
+        var navigation = Services.GetRequiredService<NavigationManager>();
+        navigation.NavigateTo("generated-documentation-explorer?import=i1");
+        var cut = Render<ExplorerPage>();
+        cut.FindAll("[data-testid=gde-document]").Should().BeEmpty("no document is open");
+
+        cut.Find("[data-testid=gde-library-search-input]").Input("barnetrygd");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=gde-library-search-result]").Should().HaveCount(3));
+        var results = cut.FindAll("[data-testid=gde-library-search-result]");
+        results.Select(r => r.GetAttribute("data-path")).Should().Equal("Person/autodoc/README.md", "Order/autodoc/architecture.md", "Person/autodoc/dataflow.md");
+        cut.Find("[data-testid=gde-library-search-summary]").TextContent.Should().Be("4 matches in 3 documents of this import");
+        results[0].QuerySelector("[data-testid=gde-library-search-title]")!.TextContent.Should().Be("Person overview");
+        results[0].QuerySelector("[data-testid=gde-library-search-doc-type]")!.TextContent.Should().Be("Overview");
+        results[0].QuerySelector("[data-testid=gde-library-search-count]")!.TextContent.Should().Be("2 matches");
+        results[0].QuerySelector("[data-testid=gde-library-search-snippet] mark")!.TextContent.Should().Be("Barnetrygd");
+
+        cut.Find("[data-testid=gde-library-search-type]").Change("Architecture");
+        cut.FindAll("[data-testid=gde-library-search-result]").Select(r => r.GetAttribute("data-path")).Should().Equal("Order/autodoc/architecture.md");
+        cut.Find("[data-testid=gde-library-search-open]").Click();
+
+        cut.Find("#gde-doc-h").TextContent.Should().StartWith("Order architecture");
+        cut.FindAll("[data-testid=gde-read] mark.gde-hit").Should().ContainSingle().Which.TextContent.Should().Be("Barnetrygd");
+        cut.Find("[data-testid=gde-search]").GetAttribute("value").Should().Be("barnetrygd");
+        cut.FindAll("[data-testid=gde-library-search-result]").Should().BeEmpty("the results step aside while the document is read");
+        cut.FindAll("[data-testid=gde-search-back]").Should().BeEmpty();
+        navigation.Uri.Should().Contain(Uri.EscapeDataString("Order/autodoc/architecture.md"));
+
+        cut.Find("[data-testid=gde-library-search-back]").TextContent.Should().Contain("Back to search results");
+        cut.Find("[data-testid=gde-library-search-back]").Click();
+        cut.FindAll("[data-testid=gde-document]").Should().BeEmpty();
+        cut.Find("[data-testid=gde-library-search-input]").GetAttribute("value").Should().Be("barnetrygd", "the query is intact");
+        cut.FindAll("[data-testid=gde-library-search-result]").Select(r => r.GetAttribute("data-path")).Should().Equal(new[] { "Order/autodoc/architecture.md" }, "the type filter is kept too");
+        navigation.Uri.Should().NotContain("document=");
+        JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == "gde-library-search-input");
+
+        // The in-document search and the toolbar's import-wide toggle still work.
+        cut.Find("[data-testid=gde-library-search-open]").Click();
+        cut.Find("[data-testid=gde-search-scope]").Click();
+        cut.Find("[data-testid=gde-search-scope]").GetAttribute("aria-pressed").Should().Be("true");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=gde-search-result]").Should().NotBeEmpty());
     }
 
     private static void Tab(IRenderedComponent<ExplorerPage> cut, string tab) => cut.Find($"[data-testid=gde-tab][data-tab={tab}]").Click();

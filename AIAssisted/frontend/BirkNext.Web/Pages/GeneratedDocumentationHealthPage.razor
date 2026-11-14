@@ -69,7 +69,7 @@
                 A module without generated documentation is shown as “Generated docs: Not configured” — a neutral state, not a failure. Coverage and health of generated documentation say nothing about source correctness or runtime behavior.
             </p>
             <GeneratedDocumentationHealthPanel Embedded="true" RequireImportedProject="true" ProjectImportId="@import.ImportId" SnapshotId="@snapshotId"
-                                               IncludeAuthoredArtifacts="@(import.ImportId == CurrentImportId)" />
+                                               IncludeAuthoredArtifacts="@(import.ImportId == CurrentImportId)" FocusModule="@_focusModule" FocusDocument="@_focusDocument" />
         }
         else if (_lineage is not null && Snapshots.Count == 0)
         {
@@ -98,6 +98,8 @@
     private string? _lineage;
     private Guid? _snapshot;
     private string _basis = "";
+    /// <summary>The module (Health module id or documented root path, "(repository)" = root) and document a link names; cleared when the selection changes here.</summary>
+    private string? _focusModule, _focusDocument;
 
     private string? CurrentImportId => ProjectImportScope.ImportIdOf(ArtifactContext.CurrentScope);
 
@@ -133,6 +135,8 @@
         _projects = [.. _imports.GroupBy(i => i.LineageKey).Select(g => new ProjectOption(g.Key, g.First().ProjectName))];
         var query = QueryHelpers.ParseQuery(Navigation.ToAbsoluteUri(Navigation.Uri).Query);
         var linked = query.TryGetValue("import", out var import) ? _imports.FirstOrDefault(i => i.ImportId == import.ToString()) : null;
+        _focusModule = query.TryGetValue("module", out var module) && !string.IsNullOrWhiteSpace(module.ToString()) ? module.ToString() : null;
+        _focusDocument = _focusModule is not null && query.TryGetValue("document", out var document) && !string.IsNullOrWhiteSpace(document.ToString()) ? document.ToString() : null;
         var current = _imports.FirstOrDefault(i => i.ImportId == CurrentImportId);
         var project = (Services.GetService(typeof(IFrontendAnalysisSettingsService)) as IFrontendAnalysisSettingsService)?.ActiveProfile?.Project;
         var boundImport = project?.Evidence.FirstOrDefault(r => r.RoleKey == BirkNext.Web.Services.ProjectEvidence.ProjectEvidenceRoles.GeneratedDocumentation)?.Sources is { Count: 1 } generated
@@ -182,6 +186,7 @@
         // Canonical: the current project's own snapshot; otherwise only an unambiguous single snapshot — never the newest of several.
         _snapshot = current?.SourceSnapshotId ?? (Snapshots.Count == 1 ? Snapshots[0].SourceSnapshotId : null);
         _basis = current?.SourceSnapshotId is not null ? "Snapshot of the current imported project" : "Only source snapshot of the selected project";
+        _focusModule = _focusDocument = null;
         Remember();
     }
 
@@ -189,6 +194,7 @@
     {
         _snapshot = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
         _basis = "Selected on this page";
+        _focusModule = _focusDocument = null;
         Remember();
     }
 

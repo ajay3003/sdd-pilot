@@ -37,6 +37,14 @@
         <p class="gdh-status" role="status" data-testid="gdh-run-status">
             Completed @run.CompletedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") in @run.DurationMilliseconds ms@(run.FromCache ? " (cached result for the same evidence)" : "").
         </p>
+        @if (_focusMissing)
+        {
+            <p class="gdh-note" role="status" data-testid="gdh-module-not-found" data-module="@FocusModule">Module not found in this run; showing all.</p>
+        }
+        else if (_focused is { } focused)
+        {
+            <p class="gdh-note" role="status" data-testid="gdh-module-focus" data-module-id="@focused.ModuleId">Showing module <strong class="gdh-wrap">@(focused.RootPath.Trim('/').Length == 0 ? "Repository level" : focused.Module)</strong> from the link@(FocusDocument is { Length: > 0 } ? $" · document {FocusDocument}" : "").</p>
+        }
         @if (run.Snapshot is { } snapshot && (!Embedded || snapshot.SnapshotId != SnapshotId))
         {
             <dl class="gdh-binding" data-testid="gdh-snapshot">
@@ -53,13 +61,14 @@
                 <p>@run.StateMessage</p>
             </section>
             @* With no generated documentation at all, the inventory still answers which modules/APIs exist and that none is configured (neutral). *@
-            @if (run.Autodoc is { } noDocsAutodoc) { <AutodocDiagnosticsSection Diagnostics="noDocsAutodoc" Snapshot="run.Snapshot" /> }
+            @if (run.Autodoc is { } noDocsAutodoc) { <AutodocDiagnosticsSection Diagnostics="noDocsAutodoc" Snapshot="run.Snapshot" FocusModuleId="@_focused?.ModuleId" FocusDocument="@FocusDocument" /> }
         }
         else
         {
             @if (run.Autodoc is { } autodoc)
             {
-                <AutodocDiagnosticsSection Diagnostics="autodoc" Snapshot="run.Snapshot" ExplorerHref="@ExplorerHref" AdvancedContent="@Detailed(run)" />
+                <AutodocDiagnosticsSection Diagnostics="autodoc" Snapshot="run.Snapshot" ExplorerHref="@ExplorerHref" AdvancedContent="@Detailed(run)"
+                                           FocusModuleId="@_focused?.ModuleId" FocusDocument="@FocusDocument" />
             }
             else
             {
@@ -87,6 +96,11 @@
     [Parameter] public Guid? SnapshotId { get; set; }
     /// <summary>Authored artifacts of the workspace are compared only when the selected import is the current project.</summary>
     [Parameter] public bool IncludeAuthoredArtifacts { get; set; } = true;
+    /// <summary>A module to open, e.g. from a Generated Documentation Explorer link: the Health module id, or its documented root path ("(repository)" =
+    /// repository root). With it the diagnostics run on arrival (the same read-only request as "Run diagnostics"); an unknown module shows all.</summary>
+    [Parameter] public string? FocusModule { get; set; }
+    /// <summary>A generated document of the focused module to mark (path as the Explorer names it).</summary>
+    [Parameter] public string? FocusDocument { get; set; }
 
     private GeneratedDocumentationDiagnosticRun? _run;
     private (string?, Guid?) _selection;
@@ -95,6 +109,8 @@
     private GeneratedDocumentationFilter _filter = GeneratedDocumentationFilter.All;
     private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
     private const int _driftLimit = 200;
+    private GeneratedDocumentationHealthResult? _focused;
+    private bool _focusMissing, _focusRequested;
 
     private async Task RunAsync()
     {
@@ -122,6 +138,7 @@
             if (_run is null) _error = "The diagnostic returned no result.";
             _expanded.Clear();
             _filter = GeneratedDocumentationFilter.All;
+            ApplyFocus();
         }
         catch (HttpRequestException)
         {
@@ -210,7 +227,8 @@
                         var sourceUnresolved = GeneratedDocumentationPresentation.UnresolvedFor(run, m, source: true);
                         var crossUnresolved = GeneratedDocumentationPresentation.UnresolvedFor(run, m, source: false);
                         var generatedCount = m.Evidence.Count(e => e.Origin == DocumentationOrigin.Generated);
-                        <li class="gdh-module" data-testid="gdh-module" data-module="@m.Module" data-status="@m.Status" data-review="@m.Review">
+                        var focusedModule = _focused?.ModuleId == m.ModuleId;
+                        <li class="gdh-module @(focusedModule ? "is-focused" : "")" data-testid="gdh-module" data-module="@m.Module" data-status="@m.Status" data-review="@m.Review" data-focused="@(focusedModule ? "true" : null)">
                             <div class="gdh-module-head">
                                 <h4 class="gdh-module-name"><span class="gdh-wrap">@m.Module</span></h4>
                                 <span class="sd-pill sd-pill-@GeneratedDocumentationPresentation.Tone(m.Review)" data-testid="gdh-module-review">@GeneratedDocumentationText.Label(m.Review)</span>
@@ -297,7 +315,8 @@
                                                 <tbody>
                                                     @foreach (var d in m.Evidence)
                                                     {
-                                                        <tr data-testid="gdh-document">
+                                                        var focusedDocument = focusedModule && FocusDocument is { Length: > 0 } && GeneratedDocumentationExplorerContext.SamePath(d.SafeRelativePath, FocusDocument);
+                                                        <tr data-testid="gdh-document" class="@(focusedDocument ? "is-selected" : null)" data-focused="@(focusedDocument ? "true" : null)">
                                                             <th scope="row"><code class="gdh-wrap">@d.SafeRelativePath</code>@if (d.StructurallyInvalid) { <span class="sd-pill sd-pill-attention gdh-inline">Does not parse</span> }</th>
                                                             <td>@GeneratedDocumentationText.Label(d.DocumentKind)</td>
                                                             <td class="gdh-wrap">@d.Origin<span class="gdh-sub">@d.Provenance.Label</span></td>
@@ -411,6 +430,28 @@
         _run = null;
         _error = null;
         _expanded.Clear();
+        _focused = null;
+        _focusMissing = false;
+    }
+
+    /// <summary>A link naming a module runs the diagnostics once on arrival, so the module can be opened.</summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _focusRequested || string.IsNullOrWhiteSpace(FocusModule)) return;
+        _focusRequested = true;
+        await RunAsync();
+        StateHasChanged();
+    }
+
+    /// <summary>The linked module, resolved by the Health module identity only (module id or documented root path); unknown → a notice, all shown.</summary>
+    private void ApplyFocus()
+    {
+        _focused = null;
+        _focusMissing = false;
+        if (_run is null || string.IsNullOrWhiteSpace(FocusModule)) return;
+        _focused = GeneratedDocumentationExplorerContext.HealthModule(_run, FocusModule);
+        _focusMissing = _focused is null;
+        if (_focused is not null) _expanded.Add(_focused.ModuleId);
     }
 
     private string? ExplorerHref => ExplorerVisible && ProjectImportId is not null ? $"{NavigationCatalog.GeneratedDocumentationExplorerRoute}?import={Uri.EscapeDataString(ProjectImportId)}" : null;

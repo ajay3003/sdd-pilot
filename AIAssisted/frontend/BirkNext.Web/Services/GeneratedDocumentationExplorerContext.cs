@@ -105,6 +105,50 @@ public static class GeneratedDocumentationExplorerContext
         return new(m, evidence, parse, m.MissingExpectedDocs, source, cross);
     }
 
+    // ── health module identity (Explorer ↔ Generated Documentation Health) ───────────────────────────────────────────────
+
+    /// <summary>The Health page's name for the repository root (an empty documented root path), as Health → Explorer links already use it.</summary>
+    public const string RepositoryModuleKey = "(repository)";
+
+    /// <summary>
+    /// The module key an Explorer document carries into Generated Documentation Health: the module's documented root path (the Explorer module IS
+    /// the generated set's module root, <see cref="DocumentationDrift"/>), "(repository)" at the repository level. The inverse of
+    /// <see cref="GeneratedDocumentationPresentation.ExplorerLink"/>, which names Explorer modules by the Health module's root path.
+    /// </summary>
+    public static string HealthModuleKey(GeneratedExplorerDocument doc) => doc.RepositoryLevel ? RepositoryModuleKey : doc.Module;
+
+    /// <summary>
+    /// The Health module a link names, by the Health side's own identity only: its module id exactly, else its documented root path —
+    /// "(repository)" = the root; a root path by normalised equality, else by a unique '/'-bounded suffix (the archive's top-level folder).
+    /// Ambiguous or unknown → null (never a similar display name).
+    /// </summary>
+    public static GeneratedDocumentationHealthResult? HealthModule(GeneratedDocumentationDiagnosticRun? run, string? module)
+    {
+        if (run is null || string.IsNullOrWhiteSpace(module)) return null;
+        var value = module.Trim();
+        if (run.Modules.FirstOrDefault(m => m.ModuleId.Length > 0 && string.Equals(m.ModuleId, value, StringComparison.Ordinal)) is { } byId) return byId;
+        static GeneratedDocumentationHealthResult? Unique(List<GeneratedDocumentationHealthResult> found) => found.Count == 1 ? found[0] : null;
+        if (value == RepositoryModuleKey) return Unique([.. run.Modules.Where(m => Norm(m.RootPath).Length == 0)]);
+        var root = Norm(value);
+        if (root.Length == 0) return null;
+        var exact = run.Modules.Where(m => string.Equals(Norm(m.RootPath), root, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (exact.Count > 0) return Unique(exact);
+        return Unique([.. run.Modules.Where(m => Norm(m.RootPath).Length > 0 && SamePath(m.RootPath, root))]);
+    }
+
+    /// <summary>
+    /// Authored-vs-generated consistency of one document from the same run: the module's cross-artifact candidates (authored Specification,
+    /// Constitution, Plan, Tasks or Spec-Kit contracts vs generated documentation, already narrowed to this document by <see cref="For"/>) plus the
+    /// workspace-level candidates ("module:*") that name this document. <c>Assessed</c> is false when the run compared no workspace authored
+    /// artifact — the caller then says "Drift not assessed", never "no drift".
+    /// </summary>
+    public static (IReadOnlyList<CrossArtifactDriftCandidate> Candidates, bool Assessed) AuthoredDrift(GeneratedDocumentationDiagnosticRun run, GeneratedDocumentHealthFindings findings, string path)
+    {
+        var workspace = run.Drift.Where(d => d.ModuleId == "module:*" && d.DriftType != CrossArtifactDriftType.DocumentationDrift
+            && d.LeftEvidence.Concat(d.RightEvidence).Any(r => SamePath(r.Path, path)));
+        return ([.. findings.CrossArtifactDrift.Concat(workspace).DistinctBy(d => d.Id)], run.Authored.Compared);
+    }
+
     /// <summary>Same document path regardless of the archive's top-level folder or separators (one is a '/'-bounded suffix of the other).</summary>
     public static bool SamePath(string? a, string? b)
     {

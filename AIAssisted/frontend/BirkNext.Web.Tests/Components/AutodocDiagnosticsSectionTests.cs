@@ -261,4 +261,16 @@ public sealed class AutodocDiagnosticsSectionTests : BunitContext
         AutodocPresentation.ReviewReasons(diagnostics.Modules.Single(m => m.Name == "Persons")).Should()
             .Equal(["Generated output present; the generator/workflow for this module could not be traced."], "the module's own reason, not a generic 'outputs incomplete'");
     }
+
+    [Fact]
+    public void A_focused_module_opens_its_row_and_an_unmatched_focus_opens_the_advanced_details()
+    {
+        var focused = Render<AutodocDiagnosticsSection>(p => p.Add(x => x.Diagnostics, Diagnostics()).Add(x => x.FocusModuleId, "module:Skole"));
+        focused.Find("#gdh-autodoc-focus-title").TextContent.Should().Be("Skole", "joined by GeneratedModuleId, the backend's own module join");
+        focused.Find("[data-testid=gdh-advanced-body]").HasAttribute("hidden").Should().BeTrue();
+
+        var repository = Render<AutodocDiagnosticsSection>(p => p.Add(x => x.Diagnostics, Diagnostics()).Add(x => x.FocusModuleId, "module:root"));
+        repository.FindAll("[data-testid=gdh-autodoc-detail]").Should().BeEmpty("no inventory row holds the repository level");
+        repository.Find("[data-testid=gdh-advanced-body]").HasAttribute("hidden").Should().BeFalse("its per-module details live under Advanced diagnostics");
+    }
 }

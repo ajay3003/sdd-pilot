@@ -40,4 +40,20 @@ public sealed class GeneratedDocumentationApiService(HttpClient http) : IGenerat
             .Select(r => new AuthoredArtifactInput(r.Role.ToString(), r.State.Selected!.Id, r.State.Selected.DisplayName, r.State.Selected.SourcePath, r.Fingerprint!, r.Content))
             .ToList() ?? [],
     };
+
+    /// <summary>
+    /// The request Generated Documentation Health makes for a selected import + source snapshot (GeneratedDocumentationHealthPage →
+    /// GeneratedDocumentationHealthPanel): the workspace's selected authored artifacts (<see cref="Request"/>) are sent only when that import is the
+    /// current project — never compared with another import's snapshot — and the import + snapshot are set explicitly.
+    /// </summary>
+    public static async Task<GeneratedDocumentationDiagnosticRequest> ForImportAsync(IArtifactExplorerContext? context, string projectImportId, Guid? snapshotId, CancellationToken ct = default)
+    {
+        TraceabilityInputs? inputs = null;
+        if (context is not null && ProjectImportScope.ImportIdOf(context.CurrentScope) == projectImportId)
+        {
+            try { inputs = await TraceabilityInputs.ResolveAsync(context, ct); }
+            catch (Exception) { inputs = null; }
+        }
+        return Request(inputs) with { ProjectImportId = projectImportId, SnapshotId = snapshotId };
+    }
 }

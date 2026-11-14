@@ -5,3 +5,5 @@
 .gdh-reasons { margin: .5rem 0 .75rem; padding-left: 1.1rem; list-style: disc; }
 .gdh-module-button { font-weight: 600; text-align: left; padding: 0; }
 tr.is-selected > th, tr.is-selected > td { background: var(--clr-surface-subtle, #f1f5f9); }
+/* A document named by an Explorer link: marked in the module focus. */
+.gdh-doc-links li.is-focused { font-weight: 600; border-left: 3px solid var(--clr-primary, #2563eb); padding-left: .4rem; }

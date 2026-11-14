@@ -154,7 +154,8 @@ public sealed class GeneratedDocumentationExplorerTests : BunitContext
         cut.Find("[data-testid=gde-origin]").TextContent.Should().Be("Generated · implementation-derived documentation");
         cut.Find("[data-testid=gde-generator]").TextContent.Should().Be("maintain-docs");
         cut.Find("[data-testid=gde-compare-drift]").GetAttribute("href").Should().Be("documentation-drift?tab=compare&import=i1&module=Person&concern=DataModel");
-        cut.Find("[data-testid=gde-open-health]").GetAttribute("href").Should().Be($"{NavigationCatalog.GeneratedDocumentationHealthRoute}?import=i1&snapshot=11111111-2222-3333-4444-555555555555", "Health opens on this import and its exact snapshot");
+        cut.Find("[data-testid=gde-open-health]").GetAttribute("href").Should().Be($"{NavigationCatalog.GeneratedDocumentationHealthRoute}?import=i1&snapshot=11111111-2222-3333-4444-555555555555&module=Person&document=Person%2Fautodoc%2Fdata-model.md",
+            "Health opens on this import, its exact snapshot, the Health module (its root path) and the document");
         cut.Markup.Should().NotContainAny("source truth is", "Passed", "Healthy", "verified implementation");
         cut.FindAll("[data-testid=gde-tab]").Single(t => t.GetAttribute("data-tab") == "Structure").Click();
         cut.FindAll("[data-testid=gde-entity]").Should().HaveCount(2);

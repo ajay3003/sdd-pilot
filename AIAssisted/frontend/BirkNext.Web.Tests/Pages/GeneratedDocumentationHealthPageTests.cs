@@ -150,14 +150,86 @@ public sealed class GeneratedDocumentationHealthPageTests : BunitContext
         cut.FindAll("[data-testid=gdh-run]").Should().BeEmpty();
     }
 
+    // ── module focus from an Explorer link ──────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Health modules carry the archive's top-level folder in their root path; the Explorer names the module without it.</summary>
+    private static GeneratedDocumentationDiagnosticRun FocusRun() => new()
+    {
+        State = GeneratedDocumentationRunState.Ready,
+        Modules =
+        [
+            new GeneratedDocumentationHealthResult
+            {
+                Module = "Person API", ModuleId = "module:person", RootPath = "M2LB/Person",
+                Evidence = [new GeneratedDocumentationEvidence { SafeRelativePath = "M2LB/Person/autodoc/README.md" }, new GeneratedDocumentationEvidence { SafeRelativePath = "M2LB/Person/autodoc/dataflow.md" }],
+            },
+            new GeneratedDocumentationHealthResult { Module = "Order", ModuleId = "module:order", RootPath = "M2LB/Order" },
+        ],
+        Autodoc = new AutodocDiagnostics
+        {
+            DetectedModules = 2, ModulesUsingAutodoc = 2, ModulesWithGeneratedOutput = 2,
+            Modules =
+            [
+                new AutodocModuleInventory { Name = "Orders", Identity = "component:orders", GeneratedModuleId = "module:order", GeneratedOutputPresent = true, Usage = AutodocUsage.Configured, ArtifactCount = 1, ArtifactPaths = ["M2LB/Order/autodoc/README.md"] },
+                new AutodocModuleInventory
+                {
+                    Name = "Persons API", Identity = "component:persons", GeneratedModuleId = "module:person", GeneratedOutputPresent = true, Usage = AutodocUsage.Configured, ArtifactCount = 2,
+                    ArtifactPaths = ["M2LB/Person/autodoc/README.md", "M2LB/Person/autodoc/dataflow.md"],
+                },
+            ],
+        },
+    };
+
+    private IRenderedComponent<GeneratedDocumentationHealthPage> OpenLinked(Guid snapshot, string module, string? document = null)
+    {
+        _api.Result = FocusRun();
+        var import = _repository.SddLifecycle.CurrentProjectImportId;
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo(
+            $"generated-documentation-health?import={import}&snapshot={snapshot}&module={Uri.EscapeDataString(module)}{(document is null ? "" : $"&document={Uri.EscapeDataString(document)}")}");
+        return Render<GeneratedDocumentationHealthPage>();
+    }
+
+    [Fact]
+    public void A_link_naming_a_module_runs_once_opens_that_module_and_marks_the_document()
+    {
+        var snapshot = Guid.NewGuid();
+        Import(snapshot);
+        var cut = OpenLinked(snapshot, "Person", "Person/autodoc/dataflow.md");
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gdh-autodoc-detail]"));
+        _api.Requests.Should().ContainSingle("the link runs the same read-only diagnostics once").Which.SnapshotId.Should().Be(snapshot);
+        cut.Find("#gdh-autodoc-focus-title").TextContent.Should().Be("Persons API", "joined by the Health module id, not by a similar name");
+        cut.Find("[data-testid=gdh-module-focus]").GetAttribute("data-module-id").Should().Be("module:person");
+        cut.FindAll("[data-testid=gdh-module-not-found]").Should().BeEmpty();
+        cut.FindAll("[data-testid=gdh-autodoc-detail] li[data-focused=true] a").Should().ContainSingle()
+            .Which.GetAttribute("href").Should().EndWith(Uri.EscapeDataString("M2LB/Person/autodoc/dataflow.md"));
+        cut.FindAll("[data-testid=gdh-module][data-focused=true]").Should().ContainSingle().Which.GetAttribute("data-module").Should().Be("Person API");
+        cut.FindAll("[data-testid=gdh-document][data-focused=true]").Should().ContainSingle();
+    }
+
+    [Fact]
+    public void A_link_naming_an_unknown_module_says_so_and_shows_all()
+    {
+        var snapshot = Guid.NewGuid();
+        Import(snapshot);
+        var cut = OpenLinked(snapshot, "Billing");
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gdh-module-not-found]").TextContent.Should().Be("Module not found in this run; showing all."));
+        cut.FindAll("[data-testid=gdh-autodoc-detail]").Should().BeEmpty();
+        cut.FindAll("[data-testid=gdh-autodoc-row]").Should().HaveCount(2, "every module stays listed");
+        cut.FindAll("[data-testid=gdh-module-focus]").Should().BeEmpty();
+    }
+
     private sealed class RecordingApi : IGeneratedDocumentationApiService
     {
         public List<GeneratedDocumentationDiagnosticRequest> Requests { get; } = [];
+        /// <summary>The run to return; a "no generated documentation" run when not set.</summary>
+        public GeneratedDocumentationDiagnosticRun? Result { get; set; }
 
         public Task<GeneratedDocumentationDiagnosticRun?> RunAsync(GeneratedDocumentationDiagnosticRequest request, CancellationToken ct = default)
         {
             Requests.Add(request);
-            return Task.FromResult<GeneratedDocumentationDiagnosticRun?>(new GeneratedDocumentationDiagnosticRun
+            return Task.FromResult<GeneratedDocumentationDiagnosticRun?>(Result ?? new GeneratedDocumentationDiagnosticRun
             {
                 State = GeneratedDocumentationRunState.NoGeneratedDocumentation, StateMessage = "No generated documentation was found in this snapshot.",
             });

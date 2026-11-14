@@ -127,7 +127,8 @@
                     <ul class="gdh-plain gdh-doc-links" data-testid="gdh-autodoc-documents">
                         @foreach (var path in fm.ArtifactPaths)
                         {
-                            <li><a data-testid="gdh-autodoc-document" href="@($"{ExplorerHref}&module={Uri.EscapeDataString(fm.Name)}&document={Uri.EscapeDataString(path)}")"><code class="gdh-wrap">@path</code></a></li>
+                            var focusedDocument = FocusDocument is { Length: > 0 } && GeneratedDocumentationExplorerContext.SamePath(path, FocusDocument);
+                            <li class="@(focusedDocument ? "is-focused" : null)" data-focused="@(focusedDocument ? "true" : null)"><a data-testid="gdh-autodoc-document" aria-current="@(focusedDocument ? "true" : null)" href="@($"{ExplorerHref}&module={Uri.EscapeDataString(fm.Name)}&document={Uri.EscapeDataString(path)}")"><code class="gdh-wrap">@path</code></a></li>
                         }
                     </ul>
                 }
@@ -157,7 +158,7 @@
         ? "Repository-level generated documentation: none detected at the repository root."
         : $"Repository-level generated documentation: {Diagnostics.RepositoryLevelDocuments.Count} document(s) at the repository root — not counted as module or API coverage.")</p>
 
-    <ReviewDisclosure Text="Advanced diagnostics" CollapseText="Hide advanced diagnostics" TestId="gdh-advanced" Hint="All metrics, generator evidence and per-module details">
+    <ReviewDisclosure Text="Advanced diagnostics" CollapseText="Hide advanced diagnostics" TestId="gdh-advanced" Hint="All metrics, generator evidence and per-module details" @bind-Expanded="_advancedOpen">
         <h4 class="gdh-h4">Generated documentation metrics</h4>
         <dl class="gdh-cards" data-testid="gdh-autodoc-summary">
             <div class="gdh-card" data-metric="workflow" title="A documentation generator workflow (maintain-docs) is declared in the repository. Repository-level workflow ≠ module usage."><dt>Generator workflow detected (maintain-docs)</dt><dd data-testid="gdh-autodoc-workflow">@(Diagnostics.MaintainDocsWorkflowDetected ? "Yes" : "No")</dd></div>
@@ -202,12 +203,31 @@
     [Parameter] public string? ExplorerHref { get; set; }
     /// <summary>The panel's detailed diagnostics (health/consistency metrics, generators, per-module details), shown inside "Advanced diagnostics".</summary>
     [Parameter] public RenderFragment? AdvancedContent { get; set; }
+    /// <summary>The Health module to open (its module id, joined to a row by <see cref="AutodocModuleInventory.GeneratedModuleId"/> — the backend's own
+    /// join). Without such a row (e.g. the repository level) the per-module details under Advanced diagnostics open instead.</summary>
+    [Parameter] public string? FocusModuleId { get; set; }
+    /// <summary>A generated document to mark in the module focus (snapshot-relative path; archive top-level folder ignored).</summary>
+    [Parameter] public string? FocusDocument { get; set; }
 
     private AutodocFilter _filter = AutodocFilter.All;
     private AutodocApiScope _scope = AutodocApiScope.All;
     /// <summary>The module whose focus is open (one at a time).</summary>
     private string? _selected;
     private bool _advancedFiltersOpen;
+    private bool _advancedOpen;
+    private string? _appliedFocus;
+
+    /// <summary>Opens the focused module once per focus value (the user's later choices are kept).</summary>
+    protected override void OnParametersSet()
+    {
+        if (string.IsNullOrEmpty(FocusModuleId) || FocusModuleId == _appliedFocus) return;
+        _appliedFocus = FocusModuleId;
+        if (Diagnostics.Modules.FirstOrDefault(m => m.GeneratedModuleId == FocusModuleId) is { } row)
+        {
+            (_filter, _scope, _selected) = (AutodocFilter.All, AutodocApiScope.All, row.Identity);
+        }
+        else _advancedOpen = true;
+    }
 
     private RenderFragment FilterButton(AutodocFilter f) => __builder =>
     {
