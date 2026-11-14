@@ -17,7 +17,10 @@ public static class ManualReviewModules
     public const string IntegrationSuites = "integration-suites";
     /// <summary>Document Quality Review findings (subject = the finding's logical id; scope = "artifact-pack:{module}/{pack}").</summary>
     public const string DocumentQuality = "document-quality";
-    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal) { ApiQuality, SecurityClassification, ImplementationGaps, IntegrationSuites, DocumentQuality };
+    /// <summary>Test Coverage journey association (subject = source-derived journey id; applies to = Integration Journey "packId:journeyId";
+    /// scope = the project key). Acceptable = association confirmed, IssueFound = rejected.</summary>
+    public const string JourneyAssociation = "journey-association";
+    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal) { ApiQuality, SecurityClassification, ImplementationGaps, IntegrationSuites, DocumentQuality, JourneyAssociation };
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

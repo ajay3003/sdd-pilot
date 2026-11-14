@@ -106,7 +106,7 @@
             </ul>
             @if (_scopeSelection is { } scopeSel)
             {
-                var scopeSummary = S.Summarize(r, scopeSel);
+                var scopeSummary = S.Summarize(r, scopeSel, _associationDecisions);
                 <section class="tco-scope" aria-labelledby="tco-scope-heading" data-testid="tco-scope-summary">
                     <h3 id="tco-scope-heading">Selected scope@(scopeSummary.ScopeCount == 1 ? "" : "s") compared with the whole project</h3>
                     <p class="tco-muted" data-testid="tco-scope-dedup">Combined over @scopeSummary.ScopeCount scope@(scopeSummary.ScopeCount == 1 ? "" : "s"); each item is counted once@(scopeSummary.SharedMembers > 0 ? $" ({scopeSummary.SharedMembers} member{(scopeSummary.SharedMembers == 1 ? " is" : "s are")} named by more than one scope)" : ""). Only a stable identity ties an item to a scope — never a similar name — and "@S.NotConfirmedLabel" is never counted as in scope.</p>
@@ -231,16 +231,55 @@
                             </div>
                         }
                         var journeys = r.Journeys.Where(MatchesJourney).ToList();
+                        var latestAssociations = S.LatestAssociations(_associationDecisions);
                         @if (_scopeSelection is not null && r.Journeys.Count > 0)
                         {
-                            @* Source-derived journey ids ("journey:a>b") and scope journeys ("packId:journeyId") share no stable identity: shown, never counted as in scope. *@
-                            <p class="tco-notice" data-testid="tco-journeys-scope-note">These journeys come from source connections; a scope names Integration Journeys by pack id, and no stable id links the two. Every journey is shown with "@S.NotConfirmedLabel".</p>
+                            @* Source-derived journey ids ("journey:a>b") and scope journeys ("packId:journeyId"): tied only by the same id or a reviewer-confirmed association. *@
+                            <p class="tco-notice" data-testid="tco-journeys-scope-note">These journeys come from source connections; a scope names Integration Journeys by pack id. A journey counts in scope only by the same id or an association a reviewer confirmed — never by a similar name. Candidates are proposals and never count.</p>
+                        }
+                        @if (r.Journeys.Any(j => j.AssociationCandidates.Count > 0))
+                        {
+                            <div class="tco-association-reviewer" data-testid="tco-association-reviewer-row">
+                                @if (AssociationUnavailableReason is { } unavailable) { <p class="tco-muted" data-testid="tco-association-unavailable">@unavailable</p> }
+                                else { <label class="tco-field tco-inline">Reviewer name <input data-testid="tco-association-reviewer" @bind="_reviewer" @bind:event="oninput" maxlength="120" /></label> }
+                                @if (_associationError is not null) { <p class="tco-error" role="alert" data-testid="tco-association-error">@_associationError</p> }
+                                @if (_associationStatus is not null) { <p class="tco-muted" role="status" data-testid="tco-association-status">@_associationStatus</p> }
+                            </div>
                         }
                         @foreach (var j in journeys.Take(_journeyLimit))
                         {
                             var sum = G.Summarize(j);
-                            <article class="tco-journey" data-testid="tco-journey" data-weakest="@j.Weakest">
-                                <h3>@(j.Title)@if (_scopeSelection is not null) { <span class="tco-pill" data-testid="tco-journey-scope-unconfirmed">@S.NotConfirmedLabel</span> }</h3>
+                            var journeyScope = _scopeSelection is { } js ? S.JourneyScope(j, js, latestAssociations) : null;
+                            var links = S.Associations(j, latestAssociations);
+                            <article class="tco-journey" data-testid="tco-journey" data-weakest="@j.Weakest" data-scope="@(journeyScope?.Association.ToString() ?? "")">
+                                <h3>@(j.Title)@if (journeyScope is { Association: CoverageScopeAssociation.NotConfirmed } jsn) { <span class="tco-pill" data-testid="tco-journey-scope-unconfirmed">@S.NotConfirmedLabel</span><span class="tco-muted" data-testid="tco-journey-scope-reason" data-reason="@jsn.Reason"> — @S.ReasonText(jsn.Reason)</span> }
+                                    else if (journeyScope is { Association: CoverageScopeAssociation.InScope } jsi) { <span class="tco-pill" data-testid="tco-journey-scope-in" data-reason="@jsi.Reason">@jsi.Text</span>@if (jsi.Scopes.Count > 0) { <span class="tco-muted" data-testid="tco-journey-scope-from"> from @string.Join(", ", jsi.Scopes)</span> } }</h3>
+                                @if (links.Count > 0 || j.AssociationCandidates.Count > 0)
+                                {
+                                    <div class="tco-associations" data-testid="tco-journey-associations">
+                                        @if (links.Count > 0)
+                                        {
+                                            <ul class="tco-list">
+                                                @foreach (var link in links)
+                                                {
+                                                    <li data-testid="tco-journey-association" data-kind="@link.Kind" data-target="@link.IntegrationJourneyId">@(link.Kind == JourneyAssociationKind.Confirmed ? "Association confirmed" : "Association rejected (never counted)"): <code>@link.IntegrationJourneyId</code> <span class="tco-muted">— @link.Reviewer, @(link.DecidedAt?.ToLocalTime().ToString("g"))</span></li>
+                                                }
+                                            </ul>
+                                        }
+                                        @foreach (var c in j.AssociationCandidates.Where(c => S.CandidateDecision(j, c.IntegrationJourneyId, latestAssociations) is null))
+                                        {
+                                            <div class="tco-candidate" data-testid="tco-journey-candidate" data-target="@c.IntegrationJourneyId" data-match="@c.Match">
+                                                <span class="tco-pill" data-testid="tco-candidate-label">@S.CandidateLabel</span>
+                                                <span><strong>@c.DisplayName</strong> <code>@c.IntegrationJourneyId</code></span>
+                                                <span class="tco-muted">@c.Basis</span>
+                                                <span class="tco-confirm" role="group" aria-label="Review association with @c.DisplayName">
+                                                    <button type="button" class="btn-secondary btn-small" data-testid="tco-association-confirm" disabled="@(!CanRecordAssociation(j))" @onclick="() => RecordAssociationAsync(j, c.IntegrationJourneyId, true)">Confirm association<span class="visually-hidden"> with @c.DisplayName</span></button>
+                                                    <button type="button" class="btn-secondary btn-small" data-testid="tco-association-reject" disabled="@(!CanRecordAssociation(j))" @onclick="() => RecordAssociationAsync(j, c.IntegrationJourneyId, false)">Reject<span class="visually-hidden"> association with @c.DisplayName</span></button>
+                                                </span>
+                                            </div>
+                                        }
+                                    </div>
+                                }
                                 <dl class="tco-journey-facts" data-testid="tco-journey-summary">
                                     <div><dt>Coverage</dt><dd><span class="tco-pill tco-@P.StepTone(G.Weakest(j))">@P.Step(G.Weakest(j))</span></dd></div>
                                     <div><dt>Steps</dt><dd>@sum.Steps</dd></div>
@@ -379,6 +418,25 @@
                         @if (G.DuplicateContext(r) is { } context) { <p class="tco-notice" data-testid="tco-duplicates-context">@context</p> }
                         <details class="tco-details" data-testid="tco-qa-input"><summary>Where QA tests come from</summary>
                             <p>Acceptance scenarios from the selected specification, test projects marked "QA automation" on the Overview, and Critical E2E flows of the active Target Environment. Manual tests outside machine-readable evidence are not seen, so overlap detection is only as complete as this input.</p>
+                        </details>
+                        var assetUses = S.Assets(r, _scopeSelection);
+                        <details class="tco-details" data-testid="tco-qa-test-data"><summary>Test Data of QA tests (@r.QaTests.Count(q => q.DataNeed == CoverageDataNeed.Linked) linked · @assetUses.Count asset@(assetUses.Count == 1 ? "" : "s"))</summary>
+                            <p class="tco-muted">Linked by immutable Test Data asset id from the Critical E2E flow definition or a Test Plan case confirmed against the flow. "Not assessed" means no link was recorded — it never means the test needs no data.</p>
+                            <ul class="tco-list">
+                                @foreach (var q in r.QaTests)
+                                {
+                                    <li data-testid="tco-qa-data-need" data-test="@q.Id" data-state="@q.DataNeed"><strong>@q.Title</strong> — @S.DataNeed(q)@if (q.DataNeedBasis is { Length: > 0 } basis) { <span class="tco-muted"> · @basis</span> }</li>
+                                }
+                            </ul>
+                            @if (assetUses.Count > 0)
+                            {
+                                <ul class="tco-list" data-testid="tco-assets">
+                                    @foreach (var a in assetUses)
+                                    {
+                                        <li data-testid="tco-asset" data-asset="@a.AssetId" data-in-scope="@(a.InScope ? "true" : "false")"><code>@a.AssetId</code>@(a.Alias is { } alias ? $" ({alias})" : "") — used by @string.Join(", ", a.Tests)@if (_scopeSelection is not null) { <span class="tco-muted" data-testid="tco-asset-scopes"> · @(a.InScope ? $"in scope: {string.Join(", ", a.Scopes)}" : "not named by the selected scopes")</span> }@if (a.Fingerprints.Count > 0) { <span class="tco-muted"> · version @string.Join(", ", a.Fingerprints.Select(Short))</span> }</li>
+                                    }
+                                </ul>
+                            }
                         </details>
                         var overlaps = r.Overlaps.Where(o => _scopeSelection is null || S.Overlap(o, r, _scopeSelection, scopeSpec.Module, scopeSpec.Feature) != CoverageScopeAssociation.OutOfScope).ToList();
                         @if (_scopeSelection is not null)
@@ -527,7 +585,10 @@
     {
         // Captured once: leaving the page disposes the source, and reading _cts.Token after that throws.
         var token = _cts.Token;
-        _projectName = (await CurrentWorkspace.GetAsync()).ProjectName;
+        var workspaceSnapshot = await CurrentWorkspace.GetAsync();
+        _projectName = workspaceSnapshot.ProjectName;
+        _projectKey = string.IsNullOrWhiteSpace(workspaceSnapshot.ProjectSlug) ? null : workspaceSnapshot.ProjectSlug;
+        await LoadAssociationsAsync();
         await LoadSpecificationAsync(token);
         if (token.IsCancellationRequested) return;
         var (options, error) = await Api.SourcesAsync(token);
@@ -602,6 +663,45 @@
         if (error is not null) { _runError = error; return; }
         // Decisions are review metadata: re-run so the result shows them next to (never instead of) the source evidence.
         await RunAsync();
+    }
+
+    // ── Journey association (shared manual-review store; project-scoped; a candidate never counts until confirmed) ──────────────
+    private string? _projectKey;
+    private IReadOnlyList<BirkNext.ManualReview.ManualReviewDecisionView> _associationDecisions = [];
+    private bool _associationsUnavailable;
+    private string _reviewer = "";
+    private string? _associationError, _associationStatus;
+
+    private string? AssociationUnavailableReason =>
+        _projectKey is null ? "Load a project to review journey associations (decisions are kept per project)."
+        : _associationsUnavailable || Services.GetService<IManualReviewApiService>() is null ? "Reviewer decisions are not available in this session." : null;
+
+    private bool CanRecordAssociation(Journey j) => AssociationUnavailableReason is null && _reviewer.Trim().Length > 0
+        && j.Id.Length <= BirkNext.ManualReview.ManualReviewRules.MaxSubject;
+
+    private async Task LoadAssociationsAsync()
+    {
+        if (_projectKey is null || Services.GetService<IManualReviewApiService>() is not { } api) return;
+        var list = await api.ListAsync(BirkNext.ManualReview.ManualReviewModules.JourneyAssociation, _projectKey);
+        if (list is null) { _associationsUnavailable = true; return; }
+        _associationDecisions = list;
+    }
+
+    /// <summary>Records "confirmed" (Acceptable) or "rejected" (IssueFound) for one source journey ↔ Integration Journey pair. Never changes source evidence.</summary>
+    private async Task RecordAssociationAsync(Journey journey, string integrationJourneyId, bool confirm)
+    {
+        if (!CanRecordAssociation(journey) || Services.GetService<IManualReviewApiService>() is not { } api) return;
+        var (decision, error) = await api.RecordAsync(new BirkNext.ManualReview.ManualReviewDecisionRequest
+        {
+            Module = BirkNext.ManualReview.ManualReviewModules.JourneyAssociation, ScopeKey = _projectKey!, SubjectKey = journey.Id, AppliesTo = integrationJourneyId,
+            Reviewer = _reviewer.Trim(),
+            Decision = confirm ? BirkNext.ManualReview.ManualReviewDecisionValue.Acceptable : BirkNext.ManualReview.ManualReviewDecisionValue.IssueFound,
+            Note = confirm ? null : "Association rejected: this Integration Journey does not describe the source journey.",
+        }, _cts.Token);
+        if (decision is null) { (_associationError, _associationStatus) = (error ?? "The decision could not be recorded.", null); return; }
+        _associationError = null;
+        _associationDecisions = [decision, .. _associationDecisions];
+        _associationStatus = confirm ? $"Association confirmed with {integrationJourneyId}." : $"Association with {integrationJourneyId} rejected; it is never counted.";
     }
 
     private Task ToggleConnectionAsync(JourneyStep step) => DecideAsync(CoverageDecisionKind.JourneyConnection, step.Id, step.ReviewerDecision == "Confirmed" ? "Rejected" : "Confirmed");

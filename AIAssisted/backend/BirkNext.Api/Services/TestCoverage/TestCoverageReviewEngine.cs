@@ -11,8 +11,11 @@ using BirkNext.TestEvidence;
 
 namespace BirkNext.Api.Services.TestCoverage;
 
-/// <summary>A QA automated end-to-end flow BirkNext knows about (Critical E2E definition) with its most recent recorded outcome, if any.</summary>
-public sealed record E2EFlowEvidence(string Id, string Name, string Module, string Description, CriticalE2EStatus? LatestStatus, DateTimeOffset? LatestRunAt);
+/// <summary>A QA automated end-to-end flow BirkNext knows about (Critical E2E definition) with its most recent recorded outcome, if any.
+/// <paramref name="TestData"/> are the Test Data assets authoritative sources link to the flow (its own data mappings, confirmed Test Plan
+/// correlations); <paramref name="DataNeed"/> is what those sources state — absence is NotAssessed, never "no data needed".</summary>
+public sealed record E2EFlowEvidence(string Id, string Name, string Module, string Description, CriticalE2EStatus? LatestStatus, DateTimeOffset? LatestRunAt,
+    IReadOnlyList<CoverageTestDataLink>? TestData = null, CoverageDataNeed DataNeed = CoverageDataNeed.NotAssessed, string? DataNeedBasis = null);
 
 /// <summary>
 /// Test Coverage &amp; Overlap Review engine. Pure function over one Source Analysis snapshot (optionally a baseline of the same repository), the
@@ -38,7 +41,8 @@ public static partial class TestCoverageReviewEngine
     private sealed record Dev(CoverageTest Test, TestBehaviorFact? Fact, HashSet<string> Tokens);
 
     public static TestCoverageReviewResult Review(IqrSourceSnapshot current, IqrSourceSnapshot? baseline, TestCoverageReviewRequest request,
-        IReadOnlyList<CoverageDecision> decisions, IReadOnlyList<E2EFlowEvidence> e2eFlows, DateTimeOffset now, CancellationToken ct = default)
+        IReadOnlyList<CoverageDecision> decisions, IReadOnlyList<E2EFlowEvidence> e2eFlows, DateTimeOffset now, CancellationToken ct = default,
+        IReadOnlyList<IntegrationJourneyCatalogEntry>? integrationJourneys = null)
     {
         var phases = new List<ReviewPhase>();
         var limitations = new List<string>();
@@ -92,6 +96,8 @@ public static partial class TestCoverageReviewEngine
         var testsByComponent = devs.SelectMany(d => d.Test.Components.Select(c => (c, d))).GroupBy(x => x.c, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Select(x => x.d).ToList(), StringComparer.Ordinal);
         var journeys = architecture is null ? [] : Journeys(current, architecture, components, testsByComponent, journeyDecisions, e2eFlows);
+        if (architecture is not null && integrationJourneys is { Count: > 0 })
+            journeys = [.. journeys.Select(j => j with { AssociationCandidates = AssociationCandidates(j, architecture, integrationJourneys) })];
         Phase("Finding system journeys and mapping tests to journey steps", journeys.Count);
 
         // ── 3. Components ────────────────────────────────────────────────────────────────────────────────────────────
@@ -110,6 +116,10 @@ public static partial class TestCoverageReviewEngine
             Id = "e2e:" + f.Id, Title = f.Name, Source = "Critical E2E flow", Ownership = TestOwnership.QaAutomated, When = f.Description, IntendedLevel = TestLevel.E2E,
             IntendedLevelBasis = "Critical E2E flow (runs against a deployed target)",
             Execution = f.LatestStatus switch { CriticalE2EStatus.Passed => TestExecutionState.Passed, CriticalE2EStatus.NotRun or null => TestExecutionState.NotVerified, _ => TestExecutionState.Failed },
+            // Test Data identity exactly as the flow's sources state it; a flow without links stays NotAssessed (never "needs no data").
+            TestData = [.. (f.TestData ?? []).DistinctBy(l => (l.AssetId, l.Source))],
+            DataNeed = (f.TestData?.Count ?? 0) > 0 ? CoverageDataNeed.Linked : f.DataNeed == CoverageDataNeed.RequiredButMissing ? CoverageDataNeed.RequiredButMissing : CoverageDataNeed.NotAssessed,
+            DataNeedBasis = (f.TestData?.Count ?? 0) > 0 || f.DataNeed == CoverageDataNeed.RequiredButMissing ? f.DataNeedBasis : null,
         }));
         var developerSide = devs.Where(d => d.Test.Ownership != TestOwnership.QaAutomated).ToList();
         // Requirement ids are only unique within a module in many repositories (every module may have its own FR-001). An id referenced by tests
@@ -467,6 +477,46 @@ public static partial class TestCoverageReviewEngine
             });
         }
         return journeys.OrderBy(j => j.Steps.Count(s => s.Developer == StepCoverage.Covered) * 1.0 / Math.Max(1, j.Steps.Count)).ThenByDescending(j => j.Steps.Count).ThenBy(j => j.Title, StringComparer.Ordinal).Take(40).ToList();
+    }
+
+    /// <summary>
+    /// Integration Journeys proposed for review from structure only. Rule: the integration journey's component chain is built from its declared
+    /// steps in order (first step's From, then each step's From/To, consecutive duplicates collapsed); the source journey's chain is its node
+    /// sequence. Both sides use the engine's component normalization (<see cref="Normal"/>: lower case, letters and digits only); a source
+    /// component node may match by its display name or its logical name (as the engine's own target resolution does). A candidate exists when
+    /// the integration chain equals the source chain ("Equal") or contains it as a contiguous run ("Contains"). Never confirmed here.
+    /// </summary>
+    internal static List<JourneyAssociationCandidate> AssociationCandidates(Journey journey, ArchitectureSnapshot architecture, IReadOnlyList<IntegrationJourneyCatalogEntry> catalog)
+    {
+        var components = architecture.Components.GroupBy(c => c.Id, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var source = journey.Nodes.Select(n => components.TryGetValue(n.Id, out var c)
+                ? new HashSet<string>(new[] { Normal(Display(c)), Normal(c.Name) }.Where(x => x.Length > 0), StringComparer.Ordinal)
+                : new HashSet<string>(new[] { Normal(n.Name) }.Where(x => x.Length > 0), StringComparer.Ordinal)).ToList();
+        if (source.Count < 2 || source.Any(s => s.Count == 0)) return [];
+        var result = new List<JourneyAssociationCandidate>();
+        foreach (var entry in catalog)
+        {
+            var chain = IntegrationChain(entry);
+            if (chain.Count < source.Count) continue;
+            var at = -1;
+            for (var start = 0; start + source.Count <= chain.Count && at < 0; start++)
+                if (source.Select((names, i) => names.Contains(chain[start + i])).All(x => x)) at = start;
+            if (at < 0) continue;
+            var equal = chain.Count == source.Count;
+            result.Add(new JourneyAssociationCandidate($"{entry.PackId}:{entry.JourneyId}", entry.DisplayName, equal ? "Equal" : "Contains",
+                equal ? "The Integration Journey declares the same component chain as this source journey (structure only; needs review)."
+                      : $"The Integration Journey's declared component chain contains this source journey's chain (components {at + 1}–{at + source.Count} of {chain.Count}; structure only; needs review)."));
+        }
+        return [.. result.DistinctBy(c => c.IntegrationJourneyId).OrderBy(c => c.Match == "Equal" ? 0 : 1).ThenBy(c => c.IntegrationJourneyId, StringComparer.Ordinal)];
+    }
+
+    /// <summary>The integration journey's declared component chain, normalized, consecutive duplicates collapsed (e.g. a self "state" step).</summary>
+    internal static List<string> IntegrationChain(IntegrationJourneyCatalogEntry entry)
+    {
+        var chain = new List<string>();
+        void Add(string component) { var n = Normal(component); if (n.Length > 0 && (chain.Count == 0 || chain[^1] != n)) chain.Add(n); }
+        foreach (var edge in entry.Edges) { Add(edge.FromComponent); Add(edge.ToComponent); }
+        return chain;
     }
 
     private static JourneyStep Step(Edge edge, Dictionary<string, JourneyNode> nodes, Dictionary<string, ArchitectureComponent> components,

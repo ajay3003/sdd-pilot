@@ -94,3 +94,8 @@
 .tco-scroll { position: relative; }
 /* Rendered Markdown tables keep readable columns; the focusable preview scrolls instead of squeezing them on phones. */
 .tco-doc-rendered ::deep th, .tco-doc-rendered ::deep td { min-width: 7rem; }
+/* Journey association: candidates are proposals (never counted) with a compact confirm/reject action. */
+.tco-associations { margin: .35rem 0; display: grid; gap: .3rem; }
+.tco-candidate { display: flex; flex-wrap: wrap; gap: .25rem .6rem; align-items: center; border: 1px dashed var(--clr-border); border-radius: .5rem; padding: .3rem .55rem; font-size: .86rem; overflow-wrap: anywhere; }
+.tco-candidate .tco-confirm { margin: 0; }
+.tco-association-reviewer { display: flex; flex-wrap: wrap; gap: .3rem 1rem; align-items: flex-end; margin: .3rem 0 .5rem; }

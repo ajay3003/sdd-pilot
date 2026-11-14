@@ -1,3 +1,4 @@
+using BirkNext.ManualReview;
 using BirkNext.Scopes;
 using BirkNext.SourceEvidence;
 using BirkNext.TestCoverage;
@@ -88,15 +89,16 @@ public sealed class TestCoverageScopeFilterTests : BunitContext
         ],
     };
 
-    private IRenderedComponent<TestCoverageReview> RenderScoped()
+    private IRenderedComponent<TestCoverageReview> RenderScoped(TestCoverageReviewResult? result = null, ScopeSelection? selection = null, Mock<IManualReviewApiService>? manual = null)
     {
+        if (manual is not null) Services.AddSingleton(manual.Object);
         var scopes = new Mock<IScopeRegistryApiService>();
         scopes.Setup(x => x.ListAsync("import-1", It.IsAny<CancellationToken>())).ReturnsAsync(([
             new ScopeSummary { Id = ScopeA, Name = "Orders", State = ScopeState.Approved, ApprovedRevision = 1, CurrentRevision = 1 },
             new ScopeSummary { Id = ScopeB, Name = "Release", State = ScopeState.Approved, ApprovedRevision = 1, CurrentRevision = 1 }], (string?)null));
-        scopes.Setup(x => x.SelectionAsync("import-1", It.IsAny<IReadOnlyList<Guid>>(), It.IsAny<CancellationToken>())).ReturnsAsync((Selection(), (string?)null));
+        scopes.Setup(x => x.SelectionAsync("import-1", It.IsAny<IReadOnlyList<Guid>>(), It.IsAny<CancellationToken>())).ReturnsAsync((selection ?? Selection(), (string?)null));
         Services.AddSingleton(scopes.Object);
-        _api.Setup(x => x.RunAsync(It.IsAny<TestCoverageReviewRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync((Result(), (string?)null));
+        _api.Setup(x => x.RunAsync(It.IsAny<TestCoverageReviewRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync((result ?? Result(), (string?)null));
         Services.GetRequiredService<NavigationManager>().NavigateTo($"test-coverage-review?scope={ScopeA}&scope={ScopeB}");
         var cut = Render<TestCoverageReview>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=tco-run]").HasAttribute("disabled").Should().BeFalse());
@@ -132,7 +134,7 @@ public sealed class TestCoverageScopeFilterTests : BunitContext
         Text(cut, "tco-scope-in-journeys").Should().Be("0", "source journeys and Integration Journey ids share no stable identity");
         Text(cut, "tco-scope-unconfirmed-journeys").Should().Be("1");
         Text(cut, "tco-scope-in-test-data").Should().Be("0");
-        Text(cut, "tco-scope-note-test-data").Should().Contain("carries no Test Data asset ids");
+        Text(cut, "tco-scope-note-test-data").Should().Contain("not linked to any QA test").And.Contain("not assessed for Test Data");
 
         cut.Find("[data-testid=tco-tab-requirements]").Click();
         var items = cut.FindAll("[data-testid=tco-behavior]");
@@ -145,6 +147,152 @@ public sealed class TestCoverageScopeFilterTests : BunitContext
         cut.Find("[data-testid=tco-tab-duplicates]").Click();
         cut.FindAll("[data-testid=tco-overlap]").Should().ContainSingle("only the overlap of the scoped Critical E2E flow is tied to the scope")
             .Which.TextContent.Should().Contain("Submit order");
+    }
+
+    // ── Journey association (exact id or reviewer-confirmed only) and Test Data identity ─────────────────────────────────────
+
+    private const string SourceJourney = "journey:a>b";
+    private const string ScopeJourney = "orders-pack:submit";
+
+    private static TestCoverageReviewResult WithCandidate() => Result() with
+    {
+        Journeys = [new Journey { Id = SourceJourney, Title = "Orders.Api → orders-out", Weakest = ConnectionEvidence.StronglySupported,
+            AssociationCandidates = [new JourneyAssociationCandidate(ScopeJourney, "Submit order", "Equal", "Same declared component chain (structure only; needs review).")] }],
+    };
+
+    private static ManualReviewDecisionView Decision(ManualReviewDecisionValue value, DateTimeOffset at) => new()
+    {
+        Id = Guid.NewGuid(), Module = ManualReviewModules.JourneyAssociation, ScopeKey = "import-1", SubjectKey = SourceJourney, AppliesTo = ScopeJourney,
+        Reviewer = "Kari", Decision = value, DecidedAt = at, Current = true,
+    };
+
+    private static Mock<IManualReviewApiService> Manual(params ManualReviewDecisionView[] decisions)
+    {
+        var manual = new Mock<IManualReviewApiService>();
+        manual.Setup(x => x.ListAsync(ManualReviewModules.JourneyAssociation, "import-1", It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ManualReviewDecisionView>?)decisions.ToList());
+        return manual;
+    }
+
+    [Fact]
+    public void A_confirmed_association_counts_the_journey_in_scope()
+    {
+        var cut = RenderScoped(WithCandidate(), manual: Manual(Decision(ManualReviewDecisionValue.Acceptable, DateTimeOffset.UtcNow)));
+
+        Text(cut, "tco-scope-in-journeys").Should().Be("1");
+        Text(cut, "tco-scope-unconfirmed-journeys").Should().Be("0");
+        cut.Find("[data-testid=tco-tab-journeys]").Click();
+        cut.Find("[data-testid=tco-journey-scope-in]").GetAttribute("data-reason").Should().Be(nameof(JourneyScopeReason.ConfirmedAssociation));
+        cut.Find("[data-testid=tco-journey-association]").GetAttribute("data-kind").Should().Be("Confirmed");
+        cut.FindAll("[data-testid=tco-journey-candidate]").Should().BeEmpty("a decided candidate is shown as its decision, not as a proposal");
+    }
+
+    [Fact]
+    public void A_structural_candidate_is_shown_for_review_but_never_counted()
+    {
+        var cut = RenderScoped(WithCandidate(), manual: Manual());
+
+        Text(cut, "tco-scope-in-journeys").Should().Be("0");
+        Text(cut, "tco-scope-unconfirmed-journeys").Should().Be("1");
+        cut.Find("[data-testid=tco-tab-journeys]").Click();
+        var candidate = cut.Find("[data-testid=tco-journey-candidate]");
+        candidate.GetAttribute("data-target").Should().Be(ScopeJourney);
+        candidate.QuerySelector("[data-testid=tco-candidate-label]")!.TextContent.Should().Be(TestCoverageScopePresentation.CandidateLabel);
+        cut.Find("[data-testid=tco-journey-scope-reason]").GetAttribute("data-reason").Should().Be(nameof(JourneyScopeReason.CandidateNotReviewed));
+        cut.Find("[data-testid=tco-association-confirm]").HasAttribute("disabled").Should().BeTrue("a reviewer name is required");
+    }
+
+    [Fact]
+    public void A_rejected_association_is_never_counted_even_after_an_earlier_confirmation()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var cut = RenderScoped(WithCandidate(), manual: Manual(Decision(ManualReviewDecisionValue.Acceptable, now.AddMinutes(-5)), Decision(ManualReviewDecisionValue.IssueFound, now)));
+
+        Text(cut, "tco-scope-in-journeys").Should().Be("0", "the latest decision for the pair is a rejection");
+        Text(cut, "tco-scope-unconfirmed-journeys").Should().Be("1");
+        cut.Find("[data-testid=tco-tab-journeys]").Click();
+        cut.Find("[data-testid=tco-journey-scope-reason]").GetAttribute("data-reason").Should().Be(nameof(JourneyScopeReason.Rejected));
+        cut.Find("[data-testid=tco-journey-association]").GetAttribute("data-kind").Should().Be("Rejected");
+    }
+
+    [Fact]
+    public void Confirming_a_candidate_records_the_decision_for_the_source_journey_and_the_integration_journey()
+    {
+        var manual = Manual();
+        ManualReviewDecisionRequest? sent = null;
+        manual.Setup(x => x.RecordAsync(It.IsAny<ManualReviewDecisionRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<ManualReviewDecisionRequest, CancellationToken>((request, _) => sent = request)
+            .ReturnsAsync((ManualReviewDecisionRequest request, CancellationToken _) => ((ManualReviewDecisionView?)Decision(request.Decision, DateTimeOffset.UtcNow), (string?)null));
+        var cut = RenderScoped(WithCandidate(), manual: manual);
+
+        cut.Find("[data-testid=tco-tab-journeys]").Click();
+        cut.Find("[data-testid=tco-association-reviewer]").Input("Kari");
+        cut.Find("[data-testid=tco-association-confirm]").Click();
+
+        cut.WaitForAssertion(() => sent.Should().NotBeNull());
+        sent!.Module.Should().Be(ManualReviewModules.JourneyAssociation);
+        (sent.ScopeKey, sent.SubjectKey, sent.AppliesTo, sent.Decision, sent.Reviewer).Should().Be(("import-1", SourceJourney, ScopeJourney, ManualReviewDecisionValue.Acceptable, "Kari"));
+        ManualReviewRules.Validate(sent).Should().BeNull();
+        cut.WaitForAssertion(() => Text(cut, "tco-scope-in-journeys").Should().Be("1"));
+    }
+
+    [Fact]
+    public void Rejecting_a_candidate_records_issue_found_with_a_note()
+    {
+        var manual = Manual();
+        ManualReviewDecisionRequest? sent = null;
+        manual.Setup(x => x.RecordAsync(It.IsAny<ManualReviewDecisionRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<ManualReviewDecisionRequest, CancellationToken>((request, _) => sent = request)
+            .ReturnsAsync((ManualReviewDecisionRequest request, CancellationToken _) => ((ManualReviewDecisionView?)Decision(request.Decision, DateTimeOffset.UtcNow), (string?)null));
+        var cut = RenderScoped(WithCandidate(), manual: manual);
+
+        cut.Find("[data-testid=tco-tab-journeys]").Click();
+        cut.Find("[data-testid=tco-association-reviewer]").Input("Kari");
+        cut.Find("[data-testid=tco-association-reject]").Click();
+
+        cut.WaitForAssertion(() => sent.Should().NotBeNull());
+        (sent!.SubjectKey, sent.AppliesTo, sent.Decision).Should().Be((SourceJourney, ScopeJourney, ManualReviewDecisionValue.IssueFound));
+        ManualReviewRules.Validate(sent).Should().BeNull("a rejection carries the required note");
+        Text(cut, "tco-scope-in-journeys").Should().Be("0");
+    }
+
+    [Fact]
+    public void Test_data_assets_are_linked_by_id_and_counted_once_across_scopes_and_tests()
+    {
+        var link = new CoverageTestDataLink("tda_order", "order", "fp-1", "Critical E2E flow definition");
+        var result = Result() with
+        {
+            QaTests =
+            [
+                new QaTestCandidate { Id = "e2e:orders-e2e", Title = "Submit order", Source = "Critical E2E flow", Ownership = TestOwnership.QaAutomated, TestData = [link], DataNeed = CoverageDataNeed.Linked },
+                new QaTestCandidate { Id = "e2e:other-flow", Title = "Other flow", Source = "Critical E2E flow", Ownership = TestOwnership.QaAutomated,
+                    TestData = [link, new CoverageTestDataLink("tda_other", null, null, "Test Plan draft")], DataNeed = CoverageDataNeed.Linked },
+                new QaTestCandidate { Id = "AS-3", Title = "Cancel order", Source = "Acceptance scenario in the specification", RequirementIds = ["FR-003"] },
+                new QaTestCandidate { Id = "e2e:cancel", Title = "Cancel flow", Source = "Critical E2E flow", DataNeed = CoverageDataNeed.RequiredButMissing, DataNeedBasis = "Describes required test data but links no Test Data asset." },
+            ],
+        };
+        var selection = Selection() with
+        {
+            Members = [.. Selection().Members.Where(m => m.Member.Kind != ScopeMemberKind.TestDataAsset), Member(ScopeMemberKind.TestDataAsset, "tda_order", ScopeA, ScopeB)],
+        };
+        var cut = RenderScoped(result, selection);
+
+        Text(cut, "tco-scope-in-test-data").Should().Be("1", "tda_order is named by two scopes and used by two tests, and counts once");
+        Text(cut, "tco-scope-whole-test-data").Should().Be("2");
+        cut.Find("[data-testid=tco-tab-duplicates]").Click();
+        var assets = cut.FindAll("[data-testid=tco-asset]");
+        assets.Select(a => a.GetAttribute("data-asset")).Should().Equal("tda_order", "tda_other");
+        var order = assets[0];
+        order.GetAttribute("data-in-scope").Should().Be("true");
+        order.TextContent.Should().Contain("Submit order").And.Contain("Other flow");
+        order.QuerySelector("[data-testid=tco-asset-scopes]")!.TextContent.Should().Contain("Orders").And.Contain("Release");
+        assets[1].GetAttribute("data-in-scope").Should().Be("false");
+
+        var needs = cut.FindAll("[data-testid=tco-qa-data-need]").ToDictionary(e => e.GetAttribute("data-test")!, e => e);
+        needs["e2e:orders-e2e"].TextContent.Should().Contain("Linked (tda_order)");
+        needs["e2e:cancel"].TextContent.Should().Contain("Required but missing");
+        needs["AS-3"].GetAttribute("data-state").Should().Be(nameof(CoverageDataNeed.NotAssessed));
+        needs["AS-3"].TextContent.Should().Contain("Not assessed", "no link is never read as 'no data needed'");
     }
 
     [Fact]

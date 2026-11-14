@@ -208,6 +208,76 @@ public sealed class TestCoverageReviewEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task Qa_tests_carry_test_data_asset_ids_from_flow_definitions_and_confirmed_test_plan_cases()
+    {
+        var definition = new CriticalE2EFlowDefinition { Id = "f1", Name = "Place order", Module = "Orders.Api", EnvironmentId = "env-1", TestDataAliases = ["customer"], TestDataAssetIds = ["tda_customer"],
+            DataMappings = [new CriticalE2EDataMapping("orderNo", ["order"], BirkNext.TestData.TestDataDataType.SimpleValues, "step-1") { AssetIds = ["tda_order"] }] };
+        var linked = new BirkNext.TestPlanning.TestCaseDraft
+        {
+            Source = new BirkNext.TestPlanning.ScenarioReference { Kind = BirkNext.TestPlanning.ScenarioSourceKind.SystemGuide, Owner = "guide", ScenarioId = "s1" },
+            Generated = new BirkNext.TestPlanning.TestCaseContent { Title = "Place an order" },
+            Correlations = [new BirkNext.TestPlanning.ScenarioCorrelation { Target = new() { Kind = BirkNext.TestPlanning.ScenarioSourceKind.CriticalE2EFlow, Owner = "env-1", ScenarioId = "f1" }, State = BirkNext.TestPlanning.CorrelationState.Confirmed }],
+            TestData = [new BirkNext.TestPlanning.TestCaseDataLink { AssetId = "tda_customer", Alias = "customer", Fingerprint = "fp-1" }, new BirkNext.TestPlanning.TestCaseDataLink { AssetId = "tda_plan", Alias = "plan", Fingerprint = "fp-2" }],
+        };
+        var candidateOnly = linked with
+        {
+            Correlations = [linked.Correlations[0] with { State = BirkNext.TestPlanning.CorrelationState.Candidate }],
+            TestData = [new BirkNext.TestPlanning.TestCaseDataLink { AssetId = "tda_unconfirmed", Alias = "x" }],
+        };
+        var draft = new BirkNext.TestPlanning.TestPlanDraft { PlanName = "Release 1", Revision = 3, Cases = [linked, candidateOnly] };
+        var flow = TestCoverageDataLinks.With(new E2EFlowEvidence("f1", "Place order", "Orders.Api", "", null, null), definition, [draft], "env-1");
+        var r = Review(await CurrentAsync(), flows: [flow]);
+
+        var qa = r.QaTests.Single(q => q.Id == "e2e:f1");
+        qa.DataNeed.Should().Be(CoverageDataNeed.Linked);
+        qa.TestData.Select(l => l.AssetId).Distinct().Should().BeEquivalentTo(["tda_customer", "tda_order", "tda_plan"], "only the flow's stable ids and a confirmed case's links count; a candidate correlation does not");
+        qa.TestData.Should().Contain(l => l.AssetId == "tda_plan" && l.Fingerprint == "fp-2" && l.Source.Contains("Release 1"));
+        qa.TestData.Should().Contain(l => l.AssetId == "tda_customer" && l.Source == TestCoverageDataLinks.FlowSource);
+    }
+
+    [Fact]
+    public async Task A_qa_test_without_a_linked_asset_is_not_assessed_unless_its_source_states_a_data_need()
+    {
+        var bare = TestCoverageDataLinks.With(new E2EFlowEvidence("f1", "Place order", "Orders.Api", "", null, null), new CriticalE2EFlowDefinition { Id = "f1" }, [], "env-1");
+        var stated = new BirkNext.TestPlanning.TestCaseDraft
+        {
+            Source = new BirkNext.TestPlanning.ScenarioReference { Kind = BirkNext.TestPlanning.ScenarioSourceKind.CriticalE2EFlow, Owner = "env-1", ScenarioId = "f2" },
+            Generated = new BirkNext.TestPlanning.TestCaseContent { Title = "Cancel", RequiredTestData = "An existing order" },
+        };
+        var missing = TestCoverageDataLinks.With(new E2EFlowEvidence("f2", "Cancel order", "Orders.Api", "", null, null), new CriticalE2EFlowDefinition { Id = "f2" },
+            [new BirkNext.TestPlanning.TestPlanDraft { PlanName = "Release 1", Cases = [stated] }], "env-1");
+        var r = Review(await CurrentAsync(), flows: [bare, missing]);
+
+        r.QaTests.Single(q => q.Id == "e2e:f1").Should().Match<QaTestCandidate>(q => q.DataNeed == CoverageDataNeed.NotAssessed && q.TestData.Count == 0 && q.DataNeedBasis == null,
+            "absence of a link is never 'no data needed'");
+        r.QaTests.Single(q => q.Id == "e2e:f2").Should().Match<QaTestCandidate>(q => q.DataNeed == CoverageDataNeed.RequiredButMissing && q.DataNeedBasis!.Contains("links no Test Data asset"));
+        r.QaTests.Where(q => !q.Id.StartsWith("e2e:", StringComparison.Ordinal)).Should().OnlyContain(q => q.DataNeed == CoverageDataNeed.NotAssessed);
+    }
+
+    [Fact]
+    public async Task Journey_association_candidates_come_from_the_declared_component_chain_only()
+    {
+        var snapshot = await CurrentAsync();
+        var journey = Review(snapshot).Journeys.First(j => j.Nodes.Count >= 2);
+        var names = journey.Nodes.Select(n => n.Name).ToList();
+        static IntegrationJourneyCatalogEntry Entry(string id, string display, IReadOnlyList<string> chain) => new("pack", id, display,
+            [.. chain.Zip(chain.Skip(1)).Select((p, i) => new JourneyEdge($"s{i}", "step", JourneyStepKind.BrokerDelivery, p.First, p.Second, p.First))]);
+        var catalog = new[]
+        {
+            Entry("same", "Same chain", [.. names.Select(n => n.ToUpperInvariant().Replace(".", " "))]),
+            Entry("longer", "Longer chain", ["Upstream system", .. names, "Downstream system"]),
+            Entry("display-name-only", journey.Title, ["Something", "Else"]),
+            Entry("reversed", "Reversed", [.. Enumerable.Reverse(names)]),
+        };
+        var r = TestCoverageReviewEngine.Review(snapshot, null, new TestCoverageReviewRequest { CurrentSnapshotId = snapshot.Id, Workspace = TestCoverageFixture.Workspace() },
+            [], [], DateTimeOffset.UtcNow, integrationJourneys: catalog);
+
+        var candidates = r.Journeys.Single(j => j.Id == journey.Id).AssociationCandidates;
+        candidates.Select(c => (c.IntegrationJourneyId, c.Match)).Should().Equal(("pack:same", "Equal"), ("pack:longer", "Contains"));
+        candidates.Should().NotContain(c => c.IntegrationJourneyId == "pack:display-name-only", "a matching title is never structure");
+    }
+
+    [Fact]
     public async Task Service_binds_runs_to_exact_snapshots_and_refuses_other_repositories()
     {
         var current = await CurrentAsync();

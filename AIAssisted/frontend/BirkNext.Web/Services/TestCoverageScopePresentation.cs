@@ -1,4 +1,5 @@
 using BirkNext.Interpretation;
+using BirkNext.ManualReview;
 using BirkNext.Scopes;
 using BirkNext.TestCoverage;
 
@@ -23,6 +24,22 @@ public sealed record CoverageScopeCount(string Kind, string Label, int InScope, 
 /// <param name="SharedMembers">Members named by more than one selected scope (each counted once).</param>
 public sealed record CoverageScopeSummary(IReadOnlyList<CoverageScopeCount> Rows, int SharedMembers, int ScopeCount, IReadOnlyList<string> Notes);
 
+/// <summary>How a source-derived journey relates to an Integration Journey: the same id, or a reviewer's recorded decision.</summary>
+public enum JourneyAssociationKind { Exact, Confirmed, Rejected }
+
+/// <summary>One association of a source journey with an Integration Journey ("packId:journeyId"). Only Exact and Confirmed ever count.</summary>
+public sealed record JourneyAssociationLink(string IntegrationJourneyId, JourneyAssociationKind Kind, string? Reviewer, DateTimeOffset? DecidedAt);
+
+/// <summary>Why a source journey is or is not tied to the selected scopes.</summary>
+public enum JourneyScopeReason { SameIdentity, ConfirmedAssociation, NoCandidate, CandidateNotReviewed, Rejected, NoJourneyInScope }
+
+/// <param name="Members">The scope Journey members the journey is tied to (exact or confirmed); empty unless in scope.</param>
+/// <param name="Scopes">Names of the selected scopes that contributed those members.</param>
+public sealed record JourneyScopeState(CoverageScopeAssociation Association, JourneyScopeReason Reason, string Text, IReadOnlyList<string> Members, IReadOnlyList<string> Scopes);
+
+/// <summary>One Test Data asset linked to QA tests in this review (deduplicated by asset id), with the tests and selected scopes that use it.</summary>
+public sealed record CoverageAssetUse(string AssetId, string? Alias, IReadOnlyList<string> Fingerprints, IReadOnlyList<string> Tests, IReadOnlyList<string> Sources, bool InScope, IReadOnlyList<string> Scopes);
+
 /// <summary>
 /// The shared scope filter on Test Coverage &amp; Overlap Review. Items are tied to the selected scopes only through identities a scope member can
 /// carry — never by name similarity — and nothing outside a confirmed association is ever presented as covered:
@@ -38,8 +55,12 @@ public sealed record CoverageScopeSummary(IReadOnlyList<CoverageScopeCount> Rows
 /// <item>Critical E2E flows: QA test "e2e:{flowId}" ↔ CriticalE2EFlow member {flowId} (exact).</item>
 /// <item>Tests and other QA tests: through the requirement ids they reference (the rule above); a test with no requirement id has no identity a scope can name.</item>
 /// <item>Journeys: the review's journeys are derived from source connections ("journey:a&gt;b"); scope journeys are Integration Journey pack ids
-/// ("packId:journeyId"). No stable identity links the two, so every journey is reported as not confirmed while journeys are selected.</item>
-/// <item>Test Data: the review result carries no Test Data asset ids, so scoped assets cannot be associated here.</item>
+/// ("packId:journeyId"). A journey is in scope only through (a) exact identity (a Journey member id equals the review journey id) or (b) a
+/// reviewer's confirmed association recorded in the shared manual-review store (module <see cref="ManualReviewModules.JourneyAssociation"/>,
+/// subject = source journey id, applies to = "packId:journeyId", latest decision Acceptable). A rejected association (latest IssueFound) never
+/// counts; a structural candidate (<see cref="JourneyAssociationCandidate"/>) is shown for review and never counts. Names are never matched.</item>
+/// <item>Test Data: an asset is in scope when a TestDataAsset member id equals an asset id a QA test is linked to (from the flow definition or a
+/// confirmed Test Plan case); each asset counts once however many tests and scopes use it.</item>
 /// </list>
 /// </summary>
 public static class TestCoverageScopePresentation
@@ -101,7 +122,83 @@ public static class TestCoverageScopePresentation
     public static int FlowContributors(QaTestCandidate q, ScopeSelection selection) => FlowId(q) is { } flowId
         ? Of(selection, ScopeMemberKind.CriticalE2EFlow).Where(m => m.Member.TargetId == flowId).SelectMany(m => m.ContributedBy).Select(c => c.ScopeId).Distinct().Count() : 0;
 
-    public static CoverageScopeSummary Summarize(TestCoverageReviewResult r, ScopeSelection selection)
+    public const string CandidateLabel = "Candidate — needs review";
+
+    /// <summary>The latest recorded association decision per (source journey, Integration Journey) pair. The store marks the latest per subject
+    /// only, so the pair is resolved here by decision time. Decisions of other modules or without an "applies to" are ignored.</summary>
+    public static IReadOnlyDictionary<(string Subject, string AppliesTo), ManualReviewDecisionView> LatestAssociations(IEnumerable<ManualReviewDecisionView>? decisions) =>
+        (decisions ?? []).Where(d => d.Module == ManualReviewModules.JourneyAssociation && !string.IsNullOrWhiteSpace(d.AppliesTo) && !string.IsNullOrWhiteSpace(d.SubjectKey))
+            .GroupBy(d => (d.SubjectKey, d.AppliesTo!)).ToDictionary(g => g.Key, g => g.OrderByDescending(d => d.DecidedAt).First());
+
+    /// <summary>The recorded associations of one source journey (Acceptable = confirmed, IssueFound = rejected; any other latest value is undecided).</summary>
+    public static IReadOnlyList<JourneyAssociationLink> Associations(Journey journey, IReadOnlyDictionary<(string Subject, string AppliesTo), ManualReviewDecisionView> latest) =>
+        [.. latest.Where(kv => kv.Key.Subject == journey.Id && kv.Value.Decision is ManualReviewDecisionValue.Acceptable or ManualReviewDecisionValue.IssueFound)
+            .Select(kv => new JourneyAssociationLink(kv.Key.AppliesTo, kv.Value.Decision == ManualReviewDecisionValue.Acceptable ? JourneyAssociationKind.Confirmed : JourneyAssociationKind.Rejected,
+                kv.Value.Reviewer, kv.Value.DecidedAt))
+            .OrderBy(l => l.IntegrationJourneyId, StringComparer.Ordinal)];
+
+    /// <summary>The recorded decision on one candidate, or null when it was not reviewed.</summary>
+    public static JourneyAssociationKind? CandidateDecision(Journey journey, string integrationJourneyId, IReadOnlyDictionary<(string Subject, string AppliesTo), ManualReviewDecisionView> latest) =>
+        latest.TryGetValue((journey.Id, integrationJourneyId), out var d)
+            ? d.Decision switch { ManualReviewDecisionValue.Acceptable => JourneyAssociationKind.Confirmed, ManualReviewDecisionValue.IssueFound => JourneyAssociationKind.Rejected, _ => (JourneyAssociationKind?)null }
+            : null;
+
+    /// <summary>Whether a source journey is tied to the selected scopes' Journey members (exact identity or confirmed association only).</summary>
+    public static JourneyScopeState JourneyScope(Journey journey, ScopeSelection selection, IReadOnlyDictionary<(string Subject, string AppliesTo), ManualReviewDecisionView> latest)
+    {
+        var members = Of(selection, ScopeMemberKind.Journey).ToList();
+        if (members.Count == 0) return new(CoverageScopeAssociation.OutOfScope, JourneyScopeReason.NoJourneyInScope, "No Integration Journey is in the selected scopes", [], []);
+        static IReadOnlyList<string> ScopesOf(IEnumerable<ScopeSelectionMember> ms) =>
+            [.. ms.SelectMany(m => m.ContributedBy).Select(c => c.ScopeName).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
+        var exact = members.Where(m => string.Equals(m.Member.TargetId, journey.Id, StringComparison.Ordinal)).ToList();
+        if (exact.Count > 0) return new(CoverageScopeAssociation.InScope, JourneyScopeReason.SameIdentity, "In scope — same journey identity", [journey.Id], ScopesOf(exact));
+        var links = Associations(journey, latest);
+        var confirmed = members.Where(m => links.Any(l => l.Kind == JourneyAssociationKind.Confirmed && l.IntegrationJourneyId == m.Member.TargetId)).ToList();
+        if (confirmed.Count > 0)
+            return new(CoverageScopeAssociation.InScope, JourneyScopeReason.ConfirmedAssociation,
+                $"In scope — association confirmed with {string.Join(", ", confirmed.Select(m => m.Member.Label is { Length: > 0 } l ? l : m.Member.TargetId).Distinct())}",
+                [.. confirmed.Select(m => m.Member.TargetId).Distinct(StringComparer.Ordinal)], ScopesOf(confirmed));
+        var memberIds = members.Select(m => m.Member.TargetId).ToHashSet(StringComparer.Ordinal);
+        var unreviewed = journey.AssociationCandidates.Where(c => memberIds.Contains(c.IntegrationJourneyId) && CandidateDecision(journey, c.IntegrationJourneyId, latest) is null).ToList();
+        var rejected = links.Where(l => l.Kind == JourneyAssociationKind.Rejected && memberIds.Contains(l.IntegrationJourneyId)).ToList();
+        var reason = unreviewed.Count > 0 ? JourneyScopeReason.CandidateNotReviewed : rejected.Count > 0 ? JourneyScopeReason.Rejected : JourneyScopeReason.NoCandidate;
+        return new(CoverageScopeAssociation.NotConfirmed, reason, $"{NotConfirmedLabel} — {ReasonText(reason)}", [], []);
+    }
+
+    /// <summary>Why a journey is (not) tied to the scope, in plain words.</summary>
+    public static string ReasonText(JourneyScopeReason reason) => reason switch
+    {
+        JourneyScopeReason.SameIdentity => "same journey identity",
+        JourneyScopeReason.ConfirmedAssociation => "association confirmed by a reviewer",
+        JourneyScopeReason.CandidateNotReviewed => "candidate not reviewed",
+        JourneyScopeReason.Rejected => "association rejected by a reviewer",
+        JourneyScopeReason.NoCandidate => "no candidate",
+        _ => "no Integration Journey in the selected scopes",
+    };
+
+    /// <summary>Plain label of a QA test's data need. "Not assessed" is never "no data needed".</summary>
+    public static string DataNeed(QaTestCandidate q) => q.DataNeed switch
+    {
+        CoverageDataNeed.Linked => $"Linked ({string.Join(", ", q.TestData.Select(l => l.AssetId).Distinct(StringComparer.Ordinal))})",
+        CoverageDataNeed.RequiredButMissing => "Required but missing",
+        _ => "Not assessed",
+    };
+
+    /// <summary>Every Test Data asset linked to a QA test in this review, once per asset id, with the tests (and, with a selection, the scopes) that use it.</summary>
+    public static IReadOnlyList<CoverageAssetUse> Assets(TestCoverageReviewResult r, ScopeSelection? selection)
+    {
+        var members = selection is null ? [] : Of(selection, ScopeMemberKind.TestDataAsset).ToList();
+        return [.. r.QaTests.SelectMany(q => q.TestData.Select(l => (Test: q, Link: l))).GroupBy(x => x.Link.AssetId, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal).Select(g =>
+        {
+            var named = members.Where(m => string.Equals(m.Member.TargetId, g.Key, StringComparison.Ordinal)).ToList();
+            return new CoverageAssetUse(g.Key, g.Select(x => x.Link.Alias).FirstOrDefault(a => !string.IsNullOrWhiteSpace(a)),
+                [.. g.Select(x => x.Link.Fingerprint).Where(f => !string.IsNullOrWhiteSpace(f)).Select(f => f!).Distinct(StringComparer.Ordinal)],
+                [.. g.Select(x => x.Test.Title).Distinct(StringComparer.Ordinal)], [.. g.Select(x => x.Link.Source).Distinct(StringComparer.Ordinal)],
+                named.Count > 0, [.. named.SelectMany(m => m.ContributedBy).Select(c => c.ScopeName).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)]);
+        })];
+    }
+
+    public static CoverageScopeSummary Summarize(TestCoverageReviewResult r, ScopeSelection selection, IEnumerable<ManualReviewDecisionView>? decisions = null)
     {
         var (module, feature) = SpecificationPath(r);
         var requirementItems = r.Behaviors.Where(b => b.Id.StartsWith("req:", StringComparison.Ordinal)).ToList();
@@ -114,7 +211,12 @@ public static class TestCoverageScopePresentation
         var flowsInReview = flows.Select(FlowId).ToHashSet(StringComparer.Ordinal);
         var flowsMissing = flowMembers.Count(id => !flowsInReview.Contains(id));
         var journeyMembers = Of(selection, ScopeMemberKind.Journey).Count();
-        var assetMembers = Of(selection, ScopeMemberKind.TestDataAsset).Count();
+        var assetMembers = Of(selection, ScopeMemberKind.TestDataAsset).Select(m => m.Member.TargetId).Distinct(StringComparer.Ordinal).ToList();
+        var latest = LatestAssociations(decisions);
+        var journeyStates = r.Journeys.GroupBy(j => j.Id, StringComparer.Ordinal).Select(g => JourneyScope(g.First(), selection, latest)).ToList();
+        var assets = Assets(r, selection);
+        var assetsUnlinked = assetMembers.Count(id => assets.All(a => a.AssetId != id));
+        var notAssessed = r.QaTests.Count(q => q.DataNeed == CoverageDataNeed.NotAssessed);
         int Count(IEnumerable<CoverageScopeAssociation> a, CoverageScopeAssociation x) => a.Count(v => v == x);
         var notes = new List<string>();
         if (module is null || feature is null)
@@ -126,11 +228,18 @@ public static class TestCoverageScopePresentation
             new("qa-tests", "QA tests and acceptance scenarios", Count(nonFlowQa, CoverageScopeAssociation.InScope), Count(nonFlowQa, CoverageScopeAssociation.NotConfirmed), nonFlowQa.Count),
             new("flows", "Critical E2E flows", flows.Count(q => flowMembers.Contains(FlowId(q)!)), 0, flows.Count,
                 flowsMissing > 0 ? $"{flowsMissing} named flow{(flowsMissing == 1 ? " is" : "s are")} not in this review (other environment, removed, or no active Target Environment at run time)." : null),
-            new("journeys", "Journeys", 0, journeyMembers > 0 ? r.Journeys.Count : 0, r.Journeys.Count,
-                journeyMembers > 0 ? $"The scope names {journeyMembers} Integration Journey{(journeyMembers == 1 ? "" : "s")}; this review's journeys come from source connections and share no stable id with them." : null),
-            new("test-data", "Test Data assets", 0, 0, 0,
-                assetMembers > 0 ? $"The scope names {assetMembers} Test Data asset{(assetMembers == 1 ? "" : "s")}; this review carries no Test Data asset ids, so they cannot be associated here (see Test Data with the same scope)." : null),
+            new("journeys", "Journeys", Count(journeyStates.Select(s => s.Association), CoverageScopeAssociation.InScope),
+                Count(journeyStates.Select(s => s.Association), CoverageScopeAssociation.NotConfirmed), journeyStates.Count,
+                journeyMembers > 0 ? $"The scope names {journeyMembers} Integration Journey{(journeyMembers == 1 ? "" : "s")}; a source journey counts only by the same id or a reviewer-confirmed association ({journeyStates.Count(s => s.Reason == JourneyScopeReason.CandidateNotReviewed)} with a candidate not reviewed, {journeyStates.Count(s => s.Reason == JourneyScopeReason.Rejected)} rejected)." : null),
+            new("test-data", "Test Data assets", assets.Count(a => a.InScope), 0, assets.Count, TestDataNote(assetMembers.Count, assetsUnlinked, notAssessed)),
         };
+        static string? TestDataNote(int named, int unlinked, int notAssessed)
+        {
+            var parts = new List<string>();
+            if (named > 0) parts.Add($"The scope names {named} Test Data asset{(named == 1 ? "" : "s")}; {unlinked} of them {(unlinked == 1 ? "is" : "are")} not linked to any QA test in this review.");
+            if (notAssessed > 0) parts.Add($"{notAssessed} QA test{(notAssessed == 1 ? " is" : "s are")} not assessed for Test Data (no link recorded; never read as \"no data needed\").");
+            return parts.Count == 0 ? null : string.Join(" ", parts);
+        }
         var relevant = new[] { ScopeMemberKind.Requirement, ScopeMemberKind.CriticalE2EFlow, ScopeMemberKind.Journey, ScopeMemberKind.TestDataAsset };
         var shared = selection.Members.Count(m => relevant.Contains(m.Member.Kind) && m.ContributedBy.Select(c => c.ScopeId).Distinct().Count() > 1);
         return new(rows, shared, selection.Scopes.Count, notes);

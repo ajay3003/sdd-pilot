@@ -134,7 +134,27 @@ public sealed record QaTestCandidate
     public TestLevel IntendedLevel { get; init; } = TestLevel.Unknown;
     public string IntendedLevelBasis { get; init; } = "";
     public TestExecutionState Execution { get; init; } = TestExecutionState.NotVerified;
+    /// <summary>Test Data assets this QA test is linked to by an authoritative source (immutable asset ids; values never copied). Empty for older results.</summary>
+    public List<CoverageTestDataLink> TestData { get; init; } = [];
+    /// <summary>Whether the source states a data need: Linked, RequiredButMissing (stated without a link) or NotAssessed (never "no data needed").</summary>
+    public CoverageDataNeed DataNeed { get; init; } = CoverageDataNeed.NotAssessed;
+    /// <summary>Why the data-need state was given (the source statement), or null when not assessed.</summary>
+    public string? DataNeedBasis { get; init; }
 }
+
+/// <summary>Data need of a QA test as its source states it. Absence of a link is <see cref="NotAssessed"/>, never "no data needed".</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CoverageDataNeed { NotAssessed, Linked, RequiredButMissing }
+
+/// <summary>One Test Data asset a QA test is linked to. <see cref="Source"/> names the owner of the link ("Critical E2E flow definition",
+/// "Test Plan draft …"); <see cref="Fingerprint"/> is the asset version seen when linked, when the source recorded one.</summary>
+public sealed record CoverageTestDataLink(string AssetId, string? Alias, string? Fingerprint, string Source);
+
+/// <summary>An Integration Journey whose declared component chain equals or contains this source journey's chain (structure only). A candidate is
+/// never an association: it is shown "Candidate — needs review" and counts for nothing until a reviewer confirms it.</summary>
+/// <param name="IntegrationJourneyId">"packId:journeyId" (the Scope Registry Journey member id).</param>
+/// <param name="Match">"Equal" (same chain) or "Contains" (the integration journey's chain contains this one contiguously).</param>
+public sealed record JourneyAssociationCandidate(string IntegrationJourneyId, string DisplayName, string Match, string Basis);
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum OverlapKind { HighConfidenceOverlap, PartialOverlap, ComplementaryCoverage, DifferentBoundary, InsufficientEvidence, NeedsTesterReview }
@@ -213,6 +233,8 @@ public sealed record Journey
     public List<JourneyStep> Steps { get; init; } = [];
     public ConnectionEvidence Weakest { get; init; }
     public List<string> FocusForTesters { get; init; } = [];
+    /// <summary>Integration Journeys proposed for review from structure alone (see <see cref="JourneyAssociationCandidate"/>). Empty for older results.</summary>
+    public List<JourneyAssociationCandidate> AssociationCandidates { get; init; } = [];
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

@@ -31,7 +31,7 @@ public sealed record TestCoverageOutcome(TestCoverageReviewResult? Result, int S
 /// to its exact snapshot ids. Reviewer decisions are review metadata per repository; they never overwrite source evidence.
 /// </summary>
 public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvidenceProvider sources, ICriticalE2EStore? e2e = null,
-    SourceRepositoryAssociationService? associations = null) : ITestCoverageReviewService
+    SourceRepositoryAssociationService? associations = null, BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyPackRegistry? journeyPacks = null) : ITestCoverageReviewService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly HashSet<string> AllowedValues = new(StringComparer.Ordinal) { "Confirmed", "Rejected", "DeveloperAutomated", "QaAutomated", "Unknown", "Accepted" };
@@ -67,8 +67,8 @@ public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvid
         }
         var repositoryKey = ReviewSourceEvidenceProvider.Identity(current).Key;
         var decisions = await DecisionsAsync(repositoryKey, ct);
-        var flows = Flows(request.EnvironmentId);
-        var result = TestCoverageReviewEngine.Review(current, baseline, request, decisions, flows, DateTimeOffset.UtcNow, ct) with { BaselineRelation = relation };
+        var flows = await FlowsAsync(request.EnvironmentId, ct);
+        var result = TestCoverageReviewEngine.Review(current, baseline, request, decisions, flows, DateTimeOffset.UtcNow, ct, IntegrationJourneyCatalog()) with { BaselineRelation = relation };
         var label = $"{result.Current.Repository} · {result.Inventory.TestsDiscovered} test(s) · {result.Journeys.Count} journey(s)";
         db.TestCoverageReviewRuns.Add(new TestCoverageReviewRunRecord
         {
@@ -92,16 +92,43 @@ public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvid
         return result;
     }
 
-    private List<E2EFlowEvidence> Flows(string? environmentId)
+    /// <summary>Critical E2E flows with their Test Data identity from authoritative links only (the flow's own asset ids, Test Plan draft cases
+    /// sourced from or confirmed against the flow). Read-only: no store is changed.</summary>
+    private async Task<List<E2EFlowEvidence>> FlowsAsync(string? environmentId, CancellationToken ct)
     {
         if (e2e is null || string.IsNullOrWhiteSpace(environmentId)) return [];
         var history = e2e.History(environmentId, 200);
-        return e2e.Flows(environmentId).Where(f => f.Enabled).Select(f =>
+        var definitions = e2e.Flows(environmentId).Where(f => f.Enabled).ToList();
+        if (definitions.Count == 0) return [];
+        var drafts = await DraftsAsync(ct);
+        return definitions.Select(f =>
         {
             var latest = history.Where(r => r.FlowId == f.Id).OrderByDescending(r => r.StartedAt).FirstOrDefault();
-            return new E2EFlowEvidence(f.Id, f.Name, f.Module, f.Description, latest?.Status, latest?.StartedAt);
+            return TestCoverageDataLinks.With(new E2EFlowEvidence(f.Id, f.Name, f.Module, f.Description, latest?.Status, latest?.StartedAt), f, drafts, environmentId);
         }).ToList();
     }
+
+    /// <summary>Every stored Test Plan draft (read-only). An unreadable draft is skipped, never guessed.</summary>
+    private async Task<List<BirkNext.TestPlanning.TestPlanDraft>> DraftsAsync(CancellationToken ct)
+    {
+        var drafts = new List<BirkNext.TestPlanning.TestPlanDraft>();
+        foreach (var row in await db.TestPlanDrafts.AsNoTracking().ToListAsync(ct))
+        {
+            try
+            {
+                if (JsonSerializer.Deserialize<BirkNext.TestPlanning.TestPlanDraft>(row.ContentJson, BirkNext.Api.Services.TestPlanning.TestPlanSuggestionEngine.Json) is { } plan)
+                    drafts.Add(plan with { Revision = row.Revision, PlanName = string.IsNullOrWhiteSpace(plan.PlanName) ? row.PlanName : plan.PlanName });
+            }
+            catch (JsonException) { }
+        }
+        return drafts;
+    }
+
+    /// <summary>Integration Journey definitions (global pack registry) as design-level edges, for structural association candidates only. Only the
+    /// declared From/To components are used (a step without them contributes nothing to the chain; the owner is not substituted).</summary>
+    private IReadOnlyList<BirkNext.Integrations.IntegrationJourneyCatalogEntry> IntegrationJourneyCatalog() => journeyPacks is null ? [] :
+        [.. journeyPacks.Packs.SelectMany(pack => pack.Journeys.OrderBy(j => j.Order).Select(j => new BirkNext.Integrations.IntegrationJourneyCatalogEntry(pack.PackId, j.JourneyId, j.DisplayName,
+            [.. j.Steps.Select(step => new BirkNext.Integrations.JourneyEdge(step.StepId, step.Label, step.Kind, step.FromComponent ?? "", step.ToComponent ?? "", step.Owner))])))];
 
     public async Task<IReadOnlyList<TestCoverageRunSummary>> HistoryAsync(CancellationToken ct = default) =>
         (await db.TestCoverageReviewRuns.AsNoTracking().OrderByDescending(r => r.CompletedAt).Take(20).ToListAsync(ct))
