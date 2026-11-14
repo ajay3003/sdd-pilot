@@ -13,7 +13,9 @@ namespace BirkNext.Api.Services.LocalDataReset;
 /// <param name="Schema">The only schema the reset may delete from; a model table in any other schema refuses the whole step.</param>
 /// <param name="ContextType">The registered DbContext type, resolved from a fresh DI scope.</param>
 /// <param name="Description">The line shown in the plan's / result's "removed" list.</param>
-public sealed record ResettableSchema(string Domain, string Schema, Type ContextType, string Description);
+/// <param name="OnlyWhenResettingEverything">True for user-authored, reviewed data (shared test areas): cleared only by the explicitly typed
+/// "Reset everything" scope, kept by "Reset everything except protected data".</param>
+public sealed record ResettableSchema(string Domain, string Schema, Type ContextType, string Description, bool OnlyWhenResettingEverything = false);
 
 /// <summary>
 /// The registry of separate-schema stores a full local data reset clears (after the application database transaction and the epoch advance,
@@ -29,7 +31,13 @@ public static class ResettableSchemas
         new("Task Alignment", TaskAlignmentDbContext.Schema, typeof(TaskAlignmentDbContext), "Task Alignment run history (persisted Task Alignment results; task_alignment schema)"),
         new("Integration Journeys", BirkNext.Api.Data.IntegrationJourneys.IntegrationJourneysDbContext.Schema, typeof(BirkNext.Api.Data.IntegrationJourneys.IntegrationJourneysDbContext),
             "Declared Integration Journeys and their revisions (integration_journeys schema)"),
+        // Shared test areas hold reviewed, possibly approved test boundaries: an ordinary reset keeps them; only "Reset everything" removes them.
+        new("Shared test areas", BirkNext.Api.Data.ScopeRegistry.ScopeRegistryDbContext.Schema, typeof(BirkNext.Api.Data.ScopeRegistry.ScopeRegistryDbContext),
+            "Shared test areas (scopes) with all revisions, approvals and review history (scope_registry schema)", OnlyWhenResettingEverything: true),
     ];
+
+    /// <summary>The stores a reset clears: everything in the registry for "Reset everything", otherwise only the stores without the flag.</summary>
+    public static IEnumerable<ResettableSchema> For(bool includeProtected) => All.Where(s => includeProtected || !s.OnlyWhenResettingEverything);
 
     /// <summary>
     /// Deletes every row of every table in <paramref name="db"/>'s model, dependents first, in one transaction (relational) or one SaveChanges

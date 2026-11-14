@@ -37,6 +37,7 @@ public sealed class ResettableSchemaResetTests : IDisposable
     {
         var services = new ServiceCollection()
             .AddDbContext<TaskAlignmentDbContext>(o => o.UseInMemoryDatabase(_dbName))
+            .AddDbContext<BirkNext.Api.Data.ScopeRegistry.ScopeRegistryDbContext>(o => o.UseInMemoryDatabase(_dbName + "-scopes"))
             .BuildServiceProvider();
         var state = new LocalDataResetState(Path.Combine(_dir, "local-data-reset.json"));
         var database = new FakeDatabaseReset(databaseResetSucceeds, databaseResetSucceeds ? "ok" : "Reset failed. See server logs for details.");
@@ -115,6 +116,65 @@ public sealed class ResettableSchemaResetTests : IDisposable
         var plan = await new DataResetService(new Guard(), null!, null!, NullLogger<DataResetService>.Instance)
             .PlanAsync(BirkNext.Maintenance.DataResetMode.DeliveryManagement, CancellationToken.None);
         Assert.Contains("Task Alignment", plan.Preserved);
+    }
+
+    private static async Task SeedScopeAsync(IServiceProvider services)
+    {
+        using var scope = services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.ScopeRegistry.ScopeRegistryDbContext>();
+        var id = Guid.NewGuid();
+        db.Scopes.Add(new BirkNext.Api.Data.ScopeRegistry.ScopeRecord { Id = id, ProjectKey = "import:abc", Name = "Report intake", Purpose = "Test", State = "Approved", CurrentRevision = 1, ApprovedRevision = 1 });
+        db.Revisions.Add(new BirkNext.Api.Data.ScopeRegistry.ScopeRevisionRecord { Id = Guid.NewGuid(), ScopeId = id, Number = 1, State = "Approved", CreatedBy = "tester", ApprovedBy = "lead" });
+        await db.SaveChangesAsync();
+    }
+
+    private static int CountScopes(IServiceProvider services)
+    {
+        using var scope = services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.ScopeRegistry.ScopeRegistryDbContext>();
+        return db.Scopes.Count() + db.Revisions.Count();
+    }
+
+    [Fact]
+    public async Task OrdinaryReset_KeepsSharedTestAreasAndSaysWhy()
+    {
+        var (coordinator, services) = Build(databaseResetSucceeds: true);
+        await SeedScopeAsync(services);
+
+        var result = await coordinator.ResetAsync(includeProtected: false);
+
+        Assert.Equal("Completed", result.Status);
+        Assert.Equal(2, CountScopes(services));
+        Assert.DoesNotContain(result.Domains, d => d.Domain == "Shared test areas");
+        Assert.Contains(LocalDataResetCoordinator.SharedTestAreasKept, result.PreservedDomains);
+        Assert.DoesNotContain(result.ClearedDomains, d => d.Contains("scope_registry", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ResetEverything_RemovesSharedTestAreasWithTheirRevisions()
+    {
+        var (coordinator, services) = Build(databaseResetSucceeds: true);
+        await SeedScopeAsync(services);
+
+        var result = await coordinator.ResetAsync(includeProtected: true);
+
+        Assert.Equal("Completed", result.Status);
+        Assert.Equal(0, CountScopes(services));
+        Assert.Contains(result.Domains, d => d.Domain == "Shared test areas" && d.Status == "Removed");
+        Assert.Contains(result.ClearedDomains, d => d.Contains("scope_registry", StringComparison.Ordinal));
+        Assert.DoesNotContain(LocalDataResetCoordinator.SharedTestAreasKept, result.PreservedDomains);
+    }
+
+    [Fact]
+    public async Task Plans_StateTheSharedTestAreaPolicyPerScope()
+    {
+        var service = new DataResetService(new Guard(), null!, null!, NullLogger<DataResetService>.Instance);
+        var keep = await service.PlanAsync(BirkNext.Maintenance.DataResetMode.FullPreserveProtected, CancellationToken.None);
+        var all = await service.PlanAsync(BirkNext.Maintenance.DataResetMode.FullIncludingProtected, CancellationToken.None);
+        Assert.Contains(LocalDataResetCoordinator.SharedTestAreasKept, keep.Preserved);
+        Assert.DoesNotContain(keep.Removed, r => r.Contains("scope_registry", StringComparison.Ordinal));
+        Assert.Contains(all.Removed, r => r.Contains("scope_registry", StringComparison.Ordinal));
+        Assert.True(Assert.Single(ResettableSchemas.All, s => s.Schema == "scope_registry").OnlyWhenResettingEverything);
     }
 
     private sealed class Guard : ILocalDatabaseReset

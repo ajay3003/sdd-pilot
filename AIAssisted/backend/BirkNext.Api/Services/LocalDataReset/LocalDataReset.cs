@@ -135,8 +135,16 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         "Delivery Management: reporting projects, delivery snapshots, comparisons and saved Delivery Reports (report history)",
         "Canonical interpretation: canonical entities, aliases, relations, interpretation snapshots and the shared review decisions made on them",
         "Snapshot Registry metadata: lineage, current/approved pointers and retention classes (rebuilt from the remaining stores on next use)",
-        .. ResettableSchemas.All.Select(s => s.Description),
+        .. ResettableSchemas.All.Where(s => !s.OnlyWhenResettingEverything).Select(s => s.Description),
     ];
+
+    /// <summary>Removed only by the explicitly typed "Reset everything" scope (user-authored, reviewed data such as shared test areas).</summary>
+    public static readonly IReadOnlyList<string> ClearedOnlyWhenResettingEverything =
+        [.. ResettableSchemas.All.Where(s => s.OnlyWhenResettingEverything).Select(s => s.Description)];
+
+    /// <summary>Why shared test areas survive an ordinary reset (listed as preserved; removed only by "Reset everything").</summary>
+    public const string SharedTestAreasKept =
+        "Shared test areas (scopes) with their revisions, approvals and review history: they hold reviewed test boundaries, so only Reset everything removes them";
 
     public static readonly IReadOnlyList<string> Preserved =
     [
@@ -148,6 +156,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         "Uploaded or external files outside the database (Source Analysis archives are never stored on disk)",
         "The highest synthetic CDC key per environment and the highest reserved synthetic identity per scope (so test keys are never reused)",
         "Protected Test Data defaults (skolenaervaer-reporter-default, skolenaervaer-child-default) with their current, possibly edited, values; Test Data supplied by backend configuration",
+        SharedTestAreasKept,
     ];
 
     public Task<LocalDataResetResult> ResetAsync(CancellationToken ct = default) => ResetAsync(includeProtected: false, ct);
@@ -222,7 +231,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
                 }
             }, domains, "Snapshot Registry");
             // Separate-schema stores from the registry (ResettableSchemas.All): each its own transaction on the local database, history tables untouched.
-            foreach (var store in ResettableSchemas.All)
+            foreach (var store in ResettableSchemas.For(includeProtected))
                 await Step(warnings, $"{store.Domain} data", async () =>
                 {
                     using var scope = services.CreateScope();
@@ -242,7 +251,8 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
                     : $"Local data reset completed with {warnings.Count} warning(s). The database was cleared ({deleted} records).")
                     + (testData is { } td ? $" Test Data: {td.ProtectedDefaultsPreserved} protected default(s) preserved with their current values, {td.AssetsRemoved} asset(s) removed ({td.GeneratedFixturesRemoved} generated fixture(s))." : ""),
                 ResetAt = at, ResetEpoch = epoch, DatabaseCleared = true, DeletedRows = deleted, BackendStateCleared = warnings.Count == 0,
-                ClearedDomains = [.. Cleared], PreservedDomains = [.. (includeProtected ? Preserved.Where(p => !p.StartsWith("Protected Test Data", StringComparison.Ordinal)) : Preserved)],
+                ClearedDomains = [.. Cleared, .. (includeProtected ? ClearedOnlyWhenResettingEverything : [])],
+                PreservedDomains = [.. (includeProtected ? Preserved.Where(p => !p.StartsWith("Protected Test Data", StringComparison.Ordinal) && p != SharedTestAreasKept) : Preserved)],
                 Warnings = warnings, TestData = testData, Domains = domains,
             };
         }

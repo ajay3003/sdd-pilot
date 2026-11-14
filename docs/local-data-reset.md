@@ -109,7 +109,7 @@ the declared schema refuses the step. Each appears in the plan and in the result
 | --- | --- | --- |
 | Task Alignment run history | `task_alignment` | Yes. Other open tabs drop a held Task Alignment result when the reset epoch changes |
 | Declared Integration Journeys and their revisions | `integration_journeys` | Yes. The legacy `App_Data/integration-journeys/declared-journeys.json` is never deleted, so the next backend start imports its entries again |
-| Shared Scope Registry | `scope_registry` | **No** (not part of the reset; existing gap) |
+| Shared test areas (Shared Scope Registry: scopes, all revisions, approvals and review history) | `scope_registry` | **Only with Reset everything** (typed confirmation). *Reset everything except protected data* keeps them and lists them as preserved: they hold reviewed, possibly approved test boundaries. Note that the project imports they belong to are removed in both scopes; a re-imported project gets a new project key, so kept test areas are not shown for it |
 
 ### Backend outside the database
 
@@ -159,7 +159,7 @@ the declared schema refuses the step. Each appears in the plan and in the result
   and the reset always navigates to the Dashboard.
 - **Managed Edge windows keep running.** A managed Edge (CDP) window is not closed. The local HTTPS proxy session, by contrast, is
   stopped, together with the dedicated browser it opened.
-- **Scope Registry not reset.** Shared scopes (`scope_registry` schema) survive a reset; they are not in the registry of resettable schemas.
+- **Shared test areas survive an ordinary reset by design.** Only *Reset everything* removes them (see the separate-schema table).
 - **Legacy journey file re-import.** After a reset the next backend start imports the legacy declared-journeys JSON file again, because the
   file is kept as the original record.
 - **Restart required for the fix.** A backend started before this change still runs the old reset, which preserved the integration catalog.
