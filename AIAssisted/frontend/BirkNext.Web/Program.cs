@@ -148,6 +148,8 @@ builder.Services.AddSingleton<IWorkspaceStateManager, WorkspaceStateManager>();
 builder.Services.AddSingleton<IWorkspaceArtifactStatusService, WorkspaceArtifactStatusService>();
 builder.Services.AddScoped<IWorkspaceSessionRestoreService, WorkspaceSessionRestoreService>();
 builder.Services.AddSingleton<LocalDataResetEpoch>();
+// Tells an auto-save aborted by a page unload (interrupted) from a real failure.
+builder.Services.AddSingleton<IPageUnloadSignal, JsPageUnloadSignal>();
 builder.Services.AddHttpClient<IWorkspacePersistenceApiService, WorkspacePersistenceApiService>(client =>
     client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<IRecommendedWorkflowApiService, RecommendedWorkflowApiService>(client =>

@@ -21,3 +21,18 @@ window.birkNextStorage = {
         return removed;
     },
 };
+
+// Workspace save guard (WorkspaceSaveIndicator): warns before a reload/close only while the workspace has unconfirmed changes, and tells
+// the save pipeline that the page is going away, so a save aborted by the unload is reported as interrupted rather than as a failure.
+// There is no local draft: an unload cannot guarantee that an in-flight or pending save completes.
+window.birknextSaveGuard = (function () {
+    let dirty = false, unloading = false;
+    window.addEventListener('beforeunload', e => { if (!dirty) return; e.preventDefault(); e.returnValue = ''; });
+    window.addEventListener('pagehide', () => { unloading = true; });
+    window.addEventListener('pageshow', () => { unloading = false; });
+    return {
+        setDirty: value => { dirty = !!value; },
+        isDirty: () => dirty,
+        isUnloading: () => unloading,
+    };
+})();

@@ -32,6 +32,10 @@ public interface IWorkspacePersistenceApiService
     /// <summary>Why the last save failed; null after a successful save or when there was nothing to save.</summary>
     string? LastSaveError { get; }
 
+    /// <summary>True when the last auto-save was aborted because the page was unloading (reload, close, full navigation). The change is not
+    /// confirmed: the backend may or may not have committed it, so the caller keeps it unsaved.</summary>
+    bool LastSaveInterrupted => false;
+
     // Workspace operations
     Task<SavedWorkspaceDto?> SaveCurrentAsync(string? name = null);
     Task<SavedWorkspaceDto?> SaveAsAsync(string name);
@@ -127,6 +131,9 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
     /// <summary>Why the last save failed (null after a successful save); shown by the auto-save status instead of a false "Saved".</summary>
     public string? LastSaveError { get; private set; }
 
+    /// <inheritdoc />
+    public bool LastSaveInterrupted { get; private set; }
+
     /// <summary>The lifecycle for a save: bodies uploaded, addresses in place. A failed upload ends the save (reported, never "Saved").</summary>
     private async Task<(string? Json, HttpResponseMessage? Failure)> LifecycleForSaveAsync()
     {
@@ -153,17 +160,20 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
     private readonly ILogger<WorkspacePersistenceApiService> _logger;
     private readonly IWorkspaceArtifactRepository _artifactRepository;
     private readonly LocalDataResetEpoch? _epoch;
+    private readonly IPageUnloadSignal? _unload;
 
     public WorkspacePersistenceApiService(
         HttpClient httpClient,
         ILogger<WorkspacePersistenceApiService> logger,
         IWorkspaceArtifactRepository artifactRepository,
-        LocalDataResetEpoch? epoch = null)
+        LocalDataResetEpoch? epoch = null,
+        IPageUnloadSignal? unload = null)
     {
         _httpClient = httpClient;
         _logger = logger;
         _artifactRepository = artifactRepository;
         _epoch = epoch;
+        _unload = unload;
     }
 
     /// <summary>True (and handled) when the backend refused the write because local data was reset after this state was loaded.</summary>
@@ -364,6 +374,7 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
 
     public async Task<SavedWorkspaceDto?> AutoSaveAsync(string? generatedName = null)
     {
+        LastSaveInterrupted = false;
         try
         {
             _logger.LogInformation("DIAG: [AutoSaveAsync] ENTERED");
@@ -400,6 +411,15 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
             var result = await response.Content.ReadFromJsonAsync<SavedWorkspaceDto>();
             _logger.LogInformation("DIAG: [AutoSaveAsync] Response received with {ArtifactCount} artifacts", result?.Artifacts.Count ?? 0);
             return result;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException && _unload?.IsUnloading == true)
+        {
+            // The page is going away (reload, close, full navigation) and the browser aborted the request: an expected interruption, not a
+            // failure. Whether the backend committed is unknown (it does not observe the client abort), so the change stays unconfirmed.
+            LastSaveInterrupted = true;
+            LastSaveError = "The save was interrupted because the page was reloaded or closed; the last changes are not confirmed as saved.";
+            _logger.LogWarning("Auto-save interrupted by page unload ({Reason}); the change is not confirmed as saved", ex.GetBaseException().Message);
+            return null;
         }
         catch (Exception ex)
         {

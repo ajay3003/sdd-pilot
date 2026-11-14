@@ -1,5 +1,3 @@
-using System.Runtime.CompilerServices;
-
 namespace BirkNext.Web.Services;
 
 /// <summary>
@@ -12,7 +10,8 @@ namespace BirkNext.Web.Services;
 /// 3. Integrate with workspace persistence backend
 /// </summary>
 /// <summary>Honest save state of the workspace: never "Saved" after a failed save; a failure keeps the local state and offers a retry.</summary>
-public enum WorkspaceSaveState { Idle, Pending, Saving, Saved, Failed }
+/// <remarks>Interrupted: the save was aborted because the page was unloading; like Failed, the changes stay unsaved and retryable.</remarks>
+public enum WorkspaceSaveState { Idle, Pending, Saving, Saved, Failed, Interrupted }
 
 public interface IWorkspaceAutoSaveService
 {
@@ -58,6 +57,18 @@ public interface IWorkspaceAutoSaveService
     /// </summary>
     Task<bool> SaveNowAsync();
 
+    /// <summary>
+    /// True while a change exists that the backend has not confirmed: set by every change, cleared only when a save that included it
+    /// succeeded. A failed, refused or interrupted save leaves it set.
+    /// </summary>
+    bool HasUnsavedChanges => false;
+
+    /// <summary>
+    /// Saves now if there are unconfirmed changes (waits for an in-flight save first, then saves only if it did not already cover the latest
+    /// change). Used on in-app navigation. Returns true when nothing is left unsaved.
+    /// </summary>
+    Task<bool> FlushAsync() => Task.FromResult(!HasUnsavedChanges);
+
     Task PauseForResetAsync();
     void ResumeAfterReset();
 
@@ -96,12 +107,93 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
         SaveStateChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    /// <summary>After a save attempt: Saved, nothing to save (Idle), or Failed with the persistence layer's reason. Local state is never cleared.</summary>
-    private void SettleAfterSave(bool saved)
+    // Change sequence: every change increments _changeSequence; a save captures the sequence before it snapshots the workspace and, only when
+    // the backend confirms it, advances _confirmedSequence to that captured value (never backwards). A confirmation for an older sequence
+    // therefore never marks a newer change as saved, and the state after it is Pending (newer change waiting), not Saved.
+    private long _changeSequence;
+    private long _confirmedSequence;
+
+    public bool HasUnsavedChanges => Interlocked.Read(ref _changeSequence) > Interlocked.Read(ref _confirmedSequence);
+
+    private void Confirm(long sequence)
     {
-        if (saved) { SetState(WorkspaceSaveState.Saved); return; }
+        long current;
+        while ((current = Interlocked.Read(ref _confirmedSequence)) < sequence
+               && Interlocked.CompareExchange(ref _confirmedSequence, sequence, current) != current) { }
+    }
+
+    /// <summary>
+    /// After a save attempt for <paramref name="sequence"/>: Saved only when the backend confirmed it and nothing newer is waiting (Pending
+    /// otherwise); Idle when there was nothing to save; Interrupted when the page unload aborted it; Failed with the persistence layer's reason.
+    /// Only a confirmation clears the unsaved state; local state is never cleared.
+    /// </summary>
+    private bool SettleAfterSave(long sequence, SavedWorkspaceDto? result)
+    {
+        if (result is not null)
+        {
+            Confirm(sequence);
+            _lastAutoSaveTime = DateTimeOffset.UtcNow;
+            SetState(HasUnsavedChanges ? WorkspaceSaveState.Pending : WorkspaceSaveState.Saved);
+            OnAutoSaveCompleted();
+            return true;
+        }
+
+        if (_persistence.LastSaveInterrupted)
+        {
+            _logger.LogInformation("Workspace save interrupted by page unload; the changes stay unsaved");
+            SetState(WorkspaceSaveState.Interrupted, _persistence.LastSaveError ?? "The save was interrupted; the last changes are not confirmed as saved.");
+            return false;
+        }
+
         var error = _persistence.LastSaveError;
-        SetState(error is null ? WorkspaceSaveState.Idle : WorkspaceSaveState.Failed, error);
+        if (error is null)
+        {
+            // Nothing to save (the backend answered 204: no project, no artifacts, no workspace): the backend matches this state.
+            Confirm(sequence);
+            SetState(HasUnsavedChanges ? WorkspaceSaveState.Pending : WorkspaceSaveState.Idle);
+            return false;
+        }
+
+        SetState(WorkspaceSaveState.Failed, error);
+        return false;
+    }
+
+    /// <summary>
+    /// The one save path, serialized by the save gate so saves never overlap and responses arrive in request order. With
+    /// <paramref name="onlyWhenUnsaved"/>, a save that finds every change already confirmed (an earlier save covered it) is skipped, so queued
+    /// triggers coalesce into one request carrying the newest state.
+    /// </summary>
+    private async Task<bool> SaveAsync(bool onlyWhenUnsaved, string trigger)
+    {
+        await _saveGate.WaitAsync();
+        try
+        {
+            if (_resetInProgress) return false;
+            if (onlyWhenUnsaved && !HasUnsavedChanges) return true;
+
+            var sequence = Interlocked.Read(ref _changeSequence); // captured before the snapshot is taken
+            SetState(WorkspaceSaveState.Saving);
+            SavedWorkspaceDto? result;
+            try
+            {
+                result = await _persistence.AutoSaveAsync();
+            }
+            catch (Exception ex)
+            {
+                SetState(WorkspaceSaveState.Failed, "The workspace could not be saved.");
+                _logger.LogError(ex, "Workspace save ({Trigger}) failed", trigger);
+                return false;
+            }
+
+            var saved = SettleAfterSave(sequence, result);
+            if (!saved && SaveState == WorkspaceSaveState.Failed)
+                _logger.LogWarning("Workspace save ({Trigger}) failed: {Error}", trigger, LastSaveError);
+            return saved;
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
     }
 
     public bool IsThrottled => !CanAutoSave();
@@ -199,6 +291,8 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
             _isMonitoring = true;
         }
 
+        Interlocked.Increment(ref _changeSequence);
+
         // Restart the timer
         if (SaveState != WorkspaceSaveState.Saving) SetState(WorkspaceSaveState.Pending, LastSaveError);
         ScheduleAutoSave(AutoSaveIntervalMs);
@@ -235,36 +329,20 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
     public async Task<bool> SaveNowAsync()
     {
         if (_resetInProgress) return false;
-        // An explicit user choice supersedes any pending debounced save of the same state.
+        // An explicit user choice supersedes any pending debounced save of the same state. It always sends (never skipped as already saved).
         CancelAutoSaveTimer();
         _isMonitoring = true;
-        await _saveGate.WaitAsync();
-        try
-        {
-            if (_resetInProgress) return false;
-            SetState(WorkspaceSaveState.Saving);
-            var result = await _persistence.AutoSaveAsync();
-            SettleAfterSave(result is not null);
-            if (result is null)
-            {
-                _logger.LogWarning("Immediate workspace save failed: the backend did not accept the save");
-                return false;
-            }
+        return await SaveAsync(onlyWhenUnsaved: false, trigger: "explicit");
+    }
 
-            _lastAutoSaveTime = DateTimeOffset.UtcNow;
-            OnAutoSaveCompleted();
-            return true;
-        }
-        catch (Exception ex)
-        {
-            SetState(WorkspaceSaveState.Failed, "The workspace could not be saved.");
-            _logger.LogError(ex, "Immediate workspace save failed");
-            return false;
-        }
-        finally
-        {
-            _saveGate.Release();
-        }
+    public async Task<bool> FlushAsync()
+    {
+        if (_resetInProgress) return false;
+        if (!HasUnsavedChanges) return true;
+        // Navigation flush: bypasses the debounce and throttle; waits for an in-flight save, then saves only what is still unconfirmed.
+        CancelAutoSaveTimer();
+        await SaveAsync(onlyWhenUnsaved: true, trigger: "navigation");
+        return !HasUnsavedChanges;
     }
 
     public async Task PauseForResetAsync()
@@ -275,7 +353,13 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
         _saveGate.Release();
     }
 
-    public void ResumeAfterReset() => _resetInProgress = false;
+    public void ResumeAfterReset()
+    {
+        // The reset discarded this browser's project state: nothing from before it is waiting to be saved.
+        Confirm(Interlocked.Read(ref _changeSequence));
+        _resetInProgress = false;
+        SetState(WorkspaceSaveState.Idle);
+    }
 
     private void CancelAutoSaveTimer()
     {
@@ -291,37 +375,9 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
 
     private async Task PerformAutoSaveAsync()
     {
-        await _saveGate.WaitAsync();
-        try
-        {
-            if (_resetInProgress) return;
-            var repoHash = RuntimeHelpers.GetHashCode(_artifactRepository);
-            var artifacts = _artifactRepository.GetAllArtifacts().ToList();
-            var artifactCount = artifacts.Count;
-
-            _logger.LogInformation("TRACE: [WorkspaceAutoSaveService.PerformAutoSaveAsync]");
-            _logger.LogInformation("  RepositoryType={Type}", _artifactRepository.GetType().Name);
-            _logger.LogInformation("  Hash={Hash}", repoHash);
-            _logger.LogInformation("  Count={Count}", artifactCount);
-
-            SetState(WorkspaceSaveState.Saving);
-            var result = await _persistence.AutoSaveAsync();
-            SettleAfterSave(result is not null);
-            if (result != null)
-            {
-                _lastAutoSaveTime = DateTimeOffset.UtcNow;
-                OnAutoSaveCompleted();
-            }
-        }
-        catch (Exception ex)
-        {
-            SetState(WorkspaceSaveState.Failed, "The workspace could not be saved.");
-            _logger.LogError(ex, "TRACE: Auto-save failed");
-        }
-        finally
-        {
-            _saveGate.Release();
-        }
+        _logger.LogInformation("TRACE: [WorkspaceAutoSaveService.PerformAutoSaveAsync] Count={Count}", _artifactRepository.GetAllArtifacts().Count());
+        // Debounced save: coalesces with any save that already covered the latest change.
+        await SaveAsync(onlyWhenUnsaved: true, trigger: "auto-save");
     }
 
     protected virtual void OnAutoSaveCompleted()

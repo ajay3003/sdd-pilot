@@ -1,19 +1,24 @@
 @using BirkNext.Web.Services
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.JSInterop
 @implements IDisposable
 @inject IServiceProvider Services
 
-@* Honest workspace save state, next to Activity: shown only while a save runs or after one failed (then with the reason and an explicit
-   retry). It never says "Saved" for a failed save, never clears unsaved local state and never retries in a loop. *@
-@if (_autoSave is { } a && a.SaveState is WorkspaceSaveState.Saving or WorkspaceSaveState.Failed)
+@* Honest workspace save state, next to Activity: shown while a save runs or after one failed or was interrupted (then with the reason and
+   an explicit retry). It never says "Saved" before the backend confirmed the save, never clears unsaved local state and never retries in a
+   loop. The hidden status element always carries the state for tests and diagnostics. While changes are unconfirmed, an in-app route change
+   flushes them (without holding the navigation) and a reload/close asks the browser to warn (birknextSaveGuard in js/storage.js). *@
+<span hidden data-testid="workspace-save-status" data-state="@(_autoSave?.SaveState.ToString() ?? "Unavailable")" data-unsaved="@(_autoSave?.HasUnsavedChanges == true ? "true" : "false")"></span>
+@if (_autoSave is { } a && a.SaveState is WorkspaceSaveState.Saving or WorkspaceSaveState.Failed or WorkspaceSaveState.Interrupted)
 {
-    <div class="wsi wsi-@a.SaveState.ToString().ToLowerInvariant()" role="status" aria-live="polite" data-testid="workspace-save-indicator" data-state="@a.SaveState">
+    <div class="wsi wsi-@(a.SaveState == WorkspaceSaveState.Saving ? "saving" : "failed")" role="status" aria-live="polite" data-testid="workspace-save-indicator" data-state="@a.SaveState">
         @if (a.SaveState == WorkspaceSaveState.Saving)
         {
             <span>Saving workspace…</span>
         }
         else
         {
-            <span class="wsi-text"><strong>Not saved.</strong> @a.LastSaveError Your changes are kept in this browser.</span>
+            <span class="wsi-text"><strong>@(a.SaveState == WorkspaceSaveState.Interrupted ? "Save interrupted." : "Not saved.")</strong> @a.LastSaveError Your changes are kept in this browser.</span>
             <button type="button" class="btn-secondary btn-sm" data-testid="workspace-save-retry" disabled="@_retrying" @onclick="RetryAsync">Retry</button>
         }
     </div>
@@ -21,12 +26,41 @@
 
 @code {
     private IWorkspaceAutoSaveService? _autoSave;
+    private IJSRuntime? _js;
+    private IDisposable? _locationChanging;
+    private bool? _guardDirty;
+    private bool _guardUnavailable;
     private bool _retrying;
 
     protected override void OnInitialized()
     {
         _autoSave = Services.GetService(typeof(IWorkspaceAutoSaveService)) as IWorkspaceAutoSaveService;
-        if (_autoSave is not null) _autoSave.SaveStateChanged += OnChanged;
+        _js = Services.GetService(typeof(IJSRuntime)) as IJSRuntime;
+        if (_autoSave is null) return;
+        _autoSave.SaveStateChanged += OnChanged;
+        if (Services.GetService(typeof(NavigationManager)) is NavigationManager navigation)
+            _locationChanging = navigation.RegisterLocationChangingHandler(OnLocationChanging);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) => await SyncUnloadGuardAsync();
+
+    /// <summary>In-app navigation with unconfirmed changes starts the save now and lets the navigation continue (the app stays loaded, so the
+    /// save completes; a failure shows here, on the next page).</summary>
+    private ValueTask OnLocationChanging(LocationChangingContext context)
+    {
+        if (_autoSave is { HasUnsavedChanges: true } autoSave) _ = autoSave.FlushAsync();
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>The browser's reload/close warning follows the unsaved state; only sent when it changes.</summary>
+    private async Task SyncUnloadGuardAsync()
+    {
+        if (_js is null || _autoSave is null || _guardUnavailable) return;
+        var dirty = _autoSave.HasUnsavedChanges;
+        if (_guardDirty == dirty) return;
+        _guardDirty = dirty;
+        try { await _js.InvokeVoidAsync("birknextSaveGuard.setDirty", dirty); }
+        catch (Exception) { _guardUnavailable = true; } // no guard script (tests): the in-app state is unaffected
     }
 
     private void OnChanged(object? sender, EventArgs e) => InvokeAsync(StateHasChanged);
@@ -39,5 +73,9 @@
         finally { _retrying = false; }
     }
 
-    public void Dispose() { if (_autoSave is not null) _autoSave.SaveStateChanged -= OnChanged; }
+    public void Dispose()
+    {
+        if (_autoSave is not null) _autoSave.SaveStateChanged -= OnChanged;
+        _locationChanging?.Dispose();
+    }
 }
