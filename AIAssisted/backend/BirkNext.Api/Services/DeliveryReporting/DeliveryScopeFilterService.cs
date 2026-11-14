@@ -63,21 +63,12 @@ public static class DeliveryReportScopeFilter
 {
     public const string FeatureLevelHint = "per feature containing in-scope items";
 
-    private static readonly HashSet<string> FeatureLevel = new(StringComparer.Ordinal)
-    {
-        "features-changed", "moved-forward", "completed", "new-features", "removed-features", "specifications-changed", "inventory-features", "inventory-no-tasks",
-        "ready-for-test", "testing", "blocked", "needs-clarification", "quality-scope-review", "quality-traceability", "attention",
-    };
-
-    private static readonly HashSet<string> ItemLevel = new(StringComparer.Ordinal)
-    {
-        "inventory-stories", "inventory-scenarios", "stories-changed", "criteria-changed", "inventory-tasks", "inventory-checked", "inventory-unchecked",
-    };
-
-    private const string ComparisonLevel = "quality-direction";
+    // Item / feature / comparison level of every key: the shared DeliveryMetricDefinitions (the UI, export and comparison label units from the same table).
+    private static bool FeatureLevel(string key) => DeliveryMetricDefinitions.IsFeatureLevel(key);
+    private static bool ComparisonLevel(string key) => DeliveryMetricDefinitions.Of(key).ScopeLevel == DeliveryMetricScopeLevel.Comparison;
 
     /// <summary>Whether a metric key can be restricted to a scope's items (item- or feature-level) — false = "Not scope-resolvable".</summary>
-    public static bool Resolvable(string key) => FeatureLevel.Contains(key) || ItemLevel.Contains(key) || key == ComparisonLevel;
+    public static bool Resolvable(string key) => DeliveryMetricDefinitions.Of(key).ScopeLevel != DeliveryMetricScopeLevel.NotScopeResolvable;
 
     private static bool IsScenario(DeliveryUserStoryRow x) => DeliveryScopeMembership.IsScenario(x.Kind, x.Key);
 
@@ -145,8 +136,8 @@ public static class DeliveryReportScopeFilter
                 notResolvable.Add(m.Label);
                 continue;
             }
-            metrics.Add(FeatureLevel.Contains(m.Key) ? recomputed with { Hint = string.IsNullOrEmpty(m.Hint) ? FeatureLevelHint : $"{m.Hint} · {FeatureLevelHint}" }
-                : m.Key == ComparisonLevel ? recomputed with { Hint = $"{m.Hint} · comparison-level (both snapshots), not item-specific" } : recomputed);
+            metrics.Add(FeatureLevel(m.Key) ? recomputed with { Hint = string.IsNullOrEmpty(m.Hint) ? FeatureLevelHint : $"{m.Hint} · {FeatureLevelHint}" }
+                : ComparisonLevel(m.Key) ? recomputed with { Hint = $"{m.Hint} · comparison-level (both snapshots), not item-specific" } : recomputed);
         }
         var requirements = projected.Stories.Where(s => !s.RemovedFeature).SelectMany(s => s.Hierarchy?.FunctionalRequirements ?? [])
             .Count(r => r.Change != DeliveryItemChange.Removed);
@@ -160,9 +151,9 @@ public static class DeliveryReportScopeFilter
         };
         var summary = counts.NoApplicableItems
             ? new List<string> { $"{DeliveryScopeProvenanceText.NoApplicableItems}: no requirement, user story or scenario of this comparison is a confirmed member of the selected scope revisions." }
-            : new List<string> { $"Filtered by scope: {included} in-scope item{(included == 1 ? "" : "s")} in {currentFeatures.Count} feature{(currentFeatures.Count == 1 ? "" : "s")}; {population - included} outside the scope." };
+            : new List<string> { $"Filtered by scope: {DeliveryScopeProvenanceText.InScopeItemsText(included)} (requirements, user stories and scenarios) in {DeliveryScopeProvenanceText.InScopeFeaturesText(currentFeatures.Count)}; {DeliveryScopeProvenanceText.ExcludedItemsText(population - included)}." };
         if (counts.MembersUnresolved > 0)
-            summary.Add($"{counts.MembersUnresolved} scope member{(counts.MembersUnresolved == 1 ? " is" : "s are")} not present in this Delivery comparison (unresolved).");
+            summary.Add($"{DeliveryScopeProvenanceText.UnresolvedMembersText(counts.MembersUnresolved)}.");
         return (projected with { Metrics = counts.NoApplicableItems ? [] : metrics, ExecutiveSummary = summary }, counts);
     }
 

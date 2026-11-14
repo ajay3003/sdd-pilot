@@ -129,7 +129,7 @@ public sealed class DeliveryScopeFilterDatabaseTests
             rows.Single(r => r.Id == filtered.ReportId).ScopeFilterLabel.Should().Be("Filtered by scope: Release 1 rev 1");
             rows.Single(r => r.Id == legacy.ReportId).ScopeFilterLabel.Should().BeEmpty();
             (await reports.ExportAsync(project, filtered.ReportId, DeliveryExportFormat.Markdown, new(), default))!.Content
-                .Should().Contain("**Scope filter:** 2 included · 2 excluded (outside scope) · 1 scope member unresolved");
+                .Should().Contain("**Scope filter:** 2 in-scope items · ").And.Contain("containing in-scope items · 2 items excluded (outside scope) · 1 scope member unresolved");
 
             // Report vs report: whole vs whole is like-for-like; whole vs filtered is not (raw counts, no percentages).
             var likeForLike = (await reports.CompareAsync(project, legacy.ReportId, context.ReportId, default)).Comparison!;

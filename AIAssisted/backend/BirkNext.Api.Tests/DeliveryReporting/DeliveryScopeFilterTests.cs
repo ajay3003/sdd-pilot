@@ -98,7 +98,7 @@ public sealed class DeliveryScopeFilterTests
         filter.Counts.Should().Match<DeliveryScopeFilterCounts>(c => c.Included == 3 && c.Excluded == 1 && c.MembersMatched == 2 && c.MembersUnresolved == 1 && c.MembersNotApplicable == 2);
         filter.Counts.UnresolvedMemberKeys.Should().Equal("UserStory|frontend/009-gone/US7");
         DeliveryScopeProvenanceText.CountsText(filter.Counts).Should()
-            .Be("3 included · 1 excluded (outside scope) · 1 scope member unresolved (named by the scope, not in this Delivery population) · 2 members of other kinds not applicable to Delivery items");
+            .Be("3 in-scope items · 1 item excluded (outside scope) · 1 scope member unresolved (named by the scope, not in this Delivery population) · 2 members of other kinds not applicable to Delivery items");
     }
 
     // ── Membership resolution (Scope Registry, in-process) ──────────────────────────────────────────────────────────────
@@ -246,6 +246,99 @@ public sealed class DeliveryScopeFilterTests
         var different = DeliveryReportComparer.Compare(a, b with { ScopeProvenance = P(3) });
         different.LikeForLike.Should().BeFalse();
         different.Mismatches.Single().Should().Contain("different scope revisions");
+    }
+
+    // ── Metric units: one definition for the UI, the export and report comparison ─────────────────────────────────────
+
+    /// <summary>The exporter's Markdown escaping (backslash before Markdown control characters).</summary>
+    private static string MdEscaped(string text) => string.Concat(text.Select(c => "\\*_`[]<>#|".Contains(c) ? "\\" + c : c.ToString()));
+
+    private static (WeeklyDeliveryReport Whole, WeeklyDeliveryReport Filtered) WholeAndFiltered()
+    {
+        var whole = Report();
+        var child = Feature(whole, "Child search");
+        var (filteredReport, counts) = DeliveryReportScopeFilter.Apply(whole, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { StoryKey(child), RequirementKey(child) }, 0);
+        return (whole, filteredReport with
+        {
+            ReportId = Guid.NewGuid(),
+            ScopeProvenance = new() { Scopes = [new(Guid.NewGuid(), "Release 1", 2, Guid.NewGuid())], Mode = DeliveryScopeMode.Filter, Filtered = true, Counts = counts },
+        });
+    }
+
+    [Fact]
+    public void Every_report_figure_has_a_shared_unit_and_the_scope_filter_uses_the_same_levels()
+    {
+        var (whole, filtered) = WholeAndFiltered();
+        whole.Metrics.Concat(filtered.Metrics).Should().OnlyContain(m => DeliveryMetricDefinitions.Of(m.Key).Unit != DeliveryMetricUnit.Unknown, "every figure the builder or the filter emits is defined once");
+        foreach (var m in whole.Metrics)
+            DeliveryReportScopeFilter.Resolvable(m.Key).Should().Be(DeliveryMetricDefinitions.Of(m.Key).ScopeLevel != DeliveryMetricScopeLevel.NotScopeResolvable, m.Key);
+        filtered.Metrics.Should().NotContain(m => DeliveryMetricDefinitions.Of(m.Key).ScopeLevel == DeliveryMetricScopeLevel.NotScopeResolvable);
+        foreach (var key in new[] { "features-changed", "moved-forward", "completed", "new-features", "removed-features", "specifications-changed", "inventory-features",
+                     "inventory-no-tasks", "ready-for-test", "testing", "blocked", "needs-clarification" })
+            DeliveryMetricDefinitions.Of(key).Should().Match<DeliveryMetricDefinition>(d => d.Unit == DeliveryMetricUnit.Features && d.ScopeLevel == DeliveryMetricScopeLevel.Feature, key);
+    }
+
+    [Fact]
+    public void A_filtered_report_labels_every_figure_with_its_unit_feature_level_as_features_and_item_level_as_in_scope_items()
+    {
+        var (_, filtered) = WholeAndFiltered();
+        DeliveryMetricDefinitions.Filtered(filtered).Should().BeTrue();
+        foreach (var m in filtered.Metrics)
+        {
+            var label = DeliveryMetricDefinitions.DisplayLabel(m, filtered: true);
+            var level = DeliveryMetricDefinitions.Of(m.Key).ScopeLevel;
+            if (level == DeliveryMetricScopeLevel.Feature) label.Should().EndWith($"{DeliveryMetricDefinitions.FeaturesContainingInScopeItems})", m.Key);
+            if (level == DeliveryMetricScopeLevel.Item) label.Should().Contain("in-scope").And.MatchRegex("(requirements|user stories|scenarios|acceptance criteria|tasks)", m.Key);
+            label.Should().StartWith(m.Label, "the stored label is kept; only the unit is added");
+        }
+        DeliveryMetricDefinitions.DisplayLabel("blocked", "Blocked", true).Should().Be("Blocked (features containing in-scope items)");
+        DeliveryMetricDefinitions.DisplayLabel("inventory-requirements", "Functional requirements", true).Should().Be("Functional requirements (in-scope requirements)");
+        DeliveryMetricDefinitions.DisplayLabel("attention", "Needs attention", true).Should().Be("Needs attention (attention items in features containing in-scope items)");
+    }
+
+    [Fact]
+    public void Export_and_comparison_use_the_same_unit_labels_as_the_report_view()
+    {
+        var (whole, filtered) = WholeAndFiltered();
+        var markdown = DeliveryReportExporter.Markdown(filtered, new());
+        var html = DeliveryReportExporter.Html(filtered, new());
+        foreach (var m in filtered.Metrics)
+        {
+            var label = DeliveryMetricDefinitions.DisplayLabel(m, filtered: true);
+            markdown.Should().Contain($"{MdEscaped(label)} | {m.Value} |", m.Key);
+            html.Should().Contain($"<span class=\"label\">{System.Net.WebUtility.HtmlEncode(label)}</span>", m.Key);
+        }
+        markdown.Should().Contain(DeliveryScopeProvenanceText.InScopeFeaturesText(filtered.ScopeProvenance!.Counts!.IncludedFeatures));
+
+        var same = filtered with { ReportId = Guid.NewGuid() };
+        var cmp = DeliveryReportComparer.Compare(filtered, same);
+        cmp.LikeForLike.Should().BeTrue();
+        foreach (var d in cmp.Metrics)
+        {
+            var stored = filtered.Metrics.Single(m => m.Key == d.Key);
+            d.Label.Should().Be(DeliveryMetricDefinitions.DisplayLabel(stored, filtered: true), d.Key);
+            d.Unit.Should().Be(DeliveryMetricDefinitions.UnitLabel(d.Key, filtered: true), d.Key);
+        }
+
+        var mixed = DeliveryReportComparer.Compare(whole, filtered);
+        mixed.Metrics.Single(m => m.Key == "inventory-features").Label.Should().Be("Features (features containing in-scope items)", "either side filtered: the unit is named");
+    }
+
+    [Fact]
+    public void A_whole_or_legacy_report_keeps_its_stored_labels_in_view_export_and_comparison()
+    {
+        var (whole, _) = WholeAndFiltered();
+        DeliveryMetricDefinitions.Filtered(whole).Should().BeFalse();
+        whole.Metrics.Should().OnlyContain(m => DeliveryMetricDefinitions.DisplayLabel(m, false) == m.Label);
+        var markdown = DeliveryReportExporter.Markdown(whole, new());
+        markdown.Should().NotContain(DeliveryMetricDefinitions.FeaturesContainingInScopeItems).And.NotContain("in-scope");
+        foreach (var m in whole.Metrics) markdown.Should().Contain($"{MdEscaped(m.Label)} | {m.Value} |", m.Key);
+
+        var cmp = DeliveryReportComparer.Compare(whole, whole with { ReportId = Guid.NewGuid() });
+        cmp.Metrics.Should().OnlyContain(d => d.Label == whole.Metrics.First(m => m.Key == d.Key).Label);
+        cmp.Metrics.Single(d => d.Key == "inventory-features").Unit.Should().Be("features");
+        // A metric key this build does not know (an older or newer report) keeps its label and has no unit.
+        DeliveryMetricDefinitions.DisplayLabel("some-future-figure", "Future figure", true).Should().Be("Future figure");
     }
 
     // ── Provenance JSON compatibility ───────────────────────────────────────────────────────────────────────────────

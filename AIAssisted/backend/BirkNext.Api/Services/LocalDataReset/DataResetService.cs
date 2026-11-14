@@ -21,7 +21,8 @@ public sealed class DataResetService(ILocalDatabaseReset guard, LocalDataResetCo
         ["Delivery Management reporting projects", "Delivery snapshots (Delivery Reporting's own copies) and their comparisons", "Generated Delivery Reports and report history"];
     private static readonly string[] DeliveryNotTouched =
         ["Project imports and workspaces", "Source Analysis", "Project Evidence and Target Environments", "Test Data",
-         "Quality review configuration and results", "Performance test definitions and history", "Critical E2E, Browser and Endpoint Discovery", "Authentication settings"];
+         "Quality review configuration and results", "Performance test definitions and history", "Critical E2E, Browser and Endpoint Discovery", "Authentication settings",
+         .. ResettableSchemas.All.Select(s => s.Domain)];
 
     public async Task<DataResetPlan> PlanAsync(DataResetMode mode, CancellationToken ct)
     {

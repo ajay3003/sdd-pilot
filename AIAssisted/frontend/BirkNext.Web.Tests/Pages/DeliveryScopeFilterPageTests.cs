@@ -115,10 +115,34 @@ public sealed class DeliveryScopeFilterPageTests : BunitContext
         page.WaitForAssertion(() => page.Find("[data-testid=dlr-scope-provenance]").GetAttribute("data-filtered").Should().Be("true"));
         page.Find("[data-testid=dlr-scope-provenance]").TextContent.Should().Contain("Filtered by scope: Release 1 rev 3");
         page.Find("[data-testid=dlr-scope-filter-counts]").TextContent.Should()
-            .Contain("3 included · 9 excluded (outside scope) · 2 scope members unresolved (named by the scope, not in this Delivery population)");
+            .Contain("3 in-scope items · 1 feature containing in-scope items · 9 items excluded (outside scope) · 2 scope members unresolved (named by the scope, not in this Delivery population)");
         page.Find("[data-testid=dlr-not-scope-resolvable]").TextContent.Should().Contain("Tasks completed this period").And.Contain("Shared & foundational tasks");
         page.Find("[data-testid=dlr-comparison]").QuerySelectorAll("[data-testid=dd-kpi]").Single(k => k.GetAttribute("data-key") == "checklist").TextContent.Should().Contain(DeliveryScopeProvenanceText.NotScopeResolvable)
             .And.NotContain("%", "a feature-wide checklist is never shown under a scope");
+
+        // Units from the shared definitions (same as the export and report comparison): feature-level figures say "features", item-level ones "in-scope …".
+        var moved = page.Find("[data-testid=dlr-metric-moved-forward]");
+        moved.GetAttribute("data-unit").Should().Be(DeliveryMetricDefinitions.FeaturesContainingInScopeItems);
+        moved.GetAttribute("data-scope-level").Should().Be(nameof(DeliveryMetricScopeLevel.Feature));
+        moved.QuerySelector(".dlr-metric-label")!.TextContent.Should().Be("Moved forward (features containing in-scope items)");
+        var stories = page.Find("[data-testid=dlr-metric-stories-changed]");
+        stories.GetAttribute("data-unit").Should().Be("in-scope user stories and scenarios");
+        stories.QuerySelector(".dlr-metric-label")!.TextContent.Should().Be("Stories changed (in-scope user stories and scenarios)");
+        page.Find("[data-testid=dlr-comparison]").QuerySelectorAll("[data-testid=dd-kpi]").Single(k => k.GetAttribute("data-key") == "scope").TextContent
+            .Should().Contain("Features containing in-scope items");
+    }
+
+    [Fact]
+    public void A_whole_report_keeps_its_stored_figure_labels()
+    {
+        _api.Reports.Clear();
+        _api.Reports[Second] = FilteredReport() with { ScopeProvenance = Selection() };
+        var page = RenderAt($"?project={ProjectId}&tab=overview&report={Second}");
+
+        page.WaitForAssertion(() => page.Find("[data-testid=dlr-metric-moved-forward]"));
+        page.Find("[data-testid=dlr-metric-moved-forward] .dlr-metric-label").TextContent.Should().Be("Moved forward");
+        page.Find("[data-testid=dlr-metric-moved-forward]").GetAttribute("data-unit").Should().Be("features");
+        page.Find("[data-testid=dlr-metric-stories-changed] .dlr-metric-label").TextContent.Should().Be("Stories changed");
     }
 
     [Fact]

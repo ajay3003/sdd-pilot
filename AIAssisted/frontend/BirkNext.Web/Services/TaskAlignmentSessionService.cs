@@ -51,12 +51,35 @@ public sealed record TaskAlignmentRunContext(
     Guid? SourceSnapshotId = null,
     string? ProjectName = null);
 
-public sealed class TaskAlignmentSessionService
+public sealed class TaskAlignmentSessionService(LocalDataResetEpoch? resetEpoch = null)
 {
-    public AlignmentReport? Report { get; private set; }
-    public TaskAlignmentSnapshot? Snapshot { get; private set; }
+    private AlignmentReport? _report;
+    private TaskAlignmentSnapshot? _snapshot;
+    /// <summary>The local data reset epoch the held result was taken under (null while unknown).</summary>
+    private int? _resultEpoch;
+
+    /// <summary>
+    /// The held result — dropped as soon as the local data reset epoch differs from the one it was taken under (another tab, or a
+    /// current-state read, saw a newer reset), so a result from before a reset is never shown again.
+    /// </summary>
+    public AlignmentReport? Report { get { DropIfFromEarlierReset(); return _report; } private set => _report = value; }
+    public TaskAlignmentSnapshot? Snapshot { get { DropIfFromEarlierReset(); return _snapshot; } private set => _snapshot = value; }
     public TaskAlignmentSaveState SaveState { get; private set; }
     public string? SaveError { get; private set; }
+
+    /// <summary>The local data reset epoch this browser currently knows (null before the first current-state read or without the epoch service).</summary>
+    public int? ResetEpoch => resetEpoch?.Value;
+
+    /// <summary>True when something loaded under <paramref name="loadedUnder"/> predates the reset epoch now known: both are known and differ.</summary>
+    public static bool IsFromEarlierReset(int? loadedUnder, int? current) => loadedUnder is { } l && current is { } c && l != c;
+
+    private void DropIfFromEarlierReset()
+    {
+        if (_report is null && _snapshot is null) return;
+        var current = resetEpoch?.Value;
+        if (_resultEpoch is null) { _resultEpoch = current; return; }
+        if (IsFromEarlierReset(_resultEpoch, current)) Clear();
+    }
 
     /// <summary>The identity a result is bound to (with the two fingerprints): the project key plus the design inputs it read.</summary>
     public static string ContextKey(string projectKey, string designInputsKey) => $"{projectKey}|design:{designInputsKey}";
@@ -95,6 +118,7 @@ public sealed class TaskAlignmentSessionService
             AnalyzedAtUtc = analyzedAtUtc ?? DateTimeOffset.UtcNow,
             TasksPath = tasksPath is null ? null : TaskAlignmentRunRules.NormalizePath(tasksPath),
         };
+        _resultEpoch = resetEpoch?.Value;
         SaveState = TaskAlignmentSaveState.NotSaved;
         SaveError = null;
     }
@@ -168,6 +192,7 @@ public sealed class TaskAlignmentSessionService
             TasksPath = run.Summary.TasksPath,
             RunId = run.Summary.Id,
         };
+        _resultEpoch = resetEpoch?.Value;
         SaveState = TaskAlignmentSaveState.Saved;
         SaveError = null;
         return TaskAlignmentRestoreOutcome.Restored;
@@ -177,6 +202,7 @@ public sealed class TaskAlignmentSessionService
     {
         Report = null;
         Snapshot = null;
+        _resultEpoch = null;
         SaveState = TaskAlignmentSaveState.NotSaved;
         SaveError = null;
     }

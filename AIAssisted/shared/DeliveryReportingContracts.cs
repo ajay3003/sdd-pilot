@@ -392,6 +392,131 @@ public static class DeliveryMetricGroups
     };
 }
 
+/// <summary>What one Delivery figure counts (its unit). Derived from the metric key, so frozen reports never need rewriting.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum DeliveryMetricUnit { Unknown, Features, Requirements, UserStories, Scenarios, UserStoriesAndScenarios, AcceptanceCriteria, Tasks, AttentionItems, ScopeChanges, Warnings }
+
+/// <summary>
+/// How a figure is restricted when a report is filtered by scope: <see cref="Item"/> = recomputed from the in-scope items only; <see cref="Feature"/> =
+/// recomputed over the features that contain in-scope items; <see cref="Comparison"/> = a property of the snapshot pair; <see cref="NotScopeResolvable"/> =
+/// removed from a filtered report and listed by name.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum DeliveryMetricScopeLevel { NotScopeResolvable, Item, Feature, Comparison }
+
+public sealed record DeliveryMetricDefinition(string Key, DeliveryMetricUnit Unit, DeliveryMetricScopeLevel ScopeLevel);
+
+/// <summary>
+/// The ONE definition of every Delivery report figure's unit and scope level, used by the scope filter (server), the Delivery Reports UI, the
+/// Markdown/HTML export and report-vs-report comparison. Labels are derived at render time from the stored key — stored metrics are never changed.
+/// A whole (unfiltered) report shows its stored labels unchanged; a report filtered by scope shows every figure with its unit, e.g.
+/// "Blocked (features containing in-scope items)" or "User stories (in-scope user stories)".
+/// </summary>
+public static class DeliveryMetricDefinitions
+{
+    /// <summary>The denominator of every feature-level figure in a filtered report.</summary>
+    public const string FeaturesContainingInScopeItems = "features containing in-scope items";
+
+    private static readonly IReadOnlyDictionary<string, DeliveryMetricDefinition> ByKey = new DeliveryMetricDefinition[]
+    {
+        // Feature-level: counted per feature; in a filtered report over the features that contain in-scope items.
+        new("features-changed", DeliveryMetricUnit.Features, DeliveryMetricScopeLevel.Feature),
+        new("moved-forward", DeliveryMetricUnit.Features, DeliveryMetricScopeLevel.Feature),
+        new("completed", DeliveryMetricUnit.Features, DeliveryMetricScopeLevel.Feature),
+        new("new-features", DeliveryMetricUnit.Features, DeliveryMetricScopeLevel.Feature),
+        new("removed-features", DeliveryMetricUnit.Features, DeliveryMetricScopeLevel.Feature),
+        new("specifications-changed", DeliveryMetricUnit.Features, DeliveryMetricScopeLevel.Feature),
+        new("inventory-features", DeliveryMetricUnit.Features, DeliveryMetricScopeLevel.Feature),
+        new("inventory-no-tasks", DeliveryMetricUnit.Features, DeliveryMetricScopeLevel.Feature),
+        new("ready-for-test", DeliveryMetricUnit.Features, DeliveryMetricScopeLevel.Feature),
+        new("testing", DeliveryMetricUnit.Features, DeliveryMetricScopeLevel.Feature),
+        new("blocked", DeliveryMetricUnit.Features, DeliveryMetricScopeLevel.Feature),
+        new("needs-clarification", DeliveryMetricUnit.Features, DeliveryMetricScopeLevel.Feature),
+        new("quality-scope-review", DeliveryMetricUnit.ScopeChanges, DeliveryMetricScopeLevel.Feature),
+        new("quality-traceability", DeliveryMetricUnit.AttentionItems, DeliveryMetricScopeLevel.Feature),
+        new("attention", DeliveryMetricUnit.AttentionItems, DeliveryMetricScopeLevel.Feature),
+        // Item-level: recomputed from the in-scope requirements, user stories and scenarios.
+        new("inventory-requirements", DeliveryMetricUnit.Requirements, DeliveryMetricScopeLevel.Item),
+        new("inventory-stories", DeliveryMetricUnit.UserStories, DeliveryMetricScopeLevel.Item),
+        new("inventory-scenarios", DeliveryMetricUnit.Scenarios, DeliveryMetricScopeLevel.Item),
+        new("stories-changed", DeliveryMetricUnit.UserStoriesAndScenarios, DeliveryMetricScopeLevel.Item),
+        new("criteria-changed", DeliveryMetricUnit.AcceptanceCriteria, DeliveryMetricScopeLevel.Item),
+        new("inventory-tasks", DeliveryMetricUnit.Tasks, DeliveryMetricScopeLevel.Item),
+        new("inventory-checked", DeliveryMetricUnit.Tasks, DeliveryMetricScopeLevel.Item),
+        new("inventory-unchecked", DeliveryMetricUnit.Tasks, DeliveryMetricScopeLevel.Item),
+        // Comparison-level.
+        new("quality-direction", DeliveryMetricUnit.Warnings, DeliveryMetricScopeLevel.Comparison),
+        // Not scope-resolvable (feature-wide or shared task figures): never shown in a filtered report.
+        new("tasks-completed", DeliveryMetricUnit.Tasks, DeliveryMetricScopeLevel.NotScopeResolvable),
+        new("tasks-added", DeliveryMetricUnit.Tasks, DeliveryMetricScopeLevel.NotScopeResolvable),
+        new("tasks-removed", DeliveryMetricUnit.Tasks, DeliveryMetricScopeLevel.NotScopeResolvable),
+        new("tasks-reopened", DeliveryMetricUnit.Tasks, DeliveryMetricScopeLevel.NotScopeResolvable),
+        new("tasks-explicit-story", DeliveryMetricUnit.Tasks, DeliveryMetricScopeLevel.NotScopeResolvable),
+        new("tasks-story-phase", DeliveryMetricUnit.Tasks, DeliveryMetricScopeLevel.NotScopeResolvable),
+        new("tasks-shared", DeliveryMetricUnit.Tasks, DeliveryMetricScopeLevel.NotScopeResolvable),
+        new("tasks-functional-group", DeliveryMetricUnit.Tasks, DeliveryMetricScopeLevel.NotScopeResolvable),
+        new("tasks-scenario-group", DeliveryMetricUnit.Tasks, DeliveryMetricScopeLevel.NotScopeResolvable),
+        new("quality-removed-story-references", DeliveryMetricUnit.Tasks, DeliveryMetricScopeLevel.NotScopeResolvable),
+        new("quality-unresolved-references", DeliveryMetricUnit.Tasks, DeliveryMetricScopeLevel.NotScopeResolvable),
+    }.ToDictionary(d => d.Key, StringComparer.Ordinal);
+
+    public static IReadOnlyCollection<DeliveryMetricDefinition> All => [.. ByKey.Values];
+
+    /// <summary>The definition of a key; an unknown key is <see cref="DeliveryMetricUnit.Unknown"/> and not scope-resolvable.</summary>
+    public static DeliveryMetricDefinition Of(string key) =>
+        ByKey.TryGetValue(key, out var d) ? d : new(key, DeliveryMetricUnit.Unknown, DeliveryMetricScopeLevel.NotScopeResolvable);
+
+    public static bool IsFeatureLevel(string key) => Of(key).ScopeLevel == DeliveryMetricScopeLevel.Feature;
+    public static bool IsItemLevel(string key) => Of(key).ScopeLevel == DeliveryMetricScopeLevel.Item;
+
+    /// <summary>"features", "requirements", "user stories", "tasks", … ("" for an unknown key).</summary>
+    public static string UnitText(DeliveryMetricUnit unit) => unit switch
+    {
+        DeliveryMetricUnit.Features => "features",
+        DeliveryMetricUnit.Requirements => "requirements",
+        DeliveryMetricUnit.UserStories => "user stories",
+        DeliveryMetricUnit.Scenarios => "scenarios",
+        DeliveryMetricUnit.UserStoriesAndScenarios => "user stories and scenarios",
+        DeliveryMetricUnit.AcceptanceCriteria => "acceptance criteria",
+        DeliveryMetricUnit.Tasks => "tasks",
+        DeliveryMetricUnit.AttentionItems => "attention items",
+        DeliveryMetricUnit.ScopeChanges => "scope changes",
+        DeliveryMetricUnit.Warnings => "warnings",
+        _ => "",
+    };
+
+    /// <summary>
+    /// The unit a figure is shown with. Whole report: the plain unit ("features"). Filtered report: what it is restricted to —
+    /// feature-level "features containing in-scope items" (or "attention items in features containing in-scope items"), item-level
+    /// "in-scope requirements" / "tasks linked to in-scope user stories and scenarios", comparison-level "warnings, comparison-level".
+    /// </summary>
+    public static string UnitLabel(string key, bool filtered)
+    {
+        var d = Of(key);
+        var unit = UnitText(d.Unit);
+        if (!filtered || unit.Length == 0) return unit;
+        return (d.ScopeLevel, d.Unit) switch
+        {
+            (DeliveryMetricScopeLevel.Feature, DeliveryMetricUnit.Features) => FeaturesContainingInScopeItems,
+            (DeliveryMetricScopeLevel.Feature, _) => $"{unit} in {FeaturesContainingInScopeItems}",
+            (DeliveryMetricScopeLevel.Item, DeliveryMetricUnit.Tasks) => "tasks linked to in-scope user stories and scenarios",
+            (DeliveryMetricScopeLevel.Item, _) => $"in-scope {unit}",
+            (DeliveryMetricScopeLevel.Comparison, _) => $"{unit}, comparison-level",
+            _ => unit,
+        };
+    }
+
+    /// <summary>The label a figure is shown with: the stored label unchanged for a whole report (legacy reports read exactly as before); in a filtered
+    /// report "{label} ({unit label})".</summary>
+    public static string DisplayLabel(string key, string label, bool filtered) =>
+        filtered && UnitLabel(key, true) is { Length: > 0 } unit ? $"{label} ({unit})" : label;
+
+    public static string DisplayLabel(DeliveryReportMetric metric, bool filtered) => DisplayLabel(metric.Key, metric.Label, filtered);
+
+    /// <summary>Whether the report's figures are restricted to a scope (filter mode, not scope context).</summary>
+    public static bool Filtered(WeeklyDeliveryReport report) => report.ScopeProvenance?.Filtered == true;
+}
+
 /// <summary>Three different kinds of signal, never one "needs attention" number: a scope change to confirm is not a defect, a traceability gap is
 /// a data-quality issue, and blocked/clarification/reopened work is a delivery signal.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -814,6 +939,9 @@ public sealed record DeliveryReportMetricDifference(string Key, string Label, st
     public int? Delta { get; init; }
     public double? PercentChange { get; init; }
     public string? Note { get; init; }
+    /// <summary>What the figure counts, from <see cref="DeliveryMetricDefinitions.UnitLabel"/> ("features containing in-scope items" when either report is
+    /// filtered by scope; then <see cref="Label"/> carries it too).</summary>
+    public string Unit { get; init; } = "";
     [JsonIgnore] public bool Changed => Baseline != Current;
 }
 
@@ -879,6 +1007,8 @@ public static class DeliveryReportComparer
         var a = baseline.Metrics.GroupBy(x => x.Key).ToDictionary(g => g.Key, g => g.First());
         var b = current.Metrics.GroupBy(x => x.Key).ToDictionary(g => g.Key, g => g.First());
         var keys = current.Metrics.Select(x => x.Key).Concat(baseline.Metrics.Select(x => x.Key)).Distinct().ToList();
+        // Units from the shared definitions (same as the report view and export): a figure of a filtered report is labelled with what it is restricted to.
+        var filtered = DeliveryMetricDefinitions.Filtered(baseline) || DeliveryMetricDefinitions.Filtered(current);
         static string Missing(DeliveryReportMetric present, IReadOnlyList<string> notResolvable, string side) =>
             notResolvable.Contains(present.Label) ? $"{DeliveryScopeProvenanceText.NotScopeResolvable} in the {side} report" : $"Not in the {side} report";
         var metrics = keys.Select(k =>
@@ -886,7 +1016,8 @@ public static class DeliveryReportComparer
             a.TryGetValue(k, out var x);
             b.TryGetValue(k, out var y);
             var any = (y ?? x)!;
-            var d = new DeliveryReportMetricDifference(k, any.Label, any.Group, x?.Value, y?.Value);
+            var d = new DeliveryReportMetricDifference(k, DeliveryMetricDefinitions.DisplayLabel(k, any.Label, filtered), any.Group, x?.Value, y?.Value)
+                { Unit = DeliveryMetricDefinitions.UnitLabel(k, filtered) };
             if (x is null) return d with { Note = Missing(y!, notResolvableA, "baseline") };
             if (y is null) return d with { Note = Missing(x, notResolvableB, "current") };
             var delta = y.Value - x.Value;

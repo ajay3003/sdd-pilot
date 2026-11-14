@@ -495,14 +495,27 @@ public static class DeliveryScopeProvenanceText
     public static string Describe(DeliveryScopeProvenance? p) =>
         IsWholePopulation(p) ? NoSelection : !Recorded(p) ? NotRecorded : p!.Filtered ? $"Filtered by scope: {Revisions(p)} · {p.MembershipResolution}" : $"{Revisions(p)} · {p.MembershipResolution}";
 
-    /// <summary>"12 included · 30 excluded (outside scope) · 2 scope members unresolved (named by the scope, not in this Delivery population)".</summary>
+    // The scope filter's count definitions, one wording everywhere (Delivery Reports view, Functional Quality Scope panel, Markdown/HTML export,
+    // report summary). Item counts are Delivery items (in a report: requirements, user stories and scenarios); the feature count is the denominator of
+    // every feature-level figure (DeliveryMetricDefinitions.FeaturesContainingInScopeItems).
+    private static string Plural(int n, string one, string many) => n == 1 ? one : many;
+    /// <summary>"12 in-scope items".</summary>
+    public static string InScopeItemsText(int n) => $"{n} in-scope {Plural(n, "item", "items")}";
+    /// <summary>"4 features containing in-scope items".</summary>
+    public static string InScopeFeaturesText(int n) => $"{n} {Plural(n, "feature containing in-scope items", DeliveryMetricDefinitions.FeaturesContainingInScopeItems)}";
+    /// <summary>"30 items excluded (outside scope)".</summary>
+    public static string ExcludedItemsText(int n) => $"{n} {Plural(n, "item", "items")} excluded (outside scope)";
+    /// <summary>"2 scope members unresolved (named by the scope, not in this Delivery population)".</summary>
+    public static string UnresolvedMembersText(int n) => $"{n} scope {Plural(n, "member", "members")} unresolved (named by the scope, not in this Delivery population)";
+
+    /// <summary>"12 in-scope items · 4 features containing in-scope items · 30 items excluded (outside scope) · 2 scope members unresolved (…)". The
+    /// feature count appears for reports only (snapshots do not count features).</summary>
     public static string CountsText(DeliveryScopeFilterCounts c)
     {
-        var parts = new List<string>
-        {
-            $"{c.Included} included", $"{c.Excluded} excluded (outside scope)",
-            $"{c.MembersUnresolved} scope member{(c.MembersUnresolved == 1 ? "" : "s")} unresolved (named by the scope, not in this Delivery population)",
-        };
+        var parts = new List<string> { InScopeItemsText(c.Included) };
+        if (c.IncludedFeatures > 0) parts.Add(InScopeFeaturesText(c.IncludedFeatures));
+        parts.Add(ExcludedItemsText(c.Excluded));
+        parts.Add(UnresolvedMembersText(c.MembersUnresolved));
         if (c.MembersNotApplicable > 0) parts.Add($"{c.MembersNotApplicable} member{(c.MembersNotApplicable == 1 ? "" : "s")} of other kinds not applicable to Delivery items");
         return string.Join(" · ", parts);
     }

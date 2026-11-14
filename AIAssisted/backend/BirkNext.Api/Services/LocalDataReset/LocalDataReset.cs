@@ -135,6 +135,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         "Delivery Management: reporting projects, delivery snapshots, comparisons and saved Delivery Reports (report history)",
         "Canonical interpretation: canonical entities, aliases, relations, interpretation snapshots and the shared review decisions made on them",
         "Snapshot Registry metadata: lineage, current/approved pointers and retention classes (rebuilt from the remaining stores on next use)",
+        .. ResettableSchemas.All.Select(s => s.Description),
     ];
 
     public static readonly IReadOnlyList<string> Preserved =
@@ -220,6 +221,17 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
                     await snapshots.Database.ExecuteSqlRawAsync("DELETE FROM snapshot_registry.snapshot_entry", ct);
                 }
             }, domains, "Snapshot Registry");
+            // Separate-schema stores from the registry (ResettableSchemas.All): each its own transaction on the local database, history tables untouched.
+            foreach (var store in ResettableSchemas.All)
+                await Step(warnings, $"{store.Domain} data", async () =>
+                {
+                    using var scope = services.CreateScope();
+                    if (scope.ServiceProvider.GetService(store.ContextType) is DbContext context)
+                    {
+                        var removed = await ResettableSchemas.DeleteAllRowsAsync(context, store.Schema, ct);
+                        logger.LogWarning("Local data reset: {Removed} rows removed from the {Schema} schema ({Domain})", removed, store.Schema, store.Domain);
+                    }
+                }, domains, store.Domain);
 
             logger.LogWarning("Local data reset {Epoch} completed: {Deleted} database rows, {Warnings} warning(s)", epoch, deleted, warnings.Count);
             return new()

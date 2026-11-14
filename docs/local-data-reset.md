@@ -99,6 +99,18 @@ later run reuse a key that already exists in the real Event Hub or downstream sy
 | Performance | `PerformanceTestDefinitions`, `PerformanceTestDataProfiles`, `PerformanceTestRuns`, `PerformanceBaselines` | **Yes (definitions and profiles changed)** | Definitions and data profiles target a project's endpoints |
 | Schema | `__EFMigrationsHistory`, tables and indexes | No | The reset deletes rows; it does not drop the database |
 
+### Separate-schema stores (registry: `Services/LocalDataReset/ResettableSchemas.cs`)
+
+Stores with their own schema and migrations history are listed once in `ResettableSchemas.All`. After the local-guarded database reset
+succeeds, each is cleared in its own transaction (dependent tables first); its migrations history is never touched, and a model table outside
+the declared schema refuses the step. Each appears in the plan and in the result domains.
+
+| Domain | Schema | Cleared |
+| --- | --- | --- |
+| Task Alignment run history | `task_alignment` | Yes. Other open tabs drop a held Task Alignment result when the reset epoch changes |
+| Declared Integration Journeys and their revisions | `integration_journeys` | Yes. The legacy `App_Data/integration-journeys/declared-journeys.json` is never deleted, so the next backend start imports its entries again |
+| Shared Scope Registry | `scope_registry` | **No** (not part of the reset; existing gap) |
+
 ### Backend outside the database
 
 | Domain | Cleared | Reason |
@@ -147,6 +159,9 @@ later run reuse a key that already exists in the real Event Hub or downstream sy
   and the reset always navigates to the Dashboard.
 - **Managed Edge windows keep running.** A managed Edge (CDP) window is not closed. The local HTTPS proxy session, by contrast, is
   stopped, together with the dedicated browser it opened.
+- **Scope Registry not reset.** Shared scopes (`scope_registry` schema) survive a reset; they are not in the registry of resettable schemas.
+- **Legacy journey file re-import.** After a reset the next backend start imports the legacy declared-journeys JSON file again, because the
+  file is kept as the original record.
 - **Restart required for the fix.** A backend started before this change still runs the old reset, which preserved the integration catalog.
   Restart it to get this behaviour.
 

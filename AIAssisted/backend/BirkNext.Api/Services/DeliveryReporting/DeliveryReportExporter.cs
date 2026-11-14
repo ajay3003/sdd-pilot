@@ -49,7 +49,8 @@ public static class DeliveryReportExporter
 
         md.AppendLine("## Movement summary").AppendLine();
         md.AppendLine("| Measure | Count |").AppendLine("|---|---:|");
-        foreach (var metric in report.Metrics) md.AppendLine($"| {(report.Version >= 3 ? Cell(DeliveryMetricGroups.Label(metric.Group)) + " · " : "")}{Cell(metric.Label)} | {metric.Value} |");
+        // Labels from the shared definitions: unchanged for a whole report; with their unit ("… (features containing in-scope items)") when filtered.
+        foreach (var metric in report.Metrics) md.AppendLine($"| {(report.Version >= 3 ? Cell(DeliveryMetricGroups.Label(metric.Group)) + " · " : "")}{Cell(DeliveryMetricDefinitions.DisplayLabel(metric, DeliveryMetricDefinitions.Filtered(report)))} | {metric.Value} |");
         md.AppendLine();
 
         var stories = DeliveryReportStories.Select(report, options.IncludeUnchangedStories);
@@ -174,7 +175,7 @@ public static class DeliveryReportExporter
         h.AppendLine("</ul></section>");
 
         h.AppendLine("<section><h2>Movement summary</h2><div class=\"cards\">");
-        foreach (var m in report.Metrics) h.AppendLine($"<div class=\"card\"><span class=\"value\">{m.Value}</span><span class=\"label\">{E(m.Label)}</span></div>");
+        foreach (var m in report.Metrics) h.AppendLine($"<div class=\"card\"><span class=\"value\">{m.Value}</span><span class=\"label\">{E(DeliveryMetricDefinitions.DisplayLabel(m, DeliveryMetricDefinitions.Filtered(report)))}</span></div>");
         h.AppendLine("</div></section>");
 
         var stories = DeliveryReportStories.Select(report, options.IncludeUnchangedStories);

@@ -468,6 +468,8 @@
     private BirkNext.TaskAlignment.TaskAlignmentRun? _persistedAlignment;
     private string? _alignmentProjectKey;
     private string? _alignmentProjectName;
+    /// <summary>The local data reset epoch <see cref="_persistedAlignment"/> was read under: a run read before a reset is never shown after it.</summary>
+    private int? _persistedAlignmentEpoch;
 
     /// <summary>The project key Task Alignment runs are stored under: the explorers' workspace scope, else this evaluation's scope (import:{id}).</summary>
     private string? AlignmentProjectKey() =>
@@ -480,6 +482,7 @@
     private async Task LoadPersistedAlignmentAsync()
     {
         _persistedAlignment = null;
+        _persistedAlignmentEpoch = (Services.GetService(typeof(LocalDataResetEpoch)) as LocalDataResetEpoch)?.Value;
         _alignmentProjectKey = AlignmentProjectKey();
         _alignmentProjectName = await TaskAlignmentProjectName.OfAsync(Services, _alignmentProjectKey);
         if (Services.GetService(typeof(ITaskAlignmentRunApiService)) is not ITaskAlignmentRunApiService runs || _alignmentProjectKey is null
@@ -502,7 +505,8 @@
         if (Services.GetService(typeof(TaskAlignmentSessionService)) is TaskAlignmentSessionService session && session.Report is { } report && session.Snapshot is { } snap
             && (snap.TasksPath is null || BirkNext.TaskAlignment.TaskAlignmentRunRules.SamePath(snap.TasksPath, path)) && snap.TasksHash == hash)
             return new("current", report.Findings.GroupBy(x => x.TaskId).ToDictionary(g => g.Key, g => g.First().Status, StringComparer.Ordinal), snap.AnalyzedAtUtc);
-        if (_persistedAlignment is not { } run || !BirkNext.TaskAlignment.TaskAlignmentRunRules.IsComplete(run)) return AlignmentEvidence.None;
+        if (_persistedAlignment is not { } run || !BirkNext.TaskAlignment.TaskAlignmentRunRules.IsComplete(run)
+            || TaskAlignmentSessionService.IsFromEarlierReset(_persistedAlignmentEpoch, (Services.GetService(typeof(LocalDataResetEpoch)) as LocalDataResetEpoch)?.Value)) return AlignmentEvidence.None;
         var state = BirkNext.TaskAlignment.TaskAlignmentRunRules.Classify(run.Summary, _alignmentProjectKey, path, hash, rulesVersion: TaskSpecAlignmentService.RulesVersion,
             projectName: _alignmentProjectName);
         var earlier = BirkNext.TaskAlignment.TaskAlignmentRunRules.IsEarlierImport(run.Summary, _alignmentProjectKey, _alignmentProjectName);

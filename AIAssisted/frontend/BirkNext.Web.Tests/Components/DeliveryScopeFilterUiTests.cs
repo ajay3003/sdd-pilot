@@ -147,9 +147,9 @@ public sealed class DeliveryScopeFilterUiTests : BunitContext
         cut.WaitForAssertion(() => sent.Should().ContainSingle());
         sent[0].ScopeProvenance!.Should().Match<DeliveryScopeProvenance>(p => p.Mode == DeliveryScopeMode.Filter && p.ProjectKey == "import-1"
             && p.Scopes.Single().RevisionId == RevisionA3);
-        cut.WaitForAssertion(() => cut.Find("[data-testid=fqs-notice]").TextContent.Should().Contain("filtered by scope").And.Contain("2 included"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=fqs-notice]").TextContent.Should().Contain("filtered by scope").And.Contain("2 in-scope items"));
         cut.Find("[data-testid=fqs-snapshot-provenance]").GetAttribute("data-filtered").Should().Be("true");
-        cut.Find("[data-testid=fqs-snapshot-filter-counts]").TextContent.Should().StartWith("2 included · 1 excluded (outside scope)");
+        cut.Find("[data-testid=fqs-snapshot-filter-counts]").TextContent.Should().StartWith("2 in-scope items · 1 item excluded (outside scope)");
 
         cut.Find("[data-testid=fqs-scope-mode-context]").Change(true);
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=fqs-scope-filtered-counts]").Should().BeEmpty());

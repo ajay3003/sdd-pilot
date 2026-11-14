@@ -154,7 +154,10 @@
         {
             "checklist" => k with { Value = DeliveryScopeProvenanceText.NotScopeResolvable, Detail = "Task checklists are per feature and include shared tasks — not restricted to the scope's items" },
             "verified" => k,
-            _ => k with { Detail = $"{k.Detail} · features containing in-scope items" },
+            // Units from the shared definitions (same wording as the figures, the export and report comparison).
+            "scope" => k with { Label = "Features containing in-scope items", Detail = $"{k.Detail} · {DeliveryMetricDefinitions.FeaturesContainingInScopeItems}" },
+            "attention" => k with { Detail = $"{k.Detail} · {DeliveryMetricDefinitions.UnitText(DeliveryMetricUnit.AttentionItems)} in {DeliveryMetricDefinitions.FeaturesContainingInScopeItems}" },
+            _ => k with { Detail = $"{k.Detail} · {DeliveryMetricDefinitions.FeaturesContainingInScopeItems}" },
         })];
     }
 
@@ -164,9 +167,9 @@
     /// <summary>"38 features · 138 user stories · 6 scenarios · 123 AC · Partial comparison".</summary>
     private static string HeaderMeta(WeeklyDeliveryReport r) => string.Join(" · ", new[]
     {
-        $"{Fig(r, "inventory-features")} features",
-        r.Metrics.Any(m => m.Key == "inventory-stories") ? $"{Fig(r, "inventory-stories")} user stories" : null,
-        r.Metrics.Any(m => m.Key == "inventory-scenarios") ? $"{Fig(r, "inventory-scenarios")} scenarios" : null,
+        $"{Fig(r, "inventory-features")} {DeliveryMetricDefinitions.UnitLabel("inventory-features", DeliveryMetricDefinitions.Filtered(r))}",
+        r.Metrics.Any(m => m.Key == "inventory-stories") ? $"{Fig(r, "inventory-stories")} {DeliveryMetricDefinitions.UnitLabel("inventory-stories", DeliveryMetricDefinitions.Filtered(r))}" : null,
+        r.Metrics.Any(m => m.Key == "inventory-scenarios") ? $"{Fig(r, "inventory-scenarios")} {DeliveryMetricDefinitions.UnitLabel("inventory-scenarios", DeliveryMetricDefinitions.Filtered(r))}" : null,
         CriteriaNow(r) is var ac && ac != "–" ? $"{ac} AC" : null,
         r.PeriodCoverage switch { DeliveryPeriodCoverage.FullPeriod => "Full-period comparison", DeliveryPeriodCoverage.PartialPeriod => "Partial comparison",
             DeliveryPeriodCoverage.SameDay => "Same-day comparison", _ => null },
@@ -234,7 +237,7 @@
                     <div class="dlr-scope-filter" data-testid="dlr-scope-filter" data-no-items="@(filteredBy.Counts?.NoApplicableItems == true ? "true" : "false")">
                         @if (filteredBy.Counts is { } fc)
                         {
-                            <p data-testid="dlr-scope-filter-counts"><strong>Filtered by scope:</strong> @DeliveryScopeProvenanceText.CountsText(fc)@(fc.IncludedFeatures > 0 ? $" · {fc.IncludedFeatures} feature{(fc.IncludedFeatures == 1 ? " contains" : "s contain")} in-scope items" : "")</p>
+                            <p data-testid="dlr-scope-filter-counts"><strong>Filtered by scope:</strong> @DeliveryScopeProvenanceText.CountsText(fc)</p>
                             @if (fc.NoApplicableItems) { <p class="dlr-warning" role="status" data-testid="dlr-scope-filter-empty">@DeliveryScopeProvenanceText.NoApplicableItems — no figures are shown (not 0).</p> }
                             @if (fc.NotScopeResolvable.Count > 0)
                             {
@@ -311,9 +314,9 @@
                     <div class="dlr-cards">
                         @foreach (var metric in group)
                         {
-                            <div class="dlr-metric" data-testid="dlr-metric-@metric.Key" title="@metric.Hint">
+                            <div class="dlr-metric" data-testid="dlr-metric-@metric.Key" title="@metric.Hint" data-unit="@DeliveryMetricDefinitions.UnitLabel(metric.Key, DeliveryMetricDefinitions.Filtered(report))" data-scope-level="@DeliveryMetricDefinitions.Of(metric.Key).ScopeLevel">
                                 <span class="dlr-metric-value">@metric.Value</span>
-                                <span class="dlr-metric-label">@metric.Label</span>
+                                <span class="dlr-metric-label">@DeliveryMetricDefinitions.DisplayLabel(metric, DeliveryMetricDefinitions.Filtered(report))</span>
                             </div>
                         }
                     </div>
@@ -810,7 +813,7 @@
                         <ul class="dlr-list dlr-compare-metrics" data-testid="dlr-compare-metrics">
                             @foreach (var m in changed)
                             {
-                                <li data-testid="dlr-compare-metric" data-key="@m.Key"><strong>@m.Label</strong>: @(m.Baseline?.ToString() ?? "–") → @(m.Current?.ToString() ?? "–")@if (m.Delta is { } delta) { <span data-testid="dlr-compare-delta"> (@delta.ToString("+0;-0;0"))</span> }@if (m.PercentChange is { } pct) { <span data-testid="dlr-compare-percent"> @DeliveryReportComparer.Percent(pct)</span> }@if (m.Note is { } note) { <span class="dlr-muted" data-testid="dlr-compare-note"> · @note</span> }</li>
+                                <li data-testid="dlr-compare-metric" data-key="@m.Key" data-unit="@m.Unit"><strong>@m.Label</strong>: @(m.Baseline?.ToString() ?? "–") → @(m.Current?.ToString() ?? "–")@if (m.Delta is { } delta) { <span data-testid="dlr-compare-delta"> (@delta.ToString("+0;-0;0"))</span> }@if (m.PercentChange is { } pct) { <span data-testid="dlr-compare-percent"> @DeliveryReportComparer.Percent(pct)</span> }@if (m.Note is { } note) { <span class="dlr-muted" data-testid="dlr-compare-note"> · @note</span> }</li>
                             }
                         </ul>
                     }
