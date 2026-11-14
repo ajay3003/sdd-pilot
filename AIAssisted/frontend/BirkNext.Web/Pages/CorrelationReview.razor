@@ -54,7 +54,14 @@
             @if (_tab == "review") { @QueueSection() }
             else if (_tab == "relationships") { @ExploreSection() }
             else if (_tab == "history") { @GovernanceSection() @HistorySection() }
-            else { @OverviewSection() @SourcesSection() }
+            else
+            {
+                @OverviewSection()
+                @* Requirement identity (identity/1): shown only while the latest analysis holds unscoped requirement ids. *@
+                <RelationshipReviewIdentityPanel Scope="@(_scope!)" Sources="_rows" SelectedSources="_selected" CurrentDelivery="_delivery" Version="_identityVersion"
+                                                 OnAnalyzed="IdentityAnalyzedAsync" />
+                @SourcesSection()
+            }
         </div>
     }
 </div>
@@ -707,6 +714,7 @@
             var (snapshot, error) = await run.StageAsync("interpret", ct => Api.InterpretAsync(_scope, new([.. _selected], deliveryId, Trigger: "Relationship Review"), ct), Changed);
             if (error is not null) { _interpretError = error; return; }
             _lastRun = snapshot;
+            _identityVersion++;
             await run.StageAsync("refresh", async _ => { await Task.WhenAll(LoadQueueAsync(), LoadHistoryAsync()); return true; }, Changed);
         }
         catch (OperationCanceledException) { }
@@ -768,6 +776,17 @@
             if (error is not null) { _decisionError = error; break; }
         }
         _saving = false;
+        _governanceVersion++;
+        await Task.WhenAll(LoadQueueAsync(), LoadHistoryAsync());
+    }
+
+    /// <summary>Bumped after this page analyzed relationships so the requirement identity panel reloads.</summary>
+    private int _identityVersion;
+
+    /// <summary>The identity panel ran Analyze relationships (source + Delivery snapshot): the page shows that run and reloads like its own run.</summary>
+    private async Task IdentityAnalyzedAsync(InterpretationSnapshotView snapshot)
+    {
+        (_lastRun, _interpretError) = (snapshot, null);
         _governanceVersion++;
         await Task.WhenAll(LoadQueueAsync(), LoadHistoryAsync());
     }

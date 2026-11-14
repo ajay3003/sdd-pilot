@@ -66,7 +66,12 @@ public enum ReviewDecisionOutcome { Confirmed, Rejected, Deferred }
 
 /// <summary>What a review decision applies to.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ReviewTargetKind { Relation, Alias }
+public enum ReviewTargetKind
+{
+    Relation, Alias,
+    /// <summary>An unscoped requirement id (source-only analysis) confirmed as, or rejected as, one feature-pack-scoped requirement (identity/1).</summary>
+    Identity,
+}
 
 /// <summary>The reviewed state of a relation after decisions are applied.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -246,3 +251,73 @@ public sealed record CanonicalPackageSummary(Guid Id, string Name, IReadOnlyList
 
 /// <summary>One page of a scoped listing (the browser never loads the whole graph).</summary>
 public sealed record CanonicalPage<T>(IReadOnlyList<T> Items, int Total, int Skip, int Take);
+
+// ---- Requirement identity (identity/1): unscoped source-only requirement ids → reviewed feature-pack-scoped identities ----
+
+/// <summary>Where one unscoped requirement id stands. Candidate/Ambiguous/Unresolved are proposals from the analyzed Delivery snapshot; only Confirmed resolves.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum RequirementIdentityState
+{
+    /// <summary>Exactly one feature pack of the analyzed Delivery snapshot defines the id: a proposal until a person confirms it.</summary>
+    Candidate,
+    /// <summary>Several feature packs define the id: a person must choose the one it is (there is no default).</summary>
+    Ambiguous,
+    /// <summary>No feature pack of the analyzed Delivery snapshot defines the id (or no Delivery snapshot was analyzed).</summary>
+    Unresolved,
+    /// <summary>A person confirmed one scoped identity: every scope consumer resolves the id to it.</summary>
+    Confirmed,
+    /// <summary>Every proposed feature pack was rejected: the id stays unscoped.</summary>
+    Rejected,
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum IdentityTargetState { Candidate, Confirmed, Rejected }
+
+/// <summary>One feature-pack-scoped requirement an unscoped id may be: where the Delivery snapshot defines it and the current decision on it.</summary>
+public sealed record RequirementIdentityTarget(string TargetKey, string Module, string Feature, string RequirementId, string DisplayName,
+    IReadOnlyList<CorrelationEvidence> Evidence, IdentityTargetState State, string DecisionKey, ReviewDecisionView? Decision);
+
+/// <summary>One unscoped requirement id (of the latest analysis, or of an earlier source-only one when the latest proposes a pack for it), where the
+/// source names it, and the scoped identities it may be.</summary>
+public sealed record RequirementIdentityRow(string UnscopedKey, string RequirementId, string DisplayName, RequirementIdentityState State,
+    IReadOnlyList<CorrelationEvidence> FoundIn, IReadOnlyList<RequirementIdentityTarget> Targets, string? ConfirmedKey, string Explanation, bool InLatestAnalysis = true);
+
+/// <summary>The requirement identity review of one project's latest analysis (empty rows when every requirement is already scoped).</summary>
+public sealed record RequirementIdentityView(string Scope, Guid? InterpretationId, IReadOnlyList<BirkNext.Snapshots.SnapshotReference> Sources, bool DeliveryIncluded,
+    IReadOnlyList<RequirementIdentityRow> Rows, IReadOnlyList<string> Notices)
+{
+    public int Count(RequirementIdentityState state) => Rows.Count(r => r.State == state);
+}
+
+/// <summary>
+/// Pure rules of requirement identity (identity/1). An unscoped id is matched only to scoped requirements a Delivery snapshot of the same analysis
+/// defines with the same normalized id — never by name, text or module guessing — and only a person's confirmation of one specific target resolves it.
+/// </summary>
+public static class RequirementIdentity
+{
+    public const string RuleSetVersion = "identity/1";
+    const string Prefix = "identity:", Arrow = "=>";
+
+    /// <summary>The decision target key of one (unscoped → scoped) pair: each target is decided on its own, so a rejection never confirms another.</summary>
+    public static string DecisionKey(string unscopedKey, string scopedKey) => $"{Prefix}{unscopedKey}{Arrow}{scopedKey}";
+
+    public static (string Unscoped, string Scoped)? ParseDecisionKey(string? key)
+    {
+        if (key is null || !key.StartsWith(Prefix, StringComparison.Ordinal)) return null;
+        var body = key[Prefix.Length..];
+        var arrow = body.IndexOf(Arrow, StringComparison.Ordinal);
+        return arrow <= 0 || arrow + Arrow.Length >= body.Length ? null : (body[..arrow], body[(arrow + Arrow.Length)..]);
+    }
+
+    /// <summary>A requirement identity without module/feature (a source-only id such as "FR-012").</summary>
+    public static bool IsUnscoped(string entityType, string identityKey) =>
+        entityType == nameof(CanonicalEntityType.Requirement) && !identityKey.Contains('/');
+
+    /// <summary>The row state from how many feature packs define the id and the current decision on each of them.</summary>
+    public static RequirementIdentityState StateOf(IReadOnlyCollection<IdentityTargetState> targets) =>
+        targets.Count(t => t == IdentityTargetState.Confirmed) == 1 ? RequirementIdentityState.Confirmed
+        : targets.Count == 0 ? RequirementIdentityState.Unresolved
+        : targets.All(t => t == IdentityTargetState.Rejected) ? RequirementIdentityState.Rejected
+        : targets.Count == 1 ? RequirementIdentityState.Candidate
+        : RequirementIdentityState.Ambiguous;
+}

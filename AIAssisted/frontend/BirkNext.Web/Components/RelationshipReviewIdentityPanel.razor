@@ -1,0 +1,284 @@
+@using BirkNext.DeliveryReporting
+@using BirkNext.Interpretation
+@using BirkNext.Snapshots
+@inject ICanonicalInterpretationApiService Api
+@inject IServiceProvider Services
+@*
+    Requirement identity (identity/1) in Relationship Review: a source-only analysis holds requirement ids without module/feature. Analyze relationships
+    with a Delivery snapshot to get the feature packs that define each id (candidate / ambiguous / unresolved), then confirm or reject one specific
+    pack per id with a rationale. Nothing is matched by name and nothing resolves until a person confirms it. Shown only when unscoped ids exist.
+*@
+@if (_view is { Rows.Count: > 0 } view)
+{
+    <section class="cri" aria-labelledby="cr-identity-h" data-testid="cr-identity-panel">
+        <h2 id="cr-identity-h">Requirement identities <span class="cri-muted" data-testid="cr-identity-counts">@Counts(view)</span></h2>
+        <p class="cri-muted">The latest analysis holds @view.Rows.Count requirement id@(view.Rows.Count == 1 ? "" : "s") without a module or feature (named by source code or tests),
+            so scopes and Feature Readiness cannot tie them to a feature. A Delivery snapshot says which feature packs define each id; you then confirm the one it is.
+            Nothing is matched by the id alone, and a proposal is never applied until confirmed.</p>
+
+        <details class="cri-run" open="@(!view.DeliveryIncluded)" data-testid="cr-identity-run-panel">
+            <summary>@(view.DeliveryIncluded ? "Analyze again with another Delivery snapshot" : "Analyze relationships with a Delivery snapshot")</summary>
+            @if (_deliveryLoading) { <InlineLoading Text="Loading Delivery snapshots…" Class="cri-muted" /> }
+            else if (NoDelivery)
+            {
+                <p class="cri-muted" data-testid="cr-identity-no-delivery">@(_deliveryError ?? "No Delivery snapshot is stored yet.") Import the project's specifications in
+                    <a href="delivery-reporting" data-testid="cr-identity-delivery-import">Delivery Reports</a> (create a project, then Import snapshot ZIP) and come back here.
+                    Everything else in Relationship Review keeps working without it.</p>
+            }
+            <div class="cri-form">
+                <label>Source Analysis
+                    <select class="form-control form-control-sm" data-testid="cr-identity-source" value="@_sourceChoice" @onchange="e => _sourceChoice = e.Value?.ToString() ?? string.Empty">
+                        <option value="">@($"Default selection ({DefaultIds().Count} source{(DefaultIds().Count == 1 ? "" : "s")})")</option>
+                        @foreach (var s in Sources) { <option value="@s.Id" disabled="@(!s.Usable)">@s.Label · @s.OutcomeLabel</option> }
+                    </select>
+                </label>
+                @if (_projects.Count > 0)
+                {
+                    <label>Delivery project
+                        <select class="form-control form-control-sm" data-testid="cr-identity-delivery-project" value="@(_projectId?.ToString() ?? "")" @onchange="ProjectChangedAsync">
+                            <option value="">Choose a Delivery project</option>
+                            @foreach (var p in _projects) { <option value="@p.Id">@p.Name (@p.SnapshotCount snapshot@(p.SnapshotCount == 1 ? "" : "s"))</option> }
+                        </select>
+                    </label>
+                    <label>Delivery snapshot
+                        <select class="form-control form-control-sm" data-testid="cr-identity-delivery" value="@(_deliveryId?.ToString() ?? "")" disabled="@(_projectId is null)"
+                                @onchange="e => _deliveryId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null">
+                            <option value="">Choose a Delivery snapshot</option>
+                            @foreach (var d in _snapshots) { <option value="@d.Id">@SnapshotOption(d)</option> }
+                        </select>
+                    </label>
+                }
+                <button type="button" class="btn btn-primary btn-sm" disabled="@(RunBlocked is not null)" data-testid="cr-identity-run" @onclick="RunAsync">Analyze relationships</button>
+            </div>
+            @if (RunBlocked is { } blocked && !_running) { <p class="cri-muted cri-small" data-testid="cr-identity-run-blocked">@blocked</p> }
+            @if (_running) { <InlineLoading Text="Analyzing relationships with the Delivery snapshot…" Class="cri-muted" /> }
+            @if (_runError is not null) { <p class="cri-error" role="alert" data-testid="cr-identity-run-error">@_runError</p> }
+        </details>
+
+        @foreach (var notice in view.Notices) { <p class="cri-muted cri-small" data-testid="cr-identity-notice">@notice</p> }
+
+        <label class="cri-reviewer">Reviewer
+            <input class="form-control form-control-sm" data-testid="cr-identity-reviewer" value="@_reviewer" @oninput="e => _reviewer = e.Value?.ToString()"
+                   placeholder="Your name (the signed-in user is recorded when there is one)" />
+        </label>
+        <ul class="cri-rows" aria-label="Unscoped requirement ids">
+            @foreach (var row in view.Rows.Take(_showAll ? int.MaxValue : PageSize))
+            {
+                var current = row;
+                var chosen = Chosen(row);
+                <li class="cri-row" data-testid="cr-identity-row" data-state="@row.State.ToString().ToLowerInvariant()" data-id="@row.RequirementId">
+                    <div class="cri-row-head">
+                        <strong>@row.RequirementId</strong>
+                        <SemanticStatusBadge Status="@Status(row.State)" QualifiedLabel="@row.State.ToString()" TestId="cr-identity-state" />
+                        @if (row.ConfirmedKey is { } resolved) { <code class="cri-small" data-testid="cr-identity-resolved">@resolved</code> }
+                    </div>
+                    <p class="cri-muted cri-small" data-testid="cr-identity-explanation">@row.Explanation</p>
+                    @if (row.FoundIn.Count > 0)
+                    {
+                        <p class="cri-muted cri-small" data-testid="cr-identity-found-in">Named by: @string.Join(" · ", row.FoundIn.Select(f => $"{f.Detail ?? f.Reference} ({f.Kind}{(f.SourceSnapshotId is null ? "" : $", {f.SourceSnapshotId}")})"))</p>
+                    }
+                    @if (row.Targets.Count > 0)
+                    {
+                        <fieldset class="cri-targets">
+                            <legend class="cri-small">@(row.Targets.Count > 1 ? "Feature packs that define it — choose one" : "Feature pack that defines it")</legend>
+                            @foreach (var t in row.Targets)
+                            {
+                                var target = t;
+                                <label class="cri-target" data-testid="cr-identity-target" data-state="@t.State.ToString().ToLowerInvariant()" data-target="@t.TargetKey">
+                                    <input type="radio" name="@($"cri-{row.UnscopedKey}")" checked="@(chosen?.TargetKey == t.TargetKey)" data-testid="cr-identity-choose"
+                                           @onchange="() => _chosen[current.UnscopedKey] = target.TargetKey" />
+                                    <span><strong>@t.Module / @t.Feature / @t.RequirementId</strong> <span class="cri-muted">@t.DisplayName</span>
+                                        <span class="cri-muted cri-small">· @t.State@(t.Decision is { } d ? $" by {d.Reviewer}" : "")</span>
+                                        @foreach (var ev in t.Evidence.Take(3)) { <span class="cri-muted cri-small" data-testid="cr-identity-evidence"> · @ev.Reference — @ev.Detail</span> }</span>
+                                </label>
+                            }
+                        </fieldset>
+                        <div class="cri-decide">
+                            <textarea rows="1" class="form-control form-control-sm" data-testid="cr-identity-rationale" value="@_rationale.GetValueOrDefault(row.UnscopedKey)"
+                                      @oninput="e => _rationale[current.UnscopedKey] = e.Value?.ToString()" placeholder="Rationale (required): why this is, or is not, that feature pack's requirement"
+                                      aria-label="@($"Rationale for {row.RequirementId}")"></textarea>
+                            <button type="button" class="btn btn-primary btn-sm" data-testid="cr-identity-confirm" disabled="@(DecideBlocked(row, chosen) is not null || chosen?.State == IdentityTargetState.Confirmed)"
+                                    @onclick="() => DecideAsync(current, ReviewDecisionOutcome.Confirmed)">Confirm</button>
+                            <button type="button" class="btn btn-secondary btn-sm" data-testid="cr-identity-reject" disabled="@(DecideBlocked(row, chosen) is not null || chosen?.State == IdentityTargetState.Rejected)"
+                                    @onclick="() => DecideAsync(current, ReviewDecisionOutcome.Rejected)">Reject</button>
+                            <button type="button" class="btn btn-link btn-sm" data-testid="cr-identity-history" aria-expanded="@(_historyFor == row.UnscopedKey ? "true" : "false")"
+                                    @onclick="() => ToggleHistoryAsync(current)">@(_historyFor == row.UnscopedKey ? "Hide history" : "History")</button>
+                        </div>
+                        @if (DecideBlocked(row, chosen) is { } why) { <p class="cri-muted cri-small" data-testid="cr-identity-decide-hint">@why</p> }
+                        @if (_historyFor == row.UnscopedKey)
+                        {
+                            @if (_history is null) { <InlineLoading Text="Loading the decision history…" Class="cri-muted" /> }
+                            else if (_history.Count == 0) { <p class="cri-muted cri-small" data-testid="cr-identity-history-empty">No decision has been recorded for @row.RequirementId yet.</p> }
+                            else
+                            {
+                                <ol class="cri-history" data-testid="cr-identity-history-list">
+                                    @foreach (var h in _history)
+                                    {
+                                        <li data-testid="cr-identity-history-entry">#@h.Sequence · <strong>@h.Outcome</strong> @(RequirementIdentity.ParseDecisionKey(h.TargetKey)?.Scoped) by @h.Reviewer
+                                            · @h.DecidedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC@(h.SupersededById is null ? "" : " · superseded")@(string.IsNullOrWhiteSpace(h.Notes) ? "" : $" — {h.Notes}")</li>
+                                    }
+                                </ol>
+                            }
+                        }
+                    }
+                </li>
+            }
+        </ul>
+        @if (!_showAll && view.Rows.Count > PageSize)
+        {
+            <button type="button" class="btn btn-secondary btn-sm" data-testid="cr-identity-show-all" @onclick="() => _showAll = true">Show all @view.Rows.Count</button>
+        }
+        @if (_decisionError is not null) { <p class="cri-error" role="alert" data-testid="cr-identity-error">@_decisionError</p> }
+    </section>
+}
+
+@code {
+    private const int PageSize = 25;
+
+    [Parameter, EditorRequired] public string Scope { get; set; } = "";
+    /// <summary>The stored Source Analysis snapshots Relationship Review lists (the same rows as its source list).</summary>
+    [Parameter] public IReadOnlyList<RelationshipSource> Sources { get; set; } = [];
+    /// <summary>The page's current source selection (used when "Default selection" is chosen).</summary>
+    [Parameter] public IReadOnlyCollection<Guid> SelectedSources { get; set; } = [];
+    /// <summary>The Delivery snapshot the latest analysis used, preselected when it is in the chosen project.</summary>
+    [Parameter] public SnapshotReference? CurrentDelivery { get; set; }
+    /// <summary>Bumped by the page after it analyzed or decided: the panel reloads.</summary>
+    [Parameter] public int Version { get; set; }
+    [Parameter] public EventCallback<InterpretationSnapshotView> OnAnalyzed { get; set; }
+
+    private RequirementIdentityView? _view;
+    private int _loadedVersion = -1;
+    private string? _loadedScope, _reviewer, _runError, _decisionError, _deliveryError, _historyFor;
+    private string _sourceChoice = "";
+    private bool _running, _saving, _showAll, _deliveryLoading, _deliveryLoaded;
+    private List<DeliveryProject> _projects = [];
+    private List<DeliverySnapshotSummary> _snapshots = [];
+    private Guid? _projectId, _deliveryId;
+    private List<ReviewDecisionView>? _history;
+    private readonly Dictionary<string, string> _chosen = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string?> _rationale = new(StringComparer.Ordinal);
+
+    private IDeliveryReportingApiService? Delivery => Services.GetService<IDeliveryReportingApiService>();
+
+    private bool NoDelivery => _deliveryLoaded && (_projects.Count == 0 || _projects.All(p => p.SnapshotCount == 0) || (_projectId is not null && _snapshots.Count == 0));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Scope) || (_loadedScope == Scope && _loadedVersion == Version)) return;
+        (_loadedScope, _loadedVersion) = (Scope, Version);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var (view, _) = await Api.RequirementIdentitiesAsync(Scope);
+        _view = view;
+        if (_view is { Rows.Count: > 0 } && !_deliveryLoaded) await LoadDeliveryAsync();
+    }
+
+    private async Task LoadDeliveryAsync()
+    {
+        if (Delivery is not { } delivery) { (_deliveryLoaded, _deliveryError) = (true, "Delivery Reports is not available here."); return; }
+        _deliveryLoading = true;
+        try
+        {
+            var (projects, error) = await delivery.ProjectsAsync();
+            (_projects, _deliveryError) = (projects ?? [], error);
+            // One Delivery project: it is the only choice, so it is selected; its snapshot list is the picker (the latest analysis' one first).
+            if (_projects.Count == 1) await SelectProjectAsync(_projects[0].Id);
+        }
+        catch (Exception e) when (BackendRequestClassifier.IsRequestFailure(e)) { _deliveryError = "Delivery projects could not be listed."; }
+        finally { (_deliveryLoading, _deliveryLoaded) = (false, true); }
+    }
+
+    private async Task ProjectChangedAsync(ChangeEventArgs e) => await SelectProjectAsync(Guid.TryParse(e.Value?.ToString(), out var id) ? id : null);
+
+    private async Task SelectProjectAsync(Guid? projectId)
+    {
+        (_projectId, _deliveryId, _snapshots) = (projectId, null, []);
+        if (projectId is not { } id || Delivery is not { } delivery) return;
+        try { _snapshots = [.. (await delivery.SnapshotsAsync(id)).OrderByDescending(s => s.EffectiveAt)]; }
+        catch (Exception ex) when (BackendRequestClassifier.IsRequestFailure(ex)) { _deliveryError = "Delivery snapshots could not be listed."; }
+        if (CurrentDelivery is { } current && _snapshots.FirstOrDefault(s => s.Id.ToString() == current.Id) is { } used) _deliveryId = used.Id;
+    }
+
+    private static string SnapshotOption(DeliverySnapshotSummary s) =>
+        $"{(string.IsNullOrWhiteSpace(s.Label) ? s.SourceFileName : s.Label)} · {s.EffectiveAt.UtcDateTime:yyyy-MM-dd} · {s.FeatureCount} feature pack{(s.FeatureCount == 1 ? "" : "s")}";
+
+    private IReadOnlyList<Guid> DefaultIds() => SelectedSources.Count > 0 ? [.. SelectedSources] : [.. Sources.Where(s => s.Usable).Select(s => s.Id)];
+
+    private IReadOnlyList<Guid> RunSources() => Guid.TryParse(_sourceChoice, out var one) ? [one] : DefaultIds();
+
+    private string? RunBlocked => _running ? "An analysis is running."
+        : RunSources().Count == 0 ? "No Source Analysis snapshot is stored for this environment: import the project's sources first."
+        : _deliveryId is null ? "Choose the Delivery snapshot that holds this project's feature packs."
+        : null;
+
+    private async Task RunAsync()
+    {
+        if (RunBlocked is not null) return;
+        (_running, _runError) = (true, null);
+        try
+        {
+            var (snapshot, error) = await Api.InterpretAsync(Scope, new([.. RunSources()], _deliveryId, "Relationship Review · requirement identity"));
+            if (error is not null || snapshot is null) { _runError = error ?? "The analysis did not complete."; return; }
+            await OnAnalyzed.InvokeAsync(snapshot);
+            await LoadAsync();
+        }
+        finally { _running = false; }
+    }
+
+    /// <summary>The target a decision applies to: the one chosen here, else the confirmed one, else the only proposal. Several proposals and no choice: none.</summary>
+    private RequirementIdentityTarget? Chosen(RequirementIdentityRow row) =>
+        _chosen.TryGetValue(row.UnscopedKey, out var key) && row.Targets.FirstOrDefault(t => t.TargetKey == key) is { } picked ? picked
+        : row.Targets.FirstOrDefault(t => t.State == IdentityTargetState.Confirmed)
+        ?? (row.Targets.Count == 1 ? row.Targets[0] : null);
+
+    private string? DecideBlocked(RequirementIdentityRow row, RequirementIdentityTarget? chosen) =>
+        _saving ? "Saving…"
+        : chosen is null ? "Choose the feature pack this requirement is — there is no default."
+        : string.IsNullOrWhiteSpace(_rationale.GetValueOrDefault(row.UnscopedKey)) ? "Write a rationale to confirm or reject."
+        : null;
+
+    private async Task DecideAsync(RequirementIdentityRow row, ReviewDecisionOutcome outcome)
+    {
+        var chosen = Chosen(row);
+        if (chosen is null || DecideBlocked(row, chosen) is not null) return;
+        (_saving, _decisionError) = (true, null);
+        try
+        {
+            var (_, error) = await Api.DecideAsync(Scope, new(ReviewTargetKind.Identity, chosen.DecisionKey, outcome, string.IsNullOrWhiteSpace(_reviewer) ? null : _reviewer.Trim(),
+                _rationale.GetValueOrDefault(row.UnscopedKey)));
+            if (error is not null) { _decisionError = error; return; }
+        }
+        finally { _saving = false; }
+        _rationale.Remove(row.UnscopedKey);
+        _chosen.Remove(row.UnscopedKey);
+        if (_historyFor == row.UnscopedKey) (_historyFor, _history) = (null, null);
+        await LoadAsync();
+    }
+
+    private async Task ToggleHistoryAsync(RequirementIdentityRow row)
+    {
+        if (_historyFor == row.UnscopedKey) { (_historyFor, _history) = (null, null); return; }
+        (_historyFor, _history) = (row.UnscopedKey, null);
+        var (items, _) = await Api.DecisionsAsync(Scope);
+        if (_historyFor == row.UnscopedKey)
+            _history = [.. items.Where(d => d.TargetKind == ReviewTargetKind.Identity && RequirementIdentity.ParseDecisionKey(d.TargetKey)?.Unscoped == row.UnscopedKey)];
+    }
+
+    private static string Counts(RequirementIdentityView view) => string.Join(" · ", new[]
+    {
+        (RequirementIdentityState.Candidate, "candidate"), (RequirementIdentityState.Ambiguous, "ambiguous"), (RequirementIdentityState.Unresolved, "unresolved"),
+        (RequirementIdentityState.Confirmed, "confirmed"), (RequirementIdentityState.Rejected, "rejected"),
+    }.Where(x => view.Count(x.Item1) > 0).Select(x => $"{view.Count(x.Item1)} {x.Item2}"));
+
+    private static SemanticStatus Status(RequirementIdentityState state) => state switch
+    {
+        RequirementIdentityState.Confirmed => SemanticStatus.Confirmed,
+        RequirementIdentityState.Candidate => SemanticStatus.Inferred,
+        RequirementIdentityState.Ambiguous => SemanticStatus.NeedsReview,
+        RequirementIdentityState.Rejected => SemanticStatus.Removed,
+        _ => SemanticStatus.Unresolved,
+    };
+}

@@ -52,6 +52,9 @@ public interface ICanonicalInterpretationApiService
         Task.FromResult<(BirkNext.Governance.ReleaseReadinessReport?, string?)>((null, "Release readiness is not available."));
     Task<(BirkNext.Governance.ReleaseReadinessReport? Report, string? Error)> SignOffReleaseAsync(string scope, Guid id, BirkNext.Governance.ReleaseSignOffRequest request,
         CancellationToken ct = default) => Task.FromResult<(BirkNext.Governance.ReleaseReadinessReport?, string?)>((null, "Release readiness is not available."));
+    /// <summary>Requirement identity (identity/1): unscoped requirement ids of the latest analysis and the feature packs they may be.</summary>
+    Task<(RequirementIdentityView? View, string? Error)> RequirementIdentitiesAsync(string scope, CancellationToken ct = default) =>
+        Task.FromResult<(RequirementIdentityView?, string?)>((null, null));
 }
 
 public sealed class CanonicalInterpretationApiService(HttpClient http) : ICanonicalInterpretationApiService
@@ -149,6 +152,9 @@ public sealed class CanonicalInterpretationApiService(HttpClient http) : ICanoni
 
     public Task<(ReviewDecisionView?, string?)> DecideAsync(string scope, ReviewDecisionRequest request, CancellationToken ct = default) =>
         PostAsync<ReviewDecisionView>($"{Base(scope)}/decisions", request, ct);
+
+    public Task<(RequirementIdentityView?, string?)> RequirementIdentitiesAsync(string scope, CancellationToken ct = default) =>
+        GetAsync<RequirementIdentityView>($"{Base(scope)}/identities/requirements", ct);
 
     private async Task<(T?, string?)> GetAsync<T>(string url, CancellationToken ct) where T : class
     {

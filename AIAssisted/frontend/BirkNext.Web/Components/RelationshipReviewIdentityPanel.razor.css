@@ -1,0 +1,25 @@
+.cri { border: 1px solid var(--clr-border); border-radius: 8px; padding: 1rem; background: var(--clr-surface-white); display: grid; gap: 0.5rem; min-width: 0; }
+.cri h2 { font-size: 1.125rem; margin: 0; display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+.cri p { margin: 0; }
+.cri-muted { color: var(--clr-text-muted); font-size: 0.875rem; }
+.cri-small { font-size: 0.8125rem; }
+.cri-error { color: var(--clr-danger, #b42318); font-size: 0.875rem; }
+.cri-run { border: 1px dashed var(--clr-border); border-radius: 6px; padding: 0.5rem 0.75rem; }
+.cri-run summary { cursor: pointer; font-weight: 600; font-size: 0.9375rem; }
+.cri-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-end; margin-top: 0.5rem; }
+.cri-form label, .cri-reviewer { display: grid; gap: 0.125rem; font-size: 0.8125rem; min-width: 12rem; max-width: 100%; }
+.cri-reviewer { max-width: 24rem; }
+.cri > * { min-width: 0; }
+.cri-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; min-width: 0; }
+.cri-row { border-top: 1px solid var(--clr-border); padding-top: 0.5rem; display: grid; gap: 0.25rem; min-width: 0; }
+.cri-row > * { min-width: 0; }
+.cri-row p, .cri-target span { overflow-wrap: anywhere; min-width: 0; }
+.cri-row-head { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.cri-row code, .cri-target { overflow-wrap: anywhere; }
+/* A fieldset defaults to min-inline-size: min-content, which let long canonical keys widen the page. */
+.cri-targets { border: 0; margin: 0; padding: 0; display: grid; gap: 0.25rem; min-width: 0; min-inline-size: 0; }
+.cri-targets legend { padding: 0; margin-bottom: 0.125rem; }
+.cri-target { display: flex; gap: 0.375rem; align-items: flex-start; font-size: 0.875rem; }
+.cri-decide { display: flex; flex-wrap: wrap; gap: 0.375rem; align-items: center; }
+.cri-decide textarea { flex: 1 1 18rem; min-width: 0; }
+.cri-history { margin: 0; padding-left: 1.25rem; font-size: 0.8125rem; }

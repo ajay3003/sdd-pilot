@@ -475,4 +475,30 @@ public sealed class RelationshipReviewTests : BunitContext
         preview[ReviewDecisionOutcome.Confirmed].ChangesGovernance.Should().BeFalse("an optional suggestion never changes a gate");
         preview[ReviewDecisionOutcome.Deferred].Consequences.Should().Contain(c => c.Contains("counts nowhere"));
     }
+
+    // ── Requirement identity (identity/1): the guided path from unscoped source-only ids to confirmed scoped identities ─────────
+
+    [Fact]
+    public async Task The_overview_guides_unscoped_requirement_ids_without_blocking_other_analysis()
+    {
+        var api = await AnalyzedM2lb();
+        api.Setup(a => a.RequirementIdentitiesAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync((new RequirementIdentityView("dev", Guid.NewGuid(), [], false,
+            [new("Requirement|FR-019", "FR-019", "FR-019", RequirementIdentityState.Unresolved, [], [], null, "No Delivery snapshot")], []), (string?)null));
+        var cut = Render<CorrelationReview>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=cr-identity-panel]"));
+        cut.Find("[data-testid=cr-identity-row]").GetAttribute("data-state").Should().Be("unresolved");
+        cut.Find("[data-testid=cr-identity-no-delivery]").QuerySelector("a")!.GetAttribute("href").Should().Be("delivery-reporting");
+        cut.Find("[data-testid=cr-interpret]").Should().NotBeNull("the source evidence and Analyze relationships stay available");
+    }
+
+    [Fact]
+    public async Task No_identity_panel_when_every_requirement_is_scoped()
+    {
+        var api = await AnalyzedM2lb();
+        api.Setup(a => a.RequirementIdentitiesAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync((new RequirementIdentityView("dev", Guid.NewGuid(), [], true, [], []), (string?)null));
+        var cut = Render<CorrelationReview>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=cr-sum-conflicts]"));
+        cut.FindAll("[data-testid=cr-identity-panel]").Should().BeEmpty();
+    }
 }

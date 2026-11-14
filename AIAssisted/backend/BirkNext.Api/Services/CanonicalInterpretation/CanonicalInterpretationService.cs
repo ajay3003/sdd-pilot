@@ -342,6 +342,7 @@ public sealed partial class CanonicalInterpretationService(
     {
         scope = ValidScope(scope);
         var reviewer = Trim(!string.IsNullOrWhiteSpace(authenticatedReviewer) ? authenticatedReviewer : string.IsNullOrWhiteSpace(request.Reviewer) ? "local user" : request.Reviewer.Trim(), 200);
+        if (request.TargetKind == ReviewTargetKind.Identity) return await DecideIdentityAsync(scope, request, reviewer, ct);
         var relational = db.Database.IsRelational();
         await using var tx = relational ? await db.Database.BeginTransactionAsync(ct) : null;
         var now = clock.GetUtcNow();

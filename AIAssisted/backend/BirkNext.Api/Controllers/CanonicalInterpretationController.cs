@@ -123,6 +123,16 @@ public sealed class CanonicalInterpretationController(CanonicalInterpretationSer
     public Task<ActionResult<ReviewDecisionView>> Decide(string scope, [FromBody] ReviewDecisionRequest request, CancellationToken ct) =>
         Run(() => service.DecideAsync(scope, request, User.Identity?.IsAuthenticated == true ? User.Identity.Name : null, ct));
 
+    /// <summary>Requirement identity (identity/1): unscoped requirement ids of the latest analysis with the feature packs its Delivery snapshot
+    /// proposes (candidate / ambiguous / unresolved) and the decisions recorded on them (POST decisions with targetKind Identity).</summary>
+    [HttpGet("identities/requirements")]
+    public Task<ActionResult<RequirementIdentityView>> RequirementIdentities(string scope, CancellationToken ct) => Run(() => service.RequirementIdentitiesAsync(scope, ct));
+
+    /// <summary>The identity each requirement key resolves to (the confirmed scoped key, else the key itself).</summary>
+    [HttpGet("identities/resolve")]
+    public Task<ActionResult<IReadOnlyDictionary<string, string>>> ResolveIdentities(string scope, [FromQuery] string[]? key, CancellationToken ct) =>
+        Run(() => service.ResolveRequirementIdentitiesAsync(scope, key ?? [], ct));
+
     private async Task<ActionResult<T>> Run<T>(Func<Task<T>> action)
     {
         try { return await action(); }

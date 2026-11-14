@@ -69,6 +69,11 @@ public sealed partial class CanonicalInterpretationService
                     join e in db.Entities.AsNoTracking() on m.EntityId equals e.Id
                     where m.SnapshotId == latest && names.Contains(e.EntityType)
                     select e;
+        // Requirement identity (identity/1): an unscoped id a person confirmed as one feature pack's requirement is that requirement — the catalog
+        // offers the scoped identity only. Candidates, ambiguous and rejected ids stay listed as they are.
+        if (types.Contains(CanonicalEntityType.Requirement)
+            && (await ConfirmedRequirementIdentitiesAsync(scope, ct)).Keys.Select(k => k["Requirement|".Length..]).ToList() is { Count: > 0 } resolved)
+            query = query.Where(e => !(e.EntityType == "Requirement" && resolved.Contains(e.IdentityKey)));
         if (!string.IsNullOrWhiteSpace(search))
         {
             var s = search.Trim().ToLower();
@@ -116,8 +121,15 @@ public sealed partial class CanonicalInterpretationService
                           where m.SnapshotId == latest && identities.Contains(e.IdentityKey)
                           select new { e.EntityType, e.IdentityKey, e.DisplayName }).ToListAsync(ct);
         var wanted = keys.ToHashSet(StringComparer.Ordinal);
-        return rows.Select(r => (Key: $"{r.EntityType}|{r.IdentityKey}", r.DisplayName)).Where(r => wanted.Contains(r.Key))
+        var names = rows.Select(r => (Key: $"{r.EntityType}|{r.IdentityKey}", r.DisplayName)).Where(r => wanted.Contains(r.Key))
             .GroupBy(r => r.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First().DisplayName, StringComparer.Ordinal);
+        // An unscoped requirement confirmed as a scoped one (identity/1) resolves to it — also when the latest analysis no longer holds the unscoped id
+        // (a Delivery snapshot moved its test links to the feature pack) — and its name says which identity it resolves to.
+        if (wanted.Any(k => k.StartsWith("Requirement|", StringComparison.Ordinal) && !k.Contains('/')))
+            foreach (var (unscoped, scoped) in await ConfirmedRequirementIdentitiesAsync(scope, ct))
+                if (wanted.Contains(unscoped))
+                    names[unscoped] = $"{(names.TryGetValue(unscoped, out var name) ? name : unscoped["Requirement|".Length..])} → {scoped["Requirement|".Length..]} (confirmed identity)";
+        return names;
     }
 }
 
