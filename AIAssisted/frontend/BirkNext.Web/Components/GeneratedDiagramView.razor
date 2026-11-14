@@ -5,7 +5,7 @@
    interpreted as HTML or script and nothing remote is loaded. Only what the diagram source declares is drawn; an unsupported or oversized
    diagram is said so and its source stays available. Diagram · Steps · Source are three views of the same block. *@
 
-<figure class="gdv" data-testid="gde-diagram" data-kind="@(_diagram?.Kind.ToString() ?? "Unavailable")" aria-label="@Caption">
+<figure class="gdv" data-testid="gde-diagram" data-kind="@(_diagram?.Kind.ToString() ?? "Unavailable")" data-source-type="@(_diagram?.SourceType)" aria-label="@Caption">
     <div class="gdv-toolbar" role="toolbar" aria-label="@($"{Caption} view")">
         <div class="gdv-modes" role="group" aria-label="Diagram views">
             @foreach (var (id, label) in Modes)
@@ -26,7 +26,7 @@
     }
     else if (_diagram is null)
     {
-        <p class="gde-muted" data-testid="gde-diagram-unavailable">Diagram preview unavailable for this diagram type. Its source is kept under Source.</p>
+        <p class="gde-muted" data-testid="gde-diagram-unavailable">Diagram preview unavailable. <span data-testid="gdv-unavailable-reason">@GeneratedDiagrams.UnavailableReason(Source)</span></p>
         <pre class="gde-code gde-raw">@Source</pre>
     }
     else if (_mode == "steps" || !Drawable)
@@ -83,7 +83,7 @@
     private bool Drawable => _diagram is not null && Size > 0 && Size <= MaxElements;
     private string Summary => _diagram is null ? "" : _diagram.Kind == GeneratedDiagramKind.Sequence
         ? $"{_diagram.Participants.Count} participants, {_diagram.Steps.Count} messages"
-        : $"{_diagram.Nodes.Count} components, {_diagram.Edges.Count} connections";
+        : $"{_diagram.Nodes.Count} {GeneratedDiagrams.Nouns(_diagram).Nodes}, {_diagram.Edges.Count} {GeneratedDiagrams.Nouns(_diagram).Edges}";
 
     protected override void OnParametersSet()
     {
@@ -95,7 +95,7 @@
 
     [Inject] private IJSRuntime JS { get; set; } = default!;
 
-    private string KindLabel => _diagram?.Kind == GeneratedDiagramKind.Sequence ? "Sequence diagram" : _diagram is null ? "Diagram" : "Flow / component diagram";
+    private string KindLabel => _diagram is null ? "Diagram" : GeneratedDiagrams.TypeLabel(_diagram);
 
     /// <summary>Zoom keeps the drawing anchored at the top-left; it never re-parses or re-lays out the diagram.</summary>
     private void Zoom(double delta)
@@ -204,6 +204,8 @@
         </div>
     };
 
+    private string NodesHeading => _diagram is null ? "Components" : GeneratedDiagrams.Nouns(_diagram).Nodes switch { var n => char.ToUpperInvariant(n[0]) + n[1..] };
+
     private static string F(double value) => value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
 
     private RenderFragment Steps() => __builder =>
@@ -219,7 +221,7 @@
         else
         {
             @if (_diagram.Groups.Count > 0) { <ul class="gde-plain" data-testid="gde-diagram-groups">@foreach (var (name, members) in _diagram.Groups) { <li><strong>@name</strong>: @string.Join(", ", members)</li> }</ul> }
-            <p class="gde-diagram-facts"><strong>Components (@_diagram.Nodes.Count)</strong></p>
+            <p class="gde-diagram-facts"><strong>@NodesHeading (@_diagram.Nodes.Count)</strong></p>
             <ul class="gde-plain" data-testid="gde-diagram-edges" aria-label="@($"{Label} relationships")">@foreach (var edge in _diagram.Edges) { <li>@edge.From → @edge.To@(edge.Label is { Length: > 0 } label ? $" ({label})" : "")</li> }</ul>
         }
     };

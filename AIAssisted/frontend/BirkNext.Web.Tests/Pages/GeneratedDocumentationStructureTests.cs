@@ -45,7 +45,9 @@ public sealed class GeneratedDocumentationStructureTests : BunitContext
     public void Unsupported_or_hostile_diagrams_fall_back_safely()
     {
         GeneratedDiagrams.IsDiagram("erDiagram\n  A ||--o{ B : has").Should().BeTrue();
-        GeneratedDiagrams.Read("erDiagram\n  A ||--o{ B : has").Should().BeNull("unsupported type → preview unavailable, source kept");
+        GeneratedDiagrams.Read("erDiagram\n  A ||--o{ B : has")!.SourceType.Should().Be("erDiagram", "ER diagrams are read as relationships only");
+        GeneratedDiagrams.IsDiagram("gantt\n  title Plan").Should().BeTrue();
+        GeneratedDiagrams.Read("gantt\n  title Plan").Should().BeNull("unsupported type → preview unavailable, source kept");
         var hostile = GeneratedDiagrams.Read("graph TB\n  A[\"<script>alert(1)</script>\"] --> B")!;
         hostile.Nodes.Select(n => n.Label).Should().NotContain(l => l.Contains('<') || l.Contains('>'), "labels are plain text, never markup");
         GeneratedDiagrams.IsDiagram("dotnet run").Should().BeFalse();

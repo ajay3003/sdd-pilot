@@ -76,6 +76,10 @@
         {
             var d = view.Document;
             <section class="gde-document" aria-labelledby="gde-doc-h" data-testid="gde-document">
+                @if (_back is { } back)
+                {
+                    <p class="gde-back"><button type="button" class="btn-link" data-testid="gde-search-back" @onclick="GoBack">← Back to @back.Title</button></p>
+                }
                 <h2 id="gde-doc-h" tabindex="-1">@TitleOf(d) <span class="gde-pill">Generated @d.RoleLabel</span></h2>
                 <dl class="gde-facts">
                     <div><dt>Source</dt><dd><code class="gde-wrap" data-testid="gde-source-path">@d.Path</code></dd></div>
@@ -103,8 +107,9 @@
                         }
                     </div>
                     <div class="gde-find" role="search">
-                        <label class="visually-hidden" for="gde-search-input">Search this document</label>
-                        <input id="gde-search-input" type="search" placeholder="Search this document" value="@_searchInput" @oninput="SearchInput" @onkeydown="SearchKey" data-testid="gde-search" />
+                        <label class="visually-hidden" for="gde-search-input">@(_searchAll ? "Search all documents of this import" : "Search this document")</label>
+                        <input id="gde-search-input" type="search" placeholder="@(_searchAll ? "Search all documents of this import" : "Search this document")" value="@_searchInput" @oninput="SearchInput" @onkeydown="SearchKey" data-testid="gde-search" />
+                        <button type="button" class="btn-secondary btn-small" data-testid="gde-search-scope" data-scope="@(_searchAll ? "import" : "document")" aria-pressed="@(_searchAll ? "true" : "false")" @onclick="ToggleSearchAll">@(_searchAll ? "Search this document only" : "Search all documents of this import")</button>
                         @if (!string.IsNullOrWhiteSpace(_search))
                         {
                             <span class="gde-muted" role="status" data-testid="gde-search-count">@(_hits == 0 ? "No match" : $"{_hitIndex + 1} of {_hits}")</span>
@@ -119,6 +124,7 @@
                         @if (_linkStatus is not null) { <span class="gde-muted" role="status" data-testid="gde-link-status">@_linkStatus</span> }
                     </div>
                 </div>
+                @if (_searchAll) { @SearchAllResults() }
                 @if (!string.IsNullOrWhiteSpace(_search) && _tab is not ("Read" or "Source"))
                 {
                     <p class="gde-muted" data-testid="gde-search-where">Matches are highlighted in Read and Source.</p>
@@ -160,6 +166,18 @@
     private IReadOnlyList<string> _rendered = [];
     private string _renderedTerm = "\u0000";
     private IReadOnlyList<BirkNext.Scopes.SystemOverviewItem>? _systems;
+
+    // Cross-document search: the selected import is the boundary; results are computed from the debounced term only and cached per import + term.
+    private bool _searchAll, _resultsCollapsed;
+    private string _allType = "";
+    private readonly Dictionary<(string Import, string Term), GeneratedSearchResults> _allCache = [];
+    /// <summary>The document a search result was opened from ("Back to …"); cleared when a document is chosen from the library.</summary>
+    private sealed record BackTarget(string Module, string Path, string Tab, string? Section, string Title);
+    private BackTarget? _back;
+
+    // Contextual health: the existing Generated Documentation Health run per (import, source snapshot), read once when Provenance is shown.
+    private readonly Dictionary<(string Import, Guid Snapshot), BirkNext.GeneratedDocumentation.GeneratedDocumentationDiagnosticRun?> _healthRuns = [];
+    private readonly HashSet<(string Import, Guid Snapshot)> _healthLoading = [];
 
     private IReadOnlyList<GeneratedExplorerDocument> LibraryDocuments => ModuleDocuments
         .Where(d => _docType.Length == 0 || d.Role.ToString() == _docType)
@@ -279,7 +297,7 @@
         {
             Select(document.ToString(), updateUrl: false);
             // An explicit ?view= (read, outline/structure, source, provenance; the former overview opens Provenance) is honoured once, on arrival.
-            if (query.TryGetValue("view", out var requested) && Gde.ViewFromQuery(requested.ToString()) is { } explicitView) _tab = explicitView;
+            if (query.TryGetValue("view", out var requested) && Gde.ViewFromQuery(requested.ToString()) is { } explicitView) { _tab = explicitView; EnsureHealth(); }
             // A deep link to a section opens Read at that heading (only an anchor the document really has).
             if (query.TryGetValue("section", out var section) && _outline.Any(o => o.AnchorId == section.ToString()))
             {
@@ -294,6 +312,7 @@
     {
         _tab = tab;
         SyncUrl();
+        EnsureHealth();
     }
 
     /// <summary>The selected document and view in the URL (replace: refresh and shared links reopen it; no history entry per tab click).</summary>
@@ -316,10 +335,96 @@
         SyncUrl();
     }
 
-    private void ImportChanged(ChangeEventArgs e) { _importId = e.Value?.ToString() ?? ""; _module = Modules.FirstOrDefault() ?? ""; _view = null; _selectedPath = ""; }
-    private void ModuleChanged(ChangeEventArgs e) { _module = e.Value?.ToString() ?? ""; _view = null; _selectedPath = ""; }
+    private void ImportChanged(ChangeEventArgs e) { _importId = e.Value?.ToString() ?? ""; _module = Modules.FirstOrDefault() ?? ""; _view = null; _selectedPath = ""; _back = null; _allType = ""; }
+    private void ModuleChanged(ChangeEventArgs e) { _module = e.Value?.ToString() ?? ""; _view = null; _selectedPath = ""; _back = null; }
 
-    private void Select(string path) => Select(path, updateUrl: true);
+    /// <summary>A document chosen from the library: a fresh reading (the "Back to …" of a search jump no longer applies).</summary>
+    private void Select(string path) { _back = null; Select(path, updateUrl: true); }
+
+    private void ToggleSearchAll() { _searchAll = !_searchAll; _resultsCollapsed = false; }
+
+    /// <summary>Every generated document of the selected import that contains the (debounced) term — computed once per import + term.</summary>
+    private GeneratedSearchResults AllResults()
+    {
+        var key = (_importId, _search.Trim());
+        if (_allCache.TryGetValue(key, out var cached)) return cached;
+        if (_allCache.Count >= 16) _allCache.Clear();
+        var state = Repository?.SddLifecycle;
+        var documents = Documents.Where(d => d.ContentAvailable).Select(d => (d, state is null ? null : DocumentationDrift.Text(state, d.Document)));
+        return _allCache[key] = GeneratedDocumentationExplorerContext.Search(documents, key.Item2);
+    }
+
+    /// <summary>Opens a cross-document result: its module, the document, the term highlighted and the first match focused; the current document is remembered.</summary>
+    private void OpenResult(GeneratedExplorerDocument doc)
+    {
+        var term = _search;
+        if (doc.Path != _selectedPath && _view is { } current)
+            _back = new(current.Document.Module, _selectedPath, _tab, _section, TitleOf(current.Document));
+        _module = doc.Module;
+        Select(doc.Path, updateUrl: false);
+        if (_view is null) return;
+        _search = _searchInput = term;
+        _hitIndex = 0;
+        _searchGeneration++;
+        _focusDocument = false;
+        _resultsCollapsed = true;
+        if (DocumentationDrift.IsMarkdown(doc.Path) && _segments.Count > 0) _ = RenderedSegment(0);
+        if (DocumentationDrift.IsMarkdown(doc.Path) && _hits > 0) { _tab = "Read"; _pendingAnchor = "gde-hit-0"; }
+        else { _tab = "Source"; _pendingAnchor = null; } // a match only in a diagram's source or a non-Markdown artifact is marked in Source
+        SyncUrl();
+    }
+
+    /// <summary>Back to the document a search result was opened from, at the view (and section) it was read at.</summary>
+    private void GoBack()
+    {
+        if (_back is not { } back) return;
+        var term = _search;
+        _back = null;
+        _module = back.Module;
+        Select(back.Path, updateUrl: false);
+        if (_view is null) return;
+        _search = _searchInput = term;
+        _searchGeneration++;
+        if (back.Tab == "Read" && back.Section is { } section && _outline.Any(o => o.AnchorId == section))
+            (_tab, _section, _pendingAnchor, _focusDocument) = ("Read", section, section, false);
+        else _tab = back.Tab;
+        SyncUrl();
+        EnsureHealth();
+    }
+
+    /// <summary>Reads the existing Generated Documentation Health run for the open document's source snapshot (once per import + snapshot).</summary>
+    private void EnsureHealth()
+    {
+        if (_tab != "Provenance" || _view?.Document.Document.SourceSnapshotId is not { } snapshot) return;
+        var key = (_importId, snapshot);
+        if (_healthRuns.ContainsKey(key) || _healthLoading.Contains(key)) return;
+        if (ServiceProvider.GetService(typeof(IGeneratedDocumentationApiService)) is not IGeneratedDocumentationApiService api) { _healthRuns[key] = null; return; }
+        _ = LoadHealthAsync(api, key);
+    }
+
+    private async Task LoadHealthAsync(IGeneratedDocumentationApiService api, (string Import, Guid Snapshot) key)
+    {
+        _healthLoading.Add(key);
+        try
+        {
+            _healthRuns[key] = await api.RunAsync(new BirkNext.GeneratedDocumentation.GeneratedDocumentationDiagnosticRequest { ProjectImportId = key.Import, SnapshotId = key.Snapshot });
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidOperationException) { _healthRuns[key] = null; }
+        finally { _healthLoading.Remove(key); await InvokeAsync(StateHasChanged); }
+    }
+
+    /// <summary>The health findings for an open document, or why health is not evaluated for it (never "healthy" by absence).</summary>
+    private (GeneratedDocumentHealthFindings? Findings, string Reason, bool Loading) HealthOf(GeneratedExplorerDocument doc)
+    {
+        if (doc.Document.SourceSnapshotId is not { } snapshot) return (null, "Its source snapshot is not known.", false);
+        if (_healthLoading.Contains((_importId, snapshot))) return (null, "", true);
+        if (!_healthRuns.TryGetValue((_importId, snapshot), out var run) || run is null)
+            return (null, "No Generated Documentation Health result is available for its source snapshot.", false);
+        if (run.State != BirkNext.GeneratedDocumentation.GeneratedDocumentationRunState.Ready) return (null, run.StateMessage, false);
+        return GeneratedDocumentationExplorerContext.For(run, doc.Module, doc.RepositoryLevel, doc.Path) is { } findings
+            ? (findings, "", false)
+            : (null, "The health run does not cover this document's module.", false);
+    }
 
     private void Select(string path, bool updateUrl)
     {
@@ -582,6 +687,7 @@
     {
         var d = v.Document.Document;
         <p class="gde-note" data-testid="gde-evidence-kind"><strong>Implementation-derived documentation</strong> (generated from source by @(d.Generator ?? "an unidentified generator")). Not an approved specification, not imported source documentation, not runtime-verified.@(v.State == GeneratedDocumentParseState.PartiallyParsed ? " Partially parsed: some content has no structured interpretation." : "")</p>
+        @HealthSummary(v)
         @SystemsReferenced(v)
         @Revisions(v)
         <details class="gde-technical" data-testid="gde-technical"><summary>Technical details</summary>
@@ -600,6 +706,113 @@
             <div><dt>Imported at</dt><dd>@(d.ImportedAt?.ToLocalTime().ToString("g") ?? "—")</dd></div>
         </dl>
         </details>
+    };
+
+    /// <summary>
+    /// Documentation health for THIS document, from the existing Generated Documentation Health run of its source snapshot: parse problems of this
+    /// document, required documents missing in its module, and its module's consistency candidates (only those naming this document when they
+    /// name one). Compact counts with the detail on request; without a run it says so — never "healthy".
+    /// </summary>
+    private RenderFragment HealthSummary(GeneratedDocumentView v) => __builder =>
+    {
+        var doc = v.Document;
+        var snapshot = doc.Document.SourceSnapshotId;
+        var href = $"{NavigationCatalog.GeneratedDocumentationHealthRoute}?import={Uri.EscapeDataString(_importId)}{(snapshot is { } s ? $"&snapshot={s}" : "")}";
+        var (findings, reason, loading) = HealthOf(doc);
+        <section class="gde-context gde-health" aria-labelledby="gde-health-h" data-testid="gde-health" data-state="@(loading ? "loading" : findings is null ? "not-evaluated" : "evaluated")">
+            <h3 id="gde-health-h" class="gde-h3">Documentation health</h3>
+            @if (loading)
+            {
+                <InlineLoading Text="Reading Generated Documentation Health…" Class="gde-muted" />
+            }
+            else if (findings is null)
+            {
+                <p class="gde-muted" data-testid="gde-health-not-evaluated">Health not evaluated for this document. @reason</p>
+            }
+            else
+            {
+                var f = findings;
+                <p data-testid="gde-health-summary">@(f.Total == 0 ? "No finding of the health run concerns this document." : $"{f.Total} finding{(f.Total == 1 ? "" : "s")} concern this document or its module.") Freshness: @f.Freshness.</p>
+                <ul class="gde-plain gde-health-counts" data-testid="gde-health-counts">
+                    <li data-testid="gde-health-count" data-kind="parse">Parse problems in this document: <strong>@f.ParseErrors.Count</strong></li>
+                    <li data-testid="gde-health-count" data-kind="missing">Required documents missing in module @doc.Module: <strong>@f.MissingExpected.Count</strong></li>
+                    <li data-testid="gde-health-count" data-kind="source">Source consistency candidates: <strong>@f.SourceDiscrepancies.Count</strong></li>
+                    <li data-testid="gde-health-count" data-kind="drift">Cross-artifact consistency candidates: <strong>@f.CrossArtifactDrift.Count</strong></li>
+                </ul>
+                @if (f.Total > 0)
+                {
+                    <details class="gde-health-detail" data-testid="gde-health-detail">
+                        <summary>Show the findings (@f.Total)</summary>
+                        @if (f.ParseErrors.Count > 0) { <p><strong>Parse problems</strong></p><ul class="gde-plain">@foreach (var e in f.ParseErrors) { <li data-testid="gde-health-parse">@e</li> }</ul> }
+                        @if (f.MissingExpected.Count > 0) { <p><strong>Required documents missing in the module</strong></p><ul class="gde-plain">@foreach (var m in f.MissingExpected) { <li data-testid="gde-health-missing">@m</li> }</ul> }
+                        @foreach (var (label, items) in new[] { ("Source consistency candidates", f.SourceDiscrepancies), ("Cross-artifact consistency candidates", f.CrossArtifactDrift) })
+                        {
+                            @if (items.Count > 0)
+                            {
+                                <p><strong>@label</strong></p>
+                                <ul class="gde-plain">@foreach (var c in items) { <li data-testid="gde-health-candidate" data-id="@c.Id">@c.Family@(c.StructuredKey.Length > 0 ? $" · {c.StructuredKey}" : "")@(c.Explanation.Length > 0 ? $" — {c.Explanation}" : "")</li> }</ul>
+                            }
+                        }
+                        <p class="gde-muted">Consistency candidates are review candidates, not defects; BirkNext does not decide which side is wrong.</p>
+                    </details>
+                }
+                <p class="gde-muted" data-testid="gde-health-basis">From Generated Documentation Health of this source snapshot · module @f.Module.Module: @BirkNext.GeneratedDocumentation.GeneratedDocumentationText.Label(f.Module.Status).</p>
+            }
+            <p><a class="gde-link" data-testid="gde-health-open" href="@href">Open Generated Documentation Health for this snapshot</a></p>
+        </section>
+    };
+
+    /// <summary>Cross-document results: grouped by document (title, type, count, a few matching lines), bounded, the selected import only.</summary>
+    private RenderFragment SearchAllResults() => __builder =>
+    {
+        var term = _search.Trim();
+        <section class="gde-search-all" aria-label="Search results in all documents of this import" data-testid="gde-search-results">
+            @if (term.Length < GeneratedDocumentationExplorerContext.MinTermLength)
+            {
+                <p class="gde-muted" data-testid="gde-search-all-hint">Type at least @GeneratedDocumentationExplorerContext.MinTermLength characters to search every generated document of this import.</p>
+            }
+            else
+            {
+                var all = AllResults();
+                var shown = all.Results.Where(r => _allType.Length == 0 || r.Document.Role.ToString() == _allType).ToList();
+                var matches = shown.Sum(r => r.Matches);
+                <div class="gde-search-all-head">
+                    <p role="status" data-testid="gde-search-summary">@(shown.Count == 0 ? "No match in the generated documents of this import." : $"{matches} match{(matches == 1 ? "" : "es")} in {shown.Count} document{(shown.Count == 1 ? "" : "s")} of this import")@(all.Truncated ? $" · limited to the first {GeneratedDocumentationExplorerContext.MaxDocuments} documents" : "")</p>
+                    @if (all.Results.Count > 0)
+                    {
+                        <label class="gde-field gde-inline"><span class="visually-hidden">Result document type</span>
+                            <select data-testid="gde-search-all-type" @onchange="e => _allType = e.Value?.ToString() ?? string.Empty">
+                                <option value="">All types</option>
+                                @foreach (var role in all.Results.Select(r => r.Document.Role).Distinct().OrderBy(r => r)) { <option value="@role" selected="@(_allType == role.ToString())">@Gde.RoleLabel(role)</option> }
+                            </select></label>
+                        <button type="button" class="btn-link" data-testid="gde-search-results-toggle" aria-expanded="@(_resultsCollapsed ? "false" : "true")" @onclick="() => _resultsCollapsed = !_resultsCollapsed">@(_resultsCollapsed ? "Show results" : "Hide results")</button>
+                    }
+                </div>
+                @if (!_resultsCollapsed && shown.Count > 0)
+                {
+                    <ol class="gde-plain gde-search-groups">
+                        @foreach (var result in shown)
+                        {
+                            var doc = result.Document;
+                            <li class="gde-search-group @(doc.Path == _selectedPath ? "is-current" : "")" data-testid="gde-search-result" data-path="@doc.Path" data-module="@doc.Module" data-role="@doc.Role">
+                                <div class="gde-search-group-head">
+                                    <button type="button" class="gde-link" data-testid="gde-search-result-open" title="@doc.Path" @onclick="() => OpenResult(doc)"><strong>@TitleOf(doc)</strong></button>
+                                    <span class="gde-pill">@doc.RoleLabel</span>
+                                    <span class="gde-muted">@doc.Module</span>
+                                    <span class="gde-muted" data-testid="gde-search-result-count">@result.Matches match@(result.Matches == 1 ? "" : "es")</span>
+                                </div>
+                                <ul class="gde-plain gde-snippets">
+                                    @foreach (var snippet in result.Snippets)
+                                    {
+                                        <li data-testid="gde-search-snippet" data-line="@snippet.Line"><span class="gde-muted">L@(snippet.Line)</span> @snippet.Before<mark>@snippet.Match</mark>@snippet.After</li>
+                                    }
+                                </ul>
+                            </li>
+                        }
+                    </ol>
+                }
+            }
+        </section>
     };
 
     /// <summary>Registered systems the document names exactly, linked to Systems &amp; Scopes; nothing when no registry or no active environment.</summary>
