@@ -83,7 +83,8 @@ public sealed class ArtifactScopeUiTests : BunitContext
             provenance.TextContent.Should().NotContain("Additional documentation read: none");
             cut.FindAll("[data-testid=qr-provenance-group]").Select(g => g.GetAttribute("data-category")).Should().Contain("Supporting authored documentation");
             var research = cut.FindAll("[data-testid=qr-provenance-document]").Single(d => d.GetAttribute("data-path") == "specs/001-person/research.md");
-            research.TextContent.Should().Contain("fingerprint").And.Contain("read by");
+            research.TextContent.Should().Contain("Read by");
+            research.GetAttribute("title").Should().StartWith("fingerprint ", "the exact fingerprint stays available on the row");
         });
     }
 
@@ -144,5 +145,37 @@ public sealed class ArtifactScopeUiTests : BunitContext
         cut.FindAll("[data-testid=markdown-source-notes-detail]").Should().BeEmpty("collapsed by default");
         cut.Find("[data-testid=markdown-source-notes-toggle]").Click();
         cut.Find("[data-testid=markdown-source-notes-detail]").TextContent.Should().Contain("Loose paragraph", "no content is lost");
+    }
+
+    [Fact]
+    public async Task Supporting_documents_are_a_searchable_catalog_that_says_which_selected_packs_read_each_one()
+    {
+        await ImportPersonAsync();
+        var cut = RenderQualityReview();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=qr-supporting-doc]").Should().NotBeEmpty());
+        cut.Find("[data-testid=qr-supporting-semantics]").TextContent.Should().Contain("available for context").And.Contain("Neither means the document was reviewed or approved");
+        cut.FindAll("[data-testid=qr-supporting-readby]").Select(e => e.TextContent).Should().OnlyContain(t => t.StartsWith("Read by ") || t.StartsWith("Context only") || t.StartsWith("No Review Pack"));
+
+        var total = cut.FindAll("[data-testid=qr-supporting-doc]").Count;
+        cut.Find("[data-testid=qr-supporting-search]").Input("privacy");
+        cut.FindAll("[data-testid=qr-supporting-doc]").Select(e => e.GetAttribute("data-path")).Should().Equal("docs/privacy.md");
+        cut.Find("[data-testid=qr-supporting-shown]").TextContent.Should().Be($"1 of {total}");
+        cut.Find("[data-testid=qr-supporting-search]").Input("");
+
+        cut.FindAll("[data-testid=qr-pack-readiness]").Select(e => e.TextContent).Should().NotContain("Ready", "readiness to run is never shown as a bare Ready");
+        cut.FindAll("[data-testid=qr-pack-reads]").Should().NotBeEmpty();
+        cut.Markup.Should().NotContain("read the primary documents of the Artifact Pack only");
+    }
+
+    [Fact]
+    public void Delivery_Readiness_declares_the_supporting_plan_documents_its_engine_receives()
+    {
+        var plan = new PackDocument("d1", "Research", null, WorkspaceArtifactType.Plan, "research.md", "specs/001-person/research.md", "Person", "001-person", PackDocumentOrigin.Authored, default!, null, "fp", ExplorerArtifactCurrentness.Current, PackDocumentClass.SupportingPackLocal, ["Plan document set"], "x");
+        var spec = plan with { Path = "specs/001-person/checklist.md", Family = WorkspaceArtifactType.Specification };
+        QualityReviewInputContracts.Reads("delivery-readiness", plan).Should().BeTrue("the Plan is extended with its supporting plan documents before Delivery Readiness runs");
+        QualityReviewInputContracts.Reads("delivery-readiness", spec).Should().BeFalse();
+        QualityReviewInputContracts.Reads("data-model-quality", plan).Should().BeFalse();
+        QualityReviewInputContracts.Describe("delivery-readiness").Should().Contain("supporting plan documents").And.NotContain("Primary documents only");
+        QualityReviewPackReadiness.StateLabel(PackReadinessState.Ready).Should().Be("Ready to run");
     }
 }

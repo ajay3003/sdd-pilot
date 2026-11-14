@@ -77,8 +77,41 @@
 
         <h3 class="ig-sub">Feature readiness</h3>
         <p class="ig-note">Derived from source evidence: an unresolved mandatory gate blocks; a checked task is not code; a declared package is not behaviour; a test definition is not an execution.</p>
+        var overview = OverviewRows(e);
+        <div class="ig-overview-bar" role="group" aria-label="Feature filters">
+            <label><span class="visually-hidden">Search features</span><input type="search" placeholder="Search features" value="@_featureSearch" @oninput="e2 => _featureSearch = e2.Value?.ToString() ?? string.Empty" data-testid="ig-feature-search" /></label>
+            <label><span class="visually-hidden">Status</span><select data-testid="ig-filter-readiness" @onchange="e2 => _readinessFilter = e2.Value?.ToString() ?? string.Empty">
+                <option value="">Any status</option>
+                @foreach (var r in e.Features.Select(f => f.Readiness).Distinct().Order()) { <option value="@r" selected="@(_readinessFilter == r.ToString())">@ReadinessLabel(r)</option> }
+            </select></label>
+            <label class="ig-check"><input type="checkbox" checked="@_missingTests" @onchange="e2 => _missingTests = e2.Value is true" data-testid="ig-filter-missing-tests" /> No executed test</label>
+            <label class="ig-check"><input type="checkbox" checked="@_missingRuntime" @onchange="e2 => _missingRuntime = e2.Value is true" data-testid="ig-filter-missing-runtime" /> No runtime evidence</label>
+            <span class="ig-context" data-testid="ig-overview-count">@overview.Count of @FeaturesIn(e).Count features</span>
+        </div>
+        <div class="ig-scroll" tabindex="0" role="region" aria-label="Feature overview">
+            <table class="ig-table ig-overview" data-testid="ig-overview">
+                <thead><tr><th scope="col">Feature</th><th scope="col">Status</th><th scope="col">Implementation evidence</th><th scope="col">Blocking gates</th><th scope="col">Test evidence</th><th scope="col">Runtime</th></tr></thead>
+                <tbody>
+                    @foreach (var f in overview)
+                    {
+                        var feature = f;
+                        var open = _openFeature == f.FeatureId;
+                        var blocking = f.GateIds.Select(g => e.Gates.First(x => x.GateId == g)).Where(g => g.Status != GapGateStatus.Approved).ToList();
+                        <tr data-testid="ig-overview-row" data-feature="@f.FeatureId" data-readiness="@f.Readiness" class="@(open ? "is-open" : "")">
+                            <th scope="row"><button type="button" class="ig-link" aria-expanded="@(open ? "true" : "false")" data-testid="ig-overview-open" @onclick="() => _openFeature = open ? null : feature.FeatureId">@f.Name</button></th>
+                            <td><span class="ig-pill ig-r-@f.Readiness">@ReadinessLabel(f.Readiness)</span></td>
+                            <td>@Dim(f, "Source implementation coverage")</td>
+                            <td data-testid="ig-overview-gates">@(blocking.Count == 0 ? (f.GateIds.Count == 0 ? "None" : "All approved") : string.Join(", ", blocking.Select(g => $"{g.GateId} ({g.Status})")))</td>
+                            <td>@Dim(f, "Test implementation coverage", "defined") · @Dim(f, "Test execution coverage", "executed")</td>
+                            <td>@Dim(f, "Runtime verification coverage", "verified")</td>
+                        </tr>
+                    }
+                    @if (overview.Count == 0) { <tr><td colspan="6" class="ig-context" data-testid="ig-overview-none">No feature matches these filters.</td></tr> }
+                </tbody>
+            </table>
+        </div>
         <ul class="ig-features" data-testid="ig-features">
-            @foreach (var f in FeaturesIn(e).Where(f => _feature.Length == 0 || f.FeatureId == _feature).Take(_featureLimit))
+            @foreach (var f in FeaturesIn(e).Where(f => _openFeature is null ? _feature.Length > 0 && f.FeatureId == _feature : f.FeatureId == _openFeature))
             {
                 var tasks = e.Tasks.Where(t => t.Source.Path == f.DocumentPath && f.TaskIds.Contains(t.TaskId)).ToList();
                 <li class="ig-feature" data-testid="ig-feature" data-readiness="@f.Readiness" id="@($"ig-feature-{Slug(f.FeatureId)}")">
@@ -135,10 +168,6 @@
                 </li>
             }
         </ul>
-        @if (FeaturesIn(e).Count(f => _feature.Length == 0 || f.FeatureId == _feature) > _featureLimit)
-        {
-            <button type="button" class="btn-secondary" @onclick="() => _featureLimit += 12" data-testid="ig-features-more">Show more features</button>
-        }
         @if (ReadinessOnly)
         {
             <p class="ig-note"><a href="/implementation-review#ig-h" data-testid="ig-open-explorer">Open the implementation gaps and their evidence</a></p>
@@ -339,9 +368,27 @@
 
     private static string ReviewLabel(GapFinding f) => f.ReviewStatus == "Not reviewed" ? "not reviewed" : $"reviewed: {f.ReviewStatus}{(f.ReviewedBy is { } by ? $" by {by}" : "")}";
 
+    private string _featureSearch = "", _readinessFilter = "";
+    private bool _missingTests, _missingRuntime;
+    private string? _openFeature;
+
+    /// <summary>The compact overview: one row per feature; detail opens on demand. Filters never hide a blocked feature's gate.</summary>
+    private List<GapFeatureAssessment> OverviewRows(GapEvaluation e) => [.. FeaturesIn(e)
+        .Where(f => _feature.Length == 0 || f.FeatureId == _feature)
+        .Where(f => _readinessFilter.Length == 0 || f.Readiness.ToString() == _readinessFilter)
+        .Where(f => _featureSearch.Trim().Length == 0 || f.Name.Contains(_featureSearch.Trim(), StringComparison.OrdinalIgnoreCase) || f.FeatureId.Contains(_featureSearch.Trim(), StringComparison.OrdinalIgnoreCase))
+        .Where(f => !_missingTests || DimValue(f, "Test execution coverage") is not { Numerator: > 0 })
+        .Where(f => !_missingRuntime || DimValue(f, "Runtime verification coverage") is not { Numerator: > 0 })];
+
+    private static GapDimension? DimValue(GapFeatureAssessment f, string name) => f.Dimensions.FirstOrDefault(d => d.Name == name);
+
+    /// <summary>"n of m" with the denominator kept; "Not assessed" when the dimension has no evidence base — never a bare zero.</summary>
+    private static string Dim(GapFeatureAssessment f, string name, string suffix = "confirmed") => DimValue(f, name) is { Denominator: { } den } d
+        ? $"{d.Numerator} of {den} {suffix}" : "Not assessed";
+
     public static string ReadinessLabel(GapReadiness r) => r switch
     {
-        GapReadiness.Blocked => "Blocked", GapReadiness.NotImplemented => "Not implemented", GapReadiness.PartiallyImplemented => "Partially implemented",
+        GapReadiness.Blocked => "Blocked", GapReadiness.NotImplemented => "Implementation not confirmed", GapReadiness.PartiallyImplemented => "Partially implemented",
         GapReadiness.ImplementedButNotVerified => "Implemented, not verified", GapReadiness.Verified => "Verified", _ => "Not assessed",
     };
 

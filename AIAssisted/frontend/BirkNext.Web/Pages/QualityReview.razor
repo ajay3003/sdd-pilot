@@ -108,27 +108,25 @@
                     ? "This project has several modules with their own documents. Choose the module to review in any document Explorer; the review reads that module's selected artifacts."
                     : "Some roles have multiple artifacts. Select one in its Explorer before running Document Quality Review.")</p>
             }
-            <!-- ── Artifact cards ───────────────────────────────────────── -->
-            <div class="qr-artifact-grid">
-                @foreach (var (role, label, fallback) in ArtifactRoles)
-                {
-                    var text = ArtifactText(role);
-                    var statusLabel = ArtifactStatusLabel(role);
-                    <div class="artifact-card @(!string.IsNullOrEmpty(text) ? "is-loaded" : "")">
-                        <div class="artifact-card-header">
-                            <span class="artifact-name">@label</span>
-                            <span class="artifact-status @(statusLabel == "Available" ? "is-loaded" : "")">@statusLabel</span>
-                        </div>
-                        <div class="qr-artifact-file">@ArtifactFileName(role, fallback)</div>
-                        <div class="qr-artifact-source">@ArtifactSource(role)</div>
-                        @if (!string.IsNullOrEmpty(text))
+            <!-- ── Primary artifacts: one compact row each (availability is presence, never a review result) ── -->
+            <div class="qr-table-wrap qr-artifact-grid">
+                <table class="qr-artifact-table" data-testid="qr-primary-artifacts">
+                    <thead><tr><th scope="col">Artifact</th><th scope="col">Document</th><th scope="col">Availability</th><th scope="col">Source</th><th scope="col">Size</th></tr></thead>
+                    <tbody>
+                        @foreach (var (role, label, fallback) in ArtifactRoles)
                         {
-                            <div class="artifact-footer">
-                                <span>@text.Split('\n').Length lines</span>
-                            </div>
+                            var text = ArtifactText(role);
+                            var statusLabel = ArtifactStatusLabel(role);
+                            <tr class="artifact-card @(!string.IsNullOrEmpty(text) ? "is-loaded" : "")" data-testid="qr-primary-artifact" data-role="@role">
+                                <th scope="row" class="artifact-name">@label</th>
+                                <td class="qr-artifact-file">@ArtifactFileName(role, fallback)</td>
+                                <td><span class="artifact-status @(statusLabel == "Available" ? "is-loaded" : "")">@statusLabel</span></td>
+                                <td class="qr-artifact-source">@ArtifactSource(role)</td>
+                                <td class="qr-muted">@(string.IsNullOrEmpty(text) ? "—" : $"{text.Split('\n').Length} lines")</td>
+                            </tr>
                         }
-                    </div>
-                }
+                    </tbody>
+                </table>
             </div>
 
             @* The canonical Artifact Pack inventory: supporting, generated and excluded documents with their reasons — never rediscovered here. *@
@@ -144,15 +142,43 @@
                     }
                     else
                     {
-                        <ul class="qr-doc-list">
-                            @foreach (var doc in supportingDocs)
-                            {
-                                <li data-testid="qr-supporting-doc" data-path="@doc.Path">
-                                    <span class="qr-doc-name">@doc.Kind</span> <span class="qr-provenance-path">@doc.Path</span>
-                                    <span class="qr-context-label"> · @doc.ClassLabel · @doc.Reason@(doc.Fingerprint is { Length: > 0 } fp ? $" · fingerprint {fp[..Math.Min(12, fp.Length)]}" : "")</span>
-                                </li>
-                            }
-                        </ul>
+                        var readers = DocumentPacks.Where(p => _selectedPacks.Contains(p.PackId) && Readiness(p).IsRunnable).ToList();
+                        var shownDocs = supportingDocs
+                            .Where(d => _supportSearch.Trim().Length == 0 || d.Path.Contains(_supportSearch.Trim(), StringComparison.OrdinalIgnoreCase) || d.Kind.Contains(_supportSearch.Trim(), StringComparison.OrdinalIgnoreCase) || (d.Reason ?? "").Contains(_supportSearch.Trim(), StringComparison.OrdinalIgnoreCase))
+                            .Where(d => _supportKind.Length == 0 || d.Kind == _supportKind)
+                            .Where(d => _supportClass.Length == 0 || d.ClassLabel == _supportClass)
+                            .Where(d => _supportRead switch { "read" => readers.Any(p => QualityReviewInputContracts.Reads(p.PackId, d)), "context" => !readers.Any(p => QualityReviewInputContracts.Reads(p.PackId, d)), _ => true })
+                            .ToList();
+                        <p class="qr-context-label" data-testid="qr-supporting-semantics">Each document is <strong>available for context</strong>. It is <strong>read by a Review Pack</strong> only where that pack's input contract names it (shown per document for the packs selected below). Neither means the document was reviewed or approved.</p>
+                        <div class="qr-catalog-bar" role="search">
+                            <label><span class="visually-hidden">Search supporting documents</span><input type="search" placeholder="Search name, path or reason" value="@_supportSearch" @oninput="e => _supportSearch = e.Value?.ToString() ?? string.Empty" data-testid="qr-supporting-search" /></label>
+                            <label><span class="visually-hidden">Document type</span><select data-testid="qr-supporting-kind" @onchange="e => _supportKind = e.Value?.ToString() ?? string.Empty">
+                                <option value="">All types</option>@foreach (var k in supportingDocs.Select(d => d.Kind).Distinct().Order()) { <option value="@k" selected="@(_supportKind == k)">@k</option> }</select></label>
+                            <label><span class="visually-hidden">Scope</span><select data-testid="qr-supporting-class" @onchange="e => _supportClass = e.Value?.ToString() ?? string.Empty">
+                                <option value="">Pack-local and shared</option>@foreach (var c in supportingDocs.Select(d => d.ClassLabel).Distinct().Order()) { <option value="@c" selected="@(_supportClass == c)">@c</option> }</select></label>
+                            <label><span class="visually-hidden">Read by selected packs</span><select data-testid="qr-supporting-read" @onchange="e => _supportRead = e.Value?.ToString() ?? string.Empty">
+                                <option value="">Read or context</option><option value="read">Read by a selected pack</option><option value="context">Context only</option></select></label>
+                            <span class="qr-muted" data-testid="qr-supporting-shown">@shownDocs.Count of @supportingDocs.Count</span>
+                        </div>
+                        @foreach (var group in shownDocs.GroupBy(d => d.Kind).OrderBy(g => g.Key))
+                        {
+                            <details class="qr-doc-group" open="@(shownDocs.Count <= 12 || _supportSearch.Length > 0)" data-testid="qr-supporting-group">
+                                <summary><span class="qr-doc-name">@group.Key</span> <span class="qr-muted">(@group.Count())</span></summary>
+                                <ul class="qr-doc-list">
+                                    @foreach (var doc in group)
+                                    {
+                                        var readBy = readers.Where(p => QualityReviewInputContracts.Reads(p.PackId, doc)).Select(p => p.PackName).ToList();
+                                        <li data-testid="qr-supporting-doc" data-path="@doc.Path" data-read="@(readBy.Count > 0 ? "true" : "false")">
+                                            <span class="qr-doc-title">@System.IO.Path.GetFileName(doc.Path)</span>
+                                            <span class="qr-context-label"> · @doc.ClassLabel · @doc.Reason</span>
+                                            <span class="qr-doc-readby @(readBy.Count > 0 ? "is-read" : "")" data-testid="qr-supporting-readby">@(readBy.Count > 0 ? $"Read by {string.Join(", ", readBy)}" : readers.Count == 0 ? "No Review Pack selected" : "Context only — no selected pack reads it")</span>
+                                            <details class="qr-doc-tech"><summary>Path and fingerprint</summary><span class="qr-provenance-path">@doc.Path</span>@if (doc.Fingerprint is { Length: > 0 } fp) { <code class="qr-muted"> @fp</code> }</details>
+                                        </li>
+                                    }
+                                </ul>
+                            </details>
+                        }
+                        @if (shownDocs.Count == 0) { <p class="qr-muted" data-testid="qr-supporting-nomatch">No supporting document matches these filters.</p> }
                     }
                     @if (generatedDocs.Count > 0)
                     {
@@ -220,6 +246,7 @@
                                             <span class="qr-readiness-chip is-@ReadinessClass(readiness.State)" data-testid="qr-pack-readiness">@QualityReviewPackReadiness.StateLabel(readiness.State)</span>
                                         </span>
                                         <span class="qr-pack-desc">@pack.PackDescription</span>
+                                        <span class="qr-pack-reads" data-testid="qr-pack-reads">Reads: @QualityReviewInputContracts.Describe(pack.PackId)</span>
                                         @if (readiness.State != PackReadinessState.Ready)
                                         {
                                             <span class="qr-pack-readiness-reason">@readiness.Summary</span>
@@ -242,7 +269,7 @@
                     @if (readinessSummary.Selected > 0)
                     {
                         <ul class="qr-readiness-counts" aria-label="Selected Review Pack readiness" data-testid="qr-readiness-counts">
-                            <li class="qr-readiness-chip is-ready"><strong>@readinessSummary.Ready</strong> ready</li>
+                            <li class="qr-readiness-chip is-ready"><strong>@readinessSummary.Ready</strong> ready to run</li>
                             <li class="qr-readiness-chip is-partial"><strong>@readinessSummary.Partial</strong> partial</li>
                             <li class="qr-readiness-chip is-blocked"><strong>@readinessSummary.Blocked</strong> blocked</li>
                             @if (readinessSummary.NotApplicable > 0)
@@ -266,7 +293,7 @@
                                 </ul>
                             }
                         </div>
-                        <p class="qr-readiness-note">Ready means a Review Pack's inputs are available, not that it will pass. Selected Review Packs read the primary documents of the Artifact Pack only (no supporting documents); shared SDD evidence is contextual and is not reported as a Document Quality Review finding.</p>
+                        <p class="qr-readiness-note" data-testid="qr-readiness-note">Ready to run means a Review Pack's inputs are available — not that the documentation will pass. Each pack reads the documents its input contract names (shown under each pack, and per supporting document above): QA Auditor, QA Readiness and Delivery Readiness also read the Plan's supporting documents; Constitution Compliance and the Standards Documentation packs read every authored document of the pack. Shared SDD evidence is context and is not reported as a Document Quality Review finding. A pack that finds nothing has not proven the documentation correct.</p>
                         <button type="button" class="qr-disclosure qr-disclosure--small" aria-expanded="@(_packReadinessOpen ? "true" : "false")" aria-controls="qr-pack-readiness-list"
                                 data-testid="qr-pack-readiness-toggle" @onclick="() => _packReadinessOpen = !_packReadinessOpen">
                             @(_packReadinessOpen ? "Hide pack readiness" : "View pack readiness")
@@ -495,18 +522,22 @@
                 @{ var additional = _report.DocumentsRead.Where(d => d.Category != "Primary artifacts").ToList(); }
                 @if (additional.Count > 0)
                 {
+                    @* Grouped and collapsed: the counts first, each document's reasons and fingerprint on request (the full record is kept). *@
                     @foreach (var group in additional.GroupBy(d => d.Category))
                     {
-                        <span class="qr-context-label" data-testid="qr-provenance-group" data-category="@group.Key">@group.Key — @group.Count()</span>
-                        <ul class="qr-provenance-list">
-                            @foreach (var doc in group)
-                            {
-                                <li data-testid="qr-provenance-document" data-path="@doc.Path">
-                                    <strong>@doc.Kind</strong> · @doc.Scope · <span class="qr-provenance-path">@doc.Path</span>
-                                    <span class="qr-context-label">@(doc.Fingerprint is { Length: > 0 } fp ? $" · fingerprint {fp[..Math.Min(12, fp.Length)]}" : "")@(doc.Revision is { } rev ? $" · revision {rev}" : "") · @doc.Reason · read by @(doc.ConsumedBy.Count == 0 ? "no selected Review Pack" : string.Join(", ", doc.ConsumedBy))</span>
-                                </li>
-                            }
-                        </ul>
+                        <details class="qr-doc-group">
+                            <summary><span class="qr-context-label" data-testid="qr-provenance-group" data-category="@group.Key">@group.Key — @group.Count() (read by a selected pack: @group.Count(d => d.ConsumedBy.Count > 0))</span></summary>
+                            <ul class="qr-provenance-list">
+                                @foreach (var doc in group)
+                                {
+                                    <li data-testid="qr-provenance-document" data-path="@doc.Path" title="@(doc.Fingerprint is { Length: > 0 } fp ? $"fingerprint {fp}" : null)">
+                                        <strong>@doc.Kind</strong> · <span class="qr-provenance-path">@doc.Path</span>
+                                        <span class="qr-doc-readby @(doc.ConsumedBy.Count > 0 ? "is-read" : "")">Read by @(doc.ConsumedBy.Count == 0 ? "no selected Review Pack (context only)" : string.Join(", ", doc.ConsumedBy))</span>
+                                        <details class="qr-doc-tech"><summary>Why included</summary><span class="qr-context-label">@doc.Scope@(doc.Revision is { } rev ? $" · revision {rev}" : "") · @doc.Reason</span></details>
+                                    </li>
+                                }
+                            </ul>
+                        </details>
                     }
                 }
                 else if (_report.HasDocumentScope)
@@ -629,7 +660,7 @@
                                 <div class="qr-pack-card-decision">
                                     @if (totalF == 0)
                                     {
-                                        <span class="qr-pack-card-ok">No issues</span>
+                                        <span class="qr-pack-card-ok" title="No rule indicator in the documents this pack read; not proof the documentation is correct.">No indicator found</span>
                                     }
                                     else
                                     {
@@ -687,6 +718,8 @@
             </div>
         }
 
+        @if (_topIssues.Count > 0) { @ReviewerDecisions() }
+
         <!-- ── Per-pack expandable result sections ─────────────────────── -->
         <div class="qr-results">
             @foreach (var result in _report.PackResults)
@@ -709,7 +742,7 @@
                                 }
                                 else
                                 {
-                                    <span class="qr-result-ok">✓ No issues</span>
+                                    <span class="qr-result-ok" title="The pack's rules found no indicator in the documents it read. That is not proof the documentation is correct.">No indicator found</span>
                                 }
                             }
                             else
@@ -820,6 +853,87 @@
         SddObservationTone.Failed => "failed",
         SddObservationTone.NeedsReview => "review",
         _ => "neutral",
+    };
+
+    private string _supportSearch = "", _supportKind = "", _supportClass = "", _supportRead = "";
+
+    // ── Reviewer decisions (the shared manual-review store; a decision never changes a rule result) ──────────────────────────
+    private readonly Dictionary<string, BirkNext.ManualReview.ManualReviewDecisionView> _decisions = [];
+    private readonly Dictionary<string, BirkNext.ManualReview.ManualReviewDecisionValue> _draftDecision = [];
+    private string _reviewer = "", _decisionScope = "";
+    private string? _decisionStatus;
+    private bool _decisionsUnavailable;
+
+    private string DecisionScope => $"artifact-pack:{_inventory?.Module ?? "workspace"}/{_inventory?.Pack ?? "-"}";
+
+    private static readonly (BirkNext.ManualReview.ManualReviewDecisionValue Value, string Label)[] DecisionOptions =
+    [
+        (BirkNext.ManualReview.ManualReviewDecisionValue.IssueFound, "Confirmed observation"),
+        (BirkNext.ManualReview.ManualReviewDecisionValue.Acceptable, "False positive / resolved with evidence"),
+        (BirkNext.ManualReview.ManualReviewDecisionValue.RiskAccepted, "Accepted documentation risk"),
+        (BirkNext.ManualReview.ManualReviewDecisionValue.NeedsEvidence, "Needs clarification"),
+        (BirkNext.ManualReview.ManualReviewDecisionValue.NotApplicable, "Not applicable"),
+    ];
+
+    private static string DecisionLabel(BirkNext.ManualReview.ManualReviewDecisionValue v) => DecisionOptions.FirstOrDefault(o => o.Value == v).Label ?? v.ToString();
+
+    /// <summary>Current decisions of this Artifact Pack's findings (latest per finding), read once per report and pack.</summary>
+    private async Task LoadDecisionsAsync()
+    {
+        if (DecisionScope == _decisionScope) return;
+        _decisionScope = DecisionScope;
+        _decisions.Clear();
+        if (Services.GetService<IManualReviewApiService>() is not { } api) { _decisionsUnavailable = true; return; }
+        var list = await api.ListAsync(BirkNext.ManualReview.ManualReviewModules.DocumentQuality, _decisionScope);
+        if (list is null) { _decisionsUnavailable = true; return; }
+        foreach (var d in list.Where(d => d.Current)) _decisions[d.SubjectKey] = d;
+        StateHasChanged();
+    }
+
+    private async Task RecordDecisionAsync(TopIssueItem issue)
+    {
+        if (Services.GetService<IManualReviewApiService>() is not { } api) return;
+        var value = _draftDecision.GetValueOrDefault(issue.LogicalId, BirkNext.ManualReview.ManualReviewDecisionValue.IssueFound);
+        var (decision, error) = await api.RecordAsync(new BirkNext.ManualReview.ManualReviewDecisionRequest
+        {
+            Module = BirkNext.ManualReview.ManualReviewModules.DocumentQuality, ScopeKey = DecisionScope, SubjectKey = issue.LogicalId,
+            Reviewer = _reviewer.Trim(), Decision = value, AppliesTo = issue.RuleCode, Note = issue.Title.Length > 300 ? issue.Title[..300] : issue.Title,
+        });
+        if (decision is null) { _decisionStatus = error ?? "The decision could not be recorded."; return; }
+        _decisions[issue.LogicalId] = decision;
+        _decisionStatus = $"Recorded “{DecisionLabel(value)}” for {issue.RuleCode}. The rule result is unchanged; the decision is kept with its history.";
+    }
+
+    private RenderFragment ReviewerDecisions() => __builder =>
+    {
+        _ = LoadDecisionsAsync();
+        <section class="qr-decisions" aria-labelledby="qr-decisions-h" data-testid="qr-decisions">
+            <h3 id="qr-decisions-h" class="qr-decisions-title">Findings needing human attention</h3>
+            <p class="qr-muted">Record your judgement on a finding. Decisions are stored separately from the rule results (which never change) and keep their history; a later run that no longer reports a finding does not resolve it.</p>
+            @if (_decisionsUnavailable) { <p class="qr-muted" data-testid="qr-decisions-unavailable">Reviewer decisions are not available in this session.</p> }
+            else
+            {
+                <label class="qr-reviewer">Your name <input data-testid="qr-reviewer" @bind="_reviewer" @bind:event="oninput" maxlength="120" /></label>
+                <ul class="qr-decision-list">
+                    @foreach (var issue in _topIssues)
+                    {
+                        var item = issue;
+                        var current = _decisions.GetValueOrDefault(item.LogicalId);
+                        <li data-testid="qr-decision" data-subject="@item.LogicalId">
+                            <span class="qr-decision-rule">@item.RuleCode</span> <span>@item.Title</span>
+                            <span class="qr-muted" data-testid="qr-decision-current">@(current is null ? "No decision yet" : $"{DecisionLabel(current.Decision)} — {current.Reviewer}, {current.DecidedAt.ToLocalTime():g}")</span>
+                            <span class="qr-decision-controls">
+                                <select aria-label="@($"Decision for {item.RuleCode}")" data-testid="qr-decision-value" @onchange="e => { if (Enum.TryParse<BirkNext.ManualReview.ManualReviewDecisionValue>(e.Value?.ToString(), out var v)) _draftDecision[item.LogicalId] = v; }">
+                                    @foreach (var (value, label) in DecisionOptions) { <option value="@value" selected="@(_draftDecision.GetValueOrDefault(item.LogicalId, current?.Decision ?? BirkNext.ManualReview.ManualReviewDecisionValue.IssueFound) == value)">@label</option> }
+                                </select>
+                                <button type="button" class="btn-secondary btn-small" data-testid="qr-decision-record" disabled="@(_reviewer.Trim().Length == 0)" @onclick="() => RecordDecisionAsync(item)">Record</button>
+                            </span>
+                        </li>
+                    }
+                </ul>
+                @if (_decisionStatus is not null) { <p role="status" class="qr-muted" data-testid="qr-decision-status">@_decisionStatus</p> }
+            }
+        </section>
     };
 
     private static string ReadinessClass(PackReadinessState state) => state switch

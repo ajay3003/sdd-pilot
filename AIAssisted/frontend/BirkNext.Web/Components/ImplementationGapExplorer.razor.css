@@ -40,3 +40,11 @@
 .ig-r-Verified, .ig-g-Approved, .ig-rel-Confirmed { border-color: #15803d; background: #f0fdf4; color: #14532d; }
 .ig-gates li { font-size: .875rem; display: grid; gap: .125rem; }
 @media (max-width: 40rem) { .ig-features { grid-template-columns: 1fr; } }
+
+/* Feature overview: one row per feature, detail on demand. */
+.ig-overview-bar { display: flex; flex-wrap: wrap; gap: .4rem .75rem; align-items: center; margin: .4rem 0; }
+.ig-overview-bar input[type=search], .ig-overview-bar select { padding: .3rem .5rem; border: 1px solid var(--clr-border, #e2e8f0); border-radius: 6px; }
+.ig-overview th[scope=row] { text-align: left; }
+.ig-overview tr.is-open { background: var(--clr-surface, #f8fafc); }
+.ig-link { background: none; border: 0; padding: 0; color: var(--clr-primary, #2563eb); font: inherit; font-weight: 600; cursor: pointer; text-align: left; }
+.ig-link:hover { text-decoration: underline; }

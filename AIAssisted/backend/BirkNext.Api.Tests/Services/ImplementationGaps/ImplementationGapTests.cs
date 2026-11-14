@@ -187,6 +187,7 @@ public sealed class ImplementationGapTests : IDisposable
         e.Findings.Should().NotContain(f => new[] { GapFindingType.TaskFileMissing, GapFindingType.TaskTypeMissing, GapFindingType.PackageMissing, GapFindingType.CompletedTaskWithoutImplementation }.Contains(f.Type),
             "the scope finding states the narrower conclusion once; no per-task 'missing' claims");
         GateFeature(e).Readiness.Should().Be(GapReadiness.NotImplemented);
+        GateFeature(e).Explanation.Should().Contain("Implementation is not confirmed").And.Contain("not proof the feature is absent");
         e.Findings.Should().Contain(f => f.Type == GapFindingType.IntegrationNotImplemented && f.Title.EndsWith("implementation not evidenced in supplied archive", StringComparison.Ordinal));
         Task(e, "T020").Verification.Should().Be(GapVerificationEvidence.TestNotFound);
     }

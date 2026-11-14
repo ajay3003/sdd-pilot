@@ -20,7 +20,7 @@ public static class QualityReviewInputContracts
         QaAuditor => "Primary documents; the Plan is read with its supporting plan documents (research, contracts, decisions) for decisions and requirement references.",
         Constitution => "The Constitution against every authored document of the Artifact Pack — primary and supporting; each reference keeps the document it was found in.",
         QaReadiness => "Primary documents with the Plan's supporting documents (testing and architecture statements across the Plan document set).",
-        Delivery => "Primary documents only. Documentation readiness: advisory unless a project policy makes it a release gate.",
+        Delivery => "Primary documents; the Plan is read with its supporting plan documents (decisions and testing statements). Documentation readiness: advisory unless a project policy makes it a release gate.",
         DataModel => "The authored Data Model. Generated data-model documentation is read as context only and never scored.",
         _ => "Every authored document of the Artifact Pack — primary, supporting and applicable shared documentation (documentation coverage only).",
     };
@@ -40,8 +40,9 @@ public static class QualityReviewInputContracts
             };
         return packId switch
         {
-            QaAuditor or QaReadiness => document.Family == WorkspaceArtifactType.Plan,
-            Delivery or DataModel => false,
+            // These three receive the Plan extended with its supporting plan documents (PlanDocumentSet.ExtendForReview), so they read them.
+            QaAuditor or QaReadiness or Delivery => document.Family == WorkspaceArtifactType.Plan,
+            DataModel => false,
             _ => true, // Constitution Compliance and every documentation-coverage (standards) pack read all supporting authored documents
         };
     }

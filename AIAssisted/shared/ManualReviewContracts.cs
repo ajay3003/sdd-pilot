@@ -15,7 +15,9 @@ public static class ManualReviewModules
     public const string ImplementationGaps = "implementation-gaps";
     /// <summary>Integration suite review items (subject = review item key; scope = the suite key).</summary>
     public const string IntegrationSuites = "integration-suites";
-    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal) { ApiQuality, SecurityClassification, ImplementationGaps, IntegrationSuites };
+    /// <summary>Document Quality Review findings (subject = the finding's logical id; scope = "artifact-pack:{module}/{pack}").</summary>
+    public const string DocumentQuality = "document-quality";
+    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal) { ApiQuality, SecurityClassification, ImplementationGaps, IntegrationSuites, DocumentQuality };
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

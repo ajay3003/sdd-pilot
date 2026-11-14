@@ -71,6 +71,7 @@
   - only exact registered names become system links, and the outline comparison ignores indentation;
   - provenance evidence kind and technical details.
 - **Full frontend regression:** 8828/8828.
+- **Backend partitions 1–5** passed (4176 passed, 11 skipped, 0 failed). **Partition 6 was not run**: Claude Code stopped it because the machine was low on memory. This task made no backend change.
 - **Browser acceptance (Edge, isolated)**, all 36 checks passing:
   - API on :5097 with a disposable database, web on :5197; ports 5000 and 5173 untouched; no external request.
   - **Real data:** the local M2LB archive, imported read-only through Import Project into the disposable database.

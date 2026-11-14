@@ -1135,10 +1135,10 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.FindAll("[data-testid=qr-pack-readiness]").Should().HaveCount(5).And.OnlyContain(c => c.TextContent == "Ready");
+            cut.FindAll("[data-testid=qr-pack-readiness]").Should().HaveCount(5).And.OnlyContain(c => c.TextContent == "Ready to run");
             cut.Find("[data-testid=qr-run-summary]").TextContent.Should().Be("5 artifacts available · 5 Review Packs selected · 5 ready · 0 partial · 0 blocked");
             cut.Find("[data-testid=qr-expected-limitations]").TextContent.Should().Contain("None from missing inputs");
-            cut.Find(".qr-readiness-note").TextContent.Should().Contain("not that it will pass");
+            cut.Find(".qr-readiness-note").TextContent.Should().Contain("not that the documentation will pass");
         });
     }
 
@@ -2276,7 +2276,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             var packCard = cut.Find(".qr-pack-card");
             var metadata = packCard.QuerySelector(".qr-pack-card-metadata");
             metadata.Should().BeNull();
-            packCard.TextContent.Should().Contain("No issues");
+            packCard.TextContent.Should().Contain("No indicator found");
             packCard.TextContent.Should().Contain("Documentation coverage 100%");
             packCard.QuerySelector(".qr-pack-card-severity").Should().BeNull();
         });

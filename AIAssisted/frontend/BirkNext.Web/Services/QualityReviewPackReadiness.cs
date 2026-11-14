@@ -42,7 +42,7 @@ public static class QualityReviewPackReadiness
 {
     public static string StateLabel(PackReadinessState state) => state switch
     {
-        PackReadinessState.Ready => "Ready",
+        PackReadinessState.Ready => "Ready to run",
         PackReadinessState.Partial => "Partial",
         PackReadinessState.Blocked => "Blocked",
         _ => "Not applicable",

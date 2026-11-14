@@ -75,7 +75,12 @@ public sealed class ImplementationGapExplorerTests : BunitContext
     public void A_blocked_feature_shows_contract_tasks_gate_and_not_evidenced_source_without_a_runtime_pass()
     {
         var cut = Render<ImplementationGapExplorer>();
-        cut.WaitForElement("[data-testid=ig-feature]");
+        // The overview lists the feature compactly; its full evidence opens on demand.
+        cut.WaitForElement("[data-testid=ig-overview-row]");
+        cut.Find("[data-testid=ig-overview-row]").GetAttribute("data-readiness").Should().Be("Blocked");
+        cut.Find("[data-testid=ig-overview-gates]").TextContent.Should().Contain("ADR-028 (Pending)");
+        cut.FindAll("[data-testid=ig-feature]").Should().BeEmpty("detail is on demand, not one large card per feature");
+        cut.Find("[data-testid=ig-overview-open]").Click();
         var feature = cut.Find("[data-testid=ig-feature]");
         feature.GetAttribute("data-readiness").Should().Be("Blocked");
         cut.Find("[data-testid=ig-feature-name]").TextContent.Should().Be("Parquet.Net for the Bufdata delivery");
@@ -148,7 +153,7 @@ public sealed class ImplementationGapExplorerTests : BunitContext
     public void The_quality_review_variant_shows_readiness_only_with_a_link_to_the_explorer()
     {
         var cut = Render<ImplementationGapExplorer>(p => p.Add(c => c.ReadinessOnly, true));
-        cut.WaitForElement("[data-testid=ig-feature]");
+        cut.WaitForElement("[data-testid=ig-overview-row]");
         cut.FindAll("[data-testid=ig-finding]").Should().BeEmpty();
         cut.Find("[data-testid=ig-open-explorer]").GetAttribute("href").Should().Be("/implementation-review#ig-h");
     }
@@ -162,5 +167,21 @@ public sealed class ImplementationGapExplorerTests : BunitContext
 
         using var bare = new BunitContext();
         bare.Render<ImplementationGapExplorer>().Markup.Trim().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Features_filter_by_status_and_missing_execution_and_a_zero_confirmation_is_not_called_not_implemented()
+    {
+        ImplementationGapExplorer.ReadinessLabel(GapReadiness.NotImplemented).Should().Be("Implementation not confirmed");
+        var cut = Render<ImplementationGapExplorer>();
+        cut.WaitForElement("[data-testid=ig-overview-row]");
+        cut.Find("[data-testid=ig-filter-missing-tests]").Change(true);
+        cut.FindAll("[data-testid=ig-overview-row]").Should().HaveCount(1, "the blocked feature has no executed test");
+        cut.Find("[data-testid=ig-filter-readiness]").Change("Verified");
+        cut.Find("[data-testid=ig-overview-none]");
+        cut.Find("[data-testid=ig-filter-readiness]").Change("");
+        cut.Find("[data-testid=ig-feature-search]").Input("parquet");
+        cut.FindAll("[data-testid=ig-overview-row]").Should().HaveCount(1);
+        cut.Find("[data-testid=ig-overview]").TextContent.Should().NotContain("%");
     }
 }

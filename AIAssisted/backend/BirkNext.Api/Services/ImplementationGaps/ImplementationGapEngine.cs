@@ -442,7 +442,7 @@ public static class ImplementationGapEngine
         var why = readiness switch
         {
             GapReadiness.Blocked => $"Not ready: {string.Join(" ", unapproved.Select(g => $"gate {g.GateId} is {g.Status} — {g.Reason}"))} {implText}",
-            GapReadiness.NotImplemented => $"Not ready: {implText}",
+            GapReadiness.NotImplemented => $"Not ready: {implText} Implementation is not confirmed — no expected source artifact was found at its stated location. That is not proof the feature is absent.",
             GapReadiness.PartiallyImplemented => $"Not ready: {implText}",
             GapReadiness.ImplementedButNotVerified => $"Implemented but not verified: {testText} {runtimeText}",
             GapReadiness.Verified => $"Verified: every implementation task is confirmed in source and every associated test task has passing recorded executions. {runtimeText}",
