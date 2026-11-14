@@ -2,6 +2,7 @@ using BirkNext.ImplementationGaps;
 using BirkNext.Web.Components;
 using BirkNext.Web.Models;
 using BirkNext.Web.Services;
+using BirkNext.Web.Tests.Services;
 using Bunit;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -61,9 +62,11 @@ public sealed class ImplementationGapExplorerTests : BunitContext
         ],
     };
 
+    private readonly Mock<IWorkspaceSessionService> _workspace = new();
+
     public ImplementationGapExplorerTests()
     {
-        var workspace = new Mock<IWorkspaceSessionService>();
+        var workspace = _workspace;
         workspace.SetupGet(w => w.SddLifecycle).Returns(_lifecycle);
         Services.AddSingleton(workspace.Object);
         Services.AddSingleton(_api.Object);
@@ -259,5 +262,94 @@ public sealed class ImplementationGapExplorerTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=ig-unscoped-requirements]").TextContent.Should().Contain("2"));
         cut.Find("[data-testid=ig-unscoped-action]").GetAttribute("href").Should().Contain("correlation-review");
         cut.Find("[data-testid=ig-overview-canonical]").TextContent.Should().StartWith("0 of", "an unscoped FR-019 is never matched to a feature by display id");
+    }
+
+    // ── Feature Readiness reads the persisted Task Alignment run (the session is empty after a browser reload) ──
+    private const string TasksText = "# Tasks\n- [ ] T105 Test the delivery\n- [ ] T119 Write the Parquet file\n";
+    private const string Project = "import:import-7516b48d6bf77426";
+
+    private IRenderedComponent<ImplementationGapExplorer> OpenFeatureWithPersistedAlignment(TaskAlignmentRunApiFake runs)
+    {
+        _workspace.SetupGet(w => w.Tasks).Returns(new WorkspaceArtifact(TasksText, DateTime.UnixEpoch, "tasks.md", Doc));
+        Services.AddSingleton<ITaskAlignmentRunApiService>(runs);
+        Services.AddSingleton(new TaskAlignmentSessionService());
+        var cut = Render<ImplementationGapExplorer>();
+        cut.WaitForElement("[data-testid=ig-overview-open]");
+        cut.Find("[data-testid=ig-overview-open]").Click();
+        return cut;
+    }
+
+    [Fact]
+    public void Feature_readiness_reads_a_current_persisted_task_alignment_run_after_a_reload()
+    {
+        var runs = new TaskAlignmentRunApiFake();
+        var analyzed = new DateTimeOffset(2026, 11, 13, 10, 15, 0, TimeSpan.Zero);
+        runs.Seed(Project, Doc, TaskAlignmentSessionService.HashText(TasksText), analyzed, ("T105", "TechnicalOnly"), ("T119", "Linked"), ("T120", "Linked"));
+
+        var cut = OpenFeatureWithPersistedAlignment(runs);
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ig-alignment]").GetAttribute("data-state").Should().Be("current"));
+        cut.Find("[data-testid=ig-alignment]").TextContent.Should().Contain("2 linked to the specification").And.Contain("1 technical only").And.NotContain("Not assessed");
+        cut.Find("[data-testid=ig-alignment-analyzed]").TextContent.Should().Contain($"last analyzed {analyzed.ToLocalTime():yyyy-MM-dd HH:mm}");
+        cut.Find("[data-testid=ig-shared-evidence]").TextContent.Should().Contain("not implementation or verification evidence", "Task Alignment stays traceability");
+    }
+
+    [Fact]
+    public void A_persisted_run_of_a_changed_tasks_document_is_stale_and_never_counted_as_current()
+    {
+        var runs = new TaskAlignmentRunApiFake();
+        var analyzed = new DateTimeOffset(2026, 11, 1, 7, 0, 0, TimeSpan.Zero);
+        runs.Seed(Project, Doc, TaskAlignmentSessionService.HashText(TasksText + "- [ ] T121 Removed since\n"), analyzed, ("T105", "Linked"), ("T119", "Linked"));
+
+        var cut = OpenFeatureWithPersistedAlignment(runs);
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ig-alignment]").GetAttribute("data-state").Should().Be("stale"));
+        cut.Find("[data-testid=ig-alignment]").TextContent.Should().Contain($"Stale — inputs changed since {analyzed.ToLocalTime():yyyy-MM-dd HH:mm}")
+            .And.NotContain("linked to the specification", "a stale result is not counted");
+        cut.FindAll("[data-testid=ig-alignment-analyzed]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_persisted_run_of_another_document_with_the_same_file_name_or_another_project_is_not_used()
+    {
+        var runs = new TaskAlignmentRunApiFake();
+        var hash = TaskAlignmentSessionService.HashText(TasksText);
+        runs.Seed(Project, "Other/specs/001-skoletjenesten/tasks.md", hash, DateTimeOffset.UnixEpoch, ("T105", "Linked"));
+        runs.Seed("import:another", Doc, hash, DateTimeOffset.UnixEpoch, ("T105", "Linked"));
+
+        var cut = OpenFeatureWithPersistedAlignment(runs);
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ig-alignment]").GetAttribute("data-state").Should().Be("none"));
+        cut.Find("[data-testid=ig-alignment]").TextContent.Should().Contain("Not assessed");
+    }
+
+    [Fact]
+    public void A_run_of_an_earlier_import_of_the_same_project_is_stale_for_a_changed_tasks_document_and_never_reaches_another_project()
+    {
+        var runs = new TaskAlignmentRunApiFake();
+        var analyzed = new DateTimeOffset(2026, 11, 2, 8, 0, 0, TimeSpan.Zero);
+        runs.Seed("import:earlier", "Skole", Doc, TaskAlignmentSessionService.HashText(TasksText + "- [ ] T121 Changed since\n"), analyzed, ("T105", "Linked"));
+        runs.Seed("import:elsewhere", "Another", Doc, TaskAlignmentSessionService.HashText(TasksText), analyzed.AddDays(1), ("T105", "Linked"));
+        Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Imported", Project, "Skole")).Object);
+
+        var cut = OpenFeatureWithPersistedAlignment(runs);
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ig-alignment]").GetAttribute("data-state").Should().Be("stale"));
+        cut.Find("[data-testid=ig-alignment]").TextContent.Should().Contain("analyzed in an earlier import of this project")
+            .And.NotContain("linked to the specification", "a stale result from an earlier source revision is never counted");
+    }
+
+    [Fact]
+    public void An_identical_tasks_document_analyzed_in_an_earlier_import_is_current_and_says_so()
+    {
+        var runs = new TaskAlignmentRunApiFake();
+        runs.Seed("import:earlier", "Skole", Doc, TaskAlignmentSessionService.HashText(TasksText), new DateTimeOffset(2026, 11, 2, 8, 0, 0, TimeSpan.Zero), ("T105", "Linked"), ("T119", "Linked"));
+        Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Imported", Project, "Skole")).Object);
+
+        var cut = OpenFeatureWithPersistedAlignment(runs);
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ig-alignment]").GetAttribute("data-state").Should().Be("current"));
+        cut.Find("[data-testid=ig-alignment-analyzed]").GetAttribute("data-earlier-import").Should().Be("true");
+        cut.Find("[data-testid=ig-alignment-analyzed]").TextContent.Should().Contain("earlier import (identical Tasks document)");
     }
 }

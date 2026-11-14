@@ -307,7 +307,7 @@
         if (_evaluation is { } e && _module.Length == 0)
             _module = e.Features.Where(f => f.FeatureId.StartsWith("gate:", StringComparison.Ordinal)).Select(f => Module(f.DocumentPath)).FirstOrDefault() ?? "";
         ResetPaging();
-        if (_evaluation is not null) await LoadSharedEvidenceAsync();
+        if (_evaluation is not null) { await LoadPersistedAlignmentAsync(); await LoadSharedEvidenceAsync(); }
     }
 
     private async Task PickAsync(ChangeEventArgs args)
@@ -458,15 +458,61 @@
         StateHasChanged();
     }
 
-    /// <summary>Task Alignment applies only when its stored result is for exactly this tasks document (same content fingerprint).</summary>
-    private Dictionary<string, AlignmentStatus>? AlignmentFor(GapFeatureAssessment f)
+    /// <summary>The Task Alignment evidence for a feature: current (statuses usable), stale (shown as stale, never counted) or none.</summary>
+    private sealed record AlignmentEvidence(string State, Dictionary<string, AlignmentStatus>? Statuses, DateTimeOffset? AnalyzedAt, bool EarlierImport = false)
     {
-        if (Services.GetService(typeof(TaskAlignmentSessionService)) is not TaskAlignmentSessionService session || session.Report is not { } report || session.Snapshot is not { } snap
-            || Artifacts?.Tasks is not { } tasks) return null;
-        var path = (tasks.SourcePath ?? tasks.FileName ?? "").Replace('\\', '/');
-        if (path.Length == 0 || !(path.EndsWith(f.DocumentPath, StringComparison.OrdinalIgnoreCase) || f.DocumentPath.EndsWith(path, StringComparison.OrdinalIgnoreCase))) return null;
-        if (TaskAlignmentSessionService.CreateSnapshot(null, "", tasks.Text).TasksHash != snap.TasksHash) return null;
-        return report.Findings.GroupBy(x => x.TaskId).ToDictionary(g => g.Key, g => g.First().Status, StringComparer.Ordinal);
+        public static readonly AlignmentEvidence None = new("none", null, null);
+    }
+
+    /// <summary>The latest persisted Task Alignment run of the selected Tasks document in this project (survives a reload; the session does not).</summary>
+    private BirkNext.TaskAlignment.TaskAlignmentRun? _persistedAlignment;
+    private string? _alignmentProjectKey;
+    private string? _alignmentProjectName;
+
+    /// <summary>The project key Task Alignment runs are stored under: the explorers' workspace scope, else this evaluation's scope (import:{id}).</summary>
+    private string? AlignmentProjectKey() =>
+        (Services.GetService(typeof(BirkNext.Web.Services.Explorers.IArtifactExplorerContext)) as BirkNext.Web.Services.Explorers.IArtifactExplorerContext)?.CurrentScope
+        ?? (_evaluation?.ScopeKey is { Length: > 0 } scopeKey ? scopeKey
+            : _evaluation?.ProjectImportId is { Length: > 0 } importId ? ImplementationGapApiService.ImportScope(importId) : null);
+
+    private static string TasksPathOf(WorkspaceArtifact tasks) => (tasks.SourcePath ?? tasks.FileName ?? "").Replace('\\', '/');
+
+    private async Task LoadPersistedAlignmentAsync()
+    {
+        _persistedAlignment = null;
+        _alignmentProjectKey = AlignmentProjectKey();
+        _alignmentProjectName = await TaskAlignmentProjectName.OfAsync(Services, _alignmentProjectKey);
+        if (Services.GetService(typeof(ITaskAlignmentRunApiService)) is not ITaskAlignmentRunApiService runs || _alignmentProjectKey is null
+            || Artifacts?.Tasks is not { } tasks || TasksPathOf(tasks) is not { Length: > 0 } path) return;
+        var (run, _) = await runs.LatestOfProjectAsync(_alignmentProjectKey, BirkNext.TaskAlignment.TaskAlignmentRunRules.NormalizePath(path), _alignmentProjectName);
+        _persistedAlignment = run;
+    }
+
+    /// <summary>
+    /// Task Alignment applies only when a result is for exactly this tasks document: the session's result when its fingerprint matches, else
+    /// the latest persisted run of the same project and full document path — Current when the fingerprint and rules match, Stale otherwise.
+    /// A run of another project or another document with the same file name is never used.
+    /// </summary>
+    private AlignmentEvidence AlignmentFor(GapFeatureAssessment f)
+    {
+        if (Artifacts?.Tasks is not { } tasks) return AlignmentEvidence.None;
+        var path = TasksPathOf(tasks);
+        if (path.Length == 0 || !(path.EndsWith(f.DocumentPath, StringComparison.OrdinalIgnoreCase) || f.DocumentPath.EndsWith(path, StringComparison.OrdinalIgnoreCase))) return AlignmentEvidence.None;
+        var hash = TaskAlignmentSessionService.HashText(tasks.Text);
+        if (Services.GetService(typeof(TaskAlignmentSessionService)) is TaskAlignmentSessionService session && session.Report is { } report && session.Snapshot is { } snap
+            && (snap.TasksPath is null || BirkNext.TaskAlignment.TaskAlignmentRunRules.SamePath(snap.TasksPath, path)) && snap.TasksHash == hash)
+            return new("current", report.Findings.GroupBy(x => x.TaskId).ToDictionary(g => g.Key, g => g.First().Status, StringComparer.Ordinal), snap.AnalyzedAtUtc);
+        if (_persistedAlignment is not { } run || !BirkNext.TaskAlignment.TaskAlignmentRunRules.IsComplete(run)) return AlignmentEvidence.None;
+        var state = BirkNext.TaskAlignment.TaskAlignmentRunRules.Classify(run.Summary, _alignmentProjectKey, path, hash, rulesVersion: TaskSpecAlignmentService.RulesVersion,
+            projectName: _alignmentProjectName);
+        var earlier = BirkNext.TaskAlignment.TaskAlignmentRunRules.IsEarlierImport(run.Summary, _alignmentProjectKey, _alignmentProjectName);
+        return state switch
+        {
+            BirkNext.TaskAlignment.TaskAlignmentRunCurrentness.Current => new("current",
+                run.Tasks.GroupBy(x => x.TaskId).ToDictionary(g => g.Key, g => TaskAlignmentRunMapper.ToFinding(g.First()).Status, StringComparer.Ordinal), run.Summary.AnalyzedAt, earlier),
+            BirkNext.TaskAlignment.TaskAlignmentRunCurrentness.Stale => new("stale", null, run.Summary.AnalyzedAt, earlier),
+            _ => AlignmentEvidence.None,
+        };
     }
 
     private RenderFragment SharedEvidence(GapFeatureAssessment f, List<string> taskIds) => __builder =>
@@ -487,12 +533,17 @@
                             <span class="ig-chip @(key is null ? "ig-g-Unknown" : "")" title="@(key ?? "Not found by module/feature/id in the latest canonical interpretation")" data-testid="ig-canonical-req" data-resolved="@(key is not null ? "true" : "false")">@id@(key is null ? " · identity not resolved" : established.Count > 0 ? $" · {established.Count} established scenario{(established.Count == 1 ? "" : "s")}" : " · no established scenario")</span>
                         }
                     }</dd></div>
-                <div><dt>Task Alignment</dt><dd data-testid="ig-alignment">
-                    @if (alignment is null) { <span>Not assessed — no current Task Alignment result for this tasks document (run Task Alignment Review on it).</span> }
+                <div><dt>Task Alignment</dt><dd data-testid="ig-alignment" data-state="@alignment.State">
+                    @if (alignment.State == "stale")
+                    {
+                        <span>Stale — inputs changed since @(alignment.AnalyzedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))@(alignment.EarlierImport ? " (analyzed in an earlier import of this project; the Tasks document differs in this source revision)" : ""). Not counted as current Task Alignment; re-run Task Alignment Review on this tasks document.</span>
+                    }
+                    else if (alignment.Statuses is not { } statuses) { <span>Not assessed — no current Task Alignment result for this tasks document (run Task Alignment Review on it).</span> }
                     else
                     {
-                        var states = taskIds.Select(t => alignment.TryGetValue(t, out var st) ? st.ToString() : "NotAnalysed").GroupBy(x => x).Select(g => $"{g.Count()} {AlignmentLabel(g.Key)}");
+                        var states = taskIds.Select(t => statuses.TryGetValue(t, out var st) ? st.ToString() : "NotAnalysed").GroupBy(x => x).Select(g => $"{g.Count()} {AlignmentLabel(g.Key)}");
                         <span>@string.Join(" · ", states)</span>
+                        if (alignment.AnalyzedAt is { } at) { <span class="ig-context" data-testid="ig-alignment-analyzed" data-earlier-import="@(alignment.EarlierImport ? "true" : "false")"> · Current · last analyzed @at.ToLocalTime().ToString("yyyy-MM-dd HH:mm")@(alignment.EarlierImport ? " in an earlier import (identical Tasks document)" : "")</span> }
                     }</dd></div>
             </dl>
             <p class="ig-context">A requirement resolved in the canonical interpretation and a task linked to the specification are traceability, not implementation or verification evidence.</p>

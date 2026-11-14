@@ -381,6 +381,10 @@ if (entra.Configured)
 var implementationGapClient = builder.Services.AddHttpClient<IImplementationGapApiService, ImplementationGapApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
     implementationGapClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
+// Task Alignment runs: completed analyses persisted per project and Tasks document, restored after a reload (Feature Readiness reads them too).
+var taskAlignmentRunClient = builder.Services.AddHttpClient<ITaskAlignmentRunApiService, TaskAlignmentRunApiService>(client => client.BaseAddress = backendBase);
+if (entra.Configured)
+    taskAlignmentRunClient.AddHttpMessageHandler(sp => new OptionalBearerTokenHandler(sp.GetRequiredService<IAccessTokenProvider>(), backendBase, entra.ApiScopes));
 // Generated integration suites: draft-only generation over existing owners (contracts, tests, Test Data, journeys, M01 Kode 6/7), authorised runs.
 var integrationSuiteClient = builder.Services.AddHttpClient<IIntegrationSuiteApiService, IntegrationSuiteApiService>(client => client.BaseAddress = backendBase);
 if (entra.Configured)
@@ -419,6 +423,9 @@ builder.Services.AddHttpClient<IClassificationReviewApiService, ClassificationRe
     client.BaseAddress = backendBase);
 // Manual review decisions (API Quality Review obligations, M01 controls): append-only, with history; never an automated result.
 builder.Services.AddHttpClient<IManualReviewApiService, ManualReviewApiService>(client =>
+    client.BaseAddress = backendBase);
+// Project-declared Integration Journeys (name + ordered component chain): Test Coverage association candidates and Scope Registry Journey members.
+builder.Services.AddHttpClient<IDeclaredIntegrationJourneyApiService, DeclaredIntegrationJourneyApiService>(client =>
     client.BaseAddress = backendBase);
 // Dependency Review: read-only analysis of uploaded repository archives (synthetic version simulation only) and source-free dependency
 // health over stored inventories (registry/advisory lookups for hundreds of packages can take a while, hence the longer timeout).

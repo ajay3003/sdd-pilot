@@ -194,6 +194,10 @@ builder.Services.AddScoped<BirkNext.Api.Services.ScopeRegistry.ScopeMemberCatalo
 builder.Services.AddScoped<BirkNext.Api.Services.ScopeRegistry.IScopeMemberResolver>(sp => sp.GetRequiredService<BirkNext.Api.Services.ScopeRegistry.ScopeMemberCatalogService>());
 builder.Services.AddScoped<BirkNext.Api.Services.ScopeRegistry.SystemsOverviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.ScopeRegistry.ScopeRegistryService>();
+// Task Alignment runs: their own schema (task_alignment); immutable completed runs per project and Tasks document, never document bodies.
+builder.Services.AddDbContext<BirkNext.Api.Data.TaskAlignment.TaskAlignmentDbContext>(options =>
+    BirkNext.Api.Data.TaskAlignment.TaskAlignmentDbContext.Configure(options, databaseConnectionString));
+builder.Services.AddScoped<BirkNext.Api.Services.TaskAlignment.TaskAlignmentRunService>();
 // Shared Snapshot Registry: its own schema (snapshot_registry); metadata synced from each owner store by adapters, payloads never copied.
 builder.Services.AddDbContext<BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext>(options =>
     BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext.Configure(options, databaseConnectionString));
@@ -217,13 +221,16 @@ builder.Services.AddScoped(sp => new BirkNext.Api.Services.DeliveryReporting.Azu
     sp.GetRequiredService<BirkNext.Api.Services.DeliveryReporting.AzureDevOps.AzureDevOpsConnectionStore>(),
     BirkNext.Api.Services.DeliveryReporting.AzureDevOps.AzureDevOpsGitClient.DevelopmentBaseUri(builder.Environment, builder.Configuration)));
 builder.Services.AddScoped<BirkNext.Api.Services.DeliveryReporting.AzureDevOps.DeliveryAzureDevOpsImportService>();
+// Delivery "Filter by scope": resolves shared Scope Registry membership in-process (approved revisions only) at freeze/report generation time.
+builder.Services.AddScoped(sp => new BirkNext.Api.Services.DeliveryReporting.DeliveryScopeFilterService(sp.GetService<BirkNext.Api.Services.ScopeRegistry.ScopeRegistryService>()));
 builder.Services.AddScoped<BirkNext.Api.Services.DeliveryReporting.WeeklyReportService>();
 // Functional Quality Scope: projection over Delivery snapshots + canonical relations + declared domain-profile flows (stores references only).
 builder.Services.AddScoped(sp => new BirkNext.Api.Services.DeliveryReporting.FunctionalQualityScopeService(
     sp.GetRequiredService<BirkNext.Api.Data.DeliveryReporting.DeliveryReportingDbContext>(), TimeProvider.System,
     sp.GetServices<BirkNext.Api.Services.IntegrationTopology.ITopologyProfile>(),
     sp.GetService<BirkNext.Api.Data.CanonicalInterpretation.CanonicalInterpretationDbContext>(),
-    sp.GetService<BirkNext.Api.Services.TestData.TestDataCatalog>()));
+    sp.GetService<BirkNext.Api.Services.TestData.TestDataCatalog>(),
+    sp.GetService<BirkNext.Api.Services.DeliveryReporting.DeliveryScopeFilterService>()));
 builder.Services.AddScoped(sp => new BirkNext.Api.Services.DeliveryReporting.DeliveryScopeService(
     sp.GetService<BirkNext.Api.Services.CanonicalInterpretation.CanonicalInterpretationService>(),
     sp.GetService<BirkNext.Api.Services.DeliveryReporting.FunctionalQualityScopeService>()));
@@ -802,6 +809,8 @@ builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.TestPlanSuggestion
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.IScenarioReviewSource>(sp => sp.GetRequiredService<BirkNext.Api.Services.TestPlanning.TestPlanSuggestionService>());
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.RequirementCoverageService>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyPackRegistry, BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyPackRegistry>();
+// Project-declared Integration Journeys (name + ordered component chain; design metadata only): Test Coverage association candidates, Scope Registry Journey members.
+builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.DeclaredIntegrationJourneyStore>();
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunner(
     sp.GetServices<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepExecutor>(), sp.GetServices<BirkNext.Api.Services.IntegrationJourneys.IJourneyStepObserver>(), TimeProvider.System));
 builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunStore>();
@@ -1058,7 +1067,8 @@ try
                      ("Delivery reporting", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.DeliveryReporting.DeliveryReportingDbContext>()),
                      ("Canonical interpretation", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.CanonicalInterpretation.CanonicalInterpretationDbContext>()),
                      ("Snapshot registry", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext>()),
-                     ("Scope registry", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.ScopeRegistry.ScopeRegistryDbContext>()) })
+                     ("Scope registry", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.ScopeRegistry.ScopeRegistryDbContext>()),
+                     ("Task alignment", scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.TaskAlignment.TaskAlignmentDbContext>()) })
         {
             var schema = await BirkNext.Api.Services.SystemInfo.BuildInfoService.SchemaAsync(name, context, CancellationToken.None);
             if (schema.Status != BirkNext.BuildInfo.SchemaCompatibility.AheadOfBuild) continue;
@@ -1072,6 +1082,7 @@ try
         await DatabaseMigrationLock.MigrateAsync(scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.CanonicalInterpretation.CanonicalInterpretationDbContext>());
         await DatabaseMigrationLock.MigrateAsync(scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext>());
         await DatabaseMigrationLock.MigrateAsync(scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.ScopeRegistry.ScopeRegistryDbContext>());
+        await DatabaseMigrationLock.MigrateAsync(scope.ServiceProvider.GetRequiredService<BirkNext.Api.Data.TaskAlignment.TaskAlignmentDbContext>());
     }
     // Saved Target Environment Altinn settings are read synchronously by the execution policy: load them once at startup.
     await scope.ServiceProvider.GetRequiredService<BirkNext.Api.Services.AltinnTesting.AltinnEnvironmentSettingsStore>().WarmAsync();

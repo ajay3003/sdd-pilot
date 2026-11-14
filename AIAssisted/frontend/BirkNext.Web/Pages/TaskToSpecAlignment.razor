@@ -98,7 +98,11 @@
                 {
                     <div><dt>Specification</dt><dd><code title="SHA-256 of the Specification the result was produced from">@TaskAlignmentSessionService.ShortHash(snapshot.SpecificationHash)</code></dd></div>
                     <div><dt>Task artifact</dt><dd><code title="SHA-256 of the Task artifact the result was produced from">@TaskAlignmentSessionService.ShortHash(snapshot.TasksHash)</code></dd></div>
-                    <div><dt>Analyzed</dt><dd>@snapshot.AnalyzedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</dd></div>
+                    <div><dt>Last analyzed</dt><dd data-testid="ir-analyzed-at">@snapshot.AnalyzedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</dd></div>
+                }
+                @if (RunApi is not null)
+                {
+                    <div><dt>Saved result</dt><dd data-testid="ir-saved" data-state="@SaveDataState">@SaveText</dd></div>
                 }
                 <div><dt>Method</dt><dd>Deterministic rules</dd></div>
                 <div><dt>Design inputs</dt><dd data-testid="ir-design-inputs">@DesignInputs()</dd></div>
@@ -108,9 +112,30 @@
         @if (_currentness == TaskAlignmentCurrentness.Stale)
         {
             <div class="ir-stale" role="status" data-testid="ir-stale">
+                <p data-testid="ir-stale-since">@StaleText(snapshot)</p>
                 <p><strong>Results are stale.</strong> The Specification or the Task artifact changed after this analysis ran. The results below describe the earlier artifacts.</p>
                 <button type="button" class="ir-action ir-action--primary" @onclick="RunAnalysis">Re-analyze</button>
             </div>
+        }
+
+        @if (AlignmentSession.SaveState == TaskAlignmentSaveState.Failed && RunApi is not null)
+        {
+            <div class="notification notification-warning" role="status" data-testid="ir-save-failed">
+                <strong>Not saved.</strong> @AlignmentSession.SaveError The result is shown for this session only and will not be available after a reload.
+            </div>
+        }
+
+        @if (_history.Count > 0)
+        {
+            <details class="ir-history" data-testid="ir-history">
+                <summary>Earlier runs of this Task artifact (@_history.Count) — history only, never the current result</summary>
+                <ul>
+                    @foreach (var run in _history)
+                    {
+                        <li data-testid="ir-history-run" data-state="historical">Historical · analyzed @run.AnalyzedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @run.Counts.TotalTasks @(run.Counts.TotalTasks == 1 ? "task" : "tasks") · Task artifact <code>@TaskAlignmentSessionService.ShortHash(run.TasksHash)</code></li>
+                    }
+                </ul>
+            </details>
         }
 
         @if (report.TotalTasks == 0)
@@ -449,6 +474,14 @@
     private bool _workspaceHasArtifacts;
     private ArtifactExplorerState? _specState;
     private ArtifactExplorerState? _tasksState;
+    /// <summary>Full paths of the selected Tasks and Specification documents within the project (a persisted run is bound to the Tasks path).</summary>
+    private string? _tasksPath, _specPath;
+    /// <summary>Earlier persisted runs of the same project and Tasks document: history only, never the current result.</summary>
+    private List<BirkNext.TaskAlignment.TaskAlignmentRunSummary> _history = [];
+    private bool _saving;
+
+    // Resolved optionally: hosts without the backend client (tests, offline) keep the session-only behaviour.
+    private ITaskAlignmentRunApiService? RunApi => Services.GetService<ITaskAlignmentRunApiService>();
 
     private AlignmentReport? _report;
     private TaskAlignmentCurrentness _currentness = TaskAlignmentCurrentness.NotRun;
@@ -511,17 +544,22 @@
             _tasksText = tasks.Status == ExplorerArtifactStatus.Loaded ? tasks.Content ?? string.Empty : string.Empty;
             _specLoaded = !string.IsNullOrEmpty(_specText);
             _tasksLoaded = !string.IsNullOrEmpty(_tasksText);
+            _tasksPath = tasks.Status == ExplorerArtifactStatus.Loaded ? PathOf(tasks.Selected) : null;
+            _specPath = spec.Status == ExplorerArtifactStatus.Loaded ? PathOf(spec.Selected) : null;
+            _tasksModule = tasks.Selected?.Module is { Length: > 0 } m ? m : tasks.Module;
+            _tasksFeature = tasks.Pack ?? tasks.Selected?.Feature;
             _loaded = true;
             if (projectChanged) AlignmentSession.Clear();
 
             if (_specLoaded && _tasksLoaded)
             {
-                RestoreOrRunAnalysis();
+                await RestoreOrRunAnalysis();
             }
             else
             {
                 _report = null;
                 _currentness = TaskAlignmentCurrentness.NotRun;
+                _history = [];
             }
         }
         catch (Exception ex)
@@ -536,7 +574,17 @@
     /// <summary>The identity a result is bound to (with the two fingerprints): the workspace scope, never a display name.</summary>
     /// <summary>The scope plus the design inputs: a result computed without (or with other) Constitution / Data Model content is never restored as
     /// current — that reused a design-less run and showed 0 design artifact links after the documents were selected.</summary>
-    private string SessionKey => $"{_scope ?? "manual-workspace"}|design:{DesignFingerprint(_constitutionText)}:{DesignFingerprint(_dataModelText)}";
+    private string SessionKey => TaskAlignmentSessionService.ContextKey(ProjectKey, DesignInputsKey);
+
+    /// <summary>The project a persisted run belongs to: the workspace scope (an import, a Sample Project) or the manual workspace.</summary>
+    private string ProjectKey => _scope ?? BirkNext.TaskAlignment.TaskAlignmentRunRules.ManualWorkspace;
+
+    private string DesignInputsKey => $"{DesignFingerprint(_constitutionText)}:{DesignFingerprint(_dataModelText)}";
+
+    private string? _tasksModule, _tasksFeature;
+
+    private static string? PathOf(ExplorerArtifact? artifact) =>
+        artifact is null ? null : (artifact.SourcePath is { Length: > 0 } p ? p : artifact.FileName) is { Length: > 0 } path ? path.Replace('\\', '/') : null;
 
     private static string DesignFingerprint(string text) => string.IsNullOrEmpty(text) ? "none"
         : Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text)))[..12];
@@ -600,6 +648,7 @@
         _tasksLoaded = false;
         _report = null;
         _currentness = TaskAlignmentCurrentness.NotRun;
+        _history = [];
         AlignmentSession.Clear();
     }
 
@@ -607,7 +656,12 @@
     /// A result bound to the loaded artifacts is restored as Current. A result for this project whose Specification or
     /// Task fingerprint no longer matches is shown as Stale until Re-analyze. With no result the deterministic analysis runs.
     /// </summary>
-    private void RestoreOrRunAnalysis()
+    /// <remarks>
+    /// After a browser reload the session is empty: the latest persisted run of exactly this project and Tasks document path is restored first
+    /// (Current when both fingerprints, the rules and the design inputs match; Stale when the same document changed). A run of another project
+    /// or another Tasks document with the same file name is never restored.
+    /// </remarks>
+    private async Task RestoreOrRunAnalysis()
     {
         _analysisError = null;
 
@@ -618,23 +672,30 @@
             return;
         }
 
-        var currentness = AlignmentSession.GetCurrentness(SessionKey, _specText, _tasksText);
+        var currentness = AlignmentSession.GetCurrentness(SessionKey, _specText, _tasksText, _tasksPath);
+        if (currentness == TaskAlignmentCurrentness.NotRun && RunApi is { } api && _tasksPath is not null)
+        {
+            await AlignmentSession.RestoreLatestAsync(api, ProjectKey, _tasksPath);
+            currentness = AlignmentSession.GetCurrentness(SessionKey, _specText, _tasksText, _tasksPath);
+        }
+
         if (currentness != TaskAlignmentCurrentness.NotRun)
         {
             if (TryNormalizeReport(AlignmentSession.Report, out var cachedReport))
             {
                 _report = cachedReport;
                 _currentness = currentness;
+                await LoadHistoryAsync();
                 return;
             }
 
             AlignmentSession.Clear();
         }
 
-        RunAnalysis();
+        await RunAnalysis();
     }
 
-    private void RunAnalysis()
+    private async Task RunAnalysis()
     {
         try
         {
@@ -644,7 +705,7 @@
 
             var reviewContext = BuildReviewContext();
             _report = NormalizeReport(ImplementationReview.Analyse(reviewContext));
-            AlignmentSession.SaveResult(_report, SessionKey, _specText, _tasksText);
+            AlignmentSession.SaveResult(_report, SessionKey, _specText, _tasksText, tasksPath: _tasksPath);
             _currentness = TaskAlignmentCurrentness.Current;
             _expandedFindings.Clear();
         }
@@ -654,8 +715,54 @@
             _report = null;
             _currentness = TaskAlignmentCurrentness.NotRun;
             AlignmentSession.Clear();
+            return;
         }
+
+        await PersistAsync();
     }
+
+    /// <summary>Saves the completed analysis as an immutable run. A failed save is shown and the result is never presented as saved.</summary>
+    private async Task PersistAsync()
+    {
+        if (RunApi is not { } api || _tasksPath is null || _report is null) return;
+        _saving = true;
+        try
+        {
+            await AlignmentSession.PersistAsync(api, new TaskAlignmentRunContext(ProjectKey, _tasksPath, DesignInputsKey, _specPath, _tasksModule, _tasksFeature,
+                ProjectName: await TaskAlignmentProjectName.OfAsync(Services, ProjectKey)));
+        }
+        finally { _saving = false; }
+        await LoadHistoryAsync();
+    }
+
+    /// <summary>Earlier runs of this Task artifact (the shown run excluded): listed as history, never as current.</summary>
+    private async Task LoadHistoryAsync()
+    {
+        _history = [];
+        if (RunApi is not { } api || _tasksPath is null) return;
+        var (runs, _) = await api.ListAsync(ProjectKey, _tasksPath);
+        var shown = AlignmentSession.Snapshot?.RunId;
+        _history = [.. (runs ?? []).Where(r => r.Id != shown && string.Equals(r.ProjectKey, ProjectKey, StringComparison.Ordinal)
+            && BirkNext.TaskAlignment.TaskAlignmentRunRules.SamePath(r.TasksPath, _tasksPath))];
+    }
+
+    private string SaveDataState => _saving ? "saving" : AlignmentSession.SaveState switch
+    {
+        TaskAlignmentSaveState.Saved => "saved",
+        TaskAlignmentSaveState.Failed => "failed",
+        _ => "not-saved",
+    };
+
+    private string SaveText => _saving ? "Saving…" : AlignmentSession.SaveState switch
+    {
+        TaskAlignmentSaveState.Saved => "Saved — available after a reload",
+        TaskAlignmentSaveState.Failed => "Not saved — this result will not be available after a reload",
+        _ => "Not saved",
+    };
+
+    internal static string StaleText(TaskAlignmentSnapshot? snapshot) => snapshot is null
+        ? "Stale — inputs changed since the last analysis"
+        : $"Stale — inputs changed since {snapshot.AnalyzedAtUtc.ToLocalTime():yyyy-MM-dd HH:mm}";
 
     private async Task ExportHtml()
     {

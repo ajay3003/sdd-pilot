@@ -148,6 +148,7 @@
     <Compile Include="../../shared/ParquetQualityContracts.cs" Link="Models/ParquetQualityContracts.cs" />
     <Compile Include="../../shared/BlobStorageContracts.cs" Link="Models/BlobStorageContracts.cs" />
     <Compile Include="../../shared/ImplementationGapContracts.cs" Link="Models/ImplementationGapContracts.cs" />
+    <Compile Include="../../shared/TaskAlignmentRunContracts.cs" Link="Models/TaskAlignmentRunContracts.cs" />
     <Compile Include="../../shared/IntegrationSuiteContracts.cs" Link="Models/IntegrationSuiteContracts.cs" />
     <Compile Include="../../shared/CompositeSuiteContracts.cs" Link="Models/CompositeSuiteContracts.cs" />
     <Compile Include="../../shared/ExecutionExplorerContracts.cs" Link="Models/ExecutionExplorerContracts.cs" />
