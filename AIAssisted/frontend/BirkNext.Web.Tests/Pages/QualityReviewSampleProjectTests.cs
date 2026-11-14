@@ -6158,4 +6158,46 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         string? Tasks,
         string? DataModel,
         IReadOnlyList<string> SelectedPackIds);
+
+    [Fact]
+    public void Reviewer_decisions_keep_rationale_and_history_and_a_failed_save_can_be_retried()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        var qaReport = new QaAuditReport { Findings = [new() { RuleCode = "PP-02", Title = "Principle 2", Severity = QaSeverity.High, Category = QaCategory.Constitution }], HasConstitution = true };
+        _qualityReview.SetReport(MakeReport(new QualityReviewPackResult { PackId = "qa-auditor", PackName = "QA Auditor", Score = 60, High = 1, QaAudit = qaReport }));
+        var store = new List<BirkNext.ManualReview.ManualReviewDecisionView>();
+        var fail = true;
+        var api = new Mock<IManualReviewApiService>();
+        api.Setup(a => a.ListAsync(BirkNext.ManualReview.ManualReviewModules.DocumentQuality, It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => [.. store]);
+        api.Setup(a => a.RecordAsync(It.IsAny<BirkNext.ManualReview.ManualReviewDecisionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((BirkNext.ManualReview.ManualReviewDecisionRequest r, CancellationToken _) =>
+            {
+                if (fail) { fail = false; return (null, "The backend could not be reached."); }
+                foreach (var old in store.Where(d => d.SubjectKey == r.SubjectKey).ToList()) store[store.IndexOf(old)] = old with { Current = false };
+                var view = new BirkNext.ManualReview.ManualReviewDecisionView { Id = Guid.NewGuid(), Module = r.Module, ScopeKey = r.ScopeKey, SubjectKey = r.SubjectKey, Reviewer = r.Reviewer,
+                    Decision = r.Decision, Note = r.Note, AppliesTo = r.AppliesTo, DecidedAt = DateTimeOffset.Parse("2026-11-14T10:00:00Z"), Current = true };
+                store.Add(view);
+                return (view, null);
+            });
+        Services.AddSingleton(api.Object);
+
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=qr-decisions]"));
+        cut.Find("[data-testid=qr-reviewer]").Input("Test lead");
+        cut.Find("[data-testid=qr-decision-value]").Change("RiskAccepted");
+        cut.Find("[data-testid=qr-decision-rationale]").Input("Accepted for release 1.2; owner agreed");
+        cut.Find("[data-testid=qr-decision-record]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=qr-decision-error]").TextContent.Should().Contain("retry"));
+        cut.Find("[data-testid=qr-decision-rationale]").GetAttribute("value").Should().Be("Accepted for release 1.2; owner agreed", "a failed save keeps the input");
+
+        cut.Find("[data-testid=qr-decision-record]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=qr-decision-current]").TextContent.Should().Contain("Accepted documentation risk").And.Contain("Test lead").And.Contain("owner agreed"));
+        cut.FindAll("[data-testid=qr-decision-error]").Should().BeEmpty();
+        cut.Find("[data-testid=qr-decision-history]").TextContent.Should().Contain("Decision history (1)");
+        store.Single().Note.Should().Be("Accepted for release 1.2; owner agreed");
+        cut.Find(".qr-issue-card").TextContent.Should().Contain("PP-02", "the rule result is unchanged by a decision");
+    }
 }

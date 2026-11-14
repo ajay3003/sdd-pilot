@@ -1220,3 +1220,7 @@
 .qr-decision-rule { font-family: var(--font-mono, ui-monospace, monospace); font-size: .8rem; }
 .qr-decision-controls { display: inline-flex; gap: .35rem; margin-left: auto; }
 .qr-decision-controls select { padding: .25rem .4rem; border: 1px solid var(--clr-border, #e2e8f0); border-radius: 6px; font-size: .85rem; }
+.qr-decision-why { padding: .25rem .45rem; border: 1px solid var(--clr-border, #e2e8f0); border-radius: 6px; font-size: .85rem; min-width: min(16rem, 100%); }
+.qr-decision-history { flex-basis: 100%; font-size: .85rem; }
+.qr-decision-history > summary { cursor: pointer; color: var(--clr-text-muted, #475467); }
+.qr-decision-error { color: var(--clr-danger, #b91c1c); }

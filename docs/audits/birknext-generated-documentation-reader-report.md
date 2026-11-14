@@ -100,3 +100,7 @@
 - The structured architecture views (resources, services, dependencies) are still the existing *Structured interpretation* under Outline; component inventories in the prose are not regrouped.
 - Health findings are linked, not shown inline. The Explorer does not run Health, and Health is evaluated per snapshot and module, not per document.
 - Systems & Scopes scope filtering of documents: there is no reliable mapping from scope members to document sections, so none is invented.
+
+## Update 2026-11-14
+
+Further gaps closed and verified on the final build (partitions 1–6, full frontend, browser 52/52): see `birknext-next-cross-module-gap-closure.md`.

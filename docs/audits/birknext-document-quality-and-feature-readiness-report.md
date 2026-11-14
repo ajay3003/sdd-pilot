@@ -95,3 +95,7 @@
 - **The results area** keeps its existing per-pack sections. Severity, document and pack filters across all findings were not added.
 - **Feature Readiness** still does not use Task Alignment or the canonical interpretation, and imported TRX executions reach it only on re-evaluate. Scope (Systems & Scopes) filtering of features was not added, because features have no scope member kind.
 - **Cross-module links** stay the existing ones (task links, gate anchors, Implementation Review). No new links were invented from display text.
+
+## Update 2026-11-14
+
+Further gaps closed and verified on the final build (partitions 1–6, full frontend, browser 52/52): see `birknext-next-cross-module-gap-closure.md`.

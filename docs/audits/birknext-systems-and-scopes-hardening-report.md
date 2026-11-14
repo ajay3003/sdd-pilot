@@ -162,3 +162,7 @@
 - **Not consuming scopes yet:** Critical E2E (flows have no scope member kind), Test Coverage & Overlap, Requirements Traceability, Impact Analysis, Unified Impact Analysis, Delivery Overview / Reports and Recommended Workflow. Each still uses its own context. Scope selection is never an execution authorization.
 - **Visual graph:** there is no graph canvas. The focused incoming/outgoing map is an accessible list, and no new graph library was added.
 - **Task-30 audit documents:** the five scope audit documents in `docs/audits` are untracked files from another session and were not edited. This report and the committed implementation report record the actual state.
+
+## Update 2026-11-14
+
+Further gaps closed and verified on the final build (partitions 1–6, full frontend, browser 52/52): see `birknext-next-cross-module-gap-closure.md`.

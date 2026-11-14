@@ -859,6 +859,9 @@
 
     // ── Reviewer decisions (the shared manual-review store; a decision never changes a rule result) ──────────────────────────
     private readonly Dictionary<string, BirkNext.ManualReview.ManualReviewDecisionView> _decisions = [];
+    private readonly Dictionary<string, List<BirkNext.ManualReview.ManualReviewDecisionView>> _history = [];
+    private readonly Dictionary<string, string> _rationale = [];
+    private string? _decisionError;
     private readonly Dictionary<string, BirkNext.ManualReview.ManualReviewDecisionValue> _draftDecision = [];
     private string _reviewer = "", _decisionScope = "";
     private string? _decisionStatus;
@@ -882,11 +885,12 @@
     {
         if (DecisionScope == _decisionScope) return;
         _decisionScope = DecisionScope;
-        _decisions.Clear();
+        _decisions.Clear(); _history.Clear();
         if (Services.GetService<IManualReviewApiService>() is not { } api) { _decisionsUnavailable = true; return; }
         var list = await api.ListAsync(BirkNext.ManualReview.ManualReviewModules.DocumentQuality, _decisionScope);
         if (list is null) { _decisionsUnavailable = true; return; }
         foreach (var d in list.Where(d => d.Current)) _decisions[d.SubjectKey] = d;
+        foreach (var g in list.GroupBy(d => d.SubjectKey)) _history[g.Key] = [.. g.OrderByDescending(d => d.DecidedAt)];
         StateHasChanged();
     }
 
@@ -897,10 +901,15 @@
         var (decision, error) = await api.RecordAsync(new BirkNext.ManualReview.ManualReviewDecisionRequest
         {
             Module = BirkNext.ManualReview.ManualReviewModules.DocumentQuality, ScopeKey = DecisionScope, SubjectKey = issue.LogicalId,
-            Reviewer = _reviewer.Trim(), Decision = value, AppliesTo = issue.RuleCode, Note = issue.Title.Length > 300 ? issue.Title[..300] : issue.Title,
+            Reviewer = _reviewer.Trim(), Decision = value, AppliesTo = issue.RuleCode,
+            Note = _rationale.GetValueOrDefault(issue.LogicalId) is { Length: > 0 } why ? why.Trim()[..Math.Min(2000, why.Trim().Length)] : null,
         });
-        if (decision is null) { _decisionStatus = error ?? "The decision could not be recorded."; return; }
+        // A failed save keeps everything on screen; Record again retries the same decision.
+        if (decision is null) { (_decisionError, _decisionStatus) = (error ?? "The decision could not be recorded.", null); return; }
+        _decisionError = null;
         _decisions[issue.LogicalId] = decision;
+        (_history.TryGetValue(issue.LogicalId, out var h) ? h : _history[issue.LogicalId] = []).Insert(0, decision);
+        _rationale.Remove(issue.LogicalId);
         _decisionStatus = $"Recorded “{DecisionLabel(value)}” for {issue.RuleCode}. The rule result is unchanged; the decision is kept with its history.";
     }
 
@@ -921,17 +930,26 @@
                         var current = _decisions.GetValueOrDefault(item.LogicalId);
                         <li data-testid="qr-decision" data-subject="@item.LogicalId">
                             <span class="qr-decision-rule">@item.RuleCode</span> <span>@item.Title</span>
-                            <span class="qr-muted" data-testid="qr-decision-current">@(current is null ? "No decision yet" : $"{DecisionLabel(current.Decision)} — {current.Reviewer}, {current.DecidedAt.ToLocalTime():g}")</span>
+                            <span class="qr-muted" data-testid="qr-decision-current">@(current is null ? "No decision yet" : $"{DecisionLabel(current.Decision)} — {current.Reviewer}, {current.DecidedAt.ToLocalTime():g}{(current.Note is { Length: > 0 } n ? $" · “{n}”" : "")}")</span>
                             <span class="qr-decision-controls">
+                                <input class="qr-decision-why" aria-label="@($"Rationale for {item.RuleCode}")" placeholder="Rationale (recorded with the decision)" maxlength="2000" data-testid="qr-decision-rationale"
+                                       value="@_rationale.GetValueOrDefault(item.LogicalId)" @oninput="e => _rationale[item.LogicalId] = e.Value?.ToString() ?? string.Empty" />
                                 <select aria-label="@($"Decision for {item.RuleCode}")" data-testid="qr-decision-value" @onchange="e => { if (Enum.TryParse<BirkNext.ManualReview.ManualReviewDecisionValue>(e.Value?.ToString(), out var v)) _draftDecision[item.LogicalId] = v; }">
                                     @foreach (var (value, label) in DecisionOptions) { <option value="@value" selected="@(_draftDecision.GetValueOrDefault(item.LogicalId, current?.Decision ?? BirkNext.ManualReview.ManualReviewDecisionValue.IssueFound) == value)">@label</option> }
                                 </select>
                                 <button type="button" class="btn-secondary btn-small" data-testid="qr-decision-record" disabled="@(_reviewer.Trim().Length == 0)" @onclick="() => RecordDecisionAsync(item)">Record</button>
                             </span>
+                            @if (_history.GetValueOrDefault(item.LogicalId) is { Count: > 0 } history)
+                            {
+                                <details class="qr-decision-history" data-testid="qr-decision-history"><summary>Decision history (@history.Count)</summary>
+                                    <ol>@foreach (var h in history) { <li data-current="@(h.Current ? "true" : "false")">@DecisionLabel(h.Decision) — @h.Reviewer, @h.DecidedAt.ToLocalTime().ToString("g")@(h.Note is { Length: > 0 } hn ? $" · “{hn}”" : "")</li> }</ol>
+                                </details>
+                            }
                         </li>
                     }
                 </ul>
                 @if (_decisionStatus is not null) { <p role="status" class="qr-muted" data-testid="qr-decision-status">@_decisionStatus</p> }
+                @if (_decisionError is not null) { <p role="alert" class="qr-decision-error" data-testid="qr-decision-error">@_decisionError Your choice and rationale are kept; select Record again to retry.</p> }
             }
         </section>
     };
