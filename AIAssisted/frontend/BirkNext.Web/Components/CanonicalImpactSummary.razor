@@ -1,4 +1,6 @@
 @using BirkNext.Interpretation
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
 
 @* Graph impact (impact/1) of a change to one canonical entity: retest needs first (a test lead's question), then test gaps, then every impacted
    entity with the relation path that makes it impacted. Nothing is impacted without a path; unresolved relations are counted, never guessed. *@
@@ -57,6 +59,22 @@
             </details>
         }
         else { <p class="cis-muted" data-testid="@($"{TestId}-none")">No established or candidate relation makes anything depend on this.</p> }
+        @if (_scopeHits is { } hits)
+        {
+            <div class="cis-scopes" data-testid="@($"{TestId}-scopes")">
+                @if (hits.Count == 0) { <p class="cis-muted cis-small" data-testid="@($"{TestId}-scopes-none")">No scope of this project names an impacted item.</p> }
+                else
+                {
+                    <p class="cis-small"><strong>Scopes with impacted members</strong> — their approved revisions are not changed; review whether the membership still holds.</p>
+                    <ul class="cis-list">
+                        @foreach (var h in hits)
+                        {
+                            <li data-testid="@($"{TestId}-scope")" data-scope="@h.ScopeId">@h.Name <span class="cis-muted cis-small">(@h.State, revision @h.Revision) · @h.Members.Count impacted member@(h.Members.Count == 1 ? "" : "s"): @string.Join(", ", h.Members.Take(6).Select(m => $"{m.Name} ({m.How})"))</span></li>
+                        }
+                    </ul>
+                }
+            </div>
+        }
         @foreach (var l in Impact.Limitations) { <p class="cis-muted cis-small" data-testid="@($"{TestId}-limitation")">@l</p> }
         <p class="cis-muted cis-small">Rule set @Impact.Rules · at most @CanonicalImpactRules.MaxDepth relation hops · alias and same-as relations never carry impact.</p>
     }
@@ -67,4 +85,43 @@
     [Parameter] public string? Error { get; set; }
     [Parameter] public string TestId { get; set; } = "cis";
     [Parameter] public int MaxRows { get; set; } = 50;
+
+    private sealed record ScopeHit(Guid ScopeId, string Name, BirkNext.Scopes.ScopeState State, int Revision, List<(string Name, string How)> Members);
+    private List<ScopeHit>? _scopeHits;
+    private CanonicalImpactView? _scopedFor;
+
+    /// <summary>
+    /// Scopes of the current project that name the changed entity or an impacted one (canonical key = member id; never a name match). The level
+    /// says how the member is reached: the changed item itself, a direct or downstream established relation, or only a candidate ("potential").
+    /// Read-only: an approved revision is never changed by an impact.
+    /// </summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Impact is null || ReferenceEquals(Impact, _scopedFor)) return;
+        _scopedFor = Impact;
+        _scopeHits = null;
+        if (Services.GetService(typeof(IScopeRegistryApiService)) is not IScopeRegistryApiService registry
+            || Services.GetService(typeof(ICurrentWorkspaceProjection)) is not ICurrentWorkspaceProjection workspace) return;
+        var project = (await workspace.GetAsync()).ProjectSlug;
+        if (project is null) return;
+        var impacted = Impact.Entities.ToDictionary(e => e.Key, e => (e.Name, How: e.Level switch
+        {
+            ImpactLevel.Direct => "direct", ImpactLevel.Downstream => "downstream", _ => "candidate relation only — not confirmed",
+        }), StringComparer.Ordinal);
+        impacted.TryAdd(Impact.RootKey, (Impact.RootName, "the changed item"));
+        var hits = new Dictionary<Guid, ScopeHit>();
+        foreach (var kind in new[] { BirkNext.Scopes.ScopeMemberKind.System, BirkNext.Scopes.ScopeMemberKind.Requirement, BirkNext.Scopes.ScopeMemberKind.Scenario,
+                     BirkNext.Scopes.ScopeMemberKind.UserStory, BirkNext.Scopes.ScopeMemberKind.Feature, BirkNext.Scopes.ScopeMemberKind.Contract })
+        {
+            var (items, error) = await registry.MembershipAsync(project, kind);
+            if (error is not null) return;
+            foreach (var scope in items.Where(i => i.State != BirkNext.Scopes.ScopeState.Archived))
+                foreach (var id in scope.TargetIds.Where(impacted.ContainsKey))
+                {
+                    if (!hits.TryGetValue(scope.ScopeId, out var hit)) hits[scope.ScopeId] = hit = new(scope.ScopeId, scope.Name, scope.State, scope.Revision, []);
+                    hit.Members.Add(impacted[id]);
+                }
+        }
+        _scopeHits = [.. hits.Values.OrderBy(h => h.Name, StringComparer.OrdinalIgnoreCase)];
+    }
 }

@@ -1,0 +1,125 @@
+@using BirkNext.Scopes
+@using BirkNext.Web.Services
+@* A focused connection graph: the chosen system in the middle, the systems that connect to it on the left and the systems it connects to on the
+   right. Every edge is one connection with its own evidence state (solid = stated by source or confirmed, dashed = candidate or needs review,
+   bold = observed at runtime). Nothing is drawn that the connection list does not hold; the list below remains the accessible alternative.
+   Pure Blazor SVG: no script, no remote resource. *@
+<figure class="scg" data-testid="scg" aria-label="@($"Connections of {Focus.Name}")">
+    <div class="scg-toolbar" role="toolbar" aria-label="Graph view">
+        <button type="button" class="btn-secondary btn-small" aria-label="Zoom out" data-testid="scg-zoom-out" disabled="@(_zoom <= .5)" @onclick="() => Zoom(-.25)">−</button>
+        <span class="scg-zoom" data-testid="scg-zoom" aria-live="polite">@($"{_zoom * 100:0}%")</span>
+        <button type="button" class="btn-secondary btn-small" aria-label="Zoom in" data-testid="scg-zoom-in" disabled="@(_zoom >= 2.5)" @onclick="() => Zoom(.25)">+</button>
+        <button type="button" class="btn-secondary btn-small" data-testid="scg-fit" @onclick="Fit">Fit</button>
+        <span class="scg-legend"><span class="scg-key scg-key-solid"></span> source evidence / confirmed <span class="scg-key scg-key-dashed"></span> candidate / needs review</span>
+    </div>
+    <div class="scg-canvas @(_dragging ? "is-dragging" : "")" tabindex="0" data-testid="scg-canvas" role="region" aria-label="Connection graph — drag or arrow keys to pan"
+         @onpointerdown="Down" @onpointermove="Move" @onpointerup="Up" @onpointerleave="Up" @onkeydown="Key">
+        <svg viewBox="0 0 @W @H" width="@(_zoom == 1 && _panX == 0 && _panY == 0 ? "100%" : F(W * _zoom))" style="@(_zoom == 1 && _panX == 0 && _panY == 0 ? null : $"transform:translate({F(_panX)}px,{F(_panY)}px)")"
+             preserveAspectRatio="xMidYMin meet" role="img" aria-labelledby="scg-title" data-testid="scg-svg">
+            <title id="scg-title">@Focus.Name: @_in.Count incoming, @_out.Count outgoing</title>
+            <defs><marker id="scg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="scg-arrowhead" /></marker></defs>
+            @foreach (var (node, i) in _in.Select((n, i) => (n, i)))
+            {
+                var y = RowY(i, _in.Count);
+                @foreach (var c in node.Connections) { @Edge(c, Left + BoxW, y, CenterX, CenterY + Offset(c, node.Connections)) }
+            }
+            @foreach (var (node, i) in _out.Select((n, i) => (n, i)))
+            {
+                var y = RowY(i, _out.Count);
+                @foreach (var c in node.Connections) { @Edge(c, CenterX + BoxW, CenterY + Offset(c, node.Connections), Right, y) }
+            }
+            <g class="scg-node is-focus" data-testid="scg-focus"><rect x="@CenterX" y="@(CenterY - BoxH / 2)" width="@BoxW" height="@BoxH" rx="8" /><text x="@(CenterX + BoxW / 2)" y="@(CenterY + 4)" text-anchor="middle">@Short(Focus.Name)</text><title>@Focus.Name</title></g>
+            @foreach (var (node, i) in _in.Select((n, i) => (n, i))) { @Node(node, Left, RowY(i, _in.Count)) }
+            @foreach (var (node, i) in _out.Select((n, i) => (n, i))) { @Node(node, Right, RowY(i, _out.Count)) }
+        </svg>
+    </div>
+    <figcaption class="scg-caption">@Focus.Name · @_in.Count incoming · @_out.Count outgoing@(Hidden > 0 ? $" · {Hidden} more not drawn (see the list)" : ""). Select a system to focus on it, or a line for its evidence. A connection is never shown as observed at runtime without runtime evidence.</figcaption>
+</figure>
+
+@code {
+    [Parameter, EditorRequired] public SystemOverviewItem Focus { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyList<SystemConnectionView> Connections { get; set; } = [];
+    [Parameter] public EventCallback<string> OnFocus { get; set; }
+    [Parameter] public EventCallback<string> OnSelectConnection { get; set; }
+    [Parameter] public string? SelectedConnection { get; set; }
+
+    private const int MaxPerSide = 14;
+    private const double BoxW = 200, BoxH = 38, Gap = 14, Left = 10, Right = 560;
+    private const double W = 770;
+    private const double CenterX = 285;
+    private double H => Math.Max(160, Math.Max(_in.Count, _out.Count) * (BoxH + Gap) + 40);
+    private double CenterY => H / 2;
+
+    private sealed record Peer(string Key, string Name, List<SystemConnectionView> Connections);
+    private List<Peer> _in = [], _out = [];
+    private int Hidden;
+    private double _zoom = 1, _panX, _panY, _dx, _dy;
+    private bool _dragging;
+
+    protected override void OnParametersSet()
+    {
+        var live = Connections.Where(c => c.State != SystemConnectionState.Rejected).ToList();
+        List<Peer> Side(IEnumerable<SystemConnectionView> list, Func<SystemConnectionView, (string Key, string Name)> other) =>
+            [.. list.GroupBy(c => other(c).Key).Select(g => new Peer(g.Key, other(g.First()).Name, [.. g])).OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)];
+        var incoming = Side(live.Where(c => c.TargetKey == Focus.Key && c.SourceKey != Focus.Key), c => (c.SourceKey, c.SourceName));
+        var outgoing = Side(live.Where(c => c.SourceKey == Focus.Key), c => (c.TargetKey, c.TargetName));
+        Hidden = Math.Max(0, incoming.Count - MaxPerSide) + Math.Max(0, outgoing.Count - MaxPerSide);
+        (_in, _out) = (incoming.Take(MaxPerSide).ToList(), outgoing.Take(MaxPerSide).ToList());
+    }
+
+    private double RowY(int i, int count) => CenterY - (count - 1) * (BoxH + Gap) / 2 + i * (BoxH + Gap);
+    private static double Offset(SystemConnectionView c, List<SystemConnectionView> all) => (all.IndexOf(c) - (all.Count - 1) / 2.0) * 6;
+
+    private RenderFragment Node(Peer p, double x, double y) => __builder =>
+    {
+        var canFocus = !p.Key.StartsWith("topology:", StringComparison.Ordinal);
+        <g class="scg-node @(canFocus ? "is-link" : "")" data-testid="scg-node" data-key="@p.Key" tabindex="@(canFocus ? "0" : null)" role="@(canFocus ? "button" : null)"
+           @onclick="@(() => canFocus ? OnFocus.InvokeAsync(p.Key) : Task.CompletedTask)" @onpointerdown:stopPropagation="true"
+           @onkeydown="@(e => canFocus && e.Key is "Enter" or " " ? OnFocus.InvokeAsync(p.Key) : Task.CompletedTask)">
+            <rect x="@F(x)" y="@F(y - BoxH / 2)" width="@BoxW" height="@BoxH" rx="8" />
+            <text x="@F(x + BoxW / 2)" y="@F(y + 4)" text-anchor="middle">@Short(p.Name)</text>
+            <title>@p.Name@(canFocus ? "" : " (Integration Topology component; not a registered system)") — @p.Connections.Count connection@(p.Connections.Count == 1 ? "" : "s")</title>
+        </g>
+    };
+
+    private RenderFragment Edge(SystemConnectionView c, double x1, double y1, double x2, double y2) => __builder =>
+    {
+        var tone = c.State switch
+        {
+            SystemConnectionState.Candidate or SystemConnectionState.NeedsReview => "is-candidate",
+            SystemConnectionState.ObservedAtRuntime => "is-observed",
+            SystemConnectionState.ConfirmedByPerson => "is-confirmed",
+            _ => "is-source",
+        };
+        <g class="scg-edge @tone @(SelectedConnection == c.Id ? "is-selected" : "")" data-testid="scg-edge" data-id="@c.Id" data-state="@c.State" tabindex="0" role="button"
+           aria-label="@($"{c.SourceName} {c.Label} {c.TargetName}: {SystemsScopesPresentation.ConnectionStateLabel(c.State)}")"
+           @onclick="() => OnSelectConnection.InvokeAsync(c.Id)" @onpointerdown:stopPropagation="true"
+           @onkeydown="@(e => e.Key is "Enter" or " " ? OnSelectConnection.InvokeAsync(c.Id) : Task.CompletedTask)">
+            <path d="@($"M{F(x1)},{F(y1)} C{F((x1 + x2) / 2)},{F(y1)} {F((x1 + x2) / 2)},{F(y2)} {F(x2)},{F(y2)}")" marker-end="url(#scg-arrow)" />
+            <path class="scg-hit" d="@($"M{F(x1)},{F(y1)} C{F((x1 + x2) / 2)},{F(y1)} {F((x1 + x2) / 2)},{F(y2)} {F(x2)},{F(y2)}")" />
+            <title>@c.SourceName → @c.Label → @c.TargetName · @SystemsScopesPresentation.ConnectionStateLabel(c.State) · @c.Origin</title>
+        </g>
+    };
+
+    private void Zoom(double d) => _zoom = Math.Round(Math.Clamp(_zoom + d, .5, 2.5), 2);
+    private void Fit() { _zoom = 1; _panX = _panY = 0; }
+    private void Down(PointerEventArgs e) { if (e.Button != 0) return; _dragging = true; (_dx, _dy) = (e.ClientX, e.ClientY); }
+    private void Move(PointerEventArgs e) { if (!_dragging) return; _panX += e.ClientX - _dx; _panY += e.ClientY - _dy; (_dx, _dy) = (e.ClientX, e.ClientY); }
+    private void Up(PointerEventArgs e) => _dragging = false;
+    private void Key(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "+" or "=": Zoom(.25); break;
+            case "-": Zoom(-.25); break;
+            case "0": Fit(); break;
+            case "ArrowLeft": _panX += 40; break;
+            case "ArrowRight": _panX -= 40; break;
+            case "ArrowUp": _panY += 40; break;
+            case "ArrowDown": _panY -= 40; break;
+        }
+    }
+
+    private static string Short(string name) => name.Length > 26 ? name[..25] + "…" : name;
+    private static string F(double v) => v.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+}

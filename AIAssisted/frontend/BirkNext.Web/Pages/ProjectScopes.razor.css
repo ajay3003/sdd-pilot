@@ -107,3 +107,4 @@
 .psc-link:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; border-radius: 2px; }
 .psc-small { font-size: .82rem; }
 .psc-scope-detail > .psc-link { justify-self: start; }
+.psc-graph-hint { display: flex; flex-wrap: wrap; gap: .35rem .5rem; align-items: center; margin: .25rem 0 .75rem; }

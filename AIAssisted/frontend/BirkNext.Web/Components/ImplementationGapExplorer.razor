@@ -1,5 +1,6 @@
 @using BirkNext.ImplementationGaps
 @using BirkNext.Web.Services
+@using BirkNext.Web.Models
 @inject IServiceProvider Services
 @inject NavigationManager Navigation
 
@@ -77,6 +78,14 @@
 
         <h3 class="ig-sub">Feature readiness</h3>
         <p class="ig-note">Derived from source evidence: an unresolved mandatory gate blocks; a checked task is not code; a declared package is not behaviour; a test definition is not an execution.</p>
+        @if (!ReadinessOnly) { <BirkNext.Web.Components.Scopes.ScopeFilter SelectionChanged="ScopeSelected" /> }
+        @if (_sharedNote is not null) { <p class="ig-note" data-testid="ig-shared-note">@_sharedNote</p> }
+        @if (_scopeSelection is not null)
+        {
+            var assoc = FeaturesIn(e).GroupBy(ScopeAssociation).ToDictionary(g => g.Key, g => g.Count());
+            <p class="ig-note" data-testid="ig-scope-summary">Scope filter: @assoc.GetValueOrDefault("in") feature@(assoc.GetValueOrDefault("in") == 1 ? "" : "s") in the selected scope@(_scopeSelection.Scopes.Count == 1 ? "" : "s") (through canonical requirement identity) ·
+                <strong data-testid="ig-scope-unconfirmed">@assoc.GetValueOrDefault("unconfirmed")</strong> with the scope association not confirmed (shown, marked) · @assoc.GetValueOrDefault("out") outside.</p>
+        }
         var overview = OverviewRows(e);
         <div class="ig-overview-bar" role="group" aria-label="Feature filters">
             <label><span class="visually-hidden">Search features</span><input type="search" placeholder="Search features" value="@_featureSearch" @oninput="e2 => _featureSearch = e2.Value?.ToString() ?? string.Empty" data-testid="ig-feature-search" /></label>
@@ -90,7 +99,7 @@
         </div>
         <div class="ig-scroll" tabindex="0" role="region" aria-label="Feature overview">
             <table class="ig-table ig-overview" data-testid="ig-overview">
-                <thead><tr><th scope="col">Feature</th><th scope="col">Status</th><th scope="col">Implementation evidence</th><th scope="col">Blocking gates</th><th scope="col">Test evidence</th><th scope="col">Runtime</th></tr></thead>
+                <thead><tr><th scope="col">Feature</th><th scope="col">Status</th><th scope="col">Implementation evidence</th><th scope="col">Blocking gates</th><th scope="col">Requirements (canonical)</th><th scope="col">Test evidence</th><th scope="col">Runtime</th></tr></thead>
                 <tbody>
                     @foreach (var f in overview)
                     {
@@ -98,15 +107,17 @@
                         var open = _openFeature == f.FeatureId;
                         var blocking = f.GateIds.Select(g => e.Gates.First(x => x.GateId == g)).Where(g => g.Status != GapGateStatus.Approved).ToList();
                         <tr data-testid="ig-overview-row" data-feature="@f.FeatureId" data-readiness="@f.Readiness" class="@(open ? "is-open" : "")">
-                            <th scope="row"><button type="button" class="ig-link" aria-expanded="@(open ? "true" : "false")" data-testid="ig-overview-open" @onclick="() => _openFeature = open ? null : feature.FeatureId">@f.Name</button></th>
+                            <th scope="row"><button type="button" class="ig-link" aria-expanded="@(open ? "true" : "false")" data-testid="ig-overview-open" @onclick="() => _openFeature = open ? null : feature.FeatureId">@f.Name</button>
+                                @if (_scopeSelection is not null && ScopeAssociation(f) == "unconfirmed") { <span class="ig-context" data-testid="ig-scope-unconfirmed-row">Scope association not confirmed</span> }</th>
                             <td><span class="ig-pill ig-r-@f.Readiness">@ReadinessLabel(f.Readiness)</span></td>
                             <td>@Dim(f, "Source implementation coverage")</td>
                             <td data-testid="ig-overview-gates">@(blocking.Count == 0 ? (f.GateIds.Count == 0 ? "None" : "All approved") : string.Join(", ", blocking.Select(g => $"{g.GateId} ({g.Status})")))</td>
+                            <td data-testid="ig-overview-canonical">@CanonicalText(f)</td>
                             <td>@Dim(f, "Test implementation coverage", "defined") · @Dim(f, "Test execution coverage", "executed")</td>
                             <td>@Dim(f, "Runtime verification coverage", "verified")</td>
                         </tr>
                     }
-                    @if (overview.Count == 0) { <tr><td colspan="6" class="ig-context" data-testid="ig-overview-none">No feature matches these filters.</td></tr> }
+                    @if (overview.Count == 0) { <tr><td colspan="7" class="ig-context" data-testid="ig-overview-none">No feature matches these filters.</td></tr> }
                 </tbody>
             </table>
         </div>
@@ -131,6 +142,7 @@
                         @if (f.RequirementIds.Count > 0) { <div><dt>Requirements</dt><dd>@string.Join(", ", f.RequirementIds)</dd></div> }
                     </dl>
                     <p class="ig-why" data-testid="ig-why">@f.Explanation</p>
+                    @SharedEvidence(f, tasks.Select(t => t.TaskId).ToList())
                     <details class="ig-more">
                         <summary>Tasks — task state, implementation and verification</summary>
                         <div class="ig-scroll" tabindex="0" role="region" aria-label="@($"Tasks of {f.Name}")">
@@ -291,6 +303,7 @@
         if (_evaluation is { } e && _module.Length == 0)
             _module = e.Features.Where(f => f.FeatureId.StartsWith("gate:", StringComparison.Ordinal)).Select(f => Module(f.DocumentPath)).FirstOrDefault() ?? "";
         ResetPaging();
+        if (_evaluation is not null) await LoadSharedEvidenceAsync();
     }
 
     private async Task PickAsync(ChangeEventArgs args)
@@ -368,6 +381,125 @@
 
     private static string ReviewLabel(GapFinding f) => f.ReviewStatus == "Not reviewed" ? "not reviewed" : $"reviewed: {f.ReviewStatus}{(f.ReviewedBy is { } by ? $" by {by}" : "")}";
 
+    // ── Shared evidence: canonical requirement identity, established scenario links, scopes, Task Alignment (all read, never written) ──
+    private BirkNext.Scopes.ScopeSelection? _scopeSelection;
+    private readonly Dictionary<string, string> _canonicalRequirements = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<BirkNext.Scopes.ScopeScenarioLink> _verifying = [];
+    private bool _canonicalLoaded;
+    private string? _sharedNote;
+
+    private void ScopeSelected(BirkNext.Scopes.ScopeSelection? selection) => _scopeSelection = selection;
+
+    /// <summary>The module and feature key a feature's tasks document belongs to ("SkoleService/specs/001-x/tasks.md" → SkoleService, 001-x).</summary>
+    public static (string Module, string FeatureKey)? FeatureContext(string documentPath)
+    {
+        var parts = documentPath.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var i = Array.FindIndex(parts, p => p.Equals("specs", StringComparison.OrdinalIgnoreCase));
+        return i > 0 && i + 1 < parts.Length ? (parts[i - 1], parts[i + 1]) : null;
+    }
+
+    /// <summary>
+    /// Canonical requirement keys of a feature: each requirement id is looked up by its exact source identity (module/feature/id) in the latest
+    /// canonical interpretation. A display id alone ("FR-001") is never enough: the same id exists in several Artifact Packs.
+    /// </summary>
+    private List<(string Id, string? Key)> CanonicalOf(GapFeatureAssessment f)
+    {
+        var ctx = FeatureContext(f.DocumentPath);
+        return [.. f.RequirementIds.Select(r => (r, ctx is { } c && _canonicalRequirements.TryGetValue($"{c.Module}/{c.FeatureKey}/{r}", out var key) ? key : null))];
+    }
+
+    private string CanonicalText(GapFeatureAssessment f)
+    {
+        if (!_canonicalLoaded) return "Not assessed";
+        var reqs = CanonicalOf(f);
+        if (reqs.Count == 0) return "No requirement named";
+        var resolved = reqs.Where(r => r.Key is not null).Select(r => r.Key!).ToHashSet();
+        var withScenario = _verifying.Where(l => resolved.Contains(l.RequirementKey)).Select(l => l.RequirementKey).Distinct().Count();
+        return $"{resolved.Count} of {reqs.Count} resolved · {withScenario} with an established scenario";
+    }
+
+    /// <summary>"in", "out" or "unconfirmed" for the selected scopes (requirement members matched by canonical key only).</summary>
+    private string ScopeAssociation(GapFeatureAssessment f)
+    {
+        if (_scopeSelection is null) return "in";
+        var keys = CanonicalOf(f).Where(r => r.Key is not null).Select(r => r.Key!).ToList();
+        if (keys.Count == 0) return "unconfirmed";
+        var members = _scopeSelection.Members.Where(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.Requirement).Select(m => m.Member.TargetId).ToHashSet(StringComparer.Ordinal);
+        return keys.Any(members.Contains) ? "in" : "out";
+    }
+
+    /// <summary>Requirement identities from the shared member catalog (latest canonical interpretation of the active Target Environment).</summary>
+    private async Task LoadSharedEvidenceAsync()
+    {
+        _canonicalRequirements.Clear(); _canonicalLoaded = false; _verifying = [];
+        if (Services.GetService(typeof(IScopeRegistryApiService)) is not IScopeRegistryApiService registry
+            || Services.GetService(typeof(IFrontendAnalysisContextFactory)) is not IFrontendAnalysisContextFactory factory)
+        { _sharedNote = null; return; }
+        var scope = CorrelationPresentation.Scope((await factory.GetActiveContextAsync()).ActiveProfileOrNull?.Id);
+        if (scope is null) { _sharedNote = "Canonical requirement evidence needs an active Target Environment."; return; }
+        for (var skip = 0; skip < 2000; skip += 100)
+        {
+            var (page, error) = await registry.CatalogAsync(BirkNext.Scopes.ScopeMemberKind.Requirement, scope, null, skip, 100);
+            if (page is null) { _sharedNote = error ?? "Canonical requirements could not be read."; return; }
+            if (page.Notices.Count > 0 && page.Items.Count == 0) { _sharedNote = string.Join(" ", page.Notices); return; }
+            foreach (var item in page.Items) if (item.Description is { Length: > 0 } identity) _canonicalRequirements.TryAdd(identity, item.TargetId);
+            if (skip + page.Items.Count >= page.Total || page.Items.Count == 0) break;
+        }
+        _canonicalLoaded = true;
+        var (links, _) = await registry.VerifyingScenariosAsync(new BirkNext.Scopes.ScopeScenarioLinkRequest(scope, [.. _canonicalRequirements.Values.Distinct()]));
+        _verifying = links;
+        _sharedNote = null;
+        StateHasChanged();
+    }
+
+    /// <summary>Task Alignment applies only when its stored result is for exactly this tasks document (same content fingerprint).</summary>
+    private Dictionary<string, AlignmentStatus>? AlignmentFor(GapFeatureAssessment f)
+    {
+        if (Services.GetService(typeof(TaskAlignmentSessionService)) is not TaskAlignmentSessionService session || session.Report is not { } report || session.Snapshot is not { } snap
+            || Artifacts?.Tasks is not { } tasks) return null;
+        var path = (tasks.SourcePath ?? tasks.FileName ?? "").Replace('\\', '/');
+        if (path.Length == 0 || !(path.EndsWith(f.DocumentPath, StringComparison.OrdinalIgnoreCase) || f.DocumentPath.EndsWith(path, StringComparison.OrdinalIgnoreCase))) return null;
+        if (TaskAlignmentSessionService.CreateSnapshot(null, "", tasks.Text).TasksHash != snap.TasksHash) return null;
+        return report.Findings.GroupBy(x => x.TaskId).ToDictionary(g => g.Key, g => g.First().Status, StringComparer.Ordinal);
+    }
+
+    private RenderFragment SharedEvidence(GapFeatureAssessment f, List<string> taskIds) => __builder =>
+    {
+        var reqs = CanonicalOf(f);
+        var alignment = AlignmentFor(f);
+        <details class="ig-more" data-testid="ig-shared-evidence" open>
+            <summary>Shared evidence — canonical requirements and Task Alignment</summary>
+            <dl class="ig-facts">
+                <div><dt>Canonical requirements</dt><dd data-testid="ig-canonical">
+                    @if (!_canonicalLoaded) { <span>Not assessed@(_sharedNote is { } note ? $" — {note}" : "")</span> }
+                    else if (reqs.Count == 0) { <span>No requirement id is named by this feature's tasks or contracts.</span> }
+                    else
+                    {
+                        @foreach (var (id, key) in reqs)
+                        {
+                            var established = key is not null ? _verifying.Where(l => l.RequirementKey == key).ToList() : [];
+                            <span class="ig-chip @(key is null ? "ig-g-Unknown" : "")" title="@(key ?? "Not found by module/feature/id in the latest canonical interpretation")" data-testid="ig-canonical-req" data-resolved="@(key is not null ? "true" : "false")">@id@(key is null ? " · identity not resolved" : established.Count > 0 ? $" · {established.Count} established scenario{(established.Count == 1 ? "" : "s")}" : " · no established scenario")</span>
+                        }
+                    }</dd></div>
+                <div><dt>Task Alignment</dt><dd data-testid="ig-alignment">
+                    @if (alignment is null) { <span>Not assessed — no current Task Alignment result for this tasks document (run Task Alignment Review on it).</span> }
+                    else
+                    {
+                        var states = taskIds.Select(t => alignment.TryGetValue(t, out var st) ? st.ToString() : "NotAnalysed").GroupBy(x => x).Select(g => $"{g.Count()} {AlignmentLabel(g.Key)}");
+                        <span>@string.Join(" · ", states)</span>
+                    }</dd></div>
+            </dl>
+            <p class="ig-context">A requirement resolved in the canonical interpretation and a task linked to the specification are traceability, not implementation or verification evidence.</p>
+        </details>
+    };
+
+    private static string AlignmentLabel(string status) => status switch
+    {
+        nameof(AlignmentStatus.Linked) => "linked to the specification", nameof(AlignmentStatus.DesignLinked) => "linked to a design artifact",
+        nameof(AlignmentStatus.TechnicalOnly) => "technical only", nameof(AlignmentStatus.NeedsReview) => "need review",
+        nameof(AlignmentStatus.PossibleDeviation) => "possible deviation", _ => "not analysed",
+    };
+
     private string _featureSearch = "", _readinessFilter = "";
     private bool _missingTests, _missingRuntime;
     private string? _openFeature;
@@ -375,6 +507,8 @@
     /// <summary>The compact overview: one row per feature; detail opens on demand. Filters never hide a blocked feature's gate.</summary>
     private List<GapFeatureAssessment> OverviewRows(GapEvaluation e) => [.. FeaturesIn(e)
         .Where(f => _feature.Length == 0 || f.FeatureId == _feature)
+        // A selected scope keeps features it names and features whose association cannot be confirmed (marked); it never hides those silently.
+        .Where(f => _scopeSelection is null || ScopeAssociation(f) != "out")
         .Where(f => _readinessFilter.Length == 0 || f.Readiness.ToString() == _readinessFilter)
         .Where(f => _featureSearch.Trim().Length == 0 || f.Name.Contains(_featureSearch.Trim(), StringComparison.OrdinalIgnoreCase) || f.FeatureId.Contains(_featureSearch.Trim(), StringComparison.OrdinalIgnoreCase))
         .Where(f => !_missingTests || DimValue(f, "Test execution coverage") is not { Numerator: > 0 })

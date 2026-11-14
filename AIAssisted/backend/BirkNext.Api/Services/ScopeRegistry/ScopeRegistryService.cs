@@ -182,7 +182,7 @@ public sealed class ScopeRegistryService(ScopeRegistryDbContext db, TimeProvider
                 + (refused.Count > 5 ? $"; and {refused.Count - 5} more" : "") + ". Nothing was saved.");
         var freshKeys = fresh.ToDictionary(m => m.Key, StringComparer.Ordinal);
         return ([.. members.Select(m => m with { TargetId = m.TargetId.Trim() }).Select(m => freshKeys.ContainsKey(m.Key)
-            ? m with { CatalogScope = m.CatalogScope ?? (ScopeMemberCatalogService.CanonicalTypes(m.Kind) is null ? null : catalogScope) }
+            ? m with { CatalogScope = m.CatalogScope ?? (ScopeMemberCatalogService.IsCatalogScoped(m.Kind) ? catalogScope : null) }
             : known.TryGetValue(m.Key, out var k) && m.CatalogScope is null ? m with { CatalogScope = k.CatalogScope } : m)], null);
     }
 

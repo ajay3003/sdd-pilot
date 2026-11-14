@@ -20,6 +20,9 @@
 .tco-phases { margin: .5rem 0 0; padding-left: 1.25rem; font-size: .85rem; color: var(--clr-text-muted); }
 .tco-cards { list-style: none; padding: 0; margin: .5rem 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .5rem; }
 .tco-cards li { border: 1px solid var(--clr-border); border-radius: 6px; padding: .5rem .75rem; display: flex; flex-direction: column; gap: .1rem; min-width: 0; font-size: .875rem; }
+/* Scope filter: scoped totals next to the whole-project numbers. */
+.tco-scope { border: 1px solid var(--clr-border); border-radius: 6px; padding: .5rem .75rem; margin: .5rem 0; }
+.tco-scope h3 { margin: 0 0 .25rem; font-size: 1rem; }
 .tco-card-value { font-size: 1.4rem; font-weight: 700; color: var(--clr-text-heading); }
 .tco-tabs { display: flex; flex-wrap: wrap; gap: .25rem; border-bottom: 1px solid var(--clr-border); margin-top: .75rem; }
 .tco-tab { background: none; border: 1px solid transparent; border-bottom: none; padding: .45rem .7rem; font-size: .85rem; cursor: pointer; color: var(--clr-text-subtle); border-radius: 6px 6px 0 0; }

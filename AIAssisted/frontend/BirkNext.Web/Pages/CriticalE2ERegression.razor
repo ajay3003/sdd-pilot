@@ -18,6 +18,8 @@
 
     @* An action that failed (run, save, history) is reported here; it never replaces the page. *@
     <BackendRequestNotice Error="_actionError" TestId="e2e-action-error" />
+    @* The shared scope filter (approved scopes only): it narrows the flow list to the flows a scope names; it never runs or enables anything. *@
+    <BirkNext.Web.Components.Scopes.ScopeFilter SelectionChanged="ScopeSelected" />
     @if (_profile is not null)
     {
         <RuntimeAuthenticationCapability OperationKey="@BirkNext.RuntimeAuthentication.RuntimeAuthenticationCatalog.CriticalE2EBrowser" Profile="_profile" />
@@ -35,7 +37,10 @@
         var headline = CriticalE2EPresentation.Headline(overview);
         var readiness = CriticalE2EPresentation.Readiness(overview);
         var actions = CriticalE2EPresentation.Actions(overview);
-        var rows = CriticalE2EPresentation.Rows(overview, _showDiagnostic);
+        var scopedFlowIds = CriticalE2EScopePresentation.FlowIds(_scopeSelection);
+        // No scope selected: unchanged. With one, only the flows it names (smoke/diagnostic included when named — they stay marked Smoke).
+        var rows = scopedFlowIds is null ? CriticalE2EPresentation.Rows(overview, _showDiagnostic)
+            : CriticalE2EPresentation.Rows(overview, includeDiagnostic: true).Where(r => scopedFlowIds.Contains(r.FlowId)).ToList();
         var criticalCount = CriticalE2EPresentation.Count(overview, CriticalE2EFlowKind.Critical);
         var diagnosticCount = CriticalE2EPresentation.Count(overview, CriticalE2EFlowKind.Diagnostic);
         var historyFlow = overview.Flows.FirstOrDefault(f => f.FlowId == _historyFlowId);
@@ -112,7 +117,41 @@
 
         @* ── The flows are the page. Smoke / diagnostic flows are hidden unless the reader asks for them. With no flow
                to show, the empty state owns the one Add action and the smoke switch; otherwise the header does. ── *@
-        var showEmpty = rows.Count == 0;
+        var showEmpty = rows.Count == 0 && _scopeSelection is null;
+        @if (_scopeSelection is { } scopeSel)
+        {
+            var sc = CriticalE2EScopePresentation.Counts(overview, scopeSel);
+            <section class="e2e-scope" data-testid="e2e-scope-summary" aria-label="Scope filter summary">
+                <p data-testid="e2e-scope-named">Scope filter: @sc.Named Critical E2E @(sc.Named == 1 ? "flow" : "flows") named by @scopeSel.Scopes.Count selected @(scopeSel.Scopes.Count == 1 ? "scope" : "scopes")@(sc.SharedByScopes > 0 ? $" ({sc.SharedByScopes} named by more than one scope, counted once)" : "").
+                    Whole environment: @overview.Flows.Count @(overview.Flows.Count == 1 ? "flow" : "flows").</p>
+                @if (sc.Named == 0)
+                {
+                    <p class="e2e-muted" data-testid="e2e-scope-none">The selected scopes name no Critical E2E flows, so no flow is shown. Add flows to a scope in Systems &amp; Scopes.</p>
+                }
+                @if (sc.MissingIds.Count > 0)
+                {
+                    <p class="e2e-row-detail e2e-tone-warning" data-testid="e2e-scope-missing">@sc.MissingIds.Count named @(sc.MissingIds.Count == 1 ? "flow is" : "flows are") not in this environment (removed, or chosen in another environment) — review the scope.</p>
+                }
+                <table class="e2e-table e2e-table-compact" data-testid="e2e-scope-counts">
+                    <thead><tr><th scope="col">Classification</th><th scope="col">Named</th><th scope="col">Prepared</th><th scope="col">Executable now</th><th scope="col">Executed</th><th scope="col">Passed</th></tr></thead>
+                    <tbody>
+                        @foreach (var (label, key, c) in new[] { ("Critical flows (can count toward Business E2E / release coverage)", "critical", sc.Critical), ("Smoke / diagnostic flows (never count)", "diagnostic", sc.Diagnostic) })
+                        {
+                            <tr data-testid="e2e-scope-counts-@key">
+                                <th scope="row">@label</th>
+                                <td data-testid="@($"e2e-scope-{key}-named")">@c.Named</td>
+                                <td data-testid="@($"e2e-scope-{key}-prepared")">@c.Prepared</td>
+                                <td data-testid="@($"e2e-scope-{key}-executable")">@c.Executable</td>
+                                <td data-testid="@($"e2e-scope-{key}-executed")">@c.Executed</td>
+                                <td data-testid="@($"e2e-scope-{key}-passed")">@c.Passed</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <p class="e2e-muted" data-testid="e2e-scope-smoke-note">@CriticalE2EScopePresentation.SmokeNote</p>
+                <p class="e2e-muted" data-testid="e2e-scope-filter-note">@CriticalE2EScopePresentation.FilterOnlyNote Prepared = definition complete; executable = enabled, configured and its engine ready; executed = has a result; passed = latest result passed@(string.IsNullOrWhiteSpace(overview.Release.BuildId) ? "" : " on the named build"). Run actions above the table still cover the whole environment.</p>
+            </section>
+        }
         <section class="e2e-flows" data-testid="e2e-flows" aria-labelledby="e2e-flows-heading">
             <div class="e2e-section-head e2e-flows-head">
                 <h2 id="e2e-flows-heading">Critical flows</h2>
@@ -142,7 +181,7 @@
             </div>
             <BackendRequestNotice Error="_flowsError" OnRetry="LoadFlowsAsync" TestId="e2e-flows-error"
                                   Hint="Flow summaries are shown; editing a flow needs its full definition." />
-            @if (!showEmpty && diagnosticCount > 0)
+            @if (!showEmpty && diagnosticCount > 0 && _scopeSelection is null)
             {
                 <div class="e2e-flows-subhead">
                     <label class="e2e-toggle" data-testid="e2e-show-diagnostic-label">
@@ -186,9 +225,13 @@
                     }
                 </div>
             }
+            else if (_scopeSelection is not null && rows.Count == 0)
+            {
+                <p class="e2e-muted" data-testid="e2e-scope-no-flows">No flow of this environment is named by the selected scopes. Clear the scope filter to see every flow.</p>
+            }
             else
             {
-                @if (criticalCount == 0)
+                @if (criticalCount == 0 && _scopeSelection is null)
                 {
                     <p class="e2e-muted" data-testid="e2e-no-critical-note">No release-critical flows yet. Showing smoke / diagnostic flows only; they never count toward release coverage.</p>
                 }
@@ -209,6 +252,7 @@
                                     <th scope="row" data-label="Critical flow">
                                         @if (diagnostic) { <span class="e2e-badge e2e-badge-smoke" data-testid="e2e-kind-@row.FlowId">Smoke</span> }
                                         <span class="e2e-flow-name">@row.Name</span>
+                                        @if (CriticalE2EScopePresentation.Contributors(_scopeSelection, row.FlowId) is > 1 and var contributors) { <span class="e2e-row-detail" data-testid="e2e-scope-from-@row.FlowId">from @contributors scopes</span> }
                                         @if (!row.Enabled) { <span class="e2e-badge e2e-badge-muted" data-testid="e2e-enabled-@row.FlowId">Disabled</span> }
                                         @if (row.ConfigurationProblem is { Length: > 0 } problem) { <span class="e2e-row-detail e2e-tone-warning" data-testid="e2e-problem-@row.FlowId">Needs attention: @problem</span> }
                                     </th>
@@ -573,6 +617,9 @@
 
 @code {
     private CriticalE2EOverview? _overview;
+    // The shared scope filter's combined selection (null = no scope selected: the page behaves exactly as before). A filter, never a run trigger.
+    private BirkNext.Scopes.ScopeSelection? _scopeSelection;
+    private void ScopeSelected(BirkNext.Scopes.ScopeSelection? selection) => _scopeSelection = selection;
     private CriticalE2EFlowDefinition? _editing;
     private CriticalE2ERunResult? _lastRun;
     // UI-local view state: a fresh page load starts with smoke/diagnostic flows and runs hidden; re-renders keep what the

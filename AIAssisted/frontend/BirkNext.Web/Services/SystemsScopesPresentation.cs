@@ -59,6 +59,7 @@ public static class SystemsScopesPresentation
         (ScopeMemberKind.TestDataAsset, false) => "Test Data asset", (ScopeMemberKind.TestDataAsset, true) => "Test Data",
         (ScopeMemberKind.AcceptanceCriterion, false) => "Acceptance criterion", (ScopeMemberKind.AcceptanceCriterion, true) => "Acceptance criteria",
         (ScopeMemberKind.TestCase, false) => "Test case", (ScopeMemberKind.TestSuite, false) => "Test suite",
+        (ScopeMemberKind.CriticalE2EFlow, false) => "Critical E2E flow", (ScopeMemberKind.CriticalE2EFlow, true) => "Critical E2E flows",
         (var k, false) => k.ToString(), (var k, true) => k + "s",
     };
 
@@ -66,7 +67,7 @@ public static class SystemsScopesPresentation
     public static readonly IReadOnlyList<ScopeMemberKind> CatalogKinds =
     [
         ScopeMemberKind.System, ScopeMemberKind.Scenario, ScopeMemberKind.Requirement, ScopeMemberKind.UserStory, ScopeMemberKind.Feature,
-        ScopeMemberKind.Journey, ScopeMemberKind.Contract, ScopeMemberKind.TestDataAsset,
+        ScopeMemberKind.Journey, ScopeMemberKind.Contract, ScopeMemberKind.TestDataAsset, ScopeMemberKind.CriticalE2EFlow,
     ];
 
     public static string PurposeLabel(ScopePurpose p) => p switch

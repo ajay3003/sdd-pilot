@@ -17,9 +17,10 @@ public enum ScopeState { Draft, InReview, Approved, Archived }
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ScopeRevisionState { Draft, InReview, Approved, Superseded }
 
-/// <summary>What a member references, by the owner's stable id (never a display name).</summary>
+/// <summary>What a member references, by the owner's stable id (never a display name). Append only: stored JSON uses the names.
+/// <see cref="CriticalE2EFlow"/> = a Critical E2E flow definition id (CriticalE2EFlowDefinition.Id) in one Target Environment.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ScopeMemberKind { System, Relationship, Scenario, Requirement, Feature, UserStory, AcceptanceCriterion, Journey, Contract, TestSuite, TestCase, TestDataAsset }
+public enum ScopeMemberKind { System, Relationship, Scenario, Requirement, Feature, UserStory, AcceptanceCriterion, Journey, Contract, TestSuite, TestCase, TestDataAsset, CriticalE2EFlow }
 
 /// <summary>Confirmed by a person; Candidate = proposed from evidence, not yet a member; Excluded = explicitly kept out.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]

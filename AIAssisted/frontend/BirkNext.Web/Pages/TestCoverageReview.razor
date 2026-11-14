@@ -4,6 +4,7 @@
 @using BirkNext.Web.Components
 @using P = BirkNext.Web.Services.TestCoveragePresentation
 @using G = BirkNext.Web.Services.TestCoverageGuidance
+@using S = BirkNext.Web.Services.TestCoverageScopePresentation
 @implements IDisposable
 @inject ITestCoverageApiService Api
 @inject IWorkspaceSessionService Workspace
@@ -29,6 +30,9 @@
     </PageHeader>
 
     <p class="tco-note" role="note" data-testid="tco-subtext">@TestCoverageText.Subtext</p>
+    @* The shared scope filter (approved scopes only). It narrows the views to items tied to the scope by a stable identity; the whole-project
+       numbers stay visible, and nothing without a confirmed association is counted as in scope. *@
+    <BirkNext.Web.Components.Scopes.ScopeFilter SelectionChanged="ScopeSelected" />
 
     <section class="tco-card" aria-labelledby="tco-inputs-heading" data-testid="tco-inputs">
         <h2 id="tco-inputs-heading">Review input</h2>
@@ -81,6 +85,7 @@
     @if (_result is { } r)
     {
         var levels = G.Levels(r);
+        var scopeSpec = S.SpecificationPath(r);
         var boundaries = G.Boundaries(r);
         <section class="tco-card" aria-labelledby="tco-result-heading" data-testid="tco-result" data-run="@r.RunId">
             <h2 id="tco-result-heading" tabindex="-1" @ref="_resultHeading">Review result</h2>
@@ -99,6 +104,31 @@
                 <li data-testid="tco-card-gaps"><span class="tco-card-value">@r.Gaps.Count</span><span>Remaining gaps</span><span class="tco-muted">@r.Gaps.Count(g => g.Attention == "Needs attention") need attention</span></li>
                 <li data-testid="tco-card-review"><span class="tco-card-value">@r.QaScope.NeedsReview.Count</span><span>Needs review</span><span class="tco-muted">Tester or test-lead decision</span></li>
             </ul>
+            @if (_scopeSelection is { } scopeSel)
+            {
+                var scopeSummary = S.Summarize(r, scopeSel);
+                <section class="tco-scope" aria-labelledby="tco-scope-heading" data-testid="tco-scope-summary">
+                    <h3 id="tco-scope-heading">Selected scope@(scopeSummary.ScopeCount == 1 ? "" : "s") compared with the whole project</h3>
+                    <p class="tco-muted" data-testid="tco-scope-dedup">Combined over @scopeSummary.ScopeCount scope@(scopeSummary.ScopeCount == 1 ? "" : "s"); each item is counted once@(scopeSummary.SharedMembers > 0 ? $" ({scopeSummary.SharedMembers} member{(scopeSummary.SharedMembers == 1 ? " is" : "s are")} named by more than one scope)" : ""). Only a stable identity ties an item to a scope — never a similar name — and "@S.NotConfirmedLabel" is never counted as in scope.</p>
+                    <div class="tco-scroll" role="region" aria-label="Scope comparison" tabindex="0">
+                        <table class="tco-table" data-testid="tco-scope-table">
+                            <thead><tr><th scope="col">Item</th><th scope="col">In scope (confirmed)</th><th scope="col">@S.NotConfirmedLabel</th><th scope="col">Whole project</th></tr></thead>
+                            <tbody>
+                                @foreach (var row in scopeSummary.Rows)
+                                {
+                                    <tr data-testid="tco-scope-row-@row.Kind">
+                                        <th scope="row">@(row.Label)@if (row.Note is { Length: > 0 } note) { <span class="tco-muted" data-testid="tco-scope-note-@row.Kind"> — @note</span> }</th>
+                                        <td data-testid="tco-scope-in-@row.Kind">@row.InScope</td>
+                                        <td data-testid="tco-scope-unconfirmed-@row.Kind">@row.NotConfirmed</td>
+                                        <td data-testid="tco-scope-whole-@row.Kind">@row.WholeProject</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    @foreach (var n in scopeSummary.Notes) { <p class="tco-muted" data-testid="tco-scope-limitation">@n</p> }
+                </section>
+            }
             <div class="tco-execution" role="note" data-testid="tco-execution-note">
                 <strong>Execution evidence:</strong> @r.Inventory.TestsWithExecutionEvidence results imported · execution status @(r.Inventory.TestsWithExecutionEvidence == 0 ? "Not verified" : "from imported results only") · code coverage: @(string.IsNullOrWhiteSpace(r.Inventory.CodeCoverage) || r.Inventory.CodeCoverage == TestCoverageText.NoPercentage ? "Not available" : "from an imported report")
                 <span class="tco-muted">@r.Inventory.ExecutionEvidence @r.Inventory.CodeCoverage</span>
@@ -201,11 +231,16 @@
                             </div>
                         }
                         var journeys = r.Journeys.Where(MatchesJourney).ToList();
+                        @if (_scopeSelection is not null && r.Journeys.Count > 0)
+                        {
+                            @* Source-derived journey ids ("journey:a>b") and scope journeys ("packId:journeyId") share no stable identity: shown, never counted as in scope. *@
+                            <p class="tco-notice" data-testid="tco-journeys-scope-note">These journeys come from source connections; a scope names Integration Journeys by pack id, and no stable id links the two. Every journey is shown with "@S.NotConfirmedLabel".</p>
+                        }
                         @foreach (var j in journeys.Take(_journeyLimit))
                         {
                             var sum = G.Summarize(j);
                             <article class="tco-journey" data-testid="tco-journey" data-weakest="@j.Weakest">
-                                <h3>@j.Title</h3>
+                                <h3>@(j.Title)@if (_scopeSelection is not null) { <span class="tco-pill" data-testid="tco-journey-scope-unconfirmed">@S.NotConfirmedLabel</span> }</h3>
                                 <dl class="tco-journey-facts" data-testid="tco-journey-summary">
                                     <div><dt>Coverage</dt><dd><span class="tco-pill tco-@P.StepTone(G.Weakest(j))">@P.Step(G.Weakest(j))</span></dd></div>
                                     <div><dt>Steps</dt><dd>@sum.Steps</dd></div>
@@ -307,11 +342,22 @@
                         break;
                     case "requirements":
                         <div class="tco-filters"><label class="tco-field tco-inline">Status <select @bind="_behaviorStatus" data-testid="tco-behavior-status"><option value="">All</option>@foreach (var st in r.Behaviors.Select(b => b.Status).Distinct().Order()) { <option value="@st">@st</option> }</select></label></div>
-                        var behaviors = r.Behaviors.Where(b => _behaviorStatus.Length == 0 || b.Status == _behaviorStatus).ToList();
+                        var behaviors = r.Behaviors.Where(b => _behaviorStatus.Length == 0 || b.Status == _behaviorStatus)
+                            .Where(b => _scopeSelection is null || S.Behavior(b, _scopeSelection, scopeSpec.Module, scopeSpec.Feature) != CoverageScopeAssociation.OutOfScope).ToList();
+                        @if (_scopeSelection is not null)
+                        {
+                            <p class="tco-muted" data-testid="tco-scope-behaviors-note">Scope filter: @behaviors.Count of @r.Behaviors.Count(b => _behaviorStatus.Length == 0 || b.Status == _behaviorStatus) items name a requirement the selected scopes name (by requirement identity) or may name ("@S.NotConfirmedLabel").</p>
+                        }
                         @foreach (var behavior in behaviors.Take(_behaviorLimit))
                         {
                             <article class="tco-behavior" data-testid="tco-behavior" data-recommendation="@behavior.Recommendation">
-                                <h3>@behavior.Title <span class="tco-pill">@behavior.Status</span></h3>
+                                <h3>@behavior.Title <span class="tco-pill">@behavior.Status</span>
+                                    @if (_scopeSelection is { } bs)
+                                    {
+                                        @if (S.Behavior(behavior, bs, scopeSpec.Module, scopeSpec.Feature) == CoverageScopeAssociation.NotConfirmed) { <span class="tco-pill" data-testid="tco-behavior-scope-unconfirmed">@S.NotConfirmedLabel</span> }
+                                        else if (S.Contributors(behavior.RequirementIds, bs, scopeSpec.Module, scopeSpec.Feature) is > 1 and var fromCount) { <span class="tco-muted" data-testid="tco-behavior-scope-from">from @fromCount scopes</span> }
+                                    }
+                                </h3>
                                 <dl class="tco-journey-facts">
                                     <div><dt>Already tested</dt><dd>@behavior.AlreadyTested.Count</dd></div>
                                     <div><dt>Not verified yet</dt><dd>@behavior.NotVerifiedYet.Count</dd></div>
@@ -334,10 +380,15 @@
                         <details class="tco-details" data-testid="tco-qa-input"><summary>Where QA tests come from</summary>
                             <p>Acceptance scenarios from the selected specification, test projects marked "QA automation" on the Overview, and Critical E2E flows of the active Target Environment. Manual tests outside machine-readable evidence are not seen, so overlap detection is only as complete as this input.</p>
                         </details>
-                        @foreach (var o in r.Overlaps.OrderBy(o => o.Kind))
+                        var overlaps = r.Overlaps.Where(o => _scopeSelection is null || S.Overlap(o, r, _scopeSelection, scopeSpec.Module, scopeSpec.Feature) != CoverageScopeAssociation.OutOfScope).ToList();
+                        @if (_scopeSelection is not null)
+                        {
+                            <p class="tco-muted" data-testid="tco-scope-overlaps-note">Scope filter: @overlaps.Count of @r.Overlaps.Count overlap observations involve a QA test tied to the selected scopes (Critical E2E flow id or requirement identity).</p>
+                        }
+                        @foreach (var o in overlaps.OrderBy(o => o.Kind))
                         {
                             <article class="tco-overlap" data-testid="tco-overlap" data-kind="@o.Kind">
-                                <h3>@o.QaTitle <span class="tco-pill">@P.Overlap(o.Kind)</span></h3>
+                                <h3>@o.QaTitle <span class="tco-pill">@P.Overlap(o.Kind)</span>@if (_scopeSelection is { } os && S.Overlap(o, r, os, scopeSpec.Module, scopeSpec.Feature) == CoverageScopeAssociation.NotConfirmed) { <span class="tco-pill" data-testid="tco-overlap-scope-unconfirmed">@S.NotConfirmedLabel</span> }</h3>
                                 <p>@o.Recommendation</p>
                                 <p class="tco-muted">Remaining risk: @o.RemainingRisk</p>
                                 <div class="tco-compare">
@@ -436,6 +487,9 @@
     ];
     private static readonly string[] PhaseNames = ["Discovering test projects", "Analyzing tests", "Finding system journeys", "Mapping tests to journeys", "Checking overlaps", "Finding remaining gaps", "Preparing documentation"];
     private ReviewSourceOptions? _sources;
+    // The shared scope filter's combined selection (null = no scope selected: every view behaves exactly as before).
+    private BirkNext.Scopes.ScopeSelection? _scopeSelection;
+    private void ScopeSelected(BirkNext.Scopes.ScopeSelection? selection) => _scopeSelection = selection;
     private readonly ReviewSourceScopeState _scope = new();
     private string? _loadError, _runError, _projectName, _environmentId;
     private Guid? _currentId, _baselineId;

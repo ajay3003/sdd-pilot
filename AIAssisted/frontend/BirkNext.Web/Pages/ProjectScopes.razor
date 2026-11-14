@@ -411,14 +411,19 @@
 
             @if (focus is not null)
             {
-                var inbound = o.Connections.Where(c => c.TargetKey == focus.Key && c.State != SystemConnectionState.Rejected).Select(c => (c.SourceKey, c.SourceName)).Distinct().ToList();
-                var outbound = o.Connections.Where(c => c.SourceKey == focus.Key && c.State != SystemConnectionState.Rejected).Select(c => (c.TargetKey, c.TargetName)).Distinct().ToList();
-                <div class="psc-map" data-testid="psc-conn-map" aria-label="Connections around @focus.Name">
-                    <div class="psc-map-col"><h3 class="psc-h4">Incoming (@inbound.Count)</h3>
-                        <ul>@foreach (var (k, n) in inbound) { <li>@if (k.StartsWith("topology:")) { @n } else { <a href="@ConnectionsHref(k)">@n</a> }</li> }</ul></div>
-                    <div class="psc-map-center"><strong>@focus.Name</strong></div>
-                    <div class="psc-map-col"><h3 class="psc-h4">Outgoing (@outbound.Count)</h3>
-                        <ul>@foreach (var (k, n) in outbound) { <li>@if (k.StartsWith("topology:")) { @n } else { <a href="@ConnectionsHref(k)">@n</a> }</li> }</ul></div>
+                <SystemConnectionGraph Focus="focus" Connections="o.Connections" SelectedConnection="@_openConnection"
+                                       OnFocus="FocusSystem" OnSelectConnection="SelectConnection" />
+            }
+            else
+            {
+                var busiest = o.Systems.Where(s => s.Outgoing + s.Incoming > 0).OrderByDescending(s => s.Outgoing + s.Incoming).ThenBy(s => s.Name).Take(8).ToList();
+                <div class="psc-graph-hint" data-testid="psc-graph-hint">
+                    @if (busiest.Count == 0) { <span class="psc-muted">No system has a recorded connection, so there is no graph to draw. Relationship Review shows candidates that are still unreviewed.</span> }
+                    else
+                    {
+                        <span class="psc-muted">Connection graph — choose a system:</span>
+                        @foreach (var b in busiest) { <a class="psc-chip" href="@ConnectionsHref(b.Key)" data-testid="psc-graph-pick" data-key="@b.Key">@b.Name (@(b.Outgoing + b.Incoming))</a> }
+                    }
                 </div>
             }
 
@@ -471,6 +476,11 @@
             }
         </section>
     };
+
+    private void FocusSystem(string key) => Nav.NavigateTo(ConnectionsHref(key));
+
+    /// <summary>A graph edge opens the same connection row (evidence, review link) in the list below.</summary>
+    private void SelectConnection(string id) { _openConnection = id; _stateFilter = "all"; }
 
     private int ConnectionCount(string key) => _overview!.Connections.Count(c => c.SourceKey == key || c.TargetKey == key);
 

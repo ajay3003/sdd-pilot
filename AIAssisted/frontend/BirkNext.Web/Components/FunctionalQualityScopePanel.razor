@@ -109,6 +109,14 @@
     }
     else if (_resolution is { } r)
     {
+        @* Shared canonical scopes narrow this view only: the Functional Quality Scope, its saved definitions and frozen snapshots are unchanged. *@
+        <BirkNext.Web.Components.Scopes.ScopeFilter SelectionChanged="CanonicalScopeSelected" />
+        @if (_canonicalScope is { } cs)
+        {
+            var named = r.Items.Where(InCanonicalScope).ToList();
+            var outside = r.Items.Count - named.Count;
+            <p class="fqs-muted fqs-small" data-testid="fqs-canonical-scope">Shared scope filter (@string.Join(", ", cs.Scopes.Select(x => $"{x.ScopeName} rev. {x.Revision}"))): @named.Select(i => i.Key).Distinct().Count() item@(named.Count == 1 ? "" : "s") named by the selected scope@(cs.Scopes.Count == 1 ? "" : "s") (counted once even when several scopes name them) — @named.Count(i => i.Type == ScopeArtifactType.Requirement) requirement(s), @named.Count(i => i.Type == ScopeArtifactType.UserStory) user stor@(named.Count(i => i.Type == ScopeArtifactType.UserStory) == 1 ? "y" : "ies"), @named.Count(i => i.Type == ScopeArtifactType.Scenario) scenario(s) · @outside outside of @r.Items.Count in this Functional Quality Scope. Matched by canonical identity (type, module, feature, id); a frozen report keeps the scope it was frozen with.</p>
+        }
         @Summary(r)
         @if (r.RelatedModules.Count > 0) { @Related(r) }
         @Scenarios(r)
@@ -148,6 +156,35 @@
     private bool _includeRelated, _includeTechnical, _loading, _editing, _newOpen, _confirmDelete;
     private string? _error, _notice;
     private ScopeResolution? _resolution;
+    private BirkNext.Scopes.ScopeSelection? _canonicalScope;
+    private HashSet<string> _canonicalKeys = new(StringComparer.OrdinalIgnoreCase);
+
+    private void CanonicalScopeSelected(BirkNext.Scopes.ScopeSelection? selection)
+    {
+        _canonicalScope = selection;
+        _canonicalKeys = selection is null ? new(StringComparer.OrdinalIgnoreCase)
+            : new(selection.Members.Select(m => m.Member.TargetId), StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The canonical key of a Delivery scope item: its type and the identity the canonical interpretation gives the same document item
+    /// (module / feature / id, CorrelationRules.Scoped). Acceptance criteria and test cases follow their parent item. Null when the item has no
+    /// canonical counterpart; such items are never in a shared scope (no name matching).
+    /// </summary>
+    public static string? CanonicalKeyOf(ScopeItem item) => item.Type switch
+    {
+        ScopeArtifactType.Requirement => CanonicalKeys.EntityKey(CanonicalEntityType.Requirement, CorrelationRules.Scoped(item.Module, item.FeatureKey, item.DisplayId)),
+        ScopeArtifactType.UserStory => CanonicalKeys.EntityKey(CanonicalEntityType.UserStory, CorrelationRules.Scoped(item.Module, item.FeatureKey, item.DisplayId)),
+        ScopeArtifactType.Scenario => CanonicalKeys.EntityKey(CanonicalEntityType.Scenario, CorrelationRules.Scoped(item.Module, item.FeatureKey, item.DisplayId)),
+        _ => null,
+    };
+
+    private bool InCanonicalScope(ScopeItem item)
+    {
+        if (_canonicalScope is null) return true;
+        if (CanonicalKeyOf(item) is { } key) return _canonicalKeys.Contains(key);
+        return item.ParentKey is { } parent && _resolution?.Items.FirstOrDefault(i => i.Key == parent) is { } p && CanonicalKeyOf(p) is { } pk && _canonicalKeys.Contains(pk);
+    }
     private ScopeDefinition? _custom;
     private ScopeFilter _filter = new();
     /// <summary>Every filter change goes through here: the selection is reconciled (an item the filters hide is no longer selected) and the URL updated.</summary>
@@ -464,7 +501,7 @@
 
     private RenderFragment Items(ScopeResolution r) => __builder =>
     {
-        var shown = P.Apply(r.Items, _filter);
+        var shown = P.Apply(r.Items, _filter).Where(InCanonicalScope).ToList();
         <p class="fqs-muted fqs-small" data-testid="fqs-shown">Showing @shown.Count of @r.Items.Count items · @r.PrecedenceNote</p>
         if (shown.Count == 0)
         {

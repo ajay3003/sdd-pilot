@@ -276,4 +276,29 @@ public sealed class ProjectScopesPageTests : BunitContext
         _scopes.Verify(s => s.MembershipAsync(Project, ScopeMemberKind.System, It.IsAny<CancellationToken>()), Times.Once);
         _scopes.Verify(s => s.GetAsync(Project, It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    [Fact]
+    public async Task The_connection_graph_draws_only_listed_connections_marks_candidates_and_opens_an_edge_in_the_list()
+    {
+        await Setup();
+        Go("?tab=connections");
+        var cut = Render<ProjectScopes>();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=psc-graph-pick]").Should().NotBeEmpty());
+        cut.FindAll("[data-testid=scg]").Should().BeEmpty("without a focused system the project is not drawn as one hairball");
+
+        Go("?tab=connections&system=Service%7Cm2lb.person.api");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=scg-focus]").TextContent.Should().Contain("M2LB.Person.Api"));
+        cut.FindAll("[data-testid=scg-node]").Select(n => n.GetAttribute("data-key")).Should().BeEquivalentTo(["Service|m2lb.skoleservice.api", "Service|m2lb.personbirkadapter.worker"]);
+        var edges = cut.FindAll("[data-testid=scg-edge]");
+        edges.Should().HaveCount(2, "the rejected MU → Person connection is not drawn");
+        edges.Single(e => e.GetAttribute("data-id") == "c2").ClassList.Should().Contain("is-candidate");
+        edges.Should().NotContain(e => e.ClassList.Contains("is-observed"), "nothing was observed at runtime");
+
+        cut.Find("[data-testid=scg-edge][data-id=c2]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=psc-conn-detail]").TextContent.Should().Contain("Not proven"));
+        cut.Find("[data-testid=scg-canvas]").KeyDown(new Microsoft.AspNetCore.Components.Web.KeyboardEventArgs { Key = "+" });
+        cut.Find("[data-testid=scg-zoom]").TextContent.Should().Be("125%");
+        cut.Find("[data-testid=scg-fit]").Click();
+        cut.Find("[data-testid=scg-zoom]").TextContent.Should().Be("100%");
+    }
 }

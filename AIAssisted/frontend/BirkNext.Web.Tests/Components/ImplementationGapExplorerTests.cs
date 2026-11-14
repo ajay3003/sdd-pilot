@@ -184,4 +184,52 @@ public sealed class ImplementationGapExplorerTests : BunitContext
         cut.FindAll("[data-testid=ig-overview-row]").Should().HaveCount(1);
         cut.Find("[data-testid=ig-overview]").TextContent.Should().NotContain("%");
     }
+
+    [Fact]
+    public void A_feature_context_comes_from_the_tasks_document_path_only()
+    {
+        ImplementationGapExplorer.FeatureContext("Skole/specs/001-skoletjenesten/tasks.md").Should().Be(("Skole", "001-skoletjenesten"));
+        ImplementationGapExplorer.FeatureContext("tasks.md").Should().BeNull("without module/specs/feature there is no identity to match");
+    }
+
+    [Fact]
+    public async Task Canonical_requirements_resolve_by_exact_identity_and_a_scope_keeps_only_confirmed_associations()
+    {
+        var storage = new BirkNext.Web.Tests.Services.ActiveTargetEnvironmentTests.Storage();
+        var settings = new FrontendAnalysisSettingsService();
+        await settings.LoadAsync(storage);
+        settings.Settings.ActiveProfileId = "dev";
+        Services.AddSingleton<Microsoft.JSInterop.IJSRuntime>(storage);
+        Services.AddSingleton<IFrontendAnalysisSettingsService>(settings);
+        Services.AddSingleton<IFrontendAnalysisContextFactory>(BirkNext.Web.Tests.Services.ActiveTargetEnvironmentTests.Factory(settings, storage));
+        var scopes = new Mock<IScopeRegistryApiService>();
+        const string Fr19 = "Requirement|skole/001-skoletjenesten/FR-019";
+        scopes.Setup(x => x.CatalogAsync(BirkNext.Scopes.ScopeMemberKind.Requirement, "dev", null, 0, 100, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new BirkNext.Scopes.ScopeCatalogPage(BirkNext.Scopes.ScopeMemberKind.Requirement,
+                [new BirkNext.Scopes.ScopeCatalogItem { Kind = BirkNext.Scopes.ScopeMemberKind.Requirement, TargetId = Fr19, Label = "FR-019: Deliver the dataset", Description = "Skole/001-skoletjenesten/FR-019" },
+                 new BirkNext.Scopes.ScopeCatalogItem { Kind = BirkNext.Scopes.ScopeMemberKind.Requirement, TargetId = "Requirement|other/002-x/FR-036", Label = "FR-036 elsewhere", Description = "Other/002-x/FR-036" }], 2, 0, 100), (string?)null));
+        scopes.Setup(x => x.VerifyingScenariosAsync(It.IsAny<BirkNext.Scopes.ScopeScenarioLinkRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(([new BirkNext.Scopes.ScopeScenarioLink(Fr19, "Scenario|system-understanding/skole/s1", "confirmed by a person")], (string?)null));
+        var scopeId = Guid.NewGuid();
+        scopes.Setup(x => x.ListAsync("import:m2lb", It.IsAny<CancellationToken>())).ReturnsAsync(([new BirkNext.Scopes.ScopeSummary
+            { Id = scopeId, Name = "Delivery", State = BirkNext.Scopes.ScopeState.Approved, ApprovedRevision = 1, CurrentRevision = 1 }], (string?)null));
+        scopes.Setup(x => x.SelectionAsync("import:m2lb", It.IsAny<IReadOnlyList<Guid>>(), It.IsAny<CancellationToken>())).ReturnsAsync((new BirkNext.Scopes.ScopeSelection
+        {
+            ProjectKey = "import:m2lb", Scopes = [new(scopeId, "Delivery", 1)],
+            Members = [new(new BirkNext.Scopes.ScopeMember { Kind = BirkNext.Scopes.ScopeMemberKind.Requirement, TargetId = Fr19, Label = "FR-019" }, [new(scopeId, "Delivery", 1)])],
+        }, (string?)null));
+        Services.AddSingleton(scopes.Object);
+        Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Imported", "import:m2lb", "M2LB")).Object);
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo($"implementation-review?scope={scopeId}");
+
+        var cut = Render<ImplementationGapExplorer>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ig-overview-canonical]").TextContent.Should().Be("1 of 2 resolved · 1 with an established scenario",
+            "FR-036 exists only in another Artifact Pack, so the display id alone never resolves it"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=ig-scope-summary]").TextContent.Should().Contain("1 feature in the selected scope"));
+        cut.FindAll("[data-testid=ig-scope-unconfirmed-row]").Should().BeEmpty();
+        cut.Find("[data-testid=ig-overview-open]").Click();
+        cut.FindAll("[data-testid=ig-canonical-req]").Select(e => e.GetAttribute("data-resolved")).Should().Equal("true", "false");
+        cut.Find("[data-testid=ig-alignment]").TextContent.Should().Contain("Not assessed", "no Task Alignment result exists for this tasks document");
+        cut.Find("[data-testid=ig-shared-evidence]").TextContent.Should().Contain("not implementation or verification evidence");
+    }
 }

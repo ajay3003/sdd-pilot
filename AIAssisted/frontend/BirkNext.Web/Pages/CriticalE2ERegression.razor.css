@@ -25,6 +25,9 @@
 .e2e-section-head h2 { margin: 0; font-size: 1.1rem; }
 .e2e-flows-head { margin-bottom: .35rem; }
 .e2e-flows-head h2 { font-size: 1.3rem; }
+/* Scope filter summary: counts over the flows the selected scopes name (a filter, never a run trigger). */
+.e2e-scope { display: grid; gap: .4rem; margin: 0 0 1rem; padding: .7rem 1rem; border-radius: 8px; background: var(--clr-surface, #f7f7f8); }
+.e2e-scope p { margin: 0; }
 .e2e-flows-subhead { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; margin: 0 0 .75rem; }
 .e2e-section-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .e2e-run-reason { font-size: .8rem; color: var(--clr-text-muted, #666); max-width: 22rem; }

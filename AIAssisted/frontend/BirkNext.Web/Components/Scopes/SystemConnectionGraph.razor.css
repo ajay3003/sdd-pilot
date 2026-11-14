@@ -1,0 +1,24 @@
+.scg { margin: .5rem 0 .75rem; border: 1px solid var(--clr-border, #e2e8f0); border-radius: 10px; background: var(--clr-surface-white, #fff); padding: .5rem .75rem; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.scg-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; margin-bottom: .4rem; }
+.scg-zoom { min-width: 3rem; text-align: center; font-size: .85rem; font-variant-numeric: tabular-nums; }
+.scg-legend { margin-left: auto; font-size: .8rem; color: var(--clr-text-muted, #475467); display: inline-flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
+.scg-key { display: inline-block; width: 1.6rem; border-top: 2px solid var(--clr-text-muted, #475467); vertical-align: middle; }
+.scg-key-dashed { border-top-style: dashed; }
+.scg-canvas { overflow: hidden; width: 100%; max-width: 100%; box-sizing: border-box; contain: inline-size; touch-action: none; border-radius: 6px; background: var(--clr-surface-subtle, #f8fafc); cursor: grab; }
+.scg-canvas.is-dragging { cursor: grabbing; user-select: none; }
+.scg-canvas:focus-visible { outline: 2px solid var(--clr-primary, #2563eb); outline-offset: 2px; }
+.scg-canvas svg { display: block; max-width: none; height: auto; font-family: inherit; }
+.scg-node rect { fill: var(--clr-surface-white, #fff); stroke: var(--clr-border-strong, #94a3b8); stroke-width: 1.3; }
+.scg-node.is-link { cursor: pointer; }
+.scg-node.is-link:hover rect, .scg-node.is-link:focus rect { stroke: var(--clr-primary, #2563eb); stroke-width: 2; }
+.scg-node.is-focus rect { stroke: var(--clr-primary, #2563eb); stroke-width: 2.4; }
+.scg-node text { font-size: 12.5px; font-weight: 600; fill: var(--clr-text, #0f172a); pointer-events: none; }
+.scg-edge path { fill: none; stroke: var(--clr-text-muted, #64748b); stroke-width: 1.6; }
+.scg-edge path.scg-hit { stroke: transparent; stroke-width: 12; cursor: pointer; }
+.scg-edge.is-candidate path:not(.scg-hit) { stroke-dasharray: 6 4; stroke: #b45309; }
+.scg-edge.is-confirmed path:not(.scg-hit) { stroke: #166534; }
+.scg-edge.is-observed path:not(.scg-hit) { stroke: #166534; stroke-width: 2.6; }
+.scg-edge.is-selected path:not(.scg-hit), .scg-edge:focus path:not(.scg-hit) { stroke: var(--clr-primary, #2563eb); stroke-width: 2.8; }
+.scg-edge:focus { outline: none; }
+.scg-arrowhead { fill: var(--clr-text-muted, #64748b); }
+.scg-caption { margin: .4rem 0 0; font-size: .82rem; color: var(--clr-text-muted, #475467); }

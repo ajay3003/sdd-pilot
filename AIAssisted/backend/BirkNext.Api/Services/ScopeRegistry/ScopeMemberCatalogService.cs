@@ -1,4 +1,5 @@
 using BirkNext.Api.Services.CanonicalInterpretation;
+using BirkNext.Api.Services.CriticalE2E;
 using BirkNext.Api.Services.IntegrationJourneys;
 using BirkNext.Api.Services.TestData;
 using BirkNext.Interpretation;
@@ -16,11 +17,14 @@ public interface IScopeMemberResolver
 /// The member catalogs of the Scope Registry as thin adapters over the owning stores — nothing is copied:
 /// systems/services, requirements, user stories, features, scenarios and contracts from the latest canonical interpretation of the active Target
 /// Environment; Test Data assets (immutable asset id, never values) from the Test Data catalog; journeys from the registered Integration Journey
-/// packs. Kinds with no catalog that can confirm an id (relationship, acceptance criterion, test suite, test case) cannot be added.
+/// packs; Critical E2E flows (flow definition id) from the Critical E2E store of the active Target Environment. Kinds with no catalog that can
+/// confirm an id (relationship, acceptance criterion, test suite, test case) cannot be added.
 /// </summary>
 public sealed class ScopeMemberCatalogService(CanonicalInterpretationService canonical, TestDataCatalog? testData = null,
-    IIntegrationJourneyPackRegistry? journeys = null) : IScopeMemberResolver
+    IIntegrationJourneyPackRegistry? journeys = null, ICriticalE2EStore? criticalE2E = null) : IScopeMemberResolver
 {
+    public const string CriticalE2EModule = "Critical E2E Regression";
+
     public const string CanonicalModule = "Canonical interpretation (Source Analysis)";
 
     /// <summary>The canonical entity types a member kind may reference.</summary>
@@ -35,7 +39,10 @@ public sealed class ScopeMemberCatalogService(CanonicalInterpretationService can
         _ => null,
     };
 
-    public static bool HasCatalog(ScopeMemberKind kind) => CanonicalTypes(kind) is not null || kind is ScopeMemberKind.TestDataAsset or ScopeMemberKind.Journey;
+    public static bool HasCatalog(ScopeMemberKind kind) => CanonicalTypes(kind) is not null || kind is ScopeMemberKind.TestDataAsset or ScopeMemberKind.Journey or ScopeMemberKind.CriticalE2EFlow;
+
+    /// <summary>Kinds whose ids only mean something in one catalog context (interpretation scope / Target Environment), so a member remembers it.</summary>
+    public static bool IsCatalogScoped(ScopeMemberKind kind) => CanonicalTypes(kind) is not null || kind == ScopeMemberKind.CriticalE2EFlow;
 
     public async Task<ScopeCatalogPage> SearchAsync(ScopeMemberKind kind, string? catalogScope, string? search, int skip, int take, CancellationToken ct)
     {
@@ -69,6 +76,15 @@ public sealed class ScopeMemberCatalogService(CanonicalInterpretationService can
             var items = JourneyItems().Where(i => Matches(i, search)).ToList();
             return new(kind, [.. items.Skip(skip).Take(take)], items.Count, skip, take);
         }
+        if (kind == ScopeMemberKind.CriticalE2EFlow)
+        {
+            if (criticalE2E is null) return new(kind, [], 0, skip, take) { Available = false, Notices = ["Critical E2E Regression is not available in this host."] };
+            // Flows belong to one Target Environment: the catalog scope is that environment's id (the same id the canonical catalogs use).
+            if (string.IsNullOrWhiteSpace(catalogScope))
+                return new(kind, [], 0, skip, take) { Notices = ["Choose an active Target Environment: Critical E2E flows are defined per environment."] };
+            var flows = FlowItems(catalogScope).Where(i => Matches(i, search)).ToList();
+            return new(kind, [.. flows.Skip(skip).Take(take)], flows.Count, skip, take);
+        }
         return new(kind, [], 0, skip, take)
         {
             Available = false,
@@ -91,6 +107,8 @@ public sealed class ScopeMemberCatalogService(CanonicalInterpretationService can
                 result.Add(journeys is null ? new(m.Key, ScopeMemberCheck.NotCheckable, "Integration Journeys are not available here.")
                     : JourneyItems().FirstOrDefault(i => i.TargetId == m.TargetId) is { } journey ? new(m.Key, ScopeMemberCheck.Current, "A registered journey.", journey.Label)
                     : new(m.Key, ScopeMemberCheck.Missing, "No registered journey has this id."));
+            else if (m.Kind == ScopeMemberKind.CriticalE2EFlow)
+                result.Add(CheckFlow(m, catalogScope));
             else result.Add(new(m.Key, ScopeMemberCheck.NotCheckable, $"No catalog can confirm {Plural(m.Kind)}."));
         }
         foreach (var group in canonicalMembers.GroupBy(m => m.CatalogScope ?? catalogScope))
@@ -136,6 +154,43 @@ public sealed class ScopeMemberCatalogService(CanonicalInterpretationService can
         SourceModule = "Integration Journeys", State = "Registered journey", SubKind = p.PackId,
     }));
 
+    ScopeMemberStatus CheckFlow(ScopeMember m, string? catalogScope)
+    {
+        if (criticalE2E is null) return new(m.Key, ScopeMemberCheck.NotCheckable, "Critical E2E Regression is not available here.");
+        var scope = m.CatalogScope ?? catalogScope;
+        if (string.IsNullOrWhiteSpace(scope)) return new(m.Key, ScopeMemberCheck.NotCheckable, "No active Target Environment to check it against.");
+        if (!string.IsNullOrWhiteSpace(catalogScope) && !string.Equals(scope, catalogScope, StringComparison.Ordinal))
+            return new(m.Key, ScopeMemberCheck.OtherContext, "Chosen from another Target Environment's Critical E2E flows; switch to that environment to check it.");
+        return FlowItems(scope).FirstOrDefault(i => string.Equals(i.TargetId, m.TargetId, StringComparison.Ordinal)) is { } flow
+            ? new(m.Key, ScopeMemberCheck.Current, "A Critical E2E flow of this Target Environment.", flow.Label)
+            : new(m.Key, ScopeMemberCheck.Missing, "No Critical E2E flow of this Target Environment has this id (removed, or never present).");
+    }
+
+    /// <summary>The environment's flow definitions. Classification is the flow's own kind: Critical flows can count toward release coverage,
+    /// Diagnostic (smoke) flows never do. Flows approved from source suggestions are Diagnostic (UI only, never Business E2E).</summary>
+    IEnumerable<ScopeCatalogItem> FlowItems(string environmentId) => criticalE2E!.Flows(environmentId)
+        .Where(f => !string.IsNullOrWhiteSpace(f.Id))
+        .OrderBy(f => f.Kind).ThenBy(f => f.Module, StringComparer.OrdinalIgnoreCase).ThenBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
+        .Select(f => new ScopeCatalogItem
+        {
+            Kind = ScopeMemberKind.CriticalE2EFlow, TargetId = f.Id, Label = string.IsNullOrWhiteSpace(f.Name) ? f.Id : f.Name,
+            Description = string.Join(" · ", new[]
+            {
+                string.IsNullOrWhiteSpace(f.Module) ? "No module" : f.Module,
+                FlowClassification(f),
+                f.Mode == BirkNext.CriticalE2E.CriticalE2EExecutionMode.CompanionBrowser ? "Attended browser" : "Automated API",
+            }),
+            SourceModule = CriticalE2EModule,
+            State = !f.Enabled ? "Disabled" : f.RequiredForRelease && f.Kind == BirkNext.CriticalE2E.CriticalE2EFlowKind.Critical ? "Required for release" : "Enabled",
+            SubKind = f.Kind.ToString(), CatalogScope = environmentId,
+        });
+
+    public static string FlowClassification(BirkNext.CriticalE2E.CriticalE2EFlowDefinition f) => f.Kind == BirkNext.CriticalE2E.CriticalE2EFlowKind.Critical
+        ? "Critical flow (can count toward release coverage)"
+        : f.Source == BirkNext.CriticalE2E.CriticalE2EFlowSource.SuggestedFromSource
+            ? "Smoke / diagnostic, suggested from UI source (never Business E2E)"
+            : "Smoke / diagnostic (never counts toward release coverage)";
+
     static bool Matches(ScopeCatalogItem i, string? search) => string.IsNullOrWhiteSpace(search)
         || i.Label.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase) || (i.Description ?? "").Contains(search.Trim(), StringComparison.OrdinalIgnoreCase);
 
@@ -149,7 +204,7 @@ public sealed class ScopeMemberCatalogService(CanonicalInterpretationService can
     public static string Singular(ScopeMemberKind kind) => kind switch
     {
         ScopeMemberKind.UserStory => "user story", ScopeMemberKind.AcceptanceCriterion => "acceptance criterion", ScopeMemberKind.TestSuite => "test suite",
-        ScopeMemberKind.TestCase => "test case", ScopeMemberKind.TestDataAsset => "Test Data asset", _ => kind.ToString().ToLowerInvariant(),
+        ScopeMemberKind.TestCase => "test case", ScopeMemberKind.TestDataAsset => "Test Data asset", ScopeMemberKind.CriticalE2EFlow => "Critical E2E flow", _ => kind.ToString().ToLowerInvariant(),
     };
 
     public static string Plural(ScopeMemberKind kind) => kind switch
