@@ -8,7 +8,7 @@ namespace BirkNext.Api.Data;
 /// database — ran the same migration concurrently and failed with "relation … already exists", duplicate
 /// __EFMigrationsHistory keys or a missing index. A PostgreSQL session-level advisory lock, taken on the connection that the
 /// migrator itself uses, makes the others wait; when they get the lock there is nothing left to apply. Used for every context that owns
-/// migrations (AppDbContext and the schema-isolated DeliveryReportingDbContext).
+/// migrations: all seven persistence contexts (see <see cref="BirkNext.Api.Services.WorkspaceTransfer.CodeMigrations.Contexts"/>), one after another.
 /// </summary>
 public static class DatabaseMigrationLock
 {

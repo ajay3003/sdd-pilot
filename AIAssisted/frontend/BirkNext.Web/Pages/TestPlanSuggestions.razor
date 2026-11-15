@@ -6,6 +6,7 @@
 @implements IDisposable
 @inject IServiceProvider ServiceProvider
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 @* Test Plan Suggestions: prepares reviewable test cases for the SELECTED PROJECT from the evidence its registered analyzers can read (specification,
    System Understanding guide when one describes the project's source, UI source, API contracts, integration journeys, existing tests). Candidates are
@@ -14,6 +15,8 @@
 <PageTitle>Plan & prepare — Manual Testing</PageTitle>
 
 <div class="tps" data-testid="tps" aria-busy="@(_loading ? "true" : "false")">
+    @* Unsaved plan edits are never discarded silently (audit 2026-11-15): leaving the page or opening another plan asks first. *@
+    <NavigationLock ConfirmExternalNavigation="@_dirty" OnBeforeInternalNavigation="ConfirmLeaveAsync" />
     @* Plan & prepare of the Manual Testing workspace IS Test Plan Suggestions: one planning page, same route and links as before. *@
     <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manual Testing" HomeRoute="@ManualTestingPresentation.HomeRoute" Stages="ManualTestingPresentation.Stages"
         Current="plan" Title="Plan & prepare" ShowProject="false"
@@ -294,7 +297,26 @@
     private void Ok(string text) { _message = text; _messageTone = "ok"; }
     private void Fail(string text) { _message = text; _messageTone = "warn"; }
 
-    private void Change(TestPlanDraft draft) { _draft = draft; _dirty = true; }
+    private void Change(TestPlanDraft draft) { _draft = draft; _dirty = true; _edits++; }
+
+    /// <summary>Counts local edits, so a save that completes after a newer edit never marks that edit as saved.</summary>
+    private int _edits;
+
+    /// <summary>Leaving with unsaved edits asks first. Switching areas of the same plan keeps the edits and does not ask.</summary>
+    private async Task ConfirmLeaveAsync(Microsoft.AspNetCore.Components.Routing.LocationChangingContext context)
+    {
+        if (!_dirty || _draft is null) return;
+        var target = Nav.ToAbsoluteUri(context.TargetLocation);
+        var current = Nav.ToAbsoluteUri(Nav.Uri);
+        var draftParameter = System.Text.RegularExpressions.Regex.Match(target.Query, @"[?&]draft=([^&]+)");
+        var samePlan = string.Equals(target.AbsolutePath, current.AbsolutePath, StringComparison.OrdinalIgnoreCase)
+            && (!draftParameter.Success || string.Equals(Uri.UnescapeDataString(draftParameter.Groups[1].Value), _draft.Id.ToString(), StringComparison.OrdinalIgnoreCase));
+        if (samePlan) return;
+        bool leave;
+        try { leave = await JS.InvokeAsync<bool>("confirm", "This plan has unsaved changes. Leave without saving them?"); }
+        catch (JSException) { leave = false; }
+        if (!leave) context.PreventNavigation();
+    }
 
     private void ToggleCase(string id) { if (!_openCases.Remove(id)) _openCases.Add(id); }
 
@@ -958,9 +980,18 @@
         if (_draft is null) return;
         _busy = true;
         if (_draft.ProjectKey is not null && _draft.Cases.Any(c => c.RequirementLinks.Any(m => m.LinkedAt == default))) await LoadRequirementsAsync();
+        var sent = _edits;
         var (draft, error) = await _api!.SaveAsync(_draft.Id, P.ToSaveRequest(_draft, requirements: _requirements));
         _busy = false;
-        if (draft is null) { Fail(error ?? "The draft could not be saved."); return; }
+        if (draft is null) { Fail(error ?? "The draft could not be saved."); return; } // the edits stay; Save can be tried again
+        if (_edits != sent)
+        {
+            // Edited while the save was on its way: what was sent is saved, the newer edits are kept on top of the saved revision and stay unsaved.
+            _draft = _draft with { Revision = draft.Revision };
+            await ReloadWorkspaceAsync();
+            Info($"Saved revision {draft.Revision}. Your newer changes are not saved yet: save again.");
+            return;
+        }
         _draft = draft; _dirty = false;
         await ReloadWorkspaceAsync();
         Ok($"Draft saved (revision {draft.Revision}).");

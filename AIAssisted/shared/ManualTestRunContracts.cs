@@ -119,6 +119,9 @@ public sealed record ManualRunSummary(Guid Id, Guid DraftId, string CaseId, stri
 
 public sealed record StartManualRunRequest(string ProjectKey, Guid DraftId, string CaseId, string? Environment);
 
+/// <summary>One page of a project's runs, newest first, with the exact number of matching runs (so a list never hides that it is partial).</summary>
+public sealed record ManualRunPage(List<ManualRunSummary> Runs, int Total, int Skip, int Take);
+
 /// <summary>Saves progress of an in-progress run: step decisions and observations, notes, evidence references and defects (full lists; an item
 /// without an id is new). Refused for a completed or abandoned run, and from an older run revision (409).</summary>
 public sealed record SaveManualRunRequest

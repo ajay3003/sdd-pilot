@@ -117,6 +117,15 @@ public sealed record LocalDataResetResult
 /// </summary>
 public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbContext db, LocalDataResetState state, IServiceProvider services, ILogger<LocalDataResetCoordinator> logger)
 {
+    /// <summary>The contexts this coordinator clears in dedicated steps (the application database, Delivery Management, Canonical interpretation,
+    /// Snapshot Registry); every other context is cleared through <see cref="ResettableSchemas.All"/>. PersistenceOwnershipTests checks that the
+    /// two lists together name every registered context exactly once.</summary>
+    public static readonly IReadOnlyList<Type> DedicatedResetContexts =
+    [
+        typeof(AppDbContext), typeof(BirkNext.Api.Data.DeliveryReporting.DeliveryReportingDbContext),
+        typeof(BirkNext.Api.Data.CanonicalInterpretation.CanonicalInterpretationDbContext), typeof(BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext),
+    ];
+
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
     public static readonly IReadOnlyList<string> Cleared =
@@ -189,7 +198,13 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
                 warnings.Add("The reset epoch could not be saved, so a browser tab that still shows the previous project could save it again. Close other BirkNext tabs.");
             }
 
-            await Step(warnings, "Critical E2E flows and history", () => { services.GetService<ICriticalE2EStore>()?.ClearAll(); return Task.CompletedTask; });
+            await Step(warnings, "Critical E2E flows and history", () =>
+            {
+                services.GetService<ICriticalE2EStore>()?.ClearAll();
+                // Suggestion reviews go with the flows and source snapshots they review (they survived a reset before audit 2026-11-15 ARCH-01).
+                services.GetService<BirkNext.Api.Services.CriticalE2E.Suggestions.ICriticalE2ESuggestionStore>()?.Clear();
+                return Task.CompletedTask;
+            });
             await Step(warnings, "authenticated browser sessions", async () => { if (services.GetService<AuthenticatedBrowserSessionManager>() is { } m) await m.DisposeAllForResetAsync(); });
             // The project-bound proxy SESSION stops; the certificate, port configuration and proxy capability are installation state and stay.
             await Step(warnings, "local HTTPS proxy session", async () => { if (services.GetService<LocalHttpsProxyService>() is { } proxy) await proxy.StopForLocalDataResetAsync(); });
@@ -223,12 +238,10 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
             await Step(warnings, "Snapshot Registry", async () =>
             {
                 using var scope = services.CreateScope();
+                // Every table of the context, dependents first, refusing any table outside its schema (was three hard-coded DELETEs, so a table
+                // added later would have survived the reset).
                 if (scope.ServiceProvider.GetService<BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext>() is { } snapshots && snapshots.Database.IsRelational())
-                {
-                    await snapshots.Database.ExecuteSqlRawAsync("DELETE FROM snapshot_registry.snapshot_edge", ct);
-                    await snapshots.Database.ExecuteSqlRawAsync("DELETE FROM snapshot_registry.snapshot_pointer", ct);
-                    await snapshots.Database.ExecuteSqlRawAsync("DELETE FROM snapshot_registry.snapshot_entry", ct);
-                }
+                    await ResettableSchemas.DeleteAllRowsAsync(snapshots, BirkNext.Api.Data.SnapshotRegistry.SnapshotRegistryDbContext.Schema, ct);
             }, domains, "Snapshot Registry");
             // Separate-schema stores from the registry (ResettableSchemas.All): each its own transaction on the local database, history tables untouched.
             foreach (var store in ResettableSchemas.For(includeProtected))

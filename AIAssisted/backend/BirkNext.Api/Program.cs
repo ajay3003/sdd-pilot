@@ -88,8 +88,9 @@ builder.Services.AddCors(options =>
         // The local-session cookie travels with the frontend's requests (one exact origin; never a wildcard with credentials).
         .AllowCredentials()));
 
-// Supported local mode listens on loopback only: a configured URL beyond loopback (ASPNETCORE_URLS, launch settings, Kestrel endpoints) stops
-// startup unless non-local hosting is chosen explicitly. HTTP_PORTS/HTTPS_PORTS bind every interface and apply only when no URL is configured.
+// The only supported mode listens on loopback only: a configured URL beyond loopback (ASPNETCORE_URLS, launch settings, Kestrel endpoints) stops
+// startup. HTTP_PORTS/HTTPS_PORTS bind every interface and apply only when no URL is configured. There is no opt-out: BirkNext has no
+// project-level authorization (audit 2026-11-15 SEC-01), so a shared or network deployment must not start until one exists.
 {
     var urlSources = new[] { builder.Configuration["urls"] }
         .Concat(builder.Configuration.GetSection("Kestrel:Endpoints").GetChildren().Select(e => e["Url"])).Where(u => !string.IsNullOrWhiteSpace(u)).ToList();
@@ -97,10 +98,11 @@ builder.Services.AddCors(options =>
         urlSources.AddRange(BirkNext.Api.Services.LocalSecurity.LoopbackBinding.PortOnlyUrls(builder.Configuration["http_ports"], builder.Configuration["https_ports"]));
     var configuredUrls = string.Join(';', urlSources);
     var widened = BirkNext.Api.Services.LocalSecurity.LoopbackBinding.Violations(configuredUrls);
-    if (widened.Count > 0 && !builder.Configuration.GetValue<bool>(BirkNext.Api.Services.LocalSecurity.LoopbackBinding.AllowSetting))
+    if (widened.Count > 0)
         throw new InvalidOperationException(
-            $"BirkNext listens on localhost only, but it was configured to listen on {string.Join(", ", widened)}. Use http://localhost:<port> " +
-            $"(or set {BirkNext.Api.Services.LocalSecurity.LoopbackBinding.AllowSetting}=true for a deliberately non-local deployment).");
+            $"BirkNext listens on localhost only, but it was configured to listen on {string.Join(", ", widened)}. Use http://localhost:<port>. " +
+            "BirkNext serves one person on this computer: it has no project-level authorization, so a shared or network deployment would let every " +
+            $"signed-in caller read and change every project ({BirkNext.Api.Services.LocalSecurity.LoopbackBinding.AllowSetting} no longer enables one).");
 }
 builder.Services.AddSingleton<BirkNext.Api.Services.LocalSecurity.LocalSessionService>();
 

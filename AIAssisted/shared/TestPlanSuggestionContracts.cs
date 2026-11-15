@@ -409,6 +409,18 @@ public sealed record ManualRequirementLink
     public string Title { get; init; } = "";
     public string LinkedBy { get; init; } = "";
     public DateTimeOffset LinkedAt { get; init; }
+    /// <summary>What the server checked the link against when it was made: <see cref="ManualRequirementLinkBasis.BrowserSpecification"/> = the
+    /// requirement list the browser parsed from the project's specification and sent with the save. The server does not hold the specification, so
+    /// this is a consistency check, not an independent verification. Null for links recorded before the basis was kept.</summary>
+    public string? CheckedAgainst { get; init; }
+    /// <summary>SHA-256 of that requirement list (requirement id and specification file, sorted), so the list a link was checked against can be
+    /// compared with a later one.</summary>
+    public string? CatalogFingerprint { get; init; }
+}
+
+public static class ManualRequirementLinkBasis
+{
+    public const string BrowserSpecification = "browser-specification";
 }
 
 /// <summary>One requirement of the project's selected specification (parsed by the existing specification parser in the browser).</summary>

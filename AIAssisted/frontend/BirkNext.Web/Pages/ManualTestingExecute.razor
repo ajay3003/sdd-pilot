@@ -133,8 +133,33 @@
             }
             foreach (var summary in _ws.Plans?.Drafts ?? [])
                 if ((await _plans.DraftAsync(summary.Id)).Draft is { } d && d.ProjectKey == key) _drafts.Add(d);
+            await LoadHistoryAsync(key, reset: true);
         }
         finally { _loading = false; }
+    }
+
+    // Run history is paged by the server (newest first, exact total) so a long history is never shown as if it were complete.
+    private const int HistoryPageSize = 50;
+    private ManualRunPage? _history;
+    private readonly List<ManualRunSummary> _historyRows = [];
+    private bool _historyBusy;
+
+    private async Task LoadHistoryAsync(string key, bool reset)
+    {
+        if (_runs is null) return;
+        if (reset) { _history = null; _historyRows.Clear(); }
+        var (page, _) = await _runs.PageAsync(key, _historyRows.Count, HistoryPageSize);
+        if (page is null) return; // the unpaged list (_ws.Runs) stays the fallback
+        _history = page;
+        _historyRows.AddRange(page.Runs.Where(r => _historyRows.All(x => x.Id != r.Id)));
+    }
+
+    private async Task MoreHistoryAsync()
+    {
+        if (_ws?.ProjectKey is not { } key || _historyBusy) return;
+        _historyBusy = true;
+        try { await LoadHistoryAsync(key, reset: false); }
+        finally { _historyBusy = false; }
     }
 
     private void Fail(string text) { _message = text; _messageBad = true; }
@@ -195,13 +220,17 @@
                 </ul>
             }
         </section>
-        @History(_ws.Runs)
+        @History(_history is null ? _ws.Runs : _historyRows)
     };
 
     private RenderFragment History(IReadOnlyList<ManualRunSummary> runs) => __builder =>
     {
         <section class="mt-card" aria-labelledby="mte-history-title" data-testid="mte-history">
             <h2 id="mte-history-title" class="mt-h">Run history</h2>
+            @if (_history is { Total: > 0 } paging)
+            {
+                <p class="mt-muted" data-testid="mte-history-count" aria-live="polite">Showing @runs.Count of @paging.Total run@(paging.Total == 1 ? "" : "s"), newest first.</p>
+            }
             @if (runs.Count == 0)
             {
                 <p class="mt-muted" data-testid="mte-history-none">No run recorded yet.</p>
@@ -224,6 +253,10 @@
                         }
                     </tbody>
                 </table>
+                @if (_history is { } more && runs.Count < more.Total)
+                {
+                    <button type="button" class="btn btn-secondary btn-sm" @onclick="MoreHistoryAsync" disabled="@_historyBusy" data-testid="mte-history-more">Show older runs</button>
+                }
             }
         </section>
     };

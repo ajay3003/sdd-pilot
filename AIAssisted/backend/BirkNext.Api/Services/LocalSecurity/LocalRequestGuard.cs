@@ -39,6 +39,11 @@ public sealed class LocalRequestGuardMiddleware(RequestDelegate next, IConfigura
         if (!path.StartsWithSegments("/api") && !graphQl || HttpMethods.IsOptions(context.Request.Method)) { await next(context); return; }
 
         if (!IsLoopbackHost(context.Request.Host.Host)) { await Reject(context, StatusCodes.Status400BadRequest, "This service only answers requests addressed to localhost."); return; }
+        // One person on this computer is the only supported deployment: BirkNext has no project-level authorization (audit 2026-11-15 SEC-01), so
+        // every authenticated caller sees every project. The Host header is chosen by the caller; the socket peer is not. A request from another
+        // computer, or one relayed by a proxy (the other way to share one instance), is refused before any authentication.
+        if (!IsLocalPeer(context.Connection.RemoteIpAddress)) { await Reject(context, StatusCodes.Status403Forbidden, "This BirkNext instance serves this computer only."); return; }
+        if (IsRelayed(context.Request.Headers)) { await Reject(context, StatusCodes.Status403Forbidden, "BirkNext does not run behind a proxy: it serves one person on this computer."); return; }
 
         var origin = context.Request.Headers.Origin.ToString();
         var extensionRoute = path.StartsWithSegments(ExtensionRoutes);
@@ -77,6 +82,15 @@ public sealed class LocalRequestGuardMiddleware(RequestDelegate next, IConfigura
         // The launcher's one-time token request: the controller requires the launch code, the launcher client header and no Origin.
         || request.Path.Equals("/api/local-session/bootstrap", StringComparison.OrdinalIgnoreCase) && HttpMethods.IsPost(request.Method);
 
+    /// <summary>The socket peer is this computer. No IP peer (an in-process host, a local named pipe) is not another computer.</summary>
+    public static bool IsLocalPeer(System.Net.IPAddress? peer) =>
+        peer is null || System.Net.IPAddress.IsLoopback(peer) || peer.IsIPv4MappedToIPv6 && System.Net.IPAddress.IsLoopback(peer.MapToIPv4());
+
+    private static readonly string[] RelayHeaders = ["Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Real-IP"];
+
+    /// <summary>The request was relayed by a proxy (a browser or the Browser Companion talking to BirkNext directly never sends these).</summary>
+    public static bool IsRelayed(IHeaderDictionary headers) => RelayHeaders.Any(headers.ContainsKey);
+
     public static bool IsLoopbackHost(string host) =>
         host.Equals("localhost", StringComparison.OrdinalIgnoreCase) || host == "127.0.0.1" || host is "[::1]" or "::1";
 
@@ -95,9 +109,14 @@ public sealed class LocalRequestGuardMiddleware(RequestDelegate next, IConfigura
     }
 }
 
-/// <summary>Supported local mode binds loopback only: every configured URL must name localhost or a loopback address.</summary>
+/// <summary>
+/// The only supported mode binds loopback only: every configured URL must name localhost or a loopback address. Shared or network hosting is
+/// refused (audit 2026-11-15 SEC-01): without project-level authorization every signed-in caller could read and change every project.
+/// </summary>
 public static class LoopbackBinding
 {
+    /// <summary>The former opt-out for non-local hosting. It no longer enables one; it is named in the startup refusal so an operator who set it
+    /// learns why it has no effect.</summary>
     public const string AllowSetting = "Hosting:AllowNonLoopbackBinding";
 
     /// <summary>The configured URLs that would listen beyond loopback (empty = safe). "*", "+", 0.0.0.0, [::], LAN addresses and host names are refused.</summary>

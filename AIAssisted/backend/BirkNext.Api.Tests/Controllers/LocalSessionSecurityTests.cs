@@ -44,14 +44,15 @@ public sealed class LocalSessionSecurityTests
         LoopbackBinding.Violations(urls).Should().HaveCount(loopback ? 0 : 1);
 
     [Fact]
-    public void The_api_refuses_to_start_on_a_lan_address_unless_explicitly_allowed()
+    public void The_api_refuses_to_start_on_a_lan_address_and_the_former_opt_out_no_longer_enables_one()
     {
         using var widened = Host().WithWebHostBuilder(b => b.UseSetting("urls", "http://0.0.0.0:5000"));
         var start = () => widened.CreateClient();
         start.Should().Throw<InvalidOperationException>().WithMessage("*listens on localhost only*0.0.0.0*");
 
-        using var allowed = Host().WithWebHostBuilder(b => { b.UseSetting("urls", "http://0.0.0.0:5000"); b.UseSetting(LoopbackBinding.AllowSetting, "true"); });
-        allowed.Invoking(f => f.CreateClient()).Should().NotThrow("a deliberate non-local deployment is an explicit choice");
+        // Audit 2026-11-15 SEC-01: there is no project-level authorization, so a non-local deployment is refused even when it is asked for.
+        using var asked = Host().WithWebHostBuilder(b => { b.UseSetting("urls", "http://0.0.0.0:5000"); b.UseSetting(LoopbackBinding.AllowSetting, "true"); });
+        asked.Invoking(f => f.CreateClient()).Should().Throw<InvalidOperationException>().WithMessage($"*project-level authorization*{LoopbackBinding.AllowSetting} no longer enables one*");
     }
 
     /// <summary>Every configuration source that can choose the listening address (ASPNETCORE_URLS / --urls → "urls", Kestrel endpoints, and

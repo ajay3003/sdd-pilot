@@ -64,6 +64,8 @@ public static class PreparedCaseTraceability
         var limitations = new List<string>();
         if (paths.Count == 0)
             limitations.Add("No specification was given, so no requirement link is counted. Select the specification in the Specification Explorer.");
+        if (cases.Any(c => c.Requirements.Any(r => r.Manual)))
+            limitations.Add("Manual requirement links were checked against the requirement list read from the project's specification in the browser when they were made; the server does not hold the specification, so a link is a tester's association, not an independently verified one.");
         if (cases.Any(c => c.Requirements.Any(r => r.Basis == PreparedCaseLinkBasis.GuideBusinessRule)))
             limitations.Add("Guide business rules are shown, never counted as requirements; MT-7 reviewed coverage (Traceability & Coverage) owns guide scenarios.");
         if (cases.Any(c => c.Requirements.Any(r => r.Basis == PreparedCaseLinkBasis.JourneyReference)))

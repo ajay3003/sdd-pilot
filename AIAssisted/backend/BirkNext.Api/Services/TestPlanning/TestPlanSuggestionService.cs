@@ -505,7 +505,7 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
     {
         var key = TestScenarioDiscoveryService.Key(projectKey);
         return PreparedCaseTraceability.Build(key, await ProjectDraftsAsync(key, ct), specificationPaths, requirementIds, requirementTitles,
-            await ManualTestRunService.ReadProjectRunsAsync(db, key, ct));
+            await ManualTestRunService.ReadTraceabilityRunsAsync(db, key, ct));
     }
 
     /// <summary>The project's plans and snapshots (only this project's), Test Data options and the Critical E2E flows of its environment.</summary>
@@ -746,6 +746,10 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
     public const string LinkedRequirementsField = "Linked requirements";
     public const int MaxRequirementLinks = 50;
 
+    /// <summary>SHA-256 over the catalog's (requirement id, specification file) keys, sorted — independent of the order the browser sent them in.</summary>
+    public static string CatalogFingerprint(IReadOnlyDictionary<(string, string), ProjectRequirementOption> catalog) =>
+        E.Sha(string.Join("\n", catalog.Keys.Select(k => $"{k.Item1}\u001f{k.Item2}").Order(StringComparer.Ordinal)));
+
     /// <summary>The save's requirement catalog keyed by (id, specification file); refused when it belongs to another project. Null = none sent.</summary>
     private static Dictionary<(string, string), ProjectRequirementOption>? RequirementCatalog(string projectKey, ProjectRequirementCatalog? catalog)
     {
@@ -779,6 +783,8 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
             {
                 RequirementId = requirement.RequirementId.Trim(), SpecificationPath = requirement.SpecificationPath.Trim(),
                 Title = requirement.Title.Trim()[..Math.Min(requirement.Title.Trim().Length, 500)], LinkedBy = actor, LinkedAt = Now,
+                // Audit 2026-11-15: the catalog comes from the browser's reading of the specification; say so, and keep what it was.
+                CheckedAgainst = ManualRequirementLinkBasis.BrowserSpecification, CatalogFingerprint = CatalogFingerprint(catalog),
             });
         }
         if (result.Count > MaxRequirementLinks)

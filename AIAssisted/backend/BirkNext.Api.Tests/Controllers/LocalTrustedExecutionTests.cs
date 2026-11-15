@@ -275,7 +275,10 @@ public sealed class LocalTrustedExecutionTests
     public async Task WithoutEveryCondition_AnonymousExecutionIsRefused(string remote, bool grant, string environment)
     {
         await using var factory = Host(remote, grant, environment);
-        using var client = factory.CreateLocalSessionClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") }, withOrigin: false);
+        // From another computer not even a session can be opened (audit 2026-11-15 SEC-01: LocalDeploymentBoundaryTests); the request is refused all the same.
+        using var client = IPAddress.IsLoopback(IPAddress.Parse(remote))
+            ? factory.CreateLocalSessionClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") }, withOrigin: false)
+            : factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") });
 
         var response = await Send(client, HttpMethod.Post, "/api/integration-journeys/runs", body: Start);
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden, "without every local-trust condition, execution is refused");
@@ -290,7 +293,9 @@ public sealed class LocalTrustedExecutionTests
     [Fact]
     public async Task TheAuthenticatedPath_IsUnchanged_AndKeptDistinctFromTheLocalSession()
     {
-        await using var factory = Host(remote: "192.168.1.20", grant: false, environment: "Test");
+        // Local trust is off (no grant, not Development), so only the bearer token can authorize. The peer is this computer: since audit
+        // 2026-11-15 SEC-01 a request from another computer is refused before authentication (LocalDeploymentBoundaryTests).
+        await using var factory = Host(remote: "127.0.0.1", grant: false, environment: "Test");
         using var client = factory.CreateLocalSessionClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") }, withOrigin: false);
         var journeys = factory.Services.GetRequiredService<RecordingJourneys>();
 
@@ -323,7 +328,9 @@ public sealed class LocalTrustedExecutionTests
             local.Services.GetRequiredService<RecordingJourneys>().Initiators.Should().BeEmpty("checking access never starts or records a run");
         }
 
-        await using var remote = Host(remote: "192.168.1.20", grant: false, environment: "Test");
+        // Local trust off (no grant, not Development): only a bearer token can give execution access. The peer is this computer, because a request
+        // from another computer is refused before authentication since audit 2026-11-15 SEC-01.
+        await using var remote = Host(remote: "127.0.0.1", grant: false, environment: "Test");
         using var remoteClient = remote.CreateLocalSessionClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") }, withOrigin: false);
         async Task<ExecutionAccessView> Access(string? token) => JsonSerializer.Deserialize<ExecutionAccessView>(
             await (await Send(remoteClient, HttpMethod.Get, "/api/execution-access", token: token)).Content.ReadAsStringAsync(), new JsonSerializerOptions(JsonSerializerDefaults.Web))!;

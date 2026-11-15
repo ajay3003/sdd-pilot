@@ -21,6 +21,16 @@ public sealed class ManualTestRunsController(ManualTestRunService runs) : Contro
     public Task<ActionResult> List([FromQuery] string projectKey, [FromQuery] Guid? draftId, [FromQuery] string? caseId, CancellationToken ct) =>
         Run(async () => Ok(await runs.ListAsync(projectKey, draftId, caseId, ct)));
 
+    /// <summary>A page of the project's runs (newest first, stable order) with the exact total. take: 1–500.</summary>
+    [HttpGet("page")]
+    public Task<ActionResult> Page([FromQuery] string projectKey, [FromQuery] Guid? draftId, [FromQuery] string? caseId, [FromQuery] int skip = 0, [FromQuery] int take = 50,
+        CancellationToken ct = default) =>
+        Run(async () =>
+        {
+            var (list, total) = await runs.ListPageAsync(projectKey, draftId, caseId, skip, take, ct);
+            return Ok(new ManualRunPage(list, total, skip, take));
+        });
+
     [HttpGet("{id:guid}")]
     public Task<ActionResult> Get(Guid id, [FromQuery] string projectKey, CancellationToken ct) => Run(async () => Ok(await runs.GetAsync(projectKey, id, ct)));
 

@@ -20,6 +20,8 @@ public sealed class ManualTestRunService(AppDbContext db, TestPlanSuggestionServ
     public const int MaxEvidence = 50;
     public const int MaxDefects = 50;
     public const int MaxText = 4000;
+    /// <summary>The largest page of the run list (and the first page the unpaged list returns).</summary>
+    public const int MaxPage = 500;
 
     private DateTimeOffset Now => (clock ?? TimeProvider.System).GetUtcNow();
 
@@ -54,26 +56,68 @@ public sealed class ManualTestRunService(AppDbContext db, TestPlanSuggestionServ
             Id = run.Id, ProjectKey = key, DraftId = run.DraftId, CaseId = run.CaseId, State = run.State.ToString(), Outcome = run.Outcome.ToString(), Revision = 1,
             ContentJson = JsonSerializer.Serialize(run, E.Json), Tester = Trim(actor, 200), StartedAt = run.StartedAt, UpdatedAt = run.UpdatedAt,
         });
-        await db.SaveChangesAsync(ct);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateException e) when (e.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation })
+        {
+            // Another request started this case at the same moment: the database keeps one run in progress per case
+            // (ux_manual_test_runs_one_in_progress), so resume that one instead of failing.
+            db.ChangeTracker.Clear();
+            var winner = await db.ManualTestRuns.AsNoTracking().Where(r => r.ProjectKey == key && r.DraftId == plan.Id && r.CaseId == c.Source.ScenarioId && r.State == nameof(ManualRunState.InProgress))
+                .FirstOrDefaultAsync(ct) ?? throw new TestPlanException(409, "run-start-conflict", "The test run could not be started; try again.");
+            return Read(winner);
+        }
         return run;
     }
 
     public async Task<ManualTestRun> GetAsync(string projectKey, Guid id, CancellationToken ct) => Read(await Row(projectKey, id, ct, tracked: false));
 
-    /// <summary>The project's runs, newest first (optionally of one plan or case). Never another project's.</summary>
-    public async Task<List<ManualRunSummary>> ListAsync(string projectKey, Guid? draftId, string? caseId, CancellationToken ct)
+    /// <summary>The project's first <see cref="MaxPage"/> runs, newest first (optionally of one plan or case). Never another project's. Callers
+    /// that need more, or need to know how many exist, page with <see cref="ListPageAsync"/>.</summary>
+    public async Task<List<ManualRunSummary>> ListAsync(string projectKey, Guid? draftId, string? caseId, CancellationToken ct) =>
+        (await ListPageAsync(projectKey, draftId, caseId, 0, MaxPage, ct)).Runs;
+
+    /// <summary>
+    /// One page of the project's runs, newest first with a stable order (start time, then id, so a page boundary never repeats or skips a run),
+    /// and the exact number of matching runs. Filtering, counting and paging happen in the database; only the page is read and deserialized.
+    /// </summary>
+    public async Task<(List<ManualRunSummary> Runs, int Total)> ListPageAsync(string projectKey, Guid? draftId, string? caseId, int skip, int take, CancellationToken ct)
     {
+        if (skip < 0) throw new TestPlanException(400, "page-invalid", "skip must be zero or more.");
+        if (take is < 1 or > MaxPage) throw new TestPlanException(400, "page-invalid", $"take must be between 1 and {MaxPage}.");
         var key = TestScenarioDiscoveryService.Key(projectKey);
         var query = db.ManualTestRuns.AsNoTracking().Where(r => r.ProjectKey == key);
         if (draftId is { } d) query = query.Where(r => r.DraftId == d);
         if (!string.IsNullOrWhiteSpace(caseId)) query = query.Where(r => r.CaseId == caseId);
-        return [.. (await query.OrderByDescending(r => r.StartedAt).Take(500).ToListAsync(ct)).Select(Read).Select(ManualRunRules.Summary)];
+        var total = await query.CountAsync(ct);
+        var rows = await query.OrderByDescending(r => r.StartedAt).ThenByDescending(r => r.Id).Skip(skip).Take(take).ToListAsync(ct);
+        return ([.. rows.Select(Read).Select(ManualRunRules.Summary)], total);
     }
 
-    /// <summary>Every run of the project as recorded (for traceability). Unreadable rows are skipped, never guessed.</summary>
-    public Task<List<ManualTestRun>> ProjectRunsAsync(string projectKey, CancellationToken ct) => ReadProjectRunsAsync(db, TestScenarioDiscoveryService.Key(projectKey), ct);
+    /// <summary>
+    /// What traceability and Test Coverage need from the project's history, bounded by its cases rather than by its history (audit 2026-11-15
+    /// PERF-01): per case the latest completed run (completion time, then start time) and its run in progress, if any. Stopped runs never give
+    /// an outcome, so they are not read. The selection runs on narrow columns; only the chosen runs are read in full. Unreadable rows are skipped,
+    /// never guessed. <see cref="PreparedCaseTraceability"/> reaches the same answer from this as from every run.
+    /// </summary>
+    public static async Task<List<ManualTestRun>> ReadTraceabilityRunsAsync(AppDbContext db, string projectKey, CancellationToken ct)
+    {
+        const string completed = nameof(ManualRunState.Completed), inProgress = nameof(ManualRunState.InProgress);
+        var heads = await db.ManualTestRuns.AsNoTracking().Where(r => r.ProjectKey == projectKey && (r.State == completed || r.State == inProgress))
+            .Select(r => new { r.Id, r.DraftId, r.CaseId, r.State, r.CompletedAt, r.StartedAt }).ToListAsync(ct);
+        var chosen = heads.GroupBy(h => (h.DraftId, h.CaseId)).SelectMany(g => new[]
+        {
+            g.Where(h => h.State == completed).OrderByDescending(h => h.CompletedAt).ThenByDescending(h => h.StartedAt).Select(h => (Guid?)h.Id).FirstOrDefault(),
+            g.Where(h => h.State == inProgress).OrderByDescending(h => h.StartedAt).Select(h => (Guid?)h.Id).FirstOrDefault(),
+        }).OfType<Guid>().ToList();
+        var list = new List<ManualTestRun>(chosen.Count);
+        foreach (var chunk in chosen.Chunk(1000))
+            foreach (var row in await db.ManualTestRuns.AsNoTracking().Where(r => chunk.Contains(r.Id)).ToListAsync(ct))
+                try { list.Add(Read(row)); } catch (JsonException) { }
+        return list;
+    }
 
-    /// <summary>The project's recorded runs, read straight from the store (Test Coverage and traceability read executions here).</summary>
+    /// <summary>Every run of the project as recorded — the whole history, read in full. Not for per-request use (see
+    /// <see cref="ReadTraceabilityRunsAsync"/>); kept as the reference the bounded read is verified against.</summary>
     public static async Task<List<ManualTestRun>> ReadProjectRunsAsync(AppDbContext db, string projectKey, CancellationToken ct)
     {
         var list = new List<ManualTestRun>();

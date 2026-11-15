@@ -2061,6 +2061,14 @@ namespace BirkNext.Api.Data.Migrations
 
                     b.HasIndex("DraftId", "CaseId");
 
+                    b.HasIndex("ProjectKey", "DraftId", "CaseId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_manual_test_runs_one_in_progress")
+                        .HasFilter("\"State\" = 'InProgress'");
+
+                    b.HasIndex("ProjectKey", "StartedAt", "Id")
+                        .HasDatabaseName("ix_manual_test_runs_project_started");
+
                     b.ToTable("manual_test_runs", (string)null);
                 });
 

@@ -33,7 +33,9 @@ public sealed class ManagedFileStores
 
     public IReadOnlyList<Store> Stores =>
     [
-        new("critical-e2e", Path.Combine(_appData, "critical-e2e"), ["flows.json", "history.json", "modules.json", "suggestion-reviews.json"], "Critical E2E Regression (flows, run history, modules, suggestion reviews)"),
+        // flow-versions.json says which definition version each run executed (Policy 2 provenance); it was missing before audit 2026-11-15 ARCH-01.
+        new("critical-e2e", Path.Combine(_appData, "critical-e2e"), ["flows.json", "history.json", "modules.json", "flow-versions.json", "suggestion-reviews.json"],
+            "Critical E2E Regression (flows, flow versions, run history, modules, suggestion reviews)"),
         new("test-data", Path.Combine(_appData, "test-data"),
             ["registry.json", "authored.json", "identities.json", "canonical-fixtures.json", "schema-associations.json", "protected-defaults.json"], "Test Data catalog"),
         new("local-data-reset", Path.GetDirectoryName(_localDataResetPath)!, [Path.GetFileName(_localDataResetPath)], "Local Data Reset epoch and synthetic-key floors (never reuse a synthetic key)"),

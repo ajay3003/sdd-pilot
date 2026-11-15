@@ -64,7 +64,15 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         public Task<(TestPlanWorkspace?, string?)> SummaryAsync(string? guideKey, CancellationToken ct = default) => Task.FromResult<(TestPlanWorkspace?, string?)>((workspace, null));
         public Task<(TestPlanDraft?, string?)> DraftAsync(Guid id, CancellationToken ct = default) => Task.FromResult<(TestPlanDraft?, string?)>((draft, null));
         public Task<(TestPlanDraft?, string?)> CreateAsync(CreateTestPlanDraftRequest request, CancellationToken ct = default) { Created = request; return Task.FromResult<(TestPlanDraft?, string?)>((Draft(), null)); }
-        public Task<(TestPlanDraft?, string?)> SaveAsync(Guid id, SaveTestPlanDraftRequest request, CancellationToken ct = default) { Saved = request; return Task.FromResult<(TestPlanDraft?, string?)>((draft! with { Revision = draft!.Revision + 1 }, null)); }
+        /// <summary>When set, a save waits for it (a slow server), so a test can edit while the save is on its way.</summary>
+        public TaskCompletionSource? HoldSave { get; set; }
+        public List<SaveTestPlanDraftRequest> Saves { get; } = [];
+        public async Task<(TestPlanDraft?, string?)> SaveAsync(Guid id, SaveTestPlanDraftRequest request, CancellationToken ct = default)
+        {
+            Saved = request; Saves.Add(request);
+            if (HoldSave is { } hold) { await hold.Task; HoldSave = null; }
+            return (draft! with { Revision = request.BaseRevision + 1 }, null);
+        }
         public Task<(TestPlanDraft?, string?)> ReviewAsync(Guid id, ReviewTestCaseRequest request, CancellationToken ct = default) { Reviewed = request; return Task.FromResult<(TestPlanDraft?, string?)>((draft, null)); }
         public Task<(TestPlanDraft?, string?)> RefreshAsync(Guid id, int baseRevision, CancellationToken ct = default) => Task.FromResult<(TestPlanDraft?, string?)>((draft, null));
         public Task<(SaveTestPlanSnapshotResult?, string?)> SaveSnapshotAsync(Guid id, SaveTestPlanSnapshotRequest request, CancellationToken ct = default) => Task.FromResult<(SaveTestPlanSnapshotResult?, string?)>((null, "n/a"));
@@ -399,6 +407,65 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         cut.Find("[data-testid=tps-clarify-manglende-barn]").HasAttribute("disabled").Should().BeTrue();
         cut.Find("[data-testid=tps-save]").Click();
         api.Saved!.Cases.Single(c => c.ScenarioId == "manglende-barn").Edits.ExpectedResult.Should().Be("Rapporten holdes til barnet finnes");
+    }
+
+    // ── Audit 2026-11-15 (§20): unsaved edits are never marked saved early and never discarded silently ──────────────────────────────────
+
+    [Fact]
+    public void An_edit_made_while_a_save_is_on_its_way_stays_unsaved_and_is_saved_next_from_the_new_revision()
+    {
+        var draft = Draft();
+        var api = new Api(Workspace(drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, 3, 2, 0, 0, 1, 2, 2, "t", DateTimeOffset.UtcNow)]), draft) { HoldSave = new() };
+        var cut = Render(api, $"?draft={draft.Id}&area=review");
+        cut.Find("[data-testid=tps-case-manglende-barn] .tps-case-head").Click();
+        cut.FindAll("[data-testid=tps-case-manglende-barn] textarea")[2].Change("First wording");
+        cut.Find("[data-testid=tps-save]").Click();                                   // the save is on its way
+        cut.FindAll("[data-testid=tps-case-manglende-barn] textarea")[2].Change("Newer wording");
+        cut.InvokeAsync(() => api.HoldSave!.SetResult());                            // the first save completes after the newer edit
+
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Your newer changes are not saved yet"));
+        cut.FindAll("[data-testid=tps-unsaved]").Should().NotBeEmpty("the newer edit is not marked saved");
+        api.Saves.Single().Cases.Single(c => c.ScenarioId == "manglende-barn").Edits.ExpectedResult.Should().Be("First wording");
+
+        cut.Find("[data-testid=tps-save]").Click();
+        cut.WaitForAssertion(() => api.Saves.Should().HaveCount(2));
+        api.Saves[1].Cases.Single(c => c.ScenarioId == "manglende-barn").Edits.ExpectedResult.Should().Be("Newer wording");
+        api.Saves[1].BaseRevision.Should().Be(4, "the next save builds on the revision the first save created, so it is not refused as stale");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=tps-unsaved]").Should().BeEmpty());
+    }
+
+    [Fact]
+    public void Leaving_with_unsaved_edits_asks_first_and_staying_keeps_them()
+    {
+        var draft = Draft();
+        var api = new Api(Workspace(drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, 3, 2, 0, 0, 1, 2, 2, "t", DateTimeOffset.UtcNow)]), draft);
+        var cut = Render(api, $"?draft={draft.Id}&area=review");
+        var confirm = JSInterop.Setup<bool>("confirm", _ => true);
+        confirm.SetResult(false);
+        cut.Find("[data-testid=tps-case-manglende-barn] .tps-case-head").Click();
+        cut.FindAll("[data-testid=tps-case-manglende-barn] textarea")[2].Change("Not saved yet");
+
+        var nav = Services.GetRequiredService<NavigationManager>();
+        cut.InvokeAsync(() => nav.NavigateTo("manual-testing"));
+        cut.WaitForAssertion(() => JSInterop.Invocations["confirm"].Should().ContainSingle());
+        nav.Uri.Should().Contain("test-plan-suggestions", "declining keeps the tester on the plan");
+        cut.FindAll("[data-testid=tps-unsaved]").Should().NotBeEmpty();
+        api.Saved.Should().BeNull("nothing was saved or discarded behind the tester's back");
+    }
+
+    [Fact]
+    public void Switching_areas_of_the_same_plan_does_not_ask()
+    {
+        var draft = Draft();
+        var api = new Api(Workspace(drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, 3, 2, 0, 0, 1, 2, 2, "t", DateTimeOffset.UtcNow)]), draft);
+        var cut = Render(api, $"?draft={draft.Id}&area=review");
+        JSInterop.Setup<bool>("confirm", _ => true).SetResult(false);
+        cut.Find("[data-testid=tps-case-manglende-barn] .tps-case-head").Click();
+        cut.FindAll("[data-testid=tps-case-manglende-barn] textarea")[2].Change("Not saved yet");
+        var nav = Services.GetRequiredService<NavigationManager>();
+        cut.InvokeAsync(() => nav.NavigateTo($"test-plan-suggestions?draft={draft.Id}&area=prepare"));
+        cut.WaitForAssertion(() => nav.Uri.Should().Contain("area=prepare"));
+        JSInterop.Invocations["confirm"].Should().BeEmpty("the edits stay with the same plan");
     }
 
     [Fact]

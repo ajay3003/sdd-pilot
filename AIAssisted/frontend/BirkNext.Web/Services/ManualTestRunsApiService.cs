@@ -11,6 +11,9 @@ public interface IManualTestRunsApiService
 {
     Task<(List<ManualRunSummary>? Runs, string? Error)> ListAsync(string projectKey, Guid? draftId = null, string? caseId = null, CancellationToken ct = default);
     Task<(ManualTestRun? Run, string? Error)> GetAsync(string projectKey, Guid id, CancellationToken ct = default);
+    /// <summary>One page of the project's runs, newest first, with the exact total. Hosts without paging return no page (callers fall back).</summary>
+    Task<(ManualRunPage? Page, string? Error)> PageAsync(string projectKey, int skip, int take, Guid? draftId = null, string? caseId = null, CancellationToken ct = default) =>
+        Task.FromResult<(ManualRunPage?, string?)>((null, null));
     Task<(ManualTestRun? Run, string? Error)> StartAsync(StartManualRunRequest request, CancellationToken ct = default);
     Task<(ManualTestRun? Run, string? Error)> SaveAsync(string projectKey, Guid id, SaveManualRunRequest request, CancellationToken ct = default);
     Task<(ManualTestRun? Run, string? Error)> CompleteAsync(string projectKey, Guid id, int baseRevision, CancellationToken ct = default);
@@ -25,6 +28,9 @@ public sealed class ManualTestRunsApiService(HttpClient http) : IManualTestRunsA
 
     public Task<(List<ManualRunSummary>?, string?)> ListAsync(string projectKey, Guid? draftId = null, string? caseId = null, CancellationToken ct = default) =>
         Send<List<ManualRunSummary>>(() => http.GetAsync($"{Base}?{P(projectKey)}{(draftId is { } d ? $"&draftId={d}" : "")}{(caseId is { Length: > 0 } c ? $"&caseId={Uri.EscapeDataString(c)}" : "")}", ct), ct);
+
+    public Task<(ManualRunPage?, string?)> PageAsync(string projectKey, int skip, int take, Guid? draftId = null, string? caseId = null, CancellationToken ct = default) =>
+        Send<ManualRunPage>(() => http.GetAsync($"{Base}/page?{P(projectKey)}&skip={skip}&take={take}{(draftId is { } d ? $"&draftId={d}" : "")}{(caseId is { Length: > 0 } c ? $"&caseId={Uri.EscapeDataString(c)}" : "")}", ct), ct);
 
     public Task<(ManualTestRun?, string?)> GetAsync(string projectKey, Guid id, CancellationToken ct = default) =>
         Send<ManualTestRun>(() => http.GetAsync($"{Base}/{id}?{P(projectKey)}", ct), ct);

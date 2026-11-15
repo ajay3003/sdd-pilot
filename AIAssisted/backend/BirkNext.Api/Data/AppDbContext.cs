@@ -1219,6 +1219,11 @@ public class AppDbContext : DbContext
             entity.Property(r => r.Tester).HasMaxLength(200).IsRequired();
             entity.HasIndex(r => r.ProjectKey);
             entity.HasIndex(r => new { r.DraftId, r.CaseId });
+            // The run list pages newest first within a project (ManualTestRunService.ListPageAsync: start time, then id).
+            entity.HasIndex(r => new { r.ProjectKey, r.StartedAt, r.Id }).HasDatabaseName("ix_manual_test_runs_project_started");
+            // One run in progress per case: StartAsync resumes it; two concurrent starts cannot both insert (audit 2026-11-15).
+            entity.HasIndex(r => new { r.ProjectKey, r.DraftId, r.CaseId }).IsUnique().HasFilter("\"State\" = 'InProgress'")
+                .HasDatabaseName("ux_manual_test_runs_one_in_progress");
         });
         modelBuilder.Entity<ScenarioDiscoveryRecord>(entity =>
         {

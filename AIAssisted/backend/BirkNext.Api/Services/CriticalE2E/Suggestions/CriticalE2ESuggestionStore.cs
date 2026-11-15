@@ -27,6 +27,8 @@ public interface ICriticalE2ESuggestionStore
     SuggestionReviewRecord? Get(string suggestionId);
     IReadOnlyList<SuggestionReviewRecord> All();
     SuggestionReviewRecord Update(string suggestionId, Guid snapshotId, Func<SuggestionReviewRecord, SuggestionReviewRecord> change);
+    /// <summary>Local data reset: removes every review (they review suggestions from source snapshots the reset removes).</summary>
+    void Clear() { }
 }
 
 /// <summary>File-backed like the Critical E2E store (<c>App_Data/critical-e2e/suggestion-reviews.json</c>); bounded to the newest 2000 records.</summary>
@@ -50,6 +52,17 @@ public sealed class CriticalE2ESuggestionStore : ICriticalE2ESuggestionStore
     }
 
     public SuggestionReviewRecord? Get(string suggestionId) { lock (_gate) return _records.GetValueOrDefault(suggestionId); }
+
+    public void Clear()
+    {
+        lock (_gate)
+        {
+            _records.Clear();
+            var temp = _path + ".tmp";
+            File.WriteAllText(temp, "[]");
+            File.Move(temp, _path, overwrite: true);
+        }
+    }
 
     public IReadOnlyList<SuggestionReviewRecord> All() { lock (_gate) return [.. _records.Values]; }
 
