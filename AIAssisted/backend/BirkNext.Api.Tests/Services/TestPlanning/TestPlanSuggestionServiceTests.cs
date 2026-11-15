@@ -427,4 +427,182 @@ public sealed class TestPlanSuggestionServiceTests : IAsyncLifetime, IDisposable
         (await Service(Context()).PreparedCaseTraceAsync("other-project", [spec], null, default)).Cases.Should().Be(0, "another project never sees these cases");
         (await Service(Context()).DraftAsync(guidePlan.Id, default)).Cases.Select(c => c.Source.ScenarioId).Should().Equal(Seven, "the guide plan is unchanged");
     }
+
+    // ── Manual requirement links ─────────────────────────────────────────────────────────────────────────────
+
+    private const string LinkSpec = "specs/001-library/spec.md";
+
+    private static ProjectRequirementCatalog Catalog(string project = "library", params string[] ids) => new()
+    {
+        ProjectKey = project,
+        Requirements = [.. (ids.Length == 0 ? ["FR-001", "FR-002", "FR-003"] : ids).Select(id => new ProjectRequirementOption(id, $"System MUST do {id}.", LinkSpec))],
+    };
+
+    private static ManualRequirementLink Want(string id, string path = LinkSpec) => new() { RequirementId = id, SpecificationPath = path, Title = "typed by the client" };
+
+    /// <summary>The save a browser sends: every case's human part as it stands, with the requirement links given per case (others unchanged).</summary>
+    private static SaveTestPlanDraftRequest Save(TestPlanDraft plan, Dictionary<string, List<ManualRequirementLink>> links, ProjectRequirementCatalog? catalog, Func<TestCaseDraft, TestCaseEdits>? edits = null) => new()
+    {
+        BaseRevision = plan.Revision, PlanName = plan.PlanName, ScenarioIds = [.. plan.Cases.Select(c => c.Source.ScenarioId)], Suites = plan.Suites, RequirementCatalog = catalog,
+        Cases = [.. plan.Cases.Select(c => new TestCaseHumanPart
+        {
+            ScenarioId = c.Source.ScenarioId, SuiteId = c.SuiteId, Edits = edits?.Invoke(c) ?? c.Edits, Risk = c.Risk, TestDataAssetIds = [.. c.TestData.Select(d => d.AssetId)],
+            RequirementLinks = links.TryGetValue(c.Source.ScenarioId, out var l) ? l : [.. c.RequirementLinks],
+        })],
+    };
+
+    private async Task<TestPlanDraft> ManualPlan(TestPlanSuggestionService service, string project = "library", params string[] titles)
+    {
+        var plan = await service.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = project, ManualCaseTitle = titles.Length > 0 ? titles[0] : "Log in as a librarian" }, "tester", default);
+        foreach (var title in titles.Skip(1))
+            plan = await service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, title, null, null), "tester", default);
+        return plan;
+    }
+
+    [Fact]
+    public async Task A_tester_links_one_and_several_existing_requirements_and_the_links_survive_a_reload_and_a_restart()
+    {
+        await using var db = Context();
+        var service = Service(db);
+        var plan = await ManualPlan(service, "library", "Log in as a librarian", "Return a book");
+        var (first, second) = (plan.Cases[0].Source.ScenarioId, plan.Cases[1].Source.ScenarioId);
+
+        plan = await service.SaveAsync(plan.Id, Save(plan, new() { [first] = [Want("FR-001")], [second] = [Want("fr-002"), Want("FR-003")] }, Catalog()), "anna", default);
+
+        // A new context and a new service: what a restarted API reads from the database.
+        var reloaded = await Service(Context()).DraftAsync(plan.Id, default);
+        reloaded.Cases.Single(c => c.Source.ScenarioId == first).RequirementLinks.Should().ContainSingle().Which.Should().Match<ManualRequirementLink>(l =>
+            l.RequirementId == "FR-001" && l.SpecificationPath == LinkSpec && l.Title == "System MUST do FR-001." && l.LinkedBy == "anna" && l.LinkedAt != default,
+            "the server records the catalog's title, who and when — never the client's text");
+        reloaded.Cases.Single(c => c.Source.ScenarioId == second).RequirementLinks.Select(l => l.RequirementId).Should().Equal("FR-002", "FR-003");
+        reloaded.Cases.Single(c => c.Source.ScenarioId == second).EditHistory.Last().Fields.Should().Contain(TestPlanSuggestionService.LinkedRequirementsField);
+
+        var view = await Service(Context()).PreparedCaseTraceAsync("library", [LinkSpec], ["FR-001", "FR-002", "FR-003", "FR-004"], default);
+        view.Requirements.Select(r => (r.RequirementId, r.ManualCases, r.AutomaticCases, r.State)).Should().Equal(
+            ("FR-001", 1, 0, "Prepared, not approved yet"), ("FR-002", 1, 0, "Prepared, not approved yet"), ("FR-003", 1, 0, "Prepared, not approved yet"));
+        view.WithoutTestDesign.Select(g => g.RequirementId).Should().Equal("FR-004");
+        view.LinkedCases.Should().Be(2);
+        view.CaseList.Should().OnlyContain(c => c.Execution == PreparedCaseTraceView.NotExecuted);
+    }
+
+    [Fact]
+    public async Task A_link_to_a_requirement_the_project_does_not_have_or_to_another_projects_requirements_is_refused_and_nothing_is_saved()
+    {
+        await using var db = Context();
+        var service = Service(db);
+        var plan = await ManualPlan(service);
+        var sid = plan.Cases[0].Source.ScenarioId;
+
+        var unknown = () => service.SaveAsync(plan.Id, Save(plan, new() { [sid] = [Want("FR-999")] }, Catalog()), "anna", default);
+        (await unknown.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("requirement-unknown");
+        var otherFile = () => service.SaveAsync(plan.Id, Save(plan, new() { [sid] = [Want("FR-001", "specs/002-other/spec.md")] }, Catalog()), "anna", default);
+        (await otherFile.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("requirement-unknown", "a requirement is identified by id and specification file");
+        var crossProject = () => service.SaveAsync(plan.Id, Save(plan, new() { [sid] = [Want("FR-001")] }, Catalog("other-project")), "anna", default);
+        (await crossProject.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("requirement-other-project");
+        var noCatalog = () => service.SaveAsync(plan.Id, Save(plan, new() { [sid] = [Want("FR-001")] }, null), "anna", default);
+        (await noCatalog.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("requirements-unavailable");
+
+        var stored = await Service(Context()).DraftAsync(plan.Id, default);
+        stored.Revision.Should().Be(plan.Revision);
+        stored.Cases[0].RequirementLinks.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Removing_a_manual_link_keeps_the_cases_own_automatic_evidence_and_editing_the_case_keeps_its_links()
+    {
+        await using var db = Context();
+        var service = Service(db);
+        var discovery = await new TestScenarioDiscoveryService(new IqrSourceStore(null!), [new SpecificationScenarioProvider()], _discoveries).DiscoverAsync(new ScenarioDiscoveryRequest
+        {
+            ProjectKey = "library", ProjectName = "Library",
+            Workspace = new BirkNext.TestCoverage.CoverageWorkspaceEvidence
+            {
+                SpecificationAvailable = true, SpecificationArtifacts = [new("spec-1", LinkSpec, null, "fp")],
+                Requirements = [new("FR-001", "System MUST do FR-001.", null), new("FR-002", "System MUST do FR-002.", null)],
+            },
+        }, default);
+        var candidate = discovery.Candidates.First(c => c.Title.StartsWith("FR-001", StringComparison.Ordinal));
+        var plan = await service.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "library", DiscoveryId = discovery.DiscoveryId, CandidateIds = [candidate.CandidateId] }, "tester", default);
+        var sid = plan.Cases.Single().Source.ScenarioId;
+
+        // A manual confirmation of the same requirement the evidence names, plus a second requirement.
+        plan = await service.SaveAsync(plan.Id, Save(plan, new() { [sid] = [Want("FR-001"), Want("FR-002")] }, Catalog()), "anna", default);
+        var linkedAt = plan.Cases.Single().RequirementLinks.Select(l => l.LinkedAt).ToList();
+        var traced = (await service.PreparedCaseTraceAsync("library", [LinkSpec], ["FR-001", "FR-002"], default)).CaseList.Single();
+        traced.Requirements.Select(r => (r.RequirementId, r.Basis, r.Counted)).Should().Equal(
+            ("FR-001", PreparedCaseLinkBasis.SpecificationEvidence, true), ("FR-001", PreparedCaseLinkBasis.ManualConfirmation, true), ("FR-002", PreparedCaseLinkBasis.ManualConfirmation, true));
+
+        // Editing the title (links sent as they stand, no catalog needed) keeps who/when of every link.
+        plan = await service.SaveAsync(plan.Id, Save(plan, [], null, c => c.Edits with { Title = "Register a loan (edited)" }), "bob", default);
+        plan.Cases.Single().RequirementLinks.Select(l => l.LinkedAt).Should().Equal(linkedAt);
+        plan.Cases.Single().RequirementLinks.Should().OnlyContain(l => l.LinkedBy == "anna");
+        // An older client that sends no links at all leaves them unchanged.
+        var older = Save(plan, [], null);
+        plan = await service.SaveAsync(plan.Id, older with { Cases = [.. older.Cases.Select(c => c with { RequirementLinks = null })] }, "bob", default);
+        plan.Cases.Single().RequirementLinks.Should().HaveCount(2);
+
+        // Removing every manual link: the automatic evidence stays and still counts.
+        plan = await service.SaveAsync(plan.Id, Save(plan, new() { [sid] = [] }, null), "anna", default);
+        plan.Cases.Single().RequirementLinks.Should().BeEmpty();
+        plan.Cases.Single().Generated.Requirements.Select(r => r.RuleId).Should().Equal("FR-001");
+        var after = await Service(Context()).PreparedCaseTraceAsync("library", [LinkSpec], ["FR-001", "FR-002"], default);
+        after.Requirements.Select(r => (r.RequirementId, r.AutomaticCases, r.ManualCases)).Should().Equal(("FR-001", 1, 0));
+        after.WithoutTestDesign.Select(g => g.RequirementId).Should().Equal("FR-002");
+    }
+
+    [Fact]
+    public async Task A_link_whose_requirement_left_the_specification_is_kept_flagged_and_never_counted()
+    {
+        await using var db = Context();
+        var service = Service(db);
+        var plan = await ManualPlan(service);
+        var sid = plan.Cases[0].Source.ScenarioId;
+        plan = await service.SaveAsync(plan.Id, Save(plan, new() { [sid] = [Want("FR-003")] }, Catalog()), "anna", default);
+
+        // FR-003 was removed from the specification; a later save with the current catalog keeps the held link (the tester removes it explicitly).
+        plan = await service.SaveAsync(plan.Id, Save(plan, [], Catalog("library", "FR-001", "FR-002"), c => c.Edits with { Purpose = "Edited" }), "anna", default);
+        plan.Cases[0].RequirementLinks.Select(l => l.RequirementId).Should().Equal("FR-003");
+
+        var view = await Service(Context()).PreparedCaseTraceAsync("library", [LinkSpec], ["FR-001", "FR-002"], default);
+        var link = view.CaseList.Single().Requirements.Single();
+        link.Should().Match<PreparedCaseRequirementLink>(l => !l.Counted && l.Validity == PreparedLinkValidity.RequirementNotFound && l.Basis == PreparedCaseLinkBasis.ManualConfirmation);
+        view.Requirements.Should().BeEmpty();
+        view.StaleManualLinks.Should().Be(1);
+        view.Limitations.Should().Contain(l => l.Contains("no longer in the reviewed specification"));
+        view.WithoutTestDesign.Select(g => g.RequirementId).Should().Equal("FR-001", "FR-002");
+    }
+
+    [Fact]
+    public async Task Several_cases_on_one_requirement_count_it_once_an_excluded_case_never_counts_and_another_project_sees_nothing()
+    {
+        await using var db = Context();
+        var service = Service(db);
+        var plan = await ManualPlan(service, "library", "Case A", "Case B", "Case C");
+        var ids = plan.Cases.Select(c => c.Source.ScenarioId).ToList();
+        plan = await service.SaveAsync(plan.Id, Save(plan, new() { [ids[0]] = [Want("FR-001")], [ids[1]] = [Want("FR-001")], [ids[2]] = [Want("FR-002")] }, Catalog()), "anna", default);
+        plan = await service.ReviewAsync(plan.Id, new ReviewTestCaseRequest(plan.Revision, ids[2], TestCaseReviewState.Excluded, "Out of scope"), "lead", default);
+        var other = await ManualPlan(service, "other-project", "Other project's case");
+        await service.SaveAsync(other.Id, Save(other, new() { [other.Cases[0].Source.ScenarioId] = [Want("FR-002")] }, Catalog("other-project")), "anna", default);
+
+        var view = await Service(Context()).PreparedCaseTraceAsync("library", [LinkSpec], ["FR-001", "FR-002"], default);
+        view.Requirements.Should().ContainSingle().Which.Should().Match<PreparedRequirementTrace>(r => r.RequirementId == "FR-001" && r.CaseKeys.Count == 2 && r.ManualCases == 2);
+        view.RequirementsWithPreparedCaseOnly.Should().Be(1, "FR-001 once, however many cases cover it");
+        view.CaseList.Single(c => c.CaseId == ids[2]).Requirements.Single().Counted.Should().BeFalse("an excluded case never counts");
+        view.WithoutTestDesign.Select(g => g.RequirementId).Should().Equal("FR-002");
+        view.CaseList.Should().HaveCount(3).And.OnlyContain(c => c.DraftId == plan.Id, "the other project's linked case is never read");
+    }
+
+    [Fact]
+    public async Task A_plan_without_manual_links_stores_no_link_field_so_its_snapshot_identity_is_unchanged()
+    {
+        await using var db = Context();
+        var service = Service(db);
+        var plan = await ManualPlan(service);
+        var json = await db.TestPlanDrafts.AsNoTracking().Where(d => d.Id == plan.Id).Select(d => d.ContentJson).SingleAsync();
+        json.Should().NotContain("requirementLinks");
+        var first = await service.SaveSnapshotAsync(plan.Id, new SaveTestPlanSnapshotRequest(plan.Revision, "D1", null), "lead", default);
+        plan = await service.SaveAsync(plan.Id, Save(plan, [], null), "lead", default);
+        (await service.SaveSnapshotAsync(plan.Id, new SaveTestPlanSnapshotRequest(plan.Revision, "D1", null), "lead", default)).Unchanged.Should().BeTrue();
+        first.Unchanged.Should().BeFalse();
+    }
 }

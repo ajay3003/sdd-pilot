@@ -2,6 +2,7 @@
 @using BirkNext.TestPlanning
 @using BirkNext.Web.Services
 @using P = BirkNext.Web.Services.TestPlanSuggestionsPresentation
+@using L = BirkNext.Web.Services.RequirementLinkPresentation
 @implements IDisposable
 @inject IServiceProvider ServiceProvider
 @inject NavigationManager Nav
@@ -136,6 +137,10 @@
     // MT-7: scenario → specification requirement associations of the active project (Relationship Review decides them; read-only here).
     private RequirementCoverageView? _coverage;
     private string? _coverageNote;
+    // Manual requirement links: the project's current specification requirements (the same parser and evidence Test Coverage reads).
+    private List<ProjectRequirementOption>? _requirements;
+    private string? _requirementsNote;
+    private readonly Dictionary<string, string> _requirementQuery = new(StringComparer.Ordinal);
 
     private bool CanWrite => _ws?.CanWrite == true;
     private bool GuideMode => _guideKey is not null;
@@ -222,6 +227,7 @@
     {
         var (ws, error) = await _api!.ProjectAsync(_projectKey!, _environmentId);
         _ws = ws; _error = error;
+        await LoadRequirementsAsync();
         if (ServiceProvider.GetService(typeof(ITestCoverageApiService)) is ITestCoverageApiService sources)
             _snapshotOptions = (await sources.SourcesAsync()).Options?.Snapshots ?? [];
         var (last, _) = await _api.LastDiscoveryAsync(_projectKey!, _snapshotId);
@@ -412,22 +418,35 @@
 
     private bool InScope(DiscoveredScenario c) => P.InScope(c, _scopeSelection, _viaRequirement.Select(l => l.ScenarioKey).ToHashSet(StringComparer.Ordinal));
 
+    /// <summary>The project's own documents, parsed by the existing specification parser (the same evidence Test Coverage reads); null when unreadable.</summary>
+    private async Task<BirkNext.TestCoverage.CoverageWorkspaceEvidence?> WorkspaceEvidenceAsync()
+    {
+        try
+        {
+            BirkNext.Web.Services.Explorers.ArtifactExplorerState? specification = null;
+            if (ServiceProvider.GetService(typeof(BirkNext.Web.Services.Explorers.IArtifactExplorerContext)) is BirkNext.Web.Services.Explorers.IArtifactExplorerContext artifacts)
+                specification = await artifacts.GetStateAsync(WorkspaceArtifactType.Specification);
+            if (ServiceProvider.GetService(typeof(IWorkspaceSessionService)) is IWorkspaceSessionService session)
+                return TestCoveragePresentation.WorkspaceEvidence(session, (ServiceProvider.GetService(typeof(IReviewContextProvider)) as IReviewContextProvider)?.GetCurrent(), _projectName, specification);
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { }
+        return null;
+    }
+
+    /// <summary>The requirements a tester can link to (the current project's selected specification), and why the list is empty when it is.</summary>
+    private async Task LoadRequirementsAsync()
+    {
+        var evidence = await WorkspaceEvidenceAsync();
+        _requirements = L.Options(evidence);
+        _requirementsNote = L.EmptyReason(evidence, _requirements);
+    }
+
     private async Task DiscoverAsync()
     {
         if (_projectKey is null) return;
         _busy = true;
         Info("Discovering test scenarios… only the analyzers registered for this project's evidence run.");
-        BirkNext.TestCoverage.CoverageWorkspaceEvidence? evidence = null;
-        try
-        {
-            // The project's own documents, parsed by the existing specification parser (the same evidence Test Coverage reads).
-            BirkNext.Web.Services.Explorers.ArtifactExplorerState? specification = null;
-            if (ServiceProvider.GetService(typeof(BirkNext.Web.Services.Explorers.IArtifactExplorerContext)) is BirkNext.Web.Services.Explorers.IArtifactExplorerContext artifacts)
-                specification = await artifacts.GetStateAsync(WorkspaceArtifactType.Specification);
-            if (ServiceProvider.GetService(typeof(IWorkspaceSessionService)) is IWorkspaceSessionService session)
-                evidence = TestCoveragePresentation.WorkspaceEvidence(session, (ServiceProvider.GetService(typeof(IReviewContextProvider)) as IReviewContextProvider)?.GetCurrent(), _projectName, specification);
-        }
-        catch (Exception e) when (e is not OperationCanceledException) { evidence = null; }
+        var evidence = await WorkspaceEvidenceAsync();
         var (result, error) = await _api!.DiscoverAsync(new ScenarioDiscoveryRequest { ProjectKey = _projectKey, ProjectName = _projectName, SnapshotId = _snapshotId, EnvironmentId = _environmentId, Workspace = evidence });
         _busy = false;
         if (result is null) { Fail(error ?? "Discovery failed."); return; }
@@ -726,6 +745,7 @@
                             else { <span>@c.Source.Owner · @sid@(c.Source.Revision is { } rev ? $" · guide revision {rev}" : "")</span> }
                             @if (c.Generated.Confidence is { } conf) { <span class="tps-muted"> · @ScenarioCandidateTypes.ConfidenceLabel(conf)</span> }</dd>
                     </dl>
+                    @LinkedRequirements(d, c, sid)
                     @if (CanWrite)
                     {
                         @* Locked while a request is in flight, so a late response can never replace an edit made meanwhile. *@
@@ -828,6 +848,73 @@
         _newStep.Remove(sid);
     }
 
+    /// <summary>"Linked requirements" of a project case: automatic (the case's own evidence) and manual (a tester's link) side by side, each checked
+    /// against the project's current specification; search and link only requirements that exist in it. Saved with the draft.</summary>
+    private RenderFragment LinkedRequirements(TestPlanDraft d, TestCaseDraft c, string sid) => __builder =>
+    {
+        if (d.ProjectKey is null) return; // guide plans: MT-7 associations (Specification requirements above) own this
+        var rows = L.Rows(c, _requirements);
+        var query = _requirementQuery.GetValueOrDefault(sid) ?? string.Empty;
+        <section class="tps-links" aria-labelledby="@($"tps-links-title-{sid}")" data-testid="@($"tps-links-{sid}")">
+            <h4 id="@($"tps-links-title-{sid}")" class="tps-links-title">Linked requirements</h4>
+            @if (rows.Count == 0)
+            {
+                <p class="tps-muted tps-small" data-testid="tps-links-none">No requirement is linked yet. The case is still listed in Test Coverage, but it does not count for any requirement until it is linked.</p>
+            }
+            else
+            {
+                <ul class="tps-link-list" data-testid="tps-links-list">
+                    @foreach (var row in rows)
+                    {
+                        <li class="tps-link-row" data-testid="tps-link" data-requirement="@row.RequirementId" data-origin="@(row.Automatic && row.Manual ? "both" : row.Manual ? "manual" : "automatic")">
+                            <span class="tps-link-text"><strong>@row.RequirementId</strong> @row.Title</span>
+                            <span class="tps-chip @(row.Manual ? "tps-chip-ok" : null)" data-testid="tps-link-origin">@row.Origin</span>
+                            <span class="tps-tone tps-tone-@row.Tone" data-testid="tps-link-validity">@row.Validity</span>
+                            @if (row.Manual && !row.Saved) { <span class="tps-tone tps-tone-warn" data-testid="tps-link-unsaved">Not saved yet</span> }
+                            else if (row.Manual && row.LinkedBy is { } who) { <span class="tps-muted tps-small" data-testid="tps-link-by">Linked by @who@(row.LinkedAt is { } at ? $", {at.ToLocalTime():yyyy-MM-dd}" : "")</span> }
+                            @if (CanWrite && row.Manual)
+                            {
+                                <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@_busy" aria-label="@($"Remove the manual link to {row.RequirementId}")"
+                                    @onclick="() => Change(P.WithCase(d, sid, x => L.Unlink(x, row.RequirementId, row.SpecificationPath)))" data-testid="tps-link-remove">Remove link</button>
+                                @if (row.Automatic) { <span class="tps-muted tps-small">Removing the manual link keeps the automatic one.</span> }
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+            @if (CanWrite)
+            {
+                @if (_requirements is not { Count: > 0 } options)
+                {
+                    <p class="tps-muted tps-small" data-testid="tps-links-unavailable">@(_requirementsNote ?? "The project's specification could not be read, so requirements cannot be linked right now.")</p>
+                }
+                else
+                {
+                    var matches = L.Search(options, c, query);
+                    <label class="tps-field tps-link-search"><span class="tps-k">Find a requirement to link</span>
+                        <input type="search" class="tps-input" value="@query" placeholder="Type an id such as FR-001 or words from the requirement" autocomplete="off"
+                            @oninput="e => _requirementQuery[sid] = e.Value?.ToString() ?? string.Empty" data-testid="@($"tps-link-search-{sid}")" /></label>
+                    @if (matches.Count == 0)
+                    {
+                        <p class="tps-muted tps-small" data-testid="tps-link-nomatch">@(query.Length == 0 ? "Every requirement of the specification is already linked." : "No requirement of this project matches. Only requirements in the project's specification can be linked.")</p>
+                    }
+                    else
+                    {
+                        <ul class="tps-link-options" aria-label="Matching requirements" data-testid="tps-link-options">
+                            @foreach (var o in matches)
+                            {
+                                <li><button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@_busy" aria-label="@($"Link {o.RequirementId}: {o.Title}")"
+                                        @onclick="() => Change(P.WithCase(d, sid, x => L.Link(x, o)))" data-testid="tps-link-add" data-requirement="@o.RequirementId">Link</button>
+                                    <span><strong>@o.RequirementId</strong> @o.Title</span></li>
+                            }
+                        </ul>
+                    }
+                    <p class="tps-muted tps-small">A link says this case is designed to test the requirement. It is not an execution and not a pass. Save the draft to keep your links.</p>
+                }
+            }
+        </section>
+    };
+
     private RenderFragment SpecificationRequirements(TestCaseDraft c) => __builder =>
     {
         if (c.Source.Kind != ScenarioSourceKind.SystemGuide) return; // MT-7 associations exist for guide scenarios only
@@ -877,7 +964,8 @@
     {
         if (_draft is null) return;
         _busy = true;
-        var (draft, error) = await _api!.SaveAsync(_draft.Id, P.ToSaveRequest(_draft));
+        if (_draft.ProjectKey is not null && _draft.Cases.Any(c => c.RequirementLinks.Any(m => m.LinkedAt == default))) await LoadRequirementsAsync();
+        var (draft, error) = await _api!.SaveAsync(_draft.Id, P.ToSaveRequest(_draft, requirements: _requirements));
         _busy = false;
         if (draft is null) { Fail(error ?? "The draft could not be saved."); return; }
         _draft = draft; _dirty = false;

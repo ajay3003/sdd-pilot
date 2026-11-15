@@ -1,6 +1,9 @@
 @using BirkNext.TestPlanning
-@* Saved test cases (Test Plan Suggestions) as test-design evidence: requirement → cases, and every case with its stage, its links and why each
-   link is or is not counted. Read-only; the same view in Test Coverage Review and Requirements Traceability (PreparedCaseTraceability). *@
+@using L = BirkNext.Web.Services.RequirementLinkPresentation
+@* Saved test cases (Test Plan Suggestions) as test-design evidence: requirement → cases, requirements without test design, and every case with its
+   stage, its links (automatically identified or manually confirmed) and why each link is or is not counted. Read-only; the same view in Test
+   Coverage Review and Requirements Traceability (PreparedCaseTraceability). Test design is never execution: executed and passed tests are the
+   review's own evidence. *@
 
 <section class="pct" data-testid="pct" aria-labelledby="pct-title">
     <h3 id="pct-title" class="pct-title">Prepared test cases</h3>
@@ -15,10 +18,19 @@
             <div><dt>Saved test cases</dt><dd data-testid="pct-cases">@View.Cases</dd></div>
             <div><dt>Linked to the specification</dt><dd data-testid="pct-linked">@View.LinkedCases</dd></div>
             <div><dt>Not linked (not counted)</dt><dd data-testid="pct-unlinked">@View.UnlinkedCases</dd></div>
-            <div><dt>Requirements with an approved case</dt><dd data-testid="pct-req-approved">@View.RequirementsWithApprovedCase</dd></div>
-            <div><dt>Requirements with prepared cases only</dt><dd data-testid="pct-req-prepared">@View.RequirementsWithPreparedCaseOnly</dd></div>
+            @if (View.SpecificationRequirements is { } total)
+            {
+                <div><dt>Requirements in the specification</dt><dd data-testid="pct-req-total">@total</dd></div>
+            }
+            <div><dt>Requirements with an approved test design</dt><dd data-testid="pct-req-approved">@View.RequirementsWithApprovedCase</dd></div>
+            <div><dt>Requirements with a prepared test design only</dt><dd data-testid="pct-req-prepared">@View.RequirementsWithPreparedCaseOnly</dd></div>
+            @if (View.SpecificationRequirements is not null)
+            {
+                <div><dt>Requirements without test design</dt><dd data-testid="pct-req-none">@View.WithoutTestDesign.Count</dd></div>
+            }
             <div><dt>Executed</dt><dd data-testid="pct-executed">0 — prepared cases are not executions</dd></div>
         </dl>
+        <p class="pct-muted" data-testid="pct-explain">@Explain(View)</p>
         @foreach (var limitation in View.Limitations)
         {
             <p class="pct-muted" data-testid="pct-limitation">@limitation</p>
@@ -27,30 +39,45 @@
         {
             <p class="pct-muted" data-testid="pct-empty">This project has no saved test case yet. Prepare cases in <a href="test-plan-suggestions">Test Plan Suggestions</a>.</p>
         }
-        else
+        @if (View.Requirements.Count > 0)
         {
-            @if (View.Requirements.Count > 0)
-            {
-                <table class="pct-table" data-testid="pct-requirements">
-                    <thead><tr><th scope="col">Requirement</th><th scope="col">Test design</th><th scope="col">Saved cases</th></tr></thead>
-                    <tbody>
-                        @foreach (var r in View.Requirements)
-                        {
-                            <tr data-testid="pct-requirement" data-requirement="@r.RequirementId">
-                                <th scope="row">@r.RequirementId</th>
-                                <td>@r.State <span class="pct-muted">(@r.ApprovedCases approved, @r.PreparedCases prepared)</span></td>
-                                <td>
-                                    @foreach (var key in r.CaseKeys)
-                                    {
-                                        var c = View.CaseList.FirstOrDefault(x => x.CaseKey == key);
-                                        if (c is not null) { <a class="pct-case-link" href="@c.Href" data-testid="pct-requirement-case">@c.Title</a> }
-                                    }
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            }
+            <table class="pct-table" data-testid="pct-requirements">
+                <thead><tr><th scope="col">Requirement</th><th scope="col">Test design</th><th scope="col">How linked</th><th scope="col">Execution</th><th scope="col">Saved cases</th></tr></thead>
+                <tbody>
+                    @foreach (var r in View.Requirements)
+                    {
+                        <tr data-testid="pct-requirement" data-requirement="@r.RequirementId">
+                            <th scope="row" data-label="Requirement"><span class="pct-req-id">@r.RequirementId</span>@if (r.Title is { Length: > 0 } title) { <span class="pct-req-title" data-testid="pct-requirement-title">@title</span> }</th>
+                            <td data-label="Test design">@r.State <span class="pct-muted">(@r.ApprovedCases approved, @r.PreparedCases prepared)</span></td>
+                            <td data-label="How linked" data-testid="pct-requirement-origin">@Origins(r)</td>
+                            <td data-label="Execution" data-testid="pct-requirement-execution">@r.Execution</td>
+                            <td data-label="Saved cases">
+                                @foreach (var key in r.CaseKeys)
+                                {
+                                    var c = View.CaseList.FirstOrDefault(x => x.CaseKey == key);
+                                    if (c is not null) { <a class="pct-case-link" href="@c.Href" data-testid="pct-requirement-case">@c.Title</a> }
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        @if (View.WithoutTestDesign.Count > 0)
+        {
+            <details class="pct-gaps" data-testid="pct-gaps">
+                <summary>Requirements without test design (@View.WithoutTestDesign.Count)</summary>
+                <p class="pct-muted">No active saved case covers these requirements yet, by its own evidence or by a tester's link. This is missing test design; missing execution is shown by the review's test evidence.</p>
+                <ul class="pct-gap-list">
+                    @foreach (var g in View.WithoutTestDesign)
+                    {
+                        <li data-testid="pct-gap" data-requirement="@g.RequirementId"><strong>@g.RequirementId</strong>@(g.Title is { Length: > 0 } t ? $" — {t}" : "")</li>
+                    }
+                </ul>
+            </details>
+        }
+        @if (View.Cases > 0)
+        {
             <details class="pct-cases" open="@ShowCases" data-testid="pct-case-list">
                 <summary>All saved cases (@View.Cases)</summary>
                 <ul class="pct-case-items">
@@ -63,15 +90,18 @@
                             <span class="pct-muted">@c.PlanName · @(c.SourceKind == ScenarioSourceKind.Manual ? "written by hand" : $"from {c.Capability ?? "discovery"}")</span>
                             @if (c.Requirements.Count == 0)
                             {
-                                <div class="pct-muted" data-testid="pct-case-unlinked">No requirement link — visible here, not counted as requirement coverage.</div>
+                                <div class="pct-muted" data-testid="pct-case-unlinked">No requirement link — visible here, not counted as requirement coverage. Link requirements to the case in Test Plan Suggestions.</div>
                             }
                             else
                             {
                                 <ul class="pct-links">
                                     @foreach (var link in c.Requirements)
                                     {
-                                        <li data-testid="pct-case-link" data-counted="@(link.Counted ? "true" : "false")">
-                                            <strong>@link.RequirementId</strong> — @(link.Counted ? "counted" : "not counted"): @link.Explanation
+                                        <li data-testid="pct-case-link" data-counted="@(link.Counted ? "true" : "false")" data-origin="@(link.Manual ? "manual" : "automatic")">
+                                            <strong>@link.RequirementId</strong>@(link.Title is { Length: > 0 } lt ? $" {lt}" : "")
+                                            <span class="pct-chip" data-testid="pct-case-link-origin">@L.OriginLabel(link.Basis)</span>
+                                            @if (L.ValidityLabel(link.Validity) is { Length: > 0 } validity) { <span class="pct-chip pct-chip-quiet" data-testid="pct-case-link-validity">@validity</span> }
+                                            — @(link.Counted ? "counted" : "not counted"): @link.Explanation
                                         </li>
                                     }
                                 </ul>
@@ -98,4 +128,21 @@
     [Parameter] public string? Message { get; set; }
     /// <summary>Open the case list at first (true when no requirement row explains the cases).</summary>
     [Parameter] public bool ShowCases { get; set; }
+
+    /// <summary>The numbers in one plain sentence: each requirement counts once, design is not execution.</summary>
+    private static string Explain(PreparedCaseTraceView v)
+    {
+        var designed = v.RequirementsWithApprovedCase + v.RequirementsWithPreparedCaseOnly;
+        var of = v.SpecificationRequirements is { } total ? $"{designed} of {total} requirements" : $"{designed} requirement{(designed == 1 ? "" : "s")}";
+        return $"{of} have a saved test case designed for them ({v.RequirementsWithApprovedCase} approved, {v.RequirementsWithPreparedCaseOnly} prepared only). "
+            + "Each requirement counts once, however many cases cover it. None of these cases has run: whether a requirement was executed or passed comes from imported test results, not from test design.";
+    }
+
+    private static string Origins(PreparedRequirementTrace r) => (r.AutomaticCases, r.ManualCases) switch
+    {
+        ( > 0, > 0) => $"{L.AutomaticLabel} ({r.AutomaticCases}) · {L.ManualLabel} ({r.ManualCases})",
+        (0, > 0) => $"{L.ManualLabel} ({r.ManualCases})",
+        ( > 0, 0) => $"{L.AutomaticLabel} ({r.AutomaticCases})",
+        _ => L.AutomaticLabel,
+    };
 }

@@ -241,6 +241,12 @@ public sealed record TestCaseDraft
     public string? VerifiedAzureDevOpsTestCaseId { get; init; }
     /// <summary>Which human-owned fields changed, by whom and when (newest last).</summary>
     public List<TestCaseEditEvent> EditHistory { get; init; } = [];
+    /// <summary>Requirements a tester linked to this case by hand (manually confirmed associations). Kept apart from the automatic links the
+    /// case's own evidence carries (<see cref="TestCaseContent.Requirements"/>): removing a manual link never touches automatic evidence, and an
+    /// automatic link is never turned into a manual one. Older plans have none.</summary>
+    [JsonIgnore] public List<ManualRequirementLink> RequirementLinks { get => StoredRequirementLinks ?? []; init => StoredRequirementLinks = value is { Count: > 0 } ? value : null; }
+    /// <summary>Stored form of <see cref="RequirementLinks"/>: omitted when empty, so a plan without links keeps its content fingerprint.</summary>
+    [JsonPropertyName("requirementLinks")] public List<ManualRequirementLink>? StoredRequirementLinks { get; init; }
 
     [JsonIgnore] public string EffectiveTitle => Edits.Title ?? Generated.Title;
     [JsonIgnore] public string EffectivePurpose => Edits.Purpose ?? Generated.Purpose;
@@ -373,6 +379,8 @@ public sealed record SaveTestPlanDraftRequest
     public List<string> ScenarioIds { get; init; } = [];
     public List<TestSuiteDraft> Suites { get; init; } = [];
     public List<TestCaseHumanPart> Cases { get; init; } = [];
+    /// <summary>The project's current specification requirements, needed only when a save adds a manual requirement link.</summary>
+    public ProjectRequirementCatalog? RequirementCatalog { get; init; }
 }
 
 public sealed record TestCaseHumanPart
@@ -386,6 +394,32 @@ public sealed record TestCaseHumanPart
     public Dictionary<string, CorrelationState> Correlations { get; init; } = [];
     /// <summary>Explicit manual links to executable definitions (target keys).</summary>
     public List<string> ManualLinks { get; init; } = [];
+    /// <summary>The case's manually linked requirements after this save (id + specification file). Null = unchanged (an older client). A link the
+    /// case does not hold yet must name a requirement of <see cref="SaveTestPlanDraftRequest.RequirementCatalog"/>.</summary>
+    public List<ManualRequirementLink>? RequirementLinks { get; init; }
+}
+
+/// <summary>A requirement a tester linked to a saved case (manually confirmed). Identity: requirement id + specification file. Title, who and when
+/// are recorded by the server at link time; a manual link is an explicit association, never an execution or a pass.</summary>
+public sealed record ManualRequirementLink
+{
+    public string RequirementId { get; init; } = "";
+    public string SpecificationPath { get; init; } = "";
+    /// <summary>The requirement text when it was linked (shown if the requirement later leaves the specification).</summary>
+    public string Title { get; init; } = "";
+    public string LinkedBy { get; init; } = "";
+    public DateTimeOffset LinkedAt { get; init; }
+}
+
+/// <summary>One requirement of the project's selected specification (parsed by the existing specification parser in the browser).</summary>
+public sealed record ProjectRequirementOption(string RequirementId, string Title, string SpecificationPath);
+
+/// <summary>The current project's specification requirements a save may link to. A new manual link must name one of them; the catalog must be
+/// the plan's own project (another project's catalog is refused).</summary>
+public sealed record ProjectRequirementCatalog
+{
+    public string ProjectKey { get; init; } = "";
+    public List<ProjectRequirementOption> Requirements { get; init; } = [];
 }
 
 public sealed record ReviewTestCaseRequest(int BaseRevision, string ScenarioId, TestCaseReviewState State, string? Rationale);
@@ -563,10 +597,33 @@ public enum PreparedCaseLinkBasis
     JourneyReference,
     /// <summary>A System Understanding guide business rule: not a specification requirement (MT-7) and never requirement coverage.</summary>
     GuideBusinessRule,
+    /// <summary>A tester linked the case to the requirement by hand in Test Plan Suggestions (manually confirmed association).</summary>
+    ManualConfirmation,
+}
+
+/// <summary>Whether a requirement link holds against the reviewed specification now.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum PreparedLinkValidity
+{
+    /// <summary>The requirement is in the reviewed specification.</summary>
+    Current,
+    /// <summary>The link names the reviewed specification file, but the requirement is no longer in it (removed or renamed): kept, never counted.</summary>
+    RequirementNotFound,
+    /// <summary>The link names another specification file than the one reviewed.</summary>
+    OtherSpecification,
+    /// <summary>No specification is being reviewed, so the link cannot be checked.</summary>
+    NotChecked,
+    /// <summary>Not a specification requirement (a guide business rule or a journey's declared id).</summary>
+    NotARequirement,
 }
 
 /// <summary>One requirement a case names, and whether it counts as test-design coverage of the reviewed specification (with the reason).</summary>
-public sealed record PreparedCaseRequirementLink(string RequirementId, string? SpecificationPath, PreparedCaseLinkBasis Basis, bool Counted, string Explanation);
+/// <remarks>Title, Validity, LinkedBy and LinkedAt are empty on results stored before manual linking.</remarks>
+public sealed record PreparedCaseRequirementLink(string RequirementId, string? SpecificationPath, PreparedCaseLinkBasis Basis, bool Counted, string Explanation,
+    string? Title = null, PreparedLinkValidity? Validity = null, string? LinkedBy = null, DateTimeOffset? LinkedAt = null)
+{
+    [JsonIgnore] public bool Manual => Basis == PreparedCaseLinkBasis.ManualConfirmation;
+}
 
 public sealed record PreparedCaseTrace
 {
@@ -604,7 +661,17 @@ public sealed record PreparedRequirementTrace
     /// <summary>"Approved test case" or "Prepared, not approved yet".</summary>
     public string State { get; init; } = "";
     public List<string> CaseKeys { get; init; } = [];
+    /// <summary>The requirement text from the reviewed specification (null when the view was not given it).</summary>
+    public string? Title { get; init; }
+    /// <summary>Cases linked by their own evidence (automatically identified) and by a tester (manually confirmed); a case with both counts in each.</summary>
+    public int AutomaticCases { get; init; }
+    public int ManualCases { get; init; }
+    /// <summary>Always "Not executed": a prepared or approved case records no execution; executed and passed tests are the review's own counts.</summary>
+    public string Execution { get; init; } = PreparedCaseTraceView.NotExecuted;
 }
+
+/// <summary>A requirement of the reviewed specification no active saved case covers (no test design yet).</summary>
+public sealed record PreparedRequirementGap(string RequirementId, string? Title);
 
 public sealed record PreparedCaseTraceView
 {
@@ -622,11 +689,17 @@ public sealed record PreparedCaseTraceView
     public List<PreparedCaseTrace> CaseList { get; init; } = [];
     public List<PreparedRequirementTrace> Requirements { get; init; } = [];
     public List<string> Limitations { get; init; } = [];
+    /// <summary>How many requirements the reviewed specification has; null when the view was not given the specification's requirements.</summary>
+    public int? SpecificationRequirements { get; init; }
+    /// <summary>Requirements of the reviewed specification with no counted case (empty when <see cref="SpecificationRequirements"/> is null).</summary>
+    public List<PreparedRequirementGap> WithoutTestDesign { get; init; } = [];
+    /// <summary>Manual links whose requirement is no longer in the reviewed specification (kept with the case, not counted).</summary>
+    public int StaleManualLinks { get; init; }
     public string Boundary { get; init; } = TraceBoundary;
 
     public const string NotExecuted = "Not executed";
-    public const string TraceBoundary = "Prepared and approved test cases are test design, not test execution: none of them ran or passed. A requirement counts only when the case's own evidence names it in the reviewed specification.";
+    public const string TraceBoundary = "Prepared and approved test cases are test design, not test execution: none of them ran or passed. A requirement counts only when the case's own evidence names it in the reviewed specification or a tester linked the case to it.";
 }
 
 /// <summary>The specification a requirements view reads, for counting case links against it (Requirements Traceability).</summary>
-public sealed record PreparedCaseTraceRequest(List<string> SpecificationPaths, List<string>? RequirementIds);
+public sealed record PreparedCaseTraceRequest(List<string> SpecificationPaths, List<string>? RequirementIds, Dictionary<string, string>? RequirementTitles = null);

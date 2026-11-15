@@ -915,7 +915,9 @@
     private string? _caseTraceMessage;
 
     /// <summary>The project's saved test cases traced to the selected specification (read-only; never changes the traceability result).</summary>
-    private async Task LoadCaseTraceAsync()
+    /// <param name="context">The analysis' review context: its specification requirements (ids and text) are the ones links are checked against,
+    /// the same parser output Test Coverage sends, so both views count and flag links alike.</param>
+    private async Task LoadCaseTraceAsync(ReviewContext? context = null)
     {
         _caseTrace = null;
         var api = PageServices.GetService(typeof(BirkNext.Web.Services.ITestPlanSuggestionsApiService)) as BirkNext.Web.Services.ITestPlanSuggestionsApiService;
@@ -928,7 +930,11 @@
         {
             try
             {
-                var (view, error) = await api.PreparedCaseTraceAsync(project, new BirkNext.TestPlanning.PreparedCaseTraceRequest([specification.SourcePath ?? specification.FileName], null));
+                var requirements = (context?.Specification?.Requirements ?? []).Where(r => !string.IsNullOrWhiteSpace(r.Id)).GroupBy(r => r.Id.Trim(), StringComparer.OrdinalIgnoreCase)
+                    .Select(g => g.First()).ToList();
+                var (view, error) = await api.PreparedCaseTraceAsync(project, new BirkNext.TestPlanning.PreparedCaseTraceRequest([specification.SourcePath ?? specification.FileName],
+                    requirements.Count == 0 ? null : [.. requirements.Select(r => r.Id.Trim())],
+                    requirements.Count == 0 ? null : requirements.ToDictionary(r => r.Id.Trim(), r => r.Text ?? "", StringComparer.OrdinalIgnoreCase)));
                 (_caseTrace, _caseTraceMessage) = (view, error);
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
@@ -989,7 +995,7 @@
 
             _report = NormalizeReport(TraceabilityService.Analyze(constitution, spec, plan, tasks, reviewContext));
             _evaluatedAt = DateTimeOffset.UtcNow;
-            _ = LoadCaseTraceAsync();
+            _ = LoadCaseTraceAsync(reviewContext);
             _reportKey = _inputs.Key;
             DashboardSnapshot.Publish(_report);
             // A new analysis starts from the URL's view (deep link) rather than always resetting to Overview.

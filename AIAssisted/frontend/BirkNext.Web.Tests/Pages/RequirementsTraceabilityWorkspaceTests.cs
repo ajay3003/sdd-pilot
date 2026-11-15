@@ -125,6 +125,8 @@ public sealed class RequirementsTraceabilityWorkspaceTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=pct-requirement]").GetAttribute("data-requirement").Should().Be("FR-201"));
         asked!.Value.Project.Should().Be(_explorers.CurrentScope, "the current project's key, the same key its plans are saved under");
         asked.Value.Request.SpecificationPaths.Should().ContainSingle().Which.Should().EndWith("specs/001-cart/spec.md");
+        asked.Value.Request.RequirementIds.Should().Equal(["FR-201"], "links are checked against the analysed specification's requirements, as in Test Coverage");
+        asked.Value.Request.RequirementTitles!["FR-201"].Should().Contain("store carts");
         cut.Find("[data-testid=pct-requirement-case]").GetAttribute("href").Should().Contain("case=tsc-cart");
         _published.Last().SpecToPlan.Select(c => c.ItemId).Should().Equal(["FR-201"], "the document traceability result is unchanged by the saved cases");
     }

@@ -500,10 +500,10 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
 
     /// <summary>The project's saved cases traced to a specification's requirements (<see cref="PreparedCaseTraceability"/>).</summary>
     public async Task<PreparedCaseTraceView> PreparedCaseTraceAsync(string projectKey, IReadOnlyCollection<string> specificationPaths, IReadOnlyCollection<string>? requirementIds,
-        CancellationToken ct)
+        CancellationToken ct, IReadOnlyDictionary<string, string>? requirementTitles = null)
     {
         var key = TestScenarioDiscoveryService.Key(projectKey);
-        return PreparedCaseTraceability.Build(key, await ProjectDraftsAsync(key, ct), specificationPaths, requirementIds);
+        return PreparedCaseTraceability.Build(key, await ProjectDraftsAsync(key, ct), specificationPaths, requirementIds, requirementTitles);
     }
 
     /// <summary>The project's plans and snapshots (only this project's), Test Data options and the Critical E2E flows of its environment.</summary>
@@ -628,12 +628,14 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         if (suites.Count == 0) suites = current.Suites;
         var assets = await AssetsAsync(ct);
         var executables = Executables().GroupBy(e => e.Reference.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var catalog = RequirementCatalog(current.ProjectKey!, request.RequirementCatalog);
         var cases = new List<TestCaseDraft>();
         foreach (var id in ids)
         {
             var before = previous[id];
             human.TryGetValue(id, out var part);
             var edits = part is null ? before.Edits : Clean(part.Edits);
+            var requirementLinks = part?.RequirementLinks is { } wanted ? RequirementLinks(before, wanted, catalog, actor) : before.RequirementLinks;
             var dataIds = part?.TestDataAssetIds ?? [.. before.TestData.Select(d => d.AssetId)];
             var links = new List<TestCaseDataLink>();
             foreach (var assetId in dataIds.Distinct(StringComparer.Ordinal).Take(20))
@@ -652,8 +654,8 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
             if (suites.All(x => x.Id != suite)) suite = suites.Any(x => x.Id == E.SuiteFor(before.Generated)) ? E.SuiteFor(before.Generated) : suites[0].Id;
             cases.Add(E.Assess(before with
             {
-                Edits = edits, EditHistory = History(before, part is null ? null : edits, actor), TestData = links, Correlations = correlations,
-                Risk = part?.Risk ?? before.Risk, SuiteId = suite,
+                Edits = edits, EditHistory = History(before, part is null ? null : edits, actor, !SameLinks(before.RequirementLinks, requirementLinks)), TestData = links,
+                Correlations = correlations, Risk = part?.Risk ?? before.Risk, SuiteId = suite, RequirementLinks = requirementLinks,
             }));
         }
         var plan = current with
@@ -715,13 +717,64 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
     }
 
     /// <summary>The case's edit history plus one event naming the human-owned fields that changed in this save (none → unchanged).</summary>
-    private List<TestCaseEditEvent> History(TestCaseDraft? before, TestCaseEdits? after, string? actor)
+    private List<TestCaseEditEvent> History(TestCaseDraft? before, TestCaseEdits? after, string? actor, bool linksChanged = false)
     {
         var history = before?.EditHistory ?? [];
         if (before is null || after is null || actor is null) return history;
         var fields = ChangedFields(before.Edits, after);
+        if (linksChanged) fields.Add(LinkedRequirementsField);
         return fields.Count == 0 ? history : [.. history.TakeLast(99), new TestCaseEditEvent(actor, Now, fields)];
     }
+
+    // ── Manual requirement links ─────────────────────────────────────────────────────────────────────────────
+
+    public const string LinkedRequirementsField = "Linked requirements";
+    public const int MaxRequirementLinks = 50;
+
+    /// <summary>The save's requirement catalog keyed by (id, specification file); refused when it belongs to another project. Null = none sent.</summary>
+    private static Dictionary<(string, string), ProjectRequirementOption>? RequirementCatalog(string projectKey, ProjectRequirementCatalog? catalog)
+    {
+        if (catalog is null) return null;
+        if (!string.Equals(catalog.ProjectKey?.Trim(), projectKey, StringComparison.Ordinal))
+            throw new TestPlanException(400, "requirement-other-project", "These requirements belong to another project. Open this plan's own project to link its requirements.");
+        var map = new Dictionary<(string, string), ProjectRequirementOption>();
+        foreach (var r in catalog.Requirements.Where(r => !string.IsNullOrWhiteSpace(r.RequirementId) && !string.IsNullOrWhiteSpace(r.SpecificationPath)).Take(5000))
+            map.TryAdd(LinkKey(r.RequirementId, r.SpecificationPath), r);
+        return map;
+    }
+
+    /// <summary>
+    /// The case's manual links after a save. A link the case already holds is kept as recorded (who, when, title) even when its requirement has
+    /// left the specification since — traceability shows it as such; the tester removes it explicitly. A new link must name a requirement of the
+    /// project's catalog (never free text); the server records who and when. Automatic links (the case's evidence) are not touched here.
+    /// </summary>
+    private List<ManualRequirementLink> RequirementLinks(TestCaseDraft before, List<ManualRequirementLink> wanted, Dictionary<(string, string), ProjectRequirementOption>? catalog, string actor)
+    {
+        var held = before.RequirementLinks.GroupBy(l => LinkKey(l.RequirementId, l.SpecificationPath)).ToDictionary(g => g.Key, g => g.First());
+        var result = new List<ManualRequirementLink>();
+        foreach (var w in wanted.Where(w => !string.IsNullOrWhiteSpace(w.RequirementId)).DistinctBy(w => LinkKey(w.RequirementId, w.SpecificationPath)))
+        {
+            var key = LinkKey(w.RequirementId, w.SpecificationPath);
+            if (held.TryGetValue(key, out var kept)) { result.Add(kept); continue; }
+            if (catalog is null)
+                throw new TestPlanException(400, "requirements-unavailable", "The project's requirements could not be read, so no new requirement link can be saved. Open the project's specification and try again.");
+            if (!catalog.TryGetValue(key, out var requirement))
+                throw new TestPlanException(400, "requirement-unknown", $"{w.RequirementId.Trim()} is not a requirement of this project's specification. Choose a requirement from the list.");
+            result.Add(new ManualRequirementLink
+            {
+                RequirementId = requirement.RequirementId.Trim(), SpecificationPath = requirement.SpecificationPath.Trim(),
+                Title = requirement.Title.Trim()[..Math.Min(requirement.Title.Trim().Length, 500)], LinkedBy = actor, LinkedAt = Now,
+            });
+        }
+        if (result.Count > MaxRequirementLinks)
+            throw new TestPlanException(400, "too-many-requirement-links", $"A test case links at most {MaxRequirementLinks} requirements.");
+        return result;
+    }
+
+    private static (string, string) LinkKey(string id, string? path) => (id.Trim().ToUpperInvariant(), (path ?? "").Replace('\\', '/').Trim().TrimStart('/').ToUpperInvariant());
+
+    private static bool SameLinks(List<ManualRequirementLink> a, List<ManualRequirementLink> b) =>
+        a.Select(l => LinkKey(l.RequirementId, l.SpecificationPath)).OrderBy(k => k).SequenceEqual(b.Select(l => LinkKey(l.RequirementId, l.SpecificationPath)).OrderBy(k => k));
 
     /// <summary>The human-owned fields that differ between two edit sets (names only, never values).</summary>
     public static List<string> ChangedFields(TestCaseEdits a, TestCaseEdits b)

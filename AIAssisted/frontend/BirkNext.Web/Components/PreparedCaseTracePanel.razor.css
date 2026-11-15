@@ -16,3 +16,16 @@
 .pct-chip { display: inline-block; font-size: 0.75rem; padding: 0.05rem 0.4rem; border-radius: 999px; background: var(--clr-surface-alt, #eef2f6); margin-right: 0.3rem; }
 .pct-chip-quiet { background: transparent; border: 1px solid var(--clr-border, #d0d7de); }
 .pct-links { margin: 0.25rem 0 0 1rem; padding: 0; font-size: 0.85rem; }
+.pct-req-id { display: block; }
+.pct-req-title { display: block; font-weight: 400; font-size: 0.85rem; color: var(--clr-text-muted, #57606a); }
+.pct-gaps { margin: 0.5rem 0; }
+.pct-gap-list { margin: 0.3rem 0 0 1rem; padding: 0; font-size: 0.85rem; overflow-wrap: anywhere; }
+/* Narrow screens: each requirement row becomes a labelled block, so the five columns never widen the page. */
+@media (max-width: 768px) {
+    .pct-table, .pct-table tbody, .pct-table tr, .pct-table th, .pct-table td { display: block; width: 100%; }
+    .pct-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .pct-table tr { border-bottom: 1px solid var(--clr-border, #d0d7de); padding: 0.3rem 0; }
+    .pct-table th, .pct-table td { border-bottom: 0; padding: 0.15rem 0; }
+    .pct-table td::before { content: attr(data-label) ": "; font-weight: 600; color: var(--clr-text-muted, #57606a); }
+    .pct-table thead th:first-child { width: auto; }
+}

@@ -73,7 +73,7 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     /// a requirement only from the case's own specification evidence; a prepared case is never an executed test.</summary>
     [HttpPost("project/traceability")]
     public Task<ActionResult> ProjectTraceability([FromQuery] string projectKey, [FromBody] PreparedCaseTraceRequest request, CancellationToken ct) =>
-        Run(async () => Ok(await service.PreparedCaseTraceAsync(projectKey, request.SpecificationPaths ?? [], request.RequirementIds, ct)));
+        Run(async () => Ok(await service.PreparedCaseTraceAsync(projectKey, request.SpecificationPaths ?? [], request.RequirementIds, ct, request.RequirementTitles)));
 
     /// <summary>Runs the registered discovery capabilities for one project (explicit; never on navigation). Read-only towards the evidence.</summary>
     [HttpPost("discover")]

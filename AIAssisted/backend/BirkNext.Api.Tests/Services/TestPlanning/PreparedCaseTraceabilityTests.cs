@@ -153,4 +153,70 @@ public sealed class PreparedCaseTraceabilityTests
 
         view.Requirements.Single().RequirementId.Should().Be("FR-001");
     }
+
+    // ── Manual requirement links ──────────────────────────────────────────────────────────────────────────────
+
+    private static TestCaseDraft Linked(TestCaseDraft c, params (string Id, string Path)[] links) =>
+        c with { RequirementLinks = [.. links.Select(l => new ManualRequirementLink { RequirementId = l.Id, SpecificationPath = l.Path, Title = $"{l.Id} as linked", LinkedBy = "anna", LinkedAt = DateTimeOffset.UnixEpoch })] };
+
+    [Fact]
+    public void A_manual_link_counts_like_evidence_shows_its_origin_and_who_linked_it_and_never_makes_the_case_executed()
+    {
+        var view = PreparedCaseTraceability.Build(Project, [Plan(Project, Linked(Manual("m", "Log in"), ("FR-002", Spec)))], [Spec], ["FR-001", "FR-002"],
+            new Dictionary<string, string> { ["FR-002"] = "System MUST email a confirmation." });
+
+        var link = view.CaseList.Single().Requirements.Single();
+        link.Should().Match<PreparedCaseRequirementLink>(l => l.Counted && l.Manual && l.Validity == PreparedLinkValidity.Current && l.LinkedBy == "anna"
+            && l.Title == "System MUST email a confirmation." && l.Explanation.Contains("manually confirmed"));
+        var row = view.Requirements.Single();
+        row.Should().Match<PreparedRequirementTrace>(r => r.RequirementId == "FR-002" && r.ManualCases == 1 && r.AutomaticCases == 0 && r.Title == "System MUST email a confirmation."
+            && r.Execution == PreparedCaseTraceView.NotExecuted && r.State == "Prepared, not approved yet");
+        view.SpecificationRequirements.Should().Be(2);
+        view.WithoutTestDesign.Should().Equal(new PreparedRequirementGap("FR-001", null));
+        view.CaseList.Single().Execution.Should().Be(PreparedCaseTraceView.NotExecuted);
+    }
+
+    [Fact]
+    public void A_case_with_automatic_and_manual_links_to_one_requirement_counts_once_with_both_origins()
+    {
+        var view = Build([Plan(Project, Linked(SpecCase("s", "Scenario", "FR-001", TestCaseReviewState.Accepted), ("FR-001", Spec)))], ids: ["FR-001"]);
+
+        view.CaseList.Single().Requirements.Select(r => r.Basis).Should().Equal(PreparedCaseLinkBasis.SpecificationEvidence, PreparedCaseLinkBasis.ManualConfirmation);
+        view.Requirements.Should().ContainSingle().Which.Should().Match<PreparedRequirementTrace>(r => r.CaseKeys.Count == 1 && r.ApprovedCases == 1 && r.AutomaticCases == 1 && r.ManualCases == 1);
+        view.LinkedCases.Should().Be(1);
+    }
+
+    [Fact]
+    public void A_manual_link_to_another_specification_or_without_a_reviewed_specification_is_shown_but_not_counted()
+    {
+        var plan = Plan(Project, Linked(Manual("m", "Log in"), ("FR-001", "specs/002-other/spec.md")), Linked(Manual("n", "Return"), ("FR-001", Spec)));
+
+        var other = Build([plan], ids: ["FR-001"]);
+        other.CaseList.Single(c => c.CaseId == "m").Requirements.Single().Should().Match<PreparedCaseRequirementLink>(l => !l.Counted && l.Validity == PreparedLinkValidity.OtherSpecification);
+        other.Requirements.Single().CaseKeys.Should().ContainSingle();
+
+        var none = Build([plan], paths: []);
+        none.CaseList.SelectMany(c => c.Requirements).Should().OnlyContain(l => !l.Counted && l.Validity == PreparedLinkValidity.NotChecked);
+        none.Requirements.Should().BeEmpty();
+        none.SpecificationRequirements.Should().BeNull();
+        none.WithoutTestDesign.Should().BeEmpty("without a reviewed specification there is no requirement population to compare");
+    }
+
+    [Fact]
+    public void A_guide_business_rule_stays_a_rule_and_an_older_stored_link_without_validity_still_reads()
+    {
+        var guide = new TestCaseDraft
+        {
+            Source = new ScenarioReference { Kind = ScenarioSourceKind.SystemGuide, Owner = Project, ScenarioId = "g" },
+            Generated = new TestCaseContent { Title = "Guide", Requirements = [new TestCaseRequirement("BR-1", "Rule", null)] },
+        };
+        var view = Build([Plan(Project, guide)], ids: ["FR-001"]);
+        view.CaseList.Single().Requirements.Single().Should().Match<PreparedCaseRequirementLink>(l => l.Basis == PreparedCaseLinkBasis.GuideBusinessRule && !l.Counted && l.Validity == PreparedLinkValidity.NotARequirement);
+        view.WithoutTestDesign.Select(g => g.RequirementId).Should().Equal(new[] { "FR-001" }, "a guide rule never covers a specification requirement (MT-7 owns guide scenarios)");
+
+        var legacy = System.Text.Json.JsonSerializer.Deserialize<PreparedCaseRequirementLink>("""{"requirementId":"FR-001","specificationPath":"x","basis":"SpecificationEvidence","counted":true,"explanation":"e"}""",
+            TestPlanSuggestionEngine.Json)!;
+        legacy.Validity.Should().BeNull();
+        legacy.Manual.Should().BeFalse();
+    }
 }

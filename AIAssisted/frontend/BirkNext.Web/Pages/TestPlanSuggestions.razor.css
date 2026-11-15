@@ -196,3 +196,16 @@ textarea.tps-input { resize: vertical; line-height: 1.45; }
 @media (max-width: 760px) {
     .tps-candidate-details { margin-left: 0; }
 }
+/* Linked requirements of a saved case: origin and validity wrap (long plain-language text never widens the page). */
+.tps-links { margin: 0.75rem 0; padding: 0.6rem 0.75rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 8px; background: var(--clr-surface, transparent); }
+.tps-links-title { margin: 0 0 0.4rem; font-size: 0.9rem; font-weight: 700; }
+.tps-link-list, .tps-link-options { list-style: none; margin: 0 0 0.5rem; padding: 0; display: grid; gap: 0.35rem; }
+.tps-link-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.5rem; min-width: 0; }
+.tps-link-text { flex: 1 1 16rem; min-width: 0; overflow-wrap: anywhere; }
+.tps-link-row .tps-tone, .tps-link-row .tps-chip { white-space: normal; }
+.tps-link-options li { display: flex; align-items: baseline; gap: 0.5rem; min-width: 0; overflow-wrap: anywhere; }
+.tps-link-search { flex: 1 1 100%; max-width: 32rem; }
+/* Phone widths: status labels wrap instead of widening the page (a long "Expected: …" label was 439px at 390px). */
+@media (max-width: 600px) {
+    .tps-tone, .tps-chip { white-space: normal; max-width: 100%; overflow-wrap: anywhere; }
+}

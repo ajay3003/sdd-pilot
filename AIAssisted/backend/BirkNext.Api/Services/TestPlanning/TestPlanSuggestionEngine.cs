@@ -356,6 +356,8 @@ public static partial class TestPlanSuggestionEngine
         Diff("ExpectedResult", b.EffectiveExpected, a.EffectiveExpected);
         Diff("Requirements", string.Join("; ", b.Generated.Requirements.Select(r => $"{r.RuleId}: {r.ExpectedBehavior ?? r.Title}")), string.Join("; ", a.Generated.Requirements.Select(r => $"{r.RuleId}: {r.ExpectedBehavior ?? r.Title}")));
         Diff("TestData", string.Join("; ", b.TestData.Select(d => $"{d.Alias}@{Short(d.Fingerprint)} {d.Approval}")), string.Join("; ", a.TestData.Select(d => $"{d.Alias}@{Short(d.Fingerprint)} {d.Approval}")));
+        Diff("LinkedRequirements", string.Join("; ", b.RequirementLinks.Select(r => $"{r.RequirementId} ({r.SpecificationPath})").Order(StringComparer.Ordinal)),
+            string.Join("; ", a.RequirementLinks.Select(r => $"{r.RequirementId} ({r.SpecificationPath})").Order(StringComparer.Ordinal)));
         Diff("Preconditions", b.EffectivePreconditions, a.EffectivePreconditions);
         Diff("Steps", string.Join("\n", b.EffectiveSteps), string.Join("\n", a.EffectiveSteps));
         Diff("Observation", b.EffectiveObservation, a.EffectiveObservation);
@@ -428,7 +430,9 @@ public static partial class TestPlanSuggestionEngine
                 {
                     title = c.EffectiveTitle, scenario = c.Source.Key, review = c.Review.ToString(), risk = c.Risk.ToString(), preconditions = c.EffectivePreconditions,
                     steps = c.EffectiveSteps, expected = c.EffectiveExpected, expectedBasis = c.Edits.ExpectedResult is not null ? nameof(ExpectedResultBasis.ReviewerClarified) : c.Generated.ExpectedBasis.ToString(),
-                    requirements = c.Generated.Requirements, testData = c.TestData.Select(d => new { d.AssetId, d.Alias, d.Fingerprint, d.Approval }), requiredTestData = c.Generated.RequiredTestData,
+                    requirements = c.Generated.Requirements,
+                    linkedRequirements = c.RequirementLinks.Count == 0 ? null : c.RequirementLinks.Select(r => new { r.RequirementId, r.SpecificationPath, r.Title, origin = "Manually confirmed" }),
+                    testData = c.TestData.Select(d => new { d.AssetId, d.Alias, d.Fingerprint, d.Approval }), requiredTestData = c.Generated.RequiredTestData,
                     observation = c.EffectiveObservation, testability = c.Testability.Summary, unresolved = c.Missing, azureDevOpsTestCaseId = c.VerifiedAzureDevOpsTestCaseId,
                     // Type and method are separate; performance details travel whole (no Azure DevOps field holds them, so they are a structured
                     // section of the case description and never dropped). Empty when not stated — nothing is assumed.

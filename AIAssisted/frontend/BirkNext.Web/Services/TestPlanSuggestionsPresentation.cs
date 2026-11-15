@@ -126,8 +126,10 @@ public static class TestPlanSuggestionsPresentation
     // ── Working copy → save request ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>Only human-owned parts are sent; the server keeps and rebuilds generated content itself.</summary>
-    public static SaveTestPlanDraftRequest ToSaveRequest(TestPlanDraft draft, IEnumerable<string>? addScenarios = null) => new()
+    /// <param name="requirements">The project's current specification requirements; sent with a project plan so new manual links can be checked.</param>
+    public static SaveTestPlanDraftRequest ToSaveRequest(TestPlanDraft draft, IEnumerable<string>? addScenarios = null, IReadOnlyCollection<ProjectRequirementOption>? requirements = null) => new()
     {
+        RequirementCatalog = draft.ProjectKey is { } project && requirements is not null ? new ProjectRequirementCatalog { ProjectKey = project, Requirements = [.. requirements] } : null,
         BaseRevision = draft.Revision, PlanName = draft.PlanName, DeliveryLabel = draft.DeliveryLabel,
         ScenarioIds = [.. draft.Cases.Where(c => c.Review != TestCaseReviewState.Superseded).Select(c => c.Source.ScenarioId).Concat(addScenarios ?? []).Distinct(StringComparer.Ordinal)],
         Suites = draft.Suites,
@@ -136,6 +138,7 @@ public static class TestPlanSuggestionsPresentation
             ScenarioId = c.Source.ScenarioId, SuiteId = c.SuiteId, Edits = c.Edits, Risk = c.Risk, TestDataAssetIds = [.. c.TestData.Select(d => d.AssetId)],
             Correlations = c.Correlations.Where(x => x.State != CorrelationState.Candidate).ToDictionary(x => x.Target.Key, x => x.State, StringComparer.Ordinal),
             ManualLinks = [.. c.Correlations.Where(x => x.Basis.StartsWith("Linked by a reviewer", StringComparison.Ordinal)).Select(x => x.Target.Key)],
+            RequirementLinks = draft.ProjectKey is null ? null : [.. c.RequirementLinks],
         })],
     };
 
