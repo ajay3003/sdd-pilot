@@ -124,7 +124,99 @@ public static partial class TestPlanSuggestionEngine
     // ── Assessment ───────────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>Missing information and manual testability of one draft, from its content, edits, links and confirmed correlations.</summary>
-    public static TestCaseDraft Assess(TestCaseDraft draft)
+    public static TestCaseDraft Assess(TestCaseDraft draft) =>
+        draft.Source.Kind is ScenarioSourceKind.ProjectDiscovery or ScenarioSourceKind.Manual ? AssessProjectCase(draft) : AssessGuideCase(draft);
+
+    /// <summary>Whether a case needs Test Data: a person's decision, else what the evidence states. Absence of a description stays Unknown.</summary>
+    public static TestDataNeed DataNeed(TestCaseDraft draft) => draft.Edits.TestDataNeed is { } n && n != TestDataNeed.Unknown ? n
+        : draft.Generated.TestDataNeed != TestDataNeed.Unknown ? draft.Generated.TestDataNeed
+        : !string.IsNullOrWhiteSpace(draft.Generated.RequiredTestData) ? TestDataNeed.Required : TestDataNeed.Unknown;
+
+    /// <summary>
+    /// One readiness state per case: a blocking prerequisite first, then a missing or unclear expected result, then Test Data — Required with no link
+    /// is missing, a link that is unresolved or not approved is unsuitable, NotRequired only when a person said so; otherwise Not assessed.
+    /// </summary>
+    public static (CaseReadiness State, string Reason) Readiness(TestCaseDraft draft, bool expectedClear)
+    {
+        if (draft.Edits.BlockedBy is { Length: > 0 } blocked) return (CaseReadiness.BlockedByPrerequisite, $"Blocked by a prerequisite: {blocked}");
+        if (draft.Review == TestCaseReviewState.NeedsClarification) return (CaseReadiness.NeedsClarification, "A reviewer asked for clarification.");
+        if (!expectedClear) return (CaseReadiness.NeedsClarification, "The expected result is missing or needs clarification.");
+        var links = draft.TestData;
+        var suitable = links.Count > 0 && links.All(d => d.Resolved && d.Approval == "Approved");
+        return DataNeed(draft) switch
+        {
+            TestDataNeed.NotRequired => (CaseReadiness.NotRequired, "A reviewer decided this case needs no Test Data."),
+            TestDataNeed.Required when links.Count == 0 => (CaseReadiness.RequiredButMissing, "Test Data is required but none is linked."),
+            _ when links.Count > 0 && !suitable => (CaseReadiness.LinkedButUnsuitable, "Linked Test Data is not approved or no longer exists."),
+            _ when links.Count > 0 => (CaseReadiness.RequiredAndAvailable, "Approved Test Data is linked."),
+            _ => (CaseReadiness.NotAssessed, "Whether Test Data is needed is not assessed yet (no input is described)."),
+        };
+    }
+
+    private static TestCaseDraft AssessProjectCase(TestCaseDraft draft)
+    {
+        var missing = new List<string>();
+        var expected = draft.EffectiveExpected;
+        var basis = draft.Generated.ExpectedBasis;
+        var documented = basis is ExpectedResultBasis.Specification or ExpectedResultBasis.Contract or ExpectedResultBasis.ReviewedGuide or ExpectedResultBasis.UnreviewedGuide;
+        var expectedKnown = draft.Edits.ExpectedResult is not null || basis == ExpectedResultBasis.ReviewedGuide || documented && draft.Review == TestCaseReviewState.Accepted;
+        if (string.IsNullOrWhiteSpace(expected)) missing.Add("Expected result: NEEDS CLARIFICATION (none in the source)");
+        else if (basis == ExpectedResultBasis.SourceDerived && draft.Edits.ExpectedResult is null)
+            missing.Add("Expected result: proposed from source code; implementation behaviour is not a basis — confirm or clarify it");
+        else if (!expectedKnown) missing.Add("Expected result: documented in the project's evidence; a reviewer confirms it by accepting the case");
+        var steps = draft.EffectiveSteps;
+        if (steps.Count == 0) missing.Add("Test steps: none in the source");
+        else if (draft.EffectiveStepExpected.Count(e => e is null) is var open and > 0) missing.Add($"Step results: {open} step(s) without an expected result (needs clarification)");
+        if (draft.Generated.Requirements.Count == 0 && draft.Source.Kind == ScenarioSourceKind.ProjectDiscovery && draft.Generated.Capability is TestScenarioDiscoveryEngine.Specification)
+            missing.Add("Requirement: no specification requirement is linked");
+        var expectedClear = !string.IsNullOrWhiteSpace(expected) && (draft.Edits.ExpectedResult is not null || basis != ExpectedResultBasis.SourceDerived);
+        var (readiness, reason) = Readiness(draft, expectedClear);
+        switch (readiness)
+        {
+            case CaseReadiness.RequiredButMissing: missing.Add("Test data: required but none linked"); break;
+            case CaseReadiness.LinkedButUnsuitable: missing.Add("Test data: a linked asset is not approved or no longer exists"); break;
+            case CaseReadiness.NotAssessed: missing.Add("Test data: need not assessed (decide whether this case needs Test Data)"); break;
+        }
+        if (draft.EffectiveType == TestCaseType.Performance) missing.AddRange(PerformanceGaps(draft));
+        foreach (var q in draft.Generated.OpenQuestions.Take(5)) missing.Add("Open question: " + q);
+
+        var data = readiness is CaseReadiness.RequiredAndAvailable or CaseReadiness.NotRequired ? TestabilityFact.Known : TestabilityFact.Missing;
+        var behaviour = expectedKnown && !string.IsNullOrWhiteSpace(expected) ? TestabilityFact.Known : TestabilityFact.Missing;
+        var blockers = new List<string>();
+        if (readiness == CaseReadiness.BlockedByPrerequisite) blockers.Add(reason);
+        if (behaviour != TestabilityFact.Known) blockers.Add("Expected behaviour is not established by a reviewed source");
+        if (data != TestabilityFact.Known) blockers.Add(readiness switch
+        {
+            CaseReadiness.RequiredButMissing => "No approved Test Data linked",
+            CaseReadiness.LinkedButUnsuitable => "Linked Test Data is not approved or no longer exists",
+            _ => "Test Data need not assessed",
+        });
+        if (steps.Count == 0) blockers.Add("No test steps");
+        return draft with
+        {
+            Missing = missing,
+            Testability = new TestCaseTestability
+            {
+                InputMethod = steps.Count > 0 ? TestabilityFact.Known : TestabilityFact.Missing, TestData = data, ExpectedBehavior = behaviour,
+                Observation = behaviour, NeedsTechnicalAssistance = false, Blockers = blockers, Readiness = readiness, ReadinessReason = reason,
+                Summary = blockers.Count == 0
+                    ? "Prepared: steps, a confirmed expected result and the Test Data decision are in place. Environment availability and tester permissions are not verified here."
+                    : $"Not ready for manual execution: {blockers.Count} open item{(blockers.Count == 1 ? "" : "s")}",
+            },
+        };
+    }
+
+    private static IEnumerable<string> PerformanceGaps(TestCaseDraft draft)
+    {
+        // A performance case is documented in the tester's words; what is not stated stays open — no default load or threshold is assumed.
+        var p = draft.Edits.Performance;
+        if (string.IsNullOrWhiteSpace(p?.AcceptanceCriteria)) yield return "Acceptance criteria not defined — review required (performance thresholds)";
+        if (string.IsNullOrWhiteSpace(p?.Workload) && string.IsNullOrWhiteSpace(p?.Concurrency) && string.IsNullOrWhiteSpace(p?.ArrivalRate))
+            yield return "Workload: not described (how many users or requests, and over what time)";
+        if (string.IsNullOrWhiteSpace(p?.TargetEnvironment)) yield return "Performance environment: not confirmed";
+    }
+
+    private static TestCaseDraft AssessGuideCase(TestCaseDraft draft)
     {
         var missing = new List<string>();
         var expected = draft.EffectiveExpected;
@@ -161,11 +253,13 @@ public static partial class TestPlanSuggestionEngine
         if (data != TestabilityFact.Known) blockers.Add(draft.TestData.Count == 0 ? "No approved Test Data linked" : "Linked Test Data is not approved or no longer exists");
         if (behaviour != TestabilityFact.Known) blockers.Add("Expected behaviour is not established by a reviewed source");
         if (observation != TestabilityFact.Known) blockers.Add("The actual outcome cannot be observed (no observation method)");
+        var (readiness, readinessReason) = Readiness(draft, behaviour == TestabilityFact.Known
+            || !string.IsNullOrWhiteSpace(expected) && draft.Generated.ExpectedBasis != ExpectedResultBasis.NeedsClarification);
         var testability = new TestCaseTestability
         {
             InputMethod = input, TestData = data, ExpectedBehavior = behaviour, Observation = observation,
             NeedsTechnicalAssistance = input != TestabilityFact.Known,
-            Blockers = blockers,
+            Blockers = blockers, Readiness = readiness, ReadinessReason = readinessReason,
             Summary = blockers.Count == 0
                 ? "Prepared: input method, approved Test Data, reviewed expected result and observation method are known. Environment availability and tester permissions are not verified here."
                 : $"Not ready for manual execution: {blockers.Count} open item{(blockers.Count == 1 ? "" : "s")}",
@@ -190,7 +284,9 @@ public static partial class TestPlanSuggestionEngine
             return new DeliveryComparison
             {
                 From = from.Summary, To = to.Summary, Comparable = false,
-                IncomparableReason = $"The snapshots belong to different systems ({from.Plan.GuideKey} and {to.Plan.GuideKey}). Cross-system plans are never compared case by case.",
+                IncomparableReason = from.Plan.ProjectKey is not null || to.Plan.ProjectKey is not null
+                    ? $"The snapshots belong to different projects ({from.Plan.ProjectName ?? from.Plan.ProjectKey ?? from.Plan.GuideKey} and {to.Plan.ProjectName ?? to.Plan.ProjectKey ?? to.Plan.GuideKey}). Plans of different projects are never compared case by case."
+                    : $"The snapshots belong to different systems ({from.Plan.GuideKey} and {to.Plan.GuideKey}). Cross-system plans are never compared case by case.",
             };
         var context = Context(from.Plan, to.Plan);
         var cases = new List<CaseComparison>();
@@ -230,7 +326,11 @@ public static partial class TestPlanSuggestionEngine
     private static List<ContextDifference> Context(TestPlanDraft a, TestPlanDraft b)
     {
         var list = new List<ContextDifference>();
-        if (a.Basis.GuideRevision != b.Basis.GuideRevision || a.Basis.GuideFingerprint != b.Basis.GuideFingerprint)
+        if (!string.Equals(a.SnapshotKey ?? "", b.SnapshotKey ?? "", StringComparison.Ordinal))
+            list.Add(new("Source", string.IsNullOrEmpty(a.SnapshotKey) ? "No source snapshot" : $"Snapshot {a.SnapshotKey[..Math.Min(8, a.SnapshotKey.Length)]}",
+                string.IsNullOrEmpty(b.SnapshotKey) ? "No source snapshot" : $"Snapshot {b.SnapshotKey[..Math.Min(8, b.SnapshotKey.Length)]}",
+                "Discovered from a different source snapshot. Source changes are a reason to review, not a proven behaviour change."));
+        if ((a.ProjectKey is null && a.Basis.GuideRevision != b.Basis.GuideRevision) || a.Basis.GuideFingerprint != b.Basis.GuideFingerprint)
             list.Add(new("Scenario source", $"Guide revision {a.Basis.GuideRevision} ({a.Basis.GuideReviewState})", $"Guide revision {b.Basis.GuideRevision} ({b.Basis.GuideReviewState})",
                 "The scenario and requirement descriptions may differ; per-case differences below show where."));
         foreach (var role in a.Basis.Roles.Select(r => r.Role).Union(b.Basis.Roles.Select(r => r.Role)).Distinct(StringComparer.Ordinal))
@@ -319,6 +419,7 @@ public static partial class TestPlanSuggestionEngine
         {
             format = ExportFormat, boundary = Boundary, snapshotId = snapshot.Summary.Id, contentFingerprint = snapshot.Summary.ContentFingerprint,
             plan = plan.PlanName, delivery = plan.DeliveryLabel, ruleVersion = plan.RuleVersion,
+            project = plan.ProjectKey is null ? null : new { key = plan.ProjectKey, name = plan.ProjectName, snapshot = plan.SnapshotKey, discovery = plan.DiscoveryId, scopes = plan.ScopeIds },
             sourceBaseline = new { guide = plan.Basis.GuideKey, guideRevision = plan.Basis.GuideRevision, guideReviewState = plan.Basis.GuideReviewState, roles = plan.Basis.Roles },
             suites = plan.Suites.Select(s => new
             {
@@ -332,13 +433,17 @@ public static partial class TestPlanSuggestionEngine
                     // Type and method are separate; performance details travel whole (no Azure DevOps field holds them, so they are a structured
                     // section of the case description and never dropped). Empty when not stated — nothing is assumed.
                     testType = c.EffectiveType.ToString(), executionMethod = c.EffectiveExecutionMethod.ToString(), performance = c.Edits.Performance,
+                    stepExpected = c.Generated.StepExpected.Count == 0 && c.Edits.StepExpected is null ? null : c.EffectiveStepExpected,
+                    readiness = c.Testability.Readiness.ToString(), evidence = c.Generated.Evidence.Count == 0 ? null : c.Generated.Evidence,
+                    template = c.Generated.Template.Count == 0 ? null : c.Generated.Template, priority = c.Edits.Priority, roles = c.Edits.Roles, dependencies = c.Edits.Dependencies,
                 }),
             }),
             unresolved,
         };
         var text = new StringBuilder();
         text.AppendLine($"Test Plan (proposal): {plan.PlanName}").AppendLine($"Delivery: {plan.DeliveryLabel ?? "—"} · Snapshot {snapshot.Summary.Id} · {snapshot.Summary.ContentFingerprint[..12]}")
-            .AppendLine($"Source: {plan.Basis.GuideKey} guide revision {plan.Basis.GuideRevision} ({plan.Basis.GuideReviewState})").AppendLine(Boundary).AppendLine();
+            .AppendLine(plan.ProjectKey is { } project ? $"Project: {plan.ProjectName ?? project} · source snapshot {(string.IsNullOrEmpty(plan.SnapshotKey) ? "none" : plan.SnapshotKey)} · discovery rules {TestScenarioDiscoveryEngine.RuleVersion}"
+                : $"Source: {plan.Basis.GuideKey} guide revision {plan.Basis.GuideRevision} ({plan.Basis.GuideReviewState})").AppendLine(Boundary).AppendLine();
         foreach (var suite in plan.Suites)
         {
             var inSuite = included.Where(c => c.SuiteId == suite.Id).ToList();
@@ -349,7 +454,13 @@ public static partial class TestPlanSuggestionEngine
                 text.AppendLine($"### {c.EffectiveTitle}  [{c.Review}; risk {c.Risk}; type {c.EffectiveType}; method {c.EffectiveExecutionMethod}]");
                 if (c.EffectivePreconditions is { } pre) text.AppendLine($"Preconditions: {pre}");
                 var i = 1;
-                foreach (var step in c.EffectiveSteps) text.AppendLine($"{i++}. {step}");
+                var stepExpected = c.EffectiveStepExpected;
+                var perStep = c.Source.Kind is ScenarioSourceKind.ProjectDiscovery or ScenarioSourceKind.Manual;
+                foreach (var step in c.EffectiveSteps)
+                {
+                    text.AppendLine(perStep ? $"{i}. {step} → Expected: {stepExpected[i - 1] ?? "NEEDS CLARIFICATION"}" : $"{i}. {step}");
+                    i++;
+                }
                 text.AppendLine($"Expected: {c.EffectiveExpected ?? "NEEDS CLARIFICATION"}");
                 if (c.Generated.Requirements.Count > 0) text.AppendLine("Requirements: " + string.Join("; ", c.Generated.Requirements.Select(r => $"{r.RuleId} {r.Title}")));
                 text.AppendLine("Test Data: " + (c.TestData.Count == 0 ? "none linked" : string.Join(", ", c.TestData.Select(d => $"{d.Alias} ({d.Approval})"))));

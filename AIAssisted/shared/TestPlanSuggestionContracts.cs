@@ -11,7 +11,11 @@ namespace BirkNext.TestPlanning;
 /// <summary>Where a scenario candidate comes from. Only <see cref="SystemGuide"/> produces Test Case drafts; executable definitions are
 /// correlation targets (an existing automated or runnable test), never drafts.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ScenarioSourceKind { SystemGuide, IntegrationJourney, CriticalE2EFlow }
+public enum ScenarioSourceKind { SystemGuide, IntegrationJourney, CriticalE2EFlow,
+    /// <summary>A candidate from project-scoped scenario discovery (<see cref="DiscoveredScenario"/>): Owner = project key, ScenarioId = candidate id.</summary>
+    ProjectDiscovery,
+    /// <summary>A test case a person created by hand (no discovered source). Owner = project key.</summary>
+    Manual }
 
 /// <summary>Generated → UnderReview → NeedsClarification | Accepted (for preparation/export) | Excluded; Superseded when the scenario left the
 /// source. Accepted is a BirkNext review decision: never an Azure DevOps approval and never an execution.</summary>
@@ -65,7 +69,13 @@ public sealed record PerformanceCaseDetails
 /// <summary>How an expected result is established: by a reviewed (published) guide revision, by an unreviewed curated draft, by a reviewer's
 /// own clarification, or not at all. Implementation behaviour is never a basis.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ExpectedResultBasis { ReviewedGuide, UnreviewedGuide, ReviewerClarified, Missing, NeedsClarification }
+public enum ExpectedResultBasis { ReviewedGuide, UnreviewedGuide, ReviewerClarified, Missing, NeedsClarification,
+    /// <summary>Stated explicitly by the project's specification (an acceptance scenario's "Then" or a requirement statement); confirmed by accepting.</summary>
+    Specification,
+    /// <summary>Documented by an API contract (declared responses); confirmed by accepting.</summary>
+    Contract,
+    /// <summary>Proposed from source code (e.g. a static message). Implementation behaviour is not a basis: a reviewer must confirm or clarify it.</summary>
+    SourceDerived }
 
 /// <summary>Known (established), Missing, NotVerified (cannot be established here, e.g. environment availability), NeedsAssistance.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -123,7 +133,26 @@ public sealed record TestCaseContent
     public string? FollowUp { get; init; }
     /// <summary>The business-process stage the scenario's first step belongs to (the evidence used to propose its suite).</summary>
     public string? StageId { get; init; }
+
+    // Project discovery (null/empty for System Understanding guide cases, which keep loading unchanged).
+    /// <summary>The suite title proposed for <see cref="StageId"/> when it is a project area ("area:…") rather than a guide stage.</summary>
+    public string? GroupTitle { get; init; }
+    public ScenarioCandidateType? CandidateType { get; init; }
+    public CandidateConfidence? Confidence { get; init; }
+    /// <summary>The expected result of each step, parallel to <see cref="Steps"/>; null = not in the evidence (Needs clarification).</summary>
+    public List<string?> StepExpected { get; init; } = [];
+    /// <summary>Type-specific template fields (operation, trigger, producer …); a null value is not in the evidence and is never filled in.</summary>
+    public List<CandidateTemplateField> Template { get; init; } = [];
+    public List<CandidateEvidenceRef> Evidence { get; init; } = [];
+    public List<CandidateTestAssociation> ExistingTests { get; init; } = [];
+    public List<string> OpenQuestions { get; init; } = [];
+    /// <summary>Required when the evidence states inputs; otherwise Unknown — absence of a description never means "not required".</summary>
+    public TestDataNeed TestDataNeed { get; init; }
+    public string? Capability { get; init; }
 }
+
+/// <summary>One change a person made to a case's human-owned fields (the fields named, never the old values).</summary>
+public sealed record TestCaseEditEvent(string Editor, DateTimeOffset At, List<string> Fields);
 
 /// <summary>Human-owned overrides. Null = take the generated value. Kept apart from the generated content so neither overwrites the other.</summary>
 public sealed record TestCaseEdits
@@ -139,8 +168,21 @@ public sealed record TestCaseEdits
     public TestExecutionMethod? ExecutionMethod { get; init; }
     /// <summary>Only meaningful for <see cref="TestCaseType.Performance"/>; kept if the type changes so nothing a tester wrote is lost.</summary>
     public PerformanceCaseDetails? Performance { get; init; }
+    /// <summary>The expected result per edited step, parallel to <see cref="Steps"/> (only meaningful when Steps is set).</summary>
+    public List<string?>? StepExpected { get; init; }
+    public string? Purpose { get; init; }
+    public string? Roles { get; init; }
+    public string? Dependencies { get; init; }
+    public string? Priority { get; init; }
+    /// <summary>The tester's decision whether the case needs Test Data (null = take the evidence; Unknown is never "not required").</summary>
+    public TestDataNeed? TestDataNeed { get; init; }
+    /// <summary>A prerequisite that blocks the case (e.g. "Payment sandbox not provisioned"); null when nothing is known to block it.</summary>
+    public string? BlockedBy { get; init; }
+    /// <summary>Template values a person supplied (key → value), shown apart from the evidence.</summary>
+    public Dictionary<string, string>? TemplateValues { get; init; }
     [JsonIgnore] public bool IsEmpty => Title is null && Preconditions is null && Steps is null && ExpectedResult is null && ObservationMethod is null && EnvironmentPrerequisites is null
-        && TestType is null && ExecutionMethod is null && (Performance is null || Performance.IsEmpty);
+        && TestType is null && ExecutionMethod is null && (Performance is null || Performance.IsEmpty) && StepExpected is null && Purpose is null && Roles is null
+        && Dependencies is null && Priority is null && TestDataNeed is null && BlockedBy is null && (TemplateValues is null || TemplateValues.Count == 0);
 }
 
 public sealed record TestCaseReviewEvent(TestCaseReviewState State, string Reviewer, string? Rationale, DateTimeOffset At);
@@ -173,6 +215,9 @@ public sealed record TestCaseTestability
     public string Summary { get; init; } = "";
     public List<string> Blockers { get; init; } = [];
     [JsonIgnore] public bool Ready => Blockers.Count == 0;
+    /// <summary>The case's readiness for test preparation (Test Data, clarification, prerequisites) in one state with its reason.</summary>
+    public CaseReadiness Readiness { get; init; }
+    public string? ReadinessReason { get; init; }
 }
 
 public sealed record TestCaseDraft
@@ -194,14 +239,29 @@ public sealed record TestCaseDraft
     public bool SourceChanged { get; init; }
     /// <summary>A verified Azure DevOps Test Case id, only when verified by a reader; BirkNext writes none and never assumes one.</summary>
     public string? VerifiedAzureDevOpsTestCaseId { get; init; }
+    /// <summary>Which human-owned fields changed, by whom and when (newest last).</summary>
+    public List<TestCaseEditEvent> EditHistory { get; init; } = [];
 
     [JsonIgnore] public string EffectiveTitle => Edits.Title ?? Generated.Title;
+    [JsonIgnore] public string EffectivePurpose => Edits.Purpose ?? Generated.Purpose;
+    /// <summary>The expected result per effective step (null = Needs clarification).</summary>
+    [JsonIgnore] public List<string?> EffectiveStepExpected
+    {
+        get
+        {
+            var steps = EffectiveSteps;
+            var source = Edits.Steps is not null ? Edits.StepExpected ?? [] : Generated.StepExpected;
+            return [.. steps.Select((_, i) => i < source.Count && !string.IsNullOrWhiteSpace(source[i]) ? source[i] : null)];
+        }
+    }
+    [JsonIgnore] public TestDataNeed EffectiveTestDataNeed => Edits.TestDataNeed is { } n && n != TestDataNeed.Unknown ? n : Generated.TestDataNeed;
     [JsonIgnore] public string? EffectiveExpected => Edits.ExpectedResult ?? Generated.ExpectedResult;
     [JsonIgnore] public string? EffectivePreconditions => Edits.Preconditions ?? Generated.Preconditions;
     [JsonIgnore] public List<string> EffectiveSteps => Edits.Steps ?? Generated.Steps;
     [JsonIgnore] public string? EffectiveObservation => Edits.ObservationMethod ?? Generated.ObservationMethod;
     [JsonIgnore] public string? EffectiveEnvironment => Edits.EnvironmentPrerequisites ?? Generated.EnvironmentPrerequisites;
-    [JsonIgnore] public TestCaseType EffectiveType => Edits.TestType ?? TestCaseType.NotClassified;
+    /// <summary>The reviewer's classification, else the type the discovery evidence states (never inferred from text); NotClassified otherwise.</summary>
+    [JsonIgnore] public TestCaseType EffectiveType => Edits.TestType ?? ScenarioCandidateTypes.ToTestCaseType(Generated.CandidateType);
     [JsonIgnore] public TestExecutionMethod EffectiveExecutionMethod => Edits.ExecutionMethod ?? TestExecutionMethod.NotDecided;
 }
 
@@ -228,7 +288,17 @@ public sealed record TestPlanSourceRole(string Role, string Label, Guid? Snapsho
 public sealed record TestPlanDraft
 {
     public Guid Id { get; init; }
+    /// <summary>The owner key stored with the draft: a System Understanding guide key for historical guide plans, or "project:{projectKey}" for a
+    /// project plan (see <see cref="ProjectKey"/>).</summary>
     public string GuideKey { get; init; } = "";
+    /// <summary>The project this plan belongs to (null for historical guide plans, which keep loading unchanged).</summary>
+    public string? ProjectKey { get; init; }
+    public string? ProjectName { get; init; }
+    /// <summary>The source snapshot and discovery result the plan was prepared from (project plans).</summary>
+    public string? SnapshotKey { get; init; }
+    public string? DiscoveryId { get; init; }
+    /// <summary>The Project Test Setup test areas the selection was made in (ids only; empty = entire project).</summary>
+    public List<string> ScopeIds { get; init; } = [];
     public string PlanName { get; init; } = "";
     public string? DeliveryLabel { get; init; }
     public int Revision { get; init; }
@@ -271,6 +341,8 @@ public sealed record TestDataOption(string AssetId, string Alias, string? Label,
 /// <summary>Everything the page needs in one call (no call per card).</summary>
 public sealed record TestPlanWorkspace
 {
+    /// <summary>The project the workspace was read for (project plans); null for the guide-only view.</summary>
+    public string? ProjectKey { get; init; }
     public List<TestPlanGuideOption> Guides { get; init; } = [];
     public string? GuideKey { get; init; }
     public TestPlanSourceBasis? Basis { get; init; }

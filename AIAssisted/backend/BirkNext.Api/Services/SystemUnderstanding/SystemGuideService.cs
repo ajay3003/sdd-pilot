@@ -136,14 +136,17 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
     /// sources), each with the revision readers see. Used by the canonical interpretation (MT-7): a guide is read only for the system the interpreted
     /// sources belong to, so an interpretation of another system never carries its scenarios.
     /// </summary>
-    public async Task<IReadOnlyList<SystemGuideRevision>> RecognisedGuidesAsync(IReadOnlyList<IqrSourceSnapshot> snapshots, CancellationToken ct)
+    /// <param name="applicationSourceOnly">True: a role recognised only because the snapshot declares infrastructure as code does not count (any IaC
+    /// package would match it), so a guide is offered for a project only when its application source is the guide's (Test Plan Suggestions).</param>
+    public async Task<IReadOnlyList<SystemGuideRevision>> RecognisedGuidesAsync(IReadOnlyList<IqrSourceSnapshot> snapshots, CancellationToken ct, bool applicationSourceOnly = false)
     {
         var result = new List<SystemGuideRevision>();
         if (snapshots.Count == 0) return result;
         foreach (var entry in catalog)
         {
             var (shown, _) = await ShownAsync(entry.GuideKey, ct);
-            if (Roles(entry, shown.Content).Any(role => snapshots.Any(s => TestPackSources.Recognizes(role, s)))) result.Add(shown);
+            if (Roles(entry, shown.Content).Where(role => !applicationSourceOnly || !role.RequiresInfrastructureAsCode)
+                .Any(role => snapshots.Any(s => TestPackSources.Recognizes(role, s)))) result.Add(shown);
         }
         return result;
     }

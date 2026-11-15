@@ -35,6 +35,8 @@ public sealed class TestPlanSuggestionServiceTests : IAsyncLifetime, IDisposable
 
     private AppDbContext Context() => new(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(TestPostgres.Temporary(_database).ConnectionString).Options);
 
+    private readonly ScenarioDiscoveryCache _discoveries = new();
+
     private TestPlanSuggestionService Service(AppDbContext db)
     {
         var registry = new TestDataRegistryStore(Path.Combine(_dir, "reg"), NullLogger<TestDataRegistryStore>.Instance);
@@ -43,7 +45,7 @@ public sealed class TestPlanSuggestionServiceTests : IAsyncLifetime, IDisposable
         var testData = new TestDataCatalogService(new TestDataSchemaValidationService(catalog, new NoSchemas()), catalog, registry, new TestDataCandidateService(sources, registry), sources, TimeProvider.System);
         var guides = new SystemGuideService(db, [Skole], Array.Empty<IIntegrationJourneyPack>());
         return new TestPlanSuggestionService(db, guides, new SourceBaselineService(db, new IqrSourceStore(db)), testData, Array.Empty<IIntegrationJourneyPack>(),
-            new CriticalE2EStore(Path.Combine(_dir, "e2e"), NullLogger<CriticalE2EStore>.Instance));
+            new CriticalE2EStore(Path.Combine(_dir, "e2e"), NullLogger<CriticalE2EStore>.Instance), discoveries: _discoveries);
     }
 
     public async Task InitializeAsync()
@@ -291,5 +293,99 @@ public sealed class TestPlanSuggestionServiceTests : IAsyncLifetime, IDisposable
         summary.Snapshots.Single().Sequence.Should().Be(1);
         summary.Basis.Should().BeNull("no source or baseline read for the summary");
         summary.TestData.Should().BeEmpty();
+    }
+
+    // ── Project plans (project-scoped discovery) ────────────────────────────────────────────────────────────
+
+    private async Task<ScenarioDiscoveryResult> Discover(string project, string? then = "the book is reserved for the member")
+    {
+        var service = new TestScenarioDiscoveryService(new IqrSourceStore(null!), [new SpecificationScenarioProvider()], _discoveries);
+        return await service.DiscoverAsync(new ScenarioDiscoveryRequest
+        {
+            ProjectKey = project, ProjectName = "Library",
+            Workspace = new BirkNext.TestCoverage.CoverageWorkspaceEvidence
+            {
+                SpecificationAvailable = true, Requirements = [new("FR-001", "System MUST let a member reserve a book.", null), new("FR-002", "System MUST email a confirmation.", null)],
+                AcceptanceScenarios = [new BirkNext.TestCoverage.QaTestCandidate { Id = "US1-1", Title = "Reserve a book", When = "the member reserves the book", Then = then, RequirementIds = ["FR-001"] }],
+            },
+        }, default);
+    }
+
+    [Fact]
+    public async Task A_project_plan_is_prepared_from_its_own_discovery_keeps_human_edits_on_rediscovery_and_never_mixes_projects()
+    {
+        await using var db = Context();
+        var service = Service(db);
+        var discovery = await Discover("library");
+        var scenario = discovery.Candidates.Single(c => c.CanonicalKey.StartsWith("scenario:"));
+        var plan = await service.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "library", ProjectName = "Library", DiscoveryId = discovery.DiscoveryId,
+            CandidateIds = [.. discovery.Candidates.Select(c => c.CandidateId), "tsc-unknown"] }, "tester", default);
+        plan.ProjectKey.Should().Be("library");
+        plan.GuideKey.Should().Be("project:library");
+        plan.PlanName.Should().Be("Library – test plan", "a name is asked for only at save/export");
+        plan.Cases.Should().HaveCount(2, "an id the discovery does not hold is ignored");
+        var c = plan.Cases.Single(x => x.Source.ScenarioId == scenario.CandidateId);
+        c.Generated.ExpectedResult.Should().Be("the book is reserved for the member");
+        c.Generated.StepExpected.Should().Equal("the book is reserved for the member");
+        c.EffectiveType.Should().Be(TestCaseType.Functional);
+
+        var edited = Human(plan, (x, p) => x.Source.ScenarioId == scenario.CandidateId
+            ? p with { Edits = new TestCaseEdits { Title = "Reserve an available book", Steps = ["Open the book", "Press Reserve"], StepExpected = [null, "Reserved"], TestDataNeed = TestDataNeed.Required } } : p);
+        var saved = await service.SaveAsync(plan.Id, edited, "tester", default);
+        var mine = saved.Cases.Single(x => x.Source.ScenarioId == scenario.CandidateId);
+        mine.EditHistory.Single().Fields.Should().Contain(["Title", "Steps", "Step results", "Test Data need"]);
+        mine.Testability.Readiness.Should().Be(CaseReadiness.RequiredButMissing);
+
+        // The specification changes; a new discovery flags the case, and updating the plan keeps the person's edits.
+        var changed = await Discover("library", "the book is reserved and a confirmation is shown");
+        (await service.DraftAsync(plan.Id, default)).Cases.Single(x => x.Source.ScenarioId == scenario.CandidateId).SourceChanged.Should().BeTrue();
+        var refreshed = await service.RefreshAsync(plan.Id, saved.Revision, "tester", default);
+        var after = refreshed.Cases.Single(x => x.Source.ScenarioId == scenario.CandidateId);
+        after.Generated.ExpectedResult.Should().Be("the book is reserved and a confirmation is shown");
+        after.EffectiveTitle.Should().Be("Reserve an available book");
+        after.EffectiveSteps.Should().Equal("Open the book", "Press Reserve");
+        after.EffectiveStepExpected.Should().Equal(null, "Reserved");
+        after.SourceChanged.Should().BeFalse();
+        refreshed.DiscoveryId.Should().Be(changed.DiscoveryId);
+
+        (await service.ProjectWorkspaceAsync("other-project", null, true, default)).Drafts.Should().BeEmpty("another project never sees this plan");
+        (await service.ProjectWorkspaceAsync("library", null, true, default)).Drafts.Single().Id.Should().Be(plan.Id);
+        var foreign = () => service.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "other-project", DiscoveryId = discovery.DiscoveryId, CandidateIds = [scenario.CandidateId] }, "x", default);
+        (await foreign.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("discovery-missing");
+    }
+
+    [Fact]
+    public async Task A_project_without_candidates_can_start_with_a_hand_written_case_and_it_saves_reloads_snapshots_and_exports()
+    {
+        await using var db = Context();
+        var service = Service(db);
+        var plan = await service.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "empty-project", ManualCaseTitle = "Log in as a librarian" }, "tester", default);
+        var manual = plan.Cases.Single();
+        manual.Source.Kind.Should().Be(ScenarioSourceKind.Manual);
+        manual.Generated.Steps.Should().BeEmpty("nothing is generated for a hand-written case");
+        manual.Missing.Should().Contain("Expected result: NEEDS CLARIFICATION (none in the source)");
+        var withSecond = await service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, "Return a book", "Check returns", ScenarioCandidateType.UiFunctional), "tester", default);
+        withSecond.Cases.Should().HaveCount(2);
+        var reloaded = await Service(Context()).DraftAsync(plan.Id, default);
+        reloaded.Cases.Select(c => c.EffectiveTitle).Should().Equal("Log in as a librarian", "Return a book");
+        var snapshot = await service.SaveSnapshotAsync(plan.Id, new SaveTestPlanSnapshotRequest(reloaded.Revision, "Sprint 1", null), "lead", default);
+        snapshot.Unchanged.Should().BeFalse();
+        var export = await service.ExportAsync(snapshot.Snapshot.Id, default);
+        export.Text.Should().Contain("Project: empty-project").And.Contain("NEEDS CLARIFICATION");
+    }
+
+    [Fact]
+    public async Task A_historical_guide_plan_keeps_loading_unchanged_next_to_project_plans()
+    {
+        await using var db = Context();
+        var service = Service(db);
+        var guidePlan = await CreateSeven(db);
+        var discovery = await Discover("library");
+        await service.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "library", DiscoveryId = discovery.DiscoveryId, CandidateIds = [discovery.Candidates[0].CandidateId] }, "tester", default);
+        var loaded = await service.DraftAsync(guidePlan.Id, default);
+        loaded.ProjectKey.Should().BeNull();
+        loaded.GuideKey.Should().Be("skolenaervaer");
+        loaded.Cases.Select(c => c.Source.ScenarioId).Should().Equal(Seven);
+        (await service.WorkspaceAsync("skolenaervaer", true, default)).Drafts.Should().ContainSingle(d => d.Id == guidePlan.Id, "project plans never appear among the guide's plans");
     }
 }

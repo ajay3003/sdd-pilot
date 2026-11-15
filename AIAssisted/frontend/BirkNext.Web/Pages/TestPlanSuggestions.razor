@@ -2,78 +2,61 @@
 @using BirkNext.TestPlanning
 @using BirkNext.Web.Services
 @using P = BirkNext.Web.Services.TestPlanSuggestionsPresentation
+@implements IDisposable
 @inject IServiceProvider ServiceProvider
 @inject NavigationManager Nav
 
-@* Test Plan Suggestions: prepares reviewable Test Plan → Suite → Case DRAFTS from System Understanding's "What to test" scenarios. Not a scenario
-   engine (scenarios stay owned by the guide), not Azure DevOps (nothing is written there), and never an execution result. Imported text is shown
-   as text only; nothing here runs a step. *@
+@* Test Plan Suggestions: prepares reviewable test cases for the SELECTED PROJECT from the evidence its registered analyzers can read (specification,
+   System Understanding guide when one describes the project's source, UI source, API contracts, integration journeys, existing tests). Candidates are
+   guidance — not Test Cases, not coverage, never executed — and nothing is written to Azure DevOps. Imported text is shown as text only (never as
+   markup); nothing here runs an imported step. Historical System Understanding guide plans keep loading (?guide=…). *@
 <PageTitle>Test Plan Suggestions</PageTitle>
 
 <div class="tps" data-testid="tps" aria-busy="@(_loading ? "true" : "false")">
     <header class="tps-head">
         <div class="tps-eyebrow">Manual Testing · Test preparation <BirkNext.Web.Components.HelpLink Topic="test-plan-suggestions" Text="What this page is" /></div>
         <h1 class="tps-title">Test Plan Suggestions</h1>
-        <p class="tps-lead">Turn scenario candidates from <a href="system-understanding?tab=tests">What to test</a> into reviewable Test Plan, Test Suite and Test Case drafts. Drafts are proposals: not Azure DevOps records, not executed tests. UI functional suggestions from the frontend source (search, forms, actions) are reviewed as manual test cases in <a href="critical-e2e-regression#sg-panel" data-testid="tps-ui-suggestions">Critical E2E Regression › Suggested tests</a>.</p>
+        <p class="tps-lead">Find what to test in the selected project's evidence, prepare readable manual test cases, check what they still need and save a plan for a delivery. Suggestions are proposals: not Azure DevOps records and not executed tests.</p>
     </header>
 
     @if (_loading)
     {
-        <p class="tps-muted" data-testid="tps-loading">Loading scenario candidates…</p>
+        <p class="tps-muted" data-testid="tps-loading">Loading the project's test plans…</p>
     }
-    else if (_ws is null)
+    else if (_api is null || _error is not null && _ws is null && _projectKey is not null)
     {
-        <section class="tps-empty" data-testid="tps-error"><h2>Test Plan Suggestions is not available</h2><p>@_error</p></section>
+        <section class="tps-empty" data-testid="tps-error"><h2>Test Plan Suggestions is not available</h2><p>@(_error ?? "Test Plan Suggestions is not available in this host.")</p></section>
     }
-    else if (_ws.GuideKey is null)
+    else if (_guideKey is null && _projectKey is null)
     {
-        <section class="tps-empty" data-testid="tps-no-guide">
-            <h2>No system guide</h2>
-            <p>Scenario candidates come from a System Understanding guide. None is available for this workspace.</p>
-            <a class="tps-btn" href="system-understanding">Open System Understanding</a>
+        <section class="tps-empty" data-testid="tps-no-project">
+            <h2>Choose a project first</h2>
+            <p>Test scenarios are discovered from one project's evidence. Open or import a project, then come back here.</p>
+            <a class="tps-btn" href="project-import">Import a project</a>
+            @if (_history.Count > 0)
+            {
+                <details class="tps-block" data-testid="tps-historical-plans"><summary>Earlier plans prepared from a System Understanding guide (@_history.Count)</summary>
+                    <ul class="tps-plain">@foreach (var d in _history) { <li><a href="@($"{P.Route}?guide={Uri.EscapeDataString(d.GuideKey)}&draft={d.Id}")">@d.PlanName</a> <span class="tps-muted tps-small">revision @d.Revision · @d.Cases cases</span></li> }</ul>
+                </details>
+            }
         </section>
     }
     else
     {
-        <section class="tps-context" data-testid="tps-context" aria-label="Source context">
-            <div class="tps-ctx-item"><span class="tps-k">System</span>
-                @if (_ws.Guides.Count > 1)
-                {
-                    <select class="tps-input tps-input-sm" aria-label="System guide" value="@_ws.GuideKey" @onchange="OnGuideChanged">
-                        @foreach (var g in _ws.Guides) { <option value="@g.GuideKey">@g.Title</option> }
-                    </select>
-                }
-                else { <strong>@_ws.Guides.FirstOrDefault(g => g.GuideKey == _ws.GuideKey)?.Title</strong> }
-            </div>
-            @if (_ws.Basis is { } basis)
-            {
-                <div class="tps-ctx-item" data-testid="tps-guide-basis"><span class="tps-k">Scenario source</span><span>Guide revision @basis.GuideRevision · <span class="tps-tone tps-tone-@(basis.GuideReviewState.StartsWith("Published") ? "ok" : "warn")">@basis.GuideReviewState</span></span></div>
-                <div class="tps-ctx-item" data-testid="tps-sources"><span class="tps-k">Source baseline</span>
-                    <span>@foreach (var r in basis.Roles.GroupBy(r => r.Role)) { var role = r.First(); <span class="tps-chip" title="@role.Label">@role.Role: @P.BaselineState(role.State)</span> }</span>
-                </div>
-                @if (P.HasBaselineWarning(basis))
-                {
-                    <p class="tps-note tps-note-warn" data-testid="tps-baseline-warning" role="status"><strong>Source baseline not selected.</strong> At least one source is imported in alternative versions and none is chosen. Proposals record this; versions are never combined. <a href="source-analysis?area=versions">Select the analysis baseline</a></p>
-                }
-            }
-            @if (_draft is { } d)
-            {
-                <div class="tps-ctx-item" data-testid="tps-draft-context"><span class="tps-k">Proposal</span><strong>@d.PlanName</strong><span class="tps-muted">revision @d.Revision@(d.DeliveryLabel is { } dl ? $" · {dl}" : "")</span>
-                    @if (_dirty) { <span class="tps-tone tps-tone-warn" data-testid="tps-unsaved">Unsaved changes</span> }</div>
-            }
-        </section>
-
+        @ContextCard()
         @if (_message is not null)
         {
             <p class="tps-note tps-note-@_messageTone" role="status" data-testid="tps-message">@_message</p>
         }
-        @if (!_ws.CanWrite)
+        @if (_ws is { CanWrite: false })
         {
-            <p class="tps-note tps-note-info" data-testid="tps-read-only">You can read proposals. Creating, reviewing and saving snapshots needs the configuration-write permission.</p>
+            <p class="tps-note tps-note-info" data-testid="tps-read-only">You can read plans. Preparing, reviewing and saving snapshots needs the configuration-write permission.</p>
         }
 
-        <nav class="tps-areas" aria-label="Test Plan Suggestions areas">
-            @foreach (var a in P.Areas)
+        <BirkNext.Web.Components.GuidedStepList Steps="@Steps" TestId="tps-steps" StepTestId="tps-step" Label="Test Plan Suggestions steps" TitleLevel="2" Busy="_busy"
+                                                StepActions="@StepActionsFragment" />
+        <nav class="tps-areas" aria-label="More">
+            @foreach (var a in P.MoreAreas)
             {
                 var id = a.Id;
                 <button type="button" class="tps-area @(_area == id ? "is-current" : null)" aria-current="@(_area == id ? "page" : null)" data-testid="tps-area-@id" @onclick="() => GoArea(id)">@a.Label</button>
@@ -84,13 +67,13 @@
         <div class="tps-body">
             @(_area switch
             {
-                "plan" => PlanArea(),
-                "review" => ReviewArea(),
-                "data" => DataArea(),
+                "prepare" => PrepareArea(),
+                "testability" => TestabilityArea(),
+                "save" => SaveArea(),
                 "snapshots" => SnapshotsArea(),
                 "compare" => CompareArea(),
                 "export" => ExportArea(),
-                _ => Discover(),
+                _ => ChooseArea(),
             })
         </div>
     }
@@ -103,6 +86,7 @@
     [SupplyParameterFromQuery(Name = "area")] public string? AreaQuery { get; set; }
 
     private ITestPlanSuggestionsApiService? _api;
+    private ICurrentWorkspaceProjection? _projection;
     private TestPlanWorkspace? _ws;
     private TestPlanDraft? _draft;
     private bool _dirty;
@@ -111,14 +95,35 @@
     private string? _error;
     private string? _message;
     private string _messageTone = "info";
-    private string _area = "discover";
-    private P.Filter _filter = new();
+    private string _area = "choose";
+
+    // Project context (never a hardcoded system): the project the shared workspace projection names, its environment and source snapshot.
+    private string? _projectKey;
+    private string? _projectName;
+    private string? _environmentId;
+    private Guid? _snapshotId;
+    private string? _snapshotBasis;
+    private List<BirkNext.SourceEvidence.ReviewSourceSnapshot> _snapshotOptions = [];
+    // Historical System Understanding guide plans (?guide=…): their own candidates and workflow, unchanged.
+    private string? _guideKey;
+    private List<TestPlanDraftSummary> _history = [];
+
+    // Discovery: explicit only; the last result for this project + snapshot is reused.
+    private ScenarioDiscoveryResult? _discovery;
+    private List<DiscoveredScenario> _candidates = [];
+    private P.CatalogFilter _catalog = new();
+    private P.CatalogGrouping _grouping = P.CatalogGrouping.Area;
+    private int _limit = P.PageSize;
     private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _openDetails = new(StringComparer.Ordinal);
+
     private readonly HashSet<string> _openCases = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _rationale = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _newStep = new(StringComparer.Ordinal);
+    private string _manualTitle = "";
+    private bool _needsActionOnly;
     private string _planName = "";
     private string _deliveryLabel = "";
-    private readonly Dictionary<string, string> _rationale = new(StringComparer.Ordinal);
-    private string _snapshotLabel = "";
     private string _snapshotNote = "";
     private TestPlanSnapshot? _openSnapshot;
     private Guid? _compareFrom;
@@ -131,39 +136,698 @@
     private RequirementCoverageView? _coverage;
     private string? _coverageNote;
 
+    private bool CanWrite => _ws?.CanWrite == true;
+    private bool GuideMode => _guideKey is not null;
+
     protected override async Task OnInitializedAsync()
     {
         _api = ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService;
-        if (_api is null) { _error = "Test Plan Suggestions is not available in this host."; _loading = false; return; }
+        if (_api is null) { _loading = false; return; }
         _area = P.AreaOrDefault(AreaQuery);
-        await LoadAsync(GuideQuery);
+        _projection = ServiceProvider.GetService(typeof(ICurrentWorkspaceProjection)) as ICurrentWorkspaceProjection;
+        if (_projection is not null) _projection.Changed += OnProjectChanged;
+        await LoadAsync();
+        _loading = false;
+    }
+
+    public void Dispose() { if (_projection is not null) _projection.Changed -= OnProjectChanged; }
+
+    /// <summary>Another project was selected: everything project-specific is dropped (selection, discovery, plan) and read again for it.</summary>
+    private void OnProjectChanged() => _ = InvokeAsync(async () =>
+    {
+        var before = _projectKey;
+        await ResolveProjectAsync();
+        if (string.Equals(before, _projectKey, StringComparison.Ordinal) || GuideMode) return;
+        _selected.Clear(); _openDetails.Clear(); _draft = null; _dirty = false; _discovery = null; _candidates = []; _comparison = null; _export = null; _openSnapshot = null;
+        await LoadProjectAsync();
+        StateHasChanged();
+    });
+
+    private async Task LoadAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(GuideQuery)) { _guideKey = GuideQuery.Trim(); await LoadGuideAsync(); }
+        else
+        {
+            await ResolveProjectAsync();
+            if (_projectKey is null)
+            {
+                // A link to a historical guide plan without ?guide= still opens it, in guide mode.
+                if (Guid.TryParse(DraftQuery, out var id) && (await _api!.DraftAsync(id)).Draft is { ProjectKey: null } legacy) { _guideKey = legacy.GuideKey; await LoadGuideAsync(); }
+                else _history = (await _api!.SummaryAsync(null)).Workspace?.Drafts ?? [];
+            }
+            else await LoadProjectAsync();
+        }
         await LoadCoverageAsync();
-        foreach (var id in P.ParseScenarios(ScenariosQuery).Where(id => _ws?.Candidates.Any(c => c.Source.ScenarioId == id) == true)) _selected.Add(id);
+    }
+
+    /// <summary>The selected project from the shared workspace projection, its active environment and the project's own source snapshot.</summary>
+    private async Task ResolveProjectAsync()
+    {
+        if (_projection is not null)
+        {
+            try
+            {
+                var w = await _projection.GetAsync();
+                _projectKey = string.IsNullOrWhiteSpace(w.ProjectSlug) ? null : w.ProjectSlug;
+                _projectName = w.ProjectName ?? w.ProjectSlug;
+            }
+            catch (InvalidOperationException) { _projectKey = null; }
+        }
+        if (ServiceProvider.GetService(typeof(IFrontendAnalysisContextFactory)) is IFrontendAnalysisContextFactory contexts)
+            try { _environmentId = (await contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id; } catch (InvalidOperationException) { _environmentId = null; }
+        (_snapshotId, _snapshotBasis) = ResolveSnapshot();
+    }
+
+    /// <summary>The project's snapshot: the imported package of the current workspace scope, else the project evidence's main package. Never the
+    /// newest snapshot of some other repository.</summary>
+    private (Guid? Id, string? Basis) ResolveSnapshot()
+    {
+        try
+        {
+            if (ServiceProvider.GetService(typeof(BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService)) is not BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService evidence) return (null, null);
+            var view = evidence.Peek();
+            var scope = (ServiceProvider.GetService(typeof(BirkNext.Web.Services.Explorers.IArtifactExplorerContext)) as BirkNext.Web.Services.Explorers.IArtifactExplorerContext)?.CurrentScope;
+            if (scope is { } s && s.StartsWith("import:", StringComparison.Ordinal) && view.Packages.FirstOrDefault(p => p.ImportId == s["import:".Length..]) is { SnapshotId: { } imported } package)
+                return (imported, $"Imported package {package.DisplayName}");
+            if (view.Main?.SnapshotId is { } main) return (main, $"Project evidence: {view.Main.DisplayName}");
+        }
+        catch (InvalidOperationException) { }
+        return (null, null);
+    }
+
+    private async Task LoadProjectAsync()
+    {
+        var (ws, error) = await _api!.ProjectAsync(_projectKey!, _environmentId);
+        _ws = ws; _error = error;
+        if (ServiceProvider.GetService(typeof(ITestCoverageApiService)) is ITestCoverageApiService sources)
+            _snapshotOptions = (await sources.SourcesAsync()).Options?.Snapshots ?? [];
+        var (last, _) = await _api.LastDiscoveryAsync(_projectKey!, _snapshotId);
+        UseDiscovery(last);
+        if (Guid.TryParse(DraftQuery, out var draftId)) await OpenDraftAsync(draftId);
+        else if (_ws?.Drafts.FirstOrDefault() is { } latest) await OpenDraftAsync(latest.Id);
+        _planName = _draft?.PlanName ?? "";
+        _deliveryLabel = _draft?.DeliveryLabel ?? "";
+    }
+
+    private async Task LoadGuideAsync()
+    {
+        var (ws, error) = await _api!.WorkspaceAsync(_guideKey);
+        _ws = ws; _error = error;
+        _guideKey = ws?.GuideKey ?? _guideKey;
+        _candidates = [.. (ws?.Candidates ?? []).Select(P.FromGuideCandidate)];
+        foreach (var id in P.ParseScenarios(ScenariosQuery).Where(id => _candidates.Any(c => c.CandidateId == id))) _selected.Add(id);
         if (_selected.Count > 0)
         {
-            _area = "discover";
-            Info($"{_selected.Count} scenario{(_selected.Count == 1 ? "" : "s")} selected from What to test. Nothing is approved by selecting: review the drafts before use.");
+            _area = "choose";
+            Info($"{_selected.Count} scenario{(_selected.Count == 1 ? "" : "s")} selected from What to test. Nothing is approved by selecting: review the test cases before use.");
         }
         if (Guid.TryParse(DraftQuery, out var draftId)) await OpenDraftAsync(draftId);
-        else if (_ws?.Drafts.FirstOrDefault() is { } latest && _selected.Count == 0) await OpenDraftAsync(latest.Id);
-        _planName = _draft?.PlanName ?? DefaultPlanName();
+        else if (ws?.Drafts.FirstOrDefault() is { } latest && _selected.Count == 0) await OpenDraftAsync(latest.Id);
+        _planName = _draft?.PlanName ?? "";
         _deliveryLabel = _draft?.DeliveryLabel ?? "";
-        _loading = false;
+    }
+
+    private async Task ReloadWorkspaceAsync()
+    {
+        if (GuideMode) { var (ws, _) = await _api!.WorkspaceAsync(_guideKey); if (ws is not null) _ws = ws; }
+        else if (_projectKey is not null) { var (ws, _) = await _api!.ProjectAsync(_projectKey, _environmentId); if (ws is not null) _ws = ws; }
+    }
+
+    private void UseDiscovery(ScenarioDiscoveryResult? result)
+    {
+        if (result is not null && result.ProjectKey != _projectKey) result = null; // never another project's result
+        _discovery = result;
+        _candidates = result?.Candidates ?? [];
+        _selected.RemoveWhere(id => _candidates.All(c => c.CandidateId != id));
     }
 
     private async Task LoadCoverageAsync()
     {
-        string? scope = null;
-        if (ServiceProvider.GetService(typeof(IFrontendAnalysisContextFactory)) is IFrontendAnalysisContextFactory contexts)
-            try { scope = (await contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id; } catch (InvalidOperationException) { }
-        if (string.IsNullOrWhiteSpace(scope)) { _coverageNote = "Unknown: no project (Target Environment) is selected, so no requirement association can be read."; return; }
-        var (coverage, error) = await _api!.RequirementCoverageAsync(scope, rows: false);
+        if (_environmentId is null && ServiceProvider.GetService(typeof(IFrontendAnalysisContextFactory)) is IFrontendAnalysisContextFactory contexts)
+            try { _environmentId = (await contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id; } catch (InvalidOperationException) { }
+        if (string.IsNullOrWhiteSpace(_environmentId)) { _coverageNote = "Unknown: no project (Target Environment) is selected, so no requirement association can be read."; return; }
+        var (coverage, error) = await _api!.RequirementCoverageAsync(_environmentId, rows: false);
         _coverage = coverage;
         _coverageNote = coverage is null ? error : coverage.Known ? null : $"Unknown: {coverage.UnknownReason}";
     }
 
+    private async Task OpenDraftAsync(Guid id)
+    {
+        var (draft, error) = await _api!.DraftAsync(id);
+        if (draft is null) { Fail(error ?? "The plan could not be opened."); return; }
+        // Project isolation: a plan of another project is never opened here.
+        if (!GuideMode && draft.ProjectKey != _projectKey) { Fail("That plan belongs to another project and is not shown here."); return; }
+        if (GuideMode && draft.ProjectKey is not null) { Fail("That plan belongs to a project; open the project to see it."); return; }
+        _draft = draft;
+        _dirty = false;
+        _planName = draft.PlanName;
+        _deliveryLabel = draft.DeliveryLabel ?? "";
+    }
+
+    private void GoArea(string id)
+    {
+        _area = P.AreaOrDefault(id);
+        _message = null;
+        Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["area"] = _area, ["draft"] = _draft?.Id.ToString(), ["scenarios"] = null }), replace: true);
+    }
+
+    private Task OnStepAction(string id) { GoArea(id); return Task.CompletedTask; }
+
+    private void Info(string text) { _message = text; _messageTone = "info"; }
+    private void Ok(string text) { _message = text; _messageTone = "ok"; }
+    private void Fail(string text) { _message = text; _messageTone = "warn"; }
+
+    private void Change(TestPlanDraft draft) { _draft = draft; _dirty = true; }
+
+    private void ToggleCase(string id) { if (!_openCases.Remove(id)) _openCases.Add(id); }
+
+    private IReadOnlyList<GuidedStep> Steps => P.Steps(_draft, _ws?.Snapshots ?? [], _candidates.Count, _discovery is not null || GuideMode, _selected.Count);
+
+    private RenderFragment<GuidedStep> StepActionsFragment => step => __builder =>
+    {
+        var id = step.Id;
+        var disabled = step.DisabledReason is not null || _busy;
+        <button type="button" class="tps-btn @(_area == id ? null : "tps-btn-quiet")" disabled="@disabled" aria-current="@(_area == id ? "step" : null)" data-testid="tps-area-@id"
+                title="@step.DisabledReason" @onclick="() => OnStepAction(id)">@(_area == id ? "Open now" : "Open")</button>
+    };
+
+    // ── Context ─────────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment ContextCard() => __builder =>
+    {
+        <section class="tps-context" data-testid="tps-context" aria-label="Project context">
+            @if (GuideMode)
+            {
+                <div class="tps-ctx-item"><span class="tps-k">System Understanding guide</span><strong data-testid="tps-guide-title">@(_ws?.Guides.FirstOrDefault(g => g.GuideKey == _guideKey)?.Title ?? _guideKey)</strong>
+                    <span class="tps-muted tps-small">A plan prepared from a guide (earlier workflow). Open a project for project-based discovery.</span></div>
+                <div class="tps-ctx-item" data-testid="tps-existing-plan"><span class="tps-k">Plan</span>
+                    @if (_draft is { } gd) { <span><strong>@gd.PlanName</strong> <span class="tps-muted">@gd.Cases.Count cases · revision @gd.Revision</span></span> }
+                    else { <span class="tps-muted">None yet</span> }
+                    @if (_dirty) { <span class="tps-tone tps-tone-warn" data-testid="tps-unsaved">Unsaved changes</span> }
+                </div>
+                @if (_ws?.Basis is { } basis)
+                {
+                    <div class="tps-ctx-item" data-testid="tps-guide-basis"><span class="tps-k">Scenario source</span><span>Guide revision @basis.GuideRevision · <span class="tps-tone tps-tone-@(basis.GuideReviewState.StartsWith("Published") ? "ok" : "warn")">@basis.GuideReviewState</span></span></div>
+                    <div class="tps-ctx-item" data-testid="tps-sources"><span class="tps-k">Source baseline</span>
+                        <span>@foreach (var r in basis.Roles.GroupBy(r => r.Role)) { var role = r.First(); <span class="tps-chip" title="@role.Label">@role.Role: @P.BaselineState(role.State)</span> }</span>
+                    </div>
+                    @if (P.HasBaselineWarning(basis))
+                    {
+                        <p class="tps-note tps-note-warn" data-testid="tps-baseline-warning" role="status"><strong>Source baseline not selected.</strong> At least one source is imported in alternative versions and none is chosen. Plans record this; versions are never combined. <a href="source-analysis?area=versions">Select the analysis baseline</a></p>
+                    }
+                }
+            }
+            else
+            {
+                <div class="tps-ctx-item"><span class="tps-k">Project</span><strong data-testid="tps-project-name">@(_projectName ?? _projectKey)</strong></div>
+                <div class="tps-ctx-item" data-testid="tps-snapshot"><span class="tps-k">Source snapshot</span>
+                    @if (_snapshotOptions.Count > 0)
+                    {
+                        <select class="tps-input tps-input-sm" aria-label="Source snapshot" @onchange="SnapshotChanged" data-testid="tps-snapshot-select">
+                            <option value="" selected="@(_snapshotId is null)">None (documents only)</option>
+                            @foreach (var s in _snapshotOptions.Take(60)) { <option value="@s.SnapshotId" selected="@(_snapshotId == s.SnapshotId)">@s.ArchiveName · @s.AnalyzedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</option> }
+                        </select>
+                    }
+                    else { <span>@(_snapshotId is null ? "None linked" : _snapshotId.ToString()![..8])</span> }
+                    <span class="tps-muted tps-small">@(_snapshotBasis ?? (_snapshotId is null ? "No source snapshot is linked to this project; documents are still read." : "Chosen here"))</span>
+                </div>
+                <div class="tps-ctx-item"><span class="tps-k">Test boundary</span>
+                    <span data-testid="tps-boundary">@(_scopeSelection is { } sel ? string.Join(", ", sel.Scopes.Select(s => s.ScopeName)) : "Entire project")</span></div>
+                <div class="tps-ctx-item" data-testid="tps-existing-plan"><span class="tps-k">Existing plan</span>
+                    @if (_draft is { } d) { <span><strong>@d.PlanName</strong> <span class="tps-muted">@d.Cases.Count cases · revision @d.Revision</span></span> }
+                    else { <span class="tps-muted">None yet</span> }
+                    @if (_dirty) { <span class="tps-tone tps-tone-warn" data-testid="tps-unsaved">Unsaved changes</span> }
+                </div>
+            }
+        </section>
+        @if (!GuideMode && _discovery is { } discovery)
+        {
+            <section class="tps-block" data-testid="tps-capabilities" aria-label="Evidence used">
+                <h2 class="tps-h3">Evidence in this project</h2>
+                <ul class="tps-capabilities">
+                    @foreach (var c in discovery.Capabilities)
+                    {
+                        var tone = c.State switch { DiscoveryCapabilityState.Available => "ok", DiscoveryCapabilityState.Failed => "bad", _ => "muted" };
+                        var label = c.State switch { DiscoveryCapabilityState.Available => $"{c.Candidates} found", DiscoveryCapabilityState.NoEvidence => "No evidence", DiscoveryCapabilityState.NotApplicable => "Not applicable", _ => "Could not read" };
+                        <li class="tps-capability" data-testid="tps-capability-@c.Id" data-state="@c.State"><strong>@c.Label</strong> <span class="tps-tone tps-tone-@tone">@(c.Id == "existing-tests" && c.State == DiscoveryCapabilityState.Available ? "Associations only" : label)</span>
+                            <span class="tps-muted tps-small">@c.Detail</span></li>
+                    }
+                </ul>
+                <p class="tps-muted tps-small">Discovered @discovery.DiscoveredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · rules @discovery.RuleVersion@(discovery.SnapshotLabel is { } sl ? $" · {sl}" : "")</p>
+                @foreach (var l in discovery.Limitations) { <p class="tps-muted tps-small" data-testid="tps-limitation">@l</p> }
+            </section>
+        }
+    };
+
+    private async Task SnapshotChanged(ChangeEventArgs e)
+    {
+        _snapshotId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        _snapshotBasis = "Chosen here";
+        var (last, _) = await _api!.LastDiscoveryAsync(_projectKey!, _snapshotId);
+        UseDiscovery(last);
+        if (last is null) Info("Discover test scenarios again to read the chosen snapshot.");
+    }
+
+    // ── Step 1: Choose scenarios ─────────────────────────────────────────────────────────────────────────────
+
+    private BirkNext.Scopes.ScopeSelection? _scopeSelection;
+    private IReadOnlyList<BirkNext.Scopes.ScopeScenarioLink> _viaRequirement = [];
+    private string? _requirementNotice;
+
+    /// <summary>A selected test area names scenarios and requirements; its requirements add the scenarios that verify them through an established canonical
+    /// Verifies relation of the active Target Environment's interpretation (explicit, derived or confirmed by a person — never a candidate).</summary>
+    private async Task ScopeSelected(BirkNext.Scopes.ScopeSelection? selection)
+    {
+        (_scopeSelection, _viaRequirement, _requirementNotice) = (selection, [], null);
+        var requirements = selection?.Members.Where(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.Requirement).Select(m => m.Member.TargetId).ToList() ?? [];
+        if (requirements.Count == 0) return;
+        var scope = CorrelationPresentation.Scope(_environmentId);
+        if (scope is null || ServiceProvider.GetService(typeof(IScopeRegistryApiService)) is not IScopeRegistryApiService registry) { _requirementNotice = "requirements need an active Target Environment to find their scenarios"; return; }
+        var (links, error) = await registry.VerifyingScenariosAsync(new BirkNext.Scopes.ScopeScenarioLinkRequest(scope, requirements));
+        (_viaRequirement, _requirementNotice) = (links, error);
+    }
+
+    private bool InScope(DiscoveredScenario c) => P.InScope(c, _scopeSelection, _viaRequirement.Select(l => l.ScenarioKey).ToHashSet(StringComparer.Ordinal));
+
+    private async Task DiscoverAsync()
+    {
+        if (_projectKey is null) return;
+        _busy = true;
+        Info("Discovering test scenarios… only the analyzers registered for this project's evidence run.");
+        BirkNext.TestCoverage.CoverageWorkspaceEvidence? evidence = null;
+        try
+        {
+            // The project's own documents, parsed by the existing specification parser (the same evidence Test Coverage reads).
+            BirkNext.Web.Services.Explorers.ArtifactExplorerState? specification = null;
+            if (ServiceProvider.GetService(typeof(BirkNext.Web.Services.Explorers.IArtifactExplorerContext)) is BirkNext.Web.Services.Explorers.IArtifactExplorerContext artifacts)
+                specification = await artifacts.GetStateAsync(WorkspaceArtifactType.Specification);
+            if (ServiceProvider.GetService(typeof(IWorkspaceSessionService)) is IWorkspaceSessionService session)
+                evidence = TestCoveragePresentation.WorkspaceEvidence(session, (ServiceProvider.GetService(typeof(IReviewContextProvider)) as IReviewContextProvider)?.GetCurrent(), _projectName, specification);
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { evidence = null; }
+        var (result, error) = await _api!.DiscoverAsync(new ScenarioDiscoveryRequest { ProjectKey = _projectKey, ProjectName = _projectName, SnapshotId = _snapshotId, EnvironmentId = _environmentId, Workspace = evidence });
+        _busy = false;
+        if (result is null) { Fail(error ?? "Discovery failed."); return; }
+        UseDiscovery(result);
+        _limit = P.PageSize;
+        if (result.Candidates.Count == 0) Info("No test scenario was found in this project's evidence. You can still write test cases by hand.");
+        else Ok($"{result.Candidates.Count} scenario candidates found. Choose the ones to prepare; selecting approves nothing.");
+    }
+
+    private RenderFragment ChooseArea() => __builder =>
+    {
+        var shown = P.Apply(_candidates, _catalog).Where(InScope).ToList();
+        var visible = shown.Take(_limit).ToList();
+        var inDraft = _draft?.Cases.Select(c => c.Source.ScenarioId).ToHashSet(StringComparer.Ordinal) ?? [];
+        var hiddenSelected = _selected.Count(id => shown.All(c => c.CandidateId != id));
+        var adding = _selected.Count(id => !inDraft.Contains(id));
+        <section class="tps-section" data-testid="tps-choose" aria-labelledby="tps-choose-h">
+            <div class="tps-section-head">
+                <h2 id="tps-choose-h" class="tps-h2">Choose scenarios <span class="tps-count">@shown.Count of @_candidates.Count</span></h2>
+                <p class="tps-muted">A candidate is guidance found in the project's evidence — not a Test Case, not test coverage. Selecting approves nothing.</p>
+            </div>
+            @if (!GuideMode)
+            {
+                <div class="tps-actionbar" data-testid="tps-discover-bar">
+                    <button type="button" class="tps-btn @(_discovery is null ? null : "tps-btn-quiet")" disabled="@_busy" @onclick="DiscoverAsync" data-testid="tps-discover-run">@(_discovery is null ? "Discover test scenarios" : "Discover again")</button>
+                    <span class="tps-muted tps-small">@(_discovery is null ? "Reads the specification, source snapshot and contracts of this project. Nothing runs until you ask." : "The last result is reused until you discover again.")</span>
+                </div>
+            }
+            <BirkNext.Web.Components.Scopes.ScopeFilter SelectionChanged="ScopeSelected" />
+            @if (_scopeSelection is { } scopeSel)
+            {
+                var scenarios = scopeSel.Members.Count(m => m.Member.Kind is BirkNext.Scopes.ScopeMemberKind.Scenario or BirkNext.Scopes.ScopeMemberKind.Requirement or BirkNext.Scopes.ScopeMemberKind.Journey);
+                <p class="tps-muted" data-testid="tps-scope-summary">Showing the candidates the selected test areas name (@scenarios scenario, requirement or journey members).
+                    @if (_viaRequirement.Count > 0) { <span data-testid="tps-scope-via-requirement">@_viaRequirement.Select(l => l.ScenarioKey).Distinct().Count() more through the areas' requirements (established Verifies links only).</span> }
+                    @if (_requirementNotice is { } rn) { <span>@rn.</span> }
+                    @if (scenarios == 0) { <span data-testid="tps-scope-no-scenarios">The selected areas name no scenarios, requirements or journeys, so no candidate is shown; add them in Project Test Setup.</span> }</p>
+            }
+            @if (_candidates.Count == 0)
+            {
+                <div class="tps-empty" data-testid="tps-no-candidates">
+                    <h3 class="tps-h3">@(GuideMode ? "The guide has no scenarios yet." : _discovery is null ? "Not discovered yet" : "No scenario found in this project's evidence")</h3>
+                    @if (!GuideMode && _discovery is not null)
+                    {
+                        <p>None of the registered analyzers found a scenario: no specification acceptance scenarios or requirements, no Razor/HTML pages with a route, no OpenAPI/GraphQL operations and no integration journeys. The list above says what was read. You can still write test cases by hand.</p>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="tps-filters" role="search">
+                    <label class="tps-field tps-field-grow"><span class="tps-k">Search</span><input class="tps-input" type="search" placeholder="Title, purpose, area or requirement" value="@_catalog.Query" @oninput="e => _catalog = _catalog with { Query = e.Value?.ToString() ?? string.Empty }" data-testid="tps-search" /></label>
+                    <label class="tps-field"><span class="tps-k">Type</span>
+                        <select class="tps-input" @onchange="e => _catalog = _catalog with { Type = Enum.TryParse<ScenarioCandidateType>(e.Value?.ToString(), out var t) ? t : null }" data-testid="tps-filter-type">
+                            <option value="">All</option>
+                            @foreach (var t in _candidates.Select(c => c.Type).Distinct().OrderBy(t => t)) { <option value="@t" selected="@(_catalog.Type == t)">@ScenarioCandidateTypes.Label(t)</option> }
+                        </select></label>
+                    <label class="tps-field"><span class="tps-k">Area</span>
+                        <select class="tps-input" @onchange="e => _catalog = _catalog with { Area = Empty(e) }" data-testid="tps-filter-area">
+                            <option value="">All</option>
+                            @foreach (var a in _candidates.Select(P.AreaOf).Distinct().OrderBy(a => a, StringComparer.CurrentCultureIgnoreCase)) { <option value="@a" selected="@(_catalog.Area == a)">@a</option> }
+                        </select></label>
+                    <label class="tps-field"><span class="tps-k">Source</span>
+                        <select class="tps-input" @onchange="e => _catalog = _catalog with { Source = Empty(e) }" data-testid="tps-filter-source">
+                            <option value="">All</option>
+                            @foreach (var s in _candidates.Select(c => c.SourceCategory).Distinct()) { <option value="@s" selected="@(_catalog.Source == s)">@s</option> }
+                        </select></label>
+                    <label class="tps-field"><span class="tps-k">Existing tests</span>
+                        <select class="tps-input" @onchange="e => _catalog = _catalog with { Tests = Empty(e) }" data-testid="tps-filter-tests">
+                            <option value="">All</option><option value="with">With an existing test</option><option value="without">Without an existing test</option>
+                        </select></label>
+                    <label class="tps-field"><span class="tps-k">Group by</span>
+                        <select class="tps-input" @onchange="e => _grouping = Enum.TryParse<P.CatalogGrouping>(e.Value?.ToString(), out var g) ? g : P.CatalogGrouping.Area" data-testid="tps-group-by">
+                            <option value="Area">Area / module</option><option value="Type">Type</option><option value="Source">Source</option>
+                        </select></label>
+                    <label class="tps-field tps-check"><input type="checkbox" checked="@_catalog.AttentionOnly" @onchange="e => _catalog = _catalog with { AttentionOnly = e.Value is true }" data-testid="tps-filter-attention" /> Only needing attention</label>
+                </div>
+                <div class="tps-selectbar" role="group" aria-label="Selection">
+                    <span data-testid="tps-selected-count" aria-live="polite"><strong>@_selected.Count</strong> selected</span>
+                    @if (hiddenSelected > 0) { <span class="tps-tone tps-tone-info" data-testid="tps-selected-hidden">@hiddenSelected hidden by filters — still selected</span> }
+                    <button type="button" class="tps-btn tps-btn-quiet" disabled="@(shown.Count == 0)" @onclick="() => { foreach (var c in shown) _selected.Add(c.CandidateId); }" data-testid="tps-select-shown">Select visible (@shown.Count)</button>
+                    <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_selected.Count == 0)" @onclick="() => _selected.Clear()" data-testid="tps-clear-selection">Clear selection</button>
+                </div>
+                @if (shown.Count == 0) { <p class="tps-muted" data-testid="tps-no-match">No scenario matches these filters.</p> }
+                <div class="tps-groups" data-testid="tps-candidates">
+                    @foreach (var group in P.Group(visible, _grouping))
+                    {
+                        <section class="tps-group" aria-labelledby="tps-g-@group.Id" data-testid="tps-group-@group.Id">
+                            <h3 id="tps-g-@group.Id" class="tps-group-h">@group.Title <span class="tps-count">@group.Items.Count</span></h3>
+                            <ul class="tps-rows">
+                                @foreach (var c in group.Items) { @CandidateRow(c, inDraft.Contains(c.CandidateId)) }
+                            </ul>
+                        </section>
+                    }
+                </div>
+                @if (shown.Count > visible.Count)
+                {
+                    <button type="button" class="tps-btn tps-btn-quiet" @onclick="() => _limit += P.PageSize" data-testid="tps-show-more">Show @Math.Min(P.PageSize, shown.Count - visible.Count) more (@visible.Count of @shown.Count shown)</button>
+                }
+            }
+            @if (CanWrite)
+            {
+                <div class="tps-actionbar tps-actionbar-sticky" data-testid="tps-prepare-bar">
+                    <span aria-live="polite"><strong>@_selected.Count</strong> scenario@(_selected.Count == 1 ? "" : "s") selected</span>
+                    <button type="button" class="tps-btn" disabled="@(_busy || adding == 0)" @onclick="PrepareAsync" data-testid="tps-prepare">@(_draft is null ? "Prepare test cases" : $"Add {adding} to the plan")</button>
+                    @if (_selected.Count > 0 && adding == 0) { <span class="tps-muted tps-small">Every selected scenario is already in the plan.</span> }
+                    @if (_selected.Count == 0) { <span class="tps-muted tps-small" data-testid="tps-select-hint">Select at least one scenario to prepare test cases.</span> }
+                </div>
+                @if (!GuideMode)
+                {
+                    <div class="tps-actionbar" data-testid="tps-manual-bar">
+                        <label class="tps-field tps-field-grow"><span class="tps-k">Write a test case by hand</span><input class="tps-input" @bind="_manualTitle" @bind:event="oninput" placeholder="Title, e.g. Return a borrowed book" data-testid="tps-manual-title" /></label>
+                        <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || string.IsNullOrWhiteSpace(_manualTitle))" @onclick="AddManualAsync" data-testid="tps-manual-create">Add test case</button>
+                    </div>
+                }
+            }
+        </section>
+    };
+
+    private RenderFragment CandidateRow(DiscoveredScenario c, bool inPlan) => __builder =>
+    {
+        var id = c.CandidateId;
+        var selected = _selected.Contains(id);
+        var open = _openDetails.Contains(id);
+        var warning = P.Warning(c);
+        <li class="tps-row @(selected ? "is-selected" : null)" data-testid="tps-candidate-@id">
+            <label class="tps-row-select">
+                <input type="checkbox" checked="@selected" @onchange="e => { if (e.Value is true) _selected.Add(id); else _selected.Remove(id); }" aria-describedby="tps-sum-@id" data-testid="tps-select-@id" />
+                <span class="tps-row-title">@c.Title</span>
+            </label>
+            <p class="tps-row-sum" id="tps-sum-@id">@c.Purpose</p>
+            <div class="tps-row-meta">
+                <span class="tps-chip" data-testid="tps-type">@ScenarioCandidateTypes.Label(c.Type)</span>
+                @if (inPlan) { <span class="tps-chip tps-chip-ok" data-testid="tps-in-draft">Already in plan</span> }
+                @if (warning is not null) { <span class="tps-chip tps-chip-warn" data-testid="tps-attention">@warning</span> }
+                <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" aria-expanded="@(open ? "true" : "false")" @onclick="() => { if (!_openDetails.Remove(id)) _openDetails.Add(id); }" data-testid="tps-details-@id">@(open ? "Hide details" : "Details")</button>
+            </div>
+            @if (open)
+            {
+                <dl class="tps-dl tps-candidate-details" data-testid="tps-candidate-details-@id">
+                    <dt>Source</dt><dd>@c.SourceCategory · @(c.Area ?? "no area stated") · @c.Engine@(string.IsNullOrEmpty(c.RuleVersion) ? "" : $" · rules {c.RuleVersion}")</dd>
+                    <dt>Confidence</dt><dd>@ScenarioCandidateTypes.ConfidenceLabel(c.Confidence)</dd>
+                    <dt>Expected behaviour</dt><dd>@(c.ExpectedBehaviour is { } eb ? $"{eb}{(c.ExpectedBasis is { } basis ? $" ({basis})" : "")}" : "Needs clarification — not stated in the evidence.")</dd>
+                    @if (c.Steps.Count > 0) { <dt>Steps in the evidence</dt><dd><ol class="tps-plain">@foreach (var s in c.Steps) { <li>@s.Action — <span class="tps-muted">@(s.Expected ?? "expected result not stated")</span></li> }</ol></dd> }
+                    @if (c.RequirementIds.Count > 0) { <dt>Requirements</dt><dd>@string.Join(", ", c.RequirementIds)</dd> }
+                    @if (c.TestDataNeeds.Count > 0) { <dt>Test Data</dt><dd>@string.Join("; ", c.TestDataNeeds)</dd> }
+                    <dt>Existing tests</dt><dd>@(c.ExistingTests.Count == 0 ? "None associated (only explicit references count)" : string.Join("; ", c.ExistingTests.Select(t => $"{t.Name}{(t.Confirmed ? "" : " (candidate — needs review)")}")))</dd>
+                    <dt>Evidence</dt><dd><ul class="tps-plain">@foreach (var e in c.Evidence.Take(8)) { <li><code>@e.Reference</code>@(e.Detail is { } detail ? $" — {detail}" : "")</li> }</ul></dd>
+                    @if (c.PossibleDuplicates.Count > 0) { <dt>Possible duplicate of</dt><dd data-testid="tps-possible-duplicates">@string.Join("; ", c.PossibleDuplicates.Select(d => _candidates.FirstOrDefault(x => x.CandidateId == d)?.Title ?? d)) <span class="tps-muted">(same requirement, different source — kept separate)</span></dd> }
+                    @if (c.OpenQuestions.Count > 0) { <dt>Open questions</dt><dd><ul class="tps-plain">@foreach (var q in c.OpenQuestions) { <li>@q</li> }</ul></dd> }
+                </dl>
+            }
+        </li>
+    };
+
+    private static string? Empty(ChangeEventArgs e) => string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString();
+
+    private async Task PrepareAsync()
+    {
+        if (_dirty) { Fail("Save or discard your changes first."); return; }
+        _busy = true;
+        TestPlanDraft? draft; string? error;
+        if (GuideMode)
+        {
+            (draft, error) = _draft is null
+                ? await _api!.CreateAsync(new CreateTestPlanDraftRequest(_guideKey!, $"{_ws?.Guides.FirstOrDefault(g => g.GuideKey == _guideKey)?.Title ?? _guideKey} – test plan", null, [.. _selected]))
+                : await _api!.SaveAsync(_draft.Id, P.ToSaveRequest(_draft, _selected));
+        }
+        else
+        {
+            (draft, error) = await _api!.CreateProjectAsync(new CreateProjectTestPlanRequest
+            {
+                ProjectKey = _projectKey!, ProjectName = _projectName, DiscoveryId = _discovery?.DiscoveryId ?? "", CandidateIds = [.. _selected],
+                ScopeIds = [.. _scopeSelection?.Scopes.Select(s => s.ScopeId.ToString()) ?? []], DraftId = _draft?.Id, BaseRevision = _draft?.Revision,
+            });
+        }
+        _busy = false;
+        if (draft is null) { Fail(error ?? "The test cases could not be prepared."); return; }
+        var count = _selected.Count;
+        _draft = draft; _dirty = false; _selected.Clear();
+        _planName = draft.PlanName; _deliveryLabel = draft.DeliveryLabel ?? "";
+        await ReloadWorkspaceAsync();
+        GoArea("prepare");
+        Ok($"{count} scenario{(count == 1 ? "" : "s")} prepared as test cases. Review them before use.");
+    }
+
+    private async Task AddManualAsync()
+    {
+        if (_dirty) { Fail("Save or discard your changes first."); return; }
+        _busy = true;
+        var (draft, error) = _draft is null
+            ? await _api!.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = _projectKey!, ProjectName = _projectName, ManualCaseTitle = _manualTitle })
+            : await _api!.AddManualCaseAsync(_draft.Id, new AddManualTestCaseRequest(_draft.Revision, _manualTitle, null, null));
+        _busy = false;
+        if (draft is null) { Fail(error ?? "The test case could not be added."); return; }
+        _draft = draft; _dirty = false; _manualTitle = "";
+        await ReloadWorkspaceAsync();
+        var added = draft.Cases[^1].Source.ScenarioId;
+        _openCases.Add(added);
+        GoArea("prepare");
+        Ok("Test case added. Write its steps and expected results.");
+    }
+
+    // ── Step 2: Prepare test cases ───────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment NoDraft() => __builder =>
+    {
+        <section class="tps-empty" data-testid="tps-no-draft"><h2>No test cases yet</h2><p>Choose scenarios and prepare them, or write a test case by hand.</p>
+            <button type="button" class="tps-btn" @onclick="@(() => GoArea("choose"))">Choose scenarios</button></section>
+    };
+
+    private RenderFragment PrepareArea() => __builder =>
+    {
+        if (_draft is not { } d) { __builder.AddContent(0, NoDraft()); return; }
+        <section class="tps-section" data-testid="tps-prepare-step" aria-labelledby="tps-prepare-h">
+            <div class="tps-section-head">
+                <h2 id="tps-prepare-h" class="tps-h2">Prepare test cases <span class="tps-count">@d.Cases.Count(c => c.Review == TestCaseReviewState.Accepted) of @d.Cases.Count accepted</span></h2>
+                <p class="tps-muted">What came from the evidence stays as it was; your changes are kept separately and never overwritten when scenarios are discovered again. A missing expected result stays <strong>Needs clarification</strong> until someone states it.</p>
+            </div>
+            @if (d.Cases.Any(c => c.SourceChanged))
+            {
+                <p class="tps-note tps-note-warn" data-testid="tps-source-changed" role="status"><strong>@d.Cases.Count(c => c.SourceChanged) scenario(s) changed in the evidence</strong> since these cases were prepared. Nothing was changed here.
+                    @if (CanWrite) { <button type="button" class="tps-btn tps-btn-quiet" disabled="@_busy" @onclick="RefreshAsync" data-testid="tps-refresh">@(d.ProjectKey is null ? "Create new revision from the current guide" : "Update from the latest discovery (keeps your edits)")</button> }</p>
+            }
+            @foreach (var suite in d.Suites)
+            {
+                var cases = d.Cases.Where(c => c.SuiteId == suite.Id).ToList();
+                if (cases.Count == 0) continue;
+                <section class="tps-suite" data-testid="tps-suite" data-suite="@suite.Id" aria-label="Suite @suite.Name">
+                    <div class="tps-suite-head">
+                        @if (CanWrite) { <input class="tps-input tps-suite-name" value="@suite.Name" aria-label="Suite name" @onchange="e => RenameSuite(suite.Id, e.Value?.ToString())" /> }
+                        else { <h3 class="tps-h3">@suite.Name</h3> }
+                        <span class="tps-count">@cases.Count</span>
+                    </div>
+                    <ul class="tps-cases">@foreach (var c in cases) { @CaseEditor(d, c) }</ul>
+                </section>
+            }
+            @if (CanWrite)
+            {
+                <div class="tps-actionbar">
+                    <label class="tps-field"><span class="tps-k">New suite</span><input class="tps-input" @bind="_newSuite" @bind:event="oninput" placeholder="Suite name" /></label>
+                    <button type="button" class="tps-btn tps-btn-quiet" disabled="@string.IsNullOrWhiteSpace(_newSuite)" @onclick="AddSuite">Add suite</button>
+                    @if (d.ProjectKey is not null)
+                    {
+                        <label class="tps-field tps-field-grow"><span class="tps-k">Write a test case by hand</span><input class="tps-input" @bind="_manualTitle" @bind:event="oninput" placeholder="Title of a new test case" data-testid="tps-manual-title" /></label>
+                        <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || _dirty || string.IsNullOrWhiteSpace(_manualTitle))" @onclick="AddManualAsync" data-testid="tps-manual-add">Add test case</button>
+                    }
+                    @SaveBar()
+                </div>
+            }
+        </section>
+    };
+
+    private RenderFragment CaseEditor(TestPlanDraft d, TestCaseDraft c) => __builder =>
+    {
+        var sid = c.Source.ScenarioId;
+        var open = _openCases.Contains(sid);
+        var review = P.Review(c.Review);
+        var expected = P.Expected(c);
+        var stepResults = c.EffectiveStepExpected;
+        <li class="tps-case @(open ? "is-open" : null)" data-testid="tps-case-@sid">
+            <button type="button" class="tps-case-head" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleCase(sid)">
+                <span class="tps-card-title">@c.EffectiveTitle</span>
+                <span class="tps-chip">@P.TypeLabel(c.EffectiveType)</span>
+                <span class="tps-tone tps-tone-@review.Tone" data-testid="tps-case-review">@review.Text</span>
+                <span class="tps-tone tps-tone-@expected.Tone">Expected: @expected.Text</span>
+                @if (c.SourceChanged) { <span class="tps-tone tps-tone-warn">Changed in the evidence</span> }
+            </button>
+            @if (open)
+            {
+                <div class="tps-case-body">
+                    <dl class="tps-dl" data-testid="tps-generated-@sid">
+                        <dt>Purpose</dt><dd>@c.EffectivePurpose</dd>
+                        @* MT-7: a guide's rule ids are its business rules, never called specification requirements; project cases carry specification ids. *@
+                        @if (c.Source.Kind == ScenarioSourceKind.SystemGuide && c.Generated.Requirements.Count == 0) { <dt>Business rules (guide)</dt><dd class="tps-muted">No business rule in the guide names this scenario.</dd> }
+                        @if (c.Generated.Requirements.Count > 0) { <dt>@(c.Source.Kind == ScenarioSourceKind.SystemGuide ? "Business rules (guide)" : "Requirements")</dt><dd><ul class="tps-plain">@foreach (var r in c.Generated.Requirements) { <li><strong>@r.Title</strong>@(r.ExpectedBehavior is { } eb ? $": {eb}" : "") <span class="tps-muted">(@r.RuleId)</span></li> }</ul></dd> }
+                        @SpecificationRequirements(c)
+                        @if (c.Generated.Template.Count > 0)
+                        {
+                            <dt>@(P.TypeLabel(c.EffectiveType)) details</dt>
+                            <dd><ul class="tps-plain" data-testid="tps-template-@sid">@foreach (var t in c.Generated.Template)
+                                {
+                                    var human = c.Edits.TemplateValues?.GetValueOrDefault(t.Key);
+                                    var key = t.Key;
+                                    <li><strong>@t.Label:</strong> @(t.Value ?? "Not in the evidence")
+                                        @if (CanWrite && t.Value is null) { <input class="tps-input tps-input-sm" value="@human" placeholder="Add if known" aria-label="@t.Label" @onchange="e => Change(P.WithCase(d, sid, x => x with { Edits = x.Edits with { TemplateValues = WithTemplate(x.Edits.TemplateValues, key, e.Value?.ToString()) } }))" data-testid="@($"tps-template-{sid}-{key}")" /> }
+                                        else if (human is not null) { <span class="tps-chip tps-chip-ok">Added: @human</span> }
+                                    </li>
+                                }</ul></dd>
+                        }
+                        @if (c.Generated.FailureCases.Count > 0) { <dt>Failure cases</dt><dd>@string.Join(" · ", c.Generated.FailureCases)</dd> }
+                        @if (c.Generated.ExistingTests.Count > 0) { <dt>Existing tests</dt><dd>@string.Join("; ", c.Generated.ExistingTests.Select(t => t.Name)) <span class="tps-muted">(explicit requirement references)</span></dd> }
+                        else if (c.Generated.NamedExistingTests.Count > 0) { <dt>Tests the guide names</dt><dd>@string.Join(" · ", c.Generated.NamedExistingTests) <span class="tps-muted">(names, not verified identities)</span></dd> }
+                        <dt>Evidence</dt><dd class="tps-small" data-testid="tps-evidence-@sid">
+                            @if (c.Generated.Evidence.Count > 0) { @string.Join(" · ", c.Generated.Evidence.Take(6).Select(e => e.Reference)) }
+                            else if (c.Source.Kind == ScenarioSourceKind.Manual) { <span>Written by hand — no discovered evidence.</span> }
+                            else { <span>@c.Source.Owner · @sid@(c.Source.Revision is { } rev ? $" · guide revision {rev}" : "")</span> }
+                            @if (c.Generated.Confidence is { } conf) { <span class="tps-muted"> · @ScenarioCandidateTypes.ConfidenceLabel(conf)</span> }</dd>
+                    </dl>
+                    @if (CanWrite)
+                    {
+                        @* Locked while a request is in flight, so a late response can never replace an edit made meanwhile. *@
+                        <fieldset class="tps-fieldset" disabled="@_busy">
+                        <div class="tps-edit-grid">
+                            @EditField(c, "Title", c.Generated.Title, c.EffectiveTitle, v => c with { Edits = c.Edits with { Title = P.TextEdit(c.Generated.Title, v) } }, false, "title")
+                            @EditField(c, "Purpose", c.Generated.Purpose, c.EffectivePurpose, v => c with { Edits = c.Edits with { Purpose = P.TextEdit(c.Generated.Purpose, v) } }, true, "purpose")
+                            @EditField(c, "Preconditions", c.Generated.Preconditions, c.EffectivePreconditions, v => c with { Edits = c.Edits with { Preconditions = P.TextEdit(c.Generated.Preconditions, v) } }, true, "preconditions")
+                        </div>
+                        <div class="tps-steps" data-testid="tps-steps-@sid">
+                            <span class="tps-k">Steps @if (c.Edits.Steps is not null) { <span class="tps-chip tps-chip-ok">Edited</span> } else if (c.Generated.Steps.Count == 0) { <span class="tps-chip tps-chip-bad">Not in source</span> }</span>
+                            <ol class="tps-step-list">
+                                @for (var i = 0; i < c.EffectiveSteps.Count; i++)
+                                {
+                                    var index = i;
+                                    <li class="tps-step-row" data-testid="@($"tps-step-{sid}-{index}")">
+                                        <input class="tps-input" value="@c.EffectiveSteps[index]" aria-label="Step @(index + 1) action" @onchange="e => Change(P.WithCase(d, sid, x => P.SetStep(x, index, e.Value?.ToString() ?? x.EffectiveSteps[index], null)))" data-testid="@($"tps-step-action-{sid}-{index}")" />
+                                        <input class="tps-input" value="@stepResults[index]" placeholder="Needs clarification — expected result not stated" aria-label="Step @(index + 1) expected result" @onchange="e => Change(P.WithCase(d, sid, x => P.SetStep(x, index, null, e.Value?.ToString() ?? string.Empty)))" data-testid="@($"tps-step-expected-{sid}-{index}")" />
+                                        <span class="tps-step-tools">
+                                            <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@(index == 0)" aria-label="Move step @(index + 1) up" @onclick="() => Change(P.WithCase(d, sid, x => P.MoveStep(x, index, -1)))" data-testid="@($"tps-step-up-{sid}-{index}")">↑</button>
+                                            <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@(index == c.EffectiveSteps.Count - 1)" aria-label="Move step @(index + 1) down" @onclick="() => Change(P.WithCase(d, sid, x => P.MoveStep(x, index, 1)))" data-testid="@($"tps-step-down-{sid}-{index}")">↓</button>
+                                            <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" aria-label="Remove step @(index + 1)" @onclick="() => Change(P.WithCase(d, sid, x => P.RemoveStep(x, index)))" data-testid="@($"tps-step-remove-{sid}-{index}")">Remove</button>
+                                        </span>
+                                        @if (stepResults[index] is null) { <span class="tps-chip tps-chip-warn">Needs clarification</span> }
+                                    </li>
+                                }
+                            </ol>
+                            <div class="tps-actionbar">
+                                <input class="tps-input" value="@_newStep.GetValueOrDefault(sid)" placeholder="New step action" aria-label="New step" @oninput="e => _newStep[sid] = e.Value?.ToString() ?? string.Empty" data-testid="@($"tps-step-new-{sid}")" />
+                                <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@string.IsNullOrWhiteSpace(_newStep.GetValueOrDefault(sid))" @onclick="() => AddStep(d, sid)" data-testid="@($"tps-step-add-{sid}")">Add step</button>
+                            </div>
+                        </div>
+                        <div class="tps-edit-grid">
+                            @EditField(c, "Expected result", c.Generated.ExpectedResult, c.EffectiveExpected, v => c with { Edits = c.Edits with { ExpectedResult = P.TextEdit(c.Generated.ExpectedResult, v) } }, true, "expected")
+                            @EditField(c, "Environment and prerequisites", c.Generated.EnvironmentPrerequisites, c.EffectiveEnvironment, v => c with { Edits = c.Edits with { EnvironmentPrerequisites = P.TextEdit(c.Generated.EnvironmentPrerequisites, v) } }, true, "environment")
+                            @EditField(c, "Roles and access", null, c.Edits.Roles, v => c with { Edits = c.Edits with { Roles = P.TextEdit(null, v) } }, false, "roles")
+                            @EditField(c, "Dependencies", null, c.Edits.Dependencies, v => c with { Edits = c.Edits with { Dependencies = P.TextEdit(null, v) } }, false, "dependencies")
+                            @EditField(c, "Priority", null, c.Edits.Priority, v => c with { Edits = c.Edits with { Priority = P.TextEdit(null, v) } }, false, "priority")
+                            <label class="tps-field"><span class="tps-k">Risk</span>
+                                <select class="tps-input" @onchange="e => Change(P.WithCase(d, sid, x => x with { Risk = Enum.TryParse<TestCaseRisk>(e.Value?.ToString(), out var r) ? r : x.Risk }))" data-testid="tps-risk-@sid">
+                                    @foreach (var r in Enum.GetValues<TestCaseRisk>()) { <option value="@r" selected="@(r == c.Risk)">@(r == TestCaseRisk.NotAssessed ? "Not assessed" : r.ToString())</option> }
+                                </select></label>
+                            @* Test type and execution method are separate choices: a performance case is not automated by type, a functional case not manual. *@
+                            <label class="tps-field"><span class="tps-k">Test type</span>
+                                <select class="tps-input" @onchange="e => Change(P.WithCase(d, sid, x => x with { Edits = x.Edits with { TestType = Enum.TryParse<TestCaseType>(e.Value?.ToString(), out var t) && t != TestCaseType.NotClassified ? t : null } }))" data-testid="tps-type-@sid">
+                                    @foreach (var t in Enum.GetValues<TestCaseType>()) { <option value="@t" selected="@(t == c.EffectiveType)">@P.TypeLabel(t)</option> }
+                                </select></label>
+                            <label class="tps-field"><span class="tps-k">Execution method</span>
+                                <select class="tps-input" @onchange="e => Change(P.WithCase(d, sid, x => x with { Edits = x.Edits with { ExecutionMethod = Enum.TryParse<TestExecutionMethod>(e.Value?.ToString(), out var m) && m != TestExecutionMethod.NotDecided ? m : null } }))" data-testid="tps-method-@sid">
+                                    @foreach (var m in Enum.GetValues<TestExecutionMethod>()) { <option value="@m" selected="@(m == c.EffectiveExecutionMethod)">@P.MethodLabel(m)</option> }
+                                </select></label>
+                            <label class="tps-field"><span class="tps-k">Suite</span>
+                                <select class="tps-input" aria-label="Move @c.EffectiveTitle to suite" @onchange="e => Change(P.WithCase(d, sid, x => x with { SuiteId = e.Value?.ToString() ?? x.SuiteId }))" data-testid="tps-suite-@sid">
+                                    @foreach (var s in d.Suites) { <option value="@s.Id" selected="@(s.Id == c.SuiteId)">@s.Name</option> }
+                                </select></label>
+                        </div>
+                        @if (c.EffectiveType == TestCaseType.Performance) { @PerformanceFields(d, c, sid) }
+                        <div class="tps-actionbar">@SaveBar()</div>
+                        </fieldset>
+                        @if (_dirty) { <p class="tps-muted tps-small" data-testid="tps-review-needs-save">Save or discard your changes before recording a review decision.</p> }
+                        <div class="tps-review-bar" role="group" aria-label="Review decision for @c.EffectiveTitle">
+                            <label class="tps-field tps-field-grow"><span class="tps-k">Rationale</span><input class="tps-input" value="@_rationale.GetValueOrDefault(sid)" @oninput="e => SetRationale(sid, e)" placeholder="Why (required to exclude or ask for clarification)" data-testid="tps-rationale-@sid" /></label>
+                            <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || _dirty)" @onclick="() => ReviewAsync(sid, TestCaseReviewState.UnderReview)">Start review</button>
+                            <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || _dirty)" @onclick="() => ReviewAsync(sid, TestCaseReviewState.NeedsClarification)" data-testid="tps-clarify-@sid">Needs clarification</button>
+                            <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || _dirty)" @onclick="() => ReviewAsync(sid, TestCaseReviewState.Excluded)" data-testid="tps-exclude-@sid">Exclude</button>
+                            <button type="button" class="tps-btn" disabled="@(_busy || _dirty || string.IsNullOrWhiteSpace(c.EffectiveExpected))" @onclick="() => ReviewAsync(sid, TestCaseReviewState.Accepted)" data-testid="tps-accept-@sid">Accept for preparation</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <dl class="tps-dl"><dt>Expected</dt><dd>@(c.EffectiveExpected ?? "NEEDS CLARIFICATION")</dd><dt>Steps</dt><dd><ol>@for (var i = 0; i < c.EffectiveSteps.Count; i++) { <li>@c.EffectiveSteps[i] — <span class="tps-muted">@(stepResults[i] ?? "Needs clarification")</span></li> }</ol></dd></dl>
+                    }
+                    @if (c.Missing.Count > 0) { <ul class="tps-blockers" data-testid="tps-open-@sid">@foreach (var m in c.Missing) { <li>@m</li> }</ul> }
+                    @if (c.EditHistory.Count > 0)
+                    {
+                        <div class="tps-history" data-testid="tps-edit-history-@sid"><span class="tps-k">Change history</span>
+                            <ol class="tps-plain">@foreach (var ev in c.EditHistory.TakeLast(10)) { <li>@ev.Editor · @ev.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm") — @string.Join(", ", ev.Fields)</li> }</ol></div>
+                    }
+                    @if (c.ReviewHistory.Count > 0)
+                    {
+                        <div class="tps-history" data-testid="tps-history-@sid"><span class="tps-k">Review history</span>
+                            <ol class="tps-plain">@foreach (var ev in c.ReviewHistory) { <li><strong>@P.Review(ev.State).Text</strong> · @ev.Reviewer · @ev.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm")@(ev.Rationale is { } why ? $" — {why}" : "")</li> }</ol></div>
+                    }
+                </div>
+            }
+        </li>
+    };
+
+    private static Dictionary<string, string>? WithTemplate(Dictionary<string, string>? values, string key, string? value)
+    {
+        var next = new Dictionary<string, string>(values ?? [], StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(value)) next.Remove(key); else next[key] = value.Trim();
+        return next.Count == 0 ? null : next;
+    }
+
+    private void AddStep(TestPlanDraft d, string sid)
+    {
+        if (_newStep.GetValueOrDefault(sid) is not { Length: > 0 } action) return;
+        Change(P.WithCase(d, sid, x => P.AddStep(x, action.Trim())));
+        _newStep.Remove(sid);
+    }
+
     private RenderFragment SpecificationRequirements(TestCaseDraft c) => __builder =>
     {
+        if (c.Source.Kind != ScenarioSourceKind.SystemGuide) return; // MT-7 associations exist for guide scenarios only
         var (verified, suggested, rejected) = RequirementCoveragePresentation.ForScenario(_coverage, c.Source.Owner, c.Source.ScenarioId);
         <dt>Specification requirements</dt>
         <dd class="tps-spec" data-testid="tps-spec-requirements">
@@ -187,303 +851,6 @@
         </dd>
     };
 
-    private string DefaultPlanName() => $"{_ws?.Guides.FirstOrDefault(g => g.GuideKey == _ws.GuideKey)?.Title ?? "System"} – Funksjonell testing";
-
-    private async Task LoadAsync(string? guideKey)
-    {
-        var (ws, error) = await _api!.WorkspaceAsync(guideKey);
-        _ws = ws;
-        _error = error;
-    }
-
-    private async Task OpenDraftAsync(Guid id)
-    {
-        var (draft, error) = await _api!.DraftAsync(id);
-        if (draft is null) { Fail(error ?? "The proposal could not be opened."); return; }
-        _draft = draft;
-        _dirty = false;
-        _planName = draft.PlanName;
-        _deliveryLabel = draft.DeliveryLabel ?? "";
-    }
-
-    private async Task OnGuideChanged(ChangeEventArgs e)
-    {
-        _draft = null; _selected.Clear(); _comparison = null; _export = null; _openSnapshot = null;
-        await LoadAsync(e.Value?.ToString());
-        _planName = DefaultPlanName();
-    }
-
-    private void GoArea(string id)
-    {
-        _area = id;
-        _message = null;
-        Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["area"] = id, ["draft"] = _draft?.Id.ToString(), ["scenarios"] = null }), replace: true);
-    }
-
-    private void Info(string text) { _message = text; _messageTone = "info"; }
-    private void Ok(string text) { _message = text; _messageTone = "ok"; }
-    private void Fail(string text) { _message = text; _messageTone = "warn"; }
-
-    private void Change(TestPlanDraft draft) { _draft = draft; _dirty = true; }
-
-    private void ToggleCase(string id) { if (!_openCases.Remove(id)) _openCases.Add(id); }
-
-    // ── Discover ─────────────────────────────────────────────────────────────────────────────────────────────
-
-    private BirkNext.Scopes.ScopeSelection? _scopeSelection;
-    private IReadOnlyList<BirkNext.Scopes.ScopeScenarioLink> _viaRequirement = [];
-    private string? _requirementNotice;
-
-    /// <summary>A selected scope names scenarios directly, and its requirements add the scenarios that verify them through an established canonical
-    /// Verifies relation of the active Target Environment's interpretation (explicit, derived or confirmed by a person — never a candidate).</summary>
-    private async Task ScopeSelected(BirkNext.Scopes.ScopeSelection? selection)
-    {
-        (_scopeSelection, _viaRequirement, _requirementNotice) = (selection, [], null);
-        var requirements = selection?.Members.Where(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.Requirement).Select(m => m.Member.TargetId).ToList() ?? [];
-        if (requirements.Count == 0) return;
-        var scope = ServiceProvider.GetService<IFrontendAnalysisContextFactory>() is { } factory ? CorrelationPresentation.Scope((await factory.GetActiveContextAsync()).ActiveProfileOrNull?.Id) : null;
-        if (scope is null || ServiceProvider.GetService<IScopeRegistryApiService>() is not { } registry) { _requirementNotice = "requirements need an active Target Environment to find their scenarios"; return; }
-        var (links, error) = await registry.VerifyingScenariosAsync(new BirkNext.Scopes.ScopeScenarioLinkRequest(scope, requirements));
-        (_viaRequirement, _requirementNotice) = (links, error);
-    }
-
-    /// <summary>A guide scenario is in the selected scope when the scope names its canonical scenario identity (the id the interpretation gives
-    /// the same guide scenario). No selection keeps every candidate; nothing is matched by title.</summary>
-    private bool InScope(ScenarioCandidate c)
-    {
-        if (_scopeSelection is null) return true;
-        if (c.Source.Kind != ScenarioSourceKind.SystemGuide) return false;
-        var key = BirkNext.Interpretation.CanonicalKeys.EntityKey(BirkNext.Interpretation.CanonicalEntityType.Scenario,
-            BirkNext.Interpretation.CorrelationRules.GuideScenarioIdentity(c.Source.Owner, c.Source.ScenarioId));
-        return _scopeSelection.Members.Any(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.Scenario && m.Member.TargetId == key)
-            || _viaRequirement.Any(l => l.ScenarioKey == key);
-    }
-
-    private RenderFragment Discover() => __builder =>
-    {
-        var ws = _ws!;
-        var shown = P.Apply(ws.Candidates, _filter).Where(InScope).ToList();
-        var inDraft = _draft?.Cases.Select(c => c.Source.ScenarioId).ToHashSet(StringComparer.Ordinal) ?? [];
-        var hiddenSelected = _selected.Count(id => shown.All(c => c.Source.ScenarioId != id));
-        var adding = _selected.Count(id => !inDraft.Contains(id));
-        @* Discover is for choosing and preparing: a compact list grouped by the guide's own business-process stages. Explaining the system stays in
-           System Understanding (one "Evidence" link per scenario opens it). *@
-        <section class="tps-section" data-testid="tps-discover" aria-labelledby="tps-discover-h">
-            <div class="tps-section-head">
-                <h2 id="tps-discover-h" class="tps-h2">Choose scenarios to prepare <span class="tps-count">@shown.Count of @ws.Candidates.Count</span></h2>
-                <p class="tps-muted">Scenario candidates from the System Understanding guide. A candidate is guidance — not a Test Case, not test coverage. Selecting approves nothing.</p>
-            </div>
-            <BirkNext.Web.Components.Scopes.ScopeFilter SelectionChanged="ScopeSelected" />
-            @if (_scopeSelection is { } scopeSel)
-            {
-                var scenarios = scopeSel.Members.Count(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.Scenario);
-                var others = scopeSel.Members.Count(m => m.Member.Kind is BirkNext.Scopes.ScopeMemberKind.UserStory or BirkNext.Scopes.ScopeMemberKind.Feature);
-                <p class="tps-muted" data-testid="tps-scope-summary">Showing the scenarios the selected scope names (@scenarios in the scope).
-                    @if (_viaRequirement.Count > 0) { <span data-testid="tps-scope-via-requirement">@_viaRequirement.Select(l => l.ScenarioKey).Distinct().Count() more through the scope's requirements (established Verifies links only).</span> }
-                    @if (others > 0) { <span>Story and feature members do not filter scenarios@(_requirementNotice is { } rn ? $"; {rn}" : "").</span> }
-                    @if (scenarios == 0) { <span data-testid="tps-scope-no-scenarios">The scope names no scenarios, so no candidate is shown; add scenarios to it in Project Test Setup.</span> }</p>
-            }
-            <div class="tps-filters" role="search">
-                <label class="tps-field tps-field-grow"><span class="tps-k">Search</span><input class="tps-input" type="search" placeholder="Title, purpose or id" value="@_filter.Query" @oninput="SetQuery" data-testid="tps-search" /></label>
-                <label class="tps-field"><span class="tps-k">Business area</span>
-                    <select class="tps-input" @onchange="e => _filter = _filter with { Stage = Empty(e) }" data-testid="tps-filter-stage">
-                        <option value="">All</option>
-                        @foreach (var s in ws.Stages.Where(s => ws.Candidates.Any(c => c.StageId == s.Id))) { <option value="@s.Id" selected="@(_filter.Stage == s.Id)">@s.Title</option> }
-                    </select></label>
-                <label class="tps-field"><span class="tps-k">Business rule</span>
-                    <select class="tps-input" @onchange="e => _filter = _filter with { Requirement = Empty(e) }" data-testid="tps-filter-requirement">
-                        <option value="">All</option>
-                        @foreach (var r in ws.Candidates.SelectMany(c => c.Requirements).DistinctBy(r => r.RuleId).OrderBy(r => r.Title)) { <option value="@r.RuleId" selected="@(_filter.Requirement == r.RuleId)">@r.Title</option> }
-                    </select></label>
-                <label class="tps-field"><span class="tps-k">Guide state</span>
-                    <select class="tps-input" @onchange="e => _filter = _filter with { GuideState = Empty(e) }" data-testid="tps-filter-state">
-                        <option value="">All</option>
-                        @foreach (var st in ws.Candidates.Select(c => c.GuideState).Distinct()) { <option value="@st" selected="@(_filter.GuideState == st)">@P.GuideState(st).Text</option> }
-                    </select></label>
-                <label class="tps-field"><span class="tps-k">Show</span>
-                    <select class="tps-input" @onchange="e => _filter = _filter with { Gap = Empty(e) }" data-testid="tps-filter-gap">
-                        <option value="">All candidates</option><option value="expected">Without expected result</option><option value="data">Without test data description</option>
-                        <option value="observe">Without observation method</option><option value="linked">Named executable test</option>
-                    </select></label>
-            </div>
-            <div class="tps-selectbar" role="group" aria-label="Selection">
-                <span data-testid="tps-selected-count" aria-live="polite"><strong>@_selected.Count</strong> selected</span>
-                @if (hiddenSelected > 0) { <span class="tps-tone tps-tone-info" data-testid="tps-selected-hidden">@hiddenSelected hidden by filters — still selected</span> }
-                <button type="button" class="tps-btn tps-btn-quiet" disabled="@(shown.Count == 0)" @onclick="() => { foreach (var c in shown) _selected.Add(c.Source.ScenarioId); }" data-testid="tps-select-shown">Select visible (@shown.Count)</button>
-                <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_selected.Count == 0)" @onclick="() => _selected.Clear()" data-testid="tps-clear-selection">Clear selection</button>
-            </div>
-            @if (shown.Count == 0)
-            {
-                <p class="tps-muted" data-testid="tps-no-candidates">@(ws.Candidates.Count == 0 ? "The guide has no scenarios yet." : "No scenario matches these filters.")</p>
-            }
-            <div class="tps-groups" data-testid="tps-candidates">
-                @foreach (var group in P.ByStage(shown, ws.Stages))
-                {
-                    <section class="tps-group" aria-labelledby="tps-g-@group.Id" data-testid="tps-group-@group.Id">
-                        <h3 id="tps-g-@group.Id" class="tps-group-h">@group.Title <span class="tps-count">@group.Items.Count</span></h3>
-                        <ul class="tps-rows">
-                            @foreach (var c in group.Items)
-                            {
-                                var id = c.Source.ScenarioId;
-                                var state = P.GuideState(c.GuideState);
-                                var selected = _selected.Contains(id);
-                                <li class="tps-row @(selected ? "is-selected" : null)" data-testid="tps-candidate-@id">
-                                    <label class="tps-row-select">
-                                        <input type="checkbox" checked="@selected" @onchange="e => { if (e.Value is true) _selected.Add(id); else _selected.Remove(id); }" aria-describedby="tps-sum-@id" data-testid="tps-select-@id" />
-                                        <span class="tps-row-title">@c.Title</span>
-                                    </label>
-                                    <p class="tps-row-sum" id="tps-sum-@id">@c.Objective</p>
-                                    <div class="tps-row-meta">
-                                        <span class="tps-tone tps-tone-@state.Tone">@state.Text</span>
-                                        @if (inDraft.Contains(id)) { <span class="tps-chip tps-chip-ok" data-testid="tps-in-draft">In proposal</span> }
-                                        @if (!c.HasExpected) { <span class="tps-chip tps-chip-bad">No expected result</span> }
-                                        @if (!c.HasTestData) { <span class="tps-chip">No test data described</span> }
-                                        @if (c.Correlations.Count > 0) { <span class="tps-chip @(c.Correlations.Any(l => l.Ambiguous) ? "tps-chip-warn" : null)" title="@string.Join("; ", c.Correlations.Select(l => l.Label))">Named: @c.Correlations.Count executable</span> }
-                                        <a class="tps-row-link" href="@($"system-understanding?tab=tests&guide={Uri.EscapeDataString(ws.GuideKey!)}")" aria-label="Evidence for @c.Title in System Understanding">Evidence</a>
-                                    </div>
-                                </li>
-                            }
-                        </ul>
-                    </section>
-                }
-            </div>
-            @if (ws.CanWrite)
-            {
-                <div class="tps-actionbar tps-actionbar-sticky" data-testid="tps-create-bar">
-                    @if (_draft is null)
-                    {
-                        <label class="tps-field tps-field-grow"><span class="tps-k">Test Plan name</span><input class="tps-input" @bind="_planName" @bind:event="oninput" data-testid="tps-plan-name" /></label>
-                        <label class="tps-field"><span class="tps-k">Delivery label</span><input class="tps-input" @bind="_deliveryLabel" @bind:event="oninput" placeholder="e.g. Release 2026.11" data-testid="tps-delivery" /></label>
-                        <button type="button" class="tps-btn" disabled="@(_busy || _selected.Count == 0 || string.IsNullOrWhiteSpace(_planName))" @onclick="CreateAsync" data-testid="tps-generate">Prepare Test Plan (@_selected.Count)</button>
-                        @if (_selected.Count == 0) { <span class="tps-muted tps-small" data-testid="tps-select-hint">Select at least one scenario to prepare a Test Plan.</span> }
-                    }
-                    else
-                    {
-                        <span class="tps-muted">Proposal: <strong>@_draft.PlanName</strong></span>
-                        <button type="button" class="tps-btn" disabled="@(_busy || adding == 0)" @onclick="AddSelectedAsync" data-testid="tps-add-selected">Add @adding to proposal</button>
-                        <button type="button" class="tps-btn tps-btn-quiet" @onclick="NewProposal" data-testid="tps-new-proposal">Start a new proposal</button>
-                        @if (_selected.Count > 0 && adding == 0) { <span class="tps-muted tps-small">Every selected scenario is already in this proposal.</span> }
-                    }
-                </div>
-            }
-            @if (ws.Drafts.Count > 0)
-            {
-                <div class="tps-drafts" data-testid="tps-drafts"><span class="tps-k">Proposals</span>
-                    @foreach (var d in ws.Drafts) { var did = d.Id; <button type="button" class="tps-chip tps-chip-btn @(_draft?.Id == did ? "is-current" : null)" @onclick="() => OpenAndPlanAsync(did)">@d.PlanName · r@d.Revision · @d.Cases cases</button> }
-                </div>
-            }
-        </section>
-    };
-
-    private void SetQuery(ChangeEventArgs e) => _filter = _filter with { Query = e.Value?.ToString() ?? "" };
-
-    private static string? Empty(ChangeEventArgs e) => string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString();
-
-    private void NewProposal() { _draft = null; _dirty = false; _planName = DefaultPlanName(); _deliveryLabel = ""; }
-
-    private async Task OpenAndPlanAsync(Guid id) { await OpenDraftAsync(id); GoArea("plan"); }
-
-    private async Task CreateAsync()
-    {
-        _busy = true;
-        var (draft, error) = await _api!.CreateAsync(new CreateTestPlanDraftRequest(_ws!.GuideKey!, _planName, string.IsNullOrWhiteSpace(_deliveryLabel) ? null : _deliveryLabel, [.. _selected]));
-        _busy = false;
-        if (draft is null) { Fail(error ?? "The proposal could not be created."); return; }
-        _draft = draft; _dirty = false; _selected.Clear();
-        await LoadAsync(_ws.GuideKey);
-        GoArea("plan");
-        Ok($"Suggested Test Plan created with {draft.Cases.Count} Test Case drafts in {draft.Suites.Count} suites. Review them before use.");
-    }
-
-    private async Task AddSelectedAsync()
-    {
-        if (_draft is null) return;
-        if (_dirty) { Fail("Save or discard your changes first."); return; }
-        _busy = true;
-        var (draft, error) = await _api!.SaveAsync(_draft.Id, P.ToSaveRequest(_draft, _selected));
-        _busy = false;
-        if (draft is null) { Fail(error ?? "The scenarios could not be added."); return; }
-        _draft = draft; _selected.Clear();
-        await LoadAsync(_ws!.GuideKey);
-        GoArea("plan");
-        Ok("Scenarios added to the proposal.");
-    }
-
-    // ── Suggested Test Plan ──────────────────────────────────────────────────────────────────────────────────
-
-    private RenderFragment NoDraft() => __builder =>
-    {
-        <section class="tps-empty" data-testid="tps-no-draft"><h2>No proposal open</h2><p>Select scenario candidates in Discover and generate a suggested Test Plan, or open an existing proposal there.</p>
-            <button type="button" class="tps-btn" @onclick="@(() => GoArea("discover"))">Go to Discover</button></section>
-    };
-
-    private RenderFragment PlanArea() => __builder =>
-    {
-        if (_draft is not { } d) { __builder.AddContent(0, NoDraft()); return; }
-        <section class="tps-section" data-testid="tps-plan" aria-labelledby="tps-plan-h">
-            <div class="tps-section-head">
-                <h2 id="tps-plan-h" class="tps-h2">@d.PlanName <span class="tps-count">@d.Cases.Count cases · @d.Suites.Count suites</span></h2>
-                <p class="tps-muted">Suites are proposed from the guide's business-process stages. Move cases, rename or add suites as part of the review.</p>
-            </div>
-            @if (_ws!.CanWrite)
-            {
-                <div class="tps-filters">
-                    <label class="tps-field tps-field-grow"><span class="tps-k">Test Plan name</span><input class="tps-input" value="@d.PlanName" @onchange="e => Change(d with { PlanName = e.Value?.ToString() ?? d.PlanName })" data-testid="tps-plan-rename" /></label>
-                    <label class="tps-field"><span class="tps-k">Delivery label</span><input class="tps-input" value="@d.DeliveryLabel" @onchange="e => Change(d with { DeliveryLabel = e.Value?.ToString() })" /></label>
-                </div>
-            }
-            @if (d.Cases.Any(c => c.SourceChanged))
-            {
-                <p class="tps-note tps-note-warn" data-testid="tps-source-changed" role="status"><strong>@d.Cases.Count(c => c.SourceChanged) scenario(s) changed in the guide</strong> since this proposal was generated. Nothing was changed here.
-                    @if (_ws.CanWrite) { <button type="button" class="tps-btn tps-btn-quiet" disabled="@_busy" @onclick="RefreshAsync" data-testid="tps-refresh">Create new proposal revision from the current guide</button> }</p>
-            }
-            <fieldset class="tps-suites tps-fieldset" disabled="@_busy">
-                @foreach (var suite in d.Suites)
-                {
-                    var cases = d.Cases.Where(c => c.SuiteId == suite.Id).ToList();
-                    <section class="tps-suite" data-testid="tps-suite" data-suite="@suite.Id" aria-label="Suite @suite.Name">
-                        <div class="tps-suite-head">
-                            @if (_ws.CanWrite)
-                            {
-                                <input class="tps-input tps-suite-name" value="@suite.Name" aria-label="Suite name" @onchange="e => RenameSuite(suite.Id, e.Value?.ToString())" />
-                            }
-                            else { <h3 class="tps-h3">@suite.Name</h3> }
-                            <span class="tps-count">@cases.Count</span>
-                            <span class="tps-muted tps-small">@(suite.Origin == "stage" ? "From guide stage" : "Added by a reviewer")</span>
-                        </div>
-                        @if (cases.Count == 0) { <p class="tps-muted tps-small">No cases.</p> }
-                        <ul class="tps-rows">
-                            @foreach (var c in cases)
-                            {
-                                var review = P.Review(c.Review);
-                                var sid = c.Source.ScenarioId;
-                                <li class="tps-row" data-testid="tps-plan-case" data-scenario="@sid">
-                                    <span class="tps-row-title">@c.EffectiveTitle</span>
-                                    <span class="tps-tone tps-tone-@review.Tone">@review.Text</span>
-                                    @if (c.Missing.Count > 0) { <span class="tps-chip tps-chip-warn">@c.Missing.Count open</span> }
-                                    @if (_ws.CanWrite)
-                                    {
-                                        <select class="tps-input tps-input-sm" aria-label="Move @c.EffectiveTitle to suite" @onchange="e => Change(P.WithCase(d, sid, x => x with { SuiteId = e.Value?.ToString() ?? x.SuiteId }))">
-                                            @foreach (var s in d.Suites) { <option value="@s.Id" selected="@(s.Id == c.SuiteId)">@s.Name</option> }
-                                        </select>
-                                    }
-                                </li>
-                            }
-                        </ul>
-                    </section>
-                }
-            </fieldset>
-            @if (_ws.CanWrite)
-            {
-                <div class="tps-actionbar">
-                    <label class="tps-field tps-field-grow"><span class="tps-k">New suite</span><input class="tps-input" @bind="_newSuite" @bind:event="oninput" placeholder="Suite name" /></label>
-                    <button type="button" class="tps-btn tps-btn-quiet" disabled="@string.IsNullOrWhiteSpace(_newSuite)" @onclick="AddSuite">Add suite</button>
-                    @SaveBar()
-                </div>
-            }
-        </section>
-    };
-
     private void RenameSuite(string id, string? name)
     {
         if (_draft is null || string.IsNullOrWhiteSpace(name)) return;
@@ -499,8 +866,8 @@
 
     private RenderFragment SaveBar() => __builder =>
     {
-        <button type="button" class="tps-btn" disabled="@(_busy || !_dirty)" @onclick="SaveAsync" data-testid="tps-save">Save proposal</button>
-        @if (_dirty) { <button type="button" class="tps-btn tps-btn-quiet" @onclick="DiscardAsync">Discard changes</button> }
+        <button type="button" class="tps-btn" disabled="@(_busy || !_dirty)" @onclick="SaveAsync" data-testid="tps-save">Save draft</button>
+        @if (_dirty) { <button type="button" class="tps-btn tps-btn-quiet" @onclick="DiscardAsync" data-testid="tps-discard">Discard changes</button> }
     };
 
     private async Task SaveAsync()
@@ -509,10 +876,10 @@
         _busy = true;
         var (draft, error) = await _api!.SaveAsync(_draft.Id, P.ToSaveRequest(_draft));
         _busy = false;
-        if (draft is null) { Fail(error ?? "The proposal could not be saved."); return; }
+        if (draft is null) { Fail(error ?? "The draft could not be saved."); return; }
         _draft = draft; _dirty = false;
-        await LoadAsync(_ws!.GuideKey);
-        Ok($"Proposal saved (revision {draft.Revision}).");
+        await ReloadWorkspaceAsync();
+        Ok($"Draft saved (revision {draft.Revision}).");
     }
 
     private async Task DiscardAsync() { if (_draft is not null) await OpenDraftAsync(_draft.Id); Info("Changes discarded."); }
@@ -524,101 +891,11 @@
         _busy = true;
         var (draft, error) = await _api!.RefreshAsync(_draft.Id, _draft.Revision);
         _busy = false;
-        if (draft is null) { Fail(error ?? "The proposal could not be updated."); return; }
+        if (draft is null) { Fail(error ?? "The plan could not be updated."); return; }
         _draft = draft;
-        await LoadAsync(_ws!.GuideKey);
-        Ok($"New proposal revision {draft.Revision} from the current guide. Changed cases went back to review.");
+        await ReloadWorkspaceAsync();
+        Ok($"Revision {draft.Revision}: generated content updated, your edits kept. Changed cases went back to review.");
     }
-
-    // ── Review Test Cases ────────────────────────────────────────────────────────────────────────────────────
-
-    private RenderFragment ReviewArea() => __builder =>
-    {
-        if (_draft is not { } d) { __builder.AddContent(0, NoDraft()); return; }
-        <section class="tps-section" data-testid="tps-review" aria-labelledby="tps-review-h">
-            <div class="tps-section-head">
-                <h2 id="tps-review-h" class="tps-h2">Review Test Cases <span class="tps-count">@d.Cases.Count(c => c.Review == TestCaseReviewState.Accepted) of @d.Cases.Count accepted</span></h2>
-                <p class="tps-muted">Generated content comes from the guide and stays as it is; your changes are kept separately. Accepted means "ready to prepare or export", not approved in Azure DevOps and not executed.</p>
-            </div>
-            <ul class="tps-cases">
-                @foreach (var c in d.Cases)
-                {
-                    var sid = c.Source.ScenarioId;
-                    var open = _openCases.Contains(sid);
-                    var review = P.Review(c.Review);
-                    var expected = P.Expected(c);
-                    <li class="tps-case @(open ? "is-open" : null)" data-testid="tps-case-@sid">
-                        <button type="button" class="tps-case-head" aria-expanded="@(open ? "true" : "false")" @onclick="() => ToggleCase(sid)">
-                            <span class="tps-card-title">@c.EffectiveTitle</span>
-                            <span class="tps-tone tps-tone-@review.Tone" data-testid="tps-case-review">@review.Text</span>
-                            <span class="tps-tone tps-tone-@expected.Tone">Expected: @expected.Text</span>
-                            @if (c.SourceChanged) { <span class="tps-tone tps-tone-warn">Changed in the guide</span> }
-                        </button>
-                        @if (open)
-                        {
-                            <div class="tps-case-body">
-                                <dl class="tps-dl">
-                                    <dt>Purpose</dt><dd>@c.Generated.Purpose</dd>
-                                    @if (c.Generated.Requirements.Count > 0) { <dt>Business rules (guide)</dt><dd><ul class="tps-plain">@foreach (var r in c.Generated.Requirements) { <li><strong>@r.Title</strong>@(r.ExpectedBehavior is { } eb ? $": {eb}" : "") <span class="tps-muted">(@r.RuleId)</span></li> }</ul></dd> }
-                                    else { <dt>Business rules (guide)</dt><dd class="tps-bad">No business rule in the guide names this scenario.</dd> }
-                                    @SpecificationRequirements(c)
-                                    @if (c.Generated.FailureCases.Count > 0) { <dt>Failure cases</dt><dd>@string.Join(" · ", c.Generated.FailureCases)</dd> }
-                                    @if (c.Generated.NamedExistingTests.Count > 0) { <dt>Tests the guide names</dt><dd>@string.Join(" · ", c.Generated.NamedExistingTests) <span class="tps-muted">(names, not verified identities)</span></dd> }
-                                    <dt>Source</dt><dd class="tps-small">@c.Source.Owner · @sid · guide revision @c.Source.Revision · <code>@(c.Source.Fingerprint?[..Math.Min(12, c.Source.Fingerprint.Length)])</code></dd>
-                                </dl>
-                                @if (_ws!.CanWrite)
-                                {
-                                    @* Locked while a request is in flight, so a late response can never replace an edit made meanwhile. *@
-                                    <fieldset class="tps-fieldset" disabled="@_busy">
-                                    <div class="tps-edit-grid">
-                                        @EditField(c, "Title", c.Generated.Title, c.EffectiveTitle, v => c with { Edits = c.Edits with { Title = P.TextEdit(c.Generated.Title, v) } }, false)
-                                        @EditField(c, "Preconditions", c.Generated.Preconditions, c.EffectivePreconditions, v => c with { Edits = c.Edits with { Preconditions = P.TextEdit(c.Generated.Preconditions, v) } }, true)
-                                        @EditField(c, "Test steps (one per line)", string.Join("\n", c.Generated.Steps), string.Join("\n", c.EffectiveSteps), v => c with { Edits = c.Edits with { Steps = P.StepsEdit(c, v ?? "") } }, true)
-                                        @EditField(c, "Expected result", c.Generated.ExpectedResult, c.EffectiveExpected, v => c with { Edits = c.Edits with { ExpectedResult = P.TextEdit(c.Generated.ExpectedResult, v) } }, true)
-                                        @EditField(c, "Observation method", c.Generated.ObservationMethod, c.EffectiveObservation, v => c with { Edits = c.Edits with { ObservationMethod = P.TextEdit(c.Generated.ObservationMethod, v) } }, true)
-                                        @EditField(c, "Environment prerequisites", c.Generated.EnvironmentPrerequisites, c.EffectiveEnvironment, v => c with { Edits = c.Edits with { EnvironmentPrerequisites = P.TextEdit(c.Generated.EnvironmentPrerequisites, v) } }, true)
-                                        <label class="tps-field"><span class="tps-k">Risk</span>
-                                            <select class="tps-input" @onchange="e => Change(P.WithCase(d, sid, x => x with { Risk = Enum.TryParse<TestCaseRisk>(e.Value?.ToString(), out var r) ? r : x.Risk }))" data-testid="tps-risk-@sid">
-                                                @foreach (var r in Enum.GetValues<TestCaseRisk>()) { <option value="@r" selected="@(r == c.Risk)">@(r == TestCaseRisk.NotAssessed ? "Not assessed" : r.ToString())</option> }
-                                            </select></label>
-                                        @* Test type and execution method are separate choices: a performance case is not automated by type, a functional case not manual. *@
-                                        <label class="tps-field"><span class="tps-k">Test type</span>
-                                            <select class="tps-input" @onchange="e => Change(P.WithCase(d, sid, x => x with { Edits = x.Edits with { TestType = Enum.TryParse<TestCaseType>(e.Value?.ToString(), out var t) && t != TestCaseType.NotClassified ? t : null } }))" data-testid="tps-type-@sid">
-                                                @foreach (var t in Enum.GetValues<TestCaseType>()) { <option value="@t" selected="@(t == c.EffectiveType)">@P.TypeLabel(t)</option> }
-                                            </select></label>
-                                        <label class="tps-field"><span class="tps-k">Execution method</span>
-                                            <select class="tps-input" @onchange="e => Change(P.WithCase(d, sid, x => x with { Edits = x.Edits with { ExecutionMethod = Enum.TryParse<TestExecutionMethod>(e.Value?.ToString(), out var m) && m != TestExecutionMethod.NotDecided ? m : null } }))" data-testid="tps-method-@sid">
-                                                @foreach (var m in Enum.GetValues<TestExecutionMethod>()) { <option value="@m" selected="@(m == c.EffectiveExecutionMethod)">@P.MethodLabel(m)</option> }
-                                            </select></label>
-                                    </div>
-                                    @if (c.EffectiveType == TestCaseType.Performance) { @PerformanceFields(d, c, sid) }
-                                    <div class="tps-actionbar">@SaveBar()</div>
-                                    </fieldset>
-                                    @if (_dirty) { <p class="tps-muted tps-small" data-testid="tps-review-needs-save">Save or discard your changes before recording a review decision.</p> }
-                                    <div class="tps-review-bar" role="group" aria-label="Review decision for @c.EffectiveTitle">
-                                        <label class="tps-field tps-field-grow"><span class="tps-k">Rationale</span><input class="tps-input" value="@_rationale.GetValueOrDefault(sid)" @oninput="e => SetRationale(sid, e)" placeholder="Why (required to exclude or ask for clarification)" data-testid="tps-rationale-@sid" /></label>
-                                        <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || _dirty)" @onclick="() => ReviewAsync(sid, TestCaseReviewState.UnderReview)">Start review</button>
-                                        <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || _dirty)" @onclick="() => ReviewAsync(sid, TestCaseReviewState.NeedsClarification)" data-testid="tps-clarify-@sid">Needs clarification</button>
-                                        <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || _dirty)" @onclick="() => ReviewAsync(sid, TestCaseReviewState.Excluded)" data-testid="tps-exclude-@sid">Exclude</button>
-                                        <button type="button" class="tps-btn" disabled="@(_busy || _dirty || string.IsNullOrWhiteSpace(c.EffectiveExpected))" @onclick="() => ReviewAsync(sid, TestCaseReviewState.Accepted)" data-testid="tps-accept-@sid">Accept for preparation</button>
-                                    </div>
-                                }
-                                else
-                                {
-                                    <dl class="tps-dl"><dt>Expected</dt><dd>@(c.EffectiveExpected ?? "NEEDS CLARIFICATION")</dd><dt>Steps</dt><dd><ol>@foreach (var s in c.EffectiveSteps) { <li>@s</li> }</ol></dd></dl>
-                                }
-                                @if (c.ReviewHistory.Count > 0)
-                                {
-                                    <div class="tps-history" data-testid="tps-history-@sid"><span class="tps-k">Review history</span>
-                                        <ol class="tps-plain">@foreach (var ev in c.ReviewHistory) { <li><strong>@P.Review(ev.State).Text</strong> · @ev.Reviewer · @ev.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm")@(ev.Rationale is { } why ? $" — {why}" : "")</li> }</ol></div>
-                                }
-                            </div>
-                        }
-                    </li>
-                }
-            </ul>
-        </section>
-    };
 
     /// <summary>
     /// A performance test case in plain words: the tester describes purpose, workload, environment, measurements and acceptance criteria; any of
@@ -666,13 +943,14 @@
         </label>
     };
 
-    private RenderFragment EditField(TestCaseDraft c, string label, string? generated, string? effective, Func<string?, TestCaseDraft> apply, bool multi) => __builder =>
+    private RenderFragment EditField(TestCaseDraft c, string label, string? generated, string? effective, Func<string?, TestCaseDraft> apply, bool multi, string key) => __builder =>
     {
         var edited = !string.Equals(generated ?? "", effective ?? "", StringComparison.Ordinal);
-        <label class="tps-field @(multi ? "tps-field-wide" : null)"><span class="tps-k">@label @if (edited) { <span class="tps-chip tps-chip-ok">Edited</span> } else if (string.IsNullOrWhiteSpace(generated)) { <span class="tps-chip tps-chip-bad">Not in source</span> }</span>
-            @if (multi) { <textarea class="tps-input" rows="3" value="@effective" @onchange="e => Change(P.WithCase(_draft!, c.Source.ScenarioId, _ => apply(e.Value?.ToString())))"></textarea> }
-            else { <input class="tps-input" value="@effective" @onchange="e => Change(P.WithCase(_draft!, c.Source.ScenarioId, _ => apply(e.Value?.ToString())))" /> }
-            @if (edited && generated is not null) { <span class="tps-muted tps-small">Generated: @generated</span> }
+        var sid = c.Source.ScenarioId;
+        <label class="tps-field @(multi ? "tps-field-wide" : null)"><span class="tps-k">@label @if (edited) { <span class="tps-chip tps-chip-ok">Edited</span> } else if (string.IsNullOrWhiteSpace(generated) && key is "expected" or "preconditions") { <span class="tps-chip tps-chip-bad">Not in source</span> }</span>
+            @if (multi) { <textarea class="tps-input" rows="2" value="@effective" @onchange="e => Change(P.WithCase(_draft!, sid, _ => apply(e.Value?.ToString())))" data-testid="@($"tps-edit-{key}-{sid}")"></textarea> }
+            else { <input class="tps-input" value="@effective" @onchange="e => Change(P.WithCase(_draft!, sid, _ => apply(e.Value?.ToString())))" data-testid="@($"tps-edit-{key}-{sid}")" /> }
+            @if (edited && generated is not null) { <span class="tps-muted tps-small">From the evidence: @generated</span> }
         </label>
     };
 
@@ -688,35 +966,54 @@
         if (draft is null) { Fail(error ?? "The review could not be recorded."); return; }
         _draft = draft;
         _rationale.Remove(scenarioId);
-        await LoadAsync(_ws!.GuideKey);
+        await ReloadWorkspaceAsync();
         Ok($"Recorded: {P.Review(state).Text}.");
     }
 
-    // ── Test Data & testability ──────────────────────────────────────────────────────────────────────────────
+    // ── Step 3: Check testability ────────────────────────────────────────────────────────────────────────────
 
-    private RenderFragment DataArea() => __builder =>
+    private RenderFragment TestabilityArea() => __builder =>
     {
         if (_draft is not { } d) { __builder.AddContent(0, NoDraft()); return; }
-        <section class="tps-section" data-testid="tps-data" aria-labelledby="tps-data-h">
+        var active = d.Cases.Where(c => c.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded)).ToList();
+        var shown = _needsActionOnly ? active.Where(P.NeedsAction).ToList() : active;
+        <section class="tps-section" data-testid="tps-testability" aria-labelledby="tps-data-h">
             <div class="tps-section-head">
-                <h2 id="tps-data-h" class="tps-h2">Test Data &amp; Testability</h2>
-                <p class="tps-muted">Link existing assets from <a href="test-data">Test Data</a> (by their permanent id; values are never copied). Testability answers what is needed to run the case by hand, from evidence: a documented scenario is not an executable test.</p>
+                <h2 id="tps-data-h" class="tps-h2">Check testability</h2>
+                <p class="tps-muted">For each case: is Test Data needed, and is suitable data linked from <a href="test-data">Test Data</a> (by its permanent id; values are never copied)? Is anything unclear or blocking? "No test data described" is never read as "not required" — only you decide that.</p>
             </div>
+            <ul class="tps-stats" data-testid="tps-readiness-summary" aria-label="Readiness summary">
+                @foreach (var g in active.GroupBy(c => c.Testability.Readiness).OrderBy(g => g.Key))
+                {
+                    var l = P.ReadinessLabel(g.Key);
+                    <li data-testid="tps-readiness-@g.Key"><strong>@g.Count()</strong> <span class="tps-tone tps-tone-@l.Tone">@l.Text</span></li>
+                }
+            </ul>
+            <label class="tps-field tps-check"><input type="checkbox" checked="@_needsActionOnly" @onchange="e => _needsActionOnly = e.Value is true" data-testid="tps-needs-action" /> Only cases needing action (@active.Count(P.NeedsAction))</label>
             <ul class="tps-cases">
-                @foreach (var c in d.Cases.Where(c => c.Review != TestCaseReviewState.Excluded))
+                @foreach (var c in shown)
                 {
                     var sid = c.Source.ScenarioId;
                     var t = c.Testability;
+                    var readiness = P.ReadinessLabel(t.Readiness);
                     <li class="tps-case is-open" data-testid="tps-data-@sid">
                         <div class="tps-case-head tps-case-head-static"><span class="tps-card-title">@c.EffectiveTitle</span>
-                            <span class="tps-tone tps-tone-@(t.Ready ? "ok" : "warn")" data-testid="tps-testability-@sid">@(t.Ready ? "Prepared for manual execution" : $"Not ready: {t.Blockers.Count} open")</span></div>
+                            <span class="tps-tone tps-tone-@readiness.Tone" data-testid="tps-testability-@sid" title="@t.ReadinessReason">@readiness.Text</span></div>
                         <fieldset class="tps-case-body tps-fieldset" disabled="@_busy">
                             <div class="tps-two">
                                 <div>
-                                    <span class="tps-k">Required test data</span>
+                                    <span class="tps-k">Test Data described in the evidence</span>
                                     <p>@(c.Generated.RequiredTestData ?? "Not described in the source.")</p>
+                                    @if (CanWrite)
+                                    {
+                                        <label class="tps-field"><span class="tps-k">Does this case need Test Data?</span>
+                                            <select class="tps-input" @onchange="e => Change(P.WithCase(d, sid, x => x with { Edits = x.Edits with { TestDataNeed = Enum.TryParse<TestDataNeed>(e.Value?.ToString(), out var n) && n != TestDataNeed.Unknown ? n : null } }))" data-testid="tps-data-need-@sid">
+                                                @foreach (var n in Enum.GetValues<TestDataNeed>()) { <option value="@n" selected="@(n == c.EffectiveTestDataNeed)">@P.DataNeedLabel(n)</option> }
+                                            </select></label>
+                                        <label class="tps-field"><span class="tps-k">Blocked by a prerequisite</span><input class="tps-input" value="@c.Edits.BlockedBy" placeholder="e.g. test account not provisioned" @onchange="e => Change(P.WithCase(d, sid, x => x with { Edits = x.Edits with { BlockedBy = P.TextEdit(null, e.Value?.ToString()) } }))" data-testid="tps-blocked-@sid" /></label>
+                                    }
                                     <span class="tps-k">Linked Test Data</span>
-                                    @if (c.TestData.Count == 0) { <p class="tps-bad" data-testid="tps-no-data-@sid">None linked.</p> }
+                                    @if (c.TestData.Count == 0) { <p class="tps-muted" data-testid="tps-no-data-@sid">None linked.</p> }
                                     <ul class="tps-plain">
                                         @foreach (var link in c.TestData)
                                         {
@@ -725,11 +1022,11 @@
                                                 @if (link.SchemaCheck is { } sc) { <span class="tps-chip">Schema: @sc</span> }
                                                 <span class="tps-muted tps-small">revision <code>@(link.Fingerprint is { Length: >= 12 } f ? f[..12] : link.Fingerprint ?? "—")</code></span>
                                                 @if (!link.Resolved) { <span class="tps-chip tps-chip-bad">No longer in Test Data</span> }
-                                                @if (_ws!.CanWrite) { <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" @onclick="() => Change(P.WithCase(d, sid, x => x with { TestData = [.. x.TestData.Where(l => l.AssetId != assetId)] }))">Unlink</button> }
+                                                @if (CanWrite) { <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" @onclick="() => Change(P.WithCase(d, sid, x => x with { TestData = [.. x.TestData.Where(l => l.AssetId != assetId)] }))">Unlink</button> }
                                             </li>
                                         }
                                     </ul>
-                                    @if (_ws!.CanWrite && _ws.TestData.Count > 0)
+                                    @if (CanWrite && _ws!.TestData.Count > 0)
                                     {
                                         <label class="tps-field"><span class="tps-k">Link an asset</span>
                                             <select class="tps-input" @onchange="e => LinkAsset(sid, e.Value?.ToString())" data-testid="tps-link-asset-@sid">
@@ -737,19 +1034,19 @@
                                                 @foreach (var a in _ws.TestData.Where(a => c.TestData.All(l => l.AssetId != a.AssetId))) { <option value="@a.AssetId">@a.Alias (@a.Approval@(a.Environment is { } env ? $", {env}" : ""))</option> }
                                             </select></label>
                                     }
-                                    else if (_ws.TestData.Count == 0) { <p class="tps-muted tps-small">No Test Data assets exist yet. <a href="test-data">Prepare Test Data</a></p> }
+                                    else if (_ws?.TestData.Count == 0) { <p class="tps-muted tps-small">No Test Data assets exist yet. <a href="test-data">Prepare Test Data</a></p> }
                                 </div>
                                 <div>
-                                    <span class="tps-k">Manual testability</span>
+                                    <span class="tps-k">What is still open</span>
+                                    <p class="tps-small">@t.ReadinessReason</p>
                                     <table class="tps-facts" aria-label="Manual testability of @c.EffectiveTitle">
                                         <tbody>
-                                            @Fact("Authorized input method", t.InputMethod)
+                                            @Fact("Steps or input method", t.InputMethod)
                                             @Fact("Suitable Test Data", t.TestData)
                                             @Fact("Expected behaviour known", t.ExpectedBehavior)
                                             @Fact("Outcome observable", t.Observation)
                                             @Fact("Environment available", t.Environment)
                                             @Fact("Tester permissions", t.Permissions)
-                                            <tr><th scope="row">Technical assistance</th><td><span class="tps-tone tps-tone-@(t.NeedsTechnicalAssistance ? "warn" : "ok")">@(t.NeedsTechnicalAssistance ? "Needed" : "Not needed")</span></td></tr>
                                         </tbody>
                                     </table>
                                     @if (c.Correlations.Count > 0)
@@ -761,7 +1058,7 @@
                                                 var key = link.Target.Key;
                                                 <li class="tps-link-row" data-testid="tps-correlation-@sid"><strong>@link.Label</strong> <span class="tps-chip @(link.State == CorrelationState.Confirmed ? "tps-chip-ok" : link.Ambiguous ? "tps-chip-warn" : null)">@(link.State == CorrelationState.Candidate ? (link.Ambiguous ? "Ambiguous candidate" : "Candidate") : link.State.ToString())</span>
                                                     <span class="tps-muted tps-small">@link.Basis @link.Capability</span>
-                                                    @if (_ws!.CanWrite && link.State == CorrelationState.Candidate)
+                                                    @if (CanWrite && link.State == CorrelationState.Candidate)
                                                     {
                                                         <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" @onclick="() => Decide(sid, key, CorrelationState.Confirmed)" data-testid="tps-confirm-@sid">Confirm link</button>
                                                         <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" @onclick="() => Decide(sid, key, CorrelationState.Rejected)">Reject</button>
@@ -770,9 +1067,9 @@
                                             }
                                         </ul>
                                     }
-                                    @if (_ws!.CanWrite && _ws.Executables.Count > 0)
+                                    @if (CanWrite && _ws!.Executables.Count > 0)
                                     {
-                                        <label class="tps-field"><span class="tps-k">Link an executable scenario or flow</span>
+                                        <label class="tps-field"><span class="tps-k">Link an existing executable flow</span>
                                             <select class="tps-input" @onchange="e => LinkExecutable(sid, e.Value?.ToString())" data-testid="tps-link-exec-@sid">
                                                 <option value="">Choose…</option>
                                                 @foreach (var x in _ws.Executables.Where(x => c.Correlations.All(l => l.Target.Key != x.Reference.Key))) { <option value="@x.Reference.Key">@x.Label</option> }
@@ -785,7 +1082,8 @@
                     </li>
                 }
             </ul>
-            @if (_ws!.CanWrite) { <div class="tps-actionbar">@SaveBar()</div> }
+            @if (shown.Count == 0) { <p class="tps-muted" data-testid="tps-nothing-needs-action">No case needs action.</p> }
+            @if (CanWrite) { <div class="tps-actionbar">@SaveBar()</div> }
         </section>
     };
 
@@ -799,50 +1097,94 @@
     {
         if (_draft is null || string.IsNullOrEmpty(assetId) || _ws!.TestData.FirstOrDefault(a => a.AssetId == assetId) is not { } a) return;
         Change(P.WithCase(_draft, scenarioId, c => c with { TestData = [.. c.TestData, new TestCaseDataLink { AssetId = a.AssetId, Alias = a.Alias, Fingerprint = a.Fingerprint, Approval = a.Approval, Validation = a.Validation, SchemaCheck = a.SchemaCheck }] }));
-        Info("Linked. Save the proposal to keep it; testability is recalculated on save.");
+        Info("Linked. Save the draft to keep it; readiness is recalculated on save.");
     }
 
     private void Decide(string scenarioId, string key, CorrelationState state)
     {
         if (_draft is null) return;
         Change(P.WithCase(_draft, scenarioId, c => c with { Correlations = [.. c.Correlations.Select(x => x.Target.Key == key ? x with { State = state } : x)] }));
-        Info("Decision noted. Save the proposal to keep it.");
+        Info("Decision noted. Save the draft to keep it.");
     }
 
     private void LinkExecutable(string scenarioId, string? key)
     {
         if (_draft is null || string.IsNullOrEmpty(key) || _ws!.Executables.FirstOrDefault(x => x.Reference.Key == key) is not { } x) return;
         Change(P.WithCase(_draft, scenarioId, c => c with { Correlations = [.. c.Correlations, new ScenarioCorrelation { Target = x.Reference, Label = x.Label, State = CorrelationState.Confirmed, Basis = "Linked by a reviewer.", Capability = x.Detail }] }));
-        Info("Linked. Save the proposal to keep it.");
+        Info("Linked. Save the draft to keep it.");
     }
 
-    // ── Snapshots ────────────────────────────────────────────────────────────────────────────────────────────
+    // ── Step 4: Save & export ────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment SaveArea() => __builder =>
+    {
+        if (_draft is not { } d) { __builder.AddContent(0, NoDraft()); return; }
+        var latest = _ws?.Snapshots.Where(s => s.DraftId == d.Id).OrderByDescending(s => s.Sequence).FirstOrDefault();
+        <section class="tps-section" data-testid="tps-save-step" aria-labelledby="tps-save-h">
+            <div class="tps-section-head">
+                <h2 id="tps-save-h" class="tps-h2">Save &amp; export</h2>
+                <p class="tps-muted">A snapshot freezes the whole plan — cases, edits, Test Data revisions, review decisions, readiness, the source snapshot and the rule version. It never changes; later edits create a new snapshot.</p>
+            </div>
+            @if (latest is not null) { <p class="tps-muted" data-testid="tps-latest-snapshot">Latest snapshot: #@latest.Sequence · @(latest.DeliveryLabel ?? "no delivery label") · @latest.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")@(latest.DraftRevision < d.Revision ? " — the plan changed since" : "")</p> }
+            @if (CanWrite)
+            {
+                <div class="tps-actionbar" data-testid="tps-snapshot-bar">
+                    <label class="tps-field tps-field-grow"><span class="tps-k">Test plan name</span><input class="tps-input" @bind="_planName" @bind:event="oninput" data-testid="tps-plan-name" /></label>
+                    <label class="tps-field"><span class="tps-k">Delivery label</span><input class="tps-input" @bind="_deliveryLabel" @bind:event="oninput" placeholder="e.g. Release 2026.11" data-testid="tps-delivery" /></label>
+                    <label class="tps-field tps-field-grow"><span class="tps-k">Note</span><input class="tps-input" @bind="_snapshotNote" @bind:event="oninput" /></label>
+                    <button type="button" class="tps-btn" disabled="@(_busy || _dirty || string.IsNullOrWhiteSpace(_planName))" @onclick="SaveSnapshotAsync" data-testid="tps-save-snapshot">Save snapshot</button>
+                    @if (_dirty) { <span class="tps-muted tps-small">Save the draft first.</span> }
+                </div>
+            }
+            <div class="tps-actionbar">
+                <button type="button" class="tps-btn tps-btn-quiet" @onclick="@(() => GoArea("export"))" data-testid="tps-go-export">Prepare for Azure DevOps</button>
+                <button type="button" class="tps-btn tps-btn-quiet" @onclick="@(() => GoArea("compare"))" data-testid="tps-go-compare">Compare deliveries</button>
+                <button type="button" class="tps-btn tps-btn-quiet" @onclick="@(() => GoArea("snapshots"))" data-testid="tps-go-snapshots">All snapshots</button>
+            </div>
+            @if (d.Cases.Any(c => c.Generated.CandidateType is ScenarioCandidateType.UiFunctional or ScenarioCandidateType.UiSmoke))
+            {
+                <p class="tps-muted tps-small" data-testid="tps-e2e-handoff">UI cases can become automated flows only through <a href="critical-e2e-regression#sg-panel">Critical E2E Regression › Suggested tests</a>, where a person verifies and approves them. Nothing is promoted from here.</p>
+            }
+        </section>
+    };
+
+    private async Task SaveSnapshotAsync()
+    {
+        if (_draft is null) return;
+        _busy = true;
+        // The plan name and delivery label are collected here (at save), then frozen with the snapshot.
+        if (!string.Equals(_planName.Trim(), _draft.PlanName, StringComparison.Ordinal) || !string.Equals(_deliveryLabel.Trim(), _draft.DeliveryLabel ?? "", StringComparison.Ordinal))
+        {
+            var (renamed, renameError) = await _api!.SaveAsync(_draft.Id, P.ToSaveRequest(_draft with { PlanName = _planName.Trim(), DeliveryLabel = string.IsNullOrWhiteSpace(_deliveryLabel) ? null : _deliveryLabel.Trim() }));
+            if (renamed is null) { _busy = false; Fail(renameError ?? "The plan name could not be saved."); return; }
+            _draft = renamed;
+        }
+        var (result, error) = await _api!.SaveSnapshotAsync(_draft.Id, new SaveTestPlanSnapshotRequest(_draft.Revision, string.IsNullOrWhiteSpace(_deliveryLabel) ? null : _deliveryLabel.Trim(), string.IsNullOrWhiteSpace(_snapshotNote) ? null : _snapshotNote));
+        _busy = false;
+        if (result is null) { Fail(error ?? "The snapshot could not be saved."); return; }
+        await ReloadWorkspaceAsync();
+        _snapshotNote = "";
+        if (result.Unchanged) Info(result.Message); else Ok(result.Message);
+    }
+
+    // ── Saved snapshots ─────────────────────────────────────────────────────────────────────────────────────
 
     private RenderFragment SnapshotsArea() => __builder =>
     {
-        var snapshots = _ws!.Snapshots;
+        var snapshots = _ws?.Snapshots ?? [];
         <section class="tps-section" data-testid="tps-snapshots" aria-labelledby="tps-snap-h">
             <div class="tps-section-head">
                 <h2 id="tps-snap-h" class="tps-h2">Saved snapshots <span class="tps-count">@snapshots.Count</span></h2>
-                <p class="tps-muted">A snapshot freezes the whole proposal: scenarios and their revisions, suites, case content, requirements, Test Data revisions, review decisions, testability, the source baseline and the suggestion-rule version. It can never be changed; later edits create a new snapshot.</p>
+                <p class="tps-muted">Every saved snapshot of @(GuideMode ? "this guide's plans" : "this project's plans"). A snapshot can never be changed.</p>
             </div>
-            @if (_draft is { } d && _ws.CanWrite)
-            {
-                <div class="tps-actionbar" data-testid="tps-snapshot-bar">
-                    <label class="tps-field"><span class="tps-k">Delivery label</span><input class="tps-input" @bind="_snapshotLabel" @bind:event="oninput" placeholder="@(d.DeliveryLabel ?? "e.g. Release 2026.11")" data-testid="tps-snapshot-label" /></label>
-                    <label class="tps-field tps-field-grow"><span class="tps-k">Note</span><input class="tps-input" @bind="_snapshotNote" @bind:event="oninput" /></label>
-                    <button type="button" class="tps-btn" disabled="@(_busy || _dirty)" @onclick="SaveSnapshotAsync" data-testid="tps-save-snapshot">Save Test Plan Suggestion Snapshot</button>
-                    @if (_dirty) { <span class="tps-muted tps-small">Save the proposal first.</span> }
-                </div>
-            }
             @if (snapshots.Count == 0) { <p class="tps-muted" data-testid="tps-no-snapshots">No snapshot saved yet.</p> }
             <ul class="tps-rows" data-testid="tps-snapshot-list">
                 @foreach (var s in snapshots)
                 {
                     var sid = s.Id;
-                    <li class="tps-row" data-testid="tps-snapshot" data-sequence="@s.Sequence">
+                    <li class="tps-row" data-testid="tps-snapshot-row" data-sequence="@s.Sequence">
                         <span class="tps-row-title">#@s.Sequence · @s.PlanName</span>
-                        <span class="tps-muted tps-small">@(s.DeliveryLabel ?? "No delivery label") · @s.Cases cases · guide r@s.GuideRevision · rules @s.RuleVersion · @s.CreatedBy · @s.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · <code>@s.ContentFingerprint[..12]</code></span>
+                        <span class="tps-muted tps-small">@(s.DeliveryLabel ?? "No delivery label") · @s.Cases cases · rules @s.RuleVersion · @s.CreatedBy · @s.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · <code>@s.ContentFingerprint[..12]</code></span>
                         <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" @onclick="() => OpenSnapshotAsync(sid)" data-testid="tps-open-snapshot">Open</button>
                     </li>
                 }
@@ -851,7 +1193,7 @@
             {
                 <section class="tps-snapshot-view" data-testid="tps-snapshot-view" aria-label="Snapshot @open.Summary.Sequence">
                     <h3 class="tps-h3">Snapshot #@open.Summary.Sequence (read-only) · @open.Plan.PlanName</h3>
-                    <p class="tps-muted tps-small">Draft revision @open.Summary.DraftRevision · guide revision @open.Plan.Basis.GuideRevision (@open.Plan.Basis.GuideReviewState) · fingerprint <code>@open.Summary.ContentFingerprint</code></p>
+                    <p class="tps-muted tps-small">Draft revision @open.Summary.DraftRevision · @(open.Plan.ProjectKey is null ? $"guide revision {open.Plan.Basis.GuideRevision} ({open.Plan.Basis.GuideReviewState})" : $"project {open.Plan.ProjectName ?? open.Plan.ProjectKey}") · fingerprint <code>@open.Summary.ContentFingerprint</code></p>
                     @foreach (var suite in open.Plan.Suites)
                     {
                         var cases = open.Plan.Cases.Where(c => c.SuiteId == suite.Id).ToList();
@@ -864,18 +1206,6 @@
         </section>
     };
 
-    private async Task SaveSnapshotAsync()
-    {
-        if (_draft is null) return;
-        _busy = true;
-        var (result, error) = await _api!.SaveSnapshotAsync(_draft.Id, new SaveTestPlanSnapshotRequest(_draft.Revision, string.IsNullOrWhiteSpace(_snapshotLabel) ? null : _snapshotLabel, string.IsNullOrWhiteSpace(_snapshotNote) ? null : _snapshotNote));
-        _busy = false;
-        if (result is null) { Fail(error ?? "The snapshot could not be saved."); return; }
-        await LoadAsync(_ws!.GuideKey);
-        _snapshotNote = "";
-        if (result.Unchanged) Info(result.Message); else Ok(result.Message);
-    }
-
     private async Task OpenSnapshotAsync(Guid id)
     {
         var (snapshot, error) = await _api!.SnapshotAsync(id);
@@ -887,11 +1217,11 @@
 
     private RenderFragment CompareArea() => __builder =>
     {
-        var snapshots = _ws!.Snapshots;
+        var snapshots = _ws?.Snapshots ?? [];
         <section class="tps-section" data-testid="tps-compare" aria-labelledby="tps-cmp-h">
             <div class="tps-section-head">
                 <h2 id="tps-cmp-h" class="tps-h2">Compare deliveries</h2>
-                <p class="tps-muted">Two saved snapshots, case by case. Source, guide, review, Test Data and suggestion-rule differences are kept apart; a text change is never declared a behaviour change by itself.</p>
+                <p class="tps-muted">Two saved snapshots, case by case. Source, review, Test Data and suggestion-rule differences are kept apart; a text change is never declared a behaviour change by itself.</p>
             </div>
             @if (snapshots.Count < 2) { <p class="tps-muted" data-testid="tps-compare-need">Save at least two snapshots to compare deliveries.</p> }
             else
@@ -950,11 +1280,11 @@
         _comparison = comparison;
     }
 
-    // ── Export ───────────────────────────────────────────────────────────────────────────────────────────────
+    // ── Prepare for Azure DevOps ─────────────────────────────────────────────────────────────────────────────
 
     private RenderFragment ExportArea() => __builder =>
     {
-        var snapshots = _ws!.Snapshots;
+        var snapshots = _ws?.Snapshots ?? [];
         <section class="tps-section" data-testid="tps-export" aria-labelledby="tps-exp-h">
             <div class="tps-section-head">
                 <h2 id="tps-exp-h" class="tps-h2">Prepare for Azure DevOps</h2>

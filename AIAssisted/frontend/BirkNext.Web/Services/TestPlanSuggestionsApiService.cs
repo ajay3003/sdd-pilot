@@ -26,6 +26,24 @@ public interface ITestPlanSuggestionsApiService
     /// <param name="rows">False: counts and associations only (no row per requirement) — what Test Plan Suggestions and the focus panel need.</param>
     Task<(RequirementCoverageView? Coverage, string? Error)> RequirementCoverageAsync(string scope, CancellationToken ct = default, bool rows = true) =>
         Task.FromResult<(RequirementCoverageView?, string?)>((null, "Reviewed requirement coverage is not available in this host."));
+
+    // ── Project-scoped discovery and plans (hosts without them report "not available") ────────────────────────
+
+    /// <summary>The project's plans, snapshots, Test Data options and its environment's Critical E2E flows (GET project).</summary>
+    Task<(TestPlanWorkspace? Workspace, string? Error)> ProjectAsync(string projectKey, string? environmentId, CancellationToken ct = default) =>
+        Task.FromResult<(TestPlanWorkspace?, string?)>((null, NotAvailable));
+    /// <summary>Runs discovery for one project (POST discover). Explicit only.</summary>
+    Task<(ScenarioDiscoveryResult? Result, string? Error)> DiscoverAsync(ScenarioDiscoveryRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(ScenarioDiscoveryResult?, string?)>((null, NotAvailable));
+    /// <summary>The last discovery result of the project (and snapshot) — no analyzer runs; (null, null) when there is none.</summary>
+    Task<(ScenarioDiscoveryResult? Result, string? Error)> LastDiscoveryAsync(string projectKey, Guid? snapshotId, CancellationToken ct = default) =>
+        Task.FromResult<(ScenarioDiscoveryResult?, string?)>((null, null));
+    Task<(TestPlanDraft? Draft, string? Error)> CreateProjectAsync(CreateProjectTestPlanRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(TestPlanDraft?, string?)>((null, NotAvailable));
+    Task<(TestPlanDraft? Draft, string? Error)> AddManualCaseAsync(Guid id, AddManualTestCaseRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(TestPlanDraft?, string?)>((null, NotAvailable));
+
+    const string NotAvailable = "Project test planning is not available in this host.";
 }
 
 public sealed class TestPlanSuggestionsApiService(HttpClient http) : ITestPlanSuggestionsApiService
@@ -66,6 +84,33 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http) : ITestPlanSu
 
     public Task<(RequirementCoverageView?, string?)> RequirementCoverageAsync(string scope, CancellationToken ct = default, bool rows = true) =>
         Send<RequirementCoverageView>(() => http.GetAsync($"{Base}/requirement-coverage?scope={Uri.EscapeDataString(scope)}{(rows ? "" : "&rows=false")}", ct), ct);
+
+    public Task<(TestPlanWorkspace?, string?)> ProjectAsync(string projectKey, string? environmentId, CancellationToken ct = default) =>
+        Send<TestPlanWorkspace>(() => http.GetAsync($"{Base}/project?projectKey={Uri.EscapeDataString(projectKey)}{(string.IsNullOrWhiteSpace(environmentId) ? "" : "&environmentId=" + Uri.EscapeDataString(environmentId))}", ct), ct);
+
+    public Task<(ScenarioDiscoveryResult?, string?)> DiscoverAsync(ScenarioDiscoveryRequest request, CancellationToken ct = default) =>
+        Send<ScenarioDiscoveryResult>(() => http.PostAsJsonAsync($"{Base}/discover", request, Json, ct), ct);
+
+    public async Task<(ScenarioDiscoveryResult?, string?)> LastDiscoveryAsync(string projectKey, Guid? snapshotId, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.GetAsync($"{Base}/discover/last?projectKey={Uri.EscapeDataString(projectKey)}{(snapshotId is { } id ? $"&snapshotId={id}" : "")}", ct);
+            if (response.StatusCode == System.Net.HttpStatusCode.NoContent) return (null, null);
+            if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<ScenarioDiscoveryResult>(Json, ct), null);
+            return (null, $"The last discovery could not be read (HTTP {(int)response.StatusCode}).");
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException or NotSupportedException)
+        {
+            return (null, "Test Plan Suggestions is not reachable.");
+        }
+    }
+
+    public Task<(TestPlanDraft?, string?)> CreateProjectAsync(CreateProjectTestPlanRequest request, CancellationToken ct = default) =>
+        Send<TestPlanDraft>(() => http.PostAsJsonAsync($"{Base}/project-drafts", request, Json, ct), ct);
+
+    public Task<(TestPlanDraft?, string?)> AddManualCaseAsync(Guid id, AddManualTestCaseRequest request, CancellationToken ct = default) =>
+        Send<TestPlanDraft>(() => http.PostAsJsonAsync($"{Base}/drafts/{id}/manual-cases", request, Json, ct), ct);
 
     private static async Task<(T? Value, string? Error)> Send<T>(Func<Task<HttpResponseMessage>> call, CancellationToken ct)
     {

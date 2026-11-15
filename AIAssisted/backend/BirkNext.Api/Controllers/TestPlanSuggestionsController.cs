@@ -62,6 +62,31 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     [HttpGet("snapshots/{id:guid}/export")]
     public Task<ActionResult> Export(Guid id, CancellationToken ct) => Run(async () => Ok(await service.ExportAsync(id, ct)));
 
+    // ── Project-scoped discovery and plans ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>The selected project's plans and snapshots (only this project's), Test Data options and its environment's Critical E2E flows.</summary>
+    [HttpGet("project")]
+    public Task<ActionResult> Project([FromQuery] string projectKey, [FromQuery] string? environmentId, CancellationToken ct) =>
+        Run(async () => Ok(await service.ProjectWorkspaceAsync(projectKey, environmentId, await CanWriteAsync(), ct)));
+
+    /// <summary>Runs the registered discovery capabilities for one project (explicit; never on navigation). Read-only towards the evidence.</summary>
+    [HttpPost("discover")]
+    public Task<ActionResult> Discover([FromBody] ScenarioDiscoveryRequest request, [FromServices] TestScenarioDiscoveryService discovery, CancellationToken ct) =>
+        Run(async () => Ok(await discovery.DiscoverAsync(request, ct)));
+
+    /// <summary>The last discovery result of the project (and snapshot) since BirkNext started; 204 when there is none. Runs no analyzer.</summary>
+    [HttpGet("discover/last")]
+    public Task<ActionResult> LastDiscovery([FromQuery] string projectKey, [FromQuery] Guid? snapshotId, [FromServices] TestScenarioDiscoveryService discovery) =>
+        Run(() => Task.FromResult<ActionResult>(discovery.Last(projectKey, snapshotId) is { } result ? Ok(result) : NoContent()));
+
+    [HttpPost("project-drafts")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public Task<ActionResult> CreateProject([FromBody] CreateProjectTestPlanRequest request, CancellationToken ct) => Run(async () => Ok(await service.CreateProjectAsync(request, Actor, ct)));
+
+    [HttpPost("drafts/{id:guid}/manual-cases")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public Task<ActionResult> AddManualCase(Guid id, [FromBody] AddManualTestCaseRequest request, CancellationToken ct) => Run(async () => Ok(await service.AddManualCaseAsync(id, request, Actor, ct)));
+
     /// <summary>
     /// MT-7 reviewed requirement coverage of one project scope: specification requirements of the latest relationship interpretation, the
     /// scenario → requirement associations (decided in Relationship Review) and the tester reviews of those scenarios. Read-only.

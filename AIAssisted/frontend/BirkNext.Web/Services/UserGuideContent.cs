@@ -145,7 +145,7 @@ public static class UserGuideContent
         ["troubleshooting"] = new("2026-11-11", "BirkNext 1.0.0", "Messages of the build-info card, Backup & Transfer import and Execution Results"),
         ["system-settings"] = new("2026-11-11", "BirkNext 1.0.0", "Application information card (api/system/build-info)"),
         ["workspace-transfer"] = new("2026-11-11", "BirkNext 1.0.0", "Backup & Transfer acceptance WT-01–WT-43"),
-        ["test-plan-suggestions"] = new("2026-11-12", "BirkNext 1.0.0", "Test Plan Suggestions browser acceptance TPS-01–TPS-41 (isolated Release install, real Skolenærvær guide)"),
+        ["test-plan-suggestions"] = new("2026-11-15", "BirkNext 1.0.0", "Universal Test Plan Suggestions browser acceptance (94 checks: Skolenærvær guide plan, M2LB project, Blazor, API-only, documentation-only, mixed and insufficient-evidence projects; 1440–768 px; isolated Release install)"),
     };
 
     private static readonly Dictionary<string, string[]> Related = new(StringComparer.Ordinal)

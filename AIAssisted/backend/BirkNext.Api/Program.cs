@@ -808,6 +808,16 @@ builder.Services.AddScoped<BirkNext.Api.Services.SystemUnderstanding.SystemGuide
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.TestPlanSuggestionService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.IScenarioReviewSource>(sp => sp.GetRequiredService<BirkNext.Api.Services.TestPlanning.TestPlanSuggestionService>());
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.RequirementCoverageService>();
+// Project-scoped test scenario discovery for Test Plan Suggestions: one provider per registered analyzer (specification, guide, UI source, contracts,
+// integration journeys, existing tests); the last result per project is kept in memory so navigation never re-runs the analyzers.
+builder.Services.AddSingleton<BirkNext.Api.Services.TestPlanning.ScenarioDiscoveryCache>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.SpecificationScenarioProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.SystemGuideScenarioProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.UiSourceScenarioProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.ApiContractScenarioProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.IntegrationJourneyScenarioProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.ExistingTestScenarioProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.TestScenarioDiscoveryService>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyPackRegistry, BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyPackRegistry>();
 // Project-declared Integration Journeys (name + ordered component chain; design metadata only): Test Coverage association candidates, Scope Registry Journey members.
 // Project-declared Integration Journeys: their own schema (integration_journeys); append-only revisions per project. The earlier JSON file is

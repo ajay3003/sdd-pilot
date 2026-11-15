@@ -10,29 +10,43 @@ public static class TestPlanSuggestionsPresentation
 {
     public const string Route = "test-plan-suggestions";
 
-    /// <param name="Purpose">One sentence: what this step of test preparation is for (shown under the area bar).</param>
+    /// <param name="Purpose">One sentence: what this step of test preparation is for (shown under the step list).</param>
     public sealed record Area(string Id, string Label, string Purpose = "");
 
-    /// <summary>The preparation steps, in order. Understanding the system stays in System Understanding; these steps prepare how it is tested.</summary>
+    /// <summary>The four guided steps, in order. Saved snapshots, delivery comparison and the Azure DevOps preparation stay available as secondary areas.</summary>
     public static readonly IReadOnlyList<Area> Areas =
     [
-        new("discover", "Discover", "Choose the scenarios to include in a proposed test plan."),
-        new("plan", "Suggested Test Plan", "Organise the chosen scenarios into a test plan and test suites."),
-        new("review", "Review Test Cases", "Review preconditions, test steps and expected results, and record your decision."),
-        new("data", "Test Data & Testability", "Link approved test data and see what still blocks manual execution."),
-        new("snapshots", "Saved Snapshots", "Freeze the proposal as an immutable snapshot for a delivery."),
-        new("compare", "Compare Deliveries", "See what changed between two snapshots and what to retest."),
+        new("choose", "Choose scenarios", "Find what to test in this project's evidence and choose the scenarios to prepare."),
+        new("prepare", "Prepare test cases", "Write readable test cases: preconditions, steps with an expected result each, and your review decision."),
+        new("testability", "Check testability", "See which cases still need Test Data, a clarification or a prerequisite before someone can run them."),
+        new("save", "Save & export", "Name the plan, save an immutable snapshot for a delivery and prepare it for Azure DevOps."),
+    ];
+
+    /// <summary>Secondary areas (not steps): snapshot history, delivery comparison and the Azure DevOps preparation.</summary>
+    public static readonly IReadOnlyList<Area> MoreAreas =
+    [
+        new("snapshots", "Saved snapshots", "Every saved snapshot of this project's plans; a snapshot never changes."),
+        new("compare", "Compare deliveries", "See what changed between two snapshots and what to retest."),
         new("export", "Prepare for Azure DevOps", "Export a snapshot as a reviewable proposal; nothing is written to Azure DevOps."),
     ];
 
-    /// <summary>"Step 2 of 7 · Organise …" for the current area. Pure.</summary>
+    /// <summary>"Step 2 of 4 · Write readable …" for a step; the purpose alone for a secondary area. Pure.</summary>
     public static string StepLine(string area)
     {
         var index = Areas.ToList().FindIndex(a => a.Id == area);
-        return index < 0 ? "" : $"Step {index + 1} of {Areas.Count} · {Areas[index].Purpose}";
+        if (index >= 0) return $"Step {index + 1} of {Areas.Count} · {Areas[index].Purpose}";
+        return MoreAreas.FirstOrDefault(a => a.Id == area)?.Purpose ?? "";
     }
 
-    public static string AreaOrDefault(string? area) => Areas.Any(a => a.Id == area) ? area! : "discover";
+    /// <summary>The area for a link; earlier area ids (discover, plan, review, data) map to their step so old links keep working.</summary>
+    public static string AreaOrDefault(string? area) => area switch
+    {
+        "discover" => "choose",
+        "plan" or "review" => "prepare",
+        "data" => "testability",
+        _ when Areas.Any(a => a.Id == area) || MoreAreas.Any(a => a.Id == area) => area!,
+        _ => "choose",
+    };
 
     /// <summary>The link from System Understanding "What to test": the guide and the selected scenario ids (never an approval).</summary>
     public static string PrepareLink(string guideKey, IEnumerable<string> scenarioIds) =>
@@ -82,6 +96,9 @@ public static class TestPlanSuggestionsPresentation
         ExpectedResultBasis.ReviewedGuide => new("From the published guide", "ok"),
         ExpectedResultBasis.UnreviewedGuide => new("From an unreviewed guide draft", "warn"),
         ExpectedResultBasis.NeedsClarification => new("NEEDS CLARIFICATION", "bad"),
+        ExpectedResultBasis.Specification when c.Generated.ExpectedResult is not null => new("Stated in the project's documentation — confirm by accepting", "info"),
+        ExpectedResultBasis.Contract when c.Generated.ExpectedResult is not null => new("Documented in the API contract — confirm by accepting", "info"),
+        ExpectedResultBasis.SourceDerived when c.Generated.ExpectedResult is not null => new("Proposed from source code — confirm or clarify", "warn"),
         _ => new("NEEDS CLARIFICATION — none in the source", "bad"),
     };
 
@@ -184,8 +201,14 @@ public static class TestPlanSuggestionsPresentation
         if (ws is null || ws.GuideKey is null) return new([], [], null);
         var draft = ws.Drafts.OrderByDescending(d => d.UpdatedAt).FirstOrDefault();
         var latest = ws.Snapshots.OrderByDescending(s => s.CreatedAt).FirstOrDefault();
-        var link = $"{Route}?guide={Uri.EscapeDataString(ws.GuideKey)}";
+        var link = ws.ProjectKey is not null ? $"{Route}?project=1" : $"{Route}?guide={Uri.EscapeDataString(ws.GuideKey)}";
         var actions = new List<FocusAction>();
+        if (draft is null && ws.ProjectKey is not null)
+        {
+            actions.Add(new("tps-review", "Discover test scenarios", "No test cases are prepared for this project yet. Discover scenarios from its evidence, or write cases by hand.",
+                link + "&area=choose", FocusActionState.CanDoNow, "Ready now", null));
+            return new([], actions, latest);
+        }
         if (draft is null)
         {
             actions.Add(new("tps-review", "Review Test Plan Suggestions", $"{ws.Candidates.Count} scenario candidates from System Understanding; none prepared yet.", link + "&area=discover",
@@ -209,6 +232,170 @@ public static class TestPlanSuggestionsPresentation
         if (ofDraft >= 2) actions.Add(new("tps-compare", "Compare deliveries", $"{ofDraft} snapshots of this proposal.", draftLink + "&area=compare", FocusActionState.CanDoNow, "Ready now", null));
         if (latest is not null) actions.Add(new("tps-export", "Prepare Azure DevOps export", $"From snapshot {latest.Sequence} (a reviewable proposal, not written to Azure DevOps).", draftLink + "&area=export", FocusActionState.CanDoNow, "Ready now", null));
         return new(facts, actions, latest);
+    }
+
+    // ── Project discovery: catalog, scope, guided steps, readiness and step editing ──────────────────────────────
+
+    /// <summary>Rows rendered per page of the scenario catalog; "Show more" adds the next page (hundreds of candidates stay responsive).</summary>
+    public const int PageSize = 60;
+
+    public enum CatalogGrouping { Area, Type, Source }
+
+    /// <param name="Tests">"with" = only candidates with an associated existing test, "without" = only without; null = all.</param>
+    public sealed record CatalogFilter(string Query = "", ScenarioCandidateType? Type = null, string? Area = null, string? Source = null, string? Tests = null, bool AttentionOnly = false);
+
+    public static string AreaOf(DiscoveredScenario c) => string.IsNullOrWhiteSpace(c.Area) ? "Not grouped" : c.Area!;
+
+    /// <summary>Only when a person must look: no expected behaviour in the evidence, or a possible duplicate of another candidate.</summary>
+    public static string? Warning(DiscoveredScenario c) => c.NeedsClarification ? "Needs clarification" : c.PossibleDuplicates.Count > 0 ? "Possible duplicate" : null;
+
+    public static IReadOnlyList<DiscoveredScenario> Apply(IEnumerable<DiscoveredScenario> candidates, CatalogFilter f) => [.. candidates.Where(c =>
+        (string.IsNullOrWhiteSpace(f.Query) || Contains(c.Title, f.Query) || Contains(c.Purpose, f.Query) || Contains(AreaOf(c), f.Query)
+            || c.RequirementIds.Any(r => r.Contains(f.Query.Trim(), StringComparison.OrdinalIgnoreCase)))
+        && (f.Type is null || c.Type == f.Type)
+        && (f.Area is null || AreaOf(c) == f.Area)
+        && (f.Source is null || c.SourceCategory == f.Source)
+        && (f.Tests is null || (f.Tests == "with") == (c.ExistingTests.Count > 0))
+        && (!f.AttentionOnly || Warning(c) is not null))];
+
+    public sealed record CatalogGroup(string Id, string Title, IReadOnlyList<DiscoveredScenario> Items);
+
+    /// <summary>Groups by real metadata only (the area/module the evidence names, the candidate type or the source category), in first-seen order.</summary>
+    public static IReadOnlyList<CatalogGroup> Group(IReadOnlyList<DiscoveredScenario> items, CatalogGrouping by) =>
+        [.. items.GroupBy(c => by switch { CatalogGrouping.Type => ScenarioCandidateTypes.Label(c.Type), CatalogGrouping.Source => c.SourceCategory, _ => AreaOf(c) })
+            .Select(g => new CatalogGroup(Slug(g.Key), g.Key, [.. g]))];
+
+    /// <summary>A readable group id from a real area title: letters (any script, e.g. "periodelås") and digits kept, everything else a hyphen.</summary>
+    public static string Slug(string value)
+    {
+        var slug = new string([.. value.ToLowerInvariant().Select(ch => char.IsLetterOrDigit(ch) ? ch : '-')]).Trim('-');
+        while (slug.Contains("--", StringComparison.Ordinal)) slug = slug.Replace("--", "-", StringComparison.Ordinal);
+        return slug.Length == 0 ? "other" : slug;
+    }
+
+    /// <summary>
+    /// Whether a candidate is inside the selected test areas (Project Test Setup): a scope member with the candidate's own canonical key, a scenario
+    /// reached through the scope's requirements by an established Verifies link, or a requirement member whose canonical identity carries the
+    /// same requirement id in this project. No selection keeps every candidate; titles are never compared.
+    /// </summary>
+    public static bool InScope(DiscoveredScenario c, BirkNext.Scopes.ScopeSelection? selection, IReadOnlyCollection<string> viaRequirementScenarioKeys)
+    {
+        if (selection is null) return true;
+        var members = selection.Members.Select(m => m.Member).ToList();
+        if (c.ScopeKeys.Any(k => members.Any(m => m.Key == k))) return true;
+        if (c.ScopeKeys.Any(k => k.StartsWith("Scenario:", StringComparison.Ordinal) && viaRequirementScenarioKeys.Contains(k["Scenario:".Length..]))) return true;
+        var ids = c.RequirementIds.Select(r => r.Trim().ToLowerInvariant()).Where(r => r.Length > 0).ToList();
+        return ids.Count > 0 && members.Any(m => m.Kind == BirkNext.Scopes.ScopeMemberKind.Requirement
+            && ids.Any(id => m.TargetId.EndsWith("/" + id, StringComparison.OrdinalIgnoreCase) || m.TargetId.EndsWith("|" + id, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    /// <summary>A System Understanding guide candidate as a catalog row (historical guide plans keep their own workflow and ids).</summary>
+    public static DiscoveredScenario FromGuideCandidate(ScenarioCandidate c) => new()
+    {
+        CandidateId = c.Source.ScenarioId, ProjectKey = c.Source.Owner, CapabilityId = "system-guide", SourceCategory = "System Understanding guide", Area = c.StageTitle,
+        Title = c.Title, Purpose = c.Objective, Type = ScenarioCandidateType.BusinessFunctional, Confidence = CandidateConfidence.CandidateAssociation,
+        ExpectedBehaviour = c.HasExpected ? "Stated in the guide (shown in the prepared case)." : null, ExpectedBasis = c.HasExpected ? "System Understanding guide" : null,
+        RequirementIds = [.. c.Requirements.Select(r => r.RuleId)], Engine = "System Understanding guide",
+        TestDataNeeds = c.HasTestData ? ["Described in the guide"] : [],
+        ScopeKeys = ["Scenario:" + BirkNext.Interpretation.CanonicalKeys.EntityKey(BirkNext.Interpretation.CanonicalEntityType.Scenario,
+            BirkNext.Interpretation.CorrelationRules.GuideScenarioIdentity(c.Source.Owner, c.Source.ScenarioId))],
+        Evidence = [new("guide-scenario", $"{c.Source.Owner}/{c.Source.ScenarioId}", c.Source.Revision is { } r ? $"Guide revision {r}" : null)],
+        OpenQuestions = [.. c.GuideState == "NeedsClarification" ? new[] { "The guide marks this scenario as needing clarification." } : []],
+    };
+
+    /// <summary>A case still needs someone's action before it can be run: not ready for Test Data, a clarification or a prerequisite.</summary>
+    public static bool NeedsAction(TestCaseDraft c) => c.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded)
+        && c.Testability.Readiness is not (CaseReadiness.RequiredAndAvailable or CaseReadiness.NotRequired);
+
+    public static Label ReadinessLabel(CaseReadiness readiness) => readiness switch
+    {
+        CaseReadiness.NotRequired => new("Not required", "ok"),
+        CaseReadiness.RequiredAndAvailable => new("Required and available", "ok"),
+        CaseReadiness.RequiredButMissing => new("Required but missing", "bad"),
+        CaseReadiness.NeedsClarification => new("Needs clarification", "warn"),
+        CaseReadiness.LinkedButUnsuitable => new("Linked but unsuitable", "bad"),
+        CaseReadiness.BlockedByPrerequisite => new("Blocked by prerequisite", "bad"),
+        _ => new("Not assessed", "muted"),
+    };
+
+    public static string DataNeedLabel(TestDataNeed need) => need switch
+    {
+        TestDataNeed.Required => "Required",
+        TestDataNeed.NotRequired => "Not required (decided by a reviewer)",
+        _ => "Not assessed yet",
+    };
+
+    /// <summary>
+    /// The four guided steps from what is stored: a plan with cases, every case reviewed, no case needing action, a snapshot of the current revision.
+    /// The first unfinished step is current; later steps wait. Each step offers one in-page action (open it).
+    /// </summary>
+    public static IReadOnlyList<GuidedStep> Steps(TestPlanDraft? draft, IReadOnlyList<TestPlanSnapshotSummary> snapshots, int candidates, bool discovered, int selected)
+    {
+        var active = draft?.Cases.Where(c => c.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded)).ToList() ?? [];
+        var accepted = active.Count(c => c.Review == TestCaseReviewState.Accepted);
+        var action = active.Count(NeedsAction);
+        var snapshot = draft is null ? null : snapshots.Where(s => s.DraftId == draft.Id).OrderByDescending(s => s.Sequence).FirstOrDefault();
+        var done = new[] { active.Count > 0, active.Count > 0 && accepted == active.Count, active.Count > 0 && action == 0, snapshot is not null && snapshot.DraftRevision >= draft!.Revision };
+        var current = Array.FindIndex(done, d => !d);
+        GuidedStepState State(int i) => current < 0 || i < current ? (done[i] ? GuidedStepState.Done : GuidedStepState.Waiting) : i == current ? GuidedStepState.Current : GuidedStepState.Waiting;
+        var noDraft = draft is null ? "Prepare test cases first." : null;
+        return
+        [
+            new("choose", Areas[0].Label, State(0), active.Count > 0 ? $"{active.Count} in the plan" : discovered ? $"{candidates} candidates · {selected} selected" : "Not discovered yet",
+                Areas[0].Purpose, ActionLabel: "Open", ActionId: "choose"),
+            new("prepare", Areas[1].Label, State(1), draft is null ? "Waiting" : $"{accepted} of {active.Count} accepted", Areas[1].Purpose, ActionLabel: "Open", ActionId: "prepare", DisabledReason: noDraft),
+            new("testability", Areas[2].Label, State(2), draft is null ? "Waiting" : action == 0 ? "No case needs action" : $"{action} need action", Areas[2].Purpose,
+                ActionLabel: "Open", ActionId: "testability", DisabledReason: noDraft),
+            new("save", Areas[3].Label, State(3), snapshot is null ? "Not saved" : snapshot.DraftRevision >= (draft?.Revision ?? 0) ? $"Saved as snapshot #{snapshot.Sequence}" : $"Changed since snapshot #{snapshot.Sequence}",
+                Areas[3].Purpose, ActionLabel: "Open", ActionId: "save", DisabledReason: noDraft),
+        ];
+    }
+
+    /// <summary>The working copy's steps with their expected results (null = Needs clarification).</summary>
+    public static (List<string> Steps, List<string?> Expected) StepsOf(TestCaseDraft c) => ([.. c.EffectiveSteps], [.. c.EffectiveStepExpected]);
+
+    /// <summary>Sets the edited steps; identical to the generated steps and results means "no edit" (the generated ones stay in force).</summary>
+    public static TestCaseDraft WithSteps(TestCaseDraft c, List<string> steps, List<string?> expected)
+    {
+        var generatedExpected = c.Generated.Steps.Select((_, i) => i < c.Generated.StepExpected.Count ? c.Generated.StepExpected[i] : null).ToList();
+        var same = steps.SequenceEqual(c.Generated.Steps) && expected.SequenceEqual(generatedExpected);
+        return c with { Edits = c.Edits with { Steps = same ? null : steps, StepExpected = same ? null : expected } };
+    }
+
+    public static TestCaseDraft SetStep(TestCaseDraft c, int index, string? action, string? expected)
+    {
+        var (steps, results) = StepsOf(c);
+        if (index < 0 || index >= steps.Count) return c;
+        if (action is not null) steps[index] = action;
+        if (expected is not null) results[index] = string.IsNullOrWhiteSpace(expected) ? null : expected;
+        return WithSteps(c, steps, results);
+    }
+
+    public static TestCaseDraft AddStep(TestCaseDraft c, string action)
+    {
+        var (steps, results) = StepsOf(c);
+        steps.Add(action);
+        results.Add(null);
+        return WithSteps(c, steps, results);
+    }
+
+    public static TestCaseDraft RemoveStep(TestCaseDraft c, int index)
+    {
+        var (steps, results) = StepsOf(c);
+        if (index < 0 || index >= steps.Count) return c;
+        steps.RemoveAt(index);
+        results.RemoveAt(index);
+        return WithSteps(c, steps, results);
+    }
+
+    public static TestCaseDraft MoveStep(TestCaseDraft c, int index, int delta)
+    {
+        var (steps, results) = StepsOf(c);
+        var to = index + delta;
+        if (index < 0 || index >= steps.Count || to < 0 || to >= steps.Count) return c;
+        (steps[index], steps[to]) = (steps[to], steps[index]);
+        (results[index], results[to]) = (results[to], results[index]);
+        return WithSteps(c, steps, results);
     }
 
     // ── Test type, execution method and performance wording (plain language for manual testers) ────────────────────

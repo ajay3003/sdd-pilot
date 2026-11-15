@@ -28,7 +28,7 @@ public sealed class TestPlanException(int status, string code, string message) :
 /// immutable snapshots of the proposal itself.
 /// </summary>
 public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideService guides, SourceBaselineService baselines, TestDataCatalogService testData,
-    IEnumerable<IIntegrationJourneyPack> packs, ICriticalE2EStore e2e, TimeProvider? clock = null) : IScenarioReviewSource
+    IEnumerable<IIntegrationJourneyPack> packs, ICriticalE2EStore e2e, TimeProvider? clock = null, ScenarioDiscoveryCache? discoveries = null) : IScenarioReviewSource
 {
     public const int MaxCases = 300;
     public const int MaxContentCharacters = 4_000_000;
@@ -103,7 +103,7 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
     public async Task<TestPlanDraft> DraftAsync(Guid id, CancellationToken ct)
     {
         var plan = Read(await Row(id, ct));
-        return WithSourceFlags(plan, await CurrentFingerprintsAsync(plan.GuideKey, ct));
+        return await FlagsAsync(plan, ct);
     }
 
     /// <summary>Marks each case whose scenario differs in (or left) the guide readers see now. Read-time only for a draft; a snapshot records it.</summary>
@@ -165,6 +165,7 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         var row = await Row(id, ct);
         if (row.Revision != request.BaseRevision) throw Stale(row);
         var current = Read(row);
+        if (current.ProjectKey is not null) return await SaveProjectAsync(row, current, request, actor, ct);
         var previous = current.Cases.ToDictionary(c => c.Source.ScenarioId, StringComparer.Ordinal);
         var revision = await guides.RevisionAsync(current.GuideKey, current.Basis.GuideRevision, ct);
         var sameRevision = string.Equals(revision.ContentFingerprint, current.Basis.GuideFingerprint, StringComparison.Ordinal);
@@ -178,7 +179,7 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         if (ids.Count > MaxCases) throw new TestPlanException(400, "too-many-cases", $"At most {MaxCases} cases per proposal.");
         var human = request.Cases.GroupBy(c => c.ScenarioId, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Last(), StringComparer.Ordinal);
         var suites = Suites(request.Suites, revision.Content, [.. ids.Where(known.Contains)]);
-        var cases = await BuildCasesAsync(current.GuideKey, revision, ids, previous, ct, human, suites, currentFingerprints: await CurrentFingerprintsAsync(current.GuideKey, ct));
+        var cases = await BuildCasesAsync(current.GuideKey, revision, ids, previous, ct, human, suites, currentFingerprints: await CurrentFingerprintsAsync(current.GuideKey, ct), actor: actor);
         var plan = current with
         {
             PlanName = Name(request.PlanName), DeliveryLabel = Label(request.DeliveryLabel), Revision = row.Revision + 1, Suites = suites, Cases = cases, UpdatedBy = actor, UpdatedAt = Now,
@@ -196,12 +197,13 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         var rationale = request.Rationale?.Trim();
         if (request.State is TestCaseReviewState.Excluded or TestCaseReviewState.NeedsClarification && string.IsNullOrWhiteSpace(rationale))
             throw new TestPlanException(400, "rationale-required", "Say why (a rationale is required to exclude a case or ask for clarification).");
-        var plan = WithSourceFlags(Read(row), await CurrentFingerprintsAsync(row.GuideKey, ct));
+        var plan = await FlagsAsync(Read(row), ct);
         var target = plan.Cases.FirstOrDefault(c => c.Source.ScenarioId == request.ScenarioId) ?? throw new TestPlanException(404, "case-not-found", "No such case in this proposal.");
         if (request.State == TestCaseReviewState.Accepted && string.IsNullOrWhiteSpace(target.EffectiveExpected))
             throw new TestPlanException(409, "expected-result-missing", "A case without an expected result cannot be accepted. Clarify the expected result first.");
         if (request.State == TestCaseReviewState.Accepted && target.SourceChanged)
-            throw new TestPlanException(409, "source-changed", "The scenario changed in the source since this draft was generated. Update the proposal from the current guide first.");
+            throw new TestPlanException(409, "source-changed", plan.ProjectKey is null ? "The scenario changed in the source since this draft was generated. Update the proposal from the current guide first."
+                : "The scenario changed in the latest discovery since this case was prepared. Update the plan from the latest discovery first.");
         var updated = target with
         {
             Review = request.State,
@@ -218,6 +220,7 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         var row = await Row(id, ct);
         if (row.Revision != baseRevision) throw Stale(row);
         var current = Read(row);
+        if (current.ProjectKey is not null) return await RefreshProjectAsync(row, current, actor, ct);
         var snapshots = await baselines.SnapshotsAsync(ct);
         var view = await guides.GetAsync(current.GuideKey, false, ct, snapshots);
         var shown = view.Shown!;
@@ -246,7 +249,7 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
     {
         var row = await Row(id, ct);
         if (row.Revision != request.ExpectedRevision) throw Stale(row);
-        var plan = WithSourceFlags(Read(row), await CurrentFingerprintsAsync(row.GuideKey, ct));
+        var plan = await FlagsAsync(Read(row), ct);
         var assets = await AssetsAsync(ct);
         plan = plan with
         {
@@ -317,7 +320,7 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
 
     private async Task<List<TestCaseDraft>> BuildCasesAsync(string guideKey, SystemGuideRevision revision, IReadOnlyList<string> ids, IReadOnlyDictionary<string, TestCaseDraft> previous,
         CancellationToken ct, IReadOnlyDictionary<string, TestCaseHumanPart>? human = null, IReadOnlyList<TestSuiteDraft>? suites = null, bool refresh = false,
-        IReadOnlyDictionary<string, string>? currentFingerprints = null)
+        IReadOnlyDictionary<string, string>? currentFingerprints = null, string? actor = null)
     {
         var reviewed = revision.State == GuideRevisionState.Published;
         var executables = Executables();
@@ -369,6 +372,7 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
                 // Flagged when the guide readers see now has a different version of this scenario (or no longer has it); cleared by an update.
                 SourceChanged = !refresh && currentFingerprints is not null && (!currentFingerprints.TryGetValue(id, out var now) || now != fingerprint),
                 VerifiedAzureDevOpsTestCaseId = before?.VerifiedAzureDevOpsTestCaseId,
+                EditHistory = History(before, part is null ? null : Clean(part.Edits), actor),
             };
             result.Add(E.Assess(draft));
         }
@@ -378,9 +382,17 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
     private static TestCaseEdits Clean(TestCaseEdits e)
     {
         static string? T(string? v, int max) => string.IsNullOrWhiteSpace(v) ? null : v.Trim()[..Math.Min(v.Trim().Length, max)];
-        var steps = e.Steps?.Where(s => !string.IsNullOrWhiteSpace(s)).Take(50).Select(s => T(s, 2000)!).ToList();
+        // Steps and their expected results stay paired: a blank step is dropped together with its expected result.
+        var pairs = e.Steps?.Select((s, i) => (Step: s, Expected: e.StepExpected is { } x && i < x.Count ? x[i] : null)).Where(p => !string.IsNullOrWhiteSpace(p.Step)).Take(50).ToList();
+        var steps = pairs?.Select(p => T(p.Step, 2000)!).ToList();
+        var stepExpected = pairs is { Count: > 0 } && e.StepExpected is not null ? pairs.Select(p => T(p.Expected, 2000)).ToList() : null;
+        var template = e.TemplateValues?.Where(kv => !string.IsNullOrWhiteSpace(kv.Key) && !string.IsNullOrWhiteSpace(kv.Value)).Take(20)
+            .ToDictionary(kv => kv.Key.Trim()[..Math.Min(kv.Key.Trim().Length, 60)], kv => T(kv.Value, 1000)!, StringComparer.Ordinal);
         return new TestCaseEdits
         {
+            StepExpected = steps is { Count: > 0 } ? stepExpected : null, Purpose = T(e.Purpose, 1000), Roles = T(e.Roles, 500), Dependencies = T(e.Dependencies, 1000),
+            Priority = T(e.Priority, 50), TestDataNeed = e.TestDataNeed is TestDataNeed.Unknown ? null : e.TestDataNeed, BlockedBy = T(e.BlockedBy, 500),
+            TemplateValues = template is { Count: > 0 } ? template : null,
             Title = T(e.Title, 300), Preconditions = T(e.Preconditions, 4000), Steps = steps is { Count: > 0 } ? steps : null, ExpectedResult = T(e.ExpectedResult, 4000),
             ObservationMethod = T(e.ObservationMethod, 2000), EnvironmentPrerequisites = T(e.EnvironmentPrerequisites, 2000),
             TestType = e.TestType is TestCaseType.NotClassified ? null : e.TestType,
@@ -461,6 +473,246 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
     private static TestCaseDataLink? Link(string assetId, IReadOnlyDictionary<string, TestDataAssetSummary> assets) => assets.TryGetValue(assetId, out var a)
         ? new TestCaseDataLink { AssetId = assetId, Alias = a.Alias, Fingerprint = a.Fingerprint, Approval = a.Approval.ToString(), Validation = a.Validation.ToString(), SchemaCheck = a.SchemaCheck?.Status.ToString() }
         : null;
+
+    // ── Project plans (project-scoped discovery) ─────────────────────────────────────────────────────────────
+
+    /// <summary>The owner key stored with a project plan ("project:{key}"); hashed when the key would not fit the column. Never a name.</summary>
+    public static string ProjectOwner(string projectKey)
+    {
+        var key = projectKey.Trim();
+        var owner = "project:" + key;
+        return owner.Length <= 100 ? owner : "project:#" + E.Sha(key)[..40];
+    }
+
+    /// <summary>The project's plans and snapshots (only this project's), Test Data options and the Critical E2E flows of its environment.</summary>
+    public async Task<TestPlanWorkspace> ProjectWorkspaceAsync(string projectKey, string? environmentId, bool canWrite, CancellationToken ct)
+    {
+        var key = TestScenarioDiscoveryService.Key(projectKey);
+        var owner = ProjectOwner(key);
+        var drafts = (await db.TestPlanDrafts.AsNoTracking().Where(d => d.GuideKey == owner).OrderByDescending(d => d.UpdatedAt).ToListAsync(ct))
+            .Select(Read).Where(p => p.ProjectKey == key).ToList();
+        var executables = string.IsNullOrWhiteSpace(environmentId) ? [] : e2e.Flows(environmentId).Select(flow => new ExecutableScenarioOption(
+            new ScenarioReference { Kind = ScenarioSourceKind.CriticalE2EFlow, Owner = flow.EnvironmentId, ScenarioId = flow.Id, Revision = flow.Version },
+            $"Critical E2E · {flow.Name}", $"Automated flow v{flow.Version} ({flow.Module}); a definition, not a result")).ToList();
+        return new TestPlanWorkspace
+        {
+            ProjectKey = key, GuideKey = owner, Drafts = [.. drafts.Select(Summary)], Snapshots = await SnapshotsAsync(owner, ct), Executables = executables,
+            TestData = await TestDataOptionsAsync(ct), CanWrite = canWrite, RuleVersion = E.RuleVersion,
+        };
+    }
+
+    /// <summary>
+    /// Prepares test cases from selected candidates of one discovery result of the same project (or adds them to the project's draft). Generated
+    /// content is built on the server from the candidate; a candidate id the result does not hold is ignored, never trusted from the client.
+    /// </summary>
+    public async Task<TestPlanDraft> CreateProjectAsync(CreateProjectTestPlanRequest request, string actor, CancellationToken ct)
+    {
+        var key = TestScenarioDiscoveryService.Key(request.ProjectKey);
+        var manualTitle = string.IsNullOrWhiteSpace(request.ManualCaseTitle) ? null : request.ManualCaseTitle.Trim()[..Math.Min(request.ManualCaseTitle.Trim().Length, 300)];
+        var discovery = string.IsNullOrWhiteSpace(request.DiscoveryId) ? null : discoveries?.Find(key, request.DiscoveryId);
+        if (discovery is null && request.CandidateIds.Count > 0)
+            throw new TestPlanException(409, "discovery-missing", "The discovery result is no longer available (BirkNext restarted or the project changed). Discover test scenarios again.");
+        var wanted = request.CandidateIds.ToHashSet(StringComparer.Ordinal);
+        var chosen = discovery?.Candidates.Where(c => wanted.Contains(c.CandidateId) && c.ProjectKey == key).ToList() ?? [];
+        if (chosen.Count == 0 && manualTitle is null) throw new TestPlanException(400, "no-scenarios", "Select at least one scenario, or write a test case by hand.");
+        if (chosen.Count > MaxCases) throw new TestPlanException(400, "too-many-cases", $"At most {MaxCases} cases per plan.");
+        var cases = chosen.Select(c => ProjectCase(key, c)).ToList();
+        if (manualTitle is not null) cases.Add(ManualCase(key, manualTitle, null, null));
+
+        if (request.DraftId is { } draftId)
+        {
+            var row = await Row(draftId, ct);
+            if (request.BaseRevision is { } baseRevision && row.Revision != baseRevision) throw Stale(row);
+            var current = Read(row);
+            if (current.ProjectKey != key) throw new TestPlanException(404, "draft-not-found", "No such Test Plan draft in this project.");
+            var known = current.Cases.Select(c => c.Source.ScenarioId).ToHashSet(StringComparer.Ordinal);
+            var added = cases.Where(c => !known.Contains(c.Source.ScenarioId)).ToList();
+            var suites = current.Suites.Concat(TestScenarioDiscoveryEngine.ProjectSuites(added.Select(c => c.Generated)).Where(s => current.Suites.All(x => x.Id != s.Id))).ToList();
+            return await WriteAsync(row, FlagProject(current with
+            {
+                Cases = [.. current.Cases, .. added], Suites = suites, Revision = row.Revision + 1, UpdatedBy = actor, UpdatedAt = Now,
+                SnapshotKey = discovery?.SnapshotKey ?? current.SnapshotKey, DiscoveryId = discovery?.DiscoveryId ?? current.DiscoveryId,
+            }), ct);
+        }
+
+        var projectName = string.IsNullOrWhiteSpace(request.ProjectName) ? discovery?.ProjectName : request.ProjectName.Trim()[..Math.Min(request.ProjectName.Trim().Length, 200)];
+        var plan = new TestPlanDraft
+        {
+            Id = Guid.NewGuid(), GuideKey = ProjectOwner(key), ProjectKey = key, ProjectName = projectName, SnapshotKey = discovery?.SnapshotKey, DiscoveryId = discovery?.DiscoveryId,
+            ScopeIds = [.. request.ScopeIds.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).Distinct(StringComparer.Ordinal).Take(20)],
+            PlanName = string.IsNullOrWhiteSpace(request.PlanName) ? $"{projectName ?? key} – test plan" : Name(request.PlanName), DeliveryLabel = Label(request.DeliveryLabel), Revision = 1,
+            Basis = new TestPlanSourceBasis { GuideKey = ProjectOwner(key), GuideReviewState = "Project discovery", Roles = [] },
+            Suites = TestScenarioDiscoveryEngine.ProjectSuites(cases.Select(c => c.Generated)), Cases = cases, RuleVersion = E.RuleVersion,
+            CreatedBy = actor, CreatedAt = Now, UpdatedBy = actor, UpdatedAt = Now,
+        };
+        Bound(plan);
+        db.TestPlanDrafts.Add(new TestPlanDraftRecord
+        {
+            Id = plan.Id, GuideKey = plan.GuideKey, PlanName = plan.PlanName, DeliveryLabel = plan.DeliveryLabel, Revision = 1, ContentJson = JsonSerializer.Serialize(plan, E.Json),
+            CreatedBy = actor, CreatedAt = plan.CreatedAt, UpdatedBy = actor, UpdatedAt = plan.UpdatedAt,
+        });
+        await db.SaveChangesAsync(ct);
+        return plan;
+    }
+
+    /// <summary>Adds a hand-written case to a project plan (title and purpose only; nothing generated).</summary>
+    public async Task<TestPlanDraft> AddManualCaseAsync(Guid id, AddManualTestCaseRequest request, string actor, CancellationToken ct)
+    {
+        var row = await Row(id, ct);
+        if (row.Revision != request.BaseRevision) throw Stale(row);
+        var current = Read(row);
+        if (current.ProjectKey is not { } key) throw new TestPlanException(400, "not-a-project-plan", "Hand-written cases are added to project plans.");
+        if (string.IsNullOrWhiteSpace(request.Title)) throw new TestPlanException(400, "title-required", "Give the test case a title.");
+        var manual = ManualCase(key, request.Title.Trim()[..Math.Min(request.Title.Trim().Length, 300)], request.Purpose, request.Type);
+        List<TestSuiteDraft> suites = current.Suites.Any(s => s.Id == manual.SuiteId) ? current.Suites
+            : [.. current.Suites, new TestSuiteDraft(manual.SuiteId, manual.Generated.GroupTitle ?? "Written by hand", "area", null)];
+        return await WriteAsync(row, current with { Cases = [.. current.Cases, manual], Suites = suites, Revision = row.Revision + 1, UpdatedBy = actor, UpdatedAt = Now }, ct);
+    }
+
+    private static TestCaseDraft ProjectCase(string projectKey, DiscoveredScenario c)
+    {
+        var content = TestScenarioDiscoveryEngine.Content(c);
+        return E.Assess(new TestCaseDraft
+        {
+            Source = new ScenarioReference { Kind = ScenarioSourceKind.ProjectDiscovery, Owner = projectKey, ScenarioId = c.CandidateId, Fingerprint = c.Fingerprint },
+            SuiteId = E.SuiteFor(content), Generated = content,
+        });
+    }
+
+    private static TestCaseDraft ManualCase(string projectKey, string title, string? purpose, ScenarioCandidateType? type)
+    {
+        var content = new TestCaseContent
+        {
+            Title = title, Purpose = string.IsNullOrWhiteSpace(purpose) ? "" : purpose.Trim()[..Math.Min(purpose.Trim().Length, 1000)], CandidateType = type,
+            StageId = TestScenarioDiscoveryEngine.AreaSuiteId("written-by-hand"), GroupTitle = "Written by hand", ExpectedBasis = ExpectedResultBasis.Missing,
+        };
+        return E.Assess(new TestCaseDraft
+        {
+            Source = new ScenarioReference { Kind = ScenarioSourceKind.Manual, Owner = projectKey, ScenarioId = "manual-" + Guid.NewGuid().ToString("N")[..12] },
+            SuiteId = E.SuiteFor(content), Generated = content,
+        });
+    }
+
+    /// <summary>Saves the human-owned parts of a project plan. Generated content stays as stored (a client cannot rewrite it); cases are only
+    /// removed here — adding goes through <see cref="CreateProjectAsync"/> so generated content always comes from a discovery result.</summary>
+    private async Task<TestPlanDraft> SaveProjectAsync(TestPlanDraftRecord row, TestPlanDraft current, SaveTestPlanDraftRequest request, string actor, CancellationToken ct)
+    {
+        var previous = current.Cases.ToDictionary(c => c.Source.ScenarioId, StringComparer.Ordinal);
+        var ids = (request.ScenarioIds ?? []).Distinct(StringComparer.Ordinal).Where(previous.ContainsKey).ToList();
+        if (ids.Count == 0) throw new TestPlanException(400, "no-scenarios", "A plan keeps at least one test case.");
+        var human = request.Cases.GroupBy(c => c.ScenarioId, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Last(), StringComparer.Ordinal);
+        var suites = request.Suites.Where(s => !string.IsNullOrWhiteSpace(s.Id) && !string.IsNullOrWhiteSpace(s.Name)).GroupBy(s => s.Id, StringComparer.Ordinal).Select(g => g.Last())
+            .Take(50).Select(s => s with { Name = s.Name.Trim()[..Math.Min(s.Name.Trim().Length, 200)], Origin = s.Origin is "area" or "stage" ? s.Origin : "reviewer" }).ToList();
+        if (suites.Count == 0) suites = current.Suites;
+        var assets = await AssetsAsync(ct);
+        var executables = Executables().GroupBy(e => e.Reference.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var cases = new List<TestCaseDraft>();
+        foreach (var id in ids)
+        {
+            var before = previous[id];
+            human.TryGetValue(id, out var part);
+            var edits = part is null ? before.Edits : Clean(part.Edits);
+            var dataIds = part?.TestDataAssetIds ?? [.. before.TestData.Select(d => d.AssetId)];
+            var links = new List<TestCaseDataLink>();
+            foreach (var assetId in dataIds.Distinct(StringComparer.Ordinal).Take(20))
+                if (Link(assetId, assets) is { } link) links.Add(link);
+                else if (before.TestData.FirstOrDefault(d => d.AssetId == assetId) is { } old) links.Add(old with { Resolved = false });
+            var correlations = new List<ScenarioCorrelation>();
+            foreach (var c in before.Correlations)
+            {
+                var manual = c.Basis.StartsWith("Linked by a reviewer", StringComparison.Ordinal);
+                if (part is not null && manual && !part.ManualLinks.Contains(c.Target.Key)) continue; // unlinked by the reviewer
+                correlations.Add(part is not null && part.Correlations.TryGetValue(c.Target.Key, out var state) ? c with { State = state } : c);
+            }
+            foreach (var key in (part?.ManualLinks ?? []).Where(k => executables.ContainsKey(k) && correlations.All(c => c.Target.Key != k)))
+                correlations.Add(new ScenarioCorrelation { Target = executables[key].Reference, Label = executables[key].Label, State = CorrelationState.Confirmed, Capability = executables[key].Detail, Basis = "Linked by a reviewer." });
+            var suite = part?.SuiteId is { Length: > 0 } chosenSuite ? chosenSuite : before.SuiteId;
+            if (suites.All(x => x.Id != suite)) suite = suites.Any(x => x.Id == E.SuiteFor(before.Generated)) ? E.SuiteFor(before.Generated) : suites[0].Id;
+            cases.Add(E.Assess(before with
+            {
+                Edits = edits, EditHistory = History(before, part is null ? null : edits, actor), TestData = links, Correlations = correlations,
+                Risk = part?.Risk ?? before.Risk, SuiteId = suite,
+            }));
+        }
+        var plan = current with
+        {
+            PlanName = string.IsNullOrWhiteSpace(request.PlanName) ? current.PlanName : Name(request.PlanName), DeliveryLabel = Label(request.DeliveryLabel),
+            Revision = row.Revision + 1, Suites = suites, Cases = cases, UpdatedBy = actor, UpdatedAt = Now,
+        };
+        return await WriteAsync(row, FlagProject(plan), ct);
+    }
+
+    /// <summary>Rebuilds generated content from the project's latest discovery. Human edits, links, Test Data and review history are kept; an accepted
+    /// case whose candidate changed goes back to review; manual cases and cases not in the latest discovery are left untouched.</summary>
+    private async Task<TestPlanDraft> RefreshProjectAsync(TestPlanDraftRecord row, TestPlanDraft current, string actor, CancellationToken ct)
+    {
+        var latest = discoveries?.Latest(current.ProjectKey!) ?? throw new TestPlanException(409, "discovery-missing", "Discover test scenarios for this project first, then update the plan.");
+        var byId = latest.Candidates.ToDictionary(c => c.CandidateId, StringComparer.Ordinal);
+        var cases = current.Cases.Select(c =>
+        {
+            if (c.Source.Kind != ScenarioSourceKind.ProjectDiscovery || !byId.TryGetValue(c.Source.ScenarioId, out var candidate) || candidate.Fingerprint == c.Source.Fingerprint)
+                return E.Assess(c with { SourceChanged = false });
+            var review = c.Review;
+            var history = c.ReviewHistory;
+            if (review == TestCaseReviewState.Accepted)
+            {
+                review = TestCaseReviewState.UnderReview;
+                history = [.. history, new TestCaseReviewEvent(TestCaseReviewState.UnderReview, "BirkNext", "The scenario changed in the latest discovery; review it again.", Now)];
+            }
+            // Generated content is replaced; the person's edits (Edits) are kept as they are and still take precedence.
+            return E.Assess(c with
+            {
+                Generated = TestScenarioDiscoveryEngine.Content(candidate), Source = c.Source with { Fingerprint = candidate.Fingerprint }, Review = review, ReviewHistory = history, SourceChanged = false,
+            });
+        }).ToList();
+        var suites = current.Suites.Concat(TestScenarioDiscoveryEngine.ProjectSuites(cases.Select(c => c.Generated)).Where(s => current.Suites.All(x => x.Id != s.Id))).ToList();
+        var plan = current with
+        {
+            Cases = cases, Suites = suites, SnapshotKey = latest.SnapshotKey, DiscoveryId = latest.DiscoveryId, RuleVersion = E.RuleVersion, Revision = row.Revision + 1, UpdatedBy = actor, UpdatedAt = Now,
+        };
+        return await WriteAsync(row, plan, ct);
+    }
+
+    /// <summary>Source-change flags: for a project plan from the project's latest discovery in this process (none known → nothing flagged), for a
+    /// guide plan from the guide revision readers see now.</summary>
+    private async Task<TestPlanDraft> FlagsAsync(TestPlanDraft plan, CancellationToken ct) =>
+        plan.ProjectKey is not null ? FlagProject(plan) : WithSourceFlags(plan, await CurrentFingerprintsAsync(plan.GuideKey, ct));
+
+    private TestPlanDraft FlagProject(TestPlanDraft plan)
+    {
+        if (plan.ProjectKey is not { } key || discoveries?.Latest(key) is not { } latest) return plan;
+        var current = latest.Candidates.ToDictionary(c => c.CandidateId, c => c.Fingerprint, StringComparer.Ordinal);
+        return plan with
+        {
+            Cases = [.. plan.Cases.Select(c => c with
+            {
+                SourceChanged = c.Source.Kind == ScenarioSourceKind.ProjectDiscovery && c.Review != TestCaseReviewState.Superseded
+                    && current.TryGetValue(c.Source.ScenarioId, out var now) && now != c.Source.Fingerprint,
+            })],
+        };
+    }
+
+    /// <summary>The case's edit history plus one event naming the human-owned fields that changed in this save (none → unchanged).</summary>
+    private List<TestCaseEditEvent> History(TestCaseDraft? before, TestCaseEdits? after, string? actor)
+    {
+        var history = before?.EditHistory ?? [];
+        if (before is null || after is null || actor is null) return history;
+        var fields = ChangedFields(before.Edits, after);
+        return fields.Count == 0 ? history : [.. history.TakeLast(99), new TestCaseEditEvent(actor, Now, fields)];
+    }
+
+    /// <summary>The human-owned fields that differ between two edit sets (names only, never values).</summary>
+    public static List<string> ChangedFields(TestCaseEdits a, TestCaseEdits b)
+    {
+        var fields = new List<string>();
+        void C(string name, object? x, object? y) { if (JsonSerializer.Serialize(x, E.Json) != JsonSerializer.Serialize(y, E.Json)) fields.Add(name); }
+        C("Title", a.Title, b.Title); C("Purpose", a.Purpose, b.Purpose); C("Preconditions", a.Preconditions, b.Preconditions); C("Steps", a.Steps, b.Steps);
+        C("Step results", a.StepExpected, b.StepExpected); C("Expected result", a.ExpectedResult, b.ExpectedResult); C("Observation method", a.ObservationMethod, b.ObservationMethod);
+        C("Environment", a.EnvironmentPrerequisites, b.EnvironmentPrerequisites); C("Test type", a.TestType, b.TestType); C("Execution method", a.ExecutionMethod, b.ExecutionMethod);
+        C("Performance", a.Performance, b.Performance); C("Roles", a.Roles, b.Roles); C("Dependencies", a.Dependencies, b.Dependencies); C("Priority", a.Priority, b.Priority);
+        C("Test Data need", a.TestDataNeed, b.TestDataNeed); C("Blocked by", a.BlockedBy, b.BlockedBy); C("Template values", a.TemplateValues, b.TemplateValues);
+        return fields;
+    }
 
     // ── Persistence helpers ──────────────────────────────────────────────────────────────────────────────────
 

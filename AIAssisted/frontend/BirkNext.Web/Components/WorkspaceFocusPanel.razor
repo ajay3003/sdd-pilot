@@ -103,7 +103,12 @@
         if (_planLoaded || _focus is null || !ShowsTestPreparation(_focus.View.View)) return;
         _planLoaded = true;
         if (Services.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService plans) return;
-        var (workspace, _) = await plans.SummaryAsync(null);
+        // The selected project's own plans when a project is loaded (never another system's); the historical guide summary otherwise.
+        BirkNext.TestPlanning.TestPlanWorkspace? workspace = null;
+        if (Services.GetService(typeof(ICurrentWorkspaceProjection)) is ICurrentWorkspaceProjection projection
+            && (await projection.GetAsync()).ProjectSlug is { Length: > 0 } projectKey)
+            (workspace, _) = await plans.ProjectAsync(projectKey, null);
+        if (workspace is null) (workspace, _) = await plans.SummaryAsync(null);
         // MT-7: the same reviewed requirement coverage facts as Requirements Traceability (one read; unknown adds nothing).
         BirkNext.TestPlanning.RequirementCoverageView? coverage = null;
         if (Services.GetService(typeof(IFrontendAnalysisContextFactory)) is IFrontendAnalysisContextFactory contexts)
