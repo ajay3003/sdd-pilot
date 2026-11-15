@@ -1,0 +1,104 @@
+@page "/all-modules"
+@using BirkNext.Web.Services
+@implements IDisposable
+@inject FeatureVisibilityService Features
+@inject IServiceProvider ServiceProvider
+
+@* Every module of BirkNext, from the one navigation registry (NavigationCatalog) through the sidebar's own resolution model (NavigationModules):
+   grouped by area, searchable, with what the selected workspace means for each module. A workspace never hides a module here; a module turned
+   off in Feature Visibility is listed as off (not linked); product availability is shown, never hidden. No module list of its own. *@
+<PageTitle>All modules</PageTitle>
+
+<div class="am" data-testid="am">
+    <header class="am-head">
+        <h1 class="am-title">All modules</h1>
+        <p class="am-lead">Every module of BirkNext, grouped by area. The workspace you choose only decides what the sidebar lists first — it never removes access: everything stays here, in search and at its own address.</p>
+        <p class="am-context" data-testid="am-workspace">Current workspace: <strong>@WorkspaceViews.Of(_state.View).Label</strong>@(_state.View == WorkspaceView.AllModules ? "" : " — modules outside it are marked below.")</p>
+    </header>
+
+    <label class="am-search" for="am-search-input"><span>Find a module</span>
+        <input id="am-search-input" type="search" value="@_query" @oninput="e => _query = e.Value?.ToString() ?? string.Empty" placeholder="Name, earlier name or what it does"
+               autocomplete="off" data-testid="am-search" aria-describedby="am-count" /></label>
+    <p id="am-count" class="am-muted" role="status" data-testid="am-count">@Shown().Count() of @_modules.Count modules@(_query.Length > 0 ? $" match \"{_query}\"" : "")</p>
+
+    @{ var groups = Shown().GroupBy(m => m.Section.Id).ToList(); }
+    @if (groups.Count == 0)
+    {
+        <p class="am-muted" data-testid="am-none">No module matches. Try another word, an earlier name or what the module does.</p>
+    }
+    @foreach (var group in groups)
+    {
+        var area = group.First().Section;
+        <section class="am-group" aria-labelledby="@($"am-g-{area.Id}")" data-testid="am-group" data-group="@area.Id">
+            <h2 id="@($"am-g-{area.Id}")" class="am-h2">@area.Label</h2>
+            <ul class="am-list">
+                @foreach (var m in group)
+                {
+                    var item = m.Item;
+                    var others = m.Reach == ModuleReach.HiddenByWorkspaceView ? WorkspaceViews.Holding(item) : [];
+                    <li class="am-item" data-testid="am-module" data-route="@item.Route" data-reach="@m.Reach" data-enabled="@(m.Enabled ? "true" : "false")">
+                        @if (m.Enabled)
+                        {
+                            <a class="am-link" href="@item.Route" data-testid="am-module-link"><span class="nav-icon @item.Icon" aria-hidden="true"></span>@item.Label</a>
+                        }
+                        else
+                        {
+                            <span class="am-link am-off"><span class="nav-icon @item.Icon" aria-hidden="true"></span>@item.Label</span>
+                        }
+                        @if (item.Hint is { Length: > 0 } hint) { <span class="am-desc">@hint</span> }
+                        <span class="am-tags">
+                            @switch (m.Reach)
+                            {
+                                case ModuleReach.InView when _state.View != WorkspaceView.AllModules:
+                                    <span class="am-chip am-chip-in" data-testid="am-in-view">In this workspace</span>
+                                    break;
+                                case ModuleReach.AddedByYou:
+                                    <span class="am-chip am-chip-in">Added by you</span>
+                                    break;
+                                case ModuleReach.HiddenByWorkspaceView:
+                                    <span class="am-chip" data-testid="am-outside">Outside this workspace@(others.Count > 0 ? $" · in {string.Join(", ", others.Select(o => o.Label))}" : "")</span>
+                                    break;
+                                case ModuleReach.DisabledByFeatureVisibility:
+                                    <span class="am-chip am-chip-off" data-testid="am-disabled">Turned off in System Settings → Feature Visibility</span>
+                                    break;
+                            }
+                            @if (m.Unavailable) { <span class="am-chip am-chip-off">Not available in this installation</span> }
+                        </span>
+                    </li>
+                }
+            </ul>
+        </section>
+    }
+</div>
+
+@code {
+    private NavigationSectionState _state = new();
+    private IReadOnlyList<NavModule> _modules = [];
+    private string _query = "";
+
+    protected override void OnInitialized()
+    {
+        _state = ServiceProvider.GetService(typeof(NavigationSectionState)) as NavigationSectionState ?? _state;
+        _state.Changed += OnChanged;
+        Features.Changed += OnChanged;
+        Load();
+    }
+
+    private void Load() => _modules = NavigationModules.All(Features, _state);
+
+    private void OnChanged() => _ = InvokeAsync(() => { Load(); StateHasChanged(); });
+
+    /// <summary>The modules matching the search (the sidebar's own ranking: labels, earlier names, descriptions, group names), in catalog order.</summary>
+    private IEnumerable<NavModule> Shown()
+    {
+        if (string.IsNullOrWhiteSpace(_query)) return _modules;
+        var hits = NavigationModules.Search(_query, Features, _state).Select(r => r.Item.Route).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return _modules.Where(m => hits.Contains(m.Item.Route));
+    }
+
+    public void Dispose()
+    {
+        _state.Changed -= OnChanged;
+        Features.Changed -= OnChanged;
+    }
+}

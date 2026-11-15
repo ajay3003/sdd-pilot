@@ -48,14 +48,14 @@
             <div class="nav-flyout-backdrop" data-testid="nav-flyout-backdrop" @onclick="CloseFlyout"></div>
         }
         <div class="nav-rail-item">
-            <button type="button" id="nav-rail-workspace" class="nav-rail-btn @(_flyout == "workspace" ? "nav-rail-open" : null)" data-testid="nav-rail-workspace" aria-label="@($"Workspace view: {view.Label}")" data-label="@($"Workspace view: {view.Label}")"
+            <button type="button" id="nav-rail-workspace" class="nav-rail-btn @(_flyout == "workspace" ? "nav-rail-open" : null)" data-testid="nav-rail-workspace" aria-label="@($"Workspace: {view.Label}")" data-label="@($"Workspace: {view.Label}")"
                     aria-haspopup="menu" aria-expanded="@(_flyout == "workspace" ? "true" : "false")" aria-controls="nav-flyout-workspace" @onclick='() => ToggleFlyout("workspace")'>
                 <span class="nav-icon nav-icon-workflow" aria-hidden="true"></span>
             </button>
             @if (_flyout == "workspace")
             {
-                <div id="nav-flyout-workspace" class="nav-flyout" role="menu" aria-label="Workspace view" data-testid="nav-flyout" data-flyout="workspace">
-                    <p class="nav-flyout-title" role="presentation">Workspace view</p>
+                <div id="nav-flyout-workspace" class="nav-flyout" role="menu" aria-label="Workspace" data-testid="nav-flyout" data-flyout="workspace">
+                    <p class="nav-flyout-title" role="presentation">Workspace</p>
                     @foreach (var option in WorkspaceViews.All)
                     {
                         <button type="button" role="menuitemradio" class="nav-flyout-option" aria-checked="@(option.View == _sections.View ? "true" : "false")"
@@ -120,14 +120,15 @@
     else
     {
         <div class="nav-tools">
-            <label class="nav-tool-label" for="nav-workspace-view">Workspace view</label>
+            <label class="nav-tool-label" for="nav-workspace-view">Workspace</label>
             <select id="nav-workspace-view" class="nav-view" data-testid="nav-workspace-view" value="@_sections.View" @onchange="OnViewChanged"
                     aria-describedby="nav-workspace-view-help">
                 @foreach (var option in WorkspaceViews.All) { <option value="@option.View">@option.Label</option> }
             </select>
             <p id="nav-workspace-view-help" class="nav-view-help" data-testid="nav-workspace-view-help">
                 @view.Description
-                <span class="visually-hidden">A navigation preference, not a permission: every module stays available through search.</span>
+                @if (!view.IsAllModules) { <span> Everything else: <a href="@NavigationCatalog.AllModulesRoute" data-testid="nav-all-modules-hint">All modules</a>.</span> }
+                <span class="visually-hidden">A navigation preference, not a permission: every module stays available in All modules and through search.</span>
             </p>
             <NavSearch IdPrefix="nav" Sections="_sections" />
         </div>

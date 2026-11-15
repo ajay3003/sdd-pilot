@@ -157,17 +157,21 @@ public sealed class NavigationWorkspaceTests : BunitContext
     }
 
     [Fact]
-    public void Eight_built_in_views_in_selector_order_with_stable_ids_and_audience_labels()
+    public void Eight_built_in_views_testing_workspaces_first_All_Modules_last_with_stable_ids()
     {
         WorkspaceViews.All.Select(v => (v.View, v.Label)).Should().Equal(
-            (WorkspaceView.AllModules, "All Modules"), (WorkspaceView.ProjectLeader, "Project Manager"), (WorkspaceView.ScrumMaster, "Scrum Master"),
-            (WorkspaceView.TestLead, "Test Lead"), (WorkspaceView.ManualTesting, "Manual Tester"), (WorkspaceView.TechnicalTester, "Technical Tester"),
-            (WorkspaceView.Developer, "Developer"), (WorkspaceView.Architect, "Architect"));
-        // Stable stored ids: numbers and names of the existing views never change.
-        ((int)WorkspaceView.ProjectLeader, (int)WorkspaceView.ManualTesting, (int)WorkspaceView.TechnicalTester).Should().Be((1, 6, 7));
-        WorkspaceViews.Of(WorkspaceView.TechnicalTester).Description.Should().Be("Verify APIs, contracts, integrations, E2E flows and performance.");
+            (WorkspaceView.ManualTesting, "Manual Testing"), (WorkspaceView.TechnicalTester, "Technical Testing"), (WorkspaceView.TestLead, "Test Management"),
+            (WorkspaceView.ProjectLeader, "Project Manager"), (WorkspaceView.ScrumMaster, "Scrum Master"), (WorkspaceView.Developer, "Developer"),
+            (WorkspaceView.Architect, "Architect"), (WorkspaceView.AllModules, "All Modules"));
+        WorkspaceViews.All.Last().IsAllModules.Should().BeTrue("All Modules is always the last choice");
+        // Stable stored ids: numbers and names of the existing views never change (only the order and labels do).
+        ((int)WorkspaceView.AllModules, (int)WorkspaceView.ProjectLeader, (int)WorkspaceView.TestLead, (int)WorkspaceView.ManualTesting, (int)WorkspaceView.TechnicalTester)
+            .Should().Be((0, 1, 3, 6, 7));
+        WorkspaceViews.Default.Should().Be(WorkspaceView.ManualTesting);
+        new NavigationSectionState().View.Should().Be(WorkspaceView.ManualTesting, "a person without a remembered choice starts in Manual Testing");
+        WorkspaceViews.Of(WorkspaceView.TechnicalTester).Description.Should().Be("Assess and verify frontends, APIs, contracts, integrations, E2E flows and performance.");
         WorkspaceViews.Of(WorkspaceView.ManualTesting).Description.Should().Be("Review requirements, prepare functional tests and test data, run them and record results.");
-        WorkspaceViews.Of((WorkspaceView)99).View.Should().Be(WorkspaceView.AllModules, "an unknown view falls back to All Modules");
+        WorkspaceViews.Of((WorkspaceView)99).View.Should().Be(WorkspaceView.ManualTesting, "an unknown view falls back to the default workspace");
     }
 
     [Fact]
@@ -199,7 +203,7 @@ public sealed class NavigationWorkspaceTests : BunitContext
         var copy = new NavigationSectionState(); copy.Restore(state.Serialize());
         copy.View.Should().Be(WorkspaceView.TechnicalTester);
         var invalid = new NavigationSectionState(); invalid.Restore("""{"View":42,"Choices":{}}""");
-        invalid.View.Should().Be(WorkspaceView.AllModules, "an invalid saved view fails safely to the default");
+        invalid.View.Should().Be(WorkspaceView.ManualTesting, "an invalid saved view fails safely to the default (Manual Testing)");
     }
 
     [Fact]
@@ -311,6 +315,7 @@ public sealed class NavigationWorkspaceTests : BunitContext
     [Fact]
     public void CollapsedSidebar_ShowsGroupIconsWithFlyouts_CompactSearch_AndIsRemembered()
     {
+        State.SetView(WorkspaceView.AllModules); // the full catalog's groups as rail icons
         Services.GetRequiredService<NavigationManager>().NavigateTo("api-quality-review");
         var cut = Render<NavMenu>();
         cut.Find("[data-testid=nav-collapse-toggle]").GetAttribute("aria-label").Should().Be("Collapse sidebar");
@@ -429,12 +434,13 @@ public sealed class NavigationWorkspaceTests : BunitContext
         var broken = new NavigationSectionState();
         broken.Restore("{not json");
         broken.Restore("""{"View":99,"Choices":{}}""");
-        broken.View.Should().Be(WorkspaceView.AllModules, "unreadable preferences fall back to the defaults");
+        broken.View.Should().Be(WorkspaceView.ManualTesting, "unreadable preferences fall back to the defaults");
     }
 
     [Fact]
     public void Preferences_AreSavedToThisBrowser_WhenChanged()
     {
+        State.SetView(WorkspaceView.AllModules);
         var cut = Render<NavMenu>();
         cut.Find("[data-testid=nav-section-quality-testing]").Click();
         cut.WaitForAssertion(() => JSInterop.Invocations.Should().Contain(i => i.Identifier == "localStorage.setItem"));

@@ -31,7 +31,8 @@ public sealed class NavMenuLayoutTests : BunitContext
     public NavMenuLayoutTests()
     {
         Services.AddSingleton<FeatureVisibilityService>();
-        Services.AddSingleton<NavigationSectionState>();
+        // The full catalog layout: the All Modules workspace (no longer the default — Manual Testing is).
+        Services.AddSingleton(AllModulesWorkspace.State());
     }
 
     private void RegisterApplicability()
@@ -273,14 +274,14 @@ public sealed class NavMenuLayoutTests : BunitContext
     }
 
     [Theory]
-    [InlineData("getting-started", new[] { "dashboard", "getting-started", "system-understanding", "project-import", "sources", "demo-projects", "project-scopes", NavigationCatalog.TargetEnvironmentsRoute })]
+    [InlineData("getting-started", new[] { "dashboard", "all-modules", "getting-started", "system-understanding", "project-import", "sources", "demo-projects", "project-scopes", NavigationCatalog.TargetEnvironmentsRoute })]
     [InlineData("delivery-reporting", new[] { NavigationCatalog.DeliverySnapshotsRoute, NavigationCatalog.DeliveryOverviewRoute, "delivery-reporting" })]
     [InlineData("document-review", new[] { "specification-explorer", "constitution-explorer", "data-model-explorer", "plan-explorer", "task-explorer", "quality/document", "task-alignment", "documentation-drift" })]
     [InlineData("traceability", new[] { "artifact-traceability", "correlation-review", "release-readiness", "snapshots" })] // Impact Analysis is optional and off by default
     [InlineData("source-review", new[] { "source-analysis", "schema-studio", "generated-documentation-explorer", "generated-documentation-health", "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
     // The Manual Testing workspace: home, then its three stages in the tester's order (Plan & prepare is Test Plan Suggestions, moved here).
     [InlineData("manual-testing-workspace", new[] { "manual-testing", "manual-testing/discover", "test-plan-suggestions", "manual-testing/execute" })]
-    [InlineData("quality-testing", new[] { "test-coverage-review", "code-risk-review", "test-data", "api-quality-review/contracts", "integration-suites", "execution-results", "parquet-viewer", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "performance-test-review", "critical-e2e-regression" })]
+    [InlineData("quality-testing", new[] { "test-coverage-review", "code-risk-review", "test-data", "api-quality-review/contracts", "integration-suites", "execution-results", "parquet-viewer", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "integration-journeys", "performance-test-review", "critical-e2e-regression" })]
     [InlineData("extensions", new[] { "security-classification-review", "extensions/skolenaervaer" })]
     [InlineData("admin", new[] { "user-guide", "admin/system-settings", "workspace-transfer" })]
     public void Rows_AreOrderedFromPrerequisiteToConsumer(string section, string[] routes)

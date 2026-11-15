@@ -9,7 +9,12 @@ namespace BirkNext.Web.Tests.Layout;
 /// <summary>Import Project is a Workspace input; Source Analysis and generic source tooling such as Schema Studio live under Source & Architecture.</summary>
 public sealed class NavMenuSourceAnalysisTests : BunitContext
 {
-    public NavMenuSourceAnalysisTests() => Services.AddSingleton<FeatureVisibilityService>();
+    public NavMenuSourceAnalysisTests()
+    {
+        Services.AddSingleton<FeatureVisibilityService>();
+        // The full catalog layout: the All Modules workspace (no longer the default — Manual Testing is).
+        Services.AddSingleton(AllModulesWorkspace.State());
+    }
 
     private static IReadOnlyList<string> Entries(IRenderedComponent<NavMenu> cut) =>
         cut.FindAll("nav .nav-section, nav .nav-item").Select(e => (e.ClassList.Contains("nav-section") ? "§" : "") + (e.QuerySelector(".nav-label")?.TextContent ?? e.TextContent).Trim()).ToList();

@@ -25,6 +25,8 @@ public class AnalysisNavigationTests : BunitContext
         var mockWorkspace = new Mock<IWorkspaceSessionService>();
         mockWorkspace.Setup(w => w.CurrentProject).Returns("test-project");
         Services.AddSingleton(mockWorkspace.Object);
+        // Structure tests of the full catalog: select All Modules (Manual Testing is the default workspace).
+        Services.AddSingleton(BirkNext.Web.Tests.Layout.AllModulesWorkspace.State());
     }
 
     [Fact]

@@ -41,7 +41,7 @@ public sealed class ManualTestingViewTests : BunitContext
     [Fact]
     public void The_view_is_built_in_and_orders_existing_modules_as_the_testing_workflow()
     {
-        WorkspaceViews.All.Should().Contain(v => v.View == WorkspaceView.ManualTesting && v.Label == "Manual Tester");
+        WorkspaceViews.All.Should().Contain(v => v.View == WorkspaceView.ManualTesting && v.Label == "Manual Testing");
         var ordered = WorkspaceViews.Ordered(WorkspaceView.ManualTesting);
         ordered.Take(Expected.Length).Select(s => (s.Label, s.Items.Select(i => i.Route).ToArray()))
             .Should().BeEquivalentTo(Expected, o => o.WithStrictOrdering());
@@ -115,11 +115,11 @@ public sealed class ManualTestingViewTests : BunitContext
         var features = Services.GetRequiredService<FeatureVisibilityService>();
         var catalogue = NavigationCatalog.Sections.SelectMany(s => s.Items).ToList();
         var rendered = cut.FindAll("#nav-groups a").Select(a => a.GetAttribute("href")).ToList();
-        rendered.Should().BeEquivalentTo(new[] { "manual-testing", "manual-testing/discover", "manual-testing/execute",
+        rendered.Should().BeEquivalentTo(new[] { "manual-testing", "manual-testing/discover", "manual-testing/execute", "all-modules",
             "project-import", "sources", "system-understanding", "specification-explorer", "quality/document", "documentation-drift",
             "test-plan-suggestions", "test-data", "artifact-traceability", "test-coverage-review", "dashboard", "getting-started", "user-guide", "admin/system-settings" }
             .Where(r => catalogue.Single(i => i.Route == r).Visible(features)),
-            "the Manual Tester preset plus Dashboard, User Guide and System Settings, nothing appended");
+            "the Manual Testing preset plus Dashboard, All modules, User Guide and System Settings, nothing appended");
         foreach (var item in catalogue.Where(i => i.Visible(features) && !rendered.Contains(i.Route)))
             NavigationModules.Search(item.Label, features, State).Should().Contain(r => r.Item.Route == item.Route && r.Bucket == NavSearchBucket.OtherWorkspaces,
                 $"{item.Label} is found by search, outside the current view");
@@ -135,6 +135,6 @@ public sealed class ManualTestingViewTests : BunitContext
 
         var unknown = new NavigationSectionState();
         unknown.Restore(State.Serialize().Replace("\"View\":6", "\"View\":42"));
-        unknown.View.Should().Be(WorkspaceView.AllModules, "a removed or unknown view never breaks the sidebar");
+        unknown.View.Should().Be(WorkspaceView.ManualTesting, "a removed or unknown view never breaks the sidebar: the default workspace stays");
     }
 }

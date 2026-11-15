@@ -13,6 +13,8 @@ public class NavMenuTests : BunitContext
     public NavMenuTests()
     {
         Services.AddSingleton<FeatureVisibilityService>();
+        // These tests check the full catalog layout: the All Modules workspace (no longer the default — Manual Testing is).
+        Services.AddSingleton(AllModulesWorkspace.State());
     }
 
     [Fact]

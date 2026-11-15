@@ -73,6 +73,7 @@ public sealed class WorkspaceFocusTests : BunitContext
     {
         Services.AddScoped<NavigationSectionState>();
         var navigation = Services.GetRequiredService<NavigationSectionState>();
+        navigation.SetView(WorkspaceView.AllModules); // Manual Testing is the default; this test starts in All Modules
         var cut = Render<WorkspaceFocusPanel>(p => p.Add(x => x.Capabilities, Capabilities));
         cut.FindAll("[data-testid=workspace-focus]").Should().BeEmpty("All Modules already shows the full page");
 

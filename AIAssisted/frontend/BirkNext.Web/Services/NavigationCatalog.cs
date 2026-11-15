@@ -71,6 +71,9 @@ public static class NavigationCatalog
     /// <summary>Route of the Target Environments section of System Settings. The sidebar row is a deep link, not a second page.</summary>
     public const string TargetEnvironmentsRoute = "admin/system-settings?section=target-environments";
 
+    /// <summary>The catalog of every module (the "All modules" row every workspace keeps): searchable, grouped, from this registry only.</summary>
+    public const string AllModulesRoute = "all-modules";
+
     /// <summary>System Understanding's "What to test" tab (scenario candidates with preconditions, test data, expected outcome and observable evidence,
     /// each with its review state). A deep link, not a catalog row and no longer a sidebar shortcut: the System Understanding row leads to it, and
     /// scenarios are prepared in Test Plan Suggestions.</summary>
@@ -95,6 +98,8 @@ public static class NavigationCatalog
         [
             new("dashboard", "Project Quality", "nav-icon-dashboard", f => f.Dashboard, NavLinkMatch.Prefix,
                 Hint: "Project Quality Dashboard: evidence, specification quality, traceability, reviews and verification", Aliases: ["Dashboard", "Project Quality Dashboard"]),
+            new(AllModulesRoute, "All modules", "nav-icon-sample-projects", Always,
+                Hint: "every module of BirkNext, searchable and grouped by area — whatever workspace is selected", Aliases: ["Module catalog", "All features", "Find a module"]),
             new("getting-started", "Recommended Workflow", "nav-icon-workflow", f => f.RecommendedWorkflow, Aliases: ["Getting Started"]),
             new("system-understanding", "System Understanding", "nav-icon-system-understanding", f => f.RecommendedWorkflow,
                 Hint: "how the system under test works: flow, step by step, data and contracts, rules and what to test", Aliases: ["Systemforståelse", "System guide"]),
@@ -222,6 +227,9 @@ public static class NavigationCatalog
                 Aliases: ["API & Integration Quality"]),
             new("integration-quality-review", "Integration Quality Review", "nav-icon-constitution-compliance", f => f.IntegrationQualityReview, ReviewId: "integration-quality-review",
                 Aliases: ["IQR", "API & Integration Quality"]),
+            // Formerly reachable only from Integration Quality Review and Test Coverage: a module of its own (declared journeys and their revisions).
+            new("integration-journeys", "Integration Journeys", "nav-icon-source-analysis", Always, WrapLabel: true,
+                Hint: "the integration journeys declared for the project: name, ordered component chain and revision history", Aliases: ["Journeys", "Declared journeys"]),
             new("performance-test-review", "Performance Test Review", "nav-icon-constitution-compliance", Always, ReviewId: "performance-test-review", Aliases: ["PTR", "k6"]),
             new("critical-e2e-regression", "Critical E2E Regression", "nav-icon-constitution-compliance", f => f.CriticalE2ERegression, ReviewId: "critical-e2e-regression", Aliases: ["E2E", "Regression"]),
         ], "nav-icon-constitution-compliance"),
@@ -416,18 +424,32 @@ public sealed record WorkspaceViewDefinition(WorkspaceView View, string Label, s
 
 public static class WorkspaceViews
 {
-    /// <summary>Rows every view keeps: the project overview, help and settings.</summary>
-    public static IReadOnlyList<string> EveryView { get; } = ["dashboard", "user-guide", "admin/system-settings"];
+    /// <summary>Rows every view keeps: the project overview, the catalog of every module, help and settings. "All modules" in every view means no
+    /// module is ever out of reach because of the selected workspace.</summary>
+    public static IReadOnlyList<string> EveryView { get; } = ["dashboard", NavigationCatalog.AllModulesRoute, "user-guide", "admin/system-settings"];
+
+    /// <summary>The selector order: the three testing workspaces first (Manual Testing is the default), the other workspaces, All Modules always
+    /// last. Only the order changes — the stored ids (<see cref="WorkspaceView"/> numbers) stay, so remembered choices keep their meaning.</summary>
+    public static readonly IReadOnlyList<WorkspaceView> SelectorOrder =
+    [
+        WorkspaceView.ManualTesting, WorkspaceView.TechnicalTester, WorkspaceView.TestLead, WorkspaceView.ProjectLeader, WorkspaceView.ScrumMaster,
+        WorkspaceView.Developer, WorkspaceView.Architect, WorkspaceView.AllModules,
+    ];
+
+    /// <summary>The view for a person without a valid remembered choice.</summary>
+    public const WorkspaceView Default = WorkspaceView.ManualTesting;
 
     /// <summary>
-    /// The eight built-in views, in selector order. Every view is a navigation and presentation preference over the same modules and the same facts:
-    /// never a permission, a feature switch, a project or a source baseline. Ids (<see cref="WorkspaceView"/>, stored by name) are stable; labels may
-    /// change ("Project Leader" is shown as Project Manager, "Manual Testing" as Manual Tester) without touching saved preferences. Membership and
-    /// rationale per module: docs/audits/birknext-workspace-views-capability-matrix.md.
+    /// The eight built-in views, in selector order (<see cref="SelectorOrder"/>). Every view is a navigation and presentation preference over the same
+    /// modules and the same facts: never a permission, a feature switch, a project or a source baseline. Ids (<see cref="WorkspaceView"/>, stored as
+    /// numbers) are stable; labels may change ("Project Leader" is shown as Project Manager, "Test Lead" as Test Management) without touching saved
+    /// preferences. Membership and rationale per module: docs/audits/birknext-workspace-navigation-architecture-redesign.md.
     /// </summary>
-    public static IReadOnlyList<WorkspaceViewDefinition> All { get; } =
+    public static IReadOnlyList<WorkspaceViewDefinition> All { get; } = [.. Definitions().OrderBy(v => SelectorOrder.ToList().IndexOf(v.View))];
+
+    private static IReadOnlyList<WorkspaceViewDefinition> Definitions() =>
     [
-        new(WorkspaceView.AllModules, "All Modules", "Browse every available module.", "dashboard", [], []),
+        new(WorkspaceView.AllModules, "All Modules", "Every module, grouped by area. Nothing is hidden by a workspace here.", "all-modules", [], []),
         Groups(WorkspaceView.ProjectLeader, "Project Manager", "Monitor project health, risks and delivery readiness.", "dashboard",
         [
             new("pm-status", "Status & next steps", "nav-icon-dashboard", ["dashboard", "getting-started"]),
@@ -443,23 +465,23 @@ public static class WorkspaceViews
             new("sm-follow-up", "Impediments & follow-up", "nav-icon-dashboard", ["getting-started", "dashboard", "release-readiness"]),
             new("sm-help", "Help", "nav-icon-user-guide", ["user-guide"]),
         ]),
-        Groups(WorkspaceView.TestLead, "Test Lead", "Oversee test coverage, readiness, execution evidence and risk.", "dashboard",
+        Groups(WorkspaceView.TestLead, "Test Management", "Monitor test progress, coverage, risk, readiness and release confidence.", "dashboard",
         [
             new("tl-overview", "Readiness & follow-up", "nav-icon-dashboard", ["dashboard", "getting-started", "release-readiness"]),
             new("tl-understand", "System & requirements", "nav-icon-system-understanding", ["system-understanding", "specification-explorer", "quality/document"]),
-            new("tl-prepare", "Functional test preparation", "nav-icon-workflow", ["test-plan-suggestions", "test-data"]),
+            new("tl-prepare", "Functional test preparation", "nav-icon-workflow", ["manual-testing", "test-plan-suggestions", "test-data"]),
             new("tl-coverage", "Coverage & traceability", "nav-icon-artifact-traceability", ["artifact-traceability", "test-coverage-review", "correlation-review"]),
-            new("tl-execution", "Execution & regression", "nav-icon-task-alignment", ["critical-e2e-regression", "execution-results", "integration-suites"]),
+            new("tl-execution", "Execution & regression", "nav-icon-task-alignment", ["manual-testing/execute", "critical-e2e-regression", "execution-results", "integration-suites"]),
             new("tl-technical", "Technical quality", "nav-icon-constitution-compliance",
                 ["api-quality-review/contracts", "api-quality-review", "integration-quality-review", "performance-test-review", "frontend-quality-review"]),
             new("tl-environment", "Environments", "nav-icon-target", [NavigationCatalog.TargetEnvironmentsRoute]),
         ]),
         CreateManualTesting(),
-        Groups(WorkspaceView.TechnicalTester, "Technical Tester", "Verify APIs, contracts, integrations, E2E flows and performance.", "dashboard",
+        Groups(WorkspaceView.TechnicalTester, "Technical Testing", "Assess and verify frontends, APIs, contracts, integrations, E2E flows and performance.", "dashboard",
         [
             new("tt-context", "Project context", "nav-icon-import", ["sources", "system-understanding"]),
             new("tt-contracts", "Contracts & APIs", "nav-icon-task-alignment", ["api-quality-review/contracts", "api-quality-review", "schema-studio"]),
-            new("tt-integration", "Integration & E2E", "nav-icon-source-analysis", ["integration-suites", "critical-e2e-regression", "integration-quality-review", "integration-topology"]),
+            new("tt-integration", "Integration & E2E", "nav-icon-source-analysis", ["integration-suites", "critical-e2e-regression", "integration-quality-review", "integration-journeys", "integration-topology"]),
             new("tt-data", "Test data & execution", "nav-icon-task-alignment", ["test-data", "execution-results", "parquet-viewer"]),
             new("tt-risk", "Performance & risk", "nav-icon-constitution-compliance", ["performance-test-review", "test-coverage-review", "code-risk-review"]),
             new("tt-follow-up", "Quality & follow-up", "nav-icon-dashboard", ["dashboard", "getting-started", "artifact-traceability", "user-guide"]),
@@ -493,7 +515,7 @@ public static class WorkspaceViews
     /// "What to test" (candidates, never Azure DevOps Test Cases or executed tests); requirement review is Document Quality Review. Technical
     /// modules stay one search (or All Modules) away. A navigation preference only: no permission, feature or source baseline changes.
     /// </summary>
-    private static WorkspaceViewDefinition CreateManualTesting() => Groups(WorkspaceView.ManualTesting, "Manual Tester",
+    private static WorkspaceViewDefinition CreateManualTesting() => Groups(WorkspaceView.ManualTesting, "Manual Testing",
         "Review requirements, prepare functional tests and test data, run them and record results.", "manual-testing",
         [
             new("manual-workspace", "Manual Testing", "nav-icon-workflow", ["manual-testing", "manual-testing/discover", "test-plan-suggestions", "manual-testing/execute"]),
@@ -647,7 +669,8 @@ public sealed class NavigationSectionState
     private readonly Dictionary<WorkspaceView, Dictionary<string, bool>> _choices = [];
     private readonly Dictionary<WorkspaceView, HashSet<string>> _added = [];
 
-    public WorkspaceView View { get; private set; } = WorkspaceView.AllModules;
+    /// <summary>The selected workspace; Manual Testing for a person without a valid remembered choice.</summary>
+    public WorkspaceView View { get; private set; } = WorkspaceViews.Default;
 
     /// <summary>The desktop sidebar shows icons only (a preference; independent of the mobile drawer).</summary>
     public bool SidebarCollapsed { get; private set; }

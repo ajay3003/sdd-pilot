@@ -1,0 +1,855 @@
+[
+  {
+    "route": "dashboard",
+    "reach": "InView",
+    "enabled": true,
+    "label": "Project Quality",
+    "group": "getting-started",
+    "linked": true,
+    "memberships": [
+      "Manual Testing",
+      "Technical Testing",
+      "Test Management",
+      "Project Manager",
+      "Scrum Master",
+      "Developer",
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "all-modules",
+    "reach": "InView",
+    "enabled": true,
+    "label": "All modules",
+    "group": "getting-started",
+    "linked": true,
+    "memberships": [
+      "Manual Testing",
+      "Technical Testing",
+      "Test Management",
+      "Project Manager",
+      "Scrum Master",
+      "Developer",
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "getting-started",
+    "reach": "InView",
+    "enabled": true,
+    "label": "Recommended Workflow",
+    "group": "getting-started",
+    "linked": true,
+    "memberships": [
+      "Manual Testing",
+      "Technical Testing",
+      "Test Management",
+      "Project Manager",
+      "Scrum Master",
+      "Developer",
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "system-understanding",
+    "reach": "InView",
+    "enabled": true,
+    "label": "System Understanding",
+    "group": "getting-started",
+    "linked": true,
+    "memberships": [
+      "Manual Testing",
+      "Technical Testing",
+      "Test Management",
+      "Project Manager",
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "project-import",
+    "reach": "InView",
+    "enabled": true,
+    "label": "Import Project",
+    "group": "getting-started",
+    "linked": true,
+    "memberships": [
+      "Manual Testing",
+      "Developer",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "sources",
+    "reach": "InView",
+    "enabled": true,
+    "label": "Source Management",
+    "group": "getting-started",
+    "linked": true,
+    "memberships": [
+      "Manual Testing",
+      "Technical Testing",
+      "Project Manager",
+      "Developer",
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "demo-projects",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Demo Projects",
+    "group": "getting-started",
+    "linked": true,
+    "memberships": [
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "project-scopes",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Project Test Setup",
+    "group": "getting-started",
+    "linked": true,
+    "memberships": [
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "admin/system-settings?section=target-environments",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Target Environments",
+    "group": "getting-started",
+    "linked": true,
+    "memberships": [
+      "Test Management",
+      "Project Manager",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "delivery-snapshots",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Delivery Snapshots",
+    "group": "delivery-reporting",
+    "linked": true,
+    "memberships": [
+      "Project Manager",
+      "Scrum Master",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "delivery-overview",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Delivery Overview",
+    "group": "delivery-reporting",
+    "linked": true,
+    "memberships": [
+      "Project Manager",
+      "Scrum Master",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "delivery-reporting",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Delivery Reports",
+    "group": "delivery-reporting",
+    "linked": true,
+    "memberships": [
+      "Project Manager",
+      "Scrum Master",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "specification-explorer",
+    "reach": "InView",
+    "enabled": true,
+    "label": "Specification Explorer",
+    "group": "document-review",
+    "linked": true,
+    "memberships": [
+      "Manual Testing",
+      "Test Management",
+      "Scrum Master",
+      "Developer",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "constitution-explorer",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Constitution Explorer",
+    "group": "document-review",
+    "linked": true,
+    "memberships": [
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "data-model-explorer",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Data Model Explorer",
+    "group": "document-review",
+    "linked": true,
+    "memberships": [
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "plan-explorer",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Plan Explorer",
+    "group": "document-review",
+    "linked": true,
+    "memberships": [
+      "Scrum Master",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "task-explorer",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Task Explorer",
+    "group": "document-review",
+    "linked": true,
+    "memberships": [
+      "Scrum Master",
+      "Developer",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "quality/document",
+    "reach": "InView",
+    "enabled": true,
+    "label": "Document Quality Review",
+    "group": "document-review",
+    "linked": true,
+    "memberships": [
+      "Manual Testing",
+      "Test Management",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "task-alignment",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Task Alignment Review",
+    "group": "document-review",
+    "linked": true,
+    "memberships": [
+      "Scrum Master",
+      "Developer",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "documentation-drift",
+    "reach": "InView",
+    "enabled": true,
+    "label": "Documentation Drift",
+    "group": "document-review",
+    "linked": true,
+    "memberships": [
+      "Manual Testing",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "artifact-traceability",
+    "reach": "InView",
+    "enabled": true,
+    "label": "Requirements Traceability",
+    "group": "traceability",
+    "linked": true,
+    "memberships": [
+      "Manual Testing",
+      "Technical Testing",
+      "Test Management",
+      "Project Manager",
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "implementation-traceability",
+    "reach": "DisabledByFeatureVisibility",
+    "enabled": false,
+    "label": "Change Traceability",
+    "group": "traceability",
+    "linked": false,
+    "memberships": [],
+    "opened": null
+  },
+  {
+    "route": "impact-analysis",
+    "reach": "DisabledByFeatureVisibility",
+    "enabled": false,
+    "label": "Impact Analysis",
+    "group": "traceability",
+    "linked": false,
+    "memberships": [],
+    "opened": null
+  },
+  {
+    "route": "correlation-review",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Relationship Review",
+    "group": "traceability",
+    "linked": true,
+    "memberships": [
+      "Test Management",
+      "Project Manager",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "release-readiness",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Release Readiness",
+    "group": "traceability",
+    "linked": true,
+    "memberships": [
+      "Test Management",
+      "Project Manager",
+      "Scrum Master",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "snapshots",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Snapshots",
+    "group": "traceability",
+    "linked": true,
+    "memberships": [
+      "Project Manager",
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "traceability",
+    "reach": "DisabledByFeatureVisibility",
+    "enabled": false,
+    "label": "Traceability & Coverage",
+    "group": "traceability",
+    "linked": false,
+    "memberships": [],
+    "opened": null
+  },
+  {
+    "route": "traceability/suggestions",
+    "reach": "DisabledByFeatureVisibility",
+    "enabled": false,
+    "label": "Traceability Suggestions",
+    "group": "traceability",
+    "linked": false,
+    "memberships": [],
+    "opened": null
+  },
+  {
+    "route": "code-traceability",
+    "reach": "DisabledByFeatureVisibility",
+    "enabled": false,
+    "label": "Code Traceability",
+    "group": "traceability",
+    "linked": false,
+    "memberships": [],
+    "opened": null
+  },
+  {
+    "route": "source-analysis",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Source Analysis",
+    "group": "source-review",
+    "linked": true,
+    "memberships": [
+      "Developer",
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "schema-studio",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Schema Studio",
+    "group": "source-review",
+    "linked": true,
+    "memberships": [
+      "Technical Testing",
+      "Developer",
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "generated-documentation-explorer",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Generated Documentation Explorer",
+    "group": "source-review",
+    "linked": true,
+    "memberships": [
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "generated-documentation-health",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Generated Documentation Health",
+    "group": "source-review",
+    "linked": true,
+    "memberships": [
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "technology-coverage",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Technology Coverage",
+    "group": "source-review",
+    "linked": true,
+    "memberships": [
+      "Developer",
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "dependency-review",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Dependency Review",
+    "group": "source-review",
+    "linked": true,
+    "memberships": [
+      "Developer",
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "pipeline-review",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Pipeline Review",
+    "group": "source-review",
+    "linked": true,
+    "memberships": [
+      "Developer",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "azure-environment",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Environment Analysis",
+    "group": "source-review",
+    "linked": true,
+    "memberships": [
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "ai-change-auditor",
+    "reach": "DisabledByFeatureVisibility",
+    "enabled": false,
+    "label": "AI Change Review",
+    "group": "source-review",
+    "linked": false,
+    "memberships": [],
+    "opened": null
+  },
+  {
+    "route": "manual-testing",
+    "reach": "InView",
+    "enabled": true,
+    "label": "Manual Testing",
+    "group": "manual-testing-workspace",
+    "linked": true,
+    "memberships": [
+      "Manual Testing",
+      "Test Management",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "manual-testing/discover",
+    "reach": "InView",
+    "enabled": true,
+    "label": "Discover & understand",
+    "group": "manual-testing-workspace",
+    "linked": true,
+    "memberships": [
+      "Manual Testing",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "test-plan-suggestions",
+    "reach": "InView",
+    "enabled": true,
+    "label": "Plan & prepare",
+    "group": "manual-testing-workspace",
+    "linked": true,
+    "memberships": [
+      "Manual Testing",
+      "Test Management",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "manual-testing/execute",
+    "reach": "InView",
+    "enabled": true,
+    "label": "Execute & document",
+    "group": "manual-testing-workspace",
+    "linked": true,
+    "memberships": [
+      "Manual Testing",
+      "Test Management",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "test-coverage-review",
+    "reach": "InView",
+    "enabled": true,
+    "label": "Test Coverage & Overlap Review",
+    "group": "quality-testing",
+    "linked": true,
+    "memberships": [
+      "Manual Testing",
+      "Technical Testing",
+      "Test Management",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "code-risk-review",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Code Risk Review",
+    "group": "quality-testing",
+    "linked": true,
+    "memberships": [
+      "Technical Testing",
+      "Developer",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "test-data",
+    "reach": "InView",
+    "enabled": true,
+    "label": "Test Data",
+    "group": "quality-testing",
+    "linked": true,
+    "memberships": [
+      "Manual Testing",
+      "Technical Testing",
+      "Test Management",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "api-quality-review/contracts",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Contract Testing",
+    "group": "quality-testing",
+    "linked": true,
+    "memberships": [
+      "Technical Testing",
+      "Test Management",
+      "Developer",
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "integration-suites",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Integration Test Suites",
+    "group": "quality-testing",
+    "linked": true,
+    "memberships": [
+      "Technical Testing",
+      "Test Management",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "execution-results",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Test Execution & Evidence",
+    "group": "quality-testing",
+    "linked": true,
+    "memberships": [
+      "Technical Testing",
+      "Test Management",
+      "Developer",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "parquet-viewer",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Parquet Quality Review",
+    "group": "quality-testing",
+    "linked": true,
+    "memberships": [
+      "Technical Testing",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "frontend-quality-review",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Frontend Quality Review",
+    "group": "quality-testing",
+    "linked": true,
+    "memberships": [
+      "Test Management",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "api-quality-review",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "API Quality Review",
+    "group": "quality-testing",
+    "linked": true,
+    "memberships": [
+      "Technical Testing",
+      "Test Management",
+      "Developer",
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "integration-topology",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Integration Topology",
+    "group": "quality-testing",
+    "linked": true,
+    "memberships": [
+      "Technical Testing",
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "integration-quality-review",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Integration Quality Review",
+    "group": "quality-testing",
+    "linked": true,
+    "memberships": [
+      "Technical Testing",
+      "Test Management",
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "integration-journeys",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Integration Journeys",
+    "group": "quality-testing",
+    "linked": true,
+    "memberships": [
+      "Technical Testing",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "performance-test-review",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Performance Test Review",
+    "group": "quality-testing",
+    "linked": true,
+    "memberships": [
+      "Technical Testing",
+      "Test Management",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "critical-e2e-regression",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Critical E2E Regression",
+    "group": "quality-testing",
+    "linked": true,
+    "memberships": [
+      "Technical Testing",
+      "Test Management",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "security-classification-review",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "M01 – Gradert tilgang (Kode 6/7)",
+    "group": "extensions",
+    "linked": true,
+    "memberships": [
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "extensions/skolenaervaer",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Skolenærvær Testing",
+    "group": "extensions",
+    "linked": true,
+    "memberships": [
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "user-guide",
+    "reach": "InView",
+    "enabled": true,
+    "label": "User Guide",
+    "group": "admin",
+    "linked": true,
+    "memberships": [
+      "Manual Testing",
+      "Technical Testing",
+      "Test Management",
+      "Project Manager",
+      "Scrum Master",
+      "Developer",
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "admin/system-settings",
+    "reach": "InView",
+    "enabled": true,
+    "label": "System Settings",
+    "group": "admin",
+    "linked": true,
+    "memberships": [
+      "Manual Testing",
+      "Technical Testing",
+      "Test Management",
+      "Project Manager",
+      "Scrum Master",
+      "Developer",
+      "Architect",
+      "All Modules"
+    ],
+    "opened": true
+  },
+  {
+    "route": "workspace-transfer",
+    "reach": "HiddenByWorkspaceView",
+    "enabled": true,
+    "label": "Backup & Transfer",
+    "group": "admin",
+    "linked": true,
+    "memberships": [
+      "All Modules"
+    ],
+    "opened": true
+  }
+]

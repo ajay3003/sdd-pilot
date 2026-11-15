@@ -270,7 +270,7 @@ public sealed class PipelineReviewSidebarStatusTests : BunitContext
     {
         var api = new Api(Coverage(outdated: false, pipeline: false, version: 2));
         Services.AddSingleton<FeatureVisibilityService>();
-        Services.AddSingleton<NavigationSectionState>();
+        Services.AddSingleton(BirkNext.Web.Tests.Layout.AllModulesWorkspace.State()); // checks rows of the full catalog
         var context = new Mock<IFrontendAnalysisContextFactory>();
         context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveProfile = new FrontendAnalysisProfile { Id = "env", Name = "Env" } });
         Services.AddSingleton(context.Object);

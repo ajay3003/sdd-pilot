@@ -46,6 +46,7 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
     private void Register(ProjectTechnologyCoverage? coverage, string? targetUrl = null)
     {
         Services.AddSingleton<FeatureVisibilityService>();
+        Services.AddSingleton(BirkNext.Web.Tests.Layout.AllModulesWorkspace.State()); // reviews of every area are listed
         var context = new Mock<IFrontendAnalysisContextFactory>();
         context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveProfile = new FrontendAnalysisProfile { Id = "pay", Name = "PaymentHub", TargetUrl = targetUrl } });
         Services.AddSingleton(context.Object);
@@ -77,6 +78,7 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
     public void Navigation_WithoutTheStateService_RendersAsBefore()
     {
         Services.AddSingleton<FeatureVisibilityService>();
+        Services.AddSingleton(BirkNext.Web.Tests.Layout.AllModulesWorkspace.State());
         var cut = Render<NavMenu>();
         cut.FindAll(".nav-applicability").Should().OnlyContain(b => b.GetAttribute("data-kind") == "Unavailable", "only product availability, which needs no applicability state");
         cut.FindAll("a[href='pipeline-review']").Should().ContainSingle();
