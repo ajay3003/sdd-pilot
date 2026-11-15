@@ -319,6 +319,13 @@ builder.Services.AddHttpClient<BirkNext.Web.Services.ProjectActivity.IProjectAct
 builder.Services.AddScoped<BirkNext.Web.Services.ProjectActivity.ProjectActivityRecorder>();
 builder.Services.AddScoped<DeliveryReportingSession>(_ => new DeliveryReportingSession());
 builder.Services.AddScoped<NavigationSectionState>();
+// Route-change progress (MainLayout resolves it after the Router subscribed): pending sidebar row, aria-busy, delayed "Opening page…".
+builder.Services.AddScoped(sp =>
+{
+    var js = sp.GetRequiredService<Microsoft.JSInterop.IJSRuntime>();
+    return new NavigationProgress(sp.GetRequiredService<NavigationManager>(), sp.GetService<TimeProvider>(),
+        () => Microsoft.JSInterop.JSRuntimeExtensions.InvokeVoidAsync(js, "birknextNav.nextPaint"));
+});
 // Performance Test Review: definitions, readiness, runs, baselines (backend owns safety and execution).
 builder.Services.AddHttpClient<IPerformanceTestApiService, PerformanceTestApiService>(client =>
     client.BaseAddress = backendBase);

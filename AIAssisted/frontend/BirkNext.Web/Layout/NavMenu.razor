@@ -35,7 +35,7 @@
 }
 <div id="nav-panel" class="nav-scrollable @(_drawerOpen ? "nav-drawer-open" : null) @(Rail ? "nav-rail" : null)" data-testid="nav-panel"
      role="@(_drawerOpen ? "dialog" : null)" aria-modal="@(_drawerOpen ? "true" : null)" aria-label="@(_drawerOpen ? "Navigation" : null)" @onkeydown="OnPanelKeyAsync">
-    @{ var location = NavigationCatalog.RelativeLocation(Navigation); var modules = NavigationModules.All(FeatureViz, _sections); var view = WorkspaceViews.Of(_sections.View); }
+    @{ var location = CurrentLocation; var modules = NavigationModules.All(FeatureViz, _sections); var view = WorkspaceViews.Of(_sections.View); var highlight = HighlightLocation(location); }
     @if (_drawerOpen)
     {
         <button type="button" class="nav-drawer-close" data-testid="nav-drawer-close" aria-label="Close navigation" @onclick="CloseDrawerAsync">×</button>
@@ -82,9 +82,10 @@
                 var rows = Rows(modules, group, location);
                 if (rows.Count == 0) continue;
                 var hasCurrent = rows.Any(m => WorkspaceViews.IsCurrent(_sections.View, m.Item, location));
+                var groupHighlighted = rows.Any(m => WorkspaceViews.IsCurrent(_sections.View, m.Item, highlight));
                 var flyoutId = $"nav-flyout-{group.Id}";
                 <div class="nav-rail-item">
-                    <button type="button" id="nav-rail-@group.Id" class="nav-rail-btn @(hasCurrent ? "active" : null) @(_flyout == group.Id ? "nav-rail-open" : null)" data-testid="nav-rail-@group.Id" aria-label="@group.Label" data-label="@group.Label"
+                    <button type="button" id="nav-rail-@group.Id" class="nav-rail-btn @(groupHighlighted ? "active" : null) @(_flyout == group.Id ? "nav-rail-open" : null)" data-testid="nav-rail-@group.Id" aria-label="@group.Label" data-label="@group.Label"
                             aria-haspopup="menu" aria-expanded="@(_flyout == group.Id ? "true" : "false")" aria-controls="@flyoutId" aria-current="@(hasCurrent ? "true" : null)"
                             @onclick="() => ToggleFlyout(group.Id)">
                         <span class="nav-icon @group.Icon" aria-hidden="true"></span>
@@ -96,9 +97,10 @@
                             @foreach (var module in rows)
                             {
                                 var current = WorkspaceViews.IsCurrent(_sections.View, module.Item, location);
+                                var pending = IsPendingTarget(module.Item, location, highlight);
                                 var status = Status(module);
-                                <a role="menuitem" class="nav-flyout-link @(current ? "active" : null) @(module.IsRow ? null : "nav-item-outside")" href="@module.Item.Route" title="@module.Item.Title"
-                                   aria-current="@(current ? "page" : null)" data-testid="nav-flyout-link" @onclick="CloseFlyout">
+                                <a role="menuitem" class="nav-flyout-link @(WorkspaceViews.IsCurrent(_sections.View, module.Item, highlight) ? "active" : null) @(pending ? "nav-pending" : null) @(module.IsRow ? null : "nav-item-outside")" href="@module.Item.Route" title="@module.Item.Title"
+                                   aria-current="@(current ? "page" : null)" data-nav-pending="@(pending ? "true" : null)" data-testid="nav-flyout-link" @onclick="CloseFlyout">
                                     <span class="nav-icon @module.Item.Icon" aria-hidden="true"></span>
                                     <span class="nav-label">@module.Item.Label</span>
                                     @if (status is not null)
@@ -145,8 +147,11 @@
                         var item = module.Item;
                         var status = Status(module);
                         var current = WorkspaceViews.IsCurrent(_sections.View, item, location);
+                        var pending = IsPendingTarget(item, location, highlight);
                         <div class="nav-item px-2 @(module.IsRow ? null : "nav-item-outside")" data-outside="@(module.IsRow ? null : "true")">
-                            <a class="nav-link @(current ? "active" : null)" href="@item.Route" title="@item.Title" aria-current="@(current ? "page" : null)">
+                            @* Highlight moves to a clicked row at once (nav-pending while the route opens); aria-current stays on the page actually shown. *@
+                            <a class="nav-link @(WorkspaceViews.IsCurrent(_sections.View, item, highlight) ? "active" : null) @(pending ? "nav-pending" : null)" href="@item.Route" title="@item.Title"
+                               aria-current="@(current ? "page" : null)" data-nav-pending="@(pending ? "true" : null)">
                                 <span class="nav-icon @item.Icon" aria-hidden="true"></span>
                                 <span class="nav-label@(item.WrapLabel ? " nav-label-wrap" : "")">@item.Label</span>
                                 @if (status is not null)
@@ -172,6 +177,8 @@
     private ICurrentWorkspaceProjection? _workspace;
     private NavigationSectionState _sections = new();
     private IJSRuntime? _js;
+    private NavigationProgress? _progress;
+    private string? _renderedPending;
 
     /// <summary>Open flyout in the collapsed sidebar: "workspace", "search" or a group id.</summary>
     private string? _flyout;
@@ -188,6 +195,9 @@
         // Optional services: hosts (and tests) that do not register them still render the menu, without statuses.
         _sections = ServiceProvider.GetService<NavigationSectionState>() ?? _sections;
         _js = ServiceProvider.GetService<IJSRuntime>();
+        // Route-change progress (optional): the clicked row is highlighted before the destination renders; a prevented navigation restores it.
+        _progress = ServiceProvider.GetService<NavigationProgress>();
+        if (_progress is not null) _progress.Changed += OnNavigationProgressChanged;
         _sections.EnsureRestored(_js);
         ExpandCurrentSection();
         _sections.Changed += OnSectionsChanged;
@@ -225,6 +235,28 @@
     }
 
     private void OnFeatureVisibilityChanged() => _ = InvokeAsync(StateHasChanged);
+
+    /// <summary>The page actually shown: the committed location (route-change progress), else the NavigationManager's.</summary>
+    private string CurrentLocation => _progress?.CommittedRelativeLocation ?? NavigationCatalog.RelativeLocation(Navigation);
+
+    /// <summary>The location rows are highlighted for: a pending destination that has a row in this view, else the current page.</summary>
+    private string HighlightLocation(string location)
+    {
+        if (_progress?.PendingRelativeLocation is not { } pending) return location;
+        return WorkspaceViews.Ordered(_sections.View).SelectMany(g => g.Items).Any(i => WorkspaceViews.IsCurrent(_sections.View, i, pending)) ? pending : location;
+    }
+
+    private bool IsPendingTarget(NavItem item, string location, string highlight) =>
+        !ReferenceEquals(location, highlight) && WorkspaceViews.IsCurrent(_sections.View, item, highlight) && !WorkspaceViews.IsCurrent(_sections.View, item, location);
+
+    /// <summary>Re-render only when the pending destination changes (start, completion, cancel) — not for the loader reveal.</summary>
+    private void OnNavigationProgressChanged()
+    {
+        var pending = _progress?.PendingRelativeLocation;
+        if (pending == _renderedPending) return;
+        _renderedPending = pending;
+        _ = InvokeAsync(StateHasChanged);
+    }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
@@ -354,6 +386,7 @@
     {
         _sections.Changed -= OnSectionsChanged;
         Navigation.LocationChanged -= OnLocationChanged;
+        if (_progress is not null) _progress.Changed -= OnNavigationProgressChanged;
         FeatureViz.Changed -= OnFeatureVisibilityChanged;
         if (_applicability is not null) _applicability.Changed -= OnApplicabilityChanged;
         if (_workspace is not null) _workspace.Changed -= OnWorkspaceChanged;

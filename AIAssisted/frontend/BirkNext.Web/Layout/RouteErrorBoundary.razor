@@ -1,0 +1,65 @@
+@using BirkNext.Web.Services
+@using BirkNext.Web.Shared.Components.Loading
+@using Microsoft.AspNetCore.Components.Routing
+@inherits ErrorBoundary
+@implements IDisposable
+@inject NavigationManager Navigation
+@inject IServiceProvider Services
+
+@* The routed page's error boundary (MainLayout, around @Body): an exception while the destination renders (or later on that page) shows
+   an error in the content area with Retry — the sidebar, Activity and the app stay usable, the navigation loader stops (never a permanent
+   spinner). Navigating to another page recovers; Retry recovers and re-navigates to the same address. *@
+@if (CurrentException is null)
+{
+    @ChildContent
+}
+else
+{
+    <section class="route-error" data-testid="navigation-error-region">
+        <h1 class="route-error-title" tabindex="-1">This page could not be shown</h1>
+        <LoadError Title="Something went wrong while showing this page."
+                   Message="An unexpected error stopped this page. Retry opens it again; other pages are not affected."
+                   OnRetry="RetryAsync" TestId="navigation-error" />
+    </section>
+}
+
+@code {
+    private NavigationProgress? _progress;
+    private string? _failedAt;
+
+    protected override void OnInitialized()
+    {
+        _progress = Services.GetService(typeof(NavigationProgress)) as NavigationProgress;
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    protected override async Task OnErrorAsync(Exception exception)
+    {
+        _failedAt = Navigation.Uri;
+        _progress?.ReportFailure();
+        await base.OnErrorAsync(exception);
+    }
+
+    /// <summary>Leaving the failed address recovers, so the next page renders. The failure of the page just opened (raised while the Router
+    /// rendered it, before this handler runs) is kept.</summary>
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (_failedAt is null || string.Equals(e.Location, _failedAt, StringComparison.OrdinalIgnoreCase)) return;
+        _ = InvokeAsync(() =>
+        {
+            _failedAt = null;
+            if (CurrentException is not null) Recover();
+        });
+    }
+
+    private Task RetryAsync()
+    {
+        _failedAt = null;
+        _progress?.ClearFailure();
+        Recover();
+        Navigation.NavigateTo(Navigation.Uri, replace: true);
+        return Task.CompletedTask;
+    }
+
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
+}

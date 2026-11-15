@@ -10,6 +10,16 @@ window.birknextNav = (function () {
     }
 
     return {
+        // Route-change acknowledgement (NavigationProgress): resolves after the browser painted the pending state (sidebar row, progress
+        // bar), so a destination with a heavy synchronous first render still shows that navigation started. Never holds a navigation
+        // long: resolves at once in a hidden tab and after at most 50 ms otherwise.
+        nextPaint() {
+            if (document.visibilityState !== 'visible') return Promise.resolve();
+            return new Promise(resolve => {
+                const done = setTimeout(resolve, 50);
+                requestAnimationFrame(() => setTimeout(() => { clearTimeout(done); resolve(); }, 0));
+            });
+        },
         // Focus the first focusable element (or the element matching selector) inside the container.
         focusFirst(id, selector) {
             const container = document.getElementById(id);

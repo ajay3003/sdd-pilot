@@ -1,0 +1,52 @@
+@using BirkNext.Web.Services
+@implements IDisposable
+@inject IServiceProvider Services
+
+@* Application-wide route-change feedback, in the content area only (never over the sidebar or header, no layout shift: everything here
+   is absolutely positioned in a zero-height anchor). Immediately on a route change: a thin progress bar (and the sidebar's pending row,
+   NavMenu). Only if the destination is still opening after NavigationLoadingTimings.RevealDelay: "Opening page…" with the startup
+   loader's spinner (loading-progress, compact). The live region exists all the time and only receives text when the loader shows, so a
+   fast navigation announces nothing. Page data keeps its own page-level loaders; this never waits for data. *@
+@if (_progress is { } p)
+{
+    var pending = p.State == NavigationProgressState.Navigating;
+    var revealed = pending && p.IsLoaderVisible;
+    <div class="nav-loading-anchor">
+        <span hidden data-testid="navigation-progress-state" data-state="@p.State" data-loader="@(revealed ? "true" : "false")"
+              data-navigation-id="@p.NavigationId" data-outcome="@p.LastOutcome"></span>
+        @if (pending)
+        {
+            <div class="nav-progress-bar" data-testid="navigation-progress-bar" aria-hidden="true"></div>
+        }
+        <div class="visually-hidden" role="status" aria-live="polite" aria-atomic="true" data-testid="navigation-loading-announcement">@(revealed ? "Opening page…" : null)</div>
+        @if (revealed)
+        {
+            <div class="nav-loading" data-testid="navigation-loading" data-navigation-id="@p.NavigationId" aria-hidden="true">
+                <div class="nav-loading-card">
+                    <svg class="loading-progress loading-progress-compact" focusable="false">
+                        <circle r="40%" cx="50%" cy="50%" />
+                        <circle r="40%" cx="50%" cy="50%" />
+                    </svg>
+                    <p class="nav-loading-text">Opening page…</p>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private NavigationProgress? _progress;
+
+    protected override void OnInitialized()
+    {
+        _progress = Services.GetService(typeof(NavigationProgress)) as NavigationProgress;
+        if (_progress is not null) _progress.Changed += OnChanged;
+    }
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        if (_progress is not null) _progress.Changed -= OnChanged;
+    }
+}

@@ -26,15 +26,17 @@ else
             <NavMenu />
         </div>
 
-        <main>
+        <main aria-busy="@(_navigationBusy ? "true" : null)">
             <LocalSessionGate />
             @* Activity Center: always available, on every page; observes long-running work, never owns it. *@
             <div class="activity-row"><ActivityCenter /></div>
             <WorkspaceSaveIndicator />
             <article class="content px-4">
+                @* Route-change feedback (progress bar, delayed "Opening page…") inside the content area; failures stay in the content (RouteErrorBoundary). *@
+                <NavigationLoadingIndicator />
                 <WorkspaceScopeNotice Sections="_navigation" />
                 <SharedWorkspaceTabs />
-                <WorkspaceDocumentsGate PageType="@RouteData?.PageType">@Body</WorkspaceDocumentsGate>
+                <WorkspaceDocumentsGate PageType="@RouteData?.PageType"><RouteErrorBoundary>@Body</RouteErrorBoundary></WorkspaceDocumentsGate>
             </article>
         </main>
     </div>
@@ -46,6 +48,8 @@ else
 
     private NavigationSectionState? _navigation;
     private bool _sidebarCollapsed;
+    private NavigationProgress? _navigationProgress;
+    private bool _navigationBusy;
 
     protected override async Task OnInitializedAsync()
     {
@@ -57,6 +61,10 @@ else
             _sidebarCollapsed = _navigation.SidebarCollapsed;
             _navigation.Changed += OnNavigationChanged;
         }
+
+        // Route-change progress: created here (after the Router subscribed), so LocationChanged reaches it once the destination rendered.
+        _navigationProgress = LayoutServices.GetService(typeof(NavigationProgress)) as NavigationProgress;
+        if (_navigationProgress is not null) _navigationProgress.Changed += OnNavigationProgressChanged;
 
         // Another tab (or an earlier reset this tab missed) reset local data: discard this tab's leftover project state instead of saving it.
         _resetEpoch = LayoutServices.GetService(typeof(LocalDataResetEpoch)) as LocalDataResetEpoch;
@@ -105,8 +113,18 @@ else
         _ = InvokeAsync(StateHasChanged);
     }
 
+    /// <summary>Only aria-busy on main follows route-change progress (start and end), never the loader reveal.</summary>
+    private void OnNavigationProgressChanged()
+    {
+        var busy = _navigationProgress?.IsPending == true;
+        if (busy == _navigationBusy) return;
+        _navigationBusy = busy;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
     public void Dispose()
     {
+        if (_navigationProgress is not null) _navigationProgress.Changed -= OnNavigationProgressChanged;
         if (_resetEpoch is not null) _resetEpoch.StaleDetected -= OnStaleAfterResetAsync;
         if (_navigation is not null) _navigation.Changed -= OnNavigationChanged;
     }
