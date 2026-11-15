@@ -601,8 +601,8 @@ public sealed class AltinnTestingTests
         var kept = JsonSerializer.Deserialize<IntegrationJourneyRun>(stored)!.Steps.Single(step => step.StepId == SkoleNaervaerAltinnExecutor.DataStep).Payload!;
         JsonDocument.Parse(kept.MaskedContent).RootElement.GetProperty("Klient").GetProperty("Identifikator").GetProperty("Fodselsnummer").GetString().Should().Be(SkoleNaervaerPayloadFlow.Mask);
         stored.Should().Contain(SyntheticPersonIdentifier.Reference(identifier));
-        // The run's own id (N format, the runner's default step correlation) is random hex; it can contain 11 digits by chance and is not an identifier of a person.
-        Regex.IsMatch(stored.Replace(run.RunId.ToString("N"), "", StringComparison.Ordinal), @"(?<!\d)\d{11}(?!\d)").Should().BeFalse("no 11-digit identifier is persisted");
+        // Generated GUIDs (the run id as "D" and as the "N" step correlation) can hold 11 digits by chance; they are not a person's identifier.
+        BirkNext.Api.Tests.Infrastructure.PersistedText.HasElevenDigitNumber(stored).Should().BeFalse("no 11-digit identifier is persisted");
     }
 
     [Fact]

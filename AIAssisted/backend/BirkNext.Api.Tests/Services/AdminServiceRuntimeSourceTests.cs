@@ -11,7 +11,8 @@ namespace BirkNext.Api.Tests.Services;
 
 /// <summary>
 /// "Published" is a runtime fact read from the layout; the package mode is a name. A configured name never makes a
-/// source run look published, and build/commit/package-root metadata stay absent rather than being invented.
+/// source run look published; build-number and package-root metadata stay absent rather than being invented, and the commit is only the one
+/// compiled into the build identity.
 /// </summary>
 public sealed class AdminServiceRuntimeSourceTests : IDisposable
 {
@@ -61,7 +62,12 @@ public sealed class AdminServiceRuntimeSourceTests : IDisposable
         var settings = Service(SourceOutput()).BuildSettings();
 
         settings.Application.BuildNumber.Should().BeNull();
-        settings.Application.CommitSha.Should().BeNull();
+        // Since application versioning (edae017a) the commit comes only from the compiled build identity: a developer build made inside a git
+        // working tree carries that tree's commit (BirkNext.BuildIdentity.targets, input 3); one made outside git carries none. Either way it is
+        // exactly what was compiled in — never configuration, never invented.
+        var compiled = BirkNext.Api.Services.SystemInfo.BuildInfoService.Current.SourceCommit;
+        settings.Application.CommitSha.Should().Be(compiled);
+        if (compiled is not null) compiled.Should().MatchRegex("^[0-9a-f]{40}$");
         settings.Runtime.LocalPackageRoot.Should().BeNull();
     }
 

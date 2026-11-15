@@ -227,9 +227,7 @@ public sealed class ManagedEdgeCdpTests
     [Fact]
     public void BridgeHasNoAuthenticationExtractionOrBrowserCloseCode()
     {
-        var root = new DirectoryInfo(AppContext.BaseDirectory);
-        while (root is not null && !Directory.Exists(Path.Combine(root.FullName, "AIAssisted"))) root = root.Parent;
-        var source = File.ReadAllText(Path.Combine(root!.FullName, "AIAssisted/backend/BirkNext.Api/Services/ManagedEdge/ManagedEdgeBrowser.cs"));
+        var source = BirkNext.Api.Tests.Infrastructure.SourceTree.ReadAllText("AIAssisted/backend/BirkNext.Api/Services/ManagedEdge/ManagedEdgeBrowser.cs");
         foreach (var forbidden in new[] { "CookiesAsync", "StorageState", "localStorage", "sessionStorage", "Authorization", "Set-Cookie", ".CloseAsync", "LaunchAsync", "response.text", "response.json" })
             Assert.DoesNotContain(forbidden, source, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("AllowAutoRedirect = false", source);

@@ -273,9 +273,7 @@ public sealed class ManagedEdgePreflightTests
     [Fact] // Q
     public void LaunchCodeNeverTerminatesOrEnumeratesEdgeProcesses()
     {
-        var root = new DirectoryInfo(AppContext.BaseDirectory);
-        while (root is not null && !Directory.Exists(System.IO.Path.Combine(root.FullName, "AIAssisted"))) root = root.Parent;
-        var source = File.ReadAllText(System.IO.Path.Combine(root!.FullName, "AIAssisted/backend/BirkNext.Api/Services/ManagedEdge/ManagedEdgePreflight.cs"));
+        var source = BirkNext.Api.Tests.Infrastructure.SourceTree.ReadAllText("AIAssisted/backend/BirkNext.Api/Services/ManagedEdge/ManagedEdgePreflight.cs");
         foreach (var forbidden in new[] { ".Kill(", "GetProcessesByName", "GetProcesses(", "taskkill", "CloseMainWindow", "CookiesAsync", "StorageState", "Authorization" })
             Assert.DoesNotContain(forbidden, source, StringComparison.Ordinal);
         Assert.Contains("AllowAutoRedirect = false", source);

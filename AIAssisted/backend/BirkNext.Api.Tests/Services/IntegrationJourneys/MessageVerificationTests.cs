@@ -339,8 +339,8 @@ public sealed class MessageVerificationTests
         reopened.EvaluatedAt.Should().BeOnOrAfter(first.MessageVerification.EvaluatedAt);
 
         var json = (await t.Harness.PersistedJsonAsync(second.RunId))!;
-        // The run's own id (N format, the runner's default step correlation) is random hex; it can contain 11 digits by chance and is not an identifier of a person.
-        Regex.IsMatch(json.Replace(second.RunId.ToString("N"), "", StringComparison.Ordinal), @"(?<!\d)\d{11}(?!\d)").Should().BeFalse("no identifier-shaped value is stored");
+        // Generated GUIDs (the run id as "D" and as the "N" step correlation) can hold 11 digits by chance; they are not a person's identifier.
+        BirkNext.Api.Tests.Infrastructure.PersistedText.HasElevenDigitNumber(json).Should().BeFalse("no identifier-shaped value is stored");
         json.Should().NotContainAny("Aktoer", "Bearer", AltinnTestKit.ClientSecret, AltinnTestKit.AltinnToken, AltinnTestKit.IdPortenToken, "Authorization", "Cookie");
         (await t.Harness.Service(t.Pack).HistoryAsync(new IntegrationJourneyHistoryQuery(Env, SkoleNaervaerJourneyPack.Id, SkoleNaervaerJourneyPack.RapportmottakId,
             SkoleNaervaerJourneyPack.MessageVerificationScenario), default)).Should().HaveCount(2, "the existing run history keeps both");

@@ -337,8 +337,8 @@ public sealed class UnattendedAltinnAuthenticationTests
         var stored = JsonSerializer.Serialize(await harness.Store.GetAsync(run.RunId, default));
         stored.Should().NotContainAny(AltinnTestKit.IdPortenToken, AltinnTestKit.AltinnToken, AltinnTestKit.HeadlessCode, AltinnTestKit.ClientSecret,
             AltinnTestKit.ReporterIdentifier, child, "testid:", "refresh-DO-NOT-PERSIST", AltinnTestKit.HeadlessRedirect);
-        // The run's own id (N format, the runner's default step correlation) is random hex; it can contain 11 digits by chance and is not an identifier of a person.
-        Regex.IsMatch(stored.Replace(run.RunId.ToString("N"), "", StringComparison.Ordinal), @"(?<!\d)\d{11}(?!\d)").Should().BeFalse("neither the reporter's nor the child's identifier is persisted");
+        // Generated GUIDs (the run id as "D" and as the "N" step correlation) can hold 11 digits by chance; they are not a person's identifier.
+        BirkNext.Api.Tests.Infrastructure.PersistedText.HasElevenDigitNumber(stored).Should().BeFalse("neither the reporter's nor the child's identifier is persisted");
     }
 
     [Fact]
