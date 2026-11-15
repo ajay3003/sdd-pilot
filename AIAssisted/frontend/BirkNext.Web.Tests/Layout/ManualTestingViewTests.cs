@@ -1,4 +1,4 @@
-using BirkNext.Web.Layout;
+﻿using BirkNext.Web.Layout;
 using BirkNext.Web.Services;
 using Bunit;
 using FluentAssertions;
@@ -28,10 +28,12 @@ public sealed class ManualTestingViewTests : BunitContext
 
     private static readonly (string Group, string[] Routes)[] Expected =
     [
+        // The Manual Testing workspace comes first: home, then its three stages; Plan & prepare is Test Plan Suggestions (one planning page).
+        ("Manual Testing", ["manual-testing", "manual-testing/discover", "test-plan-suggestions", "manual-testing/execute"]),
         ("Project setup", ["project-import", "sources"]),
         ("Understand the system", ["system-understanding"]),
         ("Requirements", ["specification-explorer", "quality/document", "documentation-drift"]),
-        ("Test preparation", ["test-plan-suggestions", "test-data"]),
+        ("Test preparation", ["test-data"]),
         ("Coverage & traceability", ["artifact-traceability", "test-coverage-review"]),
         ("Quality & follow-up", ["dashboard", "getting-started", "user-guide"]),
     ];
@@ -55,15 +57,17 @@ public sealed class ManualTestingViewTests : BunitContext
     [Fact]
     public void The_redundant_Functional_Test_Scenarios_alias_is_gone_and_its_deep_link_still_lands_on_System_Understanding()
     {
-        // It only opened System Understanding → What to test (no page, data or behaviour of its own) and competed with Test Plan Suggestions.
+        // It only opened System Understanding â†’ What to test (no page, data or behaviour of its own) and competed with Test Plan Suggestions.
         foreach (var view in WorkspaceViews.All)
             WorkspaceViews.Ordered(view.View).SelectMany(s => s.Items).Should().NotContain(i => i.Label == "Functional Test Scenarios" || i.Route == NavigationCatalog.TestScenariosRoute,
                 $"{view.Label} has no alias row for the What to test tab");
         var page = NavigationCatalog.Sections.SelectMany(s => s.Items).Single(i => i.Route == "system-understanding");
         page.IsCurrentLocation(NavigationCatalog.TestScenariosRoute).Should().BeTrue("the deep link keeps working and highlights System Understanding");
         WorkspaceViews.IsCurrent(WorkspaceView.ManualTesting, page, NavigationCatalog.TestScenariosRoute).Should().BeTrue();
-        WorkspaceViews.ManualTesting.Groups!.Single(g => g.Id == "manual-prepare").Routes.Should().Equal(["test-plan-suggestions", "test-data"],
-            "Test Plan Suggestions is where scenarios are prepared");
+        WorkspaceViews.ManualTesting.Groups!.Single(g => g.Id == "manual-workspace").Routes.Should().Contain("test-plan-suggestions",
+            "Test Plan Suggestions (Plan & prepare) is where scenarios are prepared");
+        WorkspaceViews.ManualTesting.Groups!.Single(g => g.Id == "manual-prepare").Routes.Should().Equal(["test-data"], "the planning page is listed once, in the workspace");
+        WorkspaceViews.ManualTesting.LandingRoute.Should().Be("manual-testing", "the Manual Tester view opens on the workspace home");
     }
 
     [Fact]
@@ -76,9 +80,12 @@ public sealed class ManualTestingViewTests : BunitContext
         cut.Find("[data-testid=nav-workspace-view]").Change(WorkspaceView.ManualTesting.ToString());
 
         State.View.Should().Be(WorkspaceView.ManualTesting);
-        cut.FindAll("[data-testid^=nav-section-]").Take(6).Select(b => b.TextContent.Trim()).Should().Equal(Expected.Select(e => e.Group));
+        cut.FindAll("[data-testid^=nav-section-]").Take(Expected.Length).Select(b => b.TextContent.Trim()).Should().Equal(Expected.Select(e => e.Group));
+        cut.Find("[data-testid=nav-section-manual-workspace] + .nav-group").QuerySelectorAll("a").Select(a => (a.GetAttribute("href"), a.TextContent.Trim()))
+            .Should().Equal(("manual-testing", "Manual Testing"), ("manual-testing/discover", "Discover & understand"), ("test-plan-suggestions", "Plan & prepare"),
+                ("manual-testing/execute", "Execute & document"));
         cut.Find("[data-testid=nav-section-manual-prepare] + .nav-group").QuerySelectorAll("a").Select(a => a.GetAttribute("href"))
-            .Should().Equal("test-plan-suggestions", "test-data");
+            .Should().Equal("test-data");
         cut.Find("[data-testid=nav-workspace-view-help]").TextContent.Should().Contain("prepare functional tests and test data");
         Services.GetRequiredService<NavigationManager>().ToBaseRelativePath(Services.GetRequiredService<NavigationManager>().Uri).Should().Be("source-analysis",
             "switching the view never navigates");
@@ -108,7 +115,8 @@ public sealed class ManualTestingViewTests : BunitContext
         var features = Services.GetRequiredService<FeatureVisibilityService>();
         var catalogue = NavigationCatalog.Sections.SelectMany(s => s.Items).ToList();
         var rendered = cut.FindAll("#nav-groups a").Select(a => a.GetAttribute("href")).ToList();
-        rendered.Should().BeEquivalentTo(new[] { "project-import", "sources", "system-understanding", "specification-explorer", "quality/document", "documentation-drift",
+        rendered.Should().BeEquivalentTo(new[] { "manual-testing", "manual-testing/discover", "manual-testing/execute",
+            "project-import", "sources", "system-understanding", "specification-explorer", "quality/document", "documentation-drift",
             "test-plan-suggestions", "test-data", "artifact-traceability", "test-coverage-review", "dashboard", "getting-started", "user-guide", "admin/system-settings" }
             .Where(r => catalogue.Single(i => i.Route == r).Visible(features)),
             "the Manual Tester preset plus Dashboard, User Guide and System Settings, nothing appended");

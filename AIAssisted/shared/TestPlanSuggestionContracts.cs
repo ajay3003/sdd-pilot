@@ -639,8 +639,17 @@ public sealed record PreparedCaseTrace
     public string? Capability { get; init; }
     public PreparedCaseStage Stage { get; init; }
     public string StageLabel { get; init; } = "";
-    /// <summary>Always "Not executed": Test Plan Suggestions records no execution for a prepared case.</summary>
+    /// <summary>"Not executed", or the latest completed manual run's outcome in words (Manual Testing → Execute &amp; document).</summary>
     public string Execution { get; init; } = PreparedCaseTraceView.NotExecuted;
+    /// <summary>The case's latest completed manual run (null = never completed); an abandoned run never counts.</summary>
+    public ManualRunSummary? LatestRun { get; init; }
+    /// <summary>False when the latest run executed an earlier revision of the case (its content changed since).</summary>
+    public bool LatestRunCurrent { get; init; }
+    /// <summary>A manual run of this case is in progress.</summary>
+    public bool RunInProgress { get; init; }
+    /// <summary>The latest completed run actually exercised the case (Passed or Failed); Blocked and Not run do not.</summary>
+    [JsonIgnore] public bool Executed => LatestRun is { } r && ManualRunRules.Executed(r.State, r.Outcome);
+    [JsonIgnore] public bool Passed => LatestRun is { Outcome: ManualRunOutcome.Passed } && Executed;
     public List<PreparedCaseRequirementLink> Requirements { get; init; } = [];
     /// <summary>The specification acceptance scenario the case was prepared from (the same id Test Coverage lists as a QA test), if any.</summary>
     public string? SpecificationScenarioId { get; init; }
@@ -666,8 +675,12 @@ public sealed record PreparedRequirementTrace
     /// <summary>Cases linked by their own evidence (automatically identified) and by a tester (manually confirmed); a case with both counts in each.</summary>
     public int AutomaticCases { get; init; }
     public int ManualCases { get; init; }
-    /// <summary>Always "Not executed": a prepared or approved case records no execution; executed and passed tests are the review's own counts.</summary>
+    /// <summary>"Not executed", or how many of the covering cases were executed in a completed manual run and with which outcome.</summary>
     public string Execution { get; init; } = PreparedCaseTraceView.NotExecuted;
+    /// <summary>Covering cases whose latest completed manual run executed them (Passed or Failed), and how many of those passed / failed.</summary>
+    public int ExecutedCases { get; init; }
+    public int PassedCases { get; init; }
+    public int FailedCases { get; init; }
 }
 
 /// <summary>A requirement of the reviewed specification no active saved case covers (no test design yet).</summary>
@@ -695,10 +708,16 @@ public sealed record PreparedCaseTraceView
     public List<PreparedRequirementGap> WithoutTestDesign { get; init; } = [];
     /// <summary>Manual links whose requirement is no longer in the reviewed specification (kept with the case, not counted).</summary>
     public int StaleManualLinks { get; init; }
+    /// <summary>Cases executed in a completed manual run (latest run Passed or Failed), and how many passed. Test design never adds to these.</summary>
+    public int ExecutedCases { get; init; }
+    public int PassedCases { get; init; }
+    /// <summary>Requirements with at least one executed covering case, and with at least one passed covering case.</summary>
+    public int RequirementsExecuted { get; init; }
+    public int RequirementsPassed { get; init; }
     public string Boundary { get; init; } = TraceBoundary;
 
     public const string NotExecuted = "Not executed";
-    public const string TraceBoundary = "Prepared and approved test cases are test design, not test execution: none of them ran or passed. A requirement counts only when the case's own evidence names it in the reviewed specification or a tester linked the case to it.";
+    public const string TraceBoundary = "Prepared and approved test cases are test design, not test execution. Execution is only what a tester recorded in a completed manual run (Manual Testing → Execute & document). A requirement counts only when the case's own evidence names it in the reviewed specification or a tester linked the case to it.";
 }
 
 /// <summary>The specification a requirements view reads, for counting case links against it (Requirements Traceability).</summary>

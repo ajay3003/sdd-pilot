@@ -185,6 +185,21 @@ public static class NavigationCatalog
                 Aliases: ["Azure Environment Analysis"]),
             new("ai-change-auditor", "AI Change Review", "nav-icon-ai-auditor", f => f.AiChangeReview, OptionalByDefault: true, Aliases: ["AI Review", "AI Change Auditor"]),
         ], "nav-icon-source-analysis"),
+        // Manual Testing: one workspace for the manual tester's journey (understand → plan → execute). "Plan & prepare" IS Test Plan Suggestions (same
+        // page and route, renamed in the menu; the old name stays searchable), so there is one planning interface, not two.
+        new("manual-testing-workspace", "Manual Testing",
+        [
+            new("manual-testing", "Manual Testing", "nav-icon-workflow", Always, Hint: "the manual tester's home: current project, work in progress and the next step",
+                Aliases: ["Manual tester", "Testing workspace"]),
+            new("manual-testing/discover", "Discover & understand", "nav-icon-system-understanding", Always, WrapLabel: true,
+                Hint: "what needs testing: requirements, scenario suggestions, existing tests and what needs clarification", Aliases: ["Requirements to test", "What to test"]),
+            new("test-plan-suggestions", "Plan & prepare", "nav-icon-workflow", Always, WrapLabel: true,
+                Hint: "choose scenarios, prepare and edit manual test cases, link requirements and Test Data, check testability, save plans and snapshots — proposals, not Azure DevOps records",
+                Aliases: ["Test Plan Suggestions", "Test Plan", "Test Cases", "Manual test cases"]),
+            new("manual-testing/execute", "Execute & document", "nav-icon-task-alignment", Always, WrapLabel: true,
+                Hint: "run a saved test case step by step, record results, evidence references and defects, resume runs and review run history",
+                Aliases: ["Test run", "Manual test run", "Execute test case"]),
+        ], "nav-icon-workflow"),
         // Planning → preparation → target-bound runs. Source-only assessments (test inventory, code risk) say where to focus; Test Data
         // is the prerequisite of the runs that need test identities/assets (Performance, Critical E2E; readiness shown in API/Integration);
         // Topology precedes the IQR it reads bindings from; Critical E2E is the end-to-end release check.
@@ -193,9 +208,6 @@ public static class NavigationCatalog
             new("test-coverage-review", "Test Coverage & Overlap Review", "nav-icon-task-alignment", Always),
             new("code-risk-review", "Code Risk Review", "nav-icon-constitution-compliance", Always, ReviewId: "code-risk-review"),
             new("test-data", "Test Data", "nav-icon-task-alignment", Always, Hint: "approved typed test data: values, payloads, files, entity references, data sets, expected results"),
-            new("test-plan-suggestions", "Test Plan Suggestions", "nav-icon-workflow", Always, WrapLabel: true,
-                Hint: "reviewable Test Plan, Suite and Case drafts from What to test scenarios, snapshots and delivery comparison — proposals, not Azure DevOps records",
-                Aliases: ["Test Plan", "Test Cases", "Manual test cases"]),
             new("api-quality-review/contracts", "Contract Testing", "nav-icon-task-alignment", Always, Hint: "stored REST/GraphQL contracts: versions, tests, readiness, runs, impact and coverage",
                 Aliases: ["Contract-Driven Testing", "Contracts"]),
             new("integration-suites", "Integration Test Suites", "nav-icon-task-alignment", Always, WrapLabel: true,
@@ -482,14 +494,15 @@ public static class WorkspaceViews
     /// modules stay one search (or All Modules) away. A navigation preference only: no permission, feature or source baseline changes.
     /// </summary>
     private static WorkspaceViewDefinition CreateManualTesting() => Groups(WorkspaceView.ManualTesting, "Manual Tester",
-        "Review requirements, prepare functional tests and test data.", "system-understanding",
+        "Review requirements, prepare functional tests and test data, run them and record results.", "manual-testing",
         [
+            new("manual-workspace", "Manual Testing", "nav-icon-workflow", ["manual-testing", "manual-testing/discover", "test-plan-suggestions", "manual-testing/execute"]),
             new("manual-setup", "Project setup", "nav-icon-import", ["project-import", "sources"]),
             new("manual-understand", "Understand the system", "nav-icon-system-understanding", ["system-understanding"]),
             new("manual-requirements", "Requirements", "nav-icon-task-alignment", ["specification-explorer", "quality/document", "documentation-drift"]),
             // "Functional Test Scenarios" (a shortcut to System Understanding → What to test) was removed: it duplicated the System Understanding row
             // and competed with Test Plan Suggestions, the place where scenarios are prepared. The tab and its deep link stay.
-            new("manual-prepare", "Test preparation", "nav-icon-constitution-compliance", ["test-plan-suggestions", "test-data"]),
+            new("manual-prepare", "Test preparation", "nav-icon-constitution-compliance", ["test-data"]),
             new("manual-coverage", "Coverage & traceability", "nav-icon-workflow", ["artifact-traceability", "test-coverage-review"]),
             new("manual-follow-up", "Quality & follow-up", "nav-icon-dashboard", ["dashboard", "getting-started", "user-guide"]),
         ]);

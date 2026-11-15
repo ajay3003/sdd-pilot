@@ -811,6 +811,10 @@ builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.RequirementCoverag
 // Project-scoped test scenario discovery for Test Plan Suggestions: one provider per registered analyzer (specification, guide, UI source, contracts,
 // integration journeys, existing tests); the last result per project is kept in memory so navigation never re-runs the analyzers.
 builder.Services.AddSingleton<BirkNext.Api.Services.TestPlanning.ScenarioDiscoveryCache>();
+// The cache's durable copy: the last discovery per project survives an API restart (read back on demand, never re-run).
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ScenarioDiscoveryStore>();
+// Manual Testing → Execute & document: manual runs of saved test cases (pinned case content, step results, evidence references, local defects).
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ManualTestRunService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.SpecificationScenarioProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.SystemGuideScenarioProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.UiSourceScenarioProvider>();

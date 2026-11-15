@@ -1,0 +1,234 @@
+using System.Text.Json;
+using BirkNext.Api.Data;
+using BirkNext.Api.Models;
+using BirkNext.TestPlanning;
+using Microsoft.EntityFrameworkCore;
+using E = BirkNext.Api.Services.TestPlanning.TestPlanSuggestionEngine;
+
+namespace BirkNext.Api.Services.TestPlanning;
+
+/// <summary>
+/// Manual test runs (Manual Testing → Execute &amp; document). A run executes one saved test case of one project, read through
+/// <see cref="TestPlanSuggestionService"/> (the authoritative plan store; no copy of the plan is kept). The case's steps, expected results,
+/// requirement links and Test Data names are pinned in the run at start together with a content fingerprint, so editing the case later never
+/// changes a recorded result. Outcomes are only what a tester records; the overall outcome is rolled up by <see cref="ManualRunRules.Rollup"/>
+/// when the tester completes the run. Evidence is stored as references (links or notes), never as uploaded files; defects are local
+/// observations that may name an existing external work item. Nothing is sent anywhere.
+/// </summary>
+public sealed class ManualTestRunService(AppDbContext db, TestPlanSuggestionService plans, TimeProvider? clock = null)
+{
+    public const int MaxEvidence = 50;
+    public const int MaxDefects = 50;
+    public const int MaxText = 4000;
+
+    private DateTimeOffset Now => (clock ?? TimeProvider.System).GetUtcNow();
+
+    /// <summary>Starts a run of the case as it is saved now, or returns the case's run that is still in progress (resume, never two at once).</summary>
+    public async Task<ManualTestRun> StartAsync(StartManualRunRequest request, string actor, CancellationToken ct)
+    {
+        var key = TestScenarioDiscoveryService.Key(request.ProjectKey);
+        var plan = await plans.DraftAsync(request.DraftId, ct);
+        if (plan.ProjectKey != key) throw new TestPlanException(404, "draft-not-found", "No such test plan in this project.");
+        var c = plan.Cases.FirstOrDefault(x => x.Source.ScenarioId == request.CaseId) ?? throw new TestPlanException(404, "case-not-found", "No such test case in this plan.");
+        if (c.Review is TestCaseReviewState.Excluded or TestCaseReviewState.Superseded)
+            throw new TestPlanException(409, "case-not-runnable", "This test case is excluded or superseded, so it cannot be run. Open it in Plan & prepare to change that.");
+        var steps = c.EffectiveSteps;
+        if (steps.Count == 0) throw new TestPlanException(409, "case-has-no-steps", "Add at least one step to the test case before running it.");
+
+        var open = await db.ManualTestRuns.AsNoTracking().Where(r => r.ProjectKey == key && r.DraftId == plan.Id && r.CaseId == c.Source.ScenarioId && r.State == nameof(ManualRunState.InProgress))
+            .OrderByDescending(r => r.StartedAt).FirstOrDefaultAsync(ct);
+        if (open is not null) return Read(open);
+
+        var expected = c.EffectiveStepExpected;
+        var run = new ManualTestRun
+        {
+            Id = Guid.NewGuid(), ProjectKey = key, DraftId = plan.Id, CaseId = c.Source.ScenarioId, CaseKey = $"{plan.Id:N}/{c.Source.ScenarioId}", PlanName = plan.PlanName,
+            PlanRevision = plan.Revision, CaseFingerprint = Fingerprint(c), Title = c.EffectiveTitle, Preconditions = c.EffectivePreconditions, ExpectedResult = c.EffectiveExpected,
+            RequirementIds = Requirements(c), TestData = [.. c.TestData.Select(d => string.IsNullOrWhiteSpace(d.Alias) ? d.AssetId : $"{d.Alias} ({d.AssetId})")],
+            Environment = Text(request.Environment, 200), Tester = actor, StartedAt = Now, State = ManualRunState.InProgress, Outcome = ManualRunOutcome.NotDecided,
+            Steps = [.. steps.Select((s, i) => new ManualRunStep { Number = i + 1, Action = s, Expected = i < expected.Count ? expected[i] : null })],
+            Revision = 1, UpdatedBy = actor, UpdatedAt = Now,
+        };
+        db.ManualTestRuns.Add(new ManualTestRunRecord
+        {
+            Id = run.Id, ProjectKey = key, DraftId = run.DraftId, CaseId = run.CaseId, State = run.State.ToString(), Outcome = run.Outcome.ToString(), Revision = 1,
+            ContentJson = JsonSerializer.Serialize(run, E.Json), Tester = Trim(actor, 200), StartedAt = run.StartedAt, UpdatedAt = run.UpdatedAt,
+        });
+        await db.SaveChangesAsync(ct);
+        return run;
+    }
+
+    public async Task<ManualTestRun> GetAsync(string projectKey, Guid id, CancellationToken ct) => Read(await Row(projectKey, id, ct, tracked: false));
+
+    /// <summary>The project's runs, newest first (optionally of one plan or case). Never another project's.</summary>
+    public async Task<List<ManualRunSummary>> ListAsync(string projectKey, Guid? draftId, string? caseId, CancellationToken ct)
+    {
+        var key = TestScenarioDiscoveryService.Key(projectKey);
+        var query = db.ManualTestRuns.AsNoTracking().Where(r => r.ProjectKey == key);
+        if (draftId is { } d) query = query.Where(r => r.DraftId == d);
+        if (!string.IsNullOrWhiteSpace(caseId)) query = query.Where(r => r.CaseId == caseId);
+        return [.. (await query.OrderByDescending(r => r.StartedAt).Take(500).ToListAsync(ct)).Select(Read).Select(ManualRunRules.Summary)];
+    }
+
+    /// <summary>Every run of the project as recorded (for traceability). Unreadable rows are skipped, never guessed.</summary>
+    public Task<List<ManualTestRun>> ProjectRunsAsync(string projectKey, CancellationToken ct) => ReadProjectRunsAsync(db, TestScenarioDiscoveryService.Key(projectKey), ct);
+
+    /// <summary>The project's recorded runs, read straight from the store (Test Coverage and traceability read executions here).</summary>
+    public static async Task<List<ManualTestRun>> ReadProjectRunsAsync(AppDbContext db, string projectKey, CancellationToken ct)
+    {
+        var list = new List<ManualTestRun>();
+        foreach (var row in await db.ManualTestRuns.AsNoTracking().Where(r => r.ProjectKey == projectKey).ToListAsync(ct))
+            try { list.Add(Read(row)); } catch (JsonException) { }
+        return list;
+    }
+
+    /// <summary>Saves progress: step decisions and observations, notes, environment, evidence references and defects.</summary>
+    public async Task<ManualTestRun> SaveAsync(string projectKey, Guid id, SaveManualRunRequest request, string actor, CancellationToken ct)
+    {
+        var row = await Row(projectKey, id, ct, tracked: true);
+        var run = Open(row, request.BaseRevision);
+        var byNumber = request.Steps.GroupBy(s => s.Number).ToDictionary(g => g.Key, g => g.Last());
+        var steps = run.Steps.Select(s =>
+        {
+            if (!byNumber.TryGetValue(s.Number, out var input)) return s;
+            var actual = Text(input.Actual, MaxText);
+            var changed = input.Outcome != s.Outcome || actual != s.Actual;
+            return changed ? s with { Outcome = input.Outcome, Actual = actual, RecordedAt = Now } : s;
+        }).ToList();
+        var updated = run with
+        {
+            Steps = steps, Notes = Text(request.Notes, MaxText), Environment = Text(request.Environment, 200) ?? run.Environment,
+            Evidence = Evidence(run, request.Evidence ?? [], actor), Defects = Defects(run, request.Defects ?? [], actor),
+            Revision = run.Revision + 1, UpdatedBy = actor, UpdatedAt = Now,
+        };
+        return await WriteAsync(row, updated, ct);
+    }
+
+    /// <summary>Completes the run: every step must have a decision; the overall outcome is rolled up from them. Final afterwards.</summary>
+    public async Task<ManualTestRun> CompleteAsync(string projectKey, Guid id, CompleteManualRunRequest request, string actor, CancellationToken ct)
+    {
+        var row = await Row(projectKey, id, ct, tracked: true);
+        var run = Open(row, request.BaseRevision);
+        var undecided = run.Steps.Count(s => s.Outcome is null);
+        if (undecided > 0)
+            throw new TestPlanException(409, "steps-undecided", $"{undecided} step{(undecided == 1 ? " has" : "s have")} no result yet. Record Pass, Fail, Blocked or Not run for every step, then complete the run.");
+        return await WriteAsync(row, run with
+        {
+            State = ManualRunState.Completed, Outcome = ManualRunRules.Rollup(run.Steps), CompletedAt = Now, Revision = run.Revision + 1, UpdatedBy = actor, UpdatedAt = Now,
+        }, ct);
+    }
+
+    /// <summary>Stops a run without a result (a reason is required). Its recorded steps stay as history; it never counts as an execution.</summary>
+    public async Task<ManualTestRun> AbandonAsync(string projectKey, Guid id, AbandonManualRunRequest request, string actor, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Reason)) throw new TestPlanException(400, "reason-required", "Say why the run is stopped.");
+        var row = await Row(projectKey, id, ct, tracked: true);
+        var run = Open(row, request.BaseRevision);
+        return await WriteAsync(row, run with
+        {
+            State = ManualRunState.Abandoned, Outcome = ManualRunOutcome.NotDecided, AbandonReason = Text(request.Reason, 1000), CompletedAt = Now, Revision = run.Revision + 1,
+            UpdatedBy = actor, UpdatedAt = Now,
+        }, ct);
+    }
+
+    /// <summary>The identity of a case's executable content: title, preconditions, steps and expected results as the tester sees them.</summary>
+    public static string Fingerprint(TestCaseDraft c) =>
+        E.Sha(JsonSerializer.Serialize(new { c.EffectiveTitle, c.EffectivePreconditions, Steps = c.EffectiveSteps, Expected = c.EffectiveStepExpected, c.EffectiveExpected }, E.Json));
+
+    /// <summary>Requirement ids the case names: its own specification evidence and a tester's links (guide business rules are not requirements).</summary>
+    private static List<string> Requirements(TestCaseDraft c)
+    {
+        var automatic = c.Source.Kind is ScenarioSourceKind.SystemGuide or ScenarioSourceKind.Manual || c.Generated.Capability != TestScenarioDiscoveryEngine.Specification
+            ? [] : c.Generated.Requirements.Select(r => r.RuleId);
+        return [.. automatic.Concat(c.RequirementLinks.Select(l => l.RequirementId)).Where(i => !string.IsNullOrWhiteSpace(i)).Select(i => i.Trim()).Distinct(StringComparer.OrdinalIgnoreCase)];
+    }
+
+    private List<ManualRunEvidence> Evidence(ManualTestRun run, List<ManualRunEvidence> wanted, string actor)
+    {
+        if (wanted.Count > MaxEvidence) throw new TestPlanException(400, "too-much-evidence", $"A run keeps at most {MaxEvidence} evidence references.");
+        var held = run.Evidence.ToDictionary(e => e.Id, StringComparer.Ordinal);
+        return [.. wanted.Select(e =>
+        {
+            var label = Text(e.Label, 200) ?? throw new TestPlanException(400, "evidence-label-required", "Give every evidence reference a short label.");
+            var reference = Text(e.Reference, 1000) ?? throw new TestPlanException(400, "evidence-reference-required", "Say where the evidence is kept (a link or a note).");
+            if (e.Kind == ManualEvidenceKind.Link && !SafeLink(reference))
+                throw new TestPlanException(400, "evidence-link-invalid", "An evidence link must be a full http or https address.");
+            var step = Step(run, e.Step);
+            return held.TryGetValue(e.Id ?? "", out var old)
+                ? old with { Label = label, Reference = reference, Kind = e.Kind, Step = step }
+                : new ManualRunEvidence { Id = "ev-" + Guid.NewGuid().ToString("N")[..12], Label = label, Reference = reference, Kind = e.Kind, Step = step, AddedBy = actor, AddedAt = Now };
+        })];
+    }
+
+    private List<ManualRunDefect> Defects(ManualTestRun run, List<ManualRunDefect> wanted, string actor)
+    {
+        if (wanted.Count > MaxDefects) throw new TestPlanException(400, "too-many-defects", $"A run keeps at most {MaxDefects} defects.");
+        var held = run.Defects.ToDictionary(d => d.Id, StringComparer.Ordinal);
+        return [.. wanted.Select(d =>
+        {
+            var title = Text(d.Title, 300) ?? throw new TestPlanException(400, "defect-title-required", "Give every defect a title.");
+            var severity = Text(d.Severity, 20);
+            if (severity is not null && !ManualRunRules.Severities.Contains(severity))
+                throw new TestPlanException(400, "defect-severity-invalid", $"Severity must be one of {string.Join(", ", ManualRunRules.Severities)}.");
+            var external = Text(d.ExternalReference, 1000);
+            if (external is not null && !(external.Length <= 12 && external.All(char.IsAsciiDigit)) && !SafeLink(external))
+                throw new TestPlanException(400, "defect-reference-invalid", "An external reference is a work item number or a full https address.");
+            var item = new ManualRunDefect
+            {
+                Title = title, Description = Text(d.Description, MaxText), Reproduction = Text(d.Reproduction, MaxText), Expected = Text(d.Expected, MaxText), Actual = Text(d.Actual, MaxText),
+                Severity = severity, Status = d.Status, ExternalReference = external, Step = Step(run, d.Step),
+            };
+            return held.TryGetValue(d.Id ?? "", out var old)
+                ? item with { Id = old.Id, RecordedBy = old.RecordedBy, RecordedAt = old.RecordedAt }
+                : item with { Id = "df-" + Guid.NewGuid().ToString("N")[..12], RecordedBy = actor, RecordedAt = Now };
+        })];
+    }
+
+    private static int? Step(ManualTestRun run, int? step) =>
+        step is null ? null : run.Steps.Any(s => s.Number == step) ? step : throw new TestPlanException(400, "step-unknown", $"The run has no step {step}.");
+
+    /// <summary>Only absolute http(s) addresses; never javascript:, data:, file: or relative paths.</summary>
+    public static bool SafeLink(string value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp) && !string.IsNullOrEmpty(uri.Host);
+
+    private static ManualTestRun Open(ManualTestRunRecord row, int baseRevision)
+    {
+        var run = Read(row);
+        if (run.State != ManualRunState.InProgress)
+            throw new TestPlanException(409, "run-final", $"This run is {(run.State == ManualRunState.Completed ? "completed" : "stopped")} and cannot be changed. Start a new run to test again.");
+        if (row.Revision != baseRevision) throw new TestPlanException(409, "run-changed", $"The run is at revision {row.Revision}; reload it. Your change was not saved.");
+        return run;
+    }
+
+    private async Task<ManualTestRunRecord> Row(string projectKey, Guid id, CancellationToken ct, bool tracked)
+    {
+        var key = TestScenarioDiscoveryService.Key(projectKey);
+        var rows = tracked ? db.ManualTestRuns : db.ManualTestRuns.AsNoTracking();
+        return await rows.SingleOrDefaultAsync(r => r.Id == id && r.ProjectKey == key, ct)
+            ?? throw new TestPlanException(404, "run-not-found", "No such test run in this project.");
+    }
+
+    private async Task<ManualTestRun> WriteAsync(ManualTestRunRecord row, ManualTestRun run, CancellationToken ct)
+    {
+        var json = JsonSerializer.Serialize(run, E.Json);
+        if (json.Length > 2_000_000) throw new TestPlanException(413, "run-too-large", "The run is too large to store.");
+        row.Revision = run.Revision;
+        row.State = run.State.ToString();
+        row.Outcome = run.Outcome.ToString();
+        row.ContentJson = json;
+        row.CompletedAt = run.CompletedAt;
+        row.UpdatedAt = run.UpdatedAt;
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException)
+        {
+            db.ChangeTracker.Clear();
+            throw new TestPlanException(409, "run-changed", "The run was changed by someone else. Reload it; your change was not saved.");
+        }
+        return run;
+    }
+
+    private static ManualTestRun Read(ManualTestRunRecord row) => JsonSerializer.Deserialize<ManualTestRun>(row.ContentJson, E.Json)! with { Revision = row.Revision };
+
+    private static string? Text(string? value, int max) => string.IsNullOrWhiteSpace(value) ? null : value.Trim()[..Math.Min(value.Trim().Length, max)];
+    private static string Trim(string value, int max) => value.Length <= max ? value : value[..max];
+}

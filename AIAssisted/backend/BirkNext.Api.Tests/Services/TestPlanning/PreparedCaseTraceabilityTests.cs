@@ -67,7 +67,7 @@ public sealed class PreparedCaseTraceabilityTests
 
         view.CaseList.Should().OnlyContain(c => c.Execution == PreparedCaseTraceView.NotExecuted);
         view.CaseList.Select(c => c.Stage).Should().Equal(PreparedCaseStage.Approved, PreparedCaseStage.Prepared, PreparedCaseStage.Prepared);
-        view.Boundary.Should().Contain("not test execution").And.Contain("none of them ran or passed");
+        view.Boundary.Should().Contain("not test execution").And.Contain("Execution is only what a tester recorded in a completed manual run");
         view.Requirements.Single(r => r.RequirementId == "FR-002").State.Should().Be("Prepared, not approved yet");
     }
 

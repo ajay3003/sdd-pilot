@@ -18,9 +18,12 @@ public static class PreparedCaseTraceability
     /// <param name="specificationPaths">The reviewed specification file(s); empty = none given, so no link is counted.</param>
     /// <param name="requirementIds">The reviewed specification's requirement ids; null = the ids the specification evidence names are taken as is.</param>
     /// <param name="requirementTitles">Requirement id → text of the reviewed specification (titles only; never adds a requirement).</param>
+    /// <param name="runs">The project's manual runs (Execute &amp; document). Only completed runs give an outcome; the latest completed run per case
+    /// counts; a run of an earlier case revision is shown as such. Null = executions not read (every case "Not executed").</param>
     public static PreparedCaseTraceView Build(string projectKey, IEnumerable<TestPlanDraft> drafts, IReadOnlyCollection<string> specificationPaths,
-        IReadOnlyCollection<string>? requirementIds, IReadOnlyDictionary<string, string>? requirementTitles = null)
+        IReadOnlyCollection<string>? requirementIds, IReadOnlyDictionary<string, string>? requirementTitles = null, IReadOnlyCollection<ManualTestRun>? runs = null)
     {
+        var runsByCase = (runs ?? []).Where(r => r.ProjectKey == projectKey).GroupBy(r => r.CaseKey, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
         var titles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (id, text) in requirementTitles ?? new Dictionary<string, string>())
             if (!string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(text)) titles.TryAdd(id.Trim(), text.Trim());
@@ -29,7 +32,7 @@ public static class PreparedCaseTraceability
         var paths = specificationPaths.Where(p => !string.IsNullOrWhiteSpace(p)).Select(NormalizePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var ids = requirementIds?.Where(i => !string.IsNullOrWhiteSpace(i)).Select(i => i.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var cases = plans.SelectMany(plan => plan.Cases.Select(c => Trace(plan, c, paths, ids, titles))).ToList();
+        var cases = plans.SelectMany(plan => plan.Cases.Select(c => WithRuns(Trace(plan, c, paths, ids, titles), c, runsByCase))).ToList();
         var requirements = cases.SelectMany(c => c.Requirements.Where(r => r.Counted).Select(r => (Link: r, Case: c)))
             .GroupBy(x => (Id: x.Link.RequirementId.ToUpperInvariant(), Path: NormalizePath(x.Link.SpecificationPath ?? "")))
             .Select(g =>
@@ -37,6 +40,9 @@ public static class PreparedCaseTraceability
                 var approved = g.Where(x => x.Case.Stage == PreparedCaseStage.Approved).Select(x => x.Case.CaseKey).Distinct(StringComparer.Ordinal).Count();
                 var keys = g.Select(x => x.Case.CaseKey).Distinct(StringComparer.Ordinal).ToList();
                 var id = g.First().Link.RequirementId;
+                var covering = g.Select(x => x.Case).DistinctBy(c => c.CaseKey).ToList();
+                var executed = covering.Count(c => c.Executed);
+                var passed = covering.Count(c => c.Passed);
                 return new PreparedRequirementTrace
                 {
                     RequirementId = id, SpecificationPath = g.First().Link.SpecificationPath, ApprovedCases = approved,
@@ -45,6 +51,9 @@ public static class PreparedCaseTraceability
                     Title = titles.GetValueOrDefault(id) ?? g.Select(x => x.Link.Title).FirstOrDefault(t => !string.IsNullOrWhiteSpace(t)),
                     AutomaticCases = g.Where(x => !x.Link.Manual).Select(x => x.Case.CaseKey).Distinct(StringComparer.Ordinal).Count(),
                     ManualCases = g.Where(x => x.Link.Manual).Select(x => x.Case.CaseKey).Distinct(StringComparer.Ordinal).Count(),
+                    ExecutedCases = executed, PassedCases = passed, FailedCases = executed - passed,
+                    Execution = executed == 0 ? PreparedCaseTraceView.NotExecuted
+                        : $"Executed: {executed} case{(executed == 1 ? "" : "s")} — {passed} passed, {executed - passed} failed",
                 };
             }).OrderBy(r => r.SpecificationPath, StringComparer.OrdinalIgnoreCase).ThenBy(r => r.RequirementId, NaturalId.Instance).ToList();
 
@@ -70,6 +79,8 @@ public static class PreparedCaseTraceability
             RequirementsWithPreparedCaseOnly = requirements.Count(r => r.ApprovedCases == 0),
             CaseList = cases, Requirements = requirements, Limitations = limitations,
             SpecificationRequirements = ids is null || paths.Count == 0 ? null : ids.Count, WithoutTestDesign = gaps, StaleManualLinks = stale,
+            ExecutedCases = cases.Count(c => c.Executed), PassedCases = cases.Count(c => c.Passed),
+            RequirementsExecuted = requirements.Count(r => r.ExecutedCases > 0), RequirementsPassed = requirements.Count(r => r.PassedCases > 0),
         };
     }
 
@@ -143,6 +154,22 @@ public static class PreparedCaseTraceability
             Requirements = links, SpecificationScenarioId = capability == TestScenarioDiscoveryEngine.Specification ? ScenarioIdOf(c.Generated.Evidence) : null,
             CriticalE2EFlowIds = flows,
             Href = $"test-plan-suggestions?draft={plan.Id}&area=prepare&case={Uri.EscapeDataString(caseId)}",
+        };
+    }
+
+    /// <summary>The case's latest completed manual run (an abandoned or in-progress run never gives an outcome) and whether it ran the current content.</summary>
+    static PreparedCaseTrace WithRuns(PreparedCaseTrace trace, TestCaseDraft c, IReadOnlyDictionary<string, List<ManualTestRun>> runsByCase)
+    {
+        if (!runsByCase.TryGetValue(trace.CaseKey, out var list)) return trace;
+        var inProgress = list.Any(r => r.State == ManualRunState.InProgress);
+        var latest = list.Where(r => r.State == ManualRunState.Completed).OrderByDescending(r => r.CompletedAt).ThenByDescending(r => r.StartedAt).FirstOrDefault();
+        if (latest is null) return trace with { RunInProgress = inProgress, Execution = inProgress ? "Run in progress — not executed yet" : PreparedCaseTraceView.NotExecuted };
+        var current = latest.CaseFingerprint == ManualTestRunService.Fingerprint(c);
+        var when = latest.CompletedAt?.ToString("yyyy-MM-dd") ?? "";
+        return trace with
+        {
+            LatestRun = ManualRunRules.Summary(latest), LatestRunCurrent = current, RunInProgress = inProgress,
+            Execution = $"{ManualRunRules.OutcomeLabel(latest.Outcome)} — manual run {when} by {latest.Tester}{(current ? "" : " (an earlier revision of the case)")}",
         };
     }
 

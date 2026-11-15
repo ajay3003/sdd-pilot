@@ -28,7 +28,8 @@
             {
                 <div><dt>Requirements without test design</dt><dd data-testid="pct-req-none">@View.WithoutTestDesign.Count</dd></div>
             }
-            <div><dt>Executed</dt><dd data-testid="pct-executed">0 — prepared cases are not executions</dd></div>
+            <div><dt>Executed (manual runs)</dt><dd data-testid="pct-executed">@View.ExecutedCases@(View.ExecutedCases == 0 ? " — prepared cases are not executions" : $" case{(View.ExecutedCases == 1 ? "" : "s")}")</dd></div>
+            <div><dt>Passed (manual runs)</dt><dd data-testid="pct-passed">@View.PassedCases</dd></div>
         </dl>
         <p class="pct-muted" data-testid="pct-explain">@Explain(View)</p>
         @foreach (var limitation in View.Limitations)
@@ -135,7 +136,10 @@
         var designed = v.RequirementsWithApprovedCase + v.RequirementsWithPreparedCaseOnly;
         var of = v.SpecificationRequirements is { } total ? $"{designed} of {total} requirements" : $"{designed} requirement{(designed == 1 ? "" : "s")}";
         return $"{of} have a saved test case designed for them ({v.RequirementsWithApprovedCase} approved, {v.RequirementsWithPreparedCaseOnly} prepared only). "
-            + "Each requirement counts once, however many cases cover it. None of these cases has run: whether a requirement was executed or passed comes from imported test results, not from test design.";
+            + "Each requirement counts once, however many cases cover it. "
+            + (v.ExecutedCases == 0
+                ? "None of these cases has been executed in a manual run yet: designing a case never counts as running it."
+                : $"{v.RequirementsExecuted} requirement{(v.RequirementsExecuted == 1 ? " was" : "s were")} executed in completed manual runs ({v.RequirementsPassed} with a passed case); a Blocked or Not run result is not an execution.");
     }
 
     private static string Origins(PreparedRequirementTrace r) => (r.AutomaticCases, r.ManualCases) switch

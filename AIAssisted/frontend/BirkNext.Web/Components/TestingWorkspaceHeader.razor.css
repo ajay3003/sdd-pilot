@@ -1,0 +1,15 @@
+.twh { margin: 0 0 1rem; }
+.twh-stages { display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0 0 0.75rem; padding: 0 0 0.5rem; border-bottom: 1px solid var(--clr-border, #d0d7de); }
+.twh-stage { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.35rem 0.7rem; border-radius: 999px; font-size: 0.86rem; font-weight: 600;
+    color: var(--clr-text-muted, #57606a); text-decoration: none; border: 1px solid transparent; min-height: 2rem; }
+.twh-stage:hover { color: var(--clr-text, #1f2328); background: var(--clr-surface-alt, #eef2f6); }
+.twh-stage:focus-visible { outline: 2px solid var(--clr-primary, #0969da); outline-offset: 2px; }
+.twh-stage.is-current { color: var(--clr-text, #1f2328); border-color: var(--clr-primary, #0969da); background: var(--clr-surface, #fff); }
+.twh-n { display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem; border-radius: 50%; font-size: 0.72rem;
+    background: var(--clr-surface-alt, #eef2f6); color: var(--clr-text, #1f2328); }
+.twh-stage.is-current .twh-n { background: var(--clr-primary, #0969da); color: #fff; }
+.twh-eyebrow { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--clr-text-muted, #57606a); margin: 0 0 0.2rem; }
+.twh-title { font-size: 1.55rem; margin: 0 0 0.3rem; }
+.twh-lead { margin: 0 0 0.4rem; max-width: 62rem; color: var(--clr-text-muted, #57606a); }
+.twh-context { display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; margin: 0; font-size: 0.88rem; overflow-wrap: anywhere; }
+.twh-sep { color: var(--clr-text-muted, #57606a); }

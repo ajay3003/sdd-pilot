@@ -28,7 +28,8 @@ public sealed class TestPlanException(int status, string code, string message) :
 /// immutable snapshots of the proposal itself.
 /// </summary>
 public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideService guides, SourceBaselineService baselines, TestDataCatalogService testData,
-    IEnumerable<IIntegrationJourneyPack> packs, ICriticalE2EStore e2e, TimeProvider? clock = null, ScenarioDiscoveryCache? discoveries = null) : IScenarioReviewSource
+    IEnumerable<IIntegrationJourneyPack> packs, ICriticalE2EStore e2e, TimeProvider? clock = null, ScenarioDiscoveryCache? discoveries = null,
+    ScenarioDiscoveryStore? discoveryStore = null) : IScenarioReviewSource
 {
     public const int MaxCases = 300;
     public const int MaxContentCharacters = 4_000_000;
@@ -503,7 +504,8 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         CancellationToken ct, IReadOnlyDictionary<string, string>? requirementTitles = null)
     {
         var key = TestScenarioDiscoveryService.Key(projectKey);
-        return PreparedCaseTraceability.Build(key, await ProjectDraftsAsync(key, ct), specificationPaths, requirementIds, requirementTitles);
+        return PreparedCaseTraceability.Build(key, await ProjectDraftsAsync(key, ct), specificationPaths, requirementIds, requirementTitles,
+            await ManualTestRunService.ReadProjectRunsAsync(db, key, ct));
     }
 
     /// <summary>The project's plans and snapshots (only this project's), Test Data options and the Critical E2E flows of its environment.</summary>
@@ -531,7 +533,8 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
     {
         var key = TestScenarioDiscoveryService.Key(request.ProjectKey);
         var manualTitle = string.IsNullOrWhiteSpace(request.ManualCaseTitle) ? null : request.ManualCaseTitle.Trim()[..Math.Min(request.ManualCaseTitle.Trim().Length, 300)];
-        var discovery = string.IsNullOrWhiteSpace(request.DiscoveryId) ? null : discoveries?.Find(key, request.DiscoveryId);
+        var discovery = string.IsNullOrWhiteSpace(request.DiscoveryId) ? null
+            : discoveries?.Find(key, request.DiscoveryId) ?? (discoveryStore is null ? null : await discoveryStore.FindAsync(key, request.DiscoveryId, ct));
         if (discovery is null && request.CandidateIds.Count > 0)
             throw new TestPlanException(409, "discovery-missing", "The discovery result is no longer available (BirkNext restarted or the project changed). Discover test scenarios again.");
         var wanted = request.CandidateIds.ToHashSet(StringComparer.Ordinal);
@@ -619,6 +622,7 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
     /// removed here — adding goes through <see cref="CreateProjectAsync"/> so generated content always comes from a discovery result.</summary>
     private async Task<TestPlanDraft> SaveProjectAsync(TestPlanDraftRecord row, TestPlanDraft current, SaveTestPlanDraftRequest request, string actor, CancellationToken ct)
     {
+        await RestoreDiscoveryAsync(current.ProjectKey, ct);
         var previous = current.Cases.ToDictionary(c => c.Source.ScenarioId, StringComparer.Ordinal);
         var ids = (request.ScenarioIds ?? []).Distinct(StringComparer.Ordinal).Where(previous.ContainsKey).ToList();
         if (ids.Count == 0) throw new TestPlanException(400, "no-scenarios", "A plan keeps at least one test case.");
@@ -670,6 +674,7 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
     /// case whose candidate changed goes back to review; manual cases and cases not in the latest discovery are left untouched.</summary>
     private async Task<TestPlanDraft> RefreshProjectAsync(TestPlanDraftRecord row, TestPlanDraft current, string actor, CancellationToken ct)
     {
+        await RestoreDiscoveryAsync(current.ProjectKey, ct);
         var latest = discoveries?.Latest(current.ProjectKey!) ?? throw new TestPlanException(409, "discovery-missing", "Discover test scenarios for this project first, then update the plan.");
         var byId = latest.Candidates.ToDictionary(c => c.CandidateId, StringComparer.Ordinal);
         var cases = current.Cases.Select(c =>
@@ -699,8 +704,18 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
 
     /// <summary>Source-change flags: for a project plan from the project's latest discovery in this process (none known → nothing flagged), for a
     /// guide plan from the guide revision readers see now.</summary>
-    private async Task<TestPlanDraft> FlagsAsync(TestPlanDraft plan, CancellationToken ct) =>
-        plan.ProjectKey is not null ? FlagProject(plan) : WithSourceFlags(plan, await CurrentFingerprintsAsync(plan.GuideKey, ct));
+    private async Task<TestPlanDraft> FlagsAsync(TestPlanDraft plan, CancellationToken ct)
+    {
+        if (plan.ProjectKey is null) return WithSourceFlags(plan, await CurrentFingerprintsAsync(plan.GuideKey, ct));
+        await RestoreDiscoveryAsync(plan.ProjectKey, ct);
+        return FlagProject(plan);
+    }
+
+    /// <summary>After a restart the project's last discovery is read back from storage, so source-change flags and updates keep working.</summary>
+    private async Task RestoreDiscoveryAsync(string? projectKey, CancellationToken ct)
+    {
+        if (projectKey is not null && discoveryStore is not null) await discoveryStore.RestoreAsync(projectKey, null, ct);
+    }
 
     private TestPlanDraft FlagProject(TestPlanDraft plan)
     {

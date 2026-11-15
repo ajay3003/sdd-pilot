@@ -11,14 +11,15 @@
    System Understanding guide when one describes the project's source, UI source, API contracts, integration journeys, existing tests). Candidates are
    guidance — not Test Cases, not coverage, never executed — and nothing is written to Azure DevOps. Imported text is shown as text only (never as
    markup); nothing here runs an imported step. Historical System Understanding guide plans keep loading (?guide=…). *@
-<PageTitle>Test Plan Suggestions</PageTitle>
+<PageTitle>Plan & prepare — Manual Testing</PageTitle>
 
 <div class="tps" data-testid="tps" aria-busy="@(_loading ? "true" : "false")">
-    <header class="tps-head">
-        <div class="tps-eyebrow">Manual Testing · Test preparation <BirkNext.Web.Components.HelpLink Topic="test-plan-suggestions" Text="What this page is" /></div>
-        <h1 class="tps-title">Test Plan Suggestions</h1>
-        <p class="tps-lead">Find what to test in the selected project's evidence, prepare readable manual test cases, check what they still need and save a plan for a delivery. Suggestions are proposals: not Azure DevOps records and not executed tests.</p>
-    </header>
+    @* Plan & prepare of the Manual Testing workspace IS Test Plan Suggestions: one planning page, same route and links as before. *@
+    <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manual Testing" HomeRoute="@ManualTestingPresentation.HomeRoute" Stages="ManualTestingPresentation.Stages"
+        Current="plan" Title="Plan & prepare" ShowProject="false"
+        Lead="Test Plan Suggestions: find what to test in the selected project's evidence, prepare readable manual test cases, check what they still need and save a plan for a delivery. Suggestions are proposals: not Azure DevOps records and not executed tests.">
+        <Help><BirkNext.Web.Components.HelpLink Topic="test-plan-suggestions" Text="What this page is" /></Help>
+    </BirkNext.Web.Components.TestingWorkspaceHeader>
 
     @if (_loading)
     {
@@ -208,20 +209,7 @@
 
     /// <summary>The project's snapshot: the imported package of the current workspace scope, else the project evidence's main package. Never the
     /// newest snapshot of some other repository.</summary>
-    private (Guid? Id, string? Basis) ResolveSnapshot()
-    {
-        try
-        {
-            if (ServiceProvider.GetService(typeof(BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService)) is not BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService evidence) return (null, null);
-            var view = evidence.Peek();
-            var scope = (ServiceProvider.GetService(typeof(BirkNext.Web.Services.Explorers.IArtifactExplorerContext)) as BirkNext.Web.Services.Explorers.IArtifactExplorerContext)?.CurrentScope;
-            if (scope is { } s && s.StartsWith("import:", StringComparison.Ordinal) && view.Packages.FirstOrDefault(p => p.ImportId == s["import:".Length..]) is { SnapshotId: { } imported } package)
-                return (imported, $"Imported package {package.DisplayName}");
-            if (view.Main?.SnapshotId is { } main) return (main, $"Project evidence: {view.Main.DisplayName}");
-        }
-        catch (InvalidOperationException) { }
-        return (null, null);
-    }
+    private (Guid? Id, string? Basis) ResolveSnapshot() => ManualTestingWorkspace.ResolveSnapshot(ServiceProvider);
 
     private async Task LoadProjectAsync()
     {
@@ -746,6 +734,11 @@
                             @if (c.Generated.Confidence is { } conf) { <span class="tps-muted"> · @ScenarioCandidateTypes.ConfidenceLabel(conf)</span> }</dd>
                     </dl>
                     @LinkedRequirements(d, c, sid)
+                    @if (d.ProjectKey is not null && c.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded))
+                    {
+                        <p class="tps-run-link"><a href="@($"{ManualTestingPresentation.ExecuteRoute}?draft={d.Id}&case={Uri.EscapeDataString(sid)}")" data-testid="tps-run-case">Run this test case</a>
+                            <span class="tps-muted tps-small">@(_dirty ? "Save your changes first: a run uses the saved case." : "Execute & document: record what happens, step by step.")</span></p>
+                    }
                     @if (CanWrite)
                     {
                         @* Locked while a request is in flight, so a late response can never replace an edit made meanwhile. *@

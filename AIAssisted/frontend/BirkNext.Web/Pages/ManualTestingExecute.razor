@@ -1,0 +1,520 @@
+@page "/manual-testing/execute"
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@using M = BirkNext.Web.Services.ManualTestingPresentation
+@using R = BirkNext.TestPlanning.ManualRunRules
+@implements IDisposable
+@inject IServiceProvider ServiceProvider
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@* Execute & document: run a SAVED test case step by step and record what happened. A run pins the case's steps and expected results when it
+   starts, so later edits never rewrite it. Every outcome is the tester's decision (nothing is generated); evidence is a reference (a link or a
+   note), never an uploaded file; a defect is a local observation that may name an existing work item. Nothing is sent to Azure DevOps. *@
+<PageTitle>Execute & document — Manual Testing</PageTitle>
+
+<NavigationLock ConfirmExternalNavigation="@_dirty" OnBeforeInternalNavigation="ConfirmLeaveAsync" />
+
+<div class="mt" data-testid="mte" aria-busy="@(_loading || _busy ? "true" : "false")">
+    <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manual Testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="execute" Title="Execute & document"
+        ProjectName="@_ws?.ProjectName" Context="@_ws?.SnapshotBasis"
+        Lead="What happened during testing? Run a saved test case step by step: record Pass, Fail, Blocked or Not run with what you actually saw, add evidence references and defects, and keep the run history." />
+
+    @if (_message is not null)
+    {
+        <p class="@(_messageBad ? "mt-alert" : "mt-muted")" role="@(_messageBad ? "alert" : "status")" data-testid="mte-message">@_message</p>
+    }
+
+    @if (_loading)
+    {
+        <p class="mt-muted" role="status" data-testid="mte-loading">Loading…</p>
+    }
+    else if (_ws?.ProjectKey is null)
+    {
+        <p class="mt-muted" data-testid="mte-no-project">No project is selected. <a href="project-import">Import or choose a project</a> first.</p>
+    }
+    else if (_run is not null)
+    {
+        @Runner(_run)
+    }
+    else if (_startCase is not null && _startPlan is not null)
+    {
+        @StartPanel(_startPlan, _startCase)
+    }
+    else
+    {
+        @Overview()
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "run")] public string? RunQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "draft")] public string? DraftQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "case")] public string? CaseQuery { get; set; }
+
+    private IManualTestRunsApiService? _runs;
+    private ITestPlanSuggestionsApiService? _plans;
+    private ManualTestingWorkspace.Snapshot? _ws;
+    private ICurrentWorkspaceProjection? _projection;
+    private bool _loading = true;
+    private bool _busy;
+    private string? _message;
+    private bool _messageBad;
+
+    // Overview: the project's saved cases (by plan) and the run history.
+    private readonly List<TestPlanDraft> _drafts = [];
+    // Start: one saved case.
+    private TestPlanDraft? _startPlan;
+    private TestCaseDraft? _startCase;
+    private string _environment = "";
+    // Runner: the stored run and the working copy of what the tester changed.
+    private ManualTestRun? _run;
+    private Dictionary<int, (ManualStepOutcome? Outcome, string? Actual)> _steps = [];
+    private string _notes = "";
+    private string _runEnvironment = "";
+    private List<ManualRunEvidence> _evidence = [];
+    private List<ManualRunDefect> _defects = [];
+    private bool _dirty;
+    private string _abandonReason = "";
+    // New evidence / defect forms.
+    private ManualEvidenceKind _evKind = ManualEvidenceKind.Link;
+    private string _evLabel = "", _evReference = "";
+    private int? _evStep;
+    private ManualRunDefect _newDefect = new();
+
+    private (string?, string?, string?)? _loaded;
+
+    protected override void OnInitialized()
+    {
+        _runs = ServiceProvider.GetService(typeof(IManualTestRunsApiService)) as IManualTestRunsApiService;
+        _plans = ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService;
+        _projection = ServiceProvider.GetService(typeof(ICurrentWorkspaceProjection)) as ICurrentWorkspaceProjection;
+        if (_projection is not null) _projection.Changed += OnProjectChanged;
+    }
+
+    /// <summary>First load, and Back / Forward or in-page links that change ?run / ?draft / ?case: load what the address names.</summary>
+    protected override async Task OnParametersSetAsync()
+    {
+        var query = (RunQuery, DraftQuery, CaseQuery);
+        if (_loaded == query) return;
+        _loaded = query;
+        await LoadAsync();
+    }
+
+    public void Dispose()
+    {
+        if (_projection is not null) _projection.Changed -= OnProjectChanged;
+    }
+
+    private void OnProjectChanged() => _ = InvokeAsync(async () => { _run = null; _startCase = null; _dirty = false; await LoadAsync(); StateHasChanged(); });
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        string? Q(string name) => name switch { "run" => RunQuery, "draft" => DraftQuery, "case" => CaseQuery, _ => null };
+        try
+        {
+            _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync(discovery: false, requirements: false);
+            _run = null; _startCase = null; _startPlan = null; _drafts.Clear();
+            if (_ws.ProjectKey is not { } key || _runs is null || _plans is null) return;
+            if (Guid.TryParse(Q("run"), out var runId))
+            {
+                var (run, error) = await _runs.GetAsync(key, runId);
+                if (run is null) Fail(error ?? "The run could not be opened.");
+                else Use(run);
+                return;
+            }
+            if (Guid.TryParse(Q("draft"), out var draftId) && Q("case") is { Length: > 0 } caseId)
+            {
+                var (plan, error) = await _plans.DraftAsync(draftId);
+                if (plan is null || plan.ProjectKey != key) { Fail(plan is null ? error ?? "The plan could not be opened." : "That plan belongs to another project and is not shown here."); }
+                else if (plan.Cases.FirstOrDefault(c => c.Source.ScenarioId == caseId) is not { } c) Fail("That test case is not in the plan any more.");
+                else { _startPlan = plan; _startCase = c; _environment = _ws.Runs.Where(r => r.Environment is not null).Select(r => r.Environment!).FirstOrDefault() ?? ""; return; }
+            }
+            foreach (var summary in _ws.Plans?.Drafts ?? [])
+                if ((await _plans.DraftAsync(summary.Id)).Draft is { } d && d.ProjectKey == key) _drafts.Add(d);
+        }
+        finally { _loading = false; }
+    }
+
+    private void Fail(string text) { _message = text; _messageBad = true; }
+    private void Info(string text) { _message = text; _messageBad = false; }
+
+    private void Use(ManualTestRun run)
+    {
+        _run = run;
+        _steps = run.Steps.ToDictionary(s => s.Number, s => (s.Outcome, s.Actual));
+        _notes = run.Notes ?? "";
+        _runEnvironment = run.Environment ?? "";
+        _evidence = [.. run.Evidence];
+        _defects = [.. run.Defects];
+        _dirty = false;
+    }
+
+    /// <summary>Unsaved results are never lost silently: leaving asks first (Save progress keeps them).</summary>
+    private async Task ConfirmLeaveAsync(Microsoft.AspNetCore.Components.Routing.LocationChangingContext context)
+    {
+        if (!_dirty) return;
+        bool leave;
+        try { leave = await JS.InvokeAsync<bool>("confirm", "This run has unsaved results. Leave without saving them?"); }
+        catch (JSException) { leave = false; }
+        if (!leave) context.PreventNavigation();
+    }
+
+    // ── Overview ─────────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment Overview() => __builder =>
+    {
+        var byCase = _ws!.Runs.GroupBy(r => r.CaseKey).ToDictionary(g => g.Key, g => g.ToList());
+        <section class="mt-card" aria-labelledby="mte-cases-title" data-testid="mte-cases">
+            <h2 id="mte-cases-title" class="mt-h">Choose a saved test case to run</h2>
+            @if (_drafts.Count == 0 || _drafts.All(d => d.Cases.Count == 0))
+            {
+                <p class="mt-muted" data-testid="mte-cases-none">No saved test case yet. Prepare one in <a href="@($"{M.PlanRoute}?area=choose")">Plan &amp; prepare</a>.</p>
+            }
+            @foreach (var d in _drafts.Where(d => d.Cases.Count > 0))
+            {
+                <h3 class="mt-h">@d.PlanName</h3>
+                <ul class="mt-list">
+                    @foreach (var c in d.Cases)
+                    {
+                        var key = $"{d.Id:N}/{c.Source.ScenarioId}";
+                        var runs = byCase.GetValueOrDefault(key) ?? [];
+                        var open = runs.FirstOrDefault(r => r.State == ManualRunState.InProgress);
+                        var last = runs.Where(r => r.State == ManualRunState.Completed).OrderByDescending(r => r.CompletedAt).FirstOrDefault();
+                        var runnable = c.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded) && c.EffectiveSteps.Count > 0;
+                        <li data-testid="mte-case" data-case="@c.Source.ScenarioId">
+                            <strong>@c.EffectiveTitle</strong>
+                            <span class="mt-chip mt-tone-muted">@P(c.Review)</span>
+                            @if (last is not null) { <span class="mt-chip mt-tone-@M.RunTone(last.State, last.Outcome)" data-testid="mte-case-last">Last run: @M.RunLabel(last.State, last.Outcome)</span> }
+                            @if (open is not null) { <a href="@($"{M.ExecuteRoute}?run={open.Id}")" data-testid="mte-resume">Resume run</a> }
+                            else if (runnable) { <a href="@($"{M.ExecuteRoute}?draft={d.Id}&case={Uri.EscapeDataString(c.Source.ScenarioId)}")" data-testid="mte-run">Run</a> }
+                            else { <span class="mt-muted">@(c.EffectiveSteps.Count == 0 ? "Add steps before running." : "Excluded — not run.")</span> }
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+        @History(_ws.Runs)
+    };
+
+    private RenderFragment History(IReadOnlyList<ManualRunSummary> runs) => __builder =>
+    {
+        <section class="mt-card" aria-labelledby="mte-history-title" data-testid="mte-history">
+            <h2 id="mte-history-title" class="mt-h">Run history</h2>
+            @if (runs.Count == 0)
+            {
+                <p class="mt-muted" data-testid="mte-history-none">No run recorded yet.</p>
+            }
+            else
+            {
+                <table class="mte-table">
+                    <thead><tr><th scope="col">Test case</th><th scope="col">Result</th><th scope="col">When</th><th scope="col">Tester · environment</th><th scope="col">Steps</th><th scope="col">Defects · evidence</th></tr></thead>
+                    <tbody>
+                        @foreach (var r in runs.OrderByDescending(x => x.StartedAt))
+                        {
+                            <tr data-testid="mte-history-row" data-run="@r.Id" data-state="@r.State" data-outcome="@r.Outcome">
+                                <td data-label="Test case"><a href="@($"{M.ExecuteRoute}?run={r.Id}")">@r.Title</a> <span class="mt-muted">plan revision @r.PlanRevision</span></td>
+                                <td data-label="Result"><span class="mt-chip mt-tone-@M.RunTone(r.State, r.Outcome)">@M.RunLabel(r.State, r.Outcome)</span></td>
+                                <td data-label="When">@((r.CompletedAt ?? r.StartedAt).ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</td>
+                                <td data-label="Tester · environment">@r.Tester@(r.Environment is { } env ? $" · {env}" : "")</td>
+                                <td data-label="Steps">@r.Passed pass · @r.Failed fail · @r.Blocked blocked · @r.NotRun not run@(r.Undecided > 0 ? $" · {r.Undecided} undecided" : "")</td>
+                                <td data-label="Defects · evidence">@r.Defects defect@(r.Defects == 1 ? "" : "s") (@r.OpenDefects open) · @r.Evidence reference@(r.Evidence == 1 ? "" : "s")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+    };
+
+    private static string P(TestCaseReviewState state) => state switch
+    {
+        TestCaseReviewState.Accepted => "Approved", TestCaseReviewState.NeedsClarification => "Needs clarification", TestCaseReviewState.Excluded => "Excluded",
+        TestCaseReviewState.Superseded => "Superseded", TestCaseReviewState.UnderReview => "Under review", _ => "Prepared",
+    };
+
+    // ── Start ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment StartPanel(TestPlanDraft plan, TestCaseDraft c) => __builder =>
+    {
+        var open = _ws!.Runs.FirstOrDefault(r => r.CaseKey == $"{plan.Id:N}/{c.Source.ScenarioId}" && r.State == ManualRunState.InProgress);
+        <section class="mt-card" aria-labelledby="mte-start-title" data-testid="mte-start">
+            <h2 id="mte-start-title" class="mt-h">@c.EffectiveTitle</h2>
+            <p class="mt-muted">@plan.PlanName · plan revision @plan.Revision · @c.EffectiveSteps.Count step@(c.EffectiveSteps.Count == 1 ? "" : "s")</p>
+            @if (c.EffectivePreconditions is { Length: > 0 } pre) { <p><strong>Preconditions:</strong> @pre</p> }
+            <ol>@foreach (var s in c.EffectiveSteps) { <li>@s</li> }</ol>
+            @if (open is not null)
+            {
+                <p data-testid="mte-start-open">A run of this case is already in progress (started @open.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")).</p>
+                <a class="btn btn-primary" href="@($"{M.ExecuteRoute}?run={open.Id}")" data-testid="mte-start-resume">Resume run</a>
+            }
+            else
+            {
+                <label class="mte-field"><span>Where are you testing? (optional)</span>
+                    <input value="@_environment" @oninput="e => _environment = e.Value?.ToString() ?? string.Empty" placeholder="For example QA or Test environment 2" maxlength="200" data-testid="mte-start-env" /></label>
+                <p class="mt-muted">The run uses the case exactly as it is saved now. Editing the case later does not change this run.</p>
+                <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="() => StartAsync(plan, c)" data-testid="mte-start-run">Start test run</button>
+            }
+            <a class="btn btn-secondary" href="@M.ExecuteRoute">Back to all cases</a>
+        </section>
+    };
+
+    private async Task StartAsync(TestPlanDraft plan, TestCaseDraft c)
+    {
+        _busy = true;
+        Info("Starting the test run…");
+        var (run, error) = await _runs!.StartAsync(new StartManualRunRequest(_ws!.ProjectKey!, plan.Id, c.Source.ScenarioId, string.IsNullOrWhiteSpace(_environment) ? null : _environment.Trim()));
+        _busy = false;
+        if (run is null) { Fail(error ?? "The run could not be started."); return; }
+        Info("Test run started. Record a result for every step, then complete the run.");
+        Nav.NavigateTo($"{M.ExecuteRoute}?run={run.Id}");
+    }
+
+    // ── Runner ───────────────────────────────────────────────────────────────────────────────────────────────
+
+    private ManualRunOutcome Preview => R.Rollup([.. _run!.Steps.Select(s => s with { Outcome = _steps.GetValueOrDefault(s.Number).Outcome })]);
+
+    private RenderFragment Runner(ManualTestRun run) => __builder =>
+    {
+        var editable = run.State == ManualRunState.InProgress;
+        var undecided = run.Steps.Count(s => _steps.GetValueOrDefault(s.Number).Outcome is null);
+        <section class="mt-card" aria-labelledby="mte-run-title" data-testid="mte-runner" data-state="@run.State" data-outcome="@run.Outcome">
+            <h2 id="mte-run-title" class="mt-h">@run.Title</h2>
+            <p class="mt-muted" data-testid="mte-run-meta">@run.PlanName · plan revision @run.PlanRevision (pinned when the run started) · started @run.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") by @run.Tester</p>
+            <p>
+                <span class="mt-chip mt-tone-@M.RunTone(run.State, run.Outcome)" data-testid="mte-run-state">@M.RunLabel(run.State, run.Outcome)</span>
+                @if (editable) { <span class="mt-muted" data-testid="mte-preview">If completed now: @R.OutcomeLabel(Preview)@(undecided > 0 ? $" — {undecided} step{(undecided == 1 ? "" : "s")} without a result" : "")</span> }
+                @if (_dirty) { <span class="mt-chip mt-tone-warn" data-testid="mte-unsaved">Unsaved changes</span> }
+            </p>
+            @if (run.State == ManualRunState.Abandoned) { <p data-testid="mte-abandoned">Stopped: @run.AbandonReason. A stopped run is history; it never counts as an execution.</p> }
+            @if (run.Preconditions is { Length: > 0 } pre) { <p><strong>Preconditions:</strong> <span style="white-space: pre-wrap">@pre</span></p> }
+            @if (run.RequirementIds.Count > 0) { <p class="mt-muted">Requirements: @string.Join(", ", run.RequirementIds)</p> }
+            @if (run.TestData.Count > 0) { <p class="mt-muted">Test Data: @string.Join(", ", run.TestData)</p> }
+            @if (editable)
+            {
+                <label class="mte-field"><span>Where are you testing?</span>
+                    <input value="@_runEnvironment" @oninput="e => { _runEnvironment = e.Value?.ToString() ?? string.Empty; _dirty = true; }" maxlength="200" data-testid="mte-env" /></label>
+            }
+            else if (run.Environment is { } env) { <p class="mt-muted">Environment: @env</p> }
+        </section>
+
+        @foreach (var s in run.Steps)
+        {
+            var current = _steps.GetValueOrDefault(s.Number);
+            var n = s.Number;
+            <section class="mte-step" aria-labelledby="@($"mte-step-title-{n}")" data-testid="mte-step" data-step="@n" data-outcome="@(current.Outcome?.ToString() ?? "none")">
+                <div class="mte-step-head"><h3 id="@($"mte-step-title-{n}")">Step @n</h3>
+                    <span class="mt-chip @(current.Outcome switch { ManualStepOutcome.Pass => "mt-tone-ok", ManualStepOutcome.Fail => "mt-tone-bad", null => "mt-tone-muted", _ => "mt-tone-warn" })">@R.StepLabel(current.Outcome)</span></div>
+                <dl class="mte-dl"><dt>Action</dt><dd>@s.Action</dd><dt>Expected</dt><dd>@(s.Expected ?? "Not stated — clarify before judging")</dd></dl>
+                @if (editable)
+                {
+                    <fieldset class="mte-outcomes">
+                        <legend>Result of step @n</legend>
+                        @foreach (var o in Enum.GetValues<ManualStepOutcome>())
+                        {
+                            <label><input type="radio" name="@($"mte-outcome-{n}")" value="@o" checked="@(current.Outcome == o)" @onchange="() => SetOutcome(n, o)" data-testid="@($"mte-outcome-{n}-{o}")" /> @R.StepLabel(o)</label>
+                        }
+                    </fieldset>
+                    <label class="mte-field"><span>Actual result</span>
+                        <textarea rows="2" @oninput="e => SetActual(n, e.Value?.ToString())" data-testid="@($"mte-actual-{n}")" placeholder="What you saw">@current.Actual</textarea></label>
+                    @if (current.Outcome is ManualStepOutcome.Fail or ManualStepOutcome.Blocked)
+                    {
+                        <button type="button" class="btn btn-secondary btn-sm" @onclick="() => DefectFor(s)" data-testid="@($"mte-defect-for-{n}")">Record a defect for step @n</button>
+                    }
+                }
+                else if (current.Actual is { Length: > 0 } actual) { <dl class="mte-dl"><dt>Actual</dt><dd>@actual</dd></dl> }
+            </section>
+        }
+
+        @Evidence(run, editable)
+        @Defects(run, editable)
+
+        <section class="mt-card" aria-labelledby="mte-notes-title">
+            <h2 id="mte-notes-title" class="mt-h">Notes</h2>
+            @if (editable)
+            {
+                <textarea class="mte-field" rows="3" style="width:100%" @oninput="e => { _notes = e.Value?.ToString() ?? string.Empty; _dirty = true; }" data-testid="mte-notes" aria-labelledby="mte-notes-title">@_notes</textarea>
+            }
+            else { <p>@(run.Notes ?? "No notes.")</p> }
+        </section>
+
+        @if (editable)
+        {
+            <div class="mte-bar" data-testid="mte-actions">
+                <button type="button" class="btn btn-primary" disabled="@(_busy || !_dirty)" @onclick="SaveAsync" data-testid="mte-save">Save progress</button>
+                <button type="button" class="btn btn-secondary" disabled="@(_busy || undecided > 0)" @onclick="CompleteAsync" data-testid="mte-complete">Complete run</button>
+                @if (undecided > 0) { <span class="mt-muted" data-testid="mte-complete-why">Record a result for every step to complete the run (@undecided left).</span> }
+            </div>
+            <details class="mt-card">
+                <summary>Stop this run without a result</summary>
+                <label class="mte-field"><span>Why is the run stopped?</span><input value="@_abandonReason" @oninput="e => _abandonReason = e.Value?.ToString() ?? string.Empty" data-testid="mte-abandon-reason" /></label>
+                <button type="button" class="btn btn-secondary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_abandonReason))" @onclick="AbandonAsync" data-testid="mte-abandon">Stop run</button>
+            </details>
+        }
+        <p><a href="@M.ExecuteRoute" data-testid="mte-back">All cases and run history</a> · <a href="@($"{M.PlanRoute}?draft={run.DraftId}&area=prepare&case={Uri.EscapeDataString(run.CaseId)}")" data-testid="mte-open-case">Open the test case</a></p>
+    };
+
+    private RenderFragment Evidence(ManualTestRun run, bool editable) => __builder =>
+    {
+        <section class="mt-card" aria-labelledby="mte-ev-title" data-testid="mte-evidence">
+            <h2 id="mte-ev-title" class="mt-h">Evidence references</h2>
+            <p class="mt-muted">BirkNext stores where the evidence is kept — a link or a note — not the file itself. Keep screenshots and logs in your team's evidence store.</p>
+            @if (_evidence.Count == 0) { <p class="mt-muted" data-testid="mte-evidence-none">No evidence reference yet.</p> }
+            <ul class="mte-items">
+                @foreach (var e in _evidence.ToList())
+                {
+                    <li data-testid="mte-evidence-item" data-kind="@e.Kind">
+                        <strong>@e.Label</strong>
+                        @if (e.Kind == ManualEvidenceKind.Link && Uri.TryCreate(e.Reference, UriKind.Absolute, out var u) && (u.Scheme == "https" || u.Scheme == "http"))
+                        { <a href="@e.Reference" target="_blank" rel="noopener noreferrer">@e.Reference</a> }
+                        else { <span>@e.Reference</span> }
+                        <span class="mt-muted">@(e.Kind == ManualEvidenceKind.Link ? "link" : "note")@(e.Step is { } st ? $" · step {st}" : " · whole run")@(e.AddedBy.Length > 0 ? $" · {e.AddedBy}" : " · not saved yet")</span>
+                        @if (editable) { <button type="button" class="btn btn-secondary btn-sm" aria-label="@($"Remove evidence {e.Label}")" @onclick="() => { _evidence.Remove(e); _dirty = true; }">Remove</button> }
+                    </li>
+                }
+            </ul>
+            @if (editable)
+            {
+                <div class="mte-row">
+                    <label class="mte-field"><span>Kind</span>
+                        <select @onchange="e => _evKind = Enum.TryParse<ManualEvidenceKind>(e.Value?.ToString(), out var k) ? k : ManualEvidenceKind.Link" data-testid="mte-ev-kind">
+                            <option value="Link" selected="@(_evKind == ManualEvidenceKind.Link)">Link (https://…)</option>
+                            <option value="Note" selected="@(_evKind == ManualEvidenceKind.Note)">Note (where it is kept)</option>
+                        </select></label>
+                    <label class="mte-field"><span>Label</span><input value="@_evLabel" @oninput="e => _evLabel = e.Value?.ToString() ?? string.Empty" maxlength="200" data-testid="mte-ev-label" /></label>
+                    <label class="mte-field"><span>@(_evKind == ManualEvidenceKind.Link ? "Address" : "Where it is kept")</span><input value="@_evReference" @oninput="e => _evReference = e.Value?.ToString() ?? string.Empty" maxlength="1000" data-testid="mte-ev-reference" /></label>
+                    <label class="mte-field"><span>Belongs to</span>
+                        <select @onchange="e => _evStep = int.TryParse(e.Value?.ToString(), out var v) ? v : null" data-testid="mte-ev-step">
+                            <option value="" selected="@(_evStep is null)">Whole run</option>
+                            @foreach (var s in run.Steps) { <option value="@s.Number" selected="@(_evStep == s.Number)">Step @s.Number</option> }
+                        </select></label>
+                </div>
+                @if (_evKind == ManualEvidenceKind.Link && _evReference.Length > 0 && !LinkOk(_evReference)) { <p class="mt-muted" data-testid="mte-ev-invalid">A link must be a full http or https address.</p> }
+                <button type="button" class="btn btn-secondary btn-sm" disabled="@(string.IsNullOrWhiteSpace(_evLabel) || string.IsNullOrWhiteSpace(_evReference) || (_evKind == ManualEvidenceKind.Link && !LinkOk(_evReference)))"
+                        @onclick="AddEvidence" data-testid="mte-ev-add">Add evidence reference</button>
+            }
+        </section>
+    };
+
+    private RenderFragment Defects(ManualTestRun run, bool editable) => __builder =>
+    {
+        <section class="mt-card" aria-labelledby="mte-df-title" data-testid="mte-defects">
+            <h2 id="mte-df-title" class="mt-h">Defects</h2>
+            <p class="mt-muted">Recorded here as local observations. To track a defect in Azure DevOps, register it there and add its number or link as the external reference; BirkNext never creates or changes work items.</p>
+            @if (_defects.Count == 0) { <p class="mt-muted" data-testid="mte-defects-none">No defect recorded.</p> }
+            <ul class="mte-items">
+                @foreach (var d in _defects.ToList())
+                {
+                    <li data-testid="mte-defect" data-status="@d.Status">
+                        <strong>@d.Title</strong>
+                        <span class="mt-chip @(d.Status == ManualDefectStatus.Open ? "mt-tone-bad" : "mt-tone-muted")">@d.Status</span>
+                        @if (d.Severity is { } sev) { <span class="mt-chip mt-tone-warn">@sev</span> }
+                        <span class="mt-muted">@(d.Step is { } st ? $"step {st}" : "whole run")@(d.ExternalReference is { } ext ? $" · external: {ext}" : " · local observation")@(d.RecordedBy.Length > 0 ? $" · {d.RecordedBy}" : " · not saved yet")</span>
+                        @if (d.Actual is { Length: > 0 } a) { <span class="mt-muted">Actual: @a</span> }
+                        @if (editable)
+                        {
+                            <button type="button" class="btn btn-secondary btn-sm" @onclick="() => ToggleDefect(d)" data-testid="mte-defect-toggle">@(d.Status == ManualDefectStatus.Open ? "Mark closed" : "Reopen")</button>
+                            <button type="button" class="btn btn-secondary btn-sm" aria-label="@($"Remove defect {d.Title}")" @onclick="() => { _defects.Remove(d); _dirty = true; }">Remove</button>
+                        }
+                    </li>
+                }
+            </ul>
+            @if (editable)
+            {
+                <div class="mte-row">
+                    <label class="mte-field"><span>Title</span><input value="@_newDefect.Title" @oninput="e => _newDefect = _newDefect with { Title = e.Value?.ToString() ?? string.Empty }" maxlength="300" data-testid="mte-df-title" /></label>
+                    <label class="mte-field"><span>Severity</span>
+                        <select @onchange="e => _newDefect = _newDefect with { Severity = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString() }" data-testid="mte-df-severity">
+                            <option value="" selected="@(_newDefect.Severity is null)">Not assessed</option>
+                            @foreach (var s in R.Severities) { <option value="@s" selected="@(_newDefect.Severity == s)">@s</option> }
+                        </select></label>
+                    <label class="mte-field"><span>Step</span>
+                        <select @onchange="e => _newDefect = _newDefect with { Step = int.TryParse(e.Value?.ToString(), out var v) ? v : null }" data-testid="mte-df-step">
+                            <option value="" selected="@(_newDefect.Step is null)">Whole run</option>
+                            @foreach (var s in run.Steps) { <option value="@s.Number" selected="@(_newDefect.Step == s.Number)">Step @s.Number</option> }
+                        </select></label>
+                    <label class="mte-field"><span>External reference (optional)</span><input value="@_newDefect.ExternalReference" @oninput="e => _newDefect = _newDefect with { ExternalReference = e.Value?.ToString() }" placeholder="Work item number or https link" maxlength="1000" data-testid="mte-df-external" /></label>
+                </div>
+                <div class="mte-row">
+                    <label class="mte-field"><span>Expected</span><textarea rows="2" @oninput="e => _newDefect = _newDefect with { Expected = e.Value?.ToString() }" data-testid="mte-df-expected">@_newDefect.Expected</textarea></label>
+                    <label class="mte-field"><span>Actual</span><textarea rows="2" @oninput="e => _newDefect = _newDefect with { Actual = e.Value?.ToString() }" data-testid="mte-df-actual">@_newDefect.Actual</textarea></label>
+                    <label class="mte-field"><span>How to reproduce</span><textarea rows="2" @oninput="e => _newDefect = _newDefect with { Reproduction = e.Value?.ToString() }" data-testid="mte-df-repro">@_newDefect.Reproduction</textarea></label>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" disabled="@string.IsNullOrWhiteSpace(_newDefect.Title)" @onclick="AddDefect" data-testid="mte-df-add">Add defect</button>
+            }
+        </section>
+    };
+
+    private static bool LinkOk(string value) => Uri.TryCreate(value.Trim(), UriKind.Absolute, out var u) && (u.Scheme == "https" || u.Scheme == "http") && u.Host.Length > 0;
+
+    private void SetOutcome(int n, ManualStepOutcome o) { _steps[n] = (o, _steps.GetValueOrDefault(n).Actual); _dirty = true; }
+    private void SetActual(int n, string? actual) { _steps[n] = (_steps.GetValueOrDefault(n).Outcome, actual); _dirty = true; }
+
+    private void AddEvidence()
+    {
+        _evidence.Add(new ManualRunEvidence { Kind = _evKind, Label = _evLabel.Trim(), Reference = _evReference.Trim(), Step = _evStep });
+        _evLabel = ""; _evReference = ""; _evStep = null; _dirty = true;
+    }
+
+    private void DefectFor(ManualRunStep s)
+    {
+        _newDefect = new ManualRunDefect { Step = s.Number, Expected = s.Expected, Actual = _steps.GetValueOrDefault(s.Number).Actual, Title = _newDefect.Title };
+    }
+
+    private void AddDefect()
+    {
+        _defects.Add(_newDefect with { Title = _newDefect.Title.Trim(), Status = ManualDefectStatus.Open });
+        _newDefect = new(); _dirty = true;
+    }
+
+    private void ToggleDefect(ManualRunDefect d)
+    {
+        var i = _defects.IndexOf(d);
+        if (i >= 0) { _defects[i] = d with { Status = d.Status == ManualDefectStatus.Open ? ManualDefectStatus.Closed : ManualDefectStatus.Open }; _dirty = true; }
+    }
+
+    private SaveManualRunRequest Request() => new()
+    {
+        BaseRevision = _run!.Revision, Notes = _notes, Environment = _runEnvironment,
+        Steps = [.. _run.Steps.Select(s => new ManualStepInput(s.Number, _steps.GetValueOrDefault(s.Number).Outcome, _steps.GetValueOrDefault(s.Number).Actual))],
+        Evidence = [.. _evidence], Defects = [.. _defects],
+    };
+
+    private async Task<bool> SaveAsync()
+    {
+        if (_run is null) return false;
+        _busy = true;
+        var (run, error) = await _runs!.SaveAsync(_ws!.ProjectKey!, _run.Id, Request());
+        _busy = false;
+        if (run is null) { Fail(error ?? "Your results could not be saved. They are still on this page; try again."); return false; }
+        Use(run);
+        Info($"Progress saved ({DateTime.Now:HH:mm}). You can leave and resume this run later.");
+        return true;
+    }
+
+    private async Task CompleteAsync()
+    {
+        if (_run is null) return;
+        if (_dirty && !await SaveAsync()) return;
+        _busy = true;
+        var (run, error) = await _runs!.CompleteAsync(_ws!.ProjectKey!, _run.Id, _run.Revision);
+        _busy = false;
+        if (run is null) { Fail(error ?? "The run could not be completed."); return; }
+        Use(run);
+        Info($"Run completed: {R.OutcomeLabel(run.Outcome)}. It is kept in the run history and cannot be changed.");
+        _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync(discovery: false, requirements: false);
+    }
+
+    private async Task AbandonAsync()
+    {
+        if (_run is null) return;
+        if (_dirty && !await SaveAsync()) return;
+        _busy = true;
+        var (run, error) = await _runs!.AbandonAsync(_ws!.ProjectKey!, _run.Id, _run.Revision, _abandonReason.Trim());
+        _busy = false;
+        if (run is null) { Fail(error ?? "The run could not be stopped."); return; }
+        Use(run);
+        Info("Run stopped. It stays in the history and never counts as an execution.");
+    }
+}

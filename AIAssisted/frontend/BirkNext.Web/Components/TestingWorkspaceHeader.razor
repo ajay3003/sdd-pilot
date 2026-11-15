@@ -1,0 +1,45 @@
+@using BirkNext.Web.Services
+@* The header every page of a testing workspace shares (Manual Testing today; Technical Testing can pass its own stages): the workspace and its
+   stages as one navigation (the current stage marked), the page title and lead, and the project the page works on. Stages are destinations,
+   never gates: every stage stays reachable. *@
+
+<header class="twh" data-testid="twh">
+    <nav class="twh-stages" aria-label="@($"{Workspace} stages")" data-testid="twh-stages">
+        <a href="@HomeRoute" class="twh-stage twh-home @(Current is null ? "is-current" : null)" aria-current="@(Current is null ? "page" : null)" data-testid="twh-stage" data-stage="home">@Workspace</a>
+        @foreach (var (stage, n) in Stages.Select((s, i) => (s, i + 1)))
+        {
+            <a href="@stage.Route" class="twh-stage @(stage.Id == Current ? "is-current" : null)" aria-current="@(stage.Id == Current ? "page" : null)"
+               data-testid="twh-stage" data-stage="@stage.Id"><span class="twh-n" aria-hidden="true">@n</span>@stage.Title</a>
+        }
+    </nav>
+    <div class="twh-eyebrow">@Workspace@(CurrentStage is { } s ? $" · {s.Question}" : "") @Help</div>
+    <h1 class="twh-title" data-testid="twh-title">@Title</h1>
+    @if (Lead is not null) { <p class="twh-lead">@Lead</p> }
+    @if (ShowProject)
+    {
+        <p class="twh-context" data-testid="twh-project">
+            @if (ProjectName is { Length: > 0 } project) { <span>Project: <strong>@project</strong></span> }
+            else { <span>No project selected — <a href="project-import">import or choose a project</a>.</span> }
+            @if (Context is { Length: > 0 } context) { <span class="twh-sep" aria-hidden="true">·</span><span data-testid="twh-context">@context</span> }
+        </p>
+    }
+</header>
+
+@code {
+    [Parameter, EditorRequired] public string Workspace { get; set; } = "";
+    [Parameter, EditorRequired] public string HomeRoute { get; set; } = "";
+    [Parameter, EditorRequired] public IReadOnlyList<WorkspaceStage> Stages { get; set; } = [];
+    /// <summary>The current stage id; null = the workspace home.</summary>
+    [Parameter] public string? Current { get; set; }
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Lead { get; set; }
+    [Parameter] public string? ProjectName { get; set; }
+    /// <summary>Extra context after the project (source snapshot, plan), shown as plain text.</summary>
+    [Parameter] public string? Context { get; set; }
+    /// <summary>False when the page shows its own project context bar (so the project is not repeated).</summary>
+    [Parameter] public bool ShowProject { get; set; } = true;
+    /// <summary>Optional help link in the eyebrow.</summary>
+    [Parameter] public RenderFragment? Help { get; set; }
+
+    private WorkspaceStage? CurrentStage => Stages.FirstOrDefault(s => s.Id == Current);
+}

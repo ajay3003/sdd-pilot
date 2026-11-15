@@ -267,9 +267,9 @@ public sealed class NavMenuLayoutTests : BunitContext
         var cut = Render<NavMenu>();
 
         cut.FindAll("button.nav-section").Select(b => b.GetAttribute("data-testid")!["nav-section-".Length..]).Should().Equal(
-            "getting-started", "delivery-reporting", "document-review", "traceability", "source-review", "quality-testing", "extensions", "admin");
+            "getting-started", "delivery-reporting", "document-review", "traceability", "source-review", "manual-testing-workspace", "quality-testing", "extensions", "admin");
         cut.FindAll("button.nav-section").Select(b => b.TextContent.Trim()).Should().Equal(
-            "Workspace", "Delivery Management", "Specifications & Planning", "Traceability & Impact", "Source & Architecture", "Quality & Testing", "Project Extensions", "Help & Settings");
+            "Workspace", "Delivery Management", "Specifications & Planning", "Traceability & Impact", "Source & Architecture", "Manual Testing", "Quality & Testing", "Project Extensions", "Help & Settings");
     }
 
     [Theory]
@@ -278,7 +278,9 @@ public sealed class NavMenuLayoutTests : BunitContext
     [InlineData("document-review", new[] { "specification-explorer", "constitution-explorer", "data-model-explorer", "plan-explorer", "task-explorer", "quality/document", "task-alignment", "documentation-drift" })]
     [InlineData("traceability", new[] { "artifact-traceability", "correlation-review", "release-readiness", "snapshots" })] // Impact Analysis is optional and off by default
     [InlineData("source-review", new[] { "source-analysis", "schema-studio", "generated-documentation-explorer", "generated-documentation-health", "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
-    [InlineData("quality-testing", new[] { "test-coverage-review", "code-risk-review", "test-data", "test-plan-suggestions", "api-quality-review/contracts", "integration-suites", "execution-results", "parquet-viewer", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "performance-test-review", "critical-e2e-regression" })]
+    // The Manual Testing workspace: home, then its three stages in the tester's order (Plan & prepare is Test Plan Suggestions, moved here).
+    [InlineData("manual-testing-workspace", new[] { "manual-testing", "manual-testing/discover", "test-plan-suggestions", "manual-testing/execute" })]
+    [InlineData("quality-testing", new[] { "test-coverage-review", "code-risk-review", "test-data", "api-quality-review/contracts", "integration-suites", "execution-results", "parquet-viewer", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "performance-test-review", "critical-e2e-regression" })]
     [InlineData("extensions", new[] { "security-classification-review", "extensions/skolenaervaer" })]
     [InlineData("admin", new[] { "user-guide", "admin/system-settings", "workspace-transfer" })]
     public void Rows_AreOrderedFromPrerequisiteToConsumer(string section, string[] routes)

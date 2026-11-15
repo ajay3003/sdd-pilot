@@ -1920,6 +1920,66 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("manual_review_decisions", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.ManualTestRunRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CaseId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ContentJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("DraftId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("ProjectKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Tester")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectKey");
+
+                    b.HasIndex("DraftId", "CaseId");
+
+                    b.ToTable("manual_test_runs", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.MessageObservationSetRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2823,6 +2883,41 @@ namespace BirkNext.Api.Data.Migrations
                         .HasDatabaseName("ix_scenarios_project_id_created_at");
 
                     b.ToTable("scenarios", (string)null);
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Models.ScenarioDiscoveryRecord", b =>
+                {
+                    b.Property<string>("DiscoveryId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ContentJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("DiscoveredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ProjectKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("RuleVersion")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("SnapshotKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("DiscoveryId");
+
+                    b.HasIndex("ProjectKey", "DiscoveredAt");
+
+                    b.ToTable("scenario_discovery_results", (string)null);
                 });
 
             modelBuilder.Entity("BirkNext.Api.Models.ScimEvidenceRecord", b =>

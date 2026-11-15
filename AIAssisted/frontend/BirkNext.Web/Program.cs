@@ -59,6 +59,8 @@ builder.Services.AddHttpClient<AdminApiService>(client =>
 builder.Services.AddHttpClient<IBuildInfoApiService, BuildInfoApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ISystemUnderstandingApiService, SystemUnderstandingApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ITestPlanSuggestionsApiService, TestPlanSuggestionsApiService>(client => client.BaseAddress = backendBase);
+// Manual Testing → Execute & document: manual runs of saved test cases (records what a tester did; executes nothing).
+builder.Services.AddHttpClient<IManualTestRunsApiService, ManualTestRunsApiService>(client => client.BaseAddress = backendBase);
 
 builder.Services.AddSingleton<FeatureVisibilityService>();
 builder.Services.AddSingleton<SchemaStudioService>();

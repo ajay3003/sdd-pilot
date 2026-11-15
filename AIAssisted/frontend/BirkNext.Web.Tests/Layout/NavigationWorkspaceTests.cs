@@ -120,7 +120,7 @@ public sealed class NavigationWorkspaceTests : BunitContext
     [Theory]
     [InlineData(WorkspaceView.TestLead, new[] { "artifact-traceability", "test-data", "test-plan-suggestions", "system-understanding", "specification-explorer", "test-coverage-review", "api-quality-review", "api-quality-review/contracts", "integration-quality-review", "performance-test-review", "critical-e2e-regression", "execution-results", "release-readiness" })]
     [InlineData(WorkspaceView.TechnicalTester, new[] { "api-quality-review/contracts", "api-quality-review", "integration-suites", "execution-results", "critical-e2e-regression", "integration-quality-review", "test-data", "test-coverage-review", "performance-test-review", "integration-topology", "getting-started" })]
-    [InlineData(WorkspaceView.ManualTesting, new[] { "system-understanding", "specification-explorer", "quality/document", "test-plan-suggestions", "test-data", "artifact-traceability", "test-coverage-review", "getting-started" })]
+    [InlineData(WorkspaceView.ManualTesting, new[] { "manual-testing", "manual-testing/discover", "manual-testing/execute", "system-understanding", "specification-explorer", "quality/document", "test-plan-suggestions", "test-data", "artifact-traceability", "test-coverage-review", "getting-started" })]
     [InlineData(WorkspaceView.ScrumMaster, new[] { "delivery-reporting", "delivery-overview", "task-alignment", "getting-started", "release-readiness" })]
     [InlineData(WorkspaceView.ProjectLeader, new[] { "dashboard", "delivery-overview", "delivery-reporting", "getting-started", "release-readiness", "snapshots", "correlation-review" })]
     [InlineData(WorkspaceView.Developer, new[] { "source-analysis", "specification-explorer", "schema-studio", "api-quality-review", "technology-coverage", "dependency-review", "pipeline-review" })]
@@ -166,7 +166,7 @@ public sealed class NavigationWorkspaceTests : BunitContext
         // Stable stored ids: numbers and names of the existing views never change.
         ((int)WorkspaceView.ProjectLeader, (int)WorkspaceView.ManualTesting, (int)WorkspaceView.TechnicalTester).Should().Be((1, 6, 7));
         WorkspaceViews.Of(WorkspaceView.TechnicalTester).Description.Should().Be("Verify APIs, contracts, integrations, E2E flows and performance.");
-        WorkspaceViews.Of(WorkspaceView.ManualTesting).Description.Should().Be("Review requirements, prepare functional tests and test data.");
+        WorkspaceViews.Of(WorkspaceView.ManualTesting).Description.Should().Be("Review requirements, prepare functional tests and test data, run them and record results.");
         WorkspaceViews.Of((WorkspaceView)99).View.Should().Be(WorkspaceView.AllModules, "an unknown view falls back to All Modules");
     }
 

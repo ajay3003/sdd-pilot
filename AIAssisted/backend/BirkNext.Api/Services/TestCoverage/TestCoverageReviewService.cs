@@ -124,7 +124,8 @@ public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvid
             [.. (workspace?.SpecificationArtifacts ?? []).Select(a => a.Path)],
             workspace is { SpecificationAvailable: true } ? [.. workspace.Requirements.Select(r => r.Id)] : null,
             workspace is { SpecificationAvailable: true } ? workspace.Requirements.Where(r => !string.IsNullOrWhiteSpace(r.Id)).GroupBy(r => r.Id.Trim(), StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.First().Text, StringComparer.OrdinalIgnoreCase) : null);
+                .ToDictionary(g => g.Key, g => g.First().Text, StringComparer.OrdinalIgnoreCase) : null,
+            await BirkNext.Api.Services.TestPlanning.ManualTestRunService.ReadProjectRunsAsync(db, key, ct));
     }
 
     /// <summary>Every stored Test Plan draft (read-only). An unreadable draft is skipped, never guessed.</summary>

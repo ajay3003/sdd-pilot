@@ -1,0 +1,151 @@
+@page "/manual-testing/discover"
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@using M = BirkNext.Web.Services.ManualTestingPresentation
+@implements IDisposable
+@inject IServiceProvider ServiceProvider
+
+@* Discover & understand: what needs testing in the selected project — its specification's requirements with their test design and execution
+   state (the shared traceability rule), the stored scenario discovery by source and type, existing tests and what needs clarification. Read
+   only: discovery itself runs in Plan & prepare, where scenarios are chosen. Source-derived suggestions are never shown as confirmed tests. *@
+<PageTitle>Discover & understand — Manual Testing</PageTitle>
+
+<div class="mt" data-testid="mtd" aria-busy="@(_loading ? "true" : "false")">
+    <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manual Testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="discover" Title="Discover & understand"
+        ProjectName="@_ws?.ProjectName" Context="@_ws?.SnapshotBasis"
+        Lead="What needs testing? The requirements of the project's specification, scenario suggestions found in its evidence, existing tests and what still needs clarification." />
+
+    @if (_loading)
+    {
+        <p class="mt-muted" role="status" data-testid="mtd-loading">Loading what the project's evidence says…</p>
+    }
+    else if (_ws?.ProjectKey is null)
+    {
+        <p class="mt-muted" data-testid="mtd-no-project">No project is selected. <a href="project-import">Import or choose a project</a> first.</p>
+    }
+    else
+    {
+        @if (_ws.Error is { } error) { <p class="mt-alert" role="alert" data-testid="mtd-error">@error</p> }
+        <div class="mt-grid">
+            <section class="mt-card" aria-labelledby="mtd-req-title" data-testid="mtd-requirements">
+                <h2 id="mtd-req-title" class="mt-h">Requirements</h2>
+                @if (_ws.Requirements is null)
+                {
+                    <p class="mt-muted" data-testid="mtd-req-none">@(RequirementLinkPresentation.EmptyReason(_ws.Evidence, null))</p>
+                    <a href="specification-explorer">Open the Specification Explorer</a>
+                }
+                else if (_ws.Requirements.Count == 0)
+                {
+                    <p class="mt-muted" data-testid="mtd-req-none">@(RequirementLinkPresentation.EmptyReason(_ws.Evidence, _ws.Requirements))</p>
+                }
+                else
+                {
+                    var designed = _trace?.Requirements.ToDictionary(r => r.RequirementId, StringComparer.OrdinalIgnoreCase) ?? [];
+                    <p class="mt-muted" data-testid="mtd-req-summary">@_ws.Requirements.Count requirement@(_ws.Requirements.Count == 1 ? "" : "s") · @designed.Count with test design · @(_trace?.RequirementsExecuted ?? 0) executed · @(_trace?.RequirementsPassed ?? 0) passed</p>
+                    @if (_traceError is not null) { <p class="mt-muted" data-testid="mtd-trace-error">Test design state could not be read: @_traceError</p> }
+                    <ul class="mt-list mtd-req-list">
+                        @foreach (var r in _ws.Requirements.Take(_reqLimit))
+                        {
+                            var row = designed.GetValueOrDefault(r.RequirementId);
+                            <li data-testid="mtd-requirement" data-requirement="@r.RequirementId" data-design="@(row is null ? "none" : row.ApprovedCases > 0 ? "approved" : "prepared")">
+                                <strong>@r.RequirementId</strong> <span class="mtd-req-text">@r.Title</span>
+                                <span class="mt-chip @(row is null ? "mt-tone-warn" : row.ApprovedCases > 0 ? "mt-tone-ok" : "mt-tone-info")">@(row is null ? "No test design yet" : row.State)</span>
+                                <span class="mt-chip mt-tone-muted" data-testid="mtd-requirement-execution">@(row?.Execution ?? PreparedCaseTraceView.NotExecuted)</span>
+                            </li>
+                        }
+                    </ul>
+                    @if (_ws.Requirements.Count > _reqLimit)
+                    {
+                        <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _reqLimit += 25" data-testid="mtd-req-more">Show more (@(_ws.Requirements.Count - _reqLimit) left)</button>
+                    }
+                    <p class="mt-muted"><a href="test-coverage-review">Test Coverage</a> and <a href="artifact-traceability">Requirements Traceability</a> show the same links in detail.</p>
+                }
+            </section>
+
+            <section class="mt-card" aria-labelledby="mtd-sug-title" data-testid="mtd-suggestions">
+                <h2 id="mtd-sug-title" class="mt-h">Scenario suggestions</h2>
+                @if (_ws.Discovery is not { } d)
+                {
+                    <p class="mt-muted" data-testid="mtd-sug-none">Not discovered yet. Discovery reads only this project's own evidence (specification, source, contracts, journeys, existing tests) and runs only when you ask.</p>
+                    <a class="btn btn-primary btn-sm" href="@($"{M.PlanRoute}?area=choose")" data-testid="mtd-discover">Discover scenarios</a>
+                }
+                else
+                {
+                    var clarify = d.Candidates.Count(c => c.NeedsClarification);
+                    <p class="mt-muted" data-testid="mtd-sug-summary">@d.Candidates.Count suggestion@(d.Candidates.Count == 1 ? "" : "s") · discovered @d.DiscoveredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")@(d.SnapshotLabel is { } sl ? $" · {sl}" : "")</p>
+                    @if (d.Candidates.Count > 0)
+                    {
+                        <dl class="mtd-counts">
+                            @foreach (var (label, count) in M.ByType(d)) { <div data-testid="mtd-type"><dt>@label</dt><dd>@count</dd></div> }
+                        </dl>
+                        @if (clarify > 0) { <p data-testid="mtd-clarify"><span class="mt-chip mt-tone-warn">@clarify need clarification</span> <span class="mt-muted">the evidence states no expected result; it is never filled in.</span></p> }
+                    }
+                    <p class="mt-muted">Suggestions are candidates found in source and documents, not test cases and not executed tests.</p>
+                    <a class="btn btn-primary btn-sm" href="@($"{M.PlanRoute}?area=choose")" data-testid="mtd-choose">Choose scenarios to prepare</a>
+                }
+            </section>
+        </div>
+
+        @if (_ws.Discovery is { } disc)
+        {
+            <section class="mt-card" aria-labelledby="mtd-src-title" data-testid="mtd-sources">
+                <h2 id="mtd-src-title" class="mt-h">What the evidence contains</h2>
+                <ul class="mt-list">
+                    @foreach (var c in disc.Capabilities)
+                    {
+                        <li data-testid="mtd-capability" data-capability="@c.Id" data-state="@c.State">
+                            <strong>@c.Label</strong>
+                            <span class="mt-chip @(c.State == DiscoveryCapabilityState.Available ? "mt-tone-ok" : c.State == DiscoveryCapabilityState.Failed ? "mt-tone-bad" : "mt-tone-muted")">@StateLabel(c.State)</span>
+                            <span class="mt-muted">@c.Detail</span>
+                            @if (c.Id == "system-guide" && c.State == DiscoveryCapabilityState.Available) { <a href="system-understanding">Business rules in System Understanding</a> }
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private ManualTestingWorkspace.Snapshot? _ws;
+    private PreparedCaseTraceView? _trace;
+    private string? _traceError;
+    private int _reqLimit = 25;
+    private ICurrentWorkspaceProjection? _projection;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _projection = ServiceProvider.GetService(typeof(ICurrentWorkspaceProjection)) as ICurrentWorkspaceProjection;
+        if (_projection is not null) _projection.Changed += OnProjectChanged;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync(runs: false);
+            _trace = null; _traceError = null;
+            if (_ws.ProjectKey is { } key && _ws.Requirements is { Count: > 0 } requirements
+                && ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is ITestPlanSuggestionsApiService api)
+            {
+                // The shared traceability rule (the same one Test Coverage and Requirements Traceability use), for the same specification.
+                (_trace, _traceError) = await api.PreparedCaseTraceAsync(key, new PreparedCaseTraceRequest([.. requirements.Select(r => r.SpecificationPath).Distinct()],
+                    [.. requirements.Select(r => r.RequirementId)], requirements.GroupBy(r => r.RequirementId, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Title, StringComparer.OrdinalIgnoreCase)));
+            }
+        }
+        finally { _loading = false; }
+    }
+
+    private static string StateLabel(DiscoveryCapabilityState state) => state switch
+    {
+        DiscoveryCapabilityState.Available => "Found", DiscoveryCapabilityState.NoEvidence => "No evidence", DiscoveryCapabilityState.NotApplicable => "Not applicable",
+        DiscoveryCapabilityState.Failed => "Could not read", _ => state.ToString(),
+    };
+
+    private void OnProjectChanged() => _ = InvokeAsync(async () => { _ws = null; _trace = null; await LoadAsync(); StateHasChanged(); });
+
+    public void Dispose() { if (_projection is not null) _projection.Changed -= OnProjectChanged; }
+}

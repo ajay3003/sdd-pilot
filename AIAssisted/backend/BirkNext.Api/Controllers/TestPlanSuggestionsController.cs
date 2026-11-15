@@ -80,10 +80,10 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     public Task<ActionResult> Discover([FromBody] ScenarioDiscoveryRequest request, [FromServices] TestScenarioDiscoveryService discovery, CancellationToken ct) =>
         Run(async () => Ok(await discovery.DiscoverAsync(request, ct)));
 
-    /// <summary>The last discovery result of the project (and snapshot) since BirkNext started; 204 when there is none. Runs no analyzer.</summary>
+    /// <summary>The last discovery result of the project (and snapshot), also after a restart (stored); 204 when there is none. Runs no analyzer.</summary>
     [HttpGet("discover/last")]
-    public Task<ActionResult> LastDiscovery([FromQuery] string projectKey, [FromQuery] Guid? snapshotId, [FromServices] TestScenarioDiscoveryService discovery) =>
-        Run(() => Task.FromResult<ActionResult>(discovery.Last(projectKey, snapshotId) is { } result ? Ok(result) : NoContent()));
+    public Task<ActionResult> LastDiscovery([FromQuery] string projectKey, [FromQuery] Guid? snapshotId, [FromServices] TestScenarioDiscoveryService discovery, CancellationToken ct) =>
+        Run(async () => await discovery.LastAsync(projectKey, snapshotId, ct) is { } result ? Ok(result) : NoContent());
 
     [HttpPost("project-drafts")]
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]

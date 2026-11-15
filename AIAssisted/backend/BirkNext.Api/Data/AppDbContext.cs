@@ -21,6 +21,8 @@ public class AppDbContext : DbContext
     public DbSet<SystemGuideRevisionRecord> SystemGuideRevisions => Set<SystemGuideRevisionRecord>();
     public DbSet<TestPlanDraftRecord> TestPlanDrafts => Set<TestPlanDraftRecord>();
     public DbSet<TestPlanSnapshotRecord> TestPlanSnapshots => Set<TestPlanSnapshotRecord>();
+    public DbSet<ManualTestRunRecord> ManualTestRuns => Set<ManualTestRunRecord>();
+    public DbSet<ScenarioDiscoveryRecord> ScenarioDiscoveryResults => Set<ScenarioDiscoveryRecord>();
     public DbSet<ExecutionEvidenceAuditRow> ExecutionEvidenceAudit => Set<ExecutionEvidenceAuditRow>();
     public DbSet<ExecutionRetentionSettingsRow> ExecutionRetentionSettings => Set<ExecutionRetentionSettingsRow>();
     public DbSet<MessageObservationSetRecord> MessageObservationSets => Set<MessageObservationSetRecord>();
@@ -1201,6 +1203,31 @@ public class AppDbContext : DbContext
             entity.HasIndex(r => new { r.DraftId, r.Sequence }).IsUnique();
             entity.HasIndex(r => new { r.DraftId, r.ContentFingerprint }).IsUnique();
             entity.HasIndex(r => r.GuideKey);
+        });
+        modelBuilder.Entity<ManualTestRunRecord>(entity =>
+        {
+            entity.ToTable("manual_test_runs");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.ProjectKey).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.CaseId).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.State).HasMaxLength(20).IsRequired();
+            entity.Property(r => r.Outcome).HasMaxLength(20).IsRequired();
+            entity.Property(r => r.Revision).IsConcurrencyToken();
+            entity.Property(r => r.ContentJson).HasColumnType("text").IsRequired();
+            entity.Property(r => r.Tester).HasMaxLength(200).IsRequired();
+            entity.HasIndex(r => r.ProjectKey);
+            entity.HasIndex(r => new { r.DraftId, r.CaseId });
+        });
+        modelBuilder.Entity<ScenarioDiscoveryRecord>(entity =>
+        {
+            entity.ToTable("scenario_discovery_results");
+            entity.HasKey(r => r.DiscoveryId);
+            entity.Property(r => r.DiscoveryId).HasMaxLength(64);
+            entity.Property(r => r.ProjectKey).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.SnapshotKey).HasMaxLength(64).IsRequired();
+            entity.Property(r => r.RuleVersion).HasMaxLength(20).IsRequired();
+            entity.Property(r => r.ContentJson).HasColumnType("text").IsRequired();
+            entity.HasIndex(r => new { r.ProjectKey, r.DiscoveredAt });
         });
         modelBuilder.Entity<ParquetInspectionRecord>(entity =>
         {

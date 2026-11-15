@@ -267,7 +267,7 @@ public sealed class RequirementLinkingTests : BunitContext
         cut.Find("[data-testid=pct-req-total]").TextContent.Should().Be("3");
         cut.Find("[data-testid=pct-req-none]").TextContent.Should().Be("2");
         cut.Find("[data-testid=pct-executed]").TextContent.Should().StartWith("0");
-        cut.Find("[data-testid=pct-explain]").TextContent.Should().Contain("1 of 3 requirements").And.Contain("None of these cases has run");
+        cut.Find("[data-testid=pct-explain]").TextContent.Should().Contain("1 of 3 requirements").And.Contain("None of these cases has been executed in a manual run yet");
         var row = cut.Find("[data-testid=pct-requirement]");
         row.QuerySelector("[data-testid=pct-requirement-title]")!.TextContent.Should().Be("System MUST email a receipt.");
         row.QuerySelector("[data-testid=pct-requirement-origin]")!.TextContent.Should().Be("Manually confirmed (1)");
@@ -276,7 +276,8 @@ public sealed class RequirementLinkingTests : BunitContext
         var links = cut.FindAll("[data-testid=pct-case-link]");
         links.Select(l => (l.GetAttribute("data-origin"), l.GetAttribute("data-counted"))).Should().Equal(("manual", "true"), ("manual", "false"));
         links[1].QuerySelector("[data-testid=pct-case-link-validity]")!.TextContent.Should().Be("No longer in the reviewed specification");
-        cut.Markup.Should().NotContain("Passed").And.NotContain("Covered\"");
+        cut.Find("[data-testid=pct-passed]").TextContent.Should().Be("0", "no manual run passed: designing or linking a case never counts as a pass");
+        cut.Markup.Should().NotContain("Covered\"");
     }
 
     [Fact]

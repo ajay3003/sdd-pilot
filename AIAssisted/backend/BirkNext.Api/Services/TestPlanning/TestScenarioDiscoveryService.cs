@@ -137,6 +137,9 @@ public sealed class ScenarioDiscoveryCache
         foreach (var old in _byId.Values.Where(r => !keep.Contains(r.DiscoveryId)).OrderBy(r => r.DiscoveredAt).Take(_byId.Count - Capacity)) _byId.TryRemove(old.DiscoveryId, out _);
     }
 
+    /// <summary>Holds a result (read back from storage) for lookup by id without making it the project's latest.</summary>
+    public void Remember(ScenarioDiscoveryResult result) => _byId.TryAdd(result.DiscoveryId, result);
+
     /// <summary>A result by id, only for the project it belongs to (never another project's).</summary>
     public ScenarioDiscoveryResult? Find(string projectKey, string discoveryId) =>
         _byId.TryGetValue(discoveryId, out var r) && string.Equals(r.ProjectKey, projectKey, StringComparison.Ordinal) ? r : null;
@@ -150,7 +153,7 @@ public sealed class ScenarioDiscoveryCache
 /// is reported, never hides the others), normalises and deduplicates on canonical identity and remembers the result. Runs only when asked.
 /// </summary>
 public sealed partial class TestScenarioDiscoveryService(IqrSourceStore sources, IEnumerable<ITestScenarioCandidateProvider> providers, ScenarioDiscoveryCache cache,
-    TimeProvider? clock = null, ILogger<TestScenarioDiscoveryService>? logger = null)
+    TimeProvider? clock = null, ILogger<TestScenarioDiscoveryService>? logger = null, ScenarioDiscoveryStore? store = null)
 {
     [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._:\-]{0,199}$")]
     private static partial Regex ValidKey();
@@ -199,9 +202,27 @@ public sealed partial class TestScenarioDiscoveryService(IqrSourceStore sources,
             RuleVersion = D.RuleVersion, DiscoveredAt = (clock ?? TimeProvider.System).GetUtcNow(), Capabilities = capabilities, Candidates = final, Limitations = limitations,
         };
         cache.Store(result);
+        if (store is not null)
+        {
+            try { await store.SaveAsync(result, ct); }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                logger?.LogWarning(e, "The discovery result of project {Project} could not be stored; it is kept in memory only", projectKey);
+                result = result with { Limitations = [.. result.Limitations, "This result could not be stored: it is lost when BirkNext restarts."] };
+                cache.Store(result);
+            }
+        }
         return result;
     }
 
     /// <summary>The last result for the project (and snapshot, when given); null when discovery has not run since BirkNext started.</summary>
     public ScenarioDiscoveryResult? Last(string projectKey, Guid? snapshotId) => cache.Latest(Key(projectKey), snapshotId?.ToString());
+
+    /// <summary>The last result for the project (and snapshot), restored from storage after a restart; null when the project was never discovered.</summary>
+    public async Task<ScenarioDiscoveryResult?> LastAsync(string projectKey, Guid? snapshotId, CancellationToken ct)
+    {
+        var key = Key(projectKey);
+        if (store is not null) await store.RestoreAsync(key, snapshotId?.ToString(), ct);
+        return cache.Latest(key, snapshotId?.ToString());
+    }
 }
