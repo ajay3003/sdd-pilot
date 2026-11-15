@@ -268,9 +268,9 @@ public sealed class NavMenuLayoutTests : BunitContext
         var cut = Render<NavMenu>();
 
         cut.FindAll("button.nav-section").Select(b => b.GetAttribute("data-testid")!["nav-section-".Length..]).Should().Equal(
-            "getting-started", "delivery-reporting", "document-review", "traceability", "source-review", "manual-testing-workspace", "quality-testing", "extensions", "admin");
+            "getting-started", "delivery-reporting", "document-review", "traceability", "source-review", "manual-testing-workspace", "technical-testing-workspace", "quality-testing", "extensions", "admin");
         cut.FindAll("button.nav-section").Select(b => b.TextContent.Trim()).Should().Equal(
-            "Workspace", "Delivery Management", "Specifications & Planning", "Traceability & Impact", "Source & Architecture", "Manual Testing", "Quality & Testing", "Project Extensions", "Help & Settings");
+            "Workspace", "Delivery Management", "Specifications & Planning", "Traceability & Impact", "Source & Architecture", "Manual Testing", "Technical Testing", "Quality & Testing", "Project Extensions", "Help & Settings");
     }
 
     [Theory]
@@ -281,6 +281,8 @@ public sealed class NavMenuLayoutTests : BunitContext
     [InlineData("source-review", new[] { "source-analysis", "schema-studio", "generated-documentation-explorer", "generated-documentation-health", "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
     // The Manual Testing workspace: home, then its three stages in the tester's order (Plan & prepare is Test Plan Suggestions, moved here).
     [InlineData("manual-testing-workspace", new[] { "manual-testing", "manual-testing/discover", "test-plan-suggestions", "manual-testing/execute" })]
+    // The Technical Testing workspace: home, then its three stages (summaries over the specialist modules, which stay in Quality & Testing).
+    [InlineData("technical-testing-workspace", new[] { "technical-testing", "technical-testing/assess", "technical-testing/configure", "technical-testing/verify" })]
     [InlineData("quality-testing", new[] { "test-coverage-review", "code-risk-review", "test-data", "api-quality-review/contracts", "integration-suites", "execution-results", "parquet-viewer", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "integration-journeys", "performance-test-review", "critical-e2e-regression" })]
     [InlineData("extensions", new[] { "security-classification-review", "extensions/skolenaervaer" })]
     [InlineData("admin", new[] { "user-guide", "admin/system-settings", "workspace-transfer" })]

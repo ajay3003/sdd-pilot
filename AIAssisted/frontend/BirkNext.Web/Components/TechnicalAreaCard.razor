@@ -1,0 +1,122 @@
+@using BirkNext.Web.Services
+@using T = BirkNext.Web.Services.TechnicalTestingPresentation
+@* One technical testing area on the Technical Testing home or a stage page. Three separate dimensions — evidence (does it apply), configuration,
+   latest runtime result — never merged into one verdict. Every link goes to the specialist module that owns the work. *@
+
+<section class="mt-card tta" aria-labelledby="@($"tta-{Slug}")" data-testid="tt-area" data-area="@Slug" data-evidence="@_evidence" data-configuration="@_configuration" data-runtime="@_runtime">
+    <h2 id="@($"tta-{Slug}")" class="mt-h">@T.Title(Area.Area)</h2>
+    <p class="mt-muted tta-purpose">@T.Purpose(Area.Area)</p>
+    <dl class="tta-dims">
+        <div><dt>Evidence</dt><dd><span class="mt-chip mt-tone-@Tone(T.Tone(_evidence))" data-testid="tt-evidence">@T.EvidenceLabel(_evidence)</span></dd></div>
+        <div><dt>Configuration</dt><dd><span class="mt-chip mt-tone-@Tone(T.Tone(_configuration))" data-testid="tt-configuration">@T.ConfigurationLabel(_configuration)</span></dd></div>
+        <div><dt>Latest runtime result</dt><dd><span class="mt-chip mt-tone-@Tone(T.Tone(_runtime))" data-testid="tt-runtime">@T.RuntimeLabel(Area)</span></dd></div>
+    </dl>
+    @if (Area.ReadError is { } error)
+    {
+        <p class="mt-alert" role="status" data-testid="tt-area-error">@error</p>
+    }
+
+    @switch (Stage)
+    {
+        case "assess":
+            @if (Area.Applicability is { } a)
+            {
+                <p data-testid="tt-applicability">@a.Reason</p>
+            }
+            <h3 class="tta-sub">Static evidence</h3>
+            @if (Area.Static.Count == 0)
+            {
+                <p class="mt-muted" data-testid="tt-static-none">No static evidence for this area in the project's analysed source, contracts or declarations.</p>
+            }
+            else
+            {
+                <ul class="mt-list">
+                    @foreach (var s in Area.Static)
+                    {
+                        <li data-testid="tt-static">@if (s.Href is { } href) { <a href="@href">@s.Text</a> } else { @s.Text }</li>
+                    }
+                </ul>
+            }
+            break;
+        case "configure":
+            @if (_configuration == AreaConfiguration.NeedsConfiguration)
+            {
+                <ul class="mt-list">
+                    @foreach (var gap in Gaps)
+                    {
+                        <li data-testid="tt-gap">@gap</li>
+                    }
+                </ul>
+            }
+            else if (_configuration == AreaConfiguration.Configured)
+            {
+                <p class="mt-muted" data-testid="tt-configured">Nothing missing that BirkNext can see. The specialist module checks its own prerequisites before a run.</p>
+            }
+            else
+            {
+                <p class="mt-muted" data-testid="tt-config-na">@(_configuration == AreaConfiguration.NotApplicable ? "This area does not apply to the project's evidence." : "Configuration state could not be read.")</p>
+            }
+            <p class="mt-muted">Target: @(TargetName ?? "none active")@(TestDataAssets is { } n ? $" · Test Data: {n} asset{(n == 1 ? "" : "s")}" : "")</p>
+            break;
+        case "verify":
+            <h3 class="tta-sub">Runtime results</h3>
+            @if (Area.Runs.Count == 0)
+            {
+                <p class="mt-muted" data-testid="tt-runs-none">No recorded run. Static evidence for this area is not a runtime result.</p>
+            }
+            else
+            {
+                <ul class="mt-list">
+                    @foreach (var r in Area.Runs.Take(5))
+                    {
+                        <li data-testid="tt-run" data-state="@r.State" data-stale="@(r.Stale is null ? "false" : "true")">
+                            <span class="mt-chip mt-tone-@Tone(T.Tone(r.State))">@r.Verdict</span>
+                            <a href="@r.Href">@(r.Detail ?? r.Where)</a>
+                            <span class="mt-muted">@r.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @(r.Environment ?? "environment not recorded")@(r.Identity is { } id ? $" · {id}" : "") · @r.Where</span>
+                            @if (r.Stale is { } stale)
+                            {
+                                <span class="mt-muted tta-stale" data-testid="tt-run-stale">May be out of date: @stale</span>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+            break;
+    }
+
+    <p class="tta-links">
+        @if (Stage == "home")
+        {
+            <a href="@($"{T.AssessRoute}?area={Slug}")" data-testid="tt-area-open">Details</a>
+        }
+        @foreach (var (label, href) in T.Links(Area.Area, Stage == "home" ? "verify" : Stage))
+        {
+            <a href="@href" data-testid="tt-area-link">@label</a>
+        }
+    </p>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public AreaFacts Area { get; set; } = default!;
+    /// <summary>"home", "assess", "configure" or "verify".</summary>
+    [Parameter] public string Stage { get; set; } = "home";
+    [Parameter] public string? TargetName { get; set; }
+    [Parameter] public int? TestDataAssets { get; set; }
+
+    private AreaEvidence _evidence;
+    private AreaConfiguration _configuration;
+    private AreaRuntime _runtime;
+    private string Slug => T.Slug(Area.Area);
+
+    protected override void OnParametersSet()
+    {
+        _evidence = T.Evidence(Area);
+        _configuration = T.Configuration(Area);
+        _runtime = T.Runtime(Area);
+    }
+
+    private IEnumerable<string> Gaps => Area.ConfigurationGaps.Count > 0 ? Area.ConfigurationGaps
+        : [Area.Applicability?.Action ?? Area.Applicability?.Reason ?? "Configuration is needed."];
+
+    private static string Tone(string tone) => tone == "neutral" ? "muted" : tone;
+}

@@ -165,6 +165,20 @@
     </ul>
 </section>
 
+<section id="technical-testing" class="ug-section ug-topic" data-topic="technical-testing" aria-labelledby="technical-testing-title">
+    <h2 id="technical-testing-title" class="ug-section-title" tabindex="-1">Technical testing</h2>
+    <GuideArticleMeta Topic="technical-testing" />
+    <p class="ug-lead"><a href="/technical-testing">Technical Testing</a> is the technical tester's workspace for the selected project. It brings the existing technical modules together in three stages: <strong>1. Discover &amp; assess</strong> (what technical behaviour can be tested?), <strong>2. Configure &amp; prepare</strong> (what do the checks need?) and <strong>3. Verify &amp; investigate</strong> (what was verified, and what needs investigating?). It covers five areas — <em>Frontend &amp; UI</em>, <em>APIs &amp; contracts</em>, <em>Integrations</em>, <em>Performance</em> and <em>Critical E2E</em> — and links each to the module that does the work: Frontend Quality Review, API Quality Review and Contract Testing, Integration Quality Review and Integration Journeys, Performance Test Review, and Critical E2E Regression. The stages are destinations, not gates, and nothing is configured or run from them.</p>
+    <ul data-testid="guide-tt-dimensions">
+        <li><strong>Three separate states per area.</strong> <em>Evidence</em> says whether the area applies to the project (from Technology Coverage: the analysed source and the Target Environment); <em>Configuration</em> says whether something the checks need is missing (a target, a target URL, a defined critical flow); <em>Latest runtime result</em> is what a check recorded when it ran against a Target Environment. They are never combined into one pass or fail.</li>
+        <li><strong>Static is not runtime.</strong> Contracts found in the source, declared journeys and defined flows are static evidence. A runtime result exists only when a check ran. A result that may no longer describe the current target or source (a performance run on an earlier source snapshot, a Critical E2E flow changed after its run) is marked <em>may be out of date</em>.</li>
+        <li><strong>Where results come from.</strong> Frontend and API Quality Review results are stored in this browser, per Target Environment; Integration Quality Review runs, performance runs and Critical E2E results are stored by the backend. Opening a result opens it in its own module, with its full detail and history.</li>
+        <li><strong>Areas that do not apply</strong> are listed with the reason (not applicable, not supported, no supported evidence yet) instead of being shown as runnable. A backend-only project is not sent to Frontend Quality Review.</li>
+        <li><strong>One next step</strong> on the home, from the stored state: choose a project, configure the target, investigate a failed or blocked result, complete missing configuration, verify an area with no run, or re-check a result that may be out of date.</li>
+    </ul>
+    <p>The <strong>Technical Testing</strong> workspace (sidebar → Workspace) lists these four pages first, then the project and environment pages (Source Management, System Understanding, Target Environments, Project Test Setup) and the specialist modules.</p>
+</section>
+
 <section id="test-plan-suggestions" class="ug-section ug-topic" data-topic="test-plan-suggestions" aria-labelledby="test-plan-suggestions-title">
     <h2 id="test-plan-suggestions-title" class="ug-section-title" tabindex="-1">Test Plan Suggestions</h2>
     <GuideArticleMeta Topic="test-plan-suggestions" />

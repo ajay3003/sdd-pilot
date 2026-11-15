@@ -205,6 +205,23 @@ public static class NavigationCatalog
                 Hint: "run a saved test case step by step, record results, evidence references and defects, resume runs and review run history",
                 Aliases: ["Test run", "Manual test run", "Execute test case"]),
         ], "nav-icon-workflow"),
+        // Technical Testing: one workspace over the existing technical engines (assess → configure → verify). The stages summarise and link to the
+        // specialist modules (Frontend/API/Integration Quality Review, Performance Test Review, Critical E2E); they configure and run nothing.
+        new("technical-testing-workspace", "Technical Testing",
+        [
+            new("technical-testing", "Technical Testing", "nav-icon-workflow", Always,
+                Hint: "the technical tester's home: which technical areas apply, what they need, what was verified and the next step",
+                Aliases: ["Technical tester", "Technical testing workspace"]),
+            new("technical-testing/assess", "Discover & assess", "nav-icon-system-understanding", Always, WrapLabel: true,
+                Hint: "which frontend, API, integration, performance and critical-flow areas apply, from analysed source, contracts, journeys and flows",
+                Aliases: ["Technical discovery", "What can be tested"]),
+            new("technical-testing/configure", "Configure & prepare", "nav-icon-workflow", Always, WrapLabel: true,
+                Hint: "what each area's checks still need — target, authentication, integrations, scenarios, flows, Test Data — and where to set it",
+                Aliases: ["Technical readiness", "Check prerequisites"]),
+            new("technical-testing/verify", "Verify & investigate", "nav-icon-task-alignment", Always, WrapLabel: true,
+                Hint: "recorded runtime results per area with environment, time and identity, kept apart from static review",
+                Aliases: ["Technical results", "Investigate failures"]),
+        ], "nav-icon-workflow"),
         // Planning → preparation → target-bound runs. Source-only assessments (test inventory, code risk) say where to focus; Test Data
         // is the prerequisite of the runs that need test identities/assets (Performance, Critical E2E; readiness shown in API/Integration);
         // Topology precedes the IQR it reads bindings from; Critical E2E is the end-to-end release check.
@@ -473,14 +490,15 @@ public static class WorkspaceViews
             new("tl-coverage", "Coverage & traceability", "nav-icon-artifact-traceability", ["artifact-traceability", "test-coverage-review", "correlation-review"]),
             new("tl-execution", "Execution & regression", "nav-icon-task-alignment", ["manual-testing/execute", "critical-e2e-regression", "execution-results", "integration-suites"]),
             new("tl-technical", "Technical quality", "nav-icon-constitution-compliance",
-                ["api-quality-review/contracts", "api-quality-review", "integration-quality-review", "performance-test-review", "frontend-quality-review"]),
-            new("tl-environment", "Environments", "nav-icon-target", [NavigationCatalog.TargetEnvironmentsRoute]),
+                ["technical-testing", "api-quality-review/contracts", "api-quality-review", "integration-quality-review", "performance-test-review", "frontend-quality-review"]),
+            new("tl-environment", "Environments & setup", "nav-icon-target", [NavigationCatalog.TargetEnvironmentsRoute, "project-scopes"]),
         ]),
         CreateManualTesting(),
-        Groups(WorkspaceView.TechnicalTester, "Technical Testing", "Assess and verify frontends, APIs, contracts, integrations, E2E flows and performance.", "dashboard",
+        Groups(WorkspaceView.TechnicalTester, "Technical Testing", "Assess and verify frontends, APIs, contracts, integrations, E2E flows and performance.", "technical-testing",
         [
-            new("tt-context", "Project context", "nav-icon-import", ["sources", "system-understanding"]),
-            new("tt-contracts", "Contracts & APIs", "nav-icon-task-alignment", ["api-quality-review/contracts", "api-quality-review", "schema-studio"]),
+            new("tt-workspace", "Technical Testing", "nav-icon-workflow", ["technical-testing", "technical-testing/assess", "technical-testing/configure", "technical-testing/verify"]),
+            new("tt-context", "Project & environment", "nav-icon-import", ["sources", "system-understanding", NavigationCatalog.TargetEnvironmentsRoute, "project-scopes"]),
+            new("tt-contracts", "Frontend, APIs & contracts", "nav-icon-task-alignment", ["frontend-quality-review", "api-quality-review/contracts", "api-quality-review", "schema-studio"]),
             new("tt-integration", "Integration & E2E", "nav-icon-source-analysis", ["integration-suites", "critical-e2e-regression", "integration-quality-review", "integration-journeys", "integration-topology"]),
             new("tt-data", "Test data & execution", "nav-icon-task-alignment", ["test-data", "execution-results", "parquet-viewer"]),
             new("tt-risk", "Performance & risk", "nav-icon-constitution-compliance", ["performance-test-review", "test-coverage-review", "code-risk-review"]),
@@ -519,7 +537,7 @@ public static class WorkspaceViews
         "Review requirements, prepare functional tests and test data, run them and record results.", "manual-testing",
         [
             new("manual-workspace", "Manual Testing", "nav-icon-workflow", ["manual-testing", "manual-testing/discover", "test-plan-suggestions", "manual-testing/execute"]),
-            new("manual-setup", "Project setup", "nav-icon-import", ["project-import", "sources"]),
+            new("manual-setup", "Project setup", "nav-icon-import", ["project-import", "sources", "project-scopes"]),
             new("manual-understand", "Understand the system", "nav-icon-system-understanding", ["system-understanding"]),
             new("manual-requirements", "Requirements", "nav-icon-task-alignment", ["specification-explorer", "quality/document", "documentation-drift"]),
             // "Functional Test Scenarios" (a shortcut to System Understanding → What to test) was removed: it duplicated the System Understanding row

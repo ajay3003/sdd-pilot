@@ -1,0 +1,14 @@
+/* Technical Testing workspace: the shared testing-workspace styles (manual-testing.css: .mt, .mt-card, .mt-chip, tones) plus the three area
+   dimensions and the area filter. */
+.tta { display: flex; flex-direction: column; gap: 0.4rem; }
+.tta-purpose { margin: 0; }
+.tta-dims { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr)); gap: 0.35rem 0.8rem; margin: 0.2rem 0; }
+.tta-dims dt { font-size: 0.78rem; color: var(--clr-text-muted, #57606a); }
+.tta-dims dd { margin: 0.1rem 0 0; }
+.tta-sub { font-size: 0.92rem; margin: 0.3rem 0 0.2rem; }
+.tta-stale { flex-basis: 100%; }
+.tta-links { display: flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; margin: auto 0 0; padding-top: 0.3rem; border-top: 1px solid var(--clr-border, #d0d7de); }
+.tt-filter { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0 0 0.8rem; }
+.tt-filter a { padding: 0.2rem 0.65rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 999px; text-decoration: none; font-size: 0.85rem; min-height: 2rem; display: inline-flex; align-items: center; }
+.tt-filter a.is-current { background: var(--clr-surface-alt, #eef2f6); font-weight: 650; }
+.tt-filter a:focus-visible, .tta-links a:focus-visible { outline: 2px solid var(--clr-focus, #0969da); outline-offset: 2px; }

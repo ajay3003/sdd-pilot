@@ -1,0 +1,111 @@
+@page "/technical-testing/assess"
+@page "/technical-testing/configure"
+@page "/technical-testing/verify"
+@using BirkNext.Web.Services
+@using T = BirkNext.Web.Services.TechnicalTestingPresentation
+@implements IDisposable
+@inject IServiceProvider ServiceProvider
+@inject NavigationManager Navigation
+
+@* One Technical Testing stage over every area (or one, ?area=): Discover & assess shows applicability and static evidence; Configure & prepare
+   what each area's checks still need; Verify & investigate the recorded runtime results with their environment, time and identity. Each area
+   links to the specialist module that owns the work; nothing is configured or run here. *@
+<PageTitle>@_stage.Title · Technical Testing</PageTitle>
+
+<div class="mt tt" data-testid="tts" data-stage="@_stage.Id" aria-busy="@(_loading ? "true" : "false")">
+    <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Technical Testing" HomeRoute="@T.HomeRoute" Stages="T.Stages" Current="@_stage.Id" Title="@_stage.Title"
+        ProjectName="@_ws?.Facts.ProjectName" Context="@(_ws?.Facts.TargetName is { } t ? $"Target: {t}" : _ws is null ? null : "No target application")" Lead="@Lead">
+        <Help><BirkNext.Web.Components.HelpLink Topic="technical-testing" Text="How this works" /></Help>
+    </BirkNext.Web.Components.TestingWorkspaceHeader>
+
+    @if (_loading)
+    {
+        <p class="mt-muted" role="status" data-testid="tt-loading">Loading the project's technical evidence…</p>
+    }
+    else if (_ws is null)
+    {
+        <p class="mt-alert" role="alert" data-testid="tt-error">Technical Testing could not be loaded. <button type="button" class="btn btn-secondary btn-sm" @onclick="LoadAsync" data-testid="tt-retry">Try again</button></p>
+    }
+    else if (_ws.Facts.ProjectKey is null)
+    {
+        <p class="mt-muted" data-testid="tt-no-project">No project selected. <a href="project-import">Import or choose a project</a> first.</p>
+    }
+    else
+    {
+        var facts = _ws.Facts;
+        @if (facts.Error is { } error)
+        {
+            <p class="mt-alert" role="alert" data-testid="tt-error">@error <button type="button" class="btn btn-secondary btn-sm" @onclick="LoadAsync" data-testid="tt-retry">Try again</button></p>
+        }
+        <nav class="tt-filter" aria-label="Technical area" data-testid="tt-filter">
+            <a href="@_stage.Route" class="@(_area is null ? "is-current" : null)" aria-current="@(_area is null ? "page" : null)" data-testid="tt-filter-all">All areas</a>
+            @foreach (var a in T.Areas)
+            {
+                <a href="@($"{_stage.Route}?area={T.Slug(a)}")" class="@(_area == a ? "is-current" : null)" aria-current="@(_area == a ? "page" : null)"
+                   data-testid="tt-filter-area" data-area="@T.Slug(a)">@T.Title(a)</a>
+            }
+        </nav>
+        IReadOnlyList<AreaFacts> shown = _area is { } only ? new[] { facts.For(only) } : _stage.Id == "assess" ? facts.Areas : T.InScope(facts);
+        @if (shown.Count == 0)
+        {
+            <p class="mt-muted" data-testid="tt-none">No technical area applies to this project's evidence. <a href="@($"{T.AssessRoute}")">Discover &amp; assess</a> shows what was found and what is missing.</p>
+        }
+        <div class="mt-grid" data-testid="tt-areas">
+            @foreach (var area in shown)
+            {
+                <BirkNext.Web.Components.TechnicalAreaCard Area="area" Stage="@_stage.Id" TargetName="@facts.TargetName" TestDataAssets="_ws.TestDataAssets" />
+            }
+        </div>
+        @if (_stage.Id == "configure")
+        {
+            <p class="mt-muted mt-boundary">Settings stay in their modules: <a href="@T.TargetEnvironmentsRoute">Target Environments</a> (target, authentication), <a href="test-data">Test Data</a>, <a href="project-scopes">Project test setup</a>. Nothing is configured from this page.</p>
+        }
+        else if (_stage.Id == "verify")
+        {
+            <p class="mt-muted mt-boundary">Runs are started in each module, which checks its own authorization and target first. Results keep the environment, time and identity they were recorded with; a result recorded for another environment or an older source is never shown as current.</p>
+        }
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "area")] public string? Area { get; set; }
+
+    private bool _loading = true;
+    private TechnicalTestingWorkspace.Snapshot? _ws;
+    private ICurrentWorkspaceProjection? _projection;
+    private WorkspaceStage _stage = T.Stages[0];
+    private TechnicalArea? _area;
+
+    private string Lead => _stage.Id switch
+    {
+        "assess" => "Which technical areas apply to this project, and what static evidence BirkNext found for each: analysed source, contracts, declared journeys and defined flows.",
+        "configure" => "What each area's checks still need — target application, authentication, integrations, scenarios, flows and Test Data — and where to set it.",
+        _ => "The recorded runtime results of each area with their environment, time and identity, and what needs investigating.",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _projection = ServiceProvider.GetService(typeof(ICurrentWorkspaceProjection)) as ICurrentWorkspaceProjection;
+        if (_projection is not null) _projection.Changed += OnProjectChanged;
+        await LoadAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        var path = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].TrimEnd('/');
+        _stage = T.Stages.FirstOrDefault(s => string.Equals(s.Route, path, StringComparison.OrdinalIgnoreCase)) ?? T.Stages[0];
+        _area = T.FromSlug(Area);
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try { _ws = await new TechnicalTestingWorkspace(ServiceProvider).LoadAsync(); }
+        catch (Exception e) when (e is not OperationCanceledException) { _ws = null; }
+        finally { _loading = false; }
+    }
+
+    private void OnProjectChanged() => _ = InvokeAsync(async () => { _ws = null; await LoadAsync(); StateHasChanged(); });
+
+    public void Dispose() { if (_projection is not null) _projection.Changed -= OnProjectChanged; }
+}

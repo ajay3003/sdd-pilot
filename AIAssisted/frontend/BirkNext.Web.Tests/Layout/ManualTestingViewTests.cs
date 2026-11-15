@@ -30,7 +30,7 @@ public sealed class ManualTestingViewTests : BunitContext
     [
         // The Manual Testing workspace comes first: home, then its three stages; Plan & prepare is Test Plan Suggestions (one planning page).
         ("Manual Testing", ["manual-testing", "manual-testing/discover", "test-plan-suggestions", "manual-testing/execute"]),
-        ("Project setup", ["project-import", "sources"]),
+        ("Project setup", ["project-import", "sources", "project-scopes"]),
         ("Understand the system", ["system-understanding"]),
         ("Requirements", ["specification-explorer", "quality/document", "documentation-drift"]),
         ("Test preparation", ["test-data"]),
@@ -116,7 +116,7 @@ public sealed class ManualTestingViewTests : BunitContext
         var catalogue = NavigationCatalog.Sections.SelectMany(s => s.Items).ToList();
         var rendered = cut.FindAll("#nav-groups a").Select(a => a.GetAttribute("href")).ToList();
         rendered.Should().BeEquivalentTo(new[] { "manual-testing", "manual-testing/discover", "manual-testing/execute", "all-modules",
-            "project-import", "sources", "system-understanding", "specification-explorer", "quality/document", "documentation-drift",
+            "project-import", "sources", "project-scopes", "system-understanding", "specification-explorer", "quality/document", "documentation-drift",
             "test-plan-suggestions", "test-data", "artifact-traceability", "test-coverage-review", "dashboard", "getting-started", "user-guide", "admin/system-settings" }
             .Where(r => catalogue.Single(i => i.Route == r).Visible(features)),
             "the Manual Testing preset plus Dashboard, All modules, User Guide and System Settings, nothing appended");

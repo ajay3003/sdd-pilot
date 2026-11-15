@@ -1,0 +1,88 @@
+@page "/technical-testing"
+@using BirkNext.Web.Services
+@using T = BirkNext.Web.Services.TechnicalTestingPresentation
+@implements IDisposable
+@inject IServiceProvider ServiceProvider
+
+@* Technical Testing home: which project and target, which technical areas apply, what each needs, what was verified, and one next step — from
+   stored state of the specialist modules only. Nothing runs from here; the three stages are destinations, never gates. *@
+<PageTitle>Technical Testing</PageTitle>
+
+<div class="mt tt" data-testid="tt" aria-busy="@(_loading ? "true" : "false")">
+    <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Technical Testing" HomeRoute="@T.HomeRoute" Stages="T.Stages" Current="@null" Title="Technical Testing"
+        ProjectName="@_ws?.Facts.ProjectName" Context="@Context"
+        Lead="Frontend, API, integration, performance and critical-flow testing for the selected project: what applies, what the checks need, and what was verified — in the specialist modules that do the work.">
+        <Help><BirkNext.Web.Components.HelpLink Topic="technical-testing" Text="How this works" /></Help>
+    </BirkNext.Web.Components.TestingWorkspaceHeader>
+
+    @if (_loading)
+    {
+        <p class="mt-muted" role="status" data-testid="tt-loading">Loading the project's technical evidence…</p>
+    }
+    else if (_ws is null)
+    {
+        <p class="mt-alert" role="alert" data-testid="tt-error">Technical Testing could not be loaded. <button type="button" class="btn btn-secondary btn-sm" @onclick="LoadAsync" data-testid="tt-retry">Try again</button></p>
+    }
+    else
+    {
+        var facts = _ws.Facts;
+        var next = T.Next(facts);
+        @if (facts.Error is { } error)
+        {
+            <p class="mt-alert" role="alert" data-testid="tt-error">@error <button type="button" class="btn btn-secondary btn-sm" @onclick="LoadAsync" data-testid="tt-retry">Try again</button></p>
+        }
+        <section class="mt-next" aria-labelledby="tt-next-title" data-testid="tt-next">
+            <h2 id="tt-next-title" class="mt-h">Next step</h2>
+            <a class="btn btn-primary" href="@next.Href" data-testid="tt-next-action">@next.Label</a>
+            <p class="mt-muted" data-testid="tt-next-why">@next.Why</p>
+        </section>
+
+        <BirkNext.Web.Components.GuidedStepList Steps="@T.Steps(facts)" TitleLevel="2" TestId="tt-stages" StepTestId="tt-stage" Label="Technical Testing stages" />
+
+        @if (facts.ProjectKey is not null)
+        {
+            var inScope = T.InScope(facts);
+            <div class="mt-grid" data-testid="tt-areas">
+                @foreach (var area in inScope)
+                {
+                    <BirkNext.Web.Components.TechnicalAreaCard Area="area" Stage="home" TargetName="@facts.TargetName" />
+                }
+            </div>
+            @if (facts.Areas.Except(inScope).ToList() is { Count: > 0 } other)
+            {
+                <p class="mt-muted" data-testid="tt-other-areas">Not supported by this project's evidence: @string.Join(", ", other.Select(a => $"{T.Title(a.Area)} ({T.EvidenceLabel(T.Evidence(a)).ToLowerInvariant()})")).
+                    <a href="@T.AssessRoute">See why</a>.</p>
+            }
+            <p class="mt-muted mt-boundary">Evidence and configuration come from the analysed source and the specialist modules' settings; a runtime result is only what a check recorded when it ran against a Target Environment. Static analysis is never shown as a runtime pass. Frontend and API Quality Review results are stored in this browser.</p>
+        }
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private TechnicalTestingWorkspace.Snapshot? _ws;
+    private ICurrentWorkspaceProjection? _projection;
+
+    private string? Context => _ws is null ? null
+        : string.Join(" · ", new[] { _ws.Facts.TargetName is { } t ? $"Target: {t}" : "No target application", _ws.Facts.SnapshotBasis }.Where(x => x is not null));
+
+    protected override async Task OnInitializedAsync()
+    {
+        _projection = ServiceProvider.GetService(typeof(ICurrentWorkspaceProjection)) as ICurrentWorkspaceProjection;
+        if (_projection is not null) _projection.Changed += OnProjectChanged;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try { _ws = await new TechnicalTestingWorkspace(ServiceProvider).LoadAsync(); }
+        catch (Exception e) when (e is not OperationCanceledException) { _ws = null; }
+        finally { _loading = false; }
+    }
+
+    /// <summary>Another project was selected: everything is read again for it (nothing of the previous project stays).</summary>
+    private void OnProjectChanged() => _ = InvokeAsync(async () => { _ws = null; await LoadAsync(); StateHasChanged(); });
+
+    public void Dispose() { if (_projection is not null) _projection.Changed -= OnProjectChanged; }
+}
