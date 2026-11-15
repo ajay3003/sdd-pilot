@@ -14,9 +14,9 @@
                 @if (TitleLevel is 2 or 3 or 4)
                 {
                     <div class="gsl-title">
-                        @if (TitleLevel == 2) { <h2 class="gsl-heading"><span class="visually-hidden">Step @index: </span>@step.Title</h2> }
-                        else if (TitleLevel == 3) { <h3 class="gsl-heading"><span class="visually-hidden">Step @index: </span>@step.Title</h3> }
-                        else { <h4 class="gsl-heading"><span class="visually-hidden">Step @index: </span>@step.Title</h4> }
+                        @if (TitleLevel == 2) { <h2 class="gsl-heading"><span class="visually-hidden">Step @index: </span>@StepTitle(step)</h2> }
+                        else if (TitleLevel == 3) { <h3 class="gsl-heading"><span class="visually-hidden">Step @index: </span>@StepTitle(step)</h3> }
+                        else { <h4 class="gsl-heading"><span class="visually-hidden">Step @index: </span>@StepTitle(step)</h4> }
                         <SemanticStatusBadge Status="@(step.Status ?? GuidedWorkflow.Status(step.State))" QualifiedLabel="@step.StatusLabel" TestId="gsl-status" />
                     </div>
                 }
@@ -60,5 +60,14 @@
     [Parameter] public RenderFragment<GuidedStep>? StepContent { get; set; }
     /// <summary>Optional action area per step; when set it replaces the single default action.</summary>
     [Parameter] public RenderFragment<GuidedStep>? StepActions { get; set; }
+    /// <summary>When true, a step title with a link (<see cref="GuidedStep.Href"/>) is itself that link (for steps that are destinations, such as
+    /// workspace stages): a title that looks like the way in must not be inert.</summary>
+    [Parameter] public bool LinkTitles { get; set; }
     private GuidedStep? Next => GuidedWorkflow.Next(Steps);
+
+    private RenderFragment StepTitle(GuidedStep step) => __builder =>
+    {
+        if (LinkTitles && step.Href is { } href) { <a class="gsl-title-link" href="@href" data-testid="gsl-title-link" data-step="@step.Id">@step.Title</a> }
+        else { @step.Title }
+    };
 }

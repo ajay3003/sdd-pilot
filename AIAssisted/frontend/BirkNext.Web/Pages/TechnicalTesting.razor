@@ -37,7 +37,7 @@
             <p class="mt-muted" data-testid="tt-next-why">@next.Why</p>
         </section>
 
-        <BirkNext.Web.Components.GuidedStepList Steps="@T.Steps(facts)" TitleLevel="2" TestId="tt-stages" StepTestId="tt-stage" Label="Technical Testing stages" />
+        <BirkNext.Web.Components.GuidedStepList Steps="@T.Steps(facts)" TitleLevel="2" TestId="tt-stages" StepTestId="tt-stage" Label="Technical Testing stages" LinkTitles="true" />
 
         @if (facts.ProjectKey is not null)
         {

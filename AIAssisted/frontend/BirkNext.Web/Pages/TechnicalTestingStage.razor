@@ -1,6 +1,3 @@
-@page "/technical-testing/assess"
-@page "/technical-testing/configure"
-@page "/technical-testing/verify"
 @using BirkNext.Web.Services
 @using T = BirkNext.Web.Services.TechnicalTestingPresentation
 @implements IDisposable
@@ -9,7 +6,11 @@
 
 @* One Technical Testing stage over every area (or one, ?area=): Discover & assess shows applicability and static evidence; Configure & prepare
    what each area's checks still need; Verify & investigate the recorded runtime results with their environment, time and identity. Each area
-   links to the specialist module that owns the work; nothing is configured or run here. *@
+   links to the specialist module that owns the work; nothing is configured or run here.
+   Each stage has its own small page (TechnicalTestingAssess/Configure/Verify) that renders this component with its stage, so moving between stages
+   is a change of page the router always renders. (Before, this component served all three routes and read the stage from the address in
+   OnParametersSet; Blazor reused the instance and called nothing when no parameter changed, so Configure → Verify changed the address but left
+   the previous stage on screen.) *@
 <PageTitle>@_stage.Title · Technical Testing</PageTitle>
 
 <div class="mt tt" data-testid="tts" data-stage="@_stage.Id" aria-busy="@(_loading ? "true" : "false")">
@@ -25,6 +26,11 @@
     else if (_ws is null)
     {
         <p class="mt-alert" role="alert" data-testid="tt-error">Technical Testing could not be loaded. <button type="button" class="btn btn-secondary btn-sm" @onclick="LoadAsync" data-testid="tt-retry">Try again</button></p>
+    }
+    else if (_unknown)
+    {
+        <p class="mt-muted" data-testid="tts-unknown">There is no stage "@StageSlug" in Technical Testing. Open <a href="@T.AssessRoute">Discover &amp; assess</a>,
+            <a href="@T.ConfigureRoute">Configure &amp; prepare</a> or <a href="@T.VerifyRoute">Verify &amp; investigate</a>.</p>
     }
     else if (_ws.Facts.ProjectKey is null)
     {
@@ -73,7 +79,11 @@
     private bool _loading = true;
     private TechnicalTestingWorkspace.Snapshot? _ws;
     private ICurrentWorkspaceProjection? _projection;
+    /// <summary>"assess", "configure" or "verify" (the last segment of the stage's route).</summary>
+    [Parameter] public string? StageSlug { get; set; }
+
     private WorkspaceStage _stage = T.Stages[0];
+    private bool _unknown;
     private TechnicalArea? _area;
 
     private string Lead => _stage.Id switch
@@ -92,8 +102,9 @@
 
     protected override void OnParametersSet()
     {
-        var path = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].TrimEnd('/');
-        _stage = T.Stages.FirstOrDefault(s => string.Equals(s.Route, path, StringComparison.OrdinalIgnoreCase)) ?? T.Stages[0];
+        var stage = T.Stages.FirstOrDefault(s => string.Equals(s.Id, StageSlug, StringComparison.OrdinalIgnoreCase));
+        _unknown = stage is null;
+        _stage = stage ?? T.Stages[0];
         _area = T.FromSlug(Area);
     }
 

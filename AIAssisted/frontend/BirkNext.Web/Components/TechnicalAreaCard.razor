@@ -6,10 +6,20 @@
 <section class="mt-card tta" aria-labelledby="@($"tta-{Slug}")" data-testid="tt-area" data-area="@Slug" data-evidence="@_evidence" data-configuration="@_configuration" data-runtime="@_runtime">
     <h2 id="@($"tta-{Slug}")" class="mt-h">@T.Title(Area.Area)</h2>
     <p class="mt-muted tta-purpose">@T.Purpose(Area.Area)</p>
+    @* The home shows all three states side by side; a stage shows the one it is about, so each stage reads as its own page. *@
     <dl class="tta-dims">
-        <div><dt>Evidence</dt><dd><span class="mt-chip mt-tone-@Tone(T.Tone(_evidence))" data-testid="tt-evidence">@T.EvidenceLabel(_evidence)</span></dd></div>
-        <div><dt>Configuration</dt><dd><span class="mt-chip mt-tone-@Tone(T.Tone(_configuration))" data-testid="tt-configuration">@T.ConfigurationLabel(_configuration)</span></dd></div>
-        <div><dt>Latest runtime result</dt><dd><span class="mt-chip mt-tone-@Tone(T.Tone(_runtime))" data-testid="tt-runtime">@T.RuntimeLabel(Area)</span></dd></div>
+        @if (Stage is "home" or "assess")
+        {
+            <div><dt>Evidence</dt><dd><span class="mt-chip mt-tone-@Tone(T.Tone(_evidence))" data-testid="tt-evidence">@T.EvidenceLabel(_evidence)</span></dd></div>
+        }
+        @if (Stage is "home" or "configure")
+        {
+            <div><dt>Configuration</dt><dd><span class="mt-chip mt-tone-@Tone(T.Tone(_configuration))" data-testid="tt-configuration">@T.ConfigurationLabel(_configuration)</span></dd></div>
+        }
+        @if (Stage is "home" or "verify")
+        {
+            <div><dt>Latest runtime result</dt><dd><span class="mt-chip mt-tone-@Tone(T.Tone(_runtime))" data-testid="tt-runtime">@T.RuntimeLabel(Area)</span></dd></div>
+        }
     </dl>
     @if (Area.ReadError is { } error)
     {

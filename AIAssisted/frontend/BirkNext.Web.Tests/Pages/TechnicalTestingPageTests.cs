@@ -56,7 +56,9 @@ public sealed class TechnicalTestingPageTests : BunitContext
     private IRenderedComponent<TComponent> Open<TComponent>(string url) where TComponent : IComponent
     {
         Services.GetRequiredService<NavigationManager>().NavigateTo(url);
-        var cut = Render<TComponent>();
+        // A stage page gets its stage from the route, as the router supplies it (technical-testing/{StageSlug}).
+        var stage = typeof(TComponent) == typeof(TechnicalTestingStage) ? url.Split('?')[0].Split('/').Last() : null;
+        var cut = stage is null ? Render<TComponent>() : (IRenderedComponent<TComponent>)(object)Render<TechnicalTestingStage>(p => p.Add(c => c.StageSlug, stage));
         cut.WaitForAssertion(() => cut.Find("[aria-busy=false]"));
         return cut;
     }
@@ -154,7 +156,7 @@ public sealed class TechnicalTestingPageTests : BunitContext
         cut.Find("[data-testid=tt-area]").GetAttribute("data-configuration").Should().Be("NeedsConfiguration");
         cut.Find("[data-testid=tt-gap]").TextContent.Should().Be("No critical flow is defined yet.");
         cut.Find("[data-testid=tt-configuration]").TextContent.Should().Be("Configuration needed");
-        cut.Find("[data-testid=tt-runtime]").TextContent.Should().Be("Not run");
+        cut.FindAll("[data-testid=tt-runtime]").Should().BeEmpty("a stage shows the state it is about; the home shows all three");
         cut.Markup.Should().Contain("Target: QA · Test Data: 3 assets");
     }
     [Fact]
@@ -165,6 +167,91 @@ public sealed class TechnicalTestingPageTests : BunitContext
         var cut = Open<TechnicalTestingStage>("technical-testing/assess?area=api");
         cut.Find("[data-testid=tt-area-error]").TextContent.Should().Be("Contracts could not be read.");
         cut.FindAll("[data-testid=tt-area]").Should().ContainSingle();
+    }
+
+    // ── Stage navigation (user-reported: "clicking Configure & prepare or Verify & investigate appears to do nothing") ──────────────────
+    // Root cause: one component served the three stage routes and read the stage from the address in OnParametersSet; moving between two
+    // stage routes reuses the instance and, with no parameter change, Blazor called nothing, so the address changed and the content did not.
+
+    [Fact]
+    public void Each_stage_is_its_own_page_so_the_router_renders_every_stage_change()
+    {
+        static IEnumerable<string> Routes(Type page) => page.GetCustomAttributes(typeof(RouteAttribute), false).Cast<RouteAttribute>().Select(r => r.Template);
+        Routes(typeof(TechnicalTestingAssess)).Should().Equal("/technical-testing/assess");
+        Routes(typeof(TechnicalTestingConfigure)).Should().Equal("/technical-testing/configure");
+        Routes(typeof(TechnicalTestingVerify)).Should().Equal("/technical-testing/verify");
+        Routes(typeof(TechnicalTestingStage)).Should().BeEmpty("one component serving three routes is what left the previous stage on screen");
+
+        Setup();
+        Services.GetRequiredService<NavigationManager>().NavigateTo("technical-testing/verify");
+        var verify = Render<TechnicalTestingVerify>();
+        verify.WaitForAssertion(() => verify.Find("[data-testid=tts]").GetAttribute("data-stage").Should().Be("verify"));
+        var configure = Render<TechnicalTestingConfigure>();
+        configure.WaitForAssertion(() => configure.Find("[data-testid=tts]").GetAttribute("data-stage").Should().Be("configure"));
+    }
+
+    [Fact]
+    public void Changing_the_stage_changes_the_content_not_only_the_highlight()
+    {
+        Setup(perf: [new PerformanceTestRun { State = PerformanceRunState.Completed, Verdict = PerformanceQualityVerdict.Pass, FinishedAt = DateTimeOffset.UtcNow }]);
+        var cut = Open<TechnicalTestingStage>("technical-testing/configure");
+        Shows(cut, "configure", "Configure & prepare");
+        cut.FindAll("[data-testid=tt-configured], [data-testid=tt-gap], [data-testid=tt-config-na]").Should().NotBeEmpty("Configure & prepare says what each area needs");
+        cut.FindAll("[data-testid=tt-runs-none], [data-testid=tt-run]").Should().BeEmpty();
+
+        cut.Render(p => p.Add(c => c.StageSlug, "verify"));                       // what the router does when Verify & investigate is clicked
+        Shows(cut, "verify", "Verify & investigate");
+        cut.FindAll("[data-testid=tt-run]").Should().NotBeEmpty("Verify & investigate lists the recorded runtime results");
+        cut.FindAll("[data-testid=tt-configured], [data-testid=tt-gap]").Should().BeEmpty("the configuration content of the previous stage is gone");
+
+        cut.Render(p => p.Add(c => c.StageSlug, "assess"));
+        Shows(cut, "assess", "Discover & assess");
+        cut.FindAll("[data-testid=tt-applicability]").Should().HaveCount(5, "Discover & assess lists every area with its applicability");
+        cut.FindAll("[data-testid=tt-run]").Should().BeEmpty();
+
+        cut.Render(p => p.Add(c => c.StageSlug, "configure"));
+        Shows(cut, "configure", "Configure & prepare");
+
+        static void Shows(IRenderedComponent<TechnicalTestingStage> cut, string stage, string title)
+        {
+            cut.Find("[data-testid=tts]").GetAttribute("data-stage").Should().Be(stage);
+            cut.Find("[data-testid=twh-title]").TextContent.Should().Be(title);
+            cut.FindAll("[data-testid=twh-stage][aria-current=page]").Select(a => a.GetAttribute("data-stage")).Should().Equal(stage);
+        }
+    }
+
+    [Fact]
+    public void Every_stage_has_content_for_a_project_without_technical_evidence()
+    {
+        Setup(target: false);
+        var cut = Open<TechnicalTestingStage>("technical-testing/assess");
+        cut.FindAll("[data-testid=tt-area]").Should().HaveCount(5, "Discover & assess always lists every area and why it does or does not apply");
+        foreach (var stage in new[] { "configure", "verify" })
+        {
+            cut.Render(p => p.Add(c => c.StageSlug, stage));
+            cut.Find("[data-testid=tts]").GetAttribute("data-stage").Should().Be(stage);
+            (cut.FindAll("[data-testid=tt-area]").Count > 0 || cut.FindAll("[data-testid=tt-none]").Count == 1).Should().BeTrue($"{stage} shows areas or says why there are none, with a next step");
+            cut.FindAll("a[href='technical-testing/assess']").Should().NotBeEmpty("there is always a way on");
+        }
+    }
+
+    [Fact]
+    public void An_unknown_stage_explains_and_links_the_three_stages()
+    {
+        Setup();
+        var cut = Open<TechnicalTestingStage>("technical-testing/elsewhere");
+        cut.Find("[data-testid=tts-unknown]").QuerySelectorAll("a").Select(a => a.GetAttribute("href"))
+            .Should().Equal("technical-testing/assess", "technical-testing/configure", "technical-testing/verify");
+    }
+
+    [Fact]
+    public void On_the_home_the_stage_titles_are_links_not_inert_headings()
+    {
+        Setup();
+        var cut = Open<TechnicalTesting>("technical-testing");
+        cut.FindAll("[data-testid=tt-stage] [data-testid=gsl-title-link]").Select(a => (a.GetAttribute("data-step"), a.GetAttribute("href"), a.TextContent))
+            .Should().Equal(("assess", "technical-testing/assess", "Discover & assess"), ("configure", "technical-testing/configure", "Configure & prepare"),
+                ("verify", "technical-testing/verify", "Verify & investigate"));
     }
 
     /// <summary>Project evidence whose main package is the given snapshot (Peek only; no backend).</summary>

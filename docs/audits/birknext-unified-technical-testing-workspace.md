@@ -142,3 +142,13 @@ Found and fixed during acceptance and review:
 - Starting HEAD `94d795d0` (workspace/navigation). This work is one local commit on top (see `git log`). Nothing pushed.
 - Not committed here: `appsettings.Local.json`, the Kode67 gap register, older audit drafts, `AIAssisted/testdata/`, and the concurrent full-codebase-audit remediation (separate commit).
 - Temporary databases (template copies, not dropped): `birknext_tt_acc_20261115`, `birknext_tt_final_20261115`.
+
+## 21. Stage navigation fix (user-reported)
+
+**Defect.** "Clicking Configure & prepare or Verify & investigate appears to do nothing." Reproduced in the browser on the Release build: moving between two stages from the header changed the address but left the previous stage's title and content on screen; on the home, the stage titles in the guided list were inert headings (only a small *Open* button navigated).
+
+**Root cause.** One component (`TechnicalTestingStage`) served all three stage routes and read the stage from the address in `OnParametersSet`. Navigating between two of its routes reuses the instance, and with no parameter change Blazor calls nothing, so the stage never changed. The earlier acceptance missed it because its stage switch also changed `?area=`, which is a parameter change.
+
+**Fix.** Each stage has its own small page (`TechnicalTestingAssess/Configure/Verify.razor`, one static route each) rendering the shared stage component with its stage, so the router renders every stage change; the home's stage titles are links (`GuidedStepList.LinkTitles`, opt-in, other hosts unchanged); a stage card shows the state that stage is about (evidence / configuration / runtime result), so the three stages read as different pages. Routes, bookmarks and the `?area=` filter are unchanged.
+
+**Verification (fix build).** Frontend 9,114 / 9,114 (new tests: each stage is its own page with exactly one route; switching the stage changes the stage-specific content, not only the highlight; every stage has content for a project without technical evidence; unknown stage; home titles are links). Release publish 0 errors. Browser: baseline 106 / 106, Technical Testing 76 / 76, stage navigation 48 / 48 (M2LB and documentation-only Roomly: home title link, header clicks in every direction with content checks, Back/Back/Forward, reload of each stage, Enter on a focused stage, area filter, a specialist link and Back, 1440/1024/768 px, no console errors). Two script-side issues were corrected during acceptance (a wait that could see the outgoing page, a project-selection helper); the Technical Testing request check now allows the app shell's read-only `POST /api/recommended-workflow/build-steps` (it writes nothing and is not issued by these pages).
