@@ -56,6 +56,7 @@
                             {
                                 <li data-testid="mt-plan">
                                     <a href="@($"{M.PlanRoute}?draft={p.Id}&area=prepare")"><strong>@p.PlanName</strong></a>
+                                    <a class="mt-muted" href="@($"{M.PlanRoute}?draft={p.Id}&area=export")" data-testid="mt-plan-export">Export to Azure DevOps</a>
                                     <span class="mt-muted">@p.Cases case@(p.Cases == 1 ? "" : "s") · @p.Accepted approved@(p.NeedsClarification > 0 ? $" · {p.NeedsClarification} need clarification" : "") · saved @p.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
                                 </li>
                             }

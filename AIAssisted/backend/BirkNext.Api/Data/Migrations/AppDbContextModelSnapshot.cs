@@ -141,6 +141,90 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("active_event_synthetic_identities", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.AdoExportProfileRecord", b =>
+                {
+                    b.Property<string>("ProjectKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ProfileJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("ProjectKey");
+
+                    b.ToTable("ado_export_profiles", (string)null);
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Models.AdoExportRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Cases")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ContentJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Destination")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<Guid>("DraftId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ExportedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ExportedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Format")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("PlanName")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<int>("PlanRevision")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ProjectKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("Rows")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectKey", "ExportedAt");
+
+                    b.ToTable("ado_export_records", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.AiCodeReviewRunRecord", b =>
                 {
                     b.Property<Guid>("Id")

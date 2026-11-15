@@ -1,0 +1,326 @@
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@inject IServiceProvider ServiceProvider
+@inject IJSRuntime JS
+
+@* Export to Azure DevOps (offline): select saved test cases → configure the destination fields → validate → preview → download an Azure Test
+   Plans import file (Excel by default, CSV as alternative) and a mapping report. One shared component (Plan & prepare). Nothing is sent to
+   Azure DevOps; destination values are checked for form only. *@
+
+<section class="adx" data-testid="adx" aria-labelledby="adx-title" aria-busy="@(_busy || _working ? "true" : "false")">
+    <h2 id="adx-title" class="adx-h2">Export to Azure DevOps</h2>
+    <p class="adx-muted">Creates a file for <strong>Azure Test Plans → Import test cases</strong> from the saved test cases of this plan: one row per step with its action and expected result. BirkNext does not connect to Azure DevOps — you import the file there.</p>
+
+    @if (_api is null)
+    {
+        <p class="adx-muted" data-testid="adx-unavailable">The Azure DevOps export is not available in this host.</p>
+    }
+    else
+    {
+        @if (Dirty) { <p class="adx-alert" role="alert" data-testid="adx-dirty">The plan has unsaved changes. The export uses the saved plan — save first to include them.</p> }
+        @if (_error is not null) { <p class="adx-alert" role="alert" data-testid="adx-error">@_error <button type="button" class="adx-btn adx-btn-quiet" @onclick="PreviewAsync" data-testid="adx-retry">Try again</button></p> }
+
+        @* 1 · Select test cases *@
+        <fieldset class="adx-step" data-testid="adx-select">
+            <legend class="adx-legend"><span class="adx-n">1</span> Select test cases</legend>
+            @if (_preview is { } pv)
+            {
+                <p class="adx-counts" data-testid="adx-counts" role="status">
+                    <span>@pv.TotalCases in the plan</span> · <span data-testid="adx-selected">@pv.SelectedCases selected</span> · <span data-testid="adx-ready">@pv.ReadyCases ready</span>
+                    @if (pv.CasesNeedingAttention > 0) { <span> · </span><span class="adx-bad" data-testid="adx-attention">@pv.CasesNeedingAttention need attention</span> }
+                </p>
+            }
+            <label class="adx-check"><input type="checkbox" checked="@_includeNotApproved" @onchange="e => Set(() => _includeNotApproved = e.Value is true)" data-testid="adx-include-unapproved" /> Include cases that are not approved yet</label>
+            <div class="adx-bar">
+                <button type="button" class="adx-btn adx-btn-quiet" @onclick="() => Set(() => _selected.Clear())" data-testid="adx-select-eligible">Select all eligible</button>
+                <button type="button" class="adx-btn adx-btn-quiet" @onclick="SelectNone" data-testid="adx-select-none">Select none</button>
+            </div>
+            <ul class="adx-cases" aria-label="Test cases">
+                @foreach (var c in _preview?.Cases ?? [])
+                {
+                    var blocked = c.Issues.Any(i => i.Level == AdoIssueLevel.Blocking);
+                    var state = c.ExcludedReason is not null ? "excluded" : blocked ? "attention" : "ready";
+                    var id = c.CaseId;
+                    <li class="adx-case" data-testid="adx-case" data-case="@id" data-state="@state">
+                        <label class="adx-check"><input type="checkbox" checked="@(IsChecked(c))" disabled="@(c.Review is "Excluded" or "Superseded")" aria-label="@($"Export {c.Title}")"
+                                @onchange="e => Toggle(id, e.Value is true)" data-testid="adx-case-select" />
+                            <span class="adx-case-title">@(c.Title.Length > 0 ? c.Title : "(no title)")</span></label>
+                        <span class="adx-chip">@c.Review</span>
+                        <span class="adx-chip">@c.Steps step@(c.Steps == 1 ? "" : "s")</span>
+                        <span class="adx-chip adx-chip-@state" data-testid="adx-case-state">@(state switch { "ready" => "Ready", "attention" => "Needs attention", _ => "Not exported" })</span>
+                        @if (c.ExcludedReason is { } why) { <span class="adx-muted adx-small" data-testid="adx-case-why">@why</span> }
+                        @if (blocked) { <a class="adx-small" href="@($"test-plan-suggestions?draft={Draft.Id}&area=prepare&case={Uri.EscapeDataString(id)}")" data-testid="adx-case-open">Open the test case</a> }
+                    </li>
+                }
+            </ul>
+        </fieldset>
+
+        @* 2 · Configure Azure DevOps *@
+        <fieldset class="adx-step" data-testid="adx-configure">
+            <legend class="adx-legend"><span class="adx-n">2</span> Configure Azure DevOps</legend>
+            <div class="adx-grid">
+                <label class="adx-field"><span>Azure DevOps version</span>
+                    <select @onchange="e => Set(() => _profile = _profile with { Target = Enum.Parse<AdoTarget>(e.Value!.ToString()!) })" data-testid="adx-target">
+                        <option value="Services" selected="@(_profile.Target == AdoTarget.Services)">Azure DevOps Services</option>
+                        <option value="Server" selected="@(_profile.Target == AdoTarget.Server)">Azure DevOps Server 2022 or later</option>
+                    </select></label>
+                <label class="adx-field"><span>Destination (label for your records)</span>
+                    <input value="@_profile.DestinationLabel" placeholder="For example contoso / LibraryProject" maxlength="300" @onchange="e => Set(() => _profile = _profile with { DestinationLabel = e.Value?.ToString() })" data-testid="adx-destination" /></label>
+                <label class="adx-field"><span>Area Path @(_profile.Target == AdoTarget.Services ? "(required)" : "(optional)")</span>
+                    <input value="@_profile.AreaPath" placeholder="Project\Area" maxlength="4000" @onchange="e => Set(() => _profile = _profile with { AreaPath = e.Value?.ToString() })" data-testid="adx-area" /></label>
+                <label class="adx-field"><span>Assigned To (optional)</span>
+                    <input value="@_profile.AssignedTo" placeholder="name@organization.com" maxlength="256" @onchange="e => Set(() => _profile = _profile with { AssignedTo = e.Value?.ToString() })" data-testid="adx-assigned" /></label>
+                <label class="adx-field"><span>Initial state</span>
+                    <input value="@_profile.State" maxlength="128" @onchange="e => Set(() => _profile = _profile with { State = e.Value?.ToString() ?? string.Empty })" data-testid="adx-state" /></label>
+                <label class="adx-field"><span>Preconditions</span>
+                    <select @onchange="e => Set(() => _profile = _profile with { Preconditions = Enum.Parse<AdoPreconditionsMode>(e.Value!.ToString()!) })" data-testid="adx-preconditions">
+                        <option value="MappingReport" selected="@(_profile.Preconditions == AdoPreconditionsMode.MappingReport)">List them in the mapping report</option>
+                        <option value="FirstStep" selected="@(_profile.Preconditions == AdoPreconditionsMode.FirstStep)">Add them as a first step</option>
+                    </select></label>
+            </div>
+            <fieldset class="adx-inline" data-testid="adx-format">
+                <legend>File format</legend>
+                <label class="adx-check"><input type="radio" name="adx-format" checked="@(_profile.Format == AdoExportFormat.Xlsx)" @onchange="() => Set(() => _profile = _profile with { Format = AdoExportFormat.Xlsx })" data-testid="adx-format-xlsx" /> Excel (.xlsx) — recommended</label>
+                <label class="adx-check"><input type="radio" name="adx-format" checked="@(_profile.Format == AdoExportFormat.Csv)" @onchange="() => Set(() => _profile = _profile with { Format = AdoExportFormat.Csv })" data-testid="adx-format-csv" /> CSV</label>
+            </fieldset>
+            @if (_profile.Format == AdoExportFormat.Csv)
+            {
+                <label class="adx-check"><input type="checkbox" checked="@_profile.CsvSpreadsheetSafe" @onchange="e => Set(() => _profile = _profile with { CsvSpreadsheetSafe = e.Value is true })" data-testid="adx-csv-safe" /> Protect cells that start with = + - @@ when the CSV is opened in a spreadsheet program</label>
+            }
+            <label class="adx-check"><input type="checkbox" checked="@_profile.IncludePriority" @onchange="e => Set(() => _profile = _profile with { IncludePriority = e.Value is true })" data-testid="adx-priority" /> Add a Priority column (Critical/High/Medium/Low → 1/2/3/4; map it in the import wizard)</label>
+            <fieldset class="adx-inline" data-testid="adx-mode">
+                <legend>Create or update</legend>
+                <label class="adx-check"><input type="radio" name="adx-mode" checked="@(_mode == AdoExportMode.CreateNew)" @onchange="() => Set(() => _mode = AdoExportMode.CreateNew)" data-testid="adx-mode-create" /> Create new test cases (recommended)</label>
+                <label class="adx-check"><input type="radio" name="adx-mode" checked="@(_mode == AdoExportMode.UpdateExisting)" @onchange="() => Set(() => _mode = AdoExportMode.UpdateExisting)" data-testid="adx-mode-update" /> Update existing Azure DevOps test cases</label>
+            </fieldset>
+            @if (_mode == AdoExportMode.UpdateExisting)
+            {
+                <div class="adx-update" data-testid="adx-update">
+                    <p class="adx-alert">Importing an update replaces ALL steps of each Azure DevOps test case with the steps in this file. Enter the id shown in Azure DevOps for each case — BirkNext never guesses it.</p>
+                    @foreach (var c in (_preview?.Cases ?? []).Where(c => c.ExcludedReason is null))
+                    {
+                        var id = c.CaseId;
+                        <label class="adx-field"><span>@c.Title</span><input inputmode="numeric" value="@_existing.GetValueOrDefault(id)" @onchange="e => Set(() => _existing[id] = e.Value?.ToString() ?? string.Empty)" data-testid="adx-existing-id" /></label>
+                    }
+                    <label class="adx-check"><input type="checkbox" checked="@_confirmed" @onchange="e => Set(() => _confirmed = e.Value is true)" data-testid="adx-confirm-ids" /> I checked these ids in Azure DevOps and their steps may be replaced.</label>
+                </div>
+            }
+            @if (CanWrite)
+            {
+                <button type="button" class="adx-btn adx-btn-quiet" disabled="@_working" @onclick="SaveProfileAsync" data-testid="adx-save-profile">Save as this project's export settings</button>
+            }
+        </fieldset>
+
+        @* 3 · Validate *@
+        <fieldset class="adx-step" data-testid="adx-validate">
+            <legend class="adx-legend"><span class="adx-n">3</span> Check</legend>
+            @if (_preview is { } p)
+            {
+                <table class="adx-table" data-testid="adx-fields">
+                    <thead><tr><th scope="col">Field</th><th scope="col">Value</th><th scope="col">Check</th></tr></thead>
+                    <tbody>
+                        @foreach (var f in p.Fields)
+                        {
+                            <tr data-testid="adx-field" data-field="@f.Field" data-check="@f.Check">
+                                <th scope="row">@f.Field</th><td>@(f.Value ?? "—")</td>
+                                <td><span class="adx-chip adx-check-@f.Check">@CheckLabel(f.Check)</span> <span class="adx-muted adx-small">@f.Explanation</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @foreach (var (level, title) in new[] { (AdoIssueLevel.Blocking, "Must be fixed before download"), (AdoIssueLevel.Warning, "Warnings"), (AdoIssueLevel.Info, "Good to know") })
+                {
+                    var list = p.Issues.Where(i => i.Level == level).ToList();
+                    if (list.Count == 0) continue;
+                    <div class="adx-issues adx-issues-@level" data-testid="@($"adx-issues-{level.ToString().ToLowerInvariant()}")">
+                        <h3 class="adx-h3">@title (@list.Count)</h3>
+                        <ul>
+                            @foreach (var i in list)
+                            {
+                                var title2 = i.CaseId is { } cid ? p.Cases.FirstOrDefault(c => c.CaseId == cid)?.Title : null;
+                                <li data-testid="adx-issue">@(title2 is not null ? $"{title2}: " : "")@i.Message
+                                    @if (i.CaseId is { } ic) { <a href="@($"test-plan-suggestions?draft={Draft.Id}&area=prepare&case={Uri.EscapeDataString(ic)}")">Open</a> }</li>
+                            }
+                        </ul>
+                    </div>
+                }
+                @if (p.CanDownload) { <p class="adx-ok" role="status" data-testid="adx-can-download">@p.ReadyCases test case@(p.ReadyCases == 1 ? " is" : "s are") ready for export (@p.Rows.Count rows).</p> }
+            }
+            else if (_busy) { <p class="adx-muted" role="status">Checking…</p> }
+        </fieldset>
+
+        @* 4 · Preview and download *@
+        <fieldset class="adx-step" data-testid="adx-download">
+            <legend class="adx-legend"><span class="adx-n">4</span> Preview and download</legend>
+            @if (_preview is { Rows.Count: > 0 } pr)
+            {
+                <details class="adx-preview" data-testid="adx-preview">
+                    <summary>Preview the file (@pr.Rows.Count rows, columns: @string.Join(", ", pr.Headers))</summary>
+                    <div class="adx-preview-scroll">
+                        <table class="adx-table adx-rows">
+                            <thead><tr><th scope="col">Title</th><th scope="col">Step</th><th scope="col">Action</th><th scope="col">Expected</th></tr></thead>
+                            <tbody>
+                                @foreach (var r in pr.Rows.Take(200))
+                                {
+                                    <tr data-testid="adx-row"><td>@(r.TestStep == 1 ? r.Title : "")</td><td>@r.TestStep</td><td class="adx-pre">@r.StepAction</td><td class="adx-pre">@r.StepExpected</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+            }
+            <div class="adx-bar">
+                <button type="button" class="adx-btn" disabled="@(_working || _preview is not { CanDownload: true })" @onclick="() => DownloadAsync(AdoExportFormat.Xlsx)" data-testid="adx-download-xlsx">Download Excel (.xlsx)</button>
+                <button type="button" class="adx-btn adx-btn-quiet" disabled="@(_working || _preview is not { CanDownload: true })" @onclick="() => DownloadAsync(AdoExportFormat.Csv)" data-testid="adx-download-csv">Download CSV</button>
+                <button type="button" class="adx-btn adx-btn-quiet" disabled="@(_working || _preview is null)" @onclick="ReportAsync" data-testid="adx-download-report">Download mapping report</button>
+            </div>
+            @if (_downloaded is not null) { <p class="adx-ok" role="status" data-testid="adx-downloaded">@_downloaded</p> }
+            <ol class="adx-howto" data-testid="adx-howto">
+                <li>In Azure DevOps open <strong>Test Plans</strong>, select the test plan and then the test suite.</li>
+                <li>Choose <strong>Import test cases from CSV/XLSX</strong> and select the downloaded file.</li>
+                <li>Azure DevOps Services shows the field mapping: check it (map Priority if you added it) and choose <strong>Import</strong>.</li>
+                <li>Link the requirements listed in the mapping report in Azure DevOps — the file does not create links.</li>
+            </ol>
+            <p class="adx-muted adx-small" data-testid="adx-boundary">@AdoExport.Boundary</p>
+            @if (_history.Count > 0)
+            {
+                <details data-testid="adx-history"><summary>Files created for this project (@_history.Count)</summary>
+                    <ul class="adx-cases">@foreach (var h in _history.Take(10)) { <li data-testid="adx-history-item">@h.ExportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @h.PlanName revision @h.PlanRevision · @h.Format · @h.Cases cases / @h.Rows rows@(h.Destination is { } d ? $" · {d}" : "") · @h.ExportedBy</li> }</ul>
+                    <p class="adx-muted adx-small">A file created here is not an import: only Azure DevOps knows what was imported.</p>
+                </details>
+            }
+        </fieldset>
+    }
+</section>
+
+@code {
+    /// <summary>The saved plan (its id and revision are what the file is built from).</summary>
+    [Parameter, EditorRequired] public TestPlanDraft Draft { get; set; } = new();
+    [Parameter, EditorRequired] public string ProjectKey { get; set; } = "";
+    [Parameter] public bool CanWrite { get; set; }
+    /// <summary>The page has unsaved plan edits (the export uses the saved plan).</summary>
+    [Parameter] public bool Dirty { get; set; }
+
+    private IAdoExportApiService? _api;
+    private AdoExportProfile _profile = new();
+    private AdoExportPreview? _preview;
+    private List<AdoExportHistoryEntry> _history = [];
+    // Explicit selection; empty = every eligible case.
+    private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
+    private bool _noneSelected;
+    private bool _includeNotApproved;
+    private AdoExportMode _mode = AdoExportMode.CreateNew;
+    private readonly Dictionary<string, string> _existing = new(StringComparer.Ordinal);
+    private bool _confirmed;
+    // _busy: a re-check (preview) is running — shown as aria-busy, never disables a button, so a click right after editing a field is not lost
+    // (the field's change fires on that click and starts a re-check). _working: a save or download of its own is running.
+    private bool _busy;
+    private bool _working;
+    private Task? _pendingPreview;
+    private string? _error;
+    private string? _downloaded;
+    private (Guid, int)? _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _api ??= ServiceProvider.GetService(typeof(IAdoExportApiService)) as IAdoExportApiService;
+        if (_api is null || _loadedFor == (Draft.Id, Draft.Revision)) return;
+        var first = _loadedFor is null;
+        _loadedFor = (Draft.Id, Draft.Revision);
+        if (first)
+        {
+            var (profile, _) = await _api.ProfileAsync(ProjectKey);
+            if (profile is not null) _profile = profile;
+            var (history, _) = await _api.HistoryAsync(ProjectKey);
+            _history = history ?? [];
+        }
+        await PreviewAsync();
+    }
+
+    private AdoExportRequest Request(AdoExportFormat? format = null) => new()
+    {
+        ProjectKey = ProjectKey, DraftId = Draft.Id, PlanRevision = Draft.Revision,
+        CaseIds = _noneSelected ? ["\u0000none"] : [.. _selected], IncludeNotApproved = _includeNotApproved, Mode = _mode,
+        ExistingIds = _existing.Where(e => !string.IsNullOrWhiteSpace(e.Value)).ToDictionary(e => e.Key, e => e.Value.Trim(), StringComparer.Ordinal), ExistingIdsConfirmed = _confirmed,
+        Profile = format is { } f ? _profile with { Format = f } : _profile,
+    };
+
+    private bool IsChecked(AdoExportCase c) => c.ExcludedReason is null || (_selected.Count > 0 && _selected.Contains(c.CaseId));
+
+    private async Task Set(Action change) { change(); _downloaded = null; await PreviewAsync(); }
+
+    private async Task SelectNone() { _selected.Clear(); _noneSelected = true; _downloaded = null; await PreviewAsync(); }
+
+    /// <summary>Checking a case makes the selection explicit (starting from what is shown as selected); unchecking removes it.</summary>
+    private async Task Toggle(string id, bool on)
+    {
+        if (_selected.Count == 0 && !_noneSelected && _preview is not null)
+            foreach (var c in _preview.Cases.Where(c => c.ExcludedReason is null)) _selected.Add(c.CaseId);
+        _noneSelected = false;
+        if (on) _selected.Add(id); else _selected.Remove(id);
+        if (_selected.Count == 0) _noneSelected = true;
+        if (on && Draft.Cases.FirstOrDefault(c => c.Source.ScenarioId == id) is { Review: not TestCaseReviewState.Accepted }) _includeNotApproved = true;
+        _downloaded = null;
+        await PreviewAsync();
+    }
+
+    private Task PreviewAsync() => _pendingPreview = CheckAsync();
+
+    private async Task CheckAsync()
+    {
+        if (_api is null) return;
+        _busy = true; _error = null;
+        var (preview, error) = await _api.PreviewAsync(Request());
+        _busy = false;
+        if (preview is null) { _error = error ?? "The export could not be checked."; return; }
+        _preview = preview;
+    }
+
+    /// <summary>Lets a re-check started by the same click finish first, so a file or saved settings always match what the page shows.</summary>
+    private async Task SettledAsync()
+    {
+        if (_pendingPreview is { IsCompleted: false } pending) await pending;
+    }
+
+    private async Task DownloadAsync(AdoExportFormat format)
+    {
+        _working = true; _error = null; _downloaded = null;
+        await SettledAsync();
+        if (_preview is not { CanDownload: true }) { _working = false; _error = "The export needs attention before download — see Check."; return; }
+        var (file, error) = await _api!.FileAsync(Request(format));
+        _working = false;
+        if (file is null) { _error = error ?? "The file could not be created."; return; }
+        await JS.InvokeVoidAsync("downloadBase64File", file.FileName, file.Base64, file.ContentType);
+        _downloaded = $"{file.FileName} downloaded: {file.Cases} test case{(file.Cases == 1 ? "" : "s")}, {file.Rows} rows. Import it in Azure DevOps (steps below).";
+        var (history, _) = await _api.HistoryAsync(ProjectKey);
+        _history = history ?? _history;
+    }
+
+    private async Task ReportAsync()
+    {
+        _working = true; _error = null;
+        await SettledAsync();
+        var (file, error) = await _api!.ReportAsync(Request());
+        _working = false;
+        if (file is null) { _error = error ?? "The mapping report could not be created."; return; }
+        await JS.InvokeVoidAsync("downloadBase64File", file.FileName, file.Base64, file.ContentType);
+        _downloaded = $"{file.FileName} downloaded.";
+    }
+
+    private async Task SaveProfileAsync()
+    {
+        _working = true; _error = null;
+        await SettledAsync();
+        var (profile, error) = await _api!.SaveProfileAsync(ProjectKey, _profile);
+        _working = false;
+        if (profile is null) { _error = error ?? "The settings could not be saved."; return; }
+        _profile = profile;
+        _downloaded = "Export settings saved for this project.";
+    }
+
+    private static string CheckLabel(AdoFieldCheck check) => check switch
+    {
+        AdoFieldCheck.LocallyValid => "Valid", AdoFieldCheck.NeedsConfirmationInAzureDevOps => "Confirm in Azure DevOps", AdoFieldCheck.Invalid => "Invalid",
+        AdoFieldCheck.Missing => "Missing", _ => "Not required",
+    };
+}

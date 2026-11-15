@@ -1369,9 +1369,18 @@
     private RenderFragment ExportArea() => __builder =>
     {
         var snapshots = _ws?.Snapshots ?? [];
+        @* The Azure DevOps Test Plans import file (XLSX / CSV) is built from the saved plan; one shared wizard. *@
+        @if (_draft is { ProjectKey: { } exportProject } exportDraft)
+        {
+            <BirkNext.Web.Components.AdoExportWizard Draft="exportDraft" ProjectKey="@exportProject" CanWrite="CanWrite" Dirty="_dirty" />
+        }
+        else if (!GuideMode)
+        {
+            <p class="tps-muted" data-testid="tps-export-no-plan">Prepare and save a test plan first: the Azure DevOps export is built from saved test cases.</p>
+        }
         <section class="tps-section" data-testid="tps-export" aria-labelledby="tps-exp-h">
             <div class="tps-section-head">
-                <h2 id="tps-exp-h" class="tps-h2">Prepare for Azure DevOps</h2>
+                <h2 id="tps-exp-h" class="tps-h2">BirkNext JSON of a saved snapshot</h2>
                 <p class="tps-muted">Azure DevOps Test Plans stays the authority for formal Test Plans, Suites, Cases, Runs and Results. BirkNext prepares a reviewable proposal from a saved snapshot: copyable text and a structured BirkNext JSON file. Nothing is written to Azure DevOps, and import compatibility is not verified.</p>
             </div>
             @if (snapshots.Count == 0) { <p class="tps-muted" data-testid="tps-export-need">Save a snapshot first: an export is always of one saved snapshot.</p> }

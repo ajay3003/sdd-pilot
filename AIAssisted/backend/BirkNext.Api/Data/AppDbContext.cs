@@ -23,6 +23,8 @@ public class AppDbContext : DbContext
     public DbSet<TestPlanSnapshotRecord> TestPlanSnapshots => Set<TestPlanSnapshotRecord>();
     public DbSet<ManualTestRunRecord> ManualTestRuns => Set<ManualTestRunRecord>();
     public DbSet<ScenarioDiscoveryRecord> ScenarioDiscoveryResults => Set<ScenarioDiscoveryRecord>();
+    public DbSet<AdoExportProfileRecord> AdoExportProfiles => Set<AdoExportProfileRecord>();
+    public DbSet<AdoExportRecord> AdoExports => Set<AdoExportRecord>();
     public DbSet<ExecutionEvidenceAuditRow> ExecutionEvidenceAudit => Set<ExecutionEvidenceAuditRow>();
     public DbSet<ExecutionRetentionSettingsRow> ExecutionRetentionSettings => Set<ExecutionRetentionSettingsRow>();
     public DbSet<MessageObservationSetRecord> MessageObservationSets => Set<MessageObservationSetRecord>();
@@ -1228,6 +1230,27 @@ public class AppDbContext : DbContext
             entity.Property(r => r.RuleVersion).HasMaxLength(20).IsRequired();
             entity.Property(r => r.ContentJson).HasColumnType("text").IsRequired();
             entity.HasIndex(r => new { r.ProjectKey, r.DiscoveredAt });
+        });
+        modelBuilder.Entity<AdoExportProfileRecord>(entity =>
+        {
+            entity.ToTable("ado_export_profiles");
+            entity.HasKey(r => r.ProjectKey);
+            entity.Property(r => r.ProjectKey).HasMaxLength(200);
+            entity.Property(r => r.ProfileJson).HasColumnType("text").IsRequired();
+            entity.Property(r => r.UpdatedBy).HasMaxLength(200).IsRequired();
+        });
+        modelBuilder.Entity<AdoExportRecord>(entity =>
+        {
+            entity.ToTable("ado_export_records");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.ProjectKey).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.PlanName).HasMaxLength(300).IsRequired();
+            entity.Property(r => r.Format).HasMaxLength(10).IsRequired();
+            entity.Property(r => r.Mode).HasMaxLength(20).IsRequired();
+            entity.Property(r => r.Destination).HasMaxLength(300);
+            entity.Property(r => r.ContentJson).HasColumnType("text").IsRequired();
+            entity.Property(r => r.ExportedBy).HasMaxLength(200).IsRequired();
+            entity.HasIndex(r => new { r.ProjectKey, r.ExportedAt });
         });
         modelBuilder.Entity<ParquetInspectionRecord>(entity =>
         {

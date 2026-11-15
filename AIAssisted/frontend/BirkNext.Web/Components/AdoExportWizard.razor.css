@@ -1,0 +1,46 @@
+.adx { margin: 0 0 1.25rem; min-width: 0; }
+.adx-h2 { font-size: 1.15rem; margin: 0 0 0.3rem; }
+.adx-h3 { font-size: 0.95rem; margin: 0.4rem 0 0.2rem; }
+.adx-muted { color: var(--clr-text-muted, #57606a); }
+.adx-small { font-size: 0.82rem; }
+.adx-alert { padding: 0.5rem 0.75rem; border: 1px solid #eac54f; background: #fff8c5; border-radius: 6px; }
+.adx-ok { color: #116329; font-weight: 600; }
+.adx-bad { color: #a40e26; font-weight: 600; }
+.adx-step { border: 1px solid var(--clr-border, #d0d7de); border-radius: 6px; padding: 0.7rem 0.9rem; margin: 0 0 0.8rem; min-width: 0; background: var(--clr-surface, #fff); }
+.adx-legend { font-weight: 700; font-size: 1rem; padding: 0 0.3rem; display: inline-flex; align-items: center; gap: 0.4rem; }
+.adx-n { display: inline-flex; align-items: center; justify-content: center; width: 1.4rem; height: 1.4rem; border-radius: 50%; background: var(--clr-primary, #0969da); color: #fff; font-size: 0.8rem; }
+.adx-counts { margin: 0 0 0.4rem; }
+.adx-bar { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.4rem 0; }
+.adx-btn { border: 1px solid var(--clr-primary, #0969da); background: var(--clr-primary, #0969da); color: #fff; border-radius: 6px; padding: 0.35rem 0.8rem; font: inherit; font-weight: 600; cursor: pointer; min-height: 2.2rem; }
+.adx-btn-quiet { background: var(--clr-surface, #fff); color: var(--clr-primary, #0969da); }
+.adx-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.adx-btn:focus-visible, .adx-step input:focus-visible, .adx-step select:focus-visible { outline: 2px solid var(--clr-primary, #0969da); outline-offset: 2px; }
+.adx-cases { list-style: none; margin: 0.3rem 0 0; padding: 0; display: grid; gap: 0.3rem; }
+.adx-case { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; padding: 0.3rem 0; border-bottom: 1px solid var(--clr-border, #d0d7de); min-width: 0; }
+.adx-case-title { overflow-wrap: anywhere; }
+.adx-check { display: inline-flex; align-items: center; gap: 0.4rem; min-height: 2rem; cursor: pointer; overflow-wrap: anywhere; }
+.adx-chip { display: inline-block; font-size: 0.75rem; font-weight: 650; padding: 0.05rem 0.5rem; border-radius: 999px; border: 1px solid var(--clr-border, #d0d7de); white-space: normal; }
+.adx-chip-ready, .adx-check-LocallyValid { background: #dafbe1; color: #116329; border-color: #aceebb; }
+.adx-chip-attention, .adx-check-Invalid, .adx-check-Missing { background: #ffebe9; color: #a40e26; border-color: #ffcecb; }
+.adx-chip-excluded, .adx-check-NotRequired { background: var(--clr-surface-alt, #eef2f6); color: var(--clr-text-muted, #57606a); }
+.adx-check-NeedsConfirmationInAzureDevOps { background: #fff8c5; color: #7d4e00; border-color: #eac54f; }
+.adx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: 0.4rem 0.9rem; }
+.adx-field { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; margin: 0 0 0.4rem; }
+.adx-field span { font-size: 0.85rem; font-weight: 600; }
+.adx-field input, .adx-field select { width: 100%; box-sizing: border-box; padding: 0.35rem 0.5rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 4px; font: inherit; }
+.adx-inline { border: 0; padding: 0; margin: 0.4rem 0; display: flex; flex-wrap: wrap; gap: 0.2rem 1rem; }
+.adx-inline legend { font-size: 0.85rem; font-weight: 600; width: 100%; padding: 0; }
+.adx-update { margin: 0.4rem 0; }
+.adx-table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 0.3rem 0; }
+.adx-table th, .adx-table td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--clr-border, #d0d7de); vertical-align: top; overflow-wrap: anywhere; }
+.adx-preview-scroll { max-height: 26rem; overflow: auto; }
+.adx-pre { white-space: pre-wrap; }
+.adx-issues ul { margin: 0.2rem 0 0.4rem 1.1rem; padding: 0; }
+.adx-issues-Blocking .adx-h3 { color: #a40e26; }
+.adx-howto { margin: 0.6rem 0 0.4rem 1.2rem; padding: 0; }
+@media (max-width: 768px) {
+    .adx-table, .adx-table tbody, .adx-table tr, .adx-table th, .adx-table td { display: block; width: 100%; }
+    .adx-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .adx-table tr { border-bottom: 1px solid var(--clr-border, #d0d7de); padding: 0.3rem 0; }
+    .adx-table th, .adx-table td { border: 0; padding: 0.1rem 0; }
+}

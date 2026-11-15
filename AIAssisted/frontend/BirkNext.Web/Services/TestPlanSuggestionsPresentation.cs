@@ -27,7 +27,7 @@ public static class TestPlanSuggestionsPresentation
     [
         new("snapshots", "Saved snapshots", "Every saved snapshot of this project's plans; a snapshot never changes."),
         new("compare", "Compare deliveries", "See what changed between two snapshots and what to retest."),
-        new("export", "Prepare for Azure DevOps", "Export a snapshot as a reviewable proposal; nothing is written to Azure DevOps."),
+        new("export", "Export to Azure DevOps", "Create an Azure Test Plans import file (Excel or CSV) from the saved test cases and import it in Azure DevOps yourself; nothing is written to Azure DevOps."),
     ];
 
     /// <summary>"Step 2 of 4 · Write readable …" for a step; the purpose alone for a secondary area. Pure.</summary>

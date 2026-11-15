@@ -815,6 +815,8 @@ builder.Services.AddSingleton<BirkNext.Api.Services.TestPlanning.ScenarioDiscove
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ScenarioDiscoveryStore>();
 // Manual Testing → Execute & document: manual runs of saved test cases (pinned case content, step results, evidence references, local defects).
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ManualTestRunService>();
+// Plan & prepare → Export to Azure DevOps: offline XLSX/CSV import files from saved test cases (no Azure DevOps connection).
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.AdoTestPlanExportService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.SpecificationScenarioProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.SystemGuideScenarioProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.UiSourceScenarioProvider>();
