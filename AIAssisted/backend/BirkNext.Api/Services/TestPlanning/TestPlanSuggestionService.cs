@@ -484,6 +484,28 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         return owner.Length <= 100 ? owner : "project:#" + E.Sha(key)[..40];
     }
 
+    /// <summary>This project's saved plans as stored (only owner "project:{key}" with the same ProjectKey). Unreadable rows are skipped, never guessed.</summary>
+    public async Task<List<TestPlanDraft>> ProjectDraftsAsync(string projectKey, CancellationToken ct)
+    {
+        var key = TestScenarioDiscoveryService.Key(projectKey);
+        var owner = ProjectOwner(key);
+        var list = new List<TestPlanDraft>();
+        foreach (var row in await db.TestPlanDrafts.AsNoTracking().Where(d => d.GuideKey == owner).ToListAsync(ct))
+        {
+            try { if (Read(row) is { } plan && plan.ProjectKey == key) list.Add(plan); }
+            catch (JsonException) { }
+        }
+        return list;
+    }
+
+    /// <summary>The project's saved cases traced to a specification's requirements (<see cref="PreparedCaseTraceability"/>).</summary>
+    public async Task<PreparedCaseTraceView> PreparedCaseTraceAsync(string projectKey, IReadOnlyCollection<string> specificationPaths, IReadOnlyCollection<string>? requirementIds,
+        CancellationToken ct)
+    {
+        var key = TestScenarioDiscoveryService.Key(projectKey);
+        return PreparedCaseTraceability.Build(key, await ProjectDraftsAsync(key, ct), specificationPaths, requirementIds);
+    }
+
     /// <summary>The project's plans and snapshots (only this project's), Test Data options and the Critical E2E flows of its environment.</summary>
     public async Task<TestPlanWorkspace> ProjectWorkspaceAsync(string projectKey, string? environmentId, bool canWrite, CancellationToken ct)
     {

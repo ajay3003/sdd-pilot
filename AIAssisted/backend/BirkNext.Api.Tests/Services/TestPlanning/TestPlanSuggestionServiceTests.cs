@@ -388,4 +388,43 @@ public sealed class TestPlanSuggestionServiceTests : IAsyncLifetime, IDisposable
         loaded.Cases.Select(c => c.Source.ScenarioId).Should().Equal(Seven);
         (await service.WorkspaceAsync("skolenaervaer", true, default)).Drafts.Should().ContainSingle(d => d.Id == guidePlan.Id, "project plans never appear among the guide's plans");
     }
+
+    // ── Saved cases in Test Coverage / Requirements Traceability ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task Saved_project_cases_are_traced_to_the_reviewed_specification_after_reload_and_never_counted_as_executed_or_for_another_project()
+    {
+        const string spec = "specs/001-library/spec.md";
+        await using var db = Context();
+        var service = Service(db);
+        var discovery = await new TestScenarioDiscoveryService(new IqrSourceStore(null!), [new SpecificationScenarioProvider()], _discoveries).DiscoverAsync(new ScenarioDiscoveryRequest
+        {
+            ProjectKey = "library", ProjectName = "Library",
+            Workspace = new BirkNext.TestCoverage.CoverageWorkspaceEvidence
+            {
+                SpecificationAvailable = true, SpecificationArtifacts = [new("spec-1", spec, null, "fp")],
+                Requirements = [new("FR-001", "System MUST let a member reserve a book.", null), new("FR-002", "System MUST email a confirmation.", null)],
+                AcceptanceScenarios = [new BirkNext.TestCoverage.QaTestCandidate { Id = "US1-1", Title = "Reserve a book", When = "the member reserves the book", Then = "it is reserved", RequirementIds = ["FR-001"] }],
+            },
+        }, default);
+        var plan = await service.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "library", ProjectName = "Library", DiscoveryId = discovery.DiscoveryId,
+            CandidateIds = [.. discovery.Candidates.Select(c => c.CandidateId)] }, "tester", default);
+        plan = await service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, "Log in as a librarian", "Sign in", ScenarioCandidateType.UiFunctional), "tester", default);
+        var scenario = plan.Cases.Single(c => c.Generated.Evidence.Any(e => e.Kind == "specification")).Source.ScenarioId;
+        await service.ReviewAsync(plan.Id, new ReviewTestCaseRequest(plan.Revision, scenario, TestCaseReviewState.Accepted, "Ready"), "lead", default);
+        var guidePlan = await CreateSeven(db);
+
+        // A fresh context: everything below is read back from the database.
+        var view = await Service(Context()).PreparedCaseTraceAsync("library", [spec], ["FR-001", "FR-002"], default);
+
+        view.Cases.Should().Be(3);
+        view.CaseList.Should().OnlyContain(c => c.DraftId == plan.Id && c.Execution == PreparedCaseTraceView.NotExecuted);
+        view.Requirements.Select(r => (r.RequirementId, r.State)).Should().Equal(("FR-001", "Approved test case"), ("FR-002", "Prepared, not approved yet"));
+        view.CaseList.Single(c => c.SourceKind == ScenarioSourceKind.Manual).Should().Match<PreparedCaseTrace>(c => c.Title == "Log in as a librarian" && !c.Counted);
+        view.UnlinkedCases.Should().Be(1, "the hand-written case names no requirement: visible, not counted");
+        view.CaseList.Should().NotContain(c => c.DraftId == guidePlan.Id, "the Skolenærvær guide plan belongs to MT-7, not to this project");
+
+        (await Service(Context()).PreparedCaseTraceAsync("other-project", [spec], null, default)).Cases.Should().Be(0, "another project never sees these cases");
+        (await Service(Context()).DraftAsync(guidePlan.Id, default)).Cases.Select(c => c.Source.ScenarioId).Should().Equal(Seven, "the guide plan is unchanged");
+    }
 }

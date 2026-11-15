@@ -84,6 +84,7 @@
     [SupplyParameterFromQuery(Name = "scenarios")] public string? ScenariosQuery { get; set; }
     [SupplyParameterFromQuery(Name = "draft")] public string? DraftQuery { get; set; }
     [SupplyParameterFromQuery(Name = "area")] public string? AreaQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "case")] public string? CaseQuery { get; set; }
 
     private ITestPlanSuggestionsApiService? _api;
     private ICurrentWorkspaceProjection? _projection;
@@ -144,6 +145,8 @@
         _api = ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService;
         if (_api is null) { _loading = false; return; }
         _area = P.AreaOrDefault(AreaQuery);
+        // Drill-down from Test Coverage / Requirements Traceability: open that saved case (it is only shown when it belongs to the loaded draft).
+        if (!string.IsNullOrWhiteSpace(CaseQuery)) _openCases.Add(CaseQuery);
         _projection = ServiceProvider.GetService(typeof(ICurrentWorkspaceProjection)) as ICurrentWorkspaceProjection;
         if (_projection is not null) _projection.Changed += OnProjectChanged;
         await LoadAsync();

@@ -391,6 +391,9 @@
                         }
                         break;
                     case "requirements":
+                        @* The loaded project's saved test cases (Test Plan Suggestions): test design, separate from every count above. *@
+                        <BirkNext.Web.Components.PreparedCaseTracePanel View="@r.PreparedCases" ShowCases="@(r.PreparedCases is { Requirements.Count: 0 })"
+                            Message="@(_projectKey is null ? "No project is loaded, so no saved test case is shown." : "This result was stored before saved test cases were traced; run the review again to include them.")" />
                         <div class="tco-filters"><label class="tco-field tco-inline">Status <select @bind="_behaviorStatus" data-testid="tco-behavior-status"><option value="">All</option>@foreach (var st in r.Behaviors.Select(b => b.Status).Distinct().Order()) { <option value="@st">@st</option> }</select></label></div>
                         var behaviors = r.Behaviors.Where(b => _behaviorStatus.Length == 0 || b.Status == _behaviorStatus)
                             .Where(b => _scopeSelection is null || S.Behavior(b, _scopeSelection, scopeSpec.Module, scopeSpec.Feature) != CoverageScopeAssociation.OutOfScope).ToList();

@@ -1,0 +1,101 @@
+@using BirkNext.TestPlanning
+@* Saved test cases (Test Plan Suggestions) as test-design evidence: requirement → cases, and every case with its stage, its links and why each
+   link is or is not counted. Read-only; the same view in Test Coverage Review and Requirements Traceability (PreparedCaseTraceability). *@
+
+<section class="pct" data-testid="pct" aria-labelledby="pct-title">
+    <h3 id="pct-title" class="pct-title">Prepared test cases</h3>
+    @if (View is null)
+    {
+        <p class="pct-muted" data-testid="pct-none">@(Message ?? "No project is loaded, so no saved test case is shown.")</p>
+    }
+    else
+    {
+        <p class="pct-boundary" data-testid="pct-boundary">@View.Boundary</p>
+        <dl class="pct-counts" data-testid="pct-counts">
+            <div><dt>Saved test cases</dt><dd data-testid="pct-cases">@View.Cases</dd></div>
+            <div><dt>Linked to the specification</dt><dd data-testid="pct-linked">@View.LinkedCases</dd></div>
+            <div><dt>Not linked (not counted)</dt><dd data-testid="pct-unlinked">@View.UnlinkedCases</dd></div>
+            <div><dt>Requirements with an approved case</dt><dd data-testid="pct-req-approved">@View.RequirementsWithApprovedCase</dd></div>
+            <div><dt>Requirements with prepared cases only</dt><dd data-testid="pct-req-prepared">@View.RequirementsWithPreparedCaseOnly</dd></div>
+            <div><dt>Executed</dt><dd data-testid="pct-executed">0 — prepared cases are not executions</dd></div>
+        </dl>
+        @foreach (var limitation in View.Limitations)
+        {
+            <p class="pct-muted" data-testid="pct-limitation">@limitation</p>
+        }
+        @if (View.Cases == 0)
+        {
+            <p class="pct-muted" data-testid="pct-empty">This project has no saved test case yet. Prepare cases in <a href="test-plan-suggestions">Test Plan Suggestions</a>.</p>
+        }
+        else
+        {
+            @if (View.Requirements.Count > 0)
+            {
+                <table class="pct-table" data-testid="pct-requirements">
+                    <thead><tr><th scope="col">Requirement</th><th scope="col">Test design</th><th scope="col">Saved cases</th></tr></thead>
+                    <tbody>
+                        @foreach (var r in View.Requirements)
+                        {
+                            <tr data-testid="pct-requirement" data-requirement="@r.RequirementId">
+                                <th scope="row">@r.RequirementId</th>
+                                <td>@r.State <span class="pct-muted">(@r.ApprovedCases approved, @r.PreparedCases prepared)</span></td>
+                                <td>
+                                    @foreach (var key in r.CaseKeys)
+                                    {
+                                        var c = View.CaseList.FirstOrDefault(x => x.CaseKey == key);
+                                        if (c is not null) { <a class="pct-case-link" href="@c.Href" data-testid="pct-requirement-case">@c.Title</a> }
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            <details class="pct-cases" open="@ShowCases" data-testid="pct-case-list">
+                <summary>All saved cases (@View.Cases)</summary>
+                <ul class="pct-case-items">
+                    @foreach (var c in View.CaseList)
+                    {
+                        <li class="pct-case" data-testid="pct-case" data-case="@c.CaseKey" data-stage="@c.Stage" data-counted="@(c.Counted ? "true" : "false")">
+                            <a href="@c.Href" class="pct-case-title" data-testid="pct-case-open">@c.Title</a>
+                            <span class="pct-chip" data-testid="pct-case-stage">@c.StageLabel</span>
+                            <span class="pct-chip pct-chip-quiet" data-testid="pct-case-execution">@c.Execution</span>
+                            <span class="pct-muted">@c.PlanName · @(c.SourceKind == ScenarioSourceKind.Manual ? "written by hand" : $"from {c.Capability ?? "discovery"}")</span>
+                            @if (c.Requirements.Count == 0)
+                            {
+                                <div class="pct-muted" data-testid="pct-case-unlinked">No requirement link — visible here, not counted as requirement coverage.</div>
+                            }
+                            else
+                            {
+                                <ul class="pct-links">
+                                    @foreach (var link in c.Requirements)
+                                    {
+                                        <li data-testid="pct-case-link" data-counted="@(link.Counted ? "true" : "false")">
+                                            <strong>@link.RequirementId</strong> — @(link.Counted ? "counted" : "not counted"): @link.Explanation
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                            @if (c.SpecificationScenarioId is { } scenario)
+                            {
+                                <div class="pct-muted" data-testid="pct-case-scenario">Prepared from acceptance scenario @scenario (the same scenario Test Coverage lists as a QA test; counted once).</div>
+                            }
+                            @if (c.CriticalE2EFlowIds.Count > 0)
+                            {
+                                <div class="pct-muted" data-testid="pct-case-flows">Critical E2E flow(s): @string.Join(", ", c.CriticalE2EFlowIds) — their runs belong to the flow, not to this case.</div>
+                            }
+                        </li>
+                    }
+                </ul>
+            </details>
+        }
+    }
+</section>
+
+@code {
+    /// <summary>The traced cases; null shows <see cref="Message"/> (no project, or the view could not be read).</summary>
+    [Parameter] public PreparedCaseTraceView? View { get; set; }
+    [Parameter] public string? Message { get; set; }
+    /// <summary>Open the case list at first (true when no requirement row explains the cases).</summary>
+    [Parameter] public bool ShowCases { get; set; }
+}

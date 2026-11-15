@@ -72,6 +72,7 @@ public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvid
         var flows = await FlowsAsync(request.EnvironmentId, ct);
         var result = TestCoverageReviewEngine.Review(current, baseline, request, decisions, flows, DateTimeOffset.UtcNow, ct, await IntegrationJourneyCatalogAsync(request.ProjectKey, ct)) with { BaselineRelation = relation };
         result = await WithTestDataReferencesAsync(result, request.ProjectKey, ct);
+        result = result with { PreparedCases = await PreparedCasesAsync(request, ct) };
         var label = $"{result.Current.Repository} · {result.Inventory.TestsDiscovered} test(s) · {result.Journeys.Count} journey(s)";
         db.TestCoverageReviewRuns.Add(new TestCoverageReviewRunRecord
         {
@@ -109,6 +110,19 @@ public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvid
             var latest = history.Where(r => r.FlowId == f.Id).OrderByDescending(r => r.StartedAt).FirstOrDefault();
             return TestCoverageDataLinks.With(new E2EFlowEvidence(f.Id, f.Name, f.Module, f.Description, latest?.Status, latest?.StartedAt), f, drafts, environmentId);
         }).ToList();
+    }
+
+    /// <summary>The loaded project's saved test cases (Test Plan Suggestions project plans) against the reviewed specification, through the shared
+    /// rule (<see cref="BirkNext.Api.Services.TestPlanning.PreparedCaseTraceability"/>). Kept apart from every test count of the review: test design,
+    /// never a discovered, executed or passed test. Null without a project.</summary>
+    private async Task<BirkNext.TestPlanning.PreparedCaseTraceView?> PreparedCasesAsync(TestCoverageReviewRequest request, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.ProjectKey)) return null;
+        var key = request.ProjectKey.Trim();
+        var workspace = request.Workspace;
+        return BirkNext.Api.Services.TestPlanning.PreparedCaseTraceability.Build(key, await DraftsAsync(ct),
+            [.. (workspace?.SpecificationArtifacts ?? []).Select(a => a.Path)],
+            workspace is { SpecificationAvailable: true } ? [.. workspace.Requirements.Select(r => r.Id)] : null);
     }
 
     /// <summary>Every stored Test Plan draft (read-only). An unreadable draft is skipped, never guessed.</summary>

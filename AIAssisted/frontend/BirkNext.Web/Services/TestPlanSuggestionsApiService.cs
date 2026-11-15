@@ -42,6 +42,9 @@ public interface ITestPlanSuggestionsApiService
         Task.FromResult<(TestPlanDraft?, string?)>((null, NotAvailable));
     Task<(TestPlanDraft? Draft, string? Error)> AddManualCaseAsync(Guid id, AddManualTestCaseRequest request, CancellationToken ct = default) =>
         Task.FromResult<(TestPlanDraft?, string?)>((null, NotAvailable));
+    /// <summary>The project's saved test cases traced to a specification's requirements (POST project/traceability). Read-only.</summary>
+    Task<(PreparedCaseTraceView? Trace, string? Error)> PreparedCaseTraceAsync(string projectKey, PreparedCaseTraceRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(PreparedCaseTraceView?, string?)>((null, NotAvailable));
 
     const string NotAvailable = "Project test planning is not available in this host.";
 }
@@ -111,6 +114,9 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http) : ITestPlanSu
 
     public Task<(TestPlanDraft?, string?)> AddManualCaseAsync(Guid id, AddManualTestCaseRequest request, CancellationToken ct = default) =>
         Send<TestPlanDraft>(() => http.PostAsJsonAsync($"{Base}/drafts/{id}/manual-cases", request, Json, ct), ct);
+
+    public Task<(PreparedCaseTraceView?, string?)> PreparedCaseTraceAsync(string projectKey, PreparedCaseTraceRequest request, CancellationToken ct = default) =>
+        Send<PreparedCaseTraceView>(() => http.PostAsJsonAsync($"{Base}/project/traceability?projectKey={Uri.EscapeDataString(projectKey)}", request, Json, ct), ct);
 
     private static async Task<(T? Value, string? Error)> Send<T>(Func<Task<HttpResponseMessage>> call, CancellationToken ct)
     {

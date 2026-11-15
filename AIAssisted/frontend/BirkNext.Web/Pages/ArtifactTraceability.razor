@@ -10,6 +10,7 @@
 @inject IReportExportService ExportService
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
+@inject IServiceProvider PageServices
 @implements IDisposable
 
 <PageTitle>Requirements Traceability</PageTitle>
@@ -382,6 +383,8 @@
                         }
                     </div>
                 </div>
+                @* Specification requirement → the project's saved test cases (Test Plan Suggestions), by the case's own specification evidence. *@
+                <BirkNext.Web.Components.PreparedCaseTracePanel View="@_caseTrace" Message="@_caseTraceMessage" ShowCases="@(_caseTrace is { Requirements.Count: 0 })" />
             }
 
             @if (_tab == "const-spec")
@@ -908,6 +911,34 @@
 
     // ── Actions ───────────────────────────────────────────────────────────
 
+    private BirkNext.TestPlanning.PreparedCaseTraceView? _caseTrace;
+    private string? _caseTraceMessage;
+
+    /// <summary>The project's saved test cases traced to the selected specification (read-only; never changes the traceability result).</summary>
+    private async Task LoadCaseTraceAsync()
+    {
+        _caseTrace = null;
+        var api = PageServices.GetService(typeof(BirkNext.Web.Services.ITestPlanSuggestionsApiService)) as BirkNext.Web.Services.ITestPlanSuggestionsApiService;
+        var specification = _inputs?.Role(WorkspaceArtifactType.Specification).State.Selected;
+        var project = _inputs?.Scope;
+        if (api is null) _caseTraceMessage = "Saved test cases are not available in this host.";
+        else if (string.IsNullOrWhiteSpace(project)) _caseTraceMessage = "No project is loaded, so no saved test case is shown.";
+        else if (specification is null) _caseTraceMessage = "No specification is selected, so no saved test case can be traced to its requirements.";
+        else
+        {
+            try
+            {
+                var (view, error) = await api.PreparedCaseTraceAsync(project, new BirkNext.TestPlanning.PreparedCaseTraceRequest([specification.SourcePath ?? specification.FileName], null));
+                (_caseTrace, _caseTraceMessage) = (view, error);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+            {
+                _caseTraceMessage = "Saved test cases could not be read.";
+            }
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
     private void RunAnalysis()
     {
         try
@@ -958,6 +989,7 @@
 
             _report = NormalizeReport(TraceabilityService.Analyze(constitution, spec, plan, tasks, reviewContext));
             _evaluatedAt = DateTimeOffset.UtcNow;
+            _ = LoadCaseTraceAsync();
             _reportKey = _inputs.Key;
             DashboardSnapshot.Publish(_report);
             // A new analysis starts from the URL's view (deep link) rather than always resetting to Overview.

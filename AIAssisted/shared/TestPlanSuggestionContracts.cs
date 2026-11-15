@@ -543,3 +543,90 @@ public sealed record RequirementCoverageView
 
     public const string RequirementCoverageBoundary = "Reviewed scenario coverage means a tester reviewed a scenario that a verified association links to the requirement. It is not test execution, not a passed test and not an Azure DevOps Test Case.";
 }
+
+// ── Prepared test cases in Test Coverage and Requirements Traceability ─────────────────────────────────────────
+// Saved project test cases (prepared from discovery or written by hand) as test-design evidence. One identity per saved case
+// (draft id + case id); a requirement link only from the case's own evidence (the specification file and id it was prepared from), never
+// from similarity; a prepared or approved case is never an executed or passed test. Read-only: plans stay owned by Test Plan Suggestions.
+
+/// <summary>Where a saved case stands in Test Plan Suggestions. Approved = accepted for preparation (a BirkNext review decision).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum PreparedCaseStage { Prepared, NeedsClarification, Approved, Excluded, Superseded }
+
+/// <summary>What the requirement link of a case rests on.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum PreparedCaseLinkBasis
+{
+    /// <summary>The case was prepared from this requirement or from an acceptance scenario of the same specification that names it.</summary>
+    SpecificationEvidence,
+    /// <summary>An Integration Journey declares the requirement id, without naming a specification file.</summary>
+    JourneyReference,
+    /// <summary>A System Understanding guide business rule: not a specification requirement (MT-7) and never requirement coverage.</summary>
+    GuideBusinessRule,
+}
+
+/// <summary>One requirement a case names, and whether it counts as test-design coverage of the reviewed specification (with the reason).</summary>
+public sealed record PreparedCaseRequirementLink(string RequirementId, string? SpecificationPath, PreparedCaseLinkBasis Basis, bool Counted, string Explanation);
+
+public sealed record PreparedCaseTrace
+{
+    /// <summary>The single identity of the saved case: "{draft id:N}/{case id}".</summary>
+    public string CaseKey { get; init; } = "";
+    public Guid DraftId { get; init; }
+    public string CaseId { get; init; } = "";
+    public string PlanName { get; init; } = "";
+    public int PlanRevision { get; init; }
+    public string Title { get; init; } = "";
+    public ScenarioSourceKind SourceKind { get; init; }
+    /// <summary>The discovery capability the case was prepared from (specification, ui-source …); null for a manual case.</summary>
+    public string? Capability { get; init; }
+    public PreparedCaseStage Stage { get; init; }
+    public string StageLabel { get; init; } = "";
+    /// <summary>Always "Not executed": Test Plan Suggestions records no execution for a prepared case.</summary>
+    public string Execution { get; init; } = PreparedCaseTraceView.NotExecuted;
+    public List<PreparedCaseRequirementLink> Requirements { get; init; } = [];
+    /// <summary>The specification acceptance scenario the case was prepared from (the same id Test Coverage lists as a QA test), if any.</summary>
+    public string? SpecificationScenarioId { get; init; }
+    /// <summary>Critical E2E flows the case comes from or a reviewer confirmed (their runs are the flow's, never this case's).</summary>
+    public List<string> CriticalE2EFlowIds { get; init; } = [];
+    /// <summary>Drill-down to the case in Test Plan Suggestions.</summary>
+    public string Href { get; init; } = "";
+    [JsonIgnore] public bool Counted => Requirements.Any(r => r.Counted);
+}
+
+/// <summary>One requirement of the reviewed specification with the saved cases that cover it by evidence (counted once, however many cases).</summary>
+public sealed record PreparedRequirementTrace
+{
+    public string RequirementId { get; init; } = "";
+    public string? SpecificationPath { get; init; }
+    public int ApprovedCases { get; init; }
+    public int PreparedCases { get; init; }
+    /// <summary>"Approved test case" or "Prepared, not approved yet".</summary>
+    public string State { get; init; } = "";
+    public List<string> CaseKeys { get; init; } = [];
+}
+
+public sealed record PreparedCaseTraceView
+{
+    public string ProjectKey { get; init; } = "";
+    /// <summary>The specification file(s) links are counted against; empty = no specification was given, so no link is counted.</summary>
+    public List<string> SpecificationPaths { get; init; } = [];
+    public int Plans { get; init; }
+    public int Cases { get; init; }
+    /// <summary>Cases with at least one counted requirement link.</summary>
+    public int LinkedCases { get; init; }
+    /// <summary>Cases with no counted link (visible, never counted as requirement coverage).</summary>
+    public int UnlinkedCases { get; init; }
+    public int RequirementsWithApprovedCase { get; init; }
+    public int RequirementsWithPreparedCaseOnly { get; init; }
+    public List<PreparedCaseTrace> CaseList { get; init; } = [];
+    public List<PreparedRequirementTrace> Requirements { get; init; } = [];
+    public List<string> Limitations { get; init; } = [];
+    public string Boundary { get; init; } = TraceBoundary;
+
+    public const string NotExecuted = "Not executed";
+    public const string TraceBoundary = "Prepared and approved test cases are test design, not test execution: none of them ran or passed. A requirement counts only when the case's own evidence names it in the reviewed specification.";
+}
+
+/// <summary>The specification a requirements view reads, for counting case links against it (Requirements Traceability).</summary>
+public sealed record PreparedCaseTraceRequest(List<string> SpecificationPaths, List<string>? RequirementIds);

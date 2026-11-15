@@ -543,6 +543,17 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
     }
 
     [Fact]
+    public void A_drill_down_from_coverage_opens_that_saved_case_in_its_own_plan()
+    {
+        SelectProject();
+        var plan = ProjectDraft("library");
+        var api = new Api(Workspace(), plan) { Project = ProjectWorkspace() };
+        var cut = Render(api, $"?draft={plan.Id}&area=prepare&case=tsc-borrow");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tps-case-tsc-borrow]").ClassList.Should().Contain("is-open", "the case the link names is opened"));
+        cut.Find("[data-testid=tps-case-tsc-borrow]").TextContent.Should().Contain("Borrow a book");
+    }
+
+    [Fact]
     public void With_no_evidence_a_tester_can_still_write_a_test_case_by_hand()
     {
         SelectProject("notes", "Notes only");

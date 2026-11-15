@@ -354,6 +354,9 @@ public sealed record TestCoverageReviewResult
     public List<string> DiscoveryLimitations { get; init; } = [];
     /// <summary>How each test project's pipeline test steps relate to deployments (shared delivery evidence): configured ≠ gating ≠ executed.</summary>
     public List<CoverageDeliveryTest> PipelineGating { get; init; } = [];
+    /// <summary>The loaded project's saved test cases (Test Plan Suggestions) as test-design evidence against the reviewed specification. Separate from
+    /// every count above (never a discovered, executed or passed test); null for older results or without a project.</summary>
+    public BirkNext.TestPlanning.PreparedCaseTraceView? PreparedCases { get; init; }
 }
 
 /// <summary>One pipeline test step that runs a test project: whether it gates a deployment (from source dependencies/conditions). Never a run result.</summary>

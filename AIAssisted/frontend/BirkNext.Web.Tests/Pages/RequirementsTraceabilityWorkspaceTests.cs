@@ -102,6 +102,34 @@ public sealed class RequirementsTraceabilityWorkspaceTests : BunitContext
     }
 
     [Fact]
+    public void ImportedProject_TracesItsSavedTestCases_ToTheSelectedSpecification()
+    {
+        Import(new string('c', 64), ("shop/.specify/memory/constitution.md", Constitution), ("shop/specs/001-cart/spec.md", Spec("FR-201")),
+            ("shop/specs/001-cart/plan.md", Plan), ("shop/specs/001-cart/tasks.md", Tasks));
+        var plans = new Mock<ITestPlanSuggestionsApiService>();
+        (string Project, BirkNext.TestPlanning.PreparedCaseTraceRequest Request)? asked = null;
+        var draft = Guid.NewGuid();
+        plans.Setup(x => x.PreparedCaseTraceAsync(It.IsAny<string>(), It.IsAny<BirkNext.TestPlanning.PreparedCaseTraceRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<string, BirkNext.TestPlanning.PreparedCaseTraceRequest, CancellationToken>((p, r, _) => asked = (p, r))
+            .ReturnsAsync((new BirkNext.TestPlanning.PreparedCaseTraceView
+            {
+                ProjectKey = "x", Cases = 1, LinkedCases = 1, RequirementsWithPreparedCaseOnly = 1,
+                CaseList = [new() { CaseKey = $"{draft:N}/tsc-cart", DraftId = draft, CaseId = "tsc-cart", Title = "Add an item to the cart", Stage = BirkNext.TestPlanning.PreparedCaseStage.Prepared,
+                    StageLabel = "Prepared", Href = $"test-plan-suggestions?draft={draft}&area=prepare&case=tsc-cart" }],
+                Requirements = [new() { RequirementId = "FR-201", PreparedCases = 1, State = "Prepared, not approved yet", CaseKeys = [$"{draft:N}/tsc-cart"] }],
+            }, (string?)null));
+        Services.AddSingleton(plans.Object);
+
+        var cut = Render<ArtifactTraceability>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pct-requirement]").GetAttribute("data-requirement").Should().Be("FR-201"));
+        asked!.Value.Project.Should().Be(_explorers.CurrentScope, "the current project's key, the same key its plans are saved under");
+        asked.Value.Request.SpecificationPaths.Should().ContainSingle().Which.Should().EndWith("specs/001-cart/spec.md");
+        cut.Find("[data-testid=pct-requirement-case]").GetAttribute("href").Should().Contain("case=tsc-cart");
+        _published.Last().SpecToPlan.Select(c => c.ItemId).Should().Equal(["FR-201"], "the document traceability result is unchanged by the saved cases");
+    }
+
+    [Fact]
     public void ManualWorkspace_DrivesTraceability()
     {
         _explorers.Import(new(WorkspaceArtifactType.Specification, Spec("FR-301"), "requirements.md", "File")).IsSuccess.Should().BeTrue();
