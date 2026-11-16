@@ -247,8 +247,20 @@ public sealed class TestDataIdentityStore
     {
         var tmp = _path + ".tmp";
         File.WriteAllText(tmp, JsonSerializer.Serialize(_document, Json));
-        File.Move(tmp, _path, overwrite: true);
+        // Windows refuses to replace a file another process holds open without delete sharing — typically antivirus scanning the file just
+        // written ("Access to the path is denied" / a sharing violation). That hold lasts milliseconds: retry the replace briefly, then fail loudly.
+        for (var attempt = 1; ; attempt++)
+        {
+            try { File.Move(tmp, _path, overwrite: true); return; }
+            catch (Exception e) when (e is UnauthorizedAccessException or IOException && attempt < ReplaceAttempts && File.Exists(tmp))
+            {
+                Thread.Sleep(ReplaceRetryDelayMs * attempt);
+            }
+        }
     }
+
+    internal const int ReplaceAttempts = 5;
+    internal const int ReplaceRetryDelayMs = 40;
 }
 
 /// <summary>Rename request: the new alias for a registered asset (its TestDataAssetId is unchanged).</summary>

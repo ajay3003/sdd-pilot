@@ -182,13 +182,13 @@ public static class PreparedCaseTraceability
         : PreparedLinkValidity.Current;
 
     /// <summary>The specification file of the case's own evidence ("{file}#{id}" of kind specification or requirement).</summary>
-    static string? SpecificationFile(IEnumerable<CandidateEvidenceRef> evidence) =>
+    internal static string? SpecificationFile(IEnumerable<CandidateEvidenceRef> evidence) =>
         evidence.Where(e => e.Kind is "specification" or "requirement").Select(e => FileOf(e.Reference)).FirstOrDefault(f => f is not null);
 
-    static string? RequirementFile(IEnumerable<CandidateEvidenceRef> evidence, string id) =>
+    internal static string? RequirementFile(IEnumerable<CandidateEvidenceRef> evidence, string id) =>
         evidence.Where(e => e.Kind == "requirement" && e.Reference.EndsWith("#" + id, StringComparison.OrdinalIgnoreCase)).Select(e => FileOf(e.Reference)).FirstOrDefault(f => f is not null);
 
-    static string? ScenarioIdOf(IEnumerable<CandidateEvidenceRef> evidence) =>
+    internal static string? ScenarioIdOf(IEnumerable<CandidateEvidenceRef> evidence) =>
         evidence.Where(e => e.Kind == "specification").Select(e => e.Reference.LastIndexOf('#') is var i and >= 0 ? e.Reference[(i + 1)..] : null).FirstOrDefault(s => !string.IsNullOrWhiteSpace(s));
 
     /// <summary>"specs/x/spec.md#FR-001" → "specs/x/spec.md"; a bare id or the "specification" placeholder (no file was known) → null.</summary>

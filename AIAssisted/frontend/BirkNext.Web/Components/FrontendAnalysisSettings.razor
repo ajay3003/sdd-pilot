@@ -27,6 +27,12 @@
 {
     <div class="notification notification-error" role="alert">@_saveError</div>
 }
+@if (_saveConflict is not null)
+{
+    @* Multi-tab safety: the same Target Environment was saved in another tab after this page loaded; nothing was written here. *@
+    <div class="notification notification-error" role="alert" data-testid="te-save-conflict">@_saveConflict
+        <button type="button" class="btn btn-secondary btn-sm" data-testid="te-save-conflict-reload" @onclick="ReloadAfterConflictAsync">Reload settings</button></div>
+}
 
 @* ── Active profile summary card ─────────────────────────────────────────── *@
 <section class="fa-active-card" aria-labelledby="active-environment-heading">
@@ -1708,6 +1714,22 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private string? _saveSuccess;
     private string? _saveError;
+    private string? _saveConflict;
+
+    /// <summary>Every save of this editor: on a multi-tab conflict nothing is written and the person is told which environment changed elsewhere
+    /// (see <see cref="TargetEnvironmentSaveConflictException"/>); the caller stops, so no "saved" message follows.</summary>
+    private async Task<bool> SaveSettingsAsync()
+    {
+        try { await FaSettings.SaveAsync(JS); _saveConflict = null; return true; }
+        catch (TargetEnvironmentSaveConflictException conflict) { _saveConflict = conflict.Message; _saveSuccess = null; StateHasChanged(); return false; }
+    }
+
+    private async Task ReloadAfterConflictAsync()
+    {
+        await FaSettings.ReloadAsync(JS);
+        _saveConflict = null; _isEditMode = false; _editProfile = null; _originalProfileJson = null;
+        StateHasChanged();
+    }
     private bool    _isSaving;
 
     private bool   _showCreateDialog;
@@ -2262,7 +2284,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
                 _editProfile.ArchivedProjects = stored.ArchivedProjects;
             }
             FaSettings.UpdateProfile(_editProfile);
-            await FaSettings.SaveAsync(JS);
+            if (!await SaveSettingsAsync()) return;
             _selectedProfileId = _editProfile.Id;
             _isEditMode        = false;
             _editProfile       = null;
@@ -2289,7 +2311,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         if (effective.ProviderValue.ReviewRequired) EffectiveAuthentication.ClearOverride(profile.Authentication, EffectiveAuthentication.ProviderKey);
         if (effective.SignInValue.ReviewRequired) EffectiveAuthentication.ClearOverride(profile.Authentication, EffectiveAuthentication.SignInRequiredKey);
         FaSettings.UpdateProfile(profile);
-        await FaSettings.SaveAsync(JS);
+        if (!await SaveSettingsAsync()) return;
         RecomputeManualReadiness();
     }
 
@@ -2301,7 +2323,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         FaSettings.SelectActiveProfile(_selectedProfileId);
         try
         {
-            await FaSettings.SaveAsync(JS);
+            if (!await SaveSettingsAsync()) return;
             _saveError = null;
         }
         catch
@@ -2320,7 +2342,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         copy.LastDetectedUrl = null;
         copy.LastDetectionSucceeded = false;
         copy.LastDetectionFailure = null;
-        await FaSettings.SaveAsync(JS);
+        if (!await SaveSettingsAsync()) return;
         // The duplicate is a new environment identity; it inherits no detection snapshot (the source's is keyed to the source id).
         await FaSettings.RemoveDetectionSnapshotAsync(JS, copy.Id);
         _selectedProfileId = copy.Id;
@@ -2334,7 +2356,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         try
         {
             FaSettings.DeleteProfile(_selectedProfileId);
-            await FaSettings.SaveAsync(JS);
+            if (!await SaveSettingsAsync()) return;
             _selectedProfileId = FaSettings.Settings.ActiveProfileId
                 ?? FaSettings.Settings.Profiles.FirstOrDefault()?.Id;
             _showDeleteConfirm = false;
@@ -2350,7 +2372,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         if (string.IsNullOrWhiteSpace(_newProfileName) || !IsNewProfileUrlValid) return;
         var profile = FaSettings.CreateProfile(_newProfileName.Trim(), _newProfileEnv);
         profile.TargetUrl = string.IsNullOrWhiteSpace(_newProfileUrl) ? null : _newProfileUrl;
-        await FaSettings.SaveAsync(JS);
+        if (!await SaveSettingsAsync()) return;
         SelectProfile(profile.Id);
         _showCreateDialog  = false;
         _activeTab         = "general";
@@ -2462,7 +2484,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
                 callingProfile.LastDetectedUrl = callingUrl;
                 callingProfile.LastDetectionSucceeded = result.State == DetectionState.Complete;
                 callingProfile.LastDetectionFailure = result.State == DetectionState.Complete ? null : result.State.ToString();
-                await FaSettings.SaveAsync(JS);
+                if (!await SaveSettingsAsync()) return;
 
                 // Also persist the safe public detection snapshot (separate evidence store, no credential) so a restart restores it.
                 await PersistDetectionSnapshotAsync(callingProfile, result.DetectionResponse, callingUrl);
@@ -2932,7 +2954,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         profile.ManualVerification = evidence;
         if (SelectedProfile is { } saved) saved.ManualVerification = evidence;
         if (_editProfile is not null) _originalProfileJson = System.Text.Json.JsonSerializer.Serialize(_editProfile);
-        await FaSettings.SaveAsync(JS);
+        if (!await SaveSettingsAsync()) return;
         _manualResultRecordedThisSession = true;
         RecomputeManualReadiness();
     }
@@ -3054,7 +3076,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         var history = saved.AuthenticationAdoption ??= new AuthenticationAdoptionHistory();
         var adopted = AuthenticationAdoption.Adopt(items, result, saved.Authentication, history, DateTimeOffset.UtcNow, _detectionCompletedAt);
         if (adopted.Count == 0) return;
-        await FaSettings.SaveAsync(JS);
+        if (!await SaveSettingsAsync()) return;
         // The adopted values come from this very detection: it still describes the (now saved) configuration, so it is not stale and a
         // sign-in check can be recorded against it without detecting again.
         _detectionProfileSnapshot = System.Text.Json.JsonSerializer.Deserialize<FrontendAnalysisProfile>(System.Text.Json.JsonSerializer.Serialize(saved));
@@ -3069,7 +3091,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         if (SelectedProfile is not { } saved || _detectionResult is not { Success: true } detection) return;
         var history = saved.AuthenticationAdoption ??= new AuthenticationAdoptionHistory();
         AuthenticationAdoption.Decide(choice.Item.Setting, choice.Item, choice.Decision, choice.Custom, detection, saved.Authentication, history, DateTimeOffset.UtcNow);
-        await FaSettings.SaveAsync(JS);
+        if (!await SaveSettingsAsync()) return;
         _authAdopted = choice.Decision switch
         {
             "use" => $"{choice.Item.Setting}: detected value saved.",
@@ -3214,7 +3236,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         try
         {
             FaSettings.ResetProfile(_selectedProfileId);
-            await FaSettings.SaveAsync(JS);
+            if (!await SaveSettingsAsync()) return;
             _showResetConfirm = false;
         }
         finally
@@ -3227,14 +3249,14 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     {
         if (_selectedProfileId is null) return;
         FaSettings.RestoreDefaultThresholds(_selectedProfileId);
-        await FaSettings.SaveAsync(JS);
+        if (!await SaveSettingsAsync()) return;
     }
 
     private async Task RestoreStrictThresholdsAsync()
     {
         if (_selectedProfileId is null) return;
         FaSettings.RestoreStrictThresholds(_selectedProfileId);
-        await FaSettings.SaveAsync(JS);
+        if (!await SaveSettingsAsync()) return;
     }
 
     /// <summary>Opens the Core Web Vitals restore confirmation (nothing changes until confirmed).</summary>
@@ -3245,7 +3267,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     {
         if (_selectedProfileId is null) return;
         FaSettings.RestoreDefaultCoreWebVitals(_selectedProfileId);
-        await FaSettings.SaveAsync(JS);
+        if (!await SaveSettingsAsync()) return;
         _confirmRestoreCwv = false;
     }
 
@@ -3257,7 +3279,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     {
         if (_selectedProfileId is null) return;
         FaSettings.RestoreDefaultFeatureToggles(_selectedProfileId);
-        await FaSettings.SaveAsync(JS);
+        if (!await SaveSettingsAsync()) return;
         _confirmRestoreEngines = false;
     }
 

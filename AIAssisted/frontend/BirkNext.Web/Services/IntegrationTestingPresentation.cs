@@ -38,7 +38,7 @@ public static class IntegrationTestingPresentation
     /// <param name="Reviews">Integration Quality Review runs of the active Target Environment.</param>
     public sealed record Facts(string? ProjectKey, string? ProjectName, string? EnvironmentId, string? TargetName, IntegrationTopologyView? Topology,
         IReadOnlyList<IntegrationDefinition> Integrations, IReadOnlyList<DeclaredIntegrationJourney> Journeys, IReadOnlyList<IntegrationSuiteSummary> Suites, int OtherSuites,
-        IReadOnlyList<IntegrationReviewRunSummary> Reviews, IReadOnlyList<string> Errors)
+        IReadOnlyList<IntegrationReviewRunSummary> Reviews, IReadOnlyList<string> Errors, string? ScopeNotice = null)
     {
         public static Facts Empty => new(null, null, null, null, null, [], [], [], 0, [], []);
         public DeclaredIntegrationJourney? Journey(string? id) => id is null ? null : Journeys.FirstOrDefault(j => string.Equals(j.Id, id, StringComparison.Ordinal));

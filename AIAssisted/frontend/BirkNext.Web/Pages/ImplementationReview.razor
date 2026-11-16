@@ -58,7 +58,10 @@
     }
 
     <section>
-        <h2>Requirements and evidence</h2>
+        <h2>Supporting evidence per requirement</h2>
+        @* R3: one implementation verdict. The verdict is the feature readiness above (ImplementationGapExplorer: the stored gap evaluation of the
+           imported source snapshot, also shown by Quality Review). This table is the evidence behind it, per requirement — never a second verdict. *@
+        <p class="note" data-testid="ier-verdict-source">The implementation verdict is the feature readiness above — the Implementation Gap evaluation of the imported source snapshot, the same verdict Quality Review shows. This table lists the evidence behind it per requirement; it is not a second verdict.</p>
         @if (Requirements.Count == 0)
         {
             <p>No current requirements were extracted from the selected specification.</p>
@@ -66,7 +69,7 @@
         else
         {
             <div class="table-wrap" tabindex="0" role="region" aria-label="Requirements and evidence table"><table>
-                <thead><tr><th>Requirement</th><th>Plan</th><th>Tasks</th><th>Implementation evidence</th><th>Test evidence</th><th>Assessment</th></tr></thead>
+                <thead><tr><th>Requirement</th><th>Plan</th><th>Tasks</th><th>Implementation evidence</th><th>Test evidence</th><th>Evidence state</th></tr></thead>
                 <tbody>
                 @foreach (var requirement in Requirements)
                 {

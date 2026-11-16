@@ -27,6 +27,10 @@ public sealed class IntegrationTestingWorkspace(IServiceProvider services)
             try { var c = await contexts.GetActiveContextAsync(); profile = c.ActiveTargetError is null && c.ActiveProfile is { Id.Length: > 0 } p ? p : null; }
             catch (InvalidOperationException) { }
         if (key is null) return I.Facts.Empty with { EnvironmentId = profile?.Id, TargetName = profile?.Name };
+        // R7: topology, catalog and IQR runs belong to the environment; journeys and suites to the project. An environment bound to another
+        // project contributes nothing here (identities are never merged); an unbound one is used and labelled.
+        var resolution = ProjectEnvironmentResolution.Resolve(key, profile, Get<IFrontendAnalysisSettingsService>()?.Settings.Profiles ?? []);
+        if (!resolution.EnvironmentFactsApply) profile = null;
 
         var errors = new List<string>();
         IntegrationTopologyView? topology = null;
@@ -63,6 +67,7 @@ public sealed class IntegrationTestingWorkspace(IServiceProvider services)
                     if (snapshot is { } own && s.SnapshotId == own) suites.Add(s); else other++;
             }
             catch (Exception e) when (e is not OperationCanceledException) { errors.Add("Integration Test Suites could not be read."); }
-        return new(key, name, profile?.Id, profile?.Name, topology, integrations, journeys, [.. suites.OrderByDescending(s => s.GeneratedAt)], other, reviews, errors);
+        return new(key, name, profile?.Id, profile?.Name, topology, integrations, journeys, [.. suites.OrderByDescending(s => s.GeneratedAt)], other, reviews, errors,
+            resolution.State == ProjectEnvironmentResolution.State.NoEnvironment ? null : resolution.Notice);
     }
 }

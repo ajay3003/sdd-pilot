@@ -30,6 +30,7 @@
     else
     {
         var f = _facts;
+        @if (f.ScopeNotice is { } scopeNotice) { <p class="mt-muted" role="status" data-testid="itx-scope-notice">@scopeNotice</p> }
         @foreach (var error in f.Errors)
         {
             <p class="mt-alert" role="status" data-testid="itx-read-error">@error</p>

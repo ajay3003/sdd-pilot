@@ -23,6 +23,7 @@ namespace BirkNext.Api.Tests.Services;
 /// database. The database step is faked here: these tests never touch a real database. The transactional table deletion is covered by
 /// the live smoke against an isolated database (docs/local-data-reset.md).
 /// </summary>
+[Collection(BirkNext.Api.Tests.Services.LocalDataReset.LocalDataResetCollection.Name)]
 public sealed class LocalDataResetTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "birknext-reset-tests-" + Guid.NewGuid().ToString("N"));

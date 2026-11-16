@@ -22,7 +22,7 @@ public sealed class ManagedEdgeConnectorTests
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        var response = Serve(listener, $"HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        var response = Started(listener, $"HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
         try { await Assert.ThrowsAsync<HttpRequestException>(() => ValidationConnector().ConnectAsync($"http://127.0.0.1:{port}", default)); await response; }
         finally { listener.Stop(); }
     }
@@ -37,7 +37,7 @@ public sealed class ManagedEdgeConnectorTests
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         var body = "{\"webSocketDebuggerUrl\":\"" + socket + "\"}";
-        var response = Serve(listener, $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}");
+        var response = Started(listener, $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}");
         try { await Assert.ThrowsAsync<ArgumentException>(() => ValidationConnector().ConnectAsync($"http://127.0.0.1:{port}", default)); await response; }
         finally { listener.Stop(); }
     }
@@ -54,6 +54,14 @@ public sealed class ManagedEdgeConnectorTests
     /// response, stop sending, then wait for the client to close. Closing with unread request bytes resets the connection, and
     /// the client then waited for its 5-second timeout instead of reading the response (flaky under load, seen on Linux CI).
     /// </summary>
+    /// <summary>
+    /// The canned server runs on the thread pool, not on xUnit's test synchronization context. With <c>MaxParallelThreads=2</c> that context runs the
+    /// continuations of every in-flight test on two threads; in a full partition dozens of database tests were in flight (unrelated tests that normally
+    /// take seconds took 80–160 s in the same window), so the server's accept/read continuations waited in that queue while the connector's HttpClient,
+    /// which does not capture the context, timed out after 60 s. The client, the endpoint validation and the assertions are unchanged.
+    /// </summary>
+    private static Task Started(TcpListener listener, string response) => Task.Run(() => Serve(listener, response));
+
     private static async Task Serve(TcpListener listener, string response)
     {
         using var peer = await listener.AcceptTcpClientAsync();

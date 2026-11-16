@@ -178,22 +178,37 @@ public static class TestPlanSuggestionsPresentation
         return groups;
     }
 
-    public static PlanFocus Focus(TestPlanWorkspace? ws, RequirementCoverageView? coverage = null)
+    /// <param name="population">R1: the authoritative requirement population — the selected specification's requirement ids
+    /// (<see cref="RequirementPopulation.SelectedSpecificationAsync"/>, the same set Test Coverage counts). When given, every requirement count is
+    /// over that population (relationship-analysis coverage is one measure of it); without a selected specification the counts say they are the
+    /// analysis's own.</param>
+    public static PlanFocus Focus(TestPlanWorkspace? ws, RequirementCoverageView? coverage = null, IReadOnlyList<string>? population = null)
     {
         var plan = PlanOnly(ws);
         if (coverage is not { Known: true } c) return plan; // unknown coverage adds no count (no denominator) and no action
         var facts = plan.Facts.ToList();
-        // R1: name the population — these are the requirements of the last relationship analysis (canonical interpretation), not the selected
-        // specification Test Coverage counts; the two can differ, so each number says where it comes from.
-        facts.Add(new("req-reviewed", $"Requirements with reviewed scenario coverage (of {c.Requirements} in the last relationship analysis)", c.Reviewed));
-        facts.Add(new("req-needs", "Requirements needing association review", c.NeedsReview));
+        var needsReview = c.NeedsReview;
+        if (population is { Count: > 0 } && c.Rows.Count > 0)
+        {
+            var r = RequirementPopulation.Relationship(c, population);
+            needsReview = r.NeedsReview;
+            facts.Add(new("req-reviewed", $"Requirements with reviewed scenario coverage (of {r.Population} in the selected specification)", r.Reviewed));
+            facts.Add(new("req-needs", "Requirements needing association review", r.NeedsReview));
+            if (r.NotAnalysed > 0) facts.Add(new("req-not-analysed", "Requirements not in the last relationship analysis", r.NotAnalysed));
+        }
+        else
+        {
+            // No selected specification (or no rows): the analysis's own population, named as such — never presented as the specification's.
+            facts.Add(new("req-reviewed", $"Requirements with reviewed scenario coverage (of {c.Requirements} in the last relationship analysis)", c.Reviewed));
+            facts.Add(new("req-needs", "Requirements needing association review", c.NeedsReview));
+        }
         var actions = plan.Actions.ToList();
         var at = Math.Min(1, actions.Count);
         if (c.Associations.Any(a => a.InterpretationOutdated))
             actions.Insert(at, new("req-reinterpret", "Re-run relationship analysis", "A guide scenario changed after the last interpretation; its requirement associations are not verified for the new text.",
                 RequirementCoveragePresentation.RelationshipReviewHref, FocusActionState.CanDoNow, "Ready now", null));
-        if (c.NeedsReview > 0)
-            actions.Insert(at, new("req-associations", "Review requirement/scenario associations", $"{c.NeedsReview} requirement(s) have only suggested scenario associations; nothing is counted until decided.",
+        if (needsReview > 0)
+            actions.Insert(at, new("req-associations", "Review requirement/scenario associations", $"{needsReview} requirement(s) have only suggested scenario associations; nothing is counted until decided.",
                 RequirementCoveragePresentation.RelationshipReviewHref, FocusActionState.CanDoNow, "Ready now", null));
         if (c.VerifiedNotReviewed > 0)
             actions.Add(new("req-scenarios", "Review linked scenarios", $"{c.VerifiedNotReviewed} requirement(s) are linked to a scenario no tester has accepted in its current revision.",

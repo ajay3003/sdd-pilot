@@ -159,6 +159,29 @@ public sealed class ManualTestRunServiceTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
+    public async Task A_run_started_after_a_failed_run_is_a_retest_of_it_and_carries_its_specification_origin()
+    {
+        await using var db = Context();
+        var (plan, scenario) = await PlanAsync(db);
+        var runs = Runs(db);
+        var first = await runs.StartAsync(new StartManualRunRequest("library", plan.Id, scenario.Source.ScenarioId, null), "anna", default);
+        first.RetestOf.Should().BeNull("the first run retests nothing");
+        first.Origin.Should().NotBeNull("every new run pins where its case came from");
+        first.Origin!.Requirements.Select(r => r.RequirementId).Should().Equal(first.RequirementIds);
+        first = await runs.SaveAsync("library", first.Id, Save(first, (1, ManualStepOutcome.Fail, "Error")), "anna", default);
+        first = await runs.CompleteAsync("library", first.Id, new CompleteManualRunRequest(first.Revision), "anna", default);
+
+        var retest = await runs.StartAsync(new StartManualRunRequest("library", plan.Id, scenario.Source.ScenarioId, null), "bob", default);
+        retest.RetestOf.Should().Be(first.Id, "the case's latest completed run failed");
+        ManualRunRules.Summary(retest).RetestOf.Should().Be(first.Id);
+        retest = await runs.SaveAsync("library", retest.Id, Save(retest, (1, ManualStepOutcome.Pass, null)), "bob", default);
+        await runs.CompleteAsync("library", retest.Id, new CompleteManualRunRequest(retest.Revision), "bob", default);
+
+        (await runs.StartAsync(new StartManualRunRequest("library", plan.Id, scenario.Source.ScenarioId, null), "anna", default)).RetestOf
+            .Should().BeNull("after a passing run there is nothing to retest");
+    }
+
+    [Fact]
     public void The_rollup_rule_is_fail_then_blocked_then_not_run_then_passed_and_undecided_stays_undecided()
     {
         static List<ManualRunStep> S(params ManualStepOutcome?[] o) => [.. o.Select((x, i) => new ManualRunStep { Number = i + 1, Action = "a", Outcome = x })];

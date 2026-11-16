@@ -110,12 +110,35 @@ public sealed record ManualTestRun
     public int Revision { get; init; }
     public string UpdatedBy { get; init; } = "";
     public DateTimeOffset UpdatedAt { get; init; }
+    /// <summary>Where the executed case came from, pinned at start (specification → scenario → case → run). Null on runs started before it was
+    /// recorded; those still carry <see cref="RequirementIds"/> and <see cref="CaseFingerprint"/>.</summary>
+    public ManualRunOrigin? Origin { get; init; }
+    /// <summary>The earlier failed or blocked completed run of the same case this run retests (set at start when there is one); null otherwise.</summary>
+    public Guid? RetestOf { get; init; }
 }
+
+/// <summary>The origin of the executed case at run start: its source (discovered scenario or written by hand), the scenario's fingerprint, the
+/// specification file and scenario it was prepared from, and where each requirement id came from.</summary>
+public sealed record ManualRunOrigin
+{
+    public ScenarioSourceKind SourceKind { get; init; }
+    /// <summary>The discovered scenario's content fingerprint when the case was prepared (null for a case written by hand).</summary>
+    public string? ScenarioFingerprint { get; init; }
+    /// <summary>The specification file the case was prepared from (from its own evidence), when known.</summary>
+    public string? SpecificationFile { get; init; }
+    /// <summary>The acceptance scenario of that specification, when the case was prepared from one.</summary>
+    public string? SpecificationScenarioId { get; init; }
+    public List<ManualRunRequirementSource> Requirements { get; init; } = [];
+}
+
+/// <summary>A requirement the run's case named, with its specification file and basis: "Specification evidence" (prepared from the file) or
+/// "Manual link" (a tester's confirmed link).</summary>
+public sealed record ManualRunRequirementSource(string RequirementId, string? SpecificationFile, string Basis, string? LinkedBy = null);
 
 /// <summary>A run in a history list.</summary>
 public sealed record ManualRunSummary(Guid Id, Guid DraftId, string CaseId, string CaseKey, string Title, int PlanRevision, string CaseFingerprint, ManualRunState State,
     ManualRunOutcome Outcome, string Tester, string? Environment, DateTimeOffset StartedAt, DateTimeOffset? CompletedAt, int Steps, int Passed, int Failed, int Blocked,
-    int NotRun, int Undecided, int Defects, int OpenDefects, int Evidence);
+    int NotRun, int Undecided, int Defects, int OpenDefects, int Evidence, Guid? RetestOf = null);
 
 public sealed record StartManualRunRequest(string ProjectKey, Guid DraftId, string CaseId, string? Environment);
 
@@ -143,6 +166,16 @@ public sealed record AbandonManualRunRequest(int BaseRevision, string Reason);
 public static class ManualRunRules
 {
     public static readonly IReadOnlyList<string> Severities = ["Critical", "High", "Medium", "Low"];
+
+    private static readonly System.Text.Json.JsonSerializerOptions FingerprintJson = new(System.Text.Json.JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() }, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+
+    /// <summary>The identity of a case's executable content — title, preconditions, steps and expected results as the tester sees them — pinned on a
+    /// run at start. One definition for the backend (pinning) and the web app (is the last run of this case's current content?).</summary>
+    public static string CaseFingerprint(TestCaseDraft c) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+        System.Text.Json.JsonSerializer.Serialize(new { c.EffectiveTitle, c.EffectivePreconditions, Steps = c.EffectiveSteps, Expected = c.EffectiveStepExpected, c.EffectiveExpected }, FingerprintJson)))).ToLowerInvariant();
 
     /// <summary>
     /// Overall outcome from the step decisions: any Fail → Failed; else any Blocked → Blocked; else any NotRun → NotRun (the case was not fully
@@ -172,5 +205,5 @@ public static class ManualRunRules
     public static ManualRunSummary Summary(ManualTestRun r) => new(r.Id, r.DraftId, r.CaseId, r.CaseKey, r.Title, r.PlanRevision, r.CaseFingerprint, r.State, r.Outcome, r.Tester,
         r.Environment, r.StartedAt, r.CompletedAt, r.Steps.Count, r.Steps.Count(s => s.Outcome == ManualStepOutcome.Pass), r.Steps.Count(s => s.Outcome == ManualStepOutcome.Fail),
         r.Steps.Count(s => s.Outcome == ManualStepOutcome.Blocked), r.Steps.Count(s => s.Outcome == ManualStepOutcome.NotRun), r.Steps.Count(s => s.Outcome is null),
-        r.Defects.Count, r.Defects.Count(d => d.Status == ManualDefectStatus.Open), r.Evidence.Count);
+        r.Defects.Count, r.Defects.Count(d => d.Status == ManualDefectStatus.Open), r.Evidence.Count, r.RetestOf);
 }

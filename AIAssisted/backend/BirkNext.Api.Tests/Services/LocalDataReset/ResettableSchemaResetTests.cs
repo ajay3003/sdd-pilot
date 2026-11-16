@@ -13,6 +13,12 @@ namespace BirkNext.Api.Tests.Services.LocalDataReset;
 /// listed in the plan/result, and stay untouched when the database reset itself is refused or fails. The database step is faked; the
 /// separate schema runs on the EF in-memory provider (the relational path deletes the same model tables with one DELETE each).
 /// </summary>
+/// <summary>Local data reset holds a process-wide gate (one reset at a time, by design): tests that drive a reset run in this non-parallel
+/// collection, otherwise a reset in one class sees another class's reset in progress and correctly reports "Blocked".</summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class LocalDataResetCollection { public const string Name = "Local data reset (process-wide gate)"; }
+
+[Collection(LocalDataResetCollection.Name)]
 public sealed class ResettableSchemaResetTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "birknext-schema-reset-" + Guid.NewGuid().ToString("N"));

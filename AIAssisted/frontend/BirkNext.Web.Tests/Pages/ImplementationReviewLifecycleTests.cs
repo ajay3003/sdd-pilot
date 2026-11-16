@@ -36,4 +36,14 @@ public sealed class ImplementationReviewLifecycleTests : BunitContext
         cut.Markup.Should().Contain("Designed scenarios remain separate");
         cut.Markup.Should().NotContain("Reviewing...");
     }
+
+    [Fact] // R3: one implementation verdict — the feature readiness (gap evaluation); the requirement table is supporting evidence only
+    public void The_requirement_table_is_supporting_evidence_and_names_the_one_verdict()
+    {
+        var cut = Render<ImplementationReview>();
+
+        cut.Find("[data-testid=ier-verdict-source]").TextContent.Should().Contain("The implementation verdict is the feature readiness above")
+            .And.Contain("same verdict Quality Review shows").And.Contain("not a second verdict");
+        cut.Markup.Should().Contain("Supporting evidence per requirement").And.NotContain("<h2>Requirements and evidence</h2>");
+    }
 }

@@ -20,6 +20,7 @@ namespace BirkNext.Api.Tests.Services.LocalDataReset;
 /// "Reset everything except protected data" keeps protected assets unchanged with their ids; Delivery Management owns and deletes only its schema.
 /// Ordinary deletes of protected assets stay refused.
 /// </summary>
+[Collection(LocalDataResetCollection.Name)]
 public sealed class DataResetScopeTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "birknext-reset-" + Guid.NewGuid().ToString("N"));

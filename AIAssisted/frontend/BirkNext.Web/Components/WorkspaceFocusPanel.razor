@@ -55,6 +55,7 @@
             @* Test Plan proposals (persisted drafts and snapshots only): the same facts on Dashboard and Recommended Workflow. *@
             <div class="wfp-plan" data-testid="wfp-test-plan">
                 <h3 class="wfp-subtitle">Test Plan proposals</h3>
+                @if (_scopeNotice is { } scopeNotice) { <p class="wfp-note" data-testid="wfp-scope-notice">@scopeNotice</p> }
                 <ul class="wfp-counts" aria-label="Test Plan proposal facts">
                     @foreach (var fact in plan.Facts) { <li data-testid="wfp-plan-fact" data-id="@fact.Id"><strong>@fact.Count</strong> @fact.Label.ToLowerInvariant()</li> }
                     @if (plan.Latest is { } latest) { <li data-testid="wfp-plan-latest">latest snapshot #@latest.Sequence@(latest.DeliveryLabel is { } dl ? $" · {dl}" : "")</li> }
@@ -86,6 +87,7 @@
     private SourceContextView? _context;
     private WorkspaceFocusView? _focus;
     private TestPlanSuggestionsPresentation.PlanFocus? _plan;
+    private string? _scopeNotice;
     private bool _planLoaded;
 
     protected override async Task OnInitializedAsync()
@@ -105,19 +107,31 @@
         if (Services.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService plans) return;
         // The selected project's own plans when a project is loaded (never another system's); the historical guide summary otherwise.
         BirkNext.TestPlanning.TestPlanWorkspace? workspace = null;
+        string? projectKeyForScope = null;
         if (Services.GetService(typeof(ICurrentWorkspaceProjection)) is ICurrentWorkspaceProjection projection
             && (await projection.GetAsync()).ProjectSlug is { Length: > 0 } projectKey)
+        {
+            projectKeyForScope = projectKey;
             (workspace, _) = await plans.ProjectAsync(projectKey, null);
+        }
         if (workspace is null) (workspace, _) = await plans.SummaryAsync(null);
         // MT-7: the same reviewed requirement coverage facts as Requirements Traceability (one read; unknown adds nothing).
         BirkNext.TestPlanning.RequirementCoverageView? coverage = null;
+        // R1: counts are over the selected specification's requirements (the population Test Coverage counts); rows are needed to match them.
+        var population = await RequirementPopulation.SelectedSpecificationAsync(Services);
         if (Services.GetService(typeof(IFrontendAnalysisContextFactory)) is IFrontendAnalysisContextFactory contexts)
         {
-            string? scope = null;
-            try { scope = (await contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id; } catch (InvalidOperationException) { }
-            if (!string.IsNullOrWhiteSpace(scope)) (coverage, _) = await plans.RequirementCoverageAsync(scope, rows: false);
+            BirkNext.Web.Models.FrontendAnalysisProfile? active = null;
+            try { active = (await contexts.GetActiveContextAsync()).ActiveProfileOrNull; } catch (InvalidOperationException) { }
+            // R7: reviewed coverage is environment-scoped, plans are project-scoped. Resolve through the environment's own project binding;
+            // an environment bound to another project contributes no coverage here (never merged by name).
+            var profiles = (Services.GetService(typeof(IFrontendAnalysisSettingsService)) as IFrontendAnalysisSettingsService)?.Settings.Profiles ?? [];
+            var resolution = ProjectEnvironmentResolution.Resolve(projectKeyForScope, active, profiles);
+            _scopeNotice = resolution.Notice;
+            if (resolution.EnvironmentFactsApply && resolution.EnvironmentId is { Length: > 0 } scope)
+                (coverage, _) = await plans.RequirementCoverageAsync(scope, rows: population is { Count: > 0 });
         }
-        _plan = TestPlanSuggestionsPresentation.Focus(workspace, coverage);
+        _plan = TestPlanSuggestionsPresentation.Focus(workspace, coverage, population);
     }
 
     /// <summary>Views whose workflow includes functional test preparation (Manual Tester; Test Lead oversees it alongside technical testing).</summary>

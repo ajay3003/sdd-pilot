@@ -11,7 +11,13 @@ public interface IFrontendAnalysisSettingsService
     bool                        IsLoaded      { get; }
 
     Task LoadAsync(IJSRuntime js);
+
+    /// <summary>Saves the Target Environments. Another browser tab may have saved since this one loaded: changes to different environments are
+    /// merged; the same environment changed in both tabs throws <see cref="TargetEnvironmentSaveConflictException"/> and nothing is written.</summary>
     Task SaveAsync(IJSRuntime js);
+
+    /// <summary>Discards this tab's unsaved Target Environment changes and reads what is stored (after a save conflict).</summary>
+    Task ReloadAsync(IJSRuntime js) => Task.CompletedTask;
 
     /// <summary>False while the settings are the built-in seed profiles held only in memory (nothing stored yet), so their ids would be
     /// minted again on the next load.</summary>
@@ -71,6 +77,11 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
 
     private FrontendAnalysisSettings _settings = new();
 
+    // What this tab last read from or wrote to storage: the common base for merging when another tab saved in between (multi-tab safety).
+    private string? _baseJson;
+    // Every stored content this tab itself read or wrote: finding one of these in storage means no other tab contributed anything new.
+    private readonly HashSet<string> _ownContent = new(StringComparer.Ordinal);
+
     public FrontendAnalysisSettings  Settings      => _settings;
     public bool                      IsLoaded      { get; private set; }
     public bool                      IsMaterialized { get; private set; }
@@ -107,6 +118,8 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
                             field.Value.ValueKind == JsonValueKind.True)) > 1)
                         loaded.ActiveResolutionError = "Multiple active Target Environments were found in saved settings. Select a Target Environment and choose Set as Active.";
                     _settings = loaded;
+                    _baseJson = json;
+                    _ownContent.Add(json);
                     MigrateLegacyAuthenticationExpectations(loaded);
                     IsLoaded  = true;
                     IsMaterialized = true;
@@ -145,18 +158,79 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
 
     public event Action? Changed;
 
-    public async Task SaveAsync(IJSRuntime js)
+    public Task SaveAsync(IJSRuntime js) => SaveCoreAsync(js, merge: true);
+
+    private async Task SaveCoreAsync(IJSRuntime js, bool merge)
     {
+        // Another tab (same browser storage) may have saved since this tab read the settings: merge per environment instead of overwriting.
+        string? stored = null;
+        if (merge) try { stored = await js.InvokeAsync<string?>("birkNextStorage.getItem", StorageKey); }
+        catch (JSException) { stored = null; }
+        if (merge && !string.IsNullOrWhiteSpace(stored) && stored != _baseJson && !_ownContent.Contains(stored))
+        {
+            var theirs = JsonSerializer.Deserialize<FrontendAnalysisSettings>(stored, JsonOptions);
+            if (theirs is not null)
+            {
+                var @base = (_baseJson ?? _seedJson) is { Length: > 0 } baseJson ? JsonSerializer.Deserialize<FrontendAnalysisSettings>(baseJson, JsonOptions) : null;
+                _settings = Merge(@base ?? new FrontendAnalysisSettings(), theirs, _settings); // throws on a same-environment conflict; nothing written
+            }
+        }
         var json = JsonSerializer.Serialize(_settings, JsonOptions);
         await js.InvokeVoidAsync("birkNextStorage.setItem", StorageKey, json);
+        _baseJson = json;
+        _ownContent.Add(json);
         MarkMaterialized();
         Changed?.Invoke();
+    }
+
+    public async Task ReloadAsync(IJSRuntime js)
+    {
+        IsLoaded = false;
+        await LoadAsync(js);
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Three-way merge of Target Environment settings saved in another tab (<paramref name="theirs"/>) with this tab's (<paramref name="mine"/>),
+    /// both from <paramref name="base"/>: per environment (by id), the side that changed it wins; added and deleted environments are kept as
+    /// changed; the same environment changed differently on both sides is a conflict. The active environment and package catalogs follow the
+    /// side that changed them.
+    /// </summary>
+    internal static FrontendAnalysisSettings Merge(FrontendAnalysisSettings @base, FrontendAnalysisSettings theirs, FrontendAnalysisSettings mine)
+    {
+        string Json(object? value) => JsonSerializer.Serialize(value, JsonOptions);
+        Dictionary<string, FrontendAnalysisProfile> ById(FrontendAnalysisSettings s) => s.Profiles.GroupBy(p => p.Id).ToDictionary(g => g.Key, g => g.Last(), StringComparer.Ordinal);
+        var (b, t, m) = (ById(@base), ById(theirs), ById(mine));
+        var conflicts = new List<string>();
+        FrontendAnalysisProfile? Pick(string id)
+        {
+            b.TryGetValue(id, out var bp); t.TryGetValue(id, out var tp); m.TryGetValue(id, out var mp);
+            var (bj, tj, mj) = (Json(bp), Json(tp), Json(mp));
+            if (mj == bj) return tp;          // unchanged here: take the other tab's version (or its deletion)
+            if (tj == bj || tj == mj) return mp; // unchanged there, or the same change: take this tab's
+            conflicts.Add(mp?.Name ?? tp?.Name ?? bp?.Name ?? id);
+            return mp;
+        }
+        var order = theirs.Profiles.Select(p => p.Id).Concat(mine.Profiles.Select(p => p.Id)).Concat(@base.Profiles.Select(p => p.Id)).Distinct(StringComparer.Ordinal).ToList();
+        var profiles = order.Select(Pick).Where(p => p is not null).Select(p => p!).ToList();
+        if (Json(mine.PackageCatalogs) != Json(@base.PackageCatalogs) && Json(theirs.PackageCatalogs) != Json(@base.PackageCatalogs)
+            && Json(theirs.PackageCatalogs) != Json(mine.PackageCatalogs)) conflicts.Add("Project package catalogs");
+        if (conflicts.Count > 0) throw new TargetEnvironmentSaveConflictException(conflicts);
+        return new FrontendAnalysisSettings
+        {
+            Profiles = profiles,
+            ActiveProfileId = mine.ActiveProfileId != @base.ActiveProfileId ? mine.ActiveProfileId : theirs.ActiveProfileId,
+            ActiveResolutionError = mine.ActiveResolutionError != @base.ActiveResolutionError ? mine.ActiveResolutionError : theirs.ActiveResolutionError,
+            PackageCatalogs = Json(mine.PackageCatalogs) != Json(@base.PackageCatalogs) ? mine.PackageCatalogs : theirs.PackageCatalogs,
+        };
     }
 
     public async Task MaterializeAsync(IJSRuntime js, string environmentId)
     {
         if (IsMaterialized || _seedJson is null || !_seedProfileIds.Contains(environmentId)) return;
         await js.InvokeVoidAsync("birkNextStorage.setItem", StorageKey, _seedJson);
+        _baseJson = _seedJson;
+        _ownContent.Add(_seedJson);
         MarkMaterialized();
         Changed?.Invoke();
     }
@@ -179,7 +253,7 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
         _settings = BuildSeedSettings(ConfiguredDevelopmentUrl(_settings));
         IsLoaded = true;
         _detectionSnapshots = new(StringComparer.Ordinal);
-        await SaveAsync(js);
+        await SaveCoreAsync(js, merge: false); // a reset replaces whatever any tab stored; it is never merged
     }
 
     private bool _snapshotsLoaded;
@@ -609,4 +683,12 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
             Features        = FrontendAnalysisFeatureToggles.Recommended(),
             Authentication  = new FrontendAuthenticationSettings { AuthenticatedTestingMethod = BirkNext.LocalHttpsProxy.LocalHttpsProxyEnvironmentPolicy.DefaultMethodFor(env.ToString()) }
         };
+}
+
+/// <summary>The same Target Environment was changed in this tab and saved in another tab meanwhile; nothing was written. Reload to see the other
+/// tab's version, then apply this tab's change again.</summary>
+public sealed class TargetEnvironmentSaveConflictException(IReadOnlyList<string> environments) : InvalidOperationException(
+    $"{string.Join(", ", environments)} {(environments.Count == 1 ? "was" : "were")} changed in another browser tab after this page loaded. Your change was not saved, so the other change is not lost. Reload the settings and apply your change again.")
+{
+    public IReadOnlyList<string> Environments { get; } = environments;
 }

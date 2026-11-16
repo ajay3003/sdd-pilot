@@ -142,7 +142,30 @@
     private const int HistoryPageSize = 50;
     private ManualRunPage? _history;
     private readonly List<ManualRunSummary> _historyRows = [];
-    private bool _historyBusy;
+    private bool _historyBusy, _reportBusy;
+    private string? _reportError;
+
+    /// <summary>All runs of the project (every page of the history, not only the rows shown) as a CSV report.</summary>
+    private async Task DownloadRunResultsAsync()
+    {
+        if (_ws?.ProjectKey is not { } key || _runs is null || _reportBusy) return;
+        _reportBusy = true; _reportError = null;
+        try
+        {
+            var all = new List<ManualRunSummary>();
+            for (var guard = 0; guard < 100; guard++)
+            {
+                var (page, error) = await _runs.PageAsync(key, all.Count, 200);
+                if (page is null) { if (all.Count == 0) { all.AddRange(_ws.Runs); } else _reportError = error ?? "Not every run could be read; the report was not downloaded."; break; }
+                all.AddRange(page.Runs.Where(r => all.All(x => x.Id != r.Id)));
+                if (page.Runs.Count == 0 || all.Count >= page.Total) break;
+            }
+            if (_reportError is not null) return;
+            var plans = _drafts.GroupBy(d => d.Id).ToDictionary(g => g.Key, g => g.First().PlanName);
+            await JS.InvokeVoidAsync("downloadTextFile", $"manual-test-results-{DateTime.Now:yyyy-MM-dd}.csv", M.RunResultsCsv(all, plans), "text/csv;charset=utf-8");
+        }
+        finally { _reportBusy = false; }
+    }
 
     private async Task LoadHistoryAsync(string key, bool reset)
     {
@@ -211,7 +234,12 @@
                         <li data-testid="mte-case" data-case="@c.Source.ScenarioId">
                             <strong>@c.EffectiveTitle</strong>
                             <span class="mt-chip mt-tone-muted">@P(c.Review)</span>
-                            @if (last is not null) { <span class="mt-chip mt-tone-@M.RunTone(last.State, last.Outcome)" data-testid="mte-case-last">Last run: @M.RunLabel(last.State, last.Outcome)</span> }
+                            @if (last is not null)
+                            {
+                                <span class="mt-chip mt-tone-@M.RunTone(last.State, last.Outcome)" data-testid="mte-case-last">Last run: @M.RunLabel(last.State, last.Outcome)</span>
+                                @* The last run executed an earlier version of this case (its content changed since): run it again to test what is saved now. *@
+                                @if (last.CaseFingerprint != R.CaseFingerprint(c)) { <span class="mt-chip mt-tone-warn" data-testid="mte-case-stale">Case changed since — run again</span> }
+                            }
                             @if (open is not null) { <a href="@($"{M.ExecuteRoute}?run={open.Id}")" data-testid="mte-resume">Resume run</a> }
                             else if (runnable) { <a href="@($"{M.ExecuteRoute}?draft={d.Id}&case={Uri.EscapeDataString(c.Source.ScenarioId)}")" data-testid="mte-run">Run</a> }
                             else { <span class="mt-muted">@(c.EffectiveSteps.Count == 0 ? "Add steps before running." : "Excluded — not run.")</span> }
@@ -227,6 +255,12 @@
     {
         <section class="mt-card" aria-labelledby="mte-history-title" data-testid="mte-history">
             <h2 id="mte-history-title" class="mt-h">Run history</h2>
+            @if (runs.Count > 0)
+            {
+                <p><button type="button" class="btn btn-secondary btn-sm" data-testid="mte-history-download" disabled="@_reportBusy" @onclick="DownloadRunResultsAsync">Download run results (CSV)</button>
+                    <span class="mt-muted">Every run of this project, for Excel or a report. Results only — prepared cases that were never run are not listed.</span></p>
+                @if (_reportError is not null) { <p class="mt-alert" role="alert" data-testid="mte-history-download-error">@_reportError</p> }
+            }
             @if (_history is { Total: > 0 } paging)
             {
                 <p class="mt-muted" data-testid="mte-history-count" aria-live="polite">Showing @runs.Count of @paging.Total run@(paging.Total == 1 ? "" : "s"), newest first.</p>
@@ -322,7 +356,19 @@
             </p>
             @if (run.State == ManualRunState.Abandoned) { <p data-testid="mte-abandoned">Stopped: @run.AbandonReason. A stopped run is history; it never counts as an execution.</p> }
             @if (run.Preconditions is { Length: > 0 } pre) { <p><strong>Preconditions:</strong> <span style="white-space: pre-wrap">@pre</span></p> }
-            @if (run.RequirementIds.Count > 0) { <p class="mt-muted">Requirements: @string.Join(", ", run.RequirementIds)</p> }
+            @if (run.RetestOf is { } retestOf) { <p class="mt-muted" data-testid="mte-retest-of">Retest of an earlier failed or blocked run — <a href="@($"{M.ExecuteRoute}?run={retestOf}")">open that run</a>.</p> }
+            @if (run.Origin is { } origin)
+            {
+                @* Specification → scenario → case → this run, pinned when the run started. *@
+                <p class="mt-muted" data-testid="mte-run-origin">@(origin.SpecificationFile is { } specFile
+                    ? $"Prepared from {specFile}{(origin.SpecificationScenarioId is { } sc ? $", acceptance scenario {sc}" : "")}."
+                    : origin.SourceKind == ScenarioSourceKind.Manual ? "Written by hand in Plan & prepare (no specification source)." : "Prepared from a discovered scenario (no specification file).")</p>
+                @if (origin.Requirements.Count > 0)
+                {
+                    <p class="mt-muted" data-testid="mte-run-requirements">Requirements: @string.Join(", ", origin.Requirements.Select(q => $"{q.RequirementId} ({(q.Basis == "Manual link" ? $"linked by {q.LinkedBy ?? "a tester"}" : "from the specification")}{(q.SpecificationFile is { } f && f != origin.SpecificationFile ? $", {f}" : "")})"))</p>
+                }
+            }
+            else if (run.RequirementIds.Count > 0) { <p class="mt-muted">Requirements: @string.Join(", ", run.RequirementIds)</p> }
             @if (run.TestData.Count > 0) { <p class="mt-muted">Test Data: @string.Join(", ", run.TestData)</p> }
             @if (editable)
             {

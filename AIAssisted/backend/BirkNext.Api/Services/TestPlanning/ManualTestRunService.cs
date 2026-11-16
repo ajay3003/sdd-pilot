@@ -42,6 +42,10 @@ public sealed class ManualTestRunService(AppDbContext db, TestPlanSuggestionServ
         if (open is not null) return Read(open);
 
         var expected = c.EffectiveStepExpected;
+        // A retest: the case's latest completed run failed or was blocked (the new run records which one it retests).
+        var previous = (await db.ManualTestRuns.AsNoTracking().Where(r => r.ProjectKey == key && r.DraftId == plan.Id && r.CaseId == c.Source.ScenarioId && r.State == nameof(ManualRunState.Completed))
+            .OrderByDescending(r => r.CompletedAt).ThenByDescending(r => r.StartedAt).Take(1).ToListAsync(ct)).Select(Read).FirstOrDefault();
+        var retestOf = previous is { Outcome: ManualRunOutcome.Failed or ManualRunOutcome.Blocked } ? previous.Id : (Guid?)null;
         var run = new ManualTestRun
         {
             Id = Guid.NewGuid(), ProjectKey = key, DraftId = plan.Id, CaseId = c.Source.ScenarioId, CaseKey = $"{plan.Id:N}/{c.Source.ScenarioId}", PlanName = plan.PlanName,
@@ -50,6 +54,7 @@ public sealed class ManualTestRunService(AppDbContext db, TestPlanSuggestionServ
             Environment = Text(request.Environment, 200), Tester = actor, StartedAt = Now, State = ManualRunState.InProgress, Outcome = ManualRunOutcome.NotDecided,
             Steps = [.. steps.Select((s, i) => new ManualRunStep { Number = i + 1, Action = s, Expected = i < expected.Count ? expected[i] : null })],
             Revision = 1, UpdatedBy = actor, UpdatedAt = Now,
+            Origin = Origin(c), RetestOf = retestOf,
         };
         db.ManualTestRuns.Add(new ManualTestRunRecord
         {
@@ -176,8 +181,27 @@ public sealed class ManualTestRunService(AppDbContext db, TestPlanSuggestionServ
     }
 
     /// <summary>The identity of a case's executable content: title, preconditions, steps and expected results as the tester sees them.</summary>
-    public static string Fingerprint(TestCaseDraft c) =>
-        E.Sha(JsonSerializer.Serialize(new { c.EffectiveTitle, c.EffectivePreconditions, Steps = c.EffectiveSteps, Expected = c.EffectiveStepExpected, c.EffectiveExpected }, E.Json));
+    public static string Fingerprint(TestCaseDraft c) => ManualRunRules.CaseFingerprint(c); // shared with the web app; same bytes as before
+
+    /// <summary>Specification → scenario → case, pinned on the run: the case's source, the scenario fingerprint, the specification file and acceptance
+    /// scenario it was prepared from, and each requirement's file and basis — the same derivation Requirements Traceability uses.</summary>
+    internal static ManualRunOrigin Origin(TestCaseDraft c)
+    {
+        var fromSpecification = c.Source.Kind is not (ScenarioSourceKind.SystemGuide or ScenarioSourceKind.Manual) && c.Generated.Capability == TestScenarioDiscoveryEngine.Specification;
+        var specFile = fromSpecification ? PreparedCaseTraceability.SpecificationFile(c.Generated.Evidence) : null;
+        var sources = new List<ManualRunRequirementSource>();
+        if (fromSpecification)
+            foreach (var id in c.Generated.Requirements.Select(r => r.RuleId).Where(i => !string.IsNullOrWhiteSpace(i)).Select(i => i.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
+                sources.Add(new(id, PreparedCaseTraceability.RequirementFile(c.Generated.Evidence, id) ?? specFile, "Specification evidence"));
+        foreach (var l in c.RequirementLinks.Where(l => !string.IsNullOrWhiteSpace(l.RequirementId)))
+            sources.Add(new(l.RequirementId.Trim(), string.IsNullOrWhiteSpace(l.SpecificationPath) ? null : l.SpecificationPath.Trim(), "Manual link", string.IsNullOrWhiteSpace(l.LinkedBy) ? null : l.LinkedBy));
+        return new ManualRunOrigin
+        {
+            SourceKind = c.Source.Kind, ScenarioFingerprint = c.Source.Fingerprint, SpecificationFile = specFile,
+            SpecificationScenarioId = fromSpecification ? PreparedCaseTraceability.ScenarioIdOf(c.Generated.Evidence) : null,
+            Requirements = [.. sources.DistinctBy(s => (s.RequirementId.ToUpperInvariant(), s.SpecificationFile, s.Basis))],
+        };
+    }
 
     /// <summary>Requirement ids the case names: its own specification evidence and a tester's links (guide business rules are not requirements).</summary>
     private static List<string> Requirements(TestCaseDraft c)

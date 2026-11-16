@@ -10,6 +10,41 @@ namespace BirkNext.Web.Services;
 public static class ManualTestingPresentation
 {
     public const string HomeRoute = "manual-testing";
+
+    // ── Run results report (CSV) ─────────────────────────────────────────────────────────────────────────────────────────
+
+    public static readonly IReadOnlyList<string> RunReportColumns =
+        ["Test case", "Plan", "Plan revision", "Result", "Tester", "Where tested", "Started", "Completed", "Steps", "Passed", "Failed", "Blocked", "Not run",
+         "Defects", "Open defects", "Evidence references", "Retest of earlier failed run"];
+
+    /// <summary>
+    /// Manual run results for stakeholders, one row per run (newest first), opened by Excel and other spreadsheet tools: UTF-8 with a byte-order mark,
+    /// comma-separated, quoted. A cell starting with = + - @ (or a tab/CR) is prefixed with an apostrophe so a spreadsheet never runs it as a
+    /// formula. Results only — a prepared case that was never run is not a row, and an abandoned run says so.
+    /// </summary>
+    public static string RunResultsCsv(IEnumerable<ManualRunSummary> runs, IReadOnlyDictionary<Guid, string> planNames)
+    {
+        static string Cell(string? v)
+        {
+            var t = v ?? "";
+            if (t.Length > 0 && t[0] is '=' or '+' or '-' or '@' or '\t' or '\r') t = "'" + t;
+            return "\"" + t.Replace("\"", "\"\"") + "\"";
+        }
+        var sb = new System.Text.StringBuilder("\uFEFF");
+        sb.Append(string.Join(",", RunReportColumns.Select(Cell))).Append("\r\n");
+        foreach (var r in runs.OrderByDescending(r => r.StartedAt))
+            sb.Append(string.Join(",", new[]
+            {
+                r.Title, planNames.GetValueOrDefault(r.DraftId) ?? "", r.PlanRevision.ToString(System.Globalization.CultureInfo.InvariantCulture), RunLabel(r.State, r.Outcome),
+                r.Tester, r.Environment ?? "", r.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture),
+                r.CompletedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture) ?? "",
+                N(r.Steps), N(r.Passed), N(r.Failed), N(r.Blocked), N(r.NotRun), N(r.Defects), N(r.OpenDefects), N(r.Evidence),
+                r.RetestOf is null ? "" : "Yes",
+            }.Select(Cell))).Append("\r\n");
+        return sb.ToString();
+        static string N(int n) => n.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     public const string DiscoverRoute = "manual-testing/discover";
     public const string PlanRoute = "test-plan-suggestions";
     public const string ExecuteRoute = "manual-testing/execute";
