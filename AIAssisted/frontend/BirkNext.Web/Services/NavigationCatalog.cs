@@ -221,6 +221,10 @@ public static class NavigationCatalog
             new("technical-testing/verify", "Verify & investigate", "nav-icon-task-alignment", Always, WrapLabel: true,
                 Hint: "recorded runtime results per area with environment, time and identity, kept apart from static review",
                 Aliases: ["Technical results", "Investigate failures"]),
+            // One entry for integration testing over Topology, Journeys, Test Suites and Integration Quality Review (each keeps its own page).
+            new("technical-testing/integrations", "Integration Testing", "nav-icon-source-analysis", Always, WrapLabel: true,
+                Hint: "understand integration paths, prepare tests and review verification results — topology, journeys, suites and quality review in one flow",
+                Aliases: ["Integrations", "Integration tests", "Integration journeys and suites"]),
         ], "nav-icon-workflow"),
         // Planning → preparation → target-bound runs. Source-only assessments (test inventory, code risk) say where to focus; Test Data
         // is the prerequisite of the runs that need test identities/assets (Performance, Critical E2E; readiness shown in API/Integration);
@@ -496,7 +500,7 @@ public static class WorkspaceViews
         CreateManualTesting(),
         Groups(WorkspaceView.TechnicalTester, "Technical Testing", "Assess and verify frontends, APIs, contracts, integrations, E2E flows and performance.", "technical-testing",
         [
-            new("tt-workspace", "Technical Testing", "nav-icon-workflow", ["technical-testing", "technical-testing/assess", "technical-testing/configure", "technical-testing/verify"]),
+            new("tt-workspace", "Technical Testing", "nav-icon-workflow", ["technical-testing", "technical-testing/assess", "technical-testing/configure", "technical-testing/verify", "technical-testing/integrations"]),
             new("tt-context", "Project & environment", "nav-icon-import", ["sources", "system-understanding", NavigationCatalog.TargetEnvironmentsRoute, "project-scopes"]),
             new("tt-contracts", "Frontend, APIs & contracts", "nav-icon-task-alignment", ["frontend-quality-review", "api-quality-review/contracts", "api-quality-review", "schema-studio"]),
             new("tt-integration", "Integration & E2E", "nav-icon-source-analysis", ["integration-suites", "critical-e2e-regression", "integration-quality-review", "integration-journeys", "integration-topology"]),

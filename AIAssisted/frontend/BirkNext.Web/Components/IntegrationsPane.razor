@@ -191,7 +191,7 @@
                                             @if (rowRuntime is not RuntimeEvidenceStatus.Configured and not RuntimeEvidenceStatus.Unavailable && IntegrationsPanePresentation.Platform(_catalog, row.Definition) is { } rowPlatform)
                                             { <button type="button" class="ip-link" data-testid="ip-row-runtime-configure" aria-label="@($"Configure runtime evidence for {src.Entity}")" @onclick="() => BeginRuntime(rowPlatform)">Configure</button> }</td>
                                         <td class="ip-actions">
-                                            <a class="ip-link" href="/integration-quality-review" data-testid="ip-row-iqr" aria-label="@($"Review {src.Entity} in Integration Quality Review")">Review</a>
+                                            <a class="ip-link" href="@($"/integration-quality-review?view=review&integration={Uri.EscapeDataString(row.Definition.Id)}")" data-testid="ip-row-iqr" aria-label="@($"Review {src.Entity} in Integration Quality Review")">Review</a>
                                             @if (row.Configuration == IntegrationConfigurationState.NeedsConfirmation)
                                             {
                                                 <button type="button" class="ip-link ip-test" data-testid="ip-test-mapping" aria-label="@(row.MappingState == ConsumerMappingState.Suggested ? $"Test suggested mapping for {src.Entity} and {row.Consumer}" : $"Test mapping for {src.Entity} (consumer not assigned)")" disabled="@_mappingBusy.Contains(row.Definition.Id)" @onclick="() => TestMappingAsync(row.Definition)">Test mapping</button>

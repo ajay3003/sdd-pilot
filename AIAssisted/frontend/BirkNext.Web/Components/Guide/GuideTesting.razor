@@ -186,6 +186,18 @@
     <p>Everything is redacted before it is stored (authentication headers, cookies, API keys, sensitive fields, token patterns and 11-digit numbers); a body may be Truncated or Metadata only, and is never called the original. A call without assertions is <strong>Not assessed</strong>; HTTP 200 with GraphQL errors is not a success by itself, and an expected 404 can pass. Blocked calls were refused before sending and have no request.</p>
 </section>
 
+<section id="integration-testing" class="ug-section ug-topic" data-topic="integration-testing" aria-labelledby="integration-testing-title">
+    <h2 id="integration-testing-title" class="ug-section-title" tabindex="-1">Integration testing</h2>
+    <GuideArticleMeta Topic="integration-testing" />
+    <p class="ug-lead"><a href="/technical-testing/integrations">Integration Testing</a> (Technical Testing → Integration Testing) is one way through BirkNext's integration modules, in four stages: <strong>1. Discover &amp; understand</strong> (the systems, interfaces and connections Integration Topology knows for the active Target Environment, and the integrations configured for quality review), <strong>2. Define &amp; assess</strong> (the journey that matters: its systems and steps in order), <strong>3. Prepare test suite</strong> (in Integration Test Suites) and <strong>4. Verify &amp; investigate</strong> (Integration Quality Review results and authorised runs). Each module keeps its own page; Integration Testing shows what each knows and opens it with the exact item.</p>
+    <ul data-testid="guide-itx">
+        <li><strong>Which module does what.</strong> <em>Integration Topology</em> shows components and connections found in sources and metadata (computed, not stored). The <em>Integrations catalog</em> holds the integrations configured for an environment — what <em>Integration Quality Review</em> checks. An <em>Integration Journey</em> is a person's declaration of an integration process for a project (revisions are kept). <em>Integration Test Suites</em> build test design from source snapshots. <em>Test Coverage</em> proposes source journeys that may match a declared journey; a reviewer confirms or rejects each match.</li>
+        <li><strong>Create a journey from what was discovered.</strong> In the journey editor, <em>Systems and steps</em> lets you add discovered systems or both ends of a discovered connection, then move steps up or down or remove them; typing names stays possible. Adding a discovered connection does not confirm it.</li>
+        <li><strong>Prepare a test suite for a journey.</strong> <em>Prepare test suite</em> opens Integration Test Suites with the journey shown as context. Suites keep their own sources and scope; the journey is not stored on the suite.</li>
+        <li><strong>Evidence stays separate.</strong> A discovered connection (candidate, expected, resolved, observed), a declared journey, a prepared suite, a static quality review and a recorded run are different things, and none is shown as a passed test. Counts name what they count. Suites are listed for the project's own source snapshot only.</li>
+    </ul>
+</section>
+
 <section id="integration-suites" class="ug-section ug-topic" data-topic="integration-suites" aria-labelledby="integration-suites-title">
     <h2 id="integration-suites-title" class="ug-section-title" tabindex="-1">Integration Test Suites</h2>
     <GuideArticleMeta Topic="integration-suites" />

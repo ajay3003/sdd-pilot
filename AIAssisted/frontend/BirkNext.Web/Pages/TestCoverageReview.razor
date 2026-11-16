@@ -279,7 +279,7 @@
                                         {
                                             <div class="tco-candidate" data-testid="tco-journey-candidate" data-target="@c.IntegrationJourneyId" data-match="@c.Match">
                                                 <span class="tco-pill" data-testid="tco-candidate-label">@S.CandidateLabel</span>
-                                                <span><strong>@c.DisplayName</strong> <code>@c.IntegrationJourneyId</code></span>
+                                                <span><strong>@c.DisplayName</strong> <code>@c.IntegrationJourneyId</code>@if (IntegrationTestingPresentation.DeclaredJourneyHref(c.IntegrationJourneyId) is { } journeyHref) { <a href="@journeyHref" data-testid="tco-candidate-journey"> Open journey</a> }</span>
                                                 <span class="tco-muted">@c.Basis</span>
                                                 @if (c.SourceChain is { Count: > 0 } sourceChain) { <span class="tco-chain" data-testid="tco-candidate-source-chain"><span class="tco-label">Source journey chain</span> @string.Join(" → ", sourceChain)</span> }
                                                 @if (c.DeclaredChain is { Count: > 0 } declaredChain) { <span class="tco-chain" data-testid="tco-candidate-declared-chain"><span class="tco-label">Declared chain</span> @string.Join(" → ", declaredChain)</span> }

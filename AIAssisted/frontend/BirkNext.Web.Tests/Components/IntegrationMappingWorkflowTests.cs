@@ -225,7 +225,8 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
         Row(cut).QuerySelector("[data-testid=ip-row-view]")!.Click();
         cut.Find("[data-testid=ip-row-detail]").TextContent.Should().Contain("Review readiness (IQR)")
             .And.Contain("Configuration is usable, but some runtime, checkpoint, consumer or contract evidence is unavailable.");
-        Row(cut).QuerySelector("[data-testid=ip-row-iqr]")!.GetAttribute("href").Should().Be("/integration-quality-review");
+        Row(cut).QuerySelector("[data-testid=ip-row-iqr]")!.GetAttribute("href").Should().StartWith("/integration-quality-review?view=review&integration=",
+            "review readiness opens in Integration Quality Review on exactly this integration (its catalog id)");
     }
 
     [Fact]

@@ -1,0 +1,236 @@
+@page "/technical-testing/integrations"
+@using BirkNext.Integrations
+@using BirkNext.IntegrationTopology
+@using BirkNext.Web.Services
+@using I = BirkNext.Web.Services.IntegrationTestingPresentation
+@implements IDisposable
+@inject IServiceProvider ServiceProvider
+
+@* Technical Testing → Integration Testing: one entry over Integration Topology, the Integrations catalog, Integration Journeys, Integration Test
+   Suites and Integration Quality Review, in the tester's order. Each view reads the owning module and hands off with its exact identity; the
+   specialist pages keep all their depth. The stage is a query parameter of this page (a parameter change always re-renders it). *@
+<PageTitle>@(_stage?.Title ?? "Integration Testing") · Technical Testing</PageTitle>
+
+<div class="mt tt itx" data-testid="itx" data-stage="@(_stage?.Id ?? "overview")" aria-busy="@(_loading ? "true" : "false")">
+    <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Integration Testing" HomeRoute="@I.HomeRoute" Stages="I.Stages" Current="@_stage?.Id"
+        Title="@(_stage?.Title ?? "Integration Testing")" ProjectName="@_facts?.ProjectName" Context="@(_facts?.TargetName is { } t ? $"Target: {t}" : _facts is null ? null : "No target application")"
+        Lead="@(_stage?.Question ?? "Understand integration paths, prepare tests and review verification results.")">
+        <Help><BirkNext.Web.Components.HelpLink Topic="technical-testing" Text="How this works" /></Help>
+    </BirkNext.Web.Components.TestingWorkspaceHeader>
+    <p class="mt-muted"><a href="@TechnicalTestingPresentation.HomeRoute" data-testid="itx-back">← Technical Testing</a></p>
+
+    @if (_loading)
+    {
+        <p class="mt-muted" role="status" data-testid="itx-loading">Loading integration evidence…</p>
+    }
+    else if (_facts is null)
+    {
+        <p class="mt-alert" role="alert" data-testid="itx-error">Integration Testing could not be loaded. <button type="button" class="btn btn-secondary btn-sm" @onclick="LoadAsync">Try again</button></p>
+    }
+    else
+    {
+        var f = _facts;
+        @foreach (var error in f.Errors)
+        {
+            <p class="mt-alert" role="status" data-testid="itx-read-error">@error</p>
+        }
+        @if (f.ProjectKey is null)
+        {
+            <p class="mt-muted" data-testid="itx-no-project">No project selected. <a href="project-import">Import or choose a project</a>: journeys and suites belong to a project.</p>
+        }
+        else
+        {
+            switch (_stage?.Id)
+            {
+                case null:
+                    var next = I.Next(f);
+                    <section class="mt-next" aria-labelledby="itx-next-title" data-testid="itx-next">
+                        <h2 id="itx-next-title" class="mt-h">Next step</h2>
+                        <a class="btn btn-primary" href="@next.Href" data-testid="itx-next-action">@next.Label</a>
+                        <p class="mt-muted" data-testid="itx-next-why">@next.Why</p>
+                    </section>
+                    <BirkNext.Web.Components.GuidedStepList Steps="@I.Steps(f)" TitleLevel="2" TestId="itx-stages" StepTestId="itx-stage" Label="Integration Testing stages" LinkTitles="true" />
+                    <section class="mt-card" aria-labelledby="itx-counts-title" data-testid="itx-counts">
+                        <h2 id="itx-counts-title" class="mt-h">What BirkNext knows</h2>
+                        <dl class="itx-counts">
+                            @foreach (var c in I.Counts(f))
+                            {
+                                <div data-testid="itx-count" data-entity="@c.Entity"><dt>@c.Entity</dt><dd><a href="@c.Href"><strong>@c.Value</strong></a> <span class="mt-muted">@c.Detail</span></dd></div>
+                            }
+                        </dl>
+                    </section>
+                    break;
+
+                case "discover":
+                    <section class="mt-card" data-testid="itx-discover">
+                        <h2 class="mt-h">Connections in Integration Topology</h2>
+                        @if (f.Topology is null)
+                        {
+                            <p class="mt-muted" data-testid="itx-topology-none">@(f.EnvironmentId is null ? "No Target Environment is active: topology is read per environment." : "Integration Topology could not be read.") <a href="integration-topology">Open Integration Topology</a></p>
+                        }
+                        else if (f.Topology.Connections.Count == 0)
+                        {
+                            <p class="mt-muted" data-testid="itx-connections-none">No connection is known for this environment yet. <a href="integration-topology">Open Integration Topology</a> to see its sources and discovery plan, or <a href="@I.DeclareRoute">create a journey</a> by hand.</p>
+                        }
+                        else
+                        {
+                            <ul class="mt-list">
+                                @foreach (var c in f.Topology.Connections.OrderBy(c => c.Relationship is TopologyRelationshipState.Candidate or TopologyRelationshipState.ExpectedUnresolved).ThenBy(c => I.ComponentName(f.Topology, c.ProducerComponentId)).Take(25))
+                                {
+                                    var integration = I.CatalogIntegrationId(c, f.Integrations);
+                                    <li data-testid="itx-connection" data-state="@c.Relationship">
+                                        <span>@I.ComponentName(f.Topology, c.ProducerComponentId) → @I.ComponentName(f.Topology, c.ConsumerComponentId)</span>
+                                        <span class="mt-muted">@c.Type@(c.Address is { Length: > 0 } a ? $" · {a}" : "")</span>
+                                        <span class="mt-chip mt-tone-@I.RelationshipTone(c.Relationship)">@I.RelationshipLabel(c.Relationship)</span>
+                                        @if (integration is not null) { <a href="@I.IqrHref(integration)" data-testid="itx-connection-iqr">Quality review</a> }
+                                    </li>
+                                }
+                            </ul>
+                            @if (f.Topology.Connections.Count > 25) { <p class="mt-muted">Showing 25 of @f.Topology.Connections.Count connections. <a href="integration-topology?tab=map">All in Integration Topology</a></p> }
+                        }
+                        <p class="mt-muted mt-boundary">Connections come from sources and metadata; "candidate" and "expected" ones are not confirmed. Only an observed connection was seen at runtime, and that is an observation, not a passed test.</p>
+                    </section>
+                    <section class="mt-card" data-testid="itx-integrations">
+                        <h2 class="mt-h">Configured integrations</h2>
+                        @if (f.Integrations.Count == 0)
+                        {
+                            <p class="mt-muted" data-testid="itx-integrations-none">No integration is configured for quality review in this environment. <a href="integration-quality-review?view=setup-evidence">Set up integrations</a></p>
+                        }
+                        else
+                        {
+                            <ul class="mt-list">
+                                @foreach (var i in f.Integrations.Take(20))
+                                {
+                                    <li data-testid="itx-integration" data-id="@i.Id"><a href="@I.IqrHref(i.Id, "setup-evidence")">@i.DisplayName</a> <span class="mt-muted">@i.Kind@(i.SourceSystem is { Length: > 0 } s ? $" · from {s}" : "")@(i.DestinationSystem is { Length: > 0 } d ? $" to {d}" : "")</span></li>
+                                }
+                            </ul>
+                        }
+                    </section>
+                    <p class="mt-muted"><a href="integration-topology">Integration Topology</a> · <a href="project-scopes?view=connections">Connections (Project Test Setup)</a> · <a href="@I.DeclareRoute" data-testid="itx-create-journey">Create journey</a></p>
+                    break;
+
+                case "define":
+                    <section class="mt-card" data-testid="itx-define">
+                        <h2 class="mt-h">Journeys of this project</h2>
+                        @if (f.Journeys.Count == 0)
+                        {
+                            <p class="mt-muted" data-testid="itx-journeys-none">No journey yet. A journey names the systems and steps an integration runs through, in order.</p>
+                        }
+                        else
+                        {
+                            <ul class="mt-list">
+                                @foreach (var j in f.Journeys)
+                                {
+                                    <li data-testid="itx-journey" data-id="@j.Id">
+                                        <strong>@j.DisplayName</strong> <span class="mt-muted">revision @j.Revision</span>
+                                        <span class="itx-chain">@string.Join(" → ", j.Components)</span>
+                                        <span class="mt-chip mt-tone-muted">Declared by a person</span>
+                                        <a href="@I.ReviewJourneyHref(j)" data-testid="itx-review-journey">Review journey</a>
+                                        <a href="@I.StageRoute("prepare", j.Id)" data-testid="itx-prepare-journey">Prepare test suite</a>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                        <p><a class="btn btn-primary" href="@I.DeclareRoute" data-testid="itx-create-journey">Create journey</a></p>
+                        <p class="mt-muted mt-boundary">A journey is a person's description of an integration process; its steps are not confirmed connections. Test Coverage proposes matching source journeys for it — <a href="test-coverage-review">review possible matches there</a>; a match counts only once a reviewer confirms it.</p>
+                    </section>
+                    break;
+
+                case "prepare":
+                    var selected = f.Journey(Journey);
+                    <section class="mt-card" data-testid="itx-prepare">
+                        <h2 class="mt-h">Prepare a test suite</h2>
+                        @if (selected is { } sj)
+                        {
+                            <p data-testid="itx-prepare-journey-context">For journey <strong>@sj.DisplayName</strong> (revision @sj.Revision): @string.Join(" → ", sj.Components)</p>
+                            <p><a class="btn btn-primary" href="@I.SuitesForJourneyHref(sj)" data-testid="itx-open-suites">Prepare in Integration Test Suites</a></p>
+                            <p class="mt-muted">Integration Test Suites opens with this journey as context. It builds suites from source snapshots and its own suite scopes; the journey is shown to guide the choice and is not bound to the suite.</p>
+                        }
+                        else if (Journey is { Length: > 0 })
+                        {
+                            <p class="mt-alert" role="status" data-testid="itx-journey-unknown">That journey is not one of this project's journeys.</p>
+                        }
+                        else if (f.Journeys.Count > 0)
+                        {
+                            <p class="mt-muted">Choose a journey to prepare for:</p>
+                            <ul class="mt-list">@foreach (var jj in f.Journeys) { <li><a href="@I.StageRoute("prepare", jj.Id)" data-testid="itx-choose-journey">@jj.DisplayName</a></li> }</ul>
+                        }
+                        <h3 class="tta-sub">Test suites from this project's source</h3>
+                        @if (f.Suites.Count == 0)
+                        {
+                            <p class="mt-muted" data-testid="itx-suites-none">No test suite has been generated from this project's source snapshot yet. <a href="integration-suites">Open Integration Test Suites</a></p>
+                        }
+                        else
+                        {
+                            <ul class="mt-list">
+                                @foreach (var s in f.Suites)
+                                {
+                                    <li data-testid="itx-suite" data-id="@s.Id"><a href="@I.SuiteHref(s)">@s.ScopeName</a>
+                                        <span class="mt-chip mt-tone-@(s.Status is BirkNext.IntegrationSuites.SuiteStatus.ReadyToExecute ? "ok" : s.Status is BirkNext.IntegrationSuites.SuiteStatus.Blocked ? "bad" : "warn")">@I.SuiteLabel(s.Status)</span>
+                                        <span class="mt-muted">@s.Tests test@(s.Tests == 1 ? "" : "s") · revision @s.Revision · @s.GeneratedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                                        <a href="@I.SuiteHref(s, "readiness")">Readiness</a></li>
+                                }
+                            </ul>
+                        }
+                        @if (f.OtherSuites > 0) { <p class="mt-muted" data-testid="itx-other-suites">@f.OtherSuites suite@(f.OtherSuites == 1 ? "" : "s") of other source snapshots are not shown.</p> }
+                        <p class="mt-muted mt-boundary">A suite with source evidence is test design, not an executed test: "ready to execute" means its prerequisites are met.</p>
+                    </section>
+                    break;
+
+                default:
+                    <section class="mt-card" data-testid="itx-verify">
+                        <h2 class="mt-h">Integration Quality Review runs</h2>
+                        @if (f.Reviews.Count == 0)
+                        {
+                            <p class="mt-muted" data-testid="itx-reviews-none">No quality review has run in this environment. <a href="integration-quality-review?view=review">Open Integration Quality Review</a></p>
+                        }
+                        else
+                        {
+                            <ul class="mt-list">
+                                @foreach (var r in f.Reviews.Take(10))
+                                {
+                                    <li data-testid="itx-review" data-outcome="@r.Outcome"><span>@I.ReviewLabel(r.Outcome, r.Findings)</span>
+                                        <span class="mt-muted">@r.CompletedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @r.Topics topic@(r.Topics == 1 ? "" : "s") · @(f.TargetName ?? "environment")</span></li>
+                                }
+                            </ul>
+                            <p class="mt-muted"><a href="integration-quality-review?view=review">All results in Integration Quality Review</a></p>
+                        }
+                        <h3 class="tta-sub">Runtime verification</h3>
+                        <p class="mt-muted" data-testid="itx-runtime">Runs against an environment start in <a href="integration-quality-review?view=test-verify">Integration Quality Review → Test &amp; verify</a> (registered journeys) or from a suite's <em>Execute &amp; Evidence</em> step, each behind its own authorisation check. A quality review is static analysis and is never counted as a passed run.</p>
+                    </section>
+                    break;
+            }
+        }
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "stage")] public string? StageParam { get; set; }
+    [SupplyParameterFromQuery(Name = "journey")] public string? Journey { get; set; }
+
+    private bool _loading = true;
+    private I.Facts? _facts;
+    private WorkspaceStage? _stage;
+    private ICurrentWorkspaceProjection? _projection;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _projection = ServiceProvider.GetService(typeof(ICurrentWorkspaceProjection)) as ICurrentWorkspaceProjection;
+        if (_projection is not null) _projection.Changed += OnProjectChanged;
+        await LoadAsync();
+    }
+
+    protected override void OnParametersSet() => _stage = I.Stage(StageParam);
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try { _facts = await new IntegrationTestingWorkspace(ServiceProvider).LoadAsync(); }
+        catch (Exception e) when (e is not OperationCanceledException) { _facts = null; }
+        finally { _loading = false; }
+    }
+
+    private void OnProjectChanged() => _ = InvokeAsync(async () => { _facts = null; await LoadAsync(); StateHasChanged(); });
+
+    public void Dispose() { if (_projection is not null) _projection.Changed -= OnProjectChanged; }
+}

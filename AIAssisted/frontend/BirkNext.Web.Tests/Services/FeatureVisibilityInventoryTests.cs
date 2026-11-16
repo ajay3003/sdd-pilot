@@ -66,13 +66,13 @@ public sealed class FeatureVisibilityInventoryTests
         inv.SwitchCount.Should().Be(25, "19 core + 6 advanced configurable switches (platform keys excluded; 5 no-effect switches retired)");
         inv.Switches.Where(s => !s.Platform).Should().OnlyContain(s => s.HasEffect, "every configurable switch gates a sidebar entry");
         inv.PlatformCount.Should().Be(4);
-        inv.Entries.Should().HaveCount(65, "sidebar rows, including deep links and shared entries (+3 Manual Testing workspace rows, +1 All modules, +1 Integration Journeys, +4 Technical Testing workspace rows)");
+        inv.Entries.Should().HaveCount(66, "sidebar rows, including deep links and shared entries (+3 Manual Testing workspace rows, +1 All modules, +1 Integration Journeys, +4 Technical Testing workspace rows, +1 Integration Testing)");
         inv.Entries.Select(e => e.Route).Should().Contain(["manual-testing", "manual-testing/discover", "manual-testing/execute", "all-modules", "integration-journeys",
-            "technical-testing", "technical-testing/assess", "technical-testing/configure", "technical-testing/verify"]);
+            "technical-testing", "technical-testing/assess", "technical-testing/configure", "technical-testing/verify", "technical-testing/integrations"]);
         inv.HiddenEntries.Should().Be(6);
         inv.Entries.Where(e => !e.Shown).Select(e => e.Route).Should().BeEquivalentTo(
             "implementation-traceability", "impact-analysis", "traceability", "traceability/suggestions", "code-traceability", "ai-change-auditor");
-        inv.AlwaysShownEntries.Should().Be(31); // +3 Manual Testing workspace rows, +1 All modules, +1 Integration Journeys, +4 Technical Testing rows (always shown)
+        inv.AlwaysShownEntries.Should().Be(32); // +3 Manual Testing workspace rows, +1 All modules, +1 Integration Journeys, +4 Technical Testing rows, +1 Integration Testing (always shown)
     }
 
     [Theory] // A: a switch maps to exactly the entry it gates

@@ -105,7 +105,8 @@ public sealed class SourceIntegrationsUiTests : BunitContext
         unassigned.QuerySelector("[data-testid=ip-row-consumer]")!.TextContent.Should().Contain("Not assigned");
         unassigned.QuerySelector("[data-testid=ip-row-mapping]")!.TextContent.Should().Be("Unassigned");
         unassigned.QuerySelector("[data-testid=ip-row-mapping]")!.GetAttribute("title").Should().Be("No consumer mapping has been established.");
-        Row(cut, "dbo.Tiltak").QuerySelector("[data-testid=ip-row-iqr]")!.GetAttribute("href").Should().Be("/integration-quality-review", "review readiness is Integration Quality Review's");
+        Row(cut, "dbo.Tiltak").QuerySelector("[data-testid=ip-row-iqr]")!.GetAttribute("href").Should().StartWith("/integration-quality-review?view=review&integration=",
+            "review readiness is Integration Quality Review's, opened on exactly this integration (its catalog id)");
         cut.FindAll("[data-testid=ip-row-readiness]").Should().BeEmpty("review readiness is not a configuration column");
         cut.Markup.Should().NotContain("Failed");
     }

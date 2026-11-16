@@ -157,9 +157,10 @@ public sealed class TechnicalTestingPresentationTests
     {
         foreach (var a in T.Areas)
             foreach (var stage in new[] { "assess", "configure", "verify" })
-                T.Links(a, stage).Should().NotBeEmpty().And.OnlyContain(l => !l.Href.StartsWith("technical-testing", StringComparison.Ordinal));
+                T.Links(a, stage).Should().NotBeEmpty().And.OnlyContain(l => !l.Href.StartsWith("technical-testing/", StringComparison.Ordinal) || l.Href.StartsWith("technical-testing/integrations", StringComparison.Ordinal),
+                    "an area links to its specialist modules (and integrations to the Integration Testing flow), never back to a stage");
         T.Links(TechnicalArea.Frontend, "verify").Should().Contain(("Frontend Quality Review", "frontend-quality-review"));
-        T.Links(TechnicalArea.Integration, "assess").Should().Contain(("Integration journeys", "integration-journeys"));
+        T.Links(TechnicalArea.Integration, "assess").Should().Contain(("Integration Testing", "technical-testing/integrations?stage=discover"));
         T.FromSlug("e2e").Should().Be(TechnicalArea.CriticalE2E);
         T.FromSlug("nope").Should().BeNull();
     }

@@ -6,6 +6,7 @@
 @inject IIntegrationSuiteApiService Api
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject NavigationManager Navigation
+@inject IServiceProvider Services
 
 <PageTitle>Integration Test Suites · BirkNext</PageTitle>
 
@@ -19,6 +20,19 @@
         <p class="its-note">Build one end-to-end suite from several imported sources: map every stage of the integration to evidence-backed source snapshots,
             generate a draft over the existing contracts, Test Data and Kode 6/7 reviews, resolve what blocks a run, and run approved stages as one correlated transaction.
             <BirkNext.Web.Components.HelpLink Topic="integration-suites" Text="Guide: multi-source E2E" /></p>
+        @if (_journey is { } journey)
+        {
+            @* Handed over from Integration Testing (?journey=): the declared journey as context for choosing sources and scope. It is not bound to a
+               suite: suites keep their own snapshot and scope, and the journey's steps are not confirmed connections. *@
+            <p class="its-note" role="status" data-testid="its-journey-context">Preparing for journey <strong>@journey.DisplayName</strong> (revision @journey.Revision):
+                @string.Join(" → ", journey.Components). Choose the sources and scope that cover these steps; the journey guides the choice and is not stored on the suite.
+                <a href="@($"integration-journeys/declare?journey={Uri.EscapeDataString(journey.JourneyId)}")">Review journey</a> ·
+                <a href="@($"technical-testing/integrations?stage=prepare&journey={Uri.EscapeDataString(journey.Id)}")">Back to Integration Testing</a></p>
+        }
+        else if (_journeyUnknown)
+        {
+            <p class="its-note" role="status" data-testid="its-journey-unknown">The journey in the address is not one of this project's journeys, so no journey context is shown.</p>
+        }
     </header>
 
     <nav class="its-areas" aria-label="Suite work areas" data-testid="its-areas">

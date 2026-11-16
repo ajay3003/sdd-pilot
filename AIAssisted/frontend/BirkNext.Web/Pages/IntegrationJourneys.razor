@@ -52,6 +52,7 @@
                                 @(open ? "Hide revisions" : "Revisions")<span class="visually-hidden"> of @j.DisplayName</span>
                             </button>
                             <a class="btn-secondary btn-small" href="@($"integration-journeys/declare?journey={Uri.EscapeDataString(j.JourneyId)}")" data-testid="ijl-edit">Edit (new revision)<span class="visually-hidden"> @j.DisplayName</span></a>
+                            <a class="btn-secondary btn-small" href="@IntegrationTestingPresentation.StageRoute("prepare", j.Id)" data-testid="ijl-prepare">Prepare test suite<span class="visually-hidden"> for @j.DisplayName</span></a>
                         </div>
                         @if (open)
                         {

@@ -3,6 +3,7 @@
 @implements IDisposable
 @inject ICurrentWorkspaceProjection CurrentWorkspace
 @inject IServiceProvider Services
+@inject IJSRuntime JS
 
 <PageTitle>Declared Integration Journeys</PageTitle>
 
@@ -11,6 +12,8 @@
    is associated here. Test Coverage proposes association candidates from the declared chain (structure only, a reviewer confirms); the Scope
    Registry can name a declared journey as a Journey member. The overview with revision history is /integration-journeys. *@
 <div class="ijd-page" data-testid="ijd-page" aria-busy="@(_loaded ? "false" : "true")">
+    @* Unsaved journey edits are never lost silently: leaving asks first. *@
+    <NavigationLock ConfirmExternalNavigation="@Dirty" OnBeforeInternalNavigation="ConfirmLeaveAsync" />
     <PageHeader Title="Declared Integration Journeys" Description="Declare the component chain an integration journey runs through, for this project. Test Coverage proposes it to matching source journeys; a reviewer confirms." />
     <p class="ijd-muted"><a href="integration-journeys" data-testid="ijd-overview">← All Integration Journeys of this project</a></p>
 
@@ -44,6 +47,55 @@
             <label class="ijd-field">Components in order <span class="ijd-muted">(one per line, as Source Analysis names them — e.g. a project, channel or database name)</span>
                 <textarea data-testid="ijd-components" rows="5" @bind="_components" @bind:event="oninput"></textarea>
             </label>
+            @* Systems and steps: build the chain from what was discovered (Integration Topology of the active Target Environment) instead of typing
+               exact names; reorder or remove steps. Adding a discovered component or connection confirms nothing — the journey stays a person's
+               declaration, and the components box above remains the authoritative text. *@
+            <section class="ijd-steps-panel" aria-labelledby="ijd-steps-heading" data-testid="ijd-steps-panel">
+                <h3 id="ijd-steps-heading" class="ijd-subheading">Systems and steps</h3>
+                @if (Chain.Count == 0) { <p class="ijd-muted" data-testid="ijd-steps-none">No step yet: add systems below, or type them in the box above.</p> }
+                else
+                {
+                    <ol class="ijd-steps" data-testid="ijd-steps">
+                        @foreach (var (step, index) in Chain.Select((s, i) => (s, i)))
+                        {
+                            var at = index;
+                            <li data-testid="ijd-step" data-index="@at"><span>@(at + 1). @step</span>
+                                <button type="button" class="btn-secondary btn-small" data-testid="ijd-step-up" disabled="@(at == 0)" @onclick="() => Move(at, -1)">Move up<span class="visually-hidden"> @step</span></button>
+                                <button type="button" class="btn-secondary btn-small" data-testid="ijd-step-down" disabled="@(at == Chain.Count - 1)" @onclick="() => Move(at, 1)">Move down<span class="visually-hidden"> @step</span></button>
+                                <button type="button" class="btn-secondary btn-small" data-testid="ijd-step-remove" @onclick="() => RemoveStep(at)">Remove<span class="visually-hidden"> @step</span></button></li>
+                        }
+                    </ol>
+                }
+                @if (_topology is { } topology)
+                {
+                    <label class="ijd-field">Add a discovered system <input data-testid="ijd-system-search" placeholder="Search systems in Integration Topology" @bind="_systemSearch" @bind:event="oninput" /></label>
+                    <div class="ijd-picks" data-testid="ijd-system-picks">
+                        @foreach (var c in topology.Components.Where(c => _systemSearch.Trim().Length == 0 || c.Name.Contains(_systemSearch.Trim(), StringComparison.OrdinalIgnoreCase)).OrderBy(c => c.Name).Take(12))
+                        {
+                            var component = c;
+                            <button type="button" class="btn-secondary btn-small" data-testid="ijd-add-system" data-name="@c.Name" @onclick="() => AddStep(component.Name)">+ @c.Name <span class="ijd-muted">(@c.Kind)</span></button>
+                        }
+                    </div>
+                    @if (topology.Connections.Count > 0)
+                    {
+                        <details data-testid="ijd-connections"><summary>Start from a discovered connection</summary>
+                            <ul class="ijd-steps">
+                                @foreach (var c in topology.Connections.OrderBy(c => c.Relationship is BirkNext.IntegrationTopology.TopologyRelationshipState.Candidate or BirkNext.IntegrationTopology.TopologyRelationshipState.ExpectedUnresolved).Take(15))
+                                {
+                                    var (from, to) = (IntegrationTestingPresentation.ComponentName(topology, c.ProducerComponentId), IntegrationTestingPresentation.ComponentName(topology, c.ConsumerComponentId));
+                                    <li data-testid="ijd-connection" data-state="@c.Relationship">@from → @to <span class="ijd-muted">@IntegrationTestingPresentation.RelationshipLabel(c.Relationship)</span>
+                                        <button type="button" class="btn-secondary btn-small" data-testid="ijd-add-connection" @onclick="() => { AddStep(from); AddStep(to); }">Add both</button></li>
+                                }
+                            </ul>
+                        </details>
+                    }
+                    <p class="ijd-muted">Added steps are your declaration; a discovered connection marked as candidate or expected is not confirmed by adding it.</p>
+                }
+                else
+                {
+                    <p class="ijd-muted" data-testid="ijd-no-topology">No discovered systems to choose from (Integration Topology is read for the active Target Environment). Type the components above.</p>
+                }
+            </section>
             <label class="ijd-field">Description <span class="ijd-muted">(optional)</span> <input data-testid="ijd-description" @bind="_description" @bind:event="oninput" maxlength="@DeclaredIntegrationJourneyRules.MaxDescription" /></label>
             <label class="ijd-field">@(_editing is null ? "Declared by" : "Changed by") <input data-testid="ijd-declared-by" @bind="_declaredBy" @bind:event="oninput" maxlength="@DeclaredIntegrationJourneyRules.MaxDeclaredBy" /></label>
             @if (Chain.Count > 0) { <p class="ijd-muted" data-testid="ijd-preview">Chain: @string.Join(" → ", Chain)</p> }
@@ -104,6 +156,49 @@
 
     private List<string> Chain => DeclaredIntegrationJourneyRules.Chain(_components.Split('\n'));
 
+    private BirkNext.IntegrationTopology.IntegrationTopologyView? _topology;
+    private string _systemSearch = "";
+
+    private void SetChain(IEnumerable<string> steps) => _components = string.Join("\n", steps);
+    private void AddStep(string name) { if (Chain.LastOrDefault() != name) SetChain([.. Chain, name]); }
+    private void RemoveStep(int at) { var c = Chain; if (at >= 0 && at < c.Count) { c.RemoveAt(at); SetChain(c); } }
+    private void Move(int at, int by)
+    {
+        var c = Chain; var to = at + by;
+        if (at < 0 || at >= c.Count || to < 0 || to >= c.Count) return;
+        (c[at], c[to]) = (c[to], c[at]); SetChain(c);
+    }
+
+    /// <summary>The form holds something that is not saved (a new declaration in progress, or a change to the journey being edited).</summary>
+    private bool Dirty => _editing is { } e
+        ? _name != e.Journey.DisplayName || !Chain.SequenceEqual(e.Journey.Components) || _description != (e.Journey.Description ?? "")
+        : _name.Trim().Length > 0 || Chain.Count > 0;
+
+    private async Task ConfirmLeaveAsync(Microsoft.AspNetCore.Components.Routing.LocationChangingContext context)
+    {
+        if (!Dirty) return;
+        var target = new Uri(new Uri("http://x/"), context.TargetLocation);
+        if (target.AbsolutePath.EndsWith("/integration-journeys/declare", StringComparison.OrdinalIgnoreCase) && target.Query.Length == 0) return;
+        bool leave;
+        try { leave = await JS.InvokeAsync<bool>("confirm", "This journey has unsaved changes. Leave without saving them?"); }
+        catch (JSException) { leave = false; }
+        if (!leave) context.PreventNavigation();
+    }
+
+    private async Task LoadTopologyAsync()
+    {
+        // The topology client is obtained like every topology page does (it is not a DI registration).
+        var topologyApi = IntegrationTopologyApiService.Resolve(Services);
+        if (Services.GetService<IFrontendAnalysisContextFactory>() is not { } contexts) return;
+        try
+        {
+            var context = await contexts.GetActiveContextAsync();
+            if (context.ActiveTargetError is null && context.ActiveProfile is { Id.Length: > 0 } profile)
+                (_topology, _) = await topologyApi.GetAsync(profile.Id, [], _cts.Token);
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { _topology = null; }
+    }
+
     private DeclaredIntegrationJourneyRequest Request => new()
     {
         ProjectKey = _projectKey ?? "", DisplayName = _name, Description = string.IsNullOrWhiteSpace(_description) ? null : _description, Components = Chain, DeclaredBy = _declaredBy,
@@ -118,7 +213,7 @@
         var workspace = await CurrentWorkspace.GetAsync();
         _projectKey = string.IsNullOrWhiteSpace(workspace.ProjectSlug) ? null : workspace.ProjectSlug;
         _projectName = workspace.ProjectName;
-        if (_projectKey is not null && _api is not null) await LoadAsync();
+        if (_projectKey is not null && _api is not null) { await LoadAsync(); await LoadTopologyAsync(); }
         _loaded = true;
     }
 

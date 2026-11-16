@@ -2,6 +2,7 @@
 using BirkNext.Integrations;
 using BirkNext.IntegrationSuites;
 using BirkNext.Web.Models;
+using BirkNext.Web.Services;
 using Microsoft.AspNetCore.Components;
 
 namespace BirkNext.Web.Pages;
@@ -49,6 +50,26 @@ public partial class IntegrationSuitesPage
     [SupplyParameterFromQuery(Name = "modules")] public string? ModulesQuery { get; set; }
     [SupplyParameterFromQuery(Name = "context")] public string? ContextQuery { get; set; }
     [SupplyParameterFromQuery(Name = "suite")] public string? SuiteQuery { get; set; }
+    /// <summary>?journey={declared journey id, "project.{key}:{journeyId}"}: context handed over from Integration Testing — shown only when it is a
+    /// journey of the current project (exact id), never bound to a suite.</summary>
+    [SupplyParameterFromQuery(Name = "journey")] public string? JourneyQuery { get; set; }
+
+    private DeclaredIntegrationJourney? _journey;
+    private bool _journeyUnknown;
+
+    private async Task LoadJourneyContextAsync()
+    {
+        if (string.IsNullOrWhiteSpace(JourneyQuery)) return;
+        string? project = null;
+        if (Services.GetService(typeof(ICurrentWorkspaceProjection)) is ICurrentWorkspaceProjection projection)
+            try { project = (await projection.GetAsync()).ProjectSlug; } catch (InvalidOperationException) { }
+        if (project is { Length: > 0 } && Services.GetService(typeof(IDeclaredIntegrationJourneyApiService)) is IDeclaredIntegrationJourneyApiService journeys)
+        {
+            var (list, _) = await journeys.ListAsync(project);
+            _journey = list?.FirstOrDefault(j => string.Equals(j.Id, JourneyQuery, StringComparison.Ordinal));
+        }
+        _journeyUnknown = _journey is null;
+    }
 
     private IqrSourceSnapshotSummary? Picked => Guid.TryParse(_snapshotId, out var id) ? _snapshots?.FirstOrDefault(s => s.Id == id) : null;
     private IntegrationSuiteScope? ScopeDef => _scopes?.FirstOrDefault(s => s.ScopeId == _scopeId);
@@ -83,6 +104,7 @@ public partial class IntegrationSuitesPage
         if (Areas.Any(a => a.Key == AreaQuery)) _area = AreaQuery!;
         if (Guid.TryParse(ContextQuery, out var contextId)) await OpenContextAsync(contextId, keepArea: true);
         if (Guid.TryParse(SuiteQuery, out var suiteId)) { (_suite, _) = await Api.GetAsync(suiteId); }
+        await LoadJourneyContextAsync();
         try
         {
             var context = await ContextFactory.GetActiveContextAsync();

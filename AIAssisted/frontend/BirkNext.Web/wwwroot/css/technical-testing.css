@@ -12,3 +12,11 @@
 .tt-filter a { padding: 0.2rem 0.65rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 999px; text-decoration: none; font-size: 0.85rem; min-height: 2rem; display: inline-flex; align-items: center; }
 .tt-filter a.is-current { background: var(--clr-surface-alt, #eef2f6); font-weight: 650; }
 .tt-filter a:focus-visible, .tta-links a:focus-visible { outline: 2px solid var(--clr-focus, #0969da); outline-offset: 2px; }
+/* Integration Testing (Technical Testing → Integrations). */
+.itx-counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: 0.5rem 1rem; margin: 0; }
+.itx-counts dt { font-size: 0.8rem; color: var(--clr-text-muted, #57606a); }
+.itx-counts dd { margin: 0.1rem 0 0; }
+.itx-chain { flex-basis: 100%; overflow-wrap: anywhere; }
+.ijd-steps { list-style: none; margin: 0.3rem 0; padding: 0; display: grid; gap: 0.3rem; }
+.ijd-steps li { display: flex; flex-wrap: wrap; gap: 0.3rem 0.5rem; align-items: center; }
+.ijd-picks { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.3rem 0; }
