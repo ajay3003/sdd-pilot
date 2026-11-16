@@ -19,7 +19,13 @@ namespace BirkNext.Api.Tests.Data;
 /// database). Audit 2026-11-15 PERF-01 / TEST-01 / SEC-01: the traceability read is bounded by cases, not by history; the run list pages with a
 /// stable order and an exact total; concurrent saves at one revision let exactly one through; a completed run is final; another project's run is
 /// never read or changed; and one case never has two runs in progress. The expected answers come from the seed data, not from the code under test.
+/// The allocation comparison reads <see cref="GC.GetTotalAllocatedBytes(bool)"/>, which counts the whole process, so the class runs alone
+/// (non-parallel collection): tests running beside it would otherwise add their allocations to the measured read.
 /// </summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class ManualRunAllocationCollection { public const string Name = "Manual run allocation measurement"; }
+
+[Collection(ManualRunAllocationCollection.Name)]
 public sealed class ManualRunPersistencePostgresTests(ITestOutputHelper output) : IAsyncLifetime
 {
     private readonly string _database = TestPostgres.TemporaryName("birknext_manual_runs");

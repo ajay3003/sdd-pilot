@@ -310,6 +310,19 @@ public sealed class FunctionalQualityScopeUiTests : BunitContext
     }
 
     [Fact]
+    public void Related_view_links_send_only_parameters_their_target_reads()
+    {
+        var (cut, _) = Journey();
+        cut.Find("[data-testid=fqs-filter-category]").Change("Privacy");
+        cut.Find("[data-testid=fqs-open]").Click();
+        cut.WaitForElement("[data-testid=fqs-detail]");
+
+        cut.Find("[data-testid=fqs-link-traceability]").GetAttribute("href").Should().StartWith("artifact-traceability?q=", "Requirements Traceability reads ?q=");
+        cut.Find("[data-testid=fqs-link-coverage]").GetAttribute("href").Should().Be("test-coverage-review",
+            "Test Coverage reads only ?scope= (a Project Test Setup test area); an item id there would promise a filter it does not apply");
+    }
+
+    [Fact]
     public void Returning_to_the_page_restores_the_filter_and_the_selected_item_from_the_url()
     {
         var (cut, api) = Journey(startUrl: $"delivery-reporting?tab=scope&fq-quality=Privacy&fq-item={Uri.EscapeDataString(Privacy.Key)}");

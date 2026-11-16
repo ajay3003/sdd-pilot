@@ -810,7 +810,7 @@
                     }
                 </div>
             }
-            <a href="snapshots?module=functional-scope-snapshot" class="fqs-link">Open in Snapshots</a>
+            <a href="snapshots?type=Delivery" class="fqs-link" data-testid="fqs-link-snapshots">Open in Snapshots</a>
         </details>
     };
 
@@ -936,7 +936,7 @@
                     </dl>
                     <nav class="fqs-links" aria-label="Related views">
                         <a href="artifact-traceability?q=@Uri.EscapeDataString(item.DisplayId)" data-testid="fqs-link-traceability">Traceability</a>
-                        <a href="test-coverage-review?q=@Uri.EscapeDataString(item.DisplayId)" data-testid="fqs-link-coverage">Test coverage</a>
+                        <a href="test-coverage-review" data-testid="fqs-link-coverage">Test coverage</a>
                         <a href="correlation-review" data-testid="fqs-link-correlation">Relationship Review</a>
                         <a href="test-data" data-testid="fqs-link-testdata">Test Data</a>
                     </nav>

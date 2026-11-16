@@ -10,6 +10,29 @@ public sealed class SpecComparisonServiceTests
     private readonly SpecComparisonService _service = new();
 
     [Fact]
+    public void A_compact_id_and_its_padded_form_are_one_requirement_across_versions()
+    {
+        var oldRequirement = Candidate("FR-1: The system MUST allow password login", ScenarioKind.Requirement);
+        var newRequirement = Candidate("FR-001: The system MUST allow passwordless login", ScenarioKind.Requirement);
+
+        var result = _service.Compare(Result([oldRequirement]), Result([newRequirement]));
+
+        result.Summary.ModifiedRequirements.Should().Be(1, "Documentation Drift uses the shared requirement grammar, where FR-1 is FR-001");
+        result.Summary.AddedRequirements.Should().Be(0);
+        result.Summary.RemovedRequirements.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("FR-1: Login", "FR-001")]
+    [InlineData("ABC-12: Export invoices", "ABC-12")]
+    [InlineData("Requirement: SC-2 Response time", "SC-002")]
+    [InlineData("Export as UTF-8 per FR-7", "FR-007")]
+    [InlineData("Export files as UTF-8", null)]
+    [InlineData("No identifier here", null)]
+    public void The_identity_is_the_leading_id_or_a_mentioned_requirement_id_never_a_prose_token(string title, string? expected) =>
+        SpecComparisonService.RequirementIdentity(title).Should().Be(expected);
+
+    [Fact]
     public void Compare_matches_requirements_by_extracted_id_and_marks_modified()
     {
         var oldRequirement = Candidate("FR-001: The system MUST allow password login", ScenarioKind.Requirement);

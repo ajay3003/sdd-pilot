@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Path = System.IO.Path;
 using BirkNext.Api.Services.Integrations.ApplicationMessaging;
+using BirkNext.Sdd;
 using BirkNext.TestCoverage;
 using BirkNext.TestEvidence;
 using Microsoft.CodeAnalysis;
@@ -50,8 +51,14 @@ public sealed partial class TestBehaviorSourceAnalyzer : ITestBehaviorAnalyzer
         ["NotFound"] = "404", ["Conflict"] = "409", ["UnprocessableEntity"] = "422", ["UnprocessableContent"] = "422", ["TooManyRequests"] = "429",
         ["InternalServerError"] = "500", ["ServiceUnavailable"] = "503",
     };
-    [GeneratedRegex(@"\b(?:FR|NFR|SC|REQ|AC|US)-\d{1,4}[a-z]?\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex RequirementPattern();
+    private static readonly string[] FallbackPrefixes = ["FR-", "NFR-", "SC-", "REQ-", "AC-", "US-"];
+
+    /// <summary>Requirement references of a test without a discovery provider (NUnit, MSTest): the shared grammar
+    /// (<see cref="RequirementReferenceParser"/>, so <c>FR-1</c> is <c>FR-001</c> as in specifications and xUnit discovery; upper case as written in
+    /// source, as xUnit discovery), limited to the requirement prefixes — the text includes attribute arguments, where test data such as
+    /// <c>"UTF-8"</c> is not a project identifier.</summary>
+    public static IEnumerable<string> FallbackRequirementReferences(string text) =>
+        RequirementReferenceParser.Extract(text, requireUpperCase: true).Where(id => FallbackPrefixes.Any(p => id.StartsWith(p, StringComparison.Ordinal)));
     [GeneratedRegex(@"(?<=[a-z0-9])(?=[A-Z])|_|(?<=[A-Z])(?=[A-Z][a-z])")]
     private static partial Regex NameSplit();
 
@@ -133,7 +140,7 @@ public sealed partial class TestBehaviorSourceAnalyzer : ITestBehaviorAnalyzer
                         // candidate); the identifier pattern applies only where no discovery provider exists (NUnit, MSTest).
                         RequirementReferences = (definition is not null
                                 ? definition.References.Where(r => r.Confidence is TestEvidenceConfidence.Confirmed or TestEvidenceConfidence.StronglySupported).Select(r => r.Id)
-                                : RequirementPattern().Matches(text).Select(m => m.Value.ToUpperInvariant()))
+                                : FallbackRequirementReferences(text))
                             .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList(),
                         BehaviorTokens = Tokens(method.Identifier.ValueText),
                         ExpectedOutcomes = assertions.Where(a => a.Kind is TestAssertionKind.HttpStatus or TestAssertionKind.ExceptionThrown or TestAssertionKind.AuthorizationResult)

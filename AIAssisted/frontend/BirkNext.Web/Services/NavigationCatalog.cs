@@ -510,9 +510,9 @@ public static class WorkspaceViews
         ]),
         Groups(WorkspaceView.Developer, "Developer", "Review implementation, source changes and code quality.", "source-analysis",
         [
-            new("dev-source", "Source", "nav-icon-source-analysis", ["sources", "source-analysis", "project-import"]),
+            new("dev-source", "Source", "nav-icon-source-analysis", ["sources", "source-analysis", "project-import", "demo-projects"]),
             new("dev-work", "Specifications & tasks", "nav-icon-task-explorer", ["specification-explorer", "task-explorer", "task-alignment", "implementation-traceability"]),
-            new("dev-quality", "Code quality & build", "nav-icon-constitution-compliance", ["code-risk-review", "dependency-review", "pipeline-review", "technology-coverage"]),
+            new("dev-quality", "Code quality & build", "nav-icon-constitution-compliance", ["code-risk-review", "dependency-review", "pipeline-review", "technology-coverage", NavigationCatalog.GeneratedDocumentationHealthRoute]),
             new("dev-api", "APIs & contracts", "nav-icon-task-alignment", ["api-quality-review", "api-quality-review/contracts", "schema-studio"]),
             new("dev-impact", "Change impact & tests", "nav-icon-impact-analysis", ["impact-analysis", "execution-results"]),
             new("dev-follow-up", "Follow-up", "nav-icon-dashboard", ["dashboard", "getting-started", "user-guide"]),
@@ -521,7 +521,7 @@ public static class WorkspaceViews
         [
             new("arch-system", "System & integrations", "nav-icon-system-understanding", ["system-understanding", "integration-topology", "integration-quality-review"]),
             new("arch-source", "Source & structure", "nav-icon-source-analysis",
-                ["sources", "source-analysis", "technology-coverage", "dependency-review", NavigationCatalog.GeneratedDocumentationExplorerRoute]),
+                ["sources", "source-analysis", "technology-coverage", "dependency-review", NavigationCatalog.GeneratedDocumentationExplorerRoute, NavigationCatalog.GeneratedDocumentationHealthRoute]),
             new("arch-data", "Data & contracts", "nav-icon-data-model-explorer", ["data-model-explorer", "schema-studio", "api-quality-review/contracts", "api-quality-review"]),
             new("arch-governance", "Governance & environments", "nav-icon-constitution", ["constitution-explorer", "artifact-traceability", "snapshots", "azure-environment"]),
             new("arch-follow-up", "Follow-up", "nav-icon-dashboard", ["dashboard", "getting-started", "user-guide"]),
@@ -541,7 +541,7 @@ public static class WorkspaceViews
         "Review requirements, prepare functional tests and test data, run them and record results.", "manual-testing",
         [
             new("manual-workspace", "Manual Testing", "nav-icon-workflow", ["manual-testing", "manual-testing/discover", "test-plan-suggestions", "manual-testing/execute"]),
-            new("manual-setup", "Project setup", "nav-icon-import", ["project-import", "sources", "project-scopes"]),
+            new("manual-setup", "Project setup", "nav-icon-import", ["project-import", "sources", "project-scopes", "demo-projects"]),
             new("manual-understand", "Understand the system", "nav-icon-system-understanding", ["system-understanding"]),
             new("manual-requirements", "Requirements", "nav-icon-task-alignment", ["specification-explorer", "quality/document", "documentation-drift"]),
             // "Functional Test Scenarios" (a shortcut to System Understanding → What to test) was removed: it duplicated the System Understanding row

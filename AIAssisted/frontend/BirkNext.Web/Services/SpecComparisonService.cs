@@ -267,14 +267,20 @@ public sealed partial class SpecComparisonService : ISpecComparisonService
         _ => 4,
     };
 
-    private static string? IdentityKey(ExtractionCandidate candidate)
+    /// <summary>The requirement id that identifies a compared item across versions, in the shared grammar (<see cref="BirkNext.Sdd.RequirementReferenceParser"/>,
+    /// normalised: FR-1 and FR-001 are one item, as in Specification Explorer). The title's leading identifier when it has one (any project id such as ABC-12);
+    /// otherwise the first built-in requirement id mentioned in it — never a project-style token from prose (UTF-8) — or none, and the exact text is the key.</summary>
+    internal static string? RequirementIdentity(string title)
     {
-        var idMatch = RequirementIdRegex().Match(candidate.Title);
-        if (!idMatch.Success)
-            return null;
-
-        return $"{candidate.Classification}|id:{idMatch.Value.ToUpperInvariant()}";
+        var ids = BirkNext.Sdd.RequirementReferenceParser.Extract(title);
+        if (ids.Count == 0) return null;
+        return BirkNext.Sdd.RequirementReferenceParser.StartsWithReference(title) ? ids[0] : ids.FirstOrDefault(IsBuiltInRequirementId);
     }
+
+    private static bool IsBuiltInRequirementId(string id) => BuiltInRequirementIdRegex().IsMatch(id);
+
+    private static string? IdentityKey(ExtractionCandidate candidate) =>
+        RequirementIdentity(candidate.Title) is { } id ? $"{candidate.Classification}|id:{id}" : null;
 
     private static string ExactKey(ExtractionCandidate candidate) =>
         $"{candidate.Classification}|ctx:{Normalize(candidate.ContextHeading ?? string.Empty)}|text:{Normalize(candidate.Title)}";
@@ -282,8 +288,8 @@ public sealed partial class SpecComparisonService : ISpecComparisonService
     private static string Normalize(string value) =>
         WhitespaceRegex().Replace(value.Trim().ToUpperInvariant(), " ");
 
-    [GeneratedRegex(@"\b(?:FR|REQ|US|AC|TC|TEST|NFR)[-_ ]?\d{1,5}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex RequirementIdRegex();
+    [GeneratedRegex(@"^(?:FR|NFR|SC|US|UC|AC|TS|REQ|TC)-\d{3,4}$", RegexOptions.CultureInvariant)]
+    private static partial Regex BuiltInRequirementIdRegex();
 
     [GeneratedRegex(@"\s+", RegexOptions.CultureInvariant)]
     private static partial Regex WhitespaceRegex();
