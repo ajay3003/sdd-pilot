@@ -48,4 +48,12 @@ public sealed class ManualRunReportTests
         ManualRunRules.CaseFingerprint(c).Should().Be(ManualRunRules.CaseFingerprint(c with { }), "deterministic");
         ManualRunRules.CaseFingerprint(edited).Should().NotBe(ManualRunRules.CaseFingerprint(c), "a changed case makes its last run stale");
     }
+
+    [Fact]
+    public void The_run_history_step_summary_lists_only_the_outcomes_that_occurred()
+    {
+        ManualTestingPresentation.StepCounts(Run("A", ManualRunOutcome.Failed) with { Passed = 1, Failed = 1, Blocked = 0, NotRun = 0, Undecided = 0 }).Should().Be("1 pass · 1 fail");
+        ManualTestingPresentation.StepCounts(Run("B", ManualRunOutcome.NotDecided) with { Passed = 0, Failed = 0, Blocked = 2, NotRun = 1, Undecided = 3 }).Should().Be("2 blocked · 1 not run · 3 undecided");
+        ManualTestingPresentation.StepCounts(Run("C", ManualRunOutcome.NotDecided) with { Passed = 0, Failed = 0, Blocked = 0, NotRun = 0, Undecided = 0 }).Should().Be("No step result");
+    }
 }

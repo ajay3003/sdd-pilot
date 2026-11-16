@@ -2,7 +2,7 @@
    dimensions and the area filter. */
 .tta { display: flex; flex-direction: column; gap: 0.4rem; }
 .tta-purpose { margin: 0; }
-.tta-dims { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr)); gap: 0.35rem 0.8rem; margin: 0.2rem 0; }
+.tta-dims { display: flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; margin: 0.3rem 0; }
 .tta-dims dt { font-size: 0.78rem; color: var(--clr-text-muted, #57606a); }
 .tta-dims dd { margin: 0.1rem 0 0; }
 .tta-sub { font-size: 0.92rem; margin: 0.3rem 0 0.2rem; }
@@ -20,3 +20,8 @@
 .ijd-steps { list-style: none; margin: 0.3rem 0; padding: 0; display: grid; gap: 0.3rem; }
 .ijd-steps li { display: flex; flex-wrap: wrap; gap: 0.3rem 0.5rem; align-items: center; }
 .ijd-picks { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.3rem 0; }
+/* Home: the areas side by side (four fit at a typical desktop width) instead of a second row holding one card. */
+.tt-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: 0.8rem; }
+.tt-grid .tta-purpose { font-size: 0.85rem; }
+.tt-grid.tt-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .tt-grid.tt-grid-3 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); } }

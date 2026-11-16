@@ -597,6 +597,31 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
     }
 
     [Fact]
+    public void Many_candidates_open_only_the_first_group_and_each_group_heading_opens_its_list_and_counts_selections()
+    {
+        SelectProject();
+        var many = Enumerable.Range(1, 45).Select(i => Discovered($"tsc-{i:00}", $"Scenario {i:00}", ScenarioCandidateType.UiFunctional, i <= 15 ? "Catalogue" : i <= 30 ? "Loans" : "Members", "UI source")).ToArray();
+        var api = new Api(Workspace()) { Project = ProjectWorkspace(), Last = Discovery("library", many) };
+        var cut = Render(api);
+
+        var groups = cut.FindAll("section[data-testid^=tps-group-]");
+        groups.Select(g => g.GetAttribute("data-open")).Should().Equal(["true", "false", "false"], "with many candidates the headings are the overview; only the first group starts open");
+        cut.FindAll("li[data-testid^=tps-candidate-]").Should().HaveCount(15);
+        var toggle = cut.Find("[data-testid=tps-group-toggle-loans]");
+        toggle.GetAttribute("aria-expanded").Should().Be("false");
+        toggle.TextContent.Should().Contain("Loans").And.Contain("15");
+
+        cut.Find("[data-testid=tps-select-shown]").Click();
+        cut.Find("[data-testid=tps-group-toggle-loans]").TextContent.Should().Contain("15 selected", "a closed group says how many of its candidates are selected");
+
+        cut.Find("[data-testid=tps-group-toggle-loans]").Click();
+        cut.Find("[data-testid=tps-group-toggle-loans]").GetAttribute("aria-expanded").Should().Be("true");
+        cut.FindAll("li[data-testid^=tps-candidate-]").Should().HaveCount(30);
+        cut.Find("[data-testid=tps-group-toggle-catalogue]").Click();
+        cut.FindAll("li[data-testid^=tps-candidate-]").Should().HaveCount(15, "the tester can close the first group too");
+    }
+
+    [Fact]
     public void A_discovery_result_of_another_project_is_never_shown_and_another_projects_plan_never_opens()
     {
         SelectProject();

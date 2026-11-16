@@ -704,17 +704,20 @@ public sealed class NavigationSectionState
 
     private Dictionary<string, bool> Choices => _choices.TryGetValue(View, out var c) ? c : _choices[View] = new(StringComparer.Ordinal);
 
-    public bool IsCollapsed(string sectionId) => Choices.TryGetValue(sectionId, out var collapsed) && collapsed;
+    /// <summary>Whether a group is collapsed: the person's remembered choice, else <paramref name="byDefault"/> (the sidebar opens only the view's
+    /// first group and the group of the current page; every other group starts closed, so the list stays short).</summary>
+    public bool IsCollapsed(string sectionId, bool byDefault = false) => Choices.TryGetValue(sectionId, out var collapsed) ? collapsed : byDefault;
 
-    public void Toggle(string sectionId)
+    /// <summary>Opens or closes a group as shown now (<paramref name="shownCollapsed"/>), and remembers the choice.</summary>
+    public void Toggle(string sectionId, bool? shownCollapsed = null)
     {
-        Choices[sectionId] = !IsCollapsed(sectionId);
+        Choices[sectionId] = !(shownCollapsed ?? IsCollapsed(sectionId));
         Changed?.Invoke();
     }
 
     public void Expand(string sectionId)
     {
-        if (!IsCollapsed(sectionId)) return;
+        if (Choices.TryGetValue(sectionId, out var collapsed) && !collapsed) return;
         Choices[sectionId] = false;
         Changed?.Invoke();
     }

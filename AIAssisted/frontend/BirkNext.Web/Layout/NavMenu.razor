@@ -133,15 +133,20 @@
             <NavSearch IdPrefix="nav" Sections="_sections" />
         </div>
         <nav id="nav-groups" class="flex-column" aria-label="Main">
+            @{ var firstGroup = true; }
             @foreach (var group in WorkspaceViews.Ordered(_sections.View))
             {
                 var rows = Rows(modules, group, location);
                 if (rows.Count == 0) continue;
-                var collapsed = _sections.IsCollapsed(group.Id);
+                // Closed by default except the view's first group, the group of the page shown and the group holding All modules (the way to every
+                // module stays visible); the person's own choice always wins.
+                var collapsed = _sections.IsCollapsed(group.Id, byDefault: !firstGroup && !rows.Any(r => WorkspaceViews.IsCurrent(_sections.View, r.Item, location)
+                    || string.Equals(r.Item.Route, NavigationCatalog.AllModulesRoute, StringComparison.OrdinalIgnoreCase)));
+                firstGroup = false;
                 var listId = $"nav-section-{group.Id}";
                 <button type="button" class="nav-section" data-testid="nav-section-@group.Id"
                         aria-expanded="@((!collapsed).ToString().ToLowerInvariant())" aria-controls="@listId"
-                        @onclick="() => _sections.Toggle(group.Id)">@group.Label</button>
+                        @onclick="() => _sections.Toggle(group.Id, collapsed)">@group.Label</button>
                 <div id="@listId" class="nav-group" role="group" aria-label="@($"{group.Label} navigation group")" hidden="@collapsed">
                     @foreach (var module in rows)
                     {

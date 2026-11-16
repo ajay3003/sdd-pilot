@@ -273,7 +273,8 @@
             }
             else
             {
-                <table class="mte-table">
+                <table class="mte-table mte-history-table">
+                    <colgroup><col class="mte-c-case" /><col class="mte-c-result" /><col class="mte-c-when" /><col class="mte-c-tester" /><col class="mte-c-steps" /><col class="mte-c-defects" /></colgroup>
                     <thead><tr><th scope="col">Test case</th><th scope="col">Result</th><th scope="col">When</th><th scope="col">Tester · environment</th><th scope="col">Steps</th><th scope="col">Defects · evidence</th></tr></thead>
                     <tbody>
                         @foreach (var r in runs.OrderByDescending(x => x.StartedAt))
@@ -283,7 +284,7 @@
                                 <td data-label="Result"><span class="mt-chip mt-tone-@M.RunTone(r.State, r.Outcome)">@M.RunLabel(r.State, r.Outcome)</span></td>
                                 <td data-label="When">@((r.CompletedAt ?? r.StartedAt).ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</td>
                                 <td data-label="Tester · environment">@r.Tester@(r.Environment is { } env ? $" · {env}" : "")</td>
-                                <td data-label="Steps">@r.Passed pass · @r.Failed fail · @r.Blocked blocked · @r.NotRun not run@(r.Undecided > 0 ? $" · {r.Undecided} undecided" : "")</td>
+                                <td data-label="Steps" title="@($"{r.Passed} pass · {r.Failed} fail · {r.Blocked} blocked · {r.NotRun} not run · {r.Undecided} undecided")">@M.StepCounts(r)</td>
                                 <td data-label="Defects · evidence">@r.Defects defect@(r.Defects == 1 ? "" : "s") (@r.OpenDefects open) · @r.Evidence reference@(r.Evidence == 1 ? "" : "s")</td>
                             </tr>
                         }

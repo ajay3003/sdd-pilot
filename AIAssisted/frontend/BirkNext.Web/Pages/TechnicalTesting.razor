@@ -31,7 +31,7 @@
         {
             <p class="mt-alert" role="alert" data-testid="tt-error">@error <button type="button" class="btn btn-secondary btn-sm" @onclick="LoadAsync" data-testid="tt-retry">Try again</button></p>
         }
-        @if (facts.EnvironmentNotice is { } envNotice) { <p class="mt-alert" role="status" data-testid="tt-environment-notice">@envNotice <a href="admin/system-settings?section=target-environments">Target Environments</a></p> }
+        @if (facts.EnvironmentNotice is { } envNotice) { <p class="@(facts.EnvironmentNoticeIsWarning ? "mt-note mt-note-warn" : "mt-note")" role="status" data-testid="tt-environment-notice">@envNotice <a href="admin/system-settings?section=target-environments">Target Environments</a></p> }
         <section class="mt-next" aria-labelledby="tt-next-title" data-testid="tt-next">
             <h2 id="tt-next-title" class="mt-h">Next step</h2>
             <a class="btn btn-primary" href="@next.Href" data-testid="tt-next-action">@next.Label</a>
@@ -43,7 +43,8 @@
         @if (facts.ProjectKey is not null)
         {
             var inScope = T.InScope(facts);
-            <div class="mt-grid" data-testid="tt-areas">
+            @* Five or six areas: three per row (3 + 2 / 3 + 3) instead of four and a lone card. *@
+            <div class="mt-grid tt-grid @(inScope.Count is 5 or 6 ? "tt-grid-3" : null)" data-testid="tt-areas">
                 @foreach (var area in inScope)
                 {
                     <BirkNext.Web.Components.TechnicalAreaCard Area="area" Stage="home" TargetName="@facts.TargetName" />

@@ -43,7 +43,7 @@
         {
             <p class="mt-alert" role="alert" data-testid="tt-error">@error <button type="button" class="btn btn-secondary btn-sm" @onclick="LoadAsync" data-testid="tt-retry">Try again</button></p>
         }
-        @if (facts.EnvironmentNotice is { } envNotice) { <p class="mt-alert" role="status" data-testid="tt-environment-notice">@envNotice <a href="admin/system-settings?section=target-environments">Target Environments</a></p> }
+        @if (facts.EnvironmentNotice is { } envNotice) { <p class="@(facts.EnvironmentNoticeIsWarning ? "mt-note mt-note-warn" : "mt-note")" role="status" data-testid="tt-environment-notice">@envNotice <a href="admin/system-settings?section=target-environments">Target Environments</a></p> }
         <nav class="tt-filter" aria-label="Technical area" data-testid="tt-filter">
             <a href="@_stage.Route" class="@(_area is null ? "is-current" : null)" aria-current="@(_area is null ? "page" : null)" data-testid="tt-filter-all">All areas</a>
             @foreach (var a in T.Areas)

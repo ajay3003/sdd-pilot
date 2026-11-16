@@ -3,6 +3,9 @@
 .mt-h { font-size: 1.05rem; margin: 0 0 0.5rem; }
 .mt-muted { color: var(--clr-text-muted, #57606a); font-size: 0.88rem; }
 .mt-alert { padding: 0.6rem 0.8rem; border: 1px solid #f5c2c7; background: #fff5f5; border-radius: 6px; }
+/* Information that is not an error (shared by the testing workspaces): calm by default, amber when something needs a decision. */
+.mt-note { padding: 0.45rem 0.8rem; margin: 0 0 0.8rem; border-left: 3px solid #54aeff; background: #f1f8ff; border-radius: 4px; font-size: 0.9rem; }
+.mt-note-warn { border-left-color: #d4a72c; background: #fff8c5; }
 .mt-next { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.8rem 1rem; margin: 0 0 1rem; border: 1px solid var(--clr-border, #d0d7de);
     border-left: 4px solid var(--clr-primary, #0969da); border-radius: 6px; background: var(--clr-surface, #fff); }
 .mt-next .mt-h { margin: 0; flex: 0 0 auto; }
@@ -57,3 +60,12 @@
 .mte-before > div { display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; }
 .mte-before dt { font-weight: 600; min-width: 10rem; }
 .mte-before dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Stacked cards keep a clear gap; the run history gives the test case the room and keeps short columns on one line. */
+.mt-card + .mt-card { margin-top: 0.9rem; }
+.mt-grid > .mt-card { margin-top: 0; }
+.mte-history-table .mte-c-case { width: 34%; }
+.mte-history-table .mte-c-result { width: 9rem; }
+.mte-history-table .mte-c-when { width: 9.5rem; }
+.mte-history-table .mte-c-tester { width: 17%; }
+.mte-history-table .mte-c-steps { width: 12%; }
+.mte-history-table .mte-c-defects { width: 15%; }

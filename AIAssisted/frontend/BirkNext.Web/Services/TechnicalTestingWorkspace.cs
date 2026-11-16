@@ -63,7 +63,8 @@ public sealed class TechnicalTestingWorkspace(IServiceProvider services)
         int? assets = null;
         if (Get<ITestDataApiService>() is { } testData)
             try { var (catalog, _) = await testData.CatalogAsync(ct); assets = catalog?.Assets.Count; } catch (Exception e) when (e is not OperationCanceledException) { }
-        return new(new(key, name, profile?.Name, profile?.TargetUrl, basis, areas, applicabilityError, notice), snapshotId, profile?.Id, assets);
+        return new(new(key, name, profile?.Name, profile?.TargetUrl, basis, areas, applicabilityError, notice,
+            resolution.State == ProjectEnvironmentResolution.State.OtherProject), snapshotId, profile?.Id, assets);
     }
 
     private async Task<(string? Key, string? Name)> ProjectAsync()

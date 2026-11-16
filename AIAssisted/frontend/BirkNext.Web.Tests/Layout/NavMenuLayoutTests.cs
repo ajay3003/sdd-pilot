@@ -183,37 +183,38 @@ public sealed class NavMenuLayoutTests : BunitContext
         var quality = cut.Find("[data-testid=nav-section-quality-testing]");
 
         quality.TagName.Should().Be("BUTTON");
-        quality.GetAttribute("aria-expanded").Should().Be("true");
         quality.GetAttribute("aria-controls").Should().Be("nav-section-quality-testing");
-        cut.Find("#nav-section-quality-testing").HasAttribute("hidden").Should().BeFalse();
+        quality.GetAttribute("aria-expanded").Should().Be("false", "a group that is neither the view's first nor holds the current page starts closed");
+        cut.Find("#nav-section-quality-testing").HasAttribute("hidden").Should().BeTrue();
+        var sourceBefore = cut.Find("#nav-section-source-review").HasAttribute("hidden");
 
         quality.Click();
 
-        cut.Find("[data-testid=nav-section-quality-testing]").GetAttribute("aria-expanded").Should().Be("false");
-        cut.Find("#nav-section-quality-testing").HasAttribute("hidden").Should().BeTrue();
-        cut.Find("#nav-section-source-review").HasAttribute("hidden").Should().BeFalse("other sections are unaffected");
+        cut.Find("[data-testid=nav-section-quality-testing]").GetAttribute("aria-expanded").Should().Be("true");
+        cut.Find("#nav-section-quality-testing").HasAttribute("hidden").Should().BeFalse();
+        cut.Find("#nav-section-source-review").HasAttribute("hidden").Should().Be(sourceBefore, "other sections are unaffected");
 
         cut.Find("[data-testid=nav-section-quality-testing]").Click();
-        cut.Find("#nav-section-quality-testing").HasAttribute("hidden").Should().BeFalse();
+        cut.Find("#nav-section-quality-testing").HasAttribute("hidden").Should().BeTrue();
     }
 
     [Fact]
     public void CollapseState_SurvivesARemount_ForTheSession()
     {
         var first = Render<NavMenu>();
+        var before = first.Find("[data-testid=nav-section-source-review]").GetAttribute("aria-expanded");
         first.Find("[data-testid=nav-section-source-review]").Click();
         first.Dispose();
 
         var second = Render<NavMenu>();
-        second.Find("[data-testid=nav-section-source-review]").GetAttribute("aria-expanded").Should().Be("false");
+        second.Find("[data-testid=nav-section-source-review]").GetAttribute("aria-expanded").Should().Be(before == "true" ? "false" : "true", "the person's choice is remembered");
     }
 
     [Fact]
     public void NavigatingIntoACollapsedSection_ExpandsIt_AndMarksTheRowActive()
     {
         var cut = Render<NavMenu>();
-        cut.Find("[data-testid=nav-section-quality-testing]").Click();
-        cut.Find("#nav-section-quality-testing").HasAttribute("hidden").Should().BeTrue();
+        cut.Find("#nav-section-quality-testing").HasAttribute("hidden").Should().BeTrue("closed by default");
 
         Services.GetRequiredService<NavigationManager>().NavigateTo("performance-test-review");
 

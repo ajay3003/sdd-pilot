@@ -73,6 +73,18 @@ public static class ManualTestingPresentation
         return sb.ToString();
     }
 
+    /// <summary>A run's step results in one short line: only the outcomes that occurred (all of them in the cell's tooltip).</summary>
+    public static string StepCounts(ManualRunSummary r)
+    {
+        var parts = new List<string>();
+        if (r.Passed > 0) parts.Add($"{r.Passed} pass");
+        if (r.Failed > 0) parts.Add($"{r.Failed} fail");
+        if (r.Blocked > 0) parts.Add($"{r.Blocked} blocked");
+        if (r.NotRun > 0) parts.Add($"{r.NotRun} not run");
+        if (r.Undecided > 0) parts.Add($"{r.Undecided} undecided");
+        return parts.Count == 0 ? "No step result" : string.Join(" · ", parts);
+    }
+
     /// <summary>A defect's status in tester words.</summary>
     public static string DefectStatusLabel(ManualDefectStatus status) => status switch
     {

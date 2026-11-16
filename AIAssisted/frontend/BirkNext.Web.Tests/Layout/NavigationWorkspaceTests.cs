@@ -230,7 +230,9 @@ public sealed class NavigationWorkspaceTests : BunitContext
         cut.FindAll("a[href='api-quality-review']").Should().ContainSingle();
         cut.FindAll("a[href='source-analysis']").Should().BeEmpty("outside the Test Lead view: hidden from the sidebar, not removed");
         cut.FindAll("a[href='admin/system-settings']").Should().ContainSingle("settings are in every view");
-        cut.FindAll(".nav-group[hidden]").Should().BeEmpty("groups start expanded");
+        cut.Find("#nav-section-tl-overview").HasAttribute("hidden").Should().BeFalse("the view's first group starts open");
+        cut.Find("a.nav-link[href='all-modules']").Closest(".nav-group")!.HasAttribute("hidden").Should().BeFalse("the way to every module stays visible");
+        cut.FindAll(".nav-group:not([hidden])").Should().HaveCountLessThanOrEqualTo(2, "every other group starts closed, so the sidebar stays short");
 
         cut.FindAll("[data-testid=nav-show-other]").Should().BeEmpty("no Show other modules control");
 

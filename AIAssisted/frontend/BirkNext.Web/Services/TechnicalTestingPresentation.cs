@@ -201,7 +201,7 @@ public static class TechnicalTestingPresentation
     /// <param name="EnvironmentNotice">How the active Target Environment relates to the project (shared <see cref="ProjectEnvironmentResolution"/>): set when it
     /// is unbound (results shown, unconfirmed) or bound to another project (its results are withheld).</param>
     public sealed record Facts(string? ProjectKey, string? ProjectName, string? TargetName, string? TargetUrl, string? SnapshotBasis, IReadOnlyList<AreaFacts> Areas,
-        string? Error = null, string? EnvironmentNotice = null)
+        string? Error = null, string? EnvironmentNotice = null, bool EnvironmentNoticeIsWarning = false)
     {
         public AreaFacts For(TechnicalArea a) => Areas.FirstOrDefault(x => x.Area == a) ?? new(a, null, [], [], []);
     }

@@ -479,8 +479,11 @@
         }
         @if (!GuideMode && _discovery is { } discovery)
         {
-            <section class="tps-block" data-testid="tps-capabilities" aria-label="Evidence used">
-                <h2 class="tps-h3">Evidence in this project</h2>
+            @* What the discovery read: open until a plan exists, then a one-line summary that opens on demand. *@
+            var found = discovery.Capabilities.Where(x => x.State == DiscoveryCapabilityState.Available).ToList();
+            <details class="tps-block tps-evidence" data-testid="tps-capabilities" aria-label="Evidence used" open="@(_draft is null)">
+                <summary class="tps-evidence-summary"><h2 class="tps-h3">Evidence in this project</h2>
+                    <span class="tps-muted tps-small" data-testid="tps-capabilities-summary">@found.Sum(x => x.Candidates) candidate@(found.Sum(x => x.Candidates) == 1 ? "" : "s") from @found.Count of @discovery.Capabilities.Count source@(discovery.Capabilities.Count == 1 ? "" : "s") · discovered @discovery.DiscoveredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span></summary>
                 <ul class="tps-capabilities">
                     @foreach (var c in discovery.Capabilities)
                     {
@@ -492,7 +495,7 @@
                 </ul>
                 <p class="tps-muted tps-small">Discovered @discovery.DiscoveredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · rules @discovery.RuleVersion@(discovery.SnapshotLabel is { } sl ? $" · {sl}" : "")</p>
                 @foreach (var l in discovery.Limitations) { <p class="tps-muted tps-small" data-testid="tps-limitation">@l</p> }
-            </section>
+            </details>
         }
     };
 
@@ -639,12 +642,21 @@
                 </div>
                 @if (shown.Count == 0) { <p class="tps-muted" data-testid="tps-no-match">No scenario matches these filters.</p> }
                 <div class="tps-groups" data-testid="tps-candidates">
-                    @foreach (var group in P.Group(visible, _grouping))
+                    @{ var groups = P.Group(visible, _grouping).ToList(); var firstGroup = true; }
+                    @foreach (var group in groups)
                     {
-                        <section class="tps-group" aria-labelledby="tps-g-@group.Id" data-testid="tps-group-@group.Id">
-                            <h3 id="tps-g-@group.Id" class="tps-group-h">@group.Title <span class="tps-count">@group.Items.Count</span></h3>
-                            <ul class="tps-rows">
-                                @foreach (var c in group.Items) { @CandidateRow(c, inDraft.Contains(c.CandidateId)) }
+                        // Many candidates: only the first group starts open (the headings with their counts are the overview); a few: all open.
+                        // The tester's own choice per group wins.
+                        var open = _groupOpen.TryGetValue(group.Id, out var chosen) ? chosen : firstGroup || shown.Count <= GroupsOpenUpTo;
+                        firstGroup = false;
+                        var selectedHere = group.Items.Count(c => _selected.Contains(c.CandidateId));
+                        <section class="tps-group" aria-labelledby="tps-g-@group.Id" data-testid="tps-group-@group.Id" data-open="@(open ? "true" : "false")">
+                            <h3 id="tps-g-@group.Id" class="tps-group-h">
+                                <button type="button" class="tps-group-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="tps-gl-@group.Id" data-testid="tps-group-toggle-@group.Id"
+                                        @onclick="() => _groupOpen[group.Id] = !open">@group.Title <span class="tps-count">@group.Items.Count</span>@if (selectedHere > 0) { <span class="tps-tone tps-tone-info">@selectedHere selected</span> }</button>
+                            </h3>
+                            <ul class="tps-rows" id="tps-gl-@group.Id" hidden="@(!open)">
+                                @if (open) { foreach (var c in group.Items) { @CandidateRow(c, inDraft.Contains(c.CandidateId)) } }
                             </ul>
                         </section>
                     }
@@ -672,6 +684,10 @@
             }
         </section>
     };
+
+    /// <summary>Up to this many matching candidates every group starts open; above it only the first group does.</summary>
+    private const int GroupsOpenUpTo = 40;
+    private readonly Dictionary<string, bool> _groupOpen = new(StringComparer.Ordinal);
 
     private RenderFragment CandidateRow(DiscoveredScenario c, bool inPlan) => __builder =>
     {
