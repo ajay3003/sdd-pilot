@@ -1,6 +1,6 @@
 # Standards Compliance Rule Packs
 
-This folder contains the rule packs used by the **Standards Compliance** feature in BirkNext QA Review Studio.
+This folder contains the rule packs used by the **Standards Compliance** feature in BirkNext.
 
 Rules are defined in JSON files, not in C#. Adding, updating, or versioning a rule pack requires no C# changes — only JSON file edits.
 

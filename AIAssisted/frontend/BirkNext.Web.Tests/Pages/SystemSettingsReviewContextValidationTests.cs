@@ -92,7 +92,7 @@ public class SystemSettingsReviewContextValidationTests : BunitContext
             {
                 "/api/admin/system-settings" => """
                     {
-                      "application": { "applicationName": "QA Review Studio", "environment": "Development", "version": "1.0.0", "packageMode": "Local" },
+                      "application": { "applicationName": "BirkNext", "environment": "Development", "version": "1.0.0", "packageMode": "Local" },
                       "frontend": { "frontendBaseUrl": "http://localhost:5173", "apiBaseUrl": "http://localhost:5000", "graphQlEndpoint": "http://localhost:5000/graphql", "environmentName": "Development", "staticHostingMode": true },
                       "backend": { "backendBaseUrl": "http://localhost:5000", "aspNetCoreEnvironment": "Development", "listeningUrls": "http://localhost:5000", "corsAllowedOrigins": "http://localhost:5173" },
                       "database": { "mode": "Local", "host": "localhost", "port": 5432, "databaseName": "test", "username": "test", "provider": "Postgres", "migrationStatus": "Up to date" },

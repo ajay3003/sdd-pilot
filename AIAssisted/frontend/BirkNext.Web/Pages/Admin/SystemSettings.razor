@@ -24,7 +24,7 @@
 @inject NavigationManager Navigation
 @inject IServiceProvider ServiceProvider
 
-<PageTitle>System Settings — QA Review Studio</PageTitle>
+<PageTitle>System Settings — BirkNext</PageTitle>
 
 <PageHeader Title="System Settings"
             Description="Manage feature visibility and platform configuration. Secrets are never shown.">
@@ -1021,7 +1021,7 @@ else if (_settings is not null)
             {
                 <DiagnosticPageRenderer
                     Title="Runtime Diagnostics"
-                    Description="Live runtime state for the current QA Review Studio session."
+                    Description="Live runtime state for the current BirkNext session."
                     Message="@_runtimeActionMessage"
                     HasRun="true"
                     ShowRunArea="false"
@@ -2222,7 +2222,7 @@ else if (_settings is not null)
     private string BuildRuntimeDiagnosticsExport()
     {
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("QA Review Studio - Runtime Diagnostics");
+        sb.AppendLine("BirkNext - Runtime Diagnostics");
         sb.AppendLine($"Export timestamp: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}");
         sb.AppendLine($"Overall status: {OverallRuntimeStatus}");
         sb.AppendLine($"Current project: {OrUnavailable(Workspace.CurrentProject)}");
@@ -2753,7 +2753,7 @@ else if (_settings is not null)
         var d = (string? v) => string.IsNullOrWhiteSpace(v) ? "â€”" : v;
 
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("QA Review Studio â€” Diagnostics Summary");
+        sb.AppendLine("BirkNext — Diagnostics Summary");
         sb.AppendLine($"App:             {d(s.Application.ApplicationName)} v{d(s.Application.Version)}");
         sb.AppendLine($"Environment:     {d(s.Application.Environment)}");
         sb.AppendLine($"Package Mode:    {d(s.Application.PackageMode)}");

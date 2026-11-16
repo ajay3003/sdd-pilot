@@ -1,6 +1,6 @@
 # Rule Engine — Developer Reference
 
-This document describes the architecture of the Rule Engine used by BirkNext QA Review Studio.
+This document describes the architecture of the Rule Engine used by BirkNext.
 
 ---
 

@@ -1,8 +1,8 @@
-# QA Review Studio – Architecture and Runtime Flow
+# BirkNext – Architecture and Runtime Flow
 
 ## Purpose
 
-QA Review Studio is an event-driven semantic workspace. Markdown artifacts are loaded into one workspace repository, workspace changes are batched through a coordinator, ReviewContext is rebuilt as derived runtime state, and pages/services consume the latest context read-only.
+BirkNext is an event-driven semantic workspace. Markdown artifacts are loaded into one workspace repository, workspace changes are batched through a coordinator, ReviewContext is rebuilt as derived runtime state, and pages/services consume the latest context read-only.
 
 ---
 

@@ -21,7 +21,7 @@ public class GeneralPageServiceTests
         _envMock = new Mock<IWebHostEnvironment>();
 
         // Default mock setup
-        _configMock.Setup(c => c["ApplicationName"]).Returns("QA Review Studio");
+        _configMock.Setup(c => c["ApplicationName"]).Returns("BirkNext");
         _configMock.Setup(c => c["ApplicationVersion"]).Returns("1.0.0");
         _configMock.Setup(c => c["PackageMode"]).Returns("Release");
         _configMock.Setup(c => c["DatabaseSettings:Provider"]).Returns("PostgreSQL");

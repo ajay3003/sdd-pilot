@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Successful refactoring of ReviewContext architecture across the BirkNext QA Review Studio frontend to eliminate semantic model duplication. Implemented producer/consumer pattern for ReviewContext usage, centralizing semantic model building and distributing pre-built contexts to consumer services.
+Successful refactoring of ReviewContext architecture across the BirkNext frontend to eliminate semantic model duplication. Implemented producer/consumer pattern for ReviewContext usage, centralizing semantic model building and distributing pre-built contexts to consumer services.
 
 **Key Results:**
 - ✓ 1 producer service (DeliveryReadinessService) builds ReviewContext once

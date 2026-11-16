@@ -57,7 +57,7 @@ public class GeneralPageService : IGeneralPageService
 
     private SettingsSection BuildApplicationSection()
     {
-        var appName = _config["ApplicationName"] ?? "QA Review Studio";
+        var appName = _config["ApplicationName"] ?? "BirkNext";
         var version = _config["ApplicationVersion"] ?? "Unknown";
         var buildNumber = _config["BuildNumber"];
         var packageMode = _config["PackageMode"] ?? "Unknown";

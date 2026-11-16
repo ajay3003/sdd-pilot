@@ -186,7 +186,7 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         {
             Application = new ApplicationInfo
             {
-                ApplicationName = _config["RuntimeSettings:ApplicationName"] ?? "QA Review Studio",
+                ApplicationName = _config["RuntimeSettings:ApplicationName"] ?? "BirkNext",
                 Environment = aspNetEnv,
                 Version = informationalVersion,
                 // From the compiled build identity (BuildInfoService), never configuration: only actual values, otherwise left empty.

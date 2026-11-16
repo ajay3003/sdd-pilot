@@ -13,6 +13,10 @@
     letter-spacing: 0.01em;
 }
 
+/* Product name with its subtitle on a second, smaller line (the collapsed rail shows the short mark only). */
+.nav-brand-full { display: inline-flex; flex-direction: column; line-height: 1.15; }
+.nav-brand-sub { font-size: .7rem; font-weight: 400; letter-spacing: .02em; opacity: .8; white-space: nowrap; }
+
 /* ── Rows: [icon] [label] [status] ────────────────────────────────────────────
    Fixed icon column, label takes the rest and truncates on one line (the full label is the link title and its
    accessible name), status sits in a right-aligned auto column and never overlaps the label. */

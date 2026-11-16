@@ -1,4 +1,4 @@
-Redefined QA Review Studio Workflow Architecture
+Redefined BirkNext Workflow Architecture
 
 Core principle:
 One runtime source per concern.

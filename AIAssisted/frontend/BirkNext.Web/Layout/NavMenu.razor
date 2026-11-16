@@ -14,8 +14,8 @@
    remembered in this browser. Mobile: an overlay drawer (not remembered). None of it touches the page, the project or running work. *@
 <div class="top-row ps-3 navbar navbar-dark @(Rail ? "nav-top-collapsed" : null)">
     <div class="container-fluid nav-top">
-        <a class="navbar-brand" href="dashboard" aria-label="QA Review Studio — Dashboard" title="QA Review Studio">
-            <span class="nav-brand-full">QA Review Studio</span><span class="nav-brand-short" aria-hidden="true">QA</span>
+        <a class="navbar-brand" href="dashboard" aria-label="BirkNext — Dashboard" title="BirkNext — Quality &amp; Testing Workspace" data-testid="nav-brand">
+            <span class="nav-brand-full"><span class="nav-brand-name" data-testid="nav-brand-name">BirkNext</span><span class="nav-brand-sub" data-testid="nav-brand-sub">Quality &amp; Testing Workspace</span></span><span class="nav-brand-short" aria-hidden="true">BN</span>
         </a>
         <button type="button" id="nav-collapse-toggle" class="nav-collapse-toggle" data-testid="nav-collapse-toggle" aria-controls="nav-panel"
                 aria-expanded="@(Collapsed ? "false" : "true")" aria-label="@(Collapsed ? "Expand sidebar" : "Collapse sidebar")" title="@(Collapsed ? "Expand sidebar" : "Collapse sidebar")"
