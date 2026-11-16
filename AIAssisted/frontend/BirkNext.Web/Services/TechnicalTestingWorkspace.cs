@@ -38,11 +38,18 @@ public sealed class TechnicalTestingWorkspace(IServiceProvider services)
         if (key is null)
             return new(new(null, null, profile?.Name, profile?.TargetUrl, basis, [.. TT.Areas.Select(a => new AreaFacts(a, null, [], [], []))]), snapshotId, profile?.Id, null);
 
+        // The same project ↔ environment rule as Integration Testing: an environment bound to another project contributes no results here.
+        var resolution = ProjectEnvironmentResolution.Resolve(key, profile, Get<IFrontendAnalysisSettingsService>()?.Settings?.Profiles ?? []);
+        var notice = resolution.State is ProjectEnvironmentResolution.State.Unbound or ProjectEnvironmentResolution.State.OtherProject ? resolution.Notice : null;
+        var activeName = profile?.Name;
+        if (resolution.State == ProjectEnvironmentResolution.State.OtherProject) profile = null;
+
         var (reviews, applicabilityError) = await ApplicabilityAsync(profile, snapshotId, ct);
         ReviewApplicability? For(TechnicalArea a) => reviews?.GetValueOrDefault(TT.ReviewId(a));
 
         var targetGaps = new List<string>();
-        if (profile is null) targetGaps.Add("No Target Environment is active.");
+        if (resolution.State == ProjectEnvironmentResolution.State.OtherProject) targetGaps.Add($"Target Environment {activeName} belongs to another project. Switch to an environment bound to this project in Target Environments.");
+        else if (profile is null) targetGaps.Add("No Target Environment is active.");
         else if (string.IsNullOrWhiteSpace(profile.TargetUrl)) targetGaps.Add($"Target Environment {profile.Name} has no target URL.");
 
         var areas = new List<AreaFacts>
@@ -56,7 +63,7 @@ public sealed class TechnicalTestingWorkspace(IServiceProvider services)
         int? assets = null;
         if (Get<ITestDataApiService>() is { } testData)
             try { var (catalog, _) = await testData.CatalogAsync(ct); assets = catalog?.Assets.Count; } catch (Exception e) when (e is not OperationCanceledException) { }
-        return new(new(key, name, profile?.Name, profile?.TargetUrl, basis, areas, applicabilityError), snapshotId, profile?.Id, assets);
+        return new(new(key, name, profile?.Name, profile?.TargetUrl, basis, areas, applicabilityError, notice), snapshotId, profile?.Id, assets);
     }
 
     private async Task<(string? Key, string? Name)> ProjectAsync()
@@ -145,7 +152,8 @@ public sealed class TechnicalTestingWorkspace(IServiceProvider services)
             try
             {
                 await history.LoadAsync(js);
-                runs.AddRange(history.For(profile.Id).Runs.OrderByDescending(r => r.GeneratedAt).Select(Api));
+                // API Quality Review keeps the full report of the latest run only: older runs are summaries and must not open the latest report as if it were theirs.
+                runs.AddRange(history.For(profile.Id).Runs.OrderByDescending(r => r.GeneratedAt).Select((r, i) => i == 0 ? Api(r) : Api(r) with { Href = "", Detail = Api(r).Detail + " · summary only; the full report is kept for the latest run" }));
             }
             catch (Exception e) when (e is not OperationCanceledException) { error = "Previous API Quality Review runs could not be read."; }
         if (Get<IContractTestingApiService>() is { } contracts)

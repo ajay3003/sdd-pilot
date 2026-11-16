@@ -31,6 +31,7 @@
         {
             <p class="mt-alert" role="alert" data-testid="tt-error">@error <button type="button" class="btn btn-secondary btn-sm" @onclick="LoadAsync" data-testid="tt-retry">Try again</button></p>
         }
+        @if (facts.EnvironmentNotice is { } envNotice) { <p class="mt-alert" role="status" data-testid="tt-environment-notice">@envNotice <a href="admin/system-settings?section=target-environments">Target Environments</a></p> }
         <section class="mt-next" aria-labelledby="tt-next-title" data-testid="tt-next">
             <h2 id="tt-next-title" class="mt-h">Next step</h2>
             <a class="btn btn-primary" href="@next.Href" data-testid="tt-next-action">@next.Label</a>

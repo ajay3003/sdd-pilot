@@ -16,9 +16,14 @@ public sealed class TechnicalTestingWorkspaceTests
 {
     private static readonly Guid ProjectSnapshot = Guid.Parse("22222222-2222-2222-2222-222222222222");
 
-    private static (TechnicalTestingWorkspace Loader, Mock<ITechnologyCoverageApiService> Coverage) Create(bool project, Guid? snapshot, int? contracts = null)
+    private static (TechnicalTestingWorkspace Loader, Mock<ITechnologyCoverageApiService> Coverage) Create(bool project, Guid? snapshot, int? contracts = null,
+        string slug = "roomly", EnvironmentProject? binding = null)
     {
         var services = new ServiceCollection();
+        var active = new FrontendAnalysisProfile { Id = "dev", Name = "DEV", TargetUrl = "https://dev.example", Project = binding };
+        var settings = new Mock<IFrontendAnalysisSettingsService>();
+        settings.SetupGet(x => x.Settings).Returns(new FrontendAnalysisSettings { Profiles = [active, new FrontendAnalysisProfile { Id = "qa", Name = "Roomly QA", Project = new EnvironmentProject { ProjectName = "Roomly", ProjectImportId = "import-r" } }] });
+        services.AddSingleton(settings.Object);
         if (contracts is { } n)
         {
             var api = new Mock<IContractTestingApiService>();
@@ -26,9 +31,9 @@ public sealed class TechnicalTestingWorkspaceTests
                 [new("repo:roomly", "Roomly", ["repo:roomly"], 1, n, snapshot, DateTimeOffset.UnixEpoch), new("repo:other", "Other", ["repo:other"], 1, 9, Guid.NewGuid(), DateTimeOffset.UnixEpoch)], (string?)null));
             services.AddSingleton(api.Object);
         }
-        services.AddSingleton(WorkspaceSnapshots.Projection(project ? WorkspaceSnapshots.Loaded("Imported", "roomly", "Roomly") : CurrentWorkspaceSnapshot.None()).Object);
+        services.AddSingleton(WorkspaceSnapshots.Projection(project ? WorkspaceSnapshots.Loaded("Imported", slug, "Roomly") : CurrentWorkspaceSnapshot.None()).Object);
         var context = new Mock<IFrontendAnalysisContextFactory>();
-        context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Name = "DEV", TargetUrl = "https://dev.example" } });
+        context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveProfile = active });
         services.AddSingleton(context.Object);
         var coverage = new Mock<ITechnologyCoverageApiService>();
         coverage.Setup(c => c.GetAsync(It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>())).ReturnsAsync(new ProjectTechnologyCoverage { SourceSnapshotId = snapshot });
@@ -85,5 +90,28 @@ public sealed class TechnicalTestingWorkspaceTests
         var api = (await loader.LoadAsync()).Facts.For(TechnicalArea.Api);
         api.Static.Any(s => s.Text.Contains("contract")).Should().Be(shown, "another project's 9 contracts never count, and 0 contracts is not evidence");
         if (shown) api.Static.Should().Contain(s => s.Text.StartsWith("3 contracts") && s.Href == "api-quality-review/contracts?project=repo%3Aroomly");
+    }
+
+    [Fact]
+    public async Task An_environment_bound_to_another_project_contributes_no_results_and_says_why()
+    {
+        var (loader, coverage) = Create(project: true, snapshot: ProjectSnapshot, slug: "import:import-r", binding: new EnvironmentProject { ProjectName = "Lendo", ProjectImportId = "import-l" });
+        var ws = await loader.LoadAsync();
+
+        ws.Facts.EnvironmentNotice.Should().Contain("bound to Lendo").And.Contain("Roomly QA", "the environments bound to this project are named");
+        ws.Facts.Areas.Should().OnlyContain(a => a.Runs.Count == 0, "another project's runtime results are never shown as this project's");
+        ws.Facts.For(TechnicalArea.Frontend).ConfigurationGaps.Should().Contain(g => g.Contains("belongs to another project"));
+        coverage.Verify(c => c.GetAsync("dev", It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never());
+    }
+
+    [Fact]
+    public async Task An_environment_bound_to_this_project_is_used_without_a_notice()
+    {
+        var (loader, coverage) = Create(project: true, snapshot: ProjectSnapshot, slug: "import:import-r", binding: new EnvironmentProject { ProjectName = "Roomly", ProjectImportId = "import-r" });
+        var ws = await loader.LoadAsync();
+
+        ws.Facts.EnvironmentNotice.Should().BeNull();
+        ws.Facts.TargetName.Should().Be("DEV");
+        coverage.Verify(c => c.GetAsync("dev", ProjectSnapshot, It.IsAny<CancellationToken>()), Times.Once());
     }
 }

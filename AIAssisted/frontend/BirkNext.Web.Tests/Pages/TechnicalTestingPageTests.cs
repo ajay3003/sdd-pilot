@@ -117,6 +117,19 @@ public sealed class TechnicalTestingPageTests : BunitContext
     }
 
     [Fact]
+    public void Only_the_latest_API_run_opens_the_stored_report_older_runs_are_summaries()
+    {
+        Setup(aqr: [AqrRun(high: 0) with { GeneratedAt = DateTimeOffset.Parse("2026-11-10T10:00:00Z") }, AqrRun(high: 2)]);
+        var cut = Open<TechnicalTestingStage>("technical-testing/verify?area=api");
+
+        var runs = cut.FindAll("[data-testid=tt-run]");
+        runs.Should().HaveCount(2);
+        runs[0].QuerySelector("a")!.GetAttribute("href").Should().Be("api-quality-review?tab=Findings", "the newest run is the stored report");
+        runs[1].QuerySelector("a").Should().BeNull("an older run must not open the latest report as if it were its own");
+        runs[1].QuerySelector("[data-testid=tt-run-summary]")!.TextContent.Should().Contain("summary only");
+    }
+
+    [Fact]
     public void An_area_without_runs_says_static_evidence_is_not_a_runtime_result()
     {
         Setup();

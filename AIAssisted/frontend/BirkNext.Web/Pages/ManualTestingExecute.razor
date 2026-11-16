@@ -311,7 +311,16 @@
         <section class="mt-card" aria-labelledby="mte-start-title" data-testid="mte-start">
             <h2 id="mte-start-title" class="mt-h">@c.EffectiveTitle</h2>
             <p class="mt-muted">@plan.PlanName · plan revision @plan.Revision · @c.EffectiveSteps.Count step@(c.EffectiveSteps.Count == 1 ? "" : "s")</p>
-            @if (c.EffectivePreconditions is { Length: > 0 } pre) { <p><strong>Preconditions:</strong> @pre</p> }
+            @if (c.Edits.BlockedBy is { Length: > 0 } blockedBy)
+            {
+                <p class="mt-alert" role="status" data-testid="mte-start-blocked">This case is marked as blocked by: @blockedBy. You can still start a run and record Blocked for the steps that cannot be done.</p>
+            }
+            @* Before you start: everything the tester needs to prepare, from the saved case (nothing to look up elsewhere). *@
+            <dl class="mte-before" data-testid="mte-start-before">
+                @if (c.EffectivePreconditions is { Length: > 0 } pre) { <div><dt>Preconditions</dt><dd>@pre</dd></div> }
+                @if (c.EffectiveEnvironment is { Length: > 0 } needs) { <div data-testid="mte-start-env-needed"><dt>Environment needed</dt><dd>@needs</dd></div> }
+                @if (c.TestData.Count > 0) { <div data-testid="mte-start-test-data"><dt>Test Data</dt><dd>@string.Join(", ", c.TestData.Select(d => string.IsNullOrWhiteSpace(d.Alias) ? d.AssetId : d.Alias))</dd></div> }
+            </dl>
             <ol>@foreach (var s in c.EffectiveSteps) { <li>@s</li> }</ol>
             @if (open is not null)
             {
@@ -320,8 +329,10 @@
             }
             else
             {
+                var suggested = SuggestedEnvironment(plan, c);
                 <label class="mte-field"><span>Where are you testing? (optional)</span>
-                    <input value="@_environment" @oninput="e => _environment = e.Value?.ToString() ?? string.Empty" placeholder="For example QA or Test environment 2" maxlength="200" data-testid="mte-start-env" /></label>
+                    <input value="@(_environmentTouched ? _environment : suggested ?? "")" @oninput="e => { _environment = e.Value?.ToString() ?? string.Empty; _environmentTouched = true; }" placeholder="For example QA or Test environment 2" maxlength="200" data-testid="mte-start-env" /></label>
+                @if (!_environmentTouched && suggested is not null) { <p class="mt-muted" data-testid="mte-start-env-suggested">Filled in from the last run@(LastRunOf(plan, c) is not null ? " of this case" : " in this project"); change it if you test elsewhere.</p> }
                 <p class="mt-muted">The run uses the case exactly as it is saved now. Editing the case later does not change this run.</p>
                 <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="() => StartAsync(plan, c)" data-testid="mte-start-run">Start test run</button>
             }
@@ -329,11 +340,21 @@
         </section>
     };
 
+    private bool _environmentTouched;
+
+    private ManualRunSummary? LastRunOf(TestPlanDraft plan, TestCaseDraft c) =>
+        _ws?.Runs.Where(r => r.CaseKey == $"{plan.Id:N}/{c.Source.ScenarioId}" && !string.IsNullOrWhiteSpace(r.Environment)).OrderByDescending(r => r.StartedAt).FirstOrDefault();
+
+    /// <summary>Where the tester last tested this case (else anything in this project) — so the same environment is not typed again for every run.</summary>
+    private string? SuggestedEnvironment(TestPlanDraft plan, TestCaseDraft c) =>
+        (LastRunOf(plan, c) ?? _ws?.Runs.Where(r => !string.IsNullOrWhiteSpace(r.Environment)).OrderByDescending(r => r.StartedAt).FirstOrDefault())?.Environment;
+
     private async Task StartAsync(TestPlanDraft plan, TestCaseDraft c)
     {
         _busy = true;
         Info("Starting the test run…");
-        var (run, error) = await _runs!.StartAsync(new StartManualRunRequest(_ws!.ProjectKey!, plan.Id, c.Source.ScenarioId, string.IsNullOrWhiteSpace(_environment) ? null : _environment.Trim()));
+        var environment = _environmentTouched ? _environment : SuggestedEnvironment(plan, c) ?? "";
+        var (run, error) = await _runs!.StartAsync(new StartManualRunRequest(_ws!.ProjectKey!, plan.Id, c.Source.ScenarioId, string.IsNullOrWhiteSpace(environment) ? null : environment.Trim()));
         _busy = false;
         if (run is null) { Fail(error ?? "The run could not be started."); return; }
         Info("Test run started. Record a result for every step, then complete the run.");

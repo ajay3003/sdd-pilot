@@ -81,7 +81,7 @@
                     {
                         <li data-testid="tt-run" data-state="@r.State" data-stale="@(r.Stale is null ? "false" : "true")">
                             <span class="mt-chip mt-tone-@Tone(T.Tone(r.State))">@r.Verdict</span>
-                            <a href="@r.Href">@(r.Detail ?? r.Where)</a>
+                            @if (r.Href.Length > 0) { <a href="@r.Href">@(r.Detail ?? r.Where)</a> } else { <span data-testid="tt-run-summary">@(r.Detail ?? r.Where)</span> }
                             <span class="mt-muted">@r.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @(r.Environment ?? "environment not recorded")@(r.Identity is { } id ? $" · {id}" : "") · @r.Where</span>
                             @if (r.Stale is { } stale)
                             {

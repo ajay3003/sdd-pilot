@@ -51,3 +51,9 @@
     .mte-table td::before { content: attr(data-label) ": "; font-weight: 600; color: var(--clr-text-muted, #57606a); }
     .mte-dl { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Before you start (start panel): what to prepare, as a compact label/value list. */
+.mte-before { display: grid; gap: 0.25rem; margin: 0.4rem 0 0.6rem; }
+.mte-before > div { display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; }
+.mte-before dt { font-weight: 600; min-width: 10rem; }
+.mte-before dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }

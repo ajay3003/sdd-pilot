@@ -202,4 +202,43 @@ public sealed class IntegrationSuitesPageTests : BunitContext
         cut.FindAll("a[data-testid^=its-area-]").Should().OnlyContain(a => a.GetAttribute("href")!.Contains("journey=project.library%3Aloan-flow"),
             "switching area keeps the journey, so a reload or Back does not silently drop it");
     }
+
+    [Fact]
+    public void The_generated_suite_can_be_downloaded_as_one_result_report()
+    {
+        var cut = Generated();
+        cut.Find("[data-testid=its-download-report]").Click();
+        var call = JSInterop.Invocations.Single(i => i.Identifier == "downloadTextFile");
+        ((string)call.Arguments[0]!).Should().StartWith("integration-suite-").And.Contain("-r2-");
+        ((string)call.Arguments[1]!).Should().Contain("Integration test result").And.Contain("M2LB-synthetic.zip").And.Contain("Bufdata");
+    }
+
+    [Fact]
+    public void The_projects_own_snapshot_is_listed_first_marked_and_chosen_while_other_projects_snapshots_stay_available()
+    {
+        var other = new IqrSourceSnapshotSummary
+        {
+            Id = Guid.Parse("aaaaaaaa-2222-0000-0000-0000000000ff"), Archive = new("someone-else.zip", new string('b', 64), 99),
+            AnalyzedAt = new DateTimeOffset(2026, 11, 16, 10, 0, 0, TimeSpan.Zero), Status = SourceAnalysisStatus.Ready,
+        };
+        _api.Setup(a => a.SnapshotsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(([other, new IqrSourceSnapshotSummary
+        {
+            Id = Snap, Archive = new("M2LB-synthetic.zip", new string('a', 64), 1234), AnalyzedAt = new DateTimeOffset(2026, 11, 9, 10, 0, 0, TimeSpan.Zero), Status = SourceAnalysisStatus.Ready,
+        }], null));
+        var package = new BirkNext.Web.Services.ProjectEvidence.ProjectEvidencePackage("import-m", "M2LB", "M2LB-synthetic.zip", "sha", DateTimeOffset.UnixEpoch, Snap, [],
+            new Dictionary<BirkNext.Web.Services.WorkspaceArtifactType, int>(), 0, [], [], [], null);
+        var evidence = new Mock<BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService>();
+        evidence.Setup(e => e.Peek(It.IsAny<string?>())).Returns(new BirkNext.Web.Services.ProjectEvidence.ProjectEvidenceView("dev", "DEV", null, package, [], [], [], []));
+        Services.AddSingleton(evidence.Object);
+
+        var cut = RenderGenerateArea();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=its-page]").GetAttribute("aria-busy").Should().Be("false"));
+        var options = cut.FindAll("[data-testid=its-snapshot-option]");
+        options.Select(o => o.GetAttribute("value")).Should().Equal(Snap.ToString("D"), other.Id.ToString("D"));
+        options[0].HasAttribute("checked").Should().BeTrue("the project's own snapshot is chosen by default, never the newest of another project");
+        options[1].HasAttribute("checked").Should().BeFalse();
+        cut.Find("[data-testid=its-snapshot-own]").TextContent.Should().Contain("this project");
+        cut.Find("[data-testid=its-generate]").HasAttribute("disabled").Should().BeFalse();
+    }
 }

@@ -7,6 +7,7 @@
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject NavigationManager Navigation
 @inject IServiceProvider Services
+@inject IJSRuntime JS
 
 <PageTitle>Integration Test Suites · BirkNext</PageTitle>
 
@@ -14,7 +15,7 @@
    stage, human approvals, static compatibility), 2 Generate & Review (draft suites — composite or single-snapshot), 3 Resolve Readiness (three levels,
    actionable blockers), 4 Execute & Evidence (approved plan, authorised composite runs, stage timeline, correlation, coverage). The page shows what the
    backend stored and never computes a pass. *@
-<div class="its" data-testid="its-page" aria-busy='@(_busy ? "true" : "false")'>
+<div class="its" data-testid="its-page" aria-busy='@(_busy || _initializing ? "true" : "false")'>
     <header class="its-head">
         <h1>Integration Test Suites</h1>
         <p class="its-note">Build one end-to-end suite from several imported sources: map every stage of the integration to evidence-backed source snapshots,
@@ -270,7 +271,7 @@
                         {
                             <label class="its-candidate"><input type="radio" name="its-snapshot" value='@s.Id.ToString("D")' checked="@(_snapshotId == s.Id.ToString("D"))"
                                                                @onchange='() => _snapshotId = s.Id.ToString("D")' data-testid="its-snapshot-option" />
-                                <span>@s.Archive.FileName · @Utc(s.AnalyzedAt) · @s.Status</span></label>
+                                <span>@s.Archive.FileName · @Utc(s.AnalyzedAt) · @s.Status@if (s.Id == _ownSnapshot) { <strong class="its-own" data-testid="its-snapshot-own"> · this project</strong> }</span></label>
                         }
                         @if (FilteredCount > FilteredSnapshots.Count) { <p class="its-muted">@(FilteredCount - FilteredSnapshots.Count) more — refine the search.</p> }
                     </fieldset>
@@ -317,6 +318,8 @@
                         @if (suite.Composite?.PartialDraft == true) { <span class="its-badge" data-state="NeedsReview" data-testid="its-partial">Partial draft</span> }
                     </div>
                     <p class="its-note" data-testid="its-status-reason">@suite.StatusReason</p>
+                    <p class="its-actions"><button type="button" class="btn btn-secondary btn-sm" @onclick="() => DownloadReportAsync(suite)" data-testid="its-download-report">Download result report</button>
+                        <span class="its-muted">Journey, sources, environment, stages, test data and runs of this revision, as one document.</span></p>
                     @if (suite.PreparedForJourneys.Count > 0)
                     {
                         <p class="its-note" data-testid="its-prepared-for">Prepared for: @foreach (var j in suite.PreparedForJourneys)

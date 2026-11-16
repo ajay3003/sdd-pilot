@@ -636,6 +636,19 @@ public sealed partial class IntegrationSuiteService(
     public async Task<IntegrationSuite?> GetAsync(Guid id, CancellationToken ct) =>
         await db.IntegrationSuites.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct) is { } row ? await ReadAsync(row, ct) : null;
 
+    /// <summary>Runs (newest first) whose every test was run again by a later run: their results no longer decide the suite outcome.</summary>
+    internal static HashSet<Guid> Superseded(IReadOnlyList<(Guid RunId, IReadOnlyCollection<Guid> TestIds)> newestFirst)
+    {
+        var later = new HashSet<Guid>();
+        var superseded = new HashSet<Guid>();
+        foreach (var (runId, tests) in newestFirst)
+        {
+            if (tests.Count > 0 && tests.All(later.Contains)) superseded.Add(runId);
+            later.UnionWith(tests);
+        }
+        return superseded;
+    }
+
     /// <summary>The stored revision with current review decisions and its linked runs (outcome from actual Execution Evidence, never inferred).</summary>
     private async Task<IntegrationSuite> ReadAsync(IntegrationSuiteRecord row, CancellationToken ct)
     {
@@ -645,13 +658,17 @@ public sealed partial class IntegrationSuiteService(
         var links = await db.IntegrationSuiteRuns.AsNoTracking().Where(r => r.SuiteKey == row.SuiteKey).OrderByDescending(r => r.StartedAt).ToListAsync(ct);
         var runs = new List<SuiteRunLink>();
         var callStates = new List<(ExecutionState State, int Assertions)>();
+        // A run whose tests were all run again later is superseded: its result stays in the history but no longer decides the outcome, so a
+        // passing retest clears an earlier failure (a partial retest leaves the earlier run counting, since its calls are not split per test).
+        var superseded = Superseded([.. links.Select(l => (l.RunId, (IReadOnlyCollection<Guid>)(JsonSerializer.Deserialize<List<Guid>>(l.TestIdsJson, Json) ?? [])))]);
         foreach (var link in links)
         {
             var detail = await evidence.GetAsync(link.RunId, new ExecutionCallQuery(0, 500), ct);
             var calls = detail?.Calls ?? [];
-            callStates.AddRange(calls.Select(c => (c.State, c.Assertions.Count)));
-            runs.Add(new SuiteRunLink(link.RunId, link.Kind, link.StartedAt, link.Initiator, detail is null ? "Evidence not found" : calls.Count == 0 ? "No calls recorded" :
-                string.Join(", ", calls.GroupBy(c => c.State).OrderBy(g => g.Key).Select(g => $"{g.Count()} {g.Key.ToString().ToLowerInvariant()}")) + $" of {calls.Count}",
+            if (!superseded.Contains(link.RunId)) callStates.AddRange(calls.Select(c => (c.State, c.Assertions.Count)));
+            runs.Add(new SuiteRunLink(link.RunId, link.Kind, link.StartedAt, link.Initiator, (detail is null ? "Evidence not found" : calls.Count == 0 ? "No calls recorded" :
+                string.Join(", ", calls.GroupBy(c => c.State).OrderBy(g => g.Key).Select(g => $"{g.Count()} {g.Key.ToString().ToLowerInvariant()}")) + $" of {calls.Count}")
+                + (superseded.Contains(link.RunId) ? " · superseded by a later run of the same tests" : ""),
                 JsonSerializer.Deserialize<List<Guid>>(link.TestIdsJson, Json) ?? []));
         }
         // Calls still planned, queued or running have no result yet: they never count as executed.

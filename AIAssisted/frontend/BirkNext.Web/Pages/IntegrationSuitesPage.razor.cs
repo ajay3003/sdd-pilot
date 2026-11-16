@@ -4,6 +4,7 @@ using BirkNext.IntegrationSuites;
 using BirkNext.Web.Models;
 using BirkNext.Web.Services;
 using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
 
 namespace BirkNext.Web.Pages;
 
@@ -81,9 +82,16 @@ public partial class IntegrationSuitesPage
         {
             var list = Matching.Take(MaxListed).ToList();
             if (Picked is { } p && list.All(s => s.Id != p.Id)) list.Insert(0, p);
+            // The selected project's own snapshot first (the list holds every imported snapshot: a multi-source suite may need other archives).
+            if (_ownSnapshot is { } own && _snapshots?.FirstOrDefault(s => s.Id == own) is { } mine) { list.RemoveAll(s => s.Id == own); list.Insert(0, mine); }
             return list;
         }
     }
+
+    /// <summary>The selected project's own Source Analysis snapshot (shared resolver), when there is one.</summary>
+    private Guid? _ownSnapshot;
+    /// <summary>True until the first load finished: the page reports itself busy (aria-busy) while it is still reading.</summary>
+    private bool _initializing = true;
     private IEnumerable<IqrSourceSnapshotSummary> ManualMatches => _manualFilter.Trim().Length < 2 ? [] :
         (_snapshots ?? []).Where(s => s.Archive.FileName.Contains(_manualFilter.Trim(), StringComparison.OrdinalIgnoreCase)).Take(MaxListed);
 
@@ -93,6 +101,23 @@ public partial class IntegrationSuitesPage
 
     protected override async Task OnInitializedAsync()
     {
+        try { await InitializeAsync(); }
+        finally { _initializing = false; }
+    }
+
+    private string? _projectName;
+
+    private async Task DownloadReportAsync(IntegrationSuite suite)
+    {
+        try { await JS.InvokeVoidAsync("downloadTextFile", BirkNext.Web.Services.IntegrationSuiteReport.FileName(suite), BirkNext.Web.Services.IntegrationSuiteReport.Html(suite, _projectName, _environmentName), "text/html;charset=utf-8"); }
+        catch (JSException) { _error = "The report could not be downloaded."; }
+    }
+
+    private async Task InitializeAsync()
+    {
+        if (Services.GetService(typeof(ICurrentWorkspaceProjection)) is ICurrentWorkspaceProjection workspace)
+            try { _projectName = (await workspace.GetAsync()).ProjectName; } catch (InvalidOperationException) { _projectName = null; }
+        try { _ownSnapshot = BirkNext.Web.Services.ManualTestingWorkspace.ResolveSnapshot(Services).Id; } catch (InvalidOperationException) { _ownSnapshot = null; }
         var (snapshots, e1) = await Api.SnapshotsAsync();
         var (scopes, e2) = await Api.ScopesAsync();
         var (suites, e3) = await Api.ListAsync();
@@ -102,6 +127,7 @@ public partial class IntegrationSuitesPage
         if (ScopeQuery is { Length: > 0 } scope && _scopes.Any(s => s.ScopeId == scope)) _scopeId = scope;
         if (_scopes.Count > 0 && _scopes.All(s => s.ScopeId != _scopeId)) _scopeId = _scopes[0].ScopeId;
         if (Guid.TryParse(SnapshotQuery, out var handedOff) && _snapshots.Any(s => s.Id == handedOff)) { _snapshotId = handedOff.ToString("D"); _area = "generate"; }
+        else if (_ownSnapshot is { } own && _snapshots.Any(s => s.Id == own)) _snapshotId = own.ToString("D"); // never another project's by default
         if (!string.IsNullOrWhiteSpace(ModulesQuery)) _modules = ModulesQuery.Trim();
         if (Areas.Any(a => a.Key == AreaQuery)) _area = AreaQuery!;
         if (Guid.TryParse(ContextQuery, out var contextId)) await OpenContextAsync(contextId, keepArea: true);

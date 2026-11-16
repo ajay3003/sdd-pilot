@@ -784,7 +784,9 @@
     {
         _useMessage = Activation.UseAsCurrent(importId) ? null : "That import is no longer recorded in this workspace.";
         if (_useMessage is not null) return;
-        _ = AutoSave.SaveNowAsync(); _focusId = "pi-current-heading";
+        _focusId = "pi-current-heading";
+        // Wait for the save so the choice survives closing the tab right after it; say so when it could not be stored.
+        if (!await AutoSave.SaveNowAsync()) _useMessage = "The package is shown in this tab, but the choice could not be saved yet. It is saved automatically when the connection is back; until then a new tab may show the previous package.";
         // Source setup reads stored snapshots and bindings only (never re-imports or binds); refresh it so the cards follow the change.
         await LoadSetupAsync();
     }

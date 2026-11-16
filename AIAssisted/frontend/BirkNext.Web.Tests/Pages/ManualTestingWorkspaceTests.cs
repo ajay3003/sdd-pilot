@@ -320,4 +320,29 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         lines[0].Should().StartWith("\"Defect\",\"Status\"");
         lines.Skip(1).Select(l => l.Split(',')[1]).Should().BeEquivalentTo(new[] { "\"Ready for retest\"", "\"Closed\"" }, "the defect report states the follow-up status, closed ones included");
     }
+
+    [Fact]
+    public void Before_a_run_the_tester_sees_what_to_prepare_and_the_environment_of_the_last_run_is_filled_in()
+    {
+        Setup([Summary()], runs: [RunSummary(ManualRunState.Completed, ManualRunOutcome.Failed)]);
+        var c = Draft().Cases[0];
+        _plans.Setup(x => x.DraftAsync(PlanId, It.IsAny<CancellationToken>())).ReturnsAsync((Draft() with
+        {
+            Cases = [c with
+            {
+                Edits = new TestCaseEdits { EnvironmentPrerequisites = "QA with the loan service enabled", BlockedBy = "Loan service outage" },
+                TestData = [new TestCaseDataLink { AssetId = "asset-17", Alias = "member-with-card" }],
+            }],
+        }, (string?)null));
+        var cut = Open<ManualTestingExecute>($"manual-testing/execute?draft={PlanId}&case=tsc-borrow");
+
+        cut.Find("[data-testid=mte-start-blocked]").TextContent.Should().Contain("Loan service outage").And.Contain("still start");
+        cut.Find("[data-testid=mte-start-env-needed]").TextContent.Should().Contain("QA with the loan service enabled");
+        cut.Find("[data-testid=mte-start-test-data]").TextContent.Should().Contain("member-with-card").And.NotContain("asset-17");
+        cut.Find("[data-testid=mte-start-env]").GetAttribute("value").Should().Be("QA", "the environment of this case's last run is filled in");
+        cut.Find("[data-testid=mte-start-env-suggested]").TextContent.Should().Contain("last run of this case");
+
+        cut.Find("[data-testid=mte-start-run]").Click();
+        cut.WaitForAssertion(() => _started!.Environment.Should().Be("QA", "the suggestion is used unless the tester changes it"));
+    }
 }

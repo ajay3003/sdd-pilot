@@ -205,6 +205,20 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         _journeys.Verify(j => j.StartAsync(It.IsAny<IntegrationJourneyRunRequest>(), It.IsAny<CancellationToken>()), Times.Never());
         System.Text.Json.JsonSerializer.Serialize(_setup.Snapshots.Select(s => s.BoundIntegrations)).Should().Be(bindingsBefore);
         _autoSave.Verify(a => a.SaveNowAsync(), Times.AtLeastOnce(), "the selection is a workspace change and is saved");
+        cut.FindAll("[data-testid=pi-use-message]").Should().BeEmpty("the save succeeded");
+    }
+
+    [Fact]
+    public void UseAsCurrent_SaysSoWhenTheChoiceCouldNotBeSaved()
+    {
+        ImportHistory();
+        _autoSave.Setup(a => a.SaveNowAsync()).ReturnsAsync(false);
+        var cut = RenderPage();
+
+        cut.FindAll("[data-testid=pi-previous-row]").Single(r => r.TextContent.Contains("Tiltak 2")).QuerySelector("[data-testid=pi-previous-use]")!.Click();
+
+        cut.Find("[data-testid=pi-current-archive]").TextContent.Should().Be("Tiltak 2 - hub (1).zip", "the package is still shown in this tab");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pi-use-message]").TextContent.Should().Contain("could not be saved yet"));
     }
 
     [Fact]
