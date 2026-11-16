@@ -64,12 +64,14 @@
             @foreach (var a in P.MoreAreas)
             {
                 var id = a.Id;
-                <button type="button" class="tps-area @(_area == id ? "is-current" : null)" aria-current="@(_area == id ? "page" : null)" data-testid="tps-area-@id" @onclick="() => GoArea(id)">@a.Label</button>
+                <button type="button" class="tps-area @(_area == id ? "is-current" : null)" aria-current="@(_area == id ? "page" : null)" data-testid="tps-area-@id" @onclick="() => OnStepAction(id)">@a.Label</button>
             }
         </nav>
         <p class="tps-area-purpose" data-testid="tps-area-purpose">@P.StepLine(_area)</p>
 
-        <div class="tps-body">
+        <div class="tps-body" data-area="@_area" data-testid="tps-body">
+            @* The active step's own heading: a step or area action scrolls here and moves focus here, so it never looks like nothing happened. *@
+            <h2 class="tps-area-heading" id="tps-area-heading" tabindex="-1" data-testid="tps-area-heading">@P.AreaLabel(_area)</h2>
             @(_area switch
             {
                 "prepare" => PrepareArea(),
@@ -291,7 +293,20 @@
         Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["area"] = _area, ["draft"] = _draft?.Id.ToString(), ["scenarios"] = null }), replace: true);
     }
 
-    private Task OnStepAction(string id) { GoArea(id); return Task.CompletedTask; }
+    // A step or area action always shows where it went: the area is activated (also when it already was — "Open now" on the current step), and
+    // after rendering the area's heading is scrolled into view and focused. Re-opening a completed step works the same way.
+    private bool _revealArea;
+
+    private Task OnStepAction(string id) { GoArea(id); _revealArea = true; return Task.CompletedTask; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_revealArea) return;
+        _revealArea = false;
+        try { await JS.InvokeVoidAsync("birknextRevealSection", "tps-area-heading"); }
+        catch (JSException) { }
+        catch (InvalidOperationException) { } // prerendering / no JS runtime
+    }
 
     private void Info(string text) { _message = text; _messageTone = "info"; }
     private void Ok(string text) { _message = text; _messageTone = "ok"; }

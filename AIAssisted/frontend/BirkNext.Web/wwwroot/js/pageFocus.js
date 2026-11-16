@@ -6,6 +6,21 @@ window.birknextFocusElement = function (id) {
     element.focus({ preventScroll: true });
 };
 
+// Brings a section heading to the top of the view and focuses it (a step or area action). Scrolls instantly (the page's smooth scrolling would
+// aim at a position that is stale once the newly shown section finishes rendering) and checks again after layout has settled.
+window.birknextRevealSection = function (id) {
+    const reveal = () => {
+        const element = document.getElementById(id);
+        if (!element) return;
+        const r = element.getBoundingClientRect();
+        if (r.top < 0 || r.bottom > window.innerHeight) element.scrollIntoView({ block: "start", behavior: "instant" });
+        if (document.activeElement !== element) element.focus({ preventScroll: true });
+    };
+    reveal();
+    requestAnimationFrame(() => requestAnimationFrame(reveal));
+    setTimeout(reveal, 350);
+};
+
 // Roving tab stop for a list of buttons (the Task Explorer Map): only one button is in the tab order; arrow keys move
 // focus. Up/Down = previous/next item, PageUp/PageDown or Left/Right = first item of the previous/next group
 // (data-map-phase), Home/End = first/last. Enter/Space keep their native button behaviour (selection).

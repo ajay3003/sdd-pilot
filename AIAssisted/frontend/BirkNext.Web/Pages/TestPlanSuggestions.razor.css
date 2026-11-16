@@ -176,6 +176,8 @@ textarea.tps-input { resize: vertical; line-height: 1.45; }
 
 /* Universal (project) workflow: evidence list, catalog groups, candidate details, step editor. */
 .tps-body { min-width: 0; }
+.tps-area-heading { font-size: 1.1rem; font-weight: 700; margin: 0 0 0.6rem; padding: 0.35rem 0.6rem; border-left: 4px solid var(--clr-primary, #2563eb); border-radius: 4px; scroll-margin-top: 4.5rem; }
+.tps-area-heading:focus { outline: 2px solid var(--clr-primary, #2563eb); outline-offset: 2px; background: var(--clr-surface-alt, rgba(37, 99, 235, 0.06)); }
 .tps-capabilities { list-style: none; margin: 0 0 0.4rem; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); gap: 0.45rem 0.9rem; }
 .tps-capability { display: flex; flex-wrap: wrap; gap: 0.2rem 0.45rem; align-items: baseline; font-size: 0.88rem; min-width: 0; overflow-wrap: anywhere; }
 .tps-capability > .tps-small { flex: 1 1 100%; }

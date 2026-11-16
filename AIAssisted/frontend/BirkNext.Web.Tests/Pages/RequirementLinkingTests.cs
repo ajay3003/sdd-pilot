@@ -349,4 +349,47 @@ public sealed class RequirementLinkingTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=tps-history-restore]").HasAttribute("disabled").Should().BeTrue());
         cut.Find("[data-testid=tps-history-needs-save]").TextContent.Should().Contain("Save or discard your changes");
     }
+
+    // ── Step controls ("Open now" must always visibly do something) ─────────────────────────────────────────────
+
+    private int Reveals() => JSInterop.Invocations.Count(i => i.Identifier == "birknextRevealSection" && (string)i.Arguments[0]! == "tps-area-heading");
+
+    [Fact]
+    public void Open_now_on_the_current_step_scrolls_to_its_section_and_focuses_its_heading()
+    {
+        var cut = Render(Draft(Case()));
+        var current = cut.Find("[data-testid=tps-steps] [data-testid=tps-area-prepare]");
+        current.TextContent.Should().Be("Open now");
+        current.GetAttribute("aria-current").Should().Be("step");
+
+        current.Click();
+
+        cut.WaitForAssertion(() => Reveals().Should().Be(1, "clicking the current step's action scrolls to and focuses its section"));
+        cut.Find("[data-testid=tps-area-heading]").TextContent.Should().Be("Prepare test cases");
+        cut.Find("[data-testid=tps-area-heading]").GetAttribute("tabindex").Should().Be("-1", "the heading can take focus");
+    }
+
+    [Fact]
+    public void Each_step_activates_its_section_and_a_completed_step_can_be_reopened()
+    {
+        var cut = Render(Draft(Case()));
+        foreach (var (step, label) in new[] { ("choose", "Choose scenarios"), ("testability", "Check testability"), ("save", "Save & export"), ("prepare", "Prepare test cases") })
+        {
+            var before = Reveals();
+            cut.Find($"[data-testid=tps-steps] [data-testid=tps-area-{step}]").Click();
+            cut.WaitForAssertion(() => cut.Find("[data-testid=tps-body]").GetAttribute("data-area").Should().Be(step));
+            cut.Find("[data-testid=tps-area-heading]").TextContent.Should().Be(label);
+            cut.Find($"[data-testid=tps-steps] [data-testid=tps-area-{step}]").GetAttribute("aria-current").Should().Be("step", "the active step is highlighted");
+            cut.WaitForAssertion(() => Reveals().Should().Be(before + 1));
+            Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().Uri.Should().Contain($"area={step}");
+        }
+    }
+
+    [Fact]
+    public void Without_a_plan_the_later_steps_are_disabled_and_say_what_comes_first()
+    {
+        var steps = TestPlanSuggestionsPresentation.Steps(null, [], 604, discovered: true, selected: 0);
+        steps[0].Should().Match<GuidedStep>(st => st.Id == "choose" && st.DisabledReason == null && st.StatusLabel == "604 candidates · 0 selected");
+        steps.Skip(1).Should().OnlyContain(st => st.DisabledReason == "Prepare test cases first.");
+    }
 }

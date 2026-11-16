@@ -38,6 +38,13 @@ public static class TestPlanSuggestionsPresentation
         return MoreAreas.FirstOrDefault(a => a.Id == area)?.Purpose ?? "";
     }
 
+    /// <summary>The label of a step or secondary area (the heading of the area's section).</summary>
+    public static string AreaLabel(string? area)
+    {
+        var id = AreaOrDefault(area);
+        return Areas.Concat(MoreAreas).FirstOrDefault(a => a.Id == id)?.Label ?? Areas[0].Label;
+    }
+
     /// <summary>The area for a link; earlier area ids (discover, plan, review, data) map to their step so old links keep working.</summary>
     public static string AreaOrDefault(string? area) => area switch
     {
