@@ -49,6 +49,16 @@ public sealed class FrontendQualityEngineReadinessAggregator : IFrontendQualityE
             return new(id, false, "Engine provider not found", DateTime.UtcNow);
         }
 
+        // "Check again" always probes: a provider that reuses recent results for status displays checks fresh here (R13).
+        if (provider is Readiness.IFreshReadinessProvider fresh)
+        {
+            try { return await fresh.CheckFreshAsync(ct); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Frontend quality readiness provider failed for {EngineId}", provider.EngineId);
+                return new(provider.EngineId, false, "Engine readiness check failed.", DateTime.UtcNow, FrontendQualityEngineReadinessReason.ProviderError);
+            }
+        }
         return await CheckSafeAsync(provider, ct);
     }
 

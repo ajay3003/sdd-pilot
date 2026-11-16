@@ -82,7 +82,11 @@
                                         <span>@I.ComponentName(f.Topology, c.ProducerComponentId) → @I.ComponentName(f.Topology, c.ConsumerComponentId)</span>
                                         <span class="mt-muted">@c.Type@(c.Address is { Length: > 0 } a ? $" · {a}" : "")</span>
                                         <span class="mt-chip mt-tone-@I.RelationshipTone(c.Relationship)">@I.RelationshipLabel(c.Relationship)</span>
-                                        @if (integration is not null) { <a href="@I.IqrHref(integration)" data-testid="itx-connection-iqr">Quality review</a> }
+                                        @if (integration is not null)
+                                        {
+                                            <a href="@BirkNext.Web.Services.TopologyPresentation.FocusHref(integration)" data-testid="itx-connection-topology">Topology</a>
+                                            <a href="@I.IqrHref(integration)" data-testid="itx-connection-iqr">Quality review</a>
+                                        }
                                     </li>
                                 }
                             </ul>
@@ -101,7 +105,7 @@
                             <ul class="mt-list">
                                 @foreach (var i in f.Integrations.Take(20))
                                 {
-                                    <li data-testid="itx-integration" data-id="@i.Id"><a href="@I.IqrHref(i.Id, "setup-evidence")">@i.DisplayName</a> <span class="mt-muted">@i.Kind@(i.SourceSystem is { Length: > 0 } s ? $" · from {s}" : "")@(i.DestinationSystem is { Length: > 0 } d ? $" to {d}" : "")</span></li>
+                                    <li data-testid="itx-integration" data-id="@i.Id"><a href="@I.IqrHref(i.Id, "setup-evidence")">@i.DisplayName</a> <span class="mt-muted">@i.Kind@(i.SourceSystem is { Length: > 0 } s ? $" · from {s}" : "")@(i.DestinationSystem is { Length: > 0 } d ? $" to {d}" : "")</span> <a href="@BirkNext.Web.Services.TopologyPresentation.FocusHref(i.Id)" data-testid="itx-integration-topology">In topology</a></li>
                                 }
                             </ul>
                         }

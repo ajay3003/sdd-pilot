@@ -143,6 +143,8 @@ public sealed class IntegrationTestingTests : BunitContext
         cut.FindAll("[data-testid=itx-connection]").Select(c => c.GetAttribute("data-state")).Should().Equal("Resolved", "Candidate");
         cut.Find("[data-testid=itx-connection-iqr]").GetAttribute("href").Should().Be("integration-quality-review?view=review&integration=qa%3Asb%3Aorders");
         cut.FindAll("[data-testid=itx-integration]").Should().ContainSingle();
+        cut.Find("[data-testid=itx-connection-topology]").GetAttribute("href").Should().Be("integration-topology?integration=qa%3Asb%3Aorders", "R12: the topology opens on the same catalog integration");
+        cut.Find("[data-testid=itx-integration-topology]").GetAttribute("href").Should().Be("integration-topology?integration=qa%3Asb%3Aorders");
 
         var nav = Services.GetRequiredService<NavigationManager>();
         nav.NavigateTo("technical-testing/integrations?stage=define");                      // what a stage link does

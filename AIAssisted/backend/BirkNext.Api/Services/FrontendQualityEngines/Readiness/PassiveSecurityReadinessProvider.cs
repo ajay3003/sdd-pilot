@@ -2,10 +2,12 @@ using BirkNext.Api.Services.FrontendPassiveSecurity;
 
 namespace BirkNext.Api.Services.FrontendQualityEngines.Readiness;
 
-public sealed class PassiveSecurityReadinessProvider : IFrontendQualityEngineReadinessProvider
+public sealed class PassiveSecurityReadinessProvider : IFrontendQualityEngineReadinessProvider, IFreshReadinessProvider
 {
     private readonly IFrontendZapPassiveReviewService _service;
     private readonly ILogger<PassiveSecurityReadinessProvider> _logger;
+    private readonly EngineReadinessReuse? _reuse;
+    private readonly IConfiguration? _configuration;
 
     public FrontendQualityEngineId EngineId => FrontendQualityEngineId.PassiveSecurity;
 
@@ -16,15 +18,41 @@ public sealed class PassiveSecurityReadinessProvider : IFrontendQualityEngineRea
     /// </summary>
     public static readonly TimeSpan ReadinessTimeout = TimeSpan.FromSeconds(120);
 
+    /// <param name="reuse">R13: when registered, status displays reuse a recent probe result for the same configuration (see
+    /// <see cref="EngineReadinessReuse"/>); without it every call probes, as before.</param>
     public PassiveSecurityReadinessProvider(
         IFrontendZapPassiveReviewService service,
-        ILogger<PassiveSecurityReadinessProvider> logger)
+        ILogger<PassiveSecurityReadinessProvider> logger,
+        EngineReadinessReuse? reuse = null,
+        IConfiguration? configuration = null)
     {
         _service = service;
         _logger = logger;
+        _reuse = reuse;
+        _configuration = configuration;
     }
 
-    public async Task<FrontendQualityEngineReadiness> CheckAsync(CancellationToken ct)
+    public Task<FrontendQualityEngineReadiness> CheckAsync(CancellationToken ct) => Check(fresh: false, ct);
+
+    /// <summary>"Check again": always probes (and refreshes the reused result).</summary>
+    public Task<FrontendQualityEngineReadiness> CheckFreshAsync(CancellationToken ct) => Check(fresh: true, ct);
+
+    private Task<FrontendQualityEngineReadiness> Check(bool fresh, CancellationToken ct) =>
+        _reuse is null || _configuration is null
+            ? ProbeAsync(ct)
+            // The shared probe is bounded by ReadinessTimeout, not by one caller's request: leaving the page cancels only that caller's wait.
+            : _reuse.GetAsync(ConfigurationKey(_configuration), () => ProbeAsync(CancellationToken.None), fresh, ct);
+
+    /// <summary>Everything the probe's answer depends on besides the machine itself: a change in any of it is a different key.</summary>
+    internal static string ConfigurationKey(IConfiguration configuration) => string.Join("|",
+        "passive-security",
+        FrontendQualityEngineEnablement.Resolve(configuration, FrontendQualityEngineId.PassiveSecurity, configuration.GetValue<bool>("FrontendPassiveSecurity:Enabled")),
+        configuration["FrontendQualityCapabilities:PassiveSecurityAllowed"] ?? "",
+        configuration.GetValue<string>("FrontendPassiveSecurity:ContainerRuntime") ?? "podman",
+        configuration.GetValue<string>("FrontendPassiveSecurity:ContainerNetwork") ?? "",
+        FrontendZapPassiveReviewService.Image);
+
+    private async Task<FrontendQualityEngineReadiness> ProbeAsync(CancellationToken ct)
     {
         try
         {

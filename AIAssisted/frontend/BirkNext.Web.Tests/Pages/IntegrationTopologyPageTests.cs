@@ -1,3 +1,4 @@
+using BirkNext.Integrations;
 using BirkNext.IntegrationTopology;
 using BirkNext.LocalHttpsProxy;
 using BirkNext.Web.Components;
@@ -530,4 +531,46 @@ public sealed class IntegrationTopologyPageTests : BunitContext
         Hidden(page, "overview").Should().Be("hidden");
         page.Find("[data-testid=it-tab-inventory]").GetAttribute("aria-current").Should().Be("page");
     }
+
+    // ---- R12: focus on one configured integration (?integration=, its Integration Catalog id) ------------------------------------------
+
+    private void Catalog(params IntegrationDefinition[] integrations)
+    {
+        var catalog = new Mock<IIntegrationCatalogApiService>();
+        catalog.Setup(c => c.GetCatalogAsync(It.IsAny<FrontendAnalysisProfile>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new IntegrationCatalog { EnvironmentId = "dev", Integrations = [.. integrations] });
+        Services.AddSingleton(catalog.Object);
+    }
+
+    [Fact]
+    public void A_catalog_integration_link_opens_the_topology_on_that_integrations_connections_by_identity()
+    {
+        Catalog(new IntegrationDefinition { Id = "dev:http:intake", EnvironmentId = "dev", DisplayName = "Intake to reports" });
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo(TopologyPresentation.FocusHref("dev:http:intake"));
+        var page = Render<IntegrationTopologyPage>();
+
+        page.WaitForAssertion(() => page.Find("[data-testid=it-focus]").GetAttribute("data-count").Should().Be("1"));
+        page.Find("#it-focus-heading").TextContent.Should().Be("Intake to reports", "the catalog (the integration's owner) names it, not its id");
+        page.FindAll("[data-testid=it-focus-connection]").Select(c => c.GetAttribute("data-id")).Should().Equal("c1");
+        page.Find("[data-testid=it-focus-connection]").TextContent.Should().Contain("Intake").And.Contain("ReportService");
+        page.FindAll("[data-testid=it-component]").Should().HaveCount(2, "the whole topology stays below the focus");
+        page.Find("[data-testid=it-focus-clear]").GetAttribute("href").Should().NotContain("integration=");
+    }
+
+    [Fact]
+    public void Focus_never_matches_by_name_or_address_and_says_so_when_nothing_carries_the_integration()
+    {
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo(TopologyPresentation.FocusHref("dev:http:intake-v2"));
+        var page = Render<IntegrationTopologyPage>();
+
+        page.WaitForAssertion(() => page.Find("[data-testid=it-focus]").GetAttribute("data-count").Should().Be("0"));
+        page.Find("[data-testid=it-focus-none]").TextContent.Should().Contain("No connection in this topology carries");
+        page.Find("#it-focus-heading").TextContent.Should().Be("Configured integration", "without a catalog entry no name is invented");
+        TopologyPresentation.ConnectionsOfIntegration(_api.View, "intake").Should().BeEmpty("a component name is not an integration identity");
+        TopologyPresentation.ConnectionsOfIntegration(_api.View, "/api/reports").Should().BeEmpty("an address is not an integration identity");
+    }
+
+    [Fact]
+    public void Without_a_focus_parameter_no_focus_card_is_shown() =>
+        Render<IntegrationTopologyPage>().FindAll("[data-testid=it-focus]").Should().BeEmpty();
 }

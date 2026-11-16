@@ -109,7 +109,8 @@ public sealed class ReviewedRequirementCoverageTests : BunitContext
         var ws = new TestPlanWorkspace { GuideKey = "skolenaervaer", Candidates = [new ScenarioCandidate()] };
         var focus = P.Focus(ws, View());
         focus.Facts.Single(f => f.Id == "req-reviewed").Count.Should().Be(View().Reviewed);
-        focus.Facts.Single(f => f.Id == "req-reviewed").Label.Should().Contain("of 5");
+        focus.Facts.Single(f => f.Id == "req-reviewed").Label.Should().Contain("of 5 in the last relationship analysis",
+            "R1: the denominator names its population (the canonical interpretation), which can differ from the selected specification Test Coverage counts");
         focus.Facts.Single(f => f.Id == "req-needs").Count.Should().Be(View().NeedsReview);
         var review = focus.Actions.Single(a => a.Id == "req-associations");
         review.Route.Should().Be(C.RelationshipReviewHref);

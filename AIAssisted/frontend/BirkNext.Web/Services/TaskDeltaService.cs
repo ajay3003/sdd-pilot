@@ -243,7 +243,8 @@ public static class TaskDeltaService
         var refs = new List<string>();
         foreach (Match m in SpecIdRe.Matches(text))
         {
-            var norm = $"{m.Groups[1].Value.ToUpperInvariant()}-{m.Groups[2].Value.PadLeft(2, '0')}";
+            // The shared requirement grammar's normalization (FR-1 → FR-001), as in the specification and Task Explorer.
+            var norm = BirkNext.Sdd.RequirementReferenceParser.Normalize($"{m.Groups[1].Value}-{m.Groups[2].Value}");
             if (!refs.Any(r => r.Equals(norm, OIC))) refs.Add(norm);
         }
         return refs;

@@ -44,3 +44,14 @@ Every row compares behaviour (inputs, rules, persistence, outputs) from code, no
 | 26 | Generated Documentation Explorer | Generated Documentation Health | Diagnostic run | Same request, re-run per page | Intentional reuse (repeated computation) | `Pages/GeneratedDocumentationExplorer.razor:452-470`; `GeneratedDocumentationHealthPanel.razor:115-137` | Deferred (R10, efficiency) |
 
 Corrections of earlier assumptions: Implementation Review **does** read `?scope=` (row 5). Test Coverage **does** read `?scope=` through the embedded `ScopeFilter` component (`Components/Scopes/ScopeFilter.razor:38`), so the scope links from Project Test Setup work; only `?q=` was ignored (row 4).
+
+## Status update 2026-11-16 (consolidation implementation)
+
+The rows above are the original audit and are kept as written. Changes since, from `birknext-consolidation-implementation-2026-11-16.md`:
+
+| Row | New status | Note |
+|---|---|---|
+| 9 | **Fixed** | Task Explorer table rows and Task Changes use the shared normalisation (R5); the re-check found table rows inside Task Explorer also differed from its task bodies. |
+| 10 | **Labelled** (population choice deferred) | Every requirement-coverage number names its population (R1). |
+| 17 | **Disproved** | Demo Projects writes through the same settings owner as System Settings and confirms overwrites (R8); residual risk: a stale whole-profile save from an open settings draft. |
+| — | **Integrated** | Integration Topology focuses on one configured integration by catalog id (R12). |

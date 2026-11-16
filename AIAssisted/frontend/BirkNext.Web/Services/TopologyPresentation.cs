@@ -5,6 +5,14 @@ namespace BirkNext.Web.Services;
 /// <summary>Labels for the canonical topology. Presentation only: every status is the backend's own.</summary>
 public static class TopologyPresentation
 {
+    /// <summary>The connections that carry one configured integration: Integration Catalog provenance whose reference is the integration's catalog
+    /// id (exact). The same identity rule Integration Testing uses; a name or address match never counts.</summary>
+    public static IReadOnlyList<TopologyConnection> ConnectionsOfIntegration(IntegrationTopologyView view, string integrationId) =>
+        [.. view.Connections.Where(c => c.Provenance.Any(p => p.Source == TopologySource.IntegrationCatalog && string.Equals(p.Reference, integrationId, StringComparison.Ordinal)))];
+
+    /// <summary>Integration Topology focused on one configured integration (<c>?integration=</c>, its catalog id).</summary>
+    public static string FocusHref(string integrationId) => $"integration-topology?integration={Uri.EscapeDataString(integrationId)}";
+
     public static string Status(TopologyStatus status) => status switch
     {
         TopologyStatus.Expected => "Expected",

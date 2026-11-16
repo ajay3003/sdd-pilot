@@ -532,6 +532,7 @@ builder.Services.AddScoped<FrontendQualityEngineLegacyConfigInterpreter>();
 builder.Services.AddScoped<BrowserRuntimeReadinessProvider>();
 builder.Services.AddScoped<AccessibilityReadinessProvider>();
 builder.Services.AddScoped<LighthouseReadinessProvider>();
+builder.Services.AddSingleton<BirkNext.Api.Services.FrontendQualityEngines.Readiness.EngineReadinessReuse>();
 builder.Services.AddScoped<PassiveSecurityReadinessProvider>();
 builder.Services.AddScoped<IFrontendQualityEngineReadinessProvider>(sp => sp.GetRequiredService<BrowserRuntimeReadinessProvider>());
 builder.Services.AddScoped<IFrontendQualityEngineReadinessProvider>(sp => sp.GetRequiredService<AccessibilityReadinessProvider>());

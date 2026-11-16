@@ -49,6 +49,32 @@
     {
         var counts = P.Counts(view);
         var attention = P.Attention(view, _coverage);
+        @if (IntegrationFocus is { Length: > 0 } focusId)
+        {
+            var focused = P.ConnectionsOfIntegration(view, focusId);
+            var focusName = _focusName ?? "this configured integration";
+            <section class="it-card it-focus" aria-labelledby="it-focus-heading" data-testid="it-focus" data-integration="@focusId" data-count="@focused.Count">
+                <h2 id="it-focus-heading">@(_focusName ?? "Configured integration")</h2>
+                @if (focused.Count == 0)
+                {
+                    <p data-testid="it-focus-none">No connection in this topology carries @focusName from the Integration Catalog. Its endpoints may not resolve to components yet; the rest of the topology is shown below.</p>
+                }
+                else
+                {
+                    <p class="it-note">@focused.Count connection@(focused.Count == 1 ? "" : "s") of @focusName (matched by Integration Catalog identity, not by name or address).</p>
+                    <ul class="it-interfaces">
+                        @foreach (var connection in focused)
+                        {
+                            <li data-testid="it-focus-connection" data-id="@connection.Id">
+                                @Connection(view, connection)
+                                @if (connection.Evidence.Count > 0) { <details class="it-disclosure it-evidence" open><summary>Why BirkNext believes it</summary>@EvidenceList(connection.Evidence, connection.Unverified)</details> }
+                            </li>
+                        }
+                    </ul>
+                }
+                <p class="it-note"><a href="@Navigation.GetUriWithQueryParameter("integration", (string?)null)" data-testid="it-focus-clear">Show the whole topology</a></p>
+            </section>
+        }
         @if (_discoverOpen)
         {
             <section class="it-card" id="it-discovery" aria-labelledby="it-discovery-heading" data-testid="it-discovery">
@@ -449,11 +475,30 @@
 
     /// <summary>The view is URL state (<c>?tab=</c>); attention links switch to the tab that holds their section.</summary>
     [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
+
+    /// <summary>Focus on one configured integration (<c>?integration=</c>, its Integration Catalog id) — set by links from Integration Testing.</summary>
+    [SupplyParameterFromQuery(Name = "integration")] public string? IntegrationFocus { get; set; }
+    private string? _focusName, _focusNameFor;
     private string? _tab;
     private string CurrentTab => _tab ?? W.ResolveTab(Tab);
     private string TabHref(string key) => Navigation.GetUriWithQueryParameter("tab", key == W.OverviewTab ? null : key);
 
-    protected override void OnParametersSet() => _tab = W.ResolveTab(Tab);
+    protected override async Task OnParametersSetAsync()
+    {
+        _tab = W.ResolveTab(Tab);
+        // The focused integration's display name comes from the Integration Catalog (its owner); without it the card says "Configured integration".
+        if (IntegrationFocus is not { Length: > 0 } id) { _focusName = _focusNameFor = null; return; }
+        if (id == _focusNameFor) return;
+        _focusNameFor = id; _focusName = null;
+        if (Services.GetService(typeof(BirkNext.Web.Services.IIntegrationCatalogApiService)) is not BirkNext.Web.Services.IIntegrationCatalogApiService catalog) return;
+        try
+        {
+            var profile = _profile ?? (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull;
+            if (profile is null) return;
+            _focusName = (await catalog.GetCatalogAsync(profile)).Integrations.FirstOrDefault(i => string.Equals(i.Id, id, StringComparison.Ordinal))?.DisplayName is { Length: > 0 } name ? name : null;
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { _focusName = null; }
+    }
 
     private void ShowTab(string key)
     {

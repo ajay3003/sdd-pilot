@@ -573,10 +573,11 @@ public static class TaskExplorerService
                 HeadingLevel = 0,
                 CellValues = cells,
                 LinkedTaskIds = linkedTaskIds,
+                // Same shared grammar as task bodies (FR-1 → FR-001), so a table row and a task naming one requirement agree.
                 ReferencedScIds = ScRefRe.Matches(allCellText)
-                    .Select(m => $"SC-{m.Groups[2].Value.PadLeft(2, '0')}").Distinct().ToList(),
+                    .Select(m => BirkNext.Sdd.RequirementReferenceParser.Normalize($"SC-{m.Groups[2].Value}")).Distinct().ToList(),
                 ReferencedFrIds = FrRefRe.Matches(allCellText)
-                    .Select(m => $"FR-{m.Groups[2].Value.PadLeft(2, '0')}").Distinct().ToList(),
+                    .Select(m => BirkNext.Sdd.RequirementReferenceParser.Normalize($"FR-{m.Groups[2].Value}")).Distinct().ToList(),
                 Provenance = ProjectionProvenance.Create("Tasks", "TableRow", $"{rowTitle}:{lines[i].LineIndex + 1}",
                     ProjectionProvenance.Source(documentFingerprint, lines[i].LineIndex + 1, lines[i].LineIndex + 1,
                         "TaskTableRow", lines[i].RawLine)),

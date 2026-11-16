@@ -183,7 +183,9 @@ public static class TestPlanSuggestionsPresentation
         var plan = PlanOnly(ws);
         if (coverage is not { Known: true } c) return plan; // unknown coverage adds no count (no denominator) and no action
         var facts = plan.Facts.ToList();
-        facts.Add(new("req-reviewed", $"Requirements with reviewed scenario coverage (of {c.Requirements})", c.Reviewed));
+        // R1: name the population — these are the requirements of the last relationship analysis (canonical interpretation), not the selected
+        // specification Test Coverage counts; the two can differ, so each number says where it comes from.
+        facts.Add(new("req-reviewed", $"Requirements with reviewed scenario coverage (of {c.Requirements} in the last relationship analysis)", c.Reviewed));
         facts.Add(new("req-needs", "Requirements needing association review", c.NeedsReview));
         var actions = plan.Actions.ToList();
         var at = Math.Min(1, actions.Count);

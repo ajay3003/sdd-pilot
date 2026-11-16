@@ -57,3 +57,7 @@ One source tree (this commit), Release publish from a clean copy, fresh disposab
 ## 5. Git
 
 One local commit on `008-traceability-first`; not pushed. Earlier today: Unified Integration Testing `b0430dae`, feature portfolio audit `8e9abf1a`. Unrelated working-tree changes (`appsettings.Local.json`, `AIAssisted/testdata/`, the Kode67 gap register, other audit drafts) are left untouched and uncommitted.
+
+## 6. Addendum — browser regression on the committed build (finished after commit `b400d304`)
+
+Same tree and Release build as §4 (database `birknext_br_20261116`): `nav-accept` 41/41, `nav-accept2` 32/32, `utps-accept` 106/106, `itx-accept` 42/42, `tt-accept` 76/76, `ttnav-accept` 48/48 — with `brand-accept` 17/17 that is 362/362. No page errors, 5xx or guard hits; one console line (`nav-accept`: Frontend Quality Review's engine-status request cut off when the script leaves the page — the ~13 s Passive Web Security probe, addressed as R13 in `birknext-consolidation-implementation-2026-11-16.md`).
