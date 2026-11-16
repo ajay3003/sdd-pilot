@@ -22,10 +22,11 @@
             <BirkNext.Web.Components.HelpLink Topic="integration-suites" Text="Guide: multi-source E2E" /></p>
         @if (_journey is { } journey)
         {
-            @* Handed over from Integration Testing (?journey=): the declared journey as context for choosing sources and scope. It is not bound to a
-               suite: suites keep their own snapshot and scope, and the journey's steps are not confirmed connections. *@
+            @* Handed over from Integration Testing (?journey=): the declared journey as context for choosing sources and scope. A suite generated
+               here records the journey (id + revision) so it stays identifiable; its snapshot, scope and tests are its own, and the journey's steps are
+               not confirmed connections. *@
             <p class="its-note" role="status" data-testid="its-journey-context">Preparing for journey <strong>@journey.DisplayName</strong> (revision @journey.Revision):
-                @string.Join(" → ", journey.Components). Choose the sources and scope that cover these steps; the journey guides the choice and is not stored on the suite.
+                @string.Join(" → ", journey.Components). Choose the sources and scope that cover these steps; a suite generated here records that it was prepared for this journey revision.
                 <a href="@($"integration-journeys/declare?journey={Uri.EscapeDataString(journey.JourneyId)}")">Review journey</a> ·
                 <a href="@($"technical-testing/integrations?stage=prepare&journey={Uri.EscapeDataString(journey.Id)}")">Back to Integration Testing</a></p>
         }
@@ -316,6 +317,11 @@
                         @if (suite.Composite?.PartialDraft == true) { <span class="its-badge" data-state="NeedsReview" data-testid="its-partial">Partial draft</span> }
                     </div>
                     <p class="its-note" data-testid="its-status-reason">@suite.StatusReason</p>
+                    @if (suite.PreparedForJourneys.Count > 0)
+                    {
+                        <p class="its-note" data-testid="its-prepared-for">Prepared for: @foreach (var j in suite.PreparedForJourneys)
+                            { <a href="@($"technical-testing/integrations?stage=prepare&journey={Uri.EscapeDataString(j.JourneyId)}")" data-testid="its-prepared-for-journey">@j.Name (revision @j.Revision)</a><text> </text> }</p>
+                    }
                     @if (suite.Contracts.Where(c => c.ContractKey is { Length: > 0 }).Select(c => c.ContractKey!).Distinct().ToList() is { Count: > 0 } suiteKeys)
                     {
                         <p class="its-note"><a href="@($"api-quality-review/contracts?mode=configure&keys={Uri.EscapeDataString(string.Join(',', suiteKeys))}")" data-testid="its-resolve-environment">Resolve environment blockers for these @suiteKeys.Count contract(s) →</a></p>

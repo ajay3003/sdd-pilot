@@ -27,6 +27,7 @@ public sealed class SourceIngestionOwnershipTests
             ["Controllers/DependencyReviewController.cs"] = "SBOM / lock-file import: deployed-inventory evidence, not a source repository",
             ["Controllers/TestEvidenceController.cs"] = "one .trx test-result artifact: execution evidence, never source (source tests come from the Source Analysis snapshot)",
             ["Controllers/ParquetController.cs"] = "one .parquet data file opened read-only in a temporary, expiring explorer session: data under test, never source; no snapshot is created",
+            ["Controllers/ManualTestRunsController.cs"] = "one manual-run evidence file (screenshot, PDF, log; allow-listed types, no archives, content checked): stored with the run as execution evidence, never source",
             ["Controllers/DeliveryReportingController.cs"] ="Delivery Reporting snapshot ZIP: read by the same SourceArchiveUpload and canonical bounded reader, parsed into delivery_reporting only (stories/tasks), never a source snapshot or Source Analysis input",
         };
         Sources().Where(f => f.Rel.StartsWith("Controllers/") && Regex.IsMatch(f.Text, @"ReadFormAsync|IFormFile|SourceArchiveUpload\.ReadAsync")).Select(f => f.Rel)

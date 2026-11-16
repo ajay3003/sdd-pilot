@@ -87,7 +87,9 @@ public partial class IntegrationSuitesPage
     private IEnumerable<IqrSourceSnapshotSummary> ManualMatches => _manualFilter.Trim().Length < 2 ? [] :
         (_snapshots ?? []).Where(s => s.Archive.FileName.Contains(_manualFilter.Trim(), StringComparison.OrdinalIgnoreCase)).Take(MaxListed);
 
-    private string AreaHref(string key) => $"integration-suites?area={key}{(_context is { } c ? $"&context={c.Id:D}" : "")}{(_suite is { } s ? $"&suite={s.Id:D}" : "")}";
+    // The journey being prepared stays in the address across areas, so a reload or Back keeps it and a suite generated later still records it.
+    private string AreaHref(string key) => $"integration-suites?area={key}{(_context is { } c ? $"&context={c.Id:D}" : "")}{(_suite is { } s ? $"&suite={s.Id:D}" : "")}"
+        + (_journey is { } j ? $"&journey={Uri.EscapeDataString(j.Id)}" : "");
 
     protected override async Task OnInitializedAsync()
     {
@@ -284,6 +286,7 @@ public partial class IntegrationSuitesPage
         var (result, error) = await Api.GenerateAsync(new IntegrationSuiteGenerateRequest
         {
             ScopeId = context.ScopeId, CompositeContextId = context.Id, AllowPartial = _allowPartial, IncludeNegatives = _negatives, IncludeSecurity = _security, GenerateTestData = _testData,
+            PreparedForJourneyId = _journey?.Id,
         });
         await GeneratedAsync(result, error);
         _busy = false;
@@ -297,6 +300,7 @@ public partial class IntegrationSuitesPage
         {
             SnapshotId = snapshot.Id, ScopeId = _scopeId, IncludeNegatives = _negatives, IncludeSecurity = _security, GenerateTestData = _testData,
             Modules = [.. _modules.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)],
+            PreparedForJourneyId = _journey?.Id, // recorded on the suite with the journey's revision (identity and tests are unchanged)
         });
         await GeneratedAsync(result, error);
         _busy = false;

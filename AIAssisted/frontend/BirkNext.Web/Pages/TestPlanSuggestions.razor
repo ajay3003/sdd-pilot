@@ -299,6 +299,54 @@
 
     private void Change(TestPlanDraft draft) { _draft = draft; _dirty = true; _edits++; }
 
+    // ── Version history ──────────────────────────────────────────────────────────────────────────────────────────────
+
+    private bool _historyOpen;
+    private List<TestPlanRevisionSummary>? _revisions;
+    private string? _historyError;
+    private TestPlanDraft? _viewed;
+
+    private async Task ToggleHistoryAsync()
+    {
+        _historyOpen = !_historyOpen;
+        _viewed = null;
+        if (_historyOpen) await LoadRevisionsAsync();
+    }
+
+    private async Task LoadRevisionsAsync()
+    {
+        if (_draft is null || _api is null) return;
+        _revisions = null; _historyError = null;
+        var (list, error) = await _api.RevisionsAsync(_draft.Id);
+        (_revisions, _historyError) = (list, list is null ? error ?? "The version history could not be read." : null);
+    }
+
+    private async Task ViewRevisionAsync(int revision)
+    {
+        if (_viewed?.Revision == revision) { _viewed = null; return; }
+        if (_draft is null || _api is null) return;
+        var (draft, error) = await _api.RevisionAsync(_draft.Id, revision);
+        if (draft is null) { Fail(error ?? "That version could not be read."); return; }
+        _viewed = draft;
+    }
+
+    private async Task RestoreRevisionAsync(int revision)
+    {
+        if (_draft is not { } current || _api is null || _dirty) return;
+        var next = current.Revision + 1;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Restore version {revision}? It is saved as version {next}; the current version {current.Revision} stays in the history. Test cases added after version {revision} leave the plan; their test runs stay in run history.")) return;
+        _busy = true;
+        try
+        {
+            var (restored, error) = await _api.RestoreRevisionAsync(current.Id, current.Revision, revision);
+            if (restored is null) { Fail(error ?? "The version could not be restored."); return; }
+            _draft = restored; _dirty = false; _planName = restored.PlanName; _deliveryLabel = restored.DeliveryLabel ?? ""; _viewed = null;
+            Ok($"Version {revision} restored as version {restored.Revision}.");
+            await LoadRevisionsAsync();
+        }
+        finally { _busy = false; }
+    }
+
     /// <summary>Counts local edits, so a save that completes after a newer edit never marks that edit as saved.</summary>
     private int _edits;
 
@@ -343,6 +391,7 @@
                     @if (_draft is { } gd) { <span><strong>@gd.PlanName</strong> <span class="tps-muted">@gd.Cases.Count cases · revision @gd.Revision</span></span> }
                     else { <span class="tps-muted">None yet</span> }
                     @if (_dirty) { <span class="tps-tone tps-tone-warn" data-testid="tps-unsaved">Unsaved changes</span> }
+                    @if (_draft is not null) { <button type="button" class="tps-btn tps-btn-quiet" aria-expanded="@(_historyOpen ? "true" : "false")" aria-controls="tps-history" data-testid="tps-history-open" @onclick="ToggleHistoryAsync">Version history</button> }
                 </div>
                 @if (_ws?.Basis is { } basis)
                 {
@@ -376,9 +425,43 @@
                     @if (_draft is { } d) { <span><strong>@d.PlanName</strong> <span class="tps-muted">@d.Cases.Count cases · revision @d.Revision</span></span> }
                     else { <span class="tps-muted">None yet</span> }
                     @if (_dirty) { <span class="tps-tone tps-tone-warn" data-testid="tps-unsaved">Unsaved changes</span> }
+                    @if (_draft is not null) { <button type="button" class="tps-btn tps-btn-quiet" aria-expanded="@(_historyOpen ? "true" : "false")" aria-controls="tps-history" data-testid="tps-history-open" @onclick="ToggleHistoryAsync">Version history</button> }
                 </div>
             }
         </section>
+        @if (_historyOpen && _draft is { } hd)
+        {
+            @* Version history: every saved revision of this plan (append-only). A restore saves the chosen version as the next revision. *@
+            <section class="tps-block" id="tps-history" data-testid="tps-history" aria-labelledby="tps-history-title">
+                <h2 id="tps-history-title" class="tps-h">Version history of "@hd.PlanName"</h2>
+                <p class="tps-muted tps-small">Every saved version is kept. Restoring one saves it as a new version; nothing is deleted, and test runs stay in run history.</p>
+                @if (_historyError is not null) { <p class="tps-note tps-note-warn" role="alert">@_historyError</p> }
+                else if (_revisions is null) { <p class="tps-muted" role="status">Loading versions…</p> }
+                else if (_revisions.Count == 0) { <p class="tps-muted" data-testid="tps-history-none">No saved version is recorded yet. Versions saved from now on appear here.</p> }
+                else
+                {
+                    <ol class="tps-plain" data-testid="tps-history-list">
+                        @foreach (var r in _revisions)
+                        {
+                            <li data-testid="tps-history-item" data-revision="@r.Revision" data-current="@(r.Current ? "true" : "false")">
+                                <strong>Version @r.Revision</strong> · @r.Reason · @r.SavedBy · @r.SavedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @r.Cases case@(r.Cases == 1 ? "" : "s")@(r.PlanName != hd.PlanName ? $" · named \"{r.PlanName}\"" : "")
+                                @if (r.Current) { <span class="tps-tone tps-tone-ok" data-testid="tps-history-current">Current</span> }
+                                else
+                                {
+                                    <button type="button" class="tps-btn tps-btn-quiet" data-testid="tps-history-view" @onclick="() => ViewRevisionAsync(r.Revision)">@(_viewed?.Revision == r.Revision ? "Hide" : "View")</button>
+                                    <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || _dirty)" data-testid="tps-history-restore" @onclick="() => RestoreRevisionAsync(r.Revision)">Restore this version</button>
+                                }
+                                @if (_viewed is { } v && v.Revision == r.Revision)
+                                {
+                                    <ul class="tps-plain" data-testid="tps-history-cases">@foreach (var c in v.Cases) { <li>@c.EffectiveTitle <span class="tps-muted tps-small">@c.EffectiveSteps.Count step@(c.EffectiveSteps.Count == 1 ? "" : "s")</span></li> }</ul>
+                                }
+                            </li>
+                        }
+                    </ol>
+                    @if (_dirty) { <p class="tps-muted tps-small" data-testid="tps-history-needs-save">Save or discard your changes before restoring a version.</p> }
+                }
+            </section>
+        }
         @if (!GuideMode && _discovery is { } discovery)
         {
             <section class="tps-block" data-testid="tps-capabilities" aria-label="Evidence used">
@@ -994,6 +1077,7 @@
         }
         _draft = draft; _dirty = false;
         await ReloadWorkspaceAsync();
+        if (_historyOpen) await LoadRevisionsAsync();
         Ok($"Draft saved (revision {draft.Revision}).");
     }
 

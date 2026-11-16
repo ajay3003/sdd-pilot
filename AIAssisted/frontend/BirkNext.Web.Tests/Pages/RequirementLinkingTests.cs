@@ -53,7 +53,8 @@ public sealed class RequirementLinkingTests : BunitContext
         Suites = [new("suite:area:loans", "Loans", "area", null)], Cases = [c],
     };
 
-    private IRenderedComponent<TestPlanSuggestions> Render(TestPlanDraft draft, bool specification = true, bool canWrite = true)
+    private IRenderedComponent<TestPlanSuggestions> Render(TestPlanDraft draft, bool specification = true, bool canWrite = true,
+        Action<Mock<ITestPlanSuggestionsApiService>>? configure = null)
     {
         Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Imported", "library", "Library")).Object);
         var api = new Mock<ITestPlanSuggestionsApiService>();
@@ -70,6 +71,7 @@ public sealed class RequirementLinkingTests : BunitContext
                 Revision = draft.Revision + 1,
                 Cases = [.. draft.Cases.Select(c => c with { RequirementLinks = [.. (r.Cases.Single().RequirementLinks ?? []).Select(l => l.LinkedAt == default ? l with { LinkedBy = "anna", LinkedAt = DateTimeOffset.UtcNow } : l)] })],
             }, (string?)null));
+        configure?.Invoke(api);
         Services.AddSingleton(api.Object);
 
         var artifact = new ExplorerArtifact("a1", WorkspaceArtifactType.Specification, "spec.md", "spec.md", Spec, ExplorerArtifactSource.Workspace, "ProjectImport", 1, 1, "Draft",
@@ -297,5 +299,54 @@ public sealed class RequirementLinkingTests : BunitContext
         cut.Find("[data-testid=pct-requirement-origin]").TextContent.Should().Be("Automatically identified");
         cut.FindAll("[data-testid=pct-case-link-validity]").Should().BeEmpty("an older result has no validity to show");
         cut.FindAll("[data-testid=pct-req-none]").Should().BeEmpty("without the specification's requirement count no gap is claimed");
+    }
+
+    // ── Plan version history ────────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Version_history_lists_saved_versions_shows_one_and_restores_it_as_a_new_version()
+    {
+        var current = Draft(Case());
+        var older = current with { Revision = 2, PlanName = "Library – first draft", Cases = [Case() with { Edits = new TestCaseEdits { Title = "Borrow (old wording)" } }] };
+        (Guid Id, int Base, int Revision)? restored = null;
+        var cut = Render(current, configure: api =>
+        {
+            api.Setup(x => x.RevisionsAsync(DraftId, It.IsAny<CancellationToken>())).ReturnsAsync((new List<TestPlanRevisionSummary>
+            {
+                new(4, "Saved", "anna", DateTimeOffset.UtcNow, current.PlanName, 1, true), new(2, "Created", "anna", DateTimeOffset.UtcNow.AddDays(-1), older.PlanName, 1, false),
+            }, (string?)null));
+            api.Setup(x => x.RevisionAsync(DraftId, 2, It.IsAny<CancellationToken>())).ReturnsAsync((older, (string?)null));
+            api.Setup(x => x.RestoreRevisionAsync(DraftId, 4, 2, It.IsAny<CancellationToken>()))
+                .Callback<Guid, int, int, CancellationToken>((id, b, r, _) => restored = (id, b, r))
+                .ReturnsAsync((older with { Revision = 5 }, (string?)null));
+        });
+        JSInterop.Setup<bool>("confirm", _ => true).SetResult(true);
+
+        cut.Find("[data-testid=tps-history-open]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=tps-history-item]").Should().HaveCount(2));
+        cut.Find("[data-testid=tps-history-item][data-current=true]").TextContent.Should().Contain("Version 4").And.Contain("Current");
+        cut.Find("[data-testid=tps-history-view]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tps-history-cases]").TextContent.Should().Contain("Borrow (old wording)"));
+
+        cut.Find("[data-testid=tps-history-restore]").Click();
+        cut.WaitForAssertion(() => restored.Should().Be((DraftId, 4, 2), "the version the tester saw is the base; the chosen version is restored"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tps-existing-plan]").TextContent.Should().Contain("revision 5"));
+        JSInterop.Invocations.Should().Contain(i => i.Identifier == "confirm" && ((string)i.Arguments[0]!).Contains("stays in the history"));
+    }
+
+    [Fact]
+    public void A_version_cannot_be_restored_over_unsaved_changes()
+    {
+        var current = Draft(Case());
+        var cut = Render(current, configure: api => api.Setup(x => x.RevisionsAsync(DraftId, It.IsAny<CancellationToken>())).ReturnsAsync((new List<TestPlanRevisionSummary>
+        {
+            new(4, "Saved", "anna", DateTimeOffset.UtcNow, current.PlanName, 1, true), new(2, "Created", "anna", DateTimeOffset.UtcNow, current.PlanName, 1, false),
+        }, (string?)null)));
+        cut.Find("[data-testid=tps-link-search-tsc-borrow]").Input("email");
+        cut.Find("[data-testid=tps-link-add]").Click();
+        cut.Find("[data-testid=tps-history-open]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tps-history-restore]").HasAttribute("disabled").Should().BeTrue());
+        cut.Find("[data-testid=tps-history-needs-save]").TextContent.Should().Contain("Save or discard your changes");
     }
 }

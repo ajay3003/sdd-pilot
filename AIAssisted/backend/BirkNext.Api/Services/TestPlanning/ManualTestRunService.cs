@@ -180,6 +180,121 @@ public sealed class ManualTestRunService(AppDbContext db, TestPlanSuggestionServ
         }, ct);
     }
 
+    // ── Follow-up after a run: defect lifecycle and attachments ────────────────────────────────────────────────────
+
+    public const long MaxAttachmentBytes = 10 * 1024 * 1024;
+    public const int MaxAttachments = 20;
+
+    /// <summary>File types a tester attaches as evidence (by extension; the stored content type is ours, never the browser's). Scriptable or
+    /// renderable types (HTML, SVG) and archives are refused.</summary>
+    public static readonly IReadOnlyDictionary<string, string> AttachmentTypes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        [".png"] = "image/png", [".jpg"] = "image/jpeg", [".jpeg"] = "image/jpeg", [".gif"] = "image/gif", [".webp"] = "image/webp", [".pdf"] = "application/pdf",
+        [".txt"] = "text/plain", [".log"] = "text/plain", [".csv"] = "text/csv", [".json"] = "application/json", [".xml"] = "application/xml", [".har"] = "application/json",
+    };
+
+    /// <summary>
+    /// Follows up one defect — on a completed or stopped run (a run in progress is edited in the runner). Only the defect changes: its status, its
+    /// external reference, and an audit entry (who, when, from → to, note, retest run). Steps, outcome and evidence stay exactly as recorded.
+    /// </summary>
+    public async Task<ManualTestRun> UpdateDefectAsync(string projectKey, Guid id, string defectId, UpdateManualDefectRequest request, string actor, CancellationToken ct)
+    {
+        var row = await Row(projectKey, id, ct, tracked: true);
+        var run = Read(row);
+        if (run.State == ManualRunState.InProgress)
+            throw new TestPlanException(409, "run-in-progress", "This run is still in progress: change the defect in the run and save it.");
+        if (row.Revision != request.BaseRevision) throw new TestPlanException(409, "run-changed", $"The run is at revision {row.Revision}; reload it. Your change was not saved.");
+        var defect = run.Defects.FirstOrDefault(d => d.Id == defectId) ?? throw new TestPlanException(404, "defect-not-found", "No such defect in this run.");
+        var note = Text(request.Note, MaxText);
+        var external = Text(request.ExternalReference, 1000);
+        if (external is not null && !(external.Length <= 12 && external.All(char.IsAsciiDigit)) && !SafeLink(external))
+            throw new TestPlanException(400, "defect-reference-invalid", "An external reference is a work item number or a full https address.");
+        // No reference given keeps the current one (a follow-up never clears it by omission).
+        var externalChanged = external is not null && external != defect.ExternalReference;
+        if (request.Status == defect.Status && !externalChanged && note is null)
+            throw new TestPlanException(400, "defect-unchanged", "Choose a new status, change the work item reference or add a note.");
+        if (request.RetestRunId is { } retest)
+        {
+            var key = TestScenarioDiscoveryService.Key(projectKey);
+            var retestRow = await db.ManualTestRuns.AsNoTracking().SingleOrDefaultAsync(r => r.Id == retest && r.ProjectKey == key, ct)
+                ?? throw new TestPlanException(400, "retest-run-unknown", "The retest run is not a run of this project.");
+            if (retestRow.CaseId != run.CaseId || retestRow.DraftId != run.DraftId)
+                throw new TestPlanException(400, "retest-run-other-case", "The retest run tested another test case.");
+        }
+        var entry = new ManualDefectEvent(Now, actor, defect.Status, request.Status, note, request.RetestRunId, externalChanged ? external : null);
+        var updated = defect with { Status = request.Status, ExternalReference = external ?? defect.ExternalReference, History = [.. defect.History ?? [], entry] };
+        return await WriteAsync(row, run with
+        {
+            Defects = [.. run.Defects.Select(d => d.Id == defectId ? updated : d)], Revision = run.Revision + 1, UpdatedBy = actor, UpdatedAt = Now,
+        }, ct);
+    }
+
+    /// <summary>Every defect of the project's runs (newest run first): one list across runs, read from the runs themselves (no second store).</summary>
+    public async Task<List<ManualDefectListItem>> DefectsAsync(string projectKey, CancellationToken ct)
+    {
+        var key = TestScenarioDiscoveryService.Key(projectKey);
+        var rows = await db.ManualTestRuns.AsNoTracking().Where(r => r.ProjectKey == key).OrderByDescending(r => r.StartedAt).ToListAsync(ct);
+        return [.. rows.Select(Read).SelectMany(r => r.Defects.Select(d => new ManualDefectListItem(r.Id, r.Title, r.CaseKey, r.State, r.Outcome, r.StartedAt, r.Tester, d)))];
+    }
+
+    /// <summary>
+    /// Attaches a file to a run in progress, or to a completed run as follow-up evidence (marked added after completion; the original evidence is
+    /// never replaced). Types are allow-listed by extension and checked by content signature; at most <see cref="MaxAttachmentBytes"/> per file.
+    /// </summary>
+    public async Task<ManualTestRun> AttachAsync(string projectKey, Guid id, int baseRevision, int? step, string? label, string fileName, byte[] content, string actor, CancellationToken ct)
+    {
+        var row = await Row(projectKey, id, ct, tracked: true);
+        var run = Read(row);
+        if (run.State == ManualRunState.Abandoned) throw new TestPlanException(409, "run-final", "This run was stopped; start a new run to test again.");
+        if (row.Revision != baseRevision) throw new TestPlanException(409, "run-changed", $"The run is at revision {row.Revision}; reload it. The file was not attached.");
+        var name = System.IO.Path.GetFileName((fileName ?? "").Replace('\\', '/').Split('/').Last()).Trim();
+        if (name.Length == 0 || name.Length > 255) throw new TestPlanException(400, "attachment-name-invalid", "The file needs a name of at most 255 characters.");
+        if (!AttachmentTypes.TryGetValue(System.IO.Path.GetExtension(name), out var contentType))
+            throw new TestPlanException(400, "attachment-type-refused", $"This file type cannot be attached. Allowed: {string.Join(", ", AttachmentTypes.Keys.Select(k => k.TrimStart('.')))}.");
+        if (content.Length == 0) throw new TestPlanException(400, "attachment-empty", "The file is empty.");
+        if (content.Length > MaxAttachmentBytes) throw new TestPlanException(413, "attachment-too-large", $"A file can be at most {MaxAttachmentBytes / (1024 * 1024)} MB.");
+        if (!SignatureMatches(contentType, content)) throw new TestPlanException(400, "attachment-content-mismatch", "The file's content does not match its type.");
+        if (run.Evidence.Count(e => e.Kind == ManualEvidenceKind.Attachment) >= MaxAttachments)
+            throw new TestPlanException(400, "too-many-attachments", $"A run keeps at most {MaxAttachments} attached files.");
+        if (run.Evidence.Count >= MaxEvidence) throw new TestPlanException(400, "too-much-evidence", $"A run keeps at most {MaxEvidence} evidence references.");
+        var attachment = new ManualRunAttachmentRecord
+        {
+            Id = Guid.NewGuid(), RunId = run.Id, ProjectKey = row.ProjectKey, FileName = name, ContentType = contentType, Size = content.Length,
+            Sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(content)).ToLowerInvariant(), Content = content, AddedBy = actor, AddedAt = Now,
+        };
+        db.ManualRunAttachments.Add(attachment);
+        var evidence = new ManualRunEvidence
+        {
+            Id = "ev-" + Guid.NewGuid().ToString("N")[..12], Kind = ManualEvidenceKind.Attachment, Reference = attachment.Id.ToString("N"), Label = Text(label, 200) ?? name,
+            Step = Step(run, step), FileName = name, ContentType = contentType, Size = content.Length, AddedBy = actor, AddedAt = Now,
+            AddedAfterCompletion = run.State == ManualRunState.Completed,
+        };
+        return await WriteAsync(row, run with { Evidence = [.. run.Evidence, evidence], Revision = run.Revision + 1, UpdatedBy = actor, UpdatedAt = Now }, ct);
+    }
+
+    /// <summary>An attachment of a run of this project (never another project's).</summary>
+    public async Task<ManualRunAttachmentRecord> AttachmentAsync(string projectKey, Guid runId, Guid attachmentId, CancellationToken ct)
+    {
+        var key = TestScenarioDiscoveryService.Key(projectKey);
+        return await db.ManualRunAttachments.AsNoTracking().SingleOrDefaultAsync(a => a.Id == attachmentId && a.RunId == runId && a.ProjectKey == key, ct)
+            ?? throw new TestPlanException(404, "attachment-not-found", "No such attachment in this run.");
+    }
+
+    internal static bool SignatureMatches(string contentType, byte[] c)
+    {
+        static bool Starts(byte[] c, params byte[] sig) => c.Length >= sig.Length && c.AsSpan(0, sig.Length).SequenceEqual(sig);
+        return contentType switch
+        {
+            "image/png" => Starts(c, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A),
+            "image/jpeg" => Starts(c, 0xFF, 0xD8, 0xFF),
+            "image/gif" => Starts(c, (byte)'G', (byte)'I', (byte)'F', (byte)'8'),
+            "image/webp" => c.Length >= 12 && Starts(c, (byte)'R', (byte)'I', (byte)'F', (byte)'F') && c[8] == 'W' && c[9] == 'E' && c[10] == 'B' && c[11] == 'P',
+            "application/pdf" => Starts(c, (byte)'%', (byte)'P', (byte)'D', (byte)'F'),
+            // Text types: no NUL byte in the first 8 KB (a binary file renamed to .txt is refused).
+            _ => !c.AsSpan(0, Math.Min(c.Length, 8192)).Contains((byte)0),
+        };
+    }
+
     /// <summary>The identity of a case's executable content: title, preconditions, steps and expected results as the tester sees them.</summary>
     public static string Fingerprint(TestCaseDraft c) => ManualRunRules.CaseFingerprint(c); // shared with the web app; same bytes as before
 
@@ -218,6 +333,13 @@ public sealed class ManualTestRunService(AppDbContext db, TestPlanSuggestionServ
         return [.. wanted.Select(e =>
         {
             var label = Text(e.Label, 200) ?? throw new TestPlanException(400, "evidence-label-required", "Give every evidence reference a short label.");
+            if (e.Kind == ManualEvidenceKind.Attachment || held.GetValueOrDefault(e.Id ?? "")?.Kind == ManualEvidenceKind.Attachment)
+            {
+                // An attached file is added only by uploading it; a save may relabel it, move it to a step or remove it, never point it elsewhere.
+                if (!held.TryGetValue(e.Id ?? "", out var file) || file.Kind != ManualEvidenceKind.Attachment)
+                    throw new TestPlanException(400, "attachment-unknown", "Attach a file with Attach file; an attachment cannot be typed in.");
+                return file with { Label = label, Step = Step(run, e.Step) };
+            }
             var reference = Text(e.Reference, 1000) ?? throw new TestPlanException(400, "evidence-reference-required", "Say where the evidence is kept (a link or a note).");
             if (e.Kind == ManualEvidenceKind.Link && !SafeLink(reference))
                 throw new TestPlanException(400, "evidence-link-invalid", "An evidence link must be a full http or https address.");
@@ -247,7 +369,7 @@ public sealed class ManualTestRunService(AppDbContext db, TestPlanSuggestionServ
                 Severity = severity, Status = d.Status, ExternalReference = external, Step = Step(run, d.Step),
             };
             return held.TryGetValue(d.Id ?? "", out var old)
-                ? item with { Id = old.Id, RecordedBy = old.RecordedBy, RecordedAt = old.RecordedAt }
+                ? item with { Id = old.Id, RecordedBy = old.RecordedBy, RecordedAt = old.RecordedAt, History = old.History }
                 : item with { Id = "df-" + Guid.NewGuid().ToString("N")[..12], RecordedBy = actor, RecordedAt = Now };
         })];
     }

@@ -56,6 +56,12 @@ public sealed record AdoExportProfile
     /// <summary>CSV only: prefix cells starting with = + - @ with an apostrophe so spreadsheet programs never run them (Azure DevOps then keeps
     /// the apostrophe as text). XLSX never needs this: its cells are stored as text, never as formulas.</summary>
     public bool CsvSpreadsheetSafe { get; init; } = true;
+    /// <summary>Add a Description column with where each test case came from (specification file, acceptance scenario, requirements with their
+    /// files, the BirkNext case) so the origin stays visible in Azure DevOps. On by default; map it to Description in the import wizard.</summary>
+    public bool IncludeSourceReferences { get; init; } = true;
+    /// <summary>Azure DevOps test case ids the tester confirmed in an earlier update export, by BirkNext case key ("{plan id}/{case id}"): offered
+    /// again so an id is entered once. Never guessed; the tester can change or clear one.</summary>
+    public Dictionary<string, string> KnownTestCaseIds { get; init; } = [];
 }
 
 public sealed record AdoExportRequest
@@ -89,7 +95,7 @@ public sealed record AdoFieldStatus(string Field, string? Value, AdoFieldCheck C
 
 /// <summary>One import row (one test step). Exactly what both the XLSX and the CSV file contain.</summary>
 public sealed record AdoExportRow(string Id, string WorkItemType, string Title, int TestStep, string StepAction, string StepExpected, string AreaPath, string AssignedTo,
-    string State, string? Priority);
+    string State, string? Priority, string? Description = null);
 
 public sealed record AdoExportCase
 {
@@ -107,6 +113,13 @@ public sealed record AdoExportCase
     public string? Preconditions { get; init; }
     public string? Priority { get; init; }
     public List<AdoExportIssue> Issues { get; init; } = [];
+    /// <summary>Where the case came from (pinned the same way a manual run pins it): the specification file and acceptance scenario, and each
+    /// requirement with its file — in the Description column and the mapping report.</summary>
+    public string? SourceSpecification { get; init; }
+    public string? SourceScenario { get; init; }
+    public List<string> RequirementSources { get; init; } = [];
+    /// <summary>The Azure DevOps id came from an earlier confirmed export (not typed now).</summary>
+    public bool AzureDevOpsIdRemembered { get; init; }
 }
 
 public sealed record AdoExportPreview
@@ -141,6 +154,7 @@ public static class AdoExport
     public const string Boundary = "BirkNext creates an import file only. Import it in Azure DevOps: Test Plans → select the test plan and test suite → Import test cases from CSV/XLSX. Downloading is not importing; BirkNext cannot check that the Area Path, user or state exist in your organization, and the live import has not been tested from BirkNext.";
     public static readonly IReadOnlyList<string> Headers = ["ID", "Work Item Type", "Title", "Test Step", "Step Action", "Step Expected", "Area Path", "Assigned To", "State"];
     public const string PriorityHeader = "Priority";
+    public const string DescriptionHeader = "Description";
 
     /// <summary>BirkNext priority words → Azure DevOps Priority 1–4. Anything else is not mapped (left empty, with a warning).</summary>
     public static readonly IReadOnlyDictionary<string, string> PriorityMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

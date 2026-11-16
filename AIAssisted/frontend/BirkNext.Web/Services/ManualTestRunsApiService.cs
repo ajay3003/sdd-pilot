@@ -18,6 +18,19 @@ public interface IManualTestRunsApiService
     Task<(ManualTestRun? Run, string? Error)> SaveAsync(string projectKey, Guid id, SaveManualRunRequest request, CancellationToken ct = default);
     Task<(ManualTestRun? Run, string? Error)> CompleteAsync(string projectKey, Guid id, int baseRevision, CancellationToken ct = default);
     Task<(ManualTestRun? Run, string? Error)> AbandonAsync(string projectKey, Guid id, int baseRevision, string reason, CancellationToken ct = default);
+
+    /// <summary>Follows up a defect of a completed or stopped run (status, note, work item reference, retest run).</summary>
+    Task<(ManualTestRun? Run, string? Error)> UpdateDefectAsync(string projectKey, Guid id, string defectId, UpdateManualDefectRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(ManualTestRun?, string?)>((null, "Defect follow-up is not available in this host."));
+    /// <summary>Every defect of the project's runs.</summary>
+    Task<(List<ManualDefectListItem>? Defects, string? Error)> DefectsAsync(string projectKey, CancellationToken ct = default) =>
+        Task.FromResult<(List<ManualDefectListItem>?, string?)>((null, "The defect list is not available in this host."));
+    /// <summary>Attaches a file as evidence (multipart upload).</summary>
+    Task<(ManualTestRun? Run, string? Error)> AttachAsync(string projectKey, Guid id, int baseRevision, int? step, string? label, string fileName, byte[] content, CancellationToken ct = default) =>
+        Task.FromResult<(ManualTestRun?, string?)>((null, "Attaching files is not available in this host."));
+    /// <summary>The bytes of an attachment (for a download).</summary>
+    Task<(byte[]? Content, string? Error)> AttachmentAsync(string projectKey, Guid id, string attachmentId, CancellationToken ct = default) =>
+        Task.FromResult<(byte[]?, string?)>((null, "Attachments are not available in this host."));
 }
 
 public sealed class ManualTestRunsApiService(HttpClient http) : IManualTestRunsApiService
@@ -46,6 +59,35 @@ public sealed class ManualTestRunsApiService(HttpClient http) : IManualTestRunsA
 
     public Task<(ManualTestRun?, string?)> AbandonAsync(string projectKey, Guid id, int baseRevision, string reason, CancellationToken ct = default) =>
         Send<ManualTestRun>(() => http.PostAsJsonAsync($"{Base}/{id}/abandon?{P(projectKey)}", new AbandonManualRunRequest(baseRevision, reason), Json, ct), ct);
+
+    public Task<(ManualTestRun?, string?)> UpdateDefectAsync(string projectKey, Guid id, string defectId, UpdateManualDefectRequest request, CancellationToken ct = default) =>
+        Send<ManualTestRun>(() => http.PostAsJsonAsync($"{Base}/{id}/defects/{Uri.EscapeDataString(defectId)}?{P(projectKey)}", request, Json, ct), ct);
+
+    public Task<(List<ManualDefectListItem>?, string?)> DefectsAsync(string projectKey, CancellationToken ct = default) =>
+        Send<List<ManualDefectListItem>>(() => http.GetAsync($"{Base}/defects?{P(projectKey)}", ct), ct);
+
+    public Task<(ManualTestRun?, string?)> AttachAsync(string projectKey, Guid id, int baseRevision, int? step, string? label, string fileName, byte[] content, CancellationToken ct = default) =>
+        Send<ManualTestRun>(() =>
+        {
+            var form = new MultipartFormDataContent();
+            var file = new ByteArrayContent(content);
+            file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+            form.Add(file, "file", fileName);
+            if (step is { } n) form.Add(new StringContent(n.ToString(System.Globalization.CultureInfo.InvariantCulture)), "step");
+            if (!string.IsNullOrWhiteSpace(label)) form.Add(new StringContent(label), "label");
+            return http.PostAsync($"{Base}/{id}/attachments?{P(projectKey)}&baseRevision={baseRevision}", form, ct);
+        }, ct);
+
+    public async Task<(byte[]?, string?)> AttachmentAsync(string projectKey, Guid id, string attachmentId, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.GetAsync($"{Base}/{id}/attachments/{Uri.EscapeDataString(attachmentId)}?{P(projectKey)}", ct);
+            if (response.IsSuccessStatusCode) return (await response.Content.ReadAsByteArrayAsync(ct), null);
+            return (null, (int)response.StatusCode == 404 ? "The attachment no longer exists." : $"The attachment could not be downloaded (HTTP {(int)response.StatusCode}).");
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException) { return (null, "The attachment could not be downloaded."); }
+    }
 
     private static async Task<(T? Value, string? Error)> Send<T>(Func<Task<HttpResponseMessage>> call, CancellationToken ct)
     {

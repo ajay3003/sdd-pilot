@@ -42,3 +42,21 @@ public sealed class TestPlanSnapshotRecord
     public DateTimeOffset CreatedAt { get; set; }
     public string? Note { get; set; }
 }
+
+/// <summary>
+/// One saved revision of a Test Plan Suggestion draft (table <c>test_plan_draft_revisions</c>): append-only history so a tester can see earlier
+/// versions of a plan and restore one (a restore is a new revision, never a rewrite). Written with every draft write; revisions saved before this
+/// table existed are not available (the current draft and any snapshots are).
+/// </summary>
+public sealed class TestPlanDraftRevisionRecord
+{
+    public Guid Id { get; set; }
+    public Guid DraftId { get; set; }
+    public int Revision { get; set; }
+    public string PlanName { get; set; } = "";
+    public string ContentJson { get; set; } = "";
+    /// <summary>What produced the revision, in tester words ("Created", "Saved", "Restored from revision 3", …).</summary>
+    public string Reason { get; set; } = "";
+    public string SavedBy { get; set; } = "";
+    public DateTimeOffset SavedAt { get; set; }
+}

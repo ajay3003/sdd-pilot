@@ -149,7 +149,7 @@
                         {
                             <p data-testid="itx-prepare-journey-context">For journey <strong>@sj.DisplayName</strong> (revision @sj.Revision): @string.Join(" → ", sj.Components)</p>
                             <p><a class="btn btn-primary" href="@I.SuitesForJourneyHref(sj)" data-testid="itx-open-suites">Prepare in Integration Test Suites</a></p>
-                            <p class="mt-muted">Integration Test Suites opens with this journey as context. It builds suites from source snapshots and its own suite scopes; the journey is shown to guide the choice and is not bound to the suite.</p>
+                            <p class="mt-muted">Integration Test Suites opens with this journey as context. Choose this project's source snapshot there; a suite generated with this journey as context records the journey and its revision, shown below as “Prepared for”.</p>
                         }
                         else if (Journey is { Length: > 0 })
                         {
@@ -173,6 +173,11 @@
                                     <li data-testid="itx-suite" data-id="@s.Id"><a href="@I.SuiteHref(s)">@s.ScopeName</a>
                                         <span class="mt-chip mt-tone-@(s.Status is BirkNext.IntegrationSuites.SuiteStatus.ReadyToExecute ? "ok" : s.Status is BirkNext.IntegrationSuites.SuiteStatus.Blocked ? "bad" : "warn")">@I.SuiteLabel(s.Status)</span>
                                         <span class="mt-muted">@s.Tests test@(s.Tests == 1 ? "" : "s") · revision @s.Revision · @s.GeneratedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                                        @foreach (var pj in s.PreparedForJourneys.GroupBy(x => x.JourneyId).Select(g => g.OrderByDescending(x => x.Revision).First()))
+                                        {
+                                            var current = f.Journey(pj.JourneyId);
+                                            <span class="mt-chip mt-tone-@(current is not null && current.Revision != pj.Revision ? "warn" : "muted")" data-testid="itx-suite-journey" data-journey="@pj.JourneyId">Prepared for @pj.Name (rev. @pj.Revision)@(current is not null && current.Revision != pj.Revision ? $" — journey is now at revision {current.Revision}" : "")</span>
+                                        }
                                         <a href="@I.SuiteHref(s, "readiness")">Readiness</a></li>
                                 }
                             </ul>

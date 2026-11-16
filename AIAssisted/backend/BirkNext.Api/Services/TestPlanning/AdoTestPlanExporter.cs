@@ -67,9 +67,12 @@ public static partial class AdoTestPlanExporter
             }
 
             string adoId = "";
+            var remembered = false;
             if (excluded is null && request.Mode == AdoExportMode.UpdateExisting)
             {
-                var given = request.ExistingIds.GetValueOrDefault(id)?.Trim() ?? c.VerifiedAzureDevOpsTestCaseId?.Trim();
+                var typed = request.ExistingIds.GetValueOrDefault(id)?.Trim();
+                var given = typed is { Length: > 0 } ? typed : profile.KnownTestCaseIds.GetValueOrDefault($"{plan.Id:N}/{id}")?.Trim() ?? c.VerifiedAzureDevOpsTestCaseId?.Trim();
+                remembered = typed is not { Length: > 0 } && !string.IsNullOrEmpty(given);
                 if (string.IsNullOrEmpty(given)) caseIssues.Add(new(AdoIssueLevel.Blocking, "Update mode needs this case's Azure DevOps test case id (as shown in Azure DevOps).", id));
                 else if (!WorkItemId().IsMatch(given)) caseIssues.Add(new(AdoIssueLevel.Blocking, $"\"{given}\" is not an Azure DevOps work item id (digits only).", id));
                 else if (usedIds.TryGetValue(given, out var other)) caseIssues.Add(new(AdoIssueLevel.Blocking, $"Azure DevOps id {given} is also given for \"{other}\"; each test case needs its own id.", id));
@@ -86,8 +89,13 @@ public static partial class AdoTestPlanExporter
             }
 
             var included = excluded is null && caseIssues.All(i => i.Level != AdoIssueLevel.Blocking);
+            var origin = ManualTestRunService.Origin(c);
+            var requirementSources = origin.Requirements.Select(q => q.SpecificationFile is { } f ? $"{q.RequirementId} ({f})" : q.RequirementId).ToList();
+            var description = Describe(origin, requirementSources, $"{plan.Id:N}/{id}", plan.PlanName);
             cases.Add(new AdoExportCase
             {
+                SourceSpecification = origin.SpecificationFile, SourceScenario = origin.SpecificationScenarioId, RequirementSources = requirementSources,
+                AzureDevOpsIdRemembered = remembered && adoId.Length > 0,
                 CaseId = id, CaseKey = $"{plan.Id:N}/{id}", Title = title, Review = review, Included = excluded is null, ExcludedReason = excluded, Steps = steps.Count,
                 AzureDevOpsId = adoId.Length == 0 ? null : adoId, Requirements = RequirementIds(c), TestData = [.. c.TestData.Select(d => string.IsNullOrWhiteSpace(d.Alias) ? d.AssetId : $"{d.Alias} ({d.AssetId})")],
                 Preconditions = c.EffectivePreconditions, Priority = priority, Issues = caseIssues,
@@ -95,7 +103,7 @@ public static partial class AdoTestPlanExporter
             if (!included) continue;
             for (var i = 0; i < steps.Count; i++)
                 rows.Add(new AdoExportRow(adoId, AdoExport.WorkItemType, title, i + 1, steps[i].Action, steps[i].Expected, profile.AreaPath?.Trim() ?? "", profile.AssignedTo?.Trim() ?? "",
-                    profile.State?.Trim() ?? "", profile.IncludePriority ? priority ?? "" : null));
+                    profile.State?.Trim() ?? "", profile.IncludePriority ? priority ?? "" : null, profile.IncludeSourceReferences ? description : null));
         }
 
         var exported = cases.Where(c => c.Included && c.Issues.All(i => i.Level != AdoIssueLevel.Blocking)).ToList();
@@ -119,7 +127,7 @@ public static partial class AdoTestPlanExporter
             SelectedCases = cases.Count(c => c.Included), ReadyCases = exported.Count, CasesNeedingAttention = attention, Cases = cases, Rows = rows, Fields = fields,
             Issues = [.. issues, .. cases.SelectMany(c => c.Issues)],
             CanDownload = exported.Count > 0 && attention == 0 && issues.All(i => i.Level != AdoIssueLevel.Blocking),
-            Headers = [.. AdoExport.Headers, .. profile.IncludePriority ? new[] { AdoExport.PriorityHeader } : []],
+            Headers = [.. AdoExport.Headers, .. profile.IncludePriority ? new[] { AdoExport.PriorityHeader } : [], .. profile.IncludeSourceReferences ? new[] { AdoExport.DescriptionHeader } : []],
         };
     }
 
@@ -215,14 +223,27 @@ public static partial class AdoTestPlanExporter
     public static string Text(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "" : new string(value.Replace("\r\n", "\n").Replace('\r', '\n').Where(ch => ch is '\n' or '\t' || !char.IsControl(ch)).ToArray()).Trim();
 
-    private static IEnumerable<string> Cells(AdoExportRow r) => [r.Id, r.WorkItemType, r.Title, r.StepAction, r.StepExpected, r.AreaPath, r.AssignedTo, r.State, r.Priority ?? ""];
+    private static IEnumerable<string> Cells(AdoExportRow r) => [r.Id, r.WorkItemType, r.Title, r.StepAction, r.StepExpected, r.AreaPath, r.AssignedTo, r.State, r.Priority ?? "", r.Description ?? ""];
+
+    /// <summary>The Description cell: where the case came from, in plain words, so the origin travels with the test case into Azure DevOps.</summary>
+    internal static string Describe(ManualRunOrigin origin, IReadOnlyList<string> requirementSources, string caseKey, string planName)
+    {
+        var parts = new List<string>();
+        parts.Add(origin.SpecificationFile is { } f
+            ? $"Prepared in BirkNext from {f}{(origin.SpecificationScenarioId is { } sc ? $", acceptance scenario {sc}" : "")}."
+            : origin.SourceKind == ScenarioSourceKind.Manual ? "Written by hand in BirkNext (no specification source)." : "Prepared in BirkNext from a discovered scenario.");
+        if (requirementSources.Count > 0) parts.Add($"Requirements: {string.Join("; ", requirementSources)}.");
+        parts.Add($"BirkNext test case: {planName} ({caseKey}).");
+        return string.Join(" ", parts);
+    }
 
     private static bool Risky(string value) => value.Length > 0 && value[0] is '=' or '+' or '-' or '@' or '\t';
 
-    private static IReadOnlyList<string> Values(AdoExportRow r, bool priority)
+    private static IReadOnlyList<string> Values(AdoExportRow r, bool priority, bool description)
     {
         List<string> values = [r.Id, r.WorkItemType, r.Title, r.TestStep.ToString(System.Globalization.CultureInfo.InvariantCulture), r.StepAction, r.StepExpected, r.AreaPath, r.AssignedTo, r.State];
         if (priority) values.Add(r.Priority ?? "");
+        if (description) values.Add(r.Description ?? "");
         return values;
     }
 
@@ -234,11 +255,12 @@ public static partial class AdoTestPlanExporter
     public static byte[] Csv(IReadOnlyList<AdoExportRow> rows, IReadOnlyList<string> headers, bool spreadsheetSafe)
     {
         var priority = headers.Contains(AdoExport.PriorityHeader);
+        var description = headers.Contains(AdoExport.DescriptionHeader);
         var sb = new StringBuilder();
         sb.Append(string.Join(",", headers.Select(h => Quote(h)))).Append("\r\n");
         foreach (var r in rows)
         {
-            var values = Values(r, priority);
+            var values = Values(r, priority, description);
             sb.Append(string.Join(",", values.Select((v, i) => Quote(spreadsheetSafe && i != 3 && Risky(v) ? "'" + v : v)))).Append("\r\n");
         }
         return [.. Encoding.UTF8.GetPreamble(), .. Encoding.UTF8.GetBytes(sb.ToString())];
@@ -258,6 +280,7 @@ public static partial class AdoTestPlanExporter
     public static byte[] Xlsx(IReadOnlyList<AdoExportRow> rows, IReadOnlyList<string> headers)
     {
         var priority = headers.Contains(AdoExport.PriorityHeader);
+        var description = headers.Contains(AdoExport.DescriptionHeader);
         using var stream = new MemoryStream();
         using (var zip = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
         {
@@ -267,19 +290,19 @@ public static partial class AdoTestPlanExporter
             Part(zip, "xl/_rels/workbook.xml.rels", """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>""");
             // Style 1 = bold (header row); style 2 = wrapped text (step cells). Nothing else.
             Part(zip, "xl/styles.xml", """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf></cellXfs></styleSheet>""");
-            Part(zip, "xl/worksheets/sheet1.xml", Sheet(rows, headers, priority));
+            Part(zip, "xl/worksheets/sheet1.xml", Sheet(rows, headers, priority, description));
         }
         return stream.ToArray();
     }
 
-    private static string Sheet(IReadOnlyList<AdoExportRow> rows, IReadOnlyList<string> headers, bool priority)
+    private static string Sheet(IReadOnlyList<AdoExportRow> rows, IReadOnlyList<string> headers, bool priority, bool description)
     {
         var widths = new[] { 10, 12, 50, 9, 60, 60, 30, 28, 12, 9 };
         var sb = new StringBuilder();
         sb.Append("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">""");
         sb.Append("""<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>""");
         sb.Append("<cols>");
-        for (var i = 0; i < headers.Count; i++) sb.Append($"""<col min="{i + 1}" max="{i + 1}" width="{widths[Math.Min(i, widths.Length - 1)]}" customWidth="1"/>""");
+        for (var i = 0; i < headers.Count; i++) sb.Append($"""<col min="{i + 1}" max="{i + 1}" width="{(headers[i] == AdoExport.DescriptionHeader ? 70 : widths[Math.Min(i, widths.Length - 1)])}" customWidth="1"/>""");
         sb.Append("</cols><sheetData>");
         sb.Append("""<row r="1">""");
         for (var i = 0; i < headers.Count; i++) sb.Append(TextCell(Column(i) + "1", headers[i], 1));
@@ -287,7 +310,7 @@ public static partial class AdoTestPlanExporter
         for (var r = 0; r < rows.Count; r++)
         {
             var n = r + 2;
-            var values = Values(rows[r], priority);
+            var values = Values(rows[r], priority, description);
             sb.Append($"""<row r="{n}">""");
             for (var i = 0; i < values.Count; i++)
             {
@@ -327,12 +350,14 @@ public static partial class AdoTestPlanExporter
     /// Test Data names, preconditions, and why a case is not in the file.</summary>
     public static byte[] MappingReport(AdoExportPreview preview, IReadOnlyDictionary<string, string> caseRevisions) =>
         Csv2([
-            ["BirkNext case", "Title", "In import file", "Not exported because", "Azure DevOps id", "Plan revision", "Case revision", "Requirements (BirkNext ids)", "Test Data (names only)", "Preconditions"],
+            ["BirkNext case", "Title", "In import file", "Not exported because", "Azure DevOps id", "Plan revision", "Case revision", "Requirements (BirkNext ids)", "Test Data (names only)", "Preconditions",
+             "Source specification", "Acceptance scenario", "Requirements with their specification"],
             .. preview.Cases.Select(c => (IReadOnlyList<string>)[c.CaseKey, c.Title,
                 c.Included && c.Issues.All(i => i.Level != AdoIssueLevel.Blocking) ? "Yes" : "No",
                 c.ExcludedReason ?? string.Join(" ", c.Issues.Where(i => i.Level == AdoIssueLevel.Blocking).Select(i => i.Message)),
                 c.AzureDevOpsId ?? "", preview.PlanRevision.ToString(System.Globalization.CultureInfo.InvariantCulture), caseRevisions.GetValueOrDefault(c.CaseId) ?? "",
-                string.Join("; ", c.Requirements), string.Join("; ", c.TestData), c.Preconditions ?? ""]),
+                string.Join("; ", c.Requirements), string.Join("; ", c.TestData), c.Preconditions ?? "",
+                c.SourceSpecification ?? "", c.SourceScenario ?? "", string.Join("; ", c.RequirementSources)]),
         ]);
 
     private static byte[] Csv2(IEnumerable<IReadOnlyList<string>> lines)

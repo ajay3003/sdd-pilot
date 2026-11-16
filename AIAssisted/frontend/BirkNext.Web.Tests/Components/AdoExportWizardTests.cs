@@ -188,4 +188,27 @@ public sealed class AdoExportWizardTests : BunitContext
         cut.FindAll("fieldset.adx-step > legend").Select(l => l.TextContent.Trim()).Should().Equal("1 Select test cases", "2 Configure Azure DevOps", "3 Check", "4 Preview and download");
         cut.FindAll("[data-testid=adx-configure] input:not([type=radio]):not([type=checkbox])").Should().OnlyContain(i => i.Closest("label") != null, "every field has a visible label");
     }
+
+    [Fact]
+    public void A_remembered_azure_devops_id_is_prefilled_and_marked_and_typing_a_new_one_replaces_it()
+    {
+        var cut = Open(profile: new AdoExportProfile { AreaPath = "Library", KnownTestCaseIds = new() { [$"{PlanId:N}/c1"] = "4711" } });
+
+        cut.Find("[data-testid=adx-mode-update]").Change(true);
+        cut.Find("[data-testid=adx-existing-id]").GetAttribute("value").Should().Be("4711", "the id confirmed in an earlier export is not asked for again");
+        cut.Find("[data-testid=adx-existing-id-remembered]").TextContent.Should().Contain("Remembered from an earlier export");
+        cut.Find("[data-testid=adx-existing-id]").Change("4800");
+        cut.FindAll("[data-testid=adx-existing-id-remembered]").Should().BeEmpty();
+        _previews.Last().ExistingIds["c1"].Should().Be("4800");
+    }
+
+    [Fact]
+    public void Source_references_are_on_by_default_and_can_be_left_out()
+    {
+        var cut = Open();
+        cut.Find("[data-testid=adx-source-refs]").HasAttribute("checked").Should().BeTrue();
+        _previews.First().Profile.IncludeSourceReferences.Should().BeTrue();
+        cut.Find("[data-testid=adx-source-refs]").Change(false);
+        _previews.Last().Profile.IncludeSourceReferences.Should().BeFalse();
+    }
 }

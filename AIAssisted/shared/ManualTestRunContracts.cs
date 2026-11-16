@@ -5,8 +5,10 @@ namespace BirkNext.TestPlanning;
 // ── Manual test execution (Manual Testing → Execute & document) ──────────────────────────────────────────────────
 // A manual run executes ONE saved test case (plan id + case id) as it stood when the run started: the steps, expected results and the case's
 // content fingerprint are pinned in the run, so a later edit of the case never rewrites a past result. Outcomes are recorded by a person only
-// (never generated). Evidence is a REFERENCE (a link or a note naming where the evidence is kept): BirkNext stores no uploaded file here.
-// A defect is a local observation, optionally referencing an existing external work item; nothing is written to Azure DevOps.
+// (never generated). Evidence is a link, a note naming where it is kept, or a file attached to the run (size- and type-limited, stored with the run's
+// project). A defect is a local observation, optionally referencing an existing external work item; nothing is written to Azure DevOps. After a
+// run is completed its steps, outcome and original evidence are final; a defect's status can still be followed up (with an audit history) and
+// further evidence can be attached, marked as added after completion.
 
 /// <summary>Where a run stands in its own lifecycle (separate from the case's preparation state and from the run's outcome).</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -39,6 +41,8 @@ public enum ManualEvidenceKind
     Link,
     /// <summary>A plain description of where the evidence is kept (file name, folder, ticket) — not a link, not an upload.</summary>
     Note,
+    /// <summary>A file attached to the run (screenshot, PDF, log): <see cref="ManualRunEvidence.Reference"/> is the attachment id.</summary>
+    Attachment,
 }
 
 public sealed record ManualRunEvidence
@@ -52,10 +56,23 @@ public sealed record ManualRunEvidence
     public string Reference { get; init; } = "";
     public string AddedBy { get; init; } = "";
     public DateTimeOffset AddedAt { get; init; }
+    /// <summary>For an attachment: the original file name, its type and size in bytes.</summary>
+    public string? FileName { get; init; }
+    public string? ContentType { get; init; }
+    public long? Size { get; init; }
+    /// <summary>Attached after the run was completed (follow-up evidence); the run's original evidence is never replaced.</summary>
+    public bool AddedAfterCompletion { get; init; }
 }
 
+/// <summary>Open → Ready for retest (fixed, waiting for a retest) → Closed; a closed or ready defect can be reopened. Changes after completion are
+/// recorded in <see cref="ManualRunDefect.History"/>.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ManualDefectStatus { Open, Closed }
+public enum ManualDefectStatus { Open, Closed, ReadyForRetest }
+
+/// <summary>One change of a defect's status after it was recorded: who, when, from what to what, why, and (optionally) the retest run that
+/// verified it.</summary>
+public sealed record ManualDefectEvent(DateTimeOffset At, string By, ManualDefectStatus From, ManualDefectStatus To, string? Note, Guid? RetestRunId = null,
+    string? ExternalReference = null);
 
 /// <summary>A defect observed during the run, recorded in BirkNext (a local observation). <see cref="ExternalReference"/> optionally names an
 /// existing work item (an Azure DevOps id or an https link) the tester registered elsewhere; BirkNext never creates or changes it.</summary>
@@ -74,6 +91,9 @@ public sealed record ManualRunDefect
     public string? ExternalReference { get; init; }
     public string RecordedBy { get; init; } = "";
     public DateTimeOffset RecordedAt { get; init; }
+    /// <summary>Status changes after the defect was recorded (follow-up), oldest first; omitted when there are none.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<ManualDefectEvent>? History { get; init; }
 }
 
 public sealed record ManualTestRun
@@ -160,6 +180,14 @@ public sealed record SaveManualRunRequest
 public sealed record ManualStepInput(int Number, ManualStepOutcome? Outcome, string? Actual);
 
 public sealed record CompleteManualRunRequest(int BaseRevision);
+
+/// <summary>Follows up one defect of a run — also after the run is completed: a new status with an optional note, an updated external work item
+/// reference, and the retest run that verified a fix. Only the defect changes; the run's steps, outcome and evidence stay as recorded.</summary>
+public sealed record UpdateManualDefectRequest(int BaseRevision, ManualDefectStatus Status, string? Note, string? ExternalReference, Guid? RetestRunId);
+
+/// <summary>A defect with the run it was found in (the project's defect list across runs).</summary>
+public sealed record ManualDefectListItem(Guid RunId, string RunTitle, string CaseKey, ManualRunState RunState, ManualRunOutcome RunOutcome, DateTimeOffset RunStartedAt,
+    string Tester, ManualRunDefect Defect);
 public sealed record AbandonManualRunRequest(int BaseRevision, string Reason);
 
 /// <summary>The rules every consumer (runner, history, Test Coverage, Requirements Traceability) shares.</summary>
@@ -205,5 +233,5 @@ public static class ManualRunRules
     public static ManualRunSummary Summary(ManualTestRun r) => new(r.Id, r.DraftId, r.CaseId, r.CaseKey, r.Title, r.PlanRevision, r.CaseFingerprint, r.State, r.Outcome, r.Tester,
         r.Environment, r.StartedAt, r.CompletedAt, r.Steps.Count, r.Steps.Count(s => s.Outcome == ManualStepOutcome.Pass), r.Steps.Count(s => s.Outcome == ManualStepOutcome.Fail),
         r.Steps.Count(s => s.Outcome == ManualStepOutcome.Blocked), r.Steps.Count(s => s.Outcome == ManualStepOutcome.NotRun), r.Steps.Count(s => s.Outcome is null),
-        r.Defects.Count, r.Defects.Count(d => d.Status == ManualDefectStatus.Open), r.Evidence.Count, r.RetestOf);
+        r.Defects.Count, r.Defects.Count(d => d.Status != ManualDefectStatus.Closed), r.Evidence.Count, r.RetestOf);
 }

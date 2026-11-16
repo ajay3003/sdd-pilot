@@ -134,6 +134,7 @@
             foreach (var summary in _ws.Plans?.Drafts ?? [])
                 if ((await _plans.DraftAsync(summary.Id)).Draft is { } d && d.ProjectKey == key) _drafts.Add(d);
             await LoadHistoryAsync(key, reset: true);
+            await LoadDefectsAsync(key);
         }
         finally { _loading = false; }
     }
@@ -249,6 +250,7 @@
             }
         </section>
         @History(_history is null ? _ws.Runs : _historyRows)
+        @DefectList()
     };
 
     private RenderFragment History(IReadOnlyList<ManualRunSummary> runs) => __builder =>
@@ -437,18 +439,24 @@
     private RenderFragment Evidence(ManualTestRun run, bool editable) => __builder =>
     {
         <section class="mt-card" aria-labelledby="mte-ev-title" data-testid="mte-evidence">
-            <h2 id="mte-ev-title" class="mt-h">Evidence references</h2>
-            <p class="mt-muted">BirkNext stores where the evidence is kept — a link or a note — not the file itself. Keep screenshots and logs in your team's evidence store.</p>
-            @if (_evidence.Count == 0) { <p class="mt-muted" data-testid="mte-evidence-none">No evidence reference yet.</p> }
+            <h2 id="mte-ev-title" class="mt-h">Evidence</h2>
+            <p class="mt-muted">Attach a screenshot, PDF or log (up to 10 MB), or add a link or a note to where the evidence is kept.@(run.State == ManualRunState.Completed ? " Files attached now are kept as follow-up evidence, next to what was recorded during the run." : "")</p>
+            @if (_evidence.Count == 0) { <p class="mt-muted" data-testid="mte-evidence-none">No evidence yet.</p> }
             <ul class="mte-items">
                 @foreach (var e in _evidence.ToList())
                 {
                     <li data-testid="mte-evidence-item" data-kind="@e.Kind">
                         <strong>@e.Label</strong>
-                        @if (e.Kind == ManualEvidenceKind.Link && Uri.TryCreate(e.Reference, UriKind.Absolute, out var u) && (u.Scheme == "https" || u.Scheme == "http"))
+                        @if (e.Kind == ManualEvidenceKind.Attachment)
+                        {
+                            <span>@e.FileName</span>
+                            <button type="button" class="btn btn-secondary btn-sm" data-testid="mte-attachment-download" aria-label="@($"Download {e.FileName}")" @onclick="() => DownloadAttachmentAsync(e)">Download</button>
+                            @if (e.AddedAfterCompletion) { <span class="mt-chip mt-tone-muted" data-testid="mte-attachment-followup">added after completion</span> }
+                        }
+                        else if (e.Kind == ManualEvidenceKind.Link && Uri.TryCreate(e.Reference, UriKind.Absolute, out var u) && (u.Scheme == "https" || u.Scheme == "http"))
                         { <a href="@e.Reference" target="_blank" rel="noopener noreferrer">@e.Reference</a> }
                         else { <span>@e.Reference</span> }
-                        <span class="mt-muted">@(e.Kind == ManualEvidenceKind.Link ? "link" : "note")@(e.Step is { } st ? $" · step {st}" : " · whole run")@(e.AddedBy.Length > 0 ? $" · {e.AddedBy}" : " · not saved yet")</span>
+                        <span class="mt-muted">@(e.Kind switch { ManualEvidenceKind.Link => "link", ManualEvidenceKind.Attachment => $"file · {M.FileSize(e.Size)}", _ => "note" })@(e.Step is { } st ? $" · step {st}" : " · whole run")@(e.AddedBy.Length > 0 ? $" · {e.AddedBy}" : " · not saved yet")</span>
                         @if (editable) { <button type="button" class="btn btn-secondary btn-sm" aria-label="@($"Remove evidence {e.Label}")" @onclick="() => { _evidence.Remove(e); _dirty = true; }">Remove</button> }
                     </li>
                 }
@@ -471,7 +479,22 @@
                 </div>
                 @if (_evKind == ManualEvidenceKind.Link && _evReference.Length > 0 && !LinkOk(_evReference)) { <p class="mt-muted" data-testid="mte-ev-invalid">A link must be a full http or https address.</p> }
                 <button type="button" class="btn btn-secondary btn-sm" disabled="@(string.IsNullOrWhiteSpace(_evLabel) || string.IsNullOrWhiteSpace(_evReference) || (_evKind == ManualEvidenceKind.Link && !LinkOk(_evReference)))"
-                        @onclick="AddEvidence" data-testid="mte-ev-add">Add evidence reference</button>
+                        @onclick="AddEvidence" data-testid="mte-ev-add">Add link or note</button>
+            }
+            @if (run.State != ManualRunState.Abandoned)
+            {
+                <div class="mte-row" data-testid="mte-attach-row">
+                    <label class="mte-field"><span>Attach a file</span>
+                        <InputFile OnChange="AttachAsync" accept=".png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.log,.csv,.json,.xml,.har" disabled="@_attaching" data-testid="mte-attach" /></label>
+                    <label class="mte-field"><span>Label (optional)</span><input value="@_attLabel" @oninput="e => _attLabel = e.Value?.ToString() ?? string.Empty" maxlength="200" data-testid="mte-attach-label" /></label>
+                    <label class="mte-field"><span>Belongs to</span>
+                        <select @onchange="e => _attStep = int.TryParse(e.Value?.ToString(), out var v) ? v : null" data-testid="mte-attach-step">
+                            <option value="" selected="@(_attStep is null)">Whole run</option>
+                            @foreach (var st in run.Steps) { <option value="@st.Number" selected="@(_attStep == st.Number)">Step @st.Number</option> }
+                        </select></label>
+                </div>
+                @if (_attaching) { <p class="mt-muted" role="status" data-testid="mte-attaching">Attaching…</p> }
+                @if (_attachError is not null) { <p class="mt-alert" role="alert" data-testid="mte-attach-error">@_attachError</p> }
             }
         </section>
     };
@@ -487,14 +510,51 @@
                 {
                     <li data-testid="mte-defect" data-status="@d.Status">
                         <strong>@d.Title</strong>
-                        <span class="mt-chip @(d.Status == ManualDefectStatus.Open ? "mt-tone-bad" : "mt-tone-muted")">@d.Status</span>
+                        <span class="mt-chip mt-tone-@M.DefectStatusTone(d.Status)" data-testid="mte-defect-status">@M.DefectStatusLabel(d.Status)</span>
                         @if (d.Severity is { } sev) { <span class="mt-chip mt-tone-warn">@sev</span> }
                         <span class="mt-muted">@(d.Step is { } st ? $"step {st}" : "whole run")@(d.ExternalReference is { } ext ? $" · external: {ext}" : " · local observation")@(d.RecordedBy.Length > 0 ? $" · {d.RecordedBy}" : " · not saved yet")</span>
                         @if (d.Actual is { Length: > 0 } a) { <span class="mt-muted">Actual: @a</span> }
+                        @if (d.History is { Count: > 0 } history)
+                        {
+                            <ol class="mte-defect-history" data-testid="mte-defect-history">
+                                @foreach (var h in history)
+                                {
+                                    <li>@h.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @h.By: @M.DefectStatusLabel(h.From) → @M.DefectStatusLabel(h.To)@(h.Note is { Length: > 0 } note ? $" — {note}" : "")@(h.ExternalReference is { } x ? $" · work item {x}" : "")@if (h.RetestRunId is { } rr) { <text> · </text><a href="@($"{M.ExecuteRoute}?run={rr}")">retest run</a> }</li>
+                                }
+                            </ol>
+                        }
                         @if (editable)
                         {
-                            <button type="button" class="btn btn-secondary btn-sm" @onclick="() => ToggleDefect(d)" data-testid="mte-defect-toggle">@(d.Status == ManualDefectStatus.Open ? "Mark closed" : "Reopen")</button>
+                            <label class="mte-field mte-inline"><span class="visually-hidden">Status of @d.Title</span>
+                                <select @onchange="e => SetDefectStatus(d, e.Value?.ToString())" data-testid="mte-defect-status-select">
+                                    @foreach (var ds in new[] { ManualDefectStatus.Open, ManualDefectStatus.ReadyForRetest, ManualDefectStatus.Closed })
+                                    { <option value="@ds" selected="@(d.Status == ds)">@M.DefectStatusLabel(ds)</option> }
+                                </select></label>
                             <button type="button" class="btn btn-secondary btn-sm" aria-label="@($"Remove defect {d.Title}")" @onclick="() => { _defects.Remove(d); _dirty = true; }">Remove</button>
+                        }
+                        else if (_followUp?.DefectId == d.Id)
+                        {
+                            @* Follow-up after the run: only the defect changes; the run's results and evidence stay as recorded. *@
+                            <div class="mte-row" data-testid="mte-followup">
+                                <label class="mte-field"><span>New status</span>
+                                    <select @onchange="e => _followUp = _followUp with { Status = Enum.TryParse<ManualDefectStatus>(e.Value?.ToString(), out var v) ? v : _followUp.Status }" data-testid="mte-followup-status">
+                                        @foreach (var fs in new[] { ManualDefectStatus.Open, ManualDefectStatus.ReadyForRetest, ManualDefectStatus.Closed })
+                                        { <option value="@fs" selected="@(_followUp.Status == fs)">@M.DefectStatusLabel(fs)</option> }
+                                    </select></label>
+                                <label class="mte-field"><span>Note</span><input value="@_followUp.Note" @oninput="e => _followUp = _followUp with { Note = e.Value?.ToString() }" maxlength="2000" data-testid="mte-followup-note" /></label>
+                                <label class="mte-field"><span>Work item (optional)</span><input value="@_followUp.ExternalReference" @oninput="e => _followUp = _followUp with { ExternalReference = e.Value?.ToString() }" placeholder="Number or https link" maxlength="1000" data-testid="mte-followup-external" /></label>
+                                <label class="mte-field"><span>Verified by retest run (optional)</span>
+                                    <select @onchange="e => _followUp = _followUp with { RetestRunId = Guid.TryParse(e.Value?.ToString(), out var g) ? g : null }" data-testid="mte-followup-retest">
+                                        <option value="" selected="@(_followUp.RetestRunId is null)">No retest run</option>
+                                        @foreach (var r in RetestCandidates(run)) { <option value="@r.Id" selected="@(_followUp.RetestRunId == r.Id)">@M.RunLabel(r.State, r.Outcome) · @r.StartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @r.Tester</option> }
+                                    </select></label>
+                            </div>
+                            <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => SaveFollowUpAsync(run)" data-testid="mte-followup-save">Save follow-up</button>
+                            <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _followUp = null" data-testid="mte-followup-cancel">Cancel</button>
+                        }
+                        else if (run.State != ManualRunState.InProgress)
+                        {
+                            <button type="button" class="btn btn-secondary btn-sm" data-testid="mte-defect-followup" @onclick="() => _followUp = new FollowUp(d.Id, d.Status, null, d.ExternalReference, null)">Follow up</button>
                         }
                     </li>
                 }
@@ -547,11 +607,130 @@
         _newDefect = new(); _dirty = true;
     }
 
-    private void ToggleDefect(ManualRunDefect d)
+    private void SetDefectStatus(ManualRunDefect d, string? value)
     {
         var i = _defects.IndexOf(d);
-        if (i >= 0) { _defects[i] = d with { Status = d.Status == ManualDefectStatus.Open ? ManualDefectStatus.Closed : ManualDefectStatus.Open }; _dirty = true; }
+        if (i >= 0 && Enum.TryParse<ManualDefectStatus>(value, out var status)) { _defects[i] = d with { Status = status }; _dirty = true; }
     }
+
+    // ── Follow-up after a run (defects) and attachments ─────────────────────────────────────────────────────────────
+
+    private sealed record FollowUp(string DefectId, ManualDefectStatus Status, string? Note, string? ExternalReference, Guid? RetestRunId);
+    private FollowUp? _followUp;
+    private string _attLabel = "";
+    private int? _attStep;
+    private bool _attaching;
+    private string? _attachError;
+
+    /// <summary>Completed runs of the same case started after this one — the runs that can verify a fix.</summary>
+    private IEnumerable<ManualRunSummary> RetestCandidates(ManualTestRun run) =>
+        (_ws?.Runs ?? []).Where(r => r.CaseKey == run.CaseKey && r.Id != run.Id && r.State == ManualRunState.Completed && r.StartedAt >= run.StartedAt).OrderByDescending(r => r.StartedAt);
+
+    private async Task SaveFollowUpAsync(ManualTestRun run)
+    {
+        if (_followUp is not { } f || _runs is null || _ws?.ProjectKey is not { } key) return;
+        _busy = true;
+        try
+        {
+            var (updated, error) = await _runs.UpdateDefectAsync(key, run.Id, f.DefectId,
+                new UpdateManualDefectRequest(run.Revision, f.Status, f.Note, string.IsNullOrWhiteSpace(f.ExternalReference) ? null : f.ExternalReference.Trim(), f.RetestRunId));
+            if (updated is null) { Fail(error ?? "The defect could not be updated."); return; }
+            Use(updated); _followUp = null;
+            Info("Defect updated. The run's results and evidence are unchanged.");
+            await LoadDefectsAsync(key);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task AttachAsync(InputFileChangeEventArgs args)
+    {
+        if (_run is not { } run || _runs is null || _ws?.ProjectKey is not { } key) return;
+        _attachError = null;
+        var file = args.File;
+        const long max = 10 * 1024 * 1024;
+        if (file.Size > max) { _attachError = $"\"{file.Name}\" is larger than 10 MB and was not attached."; return; }
+        _attaching = true;
+        try
+        {
+            byte[] bytes;
+            using (var buffer = new MemoryStream())
+            {
+                await using var stream = file.OpenReadStream(max);
+                await stream.CopyToAsync(buffer);
+                bytes = buffer.ToArray();
+            }
+            var (updated, error) = await _runs.AttachAsync(key, run.Id, run.Revision, _attStep, string.IsNullOrWhiteSpace(_attLabel) ? null : _attLabel.Trim(), file.Name, bytes);
+            if (updated is null) { _attachError = error ?? "The file could not be attached."; return; }
+            if (run.State == ManualRunState.InProgress)
+            {
+                // Keep this tab's unsaved results: take the new revision and add the stored file to the evidence list being edited.
+                var added = updated.Evidence.Where(e => _evidence.All(x => x.Id != e.Id) && run.Evidence.All(x => x.Id != e.Id)).ToList();
+                _run = updated with { Steps = run.Steps };
+                _evidence.AddRange(added);
+            }
+            else Use(updated);
+            _attLabel = ""; _attStep = null;
+            Info($"\"{file.Name}\" attached.");
+        }
+        catch (IOException) { _attachError = $"\"{file.Name}\" could not be read."; }
+        finally { _attaching = false; }
+    }
+
+    private async Task DownloadAttachmentAsync(ManualRunEvidence e)
+    {
+        if (_run is not { } run || _runs is null || _ws?.ProjectKey is not { } key) return;
+        var (bytes, error) = await _runs.AttachmentAsync(key, run.Id, e.Reference);
+        if (bytes is null) { Fail(error ?? "The attachment could not be downloaded."); return; }
+        await JS.InvokeVoidAsync("downloadBase64File", e.FileName ?? "attachment", Convert.ToBase64String(bytes), e.ContentType ?? "application/octet-stream");
+    }
+
+    // ── Project defect list ─────────────────────────────────────────────────────────────────────────────────────────
+
+    private List<ManualDefectListItem>? _defectList;
+    private string? _defectListError;
+    private bool _defectsAll;
+
+    private async Task LoadDefectsAsync(string key)
+    {
+        if (_runs is null) return;
+        var (list, error) = await _runs.DefectsAsync(key);
+        (_defectList, _defectListError) = (list, list is null ? error : null);
+    }
+
+    private async Task DownloadDefectsAsync()
+    {
+        if (_defectList is not { Count: > 0 } list) return;
+        await JS.InvokeVoidAsync("downloadTextFile", $"manual-test-defects-{DateTime.Now:yyyy-MM-dd}.csv", M.DefectsCsv(list), "text/csv;charset=utf-8");
+    }
+
+    private RenderFragment DefectList() => __builder =>
+    {
+        if (_defectList is null && _defectListError is null) return;
+        var shown = (_defectList ?? []).Where(i => _defectsAll || i.Defect.Status != ManualDefectStatus.Closed).ToList();
+        <section class="mt-card" aria-labelledby="mte-dl-title" data-testid="mte-defect-list">
+            <h2 id="mte-dl-title" class="mt-h">Defects</h2>
+            @if (_defectListError is not null) { <p class="mt-alert" role="alert">@_defectListError</p> }
+            else
+            {
+                <p class="mt-muted" data-testid="mte-defect-list-count">@((_defectList ?? []).Count(i => i.Defect.Status != ManualDefectStatus.Closed)) not closed · @((_defectList ?? []).Count) in all runs of this project.
+                    <label class="mte-inline"><input type="checkbox" checked="@_defectsAll" @onchange="e => _defectsAll = e.Value is true" data-testid="mte-defect-list-all" /> Show closed defects too</label>
+                    @if ((_defectList ?? []).Count > 0) { <button type="button" class="btn btn-secondary btn-sm" @onclick="DownloadDefectsAsync" data-testid="mte-defect-list-download">Download defects (CSV)</button> }</p>
+                @if (shown.Count == 0) { <p class="mt-muted" data-testid="mte-defect-list-none">@(_defectsAll ? "No defect has been recorded." : "No open defect.")</p> }
+                <ul class="mte-items">
+                    @foreach (var i in shown)
+                    {
+                        <li data-testid="mte-defect-list-item" data-status="@i.Defect.Status">
+                            <strong>@i.Defect.Title</strong>
+                            <span class="mt-chip mt-tone-@M.DefectStatusTone(i.Defect.Status)">@M.DefectStatusLabel(i.Defect.Status)</span>
+                            @if (i.Defect.Severity is { } sev) { <span class="mt-chip mt-tone-warn">@sev</span> }
+                            <span class="mt-muted">@i.RunTitle · @M.RunLabel(i.RunState, i.RunOutcome) · @i.RunStartedAt.ToLocalTime().ToString("yyyy-MM-dd") · @i.Tester@(i.Defect.ExternalReference is { } x ? $" · work item {x}" : "")</span>
+                            <a href="@($"{M.ExecuteRoute}?run={i.RunId}")" data-testid="mte-defect-list-open">Open run</a>
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+    };
 
     private SaveManualRunRequest Request() => new()
     {

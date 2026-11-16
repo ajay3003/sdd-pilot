@@ -24,12 +24,6 @@ public static class ManualTestingPresentation
     /// </summary>
     public static string RunResultsCsv(IEnumerable<ManualRunSummary> runs, IReadOnlyDictionary<Guid, string> planNames)
     {
-        static string Cell(string? v)
-        {
-            var t = v ?? "";
-            if (t.Length > 0 && t[0] is '=' or '+' or '-' or '@' or '\t' or '\r') t = "'" + t;
-            return "\"" + t.Replace("\"", "\"\"") + "\"";
-        }
         var sb = new System.Text.StringBuilder("\uFEFF");
         sb.Append(string.Join(",", RunReportColumns.Select(Cell))).Append("\r\n");
         foreach (var r in runs.OrderByDescending(r => r.StartedAt))
@@ -44,6 +38,60 @@ public static class ManualTestingPresentation
         return sb.ToString();
         static string N(int n) => n.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
+
+    /// <summary>A spreadsheet-safe quoted CSV cell (formula-looking text is prefixed with an apostrophe).</summary>
+    private static string Cell(string? v)
+    {
+        var t = v ?? "";
+        if (t.Length > 0 && t[0] is '=' or '+' or '-' or '@' or '\t' or '\r') t = "'" + t;
+        return "\"" + t.Replace("\"", "\"\"") + "\"";
+    }
+
+    public static readonly IReadOnlyList<string> DefectReportColumns =
+        ["Defect", "Status", "Severity", "Step", "Expected", "Actual", "Work item", "Recorded by", "Recorded", "Last follow-up", "Test case", "Run result", "Run started", "Tester"];
+
+    /// <summary>
+    /// Every defect of the project's manual runs, one row per defect (same CSV rules as <see cref="RunResultsCsv"/>). The status is the
+    /// defect's current follow-up status; the run result beside it stays what was recorded when the run was completed.
+    /// </summary>
+    public static string DefectsCsv(IEnumerable<ManualDefectListItem> defects)
+    {
+        var sb = new System.Text.StringBuilder("\uFEFF");
+        sb.Append(string.Join(",", DefectReportColumns.Select(Cell))).Append("\r\n");
+        foreach (var i in defects.OrderByDescending(i => i.RunStartedAt))
+        {
+            var d = i.Defect;
+            var last = d.History is { Count: > 0 } h ? h[^1] : null;
+            sb.Append(string.Join(",", new[]
+            {
+                d.Title, DefectStatusLabel(d.Status), d.Severity ?? "", d.Step?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "", d.Expected ?? "", d.Actual ?? "",
+                d.ExternalReference ?? "", d.RecordedBy, d.RecordedAt == default ? "" : d.RecordedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture),
+                last is null ? "" : $"{last.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture)} {last.By}: {DefectStatusLabel(last.From)} → {DefectStatusLabel(last.To)}{(string.IsNullOrWhiteSpace(last.Note) ? "" : " — " + last.Note)}",
+                i.RunTitle, RunLabel(i.RunState, i.RunOutcome), i.RunStartedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture), i.Tester,
+            }.Select(Cell))).Append("\r\n");
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>A defect's status in tester words.</summary>
+    public static string DefectStatusLabel(ManualDefectStatus status) => status switch
+    {
+        ManualDefectStatus.ReadyForRetest => "Ready for retest", ManualDefectStatus.Closed => "Closed", _ => "Open",
+    };
+
+    public static string DefectStatusTone(ManualDefectStatus status) => status switch
+    {
+        ManualDefectStatus.ReadyForRetest => "warn", ManualDefectStatus.Closed => "muted", _ => "bad",
+    };
+
+    /// <summary>A file size in tester words (KB/MB).</summary>
+    public static string FileSize(long? bytes) => bytes switch
+    {
+        null => "",
+        < 1024 => $"{bytes} bytes",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
+        _ => $"{bytes / (1024.0 * 1024):0.#} MB",
+    };
 
     public const string DiscoverRoute = "manual-testing/discover";
     public const string PlanRoute = "test-plan-suggestions";

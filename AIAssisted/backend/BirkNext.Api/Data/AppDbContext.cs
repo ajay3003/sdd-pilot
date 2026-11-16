@@ -22,6 +22,8 @@ public class AppDbContext : DbContext
     public DbSet<TestPlanDraftRecord> TestPlanDrafts => Set<TestPlanDraftRecord>();
     public DbSet<TestPlanSnapshotRecord> TestPlanSnapshots => Set<TestPlanSnapshotRecord>();
     public DbSet<ManualTestRunRecord> ManualTestRuns => Set<ManualTestRunRecord>();
+    public DbSet<ManualRunAttachmentRecord> ManualRunAttachments => Set<ManualRunAttachmentRecord>();
+    public DbSet<TestPlanDraftRevisionRecord> TestPlanDraftRevisions => Set<TestPlanDraftRevisionRecord>();
     public DbSet<ScenarioDiscoveryRecord> ScenarioDiscoveryResults => Set<ScenarioDiscoveryRecord>();
     public DbSet<AdoExportProfileRecord> AdoExportProfiles => Set<AdoExportProfileRecord>();
     public DbSet<AdoExportRecord> AdoExports => Set<AdoExportRecord>();
@@ -1206,6 +1208,30 @@ public class AppDbContext : DbContext
             entity.HasIndex(r => new { r.DraftId, r.ContentFingerprint }).IsUnique();
             entity.HasIndex(r => r.GuideKey);
         });
+        modelBuilder.Entity<ManualRunAttachmentRecord>(entity =>
+        {
+            entity.ToTable("manual_run_attachments");
+            entity.HasKey(a => a.Id);
+            entity.Property(a => a.ProjectKey).HasMaxLength(200).IsRequired();
+            entity.Property(a => a.FileName).HasMaxLength(255).IsRequired();
+            entity.Property(a => a.ContentType).HasMaxLength(100).IsRequired();
+            entity.Property(a => a.Sha256).HasMaxLength(64).IsRequired();
+            entity.Property(a => a.Content).HasColumnType("bytea").IsRequired();
+            entity.Property(a => a.AddedBy).HasMaxLength(200).IsRequired();
+            entity.HasIndex(a => new { a.ProjectKey, a.RunId });
+        });
+
+        modelBuilder.Entity<TestPlanDraftRevisionRecord>(entity =>
+        {
+            entity.ToTable("test_plan_draft_revisions");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.PlanName).HasMaxLength(300).IsRequired();
+            entity.Property(r => r.ContentJson).HasColumnType("text").IsRequired();
+            entity.Property(r => r.Reason).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.SavedBy).HasMaxLength(200).IsRequired();
+            entity.HasIndex(r => new { r.DraftId, r.Revision }).IsUnique().HasDatabaseName("ux_test_plan_draft_revisions_draft_revision");
+        });
+
         modelBuilder.Entity<ManualTestRunRecord>(entity =>
         {
             entity.ToTable("manual_test_runs");

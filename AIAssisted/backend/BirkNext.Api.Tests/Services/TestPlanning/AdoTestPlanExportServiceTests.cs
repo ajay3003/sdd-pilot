@@ -137,12 +137,47 @@ public sealed class AdoTestPlanExportServiceTests : IAsyncLifetime, IDisposable
     {
         await using var db = Context();
         var export = Export(db);
-        (await export.ProfileAsync("library", default)).Should().Be(new AdoExportProfile(), "defaults: Services, Design, Excel, preconditions in the report");
+        (await export.ProfileAsync("library", default)).Should().BeEquivalentTo(new AdoExportProfile(), "defaults: Services, Design, Excel, preconditions in the report");
 
         await export.SaveProfileAsync("library", new AdoExportProfile { DestinationLabel = " contoso / Library ", AreaPath = "Library\\Loans", State = "Design", Format = AdoExportFormat.Csv }, "anna", default);
         var stored = await Export(Context()).ProfileAsync("library", default);
         stored.Should().Match<AdoExportProfile>(p => p.DestinationLabel == "contoso / Library" && p.AreaPath == "Library\\Loans" && p.Format == AdoExportFormat.Csv);
         (await Export(Context()).ProfileAsync("other-project", default)).AreaPath.Should().BeNull("settings never leak to another project");
         (await db.AdoExportProfiles.AsNoTracking().SingleAsync()).ProfileJson.Should().NotContainAny("password", "token", "secret");
+    }
+
+    [Fact]
+    public async Task Azure_DevOps_ids_confirmed_once_are_offered_again_and_a_profile_save_never_drops_them()
+    {
+        await using var db = Context();
+        var plan = await PlanAsync(db);
+        var id = plan.Cases.Single().Source.ScenarioId;
+        var update = Request(plan) with { Mode = AdoExportMode.UpdateExisting, ExistingIds = new() { [id] = "4711" }, ExistingIdsConfirmed = true };
+        await Export(db).FileAsync(update, "anna", default);
+
+        var profile = await Export(Context()).ProfileAsync("library", default);
+        profile.KnownTestCaseIds.Should().Contain($"{plan.Id:N}/{id}", "4711");
+        var again = await Export(Context()).PreviewAsync(Request(plan) with { Mode = AdoExportMode.UpdateExisting, ExistingIdsConfirmed = true, Profile = profile with { AreaPath = "Library\\Loans" } }, default);
+        again.Cases.Single().Should().Match<AdoExportCase>(c => c.AzureDevOpsId == "4711" && c.AzureDevOpsIdRemembered, "the id is not typed again");
+        again.CanDownload.Should().BeTrue();
+
+        await Export(Context()).SaveProfileAsync("library", new AdoExportProfile { AreaPath = "Library\\Other" }, "bob", default);
+        (await Export(Context()).ProfileAsync("library", default)).KnownTestCaseIds.Should().Contain($"{plan.Id:N}/{id}", "4711",
+            "a settings save from a page that loaded earlier never drops confirmed ids");
+        (await Export(Context()).ProfileAsync("other-project", default)).KnownTestCaseIds.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task The_import_file_and_the_mapping_report_say_where_each_test_case_came_from()
+    {
+        await using var db = Context();
+        var plan = await PlanAsync(db);
+        var csv = await Export(db).FileAsync(Request(plan) with { Profile = Request(plan).Profile with { Format = AdoExportFormat.Csv } }, "anna", default);
+        var text = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(csv.Base64));
+        text.Split("\r\n")[0].Should().EndWith(",\"Description\"");
+        text.Should().Contain("Written by hand in BirkNext (no specification source).").And.Contain($"({plan.Id:N}/{plan.Cases.Single().Source.ScenarioId})");
+
+        var report = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String((await Export(Context()).ReportAsync(Request(plan), default)).Base64));
+        report.Split("\r\n")[0].Should().Contain("\"Source specification\",\"Acceptance scenario\",\"Requirements with their specification\"");
     }
 }

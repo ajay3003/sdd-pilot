@@ -96,7 +96,13 @@ public sealed record IntegrationSuiteGenerateRequest
     public Guid? CompositeContextId { get; init; }
     /// <summary>Explicitly allow a composite draft while mandatory stages lack an approved source (labelled partial, never Ready).</summary>
     public bool AllowPartial { get; init; }
+    /// <summary>The declared Integration Journey ("project.{key}:{slug}") this suite is prepared for, when prepared from journey context. Recorded on
+    /// the suite with the journey's current revision; it never changes what the suite tests or its identity.</summary>
+    public string? PreparedForJourneyId { get; init; }
 }
+
+/// <summary>A declared Integration Journey a suite was prepared for: its id, the revision current then, and its name.</summary>
+public sealed record SuiteJourneyReference(string JourneyId, int Revision, string Name);
 
 public sealed record SuiteContractRef
 {
@@ -255,6 +261,8 @@ public sealed record IntegrationSuite
     public List<SuiteUnsupportedOperation> Unsupported { get; init; } = [];
     public List<SuiteConfigurationValue> Configuration { get; init; } = [];
     public List<SuiteTestDataItem> TestData { get; init; } = [];
+    /// <summary>Declared Integration Journeys this suite was prepared for (id + revision), oldest first. Metadata: not part of the fingerprint.</summary>
+    public List<SuiteJourneyReference> PreparedForJourneys { get; init; } = [];
     public List<SuiteXmlSchemaRef> XmlSchemas { get; init; } = [];
     public List<SuiteTopologyMapping> Topology { get; init; } = [];
     public List<SuiteStage> Stages { get; init; } = [];
@@ -277,6 +285,7 @@ public sealed record IntegrationSuiteSummary(Guid Id, string SuiteKey, int Revis
 {
     public Guid? CompositeContextId { get; init; }
     public int Sources { get; init; } = 1;
+    public List<SuiteJourneyReference> PreparedForJourneys { get; init; } = [];
 }
 
 public sealed record IntegrationSuiteGenerateResult(IntegrationSuite? Suite, bool Reused, string? Error);

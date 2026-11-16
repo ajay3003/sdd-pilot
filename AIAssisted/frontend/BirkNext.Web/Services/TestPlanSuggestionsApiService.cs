@@ -13,6 +13,14 @@ public interface ITestPlanSuggestionsApiService
     /// <summary>Persisted facts only (drafts, snapshots, candidate count): what the Manual Testing focus panel shows.</summary>
     Task<(TestPlanWorkspace? Workspace, string? Error)> SummaryAsync(string? guideKey, CancellationToken ct = default);
     Task<(TestPlanDraft? Draft, string? Error)> DraftAsync(Guid id, CancellationToken ct = default);
+    /// <summary>The plan's saved revisions, newest first (version history).</summary>
+    Task<(List<TestPlanRevisionSummary>? Revisions, string? Error)> RevisionsAsync(Guid id, CancellationToken ct = default) =>
+        Task.FromResult<(List<TestPlanRevisionSummary>?, string?)>((null, "Version history is not available in this host."));
+    Task<(TestPlanDraft? Draft, string? Error)> RevisionAsync(Guid id, int revision, CancellationToken ct = default) =>
+        Task.FromResult<(TestPlanDraft?, string?)>((null, "Version history is not available in this host."));
+    /// <summary>Restores an earlier revision as the next revision.</summary>
+    Task<(TestPlanDraft? Draft, string? Error)> RestoreRevisionAsync(Guid id, int baseRevision, int revision, CancellationToken ct = default) =>
+        Task.FromResult<(TestPlanDraft?, string?)>((null, "Version history is not available in this host."));
     Task<(TestPlanDraft? Draft, string? Error)> CreateAsync(CreateTestPlanDraftRequest request, CancellationToken ct = default);
     Task<(TestPlanDraft? Draft, string? Error)> SaveAsync(Guid id, SaveTestPlanDraftRequest request, CancellationToken ct = default);
     Task<(TestPlanDraft? Draft, string? Error)> ReviewAsync(Guid id, ReviewTestCaseRequest request, CancellationToken ct = default);
@@ -61,6 +69,12 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http) : ITestPlanSu
         Send<TestPlanWorkspace>(() => http.GetAsync(guideKey is null ? $"{Base}/summary" : $"{Base}/summary?guideKey={Uri.EscapeDataString(guideKey)}", ct), ct);
 
     public Task<(TestPlanDraft?, string?)> DraftAsync(Guid id, CancellationToken ct = default) => Send<TestPlanDraft>(() => http.GetAsync($"{Base}/drafts/{id}", ct), ct);
+    public Task<(List<TestPlanRevisionSummary>?, string?)> RevisionsAsync(Guid id, CancellationToken ct = default) =>
+        Send<List<TestPlanRevisionSummary>>(() => http.GetAsync($"{Base}/drafts/{id}/revisions", ct), ct);
+    public Task<(TestPlanDraft?, string?)> RevisionAsync(Guid id, int revision, CancellationToken ct = default) =>
+        Send<TestPlanDraft>(() => http.GetAsync($"{Base}/drafts/{id}/revisions/{revision}", ct), ct);
+    public Task<(TestPlanDraft?, string?)> RestoreRevisionAsync(Guid id, int baseRevision, int revision, CancellationToken ct = default) =>
+        Send<TestPlanDraft>(() => http.PostAsJsonAsync($"{Base}/drafts/{id}/restore", new RestoreTestPlanRevisionRequest(baseRevision, revision), ct), ct);
 
     public Task<(TestPlanDraft?, string?)> CreateAsync(CreateTestPlanDraftRequest request, CancellationToken ct = default) =>
         Send<TestPlanDraft>(() => http.PostAsJsonAsync($"{Base}/drafts", request, Json, ct), ct);

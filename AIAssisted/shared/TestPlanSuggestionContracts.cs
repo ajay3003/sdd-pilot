@@ -734,3 +734,11 @@ public sealed record PreparedCaseTraceView
 
 /// <summary>The specification a requirements view reads, for counting case links against it (Requirements Traceability).</summary>
 public sealed record PreparedCaseTraceRequest(List<string> SpecificationPaths, List<string>? RequirementIds, Dictionary<string, string>? RequirementTitles = null);
+
+// ── Plan version history (append-only revisions of a draft) ───────────────────────────────────────────────────────────
+
+/// <summary>One saved revision of a test plan: who saved it, when, why, and how many cases it held. <see cref="Current"/> marks the draft's revision.</summary>
+public sealed record TestPlanRevisionSummary(int Revision, string Reason, string SavedBy, DateTimeOffset SavedAt, string PlanName, int Cases, bool Current);
+
+/// <summary>Restores an earlier revision as a new revision (never rewriting history). <see cref="BaseRevision"/> is the draft revision the tester saw.</summary>
+public sealed record RestoreTestPlanRevisionRequest(int BaseRevision, int Revision);

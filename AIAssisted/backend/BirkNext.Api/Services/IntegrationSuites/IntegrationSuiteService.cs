@@ -35,7 +35,8 @@ public sealed partial class IntegrationSuiteService(
     IIntegrationJourneyPackRegistry packs, IntegrationJourneyRunner runner,
     ManualReviewDecisionStore reviews, ExecutionEvidenceStore evidence, ILogger<IntegrationSuiteService> logger,
     SecurityClassificationConsumerService? security = null, BirkNext.Api.Services.IntegrationTopology.IntegrationTopologyService? topology = null,
-    TimeProvider? clock = null, ContractTestDataService? contractData = null, Composite.CompositeContextService? composites = null)
+    TimeProvider? clock = null, ContractTestDataService? contractData = null, Composite.CompositeContextService? composites = null,
+    BirkNext.Api.Services.IntegrationJourneys.DeclaredIntegrationJourneyStore? journeys = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private DateTimeOffset Now => (clock ?? TimeProvider.System).GetUtcNow();
@@ -221,14 +222,27 @@ public sealed partial class IntegrationSuiteService(
                 Stages = composite.Stages.Select(s => (s.StageId, s.Readiness, s.Coverage)),
             },
         });
+        // The declared journey the suite is prepared for (journey context): verified to be a current journey, pinned with its revision.
+        SuiteJourneyReference? journeyRef = null;
+        if (request.PreparedForJourneyId is { Length: > 0 } journeyId)
+        {
+            var journey = journeys is null ? null : await journeys.FindByIdAsync(journeyId, ct);
+            if (journey is null || journey.RetiredAt is not null)
+                return new(null, false, "The journey this suite is prepared for is not a current journey of the project; open it from Integration Journeys and try again.");
+            journeyRef = new SuiteJourneyReference(journeyId, journey.Revision, journey.DisplayName);
+        }
         var latest = await db.IntegrationSuites.AsNoTracking().Where(s => s.SuiteKey == suiteKey).OrderByDescending(s => s.Revision).FirstOrDefaultAsync(ct);
         if (latest is not null && latest.Fingerprint == fingerprint)
+        {
+            if (journeyRef is not null) latest = await RecordJourneyAsync(latest.Id, journeyRef, ct) ?? latest;
             return new(await ReadAsync(latest, ct), true, null); // unchanged: no new revision, no duplicate definitions
+        }
         var previous = latest is null ? null : JsonSerializer.Deserialize<IntegrationSuite>(latest.DefinitionJson, Json);
         var suite = body with
         {
             Id = Guid.NewGuid(), Revision = (latest?.Revision ?? 0) + 1, Fingerprint = fingerprint, GeneratedAt = Now, GeneratedBy = initiator,
             Drift = previous is null ? [] : Drift(previous, body),
+            PreparedForJourneys = WithJourney(previous?.PreparedForJourneys ?? [], journeyRef),
         };
         db.IntegrationSuites.Add(new IntegrationSuiteRecord
         {
@@ -591,6 +605,23 @@ public sealed partial class IntegrationSuiteService(
         return drift;
     }
 
+    /// <summary>Journey references accumulate (a suite can be prepared for several journeys); the same journey revision is recorded once.</summary>
+    internal static List<SuiteJourneyReference> WithJourney(IReadOnlyList<SuiteJourneyReference> earlier, SuiteJourneyReference? added) =>
+        added is null || earlier.Any(j => j.JourneyId == added.JourneyId && j.Revision == added.Revision) ? [.. earlier] : [.. earlier, added];
+
+    /// <summary>Records a journey on an unchanged suite revision (metadata only: the definition's tests, fingerprint and revision stay the same).</summary>
+    private async Task<IntegrationSuiteRecord?> RecordJourneyAsync(Guid id, SuiteJourneyReference journeyRef, CancellationToken ct)
+    {
+        var row = await db.IntegrationSuites.FirstOrDefaultAsync(s => s.Id == id, ct);
+        if (row is null) return null;
+        var definition = JsonSerializer.Deserialize<IntegrationSuite>(row.DefinitionJson, Json)!;
+        var journeysNow = WithJourney(definition.PreparedForJourneys, journeyRef);
+        if (journeysNow.Count == definition.PreparedForJourneys.Count) return row;
+        db.Entry(row).Property(nameof(IntegrationSuiteRecord.DefinitionJson)).CurrentValue = JsonSerializer.Serialize(definition with { PreparedForJourneys = journeysNow }, Json);
+        await db.SaveChangesAsync(ct);
+        return row;
+    }
+
     // ── Read / review / execute ──────────────────────────────────────────────────────────────────────────────────────────────
 
     public async Task<IReadOnlyList<IntegrationSuiteSummary>> ListAsync(CancellationToken ct)
@@ -599,7 +630,7 @@ public sealed partial class IntegrationSuiteService(
         return [.. rows.Select(r => (r, s: JsonSerializer.Deserialize<IntegrationSuite>(r.DefinitionJson, Json)!))
             .Select(x => new IntegrationSuiteSummary(x.r.Id, x.r.SuiteKey, x.r.Revision, x.r.ScopeId, x.s.Scope.DisplayName, x.r.SnapshotId, x.s.Snapshot.ArchiveFileName,
                 x.r.GeneratedAt, x.s.Status, x.s.Tests.Count, x.s.Stages.Count, x.s.Review.Count(i => i.Decision is null))
-            { CompositeContextId = x.s.Composite?.ContextId, Sources = x.s.Composite?.Sources.Count ?? 1 })];
+            { CompositeContextId = x.s.Composite?.ContextId, Sources = x.s.Composite?.Sources.Count ?? 1, PreparedForJourneys = x.s.PreparedForJourneys })];
     }
 
     public async Task<IntegrationSuite?> GetAsync(Guid id, CancellationToken ct) =>

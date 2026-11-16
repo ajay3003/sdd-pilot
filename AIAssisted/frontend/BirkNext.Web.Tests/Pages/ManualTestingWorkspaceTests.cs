@@ -203,7 +203,8 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         Setup([Summary()]);
         var cut = Open<ManualTestingExecute>($"manual-testing/execute?run={RunId}");
 
-        cut.Find("[data-testid=mte-evidence]").TextContent.Should().Contain("not the file itself");
+        cut.Find("[data-testid=mte-evidence]").TextContent.Should().Contain("Attach a screenshot, PDF or log (up to 10 MB), or add a link or a note");
+        cut.FindAll("[data-testid=mte-attach]").Should().ContainSingle("a file can be attached to a run in progress");
         cut.Find("[data-testid=mte-ev-label]").Input("Screenshot");
         cut.Find("[data-testid=mte-ev-reference]").Input("javascript:alert(1)");
         cut.Find("[data-testid=mte-ev-invalid]");
@@ -244,5 +245,79 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         var overview = Open<ManualTestingExecute>("manual-testing/execute");
         overview.Find("[data-testid=mte-case]").TextContent.Should().Contain("Borrow a book").And.Contain("Last run: Failed");
         overview.Find("[data-testid=mte-history-row]").GetAttribute("data-outcome").Should().Be("Failed");
+    }
+
+    // ── Follow-up after a run, attachments, the project's defect list ─────────────────────────────────────────────
+
+    private static ManualTestRun CompletedWithDefect() => Run(ManualRunState.Completed, ManualRunOutcome.Failed) with
+    {
+        CompletedAt = DateTimeOffset.UtcNow,
+        Defects = [new ManualRunDefect { Id = "df-1", Title = "Loan is not saved", Status = ManualDefectStatus.Open, RecordedBy = "anna", RecordedAt = DateTimeOffset.UtcNow }],
+        Evidence = [new ManualRunEvidence { Id = "ev-1", Kind = ManualEvidenceKind.Attachment, Label = "Error dialog", Reference = "0123456789abcdef0123456789abcdef", FileName = "error.png",
+            ContentType = "image/png", Size = 2048, AddedBy = "anna", AddedAt = DateTimeOffset.UtcNow, AddedAfterCompletion = true }],
+    };
+
+    [Fact]
+    public void A_defect_of_a_completed_run_is_followed_up_and_its_history_shown_while_the_results_stay_read_only()
+    {
+        UpdateManualDefectRequest? sent = null;
+        Setup(plans: [Summary()], runs: [RunSummary(ManualRunState.Completed, ManualRunOutcome.Failed)], run: CompletedWithDefect());
+        _runs.Setup(x => x.UpdateDefectAsync("library", RunId, "df-1", It.IsAny<UpdateManualDefectRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<string, Guid, string, UpdateManualDefectRequest, CancellationToken>((_, _, _, r, _) => sent = r)
+            .ReturnsAsync((string _, Guid _, string _, UpdateManualDefectRequest r, CancellationToken _) => (CompletedWithDefect() with
+            {
+                Revision = 3,
+                Defects = [CompletedWithDefect().Defects[0] with { Status = r.Status, History = [new ManualDefectEvent(DateTimeOffset.UtcNow, "dev", ManualDefectStatus.Open, r.Status, r.Note)] }],
+            }, (string?)null));
+        var cut = Open<ManualTestingExecute>($"manual-testing/execute?run={RunId}");
+
+        cut.FindAll("[data-testid=mte-defect-status-select]").Should().BeEmpty("the recorded results of a completed run are read-only");
+        cut.Find("[data-testid=mte-defect-status]").TextContent.Should().Be("Open");
+        cut.Find("[data-testid=mte-defect-followup]").Click();
+        cut.Find("[data-testid=mte-followup-status]").Change("ReadyForRetest");
+        cut.Find("[data-testid=mte-followup-note]").Input("Fixed in build 1.4");
+        cut.Find("[data-testid=mte-followup-save]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mte-defect-status]").TextContent.Should().Be("Ready for retest"));
+        sent.Should().BeEquivalentTo(new UpdateManualDefectRequest(2, ManualDefectStatus.ReadyForRetest, "Fixed in build 1.4", null, null), "the run revision the tester saw is sent");
+        cut.Find("[data-testid=mte-defect-history]").TextContent.Should().Contain("Open → Ready for retest").And.Contain("Fixed in build 1.4");
+    }
+
+    [Fact]
+    public void An_attached_file_is_listed_with_its_size_a_download_and_whether_it_was_added_after_completion()
+    {
+        Setup(plans: [Summary()], runs: [RunSummary(ManualRunState.Completed, ManualRunOutcome.Failed)], run: CompletedWithDefect());
+        _runs.Setup(x => x.AttachmentAsync("library", RunId, "0123456789abcdef0123456789abcdef", It.IsAny<CancellationToken>())).ReturnsAsync(([1, 2, 3], (string?)null));
+        var cut = Open<ManualTestingExecute>($"manual-testing/execute?run={RunId}");
+
+        var item = cut.Find("[data-testid=mte-evidence-item][data-kind=Attachment]");
+        item.TextContent.Should().Contain("error.png").And.Contain("2 KB");
+        cut.Find("[data-testid=mte-attachment-followup]").TextContent.Should().Be("added after completion");
+        cut.Find("[data-testid=mte-attachment-download]").Click();
+        cut.WaitForAssertion(() => JSInterop.Invocations.Should().Contain(i => i.Identifier == "downloadBase64File" && (string)i.Arguments[0]! == "error.png"));
+        cut.FindAll("[data-testid=mte-attach]").Should().ContainSingle("follow-up evidence can still be attached to a completed run");
+    }
+
+    [Fact]
+    public void The_project_defect_list_shows_open_defects_across_runs_and_closed_ones_on_request()
+    {
+        Setup(plans: [Summary()], runs: [RunSummary(ManualRunState.Completed, ManualRunOutcome.Failed)]);
+        ManualDefectListItem Item(string title, ManualDefectStatus status) => new(RunId, "Borrow a book", $"{PlanId:N}/tsc-borrow", ManualRunState.Completed, ManualRunOutcome.Failed,
+            DateTimeOffset.UtcNow, "anna", new ManualRunDefect { Id = title, Title = title, Status = status });
+        _runs.Setup(x => x.DefectsAsync("library", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new List<ManualDefectListItem> { Item("Loan is not saved", ManualDefectStatus.ReadyForRetest), Item("Typo in receipt", ManualDefectStatus.Closed) }, (string?)null));
+        var cut = Open<ManualTestingExecute>("manual-testing/execute");
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mte-defect-list-count]").TextContent.Should().Contain("1 not closed · 2 in all runs"));
+        cut.FindAll("[data-testid=mte-defect-list-item]").Select(e => e.GetAttribute("data-status")).Should().Equal("ReadyForRetest");
+        cut.Find("[data-testid=mte-defect-list-open]").GetAttribute("href").Should().Be($"manual-testing/execute?run={RunId}");
+        cut.Find("[data-testid=mte-defect-list-all]").Change(true);
+        cut.FindAll("[data-testid=mte-defect-list-item]").Should().HaveCount(2);
+
+        cut.Find("[data-testid=mte-defect-list-download]").Click();
+        var csv = (string)JSInterop.Invocations.Single(i => i.Identifier == "downloadTextFile").Arguments[1]!;
+        var lines = csv.TrimStart('\uFEFF').Split("\r\n", StringSplitOptions.RemoveEmptyEntries);
+        lines[0].Should().StartWith("\"Defect\",\"Status\"");
+        lines.Skip(1).Select(l => l.Split(',')[1]).Should().BeEquivalentTo(new[] { "\"Ready for retest\"", "\"Closed\"" }, "the defect report states the follow-up status, closed ones included");
     }
 }

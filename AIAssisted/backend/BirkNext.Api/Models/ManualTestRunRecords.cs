@@ -35,3 +35,21 @@ public sealed class ScenarioDiscoveryRecord
     public string ContentJson { get; set; } = "";
     public DateTimeOffset DiscoveredAt { get; set; }
 }
+
+/// <summary>
+/// A file attached as evidence to a manual run (table <c>manual_run_attachments</c>): screenshots, PDFs and logs, size- and type-limited, kept in the
+/// database so backups and project isolation cover them. The run's evidence list references it by id; the bytes are never rewritten.
+/// </summary>
+public sealed class ManualRunAttachmentRecord
+{
+    public Guid Id { get; set; }
+    public Guid RunId { get; set; }
+    public string ProjectKey { get; set; } = "";
+    public string FileName { get; set; } = "";
+    public string ContentType { get; set; } = "";
+    public long Size { get; set; }
+    public string Sha256 { get; set; } = "";
+    public byte[] Content { get; set; } = [];
+    public string AddedBy { get; set; } = "";
+    public DateTimeOffset AddedAt { get; set; }
+}

@@ -71,7 +71,9 @@ public sealed class AdoTestPlanExporterTests
         var preview = AdoTestPlanExporter.Preview(Plan(Borrow, Return), Request());
 
         preview.CanDownload.Should().BeTrue();
-        preview.Headers.Should().Equal("ID", "Work Item Type", "Title", "Test Step", "Step Action", "Step Expected", "Area Path", "Assigned To", "State");
+        preview.Headers.Should().Equal("ID", "Work Item Type", "Title", "Test Step", "Step Action", "Step Expected", "Area Path", "Assigned To", "State", "Description");
+        AdoTestPlanExporter.Preview(Plan(Borrow), Request() with { Profile = Request().Profile with { IncludeSourceReferences = false } }).Headers
+            .Should().Equal(["ID", "Work Item Type", "Title", "Test Step", "Step Action", "Step Expected", "Area Path", "Assigned To", "State"], "without source references the documented columns only");
         preview.Rows.Select(r => (r.Id, r.WorkItemType, r.Title, r.TestStep, r.StepAction)).Should().Equal(
             ("", "Test Case", "Låne en bok", 1, "Åpne utlånssiden"), ("", "Test Case", "Låne en bok", 2, "Registrer lånet, \"raskt\", med kort"), ("", "Test Case", "Return a book", 1, "Return the book"));
         preview.Rows.Should().OnlyContain(r => r.AreaPath == "Library\\Loans" && r.AssignedTo == "tester@contoso.com" && r.State == "Design");
@@ -94,10 +96,11 @@ public sealed class AdoTestPlanExporterTests
             for (var i = 1; i < 4; i++)
             {
                 var r = preview.Rows[i - 1];
-                var expected = new[] { r.Id, r.WorkItemType, r.Title, r.TestStep.ToString(), r.StepAction, r.StepExpected, r.AreaPath, r.AssignedTo, r.State };
+                var expected = new[] { r.Id, r.WorkItemType, r.Title, r.TestStep.ToString(), r.StepAction, r.StepExpected, r.AreaPath, r.AssignedTo, r.State, r.Description! };
                 csv[i].Should().Equal(expected, $"CSV row {i}");
                 string Cell(string col) => xlsx[i].TryGetValue(col, out var v) ? v.Text : "";
-                new[] { Cell("A"), Cell("B"), Cell("C"), Cell("D"), Cell("E"), Cell("F"), Cell("G"), Cell("H"), Cell("I") }.Should().Equal(expected, $"XLSX row {i}");
+                new[] { Cell("A"), Cell("B"), Cell("C"), Cell("D"), Cell("E"), Cell("F"), Cell("G"), Cell("H"), Cell("I"), Cell("J") }.Should().Equal(expected, $"XLSX row {i}");
+                r.Description.Should().Contain("BirkNext test case:", "every row carries where its test case came from");
                 xlsx[i]["D"].Type.Should().BeNull("Test Step is a number cell");
             }
             csv[2][5].Should().Be("Lånet er registrert\nog vises i listen", "the line break survives inside the quoted CSV field");
@@ -250,7 +253,7 @@ public sealed class AdoTestPlanExporterTests
         var first = AdoTestPlanExporter.Preview(Plan(c, odd), Request() with { Profile = Request().Profile with { Preconditions = AdoPreconditionsMode.FirstStep, IncludePriority = true } });
         first.Rows.Where(r => r.Title == "Låne").Select(r => (r.TestStep, r.StepAction, r.StepExpected, r.Priority)).Should().Equal(
             (1, "Check the preconditions: Medlemmet er innlogget", "The preconditions are met", "2"), (2, "Lån boken", "Lånt", "2"));
-        first.Headers.Last().Should().Be("Priority");
+        first.Headers.Should().ContainInOrder("State", "Priority", "Description");
         first.Issues.Should().Contain(i => i.CaseId == "c2" && i.Level == AdoIssueLevel.Warning && i.Message.Contains("\"Urgent-ish\" has no Azure DevOps value"));
         first.Rows.Single(r => r.Title == "Odd priority").Priority.Should().Be("");
 

@@ -174,4 +174,32 @@ public sealed class IntegrationSuitesPageTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=its-error]").TextContent.Should().Contain("failed analysis"));
         cut.FindAll("[data-testid=its-suite]").Should().BeEmpty();
     }
+
+    [Fact]
+    public void A_journey_being_prepared_is_sent_with_the_generated_suite_and_stays_in_the_address_across_areas()
+    {
+        var journey = new DeclaredIntegrationJourney { ProjectKey = "library", JourneyId = "loan-flow", DisplayName = "Loan flow", Components = ["Web", "Api"], Revision = 3 };
+        var workspace = new Mock<ICurrentWorkspaceProjection>();
+        workspace.Setup(w => w.GetAsync()).ReturnsAsync(BirkNext.Web.Tests.Services.WorkspaceSnapshots.AllRoles(project: "library"));
+        var journeys = new Mock<IDeclaredIntegrationJourneyApiService>();
+        journeys.Setup(j => j.ListAsync("library", It.IsAny<CancellationToken>())).ReturnsAsync(([journey], (string?)null));
+        Services.AddSingleton(workspace.Object);
+        Services.AddSingleton(journeys.Object);
+        _api.Setup(a => a.GenerateAsync(It.IsAny<IntegrationSuiteGenerateRequest>(), It.IsAny<CancellationToken>()))
+            .Callback((IntegrationSuiteGenerateRequest r, CancellationToken _) => _sent = r)
+            .ReturnsAsync((new IntegrationSuiteGenerateResult(Suite() with { PreparedForJourneys = [new("project.library:loan-flow", 3, "Loan flow")] }, false, null), null));
+        var nav = Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>();
+        nav.NavigateTo($"integration-suites?area=generate&journey={Uri.EscapeDataString(journey.Id)}");
+        var cut = Render<IntegrationSuitesPage>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=its-journey-context]").TextContent.Should().Contain("Loan flow"));
+        Pick(cut);
+        cut.Find("[data-testid=its-generate]").Click();
+        cut.WaitForAssertion(() => _sent.Should().NotBeNull());
+        _sent!.PreparedForJourneyId.Should().Be("project.library:loan-flow");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=its-prepared-for-journey]").TextContent.Should().Be("Loan flow (revision 3)"));
+
+        cut.FindAll("a[data-testid^=its-area-]").Should().OnlyContain(a => a.GetAttribute("href")!.Contains("journey=project.library%3Aloan-flow"),
+            "switching area keeps the journey, so a reload or Back does not silently drop it");
+    }
 }

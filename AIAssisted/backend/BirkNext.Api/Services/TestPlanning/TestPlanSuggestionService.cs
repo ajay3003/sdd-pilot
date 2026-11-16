@@ -154,6 +154,7 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
             Id = plan.Id, GuideKey = plan.GuideKey, PlanName = plan.PlanName, DeliveryLabel = plan.DeliveryLabel, Revision = 1, ContentJson = JsonSerializer.Serialize(plan, E.Json),
             CreatedBy = actor, CreatedAt = plan.CreatedAt, UpdatedBy = actor, UpdatedAt = plan.UpdatedAt,
         });
+        AddRevision(plan, "Created");
         await db.SaveChangesAsync(ct);
         return plan;
     }
@@ -576,6 +577,7 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
             Id = plan.Id, GuideKey = plan.GuideKey, PlanName = plan.PlanName, DeliveryLabel = plan.DeliveryLabel, Revision = 1, ContentJson = JsonSerializer.Serialize(plan, E.Json),
             CreatedBy = actor, CreatedAt = plan.CreatedAt, UpdatedBy = actor, UpdatedAt = plan.UpdatedAt,
         });
+        AddRevision(plan, "Created");
         await db.SaveChangesAsync(ct);
         return plan;
     }
@@ -591,7 +593,7 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         var manual = ManualCase(key, request.Title.Trim()[..Math.Min(request.Title.Trim().Length, 300)], request.Purpose, request.Type);
         List<TestSuiteDraft> suites = current.Suites.Any(s => s.Id == manual.SuiteId) ? current.Suites
             : [.. current.Suites, new TestSuiteDraft(manual.SuiteId, manual.Generated.GroupTitle ?? "Written by hand", "area", null)];
-        return await WriteAsync(row, current with { Cases = [.. current.Cases, manual], Suites = suites, Revision = row.Revision + 1, UpdatedBy = actor, UpdatedAt = Now }, ct);
+        return await WriteAsync(row, current with { Cases = [.. current.Cases, manual], Suites = suites, Revision = row.Revision + 1, UpdatedBy = actor, UpdatedAt = Now }, ct, "Test case added");
     }
 
     private static TestCaseDraft ProjectCase(string projectKey, DiscoveredScenario c)
@@ -812,12 +814,55 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
 
     // ── Persistence helpers ──────────────────────────────────────────────────────────────────────────────────
 
+    // ── Version history (append-only) ────────────────────────────────────────────────────────────────────────────────
+
+    private void AddRevision(TestPlanDraft plan, string reason, string? json = null) =>
+        db.TestPlanDraftRevisions.Add(new TestPlanDraftRevisionRecord
+        {
+            Id = Guid.NewGuid(), DraftId = plan.Id, Revision = plan.Revision, PlanName = plan.PlanName, ContentJson = json ?? JsonSerializer.Serialize(plan, E.Json),
+            Reason = reason, SavedBy = plan.UpdatedBy, SavedAt = plan.UpdatedAt,
+        });
+
+    /// <summary>The saved revisions of a plan, newest first. Revisions saved before history was recorded are not listed (the draft itself is).</summary>
+    public async Task<List<TestPlanRevisionSummary>> RevisionsAsync(Guid id, CancellationToken ct)
+    {
+        var draft = await db.TestPlanDrafts.AsNoTracking().SingleOrDefaultAsync(d => d.Id == id, ct)
+            ?? throw new TestPlanException(404, "draft-not-found", "No such Test Plan draft.");
+        var rows = await db.TestPlanDraftRevisions.AsNoTracking().Where(r => r.DraftId == id).OrderByDescending(r => r.Revision).ToListAsync(ct);
+        return [.. rows.Select(r => new TestPlanRevisionSummary(r.Revision, r.Reason, r.SavedBy, r.SavedAt, r.PlanName, CaseCount(r.ContentJson), r.Revision == draft.Revision))];
+    }
+
+    /// <summary>One saved revision as it was (read-only).</summary>
+    public async Task<TestPlanDraft> RevisionAsync(Guid id, int revision, CancellationToken ct)
+    {
+        var row = await db.TestPlanDraftRevisions.AsNoTracking().SingleOrDefaultAsync(r => r.DraftId == id && r.Revision == revision, ct)
+            ?? throw new TestPlanException(404, "revision-not-found", $"Revision {revision} of this plan is not in its history.");
+        return JsonSerializer.Deserialize<TestPlanDraft>(row.ContentJson, E.Json)! with { Revision = row.Revision };
+    }
+
+    /// <summary>Restores an earlier revision as the next revision: history is never rewritten and the replaced state stays in history. Manual runs of
+    /// cases the restored revision does not hold stay in run history.</summary>
+    public async Task<TestPlanDraft> RestoreRevisionAsync(Guid id, RestoreTestPlanRevisionRequest request, string actor, CancellationToken ct)
+    {
+        var row = await Row(id, ct);
+        if (row.Revision != request.BaseRevision) throw new TestPlanException(409, "draft-changed", $"The plan is at revision {row.Revision}; reload it. Nothing was restored.");
+        if (request.Revision == row.Revision) throw new TestPlanException(409, "revision-current", "That revision is the current plan.");
+        var old = await RevisionAsync(id, request.Revision, ct);
+        return await WriteAsync(row, old with { Id = id, Revision = row.Revision + 1, UpdatedBy = actor, UpdatedAt = Now }, ct, $"Restored from revision {request.Revision}");
+    }
+
+    private static int CaseCount(string json)
+    {
+        try { using var doc = JsonDocument.Parse(json); return doc.RootElement.TryGetProperty("cases", out var c) && c.ValueKind == JsonValueKind.Array ? c.GetArrayLength() : 0; }
+        catch (JsonException) { return 0; }
+    }
+
     private async Task<TestPlanDraftRecord> Row(Guid id, CancellationToken ct) =>
         await db.TestPlanDrafts.SingleOrDefaultAsync(d => d.Id == id, ct) ?? throw new TestPlanException(404, "draft-not-found", "No such Test Plan draft.");
 
     private static TestPlanDraft Read(TestPlanDraftRecord row) => JsonSerializer.Deserialize<TestPlanDraft>(row.ContentJson, E.Json)! with { Revision = row.Revision };
 
-    private async Task<TestPlanDraft> WriteAsync(TestPlanDraftRecord row, TestPlanDraft plan, CancellationToken ct)
+    private async Task<TestPlanDraft> WriteAsync(TestPlanDraftRecord row, TestPlanDraft plan, CancellationToken ct, string reason = "Saved")
     {
         Bound(plan);
         row.Revision = plan.Revision;
@@ -826,6 +871,7 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         row.ContentJson = JsonSerializer.Serialize(plan, E.Json);
         row.UpdatedBy = plan.UpdatedBy;
         row.UpdatedAt = plan.UpdatedAt;
+        AddRevision(plan, reason, row.ContentJson); // same transaction: every saved draft state has a revision
         try { await db.SaveChangesAsync(ct); }
         catch (DbUpdateConcurrencyException)
         {

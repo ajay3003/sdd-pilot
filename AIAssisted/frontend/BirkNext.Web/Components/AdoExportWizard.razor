@@ -88,6 +88,7 @@
                 <label class="adx-check"><input type="checkbox" checked="@_profile.CsvSpreadsheetSafe" @onchange="e => Set(() => _profile = _profile with { CsvSpreadsheetSafe = e.Value is true })" data-testid="adx-csv-safe" /> Protect cells that start with = + - @@ when the CSV is opened in a spreadsheet program</label>
             }
             <label class="adx-check"><input type="checkbox" checked="@_profile.IncludePriority" @onchange="e => Set(() => _profile = _profile with { IncludePriority = e.Value is true })" data-testid="adx-priority" /> Add a Priority column (Critical/High/Medium/Low → 1/2/3/4; map it in the import wizard)</label>
+            <label class="adx-check"><input type="checkbox" checked="@_profile.IncludeSourceReferences" @onchange="e => Set(() => _profile = _profile with { IncludeSourceReferences = e.Value is true })" data-testid="adx-source-refs" /> Add where each test case came from (specification, acceptance scenario, requirements) as a Description column — map it to Description in the import wizard</label>
             <fieldset class="adx-inline" data-testid="adx-mode">
                 <legend>Create or update</legend>
                 <label class="adx-check"><input type="radio" name="adx-mode" checked="@(_mode == AdoExportMode.CreateNew)" @onchange="() => Set(() => _mode = AdoExportMode.CreateNew)" data-testid="adx-mode-create" /> Create new test cases (recommended)</label>
@@ -96,11 +97,14 @@
             @if (_mode == AdoExportMode.UpdateExisting)
             {
                 <div class="adx-update" data-testid="adx-update">
-                    <p class="adx-alert">Importing an update replaces ALL steps of each Azure DevOps test case with the steps in this file. Enter the id shown in Azure DevOps for each case — BirkNext never guesses it.</p>
+                    <p class="adx-alert">Importing an update replaces ALL steps of each Azure DevOps test case with the steps in this file. Enter the id shown in Azure DevOps for each case once — BirkNext never guesses it, and remembers ids you confirm here for the next export.</p>
                     @foreach (var c in (_preview?.Cases ?? []).Where(c => c.ExcludedReason is null))
                     {
                         var id = c.CaseId;
-                        <label class="adx-field"><span>@c.Title</span><input inputmode="numeric" value="@_existing.GetValueOrDefault(id)" @onchange="e => Set(() => _existing[id] = e.Value?.ToString() ?? string.Empty)" data-testid="adx-existing-id" /></label>
+                        var remembered = _profile.KnownTestCaseIds.GetValueOrDefault(c.CaseKey);
+                        var typed = _existing.TryGetValue(id, out var t) && t.Length > 0 ? t : null;
+                        <label class="adx-field"><span>@c.Title</span><input inputmode="numeric" value="@(typed ?? remembered)" @onchange="e => Set(() => _existing[id] = e.Value?.ToString() ?? string.Empty)" data-testid="adx-existing-id" />
+                            @if (typed is null && remembered is not null) { <span class="adx-muted" data-testid="adx-existing-id-remembered">Remembered from an earlier export — change it if the test case moved.</span> }</label>
                     }
                     <label class="adx-check"><input type="checkbox" checked="@_confirmed" @onchange="e => Set(() => _confirmed = e.Value is true)" data-testid="adx-confirm-ids" /> I checked these ids in Azure DevOps and their steps may be replaced.</label>
                 </div>

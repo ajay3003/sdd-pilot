@@ -40,6 +40,19 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     public Task<ActionResult> Save(Guid id, [FromBody] SaveTestPlanDraftRequest request, CancellationToken ct) => Run(async () => Ok(await service.SaveAsync(id, request, Actor, ct)));
 
+    /// <summary>The plan's saved revisions, newest first (version history).</summary>
+    [HttpGet("drafts/{id:guid}/revisions")]
+    public Task<ActionResult> Revisions(Guid id, CancellationToken ct) => Run(async () => Ok(await service.RevisionsAsync(id, ct)));
+
+    [HttpGet("drafts/{id:guid}/revisions/{revision:int}")]
+    public Task<ActionResult> Revision(Guid id, int revision, CancellationToken ct) => Run(async () => Ok(await service.RevisionAsync(id, revision, ct)));
+
+    /// <summary>Restores an earlier revision as the next revision (history is kept).</summary>
+    [HttpPost("drafts/{id:guid}/restore")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public Task<ActionResult> Restore(Guid id, [FromBody] RestoreTestPlanRevisionRequest request, CancellationToken ct) =>
+        Run(async () => Ok(await service.RestoreRevisionAsync(id, request, Actor, ct)));
+
     [HttpPost("drafts/{id:guid}/review")]
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     public Task<ActionResult> Review(Guid id, [FromBody] ReviewTestCaseRequest request, CancellationToken ct) => Run(async () => Ok(await service.ReviewAsync(id, request, Actor, ct)));

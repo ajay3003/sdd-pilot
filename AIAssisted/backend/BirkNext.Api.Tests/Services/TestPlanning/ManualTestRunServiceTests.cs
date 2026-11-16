@@ -181,6 +181,169 @@ public sealed class ManualTestRunServiceTests : IAsyncLifetime, IDisposable
             .Should().BeNull("after a passing run there is nothing to retest");
     }
 
+    // ── Plan version history ──────────────────────────────────────────────────────────────────────────────────────────
+
+    private static SaveTestPlanDraftRequest Rename(TestPlanDraft plan, string name) => new()
+    {
+        BaseRevision = plan.Revision, PlanName = name, ScenarioIds = [.. plan.Cases.Select(c => c.Source.ScenarioId)], Suites = plan.Suites,
+        Cases = [.. plan.Cases.Select(c => new TestCaseHumanPart { ScenarioId = c.Source.ScenarioId, SuiteId = c.SuiteId, Edits = c.Edits })],
+    };
+
+    [Fact]
+    public async Task Every_saved_plan_revision_is_kept_and_a_restore_is_a_new_revision_that_keeps_history()
+    {
+        await using var db = Context();
+        var (plan, _) = await PlanAsync(db);
+        var saved = await Plans(db).SaveAsync(plan.Id, Rename(plan, "Library — sprint 2"), "anna", default);
+
+        var history = await Plans(Context()).RevisionsAsync(plan.Id, default);
+        history.Select(h => (h.Revision, h.Reason, h.Current)).Should().Equal((saved.Revision, "Saved", true), (plan.Revision, "Created", false));
+        (await Plans(Context()).RevisionAsync(plan.Id, plan.Revision, default)).PlanName.Should().Be(plan.PlanName, "an earlier revision reads as it was");
+
+        var restored = await Plans(Context()).RestoreRevisionAsync(plan.Id, new RestoreTestPlanRevisionRequest(saved.Revision, plan.Revision), "bob", default);
+        restored.Revision.Should().Be(saved.Revision + 1, "a restore is a new revision, never a rewrite");
+        restored.PlanName.Should().Be(plan.PlanName);
+        restored.Cases.Select(c => c.Source.ScenarioId).Should().Equal(plan.Cases.Select(c => c.Source.ScenarioId));
+        (await Plans(Context()).RevisionsAsync(plan.Id, default)).Select(h => h.Reason).Should().Equal($"Restored from revision {plan.Revision}", "Saved", "Created");
+
+        var stale = () => Plans(Context()).RestoreRevisionAsync(plan.Id, new RestoreTestPlanRevisionRequest(saved.Revision, plan.Revision), "bob", default);
+        (await stale.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("draft-changed", "a restore from an outdated view never overwrites newer work");
+        var current = () => Plans(Context()).RestoreRevisionAsync(plan.Id, new RestoreTestPlanRevisionRequest(restored.Revision, restored.Revision), "bob", default);
+        (await current.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("revision-current");
+        var missing = () => Plans(Context()).RevisionAsync(plan.Id, 99, default);
+        (await missing.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("revision-not-found");
+    }
+
+    // ── Defect lifecycle after completion ───────────────────────────────────────────────────────────────────────────
+
+    private async Task<(TestPlanDraft Plan, TestCaseDraft Scenario, ManualTestRun Run)> FailedRunWithDefectAsync(AppDbContext db)
+    {
+        var (plan, scenario) = await PlanAsync(db);
+        var runs = Runs(db);
+        var run = await runs.StartAsync(new StartManualRunRequest("library", plan.Id, scenario.Source.ScenarioId, null), "anna", default);
+        run = await runs.SaveAsync("library", run.Id, Save(run, (1, ManualStepOutcome.Fail, "Error 500")) with
+        {
+            Defects = [new ManualRunDefect { Title = "Reservation fails with 500", Severity = "High", Status = ManualDefectStatus.Open, Step = 1 }],
+            Evidence = [new ManualRunEvidence { Kind = ManualEvidenceKind.Link, Label = "Screenshot", Reference = "https://share.example.test/s1.png" }],
+        }, "anna", default);
+        run = await runs.CompleteAsync("library", run.Id, new CompleteManualRunRequest(run.Revision), "anna", default);
+        return (plan, scenario, run);
+    }
+
+    [Fact]
+    public async Task A_defect_is_followed_up_after_completion_with_history_while_results_and_evidence_stay_as_recorded()
+    {
+        await using var db = Context();
+        var (plan, scenario, run) = await FailedRunWithDefectAsync(db);
+        var defect = run.Defects.Single();
+        var runs = Runs(Context());
+
+        var fixedRun = await runs.UpdateDefectAsync("library", run.Id, defect.Id, new UpdateManualDefectRequest(run.Revision, ManualDefectStatus.ReadyForRetest, "Fixed in build 1.4", "4711", null), "dev", default);
+        fixedRun.Defects.Single().Should().Match<ManualRunDefect>(d => d.Status == ManualDefectStatus.ReadyForRetest && d.ExternalReference == "4711");
+        fixedRun.Defects.Single().History!.Single().Should().Match<ManualDefectEvent>(e => e.From == ManualDefectStatus.Open && e.To == ManualDefectStatus.ReadyForRetest
+            && e.By == "dev" && e.Note == "Fixed in build 1.4" && e.ExternalReference == "4711");
+        fixedRun.Steps.Should().BeEquivalentTo(run.Steps, "a follow-up never changes the recorded results");
+        (fixedRun.State, fixedRun.Outcome, fixedRun.CompletedAt).Should().Be((run.State, run.Outcome, run.CompletedAt));
+        fixedRun.Evidence.Should().BeEquivalentTo(run.Evidence, "the original evidence is kept as recorded");
+
+        // Retest: a new run of the same case verifies the fix; the defect is closed with that run as its proof.
+        var retest = await runs.StartAsync(new StartManualRunRequest("library", plan.Id, scenario.Source.ScenarioId, null), "anna", default);
+        retest.RetestOf.Should().Be(run.Id);
+        var inProgress = () => Runs(Context()).UpdateDefectAsync("library", retest.Id, defect.Id, new UpdateManualDefectRequest(retest.Revision, ManualDefectStatus.Closed, null, null, null), "anna", default);
+        (await inProgress.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("run-in-progress");
+        retest = await runs.SaveAsync("library", retest.Id, Save(retest, (1, ManualStepOutcome.Pass, null)), "anna", default);
+        retest = await runs.CompleteAsync("library", retest.Id, new CompleteManualRunRequest(retest.Revision), "anna", default);
+        var closed = await Runs(Context()).UpdateDefectAsync("library", run.Id, defect.Id, new UpdateManualDefectRequest(fixedRun.Revision, ManualDefectStatus.Closed, "Retest passed", null, retest.Id), "anna", default);
+        closed.Defects.Single().History!.Select(e => e.To).Should().Equal(ManualDefectStatus.ReadyForRetest, ManualDefectStatus.Closed);
+        closed.Defects.Single().History![1].RetestRunId.Should().Be(retest.Id);
+        ManualRunRules.Summary(closed).OpenDefects.Should().Be(0);
+        // The database itself still refuses a rewrite of the recorded results, also with a correct revision step (only follow-up is allowed).
+        await using (var raw = Context())
+        {
+            var rewrite = () => raw.Database.ExecuteSqlRawAsync(
+                "UPDATE manual_test_runs SET \"ContentJson\" = replace(\"ContentJson\", 'Error 500', 'All fine'), \"Revision\" = \"Revision\" + 1 WHERE \"Id\" = {0}", run.Id);
+            await rewrite.Should().ThrowAsync<Exception>("step results of a completed run are final in the database");
+        }
+
+        var stale = () => Runs(Context()).UpdateDefectAsync("library", run.Id, defect.Id, new UpdateManualDefectRequest(fixedRun.Revision, ManualDefectStatus.Open, "reopen", null, null), "anna", default);
+        (await stale.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("run-changed");
+        var unchanged = () => Runs(Context()).UpdateDefectAsync("library", run.Id, defect.Id, new UpdateManualDefectRequest(closed.Revision, ManualDefectStatus.Closed, null, null, null), "anna", default);
+        (await unchanged.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("defect-unchanged");
+        var foreignRetest = () => Runs(Context()).UpdateDefectAsync("library", run.Id, defect.Id, new UpdateManualDefectRequest(closed.Revision, ManualDefectStatus.Open, "x", null, Guid.NewGuid()), "anna", default);
+        (await foreignRetest.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("retest-run-unknown");
+
+        var list = await Runs(Context()).DefectsAsync("library", default);
+        list.Should().ContainSingle().Which.Should().Match<ManualDefectListItem>(i => i.RunId == run.Id && i.Defect.Status == ManualDefectStatus.Closed && i.RunTitle == run.Title);
+        (await Runs(Context()).DefectsAsync("another-project", default)).Should().BeEmpty("never another project's defects");
+    }
+
+    // ── Attachments ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private static readonly byte[] Png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52];
+
+    [Fact]
+    public async Task Files_are_attached_while_running_and_after_completion_typed_and_checked_and_never_cross_projects()
+    {
+        await using var db = Context();
+        var (plan, scenario) = await PlanAsync(db);
+        var runs = Runs(db);
+        var run = await runs.StartAsync(new StartManualRunRequest("library", plan.Id, scenario.Source.ScenarioId, null), "anna", default);
+
+        run = await runs.AttachAsync("library", run.Id, run.Revision, 1, "Error dialog", "C:\\Users\\anna\\error.png", Png, "anna", default);
+        var file = run.Evidence.Single();
+        file.Should().Match<ManualRunEvidence>(e => e.Kind == ManualEvidenceKind.Attachment && e.FileName == "error.png" && e.ContentType == "image/png" && e.Size == Png.Length
+            && e.Step == 1 && e.Label == "Error dialog" && !e.AddedAfterCompletion);
+        var stored = await Runs(Context()).AttachmentAsync("library", run.Id, Guid.Parse(file.Reference), default);
+        stored.Content.Should().Equal(Png);
+        stored.FileName.Should().Be("error.png", "a path from the browser is reduced to the file name");
+
+        async Task Refused(string name, byte[] content, string code)
+        {
+            var current = await Runs(Context()).GetAsync("library", run.Id, default);
+            var attach = () => Runs(Context()).AttachAsync("library", run.Id, current.Revision, null, null, name, content, "anna", default);
+            (await attach.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be(code, name);
+        }
+        await Refused("page.html", "<script>alert(1)</script>"u8.ToArray(), "attachment-type-refused");
+        await Refused("drawing.svg", "<svg/>"u8.ToArray(), "attachment-type-refused");
+        await Refused("fake.png", "not a png"u8.ToArray(), "attachment-content-mismatch");
+        await Refused("binary.txt", [0x41, 0x00, 0x42], "attachment-content-mismatch");
+        await Refused("empty.log", [], "attachment-empty");
+        await Refused("huge.pdf", [.. "%PDF"u8, .. new byte[ManualTestRunService.MaxAttachmentBytes]], "attachment-too-large");
+
+        // A save keeps the attachment and may relabel it, but cannot invent one or point it at another file.
+        var forged = () => Runs(Context()).SaveAsync("library", run.Id, Save(run) with
+            { Evidence = [.. run.Evidence, new ManualRunEvidence { Kind = ManualEvidenceKind.Attachment, Label = "x", Reference = Guid.NewGuid().ToString("N") }] }, "anna", default);
+        (await forged.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("attachment-unknown");
+        run = await Runs(Context()).SaveAsync("library", run.Id, Save(run, (1, ManualStepOutcome.Pass, null)) with
+            { Evidence = [file with { Label = "Error dialog (renamed)", Reference = "elsewhere" }] }, "anna", default);
+        run.Evidence.Single().Should().Match<ManualRunEvidence>(e => e.Label == "Error dialog (renamed)" && e.Reference == file.Reference);
+
+        run = await Runs(Context()).CompleteAsync("library", run.Id, new CompleteManualRunRequest(run.Revision), "anna", default);
+        run = await Runs(Context()).AttachAsync("library", run.Id, run.Revision, null, "Log after the fix", "server.log", "ok"u8.ToArray(), "anna", default);
+        run.Evidence.Should().HaveCount(2);
+        run.Evidence[1].AddedAfterCompletion.Should().BeTrue("follow-up evidence is marked, the original stays first");
+        run.Outcome.Should().Be(ManualRunOutcome.Passed);
+
+        var other = () => Runs(Context()).AttachmentAsync("another-project", run.Id, Guid.Parse(file.Reference), default);
+        (await other.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("attachment-not-found");
+    }
+
+    [Fact]
+    public async Task A_file_is_not_attached_to_a_stopped_run_or_from_a_stale_revision()
+    {
+        await using var db = Context();
+        var (plan, scenario) = await PlanAsync(db);
+        var run = await Runs(db).StartAsync(new StartManualRunRequest("library", plan.Id, scenario.Source.ScenarioId, null), "anna", default);
+
+        var stale = () => Runs(Context()).AttachAsync("library", run.Id, run.Revision - 1, null, null, "shot.png", Png, "anna", default);
+        (await stale.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("run-changed", "a tab that missed a save must reload first");
+
+        run = await Runs(Context()).AbandonAsync("library", run.Id, new AbandonManualRunRequest(run.Revision, "Environment down"), "anna", default);
+        var stopped = () => Runs(Context()).AttachAsync("library", run.Id, run.Revision, null, null, "shot.png", Png, "anna", default);
+        (await stopped.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("run-final");
+        (await Context().ManualRunAttachments.CountAsync(a => a.RunId == run.Id)).Should().Be(0, "nothing is stored for a refused file");
+    }
+
     [Fact]
     public void The_rollup_rule_is_fail_then_blocked_then_not_run_then_passed_and_undecided_stays_undecided()
     {

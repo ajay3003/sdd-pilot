@@ -2004,6 +2004,57 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("manual_review_decisions", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.ManualRunAttachmentRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("AddedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AddedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("ProjectKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long>("Size")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectKey", "RunId");
+
+                    b.ToTable("manual_run_attachments", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.ManualTestRunRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3633,6 +3684,49 @@ namespace BirkNext.Api.Data.Migrations
                     b.HasIndex("GuideKey");
 
                     b.ToTable("test_plan_drafts", (string)null);
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Models.TestPlanDraftRevisionRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("DraftId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PlanName")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("SavedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SavedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DraftId", "Revision")
+                        .IsUnique()
+                        .HasDatabaseName("ux_test_plan_draft_revisions_draft_revision");
+
+                    b.ToTable("test_plan_draft_revisions", (string)null);
                 });
 
             modelBuilder.Entity("BirkNext.Api.Models.TestPlanSnapshotRecord", b =>

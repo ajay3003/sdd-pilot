@@ -25,6 +25,12 @@ public sealed class AdoTestPlanExportService(AppDbContext db, TestPlanSuggestion
         catch (JsonException) { return new AdoExportProfile(); }
     }
 
+    private static AdoExportProfile? Deserialize(string json)
+    {
+        try { return JsonSerializer.Deserialize<AdoExportProfile>(json, E.Json); }
+        catch (JsonException) { return null; }
+    }
+
     public async Task<AdoExportProfile> SaveProfileAsync(string projectKey, AdoExportProfile profile, string actor, CancellationToken ct)
     {
         var key = TestScenarioDiscoveryService.Key(projectKey);
@@ -34,6 +40,8 @@ public sealed class AdoTestPlanExportService(AppDbContext db, TestPlanSuggestion
         };
         var row = await db.AdoExportProfiles.SingleOrDefaultAsync(r => r.ProjectKey == key, ct);
         if (row is null) db.AdoExportProfiles.Add(row = new AdoExportProfileRecord { ProjectKey = key });
+        // Remembered Azure DevOps ids change only through a confirmed update export, never through a profile save from a page that loaded earlier.
+        clean = clean with { KnownTestCaseIds = (row.ProfileJson.Length > 0 ? Deserialize(row.ProfileJson) : null)?.KnownTestCaseIds ?? [] };
         row.ProfileJson = JsonSerializer.Serialize(clean, E.Json);
         row.UpdatedBy = actor.Length <= 200 ? actor : actor[..200];
         row.UpdatedAt = Now;
@@ -62,6 +70,19 @@ public sealed class AdoTestPlanExportService(AppDbContext db, TestPlanSuggestion
             ContentJson = JsonSerializer.Serialize(new { cases = ready.Select(c => $"{c.CaseId}@{revisions.GetValueOrDefault(c.CaseId)}"), profile = request.Profile with { }, issues = preview.Issues.Count }, E.Json),
             ExportedBy = actor.Length <= 200 ? actor : actor[..200], ExportedAt = Now,
         });
+        // Ids the tester confirmed for an update export are remembered (by case key) so they are not typed again next time.
+        if (request.Mode == AdoExportMode.UpdateExisting && request.ExistingIdsConfirmed && ready.Any(c => c.AzureDevOpsId is not null))
+        {
+            var key = TestScenarioDiscoveryService.Key(request.ProjectKey);
+            var profileRow = await db.AdoExportProfiles.SingleOrDefaultAsync(r => r.ProjectKey == key, ct);
+            var stored = profileRow is null ? request.Profile : (Deserialize(profileRow.ProfileJson) ?? request.Profile);
+            var known = new Dictionary<string, string>(stored.KnownTestCaseIds, StringComparer.Ordinal);
+            foreach (var c in ready.Where(c => c.AzureDevOpsId is not null)) known[c.CaseKey] = c.AzureDevOpsId!;
+            if (profileRow is null) db.AdoExportProfiles.Add(profileRow = new AdoExportProfileRecord { ProjectKey = key });
+            profileRow.ProfileJson = JsonSerializer.Serialize(stored with { KnownTestCaseIds = known }, E.Json);
+            profileRow.UpdatedBy = actor.Length <= 200 ? actor : actor[..200];
+            profileRow.UpdatedAt = Now;
+        }
         await db.SaveChangesAsync(ct);
         return new AdoExportFile(name, xlsx ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "text/csv", Convert.ToBase64String(bytes), preview.Rows.Count, ready.Count);
     }
