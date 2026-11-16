@@ -64,6 +64,32 @@
                 </tbody>
             </table>
         }
+        @if (View.Integration.Count > 0)
+        {
+            @* Integration testing of the requirements: confirmed requirement ↔ journey links and the suites prepared for the journeys. Shown apart from
+               the manual counts above (never added to them); a prepared suite is not an execution. *@
+            <h3 class="pct-h3" data-testid="pct-integration-title">Integration testing</h3>
+            <table class="pct-table" data-testid="pct-integration">
+                <thead><tr><th scope="col">Requirement</th><th scope="col">Journey</th><th scope="col">Test suites prepared for the journey</th></tr></thead>
+                <tbody>
+                    @foreach (var t in View.Integration)
+                    {
+                        <tr data-testid="pct-integration-row" data-requirement="@t.RequirementId" data-journey="@t.JourneyId">
+                            <th scope="row" data-label="Requirement"><span class="pct-req-id">@t.RequirementId</span> <span class="pct-req-title">@t.RequirementTitle</span></th>
+                            <td data-label="Journey"><a href="@($"technical-testing/integrations?stage=prepare&journey={Uri.EscapeDataString(t.JourneyId)}")" data-testid="pct-integration-journey">@t.JourneyName</a>
+                                @if (t.CurrentJourneyRevision != t.LinkedAtJourneyRevision) { <span class="pct-muted" data-testid="pct-integration-revised"> (linked at revision @t.LinkedAtJourneyRevision; the journey is now at revision @t.CurrentJourneyRevision)</span> }</td>
+                            <td data-label="Test suites">
+                                @if (t.Suites.Count == 0) { <span class="pct-muted" data-testid="pct-integration-no-suite">No suite prepared yet</span> }
+                                @foreach (var s in t.Suites)
+                                {
+                                    <span class="pct-integration-suite" data-testid="pct-integration-suite" data-executed="@(s.Executed ? "true" : "false")"><a href="@s.Href">@s.Name r@(s.Revision)</a> — @s.Outcome</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
         @if (View.WithoutTestDesign.Count > 0)
         {
             <details class="pct-gaps" data-testid="pct-gaps">

@@ -29,7 +29,9 @@ public sealed class TestPlanException(int status, string code, string message) :
 /// </summary>
 public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideService guides, SourceBaselineService baselines, TestDataCatalogService testData,
     IEnumerable<IIntegrationJourneyPack> packs, ICriticalE2EStore e2e, TimeProvider? clock = null, ScenarioDiscoveryCache? discoveries = null,
-    ScenarioDiscoveryStore? discoveryStore = null) : IScenarioReviewSource
+    ScenarioDiscoveryStore? discoveryStore = null, BirkNext.Api.Services.IntegrationJourneys.JourneyRequirementLinkStore? requirementLinks = null,
+    BirkNext.Api.Services.IntegrationJourneys.DeclaredIntegrationJourneyStore? declaredJourneys = null,
+    BirkNext.Api.Services.IntegrationSuites.IntegrationSuiteService? integrationSuites = null) : IScenarioReviewSource
 {
     public const int MaxCases = 300;
     public const int MaxContentCharacters = 4_000_000;
@@ -505,8 +507,9 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         CancellationToken ct, IReadOnlyDictionary<string, string>? requirementTitles = null)
     {
         var key = TestScenarioDiscoveryService.Key(projectKey);
-        return PreparedCaseTraceability.Build(key, await ProjectDraftsAsync(key, ct), specificationPaths, requirementIds, requirementTitles,
+        var view = PreparedCaseTraceability.Build(key, await ProjectDraftsAsync(key, ct), specificationPaths, requirementIds, requirementTitles,
             await ManualTestRunService.ReadTraceabilityRunsAsync(db, key, ct));
+        return await BirkNext.Api.Services.IntegrationSuites.IntegrationRequirementTrace.WithIntegrationAsync(view, projectKey.Trim(), requirementLinks, declaredJourneys, integrationSuites, ct);
     }
 
     /// <summary>The project's plans and snapshots (only this project's), Test Data options and the Critical E2E flows of its environment.</summary>

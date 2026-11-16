@@ -29,3 +29,6 @@
     .pct-table td::before { content: attr(data-label) ": "; font-weight: 600; color: var(--clr-text-muted, #57606a); }
     .pct-table thead th:first-child { width: auto; }
 }
+/* Integration testing of the requirements (journey links and prepared suites), apart from the manual counts. */
+.pct-h3 { font-size: 0.95rem; margin: 1rem 0 0.4rem; }
+.pct-integration-suite { display: block; }

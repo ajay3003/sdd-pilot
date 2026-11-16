@@ -35,6 +35,21 @@ public sealed class DeclaredJourneyRevisionRecord
     public string Origin { get; set; } = "";
 }
 
+/// <summary>A requirement linked to a declared journey (content = the shared <c>JourneyRequirementLink</c> as JSON, with its append-only history).</summary>
+public sealed class JourneyRequirementLinkRecord
+{
+    public Guid Id { get; set; }
+    public string ProjectKey { get; set; } = "";
+    public Guid JourneyId { get; set; }
+    public string RequirementId { get; set; } = "";
+    public string SpecificationPath { get; set; } = "";
+    public string Status { get; set; } = "";
+    public string ContentJson { get; set; } = "{}";
+    /// <summary>Concurrency token: two concurrent changes cannot both apply.</summary>
+    public int Version { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 /// <summary>
 /// Project-declared Integration Journeys (schema integration_journeys): its own context on the same database, like the Scope Registry and Task
 /// Alignment. It never references another schema by foreign key.
@@ -46,6 +61,7 @@ public sealed class IntegrationJourneysDbContext(DbContextOptions<IntegrationJou
 
     public DbSet<DeclaredJourneyRecord> Journeys => Set<DeclaredJourneyRecord>();
     public DbSet<DeclaredJourneyRevisionRecord> Revisions => Set<DeclaredJourneyRevisionRecord>();
+    public DbSet<JourneyRequirementLinkRecord> RequirementLinks => Set<JourneyRequirementLinkRecord>();
 
     public static void Configure(DbContextOptionsBuilder builder, string connectionString) =>
         builder.UseNpgsql(connectionString, npgsql => npgsql.MigrationsHistoryTable(HistoryTable, Schema));
@@ -83,6 +99,23 @@ public sealed class IntegrationJourneysDbContext(DbContextOptions<IntegrationJou
             e.Property(x => x.DeclaredBy).HasColumnName("declared_by").HasMaxLength(120).IsRequired();
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.Property(x => x.Origin).HasColumnName("origin").HasMaxLength(20).IsRequired();
+            e.HasOne<DeclaredJourneyRecord>().WithMany().HasForeignKey(x => x.JourneyId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<JourneyRequirementLinkRecord>(e =>
+        {
+            e.ToTable("journey_requirement_link");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasColumnName("id");
+            e.Property(x => x.ProjectKey).HasColumnName("project_key").HasMaxLength(150).IsRequired();
+            e.Property(x => x.JourneyId).HasColumnName("journey_id");
+            e.Property(x => x.RequirementId).HasColumnName("requirement_id").HasMaxLength(200).IsRequired();
+            e.Property(x => x.SpecificationPath).HasColumnName("specification_path").HasMaxLength(500).IsRequired();
+            e.Property(x => x.Status).HasColumnName("status").HasMaxLength(20).IsRequired();
+            e.Property(x => x.ContentJson).HasColumnName("content").HasColumnType("jsonb").IsRequired();
+            e.Property(x => x.Version).HasColumnName("version").IsConcurrencyToken();
+            e.Property(x => x.UpdatedAt).HasColumnName("updated_at");
+            e.HasIndex(x => new { x.ProjectKey, x.JourneyId, x.RequirementId, x.SpecificationPath }).IsUnique().HasDatabaseName("ux_journey_requirement_link");
             e.HasOne<DeclaredJourneyRecord>().WithMany().HasForeignKey(x => x.JourneyId).OnDelete(DeleteBehavior.Restrict);
         });
     }

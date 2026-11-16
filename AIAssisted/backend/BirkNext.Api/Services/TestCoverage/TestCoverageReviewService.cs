@@ -33,7 +33,9 @@ public sealed record TestCoverageOutcome(TestCoverageReviewResult? Result, int S
 public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvidenceProvider sources, ICriticalE2EStore? e2e = null,
     SourceRepositoryAssociationService? associations = null, BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyPackRegistry? journeyPacks = null,
     BirkNext.Api.Services.IntegrationJourneys.DeclaredIntegrationJourneyStore? declaredJourneys = null,
-    BirkNext.Api.Services.TestData.TestDataCatalogService? testData = null) : ITestCoverageReviewService
+    BirkNext.Api.Services.TestData.TestDataCatalogService? testData = null,
+    BirkNext.Api.Services.IntegrationJourneys.JourneyRequirementLinkStore? requirementLinks = null,
+    BirkNext.Api.Services.IntegrationSuites.IntegrationSuiteService? integrationSuites = null) : ITestCoverageReviewService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly HashSet<string> AllowedValues = new(StringComparer.Ordinal) { "Confirmed", "Rejected", "DeveloperAutomated", "QaAutomated", "Unknown", "Accepted" };
@@ -120,12 +122,13 @@ public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvid
         if (string.IsNullOrWhiteSpace(request.ProjectKey)) return null;
         var key = request.ProjectKey.Trim();
         var workspace = request.Workspace;
-        return BirkNext.Api.Services.TestPlanning.PreparedCaseTraceability.Build(key, await DraftsAsync(ct),
+        var view = BirkNext.Api.Services.TestPlanning.PreparedCaseTraceability.Build(key, await DraftsAsync(ct),
             [.. (workspace?.SpecificationArtifacts ?? []).Select(a => a.Path)],
             workspace is { SpecificationAvailable: true } ? [.. workspace.Requirements.Select(r => r.Id)] : null,
             workspace is { SpecificationAvailable: true } ? workspace.Requirements.Where(r => !string.IsNullOrWhiteSpace(r.Id)).GroupBy(r => r.Id.Trim(), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.First().Text, StringComparer.OrdinalIgnoreCase) : null,
             await BirkNext.Api.Services.TestPlanning.ManualTestRunService.ReadTraceabilityRunsAsync(db, key, ct));
+        return await BirkNext.Api.Services.IntegrationSuites.IntegrationRequirementTrace.WithIntegrationAsync(view, key, requirementLinks, declaredJourneys, integrationSuites, ct);
     }
 
     /// <summary>Every stored Test Plan draft (read-only). An unreadable draft is skipped, never guessed.</summary>

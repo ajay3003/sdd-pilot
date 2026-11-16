@@ -834,6 +834,8 @@ builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegratio
 builder.Services.AddDbContext<BirkNext.Api.Data.IntegrationJourneys.IntegrationJourneysDbContext>(options =>
     BirkNext.Api.Data.IntegrationJourneys.IntegrationJourneysDbContext.Configure(options, databaseConnectionString));
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.DeclaredIntegrationJourneyStore>();
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.JourneyRequirementLinkStore>();
+builder.Services.AddScoped<BirkNext.Api.Services.TechnicalHistory.TechnicalHistoryService>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.DeclaredIntegrationJourneyLegacyImport>();
 builder.Services.AddSingleton<BirkNext.Api.Services.IntegrationJourneys.DeclaredIntegrationJourneyMigrationReports>();
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyRunner(

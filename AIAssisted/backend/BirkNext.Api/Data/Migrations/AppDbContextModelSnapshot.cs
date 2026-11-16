@@ -408,6 +408,71 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("api_contract_versions", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.ApiReviewRunRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Blocked")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Completed")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("EnvironmentName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("GeneratedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("High")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Info")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Low")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Medium")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ProjectKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReportJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Targets")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnvironmentId", "GeneratedAt")
+                        .IsUnique()
+                        .HasDatabaseName("ux_api_review_runs_environment_generated");
+
+                    b.HasIndex("ProjectKey", "GeneratedAt");
+
+                    b.ToTable("api_review_runs", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.ApplicationMessagingEvidenceRecord", b =>
                 {
                     b.Property<string>("EnvironmentId")
@@ -3547,6 +3612,52 @@ namespace BirkNext.Api.Data.Migrations
                         .HasFilter("\"State\" = 'Published'");
 
                     b.ToTable("system_guide_revisions", (string)null);
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Models.TechnicalFindingRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("FindingKey")
+                        .IsRequired()
+                        .HasMaxLength(600)
+                        .HasColumnType("character varying(600)");
+
+                    b.Property<string>("ProjectKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectKey", "Source", "FindingKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_technical_findings_identity");
+
+                    b.ToTable("technical_findings", (string)null);
                 });
 
             modelBuilder.Entity("BirkNext.Api.Models.TestCoverageDecisionRecord", b =>

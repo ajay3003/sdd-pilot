@@ -312,6 +312,8 @@ public sealed record SuiteSourceBinding
 
 public sealed record CompositeRunRequest
 {
+    /// <summary>The workspace project running the suite; refused when the suite was generated for other projects only.</summary>
+    public string? WorkspaceProjectKey { get; init; }
     /// <summary>Stages to run, a prefix of the plan's stages (empty = all = full E2E). Anything less is a SUBFLOW_TEST.</summary>
     public List<string> Stages { get; init; } = [];
     public string EnvironmentId { get; init; } = "";

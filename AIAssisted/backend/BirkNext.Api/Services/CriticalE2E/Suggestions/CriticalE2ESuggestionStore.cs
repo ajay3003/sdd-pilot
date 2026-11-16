@@ -78,7 +78,13 @@ public sealed class CriticalE2ESuggestionStore : ICriticalE2ESuggestionStore
                     _records.Remove(stale.SuggestionId);
             var temp = _path + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(_records.Values.ToList(), Json));
-            File.Move(temp, _path, overwrite: true);
+            // Windows refuses to replace a file another process holds without delete sharing (typically antivirus scanning the file just written):
+            // the hold lasts milliseconds, so retry the replace briefly, then fail loudly (same rule as the Test Data identity store).
+            for (var attempt = 1; ; attempt++)
+            {
+                try { File.Move(temp, _path, overwrite: true); break; }
+                catch (Exception e) when (e is UnauthorizedAccessException or IOException && attempt < 5 && File.Exists(temp)) { Thread.Sleep(40 * attempt); }
+            }
             return next;
         }
     }

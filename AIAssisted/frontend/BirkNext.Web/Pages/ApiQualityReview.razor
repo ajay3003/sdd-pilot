@@ -948,6 +948,59 @@
     private string? _errorMessage;
     private string _tab = "Overview";
     [SupplyParameterFromQuery(Name = "tab")] public string? TabParam { get; set; }
+    /// <summary>A stored run to show (from Technical Testing → Verify): its own report, never the latest one.</summary>
+    [SupplyParameterFromQuery(Name = "run")] public Guid? RunParam { get; set; }
+
+    // ── Server-side run history and finding follow-up ───────────────────────────────────────────────────────────────────────────
+    private string? _projectKey;
+    private Guid? _storedRunId;
+    private List<BirkNext.TechnicalHistory.StoredApiReviewRun> _storedRuns = [];
+    private Dictionary<string, BirkNext.TechnicalHistory.TechnicalFinding> _followUps = new(StringComparer.Ordinal);
+
+    /// <summary>After the page state is committed: a stored run named in the address replaces the shown report; otherwise the shown report is stored
+    /// (idempotent: this moves the browser copy server-side); then the project's finding follow-ups and the environment's stored runs are read.</summary>
+    private async Task AfterCommitAsync(FrontendAnalysisContext context)
+    {
+            if (RunParam is { } runId && ServiceProvider.GetService<ITechnicalHistoryApiService>() is { } stored)
+            {
+                // A stored run opened from Technical Testing → Verify (or a link): exactly that run's report, read-only.
+                var (storedReport, storedError) = await stored.ApiReviewReportAsync(runId);
+                if (storedReport is not null) { _report = storedReport; _reportFromHistory = true; _storedRunId = runId; }
+                else _errorMessage = storedError;
+            }
+            else if (_report is not null && context.ActiveTargetError is null) await StoreRunAsync(_report, context.ActiveProfile.Id); // idempotent: moves the browser copy server-side
+            await LoadFollowUpsAsync(context.ActiveTargetError is null ? context.ActiveProfile.Id : null);
+    }
+
+    private async Task StoreRunAsync(ApiReviewReport report, string environmentId)
+    {
+        if (ServiceProvider.GetService<ITechnicalHistoryApiService>() is not { } api) return;
+        await EnsureProjectAsync();
+        var (run, _) = await api.StoreApiReviewRunAsync(_projectKey, environmentId, report);
+        _storedRunId = run?.Id;
+    }
+
+    private async Task EnsureProjectAsync()
+    {
+        if (_projectKey is not null || ServiceProvider.GetService<ICurrentWorkspaceProjection>() is not { } projection) return;
+        try { _projectKey = (await projection.GetAsync()).ProjectSlug; } catch (InvalidOperationException) { }
+    }
+
+    private async Task LoadFollowUpsAsync(string? environmentId)
+    {
+        if (ServiceProvider.GetService<ITechnicalHistoryApiService>() is not { } api) return;
+        await EnsureProjectAsync();
+        if (_projectKey is null) return;
+        var (findings, _) = await api.FindingsAsync(_projectKey);
+        _followUps = (findings ?? []).Where(f => f.Source == BirkNext.TechnicalHistory.TechnicalFindingRules.ApiQualityReview).ToDictionary(f => f.FindingKey, StringComparer.Ordinal);
+        if (environmentId is not null) _storedRuns = [.. (await api.ApiReviewRunsAsync(environmentId, null)).Runs ?? []];
+    }
+
+    private Task FollowUpChanged(BirkNext.TechnicalHistory.TechnicalFinding finding)
+    {
+        _followUps[finding.FindingKey] = finding;
+        return Task.CompletedTask;
+    }
     private string? _urlTab;
 
     protected override void OnParametersSet()
@@ -1065,6 +1118,7 @@
             if (!a.IsCurrent(_generation)) return;
             await a.StageAsync("readiness", _ => Task.FromResult(true), Changed);
             Commit(a, context, runtime, targets, capabilities, schemas, bindings, authorization);
+            if (a.IsCurrent(_generation)) await AfterCommitAsync(context);
         }
         catch (OperationCanceledException) when (a.Cancelled) { }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException or InvalidOperationException or Microsoft.JSInterop.JSException)
@@ -1388,6 +1442,7 @@
                 RuntimeReviews.SaveApiQualityResult(report, context);
                 await History.RecordAsync(JS, context.ActiveProfile.Id, report);
                 _history = History.For(context.ActiveProfile.Id);
+                await StoreRunAsync(report, context.ActiveProfile.Id); // server-side history (the browser copy stays a working copy)
                 // Project activity: the completed review with its own outcome (never "passed"); recording never fails the review.
                 if (ServiceProvider.GetService<BirkNext.Web.Services.ProjectActivity.ProjectActivityRecorder>() is { } activity)
                     await activity.RecordAsync(BirkNext.Web.Services.ProjectActivity.ReviewActivity.ApiQuality(report, context.ActiveProfile.Id, context.ActiveProfile.Name));
@@ -2093,6 +2148,11 @@
                             </tr>
                             <tr id="@detailId" class="aqr-finding-details" hidden="@(!expanded)" data-testid="aqr-finding-details">
                                 <td colspan="7">
+                                    @if (expanded)
+                                    {
+                                        <BirkNext.Web.Components.TechnicalFindingFollowUp ProjectKey="@_projectKey" RunId="@_storedRunId" Finding="f" Runs="_storedRuns"
+                                            Followed="@_followUps.GetValueOrDefault(BirkNext.TechnicalHistory.TechnicalFindingRules.Key(f))" Changed="FollowUpChanged" />
+                                    }
                                     <dl class="aqr-dl aqr-dl-technical">
                                         @if (issue is not null)
                                         {

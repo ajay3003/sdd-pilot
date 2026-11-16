@@ -150,6 +150,7 @@
                             <p data-testid="itx-prepare-journey-context">For journey <strong>@sj.DisplayName</strong> (revision @sj.Revision): @string.Join(" → ", sj.Components)</p>
                             <p><a class="btn btn-primary" href="@I.SuitesForJourneyHref(sj)" data-testid="itx-open-suites">Prepare in Integration Test Suites</a></p>
                             <p class="mt-muted">Integration Test Suites opens with this journey as context. Choose this project's source snapshot there; a suite generated with this journey as context records the journey and its revision, shown below as “Prepared for”.</p>
+                            <BirkNext.Web.Components.JourneyRequirementsPanel ProjectKey="@(f.ProjectKey ?? "")" ProjectName="@f.ProjectName" Journey="sj" Suites="f.Suites" />
                         }
                         else if (Journey is { Length: > 0 })
                         {

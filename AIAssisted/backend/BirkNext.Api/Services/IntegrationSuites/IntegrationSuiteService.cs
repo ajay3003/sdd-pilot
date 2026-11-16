@@ -61,11 +61,17 @@ public sealed partial class IntegrationSuiteService(
     public async Task<IntegrationSuiteGenerateResult> GenerateAsync(IntegrationSuiteGenerateRequest request, string initiator, CancellationToken ct)
     {
         if (IntegrationSuiteComposer.Scope(request.ScopeId) is not { } scope) return new(null, false, $"Unknown integration scope '{request.ScopeId}'.");
+        if (string.IsNullOrWhiteSpace(request.WorkspaceProjectKey))
+            return new(null, false, "Select a project first: a suite is generated for one workspace project.");
+        request = request with { WorkspaceProjectKey = request.WorkspaceProjectKey.Trim() };
+        // A composite context is the supported way to combine several projects' sources (each association approved there).
         if (request.CompositeContextId is { } contextId) return await GenerateCompositeAsync(request, contextId, scope, initiator, ct);
         if (request.SnapshotId == Guid.Empty) return new(null, false, "Choose an analysed source snapshot: a suite is never generated without one.");
         var snapshot = await sources.FindSourceAnalysisAsync(request.SnapshotId, ct);
         if (snapshot is null) return new(null, false, "The source snapshot was not found. Import or re-analyse the project, then choose its snapshot explicitly.");
         if (snapshot.Status == SourceAnalysisStatus.Failed) return new(null, false, "The source snapshot failed analysis; no suite is generated from it.");
+        if (ForeignImport(request.WorkspaceProjectKey!, snapshot.ProjectImport?.ImportId))
+            return new(null, false, "That source snapshot was imported by another project. Choose this project's own snapshot, or map several projects' sources in a composite source context.");
         var modules = scope.Modules.Count > 0 ? scope.Modules : request.Modules;
         if (scope.ScopeId == IntegrationSuiteComposer.ApiScope && modules.Count == 0) return new(null, false, "Choose at least one source module for an API scope.");
         scope = scope with { Modules = [.. modules] };
@@ -227,14 +233,14 @@ public sealed partial class IntegrationSuiteService(
         if (request.PreparedForJourneyId is { Length: > 0 } journeyId)
         {
             var journey = journeys is null ? null : await journeys.FindByIdAsync(journeyId, ct);
-            if (journey is null || journey.RetiredAt is not null)
+            if (journey is null || journey.RetiredAt is not null || !string.Equals(journey.ProjectKey, request.WorkspaceProjectKey, StringComparison.Ordinal))
                 return new(null, false, "The journey this suite is prepared for is not a current journey of the project; open it from Integration Journeys and try again.");
             journeyRef = new SuiteJourneyReference(journeyId, journey.Revision, journey.DisplayName);
         }
         var latest = await db.IntegrationSuites.AsNoTracking().Where(s => s.SuiteKey == suiteKey).OrderByDescending(s => s.Revision).FirstOrDefaultAsync(ct);
         if (latest is not null && latest.Fingerprint == fingerprint)
         {
-            if (journeyRef is not null) latest = await RecordJourneyAsync(latest.Id, journeyRef, ct) ?? latest;
+            latest = await RecordJourneyAsync(latest.Id, journeyRef, request.WorkspaceProjectKey, ct) ?? latest;
             return new(await ReadAsync(latest, ct), true, null); // unchanged: no new revision, no duplicate definitions
         }
         var previous = latest is null ? null : JsonSerializer.Deserialize<IntegrationSuite>(latest.DefinitionJson, Json);
@@ -243,6 +249,7 @@ public sealed partial class IntegrationSuiteService(
             Id = Guid.NewGuid(), Revision = (latest?.Revision ?? 0) + 1, Fingerprint = fingerprint, GeneratedAt = Now, GeneratedBy = initiator,
             Drift = previous is null ? [] : Drift(previous, body),
             PreparedForJourneys = WithJourney(previous?.PreparedForJourneys ?? [], journeyRef),
+            WorkspaceProjects = WithProject(previous?.WorkspaceProjects ?? [], request.WorkspaceProjectKey),
         };
         db.IntegrationSuites.Add(new IntegrationSuiteRecord
         {
@@ -610,17 +617,35 @@ public sealed partial class IntegrationSuiteService(
         added is null || earlier.Any(j => j.JourneyId == added.JourneyId && j.Revision == added.Revision) ? [.. earlier] : [.. earlier, added];
 
     /// <summary>Records a journey on an unchanged suite revision (metadata only: the definition's tests, fingerprint and revision stay the same).</summary>
-    private async Task<IntegrationSuiteRecord?> RecordJourneyAsync(Guid id, SuiteJourneyReference journeyRef, CancellationToken ct)
+    /// <summary>Reusing an unchanged revision records the journey and the workspace project on it (metadata only: no new revision).</summary>
+    private async Task<IntegrationSuiteRecord?> RecordJourneyAsync(Guid id, SuiteJourneyReference? journeyRef, string? project, CancellationToken ct)
     {
         var row = await db.IntegrationSuites.FirstOrDefaultAsync(s => s.Id == id, ct);
         if (row is null) return null;
         var definition = JsonSerializer.Deserialize<IntegrationSuite>(row.DefinitionJson, Json)!;
         var journeysNow = WithJourney(definition.PreparedForJourneys, journeyRef);
-        if (journeysNow.Count == definition.PreparedForJourneys.Count) return row;
-        db.Entry(row).Property(nameof(IntegrationSuiteRecord.DefinitionJson)).CurrentValue = JsonSerializer.Serialize(definition with { PreparedForJourneys = journeysNow }, Json);
+        var projectsNow = WithProject(definition.WorkspaceProjects, project);
+        if (journeysNow.Count == definition.PreparedForJourneys.Count && projectsNow.Count == definition.WorkspaceProjects.Count) return row;
+        db.Entry(row).Property(nameof(IntegrationSuiteRecord.DefinitionJson)).CurrentValue =
+            JsonSerializer.Serialize(definition with { PreparedForJourneys = journeysNow, WorkspaceProjects = projectsNow }, Json);
         await db.SaveChangesAsync(ct);
         return row;
     }
+
+    internal static List<string> WithProject(IReadOnlyList<string> projects, string? project) =>
+        project is not { Length: > 0 } || projects.Contains(project, StringComparer.Ordinal) ? [.. projects] : [.. projects, project];
+
+    /// <summary>The import id of a workspace project key (<c>import:{importId}</c>); other keys have none.</summary>
+    internal static string? ImportIdOf(string? projectKey) =>
+        projectKey is { Length: > 7 } key && key.StartsWith("import:", StringComparison.Ordinal) ? key["import:".Length..] : null;
+
+    /// <summary>A snapshot imported by a project other than the workspace project (a source-only upload belongs to no project and is allowed).</summary>
+    internal static bool ForeignImport(string workspaceProjectKey, string? snapshotImportId) =>
+        snapshotImportId is { Length: > 0 } && ImportIdOf(workspaceProjectKey) is { } own && !string.Equals(own, snapshotImportId, StringComparison.Ordinal);
+
+    /// <summary>Whether a project may use the suite: suites from before projects were recorded have none and stay usable.</summary>
+    internal static bool UsableBy(IntegrationSuite suite, string? project) =>
+        suite.WorkspaceProjects.Count == 0 || (project is { Length: > 0 } && suite.WorkspaceProjects.Contains(project, StringComparer.Ordinal));
 
     // ── Read / review / execute ──────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -630,7 +655,7 @@ public sealed partial class IntegrationSuiteService(
         return [.. rows.Select(r => (r, s: JsonSerializer.Deserialize<IntegrationSuite>(r.DefinitionJson, Json)!))
             .Select(x => new IntegrationSuiteSummary(x.r.Id, x.r.SuiteKey, x.r.Revision, x.r.ScopeId, x.s.Scope.DisplayName, x.r.SnapshotId, x.s.Snapshot.ArchiveFileName,
                 x.r.GeneratedAt, x.s.Status, x.s.Tests.Count, x.s.Stages.Count, x.s.Review.Count(i => i.Decision is null))
-            { CompositeContextId = x.s.Composite?.ContextId, Sources = x.s.Composite?.Sources.Count ?? 1, PreparedForJourneys = x.s.PreparedForJourneys })];
+            { CompositeContextId = x.s.Composite?.ContextId, Sources = x.s.Composite?.Sources.Count ?? 1, PreparedForJourneys = x.s.PreparedForJourneys, WorkspaceProjects = x.s.WorkspaceProjects })];
     }
 
     public async Task<IntegrationSuite?> GetAsync(Guid id, CancellationToken ct) =>
@@ -740,6 +765,7 @@ public sealed partial class IntegrationSuiteService(
         if (!request.Authorized) return new(null, "NotAuthorized", "Execution needs the tester's explicit authorisation; nothing was sent.", []);
         var suite = await GetAsync(id, ct);
         if (suite is null) return new(null, "NotFound", "Suite not found.", []);
+        if (!UsableBy(suite, request.WorkspaceProjectKey)) return new(null, "Refused", "This suite was generated for another project; nothing was sent.", []);
         var inSuite = suite.Tests.Select(t => t.TestId).ToHashSet();
         var foreign = request.TestIds.Where(t => !inSuite.Contains(t)).ToList();
         if (foreign.Count > 0) return new(null, "Refused", "Only tests of this suite revision can be executed from it.", [.. foreign.Select(f => f.ToString("D"))]);

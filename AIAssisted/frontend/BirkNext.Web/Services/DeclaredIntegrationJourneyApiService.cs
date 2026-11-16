@@ -18,6 +18,14 @@ public interface IDeclaredIntegrationJourneyApiService
     Task<string?> RemoveAsync(string projectKey, string journeyId, string? retiredBy, CancellationToken ct = default);
     /// <summary>The legacy JSON import report, limited to this project's entries; null when it cannot be read.</summary>
     Task<DeclaredIntegrationJourneyMigrationReport?> MigrationReportAsync(string projectKey, CancellationToken ct = default);
+
+    /// <summary>The project's requirement ↔ journey links (all journeys, or one).</summary>
+    Task<(IReadOnlyList<JourneyRequirementLink>? Links, string? Error)> RequirementLinksAsync(string projectKey, string? journeyId = null, CancellationToken ct = default) =>
+        Task.FromResult<(IReadOnlyList<JourneyRequirementLink>?, string?)>((null, "Requirement links are not available in this host."));
+    Task<(JourneyRequirementLink? Link, string? Error)> LinkRequirementAsync(string projectKey, string journeyId, JourneyRequirementLinkRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(JourneyRequirementLink?, string?)>((null, "Requirement links are not available in this host."));
+    Task<(JourneyRequirementLink? Link, string? Error)> SetRequirementStatusAsync(string projectKey, string journeyId, Guid linkId, JourneyRequirementStatusRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(JourneyRequirementLink?, string?)>((null, "Requirement links are not available in this host."));
 }
 
 public sealed class DeclaredIntegrationJourneyApiService(HttpClient http) : IDeclaredIntegrationJourneyApiService
@@ -26,6 +34,39 @@ public sealed class DeclaredIntegrationJourneyApiService(HttpClient http) : IDec
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private static string E(string value) => Uri.EscapeDataString(value);
+
+    public async Task<(IReadOnlyList<JourneyRequirementLink>? Links, string? Error)> RequirementLinksAsync(string projectKey, string? journeyId = null, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.GetAsync($"{Base}/{E(projectKey)}/requirements{(journeyId is { Length: > 0 } j ? $"?journeyId={E(j)}" : "")}", ct);
+            if (!response.IsSuccessStatusCode) return (null, await MessageAsync(response, "Requirement links could not be loaded", ct));
+            return (await response.Content.ReadFromJsonAsync<List<JourneyRequirementLink>>(Json, ct) ?? [], null);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return (null, "Requirement links could not be loaded: the backend could not be reached."); }
+    }
+
+    public async Task<(JourneyRequirementLink? Link, string? Error)> LinkRequirementAsync(string projectKey, string journeyId, JourneyRequirementLinkRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.PostAsJsonAsync($"{Base}/{E(projectKey)}/{E(journeyId)}/requirements", request, Json, ct);
+            if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<JourneyRequirementLink>(Json, ct), null);
+            return (null, await MessageAsync(response, "The requirement was not linked", ct));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return (null, "The requirement was not linked: the backend could not be reached."); }
+    }
+
+    public async Task<(JourneyRequirementLink? Link, string? Error)> SetRequirementStatusAsync(string projectKey, string journeyId, Guid linkId, JourneyRequirementStatusRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.PostAsJsonAsync($"{Base}/{E(projectKey)}/{E(journeyId)}/requirements/{linkId:D}/status", request, Json, ct);
+            if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<JourneyRequirementLink>(Json, ct), null);
+            return (null, await MessageAsync(response, "The link was not changed", ct));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return (null, "The link was not changed: the backend could not be reached."); }
+    }
 
     public async Task<(IReadOnlyList<DeclaredIntegrationJourney>? Journeys, string? Error)> ListAsync(string projectKey, CancellationToken ct = default)
     {

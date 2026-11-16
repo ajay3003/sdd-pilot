@@ -99,6 +99,9 @@ public sealed record IntegrationSuiteGenerateRequest
     /// <summary>The declared Integration Journey ("project.{key}:{slug}") this suite is prepared for, when prepared from journey context. Recorded on
     /// the suite with the journey's current revision; it never changes what the suite tests or its identity.</summary>
     public string? PreparedForJourneyId { get; init; }
+    /// <summary>The workspace project the suite is generated for (the selected project's key). Required: the server checks that a single snapshot
+    /// is not another imported project's and that the journey is this project's. A composite context may combine several projects' sources.</summary>
+    public string? WorkspaceProjectKey { get; init; }
 }
 
 /// <summary>A declared Integration Journey a suite was prepared for: its id, the revision current then, and its name.</summary>
@@ -263,6 +266,9 @@ public sealed record IntegrationSuite
     public List<SuiteTestDataItem> TestData { get; init; } = [];
     /// <summary>Declared Integration Journeys this suite was prepared for (id + revision), oldest first. Metadata: not part of the fingerprint.</summary>
     public List<SuiteJourneyReference> PreparedForJourneys { get; init; } = [];
+    /// <summary>Workspace projects the suite was generated for (metadata, not part of the fingerprint). Empty for suites generated before projects
+    /// were recorded. Runs and reviews from another project are refused.</summary>
+    public List<string> WorkspaceProjects { get; init; } = [];
     public List<SuiteXmlSchemaRef> XmlSchemas { get; init; } = [];
     public List<SuiteTopologyMapping> Topology { get; init; } = [];
     public List<SuiteStage> Stages { get; init; } = [];
@@ -286,6 +292,7 @@ public sealed record IntegrationSuiteSummary(Guid Id, string SuiteKey, int Revis
     public Guid? CompositeContextId { get; init; }
     public int Sources { get; init; } = 1;
     public List<SuiteJourneyReference> PreparedForJourneys { get; init; } = [];
+    public List<string> WorkspaceProjects { get; init; } = [];
 }
 
 public sealed record IntegrationSuiteGenerateResult(IntegrationSuite? Suite, bool Reused, string? Error);
@@ -304,6 +311,8 @@ public sealed record IntegrationSuiteExecuteRequest
     public bool ConfirmMutatingCalls { get; init; }
     /// <summary>The tester's explicit authorisation of this run. Without it nothing is sent.</summary>
     public bool Authorized { get; init; }
+    /// <summary>The workspace project running the suite; refused when the suite was generated for other projects only.</summary>
+    public string? WorkspaceProjectKey { get; init; }
 }
 
 public sealed record IntegrationSuiteExecuteResult(Guid? RunId, string State, string Message, List<string> NotRun);

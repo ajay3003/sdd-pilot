@@ -149,7 +149,12 @@ public sealed class TechnicalTestingWorkspace(IServiceProvider services)
         var facts = FromApplicability(a);
         var runs = new List<RuntimeResult>();
         string? error = null;
-        if (profile is not null && Get<IApiReviewHistoryService>() is { } history && Get<IJSRuntime>() is { } js)
+        // Server-side history first: every stored run opens its own report. The browser copy is the fallback (older hosts, backend unreachable).
+        if (profile is not null && Get<ITechnicalHistoryApiService>() is { } stored
+            && (await stored.ApiReviewRunsAsync(profile.Id, null, ct)).Runs is { Count: > 0 } storedRuns)
+            runs.AddRange(storedRuns.Select(r => Api(new ApiReviewRunSummary(r.GeneratedAt, r.EnvironmentName, r.Targets, r.Completed, r.Blocked, r.High, r.Medium, r.Low, r.Info))
+                with { Href = $"api-quality-review?run={r.Id:D}&tab=findings" }));
+        else if (profile is not null && Get<IApiReviewHistoryService>() is { } history && Get<IJSRuntime>() is { } js)
             try
             {
                 await history.LoadAsync(js);

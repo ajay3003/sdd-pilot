@@ -114,4 +114,24 @@ public sealed class TechnicalTestingWorkspaceTests
         ws.Facts.TargetName.Should().Be("DEV");
         coverage.Verify(c => c.GetAsync("dev", ProjectSnapshot, It.IsAny<CancellationToken>()), Times.Once());
     }
+
+    [Fact]
+    public async Task Stored_API_review_runs_are_read_from_the_server_and_each_opens_its_own_report()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(WorkspaceSnapshots.Projection(WorkspaceSnapshots.Loaded("Imported", "roomly", "Roomly")).Object);
+        var context = new Mock<IFrontendAnalysisContextFactory>();
+        context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Name = "DEV", TargetUrl = "https://dev.example" } });
+        services.AddSingleton(context.Object);
+        var (newer, older) = (Guid.NewGuid(), Guid.NewGuid());
+        var at = new DateTimeOffset(2026, 11, 16, 9, 0, 0, TimeSpan.Zero);
+        var history = new Mock<ITechnicalHistoryApiService>();
+        history.Setup(h => h.ApiReviewRunsAsync("dev", null, It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<BirkNext.TechnicalHistory.StoredApiReviewRun>?)
+            [new(newer, "roomly", "dev", "DEV", at, at, 2, 2, 0, 1, 0, 0, 0, at), new(older, "roomly", "dev", "DEV", at.AddDays(-1), at.AddDays(-1), 2, 2, 0, 0, 0, 0, 0, at)], (string?)null));
+        services.AddSingleton(history.Object);
+
+        var api = (await new TechnicalTestingWorkspace(services.BuildServiceProvider()).LoadAsync()).Facts.For(TechnicalArea.Api);
+
+        api.Runs.Select(r => r.Href).Should().Equal($"api-quality-review?run={newer:D}&tab=findings", $"api-quality-review?run={older:D}&tab=findings");
+    }
 }

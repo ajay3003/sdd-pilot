@@ -11,8 +11,33 @@ namespace BirkNext.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/integration-journeys/declared")]
-public sealed class DeclaredIntegrationJourneysController(DeclaredIntegrationJourneyStore store, DeclaredIntegrationJourneyMigrationReports reports, TimeProvider clock) : ControllerBase
+public sealed class DeclaredIntegrationJourneysController(DeclaredIntegrationJourneyStore store, DeclaredIntegrationJourneyMigrationReports reports, TimeProvider clock,
+    JourneyRequirementLinkStore? requirementLinks = null) : ControllerBase
 {
+    /// <summary>The project's requirement ↔ journey links (every journey, or one with ?journeyId=), with their history.</summary>
+    [HttpGet("{projectKey}/requirements")]
+    public async Task<ActionResult<IReadOnlyList<JourneyRequirementLink>>> RequirementLinks(string projectKey, [FromQuery] string? journeyId, CancellationToken ct) =>
+        requirementLinks is null ? NotFound() : Ok(await requirementLinks.ListAsync(projectKey, journeyId, ct));
+
+    /// <summary>Links a requirement of the project's specification to a journey (confirmed, or proposed when asked).</summary>
+    [HttpPost("{projectKey}/{journeyId}/requirements")]
+    [RequestSizeLimit(2 * 1024 * 1024)]
+    public async Task<ActionResult<JourneyRequirementLink>> LinkRequirement(string projectKey, string journeyId, [FromBody] JourneyRequirementLinkRequest request, CancellationToken ct) =>
+        requirementLinks is null ? NotFound() : LinkResult(await requirementLinks.LinkAsync(projectKey, journeyId, request, "local-user", clock.GetUtcNow(), ct));
+
+    /// <summary>Confirms, rejects or removes a link (append-only history; nothing is deleted).</summary>
+    [HttpPost("{projectKey}/{journeyId}/requirements/{linkId:guid}/status")]
+    public async Task<ActionResult<JourneyRequirementLink>> RequirementStatus(string projectKey, string journeyId, Guid linkId, [FromBody] JourneyRequirementStatusRequest request, CancellationToken ct) =>
+        requirementLinks is null ? NotFound() : LinkResult(await requirementLinks.SetStatusAsync(projectKey, journeyId, linkId, request, "local-user", clock.GetUtcNow(), ct));
+
+    private ActionResult<JourneyRequirementLink> LinkResult(JourneyRequirementLinkStore.Write write) => write switch
+    {
+        { Link: { } link } => Ok(link),
+        { Status: 404 } => NotFound(new { message = write.Error }),
+        { Status: 409 } => Conflict(new { message = write.Error }),
+        _ => BadRequest(new { message = write.Error }),
+    };
+
     /// <summary>The current (not retired) declared journeys of one project.</summary>
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<DeclaredIntegrationJourney>>> List([FromQuery] string? projectKey, CancellationToken ct) =>

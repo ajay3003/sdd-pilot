@@ -106,6 +106,8 @@ public partial class IntegrationSuitesPage
     }
 
     private string? _projectName;
+    /// <summary>The workspace project the server scopes generation and runs to (never inferred from a snapshot or a name).</summary>
+    private string? _projectKey;
 
     private async Task DownloadReportAsync(IntegrationSuite suite)
     {
@@ -116,7 +118,7 @@ public partial class IntegrationSuitesPage
     private async Task InitializeAsync()
     {
         if (Services.GetService(typeof(ICurrentWorkspaceProjection)) is ICurrentWorkspaceProjection workspace)
-            try { _projectName = (await workspace.GetAsync()).ProjectName; } catch (InvalidOperationException) { _projectName = null; }
+            try { var w = await workspace.GetAsync(); (_projectName, _projectKey) = (w.ProjectName, w.ProjectSlug); } catch (InvalidOperationException) { _projectName = null; }
         try { _ownSnapshot = BirkNext.Web.Services.ManualTestingWorkspace.ResolveSnapshot(Services).Id; } catch (InvalidOperationException) { _ownSnapshot = null; }
         var (snapshots, e1) = await Api.SnapshotsAsync();
         var (scopes, e2) = await Api.ScopesAsync();
@@ -312,7 +314,7 @@ public partial class IntegrationSuitesPage
         var (result, error) = await Api.GenerateAsync(new IntegrationSuiteGenerateRequest
         {
             ScopeId = context.ScopeId, CompositeContextId = context.Id, AllowPartial = _allowPartial, IncludeNegatives = _negatives, IncludeSecurity = _security, GenerateTestData = _testData,
-            PreparedForJourneyId = _journey?.Id,
+            PreparedForJourneyId = _journey?.Id, WorkspaceProjectKey = _projectKey,
         });
         await GeneratedAsync(result, error);
         _busy = false;
@@ -327,6 +329,7 @@ public partial class IntegrationSuitesPage
             SnapshotId = snapshot.Id, ScopeId = _scopeId, IncludeNegatives = _negatives, IncludeSecurity = _security, GenerateTestData = _testData,
             Modules = [.. _modules.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)],
             PreparedForJourneyId = _journey?.Id, // recorded on the suite with the journey's revision (identity and tests are unchanged)
+            WorkspaceProjectKey = _projectKey,
         });
         await GeneratedAsync(result, error);
         _busy = false;
@@ -364,6 +367,7 @@ public partial class IntegrationSuitesPage
         _busy = true; _error = null; _message = null;
         var (result, error) = await Api.ExecuteAsync(suite.Id, new IntegrationSuiteExecuteRequest
         {
+            WorkspaceProjectKey = _projectKey,
             TestIds = [.. _selected], EnvironmentId = env.EnvironmentId, TargetUrl = env.TargetUrl, EnvironmentType = env.EnvironmentType, IsProduction = env.IsProduction,
             ProfileId = env.ProfileId, ContextFingerprint = env.ContextFingerprint, ConfirmMutatingCalls = confirmMutating, Authorized = true,
         });
@@ -393,6 +397,7 @@ public partial class IntegrationSuitesPage
         var until = _runUntil < 0 || _runUntil >= stages.Count ? stages.Count - 1 : _runUntil;
         return new CompositeRunRequest
         {
+            WorkspaceProjectKey = _projectKey,
             Stages = until == stages.Count - 1 ? [] : [.. stages.Take(until + 1)], EnvironmentId = _environment?.EnvironmentId ?? "", TargetUrl = _environment?.TargetUrl ?? "",
             EnvironmentType = _environment?.EnvironmentType ?? "", IsProduction = _environment?.IsProduction ?? false, ProfileId = _environment?.ProfileId,
             ContextFingerprint = _environment?.ContextFingerprint, ConfirmMutatingCalls = _confirmMutating, Authorized = authorized,

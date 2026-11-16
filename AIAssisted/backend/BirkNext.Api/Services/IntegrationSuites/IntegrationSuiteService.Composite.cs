@@ -396,6 +396,8 @@ public sealed partial class IntegrationSuiteService
     {
         var suite = await GetAsync(suiteId, ct);
         if (suite is null) return new(null, "NotFound", "Suite not found.", new(false, CompositeRunKind.SubflowTest, [], [], ["Suite not found."], []));
+        if (!UsableBy(suite, request.WorkspaceProjectKey))
+            return new(null, "Refused", "This suite was generated for another project; nothing was sent.", new(false, CompositeRunKind.SubflowTest, [], [], ["The suite belongs to another project."], []));
         var (preflight, runPlan) = Preflight(suite, request);
         if (runPlan is null) return new(null, request.Authorized ? "Refused" : "NotAuthorized", string.Join(" ", preflight.Problems), preflight);
         var result = await contractTests.RunChainAsync(runPlan.Plan.ChainId!.Value, new ContractChainRunRequest

@@ -126,12 +126,15 @@ public sealed class IntegrationSuiteTests : IAsyncLifetime
         try { Directory.Delete(_dir, true); } catch (IOException) { }
     }
 
-    private async Task<Guid> Snapshot(string openApi, string archive = "ward.zip")
+    private const string Project1 = "import:ward-import";
+
+    private async Task<Guid> Snapshot(string openApi, string archive = "ward.zip", string? importId = null)
     {
         using var scope = _services.CreateScope();
         var bytes = ProjectImportServiceTests.Zip(Project(openApi));
         var ws = IqrSourceArchiveReader.ReadDetailed(archive, bytes, default).Workspace!;
-        return (await scope.ServiceProvider.GetRequiredService<IqrSourceStore>().AnalyzeValidatedAsync(null, IqrSourceStore.SourceAnalysisOwner, archive, bytes, ws, default)).Id;
+        var provenance = importId is null ? null : new BirkNext.ProjectImport.ProjectImportProvenance { ImportId = importId, ArchiveFileName = archive, ArchiveSha256 = new string('c', 64), ImportedAt = DateTimeOffset.UtcNow };
+        return (await scope.ServiceProvider.GetRequiredService<IqrSourceStore>().AnalyzeValidatedAsync(null, IqrSourceStore.SourceAnalysisOwner, archive, bytes, ws, default, provenance)).Id;
     }
 
     private async Task<IntegrationSuiteGenerateResult> Generate(IntegrationSuiteGenerateRequest r)
@@ -146,7 +149,7 @@ public sealed class IntegrationSuiteTests : IAsyncLifetime
         return f(scope.ServiceProvider.GetRequiredService<IntegrationSuiteService>());
     }
 
-    private static IntegrationSuiteGenerateRequest Api(Guid snapshot) => new() { SnapshotId = snapshot, ScopeId = IntegrationSuiteComposer.ApiScope, Modules = ["ward"] };
+    private static IntegrationSuiteGenerateRequest Api(Guid snapshot) => new() { SnapshotId = snapshot, ScopeId = IntegrationSuiteComposer.ApiScope, Modules = ["ward"], WorkspaceProjectKey = Project1 };
 
     // ── ATG-12 snapshot identity ─────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -159,7 +162,7 @@ public sealed class IntegrationSuiteTests : IAsyncLifetime
         var suite = (await Generate(Api(snap))).Suite!;
         suite.Snapshot.Should().Match<SuiteSnapshotProvenance>(p => p.SnapshotId == snap && p.ArchiveFileName == "ward.zip" && p.ArchiveSha256.Length == 64 && p.EvidenceDomains.Contains("Contracts"));
         suite.Snapshot.Modules.Should().Contain(["ward", "other"]);
-        (await Generate(new() { SnapshotId = snap, ScopeId = IntegrationSuiteComposer.SkoleNaervaerScope })).Suite!.Snapshot.MissingSourceAreas
+        (await Generate(new() { SnapshotId = snap, ScopeId = IntegrationSuiteComposer.SkoleNaervaerScope, WorkspaceProjectKey = Project1 })).Suite!.Snapshot.MissingSourceAreas
             .Should().Contain("SkoleService/ is not in this archive", "the scope's missing modules are shown, never assumed present");
     }
 
@@ -252,7 +255,7 @@ public sealed class IntegrationSuiteTests : IAsyncLifetime
     public async Task Journey_stages_follow_the_pack_and_unsupported_stages_never_become_ready()
     {
         var snap = await Snapshot(OpenApiV1);
-        var suite = (await Generate(new() { SnapshotId = snap, ScopeId = IntegrationSuiteComposer.SkoleNaervaerScope })).Suite!;
+        var suite = (await Generate(new() { SnapshotId = snap, ScopeId = IntegrationSuiteComposer.SkoleNaervaerScope, WorkspaceProjectKey = Project1 })).Suite!;
         suite.Stages.Select(s => s.StageId).Should().Equal("altinn", "mu", "mm", "skole-intake", "person-tjeneste", "period-lock", "bufdata");
         suite.Stages.Single(s => s.StageId == "altinn").Coverage.Should().Be(SuiteStageCoverage.Executable);
         suite.Stages.Single(s => s.StageId == "altinn").Blockers.Should().Contain("No Target Environment selected");
@@ -272,7 +275,7 @@ public sealed class IntegrationSuiteTests : IAsyncLifetime
         var question = suite.Review.Single(r => r.Key == "security:bufdata-aggregate");
         question.Question.Should().Contain("aggregate");
         (await With(s => s.ReviewAsync(suite.Id, new(question.Key, "Acceptable", "Domain owner: excluded entirely"), "Tester", default))).Error.Should().BeNull();
-        var answered = (await Generate(new() { SnapshotId = snap, ScopeId = IntegrationSuiteComposer.SkoleNaervaerScope })).Suite!;
+        var answered = (await Generate(new() { SnapshotId = snap, ScopeId = IntegrationSuiteComposer.SkoleNaervaerScope, WorkspaceProjectKey = Project1 })).Suite!;
         answered.Security.Single(s => s.ScenarioId == "K67-05").Should().Match<SuiteSecurityScenario>(s => s.OpenQuestion == null && s.Basis == SuiteScenarioBasis.ReviewedBusinessRule && s.Triage != SuiteTriage.NeedsDomainDecision);
     }
 
@@ -307,6 +310,53 @@ public sealed class IntegrationSuiteTests : IAsyncLifetime
         full.Single(s => s.ScenarioId == "K67-07").Triage.Should().Be(SuiteTriage.CanRunNow);
     }
 
+    // ── Project isolation (server-side) ──────────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_suite_is_generated_only_for_a_named_project_and_never_from_another_projects_imported_snapshot()
+    {
+        var own = await Snapshot(OpenApiV1, "ward.zip", importId: "ward-import");
+        var foreign = await Snapshot(OpenApiV1, "other.zip", importId: "other-import");
+        var unowned = await Snapshot(OpenApiV1, "upload.zip");
+
+        (await Generate(Api(own) with { WorkspaceProjectKey = null })).Error.Should().Contain("Select a project first", "a request without a project is refused");
+        (await Generate(Api(own) with { WorkspaceProjectKey = "  " })).Error.Should().Contain("Select a project first");
+        (await Generate(Api(foreign))).Error.Should().Contain("imported by another project", "a forged or stale snapshot id of another project is refused server-side");
+        var ok = await Generate(Api(own));
+        ok.Error.Should().BeNull();
+        ok.Suite!.WorkspaceProjects.Should().Equal(Project1);
+        (await Generate(Api(unowned))).Error.Should().BeNull("a source-only upload belongs to no project");
+    }
+
+    [Fact]
+    public async Task A_suite_records_each_project_using_it_and_refuses_runs_from_other_projects()
+    {
+        var unowned = await Snapshot(OpenApiV1, "shared.zip");
+        var a = (await Generate(Api(unowned))).Suite!;
+        var b = await Generate(Api(unowned) with { WorkspaceProjectKey = "import:second" });
+        b.Reused.Should().BeTrue("the same evidence is the same suite revision; the project is recorded as metadata");
+        b.Suite!.WorkspaceProjects.Should().Equal(Project1, "import:second");
+
+        var test = a.Tests.First().TestId;
+        var foreignRun = await With(s => s.ExecuteAsync(a.Id, new IntegrationSuiteExecuteRequest { TestIds = [test], Authorized = true, WorkspaceProjectKey = "import:third" }, "Tester", default));
+        foreignRun.State.Should().Be("Refused");
+        foreignRun.Message.Should().Contain("another project");
+        var noProject = await With(s => s.ExecuteAsync(a.Id, new IntegrationSuiteExecuteRequest { TestIds = [test], Authorized = true }, "Tester", default));
+        noProject.State.Should().Be("Refused", "a run must name its project");
+        _ledger.Should().BeEmpty("nothing reached the target");
+    }
+
+    [Fact]
+    public void Project_rules_are_import_identities_never_names()
+    {
+        IntegrationSuiteService.ForeignImport("import:a", "a").Should().BeFalse();
+        IntegrationSuiteService.ForeignImport("import:a", "b").Should().BeTrue();
+        IntegrationSuiteService.ForeignImport("import:a", null).Should().BeFalse("a source-only upload belongs to no project");
+        IntegrationSuiteService.ForeignImport("library", "b").Should().BeFalse("a non-import workspace key has no import identity to compare");
+        IntegrationSuiteService.UsableBy(new IntegrationSuite(), null).Should().BeTrue("suites from before projects were recorded stay usable");
+        IntegrationSuiteService.UsableBy(new IntegrationSuite { WorkspaceProjects = ["import:a"] }, "import:A").Should().BeFalse("identities compare exactly");
+    }
+
     // ── Review, execution, evidence ──────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -332,7 +382,7 @@ public sealed class IntegrationSuiteTests : IAsyncLifetime
         var snap = await Snapshot(OpenApiV1);
         var suite = (await Generate(Api(snap))).Suite!;
         var health = suite.Tests.Single(t => t.Operation == "GET /health" && t.Kind == "Positive");
-        var env = new IntegrationSuiteExecuteRequest { TestIds = [health.TestId], EnvironmentId = "local-synthetic", TargetUrl = _server.Url("/"), EnvironmentType = "Local" };
+        var env = new IntegrationSuiteExecuteRequest { TestIds = [health.TestId], EnvironmentId = "local-synthetic", TargetUrl = _server.Url("/"), EnvironmentType = "Local", WorkspaceProjectKey = Project1 };
 
         (await With(s => s.ExecuteAsync(suite.Id, env, "Tester", default))).State.Should().Be("NotAuthorized");
         (await With(s => s.ExecuteAsync(suite.Id, env with { TestIds = [Guid.NewGuid()], Authorized = true }, "Tester", default))).State.Should().Be("Refused");

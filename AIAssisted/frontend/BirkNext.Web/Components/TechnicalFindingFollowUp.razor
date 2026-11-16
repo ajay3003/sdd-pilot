@@ -1,0 +1,90 @@
+@using BirkNext.ApiReview
+@using BirkNext.TechnicalHistory
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+
+@* Follow-up of one finding of a stored run: start tracking it, move it through its lifecycle with a note / work item, and verify a fix only with a
+   later stored run of the same environment (the server checks that the finding is absent there). The original run is never changed. *@
+<div class="tfu" data-testid="tfu" data-finding="@Finding.Id">
+    @if (Followed is null)
+    {
+        <button type="button" class="btn btn-secondary btn-sm" disabled="@(_busy || RunId is null || ProjectKey is null)" @onclick="TrackAsync" data-testid="tfu-track"
+                title="@(RunId is null ? "The run is not stored yet." : null)">Follow up</button>
+        @if (RunId is null) { <span class="tfu-muted">Follow-up becomes available once the run is stored.</span> }
+    }
+    else
+    {
+        <span class="tfu-status tfu-status-@Followed.Status.ToString().ToLowerInvariant()" data-testid="tfu-status">@TechnicalFindingRules.Label(Followed.Status)</span>
+        @if (Followed.ExternalReference is { } ext) { <span class="tfu-muted">work item @ext</span> }
+        @if (!_editing) { <button type="button" class="btn btn-secondary btn-sm" @onclick="() => { _editing = true; _to = Moves().FirstOrDefault(); }" data-testid="tfu-change" disabled="@(!Moves().Any())">Change</button> }
+        else
+        {
+            <div class="tfu-form" data-testid="tfu-form">
+                <label><span>New status</span>
+                    <select @onchange="e => _to = Enum.TryParse<TechnicalFindingStatus>(e.Value?.ToString(), out var v) ? v : _to" data-testid="tfu-to">
+                        @foreach (var m in Moves()) { <option value="@m" selected="@(m == _to)">@TechnicalFindingRules.Label(m)</option> }
+                    </select></label>
+                <label><span>Note</span><input value="@_note" @oninput="e => _note = e.Value?.ToString()" maxlength="2000" data-testid="tfu-note" /></label>
+                <label><span>Work item (optional)</span><input value="@_external" @oninput="e => _external = e.Value?.ToString()" maxlength="300" data-testid="tfu-external" /></label>
+                @if (_to is TechnicalFindingStatus.VerifiedResolved or TechnicalFindingStatus.Reopened)
+                {
+                    <label><span>Retest run</span>
+                        <select @onchange="e => _retest = Guid.TryParse(e.Value?.ToString(), out var g) ? g : null" data-testid="tfu-retest">
+                            <option value="">Choose a later run</option>
+                            @foreach (var r in RetestCandidates()) { <option value="@r.Id" selected="@(_retest == r.Id)">@r.GeneratedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @r.EnvironmentName · @r.High high · @r.Medium medium</option> }
+                        </select></label>
+                    @if (!RetestCandidates().Any()) { <span class="tfu-muted" data-testid="tfu-no-retest">No later run of this environment is stored yet: run API Quality Review again to retest.</span> }
+                }
+                <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" @onclick="SaveAsync" data-testid="tfu-save">Save</button>
+                <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _editing = false">Cancel</button>
+            </div>
+        }
+        <details class="tfu-history"><summary>History (@Followed.History.Count)</summary>
+            <ol data-testid="tfu-history">@foreach (var h in Followed.History) { <li>@h.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @h.By: @TechnicalFindingRules.Label(h.To)@(h.Note is { } n ? $" — {n}" : "")@(h.RetestOutcome is { } o && h.RetestRunId is not null ? $" · retest: {o}" : "")</li> }</ol>
+        </details>
+    }
+    @if (_error is not null) { <p class="tfu-error" role="alert" data-testid="tfu-error">@_error</p> }
+</div>
+
+@code {
+    [Parameter] public string? ProjectKey { get; set; }
+    /// <summary>The stored run the finding was seen in (null until the run is stored).</summary>
+    [Parameter] public Guid? RunId { get; set; }
+    [Parameter, EditorRequired] public ApiReviewFinding Finding { get; set; } = new();
+    [Parameter] public TechnicalFinding? Followed { get; set; }
+    [Parameter] public IReadOnlyList<StoredApiReviewRun> Runs { get; set; } = [];
+    [Parameter] public EventCallback<TechnicalFinding> Changed { get; set; }
+
+    private bool _busy, _editing;
+    private string? _error, _note, _external;
+    private TechnicalFindingStatus _to;
+    private Guid? _retest;
+
+    private ITechnicalHistoryApiService? Api => Services.GetService(typeof(ITechnicalHistoryApiService)) as ITechnicalHistoryApiService;
+
+    private IEnumerable<TechnicalFindingStatus> Moves() => Followed is null ? [] : Enum.GetValues<TechnicalFindingStatus>().Where(t => TechnicalFindingRules.CanMove(Followed.Status, t));
+
+    private IEnumerable<StoredApiReviewRun> RetestCandidates() => Followed is null ? [] :
+        Runs.Where(r => r.EnvironmentId == Followed.EnvironmentId && r.GeneratedAt > Followed.FirstSeenAt && r.Id != Followed.OriginalRunId).OrderByDescending(r => r.GeneratedAt);
+
+    private async Task TrackAsync()
+    {
+        if (Api is null || RunId is not { } run || ProjectKey is null) return;
+        _busy = true; _error = null;
+        var (finding, error) = await Api.TrackAsync(new TrackTechnicalFindingRequest(ProjectKey, run, Finding.Id, null));
+        _busy = false;
+        if (finding is null) { _error = error; return; }
+        await Changed.InvokeAsync(finding);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (Api is null || Followed is null || ProjectKey is null) return;
+        _busy = true; _error = null;
+        var (finding, error) = await Api.UpdateAsync(ProjectKey, Followed.Id, new UpdateTechnicalFindingRequest(Followed.Version, _to, _note, _external, _retest, null));
+        _busy = false;
+        if (finding is null) { _error = error; return; }
+        _editing = false; _note = null; _external = null; _retest = null;
+        await Changed.InvokeAsync(finding);
+    }
+}

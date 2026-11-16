@@ -727,10 +727,20 @@ public sealed record PreparedCaseTraceView
     public int RequirementsExecuted { get; init; }
     public int RequirementsPassed { get; init; }
     public string Boundary { get; init; } = TraceBoundary;
+    /// <summary>Integration testing of the requirements: confirmed requirement ↔ journey links, the suites prepared for those journeys and each
+    /// suite's recorded outcome. Kept apart from the manual counts above (never added to them, so nothing is counted twice).</summary>
+    public List<RequirementIntegrationTrace> Integration { get; init; } = [];
 
     public const string NotExecuted = "Not executed";
     public const string TraceBoundary = "Prepared and approved test cases are test design, not test execution. Execution is only what a tester recorded in a completed manual run (Manual Testing → Execute & document). A requirement counts only when the case's own evidence names it in the reviewed specification or a tester linked the case to it.";
 }
+
+/// <summary>A requirement a person linked to a declared integration journey, with the suites prepared for that journey.</summary>
+public sealed record RequirementIntegrationTrace(string RequirementId, string SpecificationPath, string RequirementTitle, string JourneyId, string JourneyName,
+    int LinkedAtJourneyRevision, int CurrentJourneyRevision, List<IntegrationSuiteTrace> Suites);
+
+/// <summary>One suite prepared for the journey: its revision and the outcome its recorded runs give (never inferred from preparation).</summary>
+public sealed record IntegrationSuiteTrace(Guid SuiteId, string Name, int Revision, string Outcome, bool Executed, string Href);
 
 /// <summary>The specification a requirements view reads, for counting case links against it (Requirements Traceability).</summary>
 public sealed record PreparedCaseTraceRequest(List<string> SpecificationPaths, List<string>? RequirementIds, Dictionary<string, string>? RequirementTitles = null);

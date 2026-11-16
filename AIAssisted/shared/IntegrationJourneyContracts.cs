@@ -954,3 +954,54 @@ public static class DeclaredIntegrationJourneyRules
             [.. chain.Zip(chain.Skip(1)).Select((p, i) => new JourneyEdge($"s{i + 1}", $"{p.First} → {p.Second}", JourneyStepKind.MessageTransport, p.First, p.Second, p.First))]);
     }
 }
+
+// ── Requirement ↔ declared journey links (the integration side of requirements traceability) ─────────────────────────────────────────
+
+/// <summary>Proposed = suggested, not yet decided by a person; Confirmed = a person linked or confirmed it; Rejected = a person said it does not
+/// apply; Removed = an earlier confirmed link a person withdrew. Only Confirmed links count in traceability.</summary>
+public enum JourneyRequirementStatus { Proposed, Confirmed, Rejected, Removed }
+
+public sealed record JourneyRequirementEvent(DateTimeOffset At, string By, JourneyRequirementStatus To, string? Note);
+
+/// <summary>
+/// One requirement linked to one declared journey of the project. Identity = project + journey + requirement id + specification path; the journey
+/// revision current when the link was made is kept. History is append-only. A suite prepared for the journey inherits the link (derived).
+/// </summary>
+public sealed record JourneyRequirementLink
+{
+    public Guid Id { get; init; }
+    public string ProjectKey { get; init; } = "";
+    /// <summary>The journey's slug within the project (the Integration Journey id is "project.{projectKey}:{slug}").</summary>
+    public string JourneyId { get; init; } = "";
+    public int JourneyRevision { get; init; }
+    public string RequirementId { get; init; } = "";
+    public string SpecificationPath { get; init; } = "";
+    public string Title { get; init; } = "";
+    public JourneyRequirementStatus Status { get; init; }
+    /// <summary>Where the requirement identity was checked: the project's specification as read in the browser and checked against the
+    /// catalog sent with the request — not a server-side reading of the specification.</summary>
+    public string Trust { get; init; } = JourneyRequirementRules.BrowserCatalogTrust;
+    public string LinkedBy { get; init; } = "";
+    public DateTimeOffset LinkedAt { get; init; }
+    /// <summary>Optimistic concurrency: a change names the version it saw.</summary>
+    public int Version { get; init; }
+    public List<JourneyRequirementEvent> History { get; init; } = [];
+}
+
+public sealed record JourneyRequirementLinkRequest(string RequirementId, string SpecificationPath, BirkNext.TestPlanning.ProjectRequirementCatalog Catalog, string? By, bool Proposed = false);
+
+public sealed record JourneyRequirementStatusRequest(int Version, JourneyRequirementStatus Status, string? Note, string? By);
+
+public static class JourneyRequirementRules
+{
+    public const string BrowserCatalogTrust = "Selected from the project's specification as read in the browser; not yet verified against a server-side reading";
+
+    /// <summary>Allowed follow-ups: a proposal is confirmed or rejected; a confirmed link can be removed; a rejected or removed one can be confirmed again.</summary>
+    public static bool CanMove(JourneyRequirementStatus from, JourneyRequirementStatus to) => (from, to) switch
+    {
+        (JourneyRequirementStatus.Proposed, JourneyRequirementStatus.Confirmed or JourneyRequirementStatus.Rejected) => true,
+        (JourneyRequirementStatus.Confirmed, JourneyRequirementStatus.Removed) => true,
+        (JourneyRequirementStatus.Rejected or JourneyRequirementStatus.Removed, JourneyRequirementStatus.Confirmed) => true,
+        _ => false,
+    };
+}

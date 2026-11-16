@@ -1,0 +1,167 @@
+@using BirkNext.Integrations
+@using BirkNext.IntegrationSuites
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+
+@* Requirements a declared journey verifies (Integration Testing → Prepare). A link names a requirement of the project's own specification (the same
+   list Manual Testing links from); only confirmed links count in traceability; nothing is deleted. Suites prepared for the journey inherit them. *@
+<section class="mt-card itx-req" aria-labelledby="itx-req-title" data-testid="itx-req" aria-busy="@(_loading ? "true" : "false")">
+    <h3 id="itx-req-title" class="tta-sub">Requirements this journey verifies</h3>
+    <p class="mt-muted mt-small">Link the requirements of the project's specification that this journey's test covers. A linked requirement is <strong>prepared</strong>, not tested: it counts as executed only when a run of a suite prepared for this journey records a result.</p>
+    @if (_error is not null) { <p class="mt-alert" role="alert" data-testid="itx-req-error">@_error</p> }
+    @if (_loading) { <p class="mt-muted" role="status">Loading requirements…</p> }
+    else
+    {
+        var active = _links.Where(l => l.Status is JourneyRequirementStatus.Confirmed or JourneyRequirementStatus.Proposed).ToList();
+        var inactive = _links.Except(active).ToList();
+        @if (active.Count == 0) { <p class="mt-muted" data-testid="itx-req-none">No requirement is linked to this journey yet.</p> }
+        else
+        {
+            <ul class="mt-list itx-req-list">
+                @foreach (var l in active) { @Row(l) }
+            </ul>
+        }
+        @if (inactive.Count > 0)
+        {
+            <details class="itx-req-inactive" data-testid="itx-req-inactive"><summary>Rejected or removed (@inactive.Count)</summary>
+                <ul class="mt-list itx-req-list">@foreach (var l in inactive) { @Row(l) }</ul>
+            </details>
+        }
+        @if (_options is null || _options.Count == 0)
+        {
+            <p class="mt-muted" data-testid="itx-req-no-spec">No specification requirements were found for this project. Import the project's specification to link requirements.</p>
+        }
+        else if (CanWrite)
+        {
+            <label class="mte-field itx-req-search"><span>Find a requirement</span>
+                <input type="search" value="@_query" @oninput="e => _query = e.Value?.ToString() ?? string.Empty" placeholder="Requirement id or words from it" data-testid="itx-req-search" /></label>
+            @if (_query.Trim().Length > 0)
+            {
+                var matches = Matches().ToList();
+                @if (matches.Count == 0) { <p class="mt-muted" data-testid="itx-req-no-match">No requirement matches.</p> }
+                <ul class="mt-list itx-req-options">
+                    @foreach (var o in matches)
+                    {
+                        <li data-testid="itx-req-option" data-requirement="@o.RequirementId">
+                            <span><strong>@o.Title</strong> <span class="mt-muted mt-small">@o.RequirementId · @o.SpecificationPath</span></span>
+                            <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => LinkAsync(o)" aria-label="@($"Link {o.RequirementId}")" data-testid="itx-req-link">Link</button>
+                        </li>
+                    }
+                </ul>
+            }
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string ProjectKey { get; set; } = "";
+    [Parameter] public string? ProjectName { get; set; }
+    [Parameter, EditorRequired] public DeclaredIntegrationJourney Journey { get; set; } = new();
+    /// <summary>The project's suites; those prepared for this journey are shown as the derived coverage of its requirements.</summary>
+    [Parameter] public IReadOnlyList<IntegrationSuiteSummary> Suites { get; set; } = [];
+    [Parameter] public bool CanWrite { get; set; } = true;
+
+    private List<JourneyRequirementLink> _links = [];
+    private List<ProjectRequirementOption>? _options;
+    private string _query = "";
+    private bool _loading = true, _busy;
+    private string? _error;
+    private string? _loadedFor;
+
+    private IDeclaredIntegrationJourneyApiService? Api => Services.GetService(typeof(IDeclaredIntegrationJourneyApiService)) as IDeclaredIntegrationJourneyApiService;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = $"{ProjectKey}|{Journey.Id}";
+        if (_loadedFor == key) return;
+        _loadedFor = key; _loading = true; _error = null;
+        if (Api is { } api)
+        {
+            var (links, error) = await api.RequirementLinksAsync(ProjectKey, Journey.JourneyId);
+            (_links, _error) = ([.. links ?? []], error);
+        }
+        _options = RequirementLinkPresentation.Options(await new ManualTestingWorkspace(Services).EvidenceAsync(ProjectName));
+        _loading = false;
+    }
+
+    private IEnumerable<ProjectRequirementOption> Matches()
+    {
+        var q = _query.Trim();
+        var taken = _links.Where(l => l.Status is JourneyRequirementStatus.Confirmed or JourneyRequirementStatus.Proposed)
+            .Select(l => (l.RequirementId, l.SpecificationPath)).ToHashSet();
+        return (_options ?? []).Where(o => !taken.Contains((o.RequirementId, o.SpecificationPath))
+                && (o.RequirementId.Contains(q, StringComparison.OrdinalIgnoreCase) || o.Title.Contains(q, StringComparison.OrdinalIgnoreCase))).Take(12);
+    }
+
+    private IReadOnlyList<IntegrationSuiteSummary> PreparedSuites => [.. Suites.Where(s => s.PreparedForJourneys.Any(j => j.JourneyId == Journey.Id))];
+
+    private RenderFragment Row(JourneyRequirementLink l) => __builder =>
+    {
+        var tone = l.Status switch { JourneyRequirementStatus.Confirmed => "ok", JourneyRequirementStatus.Proposed => "info", _ => "muted" };
+        var suites = PreparedSuites;
+        <li data-testid="itx-req-item" data-requirement="@l.RequirementId" data-status="@l.Status">
+            <span class="itx-req-text"><strong>@l.Title</strong> <span class="mt-muted mt-small">@l.RequirementId · @l.SpecificationPath</span></span>
+            <span class="mt-chip mt-tone-@tone" data-testid="itx-req-status">@StatusLabel(l.Status)</span>
+            <span class="mt-muted mt-small">@l.LinkedBy · @l.LinkedAt.ToLocalTime().ToString("yyyy-MM-dd") · journey revision @l.JourneyRevision</span>
+            @if (l.Status == JourneyRequirementStatus.Confirmed)
+            {
+                <span class="mt-small" data-testid="itx-req-suites">@(suites.Count == 0 ? "No suite prepared for this journey yet" : $"Prepared in {string.Join(", ", suites.Select(s => $"{s.ScopeName} r{s.Revision} ({IntegrationTestingPresentation.SuiteLabel(s.Status)})"))}")</span>
+            }
+            @if (CanWrite)
+            {
+                @foreach (var to in Moves(l.Status))
+                {
+                    <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => MoveAsync(l, to)" data-testid="itx-req-@to.ToString().ToLowerInvariant()"
+                            aria-label="@($"{MoveLabel(l.Status, to)} {l.RequirementId}")">@MoveLabel(l.Status, to)</button>
+                }
+            }
+            <details class="itx-req-history"><summary>History (@l.History.Count)</summary>
+                <ol class="mt-small" data-testid="itx-req-history">@foreach (var h in l.History) { <li>@h.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @h.By: @StatusLabel(h.To)@(h.Note is { } n ? $" — {n}" : "")</li> }</ol>
+                <p class="mt-muted mt-small">@l.Trust.</p>
+            </details>
+        </li>
+    };
+
+    private static IEnumerable<JourneyRequirementStatus> Moves(JourneyRequirementStatus from) =>
+        Enum.GetValues<JourneyRequirementStatus>().Where(to => JourneyRequirementRules.CanMove(from, to));
+
+    private static string StatusLabel(JourneyRequirementStatus s) => s switch
+    {
+        JourneyRequirementStatus.Confirmed => "Linked", JourneyRequirementStatus.Proposed => "Proposed — needs a decision",
+        JourneyRequirementStatus.Rejected => "Rejected", _ => "Removed",
+    };
+
+    private static string MoveLabel(JourneyRequirementStatus from, JourneyRequirementStatus to) => (from, to) switch
+    {
+        (JourneyRequirementStatus.Proposed, JourneyRequirementStatus.Confirmed) => "Confirm",
+        (_, JourneyRequirementStatus.Confirmed) => "Link again",
+        (_, JourneyRequirementStatus.Rejected) => "Reject",
+        _ => "Remove",
+    };
+
+    private async Task LinkAsync(ProjectRequirementOption option)
+    {
+        if (Api is not { } api || _options is null) return;
+        _busy = true; _error = null;
+        var (link, error) = await api.LinkRequirementAsync(ProjectKey, Journey.JourneyId,
+            new JourneyRequirementLinkRequest(option.RequirementId, option.SpecificationPath, new ProjectRequirementCatalog { ProjectKey = ProjectKey, Requirements = _options }, null));
+        _busy = false;
+        if (link is null) { _error = error ?? "The requirement was not linked."; return; }
+        _links = [.. _links.Where(x => x.Id != link.Id), link];
+        _query = "";
+    }
+
+    private async Task MoveAsync(JourneyRequirementLink l, JourneyRequirementStatus to)
+    {
+        if (Api is not { } api) return;
+        _busy = true; _error = null;
+        var (link, error) = to == JourneyRequirementStatus.Confirmed && l.Status is JourneyRequirementStatus.Rejected or JourneyRequirementStatus.Removed && _options is not null
+            ? await api.LinkRequirementAsync(ProjectKey, Journey.JourneyId, new JourneyRequirementLinkRequest(l.RequirementId, l.SpecificationPath,
+                new ProjectRequirementCatalog { ProjectKey = ProjectKey, Requirements = _options }, null))
+            : await api.SetRequirementStatusAsync(ProjectKey, Journey.JourneyId, l.Id, new JourneyRequirementStatusRequest(l.Version, to, null, null));
+        _busy = false;
+        if (link is null) { _error = error ?? "The link was not changed."; return; }
+        _links = [.. _links.Select(x => x.Id == link.Id ? link : x)];
+    }
+}

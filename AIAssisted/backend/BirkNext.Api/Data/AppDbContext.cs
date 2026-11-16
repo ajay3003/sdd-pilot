@@ -23,6 +23,8 @@ public class AppDbContext : DbContext
     public DbSet<TestPlanSnapshotRecord> TestPlanSnapshots => Set<TestPlanSnapshotRecord>();
     public DbSet<ManualTestRunRecord> ManualTestRuns => Set<ManualTestRunRecord>();
     public DbSet<ManualRunAttachmentRecord> ManualRunAttachments => Set<ManualRunAttachmentRecord>();
+    public DbSet<ApiReviewRunRecord> ApiReviewRuns => Set<ApiReviewRunRecord>();
+    public DbSet<TechnicalFindingRecord> TechnicalFindings => Set<TechnicalFindingRecord>();
     public DbSet<TestPlanDraftRevisionRecord> TestPlanDraftRevisions => Set<TestPlanDraftRevisionRecord>();
     public DbSet<ScenarioDiscoveryRecord> ScenarioDiscoveryResults => Set<ScenarioDiscoveryRecord>();
     public DbSet<AdoExportProfileRecord> AdoExportProfiles => Set<AdoExportProfileRecord>();
@@ -1208,6 +1210,32 @@ public class AppDbContext : DbContext
             entity.HasIndex(r => new { r.DraftId, r.ContentFingerprint }).IsUnique();
             entity.HasIndex(r => r.GuideKey);
         });
+        modelBuilder.Entity<ApiReviewRunRecord>(entity =>
+        {
+            entity.ToTable("api_review_runs");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.ProjectKey).HasMaxLength(200);
+            entity.Property(r => r.EnvironmentId).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.EnvironmentName).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.ReportJson).HasColumnType("jsonb").IsRequired();
+            // One record per run: the same report sent twice (retry, second tab) is stored once.
+            entity.HasIndex(r => new { r.EnvironmentId, r.GeneratedAt }).IsUnique().HasDatabaseName("ux_api_review_runs_environment_generated");
+            entity.HasIndex(r => new { r.ProjectKey, r.GeneratedAt });
+        });
+
+        modelBuilder.Entity<TechnicalFindingRecord>(entity =>
+        {
+            entity.ToTable("technical_findings");
+            entity.HasKey(f => f.Id);
+            entity.Property(f => f.ProjectKey).HasMaxLength(200).IsRequired();
+            entity.Property(f => f.Source).HasMaxLength(60).IsRequired();
+            entity.Property(f => f.FindingKey).HasMaxLength(600).IsRequired();
+            entity.Property(f => f.Status).HasMaxLength(40).IsRequired();
+            entity.Property(f => f.ContentJson).HasColumnType("jsonb").IsRequired();
+            entity.Property(f => f.Version).IsConcurrencyToken();
+            entity.HasIndex(f => new { f.ProjectKey, f.Source, f.FindingKey }).IsUnique().HasDatabaseName("ux_technical_findings_identity");
+        });
+
         modelBuilder.Entity<ManualRunAttachmentRecord>(entity =>
         {
             entity.ToTable("manual_run_attachments");

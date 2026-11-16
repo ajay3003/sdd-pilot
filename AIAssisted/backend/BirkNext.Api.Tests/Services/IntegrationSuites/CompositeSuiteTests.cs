@@ -166,11 +166,12 @@ public sealed class CompositeSuiteTests : IAsyncLifetime
 
     private Task<CompositeContextSaveResult> Save(CompositeContextSaveRequest r) => With(sp => sp.GetRequiredService<CompositeContextService>().SaveAsync(r, "Test lead", default));
     private Task<IntegrationSuiteGenerateResult> Generate(Guid context, bool partial = false) => With(sp => sp.GetRequiredService<IntegrationSuiteService>()
-        .GenerateAsync(new IntegrationSuiteGenerateRequest { ScopeId = IntegrationSuiteComposer.SkoleNaervaerScope, CompositeContextId = context, AllowPartial = partial, IncludeSecurity = true }, "Tester", default));
+        .GenerateAsync(new IntegrationSuiteGenerateRequest { ScopeId = IntegrationSuiteComposer.SkoleNaervaerScope, CompositeContextId = context, AllowPartial = partial, IncludeSecurity = true, WorkspaceProjectKey = "import:m2lb" }, "Tester", default));
 
     private CompositeRunRequest Run(params string[] stages) => new()
     {
         Stages = [.. stages], EnvironmentId = "local-synthetic", TargetUrl = _server.Url("/"), EnvironmentType = "Local", ConfirmMutatingCalls = true, Authorized = true,
+        WorkspaceProjectKey = "import:m2lb",
     };
 
     private async Task<(Guid A, Guid B, Guid C, Guid D)> ImportAll() =>

@@ -132,7 +132,76 @@ namespace BirkNext.Api.Data.IntegrationJourneys.Migrations
                     b.ToTable("journey_revision", "integration_journeys");
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Data.IntegrationJourneys.JourneyRequirementLinkRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ContentJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("content");
+
+                    b.Property<Guid>("JourneyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("journey_id");
+
+                    b.Property<string>("ProjectKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("project_key");
+
+                    b.Property<string>("RequirementId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("requirement_id");
+
+                    b.Property<string>("SpecificationPath")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("specification_path");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<int>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JourneyId");
+
+                    b.HasIndex("ProjectKey", "JourneyId", "RequirementId", "SpecificationPath")
+                        .IsUnique()
+                        .HasDatabaseName("ux_journey_requirement_link");
+
+                    b.ToTable("journey_requirement_link", "integration_journeys");
+                });
+
             modelBuilder.Entity("BirkNext.Api.Data.IntegrationJourneys.DeclaredJourneyRevisionRecord", b =>
+                {
+                    b.HasOne("BirkNext.Api.Data.IntegrationJourneys.DeclaredJourneyRecord", null)
+                        .WithMany()
+                        .HasForeignKey("JourneyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Data.IntegrationJourneys.JourneyRequirementLinkRecord", b =>
                 {
                     b.HasOne("BirkNext.Api.Data.IntegrationJourneys.DeclaredJourneyRecord", null)
                         .WithMany()
