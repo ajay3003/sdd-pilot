@@ -16,12 +16,24 @@
         <p class="am-context" data-testid="am-workspace">Current workspace: <strong>@WorkspaceViews.Of(_state.View).Label</strong>@(_state.View == WorkspaceView.AllModules ? "" : " — modules outside it are marked below.")</p>
     </header>
 
+    @{ var groups = Shown().GroupBy(m => m.Section.Id).ToList(); }
+    @if (groups.Count > 1)
+    {
+        @* Jump to an area: one compact row above the search, so Tab from the search goes straight to the results. *@
+        <nav class="am-jump" aria-label="Areas" data-testid="am-jump">
+            @foreach (var g in groups)
+            {
+                var jumpArea = g.First().Section;
+                <button type="button" class="am-jump-btn" data-testid="am-jump-area" data-group="@jumpArea.Id" @onclick="() => JumpAsync(jumpArea.Id)">@jumpArea.Label <span class="am-jump-n">@g.Count()</span></button>
+            }
+        </nav>
+    }
+
     <label class="am-search" for="am-search-input"><span>Find a module</span>
         <input id="am-search-input" type="search" value="@_query" @oninput="e => _query = e.Value?.ToString() ?? string.Empty" placeholder="Name, earlier name or what it does"
                autocomplete="off" data-testid="am-search" aria-describedby="am-count" /></label>
     <p id="am-count" class="am-muted" role="status" data-testid="am-count">@Shown().Count() of @_modules.Count modules@(_query.Length > 0 ? $" match \"{_query}\"" : "")</p>
 
-    @{ var groups = Shown().GroupBy(m => m.Section.Id).ToList(); }
     @if (groups.Count == 0)
     {
         <p class="am-muted" data-testid="am-none">No module matches. Try another word, an earlier name or what the module does.</p>
@@ -30,7 +42,7 @@
     {
         var area = group.First().Section;
         <section class="am-group" aria-labelledby="@($"am-g-{area.Id}")" data-testid="am-group" data-group="@area.Id">
-            <h2 id="@($"am-g-{area.Id}")" class="am-h2">@area.Label</h2>
+            <h2 id="@($"am-g-{area.Id}")" class="am-h2" tabindex="-1">@area.Label</h2>
             <ul class="am-list">
                 @foreach (var m in group)
                 {
@@ -75,6 +87,13 @@
     private NavigationSectionState _state = new();
     private IReadOnlyList<NavModule> _modules = [];
     private string _query = "";
+
+    private async Task JumpAsync(string areaId)
+    {
+        if (ServiceProvider.GetService(typeof(Microsoft.JSInterop.IJSRuntime)) is not Microsoft.JSInterop.IJSRuntime js) return;
+        try { await Microsoft.JSInterop.JSRuntimeExtensions.InvokeVoidAsync(js, "birknextRevealSection", $"am-g-{areaId}"); }
+        catch (Microsoft.JSInterop.JSException) { }
+    }
 
     protected override void OnInitialized()
     {

@@ -16,3 +16,12 @@
 .am-chip { font-size: 0.72rem; font-weight: 650; padding: 0.02rem 0.45rem; border-radius: 999px; border: 1px solid var(--clr-border, #d0d7de); color: var(--clr-text-muted, #57606a); }
 .am-chip-in { background: #dafbe1; color: #116329; border-color: #aceebb; }
 .am-chip-off { background: #fff8c5; color: #7d4e00; border-color: #eac54f; }
+
+/* Jump to an area: compact chips with counts above the catalog. */
+.am-jump { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.2rem 0 1rem; }
+.am-jump-btn { display: inline-flex; align-items: center; gap: 0.35rem; min-height: 2rem; padding: 0.15rem 0.7rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 999px; background: var(--clr-surface, #fff); font-size: 0.85rem; cursor: pointer; }
+.am-jump-btn:hover { border-color: var(--clr-primary, #0969da); }
+.am-jump-btn:focus-visible { outline: 2px solid var(--clr-focus, #0969da); outline-offset: 2px; }
+.am-jump-n { font-size: 0.75rem; color: var(--clr-text-muted, #57606a); }
+.am-h2 { scroll-margin-top: 4.5rem; }
+.am-h2:focus { outline: none; }

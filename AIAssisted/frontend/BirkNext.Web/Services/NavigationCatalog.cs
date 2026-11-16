@@ -100,7 +100,10 @@ public static class NavigationCatalog
                 Hint: "Project Quality Dashboard: evidence, specification quality, traceability, reviews and verification", Aliases: ["Dashboard", "Project Quality Dashboard"]),
             new(AllModulesRoute, "All modules", "nav-icon-sample-projects", Always,
                 Hint: "every module of BirkNext, searchable and grouped by area — whatever workspace is selected", Aliases: ["Module catalog", "All features", "Find a module"]),
-            new("getting-started", "Recommended Workflow", "nav-icon-workflow", f => f.RecommendedWorkflow, Aliases: ["Getting Started"]),
+            // The review-decision workspace (the only place decisions are recorded): one row in each view's follow-up group; module discovery is All modules.
+            new("getting-started", "Recommended Workflow", "nav-icon-workflow", f => f.RecommendedWorkflow,
+                Hint: "record review decisions, choose the review path and set up project inputs — every module is listed in All modules",
+                Aliases: ["Getting Started", "Review decisions", "Review path"]),
             new("system-understanding", "System Understanding", "nav-icon-system-understanding", f => f.RecommendedWorkflow,
                 Hint: "how the system under test works: flow, step by step, data and contracts, rules and what to test", Aliases: ["Systemforståelse", "System guide"]),
             new("project-import", "Import Project", "nav-icon-import", f => f.SampleProjects || f.SourceAnalysis,

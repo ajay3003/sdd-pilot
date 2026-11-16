@@ -80,4 +80,21 @@ public sealed class AllModulesPageTests : BunitContext
         cut.Find("[data-testid=am-none]").TextContent.Should().Contain("No module matches");
         cut.Find("[data-testid=am-search]").Closest("label")!.TextContent.Should().Contain("Find a module");
     }
+
+    [Fact]
+    public void Each_area_has_a_jump_button_with_its_count_that_reveals_and_focuses_the_area()
+    {
+        var cut = Render<AllModules>();
+        var jumps = cut.FindAll("[data-testid=am-jump-area]");
+        var groups = cut.FindAll("[data-testid=am-group]");
+        jumps.Select(j => j.GetAttribute("data-group")).Should().Equal(groups.Select(g => g.GetAttribute("data-group")), "one jump per area, in the catalog's order");
+        jumps[1].TextContent.Should().Contain(groups[1].QuerySelectorAll("[data-testid=am-module]").Length.ToString());
+
+        jumps[2].Click();
+        JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextRevealSection" && (string)i.Arguments[0]! == $"am-g-{groups[2].GetAttribute("data-group")}");
+        cut.Find($"#am-g-{groups[2].GetAttribute("data-group")}").GetAttribute("tabindex").Should().Be("-1", "the area heading takes focus");
+
+        cut.Find("[data-testid=am-search]").Input("zzzz-no-module");
+        cut.FindAll("[data-testid=am-jump]").Should().BeEmpty("no areas to jump to when nothing matches");
+    }
 }

@@ -19,7 +19,7 @@
 <div class="rw-page">
 
     <PageHeader Title="Recommended Workflow"
-                Description="A workspace-aware guide that recommends the next useful review based on the inputs, evidence and review decisions currently available." />
+                Description="Record review decisions for the project's documents, choose a review path and set up the project's inputs — the next useful step comes first. Every module is listed in All modules." />
     <BirkNext.Web.Components.SourceManagement.SourceContextNotice Purpose="the workflow" />
     <ProjectContextStrip RequiresEnvironment="@(_path == WorkflowPathKind.Runtime)" ShowTargetApplication="true" ReviewPath="@WorkflowPaths.PathLabel(_path)"
                          AbsentEnvironmentText="@(_path == WorkflowPathKind.Runtime ? "Required for this path · not configured" : "Not configured · optional until a runtime review")" />
@@ -242,13 +242,17 @@
             {
                 var items = _readiness.Capabilities.Where(c => c.Section == branch && (branch != ReviewSection.Extensions || c.Applicability == ReviewApplicabilityState.Applicable)).ToList();
                 if (items.Count == 0) continue;
-                <section class="rw-reviews" aria-labelledby="rw-sec-@branch" data-testid="rw-section-@branch.ToString().ToLowerInvariant()">
-                    <h2 id="rw-sec-@branch" class="rw-section-heading">@ReviewNavigator.SectionLabel(branch)</h2>
+                @* Each evidence branch is a heading with its counts; Source starts open (it holds the source-binding action), the others open on demand. *@
+                var ready = items.Count(c => c.IsActionable);
+                var applicable = items.Count(c => c.Applicability != ReviewApplicabilityState.NotApplicable);
+                <details class="rw-reviews rw-fold" data-testid="rw-section-@branch.ToString().ToLowerInvariant()" open="@(branch == ReviewSection.Source)">
+                    <summary><h2 id="rw-sec-@branch" class="rw-section-heading">@ReviewNavigator.SectionLabel(branch)</h2>
+                        <span class="rw-fold-count" data-testid="rw-branch-count">@ready of @applicable available@(items.Count > applicable ? $" · {items.Count - applicable} not applicable" : "")</span></summary>
                     <p class="rw-reviews-lead">@SectionLead(branch)</p>
                     @if (branch == ReviewSection.Source) { @SourceBindingCard() }
                     @CapabilityList(items.Where(c => c.Applicability != ReviewApplicabilityState.NotApplicable).ToList())
                     @NotApplicableGroup(items.Where(c => c.Applicability == ReviewApplicabilityState.NotApplicable).ToList())
-                </section>
+                </details>
             }
         }
 
@@ -716,10 +720,11 @@
     private RenderFragment AvailableNow() => __builder =>
     {
         var ready = _readiness!.Capabilities.Where(c => c.IsActionable).ToList();
-        <section class="rw-now" aria-labelledby="rw-now-heading" data-testid="rw-available-now">
-            <h2 id="rw-now-heading" class="rw-section-heading">Available now</h2>
-            @if (ready.Count == 0) { <p class="rw-reviews-lead">No review can run yet with the current evidence.</p> }
-            else
+        @* A list of modules is All modules' job: here it is a one-line count that opens on demand. *@
+        <details class="rw-now rw-fold" data-testid="rw-available-now">
+            <summary><h2 id="rw-now-heading" class="rw-section-heading">Available now</h2>
+                <span class="rw-fold-count" data-testid="rw-available-count">@(ready.Count == 0 ? "No review can run yet with the current evidence" : $"{ready.Count} review{(ready.Count == 1 ? "" : "s")} can run with the current evidence")</span></summary>
+            @if (ready.Count > 0)
             {
                 <ul class="rw-now-list">
                     @foreach (var c in ready)
@@ -728,7 +733,8 @@
                     }
                 </ul>
             }
-        </section>
+            <p class="rw-reviews-lead">Every module, searchable and grouped by area: <a href="@NavigationCatalog.AllModulesRoute" data-testid="rw-all-modules">All modules</a>.</p>
+        </details>
     };
 
     /// <summary>What needs setup, grouped by what it blocks; optional setup is neutral and listed separately.</summary>
