@@ -114,6 +114,10 @@ public sealed record ContractChainRunRequest
     public List<string>? StepIds { get; init; }
     /// <summary>Server-side owners only (never bound from a request body): further dependencies for the run's execution manifest.</summary>
     [JsonIgnore] public List<ManifestDependency> OwnerDependencies { get; init; } = [];
+    /// <summary>Server-side owners only: run exactly these stored test revisions (a composite suite revision's pinned definition).</summary>
+    [JsonIgnore] public Dictionary<Guid, int> PinnedRevisions { get; init; } = [];
+    /// <summary>Server-side owners only: the chain revision the caller's definition was made against; a chain changed since is not run.</summary>
+    [JsonIgnore] public int? ExpectedChainRevision { get; init; }
 }
 
 public sealed record ApiContractSummary(Guid Id, string Key, string Name, ApiContractProtocol Protocol, int LatestVersion, int OperationCount, int TestCount,

@@ -416,11 +416,16 @@ public sealed record ManualRequirementLink
     /// <summary>SHA-256 of that requirement list (requirement id and specification file, sorted), so the list a link was checked against can be
     /// compared with a later one.</summary>
     public string? CatalogFingerprint { get; init; }
+    /// <summary>Server-checked links: the server catalog revision and the requirement's wording hash when it was linked (null otherwise).</summary>
+    public int? CatalogRevision { get; init; }
+    public string? RequirementTextSha256 { get; init; }
 }
 
 public static class ManualRequirementLinkBasis
 {
-    public const string BrowserSpecification = "browser-specification";
+    public const string BrowserSpecification = BirkNext.Specifications.RequirementLinkProvenance.BrowserSpecification;
+    /// <summary>Checked against the server-held catalog captured from the imported specification at Project Import.</summary>
+    public const string ServerSpecification = BirkNext.Specifications.RequirementLinkProvenance.ServerSpecification;
 }
 
 /// <summary>One requirement of the project's selected specification (parsed by the existing specification parser in the browser).</summary>

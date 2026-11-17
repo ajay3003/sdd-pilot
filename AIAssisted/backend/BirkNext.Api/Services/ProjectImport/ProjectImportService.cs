@@ -23,7 +23,8 @@ public sealed record ProjectImportPreviewResult(ProjectImportPreview? Preview, S
 /// Source Analysis keeps owning snapshot identity, currentness and evidence; this service never stores documents and never merges the two.
 /// </summary>
 public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStagingStore staging, IReviewSourceEvidenceProvider sources, ILogger<ProjectImportService> logger,
-    BirkNext.Api.Services.GitSources.IGitImportRecorder? gitImports = null, BirkNext.Api.Services.ImplementationGaps.ImplementationGapService? gaps = null)
+    BirkNext.Api.Services.GitSources.IGitImportRecorder? gitImports = null, BirkNext.Api.Services.ImplementationGaps.ImplementationGapService? gaps = null,
+    BirkNext.Api.Services.Specifications.SpecificationCatalogService? catalogs = null)
 {
     /// <summary>The import identity: derived from the exact archive bytes, so the same archive always has the same identity.</summary>
     public static string ImportIdFor(string sha256) => "import-" + sha256[..Math.Min(16, sha256.Length)];
@@ -109,6 +110,7 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
             if (provenance.Git is { } git && !source.CanRetry) gitImports?.Record(git, source.SnapshotId, provenance.ImportId);
             var settled = !source.CanRetry;
             var gapEvaluationId = settled ? await ImplementationGapsAsync(staged, source, ct) : null;
+            await SpecificationCatalogAsync(staged, source, ct);
             var result = new ProjectImportCommitResult
             {
                 StagingId = stagingId, Provenance = provenance, Source = source, StagedUntil = settled ? null : staged.ExpiresAt, ImplementationGapEvaluationId = gapEvaluationId,
@@ -125,6 +127,23 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
     }
 
     public bool Discard(Guid stagingId) => staging.Remove(stagingId);
+
+    /// <summary>The server-held requirement catalog of this import's specification files, captured while the document text is in memory (the text
+    /// itself is not kept: requirement id, file, wording and hashes are). Idempotent per content; never fails the import.</summary>
+    private async Task SpecificationCatalogAsync(StagedProjectImport staged, ProjectImportSourceResult source, CancellationToken ct)
+    {
+        if (catalogs is null || staged.Workspace.DocumentFiles is not { Count: > 0 } documents) return;
+        try
+        {
+            await catalogs.CaptureAsync(staged.ImportId, staged.Workspace.Archive.Sha256, source.SnapshotId,
+                documents.Select(d => new BirkNext.Api.Services.Specifications.SpecificationCatalogService.Document(d.Path, d.Content)), ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            logger.LogError("The specification catalog could not be captured for a project import. Exception type {ExceptionType}", ex.GetType().Name);
+        }
+    }
 
     /// <summary>Implementation-gap evaluation of this import's SDD documents against its snapshot, while the document text is still in memory (only the
     /// extracted inputs are stored). Runs only when the archive holds a tasks document; never fails the import.</summary>

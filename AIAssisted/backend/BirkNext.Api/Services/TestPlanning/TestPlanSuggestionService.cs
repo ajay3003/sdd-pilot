@@ -31,7 +31,8 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
     IEnumerable<IIntegrationJourneyPack> packs, ICriticalE2EStore e2e, TimeProvider? clock = null, ScenarioDiscoveryCache? discoveries = null,
     ScenarioDiscoveryStore? discoveryStore = null, BirkNext.Api.Services.IntegrationJourneys.JourneyRequirementLinkStore? requirementLinks = null,
     BirkNext.Api.Services.IntegrationJourneys.DeclaredIntegrationJourneyStore? declaredJourneys = null,
-    BirkNext.Api.Services.IntegrationSuites.IntegrationSuiteService? integrationSuites = null) : IScenarioReviewSource
+    BirkNext.Api.Services.IntegrationSuites.IntegrationSuiteService? integrationSuites = null,
+    BirkNext.Api.Services.Specifications.SpecificationCatalogService? specificationCatalogs = null) : IScenarioReviewSource
 {
     public const int MaxCases = 300;
     public const int MaxContentCharacters = 4_000_000;
@@ -638,13 +639,15 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         var assets = await AssetsAsync(ct);
         var executables = Executables().GroupBy(e => e.Reference.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var catalog = RequirementCatalog(current.ProjectKey!, request.RequirementCatalog);
+        // Server-authoritative when the project has a server-held catalog (captured at Project Import); the browser's list is then not trusted.
+        var serverCatalog = specificationCatalogs is null ? null : await specificationCatalogs.CurrentAsync(current.ProjectKey!, ct);
         var cases = new List<TestCaseDraft>();
         foreach (var id in ids)
         {
             var before = previous[id];
             human.TryGetValue(id, out var part);
             var edits = part is null ? before.Edits : Clean(part.Edits);
-            var requirementLinks = part?.RequirementLinks is { } wanted ? RequirementLinks(before, wanted, catalog, actor) : before.RequirementLinks;
+            var requirementLinks = part?.RequirementLinks is { } wanted ? RequirementLinks(before, wanted, catalog, serverCatalog, actor) : before.RequirementLinks;
             var dataIds = part?.TestDataAssetIds ?? [.. before.TestData.Select(d => d.AssetId)];
             var links = new List<TestCaseDataLink>();
             foreach (var assetId in dataIds.Distinct(StringComparer.Ordinal).Take(20))
@@ -772,7 +775,8 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
     /// left the specification since — traceability shows it as such; the tester removes it explicitly. A new link must name a requirement of the
     /// project's catalog (never free text); the server records who and when. Automatic links (the case's evidence) are not touched here.
     /// </summary>
-    private List<ManualRequirementLink> RequirementLinks(TestCaseDraft before, List<ManualRequirementLink> wanted, Dictionary<(string, string), ProjectRequirementOption>? catalog, string actor)
+    private List<ManualRequirementLink> RequirementLinks(TestCaseDraft before, List<ManualRequirementLink> wanted, Dictionary<(string, string), ProjectRequirementOption>? catalog,
+        BirkNext.Specifications.SpecificationCatalogView? serverCatalog, string actor)
     {
         var held = before.RequirementLinks.GroupBy(l => LinkKey(l.RequirementId, l.SpecificationPath)).ToDictionary(g => g.Key, g => g.First());
         var result = new List<ManualRequirementLink>();
@@ -780,6 +784,18 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         {
             var key = LinkKey(w.RequirementId, w.SpecificationPath);
             if (held.TryGetValue(key, out var kept)) { result.Add(kept); continue; }
+            if (serverCatalog is not null)
+            {
+                var resolved = BirkNext.Api.Services.Specifications.SpecificationCatalogService.Resolve(serverCatalog, w.RequirementId, w.SpecificationPath);
+                if (resolved.Entry is not { } entry) throw new TestPlanException(400, "requirement-unknown", resolved.Problem!);
+                result.Add(new ManualRequirementLink
+                {
+                    RequirementId = entry.RequirementId, SpecificationPath = entry.Path, Title = entry.Title, LinkedBy = actor, LinkedAt = Now,
+                    CheckedAgainst = ManualRequirementLinkBasis.ServerSpecification, CatalogFingerprint = serverCatalog.Fingerprint,
+                    CatalogRevision = serverCatalog.Revision, RequirementTextSha256 = entry.TextSha256,
+                });
+                continue;
+            }
             if (catalog is null)
                 throw new TestPlanException(400, "requirements-unavailable", "The project's requirements could not be read, so no new requirement link can be saved. Open the project's specification and try again.");
             if (!catalog.TryGetValue(key, out var requirement))

@@ -400,6 +400,9 @@ public sealed partial class IntegrationSuiteService
             return new(null, "Refused", "This suite was generated for another project; nothing was sent.", new(false, CompositeRunKind.SubflowTest, [], [], ["The suite belongs to another project."], []));
         var (preflight, runPlan) = Preflight(suite, request);
         if (runPlan is null) return new(null, request.Authorized ? "Refused" : "NotAuthorized", string.Join(" ", preflight.Problems), preflight);
+        // The exact definition this run executes, pinned before anything is sent (the chain runner is held to it).
+        var definition = await DefinitionAsync(suite, runPlan.Plan, runPlan.Stages, runPlan.StepIds, runPlan.Sources, request.WorkspaceProjectKey, request.EnvironmentId,
+            request.TargetUrl, request.ContextFingerprint, initiator, ct);
         var result = await contractTests.RunChainAsync(runPlan.Plan.ChainId!.Value, new ContractChainRunRequest
         {
             Environment = new ContractTestEnvironment
@@ -408,6 +411,7 @@ public sealed partial class IntegrationSuiteService
                 ProfileId = request.ProfileId, ContextFingerprint = request.ContextFingerprint,
             },
             ConfirmMutatingCalls = request.ConfirmMutatingCalls, StopOnFirstFailure = true, StepIds = runPlan.StepIds, OwnerDependencies = SuiteDependencies(suite),
+            PinnedRevisions = Pins(definition), ExpectedChainRevision = definition.ChainRevision,
             Name = $"{(runPlan.Kind == CompositeRunKind.FullE2E ? "Composite E2E" : "Composite subflow")} · {suite.Scope.DisplayName} r{suite.Revision}",
         }, ct);
         if (result.Run?.RunId is not { } runId)
@@ -415,8 +419,8 @@ public sealed partial class IntegrationSuiteService
         db.IntegrationSuiteRuns.Add(new IntegrationSuiteRunRecord
         {
             Id = Guid.NewGuid(), SuiteKey = suite.SuiteKey, SuiteId = suite.Id, RunId = runId, Kind = runPlan.Kind == CompositeRunKind.FullE2E ? CompositeE2EKind : CompositeSubflowKind,
-            StartedAt = Now, Initiator = initiator, TestIdsJson = JsonSerializer.Serialize(runPlan.Plan.Steps.Where(s => runPlan.StepIds.Contains(s.StepId)).Select(s => s.TestId).OfType<Guid>(), Json),
-            PlanJson = JsonSerializer.Serialize(runPlan, Json),
+            StartedAt = definition.StartedAt, Initiator = initiator, TestIdsJson = JsonSerializer.Serialize(runPlan.Plan.Steps.Where(s => runPlan.StepIds.Contains(s.StepId)).Select(s => s.TestId).OfType<Guid>(), Json),
+            PlanJson = JsonSerializer.Serialize(runPlan, Json), DefinitionJson = JsonSerializer.Serialize(definition, Json),
         });
         await db.SaveChangesAsync(ct);
         logger.LogInformation("Composite run started. Suite {Suite}; kind {Kind}; stages {Stages}", suite.SuiteKey, runPlan.Kind, runPlan.Stages.Count);
@@ -449,14 +453,28 @@ public sealed partial class IntegrationSuiteService
 
     /// <summary>Reopens a composite run from its stored link (plan, kind, source versions) and its Execution Evidence run. Read-only; also used by
     /// Test Execution &amp; Evidence so the verdict has one owner.</summary>
-    public static async Task<CompositeRunView?> ReadCompositeRunAsync(AppDbContext db, ExecutionEvidenceStore evidence, IntegrationSuiteRunRecord link, CancellationToken ct)
+    public static async Task<CompositeRunView?> ReadCompositeRunAsync(AppDbContext db, ExecutionEvidenceStore evidence, IntegrationSuiteRunRecord link, CancellationToken ct) =>
+        await ReadCompositeRunAsync(db, evidence, link, withRetests: true, ct);
+
+    private static async Task<CompositeRunView?> ReadCompositeRunAsync(AppDbContext db, ExecutionEvidenceStore evidence, IntegrationSuiteRunRecord link, bool withRetests, CancellationToken ct)
     {
         if (link.PlanJson is null) return null;
         var runPlan = JsonSerializer.Deserialize<CompositeRunPlan>(link.PlanJson, Json);
         if (runPlan is null) return null;
         var revision = await db.IntegrationSuites.AsNoTracking().Where(s => s.Id == link.SuiteId).Select(s => s.Revision).FirstOrDefaultAsync(ct);
         var detail = await evidence.GetAsync(link.RunId, new ExecutionCallQuery(0, 500), ct);
-        return CompositeRunReader.Read(link.RunId, link.SuiteId, revision, link.StartedAt, link.Initiator, runPlan.Kind, runPlan.Stages, runPlan.StepIds, runPlan.Plan, runPlan.Sources,
+        var view = CompositeRunReader.Read(link.RunId, link.SuiteId, revision, link.StartedAt, link.Initiator, runPlan.Kind, runPlan.Stages, runPlan.StepIds, runPlan.Plan, runPlan.Sources,
             runPlan.MandatoryStages, detail);
+        var definition = link.DefinitionJson is null ? null : JsonSerializer.Deserialize<CompositeExecutionDefinition>(link.DefinitionJson, Json);
+        var retests = new List<CompositeRetestSummary>();
+        if (withRetests)
+            foreach (var r in await db.IntegrationSuiteRuns.AsNoTracking().Where(r => r.RetestOfRunId == link.RunId).OrderByDescending(r => r.StartedAt).Take(20).ToListAsync(ct))
+                if (await ReadCompositeRunAsync(db, evidence, r, withRetests: false, ct) is { } retest)
+                    retests.Add(new(r.RunId, r.RetestStageId ?? "", r.StartedAt, r.Initiator, retest.Verdict, retest.ExecutionState));
+        return view with
+        {
+            Definition = definition, ChangedSince = definition is null ? [] : await ChangedSinceAsync(db, definition, ct),
+            RetestOfRunId = link.RetestOfRunId, RetestStageId = link.RetestStageId, Retests = retests,
+        };
     }
 }

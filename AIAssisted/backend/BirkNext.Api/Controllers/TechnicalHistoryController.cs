@@ -20,8 +20,28 @@ public sealed class TechnicalHistoryController(TechnicalHistoryService history) 
         Ok(await history.ApiReviewRunsAsync(environmentId, projectKey, take, ct));
 
     [HttpGet("api-review-runs/{id:guid}")]
-    public async Task<ActionResult<ApiReviewReport>> Report(Guid id, CancellationToken ct) =>
-        await history.ApiReviewReportAsync(id, ct) is { } report ? Ok(report) : NotFound(new { message = "No such stored run." });
+    public async Task<ActionResult<ApiReviewReport>> Report(Guid id, [FromQuery] string? projectKey, CancellationToken ct) =>
+        await history.ApiReviewReportAsync(id, ct, projectKey) is { } report ? Ok(report) : NotFound(new { message = "No such stored run." });
+
+    /// <summary>Stores a finished Frontend Quality Review, safe fuzzing or authorization run (append-only; a report holding a credential is refused).</summary>
+    [HttpPost("review-runs")]
+    [RequestSizeLimit(12 * 1024 * 1024)]
+    public async Task<ActionResult<StoredTechnicalReviewRun>> StoreReviewRun([FromBody] StoreTechnicalReviewRunRequest request, CancellationToken ct) =>
+        Result(await history.StoreReviewRunAsync(request, ct));
+
+    [HttpGet("review-runs")]
+    public async Task<ActionResult<IReadOnlyList<StoredTechnicalReviewRun>>> ReviewRuns([FromQuery] string? kind, [FromQuery] string? environmentId, [FromQuery] string? projectKey,
+        [FromQuery] int take = 50, CancellationToken ct = default) =>
+        Ok(await history.ReviewRunsAsync(kind, environmentId, projectKey, take, ct));
+
+    [HttpGet("review-runs/{id:guid}/report")]
+    public async Task<IActionResult> ReviewRunReport(Guid id, [FromQuery] string? projectKey, CancellationToken ct) =>
+        await history.ReviewRunReportAsync(id, projectKey, ct) is { } json ? Content(json, "application/json") : NotFound(new { message = "No such stored run." });
+
+    /// <summary>Follow up a failed stage of a composite integration suite run.</summary>
+    [HttpPost("findings/stage")]
+    public async Task<ActionResult<TechnicalFinding>> TrackStage([FromBody] TrackStageFindingRequest request, CancellationToken ct) =>
+        Result(await history.TrackStageAsync(request, "local-user", ct));
 
     [HttpGet("findings")]
     public async Task<ActionResult<IReadOnlyList<TechnicalFinding>>> Findings([FromQuery] string? projectKey, CancellationToken ct) =>
@@ -40,6 +60,7 @@ public sealed class TechnicalHistoryController(TechnicalHistoryService history) 
         { Value: { } v } => Ok(v),
         { Status: 404 } => NotFound(new { message = r.Error }),
         { Status: 409 } => Conflict(new { message = r.Error }),
+        { Status: 413 } => StatusCode(413, new { message = r.Error }),
         _ => BadRequest(new { message = r.Error }),
     };
 }

@@ -25,6 +25,8 @@ public class AppDbContext : DbContext
     public DbSet<ManualRunAttachmentRecord> ManualRunAttachments => Set<ManualRunAttachmentRecord>();
     public DbSet<ApiReviewRunRecord> ApiReviewRuns => Set<ApiReviewRunRecord>();
     public DbSet<TechnicalFindingRecord> TechnicalFindings => Set<TechnicalFindingRecord>();
+    public DbSet<SpecificationCatalogRecord> SpecificationCatalogs => Set<SpecificationCatalogRecord>();
+    public DbSet<TechnicalReviewRunRecord> TechnicalReviewRuns => Set<TechnicalReviewRunRecord>();
     public DbSet<TestPlanDraftRevisionRecord> TestPlanDraftRevisions => Set<TestPlanDraftRevisionRecord>();
     public DbSet<ScenarioDiscoveryRecord> ScenarioDiscoveryResults => Set<ScenarioDiscoveryRecord>();
     public DbSet<AdoExportProfileRecord> AdoExportProfiles => Set<AdoExportProfileRecord>();
@@ -1236,6 +1238,38 @@ public class AppDbContext : DbContext
             entity.HasIndex(f => new { f.ProjectKey, f.Source, f.FindingKey }).IsUnique().HasDatabaseName("ux_technical_findings_identity");
         });
 
+        modelBuilder.Entity<SpecificationCatalogRecord>(entity =>
+        {
+            entity.ToTable("specification_catalogs");
+            entity.HasKey(c => c.Id);
+            entity.Property(c => c.ProjectKey).HasMaxLength(200).IsRequired();
+            entity.Property(c => c.Fingerprint).HasMaxLength(64).IsRequired();
+            entity.Property(c => c.ArchiveSha256).HasMaxLength(64);
+            entity.Property(c => c.DocumentsJson).HasColumnType("jsonb").IsRequired();
+            entity.Property(c => c.EntriesJson).HasColumnType("jsonb").IsRequired();
+            // One row per content revision of a project's specification; the same content captured twice is one revision.
+            entity.HasIndex(c => new { c.ProjectKey, c.Revision }).IsUnique().HasDatabaseName("ux_specification_catalogs_revision");
+            entity.HasIndex(c => new { c.ProjectKey, c.Fingerprint }).IsUnique().HasDatabaseName("ux_specification_catalogs_content");
+        });
+
+        modelBuilder.Entity<TechnicalReviewRunRecord>(entity =>
+        {
+            entity.ToTable("technical_review_runs");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Kind).HasMaxLength(60).IsRequired();
+            entity.Property(r => r.ProjectKey).HasMaxLength(200);
+            entity.Property(r => r.EnvironmentId).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.EnvironmentName).HasMaxLength(200).IsRequired();
+            entity.Property(r => r.TargetUrl).HasMaxLength(2000);
+            entity.Property(r => r.Outcome).HasMaxLength(60).IsRequired();
+            entity.Property(r => r.Summary).HasMaxLength(500).IsRequired();
+            entity.Property(r => r.ReportSha256).HasMaxLength(64).IsRequired();
+            entity.Property(r => r.ReportJson).HasColumnType("jsonb").IsRequired();
+            // One record per run: the same report sent twice (retry, second tab, migration from browser history) is stored once.
+            entity.HasIndex(r => new { r.Kind, r.EnvironmentId, r.GeneratedAt }).IsUnique().HasDatabaseName("ux_technical_review_runs_identity");
+            entity.HasIndex(r => new { r.ProjectKey, r.Kind, r.GeneratedAt });
+        });
+
         modelBuilder.Entity<ManualRunAttachmentRecord>(entity =>
         {
             entity.ToTable("manual_run_attachments");
@@ -1246,6 +1280,10 @@ public class AppDbContext : DbContext
             entity.Property(a => a.Sha256).HasMaxLength(64).IsRequired();
             entity.Property(a => a.Content).HasColumnType("bytea").IsRequired();
             entity.Property(a => a.AddedBy).HasMaxLength(200).IsRequired();
+            entity.Property(a => a.OriginalFileName).HasMaxLength(500).IsRequired().HasDefaultValue("");
+            entity.Property(a => a.ScanStatus).HasMaxLength(20).IsRequired().HasDefaultValue("not-scanned");
+            entity.Property(a => a.WithdrawnBy).HasMaxLength(200);
+            entity.Property(a => a.WithdrawReason).HasMaxLength(500);
             entity.HasIndex(a => new { a.ProjectKey, a.RunId });
         });
 
@@ -1362,7 +1400,12 @@ public class AppDbContext : DbContext
             entity.Property(r => r.Initiator).HasMaxLength(120).IsRequired();
             entity.Property(r => r.TestIdsJson).HasColumnType("text").IsRequired();
             entity.Property(r => r.PlanJson).HasColumnType("text");
+            entity.Property(r => r.DefinitionJson).HasColumnType("text");
+            entity.Property(r => r.RetestStageId).HasMaxLength(200);
             entity.HasIndex(r => new { r.SuiteKey, r.StartedAt });
+            // One suite-run record per execution run: the same execution is never recorded twice.
+            entity.HasIndex(r => r.RunId).IsUnique().HasDatabaseName("ux_integration_suite_runs_run");
+            entity.HasIndex(r => r.RetestOfRunId);
         });
         // Backup & Transfer: operation log (plans, fingerprints, identity mapping, reports) and imported history (never destination runs or decisions).
         modelBuilder.Entity<WorkspaceTransferOperationRecord>(entity =>

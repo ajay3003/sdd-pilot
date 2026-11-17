@@ -98,6 +98,12 @@ public sealed class IntegrationSuiteRunRecord
     public string TestIdsJson { get; init; } = "[]";
     /// <summary>Composite runs: the plan, kind and source versions the run executed (JSON), so it reopens with stage meaning; null for flat runs.</summary>
     public string? PlanJson { get; init; }
+    /// <summary>Composite runs started after definitions were pinned: the exact definition executed (<c>CompositeExecutionDefinition</c>, JSON),
+    /// written once at insert and protected from later updates by a database trigger. Null = legacy (unpinned) run.</summary>
+    public string? DefinitionJson { get; init; }
+    /// <summary>A stage retest: the composite run it retests and the stage (null for a normal run).</summary>
+    public Guid? RetestOfRunId { get; init; }
+    public string? RetestStageId { get; init; }
 }
 
 /// <summary>One immutable revision of a Composite Source Context: references to existing Source Analysis snapshots (never their content).</summary>

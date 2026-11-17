@@ -981,6 +981,12 @@ public sealed record JourneyRequirementLink
     /// <summary>Where the requirement identity was checked: the project's specification as read in the browser and checked against the
     /// catalog sent with the request — not a server-side reading of the specification.</summary>
     public string Trust { get; init; } = JourneyRequirementRules.BrowserCatalogTrust;
+    /// <summary>What the requirement was checked against when the link was made (<see cref="BirkNext.Specifications.RequirementLinkProvenance"/>);
+    /// null = recorded before the basis was kept (a browser-catalog link).</summary>
+    public string? CheckedAgainst { get; init; }
+    /// <summary>The server catalog revision and the requirement's wording hash at link time (server-checked links only).</summary>
+    public int? CatalogRevision { get; init; }
+    public string? RequirementTextSha256 { get; init; }
     public string LinkedBy { get; init; } = "";
     public DateTimeOffset LinkedAt { get; init; }
     /// <summary>Optimistic concurrency: a change names the version it saw.</summary>
@@ -995,6 +1001,7 @@ public sealed record JourneyRequirementStatusRequest(int Version, JourneyRequire
 public static class JourneyRequirementRules
 {
     public const string BrowserCatalogTrust = "Selected from the project's specification as read in the browser; not yet verified against a server-side reading";
+    public const string ServerCatalogTrust = "Checked against the project's imported specification on the server";
 
     /// <summary>Allowed follow-ups: a proposal is confirmed or rejected; a confirmed link can be removed; a rejected or removed one can be confirmed again.</summary>
     public static bool CanMove(JourneyRequirementStatus from, JourneyRequirementStatus to) => (from, to) switch

@@ -36,7 +36,7 @@ namespace BirkNext.Api.Tests.Services.IntegrationSuites;
 /// asynchronously and keeps its own ledger (the oracle — never BirkNext's output). Also: missing/ambiguous sources, incompatible schema, wrong
 /// correlation, timeouts, unknown outcome, partial drafts, subflows, regeneration impact and no duplicates.
 /// </summary>
-public sealed class CompositeSuiteTests : IAsyncLifetime
+public class CompositeSuiteTests : IAsyncLifetime
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "birknext-composite-" + Guid.NewGuid().ToString("N"));
     private readonly string _db = $"composite-{Guid.NewGuid():N}";
@@ -105,8 +105,14 @@ public sealed class CompositeSuiteTests : IAsyncLifetime
 
     // ── Harness ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    public Task InitializeAsync()
+    /// <summary>The database the harness uses: EF in-memory here; <see cref="CompositeSuitePostgresTests"/> runs the same tests on PostgreSQL.</summary>
+    protected virtual void UseDatabase(DbContextOptionsBuilder o) => o.UseInMemoryDatabase(_db);
+    protected virtual Task PrepareDatabaseAsync() => Task.CompletedTask;
+    protected virtual Task DropDatabaseAsync() => Task.CompletedTask;
+
+    public async Task InitializeAsync()
     {
+        await PrepareDatabaseAsync();
         Directory.CreateDirectory(_dir);
         _server = new LoopbackHttpTestServer(_target.HandleAsync);
         _server.Start();
@@ -114,7 +120,7 @@ public sealed class CompositeSuiteTests : IAsyncLifetime
         var registryStore = new TestDataRegistryStore(_dir, NullLogger<TestDataRegistryStore>.Instance);
         var catalog = new TestDataCatalog([new AuthoredTestDataProvider(authored)], null, registryStore);
         var services = new ServiceCollection();
-        services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_db));
+        services.AddDbContext<AppDbContext>(UseDatabase);
         services.AddLogging();
         services.AddScoped<IqrSourceStore>();
         services.AddScoped<IReviewSourceEvidenceProvider>(sp => new ReviewSourceEvidenceProvider(sp.GetRequiredService<IqrSourceStore>()));
@@ -138,11 +144,11 @@ public sealed class CompositeSuiteTests : IAsyncLifetime
         services.AddScoped<CompositeContextService>();
         services.AddScoped<IntegrationSuiteService>();
         _services = services.BuildServiceProvider();
-        return Task.CompletedTask;
     }
 
     public async Task DisposeAsync()
     {
+        try { await DropDatabaseAsync(); } catch (Npgsql.NpgsqlException) { }
         await _server.StopAsync();
         await _services.DisposeAsync();
         try { Directory.Delete(_dir, true); } catch (IOException) { }
@@ -502,6 +508,175 @@ public sealed class CompositeSuiteTests : IAsyncLifetime
         t.Dimensions.Single(d => d.Name == "Authentication").State.Should().Be(TransitionCompatibility.NotAssessed, "never inferred from source");
     }
 
+    // ── Revision-pinned execution, stage retest and finding resolution (technical evidence integrity) ─────────────────────────
+
+    private async Task<(IntegrationSuite Suite, Func<IServiceProvider, IntegrationSuiteService> Svc)> ApprovedSuite()
+    {
+        var p = await ImportAll();
+        var suite = (await Generate((await Save(Approved(p))).Context!.Id)).Suite!;
+        Func<IServiceProvider, IntegrationSuiteService> svc = sp => sp.GetRequiredService<IntegrationSuiteService>();
+        (await With(sp => svc(sp).ApprovePlanAsync(suite.Id, "Test lead", default))).Error.Should().BeNull();
+        return (suite, svc);
+    }
+
+    private CompositeStageRetestRequest Retest(Guid original, string stage, bool prerequisites = true) => new()
+    {
+        OriginalRunId = original, StageId = stage, IncludePrerequisites = prerequisites, EnvironmentId = "local-synthetic", TargetUrl = _server.Url("/"),
+        EnvironmentType = "Local", ConfirmMutatingCalls = true, Authorized = true, WorkspaceProjectKey = "import:m2lb",
+    };
+
+    private static BirkNext.Api.Services.TechnicalHistory.TechnicalHistoryService History(IServiceProvider sp) =>
+        new(sp.GetRequiredService<AppDbContext>(), null, sp.GetRequiredService<IntegrationSuiteService>());
+
+    [Fact]
+    public async Task A_composite_run_pins_the_definition_it_executed_and_a_failed_stage_is_retested_and_verified_without_touching_the_original()
+    {
+        var (suite, svc) = await ApprovedSuite();
+
+        // 1. The original failure: MM never sees the message (synthetic, local).
+        _target.Mode = "mm-reject";
+        var failedId = (await With(sp => svc(sp).ExecuteCompositeAsync(suite.Id, Run(), "Tester", default))).RunId!.Value;
+        var failed = await WaitForRunAsync(suite.Id, failedId);
+        failed.Stages.Single(s => s.StageId == "mm").State.Should().Be(CompositeStageState.TimedOut);
+        var pinned = failed.Definition!;
+        pinned.Should().Match<CompositeExecutionDefinition>(d => d.SuiteId == suite.Id && d.SuiteRevision == suite.Revision && d.SuiteFingerprint == suite.Fingerprint
+            && d.ProjectKey == "import:m2lb" && d.EnvironmentId == "local-synthetic" && d.ChainRevision != null && d.Engine.StartsWith("BirkNext contract-test chain runner")
+            && d.DefinitionSha256.Length == 64 && d.Initiator == "Tester" && d.Sources.Count == 4);
+        pinned.Steps.Should().HaveCount(7).And.OnlyContain(s => s.TestId != null && s.TestRevision != null, "every step names the stored test revision it ran");
+        failed.ChangedSince.Should().BeEmpty("nothing changed since the run");
+
+        // 2. Follow it up as a finding.
+        var finding = (await With(sp => History(sp).TrackStageAsync(new("import:m2lb", suite.Id, failedId, "mm", "Kari"), "local-user", default))).Value!;
+        finding.ComparisonBasis.Should().Contain("s3-mm").And.Contain("@r");
+        (await With(sp => History(sp).TrackStageAsync(new("import:other", suite.Id, failedId, "mm", "Eve"), "local-user", default))).Status.Should().Be(404, "another project");
+        (await With(sp => History(sp).TrackStageAsync(new("import:m2lb", suite.Id, failedId, "altinn", "Kari"), "local-user", default))).Status.Should().Be(400, "a passed stage is no finding");
+
+        // 3. The retest plan: MM takes values from MU and Altinn, so it is retested together with them (stale values are never reused).
+        var alone = await With(sp => svc(sp).RetestPlanAsync(suite.Id, failedId, "mm", false, "import:m2lb", default));
+        alone.CanRetest.Should().BeFalse();
+        alone.PrerequisiteStages.Should().Equal("altinn", "mu");
+        alone.Problems.Single().Should().Contain("not reused");
+        var withPrereq = await With(sp => svc(sp).RetestPlanAsync(suite.Id, failedId, "mm", true, "import:m2lb", default));
+        withPrereq.CanRetest.Should().BeTrue();
+        withPrereq.StepIds.Should().Equal("s1-altinn", "s2-mu", "s3-mm");
+        (await With(sp => svc(sp).RetestPlanAsync(suite.Id, failedId, "altinn", false, "import:m2lb", default))).Should()
+            .Match<CompositeStageRetestPlan>(r => r.CanRetest && r.PrerequisiteStages.Count == 0 && r.StepIds.SequenceEqual(new[] { "s1-altinn" }), "the first stage is independent");
+
+        // Refusals: another environment, no authorisation, another project — nothing is sent.
+        var sent = _target.Ledger.Count;
+        (await With(sp => svc(sp).RetestStageAsync(suite.Id, Retest(failedId, "mm") with { EnvironmentId = "qa" }, "Tester", default))).Message.Should().Contain("original run's environment");
+        (await With(sp => svc(sp).RetestStageAsync(suite.Id, Retest(failedId, "mm") with { Authorized = false }, "Tester", default))).State.Should().Be("NotAuthorized");
+        (await With(sp => svc(sp).RetestStageAsync(suite.Id, Retest(failedId, "mm") with { WorkspaceProjectKey = "import:other" }, "Tester", default))).State.Should().Be("Refused");
+        (await With(sp => svc(sp).RetestStageAsync(suite.Id, Retest(failedId, "mm", prerequisites: false), "Tester", default))).State.Should().Be("Refused");
+        _target.Ledger.Count.Should().Be(sent, "a refused retest sends nothing");
+
+        // 4. The fix is deployed (synthetic): retest the stage.
+        _target.Mode = "normal";
+        var retestId = (await With(sp => svc(sp).RetestStageAsync(suite.Id, Retest(failedId, "mm"), "Tester", default))).RunId!.Value;
+        var retest = await WaitForRunAsync(suite.Id, retestId);
+        retest.RetestOfRunId.Should().Be(failedId);
+        retest.RetestStageId.Should().Be("mm");
+        retest.Verdict.Should().Be(CompositeRunVerdict.SubflowVerified, "a stage retest is never a full E2E result");
+        retest.Stages.Single(s => s.StageId == "mm").State.Should().Be(CompositeStageState.Succeeded);
+        retest.Definition!.Steps.Select(s => (s.StepId, s.TestRevision)).Should().Equal(pinned.Steps.Take(3).Select(s => (s.StepId, s.TestRevision)), "the original revisions ran");
+
+        // 5. The original failure is preserved and links to its retest.
+        var original = await WaitForRunAsync(suite.Id, failedId);
+        original.Stages.Single(s => s.StageId == "mm").State.Should().Be(CompositeStageState.TimedOut);
+        original.Definition!.DefinitionSha256.Should().Be(pinned.DefinitionSha256);
+        original.Retests.Should().ContainSingle(r => r.RunId == retestId && r.StageId == "mm" && r.Verdict == CompositeRunVerdict.SubflowVerified);
+
+        // 6. Verified resolved needs that later comparable run.
+        var h = (Func<IServiceProvider, BirkNext.Api.Services.TechnicalHistory.TechnicalHistoryService>)History;
+        var v = finding.Version;
+        foreach (var to in new[] { BirkNext.TechnicalHistory.TechnicalFindingStatus.Confirmed, BirkNext.TechnicalHistory.TechnicalFindingStatus.ResolvedPendingRetest })
+            v = (await With(sp => h(sp).UpdateAsync("import:m2lb", finding.Id, new(v, to, "n", "AB#1", null, "Kari"), "local-user", default))).Value!.Version;
+        (await With(sp => h(sp).UpdateAsync("import:m2lb", finding.Id, new(v, BirkNext.TechnicalHistory.TechnicalFindingStatus.VerifiedResolved, null, null, failedId, "Kari"), "local-user", default)))
+            .Error.Should().Contain("later run");
+        var verified = (await With(sp => h(sp).UpdateAsync("import:m2lb", finding.Id, new(v, BirkNext.TechnicalHistory.TechnicalFindingStatus.VerifiedResolved, "fixed", null, retestId, "Kari"), "local-user", default))).Value!;
+        verified.Status.Should().Be(BirkNext.TechnicalHistory.TechnicalFindingStatus.VerifiedResolved);
+        verified.History[^1].Should().Match<BirkNext.TechnicalHistory.TechnicalFindingEvent>(e => e.RetestRunId == retestId && e.RetestOutcome == "Absent");
+    }
+
+    [Fact]
+    public async Task A_retest_that_ran_another_definition_or_stayed_inconclusive_needs_review_instead_of_verifying()
+    {
+        var (suite, svc) = await ApprovedSuite();
+        _target.Mode = "mm-reject";
+        var failedId = (await With(sp => svc(sp).ExecuteCompositeAsync(suite.Id, Run(), "Tester", default))).RunId!.Value;
+        await WaitForRunAsync(suite.Id, failedId);
+        var finding = (await With(sp => History(sp).TrackStageAsync(new("import:m2lb", suite.Id, failedId, "mm", "Kari"), "local-user", default))).Value!;
+        var v = finding.Version;
+        foreach (var to in new[] { BirkNext.TechnicalHistory.TechnicalFindingStatus.Confirmed, BirkNext.TechnicalHistory.TechnicalFindingStatus.ResolvedPendingRetest })
+            v = (await With(sp => History(sp).UpdateAsync("import:m2lb", finding.Id, new(v, to, null, null, null, "Kari"), "local-user", default))).Value!.Version;
+
+        // Still failing: the retest shows it again.
+        var again = (await With(sp => svc(sp).RetestStageAsync(suite.Id, Retest(failedId, "mm"), "Tester", default))).RunId!.Value;
+        await WaitForRunAsync(suite.Id, again);
+        (await With(sp => History(sp).UpdateAsync("import:m2lb", finding.Id, new(v, BirkNext.TechnicalHistory.TechnicalFindingStatus.VerifiedResolved, null, null, again, "Kari"), "local-user", default)))
+            .Error.Should().Contain("still shows");
+
+        // Simulate that the finding was recorded against other test revisions: a passing retest is then not comparable — review needed.
+        _target.Mode = "normal";
+        var passed = (await With(sp => svc(sp).RetestStageAsync(suite.Id, Retest(failedId, "mm"), "Tester", default))).RunId!.Value;
+        await WaitForRunAsync(suite.Id, passed);
+        await With(async sp =>
+        {
+            var db = sp.GetRequiredService<AppDbContext>();
+            var row = await db.TechnicalFindings.SingleAsync(f => f.Id == finding.Id);
+            var content = JsonSerializer.Deserialize<BirkNext.TechnicalHistory.TechnicalFinding>(row.ContentJson, new JsonSerializerOptions(JsonSerializerDefaults.Web) { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } })!;
+            row.ContentJson = JsonSerializer.Serialize(content with { ComparisonBasis = content.ComparisonBasis!.Replace("@r", "@r9") },
+                new JsonSerializerOptions(JsonSerializerDefaults.Web) { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } });
+            await db.SaveChangesAsync();
+            return 0;
+        });
+        var notComparable = await With(sp => History(sp).UpdateAsync("import:m2lb", finding.Id, new(v, BirkNext.TechnicalHistory.TechnicalFindingStatus.VerifiedResolved, null, null, passed, "Kari"), "local-user", default));
+        notComparable.Error.Should().Contain("Review needed").And.Contain("not comparable");
+        var observed = (await With(sp => History(sp).UpdateAsync("import:m2lb", finding.Id, new(v, BirkNext.TechnicalHistory.TechnicalFindingStatus.ResolvedPendingRetest, "retest ran other revisions", null, passed, "Kari"), "local-user", default))).Value!;
+        observed.Status.Should().Be(BirkNext.TechnicalHistory.TechnicalFindingStatus.ResolvedPendingRetest, "the observation is recorded; the status does not move");
+        observed.History[^1].RetestOutcome.Should().Be("Not comparable");
+    }
+
+    [Fact]
+    public async Task Later_edits_mark_a_pinned_run_as_changed_since_and_a_legacy_run_is_never_given_a_fabricated_definition()
+    {
+        var (suite, svc) = await ApprovedSuite();
+        var runId = (await With(sp => svc(sp).ExecuteCompositeAsync(suite.Id, Run("altinn", "mu"), "Tester", default))).RunId!.Value;
+        var run = await WaitForRunAsync(suite.Id, runId);
+        run.ChangedSince.Should().BeEmpty();
+
+        // A test of the run is revised afterwards: the run keeps its meaning and says what changed.
+        var testId = run.Definition!.Steps[0].TestId!.Value;
+        await With(async sp =>
+        {
+            var db = sp.GetRequiredService<AppDbContext>();
+            var row = await db.ContractTests.SingleAsync(t => t.Id == testId);
+            row.Revision += 1;
+            await db.SaveChangesAsync();
+            return 0;
+        });
+        var later = await WaitForRunAsync(suite.Id, runId);
+        later.Definition!.Steps[0].TestRevision.Should().Be(run.Definition.Steps[0].TestRevision, "history is not rewritten");
+        later.ChangedSince.Should().ContainSingle(c => c.Contains("was revised"));
+
+        // A legacy run (recorded before pinning) has no definition, cannot be retested comparably and is not followed up.
+        var legacy = new BirkNext.Api.Models.IntegrationSuiteRunRecord { Id = Guid.NewGuid(), SuiteKey = suite.SuiteKey, SuiteId = suite.Id, RunId = Guid.NewGuid(), Kind = "composite-e2e", PlanJson = "{}" };
+        IntegrationSuiteService.RetestPlan(legacy, "mu", true).Should().Match<CompositeStageRetestPlan>(p => !p.CanRetest && p.Problems.Single().Contains("before BirkNext pinned"));
+    }
+
+    [Fact]
+    public async Task Concurrent_retests_are_separate_immutable_runs_of_the_same_original()
+    {
+        var (suite, svc) = await ApprovedSuite();
+        var originalId = (await With(sp => svc(sp).ExecuteCompositeAsync(suite.Id, Run("altinn"), "Tester", default))).RunId!.Value;
+        await WaitForRunAsync(suite.Id, originalId);
+        var results = await Task.WhenAll(Enumerable.Range(0, 2).Select(_ => With(sp => svc(sp).RetestStageAsync(suite.Id, Retest(originalId, "altinn", false), "Tester", default))));
+        results.Should().OnlyContain(r => r.RunId != null);
+        results.Select(r => r.RunId).Distinct().Should().HaveCount(2);
+        foreach (var r in results) await WaitForRunAsync(suite.Id, r.RunId!.Value);
+        (await WaitForRunAsync(suite.Id, originalId)).Retests.Should().HaveCount(2);
+    }
+
     // ── Synthetic integration with its own ledger (the oracle) ──────────────────────────────────────────────────────────────
 
     private sealed class SyntheticIntegration
@@ -552,5 +727,37 @@ public sealed class CompositeSuiteTests : IAsyncLifetime
             await c.Response.OutputStream.WriteAsync(bytes);
             c.Response.Close();
         }
+    }
+}
+
+/// <summary>
+/// The same composite tests on a fresh migrated PostgreSQL database: pinned definitions, stage retests and finding resolution are persisted with
+/// the real constraints and the database's immutability triggers in force (a pinned run record can never be rewritten).
+/// </summary>
+public sealed class CompositeSuitePostgresTests : CompositeSuiteTests
+{
+    private readonly string _database = TestPostgres.TemporaryName("birknext_comp");
+
+    protected override void UseDatabase(DbContextOptionsBuilder o) => o.UseNpgsql(TestPostgres.Temporary(_database).ConnectionString);
+
+    protected override async Task PrepareDatabaseAsync()
+    {
+        await Execute($"CREATE DATABASE \"{_database}\"");
+        await using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(TestPostgres.Temporary(_database).ConnectionString).Options);
+        await DatabaseMigrationLock.MigrateAsync(db);
+    }
+
+    protected override async Task DropDatabaseAsync()
+    {
+        Npgsql.NpgsqlConnection.ClearAllPools();
+        await Execute($"DROP DATABASE IF EXISTS \"{_database}\" WITH (FORCE)");
+    }
+
+    private static async Task Execute(string sql)
+    {
+        await using var connection = new Npgsql.NpgsqlConnection(TestPostgres.Admin().ConnectionString);
+        await connection.OpenAsync();
+        await using var command = new Npgsql.NpgsqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync();
     }
 }

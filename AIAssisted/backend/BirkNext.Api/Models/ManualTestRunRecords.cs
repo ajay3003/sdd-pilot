@@ -45,11 +45,20 @@ public sealed class ManualRunAttachmentRecord
     public Guid Id { get; set; }
     public Guid RunId { get; set; }
     public string ProjectKey { get; set; } = "";
+    /// <summary>The safe display and download name (see <c>EvidenceFilePolicy.SafeName</c>).</summary>
     public string FileName { get; set; } = "";
+    /// <summary>The name as uploaded, metadata only (never a path or a download name).</summary>
+    public string OriginalFileName { get; set; } = "";
     public string ContentType { get; set; } = "";
     public long Size { get; set; }
     public string Sha256 { get; set; } = "";
     public byte[] Content { get; set; } = [];
     public string AddedBy { get; set; } = "";
     public DateTimeOffset AddedAt { get; set; }
+    /// <summary>Malware scan state: "not-scanned" unless a scanner actually ran ("clean"); a rejected file is never stored.</summary>
+    public string ScanStatus { get; set; } = "not-scanned";
+    /// <summary>Withdrawal at a person's request: the content is removed, this record stays.</summary>
+    public DateTimeOffset? WithdrawnAt { get; set; }
+    public string? WithdrawnBy { get; set; }
+    public string? WithdrawReason { get; set; }
 }

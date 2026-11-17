@@ -350,4 +350,68 @@ public sealed record CompositeRunView
     public List<CompositeCorrelationLink> Correlation { get; init; } = [];
     public List<SuiteSourceBinding> Sources { get; init; } = [];
     public string? ChainRef { get; init; }
+    /// <summary>The exact definition the run executed, captured at run start (null = a run recorded before definitions were pinned: legacy).</summary>
+    public CompositeExecutionDefinition? Definition { get; init; }
+    /// <summary>What changed in the suite's definition since this run (newer suite revision, revised tests, changed plan); empty = still current.</summary>
+    public List<string> ChangedSince { get; init; } = [];
+    /// <summary>A stage retest: the run and stage it retests (null for a normal run).</summary>
+    public Guid? RetestOfRunId { get; init; }
+    public string? RetestStageId { get; init; }
+    /// <summary>Later stage retests of this run (newest first).</summary>
+    public List<CompositeRetestSummary> Retests { get; init; } = [];
 }
+
+/// <summary>One immutable step of a pinned composite definition: the stored contract test revision that ran for it.</summary>
+public sealed record CompositeExecutionStep(string StepId, string StageId, string Role, Guid? TestId, int? TestRevision, string ContractRef, string Operation, string? FromStep);
+
+/// <summary>
+/// The definition a composite run executed, captured when it started and never changed afterwards: owning project, suite and plan revisions, the
+/// stored test revisions the chain runner was required to run, source snapshots, environment identity and the engine. Holds no credential or
+/// secret (environment identity, target address and configuration fingerprint only).
+/// </summary>
+public sealed record CompositeExecutionDefinition
+{
+    public string? ProjectKey { get; init; }
+    public Guid SuiteId { get; init; }
+    public string SuiteKey { get; init; } = "";
+    public int SuiteRevision { get; init; }
+    public string SuiteFingerprint { get; init; } = "";
+    public List<SuiteJourneyReference> Journeys { get; init; } = [];
+    public Guid? ChainId { get; init; }
+    public int? ChainRevision { get; init; }
+    public List<string> Stages { get; init; } = [];
+    public List<CompositeExecutionStep> Steps { get; init; } = [];
+    public List<SuiteSourceBinding> Sources { get; init; } = [];
+    public string EnvironmentId { get; init; } = "";
+    public string TargetUrl { get; init; } = "";
+    public string? ConfigurationFingerprint { get; init; }
+    public string Engine { get; init; } = "";
+    public DateTimeOffset StartedAt { get; init; }
+    public string Initiator { get; init; } = "";
+    /// <summary>SHA-256 of the definition's content (everything above except time and initiator): two runs with the same value ran the same definition.</summary>
+    public string DefinitionSha256 { get; init; } = "";
+}
+
+public sealed record CompositeRetestSummary(Guid RunId, string StageId, DateTimeOffset StartedAt, string Initiator, CompositeRunVerdict Verdict, string ExecutionState);
+
+/// <summary>Retest one stage of an earlier composite run. The run's own environment and pinned definition are used; a stage that takes values
+/// from earlier stages is retested together with those stages (<see cref="IncludePrerequisites"/>), because values from the original run are never
+/// reused (they may be stale). Nothing is sent without the tester's explicit authorisation.</summary>
+public sealed record CompositeStageRetestRequest
+{
+    public string? WorkspaceProjectKey { get; init; }
+    public Guid OriginalRunId { get; init; }
+    public string StageId { get; init; } = "";
+    public bool IncludePrerequisites { get; init; }
+    public string EnvironmentId { get; init; } = "";
+    public string TargetUrl { get; init; } = "";
+    public string EnvironmentType { get; init; } = "";
+    public bool IsProduction { get; init; }
+    public string? ProfileId { get; init; }
+    public string? ContextFingerprint { get; init; }
+    public bool ConfirmMutatingCalls { get; init; }
+    public bool Authorized { get; init; }
+}
+
+/// <summary>What a stage retest of a run needs, before anything is sent.</summary>
+public sealed record CompositeStageRetestPlan(bool CanRetest, string StageId, List<string> PrerequisiteStages, List<string> StepIds, List<string> Problems, string Explanation);

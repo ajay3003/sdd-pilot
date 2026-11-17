@@ -1937,6 +1937,9 @@ namespace BirkNext.Api.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("DefinitionJson")
+                        .HasColumnType("text");
+
                     b.Property<string>("Initiator")
                         .IsRequired()
                         .HasMaxLength(120)
@@ -1949,6 +1952,13 @@ namespace BirkNext.Api.Data.Migrations
 
                     b.Property<string>("PlanJson")
                         .HasColumnType("text");
+
+                    b.Property<Guid?>("RetestOfRunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RetestStageId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<Guid>("RunId")
                         .HasColumnType("uuid");
@@ -1969,6 +1979,12 @@ namespace BirkNext.Api.Data.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("RetestOfRunId");
+
+                    b.HasIndex("RunId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_integration_suite_runs_run");
 
                     b.HasIndex("SuiteKey", "StartedAt");
 
@@ -2097,6 +2113,13 @@ namespace BirkNext.Api.Data.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
 
+                    b.Property<string>("OriginalFileName")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasDefaultValue("");
+
                     b.Property<string>("ProjectKey")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -2105,6 +2128,13 @@ namespace BirkNext.Api.Data.Migrations
                     b.Property<Guid>("RunId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ScanStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("not-scanned");
+
                     b.Property<string>("Sha256")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -2112,6 +2142,17 @@ namespace BirkNext.Api.Data.Migrations
 
                     b.Property<long>("Size")
                         .HasColumnType("bigint");
+
+                    b.Property<string>("WithdrawReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTimeOffset?>("WithdrawnAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("WithdrawnBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.HasKey("Id");
 
@@ -3534,6 +3575,56 @@ namespace BirkNext.Api.Data.Migrations
                     b.ToTable("source_schema_artifacts", (string)null);
                 });
 
+            modelBuilder.Entity("BirkNext.Api.Models.SpecificationCatalogRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ArchiveSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset>("CapturedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DocumentsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("EntriesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ProjectKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("SnapshotId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectKey", "Fingerprint")
+                        .IsUnique()
+                        .HasDatabaseName("ux_specification_catalogs_content");
+
+                    b.HasIndex("ProjectKey", "Revision")
+                        .IsUnique()
+                        .HasDatabaseName("ux_specification_catalogs_revision");
+
+                    b.ToTable("specification_catalogs", (string)null);
+                });
+
             modelBuilder.Entity("BirkNext.Api.Models.SystemGuideRevisionRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3658,6 +3749,80 @@ namespace BirkNext.Api.Data.Migrations
                         .HasDatabaseName("ux_technical_findings_identity");
 
                     b.ToTable("technical_findings", (string)null);
+                });
+
+            modelBuilder.Entity("BirkNext.Api.Models.TechnicalReviewRunRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Checks")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("EnvironmentName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("GeneratedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<int>("Problems")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ProjectKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReportJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("ReportSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid?>("SourceSnapshotId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("TargetUrl")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Kind", "EnvironmentId", "GeneratedAt")
+                        .IsUnique()
+                        .HasDatabaseName("ux_technical_review_runs_identity");
+
+                    b.HasIndex("ProjectKey", "Kind", "GeneratedAt");
+
+                    b.ToTable("technical_review_runs", (string)null);
                 });
 
             modelBuilder.Entity("BirkNext.Api.Models.TestCoverageDecisionRecord", b =>

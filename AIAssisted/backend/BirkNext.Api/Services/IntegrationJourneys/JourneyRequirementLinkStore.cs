@@ -6,11 +6,12 @@ using Microsoft.EntityFrameworkCore;
 namespace BirkNext.Api.Services.IntegrationJourneys;
 
 /// <summary>
-/// Requirements linked to a project's declared journeys. A link names a requirement of the project's own specification catalog (sent with the
-/// request, as for manual test cases — the same trust level, labelled on the link), keeps the journey revision it was made against and an
+/// Requirements linked to a project's declared journeys. A link names a requirement of the project's own specification: checked against the
+/// server-held catalog captured at Project Import when the project has one (the browser's list is then not trusted), otherwise against the catalog
+/// sent with the request (labelled as such on the link, as for manual test cases). It keeps the journey revision it was made against and an
 /// append-only history of who confirmed, rejected or removed it. Nothing is deleted; another project's journey or catalog is refused.
 /// </summary>
-public sealed class JourneyRequirementLinkStore(IntegrationJourneysDbContext db)
+public sealed class JourneyRequirementLinkStore(IntegrationJourneysDbContext db, BirkNext.Api.Services.Specifications.SpecificationCatalogService? catalogs = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
 
@@ -35,11 +36,27 @@ public sealed class JourneyRequirementLinkStore(IntegrationJourneysDbContext db)
         var key = projectKey.Trim();
         var journey = await db.Journeys.FirstOrDefaultAsync(j => j.ProjectKey == key && j.Slug == journeySlug.Trim(), ct);
         if (journey is null || journey.RetiredAt is not null) return new(null, 404, "This project declares no current journey with that id.");
-        if (request.Catalog is null || !string.Equals(request.Catalog.ProjectKey, key, StringComparison.Ordinal))
+        if (request.Catalog is not null && !string.Equals(request.Catalog.ProjectKey, key, StringComparison.Ordinal))
             return new(null, 400, "The requirement must come from this project's specification.");
         var (id, path) = (request.RequirementId?.Trim() ?? "", request.SpecificationPath?.Trim() ?? "");
-        var option = request.Catalog.Requirements.FirstOrDefault(r => string.Equals(r.RequirementId, id, StringComparison.Ordinal) && string.Equals(r.SpecificationPath, path, StringComparison.Ordinal));
-        if (option is null) return new(null, 400, $"{id} is not a requirement of this project's specification.");
+        string title;
+        BirkNext.Specifications.SpecificationRequirementEntry? verified = null;
+        int? catalogRevision = null;
+        if (catalogs is not null && await catalogs.CurrentAsync(key, ct) is { } catalog)
+        {
+            // Server-authoritative: the imported specification decides; the browser's list is not consulted.
+            var resolved = BirkNext.Api.Services.Specifications.SpecificationCatalogService.Resolve(catalog, id, path);
+            if (resolved.Entry is not { } entry) return new(null, 400, resolved.Problem);
+            (verified, catalogRevision, title) = (entry, catalog.Revision, entry.Title);
+            (id, path) = (entry.RequirementId, entry.Path);
+        }
+        else
+        {
+            if (request.Catalog is null) return new(null, 400, "The requirement must come from this project's specification.");
+            var option = request.Catalog.Requirements.FirstOrDefault(r => string.Equals(r.RequirementId, id, StringComparison.Ordinal) && string.Equals(r.SpecificationPath, path, StringComparison.Ordinal));
+            if (option is null) return new(null, 400, $"{id} is not a requirement of this project's specification.");
+            title = option.Title;
+        }
         var by = string.IsNullOrWhiteSpace(request.By) ? actor : request.By.Trim();
         var status = request.Proposed ? JourneyRequirementStatus.Proposed : JourneyRequirementStatus.Confirmed;
 
@@ -54,7 +71,10 @@ public sealed class JourneyRequirementLinkStore(IntegrationJourneysDbContext db)
         var created = new JourneyRequirementLink
         {
             Id = Guid.NewGuid(), ProjectKey = key, JourneyId = journey.Slug, JourneyRevision = journey.CurrentRevision, RequirementId = id, SpecificationPath = path,
-            Title = option.Title, Status = status, LinkedBy = by, LinkedAt = now, Version = 1, History = [new(now, by, status, null)],
+            Title = title, Status = status, LinkedBy = by, LinkedAt = now, Version = 1, History = [new(now, by, status, null)],
+            Trust = verified is null ? JourneyRequirementRules.BrowserCatalogTrust : JourneyRequirementRules.ServerCatalogTrust,
+            CheckedAgainst = verified is null ? BirkNext.Specifications.RequirementLinkProvenance.BrowserSpecification : BirkNext.Specifications.RequirementLinkProvenance.ServerSpecification,
+            CatalogRevision = catalogRevision, RequirementTextSha256 = verified?.TextSha256,
         };
         db.RequirementLinks.Add(new JourneyRequirementLinkRecord
         {

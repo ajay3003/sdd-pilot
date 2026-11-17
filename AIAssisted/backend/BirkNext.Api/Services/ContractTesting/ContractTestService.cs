@@ -946,6 +946,9 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
     {
         if (await ChainAsync(id, null, ct) is not { } chain) return new(null, ["Not found."]);
         if (chain.State == ContractChainState.Draft) return new(null, [$"{chain.Name} is a draft (from a suggestion): review and approve it before it can run."]);
+        // A caller that pins its definition (a composite suite revision) runs exactly that plan: a chain edited since is not silently run instead.
+        if (request.ExpectedChainRevision is { } expected && expected != chain.Revision)
+            return new(null, [$"The transaction plan changed since this suite revision (plan revision {expected}, now {chain.Revision}). Regenerate the suite; nothing was sent."]);
         if (PathProblem(request.BasePath, "The API base path") is { } baseProblem) return new(null, [baseProblem]);
         if (PathProblem(request.GraphQlPath, "The GraphQL endpoint path") is { } gqlProblem) return new(null, [gqlProblem]);
         if (await ChainProblemsAsync(chain.Steps, ct) is { Count: > 0 } invalid) return new(null, invalid);
@@ -967,6 +970,13 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         foreach (var step in Order(chosen))
         {
             var test = (await LoadAsync(step.TestId, ct))!;
+            // Pinned: run the stored revision the caller's definition names, never the test's newer edits.
+            if (request.PinnedRevisions.TryGetValue(step.TestId, out var pinned) && pinned != test.Revision)
+            {
+                if (test.ReviewState == ContractTestReviewState.Retired) { notRun.Add($"{step.StepId} ({test.Name}): retired; not run."); continue; }
+                if (await RevisionAsync(step.TestId, pinned, ct) is not { } stored) { notRun.Add($"{step.StepId} ({test.Name}): the pinned revision r{pinned} no longer exists; not run."); continue; }
+                test = stored;
+            }
             var latest = await registry.LatestVersionAsync(test.ContractKey, ct) ?? 0;
             var view = await ViewAsync(test, latest, [], request.Environment, ct);
             var refusals = view.Readiness.Items.Where(i => i.State == ReadinessItemState.Blocked || i.State == ReadinessItemState.Missing && i.Area != "Test Data").Select(i => i.Text).ToList();

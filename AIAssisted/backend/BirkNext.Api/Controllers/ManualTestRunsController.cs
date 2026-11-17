@@ -87,9 +87,24 @@ public sealed class ManualTestRunsController(ManualTestRunService runs) : Contro
         Run(async () =>
         {
             var a = await runs.AttachmentAsync(projectKey, id, attachmentId, ct);
+            // Never rendered or executed by the browser: a download (Content-Disposition: attachment), no sniffing, a sandboxed empty policy.
             Response.Headers["X-Content-Type-Options"] = "nosniff";
+            Response.Headers["Content-Security-Policy"] = "default-src 'none'; sandbox";
+            Response.Headers["Cache-Control"] = "no-store";
+            Response.Headers["Cross-Origin-Resource-Policy"] = "same-origin";
             return File(a.Content, a.ContentType, a.FileName);
         });
+
+    /// <summary>The run's attached files: name, type, size, SHA-256, scan state and withdrawal (no content).</summary>
+    [HttpGet("{id:guid}/attachments")]
+    public Task<ActionResult> Attachments(Guid id, [FromQuery] string projectKey, CancellationToken ct) =>
+        Run(async () => Ok(await runs.AttachmentsAsync(projectKey, id, ct)));
+
+    /// <summary>Withdraws a file at a person's request: its content is removed, its record (name, size, SHA-256, who/when/why) stays.</summary>
+    [HttpPost("{id:guid}/attachments/{attachmentId:guid}/withdraw")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public Task<ActionResult> Withdraw(Guid id, Guid attachmentId, [FromQuery] string projectKey, [FromBody] WithdrawAttachmentRequest request, CancellationToken ct) =>
+        Run(async () => Ok(await runs.WithdrawAttachmentAsync(projectKey, id, attachmentId, request.Reason, Actor, ct)));
 
     private static async Task<ActionResult> Run(Func<Task<ActionResult>> action)
     {

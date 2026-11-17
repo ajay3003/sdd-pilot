@@ -15,7 +15,7 @@ namespace BirkNext.Api.Services.TestPlanning;
 /// when the tester completes the run. Evidence is stored as references (links or notes), never as uploaded files; defects are local
 /// observations that may name an existing external work item. Nothing is sent anywhere.
 /// </summary>
-public sealed class ManualTestRunService(AppDbContext db, TestPlanSuggestionService plans, TimeProvider? clock = null)
+public sealed class ManualTestRunService(AppDbContext db, TestPlanSuggestionService plans, TimeProvider? clock = null, IEvidenceFileScanner? scanner = null)
 {
     public const int MaxEvidence = 50;
     public const int MaxDefects = 50;
@@ -247,20 +247,30 @@ public sealed class ManualTestRunService(AppDbContext db, TestPlanSuggestionServ
         var run = Read(row);
         if (run.State == ManualRunState.Abandoned) throw new TestPlanException(409, "run-final", "This run was stopped; start a new run to test again.");
         if (row.Revision != baseRevision) throw new TestPlanException(409, "run-changed", $"The run is at revision {row.Revision}; reload it. The file was not attached.");
-        var name = System.IO.Path.GetFileName((fileName ?? "").Replace('\\', '/').Split('/').Last()).Trim();
-        if (name.Length == 0 || name.Length > 255) throw new TestPlanException(400, "attachment-name-invalid", "The file needs a name of at most 255 characters.");
-        if (!AttachmentTypes.TryGetValue(System.IO.Path.GetExtension(name), out var contentType))
+        var name = EvidenceFilePolicy.SafeName(fileName);
+        if (name.Length == 0 || (fileName ?? "").Length > 1000) throw new TestPlanException(400, "attachment-name-invalid", "The file needs a name of at most 255 characters.");
+        var extension = System.IO.Path.GetExtension(name);
+        if (!AttachmentTypes.TryGetValue(extension, out var contentType))
             throw new TestPlanException(400, "attachment-type-refused", $"This file type cannot be attached. Allowed: {string.Join(", ", AttachmentTypes.Keys.Select(k => k.TrimStart('.')))}.");
         if (content.Length == 0) throw new TestPlanException(400, "attachment-empty", "The file is empty.");
         if (content.Length > MaxAttachmentBytes) throw new TestPlanException(413, "attachment-too-large", $"A file can be at most {MaxAttachmentBytes / (1024 * 1024)} MB.");
-        if (!SignatureMatches(contentType, content)) throw new TestPlanException(400, "attachment-content-mismatch", "The file's content does not match its type.");
+        if (EvidenceFilePolicy.ContentProblem(extension, contentType, content) is { } problem) throw new TestPlanException(400, "attachment-content-mismatch", problem);
+        // Malware scanning only where a scanner actually exists; otherwise the file is recorded as not scanned (never as clean).
+        var scan = EvidenceScanStatus.NotScanned;
+        if (scanner is { Available: true })
+        {
+            scan = await scanner.ScanAsync(name, content, ct);
+            if (scan == EvidenceScanStatus.Rejected) throw new TestPlanException(400, "attachment-rejected-by-scan", "The malware scan rejected this file; it was not attached.");
+            if (scan != EvidenceScanStatus.Clean) scan = EvidenceScanStatus.NotScanned;
+        }
         if (run.Evidence.Count(e => e.Kind == ManualEvidenceKind.Attachment) >= MaxAttachments)
             throw new TestPlanException(400, "too-many-attachments", $"A run keeps at most {MaxAttachments} attached files.");
         if (run.Evidence.Count >= MaxEvidence) throw new TestPlanException(400, "too-much-evidence", $"A run keeps at most {MaxEvidence} evidence references.");
         var attachment = new ManualRunAttachmentRecord
         {
-            Id = Guid.NewGuid(), RunId = run.Id, ProjectKey = row.ProjectKey, FileName = name, ContentType = contentType, Size = content.Length,
-            Sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(content)).ToLowerInvariant(), Content = content, AddedBy = actor, AddedAt = Now,
+            Id = Guid.NewGuid(), RunId = run.Id, ProjectKey = row.ProjectKey, FileName = name, OriginalFileName = EvidenceFilePolicy.OriginalName(fileName), ContentType = contentType,
+            Size = content.Length, Sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(content)).ToLowerInvariant(), Content = content, AddedBy = actor, AddedAt = Now,
+            ScanStatus = scan,
         };
         db.ManualRunAttachments.Add(attachment);
         var evidence = new ManualRunEvidence
@@ -272,12 +282,41 @@ public sealed class ManualTestRunService(AppDbContext db, TestPlanSuggestionServ
         return await WriteAsync(row, run with { Evidence = [.. run.Evidence, evidence], Revision = run.Revision + 1, UpdatedBy = actor, UpdatedAt = Now }, ct);
     }
 
-    /// <summary>An attachment of a run of this project (never another project's).</summary>
+    /// <summary>An attachment of a run of this project (never another project's). A withdrawn file's content is gone: 410 with who, when and why.</summary>
     public async Task<ManualRunAttachmentRecord> AttachmentAsync(string projectKey, Guid runId, Guid attachmentId, CancellationToken ct)
     {
         var key = TestScenarioDiscoveryService.Key(projectKey);
-        return await db.ManualRunAttachments.AsNoTracking().SingleOrDefaultAsync(a => a.Id == attachmentId && a.RunId == runId && a.ProjectKey == key, ct)
+        var a = await db.ManualRunAttachments.AsNoTracking().SingleOrDefaultAsync(a => a.Id == attachmentId && a.RunId == runId && a.ProjectKey == key, ct)
             ?? throw new TestPlanException(404, "attachment-not-found", "No such attachment in this run.");
+        if (a.WithdrawnAt is { } at)
+            throw new TestPlanException(410, "attachment-withdrawn", $"The file was withdrawn by {a.WithdrawnBy} on {at:yyyy-MM-dd}: {a.WithdrawReason}. Its name, size and SHA-256 remain on record.");
+        return a;
+    }
+
+    /// <summary>The attachments of a run (metadata only: name, type, size, SHA-256, scan state, withdrawal), for this project only.</summary>
+    public async Task<List<ManualRunAttachmentInfo>> AttachmentsAsync(string projectKey, Guid runId, CancellationToken ct)
+    {
+        var key = TestScenarioDiscoveryService.Key(projectKey);
+        return await db.ManualRunAttachments.AsNoTracking().Where(a => a.RunId == runId && a.ProjectKey == key).OrderBy(a => a.AddedAt)
+            .Select(a => new ManualRunAttachmentInfo(a.Id, a.FileName, a.OriginalFileName, a.ContentType, a.Size, a.Sha256, a.AddedBy, a.AddedAt, a.ScanStatus,
+                a.WithdrawnAt, a.WithdrawnBy, a.WithdrawReason)).ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Withdraws an attached file at a person's request (e.g. it contained personal data): its bytes are removed; its record stays — name, type,
+    /// size, SHA-256, who added it and when, and who withdrew it, when and why — and the run's evidence entry is unchanged. Not undoable. This is
+    /// the only deletion of evidence content outside a full local data reset; nothing is deleted automatically.
+    /// </summary>
+    public async Task<ManualRunAttachmentInfo> WithdrawAttachmentAsync(string projectKey, Guid runId, Guid attachmentId, string? reason, string actor, CancellationToken ct)
+    {
+        var why = Text(reason, 500) ?? throw new TestPlanException(400, "withdraw-reason-required", "Say why the file is withdrawn; the reason stays on record.");
+        var key = TestScenarioDiscoveryService.Key(projectKey);
+        var a = await db.ManualRunAttachments.SingleOrDefaultAsync(a => a.Id == attachmentId && a.RunId == runId && a.ProjectKey == key, ct)
+            ?? throw new TestPlanException(404, "attachment-not-found", "No such attachment in this run.");
+        if (a.WithdrawnAt is not null) throw new TestPlanException(409, "attachment-withdrawn", "The file was already withdrawn.");
+        a.Content = []; a.WithdrawnAt = Now; a.WithdrawnBy = actor; a.WithdrawReason = why;
+        await db.SaveChangesAsync(ct);
+        return new(a.Id, a.FileName, a.OriginalFileName, a.ContentType, a.Size, a.Sha256, a.AddedBy, a.AddedAt, a.ScanStatus, a.WithdrawnAt, a.WithdrawnBy, a.WithdrawReason);
     }
 
     internal static bool SignatureMatches(string contentType, byte[] c)

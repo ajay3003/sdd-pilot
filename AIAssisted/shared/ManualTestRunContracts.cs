@@ -45,6 +45,12 @@ public enum ManualEvidenceKind
     Attachment,
 }
 
+/// <summary>An attached evidence file as stored (metadata only). <paramref name="ScanStatus"/> is "not-scanned" unless a malware scanner ran.</summary>
+public sealed record ManualRunAttachmentInfo(Guid Id, string FileName, string OriginalFileName, string ContentType, long Size, string Sha256, string AddedBy, DateTimeOffset AddedAt,
+    string ScanStatus, DateTimeOffset? WithdrawnAt, string? WithdrawnBy, string? WithdrawReason);
+
+public sealed record WithdrawAttachmentRequest(string Reason);
+
 public sealed record ManualRunEvidence
 {
     /// <summary>Assigned by the server when the reference is saved; empty for a new one.</summary>

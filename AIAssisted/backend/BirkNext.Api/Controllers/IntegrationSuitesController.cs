@@ -87,6 +87,21 @@ public sealed class IntegrationSuitesController(IntegrationSuiteService suites, 
         return result.State switch { "NotFound" => NotFound(result), "NotAuthorized" or "Refused" => BadRequest(result), _ => Ok(result) };
     }
 
+    /// <summary>What retesting one stage of a composite run takes (its steps, the earlier stages it needs, why it can or cannot run) — nothing is sent.</summary>
+    [HttpGet("{id:guid}/composite-runs/{runId:guid}/retest-plan")]
+    public async Task<ActionResult<CompositeStageRetestPlan>> RetestPlan(Guid id, Guid runId, [FromQuery] string stageId, [FromQuery] bool includePrerequisites,
+        [FromQuery] string? projectKey, CancellationToken ct) =>
+        Ok(await suites.RetestPlanAsync(id, runId, stageId ?? "", includePrerequisites, projectKey, ct));
+
+    /// <summary>Retests one stage of a composite run: a new run of the original pinned definition in the original environment, linked to the original.</summary>
+    [HttpPost("{id:guid}/composite-runs/retest")]
+    [Authorize(Policy = BirkNextPermissions.ActiveEventExecutePolicy)]
+    public async Task<ActionResult<CompositeRunResult>> RetestStage(Guid id, [FromBody] CompositeStageRetestRequest request, CancellationToken ct)
+    {
+        var result = await suites.RetestStageAsync(id, request, Initiator, ct);
+        return result.State switch { "NotFound" => NotFound(result), "NotAuthorized" or "Refused" => BadRequest(result), _ => Ok(result) };
+    }
+
     [HttpGet("{id:guid}/composite-runs/{runId:guid}")]
     public async Task<ActionResult<CompositeRunView>> CompositeRun(Guid id, Guid runId, CancellationToken ct) =>
         await suites.CompositeRunAsync(id, runId, ct) is { } r ? Ok(r) : NotFound();
