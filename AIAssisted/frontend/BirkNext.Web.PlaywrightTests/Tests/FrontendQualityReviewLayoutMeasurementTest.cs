@@ -44,7 +44,7 @@ public sealed class FrontendQualityReviewLayoutMeasurementTest : IAsyncLifetime
     /// - Computed styles (typography, grid definitions)
     /// - Overflow/scroll behavior
     /// </summary>
-    [Fact]
+    [BrowserFact]
     [Trait("Category", "PreStarted")]
     public async Task FrontendQualityReview_CaptureDetailedLayoutMeasurements()
     {
@@ -478,7 +478,7 @@ public sealed class FrontendQualityReviewLayoutMeasurementTest : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [BrowserFact]
     [Trait("Category", "PreStarted")]
     [Trait("Category", "UICorrectness")]
     public Task FrontendQualityReview_ResultLayout_IsReadableAtDesktop() =>

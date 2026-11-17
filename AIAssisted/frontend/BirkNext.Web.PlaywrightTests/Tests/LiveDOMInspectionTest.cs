@@ -17,7 +17,7 @@ public sealed class LiveDOMInspectionTest : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    [Fact]
+    [BrowserFact]
     public async Task Inspect_Live_Maintenance_DOM_For_Structured_Presentation()
     {
         var page = await _fixture.Context.NewPageAsync();

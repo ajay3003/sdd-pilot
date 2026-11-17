@@ -1,3 +1,4 @@
+using BirkNext.Web.PlaywrightTests.Fixtures;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
@@ -17,7 +18,7 @@ public sealed class ActiveEventTestingBrowserAcceptanceTests
     private const string EnvironmentId = "skole-acceptance";
     private static readonly int[] Widths = [1440, 1100, 768, 390];
 
-    [Fact]
+    [BrowserFact("BIRKNEXT_ACTIVE_EVENT_BACKEND_URL", "BIRKNEXT_ACTIVE_EVENT_FRONTEND_URL")]
     public async Task ProviderSelection_BlockedReadiness_AuthNotConfigured_History_ResponsiveAxeAndKeyboard()
     {
         var backend = Environment.GetEnvironmentVariable("BIRKNEXT_ACTIVE_EVENT_BACKEND_URL")?.TrimEnd('/');

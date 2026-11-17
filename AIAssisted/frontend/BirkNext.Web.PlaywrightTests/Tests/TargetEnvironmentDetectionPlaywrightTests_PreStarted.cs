@@ -81,7 +81,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests_PreStarted : IAsyn
         await urlInput.WaitForAsync(new LocatorWaitForOptions { Timeout = 15000 });
     }
 
-    [Fact]
+    [BrowserFact]
     [Trait("Category", "PreStarted")]
     public async Task TargetEnvironment_DetectConfiguration_PopulatesDraftSafely()
     {
@@ -140,7 +140,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests_PreStarted : IAsyn
         }
     }
 
-    [Fact]
+    [BrowserFact]
     [Trait("Category", "PreStarted")]
     public async Task TargetEnvironment_DetectConfiguration_DoesNotOverwriteConfiguredValues()
     {
@@ -176,7 +176,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests_PreStarted : IAsyn
         }
     }
 
-    [Fact]
+    [BrowserFact]
     [Trait("Category", "PreStarted")]
     public async Task TargetEnvironment_UrlChange_InvalidatesDetection()
     {
@@ -213,7 +213,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests_PreStarted : IAsyn
         }
     }
 
-    [Fact]
+    [BrowserFact]
     [Trait("Category", "PreStarted")]
     public async Task TargetEnvironment_ResponsiveLayout_NoHorizontalOverflow()
     {
@@ -249,7 +249,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests_PreStarted : IAsyn
         }
     }
 
-    [Fact]
+    [BrowserFact]
     [Trait("Category", "PreStarted")]
     public async Task TargetEnvironment_KeyboardAccessibility_NavigateDetection()
     {
@@ -305,7 +305,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests_PreStarted : IAsyn
         }
     }
 
-    [Fact]
+    [BrowserFact]
     [Trait("Category", "PreStarted")]
     public async Task TargetEnvironment_DetectConfiguration_RealBackendEndToEnd()
     {
@@ -348,7 +348,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests_PreStarted : IAsyn
         }
     }
 
-    [Fact]
+    [BrowserFact]
     [Trait("Category", "PreStarted")]
     public async Task TargetEnvironment_LocalTransport_UsesHttpBackendAndReachesRealPreflight()
     {

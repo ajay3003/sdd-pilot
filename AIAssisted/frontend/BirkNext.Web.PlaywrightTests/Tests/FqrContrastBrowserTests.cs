@@ -4,6 +4,7 @@ using Microsoft.Playwright;
 
 namespace BirkNext.Web.PlaywrightTests.Tests;
 
+[Collection(BrowserServersCollection.Name)]
 public sealed class FqrContrastBrowserTests : IAsyncLifetime
 {
     private readonly BirkNextWebApplicationFixture_PreStarted _fixture = new();
@@ -11,7 +12,7 @@ public sealed class FqrContrastBrowserTests : IAsyncLifetime
     public Task InitializeAsync() => _fixture.InitializeAsync();
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    [Fact]
+    [BrowserFact]
     public async Task FqrLandingHasNoAxeContrastViolations()
     {
         var page = await _fixture.Context.NewPageAsync();

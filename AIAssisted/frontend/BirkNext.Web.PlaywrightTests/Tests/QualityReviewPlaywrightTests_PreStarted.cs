@@ -43,7 +43,7 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
-    [Fact]
+    [BrowserFact]
     [Trait("Category", "PreStarted")]
     public async Task DataModelQuality_WasmInteractionHasNoRuntimeErrors()
     {
@@ -218,7 +218,7 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [BrowserFact]
     [Trait("Category", "FrontendQualityPhase2ERealAcceptance")]
     public async Task FrontendQualityReview_RealEnginesReachDecisionSupportExactlyOnce()
     {
@@ -348,7 +348,7 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [BrowserFact]
     [Trait("Category", "UICorrectness")]
     public async Task TargetEnvironmentsNavigation_OpenCorrectSettingsSection()
     {
@@ -380,7 +380,7 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [BrowserFact]
     [Trait("Category", "UICorrectness")]
     public async Task FrontendQualityReview_ResponsiveLayoutNoHorizontalOverflow()
     {
@@ -414,7 +414,7 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [BrowserFact]
     [Trait("Category", "UICorrectness")]
     public async Task FrontendQualityReview_KeyboardNavigationToTargetEnvironments()
     {

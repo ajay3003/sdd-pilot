@@ -15,6 +15,7 @@ namespace BirkNext.Web.PlaywrightTests.Tests;
 /// which is where the WASM unboxing error would occur if event binding
 /// used incorrect attribute names (@onclick vs onclick).
 /// </summary>
+[Collection(BrowserServersCollection.Name)]
 public sealed class QualityReviewPlaywrightTests : IAsyncLifetime
 {
     private BirkNextWebApplicationFixture _fixture = null!;
@@ -30,7 +31,7 @@ public sealed class QualityReviewPlaywrightTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
-    [Fact]
+    [BrowserFact]
     public async Task DataModelQuality_WasmInteractionHasNoRuntimeErrors()
     {
         var page = await _fixture.Context.NewPageAsync();

@@ -9,6 +9,7 @@ namespace BirkNext.Web.PlaywrightTests.Tests;
 /// E2E tests for detected endpoint and integration display in UI.
 /// Verifies that detected values are shown separately from configured values.
 /// </summary>
+[Collection(BrowserServersCollection.Name)]
 public sealed class EndpointDiscoveryUITests : IAsyncLifetime
 {
     private BirkNextWebApplicationFixture _fixture = null!;
@@ -59,7 +60,7 @@ public sealed class EndpointDiscoveryUITests : IAsyncLifetime
     // Test 1: Detected endpoints display section is shown after detection
     // ────────────────────────────────────────────────────────────────────────────
 
-    [Fact]
+    [BrowserFact]
     public async Task DetectedEndpoints_AfterSuccessfulDetection_DisplaysDiscoveredSection()
     {
         var page = await _fixture.Context.NewPageAsync();
@@ -94,7 +95,7 @@ public sealed class EndpointDiscoveryUITests : IAsyncLifetime
     // Test 2: Detected integrations display in integration section
     // ────────────────────────────────────────────────────────────────────────────
 
-    [Fact]
+    [BrowserFact]
     public async Task DetectedIntegrations_AfterSuccessfulDetection_DisplaysDiscoveredIntegrations()
     {
         var page = await _fixture.Context.NewPageAsync();
@@ -140,7 +141,7 @@ public sealed class EndpointDiscoveryUITests : IAsyncLifetime
     // Test 3: Apply button exists for detected REST endpoint
     // ────────────────────────────────────────────────────────────────────────────
 
-    [Fact]
+    [BrowserFact]
     public async Task ApplyEndpointButton_ForDetectedRest_IsClickable()
     {
         var page = await _fixture.Context.NewPageAsync();
@@ -179,7 +180,7 @@ public sealed class EndpointDiscoveryUITests : IAsyncLifetime
     // Test 4: Apply button for integration adds to draft integrations
     // ────────────────────────────────────────────────────────────────────────────
 
-    [Fact]
+    [BrowserFact]
     public async Task ApplyIntegrationButton_WhenClicked_AddsToConfiguredIntegrations()
     {
         var page = await _fixture.Context.NewPageAsync();
@@ -235,7 +236,7 @@ public sealed class EndpointDiscoveryUITests : IAsyncLifetime
     // Test 5: Stale detection warning shows when URL is changed after detection
     // ────────────────────────────────────────────────────────────────────────────
 
-    [Fact]
+    [BrowserFact]
     public async Task StaleDetectionWarning_WhenUrlChanged_DisplaysWarningMessage()
     {
         var page = await _fixture.Context.NewPageAsync();
@@ -289,7 +290,7 @@ public sealed class EndpointDiscoveryUITests : IAsyncLifetime
     // Test 6: Stale detection hides discovered endpoints until re-run
     // ────────────────────────────────────────────────────────────────────────────
 
-    [Fact]
+    [BrowserFact]
     public async Task DetectedEndpointsHidden_WhenDetectionIsStale_HidesDiscoveredSection()
     {
         var page = await _fixture.Context.NewPageAsync();

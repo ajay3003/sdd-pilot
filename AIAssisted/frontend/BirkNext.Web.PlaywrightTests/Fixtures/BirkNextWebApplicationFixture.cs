@@ -31,8 +31,9 @@ public sealed class BirkNextWebApplicationFixture : IAsyncLifetime
     private IBrowserContext? _context;
 
     public IBrowserContext Context => _context ?? throw new InvalidOperationException("Browser context not initialized");
-    public string FrontendUrl => "http://localhost:5173";
-    public string BackendUrl => "http://localhost:5000";
+    // Isolation: an external (already started, isolated) instance when configured; otherwise the self-started dev servers (opt-in only).
+    public string FrontendUrl => BrowserTestServers.FrontendUrl;
+    public string BackendUrl => BrowserTestServers.BackendUrl;
 
     public BirkNextWebApplicationFixture()
     {
@@ -52,13 +53,17 @@ public sealed class BirkNextWebApplicationFixture : IAsyncLifetime
         if (!Directory.Exists(_frontendPath))
             throw new DirectoryNotFoundException($"Frontend path not found: {_frontendPath}");
 
+        if (BrowserTestServers.NotConfiguredReason() is { } reason) throw new InvalidOperationException(reason);
         try
         {
-            // 2. Start backend (extended timeout for migrations on first run)
-            await StartBackendAsync();
+            if (!BrowserTestServers.External)
+            {
+                // 2. Start backend (extended timeout for migrations on first run)
+                await StartBackendAsync();
 
-            // 3. Start frontend
-            await StartFrontendAsync();
+                // 3. Start frontend
+                await StartFrontendAsync();
+            }
 
             // 4. Initialize Playwright
             await InitializePlaywrightAsync();
@@ -87,10 +92,11 @@ public sealed class BirkNextWebApplicationFixture : IAsyncLifetime
         _playwright?.Dispose();
 
         // Stop processes
+        // Only the processes this fixture started are stopped; an external instance is never touched.
         StopProcess(_frontendProcess, "Frontend");
         StopProcess(_backendProcess, "Backend");
-        await WaitForPortReleasedAsync(5173);
-        await WaitForPortReleasedAsync(5000);
+        if (_frontendProcess is not null) await WaitForPortReleasedAsync(BrowserTestServers.DevWebPort);
+        if (_backendProcess is not null) await WaitForPortReleasedAsync(BrowserTestServers.DevApiPort);
     }
 
     private async Task StartBackendAsync()
@@ -122,9 +128,9 @@ public sealed class BirkNextWebApplicationFixture : IAsyncLifetime
             CreateNoWindow = true,
         };
 
-        // Set database connection string (uses default local postgres)
+        // A disposable database (never the shared 'birknext' database); the API creates and migrates it on start.
         psi.Environment["ConnectionStrings__Default"] =
-            "Host=localhost;Port=5432;Database=birknext;Username=birknext;Password=birknext";
+            $"Host=localhost;Port=5432;Database={BrowserTestServers.Database};Username=birknext;Password=birknext";
         psi.Environment["ASPNETCORE_URLS"] = "http://localhost:5000";
         psi.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
 
@@ -147,6 +153,8 @@ public sealed class BirkNextWebApplicationFixture : IAsyncLifetime
         {
             return; // PostgreSQL already running
         }
+        if (!BrowserTestServers.StartPostgres)
+            throw new InvalidOperationException($"PostgreSQL is not reachable on 5432. Start it yourself, or set {BrowserTestServers.StartPostgresVariable}=1 to let the fixture run compose.");
 
         // Try to start PostgreSQL using docker compose
         var composeFilePath = Path.Combine(_repoRoot, "AIAssisted", "docker-compose.yml");
@@ -285,6 +293,7 @@ public sealed class BirkNextWebApplicationFixture : IAsyncLifetime
         });
 
         _context = await _browser.NewContextAsync();
+        await BrowserTestServers.ConnectAsync(_context, Path.Combine(_backendPath, "BirkNext.Api"));
     }
 
     private static bool IsPortInUse(int port)

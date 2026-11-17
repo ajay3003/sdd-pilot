@@ -1,3 +1,4 @@
+using BirkNext.Web.PlaywrightTests.Fixtures;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Playwright;
@@ -7,7 +8,7 @@ namespace BirkNext.Web.PlaywrightTests.Tests;
 /// <summary>Functional acceptance for a separately started current-worktree frontend. Set BIRKNEXT_SCHEMA_STUDIO_FRONTEND_URL to enable.</summary>
 public sealed class SchemaStudioBrowserAcceptanceTests
 {
-    [Fact]
+    [BrowserFact("BIRKNEXT_SCHEMA_STUDIO_FRONTEND_URL")]
     public async Task LocalXsdWorkflowIsResponsiveAccessibleAndDoesNotContactExternalHosts()
     {
         var baseUrl = Environment.GetEnvironmentVariable("BIRKNEXT_SCHEMA_STUDIO_FRONTEND_URL")?.TrimEnd('/');

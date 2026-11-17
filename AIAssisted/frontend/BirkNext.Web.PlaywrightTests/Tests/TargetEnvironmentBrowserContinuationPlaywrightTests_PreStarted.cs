@@ -18,7 +18,7 @@ public sealed class TargetEnvironmentBrowserContinuationPlaywrightTests_PreStart
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    [Theory]
+    [BrowserTheory]
     [InlineData(1440)]
     [InlineData(1280)]
     [InlineData(860)]

@@ -24,18 +24,17 @@ public sealed class BirkNextWebApplicationFixture_PreStarted : IAsyncLifetime
     private IBrowserContext? _context;
 
     public IBrowserContext Context => _context ?? throw new InvalidOperationException("Browser context not initialized");
-    public string FrontendUrl => "http://localhost:5173";
-    public string BackendUrl => "http://localhost:5000";
+    public string FrontendUrl => BrowserTestServers.FrontendUrl;
+    public string BackendUrl => BrowserTestServers.BackendUrl;
 
     public async Task InitializeAsync()
     {
         try
         {
-            // Verify backend is available
-            await VerifyServiceReadyAsync(5000, "Backend", timeoutMs: 30000);
-
-            // Verify frontend is available
-            await VerifyServiceReadyAsync(5173, "Frontend", timeoutMs: 30000);
+            if (BrowserTestServers.NotConfiguredReason() is { } reason) throw new InvalidOperationException(reason);
+            // Verify backend and frontend are available (the configured isolated instance)
+            await VerifyServiceReadyAsync(BackendUrl, "Backend", timeoutMs: 30000);
+            await VerifyServiceReadyAsync(FrontendUrl, "Frontend", timeoutMs: 30000);
 
             // Initialize Playwright
             await InitializePlaywrightAsync();
@@ -62,10 +61,9 @@ public sealed class BirkNextWebApplicationFixture_PreStarted : IAsyncLifetime
         _playwright?.Dispose();
     }
 
-    private async Task VerifyServiceReadyAsync(int port, string serviceName, int timeoutMs = 30000, int checkIntervalMs = 500)
+    private async Task VerifyServiceReadyAsync(string url, string serviceName, int timeoutMs = 30000, int checkIntervalMs = 500)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-        string url = $"http://127.0.0.1:{port}";
         Exception? lastException = null;
 
         while (DateTime.UtcNow < deadline)
@@ -74,13 +72,12 @@ public sealed class BirkNextWebApplicationFixture_PreStarted : IAsyncLifetime
             {
                 // Use HTTP GET to verify actual service readiness, not just TCP connection
                 using var handler = new HttpClientHandler { UseProxy = false };
-                using var client = new HttpClient(handler) { Timeout = TimeSpan.FromMilliseconds(1000) };
-                var response = await client.GetAsync(url);
+                using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
+                // IPv4 loopback explicitly (a "localhost" lookup may try ::1 first, where the isolated servers do not listen).
+                var response = await client.GetAsync(url.Replace("://localhost:", "://127.0.0.1:", StringComparison.OrdinalIgnoreCase));
 
-                // Accept any successful response or redirect (even 404 means service is responding)
-                if (response.StatusCode == System.Net.HttpStatusCode.NotFound ||
-                    response.StatusCode == System.Net.HttpStatusCode.MovedPermanently ||
-                    response.StatusCode == System.Net.HttpStatusCode.OK)
+                // Any answer below 500 means the service is responding (the API answers 401 to requests without the web client's header).
+                if ((int)response.StatusCode < 500)
                 {
                     return; // Service is ready
                 }
@@ -94,7 +91,7 @@ public sealed class BirkNextWebApplicationFixture_PreStarted : IAsyncLifetime
         }
 
         throw new TimeoutException(
-            $"{serviceName} on port {port} did not become ready within {timeoutMs}ms at {url}. " +
+            $"{serviceName} did not become ready within {timeoutMs}ms at {url}. " +
             $"Last error: {lastException?.Message ?? "No response"}");
     }
 
@@ -107,6 +104,7 @@ public sealed class BirkNextWebApplicationFixture_PreStarted : IAsyncLifetime
         });
 
         _context = await _browser.NewContextAsync();
+        await BrowserTestServers.ConnectAsync(_context);
     }
 
     private static bool IsPortReachable(int port)

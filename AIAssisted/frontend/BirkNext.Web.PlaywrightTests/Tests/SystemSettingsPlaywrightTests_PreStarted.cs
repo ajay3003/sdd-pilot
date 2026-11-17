@@ -17,7 +17,7 @@ public sealed class SystemSettingsPlaywrightTests_PreStarted : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    [Theory]
+    [BrowserTheory]
     [InlineData(1440)]
     [InlineData(1280)]
     public async Task Frontend_quality_engines_uses_compact_two_column_system_settings_layout(int width)
@@ -45,7 +45,7 @@ public sealed class SystemSettingsPlaywrightTests_PreStarted : IAsyncLifetime
         await page.CloseAsync();
     }
 
-    [Fact]
+    [BrowserFact]
     public async Task Parent_edit_mode_is_pane_capability_aware_and_edits_fqe_in_place()
     {
         var page = await _fixture.Context.NewPageAsync();
@@ -84,7 +84,7 @@ public sealed class SystemSettingsPlaywrightTests_PreStarted : IAsyncLifetime
         await page.CloseAsync();
     }
 
-    [Theory]
+    [BrowserTheory]
     [InlineData(1440)]
     [InlineData(1280)]
     public async Task Maintenance_diagnostic_result_uses_table_structure_with_associated_values_and_badges(int width)

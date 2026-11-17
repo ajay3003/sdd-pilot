@@ -18,7 +18,7 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    [Theory]
+    [BrowserTheory]
     [InlineData(1440)]
     [InlineData(1280)]
     [InlineData(1024)]
@@ -117,7 +117,7 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
         await page.CloseAsync();
     }
 
-    [Fact]
+    [BrowserFact]
     public async Task ActiveTargetSummary_ShowsOneIdentityAndUrl()
     {
         var page = await _fixture.Context.NewPageAsync();
@@ -143,7 +143,7 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
         await page.CloseAsync();
     }
 
-    [Fact]
+    [BrowserFact]
     public async Task SelectedDetailHeader_ShowsNameAndActiveIndicator()
     {
         var page = await _fixture.Context.NewPageAsync();
@@ -180,7 +180,7 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
         await page.CloseAsync();
     }
 
-    [Fact]
+    [BrowserFact]
     public async Task Warning_RendersWithCorrectWording_And_ActionButton()
     {
         var page = await _fixture.Context.NewPageAsync();
@@ -211,7 +211,7 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
         await page.CloseAsync();
     }
 
-    [Theory]
+    [BrowserTheory]
     [InlineData("General")]
     [InlineData("Target Application")]
     [InlineData("Endpoint Discovery")]
@@ -249,7 +249,7 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
         await page.CloseAsync();
     }
 
-    [Theory]
+    [BrowserTheory]
     [InlineData(1440, "desktop")]
     [InlineData(480, "mobile")]
     public async Task KeyboardNavigation_IsAccessible(int width, string context)

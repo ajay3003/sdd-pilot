@@ -25,17 +25,19 @@ public sealed class LiveMaintenanceInspectionTest : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture?.DisposeAsync() ?? Task.CompletedTask;
 
-    [Fact]
+    [BrowserFact]
     public async Task Inspect_Maintenance_Live_DOM()
     {
         // Use direct Playwright for frontend-only testing
         var playwright = await Playwright.CreateAsync();
         var browser = await playwright.Chromium.LaunchAsync();
-        var page = await browser.NewPageAsync();
+        var context = await browser.NewContextAsync();
+        await BrowserTestServers.ConnectAsync(context);
+        var page = await context.NewPageAsync();
 
         try
         {
-            await page.GotoAsync("http://localhost:5173/admin/system-settings?section=maintenance",
+            await page.GotoAsync($"{BrowserTestServers.FrontendUrl}/admin/system-settings?section=maintenance",
                 new() { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 30000 });
 
             // Give page time to render

@@ -9,6 +9,7 @@ namespace BirkNext.Web.PlaywrightTests.Tests;
 /// Playwright E2E tests for target environment detection.
 /// Verifies real WASM rendering, detection flow, and draft-only behavior.
 /// </summary>
+[Collection(BrowserServersCollection.Name)]
 public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
 {
     private BirkNextWebApplicationFixture _fixture = null!;
@@ -64,7 +65,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
         await urlInput.WaitForAsync(new LocatorWaitForOptions { Timeout = 15000 });
     }
 
-    [Fact]
+    [BrowserFact]
     public async Task TargetEnvironment_DetectConfiguration_PopulatesDraftSafely()
     {
         var page = await _fixture.Context.NewPageAsync();
@@ -124,7 +125,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [BrowserFact]
     public async Task TargetEnvironment_DetectConfiguration_DoesNotOverwriteConfiguredValues()
     {
         var page = await _fixture.Context.NewPageAsync();
@@ -159,7 +160,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [BrowserFact]
     public async Task TargetEnvironment_UrlChange_InvalidatesDetection()
     {
         var page = await _fixture.Context.NewPageAsync();
@@ -195,7 +196,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [BrowserFact]
     public async Task TargetEnvironment_ResponsiveLayout_NoHorizontalOverflow()
     {
         var viewports = new[] { (1440, 900), (1280, 720), (1024, 768), (860, 900), (800, 900), (480, 900) };
@@ -233,7 +234,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [BrowserFact]
     public async Task TargetEnvironment_KeyboardAccessibility_NavigateDetection()
     {
         var page = await _fixture.Context.NewPageAsync();
@@ -294,7 +295,7 @@ public sealed class TargetEnvironmentDetectionPlaywrightTests : IAsyncLifetime
         }
     }
 
-    [Fact]
+    [BrowserFact]
     public async Task TargetEnvironment_DetectConfiguration_RealBackendEndToEnd()
     {
         var page = await _fixture.Context.NewPageAsync();

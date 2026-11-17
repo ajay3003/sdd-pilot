@@ -230,6 +230,8 @@
 .nav-view { width: 100%; padding: .3rem .45rem; border: 1px solid #475569; border-radius: 6px; background: #0f172a; color: #e2e8f0; font-size: .84rem; }
 .nav-view:focus-visible { outline: 2px solid #93c5fd; outline-offset: 0; }
 .nav-view-help { margin: 0 0 .2rem; color: #94a3b8; font-size: .75rem; line-height: 1.35; }
+.nav-view-help a { color: #93c5fd; text-decoration: underline; }
+.nav-view-help a:hover, .nav-view-help a:focus-visible { color: #bfdbfe; }
 
 /* The open page when it is outside the Workspace View: one quieter row while it is open (no badge; WorkspaceScopeNotice explains). */
 .nav-item-outside ::deep a, .nav-flyout-link.nav-item-outside { color: #8d9bb0; }
