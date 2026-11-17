@@ -134,4 +134,38 @@ public sealed class TechnicalTestingWorkspaceTests
 
         api.Runs.Select(r => r.Href).Should().Equal($"api-quality-review?run={newer:D}&tab=findings", $"api-quality-review?run={older:D}&tab=findings");
     }
+
+    [Fact]
+    public async Task Specialist_reviews_stored_on_the_server_are_shown_for_this_project_only_and_a_frontend_review_opens_its_own_report()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(WorkspaceSnapshots.Projection(WorkspaceSnapshots.Loaded("Imported", "roomly", "Roomly")).Object);
+        var context = new Mock<IFrontendAnalysisContextFactory>();
+        context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Name = "DEV", TargetUrl = "https://dev.example" } });
+        services.AddSingleton(context.Object);
+        var at = new DateTimeOffset(2026, 11, 16, 9, 0, 0, TimeSpan.Zero);
+        BirkNext.TechnicalHistory.StoredTechnicalReviewRun Run(Guid id, string kind, string? project, string outcome, int problems) =>
+            new(id, kind, project, "dev", "DEV", null, null, at, outcome, 10, problems, "summary", new string('a', 64), at);
+        var (fqr, other, fuzz, authz) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var history = new Mock<ITechnicalHistoryApiService>();
+        history.Setup(h => h.ReviewRunsAsync(BirkNext.TechnicalHistory.TechnicalReviewKinds.FrontendQuality, "dev", null, It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<BirkNext.TechnicalHistory.StoredTechnicalReviewRun>?)
+            [Run(fqr, BirkNext.TechnicalHistory.TechnicalReviewKinds.FrontendQuality, "roomly", "ReviewRequired", 2), Run(other, BirkNext.TechnicalHistory.TechnicalReviewKinds.FrontendQuality, "lendo", "Blocked", 5)], (string?)null));
+        history.Setup(h => h.ReviewRunsAsync(BirkNext.TechnicalHistory.TechnicalReviewKinds.SafeFuzzing, "dev", null, It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<BirkNext.TechnicalHistory.StoredTechnicalReviewRun>?)
+            [Run(fuzz, BirkNext.TechnicalHistory.TechnicalReviewKinds.SafeFuzzing, "roomly", "Full", 0)], (string?)null));
+        history.Setup(h => h.ReviewRunsAsync(BirkNext.TechnicalHistory.TechnicalReviewKinds.Authorization, "dev", null, It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<BirkNext.TechnicalHistory.StoredTechnicalReviewRun>?)
+            [Run(authz, BirkNext.TechnicalHistory.TechnicalReviewKinds.Authorization, null, "Unexpected access", 1)], (string?)null));
+        history.Setup(h => h.ApiReviewRunsAsync("dev", null, It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<BirkNext.TechnicalHistory.StoredApiReviewRun>?)
+            [new(Guid.NewGuid(), "lendo", "dev", "DEV", at, at, 1, 1, 0, 0, 0, 0, 0, at)], (string?)null));
+        services.AddSingleton(history.Object);
+
+        var facts = (await new TechnicalTestingWorkspace(services.BuildServiceProvider()).LoadAsync()).Facts;
+
+        var frontend = facts.For(TechnicalArea.Frontend).Runs.Should().ContainSingle("another project's review is not shown").Subject;
+        frontend.Href.Should().Be($"frontend-quality-review?storedRun={fqr:D}");
+        frontend.State.Should().Be(AreaRuntime.ReviewRequired);
+        var api = facts.For(TechnicalArea.Api).Runs;
+        api.Select(r => r.Where).Should().BeEquivalentTo(["Safe fuzzing", "Authorization checks"], "another project's API review run is not shown; a run stored without a project is");
+        api.Single(r => r.Where == "Safe fuzzing").State.Should().Be(AreaRuntime.Passed);
+        api.Single(r => r.Where == "Authorization checks").State.Should().Be(AreaRuntime.Failed);
+    }
 }

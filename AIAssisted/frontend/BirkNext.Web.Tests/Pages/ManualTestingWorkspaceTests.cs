@@ -299,6 +299,30 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
     }
 
     [Fact]
+    public void An_attached_file_says_it_was_not_scanned_for_malware_and_can_be_withdrawn_with_a_reason_that_stays_on_record()
+    {
+        Setup(plans: [Summary()], runs: [RunSummary(ManualRunState.Completed, ManualRunOutcome.Failed)], run: CompletedWithDefect());
+        var fileId = Guid.Parse("01234567-89ab-cdef-0123-456789abcdef");
+        var info = new ManualRunAttachmentInfo(fileId, "error.png", "error.png", "image/png", 2048, new string('a', 64), "dev", DateTimeOffset.UtcNow, "not-scanned", null, null, null);
+        _runs.Setup(x => x.AttachmentsAsync("library", RunId, It.IsAny<CancellationToken>())).ReturnsAsync(([info], (string?)null));
+        string? reason = null;
+        _runs.Setup(x => x.WithdrawAttachmentAsync("library", RunId, "0123456789abcdef0123456789abcdef", It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback((string _, Guid _, string _, string r, CancellationToken _) => reason = r)
+            .ReturnsAsync((string _, Guid _, string _, string r, CancellationToken _) => (info with { WithdrawnAt = DateTimeOffset.UtcNow, WithdrawnBy = "dev", WithdrawReason = r }, (string?)null));
+        var cut = Open<ManualTestingExecute>($"manual-testing/execute?run={RunId}");
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mte-attachment-scan]").TextContent.Should().Be("not scanned for malware", "no scanner ran, so the file is never called clean"));
+        cut.Find("[data-testid=mte-attachment-withdraw]").Click();
+        cut.Find("[data-testid=mte-attachment-withdraw-confirm]").HasAttribute("disabled").Should().BeTrue("a reason is required");
+        cut.Find("[data-testid=mte-attachment-withdraw-reason]").Input("Contains a personal identity number");
+        cut.Find("[data-testid=mte-attachment-withdraw-confirm]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=mte-attachment-withdrawn]").TextContent.Should().Contain("Contains a personal identity number"));
+        reason.Should().Be("Contains a personal identity number");
+        cut.FindAll("[data-testid=mte-attachment-download]").Should().BeEmpty("a withdrawn file has no content to download");
+    }
+
+    [Fact]
     public void The_project_defect_list_shows_open_defects_across_runs_and_closed_ones_on_request()
     {
         Setup(plans: [Summary()], runs: [RunSummary(ManualRunState.Completed, ManualRunOutcome.Failed)]);

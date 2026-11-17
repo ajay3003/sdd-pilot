@@ -5,6 +5,7 @@
 @inject IApiReviewHistoryService History
 @inject IReportExportService ExportService
 @inject IJSRuntime JS
+@inject IServiceProvider Services
 
 @* API Quality Review → Safe fuzzing. The backend decides environment safety, eligibility and every case; this panel chooses a level,
    shows the plan, runs it (polling a bounded background run) and shows outcomes. Never presented as a penetration test. *@
@@ -327,6 +328,7 @@
         _run = run;
         _status = $"Safe fuzzing finished: {ApiFuzzingPresentation.CompletenessLabel(run.Completeness, false)}. {run.CasesExecuted} of {run.CasesPlanned} cases executed, {run.Findings.Count} finding{(run.Findings.Count == 1 ? "" : "s")}.";
         await History.RecordFuzzingAsync(JS, profileId, run);
+        await TechnicalReviewArchive.StoreAsync(Services, key => TechnicalReviewArchive.Fuzzing(key, run));
         await InvokeAsync(StateHasChanged);
     }
 

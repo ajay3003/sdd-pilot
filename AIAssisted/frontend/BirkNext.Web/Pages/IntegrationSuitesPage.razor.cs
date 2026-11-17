@@ -448,6 +448,61 @@ public partial class IntegrationSuitesPage
         if (_suite is not { } suite) return;
         (_run, var error) = await Api.CompositeRunAsync(suite.Id, runId);
         _error = error;
+        _retestPlan = null; _retestStage = null;
+    }
+
+    // ── Stage retest and finding follow-up ──────────────────────────────────────────────────────────────────────────────────────
+
+    private string? _retestStage, _retestMessage;
+    private bool _retestPrereq, _retestAuthorized, _retestConfirm;
+    private CompositeStageRetestPlan? _retestPlan;
+
+    private static bool NeedsRetest(CompositeStageState s) => s is CompositeStageState.Failed or CompositeStageState.TimedOut or CompositeStageState.UnknownOutcome
+        or CompositeStageState.NotObservable or CompositeStageState.Blocked;
+
+    private DateTimeOffset RunStarted(Guid runId) => _suite?.Runs.FirstOrDefault(r => r.RunId == runId)?.StartedAt ?? default;
+
+    private async Task PlanRetestAsync(string stageId, bool includePrerequisites)
+    {
+        if (_suite is not { } suite || _run is not { } run) return;
+        _busy = true; _error = null; _retestMessage = null; _retestAuthorized = false;
+        (_retestPlan, var error) = await Api.RetestPlanAsync(suite.Id, run.RunId, stageId, includePrerequisites, _projectKey);
+        _retestStage = stageId; _retestPrereq = includePrerequisites; _error = error;
+        _busy = false;
+    }
+
+    private async Task RetestAsync()
+    {
+        if (_suite is not { } suite || _run is not { } run || _retestStage is not { } stage || !_retestAuthorized) return;
+        _busy = true; _error = null;
+        var (result, error) = await Api.RetestStageAsync(suite.Id, new CompositeStageRetestRequest
+        {
+            WorkspaceProjectKey = _projectKey, OriginalRunId = run.RunId, StageId = stage, IncludePrerequisites = _retestPrereq,
+            EnvironmentId = _environment?.EnvironmentId ?? "", TargetUrl = _environment?.TargetUrl ?? "", EnvironmentType = _environment?.EnvironmentType ?? "",
+            IsProduction = _environment?.IsProduction ?? false, ProfileId = _environment?.ProfileId, ContextFingerprint = _environment?.ContextFingerprint,
+            ConfirmMutatingCalls = _retestConfirm, Authorized = true,
+        });
+        _retestAuthorized = false; // authorisation is per run
+        if (error is not null) _error = error;
+        else if (result?.RunId is { } retestId)
+        {
+            _retestMessage = $"Retest of {stage} started. The original run is unchanged; open the retest to follow it.";
+            (_suite, _) = await Api.GetAsync(suite.Id);
+            await OpenRunAsync(retestId);
+        }
+        else _error = result?.Message;
+        _busy = false;
+    }
+
+    private async Task FollowUpStageAsync(string stageId)
+    {
+        if (_suite is not { } suite || _run is not { } run || string.IsNullOrWhiteSpace(_projectKey)) { _error = "Select a project first."; return; }
+        if (Services.GetService(typeof(ITechnicalHistoryApiService)) is not ITechnicalHistoryApiService history) return;
+        _busy = true; _error = null;
+        var (finding, error) = await history.TrackStageAsync(new BirkNext.TechnicalHistory.TrackStageFindingRequest(_projectKey, suite.Id, run.RunId, stageId, null));
+        _error = error;
+        if (finding is not null) _retestMessage = $"Following up \"{finding.Title}\" ({BirkNext.TechnicalHistory.TechnicalFindingRules.Label(finding.Status)}). Retest the stage, then mark it verified in Technical Testing → Verify.";
+        _busy = false;
     }
 
     // ── Labels ──────────────────────────────────────────────────────────────────────────────────────────────────────────────

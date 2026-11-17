@@ -100,4 +100,31 @@ public sealed class JourneyRequirementsPanelTests : BunitContext
         rows[1].QuerySelector("[data-testid=pct-integration-no-suite]")!.TextContent.Should().Be("No suite prepared yet");
         rows[0].QuerySelector("[data-testid=pct-integration-journey]")!.GetAttribute("href").Should().Contain("stage=prepare&journey=project.import%3Alendo%3Aloan-flow");
     }
+
+    [Fact]
+    public void Each_link_says_what_it_was_checked_against_and_how_it_relates_to_the_current_specification()
+    {
+        var server = Link("FR-001", JourneyRequirementStatus.Confirmed) with
+        {
+            CheckedAgainst = BirkNext.Specifications.RequirementLinkProvenance.ServerSpecification, CatalogRevision = 2, RequirementTextSha256 = "abc",
+        };
+        var legacy = Link("FR-002", JourneyRequirementStatus.Confirmed);
+        var catalogs = new Mock<ISpecificationCatalogApiService>();
+        catalogs.Setup(c => c.CheckAsync(Project, It.IsAny<IReadOnlyList<BirkNext.Specifications.RequirementReference>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string _, IReadOnlyList<BirkNext.Specifications.RequirementReference> refs, CancellationToken _) => (new BirkNext.Specifications.RequirementReferenceCheckResult(Project, 3, DateTimeOffset.UtcNow,
+                [.. refs.Select(r => r.RequirementId == "FR-001"
+                    ? new BirkNext.Specifications.RequirementReferenceCheck(r.RequirementId, r.SpecificationPath, BirkNext.Specifications.RequirementSourceState.ChangedSinceLinked, "In the current specification, but its wording changed since the link was made.", 3, "new text", "spec.md")
+                    : new BirkNext.Specifications.RequirementReferenceCheck(r.RequirementId, r.SpecificationPath, BirkNext.Specifications.RequirementSourceState.NoServerCatalog, "No server copy.", null, null, null))]), (string?)null));
+        Services.AddSingleton(catalogs.Object);
+        var cut = Open([server, legacy]);
+
+        var items = cut.FindAll("[data-testid=itx-req-item]");
+        items[0].QuerySelector("[data-testid=itx-req-source]")!.GetAttribute("data-state").Should().Be("ChangedSinceLinked");
+        items[0].QuerySelector("[data-testid=itx-req-source]")!.TextContent.Should().Be("Wording changed since it was linked");
+        items[0].QuerySelector("[data-testid=itx-req-provenance]")!.TextContent.Should().Contain("imported specification on the server").And.Contain("revision 2");
+        items[0].QuerySelector("[data-testid=itx-req-source-detail]")!.TextContent.Should().Contain("wording changed");
+        items[1].QuerySelector("[data-testid=itx-req-source]")!.TextContent.Should().Be("No server copy of the specification");
+        items[1].QuerySelector("[data-testid=itx-req-provenance]")!.TextContent.Should().Contain("Recorded before link checks were kept", "a legacy link is never relabelled as verified");
+        catalogs.Verify(c => c.CheckAsync(Project, It.Is<IReadOnlyList<BirkNext.Specifications.RequirementReference>>(r => r.Count == 2 && r[0].LinkedTextSha256 == "abc"), It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

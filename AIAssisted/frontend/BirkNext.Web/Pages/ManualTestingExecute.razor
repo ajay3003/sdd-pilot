@@ -198,6 +198,8 @@
         _evidence = [.. run.Evidence];
         _defects = [.. run.Defects];
         _dirty = false;
+        _withdrawing = null;
+        _ = InvokeAsync(async () => { await LoadFilesAsync(); StateHasChanged(); }); // scan state and withdrawal of attached files
     }
 
     /// <summary>Unsaved results are never lost silently: leaving asks first (Save progress keeps them).</summary>
@@ -472,7 +474,31 @@
                         @if (e.Kind == ManualEvidenceKind.Attachment)
                         {
                             <span>@e.FileName</span>
-                            <button type="button" class="btn btn-secondary btn-sm" data-testid="mte-attachment-download" aria-label="@($"Download {e.FileName}")" @onclick="() => DownloadAttachmentAsync(e)">Download</button>
+                            var info = FileInfoOf(e);
+                            @if (info?.WithdrawnAt is { } withdrawnAt)
+                            {
+                                <span class="mt-chip mt-tone-muted" data-testid="mte-attachment-withdrawn" title="SHA-256 @info.Sha256">withdrawn @withdrawnAt.ToLocalTime().ToString("yyyy-MM-dd") by @info.WithdrawnBy: @info.WithdrawReason</span>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-secondary btn-sm" data-testid="mte-attachment-download" aria-label="@($"Download {e.FileName}")" @onclick="() => DownloadAttachmentAsync(e)">Download</button>
+                                @if (info is not null)
+                                {
+                                    <span class="mt-chip @(info.ScanStatus == "clean" ? "mt-tone-ok" : "mt-tone-muted")" data-testid="mte-attachment-scan" data-scan="@info.ScanStatus"
+                                          title="@(info.ScanStatus == "clean" ? "Scanned for malware: clean" : "BirkNext has no malware scanner here: the file passed the type and content checks only. Open it with the usual care.")">@(info.ScanStatus == "clean" ? "malware scan: clean" : "not scanned for malware")</span>
+                                    @if (_withdrawing == e.Reference)
+                                    {
+                                        <label class="mte-field"><span>Why is the file withdrawn?</span><input value="@_withdrawReason" @oninput="x => _withdrawReason = x.Value?.ToString() ?? string.Empty" maxlength="500" data-testid="mte-attachment-withdraw-reason" /></label>
+                                        <button type="button" class="btn btn-danger btn-sm" disabled="@string.IsNullOrWhiteSpace(_withdrawReason)" @onclick="() => WithdrawAsync(e)" data-testid="mte-attachment-withdraw-confirm">Withdraw file</button>
+                                        <button type="button" class="btn btn-link btn-sm" @onclick="() => { _withdrawing = null; _withdrawReason = string.Empty; }">Cancel</button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="btn btn-link btn-sm" @onclick="() => { _withdrawing = e.Reference; _withdrawReason = string.Empty; }" data-testid="mte-attachment-withdraw"
+                                                aria-label="@($"Withdraw {e.FileName}")">Withdraw</button>
+                                    }
+                                }
+                            }
                             @if (e.AddedAfterCompletion) { <span class="mt-chip mt-tone-muted" data-testid="mte-attachment-followup">added after completion</span> }
                         }
                         else if (e.Kind == ManualEvidenceKind.Link && Uri.TryCreate(e.Reference, UriKind.Absolute, out var u) && (u.Scheme == "https" || u.Scheme == "http"))
@@ -689,6 +715,7 @@
                 var added = updated.Evidence.Where(e => _evidence.All(x => x.Id != e.Id) && run.Evidence.All(x => x.Id != e.Id)).ToList();
                 _run = updated with { Steps = run.Steps };
                 _evidence.AddRange(added);
+                await LoadFilesAsync();
             }
             else Use(updated);
             _attLabel = ""; _attStep = null;
@@ -696,6 +723,29 @@
         }
         catch (IOException) { _attachError = $"\"{file.Name}\" could not be read."; }
         finally { _attaching = false; }
+    }
+
+    // ── Attached files: scan state and withdrawal ───────────────────────────────────────────────────────────────────
+    private Dictionary<string, ManualRunAttachmentInfo> _files = [];
+    private string? _withdrawing;
+    private string _withdrawReason = string.Empty;
+
+    private ManualRunAttachmentInfo? FileInfoOf(ManualRunEvidence e) => _files.GetValueOrDefault(e.Reference);
+
+    private async Task LoadFilesAsync()
+    {
+        _files = [];
+        if (_run is not { } run || _runs is null || _ws?.ProjectKey is not { } key || run.Evidence.All(x => x.Kind != ManualEvidenceKind.Attachment)) return;
+        var (files, _) = await _runs.AttachmentsAsync(key, run.Id);
+        _files = (files ?? []).ToDictionary(f => f.Id.ToString("N"), StringComparer.Ordinal);
+    }
+
+    private async Task WithdrawAsync(ManualRunEvidence e)
+    {
+        if (_run is not { } run || _runs is null || _ws?.ProjectKey is not { } key || string.IsNullOrWhiteSpace(_withdrawReason)) return;
+        var (file, error) = await _runs.WithdrawAttachmentAsync(key, run.Id, e.Reference, _withdrawReason.Trim());
+        if (file is null) { Fail(error ?? "The file was not withdrawn."); return; }
+        _files[e.Reference] = file; _withdrawing = null; _withdrawReason = string.Empty;
     }
 
     private async Task DownloadAttachmentAsync(ManualRunEvidence e)

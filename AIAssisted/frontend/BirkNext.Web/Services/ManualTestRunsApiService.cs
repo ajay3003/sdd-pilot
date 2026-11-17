@@ -31,6 +31,12 @@ public interface IManualTestRunsApiService
     /// <summary>The bytes of an attachment (for a download).</summary>
     Task<(byte[]? Content, string? Error)> AttachmentAsync(string projectKey, Guid id, string attachmentId, CancellationToken ct = default) =>
         Task.FromResult<(byte[]?, string?)>((null, "Attachments are not available in this host."));
+    /// <summary>The run's attached files as stored: name, size, SHA-256, malware scan state and withdrawal (no content).</summary>
+    Task<(List<ManualRunAttachmentInfo>? Files, string? Error)> AttachmentsAsync(string projectKey, Guid id, CancellationToken ct = default) =>
+        Task.FromResult<(List<ManualRunAttachmentInfo>?, string?)>((null, "Attachments are not available in this host."));
+    /// <summary>Withdraws a file at a person's request: its content is removed, its record stays (who, when, why).</summary>
+    Task<(ManualRunAttachmentInfo? File, string? Error)> WithdrawAttachmentAsync(string projectKey, Guid id, string attachmentId, string reason, CancellationToken ct = default) =>
+        Task.FromResult<(ManualRunAttachmentInfo?, string?)>((null, "Attachments are not available in this host."));
 }
 
 public sealed class ManualTestRunsApiService(HttpClient http) : IManualTestRunsApiService
@@ -84,10 +90,18 @@ public sealed class ManualTestRunsApiService(HttpClient http) : IManualTestRunsA
         {
             using var response = await http.GetAsync($"{Base}/{id}/attachments/{Uri.EscapeDataString(attachmentId)}?{P(projectKey)}", ct);
             if (response.IsSuccessStatusCode) return (await response.Content.ReadAsByteArrayAsync(ct), null);
-            return (null, (int)response.StatusCode == 404 ? "The attachment no longer exists." : $"The attachment could not be downloaded (HTTP {(int)response.StatusCode}).");
+            if ((int)response.StatusCode == 410)
+                try { return (null, (await response.Content.ReadFromJsonAsync<JsonElement>(Json, ct)).GetProperty("message").GetString()); } catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { }
+            return (null, (int)response.StatusCode switch { 404 => "The attachment no longer exists.", 410 => "The file was withdrawn.", var c => $"The attachment could not be downloaded (HTTP {c})." });
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException) { return (null, "The attachment could not be downloaded."); }
     }
+
+    public Task<(List<ManualRunAttachmentInfo>?, string?)> AttachmentsAsync(string projectKey, Guid id, CancellationToken ct = default) =>
+        Send<List<ManualRunAttachmentInfo>>(() => http.GetAsync($"{Base}/{id}/attachments?{P(projectKey)}", ct), ct);
+
+    public Task<(ManualRunAttachmentInfo?, string?)> WithdrawAttachmentAsync(string projectKey, Guid id, string attachmentId, string reason, CancellationToken ct = default) =>
+        Send<ManualRunAttachmentInfo>(() => http.PostAsJsonAsync($"{Base}/{id}/attachments/{Uri.EscapeDataString(attachmentId)}/withdraw?{P(projectKey)}", new WithdrawAttachmentRequest(reason), Json, ct), ct);
 
     private static async Task<(T? Value, string? Error)> Send<T>(Func<Task<HttpResponseMessage>> call, CancellationToken ct)
     {

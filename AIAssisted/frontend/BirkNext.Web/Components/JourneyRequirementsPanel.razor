@@ -68,6 +68,8 @@
     private bool _loading = true, _busy;
     private string? _error;
     private string? _loadedFor;
+    /// <summary>How each link relates to the project's server-held specification today (null = could not be checked).</summary>
+    private Dictionary<(string, string), BirkNext.Specifications.RequirementReferenceCheck>? _sources;
 
     private IDeclaredIntegrationJourneyApiService? Api => Services.GetService(typeof(IDeclaredIntegrationJourneyApiService)) as IDeclaredIntegrationJourneyApiService;
 
@@ -81,9 +83,25 @@
             var (links, error) = await api.RequirementLinksAsync(ProjectKey, Journey.JourneyId);
             (_links, _error) = ([.. links ?? []], error);
         }
+        await CheckSourcesAsync();
         _options = RequirementLinkPresentation.Options(await new ManualTestingWorkspace(Services).EvidenceAsync(ProjectName));
         _loading = false;
     }
+
+    private async Task CheckSourcesAsync()
+    {
+        _sources = null;
+        if (_links.Count == 0 || Services.GetService(typeof(ISpecificationCatalogApiService)) is not ISpecificationCatalogApiService catalogs) return;
+        var (result, _) = await catalogs.CheckAsync(ProjectKey, [.. _links.Select(l => new BirkNext.Specifications.RequirementReference(l.RequirementId, l.SpecificationPath, l.RequirementTextSha256))]);
+        if (result is null) return;
+        _sources = [];
+        foreach (var (link, check) in _links.Zip(result.Checks)) _sources[(link.RequirementId, link.SpecificationPath)] = check;
+    }
+
+    private static string SourceTone(BirkNext.Specifications.RequirementSourceState s) => s switch
+    {
+        BirkNext.Specifications.RequirementSourceState.Current => "ok", BirkNext.Specifications.RequirementSourceState.NoServerCatalog => "muted", _ => "warn",
+    };
 
     private IEnumerable<ProjectRequirementOption> Matches()
     {
@@ -103,6 +121,10 @@
         <li data-testid="itx-req-item" data-requirement="@l.RequirementId" data-status="@l.Status">
             <span class="itx-req-text"><strong>@l.Title</strong> <span class="mt-muted mt-small">@l.RequirementId · @l.SpecificationPath</span></span>
             <span class="mt-chip mt-tone-@tone" data-testid="itx-req-status">@StatusLabel(l.Status)</span>
+            @if (_sources?.GetValueOrDefault((l.RequirementId, l.SpecificationPath)) is { } src)
+            {
+                <span class="mt-chip mt-tone-@SourceTone(src.State)" data-testid="itx-req-source" data-state="@src.State" title="@src.Detail">@BirkNext.Specifications.RequirementLinkProvenance.Label(src.State)</span>
+            }
             <span class="mt-muted mt-small">@l.LinkedBy · @l.LinkedAt.ToLocalTime().ToString("yyyy-MM-dd") · journey revision @l.JourneyRevision</span>
             @if (l.Status == JourneyRequirementStatus.Confirmed)
             {
@@ -118,7 +140,11 @@
             }
             <details class="itx-req-history"><summary>History (@l.History.Count)</summary>
                 <ol class="mt-small" data-testid="itx-req-history">@foreach (var h in l.History) { <li>@h.At.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @h.By: @StatusLabel(h.To)@(h.Note is { } n ? $" — {n}" : "")</li> }</ol>
-                <p class="mt-muted mt-small">@l.Trust.</p>
+                <p class="mt-muted mt-small" data-testid="itx-req-provenance">@BirkNext.Specifications.RequirementLinkProvenance.Label(l.CheckedAgainst)@(l.CatalogRevision is { } rev ? $" (specification revision {rev})" : "").</p>
+                @if (_sources?.GetValueOrDefault((l.RequirementId, l.SpecificationPath)) is { State: not BirkNext.Specifications.RequirementSourceState.Current } changed)
+                {
+                    <p class="mt-muted mt-small" data-testid="itx-req-source-detail">@changed.Detail</p>
+                }
             </details>
         </li>
     };
@@ -150,6 +176,7 @@
         if (link is null) { _error = error ?? "The requirement was not linked."; return; }
         _links = [.. _links.Where(x => x.Id != link.Id), link];
         _query = "";
+        await CheckSourcesAsync();
     }
 
     private async Task MoveAsync(JourneyRequirementLink l, JourneyRequirementStatus to)
@@ -163,5 +190,6 @@
         _busy = false;
         if (link is null) { _error = error ?? "The link was not changed."; return; }
         _links = [.. _links.Select(x => x.Id == link.Id ? link : x)];
+        await CheckSourcesAsync();
     }
 }

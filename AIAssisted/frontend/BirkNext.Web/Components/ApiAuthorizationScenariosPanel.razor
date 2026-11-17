@@ -203,6 +203,7 @@
             _report = report; _historical = false;
             _status = report.BlockedReason is { } blocked ? $"Not run: {blocked}" : $"Finished: {report.Observations.Count} identity result(s).";
             await History.RecordAuthorizationAsync(JS, Context.ActiveProfile.Id, report);
+            await TechnicalReviewArchive.StoreAsync(Services, key => TechnicalReviewArchive.Authorization(key, report));
         }
         finally { _busy = false; }
     }

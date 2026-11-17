@@ -54,6 +54,10 @@
             </div>
         }
 
+        @if (_storedRunError is { } storedError)
+        {
+            <div class="wsr-banner wsr-banner-error wsr-banner-standalone" role="alert" data-testid="fqr-stored-run-error"><span aria-hidden="true">⚠</span> @storedError</div>
+        }
         @if (HistoryRuns.Count > 0 && HistoryRuns[0] is { } newestStored)
         {
             @* Stored runs stay reachable without starting a new review: opening one shows it exactly as it completed, labelled historical. *@
@@ -1398,6 +1402,7 @@
         // Optional like the Companion runtime: a host without the history store simply has no History entries.
         _history = ServiceProvider.GetService(typeof(FrontendQualityReviewHistory)) as FrontendQualityReviewHistory;
         if (_history is not null) await _history.LoadAsync(_context.ActiveProfile.Id);
+        if (StoredRunParam is { } storedRun) await OpenStoredRunAsync(storedRun);
 
         await ResolveAuthenticatedCapabilities();
         // Expensive Layer 3 readiness is fetched for the ACTIVE backend engines only and never blocks the first render.
@@ -1760,6 +1765,12 @@
         else
             RuntimeReviews.SaveQualityResult(_report, _context);
         if (_history is not null && _context is not null) await _history.AddAsync(_context.ActiveProfile.Id, completedReport);
+        // Server history (project-scoped, survives a browser change); the browser copy above stays the fallback.
+        if (_context is not null && !orchestration.PreflightBlocked)
+        {
+            var (profileId, profileName) = (_context.ActiveProfile.Id, _context.ActiveProfile.Name);
+            await TechnicalReviewArchive.StoreAsync(ServiceProvider, key => TechnicalReviewArchive.FrontendQuality(key, profileId, profileName, completedReport));
+        }
         ClearFilters();
         ClearIssueFilters();
     }
@@ -1811,6 +1822,9 @@
     private string? _focusId;
 
     [SupplyParameterFromQuery(Name = "tab")] public string? TabParam { get; set; }
+    /// <summary>A review stored on the server (Technical Testing → Verify): opened read-only as a previous run, exactly as it completed.</summary>
+    [SupplyParameterFromQuery(Name = "storedRun")] public Guid? StoredRunParam { get; set; }
+    private string? _storedRunError;
     private FrontendQualityResultTab? _urlTab;
 
     protected override void OnParametersSet()
@@ -1918,6 +1932,22 @@
 
     private IReadOnlyList<FrontendQualityReviewHistoryEntry> HistoryRuns =>
         _context is null || _history is null ? [] : _history.For(_context.ActiveProfile.Id);
+
+    /// <summary>Opens a run stored on the server for the selected project (Technical Testing links here); the browser history is not needed.</summary>
+    private async Task OpenStoredRunAsync(Guid id)
+    {
+        if (ServiceProvider.GetService(typeof(ITechnicalHistoryApiService)) is not ITechnicalHistoryApiService api || _context is null) return;
+        string? projectKey = null;
+        if (ServiceProvider.GetService(typeof(ICurrentWorkspaceProjection)) is ICurrentWorkspaceProjection projection)
+            try { projectKey = (await projection.GetAsync()).ProjectSlug; } catch (InvalidOperationException) { }
+        var (json, error) = await api.ReviewRunReportAsync(id, projectKey);
+        FrontendQualityReviewReport? report = null;
+        if (json is not null)
+            try { report = System.Text.Json.JsonSerializer.Deserialize<FrontendQualityReviewReport>(json, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)); }
+            catch (System.Text.Json.JsonException) { error = "The stored review could not be read."; }
+        if (report is null) { _storedRunError = error ?? "The stored review was not found in this project."; return; }
+        OpenHistoryRun(FrontendQualityReviewHistory.Entry(_context.ActiveProfile.Id, report));
+    }
 
     /// <summary>Shows a stored run exactly as it completed. Nothing is recomputed against current settings.</summary>
     private void OpenHistoryRun(FrontendQualityReviewHistoryEntry entry)

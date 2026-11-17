@@ -480,6 +480,7 @@
                 <section class="its-card" aria-labelledby="its-runs-title" data-testid="its-composite-runs">
                     <h2 id="its-runs-title">Runs and evidence</h2>
                     @if (esuite.Runs.Count == 0) { <p class="its-note">No run yet.</p> }
+                    @if (_retestMessage is { } rm) { <p class="its-note" role="status" data-testid="its-retest-message">@rm</p> }
                     <div class="its-actions">@foreach (var r in esuite.Runs)
                     {
                         <button type="button" class="btn btn-secondary btn-sm" @onclick="() => OpenRunAsync(r.RunId)" data-testid="its-run-open">@Utc(r.StartedAt) · @r.Kind</button>
@@ -488,12 +489,46 @@
                     {
                         <div data-testid="its-run-view" data-verdict="@run.Verdict">
                             <p><span class="its-badge" data-state="@VerdictState(run.Verdict)" data-testid="its-verdict">@Verdict(run.Verdict)</span> @run.VerdictReason</p>
-                            <p class="its-muted">@(run.Kind == CompositeRunKind.FullE2E ? "Full E2E run" : "Subflow test") · suite revision @run.SuiteRevision · @Utc(run.StartedAt) · @run.Initiator ·
+                            <p class="its-muted">@(run.RetestOfRunId is not null ? $"Stage retest of {run.RetestStageId}" : run.Kind == CompositeRunKind.FullE2E ? "Full E2E run" : "Subflow test") · suite revision @run.SuiteRevision · @Utc(run.StartedAt) · @run.Initiator ·
                                 <a href="@($"/execution-results?run={run.RunId:D}")">Execution evidence</a></p>
+                            @if (run.RetestOfRunId is { } of)
+                            {
+                                <p class="its-note" data-testid="its-retest-of">Retests stage <strong>@run.RetestStageId</strong> of the run from @Utc(RunStarted(of)).
+                                    <button type="button" class="btn btn-link btn-sm" @onclick="() => OpenRunAsync(of)" data-testid="its-open-original">Open the original run</button></p>
+                            }
+                            @if (run.Definition is { } def)
+                            {
+                                <details class="its-details" data-testid="its-run-definition" data-sha="@def.DefinitionSha256"><summary>What this run executed (pinned)</summary>
+                                    <ul class="its-list">
+                                        <li>Suite revision @def.SuiteRevision · plan revision @(def.ChainRevision?.ToString() ?? "—")@(def.Journeys.Count > 0 ? $" · journey {string.Join(", ", def.Journeys.Select(j => $"{j.Name} r{j.Revision}"))}" : "")</li>
+                                        <li>Environment @def.EnvironmentId · @def.TargetUrl</li>
+                                        <li>@def.Engine · started by @def.Initiator</li>
+                                        @foreach (var step in def.Steps) { <li data-testid="its-run-definition-step"><strong>@step.StageId</strong> · @step.Operation · test revision r@(step.TestRevision?.ToString() ?? "?")</li> }
+                                    </ul>
+                                </details>
+                                @if (run.ChangedSince.Count == 0) { <p class="its-muted" data-testid="its-run-current">The suite's definition has not changed since this run.</p> }
+                                else
+                                {
+                                    <div class="its-prereq" data-testid="its-run-changed"><strong>Changed since this run</strong> — the result describes the definition above, not today's:
+                                        <ul>@foreach (var c in run.ChangedSince) { <li>@c</li> }</ul></div>
+                                }
+                            }
+                            else
+                            {
+                                <p class="its-muted" data-testid="its-run-legacy">Recorded before BirkNext pinned what a run executed: the exact test revisions are only in the execution evidence, and this run cannot be retested comparably.</p>
+                            }
                             <ol class="its-timeline" data-testid="its-run-timeline">@foreach (var s in run.Stages)
                             {
                                 <li data-testid="its-run-stage" data-stage="@s.StageId" data-state="@s.State"><strong>@s.StageId</strong> <span class="its-badge" data-state="@StageState(s.State)">@s.State</span>
-                                    <span class="its-muted">@s.Detail@(s.Attempts > 1 ? $" · {s.Attempts} sends" : "")</span></li>
+                                    <span class="its-muted">@s.Detail@(s.Attempts > 1 ? $" · {s.Attempts} sends" : "")</span>
+                                    @if (run.Definition is not null && NeedsRetest(s.State))
+                                    {
+                                        <button type="button" class="btn btn-secondary btn-sm" disabled="@_busy" @onclick="() => PlanRetestAsync(s.StageId, false)" data-testid="its-retest-open">Retest stage</button>
+                                        @if (s.State is CompositeStageState.Failed or CompositeStageState.TimedOut)
+                                        {
+                                            <button type="button" class="btn btn-link btn-sm" disabled="@_busy" @onclick="() => FollowUpStageAsync(s.StageId)" data-testid="its-follow-up">Follow up as a finding</button>
+                                        }
+                                    }</li>
                             }</ol>
                             <h3>Correlation</h3>
                             <ul class="its-items">@foreach (var c in run.Correlation)
@@ -502,6 +537,36 @@
                                     @if (c.Value is { Length: > 0 }) { <code data-testid="its-correlation-value">@c.Value</code> }
                                     <span class="its-muted">@c.Evidence</span></li>
                             }</ul>
+                            @if (_retestPlan is { } rp && _retestStage is not null)
+                            {
+                                <div class="its-card" data-testid="its-retest" data-can="@(rp.CanRetest ? "true" : "false")">
+                                    <h3>Retest stage @rp.StageId</h3>
+                                    <p>@rp.Explanation</p>
+                                    @foreach (var pr in rp.Problems) { <p class="its-prereq" data-testid="its-retest-problem">@pr</p> }
+                                    @if (rp.PrerequisiteStages.Count > 0)
+                                    {
+                                        <label class="its-check"><input type="checkbox" checked="@_retestPrereq" @onchange="e => PlanRetestAsync(rp.StageId, e.Value is true)" data-testid="its-retest-prerequisites" />
+                                            Run @string.Join(", ", rp.PrerequisiteStages) first in the same retest</label>
+                                    }
+                                    @if (rp.CanRetest)
+                                    {
+                                        <p class="its-muted">Runs in the original environment with the original test revisions. The original run and its evidence are not changed.</p>
+                                        <label class="its-check"><input type="checkbox" @bind="_retestConfirm" data-testid="its-retest-confirm" /> I confirm any data-changing operations of these steps in this environment</label>
+                                        <label class="its-check"><input type="checkbox" @bind="_retestAuthorized" data-testid="its-retest-authorize" /> I authorise this retest against @(_environment?.TargetUrl)</label>
+                                        <button type="button" class="btn btn-primary" disabled="@(_busy || !_retestAuthorized)" @onclick="RetestAsync" data-testid="its-retest-run">Run retest</button>
+                                    }
+                                    <button type="button" class="btn btn-link btn-sm" @onclick="() => { _retestPlan = null; _retestStage = null; }" data-testid="its-retest-cancel">Cancel</button>
+                                </div>
+                            }
+                            @if (run.Retests.Count > 0)
+                            {
+                                <h3>Retests of this run</h3>
+                                <ul class="its-items" data-testid="its-retests">@foreach (var rt in run.Retests)
+                                {
+                                    <li data-testid="its-retest-row" data-verdict="@rt.Verdict"><button type="button" class="btn btn-link btn-sm" @onclick="() => OpenRunAsync(rt.RunId)">@Utc(rt.StartedAt) · stage @rt.StageId</button>
+                                        <span class="its-badge" data-state="@VerdictState(rt.Verdict)">@Verdict(rt.Verdict)</span> <span class="its-muted">@rt.Initiator</span></li>
+                                }</ul>
+                            }
                             <details class="its-details"><summary>Exact source versions</summary>
                                 <ul class="its-list">@foreach (var s in run.Sources) { <li>@s.ProjectKey · @s.ArchiveFileName · <code>@Short(s.ArchiveSha256)</code> · @string.Join(", ", s.Stages)</li> }</ul></details>
                         </div>

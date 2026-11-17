@@ -138,6 +138,7 @@
     <Compile Include="../../shared/TestPlanSuggestionContracts.cs" Link="Models/TestPlanSuggestionContracts.cs" />
     <Compile Include="../../shared/ManualTestRunContracts.cs" Link="Models/ManualTestRunContracts.cs" />
     <Compile Include="../../shared/TechnicalFindingContracts.cs" Link="Models/TechnicalFindingContracts.cs" />
+    <Compile Include="../../shared/SpecificationCatalogContracts.cs" Link="Models/SpecificationCatalogContracts.cs" />
     <Compile Include="../../shared/AdoTestPlanExportContracts.cs" Link="Models/AdoTestPlanExportContracts.cs" />
     <Compile Include="../../shared/TestScenarioDiscoveryContracts.cs" Link="Models/TestScenarioDiscoveryContracts.cs" />
     <Compile Include="../../shared/ContractTestDataContracts.cs" Link="Models/ContractTestDataContracts.cs" />

@@ -35,6 +35,12 @@ public interface IIntegrationSuiteApiService
         Task.FromResult<(CompositeRunResult?, string?)>((null, "Not available."));
     Task<(CompositeRunView? Run, string? Error)> CompositeRunAsync(Guid suiteId, Guid runId, CancellationToken ct = default) =>
         Task.FromResult<(CompositeRunView?, string?)>((null, "Not available."));
+    /// <summary>What retesting one stage of a composite run takes — nothing is sent.</summary>
+    Task<(CompositeStageRetestPlan? Plan, string? Error)> RetestPlanAsync(Guid suiteId, Guid runId, string stageId, bool includePrerequisites, string? projectKey, CancellationToken ct = default) =>
+        Task.FromResult<(CompositeStageRetestPlan?, string?)>((null, "Not available."));
+    /// <summary>Retests one stage of a composite run as a new run of the original pinned definition.</summary>
+    Task<(CompositeRunResult? Result, string? Error)> RetestStageAsync(Guid suiteId, CompositeStageRetestRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(CompositeRunResult?, string?)>((null, "Not available."));
 }
 
 public sealed class IntegrationSuiteApiService(HttpClient http) : IIntegrationSuiteApiService
@@ -155,6 +161,25 @@ public sealed class IntegrationSuiteApiService(HttpClient http) : IIntegrationSu
 
     public Task<(CompositeRunView? Run, string? Error)> CompositeRunAsync(Guid suiteId, Guid runId, CancellationToken ct = default) =>
         GetAsync<CompositeRunView>($"{Base}/{suiteId:D}/composite-runs/{runId:D}", ct);
+
+    public Task<(CompositeStageRetestPlan? Plan, string? Error)> RetestPlanAsync(Guid suiteId, Guid runId, string stageId, bool includePrerequisites, string? projectKey, CancellationToken ct = default) =>
+        GetAsync<CompositeStageRetestPlan>($"{Base}/{suiteId:D}/composite-runs/{runId:D}/retest-plan?stageId={Uri.EscapeDataString(stageId)}&includePrerequisites={(includePrerequisites ? "true" : "false")}&projectKey={Uri.EscapeDataString(projectKey ?? "")}", ct);
+
+    public async Task<(CompositeRunResult? Result, string? Error)> RetestStageAsync(Guid suiteId, CompositeStageRetestRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.PostAsJsonAsync($"{Base}/{suiteId:D}/composite-runs/retest", request, Json, ct);
+            if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized) return (null, "You do not have permission to execute (active execution permission).");
+            if (response.StatusCode is HttpStatusCode.OK or HttpStatusCode.BadRequest or HttpStatusCode.NotFound)
+            {
+                try { if (await response.Content.ReadFromJsonAsync<CompositeRunResult>(Json, ct) is { } r) return (r, null); }
+                catch (JsonException) { }
+            }
+            return (null, await Message(response, ct));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return (null, BackendRequestClassifier.FromException(Area, ex).UserMessage); }
+    }
 
     private async Task<(T? Value, string? Error)> GetAsync<T>(string url, CancellationToken ct) where T : class
     {

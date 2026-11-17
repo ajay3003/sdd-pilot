@@ -227,4 +227,102 @@ public sealed class IntegrationSuitesCompositePageTests : BunitContext
         cut.Find("[data-testid=its-bufdata]").TextContent.Should().StartWith("SPECIFIED_BUT_NOT_RUNTIME_VERIFIED");
         cut.Find("[data-testid=its-coverage-row]").GetAttribute("data-level").Should().Be("Configured");
     }
+
+    // ── Pinned definition, stage retest and follow-up ───────────────────────────────────────────────────────────────────────
+
+    private static readonly Guid FailedRun = Guid.Parse("eeeeeeee-3333-0000-0000-000000000002");
+    private static readonly Guid RetestRun = Guid.Parse("eeeeeeee-3333-0000-0000-000000000003");
+
+    private static CompositeExecutionDefinition Pinned() => new()
+    {
+        ProjectKey = "import:m2lb", SuiteId = SuiteId, SuiteKey = "skolenaervaer:composite:m2lb:x", SuiteRevision = 1, ChainRevision = 3, Stages = ["mu", "mm"],
+        Steps = [new("s1-mu", "mu", "Executor", Guid.NewGuid(), 2, "mu@v1", "POST /mu/messages", null), new("s2-mm", "mm", "Observer", Guid.NewGuid(), 4, "mm@v1", "GET /mm/messages/{messageId}", "s1-mu")],
+        EnvironmentId = "env-qa", TargetUrl = "https://qa.example.test", Engine = "BirkNext contract-test chain runner 1.0.0.0", Initiator = "Tester", DefinitionSha256 = new string('d', 64),
+    };
+
+    private IRenderedComponent<IntegrationSuitesPage> OpenFailedRun(CompositeRunView view, Mock<BirkNext.Web.Services.ITechnicalHistoryApiService>? history = null)
+    {
+        _api.Setup(a => a.GetAsync(SuiteId, It.IsAny<CancellationToken>())).ReturnsAsync((Suite("Approved") with
+            { Runs = [new(FailedRun, "composite-e2e", DateTimeOffset.UnixEpoch, "Tester", "1 failed", [])] }, null));
+        _api.Setup(a => a.CompositeRunAsync(SuiteId, FailedRun, It.IsAny<CancellationToken>())).ReturnsAsync((view, null));
+        if (history is not null) Services.AddSingleton(history.Object);
+        var cut = At($"area=execute&suite={SuiteId:D}");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=its-run-open]"));
+        cut.Find("[data-testid=its-run-open]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=its-run-view]"));
+        return cut;
+    }
+
+    private static CompositeRunView FailedView(CompositeExecutionDefinition? definition, params string[] changedSince) => new()
+    {
+        RunId = FailedRun, SuiteId = SuiteId, SuiteRevision = 1, Kind = CompositeRunKind.FullE2E, Verdict = CompositeRunVerdict.Incomplete, VerdictReason = "mm was not observed.",
+        Stages = [new("mu", "mu", CompositeStageState.Succeeded, [], 1, "Executor: 201."), new("mm", "mm", CompositeStageState.TimedOut, [], 5, "Not observed within 5 reads.")],
+        Definition = definition, ChangedSince = [.. changedSince],
+    };
+
+    [Fact]
+    public void A_run_shows_the_definition_it_executed_and_what_changed_since()
+    {
+        var cut = OpenFailedRun(FailedView(Pinned(), "MM observer (s2-mm) was revised (r4 → r5)."));
+        cut.Find("[data-testid=its-run-definition]").GetAttribute("data-sha").Should().Be(new string('d', 64));
+        cut.FindAll("[data-testid=its-run-definition-step]").Select(s => s.TextContent).Should().Equal("mu · POST /mu/messages · test revision r2", "mm · GET /mm/messages/{messageId} · test revision r4");
+        cut.Find("[data-testid=its-run-changed]").TextContent.Should().Contain("was revised (r4 → r5)").And.Contain("not today's");
+        cut.FindAll("[data-testid=its-run-legacy]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_legacy_run_says_so_and_offers_no_retest()
+    {
+        var cut = OpenFailedRun(FailedView(null));
+        cut.Find("[data-testid=its-run-legacy]").TextContent.Should().Contain("before BirkNext pinned");
+        cut.FindAll("[data-testid=its-retest-open]").Should().BeEmpty("a legacy run cannot be retested comparably");
+    }
+
+    [Fact]
+    public void A_failed_stage_is_retested_with_its_prerequisites_after_explicit_authorisation_and_the_original_is_kept()
+    {
+        CompositeStageRetestRequest? sent = null;
+        _api.Setup(a => a.RetestPlanAsync(SuiteId, FailedRun, "mm", false, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new CompositeStageRetestPlan(false, "mm", ["mu"], ["s1-mu", "s2-mm"], ["This stage takes values from mu. Retest it together with those stages: values captured in the original run are not reused, because they may no longer be valid."], "Needs mu first."), null));
+        _api.Setup(a => a.RetestPlanAsync(SuiteId, FailedRun, "mm", true, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new CompositeStageRetestPlan(true, "mm", ["mu"], ["s1-mu", "s2-mm"], [], "Runs mu and then mm (2 step(s)) with the original run's test revisions, in the original environment."), null));
+        _api.Setup(a => a.RetestStageAsync(SuiteId, It.IsAny<CompositeStageRetestRequest>(), It.IsAny<CancellationToken>()))
+            .Callback((Guid _, CompositeStageRetestRequest r, CancellationToken _) => sent = r)
+            .ReturnsAsync((new CompositeRunResult(RetestRun, "Running", "Started.", new(true, CompositeRunKind.SubflowTest, ["mu", "mm"], [], [], [])), null));
+        _api.Setup(a => a.CompositeRunAsync(SuiteId, RetestRun, It.IsAny<CancellationToken>())).ReturnsAsync((FailedView(Pinned()) with
+            { RunId = RetestRun, RetestOfRunId = FailedRun, RetestStageId = "mm", Verdict = CompositeRunVerdict.SubflowVerified }, null));
+        var cut = OpenFailedRun(FailedView(Pinned()));
+
+        cut.FindAll("[data-testid=its-retest-open]").Should().ContainSingle("only the failed stage offers a retest");
+        cut.Find("[data-testid=its-retest-open]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=its-retest]").GetAttribute("data-can").Should().Be("false"));
+        cut.Find("[data-testid=its-retest-problem]").TextContent.Should().Contain("not reused");
+        cut.FindAll("[data-testid=its-retest-run]").Should().BeEmpty();
+
+        cut.Find("[data-testid=its-retest-prerequisites]").Change(true);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=its-retest]").GetAttribute("data-can").Should().Be("true"));
+        cut.Find("[data-testid=its-retest-run]").HasAttribute("disabled").Should().BeTrue("nothing is sent before the tester authorises this retest");
+        cut.Find("[data-testid=its-retest-authorize]").Change(true);
+        cut.Find("[data-testid=its-retest-confirm]").Change(true);
+        cut.Find("[data-testid=its-retest-run]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=its-retest-of]").TextContent.Should().Contain("Retests stage mm"));
+        sent.Should().Match<CompositeStageRetestRequest>(r => r.OriginalRunId == FailedRun && r.StageId == "mm" && r.IncludePrerequisites && r.Authorized && r.ConfirmMutatingCalls);
+        cut.Find("[data-testid=its-retest-message]").TextContent.Should().Contain("original run is unchanged");
+    }
+
+    [Fact]
+    public void A_failed_stage_is_followed_up_as_a_finding_of_this_project()
+    {
+        var history = new Mock<BirkNext.Web.Services.ITechnicalHistoryApiService>();
+        BirkNext.TechnicalHistory.TrackStageFindingRequest? tracked = null;
+        history.Setup(h => h.TrackStageAsync(It.IsAny<BirkNext.TechnicalHistory.TrackStageFindingRequest>(), It.IsAny<CancellationToken>()))
+            .Callback((BirkNext.TechnicalHistory.TrackStageFindingRequest r, CancellationToken _) => tracked = r)
+            .ReturnsAsync((new BirkNext.TechnicalHistory.TechnicalFinding { Title = "mm: Not observed within 5 reads.", Status = BirkNext.TechnicalHistory.TechnicalFindingStatus.New }, null));
+        var cut = OpenFailedRun(FailedView(Pinned()), history);
+        cut.Find("[data-testid=its-follow-up]").Click();
+        // No project is selected in this test host: the page refuses instead of creating a project-less finding.
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Select a project first."));
+        tracked.Should().BeNull();
+    }
 }

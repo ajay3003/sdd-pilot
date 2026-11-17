@@ -3,6 +3,7 @@ using BirkNext.Applicability;
 using BirkNext.CriticalE2E;
 using BirkNext.PerformanceTests;
 using BirkNext.Integrations;
+using BirkNext.TechnicalHistory;
 using BirkNext.Technology;
 using BirkNext.Web.Models;
 using Microsoft.JSInterop;
@@ -54,8 +55,8 @@ public sealed class TechnicalTestingWorkspace(IServiceProvider services)
 
         var areas = new List<AreaFacts>
         {
-            await FrontendAsync(profile, For(TechnicalArea.Frontend), targetGaps),
-            await ApiAsync(profile, For(TechnicalArea.Api), targetGaps, snapshotId, ct),
+            await FrontendAsync(key, profile, For(TechnicalArea.Frontend), targetGaps, ct),
+            await ApiAsync(key, profile, For(TechnicalArea.Api), targetGaps, snapshotId, ct),
             await IntegrationAsync(key, profile, For(TechnicalArea.Integration), ct),
             await PerformanceAsync(profile, For(TechnicalArea.Performance), targetGaps, snapshotId, ct),
             await CriticalE2EAsync(profile, For(TechnicalArea.CriticalE2E), ct),
@@ -100,15 +101,55 @@ public sealed class TechnicalTestingWorkspace(IServiceProvider services)
     private static List<StaticFact> FromApplicability(ReviewApplicability? a) =>
         a is null ? [] : [.. a.Evidence.Take(3).Select(e => new StaticFact(e, "technology-coverage"))];
 
-    // Frontend Quality Review: runtime only, stored per Target Environment in this browser. Browser discovery evidence is also local.
-    private async Task<AreaFacts> FrontendAsync(FrontendAnalysisProfile? profile, ReviewApplicability? a, List<string> targetGaps)
+    /// <summary>Specialist reviews stored on the server for this environment that belong to this project (or were stored without one, before
+    /// projects were recorded). Null when the server could not be read.</summary>
+    private async Task<List<StoredTechnicalReviewRun>?> StoredReviewsAsync(string kind, string projectKey, string environmentId, CancellationToken ct)
+    {
+        if (Get<ITechnicalHistoryApiService>() is not { } api) return null;
+        var (runs, error) = await api.ReviewRunsAsync(kind, environmentId, null, ct);
+        return error is not null || runs is null ? null : [.. runs.Where(r => r.ProjectKey is null || r.ProjectKey == projectKey)];
+    }
+
+    public static RuntimeResult Stored(StoredTechnicalReviewRun r, string? environment)
+    {
+        var (state, verdict) = r.Kind switch
+        {
+            TechnicalReviewKinds.FrontendQuality => r.Outcome switch
+            {
+                nameof(FrontendQualityReleaseDisposition.Blocked) => (AreaRuntime.Failed, "Blocking issues found"),
+                nameof(FrontendQualityReleaseDisposition.ReviewRequired) => (AreaRuntime.ReviewRequired, "Review required"),
+                nameof(FrontendQualityReleaseDisposition.NoAutomatedBlockDetected) => (AreaRuntime.Passed, "No blocking issue detected"),
+                _ => (AreaRuntime.Incomplete, "Incomplete"),
+            },
+            TechnicalReviewKinds.SafeFuzzing => r.Outcome switch
+            {
+                "Full" when r.Problems == 0 => (AreaRuntime.Passed, "No fuzzing finding"),
+                "Full" or "Partial" when r.Problems > 0 => (AreaRuntime.ReviewRequired, $"{r.Problems} fuzzing finding(s)"),
+                _ => (AreaRuntime.Incomplete, r.Outcome == "Partial" ? "Partially executed" : "Not completed"),
+            },
+            _ => r.Outcome switch
+            {
+                "Not run" => (AreaRuntime.Incomplete, "Not run"),
+                _ when r.Problems > 0 => (AreaRuntime.Failed, $"{r.Problems} unexpected access result(s)"),
+                _ => (AreaRuntime.Passed, "Access as expected"),
+            },
+        };
+        var href = r.Kind == TechnicalReviewKinds.FrontendQuality ? $"frontend-quality-review?storedRun={r.Id:D}" : "api-quality-review";
+        return new(state, verdict, r.GeneratedAt, environment ?? r.EnvironmentName, null, TechnicalReviewKinds.Label(r.Kind), href,
+            Detail: r.Kind == TechnicalReviewKinds.FrontendQuality ? $"{r.Summary} · stored on the server" : $"{r.Summary} · stored on the server; the report opens from the API review's security panel history");
+    }
+
+    // Frontend Quality Review: runs stored on the server for this project first (each opens its own report); the browser copy is the fallback.
+    private async Task<AreaFacts> FrontendAsync(string projectKey, FrontendAnalysisProfile? profile, ReviewApplicability? a, List<string> targetGaps, CancellationToken ct)
     {
         var facts = FromApplicability(a);
         var runs = new List<RuntimeResult>();
         string? error = null;
         if (profile is not null)
         {
-            if (Get<FrontendQualityReviewHistory>() is { } history)
+            if (await StoredReviewsAsync(TechnicalReviewKinds.FrontendQuality, projectKey, profile.Id, ct) is { Count: > 0 } stored)
+                runs.AddRange(stored.Select(r => Stored(r, profile.Name)));
+            else if (Get<FrontendQualityReviewHistory>() is { } history)
                 try
                 {
                     await history.LoadAsync(profile.Id);
@@ -144,14 +185,15 @@ public sealed class TechnicalTestingWorkspace(IServiceProvider services)
     }
 
     // API Quality Review: runtime results per Target Environment in this browser; contracts (static) in the backend contract store.
-    private async Task<AreaFacts> ApiAsync(FrontendAnalysisProfile? profile, ReviewApplicability? a, List<string> targetGaps, Guid? snapshotId, CancellationToken ct)
+    private async Task<AreaFacts> ApiAsync(string projectKey, FrontendAnalysisProfile? profile, ReviewApplicability? a, List<string> targetGaps, Guid? snapshotId, CancellationToken ct)
     {
         var facts = FromApplicability(a);
         var runs = new List<RuntimeResult>();
         string? error = null;
         // Server-side history first: every stored run opens its own report. The browser copy is the fallback (older hosts, backend unreachable).
+        // Only this project's runs (and runs stored before projects were recorded) count here.
         if (profile is not null && Get<ITechnicalHistoryApiService>() is { } stored
-            && (await stored.ApiReviewRunsAsync(profile.Id, null, ct)).Runs is { Count: > 0 } storedRuns)
+            && (await stored.ApiReviewRunsAsync(profile.Id, null, ct)).Runs?.Where(r => r.ProjectKey is null || r.ProjectKey == projectKey).ToList() is { Count: > 0 } storedRuns)
             runs.AddRange(storedRuns.Select(r => Api(new ApiReviewRunSummary(r.GeneratedAt, r.EnvironmentName, r.Targets, r.Completed, r.Blocked, r.High, r.Medium, r.Low, r.Info))
                 with { Href = $"api-quality-review?run={r.Id:D}&tab=findings" }));
         else if (profile is not null && Get<IApiReviewHistoryService>() is { } history && Get<IJSRuntime>() is { } js)
@@ -162,6 +204,11 @@ public sealed class TechnicalTestingWorkspace(IServiceProvider services)
                 runs.AddRange(history.For(profile.Id).Runs.OrderByDescending(r => r.GeneratedAt).Select((r, i) => i == 0 ? Api(r) : Api(r) with { Href = "", Detail = Api(r).Detail + " · summary only; the full report is kept for the latest run" }));
             }
             catch (Exception e) when (e is not OperationCanceledException) { error = "Previous API Quality Review runs could not be read."; }
+        // Safe fuzzing and authorization checks stored on the server (previously browser-only).
+        if (profile is not null)
+            foreach (var kind in new[] { TechnicalReviewKinds.SafeFuzzing, TechnicalReviewKinds.Authorization })
+                if (await StoredReviewsAsync(kind, projectKey, profile.Id, ct) is { Count: > 0 } specialist)
+                    runs.AddRange(specialist.Select(r => Stored(r, profile.Name)));
         if (Get<IContractTestingApiService>() is { } contracts)
             try
             {
