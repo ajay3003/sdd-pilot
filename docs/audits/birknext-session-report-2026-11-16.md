@@ -50,3 +50,18 @@ Final run on the task 5 code, which includes every earlier task. Each task's own
 - **Playwright suite.** Its fixture-based tests start servers on 5000/5173 and were not run. The real-project category needs an external M2LB archive that isn't configured.
 - **No live Azure DevOps import** of the new Description column or remembered IDs.
 - **Attachments.** There is no malware scanning or retention policy.
+
+## Addendum: task 6, technical evidence integrity (2026-11-17)
+
+Details: `birknext-technical-evidence-integrity-2026-11-16.md`. Commits `af0ae194`, `1105b1ec`, `52e93a32` and the documentation commit.
+
+Status of the open items above:
+
+- **Server-side specification reading: resolved.** A revisioned catalog is captured at Project Import; new requirement links are checked server-side and refused when unknown. Older links are labelled "no server copy of the specification", never relabelled.
+- **Composite runs: resolved.** Runs store an immutable definition and pin test revisions; a single stage can be retested together with its prerequisites, as a new linked run.
+- **Browser-only history: resolved** for Frontend Quality Review, fuzzing and authorization runs (stored server-side, scoped to the project).
+- **Attachments: partly resolved.** Content checks, safe names, strict download headers and withdraw-with-reason are in. There is still no malware scanner, and files are labelled "not scanned" honestly.
+- **Playwright suite: runs isolated now** (5097/5197, disposable database, local session connected). It found one real regression, sidebar hint contrast, now fixed. 13 and 42 tests are stale against the current UI and still fail. The real-project category is still skipped without the M2LB archive.
+- **Still open:** suite execution against a real target, a live Azure DevOps import, and a time-based retention policy.
+
+Verification on the final code: frontend 9 212 passed; backend 6 925 passed (19 environment skips); Release publish clean; 22 browser acceptance scripts all passed, t6 at 34/34.
