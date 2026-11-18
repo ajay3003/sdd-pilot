@@ -478,7 +478,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
 
                 case "columns":
                     if (token.Kind == MarkdownTokenKind.TableRow &&
-                        !IsColumnHeaderRow(token.TableCells!))
+                        !IsColumnHeaderRow(token.TableCells!, withinTable: true))
                     {
                         var source = ProjectionProvenance.Source(documentFingerprint, token.LineIndex + 1, token.LineIndex + 1, "DataColumn", token.RawLine);
                         var col = ParseColumnRow(token.TableCells!, source);
@@ -844,11 +844,16 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         }
     }
 
-    private static bool IsColumnHeaderRow(IReadOnlyList<string> cells)
+    /// <summary>
+    /// A column-table header. To find where a table starts, a first cell such as "Name" or "Field" is enough. Inside a table that rule would
+    /// also drop data rows for columns literally called name, field, column or property, so a repeated header there must look like one:
+    /// a name heading together with a type or description heading.
+    /// </summary>
+    private static bool IsColumnHeaderRow(IReadOnlyList<string> cells, bool withinTable = false)
     {
         if (cells.Count == 0) return false;
         var first = cells[0].Trim().ToLowerInvariant();
-        if (first is "name" or "column" or "field" or "column name" or "field name" or "property")
+        if (!withinTable && first is "name" or "column" or "field" or "column name" or "field name" or "property")
             return true;
 
         var cellsLower = cells.Select(c => c.Trim().ToLowerInvariant()).ToList();

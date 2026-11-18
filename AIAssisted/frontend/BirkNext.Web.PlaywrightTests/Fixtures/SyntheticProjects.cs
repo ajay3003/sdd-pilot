@@ -52,8 +52,9 @@ public static class SyntheticProjects
                 - [x] T001 [US1] Register loan endpoint (FR-001)
                 - [ ] T002 [US1] Overdue loan list (FR-002)
                 """);
-            // A data model whose Data Model Quality findings are known from its rules: five columns have no type, "email" is sensitive without a
-            // classification and "member_id" looks like a foreign key with no relationship — seven warnings.
+            // A data model whose Data Model Quality findings are known from its rules (pinned by DataModelSyntheticFindingsTests): five columns
+            // have no type, "email", "phone" and "card_number" are sensitive without a classification and "member_id" looks like a foreign key
+            // with no relationship — nine warnings.
             if (withDataModel) Add("specs/001-library-loans/data-model.md", """
                 # Data Model: Library loans
 
@@ -90,6 +91,14 @@ public static class SyntheticProjects
         await page.GotoAsync($"{frontend}/project-import?import=source", new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 60000 });
         var chooser = page.GetByTestId("pi-choose-file");
         await chooser.WaitForAsync(new() { State = WaitForSelectorState.Attached, Timeout = 120000 });
+        // With an application already current (e.g. the one the active Target Environment is bound to), the page asks what this ZIP is: the
+        // test's project is another application, never extra evidence for someone else's. The workspaces then follow it (2026-11-18).
+        var newApplication = page.GetByTestId("pi-intent-new");
+        if (await newApplication.CountAsync() > 0)
+        {
+            await newApplication.CheckAsync();
+            await Assertions.Expect(page.GetByTestId("pi-choose-target")).ToHaveAttributeAsync("data-target", "NewApplication");
+        }
         await chooser.SetInputFilesAsync(new FilePayload { Name = $"{name}.zip", MimeType = "application/zip", Buffer = archive });
         await page.GetByTestId("pi-preview").WaitForAsync(new() { Timeout = 120000 });
         var importAgain = page.GetByTestId("pi-duplicate-import-again");
@@ -102,12 +111,18 @@ public static class SyntheticProjects
             throw new InvalidOperationException($"Synthetic project {name} was not imported: {await result.InnerTextAsync()}");
 
         await page.GotoAsync($"{frontend}/project-import", new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 60000 });
+        // A package imported as another application becomes its current import at once (so it is not in "previously imported"); a package
+        // added to the current application is shown from history. Either way the project must end up current and survive a reload.
         var use = page.Locator($"[data-testid=pi-previous-use][aria-label=\"Show {name}'s documents\"]");
-        await use.WaitForAsync(new() { Timeout = 120000 });
-        await use.ClickAsync();
+        var current = page.Locator("[data-testid=pi-current-name]", new() { HasTextString = name });
+        await use.Or(current).First.WaitForAsync(new() { Timeout = 120000 });
+        if (await current.CountAsync() == 0) await use.ClickAsync();
         await Assertions.Expect(page.GetByTestId("pi-current-name")).ToHaveTextAsync(name, new() { Timeout = 60000 });
 
         await page.ReloadAsync(new() { WaitUntil = WaitUntilState.DOMContentLoaded });
         await Assertions.Expect(page.GetByTestId("pi-current-name")).ToHaveTextAsync(name, new() { Timeout = 120000 });
+        // The application the workspaces work on is this project (not only the current import of another application).
+        var application = page.GetByTestId("pi-application-name");
+        if (await application.CountAsync() > 0) await Assertions.Expect(application).ToHaveTextAsync(name);
     }
 }

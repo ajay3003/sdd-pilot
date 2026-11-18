@@ -1,0 +1,1084 @@
+{
+ "generated": "2026-11-18",
+ "source": "task 6 TRX (pw2-Verify.trx, pw2-VerifyPre.trx) vs final recovery run TRX (pw-v6.trx, pw-p6.trx)",
+ "classes": {
+  "A": "product defect",
+  "B": "outdated interaction",
+  "C": "replaced behaviour",
+  "D": "environment/fixture",
+  "E": "isolation",
+  "F": "timing",
+  "G": "unresolved"
+ },
+ "originalFailures": {
+  "Verify": 13,
+  "VerifyPre": 42
+ },
+ "executions": [
+  {
+   "variant": "Verify",
+   "class": "ActiveEventTestingBrowserAcceptanceTests",
+   "test": "ProviderSelection_BlockedReadiness_AuthNotConfigured_History_ResponsiveAxeAndKeyboard",
+   "originalOutcome": "NotExecuted",
+   "originalMessage": "Browser acceptance not run (environment prerequisite): set BIRKNEXT_ACTIVE_EVENT_BACKEND_URL and BIRKNEXT_ACTIVE_EVENT_FRONTEND_URL to an isolated, already started BirkNext.",
+   "classification": [
+    "D"
+   ],
+   "cause": "Environment prerequisite not configured (dedicated acceptance instance / external dataset); reported as not run, never as passed.",
+   "change": "None (honest skip, unchanged).",
+   "productDefect": null,
+   "currentOutcome": "NotExecuted",
+   "currentMessage": "Browser acceptance not run (environment prerequisite): set BIRKNEXT_ACTIVE_EVENT_BACKEND_URL and BIRKNEXT_ACTIVE_EVENT_FRONTEND_URL to an isolated, already started BirkNext."
+  },
+  {
+   "variant": "Verify",
+   "class": "EndpointDiscoveryUITests",
+   "test": "ApplyEndpointButton_ForDetectedRest_IsClickable",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true })",
+   "classification": [
+    "C",
+    "E"
+   ],
+   "cause": "Expected the target check to list discovered endpoints/integrations with Apply buttons (retired on purpose: endpoints are owned by Endpoint Discovery) and pointed the check at the real m2lbdev host.",
+   "change": "Six successor tests (TargetCheck_*, ApplyDetectedType_*, OpenEndpointDiscovery_*, StaleDetection_*) answer the check synthetically.",
+   "productDefect": "Environment chosen while Target Environments was still loading was replaced by the active one (FrontendAnalysisSettings init).",
+   "currentOutcome": "replaced",
+   "successors": {
+    "ApplyDetectedType_ChangesOnlyTheDraft_UntilSaved": "Passed",
+    "TargetCheck_ShowsDetectedTargetFacts_AndProposesNoEndpointsAsConfiguration": "Passed",
+    "StaleDetection_RequiresARecheck_BeforeItCountsAgain": "Passed",
+    "OpenEndpointDiscovery_FromATargetWithoutSignIn": "Passed",
+    "TargetCheck_DoesNotChangeTheSavedEnvironment": "Passed",
+    "StaleDetectionWarning_WhenUrlChanged_DisplaysWarningMessage": "Passed"
+   }
+  },
+  {
+   "variant": "Verify",
+   "class": "EndpointDiscoveryUITests",
+   "test": "ApplyIntegrationButton_WhenClicked_AddsToConfiguredIntegrations",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true })",
+   "classification": [
+    "C",
+    "E"
+   ],
+   "cause": "Expected the target check to list discovered endpoints/integrations with Apply buttons (retired on purpose: endpoints are owned by Endpoint Discovery) and pointed the check at the real m2lbdev host.",
+   "change": "Six successor tests (TargetCheck_*, ApplyDetectedType_*, OpenEndpointDiscovery_*, StaleDetection_*) answer the check synthetically.",
+   "productDefect": "Environment chosen while Target Environments was still loading was replaced by the active one (FrontendAnalysisSettings init).",
+   "currentOutcome": "replaced",
+   "successors": {
+    "ApplyDetectedType_ChangesOnlyTheDraft_UntilSaved": "Passed",
+    "TargetCheck_ShowsDetectedTargetFacts_AndProposesNoEndpointsAsConfiguration": "Passed",
+    "StaleDetection_RequiresARecheck_BeforeItCountsAgain": "Passed",
+    "OpenEndpointDiscovery_FromATargetWithoutSignIn": "Passed",
+    "TargetCheck_DoesNotChangeTheSavedEnvironment": "Passed",
+    "StaleDetectionWarning_WhenUrlChanged_DisplaysWarningMessage": "Passed"
+   }
+  },
+  {
+   "variant": "Verify",
+   "class": "EndpointDiscoveryUITests",
+   "test": "DetectedEndpointsHidden_WhenDetectionIsStale_HidesDiscoveredSection",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true })",
+   "classification": [
+    "C",
+    "E"
+   ],
+   "cause": "Expected the target check to list discovered endpoints/integrations with Apply buttons (retired on purpose: endpoints are owned by Endpoint Discovery) and pointed the check at the real m2lbdev host.",
+   "change": "Six successor tests (TargetCheck_*, ApplyDetectedType_*, OpenEndpointDiscovery_*, StaleDetection_*) answer the check synthetically.",
+   "productDefect": "Environment chosen while Target Environments was still loading was replaced by the active one (FrontendAnalysisSettings init).",
+   "currentOutcome": "replaced",
+   "successors": {
+    "ApplyDetectedType_ChangesOnlyTheDraft_UntilSaved": "Passed",
+    "TargetCheck_ShowsDetectedTargetFacts_AndProposesNoEndpointsAsConfiguration": "Passed",
+    "StaleDetection_RequiresARecheck_BeforeItCountsAgain": "Passed",
+    "OpenEndpointDiscovery_FromATargetWithoutSignIn": "Passed",
+    "TargetCheck_DoesNotChangeTheSavedEnvironment": "Passed",
+    "StaleDetectionWarning_WhenUrlChanged_DisplaysWarningMessage": "Passed"
+   }
+  },
+  {
+   "variant": "Verify",
+   "class": "EndpointDiscoveryUITests",
+   "test": "DetectedEndpoints_AfterSuccessfulDetection_DisplaysDiscoveredSection",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true })",
+   "classification": [
+    "C",
+    "E"
+   ],
+   "cause": "Expected the target check to list discovered endpoints/integrations with Apply buttons (retired on purpose: endpoints are owned by Endpoint Discovery) and pointed the check at the real m2lbdev host.",
+   "change": "Six successor tests (TargetCheck_*, ApplyDetectedType_*, OpenEndpointDiscovery_*, StaleDetection_*) answer the check synthetically.",
+   "productDefect": "Environment chosen while Target Environments was still loading was replaced by the active one (FrontendAnalysisSettings init).",
+   "currentOutcome": "replaced",
+   "successors": {
+    "ApplyDetectedType_ChangesOnlyTheDraft_UntilSaved": "Passed",
+    "TargetCheck_ShowsDetectedTargetFacts_AndProposesNoEndpointsAsConfiguration": "Passed",
+    "StaleDetection_RequiresARecheck_BeforeItCountsAgain": "Passed",
+    "OpenEndpointDiscovery_FromATargetWithoutSignIn": "Passed",
+    "TargetCheck_DoesNotChangeTheSavedEnvironment": "Passed",
+    "StaleDetectionWarning_WhenUrlChanged_DisplaysWarningMessage": "Passed"
+   }
+  },
+  {
+   "variant": "Verify",
+   "class": "EndpointDiscoveryUITests",
+   "test": "DetectedIntegrations_AfterSuccessfulDetection_DisplaysDiscoveredIntegrations",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true })",
+   "classification": [
+    "C",
+    "E"
+   ],
+   "cause": "Expected the target check to list discovered endpoints/integrations with Apply buttons (retired on purpose: endpoints are owned by Endpoint Discovery) and pointed the check at the real m2lbdev host.",
+   "change": "Six successor tests (TargetCheck_*, ApplyDetectedType_*, OpenEndpointDiscovery_*, StaleDetection_*) answer the check synthetically.",
+   "productDefect": "Environment chosen while Target Environments was still loading was replaced by the active one (FrontendAnalysisSettings init).",
+   "currentOutcome": "replaced",
+   "successors": {
+    "ApplyDetectedType_ChangesOnlyTheDraft_UntilSaved": "Passed",
+    "TargetCheck_ShowsDetectedTargetFacts_AndProposesNoEndpointsAsConfiguration": "Passed",
+    "StaleDetection_RequiresARecheck_BeforeItCountsAgain": "Passed",
+    "OpenEndpointDiscovery_FromATargetWithoutSignIn": "Passed",
+    "TargetCheck_DoesNotChangeTheSavedEnvironment": "Passed",
+    "StaleDetectionWarning_WhenUrlChanged_DisplaysWarningMessage": "Passed"
+   }
+  },
+  {
+   "variant": "Verify",
+   "class": "EndpointDiscoveryUITests",
+   "test": "StaleDetectionWarning_WhenUrlChanged_DisplaysWarningMessage",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true })",
+   "classification": [
+    "C",
+    "E"
+   ],
+   "cause": "Expected the target check to list discovered endpoints/integrations with Apply buttons (retired on purpose: endpoints are owned by Endpoint Discovery) and pointed the check at the real m2lbdev host.",
+   "change": "Six successor tests (TargetCheck_*, ApplyDetectedType_*, OpenEndpointDiscovery_*, StaleDetection_*) answer the check synthetically.",
+   "productDefect": "Environment chosen while Target Environments was still loading was replaced by the active one (FrontendAnalysisSettings init).",
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "Verify",
+   "class": "FrontendQualityReviewLayoutMeasurementTest",
+   "test": "FrontendQualityReview_CaptureDetailedLayoutMeasurements",
+   "originalOutcome": "Failed",
+   "originalMessage": "Expected (run.IsDisabledAsync()) to be False because target must be configured, but found True.",
+   "classification": [
+    "F"
+   ],
+   "cause": "Read Run straight after navigation; Run is disabled with a stated reason while the target, engines and browser evidence load.",
+   "change": "FrontendQualityReviewPage.OpenAsync + WaitUntilRunnableAsync (waits on page state, names the stated reason on timeout).",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "Verify",
+   "class": "FrontendQualityReviewLayoutMeasurementTest",
+   "test": "FrontendQualityReview_ResultLayout_IsReadableAtDesktop",
+   "originalOutcome": "Failed",
+   "originalMessage": "Expected (run.IsDisabledAsync()) to be False because target must be configured, but found True.",
+   "classification": [
+    "F"
+   ],
+   "cause": "Read Run straight after navigation; Run is disabled with a stated reason while the target, engines and browser evidence load.",
+   "change": "FrontendQualityReviewPage.OpenAsync + WaitUntilRunnableAsync (waits on page state, names the stated reason on timeout).",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "Verify",
+   "class": "IntegrationJourneyBrowserAcceptanceTests",
+   "test": "Overview_JourneyTabs_Rules_History_ResponsiveAxeAndKeyboard_WithoutAnyExternalCall",
+   "originalOutcome": "NotExecuted",
+   "originalMessage": "Browser acceptance not run (environment prerequisite): set BIRKNEXT_ACTIVE_EVENT_BACKEND_URL and BIRKNEXT_ACTIVE_EVENT_FRONTEND_URL to an isolated, already started BirkNext.",
+   "classification": [
+    "D"
+   ],
+   "cause": "Environment prerequisite not configured (dedicated acceptance instance / external dataset); reported as not run, never as passed.",
+   "change": "None (honest skip, unchanged).",
+   "productDefect": null,
+   "currentOutcome": "NotExecuted",
+   "currentMessage": "Browser acceptance not run (environment prerequisite): set BIRKNEXT_ACTIVE_EVENT_BACKEND_URL and BIRKNEXT_ACTIVE_EVENT_FRONTEND_URL to an isolated, already started BirkNext."
+  },
+  {
+   "variant": "Verify",
+   "class": "QualityReviewPlaywrightTests",
+   "test": "DataModelQuality_WasmInteractionHasNoRuntimeErrors",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 10000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Select Project\", Exact = true }).First to be visible",
+   "classification": [
+    "D",
+    "A"
+   ],
+   "cause": "Selected a project on Demo Projects (none in the isolated instance); conditional asserts (toggle only \"if\" present).",
+   "change": "DataModelQualityScenario: own synthetic data model, exact 7 findings, 5/7 card counts, two toggle cycles, no WASM errors.",
+   "productDefect": "MarkdownTokenizer dropped empty table cells, shifting later cells one column left (empty Type → Nullable read as type).",
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "Verify",
+   "class": "RealProjectAcceptanceTests",
+   "test": "Real_project_acceptance_runs_every_feature_against_one_imported_workspace",
+   "originalOutcome": "NotExecuted",
+   "originalMessage": "External real-project dataset not configured.",
+   "classification": [
+    "D"
+   ],
+   "cause": "Environment prerequisite not configured (dedicated acceptance instance / external dataset); reported as not run, never as passed.",
+   "change": "None (honest skip, unchanged).",
+   "productDefect": null,
+   "currentOutcome": "NotExecuted",
+   "currentMessage": "External real-project dataset not configured."
+  },
+  {
+   "variant": "Verify",
+   "class": "SchemaStudioBrowserAcceptanceTests",
+   "test": "LocalXsdWorkflowIsResponsiveAccessibleAndDoesNotContactExternalHosts",
+   "originalOutcome": "NotExecuted",
+   "originalMessage": "Browser acceptance not run (environment prerequisite): set BIRKNEXT_SCHEMA_STUDIO_FRONTEND_URL to an isolated, already started BirkNext.",
+   "classification": [
+    "D"
+   ],
+   "cause": "Environment prerequisite not configured (dedicated acceptance instance / external dataset); reported as not run, never as passed.",
+   "change": "None (honest skip, unchanged).",
+   "productDefect": null,
+   "currentOutcome": "NotExecuted",
+   "currentMessage": "Browser acceptance not run (environment prerequisite): set BIRKNEXT_SCHEMA_STUDIO_FRONTEND_URL to an isolated, already started BirkNext."
+  },
+  {
+   "variant": "Verify",
+   "class": "SddProjectionResponsiveAccessibilityTests",
+   "test": "SddReviewRoutesRemainUsableAtResponsiveWidthsAndPassAxeWithinChangedRegions",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 15000ms exceeded. Call log: - waiting for Locator(\".sp-card\").Filter(new() { HasText = \"spec.md\" }).First.GetByRole(AriaRole.Button, new() { Name = \"Select Project\", Exact = true }) to be visible",
+   "classification": [
+    "D"
+   ],
+   "cause": "Selected a project on Demo Projects; the isolated Release API has no demo projects (optional, separately configured feature).",
+   "change": "Imports its own synthetic Spec Kit project (SyntheticProjects.ImportAndUseAsync) and waits for every SDD region.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "Verify",
+   "class": "TargetEnvironmentDetectionPlaywrightTests",
+   "test": "TargetEnvironment_DetectConfiguration_RealBackendEndToEnd",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 5000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true }) to be visible",
+   "classification": [
+    "B",
+    "E"
+   ],
+   "cause": "Expected \"Check target application\" on the summary and a renamed sidebar/FQR link; the end-to-end test contacted real hosts.",
+   "change": "TargetEnvironmentDetectionScenarios (shared by both variants): deep link, \"Check target\"/\"Check target again\", closed loopback port for the real backend check, drafts always cancelled.",
+   "productDefect": "\"Check target again\" shown for a never-checked target; summary showed the saved URL while the check ran on the draft URL.",
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "Verify",
+   "class": "TargetEnvironmentDetectionPlaywrightTests",
+   "test": "TargetEnvironment_KeyboardAccessibility_NavigateDetection",
+   "originalOutcome": "Failed",
+   "originalMessage": "Expected isDetectVisible to be True because Detect button should be accessible via keyboard navigation, but found False.",
+   "classification": [
+    "B",
+    "E"
+   ],
+   "cause": "Expected \"Check target application\" on the summary and a renamed sidebar/FQR link; the end-to-end test contacted real hosts.",
+   "change": "TargetEnvironmentDetectionScenarios (shared by both variants): deep link, \"Check target\"/\"Check target again\", closed loopback port for the real backend check, drafts always cancelled.",
+   "productDefect": "\"Check target again\" shown for a never-checked target; summary showed the saved URL while the check ran on the draft URL.",
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "Verify",
+   "class": "TargetEnvironmentDetectionPlaywrightTests",
+   "test": "TargetEnvironment_ResponsiveLayout_NoHorizontalOverflow",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true }) to be visible",
+   "classification": [
+    "B",
+    "E"
+   ],
+   "cause": "Expected \"Check target application\" on the summary and a renamed sidebar/FQR link; the end-to-end test contacted real hosts.",
+   "change": "TargetEnvironmentDetectionScenarios (shared by both variants): deep link, \"Check target\"/\"Check target again\", closed loopback port for the real backend check, drafts always cancelled.",
+   "productDefect": "\"Check target again\" shown for a never-checked target; summary showed the saved URL while the check ran on the draft URL.",
+   "currentOutcome": "missing from new run"
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "ActiveEventTestingBrowserAcceptanceTests",
+   "test": "ProviderSelection_BlockedReadiness_AuthNotConfigured_History_ResponsiveAxeAndKeyboard",
+   "originalOutcome": "NotExecuted",
+   "originalMessage": "Browser acceptance not run (environment prerequisite): set BIRKNEXT_ACTIVE_EVENT_BACKEND_URL and BIRKNEXT_ACTIVE_EVENT_FRONTEND_URL to an isolated, already started BirkNext.",
+   "classification": [
+    "D"
+   ],
+   "cause": "Environment prerequisite not configured (dedicated acceptance instance / external dataset); reported as not run, never as passed.",
+   "change": "None (honest skip, unchanged).",
+   "productDefect": null,
+   "currentOutcome": "NotExecuted",
+   "currentMessage": "Browser acceptance not run (environment prerequisite): set BIRKNEXT_ACTIVE_EVENT_BACKEND_URL and BIRKNEXT_ACTIVE_EVENT_FRONTEND_URL to an isolated, already started BirkNext."
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "EndpointDiscoveryUITests",
+   "test": "ApplyEndpointButton_ForDetectedRest_IsClickable",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true })",
+   "classification": [
+    "C",
+    "E"
+   ],
+   "cause": "Expected the target check to list discovered endpoints/integrations with Apply buttons (retired on purpose: endpoints are owned by Endpoint Discovery) and pointed the check at the real m2lbdev host.",
+   "change": "Six successor tests (TargetCheck_*, ApplyDetectedType_*, OpenEndpointDiscovery_*, StaleDetection_*) answer the check synthetically.",
+   "productDefect": "Environment chosen while Target Environments was still loading was replaced by the active one (FrontendAnalysisSettings init).",
+   "currentOutcome": "replaced",
+   "successors": {
+    "ApplyDetectedType_ChangesOnlyTheDraft_UntilSaved": "Passed",
+    "StaleDetectionWarning_WhenUrlChanged_DisplaysWarningMessage": "Passed",
+    "OpenEndpointDiscovery_FromATargetWithoutSignIn": "Passed",
+    "TargetCheck_DoesNotChangeTheSavedEnvironment": "Passed",
+    "StaleDetection_RequiresARecheck_BeforeItCountsAgain": "Passed",
+    "TargetCheck_ShowsDetectedTargetFacts_AndProposesNoEndpointsAsConfiguration": "Passed"
+   }
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "EndpointDiscoveryUITests",
+   "test": "ApplyIntegrationButton_WhenClicked_AddsToConfiguredIntegrations",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true })",
+   "classification": [
+    "C",
+    "E"
+   ],
+   "cause": "Expected the target check to list discovered endpoints/integrations with Apply buttons (retired on purpose: endpoints are owned by Endpoint Discovery) and pointed the check at the real m2lbdev host.",
+   "change": "Six successor tests (TargetCheck_*, ApplyDetectedType_*, OpenEndpointDiscovery_*, StaleDetection_*) answer the check synthetically.",
+   "productDefect": "Environment chosen while Target Environments was still loading was replaced by the active one (FrontendAnalysisSettings init).",
+   "currentOutcome": "replaced",
+   "successors": {
+    "ApplyDetectedType_ChangesOnlyTheDraft_UntilSaved": "Passed",
+    "StaleDetectionWarning_WhenUrlChanged_DisplaysWarningMessage": "Passed",
+    "OpenEndpointDiscovery_FromATargetWithoutSignIn": "Passed",
+    "TargetCheck_DoesNotChangeTheSavedEnvironment": "Passed",
+    "StaleDetection_RequiresARecheck_BeforeItCountsAgain": "Passed",
+    "TargetCheck_ShowsDetectedTargetFacts_AndProposesNoEndpointsAsConfiguration": "Passed"
+   }
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "EndpointDiscoveryUITests",
+   "test": "DetectedEndpointsHidden_WhenDetectionIsStale_HidesDiscoveredSection",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true })",
+   "classification": [
+    "C",
+    "E"
+   ],
+   "cause": "Expected the target check to list discovered endpoints/integrations with Apply buttons (retired on purpose: endpoints are owned by Endpoint Discovery) and pointed the check at the real m2lbdev host.",
+   "change": "Six successor tests (TargetCheck_*, ApplyDetectedType_*, OpenEndpointDiscovery_*, StaleDetection_*) answer the check synthetically.",
+   "productDefect": "Environment chosen while Target Environments was still loading was replaced by the active one (FrontendAnalysisSettings init).",
+   "currentOutcome": "replaced",
+   "successors": {
+    "ApplyDetectedType_ChangesOnlyTheDraft_UntilSaved": "Passed",
+    "StaleDetectionWarning_WhenUrlChanged_DisplaysWarningMessage": "Passed",
+    "OpenEndpointDiscovery_FromATargetWithoutSignIn": "Passed",
+    "TargetCheck_DoesNotChangeTheSavedEnvironment": "Passed",
+    "StaleDetection_RequiresARecheck_BeforeItCountsAgain": "Passed",
+    "TargetCheck_ShowsDetectedTargetFacts_AndProposesNoEndpointsAsConfiguration": "Passed"
+   }
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "EndpointDiscoveryUITests",
+   "test": "DetectedEndpoints_AfterSuccessfulDetection_DisplaysDiscoveredSection",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true })",
+   "classification": [
+    "C",
+    "E"
+   ],
+   "cause": "Expected the target check to list discovered endpoints/integrations with Apply buttons (retired on purpose: endpoints are owned by Endpoint Discovery) and pointed the check at the real m2lbdev host.",
+   "change": "Six successor tests (TargetCheck_*, ApplyDetectedType_*, OpenEndpointDiscovery_*, StaleDetection_*) answer the check synthetically.",
+   "productDefect": "Environment chosen while Target Environments was still loading was replaced by the active one (FrontendAnalysisSettings init).",
+   "currentOutcome": "replaced",
+   "successors": {
+    "ApplyDetectedType_ChangesOnlyTheDraft_UntilSaved": "Passed",
+    "StaleDetectionWarning_WhenUrlChanged_DisplaysWarningMessage": "Passed",
+    "OpenEndpointDiscovery_FromATargetWithoutSignIn": "Passed",
+    "TargetCheck_DoesNotChangeTheSavedEnvironment": "Passed",
+    "StaleDetection_RequiresARecheck_BeforeItCountsAgain": "Passed",
+    "TargetCheck_ShowsDetectedTargetFacts_AndProposesNoEndpointsAsConfiguration": "Passed"
+   }
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "EndpointDiscoveryUITests",
+   "test": "DetectedIntegrations_AfterSuccessfulDetection_DisplaysDiscoveredIntegrations",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true })",
+   "classification": [
+    "C",
+    "E"
+   ],
+   "cause": "Expected the target check to list discovered endpoints/integrations with Apply buttons (retired on purpose: endpoints are owned by Endpoint Discovery) and pointed the check at the real m2lbdev host.",
+   "change": "Six successor tests (TargetCheck_*, ApplyDetectedType_*, OpenEndpointDiscovery_*, StaleDetection_*) answer the check synthetically.",
+   "productDefect": "Environment chosen while Target Environments was still loading was replaced by the active one (FrontendAnalysisSettings init).",
+   "currentOutcome": "replaced",
+   "successors": {
+    "ApplyDetectedType_ChangesOnlyTheDraft_UntilSaved": "Passed",
+    "StaleDetectionWarning_WhenUrlChanged_DisplaysWarningMessage": "Passed",
+    "OpenEndpointDiscovery_FromATargetWithoutSignIn": "Passed",
+    "TargetCheck_DoesNotChangeTheSavedEnvironment": "Passed",
+    "StaleDetection_RequiresARecheck_BeforeItCountsAgain": "Passed",
+    "TargetCheck_ShowsDetectedTargetFacts_AndProposesNoEndpointsAsConfiguration": "Passed"
+   }
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "EndpointDiscoveryUITests",
+   "test": "StaleDetectionWarning_WhenUrlChanged_DisplaysWarningMessage",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true })",
+   "classification": [
+    "C",
+    "E"
+   ],
+   "cause": "Expected the target check to list discovered endpoints/integrations with Apply buttons (retired on purpose: endpoints are owned by Endpoint Discovery) and pointed the check at the real m2lbdev host.",
+   "change": "Six successor tests (TargetCheck_*, ApplyDetectedType_*, OpenEndpointDiscovery_*, StaleDetection_*) answer the check synthetically.",
+   "productDefect": "Environment chosen while Target Environments was still loading was replaced by the active one (FrontendAnalysisSettings init).",
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "FrontendQualityReviewLayoutMeasurementTest",
+   "test": "FrontendQualityReview_CaptureDetailedLayoutMeasurements",
+   "originalOutcome": "Failed",
+   "originalMessage": "Expected (run.IsDisabledAsync()) to be False because target must be configured, but found True.",
+   "classification": [
+    "F"
+   ],
+   "cause": "Read Run straight after navigation; Run is disabled with a stated reason while the target, engines and browser evidence load.",
+   "change": "FrontendQualityReviewPage.OpenAsync + WaitUntilRunnableAsync (waits on page state, names the stated reason on timeout).",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "FrontendQualityReviewLayoutMeasurementTest",
+   "test": "FrontendQualityReview_ResultLayout_IsReadableAtDesktop",
+   "originalOutcome": "Failed",
+   "originalMessage": "Expected (run.IsDisabledAsync()) to be False because target must be configured, but found True.",
+   "classification": [
+    "F"
+   ],
+   "cause": "Read Run straight after navigation; Run is disabled with a stated reason while the target, engines and browser evidence load.",
+   "change": "FrontendQualityReviewPage.OpenAsync + WaitUntilRunnableAsync (waits on page state, names the stated reason on timeout).",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "IntegrationJourneyBrowserAcceptanceTests",
+   "test": "Overview_JourneyTabs_Rules_History_ResponsiveAxeAndKeyboard_WithoutAnyExternalCall",
+   "originalOutcome": "NotExecuted",
+   "originalMessage": "Browser acceptance not run (environment prerequisite): set BIRKNEXT_ACTIVE_EVENT_BACKEND_URL and BIRKNEXT_ACTIVE_EVENT_FRONTEND_URL to an isolated, already started BirkNext.",
+   "classification": [
+    "D"
+   ],
+   "cause": "Environment prerequisite not configured (dedicated acceptance instance / external dataset); reported as not run, never as passed.",
+   "change": "None (honest skip, unchanged).",
+   "productDefect": null,
+   "currentOutcome": "NotExecuted",
+   "currentMessage": "Browser acceptance not run (environment prerequisite): set BIRKNEXT_ACTIVE_EVENT_BACKEND_URL and BIRKNEXT_ACTIVE_EVENT_FRONTEND_URL to an isolated, already started BirkNext."
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "QualityReviewPlaywrightTests_PreStarted",
+   "test": "DataModelQuality_WasmInteractionHasNoRuntimeErrors",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 10000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Select Project\", Exact = true }).First to be visible",
+   "classification": [
+    "D",
+    "A"
+   ],
+   "cause": "As the self-starting variant.",
+   "change": "DataModelQualityScenario (shared).",
+   "productDefect": "MarkdownTokenizer empty-cell shift (as above).",
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "QualityReviewPlaywrightTests_PreStarted",
+   "test": "FrontendQualityReview_KeyboardNavigationToTargetEnvironments",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Link, new() { Name = \"Target Environments\" })",
+   "classification": [
+    "B"
+   ],
+   "cause": "Link \"Target Environments\" was renamed \"Change target\".",
+   "change": "Uses \"Change target\"; asserts it is document.activeElement and Enter navigates.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "QualityReviewPlaywrightTests_PreStarted",
+   "test": "FrontendQualityReview_RealEnginesReachDecisionSupportExactlyOnce",
+   "originalOutcome": "Failed",
+   "originalMessage": "Expected (run.IsDisabledAsync()) to be False because the local deterministic target is configured, but found True.",
+   "classification": [
+    "F"
+   ],
+   "cause": "Run read during the stated loading state.",
+   "change": "WaitUntilRunnableAsync; leave/return via All modules + Back.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "QualityReviewPlaywrightTests_PreStarted",
+   "test": "FrontendQualityReview_ResponsiveLayoutNoHorizontalOverflow",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 5000ms exceeded. Call log: - waiting for Locator(\"article.fqr-dimension-card\").First to be visible",
+   "classification": [
+    "F"
+   ],
+   "cause": "5 s wait for dimension cards; a cold WASM start takes 8-10 s.",
+   "change": "Waits up to 120 s for the cards.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "QualityReviewPlaywrightTests_PreStarted",
+   "test": "TargetEnvironmentsNavigation_OpenCorrectSettingsSection",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 10000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Link, new() { Name = \"Target Environments\" }) to be visible",
+   "classification": [
+    "B"
+   ],
+   "cause": "Link \"Target Environments\" was renamed \"Change target\".",
+   "change": "Uses \"Change target\"; waits for the section with an assertion.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "RealProjectAcceptanceTests",
+   "test": "Real_project_acceptance_runs_every_feature_against_one_imported_workspace",
+   "originalOutcome": "NotExecuted",
+   "originalMessage": "External real-project dataset not configured.",
+   "classification": [
+    "D"
+   ],
+   "cause": "Environment prerequisite not configured (dedicated acceptance instance / external dataset); reported as not run, never as passed.",
+   "change": "None (honest skip, unchanged).",
+   "productDefect": null,
+   "currentOutcome": "NotExecuted",
+   "currentMessage": "External real-project dataset not configured."
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "SchemaStudioBrowserAcceptanceTests",
+   "test": "LocalXsdWorkflowIsResponsiveAccessibleAndDoesNotContactExternalHosts",
+   "originalOutcome": "NotExecuted",
+   "originalMessage": "Browser acceptance not run (environment prerequisite): set BIRKNEXT_SCHEMA_STUDIO_FRONTEND_URL to an isolated, already started BirkNext.",
+   "classification": [
+    "D"
+   ],
+   "cause": "Environment prerequisite not configured (dedicated acceptance instance / external dataset); reported as not run, never as passed.",
+   "change": "None (honest skip, unchanged).",
+   "productDefect": null,
+   "currentOutcome": "NotExecuted",
+   "currentMessage": "Browser acceptance not run (environment prerequisite): set BIRKNEXT_SCHEMA_STUDIO_FRONTEND_URL to an isolated, already started BirkNext."
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "SddProjectionResponsiveAccessibilityTests",
+   "test": "SddReviewRoutesRemainUsableAtResponsiveWidthsAndPassAxeWithinChangedRegions",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 15000ms exceeded. Call log: - waiting for Locator(\".sp-card\").Filter(new() { HasText = \"spec.md\" }).First.GetByRole(AriaRole.Button, new() { Name = \"Select Project\", Exact = true }) to be visible",
+   "classification": [
+    "D"
+   ],
+   "cause": "Selected a project on Demo Projects; the isolated Release API has no demo projects (optional, separately configured feature).",
+   "change": "Imports its own synthetic Spec Kit project (SyntheticProjects.ImportAndUseAsync) and waits for every SDD region.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "SystemSettingsPlaywrightTests_PreStarted",
+   "test": "Frontend_quality_engines_uses_compact_two_column_system_settings_layout(width: 1280)",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 60000ms exceeded. Call log: - waiting for Locator(\".frontend-quality-engine-settings\").Locator(\".dev-diag-section\").First to be visible - locator resolved to hidden <section role=\"listitem\" b-lpzsxr4kyw=\"\" class=\"dev-diag-section\" aria-label=\"Browser Runtime\">…</sec",
+   "classification": [
+    "C",
+    "F"
+   ],
+   "cause": "Frontend quality engines section became Frontend Testing Capabilities (engine switches inside \"Technical details\"); maintenance rows renamed; counted actions before the header rendered.",
+   "change": "Opens Capabilities → Technical details; waits for the settings header; uses current row labels.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "SystemSettingsPlaywrightTests_PreStarted",
+   "test": "Frontend_quality_engines_uses_compact_two_column_system_settings_layout(width: 1440)",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 60000ms exceeded. Call log: - waiting for Locator(\".frontend-quality-engine-settings\").Locator(\".dev-diag-section\").First to be visible - locator resolved to hidden <section role=\"listitem\" b-lpzsxr4kyw=\"\" class=\"dev-diag-section\" aria-label=\"Browser Runtime\">…</sec",
+   "classification": [
+    "C",
+    "F"
+   ],
+   "cause": "Frontend quality engines section became Frontend Testing Capabilities (engine switches inside \"Technical details\"); maintenance rows renamed; counted actions before the header rendered.",
+   "change": "Opens Capabilities → Technical details; waits for the settings header; uses current row labels.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "SystemSettingsPlaywrightTests_PreStarted",
+   "test": "Maintenance_diagnostic_result_uses_table_structure_with_associated_values_and_badges(width: 1280)",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 60000ms exceeded. Call log: - waiting for Locator(\"text=Maintenance\").Locator(\"../..\").First.Locator(\".dev-diag-section\").First to be visible",
+   "classification": [
+    "C",
+    "F"
+   ],
+   "cause": "Frontend quality engines section became Frontend Testing Capabilities (engine switches inside \"Technical details\"); maintenance rows renamed; counted actions before the header rendered.",
+   "change": "Opens Capabilities → Technical details; waits for the settings header; uses current row labels.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "SystemSettingsPlaywrightTests_PreStarted",
+   "test": "Maintenance_diagnostic_result_uses_table_structure_with_associated_values_and_badges(width: 1440)",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 60000ms exceeded. Call log: - waiting for Locator(\"text=Maintenance\").Locator(\"../..\").First.Locator(\".dev-diag-section\").First to be visible",
+   "classification": [
+    "C",
+    "F"
+   ],
+   "cause": "Frontend quality engines section became Frontend Testing Capabilities (engine switches inside \"Technical details\"); maintenance rows renamed; counted actions before the header rendered.",
+   "change": "Opens Capabilities → Technical details; waits for the settings header; uses current row labels.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "SystemSettingsPlaywrightTests_PreStarted",
+   "test": "Parent_edit_mode_is_pane_capability_aware_and_edits_fqe_in_place",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 60000ms exceeded. Call log: - waiting for Locator(\".frontend-quality-engine-settings .dev-diag-section\").First to be visible - locator resolved to hidden <section role=\"listitem\" b-lpzsxr4kyw=\"\" class=\"dev-diag-section\" aria-label=\"Browser Runtime\">…</section> - loc",
+   "classification": [
+    "C",
+    "F"
+   ],
+   "cause": "Frontend quality engines section became Frontend Testing Capabilities (engine switches inside \"Technical details\"); maintenance rows renamed; counted actions before the header rendered.",
+   "change": "Opens Capabilities → Technical details; waits for the settings header; uses current row labels.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentBrowserContinuationPlaywrightTests_PreStarted",
+   "test": "AuthenticationRequired_ClickContinuesThroughHttpAndUpdatesExactSelectedTarget(width: 1280)",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true })",
+   "classification": [
+    "B",
+    "E"
+   ],
+   "cause": "Old state labels (\"Auth required\"/\"Checked\"), Continue moved into the detection evidence, hard-coded backend http://localhost:5000.",
+   "change": "Current labels, evidence disclosure, backend from BrowserTestServers.BackendUrl, synthetic detect answers for the requested URL.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentBrowserContinuationPlaywrightTests_PreStarted",
+   "test": "AuthenticationRequired_ClickContinuesThroughHttpAndUpdatesExactSelectedTarget(width: 1440)",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true })",
+   "classification": [
+    "B",
+    "E"
+   ],
+   "cause": "Old state labels (\"Auth required\"/\"Checked\"), Continue moved into the detection evidence, hard-coded backend http://localhost:5000.",
+   "change": "Current labels, evidence disclosure, backend from BrowserTestServers.BackendUrl, synthetic detect answers for the requested URL.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentBrowserContinuationPlaywrightTests_PreStarted",
+   "test": "AuthenticationRequired_ClickContinuesThroughHttpAndUpdatesExactSelectedTarget(width: 480)",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true })",
+   "classification": [
+    "B",
+    "E"
+   ],
+   "cause": "Old state labels (\"Auth required\"/\"Checked\"), Continue moved into the detection evidence, hard-coded backend http://localhost:5000.",
+   "change": "Current labels, evidence disclosure, backend from BrowserTestServers.BackendUrl, synthetic detect answers for the requested URL.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentBrowserContinuationPlaywrightTests_PreStarted",
+   "test": "AuthenticationRequired_ClickContinuesThroughHttpAndUpdatesExactSelectedTarget(width: 800)",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true })",
+   "classification": [
+    "B",
+    "E"
+   ],
+   "cause": "Old state labels (\"Auth required\"/\"Checked\"), Continue moved into the detection evidence, hard-coded backend http://localhost:5000.",
+   "change": "Current labels, evidence disclosure, backend from BrowserTestServers.BackendUrl, synthetic detect answers for the requested URL.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentBrowserContinuationPlaywrightTests_PreStarted",
+   "test": "AuthenticationRequired_ClickContinuesThroughHttpAndUpdatesExactSelectedTarget(width: 860)",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true })",
+   "classification": [
+    "B",
+    "E"
+   ],
+   "cause": "Old state labels (\"Auth required\"/\"Checked\"), Continue moved into the detection evidence, hard-coded backend http://localhost:5000.",
+   "change": "Current labels, evidence disclosure, backend from BrowserTestServers.BackendUrl, synthetic detect answers for the requested URL.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentDetectionPlaywrightTests",
+   "test": "TargetEnvironment_DetectConfiguration_RealBackendEndToEnd",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 5000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true }) to be visible",
+   "classification": [
+    "B",
+    "E"
+   ],
+   "cause": "Expected \"Check target application\" on the summary and a renamed sidebar/FQR link; the end-to-end test contacted real hosts.",
+   "change": "TargetEnvironmentDetectionScenarios (shared by both variants): deep link, \"Check target\"/\"Check target again\", closed loopback port for the real backend check, drafts always cancelled.",
+   "productDefect": "\"Check target again\" shown for a never-checked target; summary showed the saved URL while the check ran on the draft URL.",
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentDetectionPlaywrightTests",
+   "test": "TargetEnvironment_KeyboardAccessibility_NavigateDetection",
+   "originalOutcome": "Failed",
+   "originalMessage": "Expected isDetectVisible to be True because Detect button should be accessible via keyboard navigation, but found False.",
+   "classification": [
+    "B",
+    "E"
+   ],
+   "cause": "Expected \"Check target application\" on the summary and a renamed sidebar/FQR link; the end-to-end test contacted real hosts.",
+   "change": "TargetEnvironmentDetectionScenarios (shared by both variants): deep link, \"Check target\"/\"Check target again\", closed loopback port for the real backend check, drafts always cancelled.",
+   "productDefect": "\"Check target again\" shown for a never-checked target; summary showed the saved URL while the check ran on the draft URL.",
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentDetectionPlaywrightTests",
+   "test": "TargetEnvironment_ResponsiveLayout_NoHorizontalOverflow",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 30000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Button, new() { Name = \"Check target application\", Exact = true }) to be visible",
+   "classification": [
+    "B",
+    "E"
+   ],
+   "cause": "Expected \"Check target application\" on the summary and a renamed sidebar/FQR link; the end-to-end test contacted real hosts.",
+   "change": "TargetEnvironmentDetectionScenarios (shared by both variants): deep link, \"Check target\"/\"Check target again\", closed loopback port for the real backend check, drafts always cancelled.",
+   "productDefect": "\"Check target again\" shown for a never-checked target; summary showed the saved URL while the check ran on the draft URL.",
+   "currentOutcome": "missing from new run"
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentDetectionPlaywrightTests_PreStarted",
+   "test": "TargetEnvironment_DetectConfiguration_DoesNotOverwriteConfiguredValues",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 10000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Link, new() { Name = \"Target Environments\" }) to be visible",
+   "classification": [
+    "B",
+    "E"
+   ],
+   "cause": "As the self-starting class (plus a fixed fake URL that no longer matched the QA environment).",
+   "change": "TargetEnvironmentDetectionScenarios (shared); fake detect echoes the requested URL.",
+   "productDefect": "As above.",
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentDetectionPlaywrightTests_PreStarted",
+   "test": "TargetEnvironment_DetectConfiguration_PopulatesDraftSafely",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 10000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Link, new() { Name = \"Target Environments\" }) to be visible",
+   "classification": [
+    "B",
+    "E"
+   ],
+   "cause": "As the self-starting class (plus a fixed fake URL that no longer matched the QA environment).",
+   "change": "TargetEnvironmentDetectionScenarios (shared); fake detect echoes the requested URL.",
+   "productDefect": "As above.",
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentDetectionPlaywrightTests_PreStarted",
+   "test": "TargetEnvironment_DetectConfiguration_RealBackendEndToEnd",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 10000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Link, new() { Name = \"Target Environments\" }) to be visible",
+   "classification": [
+    "B",
+    "E"
+   ],
+   "cause": "As the self-starting class (plus a fixed fake URL that no longer matched the QA environment).",
+   "change": "TargetEnvironmentDetectionScenarios (shared); fake detect echoes the requested URL.",
+   "productDefect": "As above.",
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentDetectionPlaywrightTests_PreStarted",
+   "test": "TargetEnvironment_KeyboardAccessibility_NavigateDetection",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 10000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Link, new() { Name = \"Target Environments\" }) to be visible",
+   "classification": [
+    "B",
+    "E"
+   ],
+   "cause": "As the self-starting class (plus a fixed fake URL that no longer matched the QA environment).",
+   "change": "TargetEnvironmentDetectionScenarios (shared); fake detect echoes the requested URL.",
+   "productDefect": "As above.",
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentDetectionPlaywrightTests_PreStarted",
+   "test": "TargetEnvironment_LocalTransport_UsesHttpBackendAndReachesRealPreflight",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 10000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Link, new() { Name = \"Target Environments\" }) to be visible",
+   "classification": [
+    "B",
+    "E"
+   ],
+   "cause": "As the self-starting class (plus a fixed fake URL that no longer matched the QA environment).",
+   "change": "TargetEnvironmentDetectionScenarios (shared); fake detect echoes the requested URL.",
+   "productDefect": "As above.",
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentDetectionPlaywrightTests_PreStarted",
+   "test": "TargetEnvironment_ResponsiveLayout_NoHorizontalOverflow",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 10000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Link, new() { Name = \"Target Environments\" }) to be visible",
+   "classification": [
+    "B",
+    "E"
+   ],
+   "cause": "As the self-starting class (plus a fixed fake URL that no longer matched the QA environment).",
+   "change": "TargetEnvironmentDetectionScenarios (shared); fake detect echoes the requested URL.",
+   "productDefect": "As above.",
+   "currentOutcome": "missing from new run"
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentDetectionPlaywrightTests_PreStarted",
+   "test": "TargetEnvironment_UrlChange_InvalidatesDetection",
+   "originalOutcome": "Failed",
+   "originalMessage": "System.TimeoutException : Timeout 10000ms exceeded. Call log: - waiting for GetByRole(AriaRole.Link, new() { Name = \"Target Environments\" }) to be visible",
+   "classification": [
+    "B",
+    "E"
+   ],
+   "cause": "As the self-starting class (plus a fixed fake URL that no longer matched the QA environment).",
+   "change": "TargetEnvironmentDetectionScenarios (shared); fake detect echoes the requested URL.",
+   "productDefect": "As above.",
+   "currentOutcome": "Failed",
+   "currentMessage": "Microsoft.Playwright.PlaywrightException : Locator expected to have text 'Detection complete' But was: 'Not checked' Call log: - LocatorAssertions.ToHaveTextAsync with timeout 30000ms - waiting for GetByTestId(\"target-detection-state\") - locator resolved to <span b-zogiwre1zx=\"\" data-testid=\"target-"
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentsUIResponsiveTest_PreStarted",
+   "test": "KeyboardNavigation_IsAccessible(width: 1440, context: \"desktop\")",
+   "originalOutcome": "Failed",
+   "originalMessage": "Expected (reviewDetectSettings.CountAsync()) to be 1 because the warning action must have its distinct accessible name, but found 0 (difference of -1).",
+   "classification": [
+    "B",
+    "F",
+    "E"
+   ],
+   "cause": "Counted tabs before the detail rendered; \".fa-environment-list button\" no longer exists (some tests asserted nothing); Diagnostics tab removed; conflict warning looked for in shared data.",
+   "change": "Selects through chips, waits for the detail, Validation tab, creates and deletes its own conflicting environment.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentsUIResponsiveTest_PreStarted",
+   "test": "KeyboardNavigation_IsAccessible(width: 480, context: \"mobile\")",
+   "originalOutcome": "Failed",
+   "originalMessage": "Expected (reviewDetectSettings.CountAsync()) to be 1 because the warning action must have its distinct accessible name, but found 0 (difference of -1).",
+   "classification": [
+    "B",
+    "F",
+    "E"
+   ],
+   "cause": "Counted tabs before the detail rendered; \".fa-environment-list button\" no longer exists (some tests asserted nothing); Diagnostics tab removed; conflict warning looked for in shared data.",
+   "change": "Selects through chips, waits for the detail, Validation tab, creates and deletes its own conflicting environment.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentsUIResponsiveTest_PreStarted",
+   "test": "TargetEnvironmentsUI_ResponsiveProof_AtViewport(width: 1024)",
+   "originalOutcome": "Failed",
+   "originalMessage": "Expected tabContainerCount to be greater than 0 because Tab container should exist, but found 0.",
+   "classification": [
+    "B",
+    "F",
+    "E"
+   ],
+   "cause": "Counted tabs before the detail rendered; \".fa-environment-list button\" no longer exists (some tests asserted nothing); Diagnostics tab removed; conflict warning looked for in shared data.",
+   "change": "Selects through chips, waits for the detail, Validation tab, creates and deletes its own conflicting environment.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentsUIResponsiveTest_PreStarted",
+   "test": "TargetEnvironmentsUI_ResponsiveProof_AtViewport(width: 1280)",
+   "originalOutcome": "Failed",
+   "originalMessage": "Expected tabContainerCount to be greater than 0 because Tab container should exist, but found 0.",
+   "classification": [
+    "B",
+    "F",
+    "E"
+   ],
+   "cause": "Counted tabs before the detail rendered; \".fa-environment-list button\" no longer exists (some tests asserted nothing); Diagnostics tab removed; conflict warning looked for in shared data.",
+   "change": "Selects through chips, waits for the detail, Validation tab, creates and deletes its own conflicting environment.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentsUIResponsiveTest_PreStarted",
+   "test": "TargetEnvironmentsUI_ResponsiveProof_AtViewport(width: 1440)",
+   "originalOutcome": "Failed",
+   "originalMessage": "Expected tabContainerCount to be greater than 0 because Tab container should exist, but found 0.",
+   "classification": [
+    "B",
+    "F",
+    "E"
+   ],
+   "cause": "Counted tabs before the detail rendered; \".fa-environment-list button\" no longer exists (some tests asserted nothing); Diagnostics tab removed; conflict warning looked for in shared data.",
+   "change": "Selects through chips, waits for the detail, Validation tab, creates and deletes its own conflicting environment.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentsUIResponsiveTest_PreStarted",
+   "test": "TargetEnvironmentsUI_ResponsiveProof_AtViewport(width: 480)",
+   "originalOutcome": "Failed",
+   "originalMessage": "Expected tabContainerCount to be greater than 0 because Tab container should exist, but found 0.",
+   "classification": [
+    "B",
+    "F",
+    "E"
+   ],
+   "cause": "Counted tabs before the detail rendered; \".fa-environment-list button\" no longer exists (some tests asserted nothing); Diagnostics tab removed; conflict warning looked for in shared data.",
+   "change": "Selects through chips, waits for the detail, Validation tab, creates and deletes its own conflicting environment.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentsUIResponsiveTest_PreStarted",
+   "test": "TargetEnvironmentsUI_ResponsiveProof_AtViewport(width: 800)",
+   "originalOutcome": "Failed",
+   "originalMessage": "Expected tabContainerCount to be greater than 0 because Tab container should exist, but found 0.",
+   "classification": [
+    "B",
+    "F",
+    "E"
+   ],
+   "cause": "Counted tabs before the detail rendered; \".fa-environment-list button\" no longer exists (some tests asserted nothing); Diagnostics tab removed; conflict warning looked for in shared data.",
+   "change": "Selects through chips, waits for the detail, Validation tab, creates and deletes its own conflicting environment.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  },
+  {
+   "variant": "VerifyPre",
+   "class": "TargetEnvironmentsUIResponsiveTest_PreStarted",
+   "test": "TargetEnvironmentsUI_ResponsiveProof_AtViewport(width: 860)",
+   "originalOutcome": "Failed",
+   "originalMessage": "Expected tabContainerCount to be greater than 0 because Tab container should exist, but found 0.",
+   "classification": [
+    "B",
+    "F",
+    "E"
+   ],
+   "cause": "Counted tabs before the detail rendered; \".fa-environment-list button\" no longer exists (some tests asserted nothing); Diagnostics tab removed; conflict warning looked for in shared data.",
+   "change": "Selects through chips, waits for the detail, Validation tab, creates and deletes its own conflicting environment.",
+   "productDefect": null,
+   "currentOutcome": "Passed",
+   "currentMessage": ""
+  }
+ ]
+}

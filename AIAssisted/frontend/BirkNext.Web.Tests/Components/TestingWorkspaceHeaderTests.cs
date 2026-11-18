@@ -39,4 +39,37 @@ public sealed class TestingWorkspaceHeaderTests : BunitContext
         Header(null).Find("[data-testid=twh-project]").TextContent.Should().Contain("No project selected");
         Header("LendoPlus").Find("[data-testid=twh-project]").TextContent.Should().Contain("LendoPlus");
     }
+
+    [Fact]
+    public void An_active_environment_of_another_application_is_named_with_the_way_to_rebind_it()
+    {
+        // Regression (task 7): the workspaces follow the application the tester chose; an environment still bound to another application is stated.
+        Services.AddSingleton(WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
+        var explorers = new Mock<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>();
+        explorers.SetupGet(e => e.EnvironmentBoundElsewhere).Returns(new BirkNext.Web.Services.Explorers.EnvironmentBindingElsewhere("M2LB DEV", "ScopesAcceptance"));
+        Services.AddSingleton(explorers.Object);
+
+        var notice = Header("PwSpecProbe").Find("[data-testid=twh-environment-elsewhere]");
+
+        notice.TextContent.Should().Contain("M2LB DEV").And.Contain("ScopesAcceptance").And.Contain("not to this project");
+        notice.GetAttribute("role").Should().Be("status");
+        notice.QuerySelector("[data-testid=twh-environment-elsewhere-link]")!.GetAttribute("href").Should().Be("admin/system-settings?section=target-environments");
+    }
+
+    [Fact]
+    public void No_notice_without_an_explorer_context()
+    {
+        Services.AddSingleton(WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
+        Header("LendoPlus").FindAll("[data-testid=twh-environment-elsewhere]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void No_notice_when_the_environment_belongs_to_the_project()
+    {
+        Services.AddSingleton(WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
+        var explorers = new Mock<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>();
+        explorers.SetupGet(e => e.EnvironmentBoundElsewhere).Returns((BirkNext.Web.Services.Explorers.EnvironmentBindingElsewhere?)null);
+        Services.AddSingleton(explorers.Object);
+        Header("LendoPlus").FindAll("[data-testid=twh-environment-elsewhere]").Should().BeEmpty();
+    }
 }

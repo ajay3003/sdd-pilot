@@ -174,7 +174,10 @@ public sealed class EndpointDiscoveryUITests : IAsyncLifetime
             await urlInput.DispatchEventAsync("change");
 
             await Assertions.Expect(page.GetByTestId("target-detection-state")).ToHaveTextAsync("Needs re-check");
-            await Assertions.Expect(page.GetByTestId("target-next-action")).ToHaveTextAsync("Check target again");
+            // The one check button becomes the primary action (it is never swapped for another button: 2026-11-18).
+            await Assertions.Expect(page.GetByTestId("target-check-again")).ToHaveTextAsync("Check target again");
+            await Assertions.Expect(page.GetByTestId("target-check-again")).ToHaveAttributeAsync("data-primary", "true");
+            await Assertions.Expect(page.GetByTestId("target-next-action")).ToHaveCountAsync(0);
             await Assertions.Expect(page.GetByRole(AriaRole.Button, new() { Name = "Continue detection in browser" })).ToHaveCountAsync(0);
             fake.RequestedUrls.Should().HaveCount(1, "a URL change never re-runs the check by itself");
             await page.GetByRole(AriaRole.Button, new() { Name = "Cancel", Exact = true }).ClickAsync();

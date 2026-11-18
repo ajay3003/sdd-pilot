@@ -401,6 +401,26 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
     }
 
     [Fact]
+    public async Task The_environment_detail_is_marked_busy_until_the_page_has_finished_loading()
+    {
+        // Regression (Playwright, task 7): the detail renders and accepts clicks while initialization is still running, and on a slow machine
+        // those actions were handled seconds later with no sign of it. The region states it is busy until loading has finished.
+        UseStoredAuthentication(PersistedAuthNone);
+        await _settings.LoadAsync(JSInterop.JSRuntime);
+        var discoveryPending = JSInterop.Setup<string?>("birkNextStorage.getDiscovery");
+
+        var cut = Render<Component>();
+        cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("M2LB DEV")).Click(); // the list is usable before loading finishes
+        var detail = cut.Find("[data-testid=fa-profile-detail]");
+        detail.GetAttribute("aria-busy").Should().Be("true", "the page's own loads are still running");
+        detail.GetAttribute("data-ready").Should().Be("false");
+
+        discoveryPending.SetResult(null);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=fa-profile-detail]").GetAttribute("aria-busy").Should().Be("false"));
+        cut.Find("[data-testid=fa-profile-detail]").GetAttribute("data-ready").Should().Be("true");
+    }
+
+    [Fact]
     public void While_editing_the_detection_summary_names_the_draft_url_the_check_is_about()
     {
         // Regression (Playwright, task 7): the summary kept showing the saved Frontend URL while a check ran for (and failed on) the draft URL.
@@ -421,6 +441,46 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
 
         Click(cut, "Cancel");
         cut.Find("[data-testid=target-detection-url]").TextContent.Should().Be(Url, "after Cancel the saved URL is shown again");
+    }
+
+    /// <summary>
+    /// Regression (Playwright, 2026-11-18): when a URL change made "check" the next step, the secondary check button was removed and a primary
+    /// one rendered instead — the button under the pointer disappeared as the URL committed on blur, and the first click was lost. The check
+    /// button is now one element that only changes emphasis.
+    /// </summary>
+    [Fact]
+    public void The_check_button_is_one_stable_element_that_becomes_primary_when_checking_is_the_next_step()
+    {
+        const string draft = "https://draft.example.com/";
+        _api.Setup(x => x.DetectFromUrlAsync(draft, default)).ReturnsAsync(new TargetEnvironmentDetectionResult
+        {
+            OriginalUrl = draft, Success = true, Reachability = TargetReachability.Reachable, State = DetectionState.Complete,
+        });
+        var cut = Open();
+        OpenTab(cut, "Target Application");
+        cut.Find("[data-testid=target-check-again]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=target-detection-reachability]").TextContent.Should().Contain("Reachable"));
+        AssertOneCheckButton(cut);
+
+        Click(cut, "Edit Environment");
+        OpenTab(cut, "Target Application");
+        cut.Find("[data-testid=fa-edit-target-url]").Change(draft);
+        cut.Find("[data-testid=target-detection-state]").TextContent.Should().Be("Needs re-check");
+        AssertOneCheckButton(cut);
+        cut.Find("[data-testid=target-check-again]").TextContent.Trim().Should().Be("Check target again");
+
+        cut.Find("[data-testid=target-check-again]").Click();
+        cut.WaitForAssertion(() => _api.Verify(x => x.DetectFromUrlAsync(draft, default), Times.Once));
+        Click(cut, "Cancel");
+    }
+
+    /// <summary>Exactly one check button; it is the primary action exactly when no other next action is shown (never a second check button).</summary>
+    private static void AssertOneCheckButton(IRenderedComponent<Component> cut)
+    {
+        cut.FindAll("[data-testid=target-check-again]").Should().ContainSingle();
+        cut.FindAll("[data-testid=target-next-action][data-action=check]").Should().BeEmpty("there is never a second check button");
+        var otherAction = cut.FindAll("[data-testid=target-next-action]").Count > 0;
+        cut.Find("[data-testid=target-check-again]").GetAttribute("data-primary").Should().Be(otherAction ? "false" : "true");
     }
 
     [Fact]

@@ -101,7 +101,9 @@
 @* ── Profile detail ───────────────────────────────────────────────────────── *@
 @if (SelectedProfile is { } profile)
 {
-    <div class="fa-profile-detail">
+    @* Busy while initialization still runs: the detail renders from the shared settings before the page's own loads finish, and actions taken
+       in that window are handled only once they do (seconds on a slow machine). Assistive technology and tests wait on this, never on a delay. *@
+    <div class="fa-profile-detail" data-testid="fa-profile-detail" aria-busy="@(_initializing ? "true" : "false")" data-ready="@(_initializing ? "false" : "true")">
 
         @* ── Header ── *@
         <div class="fa-detail-header">
@@ -299,12 +301,17 @@
                                 <p class="fa-target-url" data-testid="target-detection-url">@(CurrentTargetUrl ?? "No Frontend URL")</p>
                             </div>
                             <div class="fa-target-actions">
+                                @* One check button that is never replaced and never moves: it is the primary action when checking is the next step, and it
+                                   is the LAST item of this right-aligned row, so another action appearing or disappearing to its left cannot shift it. A
+                                   separate primary check button (and, later, a sibling to its right) moved it under the pointer as the URL committed on
+                                   blur, and the tester's first click landed beside it (2026-11-18). *@
                                 @if (next.Action != "check")
                                 {
-                                    <button type="button" class="btn btn-secondary btn-sm" data-testid="target-check-again" disabled="@_isDetecting" @onclick="DetectConfigurationAsync">@(_isDetecting ? "Checking…" : _detectionResult is null ? "Check target" : "Check target again")</button>
+                                    <button type="button" class="btn btn-primary btn-sm" data-testid="target-next-action" data-action="@next.Action"
+                                            @onclick="() => RunTargetNextActionAsync(next.Action)">@next.Label</button>
                                 }
-                                <button type="button" class="btn btn-primary btn-sm" data-testid="target-next-action" data-action="@next.Action" disabled="@(_isDetecting && next.Action == "check")"
-                                        @onclick="() => RunTargetNextActionAsync(next.Action)">@(_isDetecting && next.Action == "check" ? "Checking…" : next.Label)</button>
+                                <button type="button" class="btn @(next.Action == "check" ? "btn-primary" : "btn-secondary") btn-sm" data-testid="target-check-again"
+                                        data-primary="@(next.Action == "check" ? "true" : "false")" disabled="@_isDetecting" @onclick="DetectConfigurationAsync">@(_isDetecting ? "Checking…" : _detectionResult is null ? "Check target" : "Check target again")</button>
                             </div>
                         </div>
                         <p class="fa-target-badges" data-testid="target-detection-badges">
@@ -2073,7 +2080,16 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
 
+    /// <summary>True until <see cref="OnInitializedAsync"/> has finished (the detail is shown as busy meanwhile).</summary>
+    private bool _initializing = true;
+
     protected override async Task OnInitializedAsync()
+    {
+        try { await InitializeAsync(); }
+        finally { _initializing = false; }
+    }
+
+    private async Task InitializeAsync()
     {
         _edgeRuntime = ServiceProvider.GetService<ManagedEdgeRuntime>();
         if (_edgeRuntime is not null) _edgeRuntime.Changed += EdgeRuntimeChanged;

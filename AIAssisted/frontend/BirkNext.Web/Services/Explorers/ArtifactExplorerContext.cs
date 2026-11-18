@@ -209,6 +209,9 @@ public sealed record ArtifactImportResult(string? ArtifactId, string? Error, Wor
 /// What every document explorer reads: the artifacts of one ROLE in the current workspace, from whichever source they came.
 /// Explorers never look up files by name and do not depend on a Sample Project being selected.
 /// </summary>
+/// <summary>The active Target Environment (<paramref name="EnvironmentName"/>) is bound to <paramref name="ApplicationName"/>, not the current application.</summary>
+public sealed record EnvironmentBindingElsewhere(string EnvironmentName, string ApplicationName);
+
 public interface IArtifactExplorerContext
 {
     /// <summary>Raised when artifacts, selection, authority or the selected project change, and after a reset.</summary>
@@ -238,6 +241,13 @@ public interface IArtifactExplorerContext
 
     /// <summary>The workspace scope: the selected Sample Project slug, the current imported project (<c>import:{id}</c>), or null for the manual workspace.</summary>
     string? CurrentScope { get; }
+
+    /// <summary>
+    /// The active Target Environment is bound to a project of another application than the one the tester chose (Project Import → "Import another
+    /// application" / "Show this package"): the workspaces follow the chosen application, and this names the environment and the application it
+    /// is bound to so the pages can say so. Null when the environment belongs to the current application, has no project, or none is chosen.
+    /// </summary>
+    EnvironmentBindingElsewhere? EnvironmentBoundElsewhere => null;
 
     Task<ArtifactExplorerState> GetStateAsync(WorkspaceArtifactType role, CancellationToken cancellationToken = default);
 
@@ -383,12 +393,32 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         return present;
     }
 
-    /// <summary>The active Target Environment's Project, when its main import is recorded in this workspace; otherwise null (legacy fallback).</summary>
-    private (FrontendAnalysisProfile Profile, EnvironmentProject Project, SddProjectImportRecord Main)? EnvironmentProject()
+    /// <summary>
+    /// The active Target Environment's Project, when its main import is recorded in this workspace and belongs to the current application;
+    /// otherwise null (legacy fallback). An environment bound to another application never outranks the application the tester chose
+    /// (see <see cref="EnvironmentBoundElsewhere"/>), so every consumer here sees one consistent project.
+    /// </summary>
+    private (FrontendAnalysisProfile Profile, EnvironmentProject Project, SddProjectImportRecord Main)? EnvironmentProject() =>
+        BoundEnvironmentProject() is { } bound && !OfAnotherApplication(bound.Main) ? bound : null;
+
+    /// <summary>The active Target Environment's Project as bound, whatever application is current.</summary>
+    private (FrontendAnalysisProfile Profile, EnvironmentProject Project, SddProjectImportRecord Main)? BoundEnvironmentProject()
     {
         if (_environments?.ActiveProfile is not { Project: { } project } profile) return null;
         return ProjectEvidenceResolver.MainImport(project, _workspace.SddLifecycle) is { } main ? (profile, project, main) : null;
     }
+
+    /// <summary>The import belongs to a known application other than the current one (both known; legacy imports without one never differ).</summary>
+    private bool OfAnotherApplication(SddProjectImportRecord main) =>
+        _workspace.SddLifecycle.CurrentApplicationId is { Length: > 0 } current && main.ApplicationId is { Length: > 0 } bound
+        && !string.Equals(bound, current, StringComparison.Ordinal);
+
+    public EnvironmentBindingElsewhere? EnvironmentBoundElsewhere =>
+        BoundEnvironmentProject() is { } bound && OfAnotherApplication(bound.Main)
+            ? new(bound.Profile.Name,
+                ProjectImport.ApplicationContexts.Find(_workspace.SddLifecycle, bound.Main.ApplicationId)?.Name
+                    ?? (string.IsNullOrWhiteSpace(bound.Project.ProjectName) ? bound.Main.ProjectName : bound.Project.ProjectName))
+            : null;
 
     /// <summary>
     /// A selected Sample Project; else the active Target Environment's Project (its main import); else the current imported project; else the

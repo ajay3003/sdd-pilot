@@ -17,7 +17,8 @@
     }
     else
     {
-        <div class="table-wrap"><table>
+        @* The table scrolls horizontally (min-width 1100px): the scroll region is focusable and named so keyboard users can scroll it (WCAG 2.1.1). *@
+        <div class="table-wrap" tabindex="0" role="region" aria-label="Requirements traceability table" data-testid="sdd-matrix-scroll"><table>
             <thead><tr><th>Requirement</th><th>Acceptance criteria</th><th>Plan</th><th>Task</th><th>Implementation evidence</th><th>Test design</th><th>Execution / result</th><th>Currentness</th></tr></thead>
             <tbody>
             @foreach (var row in Rows)

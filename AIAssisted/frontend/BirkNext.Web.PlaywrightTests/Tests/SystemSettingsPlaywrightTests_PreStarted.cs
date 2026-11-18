@@ -70,6 +70,9 @@ public sealed class SystemSettingsPlaywrightTests_PreStarted : IAsyncLifetime
 
         await GoAsync(page, "frontend-quality-engines");
         await page.GetByTestId("ftc").WaitForAsync(new LocatorWaitForOptions { Timeout = 120000 });
+        // The capability summary checks each engine on this computer first (Lighthouse readiness starts Node and Chromium: ~17 s with the
+        // runner installed); the installation switches are listed once that check has answered.
+        await Assertions.Expect(page.GetByTestId("ftc-summary")).Not.ToContainTextAsync("Checking local capabilities", new() { Timeout = 120000 });
         await page.GetByRole(AriaRole.Button, new() { Name = "Edit Settings", Exact = true }).ClickAsync();
         page.Url.Should().EndWith("section=frontend-quality-engines");
         // Edit mode opens Technical details, where the installation switches live.

@@ -19,3 +19,5 @@
 .tai-candidates li { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .tai-reasons { margin: .25rem 0 0 1rem; font-size: .9rem; }
 .tai-why summary, .tai-choose summary, .tai-advanced summary { cursor: pointer; font-size: .9rem; }
+/* Reserves about the height of the chosen-application summary (the usual answer), so the answer arriving does not move what is below. */
+.tai-loading { min-height: 7rem; }

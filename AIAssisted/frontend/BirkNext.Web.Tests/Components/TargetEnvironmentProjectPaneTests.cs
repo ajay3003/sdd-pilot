@@ -114,6 +114,30 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
         _settings.Settings.ActiveProfileId.Should().Be("dev", "detection never changes activation");
     }
 
+    /// <summary>
+    /// Regression (Playwright, 2026-11-18): while the environment's evidence was still being read the panel showed "Application not chosen" and
+    /// the picker, then shrank ~130 px to the chosen application half a second later — moving the check button below it under the pointer, so
+    /// a click landed on the page instead. Until the answer is known the panel says it is reading, with the height of the usual answer reserved.
+    /// </summary>
+    [Fact]
+    public void While_the_environment_is_still_read_the_panel_says_so_and_never_claims_no_application()
+    {
+        DevProfile.TargetUrl = "https://m2lbdev.bufetat.no";
+        var gate = new TaskCompletionSource<ActiveEventApiResult<SourceSetupView>>();
+        var journeys = new Mock<IIntegrationJourneysApiService>();
+        journeys.Setup(j => j.SourceSetupAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>())).Returns(gate.Task);
+        Services.AddSingleton<IProjectEvidenceService>(new ProjectEvidenceService(_settings, _repository, journeys.Object, _js));
+
+        var panel = Render<TargetApplicationIdentityPanel>(p => p.Add(x => x.EnvironmentId, "dev"));
+        panel.Find("[data-testid=tai-loading]").GetAttribute("role").Should().Be("status");
+        panel.FindAll("[data-testid=tai-empty]").Should().BeEmpty("nothing is known yet: \"not chosen\" would be wrong");
+        panel.FindAll("[data-testid=tai-picker]").Should().BeEmpty();
+
+        gate.SetResult(new ActiveEventApiResult<SourceSetupView>(new SourceSetupView { Snapshots = [.. _snapshots] }, null));
+        panel.WaitForAssertion(() => panel.Find("[data-testid=tai-name]").TextContent.Should().Be("M2LB"));
+        panel.FindAll("[data-testid=tai-loading]").Should().BeEmpty();
+    }
+
     [Fact]
     public void An_existing_manual_M2LB_is_confirmed_by_detection_in_place_never_duplicated()
     {

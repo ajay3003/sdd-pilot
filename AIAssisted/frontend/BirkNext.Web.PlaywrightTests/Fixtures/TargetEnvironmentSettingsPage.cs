@@ -15,11 +15,15 @@ public static class TargetEnvironmentSettingsPage
     public static string Url(string? query = null) =>
         $"{BrowserTestServers.FrontendUrl}/admin/system-settings?section=target-environments{(query is null ? "" : "&" + query)}";
 
-    /// <summary>Opens the section and waits until the selected environment's detail has rendered (the list is clickable before that).</summary>
+    /// <summary>
+    /// Opens the section and waits until the selected environment's detail is ready: it renders (and accepts clicks) while the page is still
+    /// loading, and is marked aria-busy / data-ready="false" until loading has finished. Actions taken earlier were handled seconds later on a
+    /// loaded machine (a check "did nothing" within the test's wait, a focused button was re-rendered), so tests start once it is ready.
+    /// </summary>
     public static async Task OpenAsync(IPage page, string? query = null)
     {
         await page.GotoAsync(Url(query), new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 60000 });
-        await page.Locator(".fa-profile-detail").First.WaitForAsync(new() { Timeout = 120000 });
+        await page.Locator("[data-testid=fa-profile-detail][data-ready=true]").WaitForAsync(new() { Timeout = 120000 });
     }
 
     /// <summary>Selects an environment by name and waits until the detail shows it.</summary>

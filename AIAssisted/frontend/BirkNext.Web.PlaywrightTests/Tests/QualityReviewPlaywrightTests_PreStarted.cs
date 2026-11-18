@@ -115,8 +115,8 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
             await FrontendQualityReviewPage.WaitUntilRunnableAsync(page);
             await run.ClickAsync();
 
-            var matrix = page.Locator("table.fqr-engine-matrix");
-            await matrix.WaitForAsync(new LocatorWaitForOptions { Timeout = 240000 });
+            // The engine matrix is in the collapsed "View engine diagnostics" disclosure under Engine coverage (post-run hierarchy).
+            var matrix = await FrontendQualityReviewPage.EngineMatrixAsync(page);
             var rows = matrix.Locator("tbody tr");
             (await rows.CountAsync()).Should().Be(6, "all six configured engines must reach aggregate coverage");
 
@@ -125,12 +125,25 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
                 "StaticSecurity", "PassivePerformance", "BrowserRuntime", "Accessibility", "Lighthouse", "PassiveSecurity");
             (await page.Locator("tr[data-engine-id='BrowserRuntime']").CountAsync()).Should().Be(1);
 
-            await page.GetByRole(AriaRole.Region, new() { Name = "Release disposition" }).ShouldBeVisibleAsync();
+            // Decision support (post-run tabs, 2026-11): engine outcomes on Coverage, the release decision on Summary, logical issues and the
+            // manual follow-up on Issues, engine scores under Evidence → Technical details. Each is checked where the tester reads it.
             await page.GetByRole(AriaRole.Region, new() { Name = "Automated coverage and engine outcomes" }).ShouldBeVisibleAsync();
-            await page.GetByRole(AriaRole.Region, new() { Name = "Logical issues" }).ShouldBeVisibleAsync();
-            await page.GetByRole(AriaRole.Region, new() { Name = "Manual verification required" }).ShouldBeVisibleAsync();
             await page.GetByRole(AriaRole.Region, new() { Name = "Browser Runtime details" }).ShouldBeVisibleAsync();
-            await page.GetByText("Legacy static review score", new() { Exact = true }).ShouldBeVisibleAsync();
+
+            await FrontendQualityReviewPage.OpenResultTabAsync(page, "summary");
+            var release = page.GetByTestId("fqr-release");
+            await release.ShouldBeVisibleAsync();
+            (await release.GetAttributeAsync("data-disposition")).Should().MatchRegex("^(Blocked|ReviewRequired|NoAutomatedBlockDetected)$");
+            (await page.GetByTestId("fqr-release-label").InnerTextAsync()).Should().NotBeNullOrWhiteSpace();
+
+            await FrontendQualityReviewPage.OpenResultTabAsync(page, "issues");
+            await page.GetByTestId("fqr-all-logical-issues").ShouldBeVisibleAsync();
+            await page.GetByTestId("fqr-manual-followup").ShouldBeVisibleAsync();
+
+            await FrontendQualityReviewPage.OpenResultTabAsync(page, "evidence");
+            var diagnostics = page.GetByTestId("fqr-result-diagnostics-toggle");
+            if (await diagnostics.GetAttributeAsync("aria-expanded") != "true") await diagnostics.ClickAsync();
+            await Assertions.Expect(page.GetByText("Legacy static review score", new() { Exact = true })).ToBeVisibleAsync();
 
             foreach (var endpoint in endpoints)
             {
@@ -139,8 +152,6 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
 
             var browserRow = page.Locator("tr[data-engine-id='BrowserRuntime']");
             (await browserRow.InnerTextAsync()).Should().Contain("Chromium");
-            (await page.GetByRole(AriaRole.Region, new() { Name = "Release disposition" }).InnerTextAsync())
-                .Should().MatchRegex("Blocked|ReviewRequired|NoAutomatedBlockDetected");
 
             // Leave and return inside the same app session (client-side navigation; the sidebar no longer has a fixed Dashboard link in
             // every workspace view, so the always-present All modules link and browser Back are used).
@@ -148,7 +159,8 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
             await page.WaitForURLAsync("**/all-modules**", new PageWaitForURLOptions { Timeout = 30000 });
             await page.GoBackAsync();
             await page.WaitForURLAsync("**/frontend-quality-review", new PageWaitForURLOptions { Timeout = 30000 });
-            await matrix.WaitForAsync(new LocatorWaitForOptions { Timeout = 15000 });
+            // The restored results render collapsed again: open the diagnostics as a user returning to the page would.
+            matrix = await FrontendQualityReviewPage.EngineMatrixAsync(page, 15000);
             (await matrix.Locator("tbody tr").CountAsync()).Should().Be(6, "session reload must preserve aggregate outcomes");
             foreach (var endpoint in endpoints)
             {

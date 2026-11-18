@@ -1389,6 +1389,9 @@
                 Inventory        = _inventory,
                 Policy           = DocumentationGatePolicy.None,
             }, selectedPackIds);
+            // The new result starts collapsed with fresh previews — set now, before any await below renders it. Resetting after the
+            // post-run steps (auto-save, diagnostic export) collapsed a pack the tester had already opened while they ran (2026-11-18).
+            ResetResultViewState();
 
             QualitySession.SaveResult(_report, selectedPackIds, _selectedProject ?? string.Empty, artifactSnapshot, inputs);
             stage = "the review history could not be saved";
@@ -1433,24 +1436,6 @@
             var drResult = _report.PackResults.FirstOrDefault(r => r.DeliveryReadiness is not null);
             if (drResult?.DeliveryReadiness is not null)
                 DashboardSnapshot.Publish(drResult.DeliveryReadiness);
-
-            _topIssues     = GetTopIssues(5);
-            _inputExpanded = false;
-            _expanded.Clear();
-            // Don't auto-expand packs - let user click to expand via pack cards
-            // foreach (var r in _report.PackResults)
-            //     _expanded.Add(r.PackId);
-
-            // Reset all preview state.
-            ResetPreviewState();
-
-            // Reset readiness detail state.
-            _qaExpandedCategory      = null;
-            _drTab                   = "overview";
-            _drBlockerSeverityFilter = null;
-            _drBlockerPhaseFilter    = null;
-            _drRecPhaseFilter        = null;
-            _drRecSearch             = string.Empty;
         }
         catch (Exception ex) when (stage is not null && _report is not null)
         {
@@ -1492,6 +1477,21 @@
 
         // Reset all preview state for the new pack
         ResetPreviewState();
+    }
+
+    /// <summary>A new result is shown collapsed (packs open on request) with every preview and readiness view at its start.</summary>
+    private void ResetResultViewState()
+    {
+        _topIssues     = GetTopIssues(5);
+        _inputExpanded = false;
+        _expanded.Clear();
+        ResetPreviewState();
+        _qaExpandedCategory      = null;
+        _drTab                   = "overview";
+        _drBlockerSeverityFilter = null;
+        _drBlockerPhaseFilter    = null;
+        _drRecPhaseFilter        = null;
+        _drRecSearch             = string.Empty;
     }
 
     private void ResetPreviewState()

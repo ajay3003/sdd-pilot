@@ -104,9 +104,11 @@ public sealed class FrontendQualityReviewLayoutMeasurementTest : IAsyncLifetime
             await FrontendQualityReviewPage.WaitUntilRunnableAsync(page);
             await run.ClickAsync();
 
-            // Wait for engine matrix to appear (indicates results are rendering)
-            var matrix = page.Locator("table.fqr-engine-matrix");
-            await matrix.WaitForAsync(new LocatorWaitForOptions { Timeout = 240000 });
+            // Results render the Engine coverage table first; the detailed engine matrix lives in the collapsed "View engine diagnostics"
+            // disclosure (post-run result-first hierarchy). It is opened the way a user does, so the matrix measurements below stay meaningful.
+            // The result is five tab views (2026-11): the matrix and the assessment-domain cards are measured on Coverage, the issue search
+            // on Issues, the release decision on Summary and the technical details on Evidence — each where the tester reads it.
+            await FrontendQualityReviewPage.EngineMatrixAsync(page);
 
             // Wait for page to stabilize
             await page.WaitForTimeoutAsync(1000);
@@ -172,13 +174,13 @@ public sealed class FrontendQualityReviewLayoutMeasurementTest : IAsyncLifetime
                     return {
                         mainContent: getRect('main'),
                         fqrPage: getRect('.fqr-page'),
-                        releaseDisposition: getRect('[role=""region""][aria-label*=""Release""]'),
+                        releaseDisposition: getRect('[data-testid=fqr-release]'),
                         engineMatrix: getRect('table.fqr-engine-matrix'),
                         engineMatrixRow: getRect('table.fqr-engine-matrix tbody tr'),
-                        categoryGrid: getRect('.fqr-category-grid'),
-                        categoryCard: getRect('.fqr-category-card'),
+                        categoryGrid: getRect('.fqr-domain-grid'),
+                        categoryCard: getRect('.fqr-domain-result'),
                         findingsSearch: getRect('.fqr-search'),
-                        technicalDetails: getRect('.fqr-technical-details'),
+                        technicalDetails: getRect('[data-testid=fqr-result-diagnostics-toggle]'),
                         findingsTable: getRect('.fqr-findings-table'),
                         findingsToolbar: getRect('.fqr-findings-toolbar')
                     };
@@ -211,8 +213,8 @@ public sealed class FrontendQualityReviewLayoutMeasurementTest : IAsyncLifetime
                         normalParagraph: getStyles('.fqr-empty-panel') || getStyles('p'),
                         engineMatrixHeader: getStyles('table.fqr-engine-matrix th'),
                         engineMatrixRow: getStyles('table.fqr-engine-matrix td'),
-                        categoryCardTitle: getStyles('.fqr-category-title'),
-                        categoryCardValue: getStyles('.fqr-category-card strong'),
+                        categoryCardTitle: getStyles('.fqr-domain-result-head h2'),
+                        categoryCardValue: getStyles('.fqr-domain-result-count'),
                         searchInput: getStyles('.fqr-search'),
                         button: getStyles('button'),
                         technicalDetailsLabel: getStyles('.fqr-technical-details summary')
@@ -247,7 +249,7 @@ public sealed class FrontendQualityReviewLayoutMeasurementTest : IAsyncLifetime
 
                     return {
                         engineMatrix: getGridInfo('table.fqr-engine-matrix'),
-                        categoryGrid: getGridInfo('.fqr-category-grid'),
+                        categoryGrid: getGridInfo('.fqr-domain-grid'),
                         summaryGrid: getGridInfo('.fqr-summary-grid'),
                         riskGrid: getGridInfo('.fqr-risk-grid'),
                         recommendationGrid: getGridInfo('.fqr-recommendation-grid'),
@@ -381,7 +383,7 @@ public sealed class FrontendQualityReviewLayoutMeasurementTest : IAsyncLifetime
                         pageWidth: page.getBoundingClientRect().width,
                         matrixWidth: document.querySelector('.fqr-engine-matrix').getBoundingClientRect().width,
                         matrixFirstColumnWidth: document.querySelector('.fqr-engine-matrix th').getBoundingClientRect().width,
-                        categoryCardWidth: document.querySelector('.fqr-category-card').getBoundingClientRect().width,
+                        categoryCardWidth: document.querySelector('.fqr-domain-result').getBoundingClientRect().width,
                         scrollWidth: document.documentElement.scrollWidth,
                         bodyFontSize: getComputedStyle(document.body).fontSize,
                         matrixFontSize: getComputedStyle(document.querySelector('.fqr-engine-matrix td')).fontSize
@@ -404,8 +406,8 @@ public sealed class FrontendQualityReviewLayoutMeasurementTest : IAsyncLifetime
                         clientWidth: document.documentElement.clientWidth,
                         scrollWidth: document.documentElement.scrollWidth,
                         pageWidth: document.querySelector('.fqr-page').getBoundingClientRect().width,
-                        categoryCardWidth: document.querySelector('.fqr-category-card').getBoundingClientRect().width,
-                        representativeFontSize: getComputedStyle(document.querySelector('.fqr-category-title')).fontSize,
+                        categoryCardWidth: document.querySelector('.fqr-domain-result').getBoundingClientRect().width,
+                        representativeFontSize: getComputedStyle(document.querySelector('.fqr-domain-result-head h2')).fontSize,
                         overflowing: [...document.querySelectorAll('body *')]
                             .filter(el => el.getBoundingClientRect().right > document.documentElement.clientWidth + 0.5)
                             .slice(0, 8)
@@ -449,12 +451,20 @@ public sealed class FrontendQualityReviewLayoutMeasurementTest : IAsyncLifetime
             typography.Body!.FontSize.Should().Be("16px", "result text must retain the application typography baseline");
             domGeometry.CategoryCard!.Width.Should().BeGreaterThanOrEqualTo(160,
                 "desktop category cards must remain usable");
-            domGeometry.FindingsSearch!.Height.Should().BeInRange(36, 56,
-                "the search input must retain a normal control height");
-            (await page.GetByText("Release disposition", new() { Exact = true }).IsVisibleAsync()).Should().BeTrue();
             (await page.Locator("table.fqr-engine-matrix").IsVisibleAsync()).Should().BeTrue();
-            (await page.GetByText("Category Summary", new() { Exact = true }).IsVisibleAsync()).Should().BeTrue();
-            (await page.GetByText("Technical Details", new() { Exact = true }).IsVisibleAsync()).Should().BeTrue();
+            await Assertions.Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Assessment domains", Exact = true })).ToBeVisibleAsync();
+
+            await FrontendQualityReviewPage.OpenResultTabAsync(page, "issues");
+            var search = await page.GetByTestId("fqr-issue-search").BoundingBoxAsync();
+            search.Should().NotBeNull("the issue search is shown on Issues");
+            search!.Height.Should().BeInRange(36, 56, "the search input must retain a normal control height");
+            await FrontendQualityReviewPage.OpenResultTabAsync(page, "summary");
+            await Assertions.Expect(page.GetByTestId("fqr-release-label")).ToBeVisibleAsync();
+            await Assertions.Expect(page.GetByText("Release decision", new() { Exact = true })).ToBeVisibleAsync();
+            await FrontendQualityReviewPage.OpenResultTabAsync(page, "evidence");
+            await Assertions.Expect(page.GetByTestId("fqr-result-diagnostics-toggle")).ToBeVisibleAsync();
+            (await page.EvaluateAsync<int>("() => document.documentElement.scrollWidth")).Should().BeLessThanOrEqualTo(1440,
+                "no result view introduces page-level horizontal overflow");
 
             // Log detailed measurements for manual inspection
             Console.WriteLine("=== FQR LAYOUT MEASUREMENTS ===");

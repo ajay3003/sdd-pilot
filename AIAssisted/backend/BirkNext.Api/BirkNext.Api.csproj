@@ -50,7 +50,9 @@
     <EmbeddedResource Include="Services\SystemUnderstanding\Guides\*.guide.json" LogicalName="SystemGuide.%(Filename)%(Extension)" />
     <Content Update="Tools\LighthouseRunner\package.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Update="Tools\LighthouseRunner\package-lock.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Update="Tools\LighthouseRunner\run-lighthouse.mjs" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- .mjs is not a default Content item (only .json/.config are), so "Update" matched nothing and the pinned runner was never
+         published: every published build reported "Lighthouse runner is unavailable" (2026-11-18). -->
+    <Content Include="Tools\LighthouseRunner\run-lighthouse.mjs" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

@@ -98,8 +98,11 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
         await Assertions.Expect(page.Locator(".fa-profile-chip-selected")).ToContainTextAsync("QA");
         (await page.Locator(".fa-active-card-name").InnerTextAsync()).Trim().Should().Be(activeName, "selecting is not activating");
 
-        // The active environment's chip carries the Active indicator.
-        await Assertions.Expect(page.Locator(".fa-profile-chip").Filter(new() { HasText = activeName })).ToContainTextAsync("ACTIVE");
+        // Exactly one chip carries the Active indicator, and it is the active environment's ("Active", shown in capitals by CSS).
+        var activeBadges = page.Locator(".fa-profile-chip .fa-active-badge");
+        await Assertions.Expect(activeBadges).ToHaveCountAsync(1);
+        await Assertions.Expect(activeBadges).ToHaveTextAsync("Active");
+        await Assertions.Expect(page.Locator(".fa-profile-chip").Filter(new() { Has = page.Locator(".fa-active-badge") })).ToContainTextAsync(activeName);
         await page.CloseAsync();
     }
 
@@ -143,7 +146,10 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
         await TargetEnvironmentSettingsPage.SelectAsync(page, "QA");
 
         await TargetEnvironmentSettingsPage.OpenTabAsync(page, tabName);
-        (await page.GetByRole(AriaRole.Tab, new() { Selected = true }).InnerTextAsync()).Trim().Should().Be(tabName, "exactly the clicked tab is selected");
+        // The environment's own tabs (a tab's content may carry its own tab list, e.g. Endpoint Discovery's evidence views).
+        var selected = page.Locator("button.fa-tab[role=tab][aria-selected=true]");
+        await Assertions.Expect(selected).ToHaveCountAsync(1);
+        (await selected.InnerTextAsync()).Trim().Should().Be(tabName, "exactly the clicked tab is selected");
         var pageOverflow = await page.EvaluateAsync<int>("document.documentElement.scrollWidth - document.documentElement.clientWidth");
         pageOverflow.Should().BeLessThanOrEqualTo(0, $"Clicking {tabName} should not cause page overflow at 860px");
         await page.CloseAsync();

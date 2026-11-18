@@ -23,6 +23,16 @@
             else { <span>No project selected — <a href="project-import">import or choose a project</a>.</span> }
             @if (Context is { Length: > 0 } context) { <span class="twh-sep" aria-hidden="true">·</span><span data-testid="twh-context">@context</span> }
         </p>
+        @if (BoundElsewhere is { } other)
+        {
+            @* The workspaces follow the application the tester chose; the active environment still points at another one. Say so — runs against
+               that environment would test the other application. *@
+            <p class="mt-note mt-note-warn" role="status" data-testid="twh-environment-elsewhere">
+                The active Target Environment <strong>@other.EnvironmentName</strong> belongs to <strong>@other.ApplicationName</strong>, not to this project.
+                <a href="admin/system-settings?section=target-environments" data-testid="twh-environment-elsewhere-link">Choose or bind a Target Environment</a>
+                before running technical or integration tests.
+            </p>
+        }
     }
 </header>
 
@@ -41,6 +51,9 @@
     /// <summary>The saved project selection is still being read (the workspace projection has no snapshot yet): say so instead of "No project
     /// selected", which would be wrong for a few hundred milliseconds after every fresh start.</summary>
     private bool Restoring => HeaderServices.GetService(typeof(BirkNext.Web.Services.ICurrentWorkspaceProjection)) is BirkNext.Web.Services.ICurrentWorkspaceProjection { Current: null };
+    /// <summary>The active Target Environment is bound to another application than the chosen one (see IArtifactExplorerContext).</summary>
+    private BirkNext.Web.Services.Explorers.EnvironmentBindingElsewhere? BoundElsewhere =>
+        (HeaderServices.GetService(typeof(BirkNext.Web.Services.Explorers.IArtifactExplorerContext)) as BirkNext.Web.Services.Explorers.IArtifactExplorerContext)?.EnvironmentBoundElsewhere;
     /// <summary>Extra context after the project (source snapshot, plan), shown as plain text.</summary>
     [Parameter] public string? Context { get; set; }
     /// <summary>False when the page shows its own project context bar (so the project is not repeated).</summary>

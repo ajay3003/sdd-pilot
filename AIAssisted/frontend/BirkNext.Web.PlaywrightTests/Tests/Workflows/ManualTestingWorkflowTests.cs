@@ -62,15 +62,19 @@ public sealed class ManualTestingWorkflowTests : IAsyncLifetime
             if ((await testCase.GetAttributeAsync("class"))?.Contains("is-open") != true) await testCase.Locator(".tps-case-head").ClickAsync();
 
             // Edit: a new step with its expected result is an unsaved change until saved.
+            // Steps are numbered from 0: the added step is the row at the old count, once it has rendered.
+            var stepRows = page.Locator($"[data-testid=\"tps-steps-{candidateId}\"] .tps-step-row");
+            var before = await stepRows.CountAsync();
             await page.GetByTestId($"tps-step-new-{candidateId}").FillAsync(stepText);
             await page.GetByTestId($"tps-step-add-{candidateId}").ClickAsync();
-            var stepRows = page.Locator($"[data-testid=\"tps-steps-{candidateId}\"] .tps-step-row");
-            var last = await stepRows.CountAsync();
-            var expectedInput = page.GetByTestId($"tps-step-expected-{candidateId}-{last}");
+            await Assertions.Expect(stepRows).ToHaveCountAsync(before + 1);
+            await Assertions.Expect(page.GetByTestId($"tps-step-action-{candidateId}-{before}")).ToHaveValueAsync(stepText);
+            var expectedInput = page.GetByTestId($"tps-step-expected-{candidateId}-{before}");
             await expectedInput.FillAsync(expected);
             await expectedInput.DispatchEventAsync("change");
-            await Assertions.Expect(page.GetByTestId("tps-unsaved")).ToBeVisibleAsync();
-            await page.GetByTestId("tps-save").ClickAsync();
+            await Assertions.Expect(page.GetByTestId("tps-unsaved").First).ToBeVisibleAsync();
+            // The draft's save bar is repeated in each open area (one action); save from the case being edited, as a tester would.
+            await testCase.GetByTestId("tps-save").ClickAsync();
             await MessageAsync(page, "tps-message", "Draft saved");
 
             // Reload: exactly the saved content is there (persisted, not held by the tab).

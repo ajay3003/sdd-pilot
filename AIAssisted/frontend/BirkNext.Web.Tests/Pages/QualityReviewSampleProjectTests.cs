@@ -780,6 +780,32 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         }, timeout: TimeSpan.FromSeconds(3));
     }
 
+    /// <summary>
+    /// Defect 2026-11-18 (browser regression): the result renders while the post-run steps (diagnostic export, auto-save) are still awaited, so a
+    /// tester can open a pack then; resetting the view state after those steps collapsed that pack again ~300 ms later.
+    /// </summary>
+    [Fact]
+    public async Task APackOpenedWhileThePostRunStepsRun_StaysOpen()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        var cut = Render<QualityReview>();
+        cut.WaitForAssertion(() => cut.Find("button.btn-primary").HasAttribute("disabled").Should().BeFalse());
+
+        _resolver.MakeGetAvailableProjectsIncomplete();
+        var runTask = cut.Find("button.btn-primary").TriggerEventAsync("onclick", new MouseEventArgs());
+        runTask.IsCompleted.Should().BeFalse("the post-run diagnostic export is still waiting");
+        cut.WaitForAssertion(() => cut.FindAll("button.qr-result-header").Should().NotBeEmpty());
+        cut.Find("button.qr-result-header").Click();
+        cut.WaitForAssertion(() => cut.Find("button.qr-result-header").GetAttribute("aria-expanded").Should().Be("true"));
+
+        _resolver.CompleteGetAvailableProjects();
+        await runTask;
+        cut.WaitForAssertion(() => _qualityReview.Calls.Should().HaveCount(1));
+        cut.Render();
+        cut.Find("button.qr-result-header").GetAttribute("aria-expanded").Should().Be("true", "finishing the run must not collapse what the tester opened");
+    }
+
     [Fact]
     public void RunQualityReview_BuildDiagnosticExportAwaitsFinalizeCompletes()
     {

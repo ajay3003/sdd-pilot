@@ -13,7 +13,13 @@
 {
     <section class="tai" aria-labelledby="tai-title" data-testid="tai">
         <h4 id="tai-title" class="tai-title">Application</h4>
-        @if (_identity is { } current && !_picking)
+        @* Until the identity is read for this environment nothing is known: showing the "not chosen" picker meanwhile was wrong and, when an
+           application was chosen, the block shrank ~130 px half a second later — moving the buttons below it under the pointer (2026-11-18). *@
+        @if (!string.IsNullOrEmpty(EnvironmentId) && _identityLoadedFor != EnvironmentId)
+        {
+            <p class="tai-loading tai-muted" role="status" data-testid="tai-loading">Reading the application for this environment…</p>
+        }
+        else if (_identity is { } current && !_picking)
         {
             <p class="tai-current" data-testid="tai-current"><span class="tai-muted">Selected application</span> <strong data-testid="tai-name">@current.Name</strong>
                 <span class="tai-badge" data-testid="tai-provenance">@TargetApplicationInference.Provenance(current)</span></p>
@@ -141,7 +147,7 @@
     private IDeliveryReportingApiService? Delivery => Services.GetService(typeof(IDeliveryReportingApiService)) as IDeliveryReportingApiService;
     private TargetApplicationIdentity? _identity;
     private bool _hasEvidence, _picking, _adding, _focusConfirm;
-    private string? _query, _manualName, _manualDescription, _status, _loadedFor, _linkName;
+    private string? _query, _manualName, _manualDescription, _status, _loadedFor, _linkName, _identityLoadedFor;
     private IReadOnlyList<ProjectEvidencePackage> _packages = [];
     private IReadOnlyList<string> _deliveryProjects = [];
     private LoadState _deliveryState;
@@ -180,6 +186,7 @@
         _packages = view.Packages;
         _inference = evidence.InferApplication(EnvironmentId);
         _picking = _identity is null;
+        _identityLoadedFor = EnvironmentId;
     }
 
     /// <summary>Delivery Reports projects are read once per picker session; a failure is an error with Retry, never "no applications found".</summary>

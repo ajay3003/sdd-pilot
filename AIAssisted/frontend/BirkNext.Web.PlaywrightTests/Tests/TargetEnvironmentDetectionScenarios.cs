@@ -18,6 +18,8 @@ internal static class TargetEnvironmentDetectionScenarios
     public const string DraftUrl = "https://draft.synthetic.example.test/protected";
     /// <summary>Loopback discard port: nothing listens, so the real backend check fails fast and never leaves this machine.</summary>
     public const string ClosedLoopbackUrl = "http://127.0.0.1:9/";
+    /// <summary>How long a check may take to show its outcome (a synthetic answer is instant; a loaded machine handles the click later).</summary>
+    private const float CheckTimeoutMs = 30000;
 
     /// <summary>The visible check action on the summary, whichever state it is in.</summary>
     public static ILocator CheckAction(IPage page) =>
@@ -71,7 +73,7 @@ internal static class TargetEnvironmentDetectionScenarios
         await UrlInput(page).FillAsync(DraftUrl);
         await UrlInput(page).DispatchEventAsync("change");
         await CheckAction(page).ClickAsync();
-        await Assertions.Expect(page.GetByTestId("target-detection-state")).ToHaveTextAsync("Detection complete");
+        await Assertions.Expect(page.GetByTestId("target-detection-state")).ToHaveTextAsync("Detection complete", new() { Timeout = CheckTimeoutMs });
 
         fake.RequestedUrls.Should().Equal([DraftUrl], "the check is about the draft URL");
         await Assertions.Expect(page.GetByTestId("target-detection-url")).ToHaveTextAsync(DraftUrl);
@@ -87,11 +89,11 @@ internal static class TargetEnvironmentDetectionScenarios
         await UrlInput(page).FillAsync("https://example-a.synthetic.example.test/");
         await UrlInput(page).DispatchEventAsync("change");
         await CheckAction(page).ClickAsync();
-        await Assertions.Expect(page.GetByTestId("target-detection-state")).ToHaveTextAsync("Detection complete");
+        await Assertions.Expect(page.GetByTestId("target-detection-state")).ToHaveTextAsync("Detection complete", new() { Timeout = CheckTimeoutMs });
 
         await UrlInput(page).FillAsync("https://example-b.synthetic.example.test/");
         await UrlInput(page).DispatchEventAsync("change");
-        await Assertions.Expect(page.GetByTestId("target-detection-state")).ToHaveTextAsync("Needs re-check");
+        await Assertions.Expect(page.GetByTestId("target-detection-state")).ToHaveTextAsync("Needs re-check", new() { Timeout = CheckTimeoutMs });
         await Assertions.Expect(CheckAction(page)).ToHaveTextAsync("Check target again");
         fake.RequestedUrls.Should().HaveCount(1, "changing the URL never re-runs the check by itself");
         await page.GetByRole(AriaRole.Button, new() { Name = "Cancel", Exact = true }).ClickAsync();
@@ -127,13 +129,15 @@ internal static class TargetEnvironmentDetectionScenarios
         await page.Keyboard.PressAsync("Control+A");
         await page.Keyboard.TypeAsync(DraftUrl);
         await page.Keyboard.PressAsync("Tab"); // commits the value (change) and moves on
+        // The committed draft re-renders the actions (which buttons exist depends on the next action); focus the one present after that render.
+        await Assertions.Expect(page.GetByTestId("target-detection-url")).ToHaveTextAsync(DraftUrl);
 
         // The check action is reachable with the keyboard and runs on Enter.
         var check = CheckAction(page);
         await check.FocusAsync();
-        (await check.EvaluateAsync<bool>("element => element === document.activeElement")).Should().BeTrue("the check action is keyboard-focusable");
+        await Assertions.Expect(check).ToBeFocusedAsync(new() { Timeout = 2000 });
         await page.Keyboard.PressAsync("Enter");
-        await Assertions.Expect(page.GetByTestId("target-detection-state")).ToHaveTextAsync("Detection complete");
+        await Assertions.Expect(page.GetByTestId("target-detection-state")).ToHaveTextAsync("Detection complete", new() { Timeout = CheckTimeoutMs });
         fake.RequestedUrls.Should().Equal([DraftUrl]);
         await page.GetByRole(AriaRole.Button, new() { Name = "Cancel", Exact = true }).ClickAsync();
     }
@@ -153,7 +157,7 @@ internal static class TargetEnvironmentDetectionScenarios
         requestFailures.Should().NotContain(f => f.Contains("ERR_SSL_PROTOCOL_ERROR", StringComparison.OrdinalIgnoreCase));
 
         // Nothing listens on the discard port: the check fails honestly, for the draft URL, and the draft stays unsaved.
-        await Assertions.Expect(page.GetByTestId("target-detection-state")).ToHaveTextAsync("Detection failed");
+        await Assertions.Expect(page.GetByTestId("target-detection-state")).ToHaveTextAsync("Detection failed", new() { Timeout = CheckTimeoutMs });
         await Assertions.Expect(page.GetByTestId("target-detection-reachability")).ToContainTextAsync("Check failed");
         await Assertions.Expect(page.GetByTestId("target-detection-url")).ToHaveTextAsync(ClosedLoopbackUrl);
         await Assertions.Expect(page.GetByRole(AriaRole.Button, new() { Name = "Save changes", Exact = true })).ToBeVisibleAsync();

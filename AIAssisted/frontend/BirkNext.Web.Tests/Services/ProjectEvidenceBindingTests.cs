@@ -329,6 +329,61 @@ public sealed class ProjectEvidenceBindingTests
         _repository.SddLifecycle.CurrentProjectImportId.Should().Be(currentImport, "the user's current project is never changed");
     }
 
+    /// <summary>Two applications: M2LB (packages a, b; the environment's project) and Orders (package c). Returns the Orders import.</summary>
+    private SddProjectImportRecord TwoApplications()
+    {
+        SourceAndDocs();
+        var lifecycle = _repository.SddLifecycle;
+        lifecycle.Applications.Add(new SddApplicationContext { Id = "app-m2lb", Name = "M2LB", CreatedAt = T0 });
+        lifecycle.Applications.Add(new SddApplicationContext { Id = "app-orders", Name = "Orders", CreatedAt = T0 });
+        foreach (var id in new[] { "a", "b" }) lifecycle.ProjectImports.Single(i => i.ImportId == id).ApplicationId = "app-m2lb";
+        var orders = Import("c", "Orders.zip", 2, (WorkspaceArtifactType.Specification, "specs/001-orders/spec.md", "# Feature Specification: Orders\n\n- **FR-001**: System MUST list orders.\n"));
+        orders.ApplicationId = "app-orders";
+        return orders;
+    }
+
+    [Fact]
+    public async Task A_package_of_the_same_application_never_moves_the_explorers_off_the_environment_project()
+    {
+        TwoApplications();
+        _repository.SddLifecycle.CurrentApplicationId = "app-m2lb";
+        _repository.SddLifecycle.CurrentProjectImportId = "b"; // a supporting (documentation) package of the same application
+
+        _explorers.CurrentScope.Should().Be("import:a", "within one application the environment's project still decides");
+        _explorers.EnvironmentBoundElsewhere.Should().BeNull("the environment belongs to the chosen application");
+        (await _explorers.GetStateAsync(WorkspaceArtifactType.Specification)).Selected!.EvidenceSource.Should().Be("M2LB-docs.zip");
+    }
+
+    [Fact]
+    public async Task Another_chosen_application_is_followed_and_the_environment_bound_elsewhere_is_named()
+    {
+        // Regression (Playwright regression recovery, task 7): "Import another application" + "Show this package" showed the new application on
+        // Project Import while Manual and Technical Testing kept working on the environment's application, with nothing telling the tester.
+        TwoApplications();
+        _repository.SddLifecycle.CurrentApplicationId = "app-orders";
+        _repository.SddLifecycle.CurrentProjectImportId = "c";
+
+        _explorers.CurrentScope.Should().Be("import:c", "the workspaces follow the application the tester chose");
+        (await _explorers.GetStateAsync(WorkspaceArtifactType.Specification)).Selected!.SourcePath.Should().Be("specs/001-orders/spec.md");
+        _explorers.EnvironmentBoundElsewhere.Should().Be(new EnvironmentBindingElsewhere(Dev.Name, "M2LB"));
+        Dev.Project.Should().NotBeNull("following the chosen application never changes the environment's binding");
+
+        _repository.SddLifecycle.CurrentApplicationId = "app-m2lb"; // back to the environment's application
+        _explorers.CurrentScope.Should().Be("import:a");
+        _explorers.EnvironmentBoundElsewhere.Should().BeNull();
+    }
+
+    [Fact]
+    public void Imports_without_an_application_keep_the_environment_project_first()
+    {
+        SourceAndDocs(); // legacy imports: no application ids
+        _repository.SddLifecycle.CurrentApplicationId = "anything";
+        _repository.SddLifecycle.CurrentProjectImportId = "b";
+
+        _explorers.CurrentScope.Should().Be("import:a", "an unknown application never counts as another application");
+        _explorers.EnvironmentBoundElsewhere.Should().BeNull();
+    }
+
     [Fact]
     public async Task DocumentationRoleUnbound_IsSourceUnresolved_NotAnEmptyExplorer()
     {

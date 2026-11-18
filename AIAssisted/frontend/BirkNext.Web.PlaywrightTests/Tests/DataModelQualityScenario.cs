@@ -6,7 +6,7 @@ namespace BirkNext.Web.PlaywrightTests.Tests;
 
 /// <summary>
 /// One Document Quality Review → Data Model Quality scenario shared by the self-starting and pre-started variants: the test imports its own
-/// synthetic project (a data model with seven known warnings), runs only the Data Model Quality pack, reads the exact findings and drives the
+/// synthetic project (a data model with nine known warnings), runs only the Data Model Quality pack, reads the exact findings and drives the
 /// Show all / Show fewer toggle twice through real WASM event dispatch (the unboxing regression the original test was written for).
 /// </summary>
 internal static class DataModelQualityScenario
@@ -35,7 +35,7 @@ internal static class DataModelQualityScenario
 
         await page.GetByRole(AriaRole.Button, new() { Name = "Run Document Quality Review", Exact = true }).ClickAsync();
         var header = page.Locator("button.qr-result-header").Filter(new() { HasText = "Data Model Quality" });
-        await Assertions.Expect(header).ToContainTextAsync("7 findings", new() { Timeout = 60000 });
+        await Assertions.Expect(header).ToContainTextAsync("9 findings", new() { Timeout = 60000 });
         await header.ClickAsync();
         await Assertions.Expect(header).ToHaveAttributeAsync("aria-expanded", "true");
 
@@ -43,14 +43,14 @@ internal static class DataModelQualityScenario
         var cards = list.Locator(".issue-card");
         var toggle = page.Locator("button.qr-show-toggle[aria-controls='data-model-findings-list']");
         await Assertions.Expect(cards).ToHaveCountAsync(5, new() { Timeout = 10000 });
-        await Assertions.Expect(toggle).ToContainTextAsync("Show all 7 findings");
+        await Assertions.Expect(toggle).ToContainTextAsync("Show all 9 findings");
         (await page.Locator("main").InnerTextAsync()).Should().NotContain("##", "findings are plain text, never raw Markdown headings");
 
         for (var cycle = 1; cycle <= 2; cycle++)
         {
             await toggle.ClickAsync();
             await Assertions.Expect(toggle).ToContainTextAsync("Show fewer");
-            await Assertions.Expect(cards).ToHaveCountAsync(7);
+            await Assertions.Expect(cards).ToHaveCountAsync(9);
             await toggle.ClickAsync();
             await Assertions.Expect(toggle).ToContainTextAsync("Show all");
             await Assertions.Expect(cards).ToHaveCountAsync(5);
@@ -61,7 +61,8 @@ internal static class DataModelQualityScenario
         var text = await list.InnerTextAsync();
         foreach (var column in new[] { "name", "phone", "card_number", "book_number", "due_date" })
             text.Should().Contain($"Column \"{column}\" is missing a type.");
-        text.Should().Contain("Column \"email\" appears to contain sensitive data but has no classification annotation.");
+        foreach (var column in new[] { "email", "phone", "card_number" })
+            text.Should().Contain($"Column \"{column}\" appears to contain sensitive data but has no classification annotation.");
         text.Should().Contain("Column \"member_id\" looks like a foreign key but no relationship is defined for it.");
 
         console.Where(m => m.Contains("no idea on how to unbox value types", StringComparison.OrdinalIgnoreCase)).Should().BeEmpty("no WASM unboxing error");
