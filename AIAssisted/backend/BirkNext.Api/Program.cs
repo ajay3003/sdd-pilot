@@ -398,6 +398,14 @@ builder.Services.AddScoped<BirkNext.Api.Services.RuntimeAuthentication.RuntimeAu
 // Interactive authenticated review is local-workstation-only and disabled by default.
 builder.Services.Configure<AuthenticatedReviewOptions>(
     builder.Configuration.GetSection(AuthenticatedReviewOptions.SectionName));
+// Without an explicit Enabled/Runtime the local-workstation runtime follows Local Tester Mode (same capability in every local hosting).
+builder.Services.AddOptions<AuthenticatedReviewOptions>().PostConfigure<BirkNext.Api.Services.ActiveEventTesting.LocalTrustedExecution, IConfiguration>(
+    (options, local, configuration) =>
+    {
+        var section = configuration.GetSection(AuthenticatedReviewOptions.SectionName);
+        options.RuntimeConfigured = section["Enabled"] is not null || section["Runtime"] is not null;
+        options.LocalTesterModeActive = () => local.ModeActive;
+    });
 builder.Services.Configure<ManagedEdgeOptions>(builder.Configuration.GetSection("ManagedEdge"));
 builder.Services.AddSingleton<IManagedEdgeConnector, ManagedEdgeConnector>();
 builder.Services.AddSingleton<ManagedEdgeCdpService>();
@@ -1083,6 +1091,10 @@ app.Lifetime.ApplicationStarted.Register(() =>
     var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("BirkNext.LocalTesterMode");
     if (local.ModeActive) logger.LogInformation("{Mode} Listening on {Addresses}.", local.ModeDescription, string.Join(", ", addresses));
     else logger.LogWarning("{Mode} Listening on {Addresses}.", local.ModeDescription, string.Join(", ", addresses));
+    // After the listener check: the local-workstation runtime (browser, HTTPS inspection proxy, certificate trust) follows it.
+    var review = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthenticatedReviewOptions>>().Value;
+    logger.LogInformation("Authenticated review runtime: {Runtime} ({Source}).", review.EffectiveRuntime,
+        review.RuntimeConfigured ? "AuthenticatedReview configuration" : "Local Tester Mode");
 });
 {
     // The running build, once at startup (no secrets: version, channel, run id and commit only).
@@ -1091,9 +1103,6 @@ app.Lifetime.ApplicationStarted.Register(() =>
         build.InformationalVersion, build.Channel, build.BuildId ?? "none", build.Provenance);
 }
 
-var authenticatedReview = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthenticatedReviewOptions>>().Value;
-app.Logger.LogInformation("Authenticated review configuration: Enabled={Enabled}, Runtime={Runtime}",
-    authenticatedReview.Enabled, authenticatedReview.Runtime);
 
 try
 {
