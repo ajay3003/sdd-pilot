@@ -109,8 +109,8 @@ builder.Services.AddSingleton<BirkNext.Api.Services.LocalSecurity.LocalSessionSe
 builder.Services.AddControllers();
 
 // Active Event execution and integration configuration writes are capabilities. An Entra-issued API bearer token can carry them; missing
-// authority/audience leaves the scheme unable to validate callers. Without an identity provider the only grants are the explicit,
-// Development-and-loopback-only backend settings (Authorization:LocalConfigurationWrites, Authorization:LocalTrustedExecution) — never a
+// authority/audience leaves the scheme unable to validate callers. Without an identity provider the only grants come from Local Tester Mode
+// (BirkNext:LocalTesterMode, LocalTrustedExecution): the connected local tester on a loopback-only instance, in any hosting environment — never a
 // trusted identity header. No forwarded-headers middleware is registered: the connection's remote address is always the socket peer.
 // Inbound claim mapping is off, so Entra's "scp" and "roles" claims are evaluated under their own names.
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
@@ -1071,6 +1071,19 @@ builder.Services
     .ConfigureSchema(b => b.ModifyOptions(o => o.UseXmlDocumentation = true));
 
 var app = builder.Build();
+
+// Local Tester Mode applies only while every listener is loopback: once Kestrel has bound its addresses, any other address (0.0.0.0, a host
+// name, a LAN IP) switches every local grant off for this run. Logged once, so a misconfigured listener is visible in the backend log.
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    var local = app.Services.GetRequiredService<BirkNext.Api.Services.ActiveEventTesting.LocalTrustedExecution>();
+    var addresses = app.Services.GetService<Microsoft.AspNetCore.Hosting.Server.IServer>()?.Features
+        .Get<Microsoft.AspNetCore.Hosting.Server.Features.IServerAddressesFeature>()?.Addresses ?? [];
+    local.ObserveListeners(addresses);
+    var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("BirkNext.LocalTesterMode");
+    if (local.ModeActive) logger.LogInformation("{Mode} Listening on {Addresses}.", local.ModeDescription, string.Join(", ", addresses));
+    else logger.LogWarning("{Mode} Listening on {Addresses}.", local.ModeDescription, string.Join(", ", addresses));
+});
 {
     // The running build, once at startup (no secrets: version, channel, run id and commit only).
     var build = BirkNext.Api.Services.SystemInfo.BuildInfoService.Current;

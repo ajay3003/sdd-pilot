@@ -6,32 +6,26 @@ using Microsoft.Extensions.Options;
 namespace BirkNext.Api.Filters;
 
 /// <summary>
-/// Action filter enforcing HTTPS policy for Target Detection API endpoint.
-/// Policy is configuration-driven and environment-aware.
-///
-/// DEFAULT (Production):
-/// - HTTPS required: true
-/// - HTTP rejected
-///
-/// DEVELOPMENT/TEST:
-/// - HTTPS still preferred
-/// - HTTP loopback (localhost, 127.0.0.1, ::1) explicitly allowed if configured
-/// - HTTP non-loopback remains rejected
+/// Action filter enforcing HTTPS policy for Target Detection API endpoint. Policy is configuration-driven, never by hosting environment:
+/// - HTTPS is always accepted;
+/// - plain HTTP is accepted from loopback (localhost, 127.0.0.1, ::1) while Local Tester Mode is active — the local BirkNext's own frontend and
+///   backend on this computer, in development, a local Release run or the Windows Tester Package alike;
+/// - any other HTTP request is rejected (426), and RequireHttps = false turns the check off.
 /// </summary>
 public sealed class RequireTargetDetectionHttpsFilter : IActionFilter
 {
     private readonly IOptions<TargetDetectionOptions> _optionsSnapshot;
     private readonly ILogger<RequireTargetDetectionHttpsFilter> _logger;
-    private readonly IWebHostEnvironment _environment;
+    private readonly BirkNext.Api.Services.ActiveEventTesting.LocalTrustedExecution _local;
 
     public RequireTargetDetectionHttpsFilter(
         IOptions<TargetDetectionOptions> optionsSnapshot,
         ILogger<RequireTargetDetectionHttpsFilter> logger,
-        IWebHostEnvironment environment)
+        BirkNext.Api.Services.ActiveEventTesting.LocalTrustedExecution local)
     {
         _optionsSnapshot = optionsSnapshot;
         _logger = logger;
-        _environment = environment;
+        _local = local;
     }
 
     public void OnActionExecuting(ActionExecutingContext context)
@@ -50,22 +44,20 @@ public sealed class RequireTargetDetectionHttpsFilter : IActionFilter
             return;
         }
 
-        // Check if HTTP from loopback is explicitly allowed
-        // This is only intended for local development/test where frontend and backend are both on localhost
-        if (_environment.IsDevelopment() && IsRequestFromLoopback(request))
+        // HTTP from loopback: the local BirkNext's own frontend and backend on this computer (Local Tester Mode), in any hosting environment.
+        if (_local.ModeActive && IsRequestFromLoopback(request))
         {
-            _logger.LogDebug("Allowing HTTP request from loopback in Development environment: {Host}", request.Host.Host);
+            _logger.LogDebug("Allowing HTTP request from loopback in Local Tester Mode: {Host}", request.Host.Host);
             return;
         }
 
         // Reject insecure request
         _logger.LogWarning(
             "Rejecting insecure HTTP request to Target Detection API. " +
-            "Host: {Host}, IsHttps: {IsHttps}, Environment: {Environment}, AllowLoopback: {AllowLoopback}",
+            "Host: {Host}, IsHttps: {IsHttps}, LocalTesterMode: {Mode}",
             request.Host.Host,
             request.IsHttps,
-            _environment.EnvironmentName,
-            _environment.IsDevelopment());
+            _local.ModeDescription);
 
         context.Result = new StatusCodeResult(StatusCodes.Status426UpgradeRequired);
     }

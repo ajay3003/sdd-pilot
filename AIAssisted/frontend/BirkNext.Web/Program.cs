@@ -17,7 +17,7 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 
 // One configured backend address for every BirkNext API client (wwwroot/appsettings.json "BackendUrl"). A feature client
 // with its own hard-coded host or port drifts from the rest: its calls fail while other pages work, and the failure
-// reads as "backend not reachable". SECURITY: HTTPS required in production; HTTP only for loopback in Development.
+// reads as "backend not reachable". SECURITY: HTTPS, or HTTP only to the loopback backend on this computer (Local Tester Mode, any environment).
 var backendUrl = builder.Configuration["BackendUrl"] ?? "https://localhost:5000";
 BackendUrlValidator.Validate(backendUrl, builder.HostEnvironment.Environment);
 var backendBase = BackendUrlValidator.BaseAddress(backendUrl);

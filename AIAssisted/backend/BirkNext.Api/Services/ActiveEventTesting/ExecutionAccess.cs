@@ -7,39 +7,72 @@ using BirkNext.Integrations;
 namespace BirkNext.Api.Services.ActiveEventTesting;
 
 /// <summary>
-/// The local, single-user BirkNext execution mode: a backend that runs on a developer/tester machine without an identity provider. It is a
-/// capability grant for ActiveEventExecute — never an identity, never claims — and it applies only when ALL of these hold for the request:
+/// <b>Local Tester Mode</b> — BirkNext's supported operating model: one local instance, on one computer, used by the one tester connected to it,
+/// with a local API, a local web application and no remote listener. In this mode the tester's QA capabilities (active test execution,
+/// integration-configuration and test-plan writes, System Settings changes, Backup &amp; Transfer) are granted to the connected local tester —
+/// identically in local development, a local Release run and the Windows Tester Package. It is decided by explicit configuration, never by the
+/// .NET hosting environment: the backend may run as Production (normal runtime behaviour) without losing any QA function.
+///
+/// It is a capability grant, never an identity and never claims, and it applies to a request only when ALL of these hold:
 /// <list type="bullet">
-/// <item>the backend setting <c>Authorization:LocalTrustedExecution</c> is true (off by default; the same backend-setting pattern as
-/// <c>Authorization:LocalConfigurationWrites</c>; no request header or value can turn it on);</item>
-/// <item>the host environment is Development (not Production, Staging, QA or any other name), or the backend runs the TesterNative runtime
-/// profile set by the Windows Tester Package launcher (a per-user installation whose backend is bound to loopback);</item>
+/// <item><c>BirkNext:LocalTesterMode</c> is true (set in the shipped appsettings.json; false turns every local grant off);</item>
+/// <item>BirkNext listens on loopback addresses only (checked against the server's actual addresses at startup: one non-loopback listener —
+/// e.g. <c>http://0.0.0.0:5000</c> — and the mode grants nothing, because the instance is then reachable from other machines);</item>
+/// <item>the capability is not switched off explicitly (<c>Authorization:Local…</c> = false);</item>
 /// <item>the socket peer is loopback on both ends (no forwarded-header middleware is registered, so X-Forwarded-For is never consulted);</item>
 /// <item>the Host header is exactly <c>localhost</c> or a loopback IP literal (a DNS-rebinding page arrives with its own host name);</item>
-/// <item>an Origin header is present and equals the configured <c>FRONTEND_ORIGIN</c> exactly (scheme, host and port), and that
-/// configured origin is itself a well-formed loopback http(s) origin — a malformed or non-loopback configuration grants nothing.</item>
+/// <item>an Origin header is present and equals the configured <c>FRONTEND_ORIGIN</c> exactly (scheme, host and port), and that configured
+/// origin is itself a well-formed loopback http(s) origin — a malformed or non-loopback configuration grants nothing.</item>
 /// </list>
+/// The API additionally requires the connected local session (launch code) for every call, so the tester is the one browser connected to this
+/// instance. An authenticated principal with the matching Entra permission is granted independently of this mode.
 /// </summary>
 public sealed class LocalTrustedExecution(IHostEnvironment environment, IConfiguration configuration)
 {
+    public const string ModeSetting = "BirkNext:LocalTesterMode";
     public const string Setting = "Authorization:LocalTrustedExecution";
 
     public sealed record Decision(bool Allowed, string Reason);
+
+    private volatile string? _nonLoopbackListener;
+
+    /// <summary>The configured mode (before the listener check).</summary>
+    public bool ModeConfigured => bool.TryParse(configuration[ModeSetting], out var on) && on;
+
+    /// <summary>The mode applies to this instance: configured, and no listener beyond loopback.</summary>
+    public bool ModeActive => ModeConfigured && _nonLoopbackListener is null;
+
+    /// <summary>Why the mode is (not) active, for diagnostics.</summary>
+    public string ModeDescription => !ModeConfigured ? $"Local Tester Mode is off for this backend ({ModeSetting} is not true)."
+        : _nonLoopbackListener is { } address ? $"Local Tester Mode grants nothing: BirkNext also listens on {address}, which is not a loopback address."
+        : $"Local Tester Mode: loopback-only BirkNext for the connected local tester (backend environment {environment.EnvironmentName}).";
+
+    /// <summary>Records the server's listening addresses once it has started; any non-loopback address disables every local grant.</summary>
+    public void ObserveListeners(IEnumerable<string> addresses) => _nonLoopbackListener = addresses.FirstOrDefault(a => !IsLoopbackListener(a));
+
+    /// <summary>A Kestrel listening address on loopback only ("http://localhost:5480", "http://127.0.0.1:5097", "http://[::1]:5000"). Wildcards
+    /// ("+", "*", "0.0.0.0", "[::]") and host names other than localhost are not. Pure.</summary>
+    internal static bool IsLoopbackListener(string address)
+    {
+        var withoutScheme = address.Contains("://", StringComparison.Ordinal) ? address[(address.IndexOf("://", StringComparison.Ordinal) + 3)..] : address;
+        var hostPort = withoutScheme.Split('/')[0];
+        var host = hostPort.StartsWith('[') ? hostPort[..(hostPort.IndexOf(']') + 1)] : hostPort.Split(':')[0];
+        return IsLoopbackHostName(host);
+    }
 
     public bool Applies(HttpContext? context) => Evaluate(context).Allowed;
 
     public Decision Evaluate(HttpContext? context) => EvaluateFor(Setting, "Local trusted execution", context);
 
     /// <summary>
-    /// The same loopback-bounded local grant for another capability with its own backend setting (for example
-    /// <c>Authorization:LocalSystemConfiguration</c>): every condition above applies unchanged; only the enabling setting differs.
+    /// The Local Tester Mode grant for one capability (<paramref name="setting"/> may switch that capability off explicitly; it is on by default
+    /// while the mode is on). Every condition above applies; the hosting environment is never consulted.
     /// </summary>
     public Decision EvaluateFor(string setting, string capability, HttpContext? context)
     {
-        if (!bool.TryParse(configuration[setting], out var enabled) || !enabled)
-            return new(false, $"{capability} is not enabled for this backend.");
-        if (!environment.IsDevelopment() && !TesterNative)
-            return new(false, $"{capability} is only available when the backend runs in the Development environment or as the Windows Tester Package (TesterNative).");
+        if (!ModeActive) return new(false, ModeDescription);
+        if (configuration[setting] is { } value && (!bool.TryParse(value, out var enabled) || !enabled))
+            return new(false, $"{capability} is switched off for this backend ({setting} = {value}; only true or absent grants it).");
         if (context is null) return new(false, "No request.");
         var connection = context.Connection;
         if (connection.RemoteIpAddress is not { } remote || !IsLoopback(remote) || (connection.LocalIpAddress is { } local && !IsLoopback(local)))
@@ -51,11 +84,8 @@ public sealed class LocalTrustedExecution(IHostEnvironment environment, IConfigu
         var origin = context.Request.Headers.Origin;
         if (origin.Count != 1 || ParseOrigin(origin.ToString()) is not { } actual || !SameOrigin(actual, allowed))
             return new(false, $"{capability} is only granted to requests from the configured BirkNext frontend origin.");
-        return new(true, $"{capability}: loopback-only {(TesterNative ? "Tester Package (TesterNative)" : "Development")} backend, request from the configured BirkNext frontend.");
+        return new(true, $"{capability}: Local Tester Mode — loopback-only BirkNext, request from the configured BirkNext frontend.");
     }
-
-    /// <summary>The launcher-set TesterNative profile (an invalid profile value stops startup, so it is never guessed here).</summary>
-    private bool TesterNative => BirkNext.BuildInfo.RuntimeProfiles.Parse(configuration[BirkNext.BuildInfo.RuntimeProfiles.ConfigurationKey]).Profile == BirkNext.BuildInfo.RuntimeProfile.TesterNative;
 
     internal static bool IsLoopback(IPAddress address) =>
         IPAddress.IsLoopback(address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address);

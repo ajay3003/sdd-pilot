@@ -12,8 +12,8 @@ namespace BirkNext.Api.Services.LocalSecurity;
 /// authorization, and a hidden page stays reachable by its address. Granted to:
 /// <list type="bullet">
 /// <item>an authenticated principal holding <c>SystemConfiguration.Write</c> (scope, app role or permission claim; Entra);</item>
-/// <item>the local single-user installation when the backend setting <c>Authorization:LocalSystemConfiguration</c> is true, with exactly the
-/// loopback / Host / Origin / environment conditions of <see cref="LocalTrustedExecution"/> (Development, or the TesterNative Tester Package).
+/// <item>the connected local tester under Local Tester Mode (<see cref="LocalTrustedExecution"/>: loopback-only instance and request,
+/// localhost Host, configured frontend Origin), in any hosting environment; <c>Authorization:LocalSystemConfiguration</c> = false switches it off.
 /// It is a capability grant, never an identity: the actor recorded for such a change is <c>local-session:loopback</c>.</item>
 /// </list>
 /// Integration-configuration, active-execution and Backup &amp; Transfer rights do not imply it, and it implies none of them.

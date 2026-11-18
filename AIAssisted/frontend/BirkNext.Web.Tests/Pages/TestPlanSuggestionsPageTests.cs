@@ -646,6 +646,36 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
     }
 
     [Fact]
+    public void A_disabled_Add_test_case_says_why_until_a_title_is_typed()
+    {
+        // Regression (2026-11-18): "Add test case" was disabled without any reason shown, so it looked broken.
+        SelectProject("notes", "Notes only");
+        var api = new Api(Workspace()) { Project = ProjectWorkspace("notes"), Discovery = Discovery("notes") };
+        var cut = Render(api);
+        cut.Find("[data-testid=tps-discover-run]").Click();
+
+        cut.Find("[data-testid=tps-manual-create]").HasAttribute("disabled").Should().BeTrue();
+        cut.Find("[data-testid=tps-manual-hint]").TextContent.Should().Be("Type a title to add a test case.");
+
+        cut.Find("[data-testid=tps-manual-title]").Input("Log in with an expired password");
+        cut.Find("[data-testid=tps-manual-create]").HasAttribute("disabled").Should().BeFalse();
+        cut.FindAll("[data-testid=tps-manual-hint]").Should().BeEmpty("the reason disappears once it no longer applies");
+    }
+
+    [Fact]
+    public void Without_write_permission_the_page_says_so_and_offers_no_prepare_or_add_actions()
+    {
+        // The read-only state the Windows Tester Package showed before its backend granted local configuration writes (2026-11-18).
+        SelectProject("notes", "Notes only");
+        var api = new Api(Workspace()) { Project = ProjectWorkspace("notes") with { CanWrite = false }, Discovery = Discovery("notes") };
+        var cut = Render(api);
+
+        cut.Find("[data-testid=tps-read-only]").TextContent.Should().Contain("needs the configuration-write permission");
+        cut.FindAll("[data-testid=tps-prepare]").Should().BeEmpty();
+        cut.FindAll("[data-testid=tps-manual-create]").Should().BeEmpty();
+    }
+
+    [Fact]
     public void With_no_evidence_a_tester_can_still_write_a_test_case_by_hand()
     {
         SelectProject("notes", "Notes only");

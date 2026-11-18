@@ -77,13 +77,10 @@ internal sealed class BackendProcess(PackageLayout package, DataLayout data, Lau
         ["FRONTEND_ORIGIN"] = $"http://localhost:{ports.Frontend}",
         ["BirkNext__RuntimeProfile"] = "TesterNative",
         ["BirkNext__Distribution"] = BirkNext.BuildInfo.RuntimeProfiles.WindowsTesterPackage,
-        // Local single-user execution (performance tests and other active tests) under the backend's own loopback, Host, Origin and session checks.
-        ["Authorization__LocalTrustedExecution"] = "true",
-        // The Tester Package is a per-user installation: its own user maintains its configuration (System Settings saves), under the same
-        // loopback, Host, Origin and local-session checks. Never a header; never in any other environment.
-        ["Authorization__LocalSystemConfiguration"] = "true",
-        // Backup & Transfer for the same single user (full backup, isolated restore, packages), under the same loopback/Host/Origin/session checks.
-        ["Authorization__LocalWorkspaceTransfer"] = "true",
+        // Local Tester Mode: the connected local tester gets every QA capability (active tests, test-plan and integration writes, System Settings,
+        // Backup & Transfer) under the backend's own loopback-listener, loopback, Host, Origin and session checks — the same explicit setting a
+        // developer or a local Release run uses, independent of the Production hosting environment above.
+        ["BirkNext__LocalTesterMode"] = "true",
         ["PerformanceTests__Runner"] = "Native",
         ["PerformanceTests__Native__K6Path"] = package.K6Exe,
         ["PerformanceTests__Native__K6Sha256"] = package.Manifest.K6.Sha256,
@@ -106,7 +103,8 @@ internal sealed class BackendProcess(PackageLayout package, DataLayout data, Lau
         var info = new ProcessStartInfo(package.BackendExe) { WorkingDirectory = package.Backend, UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (var key in info.Environment.Keys.Where(k => k.StartsWith("ConnectionStrings__", StringComparison.OrdinalIgnoreCase) || k.StartsWith("BirkNext__", StringComparison.OrdinalIgnoreCase)
                      || k.StartsWith("PerformanceTests__", StringComparison.OrdinalIgnoreCase) || k.StartsWith("ASPNETCORE_", StringComparison.OrdinalIgnoreCase)
-                     || k.StartsWith("Backup__", StringComparison.OrdinalIgnoreCase)).ToList())
+                     || k.StartsWith("Backup__", StringComparison.OrdinalIgnoreCase) || k.StartsWith("Authorization__", StringComparison.OrdinalIgnoreCase)
+                     || k.StartsWith("FRONTEND_ORIGIN", StringComparison.OrdinalIgnoreCase)).ToList())
             info.Environment.Remove(key);
         foreach (var (k, v) in Environment(package, data, ports, credentials)) info.Environment[k] = v;
         Directory.CreateDirectory(data.Logs);
@@ -184,8 +182,8 @@ internal sealed class BackendProcess(PackageLayout package, DataLayout data, Lau
 
 /// <summary>
 /// Serves the packaged Blazor WebAssembly frontend on loopback. <c>appsettings.json</c> is served with the actual backend address (the package
-/// file is not modified); deep links fall back to index.html. The Blazor-Environment header follows the existing local launcher convention
-/// (the loopback http backend is accepted only in Development; Production keeps requiring https).
+/// file is not modified); deep links fall back to index.html. The frontend runs as Production, like any Release frontend: its loopback http
+/// backend is accepted in every environment (Local Tester Mode), so no Development flag is needed (it was sent before 2026-11-18).
 /// </summary>
 internal sealed class FrontendHost(PackageLayout package, LauncherLog log) : IAsyncDisposable
 {
@@ -215,7 +213,7 @@ internal sealed class FrontendHost(PackageLayout package, LauncherLog log) : IAs
         types.Mappings[".wasm"] = "application/wasm";
         _app.Use(async (context, next) =>
         {
-            context.Response.Headers["Blazor-Environment"] = "Development";
+            context.Response.Headers["Blazor-Environment"] = "Production";
             context.Response.Headers["X-Content-Type-Options"] = "nosniff";
             if (context.Request.Path.Equals("/appsettings.json", StringComparison.OrdinalIgnoreCase))
             {

@@ -679,6 +679,7 @@
                     <div class="tps-actionbar" data-testid="tps-manual-bar">
                         <label class="tps-field tps-field-grow"><span class="tps-k">Write a test case by hand</span><input class="tps-input" @bind="_manualTitle" @bind:event="oninput" placeholder="Title, e.g. Return a borrowed book" data-testid="tps-manual-title" /></label>
                         <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || string.IsNullOrWhiteSpace(_manualTitle))" @onclick="AddManualAsync" data-testid="tps-manual-create">Add test case</button>
+                        @if (string.IsNullOrWhiteSpace(_manualTitle)) { <span class="tps-muted tps-small" data-testid="tps-manual-hint">Type a title to add a test case.</span> }
                     </div>
                 }
             }
@@ -816,6 +817,8 @@
                     {
                         <label class="tps-field tps-field-grow"><span class="tps-k">Write a test case by hand</span><input class="tps-input" @bind="_manualTitle" @bind:event="oninput" placeholder="Title of a new test case" data-testid="tps-manual-title" /></label>
                         <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || _dirty || string.IsNullOrWhiteSpace(_manualTitle))" @onclick="AddManualAsync" data-testid="tps-manual-add">Add test case</button>
+                        @if (_dirty) { <span class="tps-muted tps-small" data-testid="tps-manual-hint">Save or discard your changes first.</span> }
+                        else if (string.IsNullOrWhiteSpace(_manualTitle)) { <span class="tps-muted tps-small" data-testid="tps-manual-hint">Type a title to add a test case.</span> }
                     }
                     @SaveBar()
                 </div>

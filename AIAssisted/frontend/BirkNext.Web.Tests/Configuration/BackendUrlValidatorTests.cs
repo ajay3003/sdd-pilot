@@ -17,13 +17,26 @@ public sealed class BackendUrlValidatorTests
         BackendUrlValidator.Validate("https://api.example.com", "Production");
     }
 
-    [Fact]
-    public void ProductionHttpLocalhost_Rejected()
+    [Theory]
+    [InlineData("Production")]
+    [InlineData("Staging")]
+    [InlineData("Development")]
+    public void HttpLocalhost_IsAcceptedInEveryEnvironment(string environment)
     {
-        // Act & Assert
-        var action = () => BackendUrlValidator.Validate("http://localhost:5000", "Production");
-        action.Should().Throw<InvalidOperationException>()
-            .WithMessage("*HTTP is only allowed for loopback*");
+        // Local Tester Mode (2026-11-18): a local Release run and the Windows Tester Package serve the frontend as Production; their backend is
+        // http://localhost:<port> on the same computer. Before, a Production frontend refused it at startup.
+        BackendUrlValidator.Validate("http://localhost:5480", environment);
+        BackendUrlValidator.Validate("http://127.0.0.1:5097", environment);
+    }
+
+    [Theory]
+    [InlineData("http://127.evil.example:5000")]
+    [InlineData("http://localhost.evil.example:5000")]
+    [InlineData("http://evil.example/localhost")]
+    public void HostNamesThatOnlyLookLikeLoopback_AreRejected(string url)
+    {
+        var action = () => BackendUrlValidator.Validate(url, "Production");
+        action.Should().Throw<InvalidOperationException>().WithMessage("*HTTP is only allowed for loopback*");
     }
 
     [Fact]

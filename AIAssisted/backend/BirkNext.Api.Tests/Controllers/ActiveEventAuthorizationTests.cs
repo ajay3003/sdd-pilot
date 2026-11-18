@@ -114,22 +114,40 @@ public sealed class ActiveEventAuthorizationTests
         (await Get(client, "/api/integrations?environmentId=dev-env", null)).Should().Be(HttpStatusCode.OK, "catalog reads are configuration metadata and stay open");
     }
 
+    // Local Tester Mode (2026-11-18): configuration and test-plan writes ("Prepare test cases", "Add test case", integration settings) are granted to
+    // the connected local tester in every hosting environment — before, only in Development, so a local Release run and the Windows Tester Package
+    // (both Production) refused them with 403. Every request condition still applies; a header never grants anything.
     [Theory]
-    [InlineData("Development", "true", "127.0.0.1", true)]
-    [InlineData("Development", "true", "::1", true)]
-    [InlineData("Development", "true", "10.1.2.3", false)]
-    [InlineData("Development", "false", "127.0.0.1", false)]
-    [InlineData("Test", "true", "127.0.0.1", false)]
-    [InlineData("Production", "true", "127.0.0.1", false)]
-    public async Task LocalConfigurationWrites_AreDevelopmentLoopbackOnly_AndNeverAHeader(string environment, string setting, string remote, bool expected)
+    [InlineData("Development", "true", null, "127.0.0.1", "localhost:5480", "http://localhost:5481", null, true)]
+    [InlineData("Production", "true", null, "127.0.0.1", "localhost:5480", "http://localhost:5481", null, true)]
+    [InlineData("Staging", "true", null, "::1", "[::1]:5480", "http://localhost:5481", null, true)]
+    [InlineData("Production", "true", "true", "127.0.0.1", "localhost:5480", "http://localhost:5481", null, true)]
+    [InlineData("Production", "true", "false", "127.0.0.1", "localhost:5480", "http://localhost:5481", null, false)]             // capability switched off
+    [InlineData("Production", "true", "yes", "127.0.0.1", "localhost:5480", "http://localhost:5481", null, false)]               // malformed: never on
+    [InlineData("Production", "false", null, "127.0.0.1", "localhost:5480", "http://localhost:5481", null, false)]               // mode off
+    [InlineData("Development", null, null, "127.0.0.1", "localhost:5480", "http://localhost:5481", null, false)]                // mode absent
+    [InlineData("Production", "true", null, "10.1.2.3", "localhost:5480", "http://localhost:5481", null, false)]                 // not loopback
+    [InlineData("Production", "true", null, "127.0.0.1", "birknext.example:5480", "http://localhost:5481", null, false)]        // DNS-rebinding Host
+    [InlineData("Production", "true", null, "127.0.0.1", "localhost:5480", "http://evil.example", null, false)]                 // foreign Origin
+    [InlineData("Production", "true", null, "127.0.0.1", "localhost:5480", null, null, false)]                                  // no Origin
+    [InlineData("Production", "true", null, "127.0.0.1", "localhost:5480", "http://localhost:5481", "http://0.0.0.0:5480", false)] // reachable from other machines
+    public async Task LocalConfigurationWrites_FollowLocalTesterMode_InAnyEnvironment_AndNeverAHeader(string environment, string? mode, string? setting, string remote,
+        string hostHeader, string? origin, string? extraListener, bool expected)
     {
         var host = new StubHostEnvironment { EnvironmentName = environment };
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Authorization:LocalConfigurationWrites"] = setting }).Build();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [LocalTrustedExecution.ModeSetting] = mode, [IntegrationConfigurationWriteHandler.Setting] = setting, ["FRONTEND_ORIGIN"] = "http://localhost:5481",
+        }).Build();
+        var local = new LocalTrustedExecution(host, configuration);
+        local.ObserveListeners(extraListener is null ? ["http://localhost:5480"] : ["http://localhost:5480", extraListener]);
         var context = new DefaultHttpContext();
         context.Connection.RemoteIpAddress = IPAddress.Parse(remote);
         context.Connection.LocalIpAddress = IPAddress.Loopback;
+        context.Request.Host = HostString.FromUriComponent(hostHeader);
+        if (origin is not null) context.Request.Headers.Origin = origin;
         context.Request.Headers["X-Test-Permission"] = BirkNextPermissions.IntegrationConfigurationWrite;
-        var handler = new IntegrationConfigurationWriteHandler(host, configuration, new HttpContextAccessor { HttpContext = context });
+        var handler = new IntegrationConfigurationWriteHandler(local, new HttpContextAccessor { HttpContext = context });
         var requirement = new IntegrationConfigurationWriteRequirement();
         var authorization = new AuthorizationHandlerContext([requirement], new ClaimsPrincipal(new ClaimsIdentity()), null);
         await handler.HandleAsync(authorization);

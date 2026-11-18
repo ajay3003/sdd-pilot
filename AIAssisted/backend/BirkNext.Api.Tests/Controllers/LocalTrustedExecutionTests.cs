@@ -41,9 +41,14 @@ public sealed class LocalTrustedExecutionTests
 
     // ── Rules ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    private static LocalTrustedExecution Local(string environment = "Development", string? setting = "true", string? frontend = Frontend) =>
-        new(new StubHostEnvironment { EnvironmentName = environment },
-            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { [LocalTrustedExecution.Setting] = setting, ["FRONTEND_ORIGIN"] = frontend }).Build());
+    private static LocalTrustedExecution Local(string environment = "Development", string? setting = "true", string? frontend = Frontend, string? mode = "true",
+        params string[] listeners)
+    {
+        var local = new LocalTrustedExecution(new StubHostEnvironment { EnvironmentName = environment }, new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?> { [LocalTrustedExecution.ModeSetting] = mode, [LocalTrustedExecution.Setting] = setting, ["FRONTEND_ORIGIN"] = frontend }).Build());
+        local.ObserveListeners(listeners);
+        return local;
+    }
 
     private static DefaultHttpContext Request(string? remote = "127.0.0.1", string? local = "127.0.0.1", string host = "localhost:5000", string? origin = Frontend,
         string? authorization = null, string? forwardedFor = null)
@@ -67,35 +72,50 @@ public sealed class LocalTrustedExecutionTests
         Local(frontend: "http://127.0.0.1:5173/").Evaluate(Request(origin: "http://127.0.0.1:5173")).Allowed.Should().BeTrue();
     }
 
-    /// <summary>The Windows Tester Package (TesterNative profile set by its launcher) is the other local single-user backend: same grant, same checks.</summary>
-    [Fact]
-    public void TesterNative_GrantsUnderTheSameChecks_AndProductionWithoutItStillDenies()
+    /// <summary>
+    /// Local Tester Mode is decided by configuration, never by the hosting environment (2026-11-18): development, a local Release run and the
+    /// Windows Tester Package (Production) give the connected local tester the same grant under the same request checks.
+    /// </summary>
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Production")]
+    [InlineData("Staging")]
+    [InlineData("QA")]
+    [InlineData("Test")]
+    public void LocalTesterMode_GrantsInEveryHostingEnvironment_UnderTheSameChecks(string environment)
     {
-        static LocalTrustedExecution Tester(string? profile, string? setting = "true") =>
-            new(new StubHostEnvironment { EnvironmentName = "Production" }, new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                [LocalTrustedExecution.Setting] = setting, ["FRONTEND_ORIGIN"] = Frontend, [BirkNext.BuildInfo.RuntimeProfiles.ConfigurationKey] = profile,
-            }).Build());
-        var granted = Tester("TesterNative").Evaluate(Request());
+        var granted = Local(environment, listeners: ["http://localhost:5480", "http://127.0.0.1:5480", "http://[::1]:5480"]).Evaluate(Request());
         granted.Allowed.Should().BeTrue();
-        granted.Reason.Should().Contain("TesterNative");
-        Tester("DeveloperContainer").Evaluate(Request()).Allowed.Should().BeFalse("a Production backend without the tester profile gets nothing");
-        Tester(null).Evaluate(Request()).Allowed.Should().BeFalse();
-        Tester("Tester").Evaluate(Request()).Allowed.Should().BeFalse("an unknown profile is not TesterNative");
-        Tester("TesterNative", setting: null).Evaluate(Request()).Allowed.Should().BeFalse("the launcher must still enable the setting explicitly");
-        Tester("TesterNative").Evaluate(Request(origin: "http://evil.example")).Allowed.Should().BeFalse("the Origin check is unchanged");
-        Tester("TesterNative").Evaluate(Request(remote: "10.0.0.5")).Allowed.Should().BeFalse("the loopback check is unchanged");
-        Tester("TesterNative").Evaluate(Request(host: "birknext.example:5000")).Allowed.Should().BeFalse("the Host check is unchanged");
+        granted.Reason.Should().Contain("Local Tester Mode");
+        Local(environment, setting: null).Evaluate(Request()).Allowed.Should().BeTrue("a capability is on by default while the mode is on");
+        Local(environment).Evaluate(Request(origin: "http://evil.example")).Allowed.Should().BeFalse("the Origin check is unchanged");
+        Local(environment).Evaluate(Request(remote: "10.0.0.5")).Allowed.Should().BeFalse("the loopback check is unchanged");
+        Local(environment).Evaluate(Request(host: "birknext.example:5000")).Allowed.Should().BeFalse("the Host check is unchanged");
     }
 
     [Theory]
-    [InlineData("no-grant")]
+    [InlineData("http://0.0.0.0:5480")]
+    [InlineData("http://+:5480")]
+    [InlineData("http://*:5480")]
+    [InlineData("http://[::]:5480")]
+    [InlineData("http://192.168.1.20:5480")]
+    [InlineData("http://birknext.example:5480")]
+    public void ANonLoopbackListener_SwitchesEveryLocalGrantOff(string listener)
+    {
+        var local = Local(listeners: ["http://localhost:5480", listener]);
+        local.ModeActive.Should().BeFalse();
+        local.ModeDescription.Should().Contain(listener).And.Contain("not a loopback address");
+        local.Evaluate(Request()).Allowed.Should().BeFalse("BirkNext is reachable from other machines");
+        local.EvaluateFor("Authorization:LocalConfigurationWrites", "Local configuration writes", Request()).Allowed.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("mode-absent")]
+    [InlineData("mode-off")]
+    [InlineData("mode-malformed")]
     [InlineData("grant-false")]
     [InlineData("grant-malformed")]
-    [InlineData("production")]
-    [InlineData("staging")]
-    [InlineData("qa")]
-    [InlineData("test")]
+    [InlineData("listener-any")]
     [InlineData("remote-lan")]
     [InlineData("remote-public")]
     [InlineData("remote-missing")]
@@ -125,13 +145,12 @@ public sealed class LocalTrustedExecutionTests
     {
         var (local, request) = problem switch
         {
-            "no-grant" => (Local(setting: null), Request()),
+            "mode-absent" => (Local(mode: null), Request()),
+            "mode-off" => (Local(mode: "false"), Request()),
+            "mode-malformed" => (Local(mode: "yes"), Request()),
             "grant-false" => (Local(setting: "false"), Request()),
             "grant-malformed" => (Local(setting: "yes"), Request()),
-            "production" => (Local("Production"), Request()),
-            "staging" => (Local("Staging"), Request()),
-            "qa" => (Local("QA"), Request()),
-            "test" => (Local("Test"), Request()),
+            "listener-any" => (Local(listeners: ["http://0.0.0.0:5000"]), Request()),
             "remote-lan" => (Local(), Request(remote: "192.168.1.20")),
             "remote-public" => (Local(), Request(remote: "203.0.113.7")),
             "remote-missing" => (Local(), Request(remote: null)),
@@ -156,7 +175,7 @@ public sealed class LocalTrustedExecutionTests
             "frontend-missing" => (Local(frontend: null), Request()),
             "frontend-wildcard" => (Local(frontend: "*"), Request(origin: "*")),
             "xff-spoof" => (Local(), Request(remote: "192.168.1.20", forwardedFor: "127.0.0.1")),
-            "authorization-header-only" => (Local(setting: null), Request(authorization: "LocalTrustedExecution")),
+            "authorization-header-only" => (Local(mode: null), Request(authorization: "LocalTrustedExecution")),
             _ => throw new ArgumentOutOfRangeException(nameof(problem)),
         };
         var decision = local.Evaluate(request);
@@ -180,10 +199,10 @@ public sealed class LocalTrustedExecutionTests
         var remote = Request(remote: "192.168.1.20");
 
         (await Handle(anonymous, Local(), Request())).Should().BeTrue("local trusted execution");
-        (await Handle(anonymous, Local(setting: null), Request())).Should().BeFalse("anonymous without local trust");
+        (await Handle(anonymous, Local(mode: null), Request())).Should().BeFalse("anonymous without local trust (Local Tester Mode off)");
         (await Handle(anonymous, Local(), remote)).Should().BeFalse("not loopback");
-        (await Handle(permitted, Local(setting: null), remote)).Should().BeTrue("authenticated with the permission, anywhere");
-        (await Handle(unpermitted, Local(setting: null), remote)).Should().BeFalse("authenticated without the permission");
+        (await Handle(permitted, Local(mode: null), remote)).Should().BeTrue("authenticated with the permission, anywhere");
+        (await Handle(unpermitted, Local(mode: null), remote)).Should().BeFalse("authenticated without the permission");
         BirkNextPermissions.Holds(anonymous, BirkNextPermissions.ActiveEventExecute).Should().BeFalse("the local grant never manufactures a permission claim");
     }
 
@@ -208,10 +227,11 @@ public sealed class LocalTrustedExecutionTests
 
     // ── The real pipeline ──────────────────────────────────────────────────────────────────────────────────────────────
 
-    private static WebApplicationFactory<Program> Host(string remote = "127.0.0.1", bool grant = true, string environment = "Development") =>
+    private static WebApplicationFactory<Program> Host(string remote = "127.0.0.1", bool grant = true, string environment = "Development", bool mode = true) =>
         TestHostConfiguration.CreateDefaultHostWithEnginesDisabled().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment(environment);
+            builder.UseSetting(LocalTrustedExecution.ModeSetting, mode ? "true" : "false");
             builder.UseSetting(LocalTrustedExecution.Setting, grant ? "true" : "false");
             builder.UseSetting("FRONTEND_ORIGIN", Frontend);
             builder.ConfigureTestServices(services =>
@@ -248,10 +268,12 @@ public sealed class LocalTrustedExecutionTests
     private static readonly IntegrationJourneyRunRequest Start = new() { EnvironmentId = "dev-env", PackId = "skolenaervaer", JourneyId = "rapportmottak", ScenarioId = "valid-report", Confirmed = true,
         Inputs = new Dictionary<string, string> { ["reporter"] = "reporter-a", ["childIdentifier"] = "01821512345" } };
 
-    [Fact]
-    public async Task LocalTrustedExecution_RunsJourneys_WithoutEntra_AsTheLocalSession()
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Production")] // a local Release run and the Windows Tester Package (2026-11-18: same capability, any hosting environment)
+    public async Task LocalTrustedExecution_RunsJourneys_WithoutEntra_AsTheLocalSession(string environment)
     {
-        await using var factory = Host();
+        await using var factory = Host(environment: environment);
         using var client = factory.CreateLocalSessionClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") }, withOrigin: false);
         var journeys = factory.Services.GetRequiredService<RecordingJourneys>();
 
@@ -268,13 +290,13 @@ public sealed class LocalTrustedExecutionTests
     }
 
     [Theory]
-    [InlineData("192.168.1.20", true, "Development")]
-    [InlineData("127.0.0.1", false, "Development")]
-    [InlineData("127.0.0.1", true, "Production")]
-    [InlineData("127.0.0.1", true, "Staging")]
-    public async Task WithoutEveryCondition_AnonymousExecutionIsRefused(string remote, bool grant, string environment)
+    [InlineData("192.168.1.20", true, "Development", true)]
+    [InlineData("127.0.0.1", false, "Development", true)]
+    [InlineData("127.0.0.1", true, "Production", false)]
+    [InlineData("127.0.0.1", true, "Development", false)]
+    public async Task WithoutEveryCondition_AnonymousExecutionIsRefused(string remote, bool grant, string environment, bool mode)
     {
-        await using var factory = Host(remote, grant, environment);
+        await using var factory = Host(remote, grant, environment, mode);
         // From another computer not even a session can be opened (audit 2026-11-15 SEC-01: LocalDeploymentBoundaryTests); the request is refused all the same.
         using var client = IPAddress.IsLoopback(IPAddress.Parse(remote))
             ? factory.CreateLocalSessionClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("http://localhost") }, withOrigin: false)

@@ -29,7 +29,7 @@ public sealed class ActiveEventPermissionRequirement : IAuthorizationRequirement
 /// <summary>
 /// ActiveEventExecute is a capability: "this caller may execute active/external test actions". It is held by an authenticated principal with
 /// the permission (scope, app role or permission claim), or granted by the explicitly enabled, loopback-bounded local trusted execution of a
-/// Development backend (<see cref="LocalTrustedExecution"/>). The handler enforces both paths itself (the policy has no separate
+/// connected local tester under Local Tester Mode (<see cref="LocalTrustedExecution"/>). The handler enforces both paths itself (the policy has no separate
 /// authenticated-user requirement); anything else — anonymous, a header, an environment name alone — is refused. The local grant adds no
 /// claims and is never specific to one pack, project or route.
 /// </summary>
@@ -45,26 +45,22 @@ public sealed class ActiveEventPermissionHandler(LocalTrustedExecution local, IH
 public sealed class IntegrationConfigurationWriteRequirement : IAuthorizationRequirement { }
 
 /// <summary>
-/// Integration catalog writes (the configuration Active Event execution resolves its destination from). Granted to an authenticated principal
-/// holding <c>IntegrationConfiguration.Write</c>. For the local, single-user tool without Entra configured, a backend setting
-/// (<c>Authorization:LocalConfigurationWrites</c> = true) additionally allows writes in the Development environment from a loopback client
-/// only — never from a header, and never in any other environment. ActiveEventExecute does not imply configuration rights.
+/// Integration catalog and test-plan writes (the configuration Active Event execution resolves its destination from, Test Plan drafts,
+/// "Prepare test cases" and hand-written test cases). Granted to an authenticated principal holding <c>IntegrationConfiguration.Write</c>, or
+/// to the connected local tester under Local Tester Mode (<see cref="LocalTrustedExecution"/>: loopback-only instance and request, localhost
+/// Host, configured frontend Origin) — in any hosting environment; <c>Authorization:LocalConfigurationWrites</c> = false switches the local
+/// grant off. Never from a header. ActiveEventExecute does not imply configuration rights.
 /// </summary>
-public sealed class IntegrationConfigurationWriteHandler(IHostEnvironment environment, IConfiguration configuration, IHttpContextAccessor http)
+public sealed class IntegrationConfigurationWriteHandler(LocalTrustedExecution local, IHttpContextAccessor http)
     : AuthorizationHandler<IntegrationConfigurationWriteRequirement>
 {
+    public const string Setting = "Authorization:LocalConfigurationWrites";
+
     protected override Task HandleRequirementAsync(AuthorizationHandlerContext context, IntegrationConfigurationWriteRequirement requirement)
     {
-        if (BirkNextPermissions.Holds(context.User, BirkNextPermissions.IntegrationConfigurationWrite) || LocalDevelopmentWrite())
+        if (BirkNextPermissions.Holds(context.User, BirkNextPermissions.IntegrationConfigurationWrite)
+            || local.EvaluateFor(Setting, "Local configuration writes", http.HttpContext).Allowed)
             context.Succeed(requirement);
         return Task.CompletedTask;
-    }
-
-    private bool LocalDevelopmentWrite()
-    {
-        if (!environment.IsDevelopment() || !bool.TryParse(configuration["Authorization:LocalConfigurationWrites"], out var allowed) || !allowed) return false;
-        var connection = http.HttpContext?.Connection;
-        return connection?.RemoteIpAddress is { } remote && IPAddress.IsLoopback(remote) &&
-            (connection.LocalIpAddress is null || IPAddress.IsLoopback(connection.LocalIpAddress));
     }
 }

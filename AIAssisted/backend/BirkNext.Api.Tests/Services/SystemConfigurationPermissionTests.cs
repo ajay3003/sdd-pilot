@@ -43,10 +43,10 @@ public sealed class SystemConfigurationPermissionTests : IDisposable
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
-    private static LocalTrustedExecution Local(string environment = "Development", string? setting = "true", string? profile = null) =>
+    private static LocalTrustedExecution Local(string environment = "Development", string? setting = "true", string? profile = null, string? mode = "true") =>
         new(new Env(environment), new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
-            [SystemConfigurationPermissions.LocalSetting] = setting, ["FRONTEND_ORIGIN"] = Frontend,
+            [LocalTrustedExecution.ModeSetting] = mode, [SystemConfigurationPermissions.LocalSetting] = setting, ["FRONTEND_ORIGIN"] = Frontend,
             [LocalTrustedExecution.Setting] = "true", // a different capability: it never implies configuration rights
             [BirkNext.BuildInfo.RuntimeProfiles.ConfigurationKey] = profile,
         }).Build());
@@ -76,23 +76,25 @@ public sealed class SystemConfigurationPermissionTests : IDisposable
     [Fact]
     public async Task The_local_grant_needs_its_own_setting_and_every_loopback_condition()
     {
-        (await Handle(LocalSession, Local(), Request())).Should().BeTrue("Development, setting on, loopback, localhost, frontend origin");
-        (await Handle(LocalSession, Local(setting: null), Request())).Should().BeFalse("LocalTrustedExecution alone does not grant configuration rights");
+        (await Handle(LocalSession, Local(), Request())).Should().BeTrue("Local Tester Mode, loopback, localhost, frontend origin");
+        (await Handle(LocalSession, Local(setting: null), Request())).Should().BeTrue("on by default while Local Tester Mode is on");
+        (await Handle(LocalSession, Local(setting: "false"), Request())).Should().BeFalse("switched off explicitly: LocalTrustedExecution alone does not grant configuration rights");
         (await Handle(LocalSession, Local(), Request(remote: "192.168.1.20"))).Should().BeFalse("not loopback");
         (await Handle(LocalSession, Local(), Request(host: "evil.example:5000"))).Should().BeFalse("DNS-rebinding host");
         (await Handle(LocalSession, Local(), Request(origin: "http://evil.example"))).Should().BeFalse("another origin");
         (await Handle(LocalSession, Local(), Request(origin: null))).Should().BeFalse("no origin");
-        (await Handle(LocalSession, Local(environment: "Production"), Request())).Should().BeFalse("a production server without the tester profile");
+        (await Handle(LocalSession, Local(environment: "Production"), Request())).Should().BeTrue("a local Release run (Production): same grant, independent of the hosting environment");
         (await Handle(LocalSession, Local(environment: "Production", profile: "TesterNative"), Request())).Should().BeTrue("the per-user Tester Package");
+        (await Handle(LocalSession, Local(mode: null), Request())).Should().BeFalse("Local Tester Mode off");
     }
 
     [Fact]
     public async Task A_signed_in_principal_needs_the_permission_and_other_permissions_do_not_imply_it()
     {
         var remote = Request(remote: "10.0.0.5");
-        (await Handle(Bearer("User.Read SystemConfiguration.Write"), Local(setting: null), remote)).Should().BeTrue();
-        (await Handle(Bearer("User.Read ActiveEventExecute IntegrationConfiguration.Write WorkspaceTransfer"), Local(setting: null), remote)).Should().BeFalse();
-        SystemConfigurationPermissions.Evaluate(Bearer("User.Read"), Local(setting: null), remote).Reason.Should().Contain("without the SystemConfiguration.Write permission");
+        (await Handle(Bearer("User.Read SystemConfiguration.Write"), Local(mode: null), remote)).Should().BeTrue();
+        (await Handle(Bearer("User.Read ActiveEventExecute IntegrationConfiguration.Write WorkspaceTransfer"), Local(mode: null), remote)).Should().BeFalse();
+        SystemConfigurationPermissions.Evaluate(Bearer("User.Read"), Local(mode: null), remote).Reason.Should().Contain("without the SystemConfiguration.Write permission");
     }
 
     [Fact]

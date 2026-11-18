@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -23,7 +24,7 @@ namespace BirkNext.Api.Tests.Controllers;
 /// </summary>
 public sealed class TargetEnvironmentDetectionControllerHttpsTests
 {
-    private readonly RequireTargetDetectionHttpsFilter _filter;
+    private RequireTargetDetectionHttpsFilter _filter;
     private readonly Mock<ILogger<RequireTargetDetectionHttpsFilter>> _loggerMock;
     private readonly Mock<IWebHostEnvironment> _environmentMock;
 
@@ -35,12 +36,20 @@ public sealed class TargetEnvironmentDetectionControllerHttpsTests
 
         var options = new TargetDetectionOptions { RequireHttps = true };
         var optionsWrapper = Options.Create(options);
-        _filter = new RequireTargetDetectionHttpsFilter(optionsWrapper, _loggerMock.Object, _environmentMock.Object);
+        _filter = new RequireTargetDetectionHttpsFilter(optionsWrapper, _loggerMock.Object, Local());
     }
 
-    private void SetEnvironment(string environmentName)
+    /// <summary>The Local Tester Mode gate the filter consults (the hosting environment is only reported, never decisive).</summary>
+    private BirkNext.Api.Services.ActiveEventTesting.LocalTrustedExecution Local(string? mode = "true") =>
+        new(_environmentMock.Object, new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { [BirkNext.Api.Services.ActiveEventTesting.LocalTrustedExecution.ModeSetting] = mode }).Build());
+
+    private void SetEnvironment(string environmentName, string? mode = "true", params string[] listeners)
     {
         _environmentMock.SetupGet(x => x.EnvironmentName).Returns(environmentName);
+        var local = Local(mode);
+        local.ObserveListeners(listeners);
+        _filter = new RequireTargetDetectionHttpsFilter(Options.Create(new TargetDetectionOptions { RequireHttps = true }), _loggerMock.Object, local);
     }
 
     // ────────────────────────────────────────────────────────────
@@ -77,24 +86,38 @@ public sealed class TargetEnvironmentDetectionControllerHttpsTests
     }
 
     // ────────────────────────────────────────────────────────────
-    // CASE C: Production HTTP loopback — rejected (loopback exception only in Development)
+    // CASE C: HTTP loopback in Local Tester Mode — accepted in every hosting environment (2026-11-18: a local Release run and the Windows
+    // Tester Package run as Production; their target checks were refused with 426). Rejected when the mode is off or a listener is not loopback.
     // ────────────────────────────────────────────────────────────
     [Theory]
-    [InlineData("localhost")]
-    [InlineData("127.0.0.1")]
-    [InlineData("[::1]")]
-    public void ProductionHttpLoopback_Request_Rejected(string loopbackHost)
+    [InlineData("Production", "localhost")]
+    [InlineData("Production", "127.0.0.1")]
+    [InlineData("Production", "[::1]")]
+    [InlineData("Staging", "localhost")]
+    public void LocalTesterModeHttpLoopback_Request_Accepted_InAnyEnvironment(string environment, string loopbackHost)
     {
-        // Arrange - Production environment
-        SetEnvironment("Production");
+        SetEnvironment(environment, mode: "true", "http://localhost:5480");
         var context = CreateActionExecutingContext(isHttps: false, host: loopbackHost);
 
-        // Act
         _filter.OnActionExecuting(context);
 
-        // Assert
+        context.Result.Should().BeNull("the local BirkNext's own loopback request is accepted whatever the hosting environment");
+    }
+
+    [Theory]
+    [InlineData("false", new string[0])]
+    [InlineData(null, new string[0])]
+    [InlineData("true", new[] { "http://0.0.0.0:5000" })]
+    [InlineData("true", new[] { "http://localhost:5000", "http://192.168.1.20:5000" })]
+    public void HttpLoopback_Request_Rejected_WithoutAnActiveLocalTesterMode(string? mode, string[] listeners)
+    {
+        SetEnvironment("Production", mode, listeners);
+        var context = CreateActionExecutingContext(isHttps: false, host: "localhost");
+
+        _filter.OnActionExecuting(context);
+
         context.Result.Should().BeOfType<StatusCodeResult>()
-            .Which.StatusCode.Should().Be(426, "Production should reject all HTTP, including loopback");
+            .Which.StatusCode.Should().Be(426, "mode off, or BirkNext also reachable from other machines: plain HTTP is refused");
     }
 
     // ────────────────────────────────────────────────────────────
@@ -166,7 +189,7 @@ public sealed class TargetEnvironmentDetectionControllerHttpsTests
         // Arrange
         var options = new TargetDetectionOptions { RequireHttps = false };
         var optionsWrapper = Options.Create(options);
-        var filter = new RequireTargetDetectionHttpsFilter(optionsWrapper, _loggerMock.Object, _environmentMock.Object);
+        var filter = new RequireTargetDetectionHttpsFilter(optionsWrapper, _loggerMock.Object, Local());
         var context = CreateActionExecutingContext(isHttps: false, host: "example.com");
 
         // Act

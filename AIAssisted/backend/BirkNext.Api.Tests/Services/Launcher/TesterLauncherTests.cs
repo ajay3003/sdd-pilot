@@ -343,9 +343,8 @@ public sealed class TesterLauncherTests
         env["BirkNext__RuntimeProfile"].Should().Be("TesterNative");
         env["BirkNext__Distribution"].Should().Be("WindowsTesterPackage");
         env["PerformanceTests__Runner"].Should().Be("Native");
-        env["Authorization__LocalTrustedExecution"].Should().Be("true", "the single-user tester runs its own tests; the backend still checks loopback, Host, Origin and the session");
-        env["Authorization__LocalSystemConfiguration"].Should().Be("true", "the tester maintains their own installation's configuration");
-        env["Authorization__LocalWorkspaceTransfer"].Should().Be("true", "the tester backs up and restores their own installation");
+        env["BirkNext__LocalTesterMode"].Should().Be("true", "the tester gets every QA capability (tests, test plans, settings, backup); the backend still checks its listeners, loopback, Host, Origin and the session");
+        env.Keys.Should().NotContain(k => k.StartsWith("Authorization__"), "one explicit Local Tester Mode, no per-capability switches (Prepare test cases was refused with 403 when one was missing, 2026-11-18)");
         env["PerformanceTests__Native__K6Path"].Should().Be(Path.Combine("C:\\Pkg\\BirkNext-Tester", "runtime", "k6", "k6.exe"));
         env["PerformanceTests__Native__K6Sha256"].Should().Be(new string('c', 64));
         // In-app Backup & Transfer uses the package's bundled pg_dump/pg_restore (the root cause of "PostgreSQL tools: Not available" in the package).
