@@ -33,7 +33,7 @@ public sealed class DataResetPanelTests : BunitContext
         Notes = mode == DataResetMode.FullIncludingProtected ? ["Reset everything means all resettable local application data — not uninstalling BirkNext."] : [],
         Counts = new() { ["Delivery snapshots"] = 3 },
         ConfirmationPhrase = mode == DataResetMode.FullIncludingProtected ? "RESET EVERYTHING" : null,
-        Allowed = allowed, NotAllowedReason = allowed ? null : "Reset is available only for a Local database on a non-production backend.",
+        Allowed = allowed, NotAllowedReason = allowed ? null : "Reset is available only for a Local database on this computer (a loopback database host).",
     };
 
     private IRenderedComponent<DataResetPanel> RenderPanel(bool allowed = true) =>

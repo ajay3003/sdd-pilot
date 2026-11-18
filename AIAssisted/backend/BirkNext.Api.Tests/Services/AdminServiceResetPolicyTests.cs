@@ -27,17 +27,23 @@ public sealed class AdminServiceResetPolicyTests
         return new AdminService(new ConfigurationBuilder().AddInMemoryCollection(values).Build(), env.Object, db, NullLogger<AdminService>.Instance);
     }
 
-    [Fact]
-    public void DevelopmentLocalLoopbackReportsResetReady()
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Production")] // the Windows Tester Package runs its backend as Production on its own local database
+    [InlineData("Staging")]
+    public void LocalLoopbackReportsResetReadyInEveryBackendEnvironment(string environment)
     {
-        var settings = Create("Development", "Local", "localhost").BuildSettings();
+        var service = Create(environment, "Local", "127.0.0.1");
+        var settings = service.BuildSettings();
 
         Assert.True(settings.Maintenance.ResetAllowed);
+        Assert.Equal("", settings.Maintenance.ResetNotAllowedReason);
         Assert.Equal("Local", settings.Maintenance.DatabaseMode);
+        Assert.Null(service.ResetRefusal());
     }
 
     [Theory]
-    [InlineData("Production", "Local", "localhost")]
+    [InlineData("Production", "Local", "prod-db.example")]
     [InlineData("Development", null, "localhost")]
     [InlineData("Development", "Local", "prod-db.example")]
     [InlineData("Development", "Shared", "localhost")]

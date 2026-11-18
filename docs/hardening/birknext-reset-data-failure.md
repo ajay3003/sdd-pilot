@@ -6,7 +6,7 @@ Branch `008-traceability-first`. Reported: the Reset Data dialog showed **"Reset
 
 System Settings → Maintenance → **Reset data…** (`DataResetPanel`) → `POST api/admin/data-reset` (`AdminController.DataReset`) →
 `DataResetService` → `LocalDataResetCoordinator` → `AdminService.ResetLocalDatabaseAsync`. Guards: admin enabled, typed/acknowledged
-confirmation, `AdminSettings:AllowLocalDatabaseReset`, Local database on a loopback host, non-production backend, one reset at a time, no
+confirmation, `AdminSettings:AllowLocalDatabaseReset`, Local database on a loopback host (in any backend environment since 2026-11-18: the Windows Tester Package runs its backend as Production on its own local database), one reset at a time, no
 running CDC/performance run. It deletes the rows of **every application table of this build's EF model** in one transaction (installation
 settings, schema and migration history are preserved), advances the reset epoch, then clears BirkNext's own out-of-database state.
 It never touches external systems (Azure, Altinn, TT02, MU, MM, Service Bus, Bufdata, Git) — it resets local BirkNext data, not target-system state.

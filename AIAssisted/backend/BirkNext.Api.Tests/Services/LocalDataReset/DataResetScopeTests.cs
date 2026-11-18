@@ -117,7 +117,7 @@ public sealed class DataResetScopeTests : IDisposable
     [Theory]
     [InlineData(DataResetMode.FullIncludingProtected, "RESET", null, "Type RESET EVERYTHING")]
     [InlineData(DataResetMode.FullPreserveProtected, null, null, "not confirmed")]
-    [InlineData(DataResetMode.DeliveryManagement, "CONFIRM", "Reset is available only for a Local database on a non-production backend.", "Local database")]
+    [InlineData(DataResetMode.DeliveryManagement, "CONFIRM", "Reset is available only for a Local database on this computer (a loopback database host).", "Local database")]
     public async Task Scope_confirmation_and_the_local_database_guard_are_enforced_by_the_backend(DataResetMode mode, string? confirmation, string? refusal, string message)
     {
         var service = new DataResetService(new Guard(refusal), null!, null!, NullLogger<DataResetService>.Instance);

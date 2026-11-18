@@ -132,7 +132,7 @@ public sealed class LocalDataResetTests : IDisposable
     [Fact]
     public async Task RefusedReset_IsReportedAsRefused()
     {
-        var (coordinator, _, _, _) = Build(new FakeDatabaseReset(success: false, message: "Reset is available only for a Local database on a non-production backend."));
+        var (coordinator, _, _, _) = Build(new FakeDatabaseReset(success: false, message: "Reset is available only for a Local database on this computer (a loopback database host)."));
         var result = await coordinator.ResetAsync();
         Assert.Equal("Refused", result.Status);
     }

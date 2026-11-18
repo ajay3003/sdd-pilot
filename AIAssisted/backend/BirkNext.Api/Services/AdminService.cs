@@ -618,7 +618,7 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         if (!_config.GetValue<bool>("AdminSettings:AllowLocalDatabaseReset", true))
             return (false, "Reset is disabled by local administrator policy.", 0, null);
         if (!IsSafeLocalResetEnvironment(dbMode))
-            return (false, "Reset is available only for a Local database on a non-production backend.", 0, null);
+            return (false, LocalDatabaseOnly, 0, null);
 
         if (!await ResetGate.WaitAsync(0))
             return (false, "A local database reset is already in progress.", 0, null);
@@ -707,19 +707,22 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         return missing.Count == 0 ? null : $"{missing.Count} table(s) missing in the database: {string.Join(", ", missing.Take(5))}{(missing.Count > 5 ? ", …" : "")}";
     }
 
-    /// <summary>The reset guard every scope uses (policy, Local database, non-production host); null when a reset may run.</summary>
+    /// <summary>
+    /// The reset guard every scope uses: the local administrator policy and a Local database on this computer (loopback host); null when a reset
+    /// may run. Deliberately not tied to the backend environment: the Windows Tester Package runs its backend as Production on its own local
+    /// database, and testers must be able to reset that data. A shared or remote database is never reset.
+    /// </summary>
     public string? ResetRefusal()
     {
         if (!_config.GetValue<bool>("AdminSettings:AllowLocalDatabaseReset", true)) return "Reset is disabled by local administrator policy.";
-        return IsSafeLocalResetEnvironment(_config["DatabaseSettings:Mode"] ?? "Unknown") ? null : "Reset is available only for a Local database on a non-production backend.";
+        return IsSafeLocalResetEnvironment(_config["DatabaseSettings:Mode"] ?? "Unknown") ? null : LocalDatabaseOnly;
     }
 
-    private bool IsSafeLocalResetEnvironment(string databaseMode)
-    {
-        if (!(_env.IsDevelopment() || _env.IsEnvironment("Local") || _env.IsEnvironment("Test"))
-            || !databaseMode.Equals("Local", StringComparison.OrdinalIgnoreCase)) return false;
-        return IsLoopbackDatabaseHost();
-    }
+    private const string LocalDatabaseOnly = "Reset is available only for a Local database on this computer (a loopback database host).";
+
+    /// <summary>A Local database mode on a loopback host, in any backend environment (see <see cref="ResetRefusal"/>).</summary>
+    private bool IsSafeLocalResetEnvironment(string databaseMode) =>
+        databaseMode.Equals("Local", StringComparison.OrdinalIgnoreCase) && IsLoopbackDatabaseHost();
 
     private bool IsLoopbackDatabaseHost()
     {
@@ -815,10 +818,8 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
     {
         if (!resetPolicyEnabled)
             return "Reset is disabled in AdminSettings.";
-        if (!_env.IsDevelopment() && !_env.IsEnvironment("Local") && !_env.IsEnvironment("Test"))
-            return "Reset is disabled outside Development, Local, or Test backend environments.";
         if (!isSafeLocalMode)
-            return "Reset requires Local database mode and a loopback database host.";
+            return LocalDatabaseOnly;
         return "";
     }
 
