@@ -295,12 +295,13 @@
                         <div class="fa-target-summary-head">
                             <div>
                                 <h3 id="target-detection-heading">Target Detection — <span data-testid="target-detection-state">@DetectionStateLabel</span></h3>
-                                <p class="fa-target-url" data-testid="target-detection-url">@(targetSummaryProfile.TargetUrl ?? "No Frontend URL")</p>
+                                @* The URL the check is about: the draft URL while editing (a result for the draft must not be shown under the saved URL). *@
+                                <p class="fa-target-url" data-testid="target-detection-url">@(CurrentTargetUrl ?? "No Frontend URL")</p>
                             </div>
                             <div class="fa-target-actions">
                                 @if (next.Action != "check")
                                 {
-                                    <button type="button" class="btn btn-secondary btn-sm" data-testid="target-check-again" disabled="@_isDetecting" @onclick="DetectConfigurationAsync">@(_isDetecting ? "Checking…" : "Check target again")</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" data-testid="target-check-again" disabled="@_isDetecting" @onclick="DetectConfigurationAsync">@(_isDetecting ? "Checking…" : _detectionResult is null ? "Check target" : "Check target again")</button>
                                 }
                                 <button type="button" class="btn btn-primary btn-sm" data-testid="target-next-action" data-action="@next.Action" disabled="@(_isDetecting && next.Action == "check")"
                                         @onclick="() => RunTargetNextActionAsync(next.Action)">@(_isDetecting && next.Action == "check" ? "Checking…" : next.Label)</button>
@@ -2088,8 +2089,11 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         // Endpoint Discovery history is persisted separately per Target Environment; load it so a restart restores discovery (never a credential).
         if (_discovery is not null) await _discovery.LoadAsync(JS);
 
-        _selectedProfileId = FaSettings.Settings.ActiveProfileId
-            ?? FaSettings.Settings.Profiles.FirstOrDefault()?.Id;
+        // The environment list can already render (from the shared settings) while the loads above are awaited, so a tester may have chosen an
+        // environment by now. Keep that choice; only default to the active one when nothing (or an environment that no longer exists) is selected.
+        if (_selectedProfileId is null || FaSettings.Settings.Profiles.All(p => p.Id != _selectedProfileId))
+            _selectedProfileId = FaSettings.Settings.ActiveProfileId
+                ?? FaSettings.Settings.Profiles.FirstOrDefault()?.Id;
         ApplyInitialProfile();
         if (_proxyRuntime is not null) await _proxyRuntime.SynchronizeAsync(CurrentProfile);
         // Restore the persisted public detection snapshot so a restart shows "Previously detected" (revalidated to Current/Stale)

@@ -204,10 +204,17 @@ public static class MarkdownTokenizer
     private static MarkdownToken Tok(MarkdownTokenKind k, int i, string raw, string content) =>
         new(k, i, raw, content, 0, null);
 
-    private static IReadOnlyList<string> SplitCells(string line) =>
-        line.Split('|', StringSplitOptions.TrimEntries)
-            .Where(c => !string.IsNullOrEmpty(c))
-            .ToList();
+    /// <summary>
+    /// The cells of a table row. Only the empty segments outside the outer pipes are dropped; an empty cell inside the row is kept, so every
+    /// later cell stays in its column ("| phone |  | yes |" has an empty Type, not Type "yes").
+    /// </summary>
+    private static IReadOnlyList<string> SplitCells(string line)
+    {
+        var cells = line.Split('|', StringSplitOptions.TrimEntries).ToList();
+        if (cells.Count > 0 && cells[0].Length == 0) cells.RemoveAt(0);
+        if (cells.Count > 0 && cells[^1].Length == 0) cells.RemoveAt(cells.Count - 1);
+        return cells;
+    }
 
     private static bool IsSeparatorCell(string cell) =>
         cell.Replace("-", "").Replace(":", "").Replace(" ", "").Length == 0;

@@ -383,6 +383,47 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
     }
 
     [Fact]
+    public async Task An_environment_chosen_while_the_page_is_still_loading_stays_selected()
+    {
+        // Regression (Playwright, task 7): the environment list renders from the shared settings while the page still awaits its own loads;
+        // a click in that window was silently replaced by the active environment when initialization resumed.
+        UseStoredAuthentication(PersistedAuthNone);
+        await _settings.LoadAsync(JSInterop.JSRuntime);
+        var discoveryPending = JSInterop.Setup<string?>("birkNextStorage.getDiscovery");
+
+        var cut = Render<Component>();
+        cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("M2LB DEV")).Click();
+        discoveryPending.SetResult(null);
+
+        cut.WaitForAssertion(() => cut.Find(".fa-detail-name").TextContent.Trim().Should().Be("M2LB DEV", "the tester's choice is kept once loading finishes"));
+        cut.Find(".fa-profile-chip-selected").TextContent.Should().Contain("M2LB DEV");
+        _settings.Settings.ActiveProfileId.Should().Be("local", "selecting an environment to inspect never activates it");
+    }
+
+    [Fact]
+    public void While_editing_the_detection_summary_names_the_draft_url_the_check_is_about()
+    {
+        // Regression (Playwright, task 7): the summary kept showing the saved Frontend URL while a check ran for (and failed on) the draft URL.
+        const string draft = "https://draft.example.com/";
+        _api.Setup(x => x.DetectFromUrlAsync(draft, default)).ReturnsAsync(new TargetEnvironmentDetectionResult
+        {
+            OriginalUrl = draft, Success = false, Reachability = TargetReachability.Unreachable, Message = "Network error", State = DetectionState.Failed,
+        });
+        var cut = Open();
+        Click(cut, "Edit Environment");
+        OpenTab(cut, "Target Application");
+        cut.Find("[data-testid=fa-edit-target-url]").Change(draft);
+        cut.Find("[data-testid=target-detection-url]").TextContent.Should().Be(draft, "the check is about the draft URL");
+        cut.Find("[data-testid=target-check-again]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=target-detection-reachability]").TextContent.Should().Contain("Check failed"));
+        cut.Find("[data-testid=target-detection-url]").TextContent.Should().Be(draft, "a failure for the draft is never shown under the saved URL");
+        _api.Verify(x => x.DetectFromUrlAsync(draft, default), Times.Once);
+
+        Click(cut, "Cancel");
+        cut.Find("[data-testid=target-detection-url]").TextContent.Should().Be(Url, "after Cancel the saved URL is shown again");
+    }
+
+    [Fact]
     public void Target_application_shows_one_detection_summary_with_a_derived_next_action_and_the_evidence_collapsed()
     {
         var cut = Open();
@@ -390,8 +431,10 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         cut.Find("[data-testid=target-detection-state]").TextContent.Should().Be("Not checked");
         cut.Find("[data-testid=target-detection-evidence]").HasAttribute("open").Should().BeFalse("detection evidence is one disclosure, collapsed");
         cut.Find("[data-testid=target-next-action]").GetAttribute("data-action").Should().Be("application", "no application is chosen yet: that comes first");
+        cut.Find("[data-testid=target-check-again]").TextContent.Trim().Should().Be("Check target", "a target that was never checked is not checked \"again\"");
         cut.Find("[data-testid=target-check-again]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=target-detection-reachability]").TextContent.Should().Contain("Reachable"));
+        cut.Find("[data-testid=target-check-again]").TextContent.Trim().Should().Be("Check target again");
         cut.Find("[data-testid=target-detection-framework]").TextContent.Should().Contain("Blazor WebAssembly");
         cut.Find("[data-testid=target-detection-provider]").TextContent.Should().Contain("Microsoft Entra ID");
         cut.Find("[data-testid=target-detection-runtime]").TextContent.Should().Contain("Runtime not verified", "a detected provider is not runtime verification");
