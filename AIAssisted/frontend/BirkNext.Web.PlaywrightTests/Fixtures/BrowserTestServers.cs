@@ -77,6 +77,7 @@ public static class BrowserTestServers
     /// </summary>
     public static async Task ConnectAsync(IBrowserContext context, string? selfStartedApiDirectory = null)
     {
+        if (External) await VerifyFrontendTargetsBackendAsync(context);
         if (LaunchCode(selfStartedApiDirectory) is not { } code) return;
         var response = await context.APIRequest.PostAsync($"{BackendUrl}/api/local-session", new APIRequestContextOptions
         {
@@ -85,6 +86,36 @@ public static class BrowserTestServers
         });
         if (!response.Ok)
             throw new InvalidOperationException($"Could not connect the test browser to {BackendUrl} (local session answered {response.Status}); check {LaunchCodeVariable}/{LaunchCodeFileVariable}.");
+    }
+
+    /// <summary>
+    /// An external frontend must call the backend under test. A published web app keeps its default <c>BackendUrl</c> (http://localhost:5000, the
+    /// developer's own API) unless the isolated copy was re-pointed; every page would then call that instance, the network guard would block it and
+    /// each test would time out. Fail at once with the cause instead (seen 2026-11-18: one republish skipped the re-pointing step).
+    /// </summary>
+    private static async Task VerifyFrontendTargetsBackendAsync(IBrowserContext context)
+    {
+        var response = await context.APIRequest.GetAsync($"{FrontendUrl}/appsettings.json");
+        if (!response.Ok) return; // no static configuration file: the app falls back to its own defaults, nothing to compare
+        using var json = System.Text.Json.JsonDocument.Parse(await response.TextAsync());
+        if (!json.RootElement.TryGetProperty("BackendUrl", out var configured) || configured.GetString() is not { Length: > 0 } backend) return;
+        if (!string.Equals(backend.TrimEnd('/'), BackendUrl, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"The frontend at {FrontendUrl} calls BackendUrl {backend}, not the backend under test ({BackendVariable}={BackendUrl}); point the isolated frontend's appsettings.json at {BackendUrl}.");
+    }
+
+    public const string TraceDirectoryVariable = "BIRKNEXT_PLAYWRIGHT_TRACE_DIR";
+
+    /// <summary>Starts a Playwright trace (screenshots + DOM snapshots) when <c>BIRKNEXT_PLAYWRIGHT_TRACE_DIR</c> is set — failure evidence.</summary>
+    public static Task StartTraceAsync(IBrowserContext context) =>
+        Env(TraceDirectoryVariable) is null ? Task.CompletedTask : context.Tracing.StartAsync(new() { Screenshots = true, Snapshots = true, Sources = false });
+
+    /// <summary>Saves the trace started by <see cref="StartTraceAsync"/> (one zip per fixture context, named by time).</summary>
+    public static async Task StopTraceAsync(IBrowserContext context)
+    {
+        if (Env(TraceDirectoryVariable) is not { } directory) return;
+        Directory.CreateDirectory(directory);
+        try { await context.Tracing.StopAsync(new() { Path = Path.Combine(directory, $"trace-{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}.zip") }); }
+        catch (PlaywrightException) { /* the context may already be closing; the test result is unaffected */ }
     }
 
     /// <summary>Why an acceptance test with its own variables cannot run (missing <paramref name="required"/>), or null.</summary>

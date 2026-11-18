@@ -37,42 +37,55 @@ public sealed class TargetEnvironmentBrowserContinuationPlaywrightTests_PreStart
         page.PageError += (_, error) => pageErrors.Add(error);
         await page.SetViewportSizeAsync(width, 950);
 
-        await page.RouteAsync("**/api/frontend-target/detect", route => route.FulfillAsync(new()
+        // Synthetic answers for exactly the URL the page asks about (no target is contacted): sign-in is required, and the browser
+        // continuation completes detection.
+        await page.RouteAsync("**/api/frontend-target/detect", async route =>
         {
-            Status = 200,
-            ContentType = "application/json",
-            Body = "{\"originalUrl\":\"https://qa.example.test/\",\"normalizedTargetUrl\":\"https://qa.example.test/\",\"reachability\":1,\"authenticationRequired\":true,\"success\":true,\"warnings\":[]}"
-        }));
+            using var request = JsonDocument.Parse(route.Request.PostData ?? "{}");
+            var url = request.RootElement.GetProperty("targetUrl").GetString();
+            await route.FulfillAsync(new()
+            {
+                Status = 200, ContentType = "application/json",
+                Body = JsonSerializer.Serialize(new { originalUrl = url, normalizedTargetUrl = url, reachability = "AuthenticationRequired", authenticationRequired = true, success = true, warnings = Array.Empty<string>() }),
+            });
+        });
         await page.RouteAsync("**/api/frontend-target/continue-in-browser", async route =>
         {
             continuationCalls++;
             continuationBody = route.Request.PostData;
             continuationUrl = route.Request.Url;
+            using var request = JsonDocument.Parse(continuationBody ?? "{}");
+            var url = request.RootElement.GetProperty("targetUrl").GetString();
             await route.FulfillAsync(new()
             {
-                Status = 200,
-                ContentType = "application/json",
-                Body = "{\"state\":2,\"isActivationReady\":true,\"strategySuggestion\":\"no-action-needed\",\"detectedUrl\":\"https://qa.example.test/\",\"isUrlCurrent\":true,\"detectionResponse\":{\"originalUrl\":\"https://qa.example.test/\",\"normalizedTargetUrl\":\"https://qa.example.test/\",\"reachability\":0,\"authenticationRequired\":false,\"success\":true,\"warnings\":[]}}"
+                Status = 200, ContentType = "application/json",
+                Body = JsonSerializer.Serialize(new
+                {
+                    state = 2, isActivationReady = true, strategySuggestion = "no-action-needed", detectedUrl = url, isUrlCurrent = true,
+                    detectionResponse = new { originalUrl = url, normalizedTargetUrl = url, reachability = "Reachable", authenticationRequired = false, success = true, isActivationReady = true, warnings = Array.Empty<string>() },
+                }),
             });
         });
 
-        await page.GotoAsync($"{_fixture.FrontendUrl}/admin/system-settings?section=target-environments",
-            new() { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 30000 });
-        await page.Locator(".fa-profile-chip").Filter(new() { HasText = "QA" }).ClickAsync();
+        // Selects QA (not the active environment) and checks it; History (2026-11-17): the summary action is "Check target", the state labels
+        // are "Authentication required" / "Detection complete" (were "Auth required" / "Checked"), and Continue lives in the detection evidence.
+        await TargetEnvironmentSettingsPage.OpenAsync(page);
+        await TargetEnvironmentSettingsPage.SelectAsync(page, "QA");
         var activeBefore = await page.Locator(".fa-active-card-name").InnerTextAsync();
-        var selectedUrl = await page.Locator(".fa-selected-url .fa-summary-url").InnerTextAsync();
-        await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
-        await page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true }).ClickAsync();
-        await page.GetByText("Auth required", new() { Exact = true }).WaitForAsync();
+        await TargetEnvironmentSettingsPage.OpenTabAsync(page, "Target Application");
+        var selectedUrl = (await page.GetByTestId("target-detection-url").InnerTextAsync()).Trim();
+        await TargetEnvironmentDetectionScenarios.CheckAction(page).ClickAsync();
+        await Assertions.Expect(page.GetByTestId("target-detection-state")).ToHaveTextAsync("Authentication required");
 
         continuationCalls.Should().Be(0, "rendering AuthenticationRequired must not auto-launch a browser");
+        await page.GetByTestId("target-detection-evidence-toggle").ClickAsync();
         var continueButton = page.GetByRole(AriaRole.Button, new() { Name = "Continue detection in browser", Exact = true });
         await continueButton.FocusAsync();
         await page.Keyboard.PressAsync("Enter");
-        await page.GetByText("Checked", new() { Exact = true }).WaitForAsync();
+        await Assertions.Expect(page.GetByTestId("target-detection-state")).ToHaveTextAsync("Detection complete");
 
         continuationCalls.Should().Be(1);
-        continuationUrl.Should().Be("http://localhost:5000/api/frontend-target/continue-in-browser");
+        continuationUrl.Should().Be($"{BrowserTestServers.BackendUrl}/api/frontend-target/continue-in-browser", "the continuation goes to the configured backend");
         using var requestDocument = JsonDocument.Parse(continuationBody!);
         var request = requestDocument.RootElement;
         var qaProfileId = request.GetProperty("profileId").GetString();

@@ -4,6 +4,15 @@ using Microsoft.Playwright;
 
 namespace BirkNext.Web.PlaywrightTests.Tests;
 
+/// <summary>
+/// System Settings layout and edit-mode ownership.
+///
+/// History (Playwright regression recovery, 2026-11-17): the "frontend-quality-engines" section became Frontend Testing Capabilities; the
+/// per-engine installation switches (the four engine sections) moved into its "Technical details" disclosure, which opens itself in edit
+/// mode; "Refresh status" became the page-level "Refresh local capabilities"; the editable layer row is "Deployment setting" (was "System
+/// setting"); and the Maintenance rows are "Reset capability" / "Database mode" (were "Database Reset" / "Database Mode"). The maintenance test
+/// never clicks "Reset data…".
+/// </summary>
 [Collection("Playwright Tests - PreStarted")]
 public sealed class SystemSettingsPlaywrightTests_PreStarted : IAsyncLifetime
 {
@@ -29,11 +38,12 @@ public sealed class SystemSettingsPlaywrightTests_PreStarted : IAsyncLifetime
         await page.GotoAsync($"{_fixture.FrontendUrl}/admin/system-settings?section=frontend-quality-engines",
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60000 });
 
+        await OpenEngineSwitchesAsync(page);
         var root = page.Locator(".frontend-quality-engine-settings");
-        await root.Locator(".dev-diag-section").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60000 });
 
         (await root.Locator(".dev-diag-section").CountAsync()).Should().Be(4);
-        (await root.GetByRole(AriaRole.Button, new() { Name = "Refresh status", Exact = true }).CountAsync()).Should().Be(1);
+        (await page.GetByTestId("ftc-refresh").CountAsync()).Should().Be(1, "one refresh action for the local capabilities");
+        (await root.GetByRole(AriaRole.Button, new() { Name = "Refresh status", Exact = true }).CountAsync()).Should().Be(0, "the engine table has no second refresh");
         var columns = await root.Locator(".dev-diag-subgrid").EvaluateAsync<int>("el => getComputedStyle(el).gridTemplateColumns.split(' ').length");
         columns.Should().Be(2);
         var badgeWidths = await root.Locator("tr:has(td:text-is('Effective availability')) .settings-badge")
@@ -59,14 +69,15 @@ public sealed class SystemSettingsPlaywrightTests_PreStarted : IAsyncLifetime
         await page.GetByRole(AriaRole.Button, new() { Name = "Cancel", Exact = true }).ClickAsync();
 
         await GoAsync(page, "frontend-quality-engines");
-        await page.Locator(".frontend-quality-engine-settings .dev-diag-section").First
-            .WaitForAsync(new LocatorWaitForOptions { Timeout = 60000 });
+        await page.GetByTestId("ftc").WaitForAsync(new LocatorWaitForOptions { Timeout = 120000 });
         await page.GetByRole(AriaRole.Button, new() { Name = "Edit Settings", Exact = true }).ClickAsync();
         page.Url.Should().EndWith("section=frontend-quality-engines");
-        (await page.Locator(".frontend-quality-engine-settings input[type=checkbox]").CountAsync()).Should().Be(4);
+        // Edit mode opens Technical details, where the installation switches live.
+        await Assertions.Expect(page.GetByTestId("ftc-technical")).ToHaveAttributeAsync("open", "");
+        await Assertions.Expect(page.Locator(".frontend-quality-engine-settings input[type=checkbox]")).ToHaveCountAsync(4);
         var nonLayer2Inputs = await page.Locator(".frontend-quality-engine-settings tr")
-            .EvaluateAllAsync<int>("rows => rows.filter(row => row.querySelector('td')?.textContent.trim() !== 'System setting').reduce((count, row) => count + row.querySelectorAll('input').length, 0)");
-        nonLayer2Inputs.Should().Be(0);
+            .EvaluateAllAsync<int>("rows => rows.filter(row => row.querySelector('td')?.textContent.trim() !== 'Deployment setting').reduce((count, row) => count + row.querySelectorAll('input').length, 0)");
+        nonLayer2Inputs.Should().Be(0, "only the Deployment setting layer is editable here");
         await page.GetByRole(AriaRole.Button, new() { Name = "Cancel", Exact = true }).ClickAsync();
 
         foreach (var section in new[] { "general", "platform", "ai", "maintenance", "system-diagnostics" })
@@ -96,19 +107,20 @@ public sealed class SystemSettingsPlaywrightTests_PreStarted : IAsyncLifetime
         await page.GotoAsync($"{_fixture.FrontendUrl}/admin/system-settings?section=maintenance",
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60000 });
 
-        var root = page.Locator("text=Maintenance").Locator("../..").First;
-        await root.Locator(".dev-diag-section").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60000 });
+        // The Maintenance diagnostic section (the old "text=Maintenance" → ../.. root matched the settings navigation first).
+        var root = page.Locator(".dev-diag-section").Filter(new() { HasText = "Reset capability and database mode" });
+        await root.WaitForAsync(new LocatorWaitForOptions { Timeout = 120000 });
 
         // Verify diagnostic section contains table
         (await root.Locator(".settings-table").CountAsync()).Should().BeGreaterThan(0);
 
         // Verify rows contain Database Reset and Database Mode with their values
-        var resetRow = root.Locator("tr:has-text('Database Reset')");
+        var resetRow = root.Locator("tr:has-text('Reset capability')");
         (await resetRow.CountAsync()).Should().Be(1);
         (await resetRow.Locator("td:has-text('Allowed')").CountAsync()).Should().Be(1);
         (await resetRow.Locator(".ss-health-sev").CountAsync()).Should().Be(1);
 
-        var modeRow = root.Locator("tr:has-text('Database Mode')");
+        var modeRow = root.Locator("tr:has-text('Database mode')");
         (await modeRow.CountAsync()).Should().Be(1);
         (await modeRow.Locator("td:has-text('Local')").CountAsync()).Should().Be(1);
         (await modeRow.Locator(".ss-health-sev").CountAsync()).Should().Be(1);
@@ -127,9 +139,22 @@ public sealed class SystemSettingsPlaywrightTests_PreStarted : IAsyncLifetime
         await page.CloseAsync();
     }
 
-    private async Task GoAsync(IPage page, string section) =>
+    /// <summary>Opens Frontend Testing Capabilities once its local status has loaded, then its Technical details (the engine switches).</summary>
+    private static async Task OpenEngineSwitchesAsync(IPage page)
+    {
+        await page.GetByTestId("ftc").WaitForAsync(new LocatorWaitForOptions { Timeout = 120000 });
+        await Assertions.Expect(page.GetByTestId("ftc-summary")).Not.ToContainTextAsync("Checking local capabilities", new() { Timeout = 120000 });
+        await page.GetByTestId("ftc-technical").Locator("summary").ClickAsync();
+        await page.Locator(".frontend-quality-engine-settings .dev-diag-section").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30000 });
+    }
+
+    /// <summary>Opens a section and waits until the settings header has rendered (its actions are counted afterwards, never before).</summary>
+    private async Task GoAsync(IPage page, string section)
+    {
         await page.GotoAsync($"{_fixture.FrontendUrl}/admin/system-settings?section={section}",
-            new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60000 });
+            new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 60000 });
+        await page.Locator(".btn-copy-diag").WaitForAsync(new LocatorWaitForOptions { Timeout = 120000 });
+    }
 
     private static bool IsSystemSettingsConsoleError(string error) =>
         !error.Contains("WorkspacePersistenceApiService", StringComparison.Ordinal);

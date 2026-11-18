@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using BirkNext.Web.PlaywrightTests.Fixtures;
 using FluentAssertions;
 using Microsoft.Playwright;
@@ -6,14 +7,19 @@ using Xunit;
 namespace BirkNext.Web.PlaywrightTests.Tests;
 
 /// <summary>
-/// E2E tests for detected endpoint and integration display in UI.
-/// Verifies that detected values are shown separately from configured values.
+/// Target Application → target check: what a check shows, proposes and keeps.
+///
+/// History (Playwright regression recovery, 2026-11-17): these tests used to point the check at the real m2lbdev host and expect detection
+/// to list "Discovered API Endpoints/Integrations" with Apply/Add buttons. That behaviour was retired on purpose — a target check now reports
+/// target facts (reachability, framework, sign-in, a suggested environment type) as evidence only, and endpoints are owned by Endpoint
+/// Discovery (source, proxy and browser evidence); the bUnit test DetectedEndpointProposals_AreNotShownOnAnyTab guards that. Each test below
+/// verifies the successor of the original user goal, answering the check with a synthetic result (no target is contacted).
 /// </summary>
 [Collection(BrowserServersCollection.Name)]
 public sealed class EndpointDiscoveryUITests : IAsyncLifetime
 {
+    private const string Environment = "QA";
     private BirkNextWebApplicationFixture _fixture = null!;
-    private const string M2lbDevUrl = "https://m2lbdev.bufetat.no/";
 
     public async Task InitializeAsync()
     {
@@ -21,325 +27,158 @@ public sealed class EndpointDiscoveryUITests : IAsyncLifetime
         await _fixture.InitializeAsync();
     }
 
-    public async Task DisposeAsync()
+    public async Task DisposeAsync() => await _fixture.DisposeAsync();
+
+    /// <summary>Opens <see cref="Environment"/>'s Target Application tab and runs one (synthetic) target check.</summary>
+    private static async Task<TargetEnvironmentSettingsPage.TargetCheckFake> CheckTargetAsync(IPage page, string suggestedType = "QA")
     {
-        await _fixture.DisposeAsync();
+        var fake = await TargetEnvironmentSettingsPage.FakeTargetCheckAsync(page, TargetEnvironmentSettingsPage.PublicBlazorTarget(suggestedType));
+        await TargetEnvironmentSettingsPage.OpenAsync(page);
+        await TargetEnvironmentSettingsPage.SelectAsync(page, Environment);
+        await TargetEnvironmentSettingsPage.OpenTabAsync(page, "Target Application");
+        await Assertions.Expect(page.GetByTestId("target-detection-state")).ToHaveTextAsync("Not checked");
+        // Before the first check the action says "Check target" (not "again").
+        await page.GetByRole(AriaRole.Button, new() { Name = "Check target", Exact = true }).ClickAsync();
+        await Assertions.Expect(page.GetByTestId("target-detection-state")).ToHaveTextAsync("Detection complete");
+        return fake;
     }
 
-    private async Task OpenTargetEnvironmentEditModeAsync(IPage page)
-    {
-        await page.GotoAsync($"{_fixture.FrontendUrl}/admin/system-settings?section=target-environments", new PageGotoOptions
-        {
-            WaitUntil = WaitUntilState.NetworkIdle,
-            Timeout = 30000,
-        });
-
-        var targetEnvRegion = page.GetByRole(AriaRole.Region, new() { Name = "Target Environments" });
-        await targetEnvRegion.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
-
-        var profileDetail = page.Locator(".fa-profile-detail").First;
-        await profileDetail.WaitForAsync(new LocatorWaitForOptions { Timeout = 15000 });
-
-        await page.WaitForTimeoutAsync(500);
-
-        var editButton = page.Locator("button:has-text('Edit Environment')").First;
-        await editButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
-        await editButton.ClickAsync();
-
-        await page.WaitForTimeoutAsync(500);
-
-        var targetTabButton = page.Locator(".fa-tab:has-text('Target Application')").First;
-        await targetTabButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 10000 });
-        await targetTabButton.ClickAsync();
-
-        var urlInput = page.Locator("input[type='url']").First;
-        await urlInput.WaitForAsync(new LocatorWaitForOptions { Timeout = 15000 });
-    }
-
-    // ────────────────────────────────────────────────────────────────────────────
-    // Test 1: Detected endpoints display section is shown after detection
-    // ────────────────────────────────────────────────────────────────────────────
+    private static Task<string> SelectedUrlAsync(IPage page) => page.GetByTestId("target-detection-url").InnerTextAsync();
 
     [BrowserFact]
-    public async Task DetectedEndpoints_AfterSuccessfulDetection_DisplaysDiscoveredSection()
+    public async Task TargetCheck_ShowsDetectedTargetFacts_AndProposesNoEndpointsAsConfiguration()
     {
+        // Successor of DetectedEndpoints_AfterSuccessfulDetection_DisplaysDiscoveredSection.
         var page = await _fixture.Context.NewPageAsync();
-
         try
         {
-            await OpenTargetEnvironmentEditModeAsync(page);
+            var fake = await CheckTargetAsync(page);
+            fake.RequestedUrls.Should().ContainSingle().Which.Should().Be(await SelectedUrlAsync(page), "the check is for the selected environment's Frontend URL");
+            await Assertions.Expect(page.GetByTestId("target-detection-reachability")).ToContainTextAsync("Reachable");
+            await Assertions.Expect(page.GetByTestId("target-detection-framework")).ToContainTextAsync("Blazor WebAssembly");
+            await Assertions.Expect(page.GetByTestId("target-detection-runtime")).ToContainTextAsync("Runtime not verified");
 
-            // Enter M2LB URL
-            var urlInput = page.Locator("input[type='url']").First;
-            await urlInput.ClearAsync();
-            await urlInput.FillAsync(M2lbDevUrl);
+            await page.GetByTestId("target-detection-evidence-toggle").ClickAsync();
+            var detected = page.GetByTestId("target-detected-summary");
+            await Assertions.Expect(detected).ToContainTextAsync("Detected values describe this target. They are not saved configuration.");
 
-            // Click Detect Settings button
-            await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
-            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true });
-            await detectButton.ClickAsync();
-
-            // Wait for detection to complete (should show detection results)
-            var discoveredSection = page.Locator("text=Discovered API Endpoints").First;
-            await discoveredSection.WaitForAsync(new LocatorWaitForOptions { Timeout = 30000 });
-
-            discoveredSection.Should().NotBeNull();
+            // The REST/GraphQL/Swagger values in the result are never offered as configuration on any tab.
+            foreach (var tab in new[] { "Target Application", "General", "Endpoint Discovery" })
+            {
+                await TargetEnvironmentSettingsPage.OpenTabAsync(page, tab);
+                (await page.Locator("main").InnerTextAsync()).Should().NotContain("api.synthetic.example.test", $"detected endpoints are not proposed on {tab}");
+                (await page.GetByText("Discovered API Endpoints").CountAsync()).Should().Be(0);
+            }
         }
-        finally
-        {
-            await page.CloseAsync();
-        }
+        finally { await page.CloseAsync(); }
     }
-
-    // ────────────────────────────────────────────────────────────────────────────
-    // Test 2: Detected integrations display in integration section
-    // ────────────────────────────────────────────────────────────────────────────
 
     [BrowserFact]
-    public async Task DetectedIntegrations_AfterSuccessfulDetection_DisplaysDiscoveredIntegrations()
+    public async Task TargetCheck_DoesNotChangeTheSavedEnvironment()
     {
+        // Successor of DetectedIntegrations_AfterSuccessfulDetection_DisplaysDiscoveredIntegrations: a check adds nothing to the environment.
         var page = await _fixture.Context.NewPageAsync();
-
         try
         {
-            await OpenTargetEnvironmentEditModeAsync(page);
+            await CheckTargetAsync(page, suggestedType: "Production");
+            var url = await SelectedUrlAsync(page);
 
-            var urlInput = page.Locator("input[type='url']").First;
-            await urlInput.ClearAsync();
-            await urlInput.FillAsync(M2lbDevUrl);
-
-            await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
-
-            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true });
-            await detectButton.ClickAsync();
-
-            // Wait for detection to complete
-            await page.WaitForTimeoutAsync(10000);
-
-            // Check if detected integrations section exists (may not be present if no integrations found)
-            var integrationsSection = page.Locator("text=Discovered Integrations");
-            bool isVisible = false;
-            try
-            {
-                isVisible = await integrationsSection.IsVisibleAsync();
-            }
-            catch
-            {
-                isVisible = false;
-            }
-
-            // Whether visible or not, the test passes - we're checking the UI renders without error
-            // The discovery section may or may not be present depending on what's detected
+            await page.ReloadAsync(new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+            await page.Locator(".fa-profile-detail").First.WaitForAsync(new() { Timeout = 120000 });
+            await TargetEnvironmentSettingsPage.SelectAsync(page, Environment);
+            await TargetEnvironmentSettingsPage.OpenTabAsync(page, "General");
+            var detail = await page.Locator(".fa-profile-detail").InnerTextAsync();
+            Regex.IsMatch(detail, @"Environment Type\s+QA").Should().BeTrue("the suggested Production type is not applied by a check");
+            await TargetEnvironmentSettingsPage.OpenTabAsync(page, "Target Application");
+            (await SelectedUrlAsync(page)).Should().Be(url, "the Frontend URL is never changed by a check");
+            await Assertions.Expect(page.GetByRole(AriaRole.Button, new() { Name = "Save changes" })).ToHaveCountAsync(0);
         }
-        finally
-        {
-            await page.CloseAsync();
-        }
+        finally { await page.CloseAsync(); }
     }
-
-    // ────────────────────────────────────────────────────────────────────────────
-    // Test 3: Apply button exists for detected REST endpoint
-    // ────────────────────────────────────────────────────────────────────────────
 
     [BrowserFact]
-    public async Task ApplyEndpointButton_ForDetectedRest_IsClickable()
+    public async Task ApplyDetectedType_ChangesOnlyTheDraft_UntilSaved()
     {
+        // Successor of ApplyEndpointButton_ForDetectedRest_IsClickable: the one detected value that can be applied goes to the draft.
         var page = await _fixture.Context.NewPageAsync();
-
         try
         {
-            await OpenTargetEnvironmentEditModeAsync(page);
+            await CheckTargetAsync(page, suggestedType: "Production");
+            await page.GetByTestId("target-detection-evidence-toggle").ClickAsync();
+            var details = page.GetByTestId("target-detected-details");
+            if (await details.GetAttributeAsync("open") is null) await details.Locator("summary").ClickAsync();
+            await page.GetByRole(AriaRole.Button, new() { Name = "Apply detected type", Exact = true }).ClickAsync();
 
-            var urlInput = page.Locator("input[type='url']").First;
-            await urlInput.ClearAsync();
-            await urlInput.FillAsync(M2lbDevUrl);
+            await Assertions.Expect(page.GetByRole(AriaRole.Button, new() { Name = "Save changes", Exact = true })).ToBeVisibleAsync();
+            await Assertions.Expect(page.Locator(".fa-page-unsaved")).ToHaveTextAsync("Unsaved changes");
+            await page.GetByRole(AriaRole.Button, new() { Name = "Cancel", Exact = true }).ClickAsync();
+            await Assertions.Expect(page.GetByRole(AriaRole.Button, new() { Name = "Edit Environment", Exact = true })).ToBeVisibleAsync();
 
-            await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
-
-            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true });
-            await detectButton.ClickAsync();
-
-            // Wait for detection to complete
-            var discoveredSection = page.Locator("text=Discovered API Endpoints").First;
-            await discoveredSection.WaitForAsync(new LocatorWaitForOptions { Timeout = 30000 });
-
-            // Look for Apply button within detected endpoints section
-            var applyButtons = page.Locator("button:has-text('Apply')");
-            var applyButtonCount = await applyButtons.CountAsync();
-
-            // Should have at least one Apply button for detected endpoints
-            applyButtonCount.Should().BeGreaterThanOrEqualTo(0);
+            await page.ReloadAsync(new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+            await page.Locator(".fa-profile-detail").First.WaitForAsync(new() { Timeout = 120000 });
+            await TargetEnvironmentSettingsPage.SelectAsync(page, Environment);
+            Regex.IsMatch(await page.Locator(".fa-profile-detail").InnerTextAsync(), @"Environment Type\s+QA").Should().BeTrue("a cancelled draft is not saved");
         }
-        finally
-        {
-            await page.CloseAsync();
-        }
+        finally { await page.CloseAsync(); }
     }
-
-    // ────────────────────────────────────────────────────────────────────────────
-    // Test 4: Apply button for integration adds to draft integrations
-    // ────────────────────────────────────────────────────────────────────────────
 
     [BrowserFact]
-    public async Task ApplyIntegrationButton_WhenClicked_AddsToConfiguredIntegrations()
+    public async Task OpenEndpointDiscovery_FromATargetWithoutSignIn()
     {
+        // Successor of ApplyIntegrationButton_WhenClicked_AddsToConfiguredIntegrations: endpoints come from Endpoint Discovery.
         var page = await _fixture.Context.NewPageAsync();
-
         try
         {
-            await OpenTargetEnvironmentEditModeAsync(page);
-
-            var urlInput = page.Locator("input[type='url']").First;
-            await urlInput.ClearAsync();
-            await urlInput.FillAsync(M2lbDevUrl);
-
-            await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
-
-            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true });
-            await detectButton.ClickAsync();
-
-            // Wait for detection to complete
-            await page.WaitForTimeoutAsync(10000);
-
-            // Check for discovered integrations section
-            var integrationsSection = page.Locator("text=Discovered Integrations");
-            bool isVisible = false;
-            try
-            {
-                isVisible = await integrationsSection.IsVisibleAsync();
-            }
-            catch
-            {
-                isVisible = false;
-            }
-
-            if (isVisible)
-            {
-                // Find and click the first Add button for an integration
-                var addButtons = page.Locator("button:has-text('Add')");
-                var addButtonCount = await addButtons.CountAsync();
-                if (addButtonCount > 0)
-                {
-                    await addButtons.First.ClickAsync();
-                    await page.WaitForTimeoutAsync(1000);
-                    // Verify no error occurred
-                }
-            }
+            await CheckTargetAsync(page);
+            var next = page.GetByTestId("target-next-action");
+            await Assertions.Expect(next).ToHaveTextAsync("Open Endpoint Discovery");
+            await Assertions.Expect(page.GetByTestId("target-next-reason")).ToHaveTextAsync("The target does not require sign-in.");
+            await next.ClickAsync();
+            await Assertions.Expect(page.GetByRole(AriaRole.Tab, new() { Name = "Endpoint Discovery", Exact = true })).ToHaveAttributeAsync("aria-selected", "true");
         }
-        finally
-        {
-            await page.CloseAsync();
-        }
+        finally { await page.CloseAsync(); }
     }
-
-    // ────────────────────────────────────────────────────────────────────────────
-    // Test 5: Stale detection warning shows when URL is changed after detection
-    // ────────────────────────────────────────────────────────────────────────────
 
     [BrowserFact]
     public async Task StaleDetectionWarning_WhenUrlChanged_DisplaysWarningMessage()
     {
         var page = await _fixture.Context.NewPageAsync();
-
         try
         {
-            await OpenTargetEnvironmentEditModeAsync(page);
-
+            await CheckTargetAsync(page);
+            await TargetEnvironmentSettingsPage.EditAsync(page);
+            await TargetEnvironmentSettingsPage.OpenTabAsync(page, "Target Application");
             var urlInput = page.Locator("input[type='url']").First;
-            await urlInput.ClearAsync();
-            await urlInput.FillAsync(M2lbDevUrl);
-
-            await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
-
-            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true });
-            await detectButton.ClickAsync();
-
-            // Wait for detection to complete
-            var discoveredSection = page.Locator("text=Discovered API Endpoints").First;
-            await discoveredSection.WaitForAsync(new LocatorWaitForOptions { Timeout = 30000 });
-
-            // Now change the URL
-            await urlInput.ClearAsync();
-            await urlInput.FillAsync("https://example.com");
+            await urlInput.FillAsync("https://changed.synthetic.example.test/");
             await urlInput.DispatchEventAsync("change");
 
-            await page.WaitForTimeoutAsync(1000);
-
-            // Look for stale warning
-            var staleWarning = page.Locator("text=Discoveries are stale");
-            bool isVisible = false;
-            try
-            {
-                isVisible = await staleWarning.IsVisibleAsync();
-            }
-            catch
-            {
-                isVisible = false;
-            }
-
-            // The stale warning should appear
-            isVisible.Should().BeTrue("Stale warning should appear when URL changes");
+            await Assertions.Expect(page.GetByTestId("target-detection-stale")).ToContainTextAsync("Discoveries are stale.");
+            await Assertions.Expect(page.GetByTestId("target-detection-stale")).ToContainTextAsync("The target URL changed since detection.");
+            await page.GetByRole(AriaRole.Button, new() { Name = "Cancel", Exact = true }).ClickAsync();
         }
-        finally
-        {
-            await page.CloseAsync();
-        }
+        finally { await page.CloseAsync(); }
     }
 
-    // ────────────────────────────────────────────────────────────────────────────
-    // Test 6: Stale detection hides discovered endpoints until re-run
-    // ────────────────────────────────────────────────────────────────────────────
-
     [BrowserFact]
-    public async Task DetectedEndpointsHidden_WhenDetectionIsStale_HidesDiscoveredSection()
+    public async Task StaleDetection_RequiresARecheck_BeforeItCountsAgain()
     {
+        // Successor of DetectedEndpointsHidden_WhenDetectionIsStale_HidesDiscoveredSection.
         var page = await _fixture.Context.NewPageAsync();
-
         try
         {
-            await OpenTargetEnvironmentEditModeAsync(page);
-
+            var fake = await CheckTargetAsync(page);
+            await TargetEnvironmentSettingsPage.EditAsync(page);
+            await TargetEnvironmentSettingsPage.OpenTabAsync(page, "Target Application");
             var urlInput = page.Locator("input[type='url']").First;
-            await urlInput.ClearAsync();
-            await urlInput.FillAsync(M2lbDevUrl);
-
-            await page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true }).ClickAsync();
-
-            var detectButton = page.GetByRole(AriaRole.Button, new() { Name = "Check target application", Exact = true });
-            await detectButton.ClickAsync();
-
-            // Wait for detection to complete
-            var discoveredSection = page.Locator("text=Discovered API Endpoints").First;
-            await discoveredSection.WaitForAsync(new LocatorWaitForOptions { Timeout = 30000 });
-
-            // Verify section is visible
-            var visibleBefore = await discoveredSection.IsVisibleAsync();
-            visibleBefore.Should().BeTrue("Discovered endpoints should be visible after detection");
-
-            // Change the URL to make detection stale
-            await urlInput.ClearAsync();
-            await urlInput.FillAsync("https://different.example.com");
+            await urlInput.FillAsync("https://different.synthetic.example.test/");
             await urlInput.DispatchEventAsync("change");
 
-            await page.WaitForTimeoutAsync(1000);
-
-            // Check if discovered section is now hidden
-            bool visibleAfter = false;
-            try
-            {
-                visibleAfter = await discoveredSection.IsVisibleAsync();
-            }
-            catch
-            {
-                visibleAfter = false;
-            }
-
-            // Section should be hidden or not visible
-            visibleAfter.Should().BeFalse("Discovered endpoints should be hidden when stale");
+            await Assertions.Expect(page.GetByTestId("target-detection-state")).ToHaveTextAsync("Needs re-check");
+            await Assertions.Expect(page.GetByTestId("target-next-action")).ToHaveTextAsync("Check target again");
+            await Assertions.Expect(page.GetByRole(AriaRole.Button, new() { Name = "Continue detection in browser" })).ToHaveCountAsync(0);
+            fake.RequestedUrls.Should().HaveCount(1, "a URL change never re-runs the check by itself");
+            await page.GetByRole(AriaRole.Button, new() { Name = "Cancel", Exact = true }).ClickAsync();
         }
-        finally
-        {
-            await page.CloseAsync();
-        }
+        finally { await page.CloseAsync(); }
     }
 }

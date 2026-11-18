@@ -18,12 +18,10 @@ public sealed class SddProjectionResponsiveAccessibilityTests : IAsyncLifetime
         var page = await _fixture.Context.NewPageAsync();
         var axePath = FindAxePath();
         page.Dialog += async (_, dialog) => await dialog.AcceptAsync();
-        await page.GotoAsync(_fixture.FrontendUrl + "/sample-projects", new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 60000 });
-        var specificationProject = page.Locator(".sp-card").Filter(new() { HasText = "spec.md" }).First;
-        var selectProject = specificationProject.GetByRole(AriaRole.Button, new() { Name = "Select Project", Exact = true });
-        await selectProject.WaitForAsync(new() { Timeout = 15000 });
-        await selectProject.ClickAsync();
-        await page.GetByRole(AriaRole.Button, new() { Name = "Selected", Exact = true }).First.WaitForAsync(new() { Timeout = 15000 });
+        // Was: Demo Projects → a card containing spec.md → "Select Project". Demo Projects are an optional, separately configured feature
+        // (the isolated API has none), so the test now imports its own Spec Kit project and makes it current.
+        var project = SyntheticProjects.NewName("PwSdd");
+        await SyntheticProjects.ImportAndUseAsync(page, project, SyntheticProjects.SpecificationArchive(project));
 
         foreach (var (route, region) in new[]
         {
@@ -34,20 +32,9 @@ public sealed class SddProjectionResponsiveAccessibilityTests : IAsyncLifetime
         {
             await page.GotoAsync(_fixture.FrontendUrl + route, new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 60000 });
             var root = page.Locator(region);
-            if (route != "/quality-review") await root.WaitForAsync(new() { Timeout = 15000 });
-            else await page.WaitForTimeoutAsync(500);
-            if (await root.CountAsync() == 0)
-            {
-                Assert.Equal("/quality-review", route);
-                await page.Locator(".qr-page").WaitForAsync(new() { Timeout = 15000 });
-                foreach (var width in new[] { 1440, 1100, 768, 390 })
-                {
-                    await page.SetViewportSizeAsync(width, 1000);
-                    var overflow = await page.EvaluateAsync<bool>("document.documentElement.scrollWidth > window.innerWidth");
-                    Assert.False(overflow, $"{route} overflows horizontally at {width}px");
-                }
-                continue; // This sample has no SDD requirements, so the optional SDD panel is correctly NotApplicable.
-            }
+            // The project has Spec Kit requirements, so every SDD region — including Document Quality Review's shared SDD evidence — must
+            // render; it is waited for (cold WASM start takes several seconds), never assumed absent after a fixed delay.
+            await root.First.WaitForAsync(new() { Timeout = 120000 });
 
             await page.AddScriptTagAsync(new() { Path = axePath });
             var violations = await page.EvaluateAsync<JsonElement>(@"async selector => {

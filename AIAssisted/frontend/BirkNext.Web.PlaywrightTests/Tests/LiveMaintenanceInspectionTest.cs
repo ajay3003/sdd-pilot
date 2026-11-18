@@ -32,6 +32,7 @@ public sealed class LiveMaintenanceInspectionTest : IAsyncLifetime
         var playwright = await Playwright.CreateAsync();
         var browser = await playwright.Chromium.LaunchAsync();
         var context = await browser.NewContextAsync();
+        var guard = await BrowserNetworkGuard.InstallAsync(context);
         await BrowserTestServers.ConnectAsync(context);
         var page = await context.NewPageAsync();
 
@@ -99,5 +100,6 @@ public sealed class LiveMaintenanceInspectionTest : IAsyncLifetime
             await browser.CloseAsync();
             playwright.Dispose();
         }
+        guard.AssertNoViolations();
     }
 }

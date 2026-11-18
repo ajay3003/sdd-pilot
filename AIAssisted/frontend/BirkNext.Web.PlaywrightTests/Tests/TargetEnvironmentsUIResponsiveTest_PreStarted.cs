@@ -1,13 +1,21 @@
 using BirkNext.Web.PlaywrightTests.Fixtures;
 using FluentAssertions;
 using Microsoft.Playwright;
-using System.Text.Json;
 
 namespace BirkNext.Web.PlaywrightTests.Tests;
 
+/// <summary>
+/// Target Environments layout, identity and keyboard behaviour across widths.
+///
+/// History (Playwright regression recovery, 2026-11-17): the tests now wait for the selected environment's detail (the section heading appears
+/// first, the tabs a moment later); environments are selected through their chips (".fa-environment-list button" no longer exists, so several
+/// tests used to pass without asserting anything); the removed Diagnostics tab is replaced by Validation, which carries its validation status;
+/// and the type-conflict warning is produced by an environment the test creates and deletes itself instead of being looked for in shared data.
+/// </summary>
 [Collection("Playwright Tests - PreStarted")]
 public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifetime
 {
+    private const string ConflictUrl = "https://app-dev.synthetic.example.test/";
     private BirkNextWebApplicationFixture_PreStarted _fixture = null!;
 
     public async Task InitializeAsync()
@@ -34,86 +42,27 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
         page.PageError += (_, error) => pageErrors.Add(error);
 
         await page.SetViewportSizeAsync(width, 900);
-        await page.GotoAsync(
-            $"{_fixture.FrontendUrl}/admin/system-settings?section=target-environments",
-            new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60000 });
-
-        // Verify Target Environments section loaded
-        var sectionButton = page.GetByRole(AriaRole.Button, new() { Name = "Target Environments", Exact = true });
-        await sectionButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 30000 });
-
-        // Get metrics
-        var pageScrollWidth = await page.EvaluateAsync<int>("document.documentElement.scrollWidth");
-        var pageClientWidth = await page.EvaluateAsync<int>("document.documentElement.clientWidth");
-        var hasPageOverflow = pageScrollWidth > pageClientWidth;
-
-        // Check active card exists
-        var activeCard = page.Locator(".fa-active-card");
-        var activeCardCount = await activeCard.CountAsync();
-        activeCardCount.Should().BeGreaterThan(0, "Active target summary card should be present");
-
-        // Active status has one identity and no redundant type badge.
-        var activeCardLeft = activeCard.Locator(".fa-active-card-left");
-        var typeBadges = activeCardLeft.Locator(".fa-env-badge");
-        var typeBadgeCount = await typeBadges.CountAsync();
-        typeBadgeCount.Should().Be(0, "Active status should not repeat the environment type as a badge");
-
-        var nameSpan = activeCardLeft.Locator(".fa-active-card-name");
-        var nameCount = await nameSpan.CountAsync();
-        nameCount.Should().Be(1, "Active card left should have name");
-
-        // Verify no redundant context label
-        var contextLabel = activeCardLeft.Locator(".fa-active-card-context");
-        var contextCount = await contextLabel.CountAsync();
-        contextCount.Should().Be(0, "Active card should not have redundant context label");
-
-        // Check tab container
+        await TargetEnvironmentSettingsPage.OpenAsync(page);
         var tabContainer = page.Locator(".fa-section-tabs");
-        var tabContainerCount = await tabContainer.CountAsync();
-        tabContainerCount.Should().BeGreaterThan(0, "Tab container should exist");
+        await tabContainer.WaitForAsync(new() { Timeout = 30000 });
 
-        if (tabContainerCount > 0)
-        {
-            var tabScrollWidth = await tabContainer.EvaluateAsync<int>("el => el.scrollWidth");
-            var tabClientWidth = await tabContainer.EvaluateAsync<int>("el => el.clientWidth");
-            var hasTabOverflow = tabScrollWidth > tabClientWidth;
+        var activeCard = page.Locator(".fa-active-card");
+        (await activeCard.CountAsync()).Should().BeGreaterThan(0, "Active target summary card should be present");
+        var activeCardLeft = activeCard.Locator(".fa-active-card-left");
+        (await activeCardLeft.Locator(".fa-env-badge").CountAsync()).Should().Be(0, "Active status should not repeat the environment type as a badge");
+        (await activeCardLeft.Locator(".fa-active-card-name").CountAsync()).Should().Be(1, "Active card left should have name");
+        (await activeCardLeft.Locator(".fa-active-card-context").CountAsync()).Should().Be(0, "Active card should not have redundant context label");
 
-            // Count visible tabs
-            var tabButtons = tabContainer.Locator("button[role=tab]");
-            var tabCount = await tabButtons.CountAsync();
+        (await tabContainer.CountAsync()).Should().Be(1, "one tab list for the selected environment");
+        (await tabContainer.GetByRole(AriaRole.Tab).CountAsync()).Should().BeGreaterThan(8, "every section is a tab");
+        if (width < 1000)
+            (await tabContainer.EvaluateAsync<string>("el => getComputedStyle(el).flexWrap")).Should().Be("wrap", "At narrow widths, tabs should use flex-wrap");
 
-            // Check if tabs are wrapping (multiple rows) by checking flex-wrap CSS
-            var flexWrap = await tabContainer.EvaluateAsync<string>("el => getComputedStyle(el).flexWrap");
-
-            if (width < 1000)
-            {
-                flexWrap.Should().Be("wrap", "At narrow widths, tabs should use flex-wrap");
-            }
-        }
-
-        // Look for warning if it exists
-        var warning = page.Locator(".fa-type-conflict");
-        var warningCount = await warning.CountAsync();
-        if (warningCount > 0)
-        {
-            // If warning exists, verify it has proper structure
-            var warningText = warning.Locator(".fa-type-conflict-text");
-            var warningTextCount = await warningText.CountAsync();
-            warningTextCount.Should().Be(1, "Warning should have text section");
-
-            var warningAction = warning.Locator(".fa-type-conflict-action");
-            var warningActionCount = await warningAction.CountAsync();
-            warningActionCount.Should().Be(1, "Warning should have action button");
-        }
-
-        // Final overflow check
-        hasPageOverflow.Should().BeFalse($"Page should not overflow horizontally at {width}px (scrollWidth={pageScrollWidth}, clientWidth={pageClientWidth})");
-
-        // Check console errors
-        var unexpectedErrors = consoleErrors.Where(IsUnexpectedError).ToList();
-        unexpectedErrors.Should().BeEmpty($"No unexpected console errors at {width}px viewport");
+        var scrollWidth = await page.EvaluateAsync<int>("document.documentElement.scrollWidth");
+        var clientWidth = await page.EvaluateAsync<int>("document.documentElement.clientWidth");
+        (scrollWidth > clientWidth).Should().BeFalse($"Page should not overflow horizontally at {width}px (scrollWidth={scrollWidth}, clientWidth={clientWidth})");
+        consoleErrors.Where(IsUnexpectedError).Should().BeEmpty($"No unexpected console errors at {width}px viewport");
         pageErrors.Should().BeEmpty($"No page errors at {width}px viewport");
-
         await page.CloseAsync();
     }
 
@@ -122,24 +71,14 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
     {
         var page = await _fixture.Context.NewPageAsync();
         await page.SetViewportSizeAsync(1440, 900);
-        await page.GotoAsync(
-            $"{_fixture.FrontendUrl}/admin/system-settings?section=target-environments",
-            new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60000 });
+        await TargetEnvironmentSettingsPage.OpenAsync(page);
 
-        var activeCard = page.Locator(".fa-active-card");
-        await activeCard.WaitForAsync(new LocatorWaitForOptions { Timeout = 30000 });
-
-        // Active card should have one name and its URL, without identity badges.
-        var activeCardLeft = activeCard.Locator(".fa-active-card-left");
-        var content = await activeCardLeft.InnerTextAsync();
-
-        // Should contain type and name, not redundant labels
-        content.Should().NotBeNullOrEmpty();
+        var activeCardLeft = page.Locator(".fa-active-card .fa-active-card-left");
+        (await activeCardLeft.InnerTextAsync()).Should().NotBeNullOrEmpty();
         (await activeCardLeft.Locator(".fa-env-badge").CountAsync()).Should().Be(0);
         (await activeCardLeft.Locator(".fa-active-card-name").CountAsync()).Should().Be(1);
         (await activeCardLeft.Locator(".fa-active-card-context").CountAsync()).Should().Be(0);
-        (await activeCard.Locator(".fa-active-stat-mono").CountAsync()).Should().Be(1);
-
+        (await page.Locator(".fa-active-card .fa-active-stat-mono").CountAsync()).Should().Be(1);
         await page.CloseAsync();
     }
 
@@ -148,35 +87,19 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
     {
         var page = await _fixture.Context.NewPageAsync();
         await page.SetViewportSizeAsync(1440, 900);
-        await page.GotoAsync(
-            $"{_fixture.FrontendUrl}/admin/system-settings?section=target-environments",
-            new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60000 });
+        await TargetEnvironmentSettingsPage.OpenAsync(page);
+        var activeName = (await page.Locator(".fa-active-card-name").InnerTextAsync()).Trim();
 
-        // Find and click the first target to select it
-        var targetRows = page.Locator("[class*='target-environment'][class*='row'], .fa-environment-list button");
-        var rowCount = await targetRows.CountAsync();
-        if (rowCount > 0)
-        {
-            await targetRows.First.ClickAsync();
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        // A non-active environment: its header names it, with no type badge, and the active environment is unchanged.
+        await TargetEnvironmentSettingsPage.SelectAsync(page, "QA");
+        var detailHeader = page.Locator(".fa-detail-header-left");
+        await Assertions.Expect(detailHeader.Locator(".fa-detail-name")).ToHaveTextAsync("QA");
+        (await detailHeader.Locator(".fa-env-badge").CountAsync()).Should().Be(0, "Detail header should not duplicate type badge");
+        await Assertions.Expect(page.Locator(".fa-profile-chip-selected")).ToContainTextAsync("QA");
+        (await page.Locator(".fa-active-card-name").InnerTextAsync()).Trim().Should().Be(activeName, "selecting is not activating");
 
-            // Detail header should show name and potentially Active badge
-            var detailHeader = page.Locator(".fa-detail-header-left");
-            var detailHeaderCount = await detailHeader.CountAsync();
-            if (detailHeaderCount > 0)
-            {
-                // Should have name
-                var nameSpan = detailHeader.Locator(".fa-detail-name");
-                var nameCount = await nameSpan.CountAsync();
-                nameCount.Should().BeGreaterThan(0, "Detail header should show target name");
-
-                // Should not have redundant type badge in header
-                var typeBadges = detailHeader.Locator(".fa-env-badge");
-                var typeBadgeCount = await typeBadges.CountAsync();
-                typeBadgeCount.Should().Be(0, "Detail header should not duplicate type badge");
-            }
-        }
-
+        // The active environment's chip carries the Active indicator.
+        await Assertions.Expect(page.Locator(".fa-profile-chip").Filter(new() { HasText = activeName })).ToContainTextAsync("ACTIVE");
         await page.CloseAsync();
     }
 
@@ -185,67 +108,44 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
     {
         var page = await _fixture.Context.NewPageAsync();
         await page.SetViewportSizeAsync(1440, 900);
-        await page.GotoAsync(
-            $"{_fixture.FrontendUrl}/admin/system-settings?section=target-environments",
-            new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60000 });
-
-        var warning = page.Locator(".fa-type-conflict");
-        var warningCount = await warning.CountAsync();
-
-        if (warningCount > 0)
+        var name = SyntheticProjects.NewName("PwConflict");
+        await TargetEnvironmentSettingsPage.OpenAsync(page);
+        await TargetEnvironmentSettingsPage.CreateAsync(page, name, "Production", ConflictUrl);
+        try
         {
-            // Verify wording: "Stored type:" and "Detected type:"
+            var warning = page.Locator(".fa-type-conflict");
+            await Assertions.Expect(warning).ToHaveCountAsync(1);
             var warningText = await warning.InnerTextAsync();
-            warningText.Should().Contain("Stored type:", "Warning should show stored type");
-            warningText.Should().Contain("Detected type:", "Warning should show detected type");
-
-            // Verify action button
-            var actionButton = warning.Locator(".fa-type-conflict-action");
-            var actionButtonCount = await actionButton.CountAsync();
-            actionButtonCount.Should().Be(1, "Warning should have action button");
-
-            var buttonText = await actionButton.InnerTextAsync();
-            buttonText.Should().Contain("Review", "Action button should mention review");
+            warningText.Should().Contain("Stored type: Production", "Warning should show stored type");
+            warningText.Should().Contain("Detected type: Development", "Warning should show the type the URL indicates");
+            var action = warning.Locator(".fa-type-conflict-action");
+            await Assertions.Expect(action).ToHaveTextAsync("Review on Target Application");
+            await action.ClickAsync();
+            await Assertions.Expect(page.GetByRole(AriaRole.Tab, new() { Name = "Target Application", Exact = true })).ToHaveAttributeAsync("aria-selected", "true");
         }
-
-        await page.CloseAsync();
+        finally
+        {
+            await TargetEnvironmentSettingsPage.DeleteSelectedAsync(page, name);
+            await page.CloseAsync();
+        }
     }
 
     [BrowserTheory]
     [InlineData("General")]
     [InlineData("Target Application")]
     [InlineData("Endpoint Discovery")]
-    [InlineData("Diagnostics")]
+    [InlineData("Validation")]
     public async Task TabActivation_WorksCorrectlyAfterWrap(string tabName)
     {
         var page = await _fixture.Context.NewPageAsync();
         await page.SetViewportSizeAsync(860, 900);
-        await page.GotoAsync(
-            $"{_fixture.FrontendUrl}/admin/system-settings?section=target-environments",
-            new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60000 });
+        await TargetEnvironmentSettingsPage.OpenAsync(page);
+        await TargetEnvironmentSettingsPage.SelectAsync(page, "QA");
 
-        // Select a target first
-        var targetRows = page.Locator("[class*='target-environment'][class*='row'], .fa-environment-list button");
-        var rowCount = await targetRows.CountAsync();
-        if (rowCount > 0)
-        {
-            await targetRows.First.ClickAsync();
-            await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-
-            // Click the tab
-            var tabButton = page.GetByRole(AriaRole.Tab, new() { Name = tabName });
-            var tabExists = await tabButton.CountAsync() > 0;
-            if (tabExists)
-            {
-                await tabButton.ClickAsync();
-                await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
-
-                // Verify no page overflow
-                var pageOverflow = await page.EvaluateAsync<int>("document.documentElement.scrollWidth - document.documentElement.clientWidth");
-                pageOverflow.Should().BeLessThanOrEqualTo(0, $"Clicking {tabName} should not cause page overflow at 860px");
-            }
-        }
-
+        await TargetEnvironmentSettingsPage.OpenTabAsync(page, tabName);
+        (await page.GetByRole(AriaRole.Tab, new() { Selected = true }).InnerTextAsync()).Trim().Should().Be(tabName, "exactly the clicked tab is selected");
+        var pageOverflow = await page.EvaluateAsync<int>("document.documentElement.scrollWidth - document.documentElement.clientWidth");
+        pageOverflow.Should().BeLessThanOrEqualTo(0, $"Clicking {tabName} should not cause page overflow at 860px");
         await page.CloseAsync();
     }
 
@@ -259,61 +159,56 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
         var pageErrors = new List<string>();
         page.Console += (_, message) => { if (message.Type == "error") consoleErrors.Add(message.Text); };
         page.PageError += (_, error) => pageErrors.Add(error);
+        var name = SyntheticProjects.NewName("PwKeyboard");
 
         await page.SetViewportSizeAsync(width, 900);
-        await page.GotoAsync(
-            $"{_fixture.FrontendUrl}/admin/system-settings?section=target-environments",
-            new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60000 });
-
-        var sectionButton = page.GetByRole(AriaRole.Button, new() { Name = "Target Environments", Exact = true });
-        await sectionButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 30000 });
-
-        var detectSettings = page.GetByRole(AriaRole.Button, new() { Name = "Detect settings", Exact = true });
-        var reviewDetectSettings = page.GetByRole(AriaRole.Button, new() { Name = "Review on Target Application", Exact = true });
-        var generalTab = page.GetByRole(AriaRole.Tab, new() { Name = "General", Exact = true });
-        var diagnosticsTab = page.GetByRole(AriaRole.Tab, new() { Name = "Diagnostics", Exact = true });
-
-        await SelectProfileWithWarningAsync(page, reviewDetectSettings);
-        var selectedProfile = page.Locator(".fa-profile-chip-selected");
-
-        (await detectSettings.CountAsync()).Should().Be(0, "there is no environment-wide detect; Target Application owns its own check");
-        (await reviewDetectSettings.CountAsync()).Should().Be(1, "the warning action must have its distinct accessible name");
-        (await generalTab.GetAttributeAsync("aria-selected")).Should().Be("true", "General is the selected tab on initial render");
-        (await generalTab.InnerTextAsync()).Should().NotBeNullOrWhiteSpace("the selected tab must have an accessible name");
-
-        if (width == 1440)
+        await TargetEnvironmentSettingsPage.OpenAsync(page);
+        await TargetEnvironmentSettingsPage.CreateAsync(page, name, "Production", ConflictUrl);
+        try
         {
-            await AssertCanReceiveFocusAsync(selectedProfile, "the selected target control");
-            await AssertCanReceiveFocusAsync(reviewDetectSettings, "Review on Target Application");
-            await AssertCanReceiveFocusAsync(generalTab, "the General section tab");
+            var detectSettings = page.GetByRole(AriaRole.Button, new() { Name = "Detect settings", Exact = true });
+            var reviewDetectSettings = page.GetByRole(AriaRole.Button, new() { Name = "Review on Target Application", Exact = true });
+            var generalTab = page.GetByRole(AriaRole.Tab, new() { Name = "General", Exact = true });
+            var validationTab = page.GetByRole(AriaRole.Tab, new() { Name = "Validation", Exact = true });
+            var selectedProfile = page.Locator(".fa-profile-chip-selected");
 
-            var editEnvironment = page.GetByRole(AriaRole.Button, new() { Name = "Edit Environment", Exact = true });
-            await AssertCanReceiveFocusAsync(editEnvironment, "the header Edit Environment action");
-        }
-        else
-        {
-            await AssertCanReceiveFocusAsync(reviewDetectSettings, "Review on Target Application");
+            (await detectSettings.CountAsync()).Should().Be(0, "there is no environment-wide detect; Target Application owns its own check");
+            (await reviewDetectSettings.CountAsync()).Should().Be(1, "the warning action must have its distinct accessible name");
+            (await generalTab.GetAttributeAsync("aria-selected")).Should().Be("true", "General is the selected tab on initial render");
+            (await generalTab.InnerTextAsync()).Should().NotBeNullOrWhiteSpace("the selected tab must have an accessible name");
+
+            if (width == 1440)
+            {
+                await AssertCanReceiveFocusAsync(selectedProfile, "the selected target control");
+                await AssertCanReceiveFocusAsync(reviewDetectSettings, "Review on Target Application");
+                await AssertCanReceiveFocusAsync(generalTab, "the General section tab");
+                await AssertCanReceiveFocusAsync(page.GetByRole(AriaRole.Button, new() { Name = "Edit Environment", Exact = true }), "the header Edit Environment action");
+            }
+            else
+            {
+                await AssertCanReceiveFocusAsync(reviewDetectSettings, "Review on Target Application");
+                await page.Keyboard.PressAsync("Tab");
+                (await IsActiveElementAsync(generalTab)).Should().BeTrue("Tab must leave the warning action and reach the wrapped tab set without a focus trap");
+                await AssertCanReceiveFocusAsync(validationTab, "the wrapped Validation tab");
+                (await validationTab.GetAttributeAsync("aria-selected")).Should().Be("false", "keyboard focus must not be conflated with selected state");
+            }
+
+            var focusedBeforeTab = await page.EvaluateAsync<string>("() => document.activeElement?.outerHTML ?? ''");
             await page.Keyboard.PressAsync("Tab");
-            (await IsActiveElementAsync(generalTab)).Should().BeTrue("Tab must leave the warning action and reach the wrapped tab set without a focus trap");
+            var focusedAfterTab = await page.EvaluateAsync<string>("() => document.activeElement?.outerHTML ?? ''");
+            focusedAfterTab.Should().NotBe(focusedBeforeTab, $"Tab focus must advance without a focus trap at {width}px ({context})");
 
-            await AssertCanReceiveFocusAsync(diagnosticsTab, "the wrapped Diagnostics tab");
-            (await diagnosticsTab.GetAttributeAsync("aria-selected")).Should().Be("false", "keyboard focus must not be conflated with selected state");
+            var pageScrollWidth = await page.EvaluateAsync<int>("document.documentElement.scrollWidth");
+            var pageClientWidth = await page.EvaluateAsync<int>("document.documentElement.clientWidth");
+            (pageScrollWidth > pageClientWidth).Should().BeFalse($"Focusing controls must not introduce page overflow at {width}px");
+            consoleErrors.Where(IsUnexpectedError).Should().BeEmpty($"No unexpected console errors during keyboard proof at {width}px");
+            pageErrors.Should().BeEmpty($"No page errors during keyboard proof at {width}px");
         }
-
-        var focusedBeforeTab = await page.EvaluateAsync<string>("() => document.activeElement?.outerHTML ?? ''");
-        await page.Keyboard.PressAsync("Tab");
-        var focusedAfterTab = await page.EvaluateAsync<string>("() => document.activeElement?.outerHTML ?? ''");
-        focusedAfterTab.Should().NotBe(focusedBeforeTab, $"Tab focus must advance without a focus trap at {width}px ({context})");
-
-        var pageScrollWidth = await page.EvaluateAsync<int>("document.documentElement.scrollWidth");
-        var pageClientWidth = await page.EvaluateAsync<int>("document.documentElement.clientWidth");
-        Console.WriteLine($"KEYBOARD_METRICS width={width} scrollWidth={pageScrollWidth} clientWidth={pageClientWidth} overflow={pageScrollWidth > pageClientWidth}");
-        (pageScrollWidth > pageClientWidth).Should().BeFalse($"Focusing controls must not introduce page overflow at {width}px");
-
-        consoleErrors.Where(IsUnexpectedError).Should().BeEmpty($"No unexpected console errors during keyboard proof at {width}px");
-        pageErrors.Should().BeEmpty($"No page errors during keyboard proof at {width}px");
-
-        await page.CloseAsync();
+        finally
+        {
+            await TargetEnvironmentSettingsPage.DeleteSelectedAsync(page, name);
+            await page.CloseAsync();
+        }
     }
 
     private static async Task AssertCanReceiveFocusAsync(ILocator locator, string description)
@@ -325,29 +220,8 @@ public sealed class TargetEnvironmentsUIResponsiveTest_PreStarted : IAsyncLifeti
     private static Task<bool> IsActiveElementAsync(ILocator locator) =>
         locator.EvaluateAsync<bool>("element => element === document.activeElement");
 
-    private static async Task SelectProfileWithWarningAsync(IPage page, ILocator warningAction)
-    {
-        if (await warningAction.CountAsync() > 0)
-            return;
-
-        var profiles = page.Locator(".fa-profile-chip");
-        for (var index = 0; index < await profiles.CountAsync(); index++)
-        {
-            await profiles.Nth(index).ClickAsync();
-            if (await warningAction.CountAsync() > 0)
-                return;
-        }
-    }
-
-    private static bool IsUnexpectedError(string errorMessage)
-    {
-        // Filter out known safe errors
-        if (errorMessage.Contains("__react_", StringComparison.OrdinalIgnoreCase))
-            return false;
-        if (errorMessage.Contains("css", StringComparison.OrdinalIgnoreCase))
-            return false;
-        if (errorMessage.Contains("stylesheet", StringComparison.OrdinalIgnoreCase))
-            return false;
-        return true;
-    }
+    private static bool IsUnexpectedError(string errorMessage) =>
+        !errorMessage.Contains("__react_", StringComparison.OrdinalIgnoreCase)
+        && !errorMessage.Contains("css", StringComparison.OrdinalIgnoreCase)
+        && !errorMessage.Contains("stylesheet", StringComparison.OrdinalIgnoreCase);
 }

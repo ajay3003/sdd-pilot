@@ -97,16 +97,11 @@ public sealed class FrontendQualityReviewLayoutMeasurementTest : IAsyncLifetime
             await page.AddInitScriptAsync($"localStorage.setItem('birknext:frontend-analysis-settings', {settingsLiteral});");
 
             // Navigate to FQR page
-            await page.GotoAsync($"{_fixture.FrontendUrl}/frontend-quality-review", new PageGotoOptions
-            {
-                WaitUntil = WaitUntilState.NetworkIdle,
-                Timeout = 30000
-            });
+            await FrontendQualityReviewPage.OpenAsync(page);
 
-            // Click run button
+            // Click run button once the review is runnable for the configured target (it is disabled, with a stated reason, while loading).
             var run = page.GetByRole(AriaRole.Button, new() { Name = "Run Frontend Quality Review", Exact = true });
-            await run.WaitForAsync(new LocatorWaitForOptions { Timeout = 15000 });
-            (await run.IsDisabledAsync()).Should().BeFalse("target must be configured");
+            await FrontendQualityReviewPage.WaitUntilRunnableAsync(page);
             await run.ClickAsync();
 
             // Wait for engine matrix to appear (indicates results are rendering)

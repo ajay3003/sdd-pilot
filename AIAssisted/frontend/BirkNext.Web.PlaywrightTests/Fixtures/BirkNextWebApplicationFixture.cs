@@ -31,6 +31,8 @@ public sealed class BirkNextWebApplicationFixture : IAsyncLifetime
     private IBrowserContext? _context;
 
     public IBrowserContext Context => _context ?? throw new InvalidOperationException("Browser context not initialized");
+    /// <summary>Blocks and records every request outside the isolated BirkNext; a violation fails the test when the fixture is disposed.</summary>
+    public BrowserNetworkGuard? NetworkGuard { get; private set; }
     // Isolation: an external (already started, isolated) instance when configured; otherwise the self-started dev servers (opt-in only).
     public string FrontendUrl => BrowserTestServers.FrontendUrl;
     public string BackendUrl => BrowserTestServers.BackendUrl;
@@ -81,6 +83,7 @@ public sealed class BirkNextWebApplicationFixture : IAsyncLifetime
         // Clean up in reverse order
         if (_context != null)
         {
+            await BrowserTestServers.StopTraceAsync(_context);
             await _context.CloseAsync();
         }
 
@@ -97,6 +100,7 @@ public sealed class BirkNextWebApplicationFixture : IAsyncLifetime
         StopProcess(_backendProcess, "Backend");
         if (_frontendProcess is not null) await WaitForPortReleasedAsync(BrowserTestServers.DevWebPort);
         if (_backendProcess is not null) await WaitForPortReleasedAsync(BrowserTestServers.DevApiPort);
+        NetworkGuard?.AssertNoViolations();
     }
 
     private async Task StartBackendAsync()
@@ -293,6 +297,8 @@ public sealed class BirkNextWebApplicationFixture : IAsyncLifetime
         });
 
         _context = await _browser.NewContextAsync();
+        NetworkGuard = await BrowserNetworkGuard.InstallAsync(_context);
+        await BrowserTestServers.StartTraceAsync(_context);
         await BrowserTestServers.ConnectAsync(_context, Path.Combine(_backendPath, "BirkNext.Api"));
     }
 

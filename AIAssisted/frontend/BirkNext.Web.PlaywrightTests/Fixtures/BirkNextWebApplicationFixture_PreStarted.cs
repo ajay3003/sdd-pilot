@@ -24,6 +24,8 @@ public sealed class BirkNextWebApplicationFixture_PreStarted : IAsyncLifetime
     private IBrowserContext? _context;
 
     public IBrowserContext Context => _context ?? throw new InvalidOperationException("Browser context not initialized");
+    /// <summary>Blocks and records every request outside the isolated BirkNext; a violation fails the test when the fixture is disposed.</summary>
+    public BrowserNetworkGuard? NetworkGuard { get; private set; }
     public string FrontendUrl => BrowserTestServers.FrontendUrl;
     public string BackendUrl => BrowserTestServers.BackendUrl;
 
@@ -50,6 +52,7 @@ public sealed class BirkNextWebApplicationFixture_PreStarted : IAsyncLifetime
     {
         if (_context != null)
         {
+            await BrowserTestServers.StopTraceAsync(_context);
             await _context.CloseAsync();
         }
 
@@ -59,6 +62,7 @@ public sealed class BirkNextWebApplicationFixture_PreStarted : IAsyncLifetime
         }
 
         _playwright?.Dispose();
+        NetworkGuard?.AssertNoViolations();
     }
 
     private async Task VerifyServiceReadyAsync(string url, string serviceName, int timeoutMs = 30000, int checkIntervalMs = 500)
@@ -104,6 +108,8 @@ public sealed class BirkNextWebApplicationFixture_PreStarted : IAsyncLifetime
         });
 
         _context = await _browser.NewContextAsync();
+        NetworkGuard = await BrowserNetworkGuard.InstallAsync(_context);
+        await BrowserTestServers.StartTraceAsync(_context);
         await BrowserTestServers.ConnectAsync(_context);
     }
 
