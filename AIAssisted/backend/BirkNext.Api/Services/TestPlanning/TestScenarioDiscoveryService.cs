@@ -84,7 +84,8 @@ public sealed class ApiContractScenarioProvider : ITestScenarioCandidateProvider
 }
 
 /// <summary>Integration journeys declared for this project, and test-pack journeys whose sources are this project's application source.</summary>
-public sealed class IntegrationJourneyScenarioProvider(DeclaredIntegrationJourneyStore? declared = null, IIntegrationJourneyPackRegistry? packs = null) : ITestScenarioCandidateProvider
+public sealed class IntegrationJourneyScenarioProvider(DeclaredIntegrationJourneyStore? declared = null, IIntegrationJourneyPackRegistry? packs = null,
+    IntegrationJourneyRunStore? runs = null) : ITestScenarioCandidateProvider
 {
     public string CapabilityId => D.IntegrationJourneys;
     public async Task<CandidateProviderOutput> DiscoverAsync(ScenarioDiscoveryContext context, CancellationToken ct)
@@ -92,7 +93,15 @@ public sealed class IntegrationJourneyScenarioProvider(DeclaredIntegrationJourne
         var mine = declared is null ? [] : await declared.ForProjectAsync(context.ProjectKey, ct);
         var recognisedPacks = context.Snapshot is null || packs is null ? [] : packs.Packs
             .Where(p => p.SourceRoles.Where(r => !r.RequiresInfrastructureAsCode).Any(r => TestPackSources.Recognizes(r, context.Snapshot!))).ToList();
-        var list = D.FromDeclaredJourneys(context.ProjectKey, mine).Concat(recognisedPacks.SelectMany(p => D.FromPackJourneys(context.ProjectKey, p))).ToList();
+        var list = D.FromDeclaredJourneys(context.ProjectKey, mine).ToList();
+        foreach (var pack in recognisedPacks)
+        {
+            // Cross-source: the pack's own run history in the active Target Environment (one bounded read per pack, never per scenario).
+            IReadOnlyList<IntegrationJourneyRun>? history = null;
+            if (runs is not null && context.EnvironmentId is { Length: > 0 } environment)
+                history = await runs.ListAsync(new IntegrationJourneyHistoryQuery(environment, PackId: pack.PackId), 500, ct);
+            list.AddRange(D.WithRunEvidence(D.FromPackJourneys(context.ProjectKey, pack), pack, context.EnvironmentId, null, history));
+        }
         var detail = $"{mine.Count} declared for this project" + (recognisedPacks.Count == 0 ? "" : $"; test pack(s) {string.Join(", ", recognisedPacks.Select(p => p.DisplayName))} recognise this source");
         return new(D.Capability(D.IntegrationJourneys, list.Count == 0 ? DiscoveryCapabilityState.NoEvidence : DiscoveryCapabilityState.Available, list.Count,
             list.Count == 0 ? "No integration journey is declared for this project (Integrations › journeys) and no test pack recognises its source." : detail, "Integration journeys"), list);

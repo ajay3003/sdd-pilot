@@ -725,14 +725,39 @@
                 <dl class="tps-dl tps-candidate-details" data-testid="tps-candidate-details-@id">
                     <dt>Source</dt><dd>@c.SourceCategory · @(c.Area ?? "no area stated") · @c.Engine@(string.IsNullOrEmpty(c.RuleVersion) ? "" : $" · rules {c.RuleVersion}")</dd>
                     <dt>Confidence</dt><dd>@ScenarioCandidateTypes.ConfidenceLabel(c.Confidence)</dd>
-                    <dt>Expected behaviour</dt><dd>@(c.ExpectedBehaviour is { } eb ? $"{eb}{(c.ExpectedBasis is { } basis ? $" ({basis})" : "")}" : "Needs clarification — not stated in the evidence.")</dd>
+                    <dt>Expected behaviour</dt><dd data-testid="tps-expected">@(c.ExpectedBehaviour is { } eb ? $"{eb}{(c.ExpectedBasis is { } basis ? $" ({basis})" : "")}" : "Needs clarification — the evidence states no expected outcome.")</dd>
                     @if (c.Steps.Count > 0) { <dt>Steps in the evidence</dt><dd><ol class="tps-plain">@foreach (var s in c.Steps) { <li>@s.Action — <span class="tps-muted">@(s.Expected ?? "expected result not stated")</span></li> }</ol></dd> }
                     @if (c.RequirementIds.Count > 0) { <dt>Requirements</dt><dd>@string.Join(", ", c.RequirementIds)</dd> }
                     @if (c.TestDataNeeds.Count > 0) { <dt>Test Data</dt><dd>@string.Join("; ", c.TestDataNeeds)</dd> }
                     <dt>Existing tests</dt><dd>@(c.ExistingTests.Count == 0 ? "None associated (only explicit references count)" : string.Join("; ", c.ExistingTests.Select(t => $"{t.Name}{(t.Confirmed ? "" : " (candidate — needs review)")}")))</dd>
-                    <dt>Evidence</dt><dd><ul class="tps-plain">@foreach (var e in c.Evidence.Take(8)) { <li><code>@e.Reference</code>@(e.Detail is { } detail ? $" — {detail}" : "")</li> }</ul></dd>
+                    <dt>Evidence</dt><dd><ul class="tps-plain">@foreach (var e in c.Evidence.Take(8))
+                        {
+                            @* A run is named by what it showed, not by its internal id. *@
+                            if (e.Kind == "journey-run") { <li data-testid="tps-evidence-run">Integration journey run — @e.Detail</li> }
+                            else { <li><code>@e.Reference</code>@(e.Detail is { } detail ? $" — {detail}" : "")</li> }
+                        }</ul></dd>
                     @if (c.PossibleDuplicates.Count > 0) { <dt>Possible duplicate of</dt><dd data-testid="tps-possible-duplicates">@string.Join("; ", c.PossibleDuplicates.Select(d => _candidates.FirstOrDefault(x => x.CandidateId == d)?.Title ?? d)) <span class="tps-muted">(same requirement, different source — kept separate)</span></dd> }
-                    @if (c.OpenQuestions.Count > 0) { <dt>Open questions</dt><dd><ul class="tps-plain">@foreach (var q in c.OpenQuestions) { <li>@q</li> }</ul></dd> }
+                    @if (c.Gaps.Count > 0)
+                    {
+                        @* What is still open, classified: who resolves it and the supported next step. A missing prerequisite or observation is not an
+                           unclear expectation; static evidence is never a run. *@
+                        <dt>What is still open</dt>
+                        <dd><ul class="tps-plain tps-gaps" data-testid="tps-gaps">
+                            @foreach (var g in c.Gaps)
+                            {
+                                <li data-testid="tps-gap" data-kind="@g.Kind"><strong>@EvidenceGaps.Label(g.Kind)</strong> — @g.Question
+                                    @if (g.Basis is { } gb) { <span class="tps-muted"> (@gb)</span> }
+                                    @if (g.NextAction is { } next) { <span class="tps-gap-next" data-testid="tps-gap-next"> Next: @next</span> }
+                                    <span class="tps-muted tps-small"> · @EvidenceGaps.Owner(g.Kind)</span></li>
+                            }
+                        </ul></dd>
+                    }
+                    else if (c.OpenQuestions.Count > 0) { <dt>Open questions</dt><dd><ul class="tps-plain">@foreach (var q in c.OpenQuestions) { <li>@q</li> }</ul></dd> }
+                    @if (c.SourcesChecked.Count > 0)
+                    {
+                        <dt>Sources checked</dt>
+                        <dd><ul class="tps-plain" data-testid="tps-sources-checked">@foreach (var sc in c.SourcesChecked) { <li data-found="@(sc.Found ? "true" : "false")"><strong>@sc.Source</strong> — @sc.Detail</li> }</ul></dd>
+                    }
                 </dl>
             }
         </li>

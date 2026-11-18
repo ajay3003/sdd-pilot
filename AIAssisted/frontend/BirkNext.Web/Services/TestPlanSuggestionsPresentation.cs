@@ -273,8 +273,21 @@ public static class TestPlanSuggestionsPresentation
 
     public static string AreaOf(DiscoveredScenario c) => string.IsNullOrWhiteSpace(c.Area) ? "Not grouped" : c.Area!;
 
-    /// <summary>Only when a person must look: no expected behaviour in the evidence, or a possible duplicate of another candidate.</summary>
-    public static string? Warning(DiscoveredScenario c) => c.NeedsClarification ? "Needs clarification" : c.PossibleDuplicates.Count > 0 ? "Possible duplicate" : null;
+    /// <summary>
+    /// Only when a person must look, named for what is actually open: an unclear expectation ("Needs clarification"), else the most pressing
+    /// classified gap (contradiction, implementation, test prerequisite, verification), else a possible duplicate. A scenario that simply has
+    /// not been run yet, or whose source association awaits review, gets no warning chip (that would mark almost every row); its details say so.
+    /// </summary>
+    public static string? Warning(DiscoveredScenario c) =>
+        c.NeedsClarification ? "Needs clarification"
+        : TopGap(c) is { } gap ? EvidenceGaps.Label(gap)
+        : c.PossibleDuplicates.Count > 0 ? "Possible duplicate" : null;
+
+    private static readonly EvidenceGapKind[] WarningOrder =
+        [EvidenceGapKind.ContradictoryEvidence, EvidenceGapKind.ImplementationEvidenceMissing, EvidenceGapKind.TestPrerequisiteMissing, EvidenceGapKind.VerificationMechanismMissing];
+
+    public static EvidenceGapKind? TopGap(DiscoveredScenario c) =>
+        WarningOrder.Cast<EvidenceGapKind?>().FirstOrDefault(k => c.Gaps.Any(g => g.Kind == k));
 
     public static IReadOnlyList<DiscoveredScenario> Apply(IEnumerable<DiscoveredScenario> candidates, CatalogFilter f) => [.. candidates.Where(c =>
         (string.IsNullOrWhiteSpace(f.Query) || Contains(c.Title, f.Query) || Contains(c.Purpose, f.Query) || Contains(AreaOf(c), f.Query)

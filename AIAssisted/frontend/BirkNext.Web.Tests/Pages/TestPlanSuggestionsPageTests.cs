@@ -596,6 +596,60 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         cut.Find("[data-testid=tps-prepare-step]").TextContent.Should().Contain("Borrow a book");
     }
 
+    // ── Clarification accuracy (2026-11-18): classified gaps instead of one "Needs clarification" ─────────────────────────────────────────────
+
+    private static DiscoveredScenario PackScenario(string id, string? expected, params EvidenceGap[] gaps) => Discovered(id, "Intake · " + id, ScenarioCandidateType.Integration, "Intake", "Integration journey", expected) with
+    {
+        Confidence = CandidateConfidence.CandidateAssociation, ExpectedBasis = expected is null ? null : "Stated by the test pack Intake 1", Gaps = [.. gaps],
+        SourcesChecked = [new("Test pack Intake 1", true, "Scenario, steps, stated outcome and open points"), new("Integration journey runs", false, "No run in DEV")],
+        Evidence = [new("journey", "intake:" + id, "Intake 1"), new("journey-run", Guid.NewGuid().ToString(), "NotVerified in DEV, 2026-11-18 09:00 UTC")],
+    };
+
+    [Fact]
+    public void A_stated_outcome_with_a_missing_prerequisite_is_not_called_needs_clarification_and_the_details_say_what_is_open()
+    {
+        SelectProject();
+        var two = PackScenario("two-reporters", "Both reports are kept.",
+            new(EvidenceGapKind.TestPrerequisiteMissing, "A second approved synthetic reporter is needed.", "Test pack", "Prepare a second approved synthetic reporter in Test Data."),
+            new(EvidenceGapKind.VerificationMechanismMissing, "No approved way to show both reports are kept downstream.", "Test pack"),
+            new(EvidenceGapKind.AssociationNeedsReview, "Associated through source roles; not confirmed.", "Source role recognition"));
+        var api = new Api(Workspace()) { Project = ProjectWorkspace(), Last = Discovery("library", two) };
+        var cut = Render(api);
+
+        cut.Find("[data-testid=tps-candidate-two-reporters] [data-testid=tps-attention]").TextContent.Should().Be("Test prerequisite missing");
+        cut.Find("[data-testid=tps-details-two-reporters]").Click();
+        cut.Find("[data-testid=tps-expected]").TextContent.Should().Be("Both reports are kept. (Stated by the test pack Intake 1)");
+        var gaps = cut.FindAll("[data-testid=tps-gap]");
+        gaps.Select(g => g.GetAttribute("data-kind")).Should().Equal("TestPrerequisiteMissing", "VerificationMechanismMissing", "AssociationNeedsReview");
+        gaps[0].TextContent.Should().Contain("Next: Prepare a second approved synthetic reporter in Test Data.").And.Contain("Tester (Test Data, access, environment)");
+        cut.Find("[data-testid=tps-sources-checked]").TextContent.Should().Contain("Integration journey runs — No run in DEV");
+        cut.Find("[data-testid=tps-evidence-run]").TextContent.Should().Be("Integration journey run — NotVerified in DEV, 2026-11-18 09:00 UTC", "a run is named by what it showed, never by its id");
+        cut.Markup.Should().NotContain("Needs clarification");
+    }
+
+    [Fact]
+    public void An_unstated_outcome_still_needs_clarification_and_a_scenario_only_awaiting_a_run_gets_no_warning_chip()
+    {
+        SelectProject();
+        var unclear = PackScenario("duplicate", null, new EvidenceGap(EvidenceGapKind.BusinessExpectationUnclear, "No expected outcome is stated.", "Test pack"));
+        var runOnly = PackScenario("valid", "The report is accepted.", new EvidenceGap(EvidenceGapKind.RuntimeEvidenceMissing, "Not run in DEV yet.", "Integration journey runs", "Run it from Integration Testing."),
+            new EvidenceGap(EvidenceGapKind.AssociationNeedsReview, "Associated through source roles; not confirmed.", "Source role recognition"));
+        var api = new Api(Workspace()) { Project = ProjectWorkspace(), Last = Discovery("library", unclear, runOnly) };
+        var cut = Render(api);
+        cut.Find("[data-testid=tps-candidate-duplicate] [data-testid=tps-attention]").TextContent.Should().Be("Needs clarification");
+        cut.FindAll("[data-testid=tps-candidate-valid] [data-testid=tps-attention]").Should().BeEmpty("not having run yet is shown in the details, not as a warning on every row");
+        cut.Find("[data-testid=tps-details-duplicate]").Click();
+        cut.Find("[data-testid=tps-candidate-details-duplicate] [data-testid=tps-expected]").TextContent.Should().Be("Needs clarification — the evidence states no expected outcome.");
+    }
+
+    [Theory]
+    [InlineData(EvidenceGapKind.ContradictoryEvidence, "Contradictory evidence")]
+    [InlineData(EvidenceGapKind.ImplementationEvidenceMissing, "Implementation evidence missing")]
+    [InlineData(EvidenceGapKind.VerificationMechanismMissing, "Verification mechanism missing")]
+    public void The_warning_names_the_most_pressing_gap(EvidenceGapKind kind, string label) =>
+        TestPlanSuggestionsPresentation.Warning(PackScenario("x", "Outcome.", new EvidenceGap(EvidenceGapKind.RuntimeEvidenceMissing, "r"), new EvidenceGap(kind, "q"),
+            new EvidenceGap(EvidenceGapKind.TestPrerequisiteMissing, "p"))).Should().Be(kind == EvidenceGapKind.VerificationMechanismMissing ? "Test prerequisite missing" : label);
+
     [Fact]
     public void Many_candidates_open_only_the_first_group_and_each_group_heading_opens_its_list_and_counts_selections()
     {

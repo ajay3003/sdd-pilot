@@ -79,6 +79,15 @@
                             @foreach (var (label, count) in M.ByType(d)) { <div data-testid="mtd-type"><dt>@label</dt><dd>@count</dd></div> }
                         </dl>
                         @if (clarify > 0) { <p data-testid="mtd-clarify"><span class="mt-chip mt-tone-warn">@clarify need clarification</span> <span class="mt-muted">the evidence states no expected result; it is never filled in.</span></p> }
+                        @* The other open points, by kind (same classification as Plan & prepare): an expectation can be clear while a prerequisite or
+                           an observation is still missing. Counted per scenario. *@
+                        var gaps = new[] { BirkNext.TestPlanning.EvidenceGapKind.ContradictoryEvidence, BirkNext.TestPlanning.EvidenceGapKind.ImplementationEvidenceMissing,
+                               BirkNext.TestPlanning.EvidenceGapKind.TestPrerequisiteMissing, BirkNext.TestPlanning.EvidenceGapKind.VerificationMechanismMissing }
+                               .Select(k => (Kind: k, Count: d.Candidates.Count(c => c.Gaps.Any(g => g.Kind == k)))).Where(x => x.Count > 0).ToList();
+                        @if (gaps.Count > 0)
+                        {
+                            <p class="mt-muted" data-testid="mtd-gaps">Also open: @string.Join(" · ", gaps.Select(x => $"{x.Count} {BirkNext.TestPlanning.EvidenceGaps.Label(x.Kind).ToLowerInvariant()}"))</p>
+                        }
                     }
                     <p class="mt-muted">Suggestions are candidates found in source and documents, not test cases and not executed tests.</p>
                     <a class="btn btn-primary btn-sm" href="@($"{M.PlanRoute}?area=choose")" data-testid="mtd-choose">Choose scenarios to prepare</a>

@@ -69,7 +69,11 @@ public sealed record JourneyScenarioDescriptor(
     bool StateChanging = true,
     IReadOnlyList<JourneyScenarioInput>? Inputs = null,
     IReadOnlyList<string>? ExecutionEffects = null,
-    JourneyScenarioCapabilityProfile? Capability = null);
+    JourneyScenarioCapabilityProfile? Capability = null,
+    // The outcome the pack states for the scenario (its business expectation), separate from how it is run; null = the pack does not state one.
+    string? ExpectedOutcome = null,
+    // What is still open for the scenario, each classified (a missing test prerequisite is not an unclear expectation).
+    IReadOnlyList<BirkNext.TestPlanning.EvidenceGap>? Gaps = null);
 
 /// <summary>
 /// Whether a scenario can be executed now, separately from whether its result can be verified. Runnable = every applicable mandatory

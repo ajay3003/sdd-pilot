@@ -328,26 +328,107 @@ public static class TestScenarioDiscoveryEngine
         }, projectKey);
     })];
 
+    /// <summary>
+    /// Test-pack journey scenarios. The pack is the evidence: its stated outcome is the expected behaviour (with the pack as basis), and what it
+    /// says is still open is classified (a missing test prerequisite or observation is not an unclear expectation). The pack is associated
+    /// with the project through its recognised source roles only, so the association stays a candidate for review.
+    /// </summary>
     public static List<DiscoveredScenario> FromPackJourneys(string projectKey, IIntegrationJourneyPack pack) => [.. pack.Journeys.SelectMany(j => j.Scenarios.Select(s =>
     {
         var id = $"{pack.PackId}:{j.JourneyId}:{s.ScenarioId}";
         var first = j.Steps.FirstOrDefault();
         var last = j.Steps.LastOrDefault();
+        var packName = $"{pack.DisplayName} {pack.PackVersion}";
+        var gaps = PackGaps(s, packName);
         return Finish(new DiscoveredScenario
         {
             CapabilityId = IntegrationJourneys, SourceCategory = "Integration journey", Area = j.DisplayName, Title = $"{j.DisplayName} · {s.DisplayName}",
             Purpose = Text(s.Description) ?? j.Description, Type = ScenarioCandidateType.Integration, Confidence = CandidateConfidence.CandidateAssociation,
+            ExpectedBehaviour = Text(s.ExpectedOutcome), ExpectedBasis = s.ExpectedOutcome is null ? null : $"Stated by the test pack {packName}",
             Steps = [.. j.Steps.Select(x => new DiscoveredStep(x.Label, Text(x.ExpectedEvidence)))],
             Template =
             [
                 new("trigger", "Trigger", first?.Label), new("producer", "Producer", first?.FromComponent ?? first?.Owner), new("consumer", "Consumer", last?.ToComponent ?? last?.Owner),
                 new("message", "Message", null), new("processing", "Expected processing", Text(last?.ExpectedEvidence)),
             ],
-            Evidence = [new("journey", id, $"{pack.DisplayName} {pack.PackVersion}")],
+            Evidence = [new("journey", id, packName)],
             CanonicalKey = "journey:" + id, Engine = $"Test pack {pack.PackId} {pack.PackVersion}",
-            OpenQuestions = [.. s.Support != JourneyScenarioSupport.Supported ? new[] { $"Not assessed in the pack: {s.NotAssessedBecause ?? "no reason given"}." } : []],
+            Gaps = gaps,
+            OpenQuestions = [.. gaps.Where(g => g.Kind != EvidenceGapKind.AssociationNeedsReview).Select(g => $"{EvidenceGaps.Label(g.Kind)}: {g.Question}")],
+            SourcesChecked = [new($"Test pack {packName}", true, s.Gaps is { Count: > 0 } || s.ExpectedOutcome is not null
+                ? "Scenario, steps, stated outcome and open points"
+                : "Scenario and steps; the pack states no separate outcome")],
         }, projectKey);
     }))];
+
+    /// <summary>The pack's classified open points; a pack that only gives a free-text reason keeps it as one unclassified point (never guessed).</summary>
+    internal static List<EvidenceGap> PackGaps(JourneyScenarioDescriptor s, string packName)
+    {
+        var gaps = new List<EvidenceGap>();
+        if (s.ExpectedOutcome is null && (s.Gaps is null || s.Gaps.All(g => g.Kind != EvidenceGapKind.BusinessExpectationUnclear)))
+            gaps.Add(new(EvidenceGapKind.BusinessExpectationUnclear, "The test pack describes the scenario but states no expected outcome separately from how it is run.",
+                $"Test pack {packName}", "Define the expected result when preparing the test case."));
+        if (s.Gaps is { Count: > 0 } declared) gaps.AddRange(declared);
+        else if (s.Support != JourneyScenarioSupport.Supported)
+            gaps.Add(new(EvidenceGapKind.EvidenceNotEvaluated, $"Not assessed in the pack: {WithoutNotAssessedPrefix(s.NotAssessedBecause) ?? "no reason given"}.", $"Test pack {packName}"));
+        gaps.Add(new(EvidenceGapKind.AssociationNeedsReview,
+            "The test pack is associated with this project because it recognises the project's source roles; nobody has confirmed the association.", "Source role recognition"));
+        return gaps;
+    }
+
+    /// <summary>"Not assessed: …" / "Not assessed — …" reasons are shown under a heading that already says so: drop the repeated prefix.</summary>
+    internal static string? WithoutNotAssessedPrefix(string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason)) return null;
+        var text = reason.Trim();
+        foreach (var prefix in new[] { "Not assessed:", "Not assessed —", "Not assessed -", "Not verified:" })
+            if (text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return text[prefix.Length..].Trim().TrimEnd('.');
+        return text.TrimEnd('.');
+    }
+
+    /// <summary>
+    /// Adds what the pack's run history in the active Target Environment shows: the last run of each scenario as evidence. Only a Completed
+    /// run removes "Runtime evidence missing"; any other state is shown as it is. Without an environment the history is reported as not
+    /// examined rather than as missing evidence. One history read per pack (no per-row query).
+    /// </summary>
+    public static List<DiscoveredScenario> WithRunEvidence(List<DiscoveredScenario> scenarios, IIntegrationJourneyPack pack, string? environmentId, string? environmentName,
+        IReadOnlyList<IntegrationJourneyRun>? runs) => [.. scenarios.Select(c =>
+    {
+        var packId = pack.PackId;
+        if (!c.CanonicalKey.StartsWith($"journey:{packId}:", StringComparison.Ordinal)) return c;
+        var key = c.CanonicalKey["journey:".Length..];
+        // A scenario the pack cannot run yet is not "missing a run": its own gaps say what must exist first.
+        var runnable = pack.Journeys.SelectMany(j => j.Scenarios.Select(s => (Key: $"{packId}:{j.JourneyId}:{s.ScenarioId}", s.Support)))
+            .Any(x => x.Key == key && x.Support == JourneyScenarioSupport.Supported);
+        if (environmentId is null || runs is null)
+            return c with
+            {
+                SourcesChecked = [.. c.SourcesChecked, new("Integration journey runs", false, "Not examined: no active Target Environment")],
+                Gaps = [.. c.Gaps, new(EvidenceGapKind.EvidenceNotEvaluated, "Run history was not examined because no Target Environment is active.", "Integration journey runs",
+                    "Choose a Target Environment, then discover again.")],
+            };
+        var where = string.IsNullOrWhiteSpace(environmentName) ? "the active Target Environment" : environmentName;
+        var latest = runs.Where(r => $"{r.PackId}:{r.JourneyId}:{r.ScenarioId}" == key).OrderByDescending(r => r.StartedAt).FirstOrDefault();
+        if (latest is null)
+            return c with
+            {
+                SourcesChecked = [.. c.SourcesChecked, new("Integration journey runs", false, $"No run in {where}")],
+                Gaps = !runnable || c.Gaps.Any(g => g.Kind == EvidenceGapKind.RuntimeEvidenceMissing) ? c.Gaps
+                    : [.. c.Gaps, new(EvidenceGapKind.RuntimeEvidenceMissing, $"The scenario has not been run in {where}.", "Integration journey runs", "Run it from Integration Testing.")],
+            };
+        var verified = latest.OverallState == JourneyRunState.Completed;
+        var when = latest.StartedAt.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+        return c with
+        {
+            Evidence = [.. c.Evidence, new("journey-run", latest.RunId.ToString(), $"{latest.OverallState} in {where}, {when} UTC")],
+            SourcesChecked = [.. c.SourcesChecked, new("Integration journey runs", true, $"Last run {latest.OverallState} ({when} UTC)")],
+            Gaps = verified
+                ? [.. c.Gaps.Where(g => g.Kind != EvidenceGapKind.RuntimeEvidenceMissing)]
+                : [.. c.Gaps.Where(g => g.Kind != EvidenceGapKind.RuntimeEvidenceMissing),
+                    new(EvidenceGapKind.RuntimeEvidenceMissing, $"The last run in {where} ended {latest.OverallState}: {Text(latest.StateReason) ?? "no reason recorded"}.",
+                        "Integration journey runs", "Open the run in Integration Testing.")],
+        };
+    })];
 
     // ── Existing tests ───────────────────────────────────────────────────────────────────────────────────────
 

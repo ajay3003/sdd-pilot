@@ -67,6 +67,65 @@ public static class ScenarioCandidateTypes
     };
 }
 
+/// <summary>
+/// What kind of thing is still open about a scenario (2026-11-18). One "Needs clarification" used to stand for all of these; they need
+/// different people and different actions, so they are kept apart. Grounded in the evidence that produced the scenario — never cosmetic.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum EvidenceGapKind
+{
+    /// <summary>The expected business behaviour is not established by an authoritative specification or approved rule.</summary>
+    BusinessExpectationUnclear,
+    /// <summary>The expectation is documented, but the implementation cannot be established from the available source evidence.</summary>
+    ImplementationEvidenceMissing,
+    /// <summary>The expectation is clear; the test needs Test Data, credentials, access, configuration or a controlled environment first.</summary>
+    TestPrerequisiteMissing,
+    /// <summary>The expected result is understood, but no permitted way (API, log, database, read contract) exists to observe the actual result.</summary>
+    VerificationMechanismMissing,
+    /// <summary>Potentially relevant evidence exists, but its relationship to this project or scenario is not confirmed.</summary>
+    AssociationNeedsReview,
+    /// <summary>Static evidence (specification, source review, contract) exists; no execution has verified the behaviour.</summary>
+    RuntimeEvidenceMissing,
+    /// <summary>Two trustworthy sources disagree; both are kept and a person decides.</summary>
+    ContradictoryEvidence,
+    /// <summary>Relevant evidence exists but has not been examined yet.</summary>
+    EvidenceNotEvaluated,
+}
+
+/// <summary>One open point of a scenario: what kind it is, the question in plain language, what it rests on and the supported next action.</summary>
+public sealed record EvidenceGap(EvidenceGapKind Kind, string Question, string? Basis = null, string? NextAction = null);
+
+/// <summary>A source BirkNext examined for a scenario and what it found there (Found false = examined, nothing relevant).</summary>
+public sealed record EvidenceSourceCheck(string Source, bool Found, string Detail);
+
+public static class EvidenceGaps
+{
+    public static string Label(EvidenceGapKind kind) => kind switch
+    {
+        EvidenceGapKind.BusinessExpectationUnclear => "Business expectation unclear",
+        EvidenceGapKind.ImplementationEvidenceMissing => "Implementation evidence missing",
+        EvidenceGapKind.TestPrerequisiteMissing => "Test prerequisite missing",
+        EvidenceGapKind.VerificationMechanismMissing => "Verification mechanism missing",
+        EvidenceGapKind.AssociationNeedsReview => "Source association needs review",
+        EvidenceGapKind.RuntimeEvidenceMissing => "Runtime evidence missing",
+        EvidenceGapKind.ContradictoryEvidence => "Contradictory evidence",
+        EvidenceGapKind.EvidenceNotEvaluated => "Evidence not evaluated",
+        _ => kind.ToString(),
+    };
+
+    /// <summary>Who usually resolves it — shown so a tester knows whether to ask the business, prepare data, or run something.</summary>
+    public static string Owner(EvidenceGapKind kind) => kind switch
+    {
+        EvidenceGapKind.BusinessExpectationUnclear or EvidenceGapKind.ContradictoryEvidence => "Product owner or business analyst",
+        EvidenceGapKind.ImplementationEvidenceMissing => "Developer or source analysis",
+        EvidenceGapKind.TestPrerequisiteMissing => "Tester (Test Data, access, environment)",
+        EvidenceGapKind.VerificationMechanismMissing => "Developer or operations (observability)",
+        EvidenceGapKind.AssociationNeedsReview or EvidenceGapKind.EvidenceNotEvaluated => "Tester (review)",
+        EvidenceGapKind.RuntimeEvidenceMissing => "Tester (run)",
+        _ => "",
+    };
+}
+
 /// <summary>One piece of evidence behind a candidate. Kind: specification, requirement, guide-scenario, source-file, contract-operation, journey,
 /// test. Reference is a stable pointer (file:line, operation, id); Detail is short plain text (never raw markup).</summary>
 public sealed record CandidateEvidenceRef(string Kind, string Reference, string? Detail = null);
@@ -116,6 +175,10 @@ public sealed record DiscoveredScenario
     public string RuleVersion { get; init; } = "";
     public string Engine { get; init; } = "";
     public List<string> OpenQuestions { get; init; } = [];
+    /// <summary>The open points, each classified (expectation, implementation, prerequisite, verification, association, runtime …).</summary>
+    public List<EvidenceGap> Gaps { get; init; } = [];
+    /// <summary>The sources BirkNext examined for this candidate and what each contributed (so "not found" is distinguishable from "not looked at").</summary>
+    public List<EvidenceSourceCheck> SourcesChecked { get; init; } = [];
     /// <summary>Candidates that may describe the same behaviour (shared requirement id, different source); kept separate on purpose.</summary>
     public List<string> PossibleDuplicates { get; init; } = [];
     /// <summary>Content fingerprint of the evidence: a change means the candidate changed in the source.</summary>
