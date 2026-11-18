@@ -1,0 +1,8 @@
+@* Renders its content only. The layout puts it around the page with @key = the project-switch generation, so a project switch made with the
+   shared selector re-creates the page: every module — including those that read the project once when they start — reloads for the new
+   project, and nothing of the previous project's data stays on screen under the new project's name (2026-11-18). *@
+@ChildContent
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

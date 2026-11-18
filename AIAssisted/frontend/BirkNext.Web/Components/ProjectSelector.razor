@@ -1,0 +1,146 @@
+@using BirkNext.Web.Services
+@using BirkNext.Web.Services.Explorers
+@using BirkNext.Web.Services.ProjectImport
+@implements IDisposable
+@inject IServiceProvider Services
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+@* The project selector every project-scoped workspace shows (2026-11-18): one compact "Project ▾" control over the imported-project registry.
+   Choosing switches the workspace's current project through ProjectSelection (the same activation Project Import uses) and saves it; every
+   page then reloads from the shared current project. Unsaved work registered by the page is never discarded without confirmation; Cancel
+   keeps the project and the work. While the saved selection is still being read it says so instead of showing a wrong default. *@
+@if (Selection is not null)
+{
+<div class="psel" data-testid="project-selector">
+    <label class="psel-label" for="@_id">Project</label>
+    @if (Restoring)
+    {
+        <span class="psel-note" role="status" data-testid="project-selector-restoring">Loading the selected project…</span>
+    }
+    else if (Selection is not { HasProjects: true } selection)
+    {
+        <span class="psel-note" data-testid="project-selector-empty">No imported project yet — <a href="project-import">import a project</a>.</span>
+    }
+    else
+    {
+        var current = selection.CurrentValue;
+        @* Re-created on every refused or failed switch (@key), so the control shows the project still in use, not the refused choice. *@
+        <select id="@_id" class="psel-select" @key="_version" data-testid="project-selector-select" disabled="@_busy" aria-describedby="@(_status is null ? null : _id + "-status")"
+                @onchange="OnChangeAsync">
+            @if (current.Length == 0) { <option value="" selected>Choose a project…</option> }
+            @foreach (var choice in selection.Choices)
+            {
+                <option value="@choice.Value" selected="@(choice.Value == current)" title="@Title(choice)">@choice.Label</option>
+            }
+        </select>
+        <a href="project-import" class="psel-manage" data-testid="project-selector-manage">Import or manage projects</a>
+    }
+    @if (_busy) { <span class="psel-note" role="status" data-testid="project-selector-switching">Loading the selected project…</span> }
+    @if (_status is { } status) { <span id="@(_id + "-status")" class="psel-status" role="status" data-testid="project-selector-status">@status</span> }
+</div>
+}
+
+@code {
+    private readonly string _id = "psel-" + Guid.NewGuid().ToString("N")[..8];
+    private int _version;
+    private bool _busy;
+    private string? _status;
+    private IArtifactExplorerContext? _explorers;
+    private ICurrentWorkspaceProjection? _projection;
+
+    private ProjectSelection? Selection => Services.GetService<ProjectSelection>();
+    private UnsavedWorkGuard? Guard => Services.GetService<UnsavedWorkGuard>();
+    /// <summary>The saved selection is still being read (no workspace snapshot yet).</summary>
+    private bool Restoring => _projection is { Current: null };
+
+    protected override void OnInitialized()
+    {
+        // The page was re-created by a switch made in a previous instance: show what that switch left to say, once.
+        if (Selection is { Notice: { } notice } selection) { _status = notice; selection.Notice = null; }
+        _explorers = Services.GetService<IArtifactExplorerContext>();
+        _projection = Services.GetService<ICurrentWorkspaceProjection>();
+        if (_explorers is not null) _explorers.Changed += OnChanged;
+        if (_projection is not null) _projection.Changed += OnProjectionChanged;
+    }
+
+    /// <summary>
+    /// The first workspace snapshot is computed without a Changed event, and this control has no parameters (a page re-render does not
+    /// re-render it): wait for that snapshot here, or "Loading the selected project…" would stay after the project is known.
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        if (_projection is { Current: null } projection)
+        {
+            try { await projection.GetAsync(); }
+            catch (Exception ex) when (ex is not OutOfMemoryException) { _status = "The selected project could not be read. Reload the page to try again."; }
+        }
+    }
+
+    private void OnChanged(object? sender, EventArgs e) => _ = InvokeAsync(StateHasChanged);
+    private void OnProjectionChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private static string Title(ProjectChoice choice) => choice.Packages switch
+    {
+        0 => "Sample Project — choose another on the Sample Projects page",
+        1 => "1 imported package",
+        var n => $"{n} imported packages",
+    };
+
+    private async Task OnChangeAsync(ChangeEventArgs e)
+    {
+        if (Selection is not { } selection || e.Value?.ToString() is not { Length: > 0 } value || value == selection.CurrentValue) return;
+        _status = null;
+        if (Guard?.Pending is { } unsaved)
+        {
+            bool discard;
+            try { discard = await JS.InvokeAsync<bool>("confirm", $"{unsaved} Switch project and discard them?"); }
+            catch (JSException) { discard = false; }
+            if (!discard)
+            {
+                _status = "Project not changed: your unsaved work is kept.";
+                _version++;
+                return;
+            }
+        }
+        _busy = true;
+        try
+        {
+            var outcome = await selection.SwitchAsync(value);
+            if (outcome is ProjectSwitchOutcome.Switched or ProjectSwitchOutcome.SwitchedNotSaved) DropRecordParameters();
+            _status = outcome == ProjectSwitchOutcome.Unavailable ? "That project is no longer available in this workspace." : null;
+            if (outcome == ProjectSwitchOutcome.SwitchedNotSaved)
+                selection.Notice = "The project is shown in this tab, but the choice could not be saved yet; it is saved automatically when the connection is back.";
+        }
+        finally
+        {
+            _busy = false;
+            _version++;
+        }
+    }
+
+    /// <summary>Query parameters that name a record of the previous project (a plan, run, case, snapshot …). After a switch they would open the
+    /// previous project's record under the new project's name, so they are dropped; view parameters (area, tab, section, view) stay.</summary>
+    internal static readonly string[] RecordParameters = ["draft", "run", "case", "snapshot", "import", "scope", "journey", "suite", "plan", "requirement", "baseline", "candidate"];
+
+    internal static string WithoutRecordParameters(string url)
+    {
+        var uri = new Uri(url);
+        if (string.IsNullOrEmpty(uri.Query)) return url;
+        var kept = uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Where(pair => !RecordParameters.Contains(Uri.UnescapeDataString(pair.Split('=')[0]), StringComparer.OrdinalIgnoreCase)).ToList();
+        return uri.GetLeftPart(UriPartial.Path) + (kept.Count == 0 ? "" : "?" + string.Join('&', kept)) + uri.Fragment;
+    }
+
+    private void DropRecordParameters()
+    {
+        var target = WithoutRecordParameters(Nav.Uri);
+        if (!string.Equals(target, Nav.Uri, StringComparison.Ordinal)) Nav.NavigateTo(target, replace: true);
+    }
+
+    public void Dispose()
+    {
+        if (_explorers is not null) _explorers.Changed -= OnChanged;
+        if (_projection is not null) _projection.Changed -= OnProjectionChanged;
+    }
+}

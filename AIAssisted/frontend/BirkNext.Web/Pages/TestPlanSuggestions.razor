@@ -19,7 +19,7 @@
     <NavigationLock ConfirmExternalNavigation="@_dirty" OnBeforeInternalNavigation="ConfirmLeaveAsync" />
     @* Plan & prepare of the Manual Testing workspace IS Test Plan Suggestions: one planning page, same route and links as before. *@
     <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manual Testing" HomeRoute="@ManualTestingPresentation.HomeRoute" Stages="ManualTestingPresentation.Stages"
-        Current="plan" Title="Plan & prepare" ShowProject="false"
+        Current="plan" Title="Plan & prepare" ShowProject="@(!_loading && _projectKey is null && !GuideMode)"
         Lead="Test Plan Suggestions: find what to test in the selected project's evidence, prepare readable manual test cases, check what they still need and save a plan for a delivery. Suggestions are proposals: not Azure DevOps records and not executed tests.">
         <Help><BirkNext.Web.Components.HelpLink Topic="test-plan-suggestions" Text="What this page is" /></Help>
     </BirkNext.Web.Components.TestingWorkspaceHeader>
@@ -151,8 +151,12 @@
     private bool CanWrite => _ws?.CanWrite == true;
     private bool GuideMode => _guideKey is not null;
 
+    private IDisposable? _unsaved;
+
     protected override async Task OnInitializedAsync()
     {
+        // A project switch asks before discarding unsaved plan changes (the same protection as leaving the page).
+        _unsaved = (ServiceProvider.GetService(typeof(BirkNext.Web.Services.ProjectImport.UnsavedWorkGuard)) as BirkNext.Web.Services.ProjectImport.UnsavedWorkGuard)?.Register(() => _dirty && _draft is not null ? "This plan has unsaved changes." : null);
         _api = ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService;
         if (_api is null) { _loading = false; return; }
         _area = P.AreaOrDefault(AreaQuery);
@@ -164,7 +168,7 @@
         _loading = false;
     }
 
-    public void Dispose() { if (_projection is not null) _projection.Changed -= OnProjectChanged; }
+    public void Dispose() { _unsaved?.Dispose(); if (_projection is not null) _projection.Changed -= OnProjectChanged; }
 
     /// <summary>Another project was selected: everything project-specific is dropped (selection, discovery, plan) and read again for it.</summary>
     private void OnProjectChanged() => _ = InvokeAsync(async () =>
@@ -422,7 +426,15 @@
             }
             else
             {
-                <div class="tps-ctx-item"><span class="tps-k">Project</span><strong data-testid="tps-project-name">@(_projectName ?? _projectKey)</strong></div>
+                @* The shared project selector (same control as every workspace header); plain text where no selection service exists. *@
+                @if (ServiceProvider.GetService(typeof(BirkNext.Web.Services.ProjectImport.ProjectSelection)) is not null)
+                {
+                    <div class="tps-ctx-item" data-testid="tps-project"><BirkNext.Web.Components.ProjectSelector /></div>
+                }
+                else
+                {
+                    <div class="tps-ctx-item"><span class="tps-k">Project</span><strong data-testid="tps-project-name">@(_projectName ?? _projectKey)</strong></div>
+                }
                 <div class="tps-ctx-item" data-testid="tps-snapshot"><span class="tps-k">Source snapshot</span>
                     @if (_snapshotOptions.Count > 0)
                     {

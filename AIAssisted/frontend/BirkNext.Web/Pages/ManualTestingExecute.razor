@@ -84,8 +84,12 @@
 
     private (string?, string?, string?)? _loaded;
 
+    private IDisposable? _unsaved;
+
     protected override void OnInitialized()
     {
+        // A project switch asks before discarding an unsaved run (the same protection as leaving the page).
+        _unsaved = (ServiceProvider.GetService(typeof(BirkNext.Web.Services.ProjectImport.UnsavedWorkGuard)) as BirkNext.Web.Services.ProjectImport.UnsavedWorkGuard)?.Register(() => _dirty ? "This run has unsaved results." : null);
         _runs = ServiceProvider.GetService(typeof(IManualTestRunsApiService)) as IManualTestRunsApiService;
         _plans = ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService;
         _projection = ServiceProvider.GetService(typeof(ICurrentWorkspaceProjection)) as ICurrentWorkspaceProjection;
@@ -103,6 +107,7 @@
 
     public void Dispose()
     {
+        _unsaved?.Dispose();
         if (_projection is not null) _projection.Changed -= OnProjectChanged;
     }
 

@@ -20,7 +20,7 @@
    Project > the project's own snapshot (the environment Project's main application, else the current import) > the last selection on this
    page > ask. A documentation-only or infrastructure package never becomes the generated-documentation context by being imported last. The diagnostics are the existing panel; this page owns the target context. *@
 <div class="gdh-page" data-testid="gdh-page">
-    <PageHeader Title="@Title" Description="@Intro" />
+    <PageHeader ShowProjectSelector="true" Title="@Title" Description="@Intro" />
     <BirkNext.Web.Components.ProjectContextStrip RequiresEnvironment="false" />
 
     @if (_projects.Count == 0)

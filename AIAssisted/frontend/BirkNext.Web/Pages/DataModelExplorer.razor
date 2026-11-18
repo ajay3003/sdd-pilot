@@ -16,7 +16,7 @@
 
 <div class="dme-page">
 
-    <PageHeader Title="Data Model Explorer"
+    <PageHeader ShowProjectSelector="true" Title="Data Model Explorer"
                 Description="@ArtifactExplorerRoles.Purpose(WorkspaceArtifactType.DataModel)" />
 
     <ArtifactExplorerHost @ref="_host" Role="WorkspaceArtifactType.DataModel" OnStateChanged="OnArtifactChanged" AvailabilityText="@AvailabilityText">

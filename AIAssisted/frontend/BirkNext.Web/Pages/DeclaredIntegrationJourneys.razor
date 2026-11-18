@@ -207,8 +207,12 @@
 
     private string? Invalid => DeclaredIntegrationJourneyRules.Validate(Request);
 
+    private IDisposable? _unsaved;
+
     protected override async Task OnInitializedAsync()
     {
+        // A project switch asks before discarding an unsaved journey declaration (the same protection as leaving the page).
+        _unsaved = Services.GetService<BirkNext.Web.Services.ProjectImport.UnsavedWorkGuard>()?.Register(() => Dirty ? "This journey declaration has unsaved changes." : null);
         _api = Services.GetService<IDeclaredIntegrationJourneyApiService>();
         var workspace = await CurrentWorkspace.GetAsync();
         _projectKey = string.IsNullOrWhiteSpace(workspace.ProjectSlug) ? null : workspace.ProjectSlug;
@@ -287,5 +291,5 @@
         finally { _busy = false; }
     }
 
-    public void Dispose() { _cts.Cancel(); _cts.Dispose(); }
+    public void Dispose() { _unsaved?.Dispose(); _cts.Cancel(); _cts.Dispose(); }
 }

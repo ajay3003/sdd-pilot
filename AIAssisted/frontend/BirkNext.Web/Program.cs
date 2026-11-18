@@ -302,6 +302,9 @@ builder.Services.AddHttpClient<BirkNext.Web.Services.ProjectImport.IProjectImpor
 });
 builder.Services.AddScoped<BirkNext.Web.Services.ProjectImport.ProjectImportActivation>(sp => new BirkNext.Web.Services.ProjectImport.ProjectImportActivation(
     sp.GetRequiredService<WorkspaceArtifactRepository>(), sp.GetRequiredService<IWorkspaceUpdateCoordinator>()));
+// One project-selection experience: every workspace's project selector switches through this (the imported-project registry + activation).
+builder.Services.AddScoped<BirkNext.Web.Services.ProjectImport.ProjectSelection>();
+builder.Services.AddScoped<BirkNext.Web.Services.ProjectImport.UnsavedWorkGuard>();
 // Azure Environment Analysis: sign-in status, read-only analysis into snapshots, declared-vs-observed comparison (the backend only reads Azure).
 builder.Services.AddHttpClient<IAzureEnvironmentApiService, AzureEnvironmentApiService>(client =>
     client.BaseAddress = backendBase);

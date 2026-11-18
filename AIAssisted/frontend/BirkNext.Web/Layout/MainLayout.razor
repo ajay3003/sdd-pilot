@@ -36,7 +36,7 @@ else
                 <NavigationLoadingIndicator />
                 <WorkspaceScopeNotice Sections="_navigation" />
                 <SharedWorkspaceTabs />
-                <WorkspaceDocumentsGate PageType="@RouteData?.PageType"><RouteErrorBoundary>@Body</RouteErrorBoundary></WorkspaceDocumentsGate>
+                <WorkspaceDocumentsGate PageType="@RouteData?.PageType"><RouteErrorBoundary><BirkNext.Web.Components.ProjectScopedContent @key="_projectGeneration">@Body</BirkNext.Web.Components.ProjectScopedContent></RouteErrorBoundary></WorkspaceDocumentsGate>
             </article>
         </main>
     </div>
@@ -51,8 +51,16 @@ else
     private NavigationProgress? _navigationProgress;
     private bool _navigationBusy;
 
+    private BirkNext.Web.Services.ProjectImport.ProjectSelection? _projectSelection;
+    /// <summary>Keys the page content: a project switch made with the shared selector re-creates the page for the new project.</summary>
+    private int _projectGeneration;
+
+    private void OnProjectSwitched() => _ = InvokeAsync(() => { _projectGeneration = _projectSelection?.Generation ?? 0; StateHasChanged(); });
+
     protected override async Task OnInitializedAsync()
     {
+        _projectSelection = LayoutServices.GetService(typeof(BirkNext.Web.Services.ProjectImport.ProjectSelection)) as BirkNext.Web.Services.ProjectImport.ProjectSelection;
+        if (_projectSelection is not null) _projectSelection.Switched += OnProjectSwitched;
         // Navigation preferences first and synchronously (WebAssembly), so the sidebar has its remembered width on the first render.
         _navigation = LayoutServices.GetService(typeof(NavigationSectionState)) as NavigationSectionState;
         if (_navigation is not null)
@@ -124,6 +132,7 @@ else
 
     public void Dispose()
     {
+        if (_projectSelection is not null) _projectSelection.Switched -= OnProjectSwitched;
         if (_navigationProgress is not null) _navigationProgress.Changed -= OnNavigationProgressChanged;
         if (_resetEpoch is not null) _resetEpoch.StaleDetected -= OnStaleAfterResetAsync;
         if (_navigation is not null) _navigation.Changed -= OnNavigationChanged;

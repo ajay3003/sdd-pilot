@@ -17,7 +17,7 @@
    regions (ss-table-wrap, ss-code-scroll), so no view can widen the page. Shared BirkNext styles throughout (buttons, status chips, empty states,
    disclosures, Export/More menu, sub-navigation); plain language first, exact XSD terms as secondary detail. *@
 <div class="ss-page" data-testid="ss-page">
-    <PageHeader Title="Schema Studio" Description="Explore, compare and test XML Schema (XSD) contracts. Imports are analyzed locally; remote schemas are never fetched." />
+    <PageHeader ShowProjectSelector="true" Title="Schema Studio" Description="Explore, compare and test XML Schema (XSD) contracts. Imports are analyzed locally; remote schemas are never fetched." />
     <ProjectContextStrip RequiresEnvironment="false" />
     @if (_handoffRequested && _handoffFailed is { } failed)
     {

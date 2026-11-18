@@ -17,12 +17,15 @@
     @if (Lead is not null) { <p class="twh-lead">@Lead</p> }
     @if (ShowProject)
     {
-        <p class="twh-context" data-testid="twh-project">
-            @if (ProjectName is { Length: > 0 } project) { <span>Project: <strong>@project</strong></span> }
+        <div class="twh-context" data-testid="twh-project">
+            @* The shared project selector (one selection mechanism for every workspace); the plain text is the fallback where no selection
+               service exists (isolated component hosts). *@
+            @if (HasSelector) { <BirkNext.Web.Components.ProjectSelector /> }
+            else if (ProjectName is { Length: > 0 } project) { <span>Project: <strong>@project</strong></span> }
             else if (Restoring) { <span role="status" data-testid="twh-project-restoring">Loading the selected project…</span> }
             else { <span>No project selected — <a href="project-import">import or choose a project</a>.</span> }
             @if (Context is { Length: > 0 } context) { <span class="twh-sep" aria-hidden="true">·</span><span data-testid="twh-context">@context</span> }
-        </p>
+        </div>
         @if (BoundElsewhere is { } other)
         {
             @* The workspaces follow the application the tester chose; the active environment still points at another one. Say so — runs against
@@ -54,6 +57,7 @@
     /// <summary>The active Target Environment is bound to another application than the chosen one (see IArtifactExplorerContext).</summary>
     private BirkNext.Web.Services.Explorers.EnvironmentBindingElsewhere? BoundElsewhere =>
         (HeaderServices.GetService(typeof(BirkNext.Web.Services.Explorers.IArtifactExplorerContext)) as BirkNext.Web.Services.Explorers.IArtifactExplorerContext)?.EnvironmentBoundElsewhere;
+    private bool HasSelector => HeaderServices.GetService(typeof(BirkNext.Web.Services.ProjectImport.ProjectSelection)) is not null;
     /// <summary>Extra context after the project (source snapshot, plan), shown as plain text.</summary>
     [Parameter] public string? Context { get; set; }
     /// <summary>False when the page shows its own project context bar (so the project is not repeated).</summary>

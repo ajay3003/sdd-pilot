@@ -203,6 +203,9 @@
    PAGE LEAD
    ====================================================== */
 
+/* Shared project selector under a project-scoped page title (ProjectSelector). */
+.page-header-project { margin-top: .5rem; }
+
 .page-lead {
     font-size: 0.925rem;
     color: var(--clr-text-subtle);

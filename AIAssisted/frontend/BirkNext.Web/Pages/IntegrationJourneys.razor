@@ -10,7 +10,7 @@
    journeys declared for the current project with their revision history, and leads to declaring a new one. Registered test-pack journeys (which
    can run) stay in Integration Quality Review → Test & Verify. Declared journeys are design metadata: nothing runs from here. *@
 <div class="ijl-page" data-testid="ijl-page" aria-busy="@(_loaded ? "false" : "true")">
-    <PageHeader Title="Integration Journeys" Description="The integration journeys declared for this project: name and ordered component chain, with every revision. Test Coverage proposes them to matching source journeys; scopes can name them." />
+    <PageHeader ShowProjectSelector="true" Title="Integration Journeys" Description="The integration journeys declared for this project: name and ordered component chain, with every revision. Test Coverage proposes them to matching source journeys; scopes can name them." />
 
     @if (!_loaded)
     {

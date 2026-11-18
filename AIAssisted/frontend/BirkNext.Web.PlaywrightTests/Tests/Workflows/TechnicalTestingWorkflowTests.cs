@@ -40,7 +40,7 @@ public sealed class TechnicalTestingWorkflowTests : IAsyncLifetime
         {
             await SyntheticProjects.ImportAndUseAsync(page, project, SyntheticProjects.SpecificationArchive(project));
             await page.GotoAsync($"{BrowserTestServers.FrontendUrl}/technical-testing", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
-            await Assertions.Expect(page.GetByTestId("twh-project")).ToContainTextAsync(project, new() { Timeout = 240000 });
+            await SyntheticProjects.ExpectSelectedProjectAsync(page, project, 240000);
             await Assertions.Expect(page.GetByTestId("tt-next-action")).ToHaveCountAsync(1);
 
             await page.Locator("[data-testid=twh-stage][data-stage=assess]").ClickAsync();
@@ -62,7 +62,7 @@ public sealed class TechnicalTestingWorkflowTests : IAsyncLifetime
             await StageReadyAsync(page, "configure");
             page.Url.Should().EndWith("technical-testing/configure?area=api");
             (await AreasAsync(page)).Should().Equal(["api"]);
-            await Assertions.Expect(page.GetByTestId("twh-project")).ToContainTextAsync(project);
+            await SyntheticProjects.ExpectSelectedProjectAsync(page, project);
 
             await page.Locator("[data-testid=twh-stage][data-stage=verify]").ClickAsync();
             await StageReadyAsync(page, "verify");

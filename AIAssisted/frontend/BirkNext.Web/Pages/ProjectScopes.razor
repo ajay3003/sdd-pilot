@@ -25,6 +25,7 @@
     <header class="psc-header">
         <div class="pts-head">
             <h1>@T.Title</h1>
+            <div class="page-header-project"><BirkNext.Web.Components.ProjectSelector /></div>
             <p class="psc-sub" data-testid="psc-context">
                 <span data-testid="psc-project">@(_projectName ?? "No project loaded")</span>
                 @if (_environmentLabel is not null) { <span class="psc-dot" aria-hidden="true">·</span><span data-testid="psc-environment">@_environmentLabel</span> }

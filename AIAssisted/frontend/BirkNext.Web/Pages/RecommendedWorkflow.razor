@@ -18,7 +18,7 @@
 
 <div class="rw-page">
 
-    <PageHeader Title="Recommended Workflow"
+    <PageHeader ShowProjectSelector="true" Title="Recommended Workflow"
                 Description="Record review decisions for the project's documents, choose a review path and set up the project's inputs — the next useful step comes first. Every module is listed in All modules." />
     <BirkNext.Web.Components.SourceManagement.SourceContextNotice Purpose="the workflow" />
     <ProjectContextStrip RequiresEnvironment="@(_path == WorkflowPathKind.Runtime)" ShowTargetApplication="true" ReviewPath="@WorkflowPaths.PathLabel(_path)"

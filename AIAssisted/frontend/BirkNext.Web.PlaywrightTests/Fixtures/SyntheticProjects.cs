@@ -82,6 +82,13 @@ public static class SyntheticProjects
     }
 
     /// <summary>
+    /// The shared project selector (workspace header, page header or Plan & prepare's context bar) has <paramref name="name"/> selected — the
+    /// selected option, not merely an option in the list (every project's name is in the control).
+    /// </summary>
+    public static Task ExpectSelectedProjectAsync(IPage page, string name, float timeoutMs = 120000) =>
+        Assertions.Expect(page.Locator("[data-testid=project-selector-select] option:checked").First).ToHaveTextAsync(name, new() { Timeout = timeoutMs });
+
+    /// <summary>
     /// Imports <paramref name="archive"/> as <paramref name="name"/>, makes it the current project and confirms it after a reload (the selection is
     /// persisted by the server, not only held by this tab). Returns when <c>Current import</c> names exactly this project.
     /// </summary>

@@ -46,7 +46,7 @@ public sealed class ManualTestingWorkflowTests : IAsyncLifetime
             // Plan & prepare: discovery reads the imported specification.
             await page.GotoAsync($"{BrowserTestServers.FrontendUrl}/test-plan-suggestions", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
             await ReadyAsync(page, "tps");
-            await Assertions.Expect(page.GetByTestId("tps-project-name")).ToHaveTextAsync(project);
+            await SyntheticProjects.ExpectSelectedProjectAsync(page, project);
             await page.GetByTestId("tps-discover-run").ClickAsync();
             await MessageAsync(page, "tps-message", "candidates found");
             var candidates = page.Locator("li[data-testid^=tps-candidate-]");

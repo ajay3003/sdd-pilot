@@ -17,7 +17,7 @@
 @* Test Coverage & Overlap Review: one evidence model (tests, journeys, overlaps, gaps) shown as several views. Source comes only from the
    Source Analysis snapshot; nothing is executed; no coverage percentage. Simple language by default, technical details on demand. *@
 <div class="tco-page" data-testid="tco-page" aria-busy="@(_loaded ? "false" : "true")">
-    <PageHeader Title="@TestCoverageText.Title" Description="@TestCoverageText.Hero">
+    <PageHeader ShowProjectSelector="true" Title="@TestCoverageText.Title" Description="@TestCoverageText.Hero">
         @if (_result is not null)
         {
             <div class="tco-exports" role="group" aria-label="Export">

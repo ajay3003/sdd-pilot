@@ -8,6 +8,12 @@
         {
             <p class="page-lead">@Description</p>
         }
+        @* Project-scoped modules show the shared project selector (the same control as the testing workspaces); global, environment-scoped
+           and multi-project modules do not (see docs/audits/birknext-project-selector-consistency-2026-11-18.md). *@
+        @if (ShowProjectSelector)
+        {
+            <div class="page-header-project"><BirkNext.Web.Components.ProjectSelector /></div>
+        }
     </div>
     @if (ChildContent is not null)
     {
@@ -19,4 +25,5 @@
     [Parameter, EditorRequired] public string Title    { get; set; } = "";
     [Parameter]                 public string? Description { get; set; }
     [Parameter]                 public RenderFragment? ChildContent { get; set; }
+    [Parameter]                 public bool ShowProjectSelector { get; set; }
 }

@@ -18,7 +18,7 @@
    no upload here, no model, no score, and it never determines who or what wrote the code. After a run the result reads top-down as a decision
    aid: summary → what to fix first → coverage → grouped findings → change risk → rule details → limitations. *@
 <div class="aic-page" data-testid="aic-page" aria-busy="@(_loaded ? "false" : "true")">
-    <PageHeader Title="@AiCodeReviewText.Title" Description="@AiCodeReviewText.Hero">
+    <PageHeader ShowProjectSelector="true" Title="@AiCodeReviewText.Title" Description="@AiCodeReviewText.Hero">
         @if (_result is not null)
         {
             <button type="button" class="btn-secondary" data-testid="aic-export" @onclick="ExportAsync">Export HTML</button>
