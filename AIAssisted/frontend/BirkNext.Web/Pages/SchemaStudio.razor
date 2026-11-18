@@ -1002,8 +1002,11 @@
     private string _sourceContractFilter = "";
     /// <summary>The retained XSDs matching the file-name/path filter, by file name (the primary identity); the directory is shown second.</summary>
     private List<SourceSchemaFile> ContractChoices(SourceSchemaPackage package) =>
-        [.. package.Files.Where(file => _sourceContractFilter.Length == 0 || file.Path.Contains(_sourceContractFilter, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(file => System.IO.Path.GetFileName(file.Path.Replace('\\', '/')), StringComparer.OrdinalIgnoreCase)];
+        [.. SchemaSourceSelection.Rank(package.Files.Where(file => _sourceContractFilter.Length == 0 || file.Path.Contains(_sourceContractFilter, StringComparison.OrdinalIgnoreCase)
+            || (file.Usage?.TargetNamespace?.Contains(_sourceContractFilter, StringComparison.OrdinalIgnoreCase) ?? false))).Select(r => r.File)];
+    private SchemaSourceSelection.Recommendation? _sourceRecommendation;
+    private static string ChoiceLabel(SourceSchemaFile file) =>
+        $"{SchemaStudioPresentation.FileName(file.Path)}{(SchemaSourceSelection.VersionOf(file) is { } v ? $" · v{v}" : "")} · {SchemaSourceSelection.Variant(file.Path)}";
     private static string DirectoryOf(string path) =>
         System.IO.Path.GetDirectoryName(path.Replace('\\', '/'))?.Replace('\\', '/') is { Length: > 0 } directory ? directory : "(root)";
     private bool _viewParameterApplied;
@@ -1170,12 +1173,37 @@
                     <label class="ss-field">Contract XSD (@ContractChoices(sourcePackage).Count of @sourcePackage.Files.Count)
                         <select @bind="_sourceContractPath" aria-label="Discovered XSD contract" data-testid="ss-source-contract-select">
                             @if (ContractChoices(sourcePackage).All(file => file.Path != _sourceContractPath)) { <option value="">Choose an XSD</option> }
-                            @foreach (var file in ContractChoices(sourcePackage)) { <option value="@file.Path">@SchemaStudioPresentation.FileName(file.Path) — @DirectoryOf(file.Path)</option> }
+                            @* Grouped by what the source shows (validation code → other source references → declared only), strongest first. *@
+                            @foreach (var tier in new[] { SchemaSourceSelection.ValidationTier, SchemaSourceSelection.SourceTier, SchemaSourceSelection.DeclaredTier })
+                            {
+                                var inTier = ContractChoices(sourcePackage).Where(f => SchemaSourceSelection.TierOf(f) == tier).ToList();
+                                if (inTier.Count == 0) continue;
+                                <optgroup label="@SchemaSourceSelection.TierLabel(tier)" data-tier="@tier">
+                                    @foreach (var file in inTier) { <option value="@file.Path" title="@file.Path">@ChoiceLabel(file)</option> }
+                                </optgroup>
+                            }
                         </select>
                     </label>
+                    @if (_sourceRecommendation is { } recommendation)
+                    {
+                        <p class="ss-muted" role="status" data-testid="ss-source-contract-recommendation" data-ambiguous="@(recommendation.Ambiguous ? "true" : "false")">@recommendation.Message</p>
+                    }
                     @if (_sourceContractPath.Length > 0)
                     {
                         <p class="ss-selected-contract" data-testid="ss-source-contract-selected"><strong>@SchemaStudioPresentation.FileName(_sourceContractPath)</strong> <span class="ss-muted ss-mono">@_sourceContractPath</span></p>
+                        @if (sourcePackage.Files.FirstOrDefault(f => f.Path == _sourceContractPath) is { } chosen)
+                        {
+                            @* Three separate answers for a technical tester: declared, referenced by validation code, verified in a runtime test. *@
+                            <dl class="ss-usage" data-testid="ss-source-contract-usage">
+                                <div><dt>Declared in source</dt><dd data-testid="ss-usage-declared">Yes — @sourcePackage.SourceArchiveName@(chosen.Usage?.TargetNamespace is { } ns ? $" · namespace {ns}" : "")</dd></div>
+                                <div><dt>Referenced by validation code</dt><dd data-testid="ss-usage-validation">@(SchemaSourceSelection.TierOf(chosen) == SchemaSourceSelection.ValidationTier ? $"Yes — {chosen.Usage!.TierBasis}" : $"No — {chosen.Usage?.TierBasis ?? "no source evidence recorded"}")</dd></div>
+                                <div><dt>Verified in a runtime test</dt><dd data-testid="ss-usage-runtime">@(chosen.Usage is { RuntimeVerified: true } ? "Yes" : chosen.Usage?.RuntimeVerification ?? "Not verified at runtime.")</dd></div>
+                                @if (chosen.Usage?.References is { Count: > 0 } refs)
+                                {
+                                    <div><dt>Source references</dt><dd><ul class="ss-plain" data-testid="ss-usage-references">@foreach (var r in refs.Take(8)) { <li>@r.Kind: <span class="ss-mono">@r.File:@r.Line</span>@(r.Component is { } c ? $" ({c})" : "")</li> }</ul></dd></div>
+                                }
+                            </dl>
+                        }
                     }
                     <button class="btn-primary" disabled="@(_sourceContractPath.Length == 0)" @onclick="OpenSourceContract">Open contract in Schema Studio</button>
                 }
@@ -1502,8 +1530,11 @@
             if (!string.Equals(artifact.ProjectImportId, snapshot.ProjectImportId, StringComparison.Ordinal))
             { _sourceError = "The returned XSD artifacts do not match the selected project import identity."; return; }
             _sourcePackage = artifact;
-            _sourceContractPath = artifact.Files.FirstOrDefault(f => f.Path.EndsWith(".xsd", StringComparison.OrdinalIgnoreCase))?.Path ?? "";
-            if (_sourceContractPath.Length == 0) _sourceError = "The selected snapshot contains no stored XSD files.";
+            // Source-aware default (2026-11-18): only the single best-evidenced schema is pre-selected; a tie or no evidence leaves the choice
+            // to the tester with the reason. A deep link (?contract=) still decides afterwards.
+            _sourceRecommendation = SchemaSourceSelection.Recommend(artifact.Files);
+            _sourceContractPath = _sourceRecommendation.Selected?.Path ?? "";
+            if (!artifact.Files.Any(f => f.Path.EndsWith(".xsd", StringComparison.OrdinalIgnoreCase))) _sourceError = "The selected snapshot contains no stored XSD files.";
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or InvalidOperationException)
         { _sourceError = "The XSD artifacts could not be loaded from this snapshot."; }

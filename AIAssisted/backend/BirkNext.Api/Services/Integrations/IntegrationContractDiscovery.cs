@@ -134,6 +134,9 @@ public static class IntegrationContractDiscoveryEngine
                         "Embedded resource" => new(IntegrationContractEvidenceRank.ComponentAssociation, $"Packaged with its project: {where}", reference.File, reference.Line),
                         "Configuration reference" => new(IntegrationContractEvidenceRank.ComponentAssociation, $"Named in configuration: {where}", reference.File, reference.Line),
                         "Test code reference" => new(IntegrationContractEvidenceRank.SourceRelationship, $"Named by test code only: {where}", reference.File, reference.Line),
+                        SourceContractReferenceKinds.RegistryValidator => new(IntegrationContractEvidenceRank.ComponentAssociation,
+                            $"Registered in a schema registry that validating code loads (chosen per message by namespace): {where}", reference.File, reference.Line),
+                        SourceContractReferenceKinds.RegistryEntry => new(IntegrationContractEvidenceRank.SourceRelationship, $"Listed in a schema registry: {where}", reference.File, reference.Line),
                         _ => new(IntegrationContractEvidenceRank.ComponentAssociation, $"Named by code: {where}", reference.File, reference.Line),
                     });
                 }

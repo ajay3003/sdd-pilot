@@ -160,6 +160,9 @@ public sealed class SchemaStudioPageTests : BunitContext
         var page = Render<SchemaStudio>();
         page.Find("select[aria-label='Source Analysis snapshot']").Change(snapshotId.ToString("D"));
         page.FindAll("button").Single(button => button.TextContent.Contains("Load XSDs from snapshot", StringComparison.Ordinal)).Click();
+        // Nothing in this snapshot's source names any of the schemas, so none is pre-selected (2026-11-18: never the first file by path).
+        Assert.Contains("none is pre-selected", page.Find("[data-testid=ss-source-contract-recommendation]").TextContent);
+        page.Find("[data-testid=ss-source-contract-select]").Change("schemas/main.xsd");
         page.FindAll("button").Single(button => button.TextContent.Contains("Open contract in Schema Studio", StringComparison.Ordinal)).Click();
 
         var package = Assert.Single(schemas.Packages);
@@ -215,6 +218,56 @@ public sealed class SchemaStudioPageTests : BunitContext
 
         Assert.Contains("do not match the selected immutable Source Analysis snapshot", page.Markup);
         Assert.Empty(schemas.Packages);
+    }
+
+    /// <summary>
+    /// Source-aware default (2026-11-18): the schema the source's validation code uses is pre-selected — not the first file by path — with the
+    /// reason, and the three answers (declared · referenced by validation code · verified in a runtime test) are shown separately. A schema the
+    /// tester chooses stays chosen.
+    /// </summary>
+    [Fact]
+    public void SourceAnalysisSnapshotPreSelectsTheSchemaItsValidationCodeUsesAndExplainsWhy()
+    {
+        const string xs = "http://www.w3.org/2001/XMLSchema";
+        static string Xsd(string ns) => $"<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" targetNamespace=\"{ns}\" xmlns=\"{ns}\"><xs:element name=\"Report\" type=\"xs:string\"/></xs:schema>";
+        _ = xs;
+        var referral = Xsd("urn:example:a.referral.v2");
+        var report = Xsd("urn:example:report.v2.0.0.flat");
+        var snapshotId = Guid.NewGuid();
+        const string snapshotFingerprint = "snapshot-fingerprint-usage";
+        var notRuntime = "Not verified at runtime: no test run in BirkNext records which schema was applied to a message.";
+        var files = new[]
+        {
+            new SourceSchemaFile("xsds/a.referral.v2.0.0.xsd", referral, Fingerprint(referral),
+                new SourceSchemaUsage("urn:example:a.referral.v2", "2.0.0", "Declared", "Present in the source archive; nothing in the source names it", [], false, notRuntime)),
+            new SourceSchemaFile("xsds/example.report.v2.0.0.flat.xsd", report, Fingerprint(report),
+                new SourceSchemaUsage("urn:example:report.v2.0.0.flat", "2.0.0", "ReferencedByValidationCode", "Named by validation code: Hub/ReportValidator.cs:12",
+                    [new("Hub/ReportValidator.cs", 12, "Validator", "Hub"), new("Hub.Tests/ReportTests.cs", 4, "Test code reference")], false, notRuntime)),
+        };
+        var api = new Mock<ISourceSchemaApiService>();
+        api.Setup(client => client.ListSchemaSnapshotIndexAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SourceSchemaSnapshotIndex([new(snapshotId, "hub.zip", snapshotFingerprint, DateTimeOffset.UtcNow, true, true, 0)], false));
+        api.Setup(client => client.SourceSchemasAsync(snapshotId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SourceSchemaPackage(snapshotId, snapshotFingerprint, "hub.zip", DateTimeOffset.UtcNow, true, 0, files));
+        Services.AddSingleton(new SchemaStudioService());
+        Services.AddSingleton(api.Object);
+
+        var page = Render<SchemaStudio>();
+        page.Find("select[aria-label='Source Analysis snapshot']").Change(snapshotId.ToString("D"));
+        page.FindAll("button").Single(button => button.TextContent.Contains("Load XSDs from snapshot", StringComparison.Ordinal)).Click();
+
+        Assert.Equal("xsds/example.report.v2.0.0.flat.xsd", page.Find("[data-testid=ss-source-contract-select] option[selected]").GetAttribute("value"));
+        Assert.StartsWith("Pre-selected example.report.v2.0.0.flat.xsd (version 2.0.0): referenced by validation code — Named by validation code: Hub/ReportValidator.cs:12",
+            page.Find("[data-testid=ss-source-contract-recommendation]").TextContent);
+        Assert.Equal(["Referenced by validation code", "Declared in source only"], page.FindAll("[data-testid=ss-source-contract-select] optgroup").Select(g => g.GetAttribute("label")));
+        Assert.StartsWith("Yes — Named by validation code", page.Find("[data-testid=ss-usage-validation]").TextContent);
+        Assert.Equal(notRuntime, page.Find("[data-testid=ss-usage-runtime]").TextContent);
+        Assert.Contains("Hub.Tests/ReportTests.cs:4", page.Find("[data-testid=ss-usage-references]").TextContent);
+
+        // The tester's choice wins over the recommendation and is explained the same way.
+        page.Find("[data-testid=ss-source-contract-select]").Change("xsds/a.referral.v2.0.0.xsd");
+        Assert.Contains("a.referral.v2.0.0.xsd", page.Find("[data-testid=ss-source-contract-selected]").TextContent);
+        Assert.StartsWith("No — Present in the source archive", page.Find("[data-testid=ss-usage-validation]").TextContent);
     }
 
     private static string Fingerprint(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();

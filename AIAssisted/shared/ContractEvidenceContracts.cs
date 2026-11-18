@@ -224,7 +224,7 @@ public static class ContractEvidenceQueries
     {
         SourceContractType.OpenApi or SourceContractType.GraphQlSchema or SourceContractType.AsyncApi => ContractUsageKind.PublishedApi,
         SourceContractType.MessageContract => ContractUsageKind.MessageSchema,
-        SourceContractType.XmlSchema or SourceContractType.JsonSchema when c.CodeReferences.Any(r => r.Kind == "Validator") => ContractUsageKind.ValidationSchema,
+        SourceContractType.XmlSchema or SourceContractType.JsonSchema when c.CodeReferences.Any(r => SourceContractReferenceKinds.IsValidator(r.Kind)) => ContractUsageKind.ValidationSchema,
         SourceContractType.XmlSchema when entry.State == ContractEntryPointState.ReusableDefinitions => ContractUsageKind.ReusableLibrary,
         SourceContractType.XmlSchema when entry.State == ContractEntryPointState.SingleMessageRoot => ContractUsageKind.MessageSchema,
         _ => ContractUsageKind.Unknown,
@@ -444,7 +444,7 @@ public static class ContractRelationships
             if (producer?.ContentType is { } ct && (ct.Contains("xml", StringComparison.OrdinalIgnoreCase) && c.Contract.Type == SourceContractType.XmlSchema
                 || ct.Contains("json", StringComparison.OrdinalIgnoreCase) && c.Contract.Type == SourceContractType.JsonSchema))
                 matches.Add(new("content-type", $"{ct} fits a {ContractEvidenceQueries.Label(c.Contract.Type)}", ContractMatchStrength.Supporting));
-            foreach (var r in c.Contract.CodeReferences.Where(r => r.Kind is "Validator" or "Configuration reference" or "Embedded resource"))
+            foreach (var r in c.Contract.CodeReferences.Where(r => r.Kind is "Validator" or SourceContractReferenceKinds.RegistryValidator or "Configuration reference" or "Embedded resource"))
                 matches.Add(new("source-usage", $"{r.Kind}: {r.File}:{r.Line}", r.Kind == "Validator" ? ContractMatchStrength.ExplicitUsage : ContractMatchStrength.Strong));
             if (producer?.DataType is { Length: > 2 } name && !matches.Any(m => m.Kind == "root") && Norm(c.Contract.Name).Contains(Norm(name), StringComparison.Ordinal))
                 matches.Add(new("file-name", $"File name resembles {name} (low confidence)", ContractMatchStrength.Weak));

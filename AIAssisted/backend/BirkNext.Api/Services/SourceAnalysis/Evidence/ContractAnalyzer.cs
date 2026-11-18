@@ -21,7 +21,8 @@ namespace BirkNext.Api.Services.SourceAnalysis.Evidence;
 /// </summary>
 internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
 {
-    public const int Version = 2;
+    /// <summary>3 (2026-11-18): XSD references by target namespace and through schema registries (see NamespaceReferences).</summary>
+    public const int Version = 3;
     public DomainAnalyzerInfo Info { get; } = SourceEvidenceAnalyzer.Info(SourceEvidenceDomain.Contracts, "Contract and schema analyzer", Version, 1,
         ["OpenAPI", "GraphQL SDL", "GraphQL operations", "AsyncAPI", "JSON Schema", "Protobuf", "Message contracts (C#)", "Generated clients"], [],
         ["Contracts", "Operations", "Types and fields (required/optional)", "Producer/consumer hints", "Code and project references to contract files", "Contract drift classes"]);
@@ -152,6 +153,8 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
     private const int MaxReferencesPerContract = 20;
     private static readonly Regex SchemaLoading = new(@"XmlSchemaSet|XmlSchema\.Read|Schemas\.Add|ValidationType\.Schema|JsonSchema|\.Validate\s*\(|XmlSerializer|Deserialize",
         RegexOptions.CultureInvariant);
+    /// <summary>XML-schema validation specifically (a schema registry feeds these; JSON (de)serialization does not validate an XSD).</summary>
+    private static readonly Regex XmlSchemaLoading = new(@"XmlSchemaSet|XmlSchema\.Read|Schemas\.Add|ValidationType\.Schema", RegexOptions.CultureInvariant);
     private static readonly Regex PackagedItem = new(@"<(EmbeddedResource|Content|None)\s+[^>]*Include\s*=\s*""([^""]+)""", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>
@@ -178,6 +181,7 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
                 Add(name, new(SourceEvidenceRedaction.SafePath(file.Path), file.Line(at), kind, context.ComponentOf(file.Path)?.Name));
             }
         }
+        NamespaceReferences(context, formal, Add, ct);
         // A project file that packages the contract (EmbeddedResource/Content glob) ties it to that project's component — not to a handler.
         foreach (var project in context.Files.Where(f => f.Role == SourceFileRole.ProjectMetadata && f.Path.EndsWith("proj", StringComparison.OrdinalIgnoreCase)))
             foreach (Match match in PackagedItem.Matches(project.Content))
@@ -203,6 +207,82 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
             if (list.Count < MaxReferencesPerContract && !list.Any(r => r.File == reference.File && r.Kind == reference.Kind)) list.Add(reference);
         }
     }
+
+    /// <summary>
+    /// XSDs chosen by target namespace rather than by file name (2026-11-18). A validator that keeps its schemas in a registry and selects one
+    /// per message by namespace names no XSD file, so literal matching found nothing and Schema Studio fell back to the first file. Grounded
+    /// references only:
+    /// <list type="bullet">
+    /// <item>source, configuration or test text containing a schema's exact target namespace (same kinds as a file-name reference;
+    /// a file that also loads XML schemas is a "Validator");</item>
+    /// <item>a JSON schema registry listing two or more of the archive's XSDs (by namespace or file name) → "Schema registry entry";</item>
+    /// <item>when non-test code names that registry file and non-test code loads XML schemas → "Validator (schema registry)" on every
+    /// registered XSD (both files cited) — registered for validation, not proof that a particular message used it.</item>
+    /// </list>
+    /// </summary>
+    private static void NamespaceReferences(SourceEvidenceContext context, List<SourceContract> formal, Action<string, SourceContractCodeReference, string?> add,
+        CancellationToken ct)
+    {
+        var schemas = formal.Where(c => c.Type == SourceContractType.XmlSchema && c.XmlSchema?.TargetNamespace is { Length: > 12 })
+            .Select(c => (Contract: c, Namespace: c.XmlSchema!.TargetNamespace!, Name: System.IO.Path.GetFileName(c.File))).ToList();
+        if (schemas.Count == 0) return;
+        bool Names(string text, (SourceContract Contract, string Namespace, string Name) x) =>
+            ContainsNamespace(text, x.Namespace) || text.Contains(x.Name, StringComparison.OrdinalIgnoreCase);
+        foreach (var file in context.Files.Where(f => f.Role is SourceFileRole.SourceCode or SourceFileRole.Test or SourceFileRole.Configuration))
+        {
+            ct.ThrowIfCancellationRequested();
+            var loads = file.Role != SourceFileRole.Configuration && SchemaLoading.IsMatch(file.Content);
+            var test = file.Role == SourceFileRole.Test || context.ProjectOf(file.Path)?.IsTest == true;
+            foreach (var x in schemas)
+            {
+                var at = IndexOfNamespace(file.Content, x.Namespace);
+                if (at < 0) continue;
+                var kind = test ? "Test code reference" : file.Role == SourceFileRole.Configuration ? "Configuration reference" : loads ? "Validator" : "Code reference";
+                add(x.Name, new(SourceEvidenceRedaction.SafePath(file.Path), file.Line(at), kind, context.ComponentOf(file.Path)?.Name), x.Contract.File);
+            }
+        }
+        var registries = context.Files.Where(f => f.Path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            .Select(f => (File: f, Registered: schemas.Where(x => Names(f.Content, x)).ToList())).Where(r => r.Registered.Count >= 2).ToList();
+        if (registries.Count == 0) return;
+        var loaders = context.Files.Where(f => f.Role == SourceFileRole.SourceCode && context.ProjectOf(f.Path)?.IsTest != true && XmlSchemaLoading.IsMatch(f.Content)).ToList();
+        foreach (var registry in registries)
+        {
+            ct.ThrowIfCancellationRequested();
+            foreach (var x in registry.Registered)
+            {
+                var at = IndexOfNamespace(registry.File.Content, x.Namespace) is var n and >= 0 ? n : registry.File.Content.IndexOf(x.Name, StringComparison.OrdinalIgnoreCase);
+                add(x.Name, new(SourceEvidenceRedaction.SafePath(registry.File.Path), registry.File.Line(Math.Max(0, at)), "Schema registry entry",
+                    context.ComponentOf(registry.File.Path)?.Name), x.Contract.File);
+            }
+            var naming = context.Files.Where(f => f.Role == SourceFileRole.SourceCode && context.ProjectOf(f.Path)?.IsTest != true
+                && f.Content.Contains(registry.File.Name, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (naming.Count == 0 || loaders.Count == 0) continue;
+            foreach (var x in registry.Registered)
+            {
+                foreach (var cite in naming.Take(2).Concat(loaders.Take(2)).DistinctBy(f => f.Path))
+                {
+                    var at = cite.Content.IndexOf(registry.File.Name, StringComparison.OrdinalIgnoreCase) is var i and >= 0 ? i : Math.Max(0, XmlSchemaLoading.Match(cite.Content).Index);
+                    add(x.Name, new(SourceEvidenceRedaction.SafePath(cite.Path), cite.Line(at), "Validator (schema registry)", context.ComponentOf(cite.Path)?.Name), x.Contract.File);
+                }
+            }
+        }
+    }
+
+    /// <summary>A namespace as a whole literal: "…v2.0.0.flat" must not match inside "…v2.0.0.flat.m2lb" or "…v2.0.0.flat2".</summary>
+    private static int IndexOfNamespace(string text, string ns)
+    {
+        for (var at = text.IndexOf(ns, StringComparison.Ordinal); at >= 0; at = text.IndexOf(ns, at + 1, StringComparison.Ordinal))
+        {
+            var end = at + ns.Length;
+            var next = end < text.Length ? text[end] : '\0';
+            var after = end + 1 < text.Length ? text[end + 1] : '\0';
+            var continues = char.IsLetterOrDigit(next) || next is '_' or '-' || (next is '.' or '/' && char.IsLetterOrDigit(after));
+            if (!continues) return at;
+        }
+        return -1;
+    }
+
+    private static bool ContainsNamespace(string text, string ns) => IndexOfNamespace(text, ns) >= 0;
 
     /// <summary>An MSBuild include (relative to the project directory, <c>\</c> or <c>/</c>, <c>*</c>/<c>**</c>) as a path regex.</summary>
     private static Regex Glob(string projectDirectory, string include)

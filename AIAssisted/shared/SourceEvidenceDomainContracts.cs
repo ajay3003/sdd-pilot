@@ -462,6 +462,19 @@ public sealed record XmlSchemaEvidence(string? TargetNamespace, string? Explicit
 /// schema), "Code reference", "Test code reference" or "Embedded resource" (a project file packages it). Literal names only — never a guess.</summary>
 public sealed record SourceContractCodeReference(string File, int Line, string Kind, string? Component = null);
 
+/// <summary>Reference kinds beyond a literal file name (2026-11-18): an XSD selected by namespace from a schema registry.</summary>
+public static class SourceContractReferenceKinds
+{
+    public const string Validator = "Validator";
+    /// <summary>Registered in a schema registry that validating code loads: registered for validation, chosen per message by namespace.</summary>
+    public const string RegistryValidator = "Validator (schema registry)";
+    /// <summary>Listed in a schema registry file (namespace or file name); declares the schema, says nothing about its use.</summary>
+    public const string RegistryEntry = "Schema registry entry";
+    public const string TestReference = "Test code reference";
+
+    public static bool IsValidator(string kind) => kind is Validator or RegistryValidator;
+}
+
 public sealed record ContractField(string Name, string Type, bool Required);
 public sealed record ContractTypeShape(string Name, string Kind, List<ContractField> Fields)
 {

@@ -46,7 +46,7 @@ public sealed class IqrSourceEvidenceController(IqrSourceStore store, BirkNext.A
             return Conflict(new { error = "The stored schema artifact does not match this source project's import identity." });
         try
         {
-            var files = JsonSerializer.Deserialize<List<SourceSchemaFileDto>>(artifact.PackageJson, SchemaJson) ?? [];
+            var files = SourceSchemaUsage.Attach(JsonSerializer.Deserialize<List<SourceSchemaFileDto>>(artifact.PackageJson, SchemaJson) ?? [], snapshot);
             return Ok(new SourceSchemaPackageDto(snapshot.Id, snapshot.Archive.Sha256, snapshot.Archive.FileName,
                 snapshot.AnalyzedAt, artifact.IsComplete, artifact.OmittedFiles, files,
                 ProjectImportId: artifact.ProjectImportId, SourceProjectName: SourceProjectName(snapshot)));
@@ -186,7 +186,54 @@ public sealed class IqrSourceEvidenceController(IqrSourceStore store, BirkNext.A
     }
 }
 
-public sealed record SourceSchemaFileDto(string Path, string Text, string Fingerprint);
+public sealed record SourceSchemaFileDto(string Path, string Text, string Fingerprint, SourceSchemaUsageDto? Usage = null);
+
+/// <summary>
+/// What the snapshot's source shows about one XSD (2026-11-18), in three separate answers a technical tester needs: is it declared in the
+/// source, is it referenced by validation code, and has a test run verified it. Computed from the snapshot's contract evidence when read
+/// (nothing stored twice). <see cref="Tier"/>: "ReferencedByValidationCode" (a validator names the file or namespace, or loads the registry
+/// that lists it), "ReferencedBySource" (configuration, code or tests name it), "Declared" (present in the archive only).
+/// </summary>
+public sealed record SourceSchemaUsageDto(string? TargetNamespace, string? Version, string Tier, string TierBasis,
+    IReadOnlyList<BirkNext.SourceDomains.SourceContractCodeReference> References, bool RuntimeVerified, string RuntimeVerification);
+
+public static class SourceSchemaUsage
+{
+    public const string ValidationTier = "ReferencedByValidationCode", SourceTier = "ReferencedBySource", DeclaredTier = "Declared";
+    public const string NotRuntimeVerified = "Not verified at runtime: no test run in BirkNext records which schema was applied to a message.";
+
+    public static List<SourceSchemaFileDto> Attach(List<SourceSchemaFileDto> files, IqrSourceSnapshot snapshot)
+    {
+        var contracts = snapshot.EvidenceDomains?.Contracts.Contracts.Where(c => c.Type == BirkNext.SourceDomains.SourceContractType.XmlSchema).ToList() ?? [];
+        // Snapshots analysed before namespace/registry references were recorded can show "nothing names it" for a registry-selected schema.
+        var stale = (snapshot.EvidenceDomains?.Contracts.AnalyzerVersion ?? 0) < BirkNext.Api.Services.SourceAnalysis.Evidence.ContractAnalyzer.Version;
+        return [.. files.Select(f =>
+        {
+            var contract = contracts.FirstOrDefault(c => string.Equals(Norm(c.File), Norm(f.Path), StringComparison.OrdinalIgnoreCase));
+            return f with { Usage = Of(contract, stale) };
+        })];
+    }
+
+    public static SourceSchemaUsageDto Of(BirkNext.SourceDomains.SourceContract? contract, bool staleAnalysis = false)
+    {
+        var references = contract?.CodeReferences ?? [];
+        var literal = references.FirstOrDefault(r => r.Kind == BirkNext.SourceDomains.SourceContractReferenceKinds.Validator);
+        var registry = references.FirstOrDefault(r => r.Kind == BirkNext.SourceDomains.SourceContractReferenceKinds.RegistryValidator);
+        // Naming references only: being packaged with a project (often in bulk) or listed in a registry declares a schema, it does not use it.
+        var other = references.FirstOrDefault(r => r.Kind is "Configuration reference" or "Code reference" or "Test code reference");
+        var packaged = references.FirstOrDefault(r => r.Kind == "Embedded resource");
+        var (tier, basis) = literal is not null ? (ValidationTier, $"Named by validation code: {literal.File}:{literal.Line}")
+            : registry is not null ? (ValidationTier, $"Registered in a schema registry that validation code loads ({registry.File}:{registry.Line}); chosen per message by namespace")
+            : other is not null ? (SourceTier, $"{other.Kind}: {other.File}:{other.Line}")
+            : (DeclaredTier, packaged is not null ? $"Packaged with a project ({packaged.File}:{packaged.Line}); nothing in the source names it"
+                : references.Count > 0 ? "Listed in a schema registry only" : "Present in the source archive; nothing in the source names it");
+        if (staleAnalysis && tier != ValidationTier)
+            basis += " (this snapshot was analysed before references by namespace and schema registry were recorded; re-import the source to refresh)";
+        return new(contract?.XmlSchema?.TargetNamespace, contract?.Version ?? contract?.XmlSchema?.ExplicitVersion, tier, basis, references, false, NotRuntimeVerified);
+    }
+
+    private static string Norm(string path) => path.Replace('\\', '/').TrimStart('/');
+}
 public sealed record SourceSchemaPackageDto(Guid SnapshotId, string SnapshotFingerprint, string SourceArchiveName,
     DateTimeOffset AnalyzedAt, bool IsComplete, int OmittedFiles, IReadOnlyList<SourceSchemaFileDto> Files,
     bool IsAvailable = true, string? UnavailableReason = null, string? ProjectImportId = null, string? SourceProjectName = null);

@@ -5,7 +5,14 @@ using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 
 namespace BirkNext.Web.Services;
 
-public sealed record SourceSchemaFile(string Path, string Text, string Fingerprint);
+public sealed record SourceSchemaFile(string Path, string Text, string Fingerprint, SourceSchemaUsage? Usage = null);
+
+/// <summary>What the snapshot's source shows about one XSD: declared, referenced by validation code, verified at runtime (separate answers).</summary>
+public sealed record SourceSchemaUsage(string? TargetNamespace, string? Version, string Tier, string TierBasis,
+    IReadOnlyList<SourceSchemaReference> References, bool RuntimeVerified, string RuntimeVerification);
+
+/// <summary>A source, configuration, test, project or registry file that names the XSD (by file name or target namespace).</summary>
+public sealed record SourceSchemaReference(string File, int Line, string Kind, string? Component = null);
 public sealed record SourceSchemaPackage(Guid SnapshotId, string SnapshotFingerprint, string SourceArchiveName,
     DateTimeOffset AnalyzedAt, bool IsComplete, int OmittedFiles, IReadOnlyList<SourceSchemaFile> Files,
     bool IsAvailable = true, string? UnavailableReason = null, string? ProjectImportId = null, string? SourceProjectName = null);

@@ -318,12 +318,50 @@ public sealed class IntegrationContractDiscoveryTests
             ("Docs/example.report.v2.0.0.flat.xsd", Entry("2.0.0")),
             ("Receiver.Tests/Receiver.Tests.csproj", """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup><ItemGroup><PackageReference Include="xunit" Version="2.0.0" /></ItemGroup></Project>"""),
             ("Receiver.Tests/ReportTests.cs", """public sealed class ReportTests { const string Name = "example.lib.xsd"; }"""));
-        domains.Contracts!.AnalyzerVersion.Should().Be(IntegrationContractDiscoveryEngine.CodeReferenceAnalyzerVersion);
+        domains.Contracts!.AnalyzerVersion.Should().BeGreaterThanOrEqualTo(IntegrationContractDiscoveryEngine.CodeReferenceAnalyzerVersion, "discovery reads its references");
         var contracts = domains.Contracts.Contracts.Where(c => c.Type == SourceContractType.XmlSchema).ToDictionary(c => System.IO.Path.GetFileName(c.File));
         contracts["example.report.v2.0.0.receiver.xsd"].CodeReferences.Select(r => r.Kind).Should().BeEquivalentTo(["Validator", "Embedded resource"]);
         contracts["example.report.v2.0.0.receiver.xsd"].CodeReferences.Single(r => r.Kind == "Validator").File.Should().Be("Receiver/ReportType.cs");
         contracts["example.lib.xsd"].CodeReferences.Select(r => r.Kind).Should().BeEquivalentTo(["Embedded resource", "Test code reference"]);
         contracts["example.report.v2.0.0.flat.xsd"].CodeReferences.Should().BeEmpty("nothing names it — a file next to others is not referenced");
+    }
+
+    /// <summary>
+    /// XSDs chosen by namespace from a schema registry (2026-11-18, generic synthetic copy of the pattern): the validator never names a file, so
+    /// literal matching found nothing. Registry entries, the registry-loading validator and namespace literals in tests are now references;
+    /// a namespace that merely starts like another ("…v2.0.0" vs "…v2.0.0.flat") is not.
+    /// </summary>
+    [Fact]
+    public void SourceAnalysis_RecordsNamespaceAndSchemaRegistryReferences()
+    {
+        static string Xsd(string ns) => $"""<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="{ns}" elementFormDefault="qualified"><xs:element name="Report" type="xs:string" /></xs:schema>""";
+        var domains = SourceEvidenceFixtures.Analyze(
+            ("Hub/Hub.csproj", """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>"""),
+            ("Hub/SchemaRegister.cs", """public static class SchemaRegister { public const string FileNameRegister = "example.xsd.registry.json"; }"""),
+            ("Hub/XmlValidatorClient.cs", """
+                using System.Xml.Schema;
+                public sealed class XmlValidatorClient
+                {
+                    public void Validate(string ns) { var schemas = new XmlSchemaSet(); schemas.Add(null, ns); }
+                }
+                """),
+            ("Hub.TestData/xsds/example.xsd.registry.json", """[{"Nmsp":"https://example.test/report.v1.0.0"},{"Nmsp":"https://example.test/report.v2.0.0.flat"}]"""),
+            ("Hub.TestData/xsds/example.report.v1.0.0.xsd", Xsd("https://example.test/report.v1.0.0")),
+            ("Hub.TestData/xsds/example.report.v2.0.0.flat.xsd", Xsd("https://example.test/report.v2.0.0.flat")),
+            ("Hub.TestData/xsds/example.report.v2.0.0.xsd", Xsd("https://example.test/report.v2.0.0")),
+            ("Hub.TestData/xsds/example.other.v1.xsd", Xsd("https://example.test/other.v1")),
+            ("Hub.Tests/Hub.Tests.csproj", """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup><ItemGroup><PackageReference Include="xunit" Version="2.0.0" /></ItemGroup></Project>"""),
+            ("Hub.Tests/InboundTests.cs", """public sealed class InboundTests { const string Ns = "https://example.test/report.v2.0.0.flat"; }"""));
+        var byName = domains.Contracts!.Contracts.Where(c => c.Type == SourceContractType.XmlSchema).ToDictionary(c => System.IO.Path.GetFileName(c.File));
+        var flat = byName["example.report.v2.0.0.flat.xsd"].CodeReferences;
+        flat.Select(r => r.Kind).Should().Contain([SourceContractReferenceKinds.RegistryEntry, SourceContractReferenceKinds.RegistryValidator, "Test code reference"]);
+        flat.Where(r => r.Kind == SourceContractReferenceKinds.RegistryValidator).Select(r => r.File).Should().Contain(["Hub/SchemaRegister.cs", "Hub/XmlValidatorClient.cs"]);
+        byName["example.report.v1.0.0.xsd"].CodeReferences.Select(r => r.Kind).Should().Contain(SourceContractReferenceKinds.RegistryValidator).And.NotContain("Test code reference");
+        byName["example.report.v2.0.0.xsd"].CodeReferences.Should().BeEmpty("its namespace is only a prefix of the registered …v2.0.0.flat; it is not registered or named");
+        byName["example.other.v1.xsd"].CodeReferences.Should().BeEmpty();
+        BirkNext.ContractSchemaEvidence.ContractEvidenceQueries.Usage(byName["example.report.v2.0.0.flat.xsd"],
+                new BirkNext.ContractSchemaEvidence.ContractEntryPoint(BirkNext.ContractSchemaEvidence.ContractEntryPointState.SingleMessageRoot, [], ""))
+            .Should().Be(BirkNext.ContractSchemaEvidence.ContractUsageKind.ValidationSchema);
     }
 
     // §30 + §16: XSD uploads are accepted; a source selection keeps its snapshot as provenance; nothing else changes.
