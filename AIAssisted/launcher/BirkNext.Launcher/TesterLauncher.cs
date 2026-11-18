@@ -59,6 +59,25 @@ public sealed record LauncherOptions
 /// </summary>
 public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
 {
+    private LauncherLog? _log;
+    private string? _stage;
+    private readonly Stopwatch _stageClock = new();
+
+    /// <summary>
+    /// A startup stage: shown to the tester and logged with how long the previous stage took, so a slow or stuck stage is visible in the log and
+    /// in the diagnostics archive (not only as the last line on screen).
+    /// </summary>
+    private void Stage(string step)
+    {
+        // The same stage announced twice in a row (the launcher, then the database helper it calls) is shown once.
+        if (string.Equals(step, _stage, StringComparison.Ordinal)) return;
+        if (_stage is not null) _log?.Info($"Stage done: {_stage} ({_stageClock.Elapsed.TotalSeconds:0.0} s)");
+        _log?.Info($"Stage: {step}");
+        _stage = step;
+        _stageClock.Restart();
+        ui.Step(step);
+    }
+
     public async Task<int> RunAsync(CancellationToken stop)
     {
         if (options.Command == "help") { ui.Line(LauncherOptions.Help); return 0; }
@@ -70,6 +89,7 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
         data.Create();
         try { OwnerOnly.Apply(data.Root); } catch (Exception e) when (e is UnauthorizedAccessException or IOException or PlatformNotSupportedException) { }
         var log = new LauncherLog(data.Logs);
+        _log = log;
         log.Info($"Start-BirkNext {options.Command}: profile {profile} ({source}), package {package.BuildVersion()}, data {data.Root}");
         ui.Title($"BirkNext {package.BuildVersion()} — {RuntimeProfiles.DisplayName(profile)}");
         try { return await DispatchAsync(package, data, log, stop); }
@@ -95,7 +115,7 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
         switch (options.Command)
         {
             case "validate":
-                CheckPackage(package, data, log, full: true);
+                await CheckPackageAsync(package, data, log, full: true, stop);
                 ui.Done("The package and this PC are ready. Nothing was started.");
                 return 0;
             case "diagnostics":
@@ -112,7 +132,7 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
             {
                 // A running launcher stops itself in order (frontend, backend, database); this process only asks.
                 StateFile.Write(data.StopRequestFile, new { requestedAt = DateTimeOffset.UtcNow, by = Environment.ProcessId });
-                ui.Step("Asking the running BirkNext to stop");
+                Stage("Asking the running BirkNext to stop");
                 for (var i = 0; i < 120 && File.Exists(data.SessionFile); i++) await Task.Delay(500, CancellationToken.None);
                 if (File.Exists(data.SessionFile)) throw new LauncherException("The running BirkNext did not stop.", "Close the BirkNext window.", exitCode: 3);
                 ui.Done("BirkNext has stopped.");
@@ -137,14 +157,14 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
         switch (options.Command)
         {
             case "stop":
-                ui.Step("Stopping local database");
+                Stage("Stopping local database");
                 if (!postgres.Stop()) throw new LauncherException("The local database did not stop.", "Close BirkNext windows and try again.");
                 ui.Done("The local database is stopped.");
                 return 0;
         }
 
-        ui.Step("Checking application files");
-        CheckPackage(package, data, log, full: false);
+        Stage("Checking application files");
+        await CheckPackageAsync(package, data, log, full: false, stop);
         var (ports, credentials, record) = PrepareDatabase(package, data, postgres, log);
         // Isolated restore needs a new database; the application role stays NOCREATEDB, so a separate narrow role creates it (see PostgresManager).
         try { credentials = postgres.EnsureRestoreProvisioner(ports.Database, credentials); }
@@ -153,7 +173,7 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
 
         if (options.Command == "backup")
         {
-            ui.Step("Writing backup");
+            Stage("Writing backup");
             try { ui.Done($"Backup written: {postgres.Backup(ports.Database, credentials, "manual")}"); }
             finally { postgres.Stop(); } // BirkNext is not running (we hold its lock): leave nothing running after a backup.
             return 0;
@@ -164,7 +184,7 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
         var build = package.BuildVersion();
         if (last is not null && last.Build != build)
         {
-            ui.Step("Backing up before applying database updates");
+            Stage("Backing up before applying database updates");
             var size = postgres.DatabaseSize(ports.Database, credentials);
             var free = new DriveInfo(Path.GetPathRoot(data.Backups)!).AvailableFreeSpace;
             if (free < size * 2 + (256L << 20))
@@ -174,14 +194,23 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
             { File.Delete(old); log.Info($"Older automatic pre-upgrade backup removed: {Path.GetFileName(old)}"); }
         }
 
-        ui.Step("Applying database updates and starting BirkNext");
+        Stage("Applying database updates and starting BirkNext");
         using var backend = new BackendProcess(package, data, log);
         backend.Start(ports, credentials);
-        if (!await backend.WaitHealthyAsync(ports.Backend, TimeSpan.FromMinutes(5), stop, elapsed => ui.Step($"Still starting BirkNext ({(int)elapsed.TotalSeconds} s; a first start can take a few minutes)")))
+        bool healthy;
+        try { healthy = await backend.WaitHealthyAsync(ports.Backend, TimeSpan.FromMinutes(5), stop, elapsed => ui.Step($"Still starting BirkNext ({(int)elapsed.TotalSeconds} s; a first start can take a few minutes)")); }
+        catch (OperationCanceledException) when (stop.IsCancellationRequested) { healthy = false; }
+        if (!healthy)
         {
             var reason = backend.StartupFailure();
             backend.Stop();
             postgres.Stop();
+            if (stop.IsCancellationRequested)
+            {
+                // Ctrl+C or a closed window while BirkNext was starting: a cancelled start, not a failed one.
+                log.Warn($"Start cancelled while waiting for the BirkNext service; backend and local database stopped. {reason}");
+                throw new LauncherException("BirkNext start was cancelled. Everything it had started has been stopped.", "Start BirkNext again when you are ready.", exitCode: 130);
+            }
             throw reason is not null && reason.Contains("requires a newer BirkNext", StringComparison.Ordinal)
                 ? new LauncherException("The database requires a newer BirkNext than this package.", "Start the newer BirkNext version, or restore the backup made before the update (see the upgrade guide).", reason)
                 : new LauncherException("BirkNext did not start.", "Start BirkNext again. If it keeps failing, send the diagnostics (Start-BirkNext.exe --diagnostics).",
@@ -194,6 +223,7 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
         StateFile.Write(data.SessionFile, new SessionRecord(url, Environment.ProcessId, DateTimeOffset.UtcNow, build));
         if (File.Exists(data.LastErrorFile)) File.Delete(data.LastErrorFile);
         var code = ConnectionCode(data, TimeSpan.FromSeconds(20));
+        if (_stage is not null) log.Info($"Stage done: {_stage} ({_stageClock.Elapsed.TotalSeconds:0.0} s)");
         ui.Ready(url, code, log.FilePath);
         log.Info($"Ready at {url} (database cluster {record.SystemIdentifier}).");
         if (!options.NoBrowser) Browser.Open(await LocalAccess.ConnectedUrlAsync(url, ports.Backend, code, log), log);
@@ -209,7 +239,7 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
         }
         finally
         {
-            ui.Step("Stopping BirkNext");
+            Stage("Stopping BirkNext");
             await frontend.DisposeAsync();
             backend.Stop();
             postgres.Stop();
@@ -219,8 +249,15 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
         return 0;
     }
 
-    /// <summary>Quick check every start (size + hash of the runtime executables); the full hash of every file once per package build.</summary>
-    private void CheckPackage(PackageLayout package, DataLayout data, LauncherLog log, bool full)
+    /// <summary>How often a running package check reports its progress, and when a single file counts as slow (named, never aborted).</summary>
+    public static readonly TimeSpan CheckHeartbeat = TimeSpan.FromSeconds(5), SlowFile = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Quick check every start (hash of the runtime executables); the full hash of every file once per package build and folder. The full check
+    /// runs in the background while this window reports progress every few seconds (a freshly extracted package is scanned by antivirus as it is
+    /// read, so the first check can take minutes on a tester PC); it is never skipped and has no time limit. Ctrl+C cancels it.
+    /// </summary>
+    private async Task CheckPackageAsync(PackageLayout package, DataLayout data, LauncherLog log, bool full, CancellationToken stop)
     {
         var problems = Prerequisites.Problems(freeBytes: new DriveInfo(Path.GetPathRoot(data.Root)!).AvailableFreeSpace);
         if (problems.Count > 0) throw new LauncherException(problems[0], "Ask IT for help with this PC requirement.", string.Join(" | ", problems));
@@ -233,13 +270,49 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
         string Rel(string p) => Path.GetRelativePath(package.Root, p).Replace('\\', '/');
         var critical = new[] { package.BackendExe, Path.Combine(package.Backend, "BirkNext.Api.dll"), package.K6Exe, package.Tool("postgres"), package.Tool("initdb"), package.Tool("pg_ctl"),
             package.Tool("pg_dump"), package.Tool("pg_restore"), PackageLayout.RuntimeManifestPath(package.Root) }.Select(Rel).ToList();
-        var result = PackageIntegrity.Verify(package.Root, needFull ? null : critical);
+        log.Info(needFull
+            ? $"Package check: every file ({(verified is null ? "first check of this package folder" : "package or folder changed since the last full check")}) in {package.Root}."
+            : "Package check: runtime files (every file was verified for this package and folder before).");
+        if (needFull && options.Command == "start")
+            ui.Line("    The first start after extracting checks every BirkNext file once; this can take a few minutes. Progress is shown below.");
+
+        PackageIntegrity.Progress? latest = null;
+        var clock = Stopwatch.StartNew();
+        var verify = Task.Run(() => PackageIntegrity.Verify(package.Root, needFull ? null : critical, p => Volatile.Write(ref latest, p), stop), stop);
+        var next = CheckHeartbeat;
+        while (!verify.IsCompleted)
+        {
+            await Task.WhenAny(verify, Task.Delay(TimeSpan.FromMilliseconds(250), CancellationToken.None));
+            if (verify.IsCompleted || clock.Elapsed < next) continue;
+            next += CheckHeartbeat;
+            if (Volatile.Read(ref latest) is not { } p) continue;
+            var line = PackageIntegrity.Describe(p, clock.Elapsed, DateTime.UtcNow, SlowFile);
+            ui.Step(line);
+            log.Info(line);
+        }
+        PackageIntegrity.Result result;
+        try { result = await verify; }
+        catch (OperationCanceledException) when (stop.IsCancellationRequested)
+        {
+            log.Warn($"Package check cancelled after {clock.Elapsed.TotalSeconds:0} s.");
+            throw new LauncherException("BirkNext start was cancelled while it was checking its files. Nothing was started.", "Start BirkNext again when you are ready.", exitCode: 130);
+        }
         if (!result.Ok)
-            throw new LauncherException(result.Missing.Count > 0 ? "This BirkNext package is incomplete: files are missing." : "This BirkNext package has been changed after it was built.",
-                "Download the BirkNext Tester Package again and extract the whole archive to a new folder.",
-                $"missing: {string.Join(", ", result.Missing.Take(10))}; changed: {string.Join(", ", result.Changed.Take(10))}");
+        {
+            var (message, action) = result switch
+            {
+                { Missing.Count: > 0 } => ($"This BirkNext package is incomplete: {result.Missing.Count} file(s) are missing, for example {result.Missing[0]}.",
+                    "Extract the whole archive again into a new, empty folder (wait until extraction has finished), then start BirkNext from there."),
+                { Unreadable.Count: > 0 } => ($"BirkNext cannot read {result.Unreadable.Count} of its own file(s), for example {result.Unreadable[0].Split(" (")[0]}.",
+                    "Another program (often antivirus) or folder permissions block them. Extract the archive again into a folder in your user profile and start again; if it keeps failing, ask IT."),
+                _ => ($"This BirkNext package has been changed after it was built: {result.Changed.Count} file(s) differ, for example {result.Changed[0]}.",
+                    "Download the BirkNext Tester Package again and extract the whole archive to a new folder."),
+            };
+            throw new LauncherException(message, action,
+                $"missing: {string.Join(", ", result.Missing.Take(10))}; changed: {string.Join(", ", result.Changed.Take(10))}; unreadable: {string.Join(", ", result.Unreadable.Take(10))}");
+        }
         if (needFull) StateFile.Write(verifiedFile, new VerifiedRecord(manifestHash, package.Root, DateTimeOffset.UtcNow, result.Checked));
-        log.Info($"Package verified ({(needFull ? "all" : "runtime")} files: {result.Checked}).");
+        log.Info($"Package verified ({(needFull ? "all" : "runtime")} files: {result.Checked}) in {clock.Elapsed.TotalSeconds:0.0} s.");
     }
 
     /// <summary>First run, or the existing cluster after identity verification. Never initializes over existing files.</summary>
@@ -266,14 +339,14 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
             var frontendPort = Ports.Choose(saved?.Frontend ?? Ports.Preferred.Frontend, taken);
             var ports = new Ports.Assignment(db, backendPort, frontendPort);
             StateFile.Write(data.PortsFile, ports);
-            var (record, credentials) = postgres.Initialize(db, package.BuildVersion(), ui.Step);
+            var (record, credentials) = postgres.Initialize(db, package.BuildVersion(), Stage);
             return (ports, credentials, record);
         }
         var existing = postgres.Record!;
         var creds = DatabaseCredentials.Load(data.SecretsFile)
             ?? throw new LauncherException("The local database credentials are missing.", "Restore the data folder from a backup, or contact the BirkNext owner. Nothing was changed.");
         var current = saved ?? new Ports.Assignment(existing.Port, Ports.Preferred.Backend, Ports.Preferred.Frontend);
-        ui.Step("Starting local database");
+        Stage("Starting local database");
         if (postgres.IsRunning())
         {
             // Already running on our data directory (e.g. after a launcher crash): reuse it only when it proves to be our cluster.
@@ -292,7 +365,7 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
                 log.Warn($"Port {current.Database} is used by another application; the local database now uses {dbPort}.");
             }
             current = current with { Database = dbPort };
-            postgres.Start(dbPort, ui.Step);
+            postgres.Start(dbPort, Stage);
             var identity = postgres.VerifyIdentity(dbPort, creds, existing);
             if (!identity.Ok)
             {

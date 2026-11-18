@@ -218,6 +218,78 @@ public sealed class TesterLauncherTests
         FluentActions.Invoking(() => PackageIntegrity.Verify(traversal)).Should().Throw<LauncherException>().WithMessage("*incomplete*");
     }
 
+    // ── Package check progress (regression: a first start stayed at "Checking application files" with no feedback) ─────────────────
+
+    [Fact]
+    public void The_full_check_reports_progress_for_every_file_and_ends_complete()
+    {
+        var root = Package(("runtime/k6/k6.exe", new string('k', 3000)), ("AIAssisted/backend/BirkNext.Api.exe", "api"), ("config/runtime-manifest.json", "{}"));
+        var reports = new List<PackageIntegrity.Progress>();
+
+        var result = PackageIntegrity.Verify(root, progress: reports.Add);
+
+        result.Ok.Should().BeTrue();
+        reports.Should().HaveCount(6, "one report before and one after each of the three files");
+        reports.Where(r => r.Current is not null).Select(r => r.Current).Should().BeEquivalentTo("runtime/k6/k6.exe", "AIAssisted/backend/BirkNext.Api.exe", "config/runtime-manifest.json");
+        reports[^1].Should().Match<PackageIntegrity.Progress>(r => r.Done == 3 && r.Total == 3 && r.BytesDone == r.BytesTotal && r.BytesTotal == 3000 + 3 + 2 && r.Current == null);
+        reports.Select(r => r.Done).Should().BeInAscendingOrder();
+    }
+
+    [Fact]
+    public void A_partial_extraction_is_reported_at_once_without_hashing_the_rest()
+    {
+        var root = Package(("runtime/k6/k6.exe", "k6"), ("AIAssisted/backend/BirkNext.Api.exe", "api"), ("config/runtime-manifest.json", "{}"));
+        File.Delete(Path.Combine(root, "config", "runtime-manifest.json"));
+        var reports = new List<PackageIntegrity.Progress>();
+
+        var result = PackageIntegrity.Verify(root, progress: reports.Add);
+
+        result.Missing.Should().Equal("config/runtime-manifest.json");
+        result.Ok.Should().BeFalse();
+        reports.Should().BeEmpty("a missing file decides the outcome before any file is hashed");
+    }
+
+    [Fact]
+    public void A_file_another_program_holds_is_reported_by_name_not_as_an_unexpected_error()
+    {
+        var root = Package(("runtime/k6/k6.exe", "k6"), ("AIAssisted/backend/BirkNext.Api.exe", "api"));
+        using (new FileStream(Path.Combine(root, "runtime", "k6", "k6.exe"), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            var result = PackageIntegrity.Verify(root);
+            result.Ok.Should().BeFalse("a file that cannot be read is not verified");
+            result.Unreadable.Should().ContainSingle().Which.Should().StartWith("runtime/k6/k6.exe (");
+            result.Missing.Should().BeEmpty();
+            result.Changed.Should().BeEmpty();
+        }
+        PackageIntegrity.Verify(root).Ok.Should().BeTrue("once released, the same file verifies");
+    }
+
+    [Fact]
+    public void The_check_stops_promptly_when_the_tester_cancels_and_never_reports_success()
+    {
+        var root = Package(("runtime/k6/k6.exe", "k6"), ("AIAssisted/backend/BirkNext.Api.exe", "api"));
+        using var cancel = new CancellationTokenSource();
+        var reports = new List<PackageIntegrity.Progress>();
+
+        FluentActions.Invoking(() => PackageIntegrity.Verify(root, progress: p => { reports.Add(p); cancel.Cancel(); }, cancellationToken: cancel.Token))
+            .Should().Throw<OperationCanceledException>();
+        reports.Should().HaveCount(1, "the check stops in the first file once cancelled");
+    }
+
+    [Fact]
+    public void Progress_text_counts_files_and_megabytes_and_names_a_file_read_for_a_long_time()
+    {
+        var now = new DateTime(2026, 11, 18, 12, 0, 0, DateTimeKind.Utc);
+        var p = new PackageIntegrity.Progress(812, 2739, 210L << 20, 690L << 20, "runtime/k6/k6.exe", now.AddSeconds(-5));
+
+        PackageIntegrity.Describe(p, TimeSpan.FromSeconds(25), now, TimeSpan.FromSeconds(30))
+            .Should().Be("Still checking application files: 812 of 2,739 files (30%, 210 of 690 MB), 25 s");
+        PackageIntegrity.Describe(p with { CurrentSince = now.AddSeconds(-45) }, TimeSpan.FromSeconds(70), now, TimeSpan.FromSeconds(30))
+            .Should().EndWith("— runtime/k6/k6.exe has been read for 45 s; antivirus software may be scanning it");
+        PackageIntegrity.Describe(p with { Current = null, CurrentSince = now.AddMinutes(-5) }, TimeSpan.FromSeconds(70), now, TimeSpan.FromSeconds(30))
+            .Should().NotContain("antivirus", "between files nothing is slow");
+    }
+
     [Fact]
     public void A_missing_or_invalid_runtime_manifest_is_a_tester_message_not_a_crash()
     {

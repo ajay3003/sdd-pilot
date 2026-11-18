@@ -25,6 +25,8 @@ The window shows:
 ```text
 BirkNext is preparing your local environment.
   • Checking application files…
+    The first start after extracting checks every BirkNext file once; this can take a few minutes. Progress is shown below.
+  • Still checking application files: 1,204 of 2,744 files (41%, 236 of 578 MB), 15 s…
   • Preparing local database…
   • Starting local database…
   • Creating BirkNext database…
@@ -33,7 +35,8 @@ BirkNext is preparing your local environment.
   Connection code: XXXX-XXXX-XXXX
 ```
 
-- **Duration:** the first start takes about a minute: it checks every package file once and creates your database.
+- **Duration:** the first start takes about a minute on most PCs: it checks every package file once (SHA-256, nothing is skipped) and creates your database. Antivirus software scans each newly extracted file when it is first read, so on some PCs the file check takes several minutes; the window then shows progress every few seconds, and names a file that is being read for a long time. Later starts check only the runtime programs and take seconds.
+- **The window never just waits:** if a file is missing, changed or blocked, the window says which file and what to do. **Ctrl+C** during the file check cancels the start (nothing is started); details are in the log named in the window.
 - **Connection code:** Edge opens. Enter the connection code once per browser, and again after BirkNext restarts.
 - **Your data:** stored in `%LOCALAPPDATA%\BirkNext\TesterNative`, only for your Windows user, outside the package folder.
 

@@ -161,16 +161,29 @@ public static class Ports
     }
 }
 
-/// <summary>Package integrity: every file listed in package-manifest.json (format 2) has its recorded SHA-256 and size.</summary>
+/// <summary>
+/// Package integrity: every file listed in package-manifest.json (format 2) has its recorded SHA-256. A first, cheap pass checks that every
+/// listed file exists (a partial extraction is reported in seconds, without hashing anything) and sums the sizes; the second pass hashes the
+/// files in chunks, reporting progress after each file and honouring cancellation between chunks. Nothing is skipped and there is no time limit:
+/// on a freshly extracted package antivirus scanning can make the first full check take minutes, so the caller shows progress instead.
+/// </summary>
 public static class PackageIntegrity
 {
     public sealed record Result(int Checked, IReadOnlyList<string> Missing, IReadOnlyList<string> Changed)
     {
-        public bool Ok => Missing.Count == 0 && Changed.Count == 0;
+        /// <summary>Files that exist but could not be read (locked by another program, or no read permission).</summary>
+        public IReadOnlyList<string> Unreadable { get; init; } = [];
+        public bool Ok => Missing.Count == 0 && Changed.Count == 0 && Unreadable.Count == 0;
     }
 
-    /// <summary>Verifies the listed files; <paramref name="only"/> limits the check to those package-relative paths (the quick per-start check).</summary>
-    public static Result Verify(string root, IReadOnlyCollection<string>? only = null)
+    /// <summary>Where the check is: files and bytes done of the total, and the file being read since <see cref="CurrentSince"/>.</summary>
+    public sealed record Progress(int Done, int Total, long BytesDone, long BytesTotal, string? Current, DateTime CurrentSince);
+
+    /// <summary>
+    /// Verifies the listed files; <paramref name="only"/> limits the check to those package-relative paths (the quick per-start check).
+    /// <paramref name="progress"/> is called before and after each file (from the verifying thread).
+    /// </summary>
+    public static Result Verify(string root, IReadOnlyCollection<string>? only = null, Action<Progress>? progress = null, CancellationToken cancellationToken = default)
     {
         var manifestPath = Path.Combine(root, "package-manifest.json");
         if (!File.Exists(manifestPath))
@@ -179,23 +192,54 @@ public static class PackageIntegrity
         if (!doc.RootElement.TryGetProperty("format", out var format) || format.GetInt32() != 2 || !doc.RootElement.TryGetProperty("fileHashes", out var hashes))
             throw new LauncherException("This BirkNext package is damaged: its file list is not valid.", "Download the BirkNext Tester Package again.");
         var filter = only?.Select(p => p.Replace('\\', '/')).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var missing = new List<string>(); var changed = new List<string>(); var count = 0;
+        var packageRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var missing = new List<string>(); var changed = new List<string>(); var unreadable = new List<string>();
+        var listed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var files = new List<(string Rel, string Full, string Sha256, long Length)>();
+
+        // Pass 1 (metadata only): every listed file exists; never follow a manifest entry out of the package.
         foreach (var entry in hashes.EnumerateArray())
         {
             var rel = entry.GetProperty("path").GetString() ?? "";
+            listed.Add(rel);
             if (filter is not null && !filter.Contains(rel)) continue;
-            // Never follow a manifest entry out of the package.
             var full = Path.GetFullPath(Path.Combine(root, rel.Replace('/', Path.DirectorySeparatorChar)));
-            if (!full.StartsWith(Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) { changed.Add(rel); continue; }
-            count++;
-            if (!File.Exists(full)) { missing.Add(rel); continue; }
-            using var stream = File.OpenRead(full);
-            if (!string.Equals(Convert.ToHexString(SHA256.HashData(stream)), entry.GetProperty("sha256").GetString(), StringComparison.OrdinalIgnoreCase)) changed.Add(rel);
+            if (!full.StartsWith(packageRoot, StringComparison.OrdinalIgnoreCase)) { changed.Add(rel); continue; }
+            var info = new FileInfo(full);
+            if (!info.Exists) { missing.Add(rel); continue; }
+            files.Add((rel, full, entry.GetProperty("sha256").GetString() ?? "", info.Length));
         }
-        if (filter is not null)
-            foreach (var wanted in filter.Where(w => !hashes.EnumerateArray().Any(e => string.Equals(e.GetProperty("path").GetString(), w, StringComparison.OrdinalIgnoreCase))))
-                missing.Add(wanted);
-        return new Result(count, missing, changed);
+        if (filter is not null) missing.AddRange(filter.Where(wanted => !listed.Contains(wanted)));
+        var count = files.Count + missing.Count(m => listed.Contains(m));
+        // A missing file already decides the outcome ("incomplete"): report it at once instead of hashing everything else first.
+        if (missing.Count > 0) return new Result(count, missing, changed);
+
+        // Pass 2: the hashes, in chunks (cancellable inside large files).
+        var total = files.Count; var bytesTotal = files.Sum(f => f.Length); long bytesDone = 0; var done = 0;
+        var buffer = new byte[1 << 20];
+        foreach (var file in files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            progress?.Invoke(new Progress(done, total, bytesDone, bytesTotal, file.Rel, DateTime.UtcNow));
+            try
+            {
+                using var stream = new FileStream(file.Full, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 1, FileOptions.SequentialScan);
+                using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                int read;
+                while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    sha.AppendData(buffer, 0, read);
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+                if (!string.Equals(Convert.ToHexString(sha.GetHashAndReset()), file.Sha256, StringComparison.OrdinalIgnoreCase)) changed.Add(file.Rel);
+            }
+            catch (FileNotFoundException) { missing.Add(file.Rel); }
+            catch (DirectoryNotFoundException) { missing.Add(file.Rel); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { unreadable.Add($"{file.Rel} ({e.GetType().Name}: {e.Message})"); }
+            done++; bytesDone += file.Length;
+            progress?.Invoke(new Progress(done, total, bytesDone, bytesTotal, null, DateTime.UtcNow));
+        }
+        return new Result(count, missing, changed) { Unreadable = unreadable };
     }
 
     /// <summary>SHA-256 of the manifest itself: identifies the package build whose full verification is remembered.</summary>
@@ -203,6 +247,19 @@ public static class PackageIntegrity
     {
         using var stream = File.OpenRead(Path.Combine(root, "package-manifest.json"));
         return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+    }
+
+    /// <summary>The tester's progress line for <paramref name="p"/> after <paramref name="elapsed"/>. Pure.</summary>
+    public static string Describe(Progress p, TimeSpan elapsed, DateTime now, TimeSpan slowFile)
+    {
+        var percent = p.BytesTotal > 0 ? (int)(p.BytesDone * 100 / p.BytesTotal) : p.Total > 0 ? p.Done * 100 / p.Total : 0;
+        // English launcher text: invariant number formatting (a Norwegian PC would otherwise print "2 739").
+        var text = string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"Still checking application files: {p.Done:N0} of {p.Total:N0} files ({percent}%, {p.BytesDone / (1 << 20):N0} of {p.BytesTotal / (1 << 20):N0} MB), {(int)elapsed.TotalSeconds} s");
+        if (p.Current is { } current && now - p.CurrentSince >= slowFile)
+            text += string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $" — {current} has been read for {(int)(now - p.CurrentSince).TotalSeconds} s; antivirus software may be scanning it");
+        return text;
     }
 }
 

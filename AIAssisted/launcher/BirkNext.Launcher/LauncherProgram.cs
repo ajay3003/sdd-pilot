@@ -87,7 +87,7 @@ public static class ConsoleMode
     }
 }
 
-/// <summary>Start-BirkNext.exe. Exit codes: 0 ok, 2 startup failure, 3 already running, 64 usage.</summary>
+/// <summary>Start-BirkNext.exe. Exit codes: 0 ok, 2 startup failure, 3 already running, 64 usage, 130 start cancelled (Ctrl+C) during the package check.</summary>
 public static class LauncherProgram
 {
     public static async Task<int> Main(string[] args)
