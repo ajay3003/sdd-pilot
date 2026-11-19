@@ -96,7 +96,32 @@ explicitly (the old assertion "generated in the same step by default" described 
 
 ## 9. Browser acceptance
 
-Script `acc/ct-accept.cjs` (SchoolHub synthetic archive with three byte-identical copies of one GraphQL schema, a schema extension without root operations and two services' OpenAPI documents; an unrelated REST-only project). **Running at commit time; the result follows in a separate commit.**
+Fresh Release publish (tag 62; web assets 86/86 match their hashes), disposable database `birknext_ct_20261119` (template copy that also holds
+an earlier M2LB import), API :5097, web :5197, repository network guard. Synthetic **SchoolHub** archive (three byte-identical copies of one
+GraphQL schema — service docs, contract-test snapshot, frontend client — a schema extension without root operations, SchoolService and
+PersonService OpenAPI documents) and the unrelated REST-only `tps-api` archive. Scripts `acc/ct-accept.cjs` and `acc/ct-accept2.cjs`.
+
+**Result: 33 of 33 checks passed** (first run 22/22 up to step 21, which stopped on a script issue — the workspace project was the last
+imported archive, so Plan & prepare showed that project; the continuation selects SchoolHub with the shared selector and ran steps 21–24, 11/11).
+
+| Step | Check | Result |
+|---|---|---|
+| 1–3 | Technical Testing → Contract Testing; choosing SchoolHub narrows 42 files to its 6 | pass |
+| 4 | 6 files = 2 REST + 4 GraphQL; 12 distinct operations vs 24 operation entries; grouped by AccessService, Frontend, PersonService, SchoolService (not by the archive folder); no generate checkbox | pass |
+| 5–7 | GraphQL filter; the main schema lists its 6 operations before import; its two byte-identical copies are named; the details link the exact Source Analysis snapshot | pass |
+| 8–9 | The extension is explained as a fragment/extension (no endpoint tests) with its possible parent schema as a labelled proposal | pass |
+| 10–11 | Selection survives a filter (*3 selected · 2 hidden by filters*); the preview names 3 new, 2 logical API groups, the project and the file without root operations | pass |
+| 12–15 | *Import 3 contracts*: imported, **0 tests**; after reload still 3 contracts and 0 tests | pass |
+| 16–17 | Generation as a separate step (*Generate tests and synthetic data for it*): 3 draft tests | pass |
+| 18–19 | Re-importing the 4 imported files: all *Unchanged*; still 4 contracts and 3 tests | pass |
+| S1 | The server refuses a bulk import naming SchoolHub with another project's file: 422 "belong to another project (M2LB); nothing was imported" | pass |
+| 20 | Deep link `?mode=import&snapshot=&file=&operation=mutation lockPeriod` opens that file with the operation highlighted; an unknown file says so | pass |
+| 21–22 | Plan & prepare's API candidate links to `…&file=SchoolHub/AccessService/autodoc/schema.graphql&operation=mutation activateEmergencyAccess`; Contract Testing opens it highlighted; Back returns to the technical view | pass |
+| 23 | Generated tests are drafts, nothing run | pass |
+| — | 1440 / 1280 / 1024 / 768 / 390 px without horizontal scroll; no console or page errors; no external request | pass |
+
+Before / after (same SchoolHub data and API; "before" is the previous web build, tag 61): `contract-testing-2026-11-18/before-1440-import.png`,
+`after-1440-import.png`, `before-390-import.png`, `after-390-import.png`, `ct-after-1440-preview.png`.
 
 ## 10. Remaining limitations
 
