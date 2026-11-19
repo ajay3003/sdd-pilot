@@ -435,7 +435,9 @@ public sealed class TesterLauncherTests
         shutdown.Hurried.Should().BeFalse("Ctrl+C leaves time for the ordinary stop");
 
         // The close handler blocks until the launcher reports its stop (Windows ends the process as soon as the handler returns).
-        var handler = Task.Run(() => shutdown.RequestAndWait(ShutdownReason.WindowClosed, TimeSpan.FromSeconds(10)));
+        // A budget far beyond the 300 ms below: under a loaded test host the delay's continuation can run seconds late, and a short budget then
+        // expired on its own (seen 2026-11-19 in backend partition 6: the handler returned after 10 s before the check ran).
+        var handler = Task.Run(() => shutdown.RequestAndWait(ShutdownReason.WindowClosed, TimeSpan.FromMinutes(5)));
         await Task.Delay(300);
         handler.IsCompleted.Should().BeFalse("the stop has not completed yet");
         shutdown.Hurried.Should().BeTrue("a close after Ctrl+C still uses the short waits");

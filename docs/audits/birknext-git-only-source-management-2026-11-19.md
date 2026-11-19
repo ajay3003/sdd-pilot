@@ -203,9 +203,25 @@ Defects found while verifying, all fixed:
   - Two tests "edited" a README that the fixture does not contain, so they created an untracked file instead of an uncommitted change.
   - One test refreshed the index whose timestamp it compared.
 
+**Backend partitions 1–6** at `df7e9374` (this change plus the Local Data Reset fix), sequential and memory-guarded:
+
+| Partition | Passed | Failed | Skipped |
+| --- | --- | --- | --- |
+| 1 | 1 053 | 0 | 2 |
+| 2 | 1 101 | 0 | 5 |
+| 3 | 904 | 0 | 0 |
+| 4 | 682 | 0 | 1 |
+| 5 | 541 | 0 | 3 |
+| 6 | 2 717 | 1 | 8 |
+| **Total** | **6 998** | **1** | **19** |
+
+The one failure is `TesterLauncherTests.Closing_the_window_waits_for_the_stop_and_Ctrl_C_only_asks`, a launcher test unrelated to this
+change. It is a timing flake: under partition 6's load the test's 300 ms delay resumed after the handler's 10 s budget had already expired.
+`ShutdownCoordinator` behaved correctly. The test now gives the handler a 5-minute budget and passes; it is committed together with this
+record.
+
 **Not run yet:**
 
-- Backend partitions 1–6 (the full backend suite).
 - API and Web Release publishes.
 - A Windows package with this change.
 - Browser acceptance of System Settings → Git Sources at 1440, 1024, 768 and 390 px.
