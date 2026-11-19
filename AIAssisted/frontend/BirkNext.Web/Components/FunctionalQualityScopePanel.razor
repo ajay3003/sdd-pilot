@@ -109,29 +109,6 @@
     }
     else if (_resolution is { } r)
     {
-        @* Shared canonical scopes narrow this view only: the Functional Quality Scope, its saved definitions and frozen snapshots are unchanged. *@
-        <BirkNext.Web.Components.Scopes.ScopeFilter SelectionChanged="CanonicalScopeSelected" />
-        @if (_canonicalScope is { } cs)
-        {
-            var named = r.Items.Where(InCanonicalScope).ToList();
-            var outside = r.Items.Count - named.Count;
-            <p class="fqs-muted fqs-small" data-testid="fqs-canonical-scope">Shared scope filter (@string.Join(", ", cs.Scopes.Select(x => $"{x.ScopeName} rev. {x.Revision}"))): @named.Select(i => i.Key).Distinct().Count() item@(named.Count == 1 ? "" : "s") named by the selected scope@(cs.Scopes.Count == 1 ? "" : "s") (counted once even when several scopes name them) — @named.Count(i => i.Type == ScopeArtifactType.Requirement) requirement(s), @named.Count(i => i.Type == ScopeArtifactType.UserStory) user stor@(named.Count(i => i.Type == ScopeArtifactType.UserStory) == 1 ? "y" : "ies"), @named.Count(i => i.Type == ScopeArtifactType.Scenario) scenario(s) · @outside outside of @r.Items.Count in this Functional Quality Scope. Matched by canonical identity (type, module, feature, id); a frozen report keeps the scope it was frozen with.</p>
-            @* Explicit choice of what freezing does with the shared scope: record it only (default, unchanged behaviour) or restrict the frozen items. *@
-            <fieldset class="fqs-toggle" data-testid="fqs-scope-mode">
-                <legend>When freezing a snapshot</legend>
-                <label title="@DeliveryScopeProvenanceText.ContextHint"><input type="radio" name="fqs-scope-mode" checked="@(_scopeMode == DeliveryScopeMode.Context)" @onchange="() => _scopeMode = DeliveryScopeMode.Context" data-testid="fqs-scope-mode-context" /> @DeliveryScopeProvenanceText.ContextLabel</label>
-                <label title="@DeliveryScopeProvenanceText.FilterHint"><input type="radio" name="fqs-scope-mode" checked="@(_scopeMode == DeliveryScopeMode.Filter)" @onchange="() => _scopeMode = DeliveryScopeMode.Filter" data-testid="fqs-scope-mode-filter" /> @DeliveryScopeProvenanceText.FilterLabel</label>
-            </fieldset>
-            @if (_scopeMode == DeliveryScopeMode.Filter)
-            {
-                var preview = DeliveryScopeMembership.FilterItems(r.Items, _itemMemberKeys, _membersNotApplicable).Counts;
-                <p class="fqs-notice fqs-small" role="status" data-testid="fqs-scope-filtered-counts" data-included="@preview.Included" data-excluded="@preview.Excluded" data-unresolved="@preview.MembersUnresolved">Freezing keeps only in-scope items: @DeliveryScopeProvenanceText.CountsText(preview)@(preview.NoApplicableItems ? $" — {DeliveryScopeProvenanceText.NoApplicableItems}" : ""). Membership is resolved again on the server from the pinned approved revisions when you freeze.</p>
-            }
-            else
-            {
-                <p class="fqs-muted fqs-small" data-testid="fqs-scope-context-note">@DeliveryScopeProvenanceText.ContextHint</p>
-            }
-        }
         @Summary(r)
         @if (r.RelatedModules.Count > 0) { @Related(r) }
         @Scenarios(r)
@@ -171,71 +148,7 @@
     private bool _includeRelated, _includeTechnical, _loading, _editing, _newOpen, _confirmDelete;
     private string? _error, _notice;
     private ScopeResolution? _resolution;
-    private BirkNext.Scopes.ScopeSelection? _canonicalScope;
-    private HashSet<string> _canonicalKeys = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Scope context (default: provenance only) or Filter by scope (the frozen snapshot keeps only in-scope items).</summary>
-    private DeliveryScopeMode _scopeMode = DeliveryScopeMode.Context;
-    /// <summary>Confirmed requirement / user story / scenario member keys (the only kinds that identify Delivery items) and how many members are of other kinds.</summary>
-    private List<string> _itemMemberKeys = [];
-    private int _membersNotApplicable;
-
-    private static bool IsItemKind(BirkNext.Scopes.ScopeMemberKind kind) =>
-        kind is BirkNext.Scopes.ScopeMemberKind.Requirement or BirkNext.Scopes.ScopeMemberKind.UserStory or BirkNext.Scopes.ScopeMemberKind.Scenario;
-
-    private void CanonicalScopeSelected(BirkNext.Scopes.ScopeSelection? selection)
-    {
-        _canonicalScope = selection;
-        _canonicalKeys = selection is null ? new(StringComparer.OrdinalIgnoreCase)
-            : new(selection.Members.Select(m => m.Member.TargetId), StringComparer.OrdinalIgnoreCase);
-        _itemMemberKeys = selection is null ? [] : [.. selection.Members.Where(m => IsItemKind(m.Member.Kind)).Select(m => m.Member.TargetId)];
-        _membersNotApplicable = selection?.Members.Count(m => !IsItemKind(m.Member.Kind)) ?? 0;
-        if (selection is null) _scopeMode = DeliveryScopeMode.Context;
-        _scopeProvenance = ScopeProvenanceAsync(selection, ++_provenanceGeneration);
-    }
-
-    // ── Shared scope provenance (recorded with a frozen snapshot or a generated report) ─────────────────────────────────
-
-    private Task<DeliveryScopeProvenance?> _scopeProvenance = Task.FromResult<DeliveryScopeProvenance?>(null);
-    private int _provenanceGeneration;
-    /// <summary>Scope revision → revision id, resolved once from the Scope Registry (ScopeDetail.Revisions); never guessed.</summary>
-    private readonly Dictionary<(Guid ScopeId, int Revision), Guid?> _revisionIds = [];
-
-    /// <summary>
-    /// The selected shared scopes with their exact approved revision numbers and the revision ids the Scope Registry reports for them (one
-    /// GetAsync per scope revision not resolved before). An id the registry does not return stays null. The result is offered to report
-    /// generation in this browser tab (DeliveryReportingSession); a newer selection always wins over a slower earlier one.
-    /// </summary>
-    private async Task<DeliveryScopeProvenance?> ScopeProvenanceAsync(BirkNext.Scopes.ScopeSelection? selection, int generation)
-    {
-        DeliveryScopeProvenance? provenance = null;
-        if (selection is { Scopes.Count: > 0 })
-        {
-            var registry = Services.GetService(typeof(IScopeRegistryApiService)) as IScopeRegistryApiService;
-            var projectKey = selection.ProjectKey is { Length: > 0 } key ? key
-                : Services.GetService(typeof(ICurrentWorkspaceProjection)) is ICurrentWorkspaceProjection workspace ? (await workspace.GetAsync()).ProjectSlug : null;
-            var entries = new List<DeliveryScopeProvenanceEntry>();
-            foreach (var scope in selection.Scopes)
-            {
-                if (!_revisionIds.TryGetValue((scope.ScopeId, scope.Revision), out var revisionId) && registry is not null && projectKey is { Length: > 0 })
-                {
-                    BirkNext.Scopes.ScopeDetail? detail = null;
-                    try { (detail, _) = await registry.GetAsync(projectKey, scope.ScopeId); }
-                    catch (HttpRequestException) { detail = null; }
-                    revisionId = detail?.Revisions.FirstOrDefault(r => r.Number == scope.Revision)?.Id is { } id && id != Guid.Empty ? id : null;
-                    if (detail is not null) _revisionIds[(scope.ScopeId, scope.Revision)] = revisionId;
-                }
-                entries.Add(new(scope.ScopeId, scope.ScopeName, scope.Revision, revisionId));
-            }
-            provenance = new DeliveryScopeProvenance
-            {
-                Scopes = entries, MembershipResolution = DeliveryScopeProvenance.DefaultMembershipResolution, CreatedAt = DateTimeOffset.UtcNow, ProjectKey = projectKey,
-            };
-        }
-        if (generation == _provenanceGeneration)
-            (Services.GetService(typeof(DeliveryReportingSession)) as DeliveryReportingSession)?.SetScopeProvenance(ProjectId, provenance);
-        return provenance;
-    }
 
     // ── Frozen snapshot comparison (A vs B, with their scope provenance) ────────────────────────────────────────────────
 
@@ -250,12 +163,6 @@
     /// </summary>
     public static string? CanonicalKeyOf(ScopeItem item) => DeliveryScopeMembership.CanonicalKeyOf(item);
 
-    private bool InCanonicalScope(ScopeItem item)
-    {
-        if (_canonicalScope is null) return true;
-        if (CanonicalKeyOf(item) is { } key) return _canonicalKeys.Contains(key);
-        return item.ParentKey is { } parent && _resolution?.Items.FirstOrDefault(i => i.Key == parent) is { } p && CanonicalKeyOf(p) is { } pk && _canonicalKeys.Contains(pk);
-    }
     private ScopeDefinition? _custom;
     private ScopeFilter _filter = new();
     /// <summary>Every filter change goes through here: the selection is reconciled (an item the filters hide is no longer selected) and the URL updated.</summary>
@@ -574,7 +481,7 @@
 
     private RenderFragment Items(ScopeResolution r) => __builder =>
     {
-        var shown = P.Apply(r.Items, _filter).Where(InCanonicalScope).ToList();
+        var shown = P.Apply(r.Items, _filter).ToList();
         <p class="fqs-muted fqs-small" data-testid="fqs-shown">Showing @shown.Count of @r.Items.Count items · @r.PrecedenceNote</p>
         if (shown.Count == 0)
         {
@@ -754,15 +661,13 @@
 
     private async Task Freeze()
     {
-        // The shared scope selection in force (revision ids resolved once) is recorded with the snapshot; without one nothing is recorded.
-        var provenance = _canonicalScope is null ? null : await _scopeProvenance;
-        if (provenance is not null) provenance = provenance with { Mode = _scopeMode };
-        var (snapshot, error) = await Api.FreezeAsync(ProjectId, new ScopeQuery(_scopeKey, CustomId, _includeRelated, _includeTechnical, Environment: _environment) { ScopeProvenance = provenance });
+        // Test areas were removed (2026-11-19): a new snapshot records no shared-scope provenance; earlier snapshots keep theirs (shown below).
+        var (snapshot, error) = await Api.FreezeAsync(ProjectId, new ScopeQuery(_scopeKey, CustomId, _includeRelated, _includeTechnical, Environment: _environment));
         _error = error;
         if (snapshot is null) return;
         _notice = snapshot.ScopeProvenance is { Filtered: true, Counts: { } counts }
             ? $"Scope snapshot frozen, filtered by scope ({DeliveryScopeProvenanceText.Revisions(snapshot.ScopeProvenance)}): {DeliveryScopeProvenanceText.CountsText(counts)}."
-            : $"Scope snapshot frozen: {snapshot.ItemCount} items (scope version {snapshot.ScopeVersion}).{(provenance is null ? "" : $" Shared scope recorded: {DeliveryScopeProvenanceText.Revisions(provenance)}.")}";
+            : $"Scope snapshot frozen: {snapshot.ItemCount} items (scope version {snapshot.ScopeVersion}).";
         _snapshots = await Api.SnapshotsAsync(ProjectId);
     }
 

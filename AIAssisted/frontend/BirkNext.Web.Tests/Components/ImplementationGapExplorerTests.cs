@@ -196,7 +196,7 @@ public sealed class ImplementationGapExplorerTests : BunitContext
     }
 
     [Fact]
-    public async Task Canonical_requirements_resolve_by_exact_identity_and_a_scope_keeps_only_confirmed_associations()
+    public async Task Canonical_requirements_resolve_by_exact_identity_and_an_old_scope_link_narrows_nothing()
     {
         var storage = new BirkNext.Web.Tests.Services.ActiveTargetEnvironmentTests.Storage();
         var settings = new FrontendAnalysisSettingsService();
@@ -228,8 +228,8 @@ public sealed class ImplementationGapExplorerTests : BunitContext
         var cut = Render<ImplementationGapExplorer>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=ig-overview-canonical]").TextContent.Should().Be("1 of 2 resolved · 1 with an established scenario",
             "FR-036 exists only in another Artifact Pack, so the display id alone never resolves it"));
-        cut.WaitForAssertion(() => cut.Find("[data-testid=ig-scope-summary]").TextContent.Should().Contain("1 feature in the selected scope"));
-        cut.FindAll("[data-testid=ig-scope-unconfirmed-row]").Should().BeEmpty();
+        // Test areas were removed (2026-11-19): an old ?scope= link shows every feature and no test-area summary.
+        cut.FindAll("[data-testid=ig-scope-summary], [data-testid=ig-scope-unconfirmed-row]").Should().BeEmpty();
         cut.Find("[data-testid=ig-overview-open]").Click();
         cut.FindAll("[data-testid=ig-canonical-req]").Select(e => e.GetAttribute("data-resolved")).Should().Equal("true", "false");
         cut.Find("[data-testid=ig-alignment]").TextContent.Should().Contain("Not assessed", "no Task Alignment result exists for this tasks document");

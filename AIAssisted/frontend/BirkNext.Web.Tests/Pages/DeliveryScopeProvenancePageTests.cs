@@ -73,18 +73,6 @@ public sealed class DeliveryScopeProvenancePageTests : BunitContext
     }
 
     [Fact]
-    public void Generating_a_report_sends_the_shared_scope_selection_with_its_revision_ids()
-    {
-        _session.SetScopeProvenance(ProjectId, Provenance());
-        var page = RenderAt($"?project={ProjectId}&tab=overview");
-
-        page.WaitForAssertion(() => page.Find("[data-testid=dlr-generate-scope-provenance]").TextContent.Should().Contain("Release 1 rev 3"));
-        page.Find("[data-testid=dlr-generate-run]").Click();
-        page.WaitForAssertion(() => _api.LastGenerate.Should().NotBeNull());
-        _api.LastGenerate!.ScopeProvenance!.Scopes.Should().ContainSingle().Which.Should().Be(new DeliveryScopeProvenanceEntry(ScopeA, "Release 1", 3, RevisionA3));
-    }
-
-    [Fact]
     public void Without_a_shared_scope_selection_no_provenance_is_sent()
     {
         var page = RenderAt($"?project={ProjectId}&tab=overview");

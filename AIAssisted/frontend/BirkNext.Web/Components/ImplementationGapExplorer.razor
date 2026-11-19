@@ -78,17 +78,10 @@
 
         <h3 class="ig-sub">Feature readiness</h3>
         <p class="ig-note">Derived from source evidence: an unresolved mandatory gate blocks; a checked task is not code; a declared package is not behaviour; a test definition is not an execution.</p>
-        @if (!ReadinessOnly) { <BirkNext.Web.Components.Scopes.ScopeFilter SelectionChanged="ScopeSelected" /> }
         @if (_sharedNote is not null) { <p class="ig-note" data-testid="ig-shared-note">@_sharedNote</p> }
         @if (_canonicalLoaded && _unscopedRequirements > 0 && _canonicalRequirements.Count == _unscopedRequirements)
         {
             <p class="ig-note" data-testid="ig-unscoped-requirements">The canonical interpretation holds @_unscopedRequirements requirement id@(_unscopedRequirements == 1 ? "" : "s") without a module or feature (a source-only analysis), so no requirement can be tied to a feature or scope here — the same id exists in several Artifact Packs. To resolve them, include a Delivery snapshot when you run Analyze relationships in <a href="correlation-review?tab=overview" data-testid="ig-unscoped-action">Relationship Review</a>. Nothing is matched by the id alone in the meantime.</p>
-        }
-        @if (_scopeSelection is not null)
-        {
-            var assoc = FeaturesIn(e).GroupBy(ScopeAssociation).ToDictionary(g => g.Key, g => g.Count());
-            <p class="ig-note" data-testid="ig-scope-summary">Scope filter: @assoc.GetValueOrDefault("in") feature@(assoc.GetValueOrDefault("in") == 1 ? "" : "s") in the selected scope@(_scopeSelection.Scopes.Count == 1 ? "" : "s") (through canonical requirement identity) ·
-                <strong data-testid="ig-scope-unconfirmed">@assoc.GetValueOrDefault("unconfirmed")</strong> with the scope association not confirmed (shown, marked) · @assoc.GetValueOrDefault("out") outside.</p>
         }
         var overview = OverviewRows(e);
         <div class="ig-overview-bar" role="group" aria-label="Feature filters">
@@ -111,8 +104,7 @@
                         var open = _openFeature == f.FeatureId;
                         var blocking = f.GateIds.Select(g => e.Gates.First(x => x.GateId == g)).Where(g => g.Status != GapGateStatus.Approved).ToList();
                         <tr data-testid="ig-overview-row" data-feature="@f.FeatureId" data-readiness="@f.Readiness" class="@(open ? "is-open" : "")">
-                            <th scope="row"><button type="button" class="ig-link" aria-expanded="@(open ? "true" : "false")" data-testid="ig-overview-open" @onclick="() => _openFeature = open ? null : feature.FeatureId">@f.Name</button>
-                                @if (_scopeSelection is not null && ScopeAssociation(f) == "unconfirmed") { <span class="ig-context" data-testid="ig-scope-unconfirmed-row">Scope association not confirmed</span> }</th>
+                            <th scope="row"><button type="button" class="ig-link" aria-expanded="@(open ? "true" : "false")" data-testid="ig-overview-open" @onclick="() => _openFeature = open ? null : feature.FeatureId">@f.Name</button></th>
                             <td><span class="ig-pill ig-r-@f.Readiness">@ReadinessLabel(f.Readiness)</span></td>
                             <td>@Dim(f, "Source implementation coverage")</td>
                             <td data-testid="ig-overview-gates">@(blocking.Count == 0 ? (f.GateIds.Count == 0 ? "None" : "All approved") : string.Join(", ", blocking.Select(g => $"{g.GateId} ({g.Status})")))</td>
@@ -386,14 +378,12 @@
     private static string ReviewLabel(GapFinding f) => f.ReviewStatus == "Not reviewed" ? "not reviewed" : $"reviewed: {f.ReviewStatus}{(f.ReviewedBy is { } by ? $" by {by}" : "")}";
 
     // ── Shared evidence: canonical requirement identity, established scenario links, scopes, Task Alignment (all read, never written) ──
-    private BirkNext.Scopes.ScopeSelection? _scopeSelection;
     private readonly Dictionary<string, string> _canonicalRequirements = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<BirkNext.Scopes.ScopeScenarioLink> _verifying = [];
     private bool _canonicalLoaded;
     private int _unscopedRequirements;
     private string? _sharedNote;
 
-    private void ScopeSelected(BirkNext.Scopes.ScopeSelection? selection) => _scopeSelection = selection;
 
     /// <summary>The module and feature key a feature's tasks document belongs to ("SkoleService/specs/001-x/tasks.md" → SkoleService, 001-x).</summary>
     public static (string Module, string FeatureKey)? FeatureContext(string documentPath)
@@ -421,16 +411,6 @@
         var resolved = reqs.Where(r => r.Key is not null).Select(r => r.Key!).ToHashSet();
         var withScenario = _verifying.Where(l => resolved.Contains(l.RequirementKey)).Select(l => l.RequirementKey).Distinct().Count();
         return $"{resolved.Count} of {reqs.Count} resolved · {withScenario} with an established scenario";
-    }
-
-    /// <summary>"in", "out" or "unconfirmed" for the selected scopes (requirement members matched by canonical key only).</summary>
-    private string ScopeAssociation(GapFeatureAssessment f)
-    {
-        if (_scopeSelection is null) return "in";
-        var keys = CanonicalOf(f).Where(r => r.Key is not null).Select(r => r.Key!).ToList();
-        if (keys.Count == 0) return "unconfirmed";
-        var members = _scopeSelection.Members.Where(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.Requirement).Select(m => m.Member.TargetId).ToHashSet(StringComparer.Ordinal);
-        return keys.Any(members.Contains) ? "in" : "out";
     }
 
     /// <summary>Requirement identities from the shared member catalog (latest canonical interpretation of the active Target Environment).</summary>
@@ -568,8 +548,6 @@
     /// <summary>The compact overview: one row per feature; detail opens on demand. Filters never hide a blocked feature's gate.</summary>
     private List<GapFeatureAssessment> OverviewRows(GapEvaluation e) => [.. FeaturesIn(e)
         .Where(f => _feature.Length == 0 || f.FeatureId == _feature)
-        // A selected scope keeps features it names and features whose association cannot be confirmed (marked); it never hides those silently.
-        .Where(f => _scopeSelection is null || ScopeAssociation(f) != "out")
         .Where(f => _readinessFilter.Length == 0 || f.Readiness.ToString() == _readinessFilter)
         .Where(f => _featureSearch.Trim().Length == 0 || f.Name.Contains(_featureSearch.Trim(), StringComparison.OrdinalIgnoreCase) || f.FeatureId.Contains(_featureSearch.Trim(), StringComparison.OrdinalIgnoreCase))
         .Where(f => !_missingTests || DimValue(f, "Test execution coverage") is not { Numerator: > 0 })

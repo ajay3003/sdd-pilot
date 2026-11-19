@@ -78,6 +78,7 @@ public static class FeatureVisibilityTaxonomy
         new("compare/reviews", ContextualRouteKind.Redirect, "documentation-drift", "Retired list; redirects to Documentation Drift."),
         new("compare/reviews/{id}", ContextualRouteKind.Contextual, "documentation-drift", "Detail of one stored comparison review, opened from its list."),
         new("task-deltas", ContextualRouteKind.Redirect, "task-explorer", "Retired Task Deltas; redirects to Task Explorer → Changes."),
+        new("project-scopes", ContextualRouteKind.Redirect, "project-import", "Retired Project Test Setup (2026-11-19); redirects to project selection, or Integration Topology for the systems and connections views."),
         new("quality/source", ContextualRouteKind.Redirect, "source-analysis", "Earlier source quality page; redirects to Source Analysis."),
         new("source-analysis/application-messaging", ContextualRouteKind.Contextual, "source-analysis", "Application messaging detail, opened from Source Analysis."),
         new("integration-journeys/declare", ContextualRouteKind.Contextual, "test-coverage-review",

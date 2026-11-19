@@ -32,26 +32,4 @@ public sealed class ScopeConsumerAdapterTests : BunitContext
             .Should().NotBe(FunctionalQualityScopePanel.CanonicalKeyOf(Item(ScopeArtifactType.Requirement, "FR-001")), "the same display id in another feature is another requirement");
     }
 
-    [Fact]
-    public void An_impact_trace_lists_the_scopes_naming_impacted_items_and_marks_candidate_only_members()
-    {
-        var registry = new Mock<IScopeRegistryApiService>();
-        var a = Guid.NewGuid();
-        registry.Setup(r => r.MembershipAsync("import:m2lb", It.IsAny<ScopeMemberKind>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string _, ScopeMemberKind kind, CancellationToken _) => (kind == ScopeMemberKind.System
-                ? [new ScopeMembershipSummary(a, "Person flow", ScopeState.Approved, 2, ["Service|m2lb.person.api", "System|person"])]
-                : [], (string?)null));
-        Services.AddSingleton(registry.Object);
-        Services.AddSingleton(WorkspaceSnapshots.Projection(WorkspaceSnapshots.Loaded("Imported", "import:m2lb", "M2LB")).Object);
-        var impact = new CanonicalImpactView
-        {
-            Scope = "dev", RootKey = "Service|m2lb.person.api", RootName = "M2LB.Person.Api", RootType = "Service",
-            Entities = [new("System|person", "System", "Person", ImpactLevel.Potential, 1, [])],
-        };
-
-        var cut = Render<CanonicalImpactSummary>(p => p.Add(c => c.Impact, impact));
-        cut.WaitForAssertion(() => cut.Find("[data-testid=cis-scope]").TextContent.Should().Contain("Person flow").And.Contain("Approved, revision 2"));
-        cut.Find("[data-testid=cis-scope]").TextContent.Should().Contain("the changed item").And.Contain("candidate relation only — not confirmed");
-        cut.Find("[data-testid=cis-scopes]").TextContent.Should().Contain("approved revisions are not changed");
-    }
 }

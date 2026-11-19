@@ -495,8 +495,6 @@
                     else { <span>@(_snapshotId is null ? "None linked" : _snapshotId.ToString()![..8])</span> }
                     <span class="tps-muted tps-small">@(_snapshotBasis ?? (_snapshotId is null ? "No source snapshot is linked to this project; documents are still read." : "Chosen here"))</span>
                 </div>
-                <div class="tps-ctx-item"><span class="tps-k">Test boundary</span>
-                    <span data-testid="tps-boundary">@(_scopeSelection is { } sel ? string.Join(", ", sel.Scopes.Select(s => s.ScopeName)) : "Entire project")</span></div>
                 <div class="tps-ctx-item" data-testid="tps-existing-plan"><span class="tps-k">Existing plan</span>
                     @if (_draft is { } d) { <span><strong>@d.PlanName</strong> <span class="tps-muted">@d.Cases.Count cases · revision @d.Revision</span></span> }
                     else { <span class="tps-muted">None yet</span> }
@@ -580,25 +578,6 @@
 
     // ── Step 1: Choose scenarios ─────────────────────────────────────────────────────────────────────────────
 
-    private BirkNext.Scopes.ScopeSelection? _scopeSelection;
-    private IReadOnlyList<BirkNext.Scopes.ScopeScenarioLink> _viaRequirement = [];
-    private string? _requirementNotice;
-
-    /// <summary>A selected test area names scenarios and requirements; its requirements add the scenarios that verify them through an established canonical
-    /// Verifies relation of the active Target Environment's interpretation (explicit, derived or confirmed by a person — never a candidate).</summary>
-    private async Task ScopeSelected(BirkNext.Scopes.ScopeSelection? selection)
-    {
-        (_scopeSelection, _viaRequirement, _requirementNotice) = (selection, [], null);
-        var requirements = selection?.Members.Where(m => m.Member.Kind == BirkNext.Scopes.ScopeMemberKind.Requirement).Select(m => m.Member.TargetId).ToList() ?? [];
-        if (requirements.Count == 0) return;
-        var scope = CorrelationPresentation.Scope(_environmentId);
-        if (scope is null || ServiceProvider.GetService(typeof(IScopeRegistryApiService)) is not IScopeRegistryApiService registry) { _requirementNotice = "requirements need an active Target Environment to find their scenarios"; return; }
-        var (links, error) = await registry.VerifyingScenariosAsync(new BirkNext.Scopes.ScopeScenarioLinkRequest(scope, requirements));
-        (_viaRequirement, _requirementNotice) = (links, error);
-    }
-
-    private bool InScope(DiscoveredScenario c) => P.InScope(c, _scopeSelection, _viaRequirement.Select(l => l.ScenarioKey).ToHashSet(StringComparer.Ordinal));
-
     /// <summary>The project's own documents, parsed by the existing specification parser (the same evidence Test Coverage reads); null when unreadable.</summary>
     private async Task<BirkNext.TestCoverage.CoverageWorkspaceEvidence?> WorkspaceEvidenceAsync()
     {
@@ -641,7 +620,7 @@
     {
         // One inventory, four views (2026-11-18): the view narrows what is listed, the filters narrow the view; the selection is never touched by either.
         var inView = _candidates.Where(c => P.InView(c, _inventory.Of(c), _view)).ToList();
-        var shown = P.Apply(inView, _catalog).Where(InScope).ToList();
+        var shown = P.Apply(inView, _catalog).ToList();
         var visible = shown.Take(_limit).ToList();
         var inDraft = InPlan;
         var shownIds = shown.Select(c => c.CandidateId).ToHashSet(StringComparer.Ordinal);
@@ -657,15 +636,6 @@
                     <button type="button" class="tps-btn @(_discovery is null ? null : "tps-btn-quiet")" disabled="@_busy" @onclick="DiscoverAsync" data-testid="tps-discover-run">@(_discovery is null ? "Discover test scenarios" : "Discover again")</button>
                     <span class="tps-muted tps-small">@(_discovery is null ? "Reads the specification, source snapshot and contracts of this project. Nothing runs until you ask." : "The last result is reused until you discover again; changing a view or filter never re-runs analysis.")</span>
                 </div>
-            }
-            <BirkNext.Web.Components.Scopes.ScopeFilter SelectionChanged="ScopeSelected" />
-            @if (_scopeSelection is { } scopeSel)
-            {
-                var scenarios = scopeSel.Members.Count(m => m.Member.Kind is BirkNext.Scopes.ScopeMemberKind.Scenario or BirkNext.Scopes.ScopeMemberKind.Requirement or BirkNext.Scopes.ScopeMemberKind.Journey);
-                <p class="tps-muted" data-testid="tps-scope-summary">Showing the candidates the selected test areas name (@scenarios scenario, requirement or journey members).
-                    @if (_viaRequirement.Count > 0) { <span data-testid="tps-scope-via-requirement">@_viaRequirement.Select(l => l.ScenarioKey).Distinct().Count() more through the areas' requirements (established Verifies links only).</span> }
-                    @if (_requirementNotice is { } rn) { <span>@rn.</span> }
-                    @if (scenarios == 0) { <span data-testid="tps-scope-no-scenarios">The selected areas name no scenarios, requirements or journeys, so no candidate is shown; add them in Project Test Setup.</span> }</p>
             }
             @if (_candidates.Count == 0)
             {
@@ -956,7 +926,7 @@
             (draft, error) = await _api!.CreateProjectAsync(new CreateProjectTestPlanRequest
             {
                 ProjectKey = _projectKey!, ProjectName = _projectName, DiscoveryId = _discovery?.DiscoveryId ?? "", CandidateIds = [.. _selected],
-                ScopeIds = [.. _scopeSelection?.Scopes.Select(s => s.ScopeId.ToString()) ?? []], DraftId = _draft?.Id, BaseRevision = _draft?.Revision,
+                DraftId = _draft?.Id, BaseRevision = _draft?.Revision,
             });
         }
         _busy = false;

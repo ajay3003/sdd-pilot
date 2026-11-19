@@ -82,27 +82,6 @@ public sealed class DeliveryScopeFilterPageTests : BunitContext
 
     // ── Generate: explicit mode ─────────────────────────────────────────────────────────────────────────────────────
 
-    [Fact]
-    public void Generate_defaults_to_scope_context_and_sends_filter_by_scope_only_when_chosen()
-    {
-        _session.SetScopeProvenance(ProjectId, Selection());
-        var page = RenderAt($"?project={ProjectId}&tab=overview");
-
-        page.WaitForAssertion(() => page.Find("[data-testid=dlr-generate-scope-mode-context]").HasAttribute("checked").Should().BeTrue());
-        page.Find("[data-testid=dlr-generate-scope-provenance]").GetAttribute("data-mode").Should().Be(nameof(DeliveryScopeMode.Context));
-        page.Find("[data-testid=dlr-generate-run]").Click();
-        page.WaitForAssertion(() => _api.Inner.LastGenerate.Should().NotBeNull());
-        _api.Inner.LastGenerate!.ScopeProvenance!.Mode.Should().Be(DeliveryScopeMode.Context, "the default never silently narrows a report");
-
-        page.Find("[data-testid=dlr-generate-scope-mode-filter]").Change(true);
-        page.WaitForAssertion(() => page.Find("[data-testid=dlr-generate-scope-provenance]").GetAttribute("data-mode").Should().Be(nameof(DeliveryScopeMode.Filter)));
-        page.Find("[data-testid=dlr-generate-scope-provenance]").TextContent.Should().Contain("Filter by scope: Release 1 rev 3").And.Contain(DeliveryScopeProvenanceText.NotScopeResolvable);
-        page.Find("[data-testid=dlr-generate-run]").Click();
-        page.WaitForAssertion(() => _api.Inner.LastGenerate!.ScopeProvenance!.Mode.Should().Be(DeliveryScopeMode.Filter));
-        _api.Inner.LastGenerate!.ScopeProvenance!.Scopes.Single().RevisionId.Should().Be(RevisionA3);
-        _api.Inner.LastGenerate.ScopeProvenance.ProjectKey.Should().Be("import-1");
-    }
-
     // ── A filtered report ───────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]

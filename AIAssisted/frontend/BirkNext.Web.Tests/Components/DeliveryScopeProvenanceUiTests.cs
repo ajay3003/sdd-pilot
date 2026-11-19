@@ -81,34 +81,6 @@ public sealed class DeliveryScopeProvenanceUiTests : BunitContext
     }
 
     [Fact]
-    public void Freezing_with_a_shared_scope_selected_sends_its_provenance_with_the_resolved_revision_id()
-    {
-        var api = Api();
-        var sent = new List<ScopeQuery>();
-        api.Setup(a => a.FreezeAsync(Project, It.IsAny<ScopeQuery>(), It.IsAny<CancellationToken>()))
-            .Callback<Guid, ScopeQuery, CancellationToken>((_, q, _) => sent.Add(q))
-            .ReturnsAsync((Frozen(1, Provenance(3, RevisionA3), 0), (string?)null));
-        var registry = Registry();
-
-        var cut = Render<FunctionalQualityScopePanel>(p => p.Add(x => x.ProjectId, Project));
-        cut.WaitForElement("[data-testid=fqs-canonical-scope]");
-        cut.Find("[data-testid=fqs-freeze]").Click();
-        cut.WaitForAssertion(() => sent.Should().ContainSingle());
-
-        var provenance = sent[0].ScopeProvenance;
-        provenance.Should().NotBeNull("a shared scope was selected when the snapshot was frozen");
-        provenance!.Scopes.Should().ContainSingle().Which.Should().Be(new DeliveryScopeProvenanceEntry(ScopeA, "Release 1", 3, RevisionA3),
-            "the exact approved revision number and the registry's id for that revision (not revision 2's)");
-        provenance.MembershipResolution.Should().Be("approved revisions; canonical key match type+module+feature+id");
-        _session.ScopeProvenance(Project)!.Scopes.Single().RevisionId.Should().Be(RevisionA3, "report generation in this tab records the same selection");
-
-        cut.Find("[data-testid=fqs-freeze]").Click();
-        cut.WaitForAssertion(() => sent.Should().HaveCount(2));
-        sent[1].ScopeProvenance!.Scopes.Single().RevisionId.Should().Be(RevisionA3);
-        registry.Verify(x => x.GetAsync("import-1", ScopeA, It.IsAny<CancellationToken>()), Times.Once(), "revision ids are resolved once per scope revision");
-    }
-
-    [Fact]
     public void Freezing_without_a_shared_scope_records_no_provenance()
     {
         var api = Api();

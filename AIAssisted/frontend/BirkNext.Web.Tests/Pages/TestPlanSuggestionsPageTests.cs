@@ -488,52 +488,15 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         cut.Markup.Should().NotContain("k6", "no script is asked for");
     }
 
+    // Project Test Setup was removed (2026-11-19): no test area is needed or offered; an old ?scope= link narrows nothing.
     [Fact]
-    public void A_selected_approved_scope_narrows_candidates_to_the_scenarios_it_names_by_canonical_identity()
+    public void Without_any_test_area_every_candidate_is_listed_and_an_old_scope_link_narrows_nothing()
     {
-        var scopeId = Guid.NewGuid();
-        var scopes = new Moq.Mock<IScopeRegistryApiService>();
-        scopes.Setup(s => s.ListAsync("import:m2lb", It.IsAny<CancellationToken>())).ReturnsAsync(([new BirkNext.Scopes.ScopeSummary
-            { Id = scopeId, Name = "Period lock", State = BirkNext.Scopes.ScopeState.Approved, ApprovedRevision = 1, CurrentRevision = 1 }], (string?)null));
-        var member = new BirkNext.Scopes.ScopeMember { Kind = BirkNext.Scopes.ScopeMemberKind.Scenario, TargetId = "Scenario|system-understanding/skolenaervaer/periodelaas", Label = "Periodelås" };
-        scopes.Setup(s => s.SelectionAsync("import:m2lb", It.Is<IReadOnlyList<Guid>>(ids => ids.Single() == scopeId), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((new BirkNext.Scopes.ScopeSelection { ProjectKey = "import:m2lb", Scopes = [new(scopeId, "Period lock", 1)],
-                Members = [new(member, [new(scopeId, "Period lock", 1)])] }, (string?)null));
-        Services.AddSingleton(scopes.Object);
         Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Imported", "import:m2lb", "M2LB")).Object);
-
-        var cut = Render(new Api(Workspace()), $"?guide=skolenaervaer&scope={scopeId}");
-        cut.WaitForAssertion(() => cut.Find("[data-testid=tps-scope-summary]").TextContent.Should().Contain("(1 scenario, requirement or journey members)"));
-        cut.FindAll("input[type=checkbox][data-testid^=tps-select-]").Select(e => e.GetAttribute("data-testid")).Should().Equal("tps-select-periodelaas");
-        cut.Find("[data-testid=scf-clear]").Click();
-        cut.WaitForAssertion(() => cut.FindAll("input[type=checkbox][data-testid^=tps-select-]").Should().HaveCount(4, "without a scope nothing is filtered"));
-    }
-
-    [Fact]
-    public async Task A_scope_requirement_adds_only_the_scenarios_that_verify_it_through_established_links()
-    {
-        var scopeId = Guid.NewGuid();
-        var scopes = new Moq.Mock<IScopeRegistryApiService>();
-        scopes.Setup(s => s.ListAsync("import:m2lb", It.IsAny<CancellationToken>())).ReturnsAsync(([new BirkNext.Scopes.ScopeSummary
-            { Id = scopeId, Name = "Intake", State = BirkNext.Scopes.ScopeState.Approved, ApprovedRevision = 1, CurrentRevision = 1 }], (string?)null));
-        var requirement = new BirkNext.Scopes.ScopeMember { Kind = BirkNext.Scopes.ScopeMemberKind.Requirement, TargetId = "Requirement|skole/001/fr-001", Label = "FR-001" };
-        scopes.Setup(s => s.SelectionAsync("import:m2lb", It.IsAny<IReadOnlyList<Guid>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((new BirkNext.Scopes.ScopeSelection { ProjectKey = "import:m2lb", Scopes = [new(scopeId, "Intake", 1)], Members = [new(requirement, [new(scopeId, "Intake", 1)])] }, (string?)null));
-        scopes.Setup(s => s.VerifyingScenariosAsync(It.Is<BirkNext.Scopes.ScopeScenarioLinkRequest>(r => r.RequirementKeys.Single() == "Requirement|skole/001/fr-001"), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(([new BirkNext.Scopes.ScopeScenarioLink("Requirement|skole/001/fr-001", "Scenario|system-understanding/skolenaervaer/duplikat-melding", "stated by the source")], (string?)null));
-        Services.AddSingleton(scopes.Object);
-        Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Imported", "import:m2lb", "M2LB")).Object);
-        var storage = new BirkNext.Web.Tests.Services.ActiveTargetEnvironmentTests.Storage();
-        var settings = new FrontendAnalysisSettingsService();
-        await settings.LoadAsync(storage);
-        settings.Settings.ActiveProfileId = "dev";
-        Services.AddSingleton<Microsoft.JSInterop.IJSRuntime>(storage);
-        Services.AddSingleton<IFrontendAnalysisSettingsService>(settings);
-        Services.AddSingleton<IFrontendAnalysisContextFactory>(BirkNext.Web.Tests.Services.ActiveTargetEnvironmentTests.Factory(settings, storage));
-
-        var cut = Render(new Api(Workspace()), $"?guide=skolenaervaer&scope={scopeId}");
-        cut.WaitForAssertion(() => cut.FindAll("input[type=checkbox][data-testid^=tps-select-]").Select(e => e.GetAttribute("data-testid")).Should().Equal("tps-select-duplikat-melding"));
-        cut.Find("[data-testid=tps-scope-via-requirement]").TextContent.Should().Contain("1 more through the areas' requirements (established Verifies links only)");
+        var cut = Render(new Api(Workspace()), $"?guide=skolenaervaer&scope={Guid.NewGuid()}");
+        cut.FindAll("input[type=checkbox][data-testid^=tps-select-]").Should().HaveCount(4, "the guide's four scenarios, with nothing to configure first");
+        cut.FindAll("[data-testid=tps-scope-summary], [data-testid=tps-boundary], [data-testid=scf]").Should().BeEmpty();
+        cut.Markup.Should().NotContain("Project Test Setup").And.NotContain("test area");
     }
 
     // ── Universal (project) workflow ──────────────────────────────────────────────────────────────────────────────
@@ -801,7 +764,7 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
     }
 
     [Fact]
-    public void Catalog_filters_and_groups_by_real_metadata_and_scopes_match_canonical_keys_never_titles()
+    public void Catalog_filters_and_groups_by_real_metadata()
     {
         P.Apply(LibraryCandidates, new P.CatalogFilter(Query: "book")).Should().HaveCount(3);
         P.Apply(LibraryCandidates, new P.CatalogFilter(Source: "Specification")).Should().HaveCount(2);
@@ -810,14 +773,6 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         P.Group(LibraryCandidates, P.CatalogGrouping.Type).Select(g => g.Title).Should().Equal("Business functional", "API / contract", "UI functional");
         P.Group(LibraryCandidates, P.CatalogGrouping.Area).Select(g => g.Id).Should().Equal("loans", "library-api", "catalogue");
 
-        var scoped = LibraryCandidates[0] with { ScopeKeys = ["Scenario:abc"], RequirementIds = ["FR-001"] };
-        BirkNext.Scopes.ScopeSelection Sel(BirkNext.Scopes.ScopeMember m) => new() { ProjectKey = "library", Members = [new(m, [])] };
-        P.InScope(scoped, null, []).Should().BeTrue("no selection = entire project");
-        P.InScope(scoped, Sel(new() { Kind = BirkNext.Scopes.ScopeMemberKind.Scenario, TargetId = "abc", Label = "x" }), []).Should().BeTrue("the member's canonical key is the candidate's");
-        P.InScope(scoped, Sel(new() { Kind = BirkNext.Scopes.ScopeMemberKind.Scenario, TargetId = "abd", Label = "x" }), []).Should().BeFalse("a different canonical key");
-        P.InScope(scoped, Sel(new() { Kind = BirkNext.Scopes.ScopeMemberKind.Scenario, TargetId = "x" }), ["abc"]).Should().BeTrue("reached through an established Verifies link");
-        P.InScope(scoped, Sel(new() { Kind = BirkNext.Scopes.ScopeMemberKind.Requirement, TargetId = "Requirement|library/001/fr-001", Label = "FR-001" }), []).Should().BeTrue();
-        P.InScope(scoped, Sel(new() { Kind = BirkNext.Scopes.ScopeMemberKind.Scenario, TargetId = "other", Label = "Borrow a book" }), []).Should().BeFalse("a matching label is never a match");
     }
 
     // ── Scenario ownership views (2026-11-18): one inventory, Manual testing by default, technical candidates one click away ──────────────

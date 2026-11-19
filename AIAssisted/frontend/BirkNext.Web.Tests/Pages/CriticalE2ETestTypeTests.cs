@@ -114,7 +114,8 @@ public sealed class CriticalE2ETestTypeTests : BunitContext
         CriticalE2EPresentation.Rows(Mixed()).Single(r => r.FlowId == "legacy").TestType.Should().Be(CriticalE2ETestType.Unknown);
 
         var page = Render(Mixed(), AllMixed(), out _);
-        page.WaitForAssertion(() => page.FindAll("[data-testid=e2e-scope-summary]").Should().ContainSingle());
+        page.WaitForAssertion(() => page.FindAll("[data-testid=e2e-flow-business]").Should().ContainSingle());
+        page.Find("[data-testid=e2e-show-diagnostic]").Change(true); // non-critical flows are listed on request
 
         string Label(string flowId) => page.Find($"[data-testid=e2e-flow-{flowId}] [data-testid=e2e-test-type]").TextContent.Trim();
         Label("smoke-critical").Should().Be("UI smoke");
@@ -123,61 +124,6 @@ public sealed class CriticalE2ETestTypeTests : BunitContext
         Label("legacy").Should().Be("Not classified");
         Label("integration").Should().Be("Integration/API");
         page.Find("[data-testid=e2e-flow-legacy] [data-testid=e2e-test-type]").GetAttribute("data-test-type").Should().Be("Unknown");
-    }
-
-    [Fact]
-    public void BusinessE2ECoverageCountsOnlyCriticalBusinessE2EFlows_AndUiSmokeNeverCounts()
-    {
-        var counts = CriticalE2EScopePresentation.Counts(Mixed(), AllMixed());
-
-        var business = counts.TestTypeRow(CriticalE2EScopePresentation.BusinessE2EKey);
-        business.Named.Should().Be(1, "only the critical Business E2E flow counts; the critical UI smoke and legacy flows do not");
-        business.Executed.Should().Be(0, "executed and passed come only from recorded runs");
-        business.Passed.Should().Be(0, "the passed critical UI smoke flow is never a Business E2E pass");
-
-        counts.TestTypeRow(CriticalE2EScopePresentation.UiSmokeKey).Should().Be(new CriticalE2EScopeClassCounts(1, 1, 1, 1, 1));
-        counts.ByTestType.Single(r => r.Key == CriticalE2EScopePresentation.UiSmokeKey).Dimension.Should().Be("Never counts");
-
-        counts.TestTypeRow(CriticalE2EScopePresentation.IntegrationApiKey).Named.Should().Be(1);
-        counts.TestTypeRow(CriticalE2EScopePresentation.IntegrationApiKey).Passed.Should().Be(0, "a failed run is not a pass");
-
-        // Criticality rows are unchanged: the critical UI smoke flow is still a critical flow, just not Business E2E coverage.
-        counts.Critical.Named.Should().Be(4);
-        counts.ByTestType.Sum(r => r.Counts.Named).Should().Be(5, "each flow is in exactly one test-type row");
-    }
-
-    [Fact]
-    public void UiFunctionalCountsOnlyAsFunctional_AndLegacyIsShownAsNotClassified()
-    {
-        var counts = CriticalE2EScopePresentation.Counts(Mixed(), AllMixed());
-
-        var functional = counts.ByTestType.Single(r => r.Key == CriticalE2EScopePresentation.UiFunctionalKey);
-        functional.Counts.Named.Should().Be(1);
-        functional.Counts.Passed.Should().Be(1);
-        functional.Dimension.Should().Be("Functional coverage only");
-        counts.TestTypeRow(CriticalE2EScopePresentation.BusinessE2EKey).Passed.Should().Be(0, "a UI functional pass is never Business E2E");
-
-        var legacy = counts.ByTestType.Single(r => r.Key == CriticalE2EScopePresentation.NotClassifiedKey);
-        legacy.Counts.Named.Should().Be(1);
-        legacy.Counts.Passed.Should().Be(1);
-        legacy.Dimension.Should().Be("Not classified");
-    }
-
-    [Fact]
-    public void TheScopeSummaryShowsTestTypeCounts_AndNeverStartsARun()
-    {
-        var page = Render(Mixed(), AllMixed(), out var api);
-        page.WaitForAssertion(() => page.FindAll("[data-testid=e2e-scope-type-counts]").Should().ContainSingle());
-
-        Text(page, "e2e-scope-type-business-e2e-named").Should().Be("1");
-        Text(page, "e2e-scope-type-business-e2e-passed").Should().Be("0");
-        Text(page, "e2e-scope-type-ui-smoke-named").Should().Be("1");
-        Text(page, "e2e-scope-type-ui-smoke-dimension").Should().Be("Never counts");
-        Text(page, "e2e-scope-type-ui-functional-dimension").Should().Be("Functional coverage only");
-        Text(page, "e2e-scope-type-not-classified-named").Should().Be("1");
-        Text(page, "e2e-scope-test-type-note").Should().Contain("UI smoke never counts").And.Contain("not classified");
-
-        api.Runs.Should().Be(0, "showing or counting test types never starts a run");
     }
 
     // ── Editor ────────────────────────────────────────────────────────────────────────────────────────────────

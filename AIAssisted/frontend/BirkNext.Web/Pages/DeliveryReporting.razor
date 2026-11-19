@@ -452,18 +452,6 @@
                     }
                     <button type="button" class="btn-primary" data-testid="dlr-generate-run" disabled="@(_busy || RunningGeneration is not null || _baselineId is null || _currentId is null || _comparison is { CanGenerate: false } || _comparison is { RequiresConfirmation: true } && !_confirmDirection)" @onclick="Generate">@(_comparison is { RequiresConfirmation: true } && _confirmDirection ? "Generate anyway" : "Generate report")</button>
                 </div>
-                @if (_projectId is { } provenanceProject && Session.ScopeProvenance(provenanceProject) is { } selectedScope)
-                {
-                    @* Explicit: the shared scope is recorded only (default, unchanged behaviour) or restricts the report's items and metrics. *@
-                    <fieldset class="dlr-scope-mode" data-testid="dlr-generate-scope-mode">
-                        <legend>Shared scope (@DeliveryScopeProvenanceText.Revisions(selectedScope))</legend>
-                        <label title="@DeliveryScopeProvenanceText.ContextHint"><input type="radio" name="dlr-generate-scope-mode" checked="@(_generateScopeMode == DeliveryScopeMode.Context)" @onchange="() => _generateScopeMode = DeliveryScopeMode.Context" data-testid="dlr-generate-scope-mode-context" /> @DeliveryScopeProvenanceText.ContextLabel</label>
-                        <label title="@DeliveryScopeProvenanceText.FilterHint"><input type="radio" name="dlr-generate-scope-mode" checked="@(_generateScopeMode == DeliveryScopeMode.Filter)" @onchange="() => _generateScopeMode = DeliveryScopeMode.Filter" data-testid="dlr-generate-scope-mode-filter" /> @DeliveryScopeProvenanceText.FilterLabel</label>
-                    </fieldset>
-                    <p class="dlr-muted" data-testid="dlr-generate-scope-provenance" data-mode="@_generateScopeMode">@(_generateScopeMode == DeliveryScopeMode.Filter
-                        ? $"Filter by scope: {DeliveryScopeProvenanceText.Revisions(selectedScope)} (selected in Functional Quality Scope). Only requirements, user stories and scenarios that are confirmed members of these approved revisions are kept; membership is resolved when the report is generated, and figures that cannot be restricted read “{DeliveryScopeProvenanceText.NotScopeResolvable}”."
-                        : $"Shared scope recorded with the report: {DeliveryScopeProvenanceText.Revisions(selectedScope)} (selected in Functional Quality Scope; provenance only — it does not narrow the report).")</p>
-                }
                 <p class="dlr-muted dlr-sort-note">@BirkNext.Snapshots.SnapshotSelectionLabels.SortExplanation “Current” marks the newest snapshot imported as current.</p>
                 @if (_selectionNotice is not null) { <p class="dlr-warning" role="status" data-testid="dlr-selection-notice">@_selectionNotice</p> }
                 @PreviewPanel()
@@ -986,8 +974,6 @@
     [SupplyParameterFromQuery(Name = "mod")] public string? ModuleQuery { get; set; }
     /// <summary>Report comparison in Report history: "?compare={baselineReportId},{currentReportId}" (kept in the URL so it can be shared and reopened).</summary>
     [SupplyParameterFromQuery(Name = "compare")] public string? CompareQuery { get; set; }
-    /// <summary>Generate: Scope context (default — provenance only) or Filter by scope (restricts items and metrics).</summary>
-    private DeliveryScopeMode _generateScopeMode = DeliveryScopeMode.Context;
     private (Guid Baseline, Guid Current)? _compareIds;
     private DeliveryReportComparison? _reportComparison;
     private string? _reportComparisonError;
@@ -1545,8 +1531,6 @@
         _error = null;
         var confirm = _confirmDirection;
         var (source, scope) = (_generateSource, _generateScope);
-        var scopeMode = _generateScopeMode;
-        var scopeProvenance = Session.ScopeProvenance(id) is { } selected ? selected with { Mode = scopeMode } : null;
         var baselineLabel = _snapshots.FirstOrDefault(s => s.Id == baseline) is { } b ? P.DisplayName(b) : null;
         var currentLabel = _snapshots.FirstOrDefault(s => s.Id == current) is { } c ? P.DisplayName(c) : null;
         WeeklyDeliveryReport? generated = null;
@@ -1555,13 +1539,13 @@
             var run = Operations.Start(new(BirkNext.Web.Services.Operations.OperationKind.DeliveryReportGeneration, "Generating weekly report",
                 new(ProjectName ?? "Delivery project", id.ToString()) { Baseline = baselineLabel, Revision = currentLabel }, $"{P.Route}?project={id}&tab=history")
             {
-                IdempotencyKey = $"delivery-report:{id}:{baseline}:{current}:{source}:{scope}{(scopeProvenance is { Mode: DeliveryScopeMode.Filter } ? $":filter:{DeliveryScopeProvenanceText.Revisions(scopeProvenance)}" : "")}",
+                IdempotencyKey = $"delivery-report:{id}:{baseline}:{current}:{source}:{scope}",
                 // The backend generates and saves in one request; it is not cancellable once sent.
                 Cancellable = false,
             }, async (progress, ct) =>
             {
                 progress.Stage("Comparing snapshots and generating the report", $"{baselineLabel} → {currentLabel}");
-                var (report, error) = await Api.GenerateAsync(new GenerateWeeklyReportRequest(id, baseline, current) { ConfirmDirection = confirm, SourceId = source, FunctionalScopeId = scope, ScopeProvenance = scopeProvenance });
+                var (report, error) = await Api.GenerateAsync(new GenerateWeeklyReportRequest(id, baseline, current) { ConfirmDirection = confirm, SourceId = source, FunctionalScopeId = scope });
                 if (report is null) return BirkNext.Web.Services.Operations.OperationOutcome.Failure(error ?? "The report could not be generated.");
                 generated = report;
                 return BirkNext.Web.Services.Operations.OperationOutcome.Success($"{P.Route}?project={id}&tab=overview&report={report.ReportId}", $"Open report {report.WeekLabel}");

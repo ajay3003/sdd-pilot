@@ -88,24 +88,19 @@ public sealed class TestCoverageJourneyAndDataLinkTests : BunitContext
         return manual;
     }
 
-    private IRenderedComponent<TestCoverageReview> Render(TestCoverageReviewResult result, Mock<IManualReviewApiService> manual, bool scoped = true)
+    /// <summary>Project Test Setup and its test areas were removed (2026-11-19): the review is read for the whole project; an old ?scope= link narrows nothing.</summary>
+    private IRenderedComponent<TestCoverageReview> Render(TestCoverageReviewResult result, Mock<IManualReviewApiService> manual, bool oldScopeLink = true)
     {
         Services.AddSingleton(manual.Object);
-        var scopes = new Mock<IScopeRegistryApiService>();
-        scopes.Setup(x => x.ListAsync("import-1", It.IsAny<CancellationToken>())).ReturnsAsync(([
-            new ScopeSummary { Id = ScopeA, Name = "Orders", State = ScopeState.Approved, ApprovedRevision = 1, CurrentRevision = 1 },
-            new ScopeSummary { Id = ScopeB, Name = "Release", State = ScopeState.Approved, ApprovedRevision = 1, CurrentRevision = 1 }], (string?)null));
-        scopes.Setup(x => x.SelectionAsync("import-1", It.IsAny<IReadOnlyList<Guid>>(), It.IsAny<CancellationToken>())).ReturnsAsync((Selection(), (string?)null));
-        Services.AddSingleton(scopes.Object);
         _api.Setup(x => x.RunAsync(It.IsAny<TestCoverageReviewRequest>(), It.IsAny<CancellationToken>()))
             .Callback<TestCoverageReviewRequest, CancellationToken>((request, _) => _sent = request)
             .ReturnsAsync((result, (string?)null));
-        if (scoped) Services.GetRequiredService<NavigationManager>().NavigateTo($"test-coverage-review?scope={ScopeA}&scope={ScopeB}");
+        if (oldScopeLink) Services.GetRequiredService<NavigationManager>().NavigateTo($"test-coverage-review?scope={ScopeA}&scope={ScopeB}");
         var cut = Render<TestCoverageReview>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=tco-run]").HasAttribute("disabled").Should().BeFalse());
         cut.Find("[data-testid=tco-run]").Click();
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=tco-result]").Should().ContainSingle());
-        if (scoped) cut.WaitForAssertion(() => cut.FindAll("[data-testid=tco-scope-summary]").Should().ContainSingle());
+        cut.FindAll("[data-testid=tco-scope-summary]").Should().BeEmpty("no test-area comparison exists any more");
         return cut;
     }
 
@@ -136,8 +131,6 @@ public sealed class TestCoverageJourneyAndDataLinkTests : BunitContext
         (sent!.SubjectKey, sent.AppliesTo, sent.Decision, sent.Note).Should().Be((SourceJourney, Declared, ManualReviewDecisionValue.Acceptable, "Same adapter, API, topic and notifier as the declared journey."));
         ManualReviewRules.Validate(sent).Should().BeNull();
         cut.WaitForAssertion(() => cut.Find("[data-testid=tco-journey-association-note]").TextContent.Should().Contain("Same adapter"));
-        Text(cut, "tco-scope-in-journeys").Should().Be("1", "the confirmed journey is named by two overlapping scopes and counts once");
-        Text(cut, "tco-scope-unconfirmed-journeys").Should().Be("1", "the similar audit journey has no candidate: reported as not confirmed, never counted in scope");
     }
 
     [Fact]
@@ -148,7 +141,6 @@ public sealed class TestCoverageJourneyAndDataLinkTests : BunitContext
 
         manual.Verify(x => x.ListAsync(ManualReviewModules.JourneyAssociation, "import-1", It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
         _sent!.ProjectKey.Should().Be("import-1", "project-declared journeys and project-scoped Test Data references are read for this project");
-        Text(cut, "tco-scope-in-journeys").Should().Be("1");
         cut.Find("[data-testid=tco-tab-journeys]").Click();
         cut.Find("[data-testid=tco-journey-association]").GetAttribute("data-kind").Should().Be("Confirmed");
         cut.Find("[data-testid=tco-journey-association-note]").TextContent.Should().Contain("Reviewed in the release meeting.");
@@ -160,7 +152,6 @@ public sealed class TestCoverageJourneyAndDataLinkTests : BunitContext
     {
         var cut = Render(Result(), Manual(Decision(ManualReviewDecisionValue.IssueFound, "Notifier belongs to another journey.")));
 
-        Text(cut, "tco-scope-in-journeys").Should().Be("0");
         cut.Find("[data-testid=tco-tab-journeys]").Click();
         cut.Find("[data-testid=tco-journey-association]").GetAttribute("data-kind").Should().Be("Rejected");
         cut.Find("[data-testid=tco-journey-association-note]").TextContent.Should().Contain("another journey");
@@ -169,7 +160,7 @@ public sealed class TestCoverageJourneyAndDataLinkTests : BunitContext
     private static readonly CoverageTestDataLink Resolved = new("tda_customer", "order-customer", "abcdef0123456789", "Test Data consumer reference (Order customer)", "Resolved");
 
     [Fact]
-    public void Qa_tests_show_asset_revision_and_readiness_and_one_asset_counts_once_across_tests_and_scopes()
+    public void Qa_tests_show_asset_revision_and_readiness_and_one_asset_is_listed_once_across_tests()
     {
         var result = Result(
             Qa("t-place", "OrderAcceptanceTests.PlaceOrder_NotifiesCustomer", CoverageDataNeed.Linked, Resolved),
@@ -178,8 +169,6 @@ public sealed class TestCoverageJourneyAndDataLinkTests : BunitContext
             Qa("t-other", "OrderAcceptanceTests.Other", CoverageDataNeed.NotAssessed));
         var cut = Render(result, Manual());
 
-        Text(cut, "tco-scope-in-test-data").Should().Be("1", "one asset used by two tests and named by two scopes counts once");
-        Text(cut, "tco-scope-unconfirmed-test-data").Should().Be("0");
         cut.Find("[data-testid=tco-tab-duplicates]").Click();
         var needs = cut.FindAll("[data-testid=tco-qa-data-need]").ToDictionary(e => e.GetAttribute("data-test")!, e => e);
         needs["t-place"].GetAttribute("data-state").Should().Be(nameof(CoverageDataNeed.Linked));
@@ -193,13 +182,11 @@ public sealed class TestCoverageJourneyAndDataLinkTests : BunitContext
     }
 
     [Fact]
-    public void An_unresolved_revision_is_shown_as_needing_review_and_never_counted_in_scope()
+    public void An_unresolved_revision_is_shown_as_needing_review()
     {
         var stale = Resolved with { State = "NeedsReview", StateReason = "The asset is deprecated." };
         var cut = Render(Result(Qa("t-place", "PlaceOrder", CoverageDataNeed.LinkNeedsReview, stale)), Manual());
 
-        Text(cut, "tco-scope-in-test-data").Should().Be("0", "an unresolved revision is never in scope");
-        Text(cut, "tco-scope-unconfirmed-test-data").Should().Be("1");
         cut.Find("[data-testid=tco-tab-duplicates]").Click();
         var need = cut.Find("[data-testid=tco-qa-data-need]");
         need.GetAttribute("data-state").Should().Be(nameof(CoverageDataNeed.LinkNeedsReview));
@@ -212,7 +199,7 @@ public sealed class TestCoverageJourneyAndDataLinkTests : BunitContext
     [Fact]
     public void Request_or_link_opens_test_data_with_the_qa_test_as_a_project_scoped_consumer()
     {
-        var cut = Render(Result(Qa("Orders.Acceptance.Tests::PlaceOrder", "OrderAcceptanceTests.PlaceOrder_NotifiesCustomer", CoverageDataNeed.NotAssessed)), Manual(), scoped: false);
+        var cut = Render(Result(Qa("Orders.Acceptance.Tests::PlaceOrder", "OrderAcceptanceTests.PlaceOrder_NotifiesCustomer", CoverageDataNeed.NotAssessed)), Manual(), oldScopeLink: false);
 
         cut.Find("[data-testid=tco-tab-duplicates]").Click();
         cut.Find("[data-testid=tco-qa-data-type]").Change(nameof(TestDataDataType.JsonPayload));

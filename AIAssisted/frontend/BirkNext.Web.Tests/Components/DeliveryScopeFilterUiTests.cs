@@ -102,56 +102,9 @@ public sealed class DeliveryScopeFilterUiTests : BunitContext
         Registry();
 
         var cut = Render<FunctionalQualityScopePanel>(p => p.Add(x => x.ProjectId, Project).Add(x => x.InitialScope, ScopeA.ToString()));
-        cut.WaitForElement("[data-testid=fqs-scope-mode]");
+        cut.WaitForElement("[data-testid=fqs-item]");
+        cut.FindAll("[data-testid=fqs-scope-mode]").Should().BeEmpty("there is no shared-scope mode to choose any more");
         cut.FindAll("[data-testid=fqs-notice]").Should().BeEmpty("?scope= also carries Shared Scope Registry ids; a GUID is not a missing Functional Quality Scope");
     }
 
-    [Fact]
-    public void Scope_context_is_the_default_and_freezes_with_provenance_only()
-    {
-        var sent = new List<ScopeQuery>();
-        Api(sent, Frozen(3, Recorded(false)));
-        Registry();
-
-        var cut = Render<FunctionalQualityScopePanel>(p => p.Add(x => x.ProjectId, Project));
-        cut.WaitForElement("[data-testid=fqs-scope-mode]");
-        cut.Find("[data-testid=fqs-scope-mode-context]").HasAttribute("checked").Should().BeTrue();
-        cut.Find("[data-testid=fqs-scope-mode-filter]").HasAttribute("checked").Should().BeFalse();
-        cut.FindAll("[data-testid=fqs-scope-filtered-counts]").Should().BeEmpty();
-        cut.Find("[data-testid=fqs-scope-context-note]").TextContent.Should().Be(DeliveryScopeProvenanceText.ContextHint);
-
-        cut.Find("[data-testid=fqs-freeze]").Click();
-        cut.WaitForAssertion(() => sent.Should().ContainSingle());
-        sent[0].ScopeProvenance!.Mode.Should().Be(DeliveryScopeMode.Context);
-        sent[0].ScopeProvenance!.ProjectKey.Should().Be("import-1");
-    }
-
-    [Fact]
-    public void Filter_by_scope_previews_counts_by_canonical_key_and_freezes_with_the_filter_mode()
-    {
-        var sent = new List<ScopeQuery>();
-        Api(sent, Frozen(2, Recorded(true)));
-        Registry();
-
-        var cut = Render<FunctionalQualityScopePanel>(p => p.Add(x => x.ProjectId, Project));
-        cut.WaitForElement("[data-testid=fqs-scope-mode]");
-        cut.Find("[data-testid=fqs-scope-mode-filter]").Change(true);
-
-        var counts = cut.WaitForElement("[data-testid=fqs-scope-filtered-counts]");
-        counts.GetAttribute("data-included").Should().Be("2", "US1 and its acceptance criterion (children follow their parent)");
-        counts.GetAttribute("data-excluded").Should().Be("1", "US2 is not a member");
-        counts.GetAttribute("data-unresolved").Should().Be("1", "a story the scope names that this Delivery population does not have");
-        counts.TextContent.Should().Contain("1 member of other kinds not applicable to Delivery items");
-
-        cut.Find("[data-testid=fqs-freeze]").Click();
-        cut.WaitForAssertion(() => sent.Should().ContainSingle());
-        sent[0].ScopeProvenance!.Should().Match<DeliveryScopeProvenance>(p => p.Mode == DeliveryScopeMode.Filter && p.ProjectKey == "import-1"
-            && p.Scopes.Single().RevisionId == RevisionA3);
-        cut.WaitForAssertion(() => cut.Find("[data-testid=fqs-notice]").TextContent.Should().Contain("filtered by scope").And.Contain("2 in-scope items"));
-        cut.Find("[data-testid=fqs-snapshot-provenance]").GetAttribute("data-filtered").Should().Be("true");
-        cut.Find("[data-testid=fqs-snapshot-filter-counts]").TextContent.Should().StartWith("2 in-scope items · 1 item excluded (outside scope)");
-
-        cut.Find("[data-testid=fqs-scope-mode-context]").Change(true);
-        cut.WaitForAssertion(() => cut.FindAll("[data-testid=fqs-scope-filtered-counts]").Should().BeEmpty());
-    }
 }

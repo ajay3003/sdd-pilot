@@ -506,22 +506,6 @@ public static class TestPlanSuggestionsPresentation
         return slug.Length == 0 ? "other" : slug;
     }
 
-    /// <summary>
-    /// Whether a candidate is inside the selected test areas (Project Test Setup): a scope member with the candidate's own canonical key, a scenario
-    /// reached through the scope's requirements by an established Verifies link, or a requirement member whose canonical identity carries the
-    /// same requirement id in this project. No selection keeps every candidate; titles are never compared.
-    /// </summary>
-    public static bool InScope(DiscoveredScenario c, BirkNext.Scopes.ScopeSelection? selection, IReadOnlyCollection<string> viaRequirementScenarioKeys)
-    {
-        if (selection is null) return true;
-        var members = selection.Members.Select(m => m.Member).ToList();
-        if (c.ScopeKeys.Any(k => members.Any(m => m.Key == k))) return true;
-        if (c.ScopeKeys.Any(k => k.StartsWith("Scenario:", StringComparison.Ordinal) && viaRequirementScenarioKeys.Contains(k["Scenario:".Length..]))) return true;
-        var ids = c.RequirementIds.Select(r => r.Trim().ToLowerInvariant()).Where(r => r.Length > 0).ToList();
-        return ids.Count > 0 && members.Any(m => m.Kind == BirkNext.Scopes.ScopeMemberKind.Requirement
-            && ids.Any(id => m.TargetId.EndsWith("/" + id, StringComparison.OrdinalIgnoreCase) || m.TargetId.EndsWith("|" + id, StringComparison.OrdinalIgnoreCase)));
-    }
-
     /// <summary>A System Understanding guide candidate as a catalog row (historical guide plans keep their own workflow and ids).</summary>
     public static DiscoveredScenario FromGuideCandidate(ScenarioCandidate c) => new()
     {

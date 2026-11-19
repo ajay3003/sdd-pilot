@@ -975,7 +975,7 @@
         </section>
     };
 
-    /// <summary>Registered systems the document names exactly, linked to Project Test Setup; nothing when no registry or no active environment.</summary>
+    /// <summary>Registered systems the document names exactly, linked to Integration Topology; nothing when no registry or no active environment.</summary>
     private RenderFragment SystemsReferenced(GeneratedDocumentView v) => __builder =>
     {
         <section class="gde-context" aria-labelledby="gde-systems-h" data-testid="gde-systems">
@@ -990,7 +990,7 @@
                     <ul class="gde-chips">
                         @foreach (var (system, mention) in mentions)
                         {
-                            <li><a class="gde-chip" data-testid="gde-system-link" data-key="@system.Key" href="@($"project-scopes?view=connections&system={Uri.EscapeDataString(system.Key)}")">@system.Name</a>
+                            <li><a class="gde-chip" data-testid="gde-system-link" data-key="@system.Key" href="integration-topology" title="Open Integration Topology (components and connections)">@system.Name</a>
                                 @if (mention != system.Name) { <span class="gde-muted"> (named “@mention”)</span> }</li>
                         }
                     </ul>
