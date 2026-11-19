@@ -192,13 +192,15 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         if (!string.IsNullOrWhiteSpace(target.ContractRef) || !string.IsNullOrWhiteSpace(target.ContractSource))
         {
             (contractReview, contract, contractSummary) = await ReviewOpenApiAsync(target, ct);
-            if (contractReview is not null) { checks.AddRange(contractReview.Checks); targetFindings.AddRange(contractReview.Findings); }
+            // The contract document's own findings (no security scheme, undocumented error responses …) are review findings like any other:
+            // they were counted per target but never reached the review's findings when the target was executed (2026-11-19).
+            if (contractReview is not null) { checks.AddRange(contractReview.Checks); foreach (var f in contractReview.Findings) Add(targetFindings, findings, f); }
         }
 
         if (mode is ApiReviewAccessMode.Unavailable or ApiReviewAccessMode.ManualOnly or ApiReviewAccessMode.Blocked)
         {
-            // Fail fast: nothing is executed, the contract review (if any) stands on its own, and the target is Blocked — not "no findings".
-            findings.AddRange(targetFindings);
+            // Fail fast: nothing is executed, the contract review (if any) stands on its own (its findings are already reported), and the target
+            // is Blocked — not "no findings".
             return new ApiReviewTargetResult
             {
                 Target = target, AccessMode = mode, AccessReason = reason, RequiredAction = action, Status = ApiReviewTargetStatus.Blocked, Contract = contractSummary, Checks = checks,

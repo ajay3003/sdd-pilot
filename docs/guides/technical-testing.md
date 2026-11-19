@@ -9,6 +9,7 @@ gives a checklist.
 |------|------|-------|
 | Performance and load | Performance Test Review (`/performance-test-review`) | A non-production target reachable from the k6 container (Podman) |
 | Automated browser flows | Critical E2E Regression (`/critical-e2e-regression`) | An imported project with UI source; for verify and run, the Edge Companion on an attended page of a non-production target |
+| API quality | API Quality Review (`/api-quality-review`) | A non-production Target Environment with the API's base URL (and health endpoint, OpenAPI contract) |
 | Integration chains (Skolenærvær) | Integration suites (`/integration-suites`) | A project, the services' source (OpenAPI) and a non-production Target Environment whose URL reaches every stage |
 
 Manual test cases are prepared in **Manual Testing → Plan & prepare** and exported to Azure DevOps Test Plans
@@ -210,4 +211,49 @@ MM rejecting → **Incomplete** (MM *TimedOut*); MM answering with another id �
 
 **Against TT02 / MU / MM (attended):** create a Target Environment for the test environment, bind each contract's base path, run a
 **subflow** first (for example Altinn → MU) before the full chain, and agree the submission with whoever owns the receiving systems.
+
+---
+
+## 4. API Quality Review
+
+API Quality Review calls the API's read-only operations once, checks the answers against its OpenAPI contract, reviews the contract
+document itself, and checks security headers, CORS, error handling and response times. It never sends data-changing requests in the main
+run (safe fuzzing and authorization checks are separate, opt-in checks).
+
+### Before you start
+
+A Target Environment (Local, Development, QA or Test) with the API's **REST base URL**, optionally a **health endpoint** and the **OpenAPI
+contract URL** (System Settings → Target Environments). The run calls those URLs and any operations Endpoint Discovery has observed; it does
+not call every operation listed in the contract.
+
+### Step by step
+
+1. **Open API Quality Review.** The run decision says *Ready*, *Limited* or *Blocked* and why; the target cards show what will be called and
+   which contract is used.
+2. **Run review.** One run takes a few seconds per target.
+3. **Overview** shows the key issues (grouped by rule and endpoint) and the severity strip; **Findings** lists every finding with its
+   evidence; **Contracts** shows the contract checks and drift; **Security**, **Errors** and **Performance** show their checks.
+4. **Run review again** after a change. The second run also reports *drift* — what changed in the live responses since the previous run.
+5. **Export → HTML** downloads `api-quality-review-<date>.html`.
+
+### What the findings mean (examples)
+
+| Finding | Meaning |
+|---------|---------|
+| *Unexpected type at $[*].id*, *Missing required property $[*].name* (High, Breaking) | A live response does not match the contract — for an array, every element is checked against the item schema |
+| *No security schemes declared* (Medium) | The contract does not say how clients authenticate |
+| *Server error HTTP 500* (High) | A read-only call failed on the server |
+| *Wildcard CORS origin combined with credentials* (High) | Any web site may call the API with the user's cookies |
+| *Unknown route causes HTTP 500* / *Error response leaks internal details* (High) | Errors are not handled; stack traces or file paths are returned |
+| *API served over plain HTTP* (High) | Expected on a local stand-in; never acceptable in a real environment |
+| *Slow response* (Low) | A single request was slower than the latency policy (1500 ms by default) |
+
+### What was verified
+
+`ApiQualityReviewWorkflowTests` (browser test) against a local stand-in API (`ApiStandIn`) with deliberate defects: the run reports the
+server error, both contract violations, unsafe CORS, the leaking error page, the slow response, the missing headers and the contract's
+missing security scheme; after the stand-in is fixed, those findings are gone, plain HTTP and the unchanged contract are still reported,
+and the HTML report is downloaded. Two defects in BirkNext were found and fixed on the way: an array of component items was not checked
+element by element (a wrong type and a missing required property read as "1 undocumented property", Info), and the contract document's
+own findings never reached the review's findings.
 

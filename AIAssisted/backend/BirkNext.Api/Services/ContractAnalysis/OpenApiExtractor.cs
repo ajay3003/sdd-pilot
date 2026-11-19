@@ -304,6 +304,24 @@ public sealed class OpenApiExtractor : IOpenApiExtractor
         {
             schema.ArrayItemType = itemTypeEl.ValueKind == JsonValueKind.String ? itemTypeEl.GetString() : null;
         }
+        // An array of objects ("items": a component "$ref" or an inline object): live validation checks every element ("$[*]") against the
+        // item's properties, so they are carried on the array schema. Without this an element missing a required property or with a wrong
+        // type passed unnoticed and every element property read as "undocumented" (API Quality Review against a stand-in API, 2026-11-19).
+        if (schema.Type == "array" && schema.Properties.Count == 0 && itemsEl.ValueKind == JsonValueKind.Object)
+        {
+            NormalizedSchema? item = null;
+            if (itemsEl.TryGetProperty("$ref", out var itemRef) && itemRef.GetString() is { } pointer && pointer.StartsWith("#/components/schemas/", StringComparison.Ordinal))
+                schemaMap.TryGetValue(pointer["#/components/schemas/".Length..], out item);
+            else if (itemsEl.TryGetProperty("properties", out _))
+                item = ExtractSchema(itemsEl, name.Length > 0 ? name + "[]" : "", schemaMap);
+            if (item is not null && item.Type != "array")
+            {
+                schema.ArrayItemType ??= item.Type;
+                schema.Properties.AddRange(item.Properties);
+                schema.Required.AddRange(item.Required);
+                schema.AllowsAdditionalProperties ??= item.AllowsAdditionalProperties;
+            }
+        }
 
         // Additional properties
         if (schemaEl.TryGetProperty("additionalProperties", out var addlEl))
@@ -330,7 +348,8 @@ public sealed class OpenApiExtractor : IOpenApiExtractor
                     schema.Required.Add(reqName);
         }
 
-        schemaMap[name] = schema;
+        // Only named component schemas are registered (inline response schemas and array items stay local).
+        if (name.Length > 0 && !name.EndsWith("[]", StringComparison.Ordinal)) schemaMap[name] = schema;
         return schema;
     }
 
@@ -382,8 +401,8 @@ public sealed class OpenApiExtractor : IOpenApiExtractor
             return null;
         }
 
-        // Inline schemas are not registered: only component schemas are reachable by "$ref".
-        return ExtractSchema(schemaEl, "", []);
+        // Inline schemas are not registered: only component schemas are reachable by "$ref" (an inline array's items may refer to one).
+        return ExtractSchema(schemaEl, "", schemaMap);
     }
 }
 

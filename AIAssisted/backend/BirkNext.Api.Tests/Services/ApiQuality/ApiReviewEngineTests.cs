@@ -263,6 +263,33 @@ public sealed partial class ApiReviewEngineTests
     }
 
     [Fact]
+    public async Task An_array_of_component_items_is_validated_per_element_and_the_contract_document_s_own_findings_are_reported()
+    {
+        // API Quality Review against a stand-in API (2026-11-19): "items": {"$ref": Child} left the array schema without properties, so an element
+        // with a wrong type and a missing required property read only as "1 undocumented property" (Info); and the contract document's own
+        // findings (no security scheme …) were counted per target but never reached the review's findings.
+        const string openApi = """
+            {"openapi":"3.0.3","info":{"title":"Children","version":"1.0"},
+             "paths":{"/api/children":{"get":{"operationId":"listChildren","responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/Child"}}}}}}}}},
+             "components":{"schemas":{"Child":{"type":"object","required":["id","name"],"properties":{"id":{"type":"string"},"name":{"type":"string"}}}}}}
+            """;
+        var fixture = new Fixture { Respond = (req, _) => req.RequestUri!.AbsolutePath switch
+        {
+            "/swagger/v1/swagger.json" => Json(HttpStatusCode.OK, openApi),
+            "/api/children" when req.Method == HttpMethod.Get => Json(HttpStatusCode.OK, "[{\"id\":1001},{\"id\":1002}]"),
+            _ => Json(HttpStatusCode.NotFound, "{\"title\":\"Not Found\",\"status\":404,\"type\":\"x\"}", "application/problem+json"),
+        } };
+        var report = await Engine(fixture).RunAsync(Request(AuthenticatedTestingMethod.ManagedEdgeCdp, false, Rest(contract: "https://api-dev.example.test/swagger/v1/swagger.json")));
+
+        Assert.Contains(report.Findings, f => f.Id.StartsWith("contract-type-mismatch") && f.Evidence.Contains("Path: $[*].id") && f.Evidence.Contains("Observed: integer"));
+        Assert.Contains(report.Findings, f => f.Id.StartsWith("contract-missing-required") && f.Evidence.Contains("Path: $[*].name"));
+        Assert.DoesNotContain(report.Findings, f => f.Id.StartsWith("contract-undocumented-property"));
+        var noScheme = Assert.Single(report.Findings, f => f.Id.StartsWith("oas-no-security-schemes"));
+        Assert.Equal(ApiReviewSeverity.Medium, noScheme.Severity);
+        Assert.Equal(report.Findings.Count, report.Findings.Select(f => f.Id).Distinct().Count());
+    }
+
+    [Fact]
     public async Task RestDrift_RemovedPropertyAndTypeChange_AreBreaking_AddedIsNonBreaking()
     {
         var fixture = new Fixture { Respond = (req, _) => req.Method == HttpMethod.Get && req.RequestUri!.AbsolutePath == "/api/children" ? Json(HttpStatusCode.OK, "{\"id\":\"1\",\"added\":true}") : Json(HttpStatusCode.NotFound, "{\"title\":\"nf\",\"status\":404,\"type\":\"x\"}", "application/problem+json") };
