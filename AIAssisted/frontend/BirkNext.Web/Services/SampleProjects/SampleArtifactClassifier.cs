@@ -191,7 +191,7 @@ public static class SampleArtifactClassifier
         var parts = relativePath.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
         var folders = parts.SkipLast(1).Where(f => FolderHints.ContainsKey(f) || f.Equals("checklists", StringComparison.OrdinalIgnoreCase)
             || f.Equals("contracts", StringComparison.OrdinalIgnoreCase)
-            || IsTemplateDirectory(f));
+            || IsTemplateDirectory(f) || IsAssistantToolingDirectory(f));
         return string.Join('/', folders.Append(parts.Length == 0 ? "" : parts[^1]));
     }
 
@@ -233,6 +233,12 @@ public static class SampleArtifactClassifier
         if (folders.Any(IsTemplateDirectory) || IsTemplateFilename(stem))
             return new(ArtifactDiscoveryStatus.Unclassified, null, ArtifactConfidence.Unknown,
                 [$"{fileName} is a reusable template, not a project artifact."], []);
+
+        // AI assistant configuration (skills, commands, agent instructions and their reference notes, e.g. .claude/skills/*/references/*.md):
+        // it describes how a tool works, not the project, so it is never offered as a specification, plan or other artifact.
+        if (folders.Any(IsAssistantToolingDirectory))
+            return new(ArtifactDiscoveryStatus.Unclassified, null, ArtifactConfidence.Unknown,
+                [$"{fileName} is AI assistant configuration ({folders.First(IsAssistantToolingDirectory)}), not a project artifact."], []);
 
         var tokens = MarkdownTokenizer.Tokenize(body);
         var headings = tokens.Where(t => t.Kind == MarkdownTokenKind.Heading).ToList();
@@ -408,6 +414,11 @@ public static class SampleArtifactClassifier
     private static bool IsTemplateDirectory(string name) =>
         name.Equals("template", StringComparison.OrdinalIgnoreCase)
         || name.Equals("templates", StringComparison.OrdinalIgnoreCase);
+
+    private static readonly HashSet<string> AssistantToolingDirectories =
+        new([".claude", ".cursor", ".windsurf", ".codex", ".agents", ".aider", ".continue", ".roo", ".clinerules"], StringComparer.OrdinalIgnoreCase);
+
+    private static bool IsAssistantToolingDirectory(string name) => AssistantToolingDirectories.Contains(name);
 
     private static bool IsTemplateFilename(string stem) =>
         stem.Equals("template", StringComparison.OrdinalIgnoreCase)

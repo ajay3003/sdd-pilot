@@ -94,3 +94,17 @@ rerun: 2 723 passed, 1 failed (`CompositeSuitePostgresTests.Failures_are_reporte
 *Incomplete* under load, in integration suites, unrelated to manual testing); it passed in isolation (26/26 in its class). The five earlier
 timeout failures did not recur.
 
+## Document explorers on M2LB: long specifications and several documents per module
+
+A browser probe went through every explorer (Specification, Plan, Task, Data Model, Constitution), every module and every feature of
+`M2LB (8).zip` on an empty database, before and after the fixes.
+
+| # | Found | Fix |
+|---|-------|-----|
+| 17 | Review analysis refused four specifications as *too large* (HendelseService 003: 98 078 characters, SkoleService: 91 941, MeldingsutvekslerReceiver: 63 791, HendelseAdapter 004: 58 064; the bound was 50 000) | The extraction is linear (28 ms for SkoleService on .NET, 0.6 s in the browser): the bound is 1 000 000 characters, the 1 MB of a specification import; beyond it the message gives the size and the bound |
+| 18 | A feature without its own `spec.md` (AutorisasjonService 001, 002) loaded a project-level note as its specification (an Aspire skill reference under `.claude/`, `docs/analysis` notes); a choice for one feature carried over to its siblings; every feature listed six such notes as alternatives *for this feature*. Data Model showed *Skolenærvær — Code Review* for features without a data model | For a module feature's spec, plan, tasks and data model, project-level documents are neither alternatives nor used automatically; the empty state offers them, and opening one applies to that feature only. Module-shared documents and the constitution keep their shared meaning |
+| 19 | 37 AI assistant files (`.claude/skills/…`) were classified as project artifacts | Assistant configuration folders (`.claude`, `.cursor`, …) are never classified as artifacts; `.specify/memory/constitution.md` is unaffected |
+
+After: 0 analysis failures (all 42 features), 0 page errors, 0 server errors. Still open: `Frontend/docs/tilgangsadministrasjon/…Implementation-Notes`
+is classified as a task list; as a module-shared document it is offered for Frontend features without `tasks.md` after a choice (not silently).
+

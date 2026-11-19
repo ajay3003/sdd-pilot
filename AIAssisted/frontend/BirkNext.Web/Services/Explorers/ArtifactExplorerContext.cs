@@ -649,7 +649,10 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         var focus = StoredFocus(scope);
         var key = module ?? focus ?? ArtifactModules.ProjectLevel;
         var selections = _workspace.SddLifecycle.ExplorerSelections;
-        var pack = FeatureOfArtifact(role, scope, artifactId);
+        // A shared document of a pack-scoped role chosen while viewing a feature is recorded for that feature: a project-level one then applies to it only.
+        var pack = FeatureOfArtifact(role, scope, artifactId)
+            ?? (ArtifactPacks.IsPackScoped(role) && key != ArtifactModules.ProjectLevel
+                ? _workspace.SddLifecycle.PackFocus.LastOrDefault(f => f.WorkspaceScope == scope && f.Module == key)?.Pack : null);
         // One selection per role, module and pack: choosing in one pack never replaces another pack's choice.
         selections.RemoveAll(s => s.WorkspaceScope == scope && s.Role == role.ToString() && (s.Module ?? ArtifactModules.ProjectLevel) == key && s.Pack == pack);
         selections.Add(new SddExplorerSelection { WorkspaceScope = scope, Role = role.ToString(), ArtifactId = artifactId, Module = key, Pack = pack, SelectedAt = DateTimeOffset.UtcNow });
@@ -845,9 +848,16 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
         // Resolution order: PackLocal → ModuleShared → ProjectShared → missing. Never a sibling pack.
         var local = sharedOnly ? [] : entries.Where(e => e.Artifact.Feature == viewing).ToList();
         var shared = entries.Where(e => e.Artifact.Feature is null).ToList();
+        var fromProject = false;
         if (shared.Count == 0 && model.HasModules && module != ArtifactModules.ProjectLevel)
+        {
             shared = model.Roles[role].Where(e => e.Artifact.Module == ArtifactModules.ProjectLevel && e.Artifact.Feature is null).ToList();
-        var listed = local.Concat(shared).Select(e => e.Artifact).ToList();
+            fromProject = shared.Count > 0;
+        }
+        // Project-level notes and analyses (a monorepo's docs/, tool folders) are not a module feature's spec, plan, tasks or data model: for a
+        // pack-scoped role they are neither listed as the feature's alternatives nor used for it unless the tester opens one for this feature.
+        var borrowedOnly = ArtifactPacks.IsPackScoped(role) && fromProject && !sharedOnly;
+        var listed = (borrowedOnly && local.Count > 0 ? local : local.Concat(shared)).Select(e => e.Artifact).ToList();
         ScopeEntry? Stored(IEnumerable<ScopeEntry> candidates) => _workspace.SddLifecycle.ExplorerSelections
             .Where(s => s.WorkspaceScope == model.Scope && s.Role == role.ToString() && (s.Module ?? ArtifactModules.ProjectLevel) == module)
             .Select(s => candidates.FirstOrDefault(c => c.Artifact.Id == s.ArtifactId)).LastOrDefault(c => c is not null);
@@ -865,6 +875,17 @@ public sealed class ArtifactExplorerContext : IArtifactExplorerContext, IDisposa
                 : State(ExplorerArtifactStatus.SelectionRequired, local.Select(e => e.Artifact).ToList(), ambiguous: true);
         }
         if (shared.Count == 0) return State(ExplorerArtifactStatus.Empty, listed);
+        if (borrowedOnly)
+        {
+            // The feature has no document of its own and its module none either. A project-level one is never used for it automatically, and
+            // a choice made for another feature does not carry over: it applies only when the tester opened it for this feature.
+            var forThisPack = _workspace.SddLifecycle.ExplorerSelections
+                .Where(s => s.WorkspaceScope == model.Scope && s.Role == role.ToString() && (s.Module ?? ArtifactModules.ProjectLevel) == module && s.Pack == viewing)
+                .Select(s => shared.FirstOrDefault(c => c.Artifact.Id == s.ArtifactId)).LastOrDefault(c => c is not null);
+            return forThisPack is not null
+                ? State(ExplorerArtifactStatus.Loaded, listed, forThisPack, ExplorerSelectionReason.Explicit)
+                : State(ExplorerArtifactStatus.Empty, listed);
+        }
         if (Stored(shared) is { } chosenShared) return State(ExplorerArtifactStatus.Loaded, listed, chosenShared, ExplorerSelectionReason.Explicit);
         var authoritative = shared.Where(e => e.Artifact.IsAuthoritative).ToList();
         if (shared.Count == 1 || authoritative.Count == 1)

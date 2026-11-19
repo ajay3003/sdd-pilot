@@ -281,7 +281,7 @@
                     _analysisError = result.Status switch
                     {
                         PipelineStatus.EmptyInput => "The selected Specification has no content to analyze.",
-                        PipelineStatus.InputTooLarge => "The selected Specification is too large for deterministic review analysis.",
+                        PipelineStatus.InputTooLarge => $"The selected Specification has {result.InputLengthChars:N0} characters; review analysis reads specifications up to {ExtractionConfiguration.DefaultMaxInputLengthChars:N0} characters. The document itself is shown in full.",
                         _ => "Specification review analysis did not complete.",
                     };
                 }

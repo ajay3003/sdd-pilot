@@ -242,9 +242,29 @@
                     <div class="axh-icon" aria-hidden="true">@Icon</div>
                     <h2 class="axh-title">No @Label.ToLowerInvariant() is available for this feature</h2>
                     <p class="axh-text">
-                        <strong>@emptyPack.DisplayName</strong> <span class="axh-muted">(pack @emptyPack.Pack)</span> has no @Label artifact of its own, and no shared one applies.
+                        <strong>@emptyPack.DisplayName</strong> <span class="axh-muted">(pack @emptyPack.Pack)</span> has no @Label artifact of its own@(_state.Artifacts.Count == 0 ? ", and no shared one applies" : "").
                         Other features' documents are never used instead. Choose another feature above, or open the other explorers for this feature's documents.
                     </p>
+                    @if (_state.Artifacts.Count > 0)
+                    {
+                        @* Project- or module-wide documents of the role (notes, analyses): never this feature's automatically; opening one is the tester's choice for this feature only. *@
+                        <details class="axh-why" data-testid="artifact-explorer-shared-candidates">
+                            <summary>@_state.Artifacts.Count shared @(_state.Artifacts.Count == 1 ? "document is" : "documents are") classified as @Label — open one for this feature</summary>
+                            <p class="axh-text">They belong to @(_state.Artifacts.All(a => a.Module.Length == 0) ? "the whole project" : "the module"), not to this feature. Opening one uses it for this feature only.</p>
+                            <ul class="axh-choices">
+                                @foreach (var artifact in _state.Artifacts)
+                                {
+                                    <li>
+                                        <button type="button" class="axh-choice" data-testid="artifact-explorer-shared-choice" data-birknext-document-id="@artifact.DocumentIdentity"
+                                                @onclick="() => SelectAsync(artifact.Id)">
+                                            <span class="axh-choice-name">@artifact.DisplayName</span>
+                                            <span class="axh-choice-meta">@(artifact.SourcePath ?? artifact.FileName)</span>
+                                        </button>
+                                    </li>
+                                }
+                            </ul>
+                        </details>
+                    }
                 </div>
                 break;
 

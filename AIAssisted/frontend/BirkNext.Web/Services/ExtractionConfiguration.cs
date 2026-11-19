@@ -9,7 +9,12 @@ public interface IExtractionConfiguration
 
 public sealed class ExtractionConfiguration : IExtractionConfiguration
 {
-    public int MaxInputLengthChars { get; init; } = 50_000;
+    /// <summary>The largest specification the deterministic extraction reads. It is linear in the input (about 30 ms for a 92 000-character
+    /// specification on .NET; real M2LB service specifications reach 98 000 characters), so the bound only guards against non-documents: it
+    /// matches the 1 MB limit of a specification file import.</summary>
+    public const int DefaultMaxInputLengthChars = 1_000_000;
+
+    public int MaxInputLengthChars { get; init; } = DefaultMaxInputLengthChars;
     public int MinCandidateLengthChars { get; init; } = 3;
     public int MaxLineLengthForPatternMatching { get; init; } = 2_000;
 }

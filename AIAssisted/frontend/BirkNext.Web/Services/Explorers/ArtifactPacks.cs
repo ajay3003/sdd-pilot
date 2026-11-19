@@ -76,6 +76,13 @@ public static partial class ArtifactPacks
            && (path.Replace('\\', '/').Equals(".specify/memory/constitution.md", StringComparison.OrdinalIgnoreCase)
                || path.Replace('\\', '/').EndsWith("/.specify/memory/constitution.md", StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// A role every feature has its own document of (spec, plan, tasks, data model): a document outside the feature folder is never that
+    /// feature's automatically — the tester may open one for the feature explicitly. The constitution and supporting roles are shared by nature.
+    /// </summary>
+    public static bool IsPackScoped(WorkspaceArtifactType role) =>
+        role is WorkspaceArtifactType.Specification or WorkspaceArtifactType.Plan or WorkspaceArtifactType.Tasks or WorkspaceArtifactType.DataModel;
+
     /// <summary>The Spec-Kit file of a role in a feature folder (<c>spec.md</c>, <c>plan.md</c>, <c>tasks.md</c>, <c>data-model.md</c>).</summary>
     public static string? PackFileName(WorkspaceArtifactType role) => role switch
     {

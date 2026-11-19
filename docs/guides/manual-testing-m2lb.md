@@ -66,6 +66,13 @@ When the module you choose has more than one specification, BirkNext again does 
 - **Feature packs** (for example `specs/001-…` and `specs/002-…` in the same service): the explorer shows **Choose a feature to explore**, one
   button per feature with its number of documents. Documents shared by the whole project apply to every feature.
 - **Several specification files that nothing tells apart**: the explorer shows **Choose a Specification artifact** with the file names.
+- **A feature without a `spec.md` of its own** (in M2LB: AutorisasjonService features 001 and 002): the explorer says *No specification is
+  available for this feature*. Notes and analyses elsewhere in the project are never used as that feature's specification automatically;
+  they are listed under *shared documents … open one for this feature*, and opening one applies to that feature only. The same holds for
+  plans, task lists and data models.
+
+Once chosen, switch with the **Module** and **Feature** lists at the top of any explorer; every explorer and manual testing follow the
+same choice. Long specifications are analysed in full (SkoleService has about 92 000 characters).
 
 Until you choose, Discover & understand names the module, for example *Module SkoleService has 3 specifications and none is chosen yet*.
 
