@@ -139,9 +139,55 @@ The existing source-level role editor (the *Capabilities & Roles* tab, which wri
 - Asset integrity: 86/86 framework assets match. The checker's one "missing hash" is the manifest's own `hash` key, not a file.
 - One cosmetic fix came from the screenshots: the *partly analyzed* pill had a left-only coloured border.
 
-**Still open**
-- **Dormant manual-run tables.** Dropping `manual_test_runs` and `manual_run_attachments` would delete data in existing databases, so it needs the owner's explicit approval (a forward EF migration).
+## 7. Final verification (2026-11-19, final code)
 
-## 7. Commits
+**Review status is per application.** A source can serve several target applications (for example Tiltak 2), and each has its own open decisions.
+- The row flag now names the application the decision belongs to: "Requires review · ScopesAcceptance (Development)", with tooltip "Association with … needs review: …". The detail callout does the same.
+- *Associations* gives every application its own review state:
+  - *Needs review* when that application has an open decision;
+  - *No open review* when it was checked and has none;
+  - *Open reviews: see its Project Evidence* when it was not checked in this session — never shown as zero.
+- New bUnit test: a review open in Development is shown only for Development; Skolenærvær (checked) shows "No open review".
 
-See `git log` (the Source Management UX consolidation commit after `d1d174ea`).
+**Browser recheck.** Release publish of the final code, isolated :5097/:5197, the disposable `birknext_sm_20261119` database, network guard on. **20/20 passed:**
+- the partly-analyzed pill border is uniform at 1440 and 390 px (computed style on all four sides), with no overflow;
+- the review flag is scoped to one application;
+- two applications binding one source: the active one "No open review", the unchecked one "Open reviews: see its Project Evidence", each with its own `profile=` link;
+- exact `snapshots?open=SourceAnalysis:<id>` and `source-analysis?snapshot=<same id>` links;
+- the Snapshot Registry and Source Analysis open that snapshot, and Back returns to the open source;
+- multi-role: two confirmed roles saved, shown on the row, persisted across reload, and kept separate from detected capabilities. The original roles were restored afterwards;
+- 0 blocked requests, 0 browser errors.
+- The test servers were stopped afterwards. Only the processes started from the acceptance folder were stopped; nothing else was listening on 5000/5173.
+
+**Multi-role compatibility.**
+- The focused run covered Source Management, Source Context, Source Role Association, Project Evidence, Target Environment Project Pane and Snapshot Browser: 158/158 passed.
+- Source Management reads the multi-role contracts (`ConfirmedRoles`, Project Evidence bindings and associations) and writes only the source-level `ConfirmedRoles` it already owned.
+
+**Frontend.** Full suite: 9222 passed / 1 failed. The failure is `SchemaSourceSelectionTests.A_large_list_is_ranked_quickly_and_completely` (2.6 s against a 2 s timing limit under suite load). It is unrelated to Source Management and passed 3/3 when rerun alone.
+
+**Backend.** Build guarded, memory floor 1500 MB, partitions run one at a time:
+
+| Partition | Passed | Failed | Skipped |
+| --- | --- | --- | --- |
+| 1 | 1053 | 0 | 2 |
+| 2 | 1101 | 0 | 5 |
+| 3 | 904 | 0 | 0 |
+| 4 | 682 | 0 | 1 |
+| 5 | 541 | 0 | 3 |
+| 6 | 2719 | 5 | 8 |
+
+- The 5 failures in partition 6 were all 100-second request timeouts while that partition peaked at 7.2 GB used and free memory fell to 4.7 GB. The tests: AltinnTestingAuthorization, LocalSessionBootstrap, TargetEnvironmentContinuationClosure, ProjectImportPipeline, IntegrationTemplateApplyGuard.
+- Rerun alone: 5/5 passed in 6 s. Their five classes in full: 21/21 passed.
+- Source Management made no backend change.
+
+**Not part of this task**
+- **Dormant manual-run tables.** `manual_test_runs` and `manual_run_attachments` were not touched. Their cleanup is a separate decision.
+- **Pending reviews for unchecked applications.** They are shown as unknown until that application's Project Evidence is opened in the session. This is deliberate: reading them would mean `GetAsync`, which may apply a target application.
+
+## 8. Commits
+
+- `dde8e080`: Source Management UX consolidation.
+- `e3870c11`: open reviews per application, large-inventory check, first browser acceptance.
+- Final commit: reviews scoped to their application, final verification (this report).
+
+Starting HEAD `d1d174ea`. Not pushed.

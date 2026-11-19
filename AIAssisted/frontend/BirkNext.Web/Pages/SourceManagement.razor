@@ -160,7 +160,7 @@
                             <div class="sm-item-main">
                                 <button type="button" class="sm-open" data-testid="sm-open" aria-expanded="@(selected ? "true" : "false")" aria-controls="sm-detail" @onclick="() => Open(f.Key)">@f.Name</button>
                                 <span class="sm-chip sm-chip-@f.Origin.ToLowerInvariant()" data-testid="sm-origin">@f.Origin</span>
-                                @if (f.NeedsReview) { <span class="sm-chip sm-chip-attention" data-testid="sm-review-flag" title="@f.ReviewReason">Requires review</span> }
+                                @if (f.NeedsReview) { <span class="sm-chip sm-chip-attention" data-testid="sm-review-flag" title="@f.ReviewReason">@(f.ReviewReason?.StartsWith("Association with ", StringComparison.Ordinal) == true ? $"Requires review · {ActiveApplication}" : "Requires review")</span> }
                             </div>
                             <div class="sm-item-roles" data-testid="sm-roles">@RoleLine(f)</div>
                             <div class="sm-item-facts">
@@ -378,8 +378,14 @@
             : [];
 
     /// <summary>A decision is open: the active environment's association needs review, or the role is neither confirmed nor classified.</summary>
+    /// <summary>The application the active environment's association decisions belong to. A review is always scoped to it: one application's open
+    /// decision is never shown as if it applied to every application the source serves (each has its own row under Associations).</summary>
+    private string ActiveApplication =>
+        _evidence?.TargetApplication?.Name is { Length: > 0 } app ? (_evidence.EnvironmentName is { Length: > 0 } env ? $"{app} ({env})" : app)
+        : _evidence?.EnvironmentName is { Length: > 0 } name ? name : "the active environment";
+
     private string? ReviewReason(Row row) =>
-        AssociationOf(row) is { State: EvidenceAssociationState.NeedsReview } a ? $"Association needs review: {a.Detail}"
+        AssociationOf(row) is { State: EvidenceAssociationState.NeedsReview } a ? $"Association with {ActiveApplication} needs review: {a.Detail}"
         : row.Record is { } r && r.ConfirmedRoles.Count == 0 && AssociationOf(row) is { Role: PackageEvidenceRole.NotClassified } ? "No role: assign what this source is"
         : null;
 

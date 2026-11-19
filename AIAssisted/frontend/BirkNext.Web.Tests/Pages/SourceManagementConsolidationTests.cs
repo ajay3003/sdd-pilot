@@ -192,6 +192,36 @@ public sealed class SourceManagementConsolidationTests : BunitContext
         evidence.Verify(e => e.GetAsync("test", It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never(), "another application is only peeked: GetAsync may apply a target application");
     }
 
+    [Fact] // A source serving several applications (Tiltak 2): one application's open decision is never shown as everyone's.
+    public void A_review_open_in_one_application_is_scoped_to_it_and_never_shown_for_the_others()
+    {
+        Import("imp-t", "Tiltak 2");
+        Bind("dev", "Development", "Tiltak", "imp-t", "Contracts/schema");
+        Bind("test", "Test", "Skolenærvær", "imp-t", "Supporting source");
+        var package = new BirkNext.Web.Services.ProjectEvidence.ProjectEvidencePackage("imp-t", "Tiltak 2", "Tiltak 2.zip", "", DateTimeOffset.UtcNow, null, [],
+            new Dictionary<WorkspaceArtifactType, int>(), 0, [], [], [], null);
+        var evidence = new Mock<BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService>();
+        evidence.Setup(e => e.GetAsync("dev", It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(
+            new BirkNext.Web.Services.ProjectEvidence.ProjectEvidenceView("dev", "Development", null, null, [], [], [package], [])
+            {
+                Classified = true,
+                Associations = [new(package, BirkNext.Web.Services.ProjectEvidence.EvidenceAssociationState.NeedsReview, PackageEvidenceRole.Contracts, "Two contract sources match")],
+            });
+        evidence.Setup(e => e.Peek("test")).Returns(new BirkNext.Web.Services.ProjectEvidence.ProjectEvidenceView("test", "Test", null, null, [], [], [package], []) { Classified = true });
+        Services.AddSingleton(evidence.Object);
+
+        var cut = Render<SourceManagementPage>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sm-review-flag]").TextContent.Should().Be("Requires review · Development"));
+        cut.Find("[data-testid=sm-review-flag]").GetAttribute("title").Should().Be("Association with Development needs review: Two contract sources match");
+        cut.Find("[data-testid=sm-open]").Click();
+        cut.Find("[data-testid=sm-review-reason]").TextContent.Should().Contain("Association with Development needs review");
+        cut.Find("[data-testid=sm-tab][data-tab=associations]").Click();
+        var pending = cut.FindAll("[data-testid=sm-association]").ToDictionary(a => a.GetAttribute("data-environment")!,
+            a => a.QuerySelector("[data-testid=sm-association-pending]")!.TextContent.Trim());
+        pending["dev"].Should().Be("Needs review");
+        pending["test"].Should().Be("No open review", "the Development decision does not apply to Skolenærvær");
+    }
+
     [Fact]
     public void Snapshot_and_analysis_actions_use_the_exact_snapshot_identity()
     {
