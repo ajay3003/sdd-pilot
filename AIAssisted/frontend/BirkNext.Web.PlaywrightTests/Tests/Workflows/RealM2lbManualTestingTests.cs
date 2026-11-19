@@ -58,32 +58,36 @@ public sealed class RealM2lbManualTestingTests : IAsyncLifetime
             // 2. A monorepo: the home asks for the specification first, and Discover says why (counts, no silent choice).
             await GoAsync(page, "manual-testing", "mt");
             await Assertions.Expect(page.GetByTestId("mt-next-action")).ToHaveTextAsync("Choose the specification");
-            await GoAsync(page, "manual-testing/discover", "mtd");
+            await page.GetByTestId("mt-next-action").ClickAsync();
+            await ReadyAsync(page, "mtd");
             await Assertions.Expect(page.GetByTestId("mtd-req-none")).ToHaveAttributeAsync("data-reason", "choose-specification");
             await Assertions.Expect(page.GetByTestId("mtd-req-none")).ToContainTextAsync(new Regex(@"\d+ specifications in \d+ modules"));
 
-            // 3. Choose the module (and its feature or specification when it has several).
-            await page.GetByTestId("mtd-choose-specification").ClickAsync();
-            await page.GetByTestId("artifact-explorer").WaitForAsync(new() { Timeout = 240000 });
-            var moduleChoice = page.Locator($"[data-testid=artifact-explorer-module-choice][data-module=\"{module}\"]");
-            await moduleChoice.WaitForAsync(new() { Timeout = 120000 });
-            await moduleChoice.ClickAsync();
-            var pack = page.GetByTestId("artifact-explorer-pack-choice");
-            var choice = page.GetByTestId("artifact-explorer-choice");
-            await page.WaitForTimeoutAsync(2000);
-            if (await pack.CountAsync() > 0) { await pack.First.ClickAsync(); await page.WaitForTimeoutAsync(2000); }
-            if (await choice.CountAsync() > 0) { await choice.First.ClickAsync(); await page.WaitForTimeoutAsync(2000); }
+            // 3. Choose the module (and its feature or specification when it has several) in Manual Testing's own lists.
+            var picker = page.Locator("[data-testid=ssp][aria-busy=false]");
+            await Assertions.Expect(page.GetByTestId("ssp-current")).ToHaveAttributeAsync("data-state", "module", new() { Timeout = 60000 });
+            await page.GetByTestId("ssp-module").SelectOptionAsync(module);
+            await picker.WaitForAsync(new() { Timeout = 120000 });
+            if (await page.GetByTestId("ssp-feature").CountAsync() > 0 && await page.GetByTestId("ssp-feature").InputValueAsync() == "")
+            {
+                var first = (await page.Locator("[data-testid=ssp-feature] option").EvaluateAllAsync<string[]>("os => os.map(o => o.value).filter(Boolean)"))[0];
+                await page.GetByTestId("ssp-feature").SelectOptionAsync(first);
+                await picker.WaitForAsync(new() { Timeout = 120000 });
+            }
+            await Assertions.Expect(page.GetByTestId("ssp-current")).ToHaveAttributeAsync("data-state", "chosen", new() { Timeout = 120000 });
+            await Assertions.Expect(page.GetByTestId("ssp-current")).ToContainTextAsync(module);
 
-            // 4. Discover & understand lists the chosen specification's requirements as plain statements.
-            await GoAsync(page, "manual-testing/discover", "mtd");
-            await Assertions.Expect(page.GetByTestId("mtd-req-summary")).ToContainTextAsync(new Regex(@"\d+ requirements?"));
+            // 4. Discover & understand lists the chosen specification's requirements as plain statements, without leaving Manual Testing.
+            await ReadyAsync(page, "mtd");
+            await Assertions.Expect(page.GetByTestId("mtd-req-summary")).ToContainTextAsync(new Regex(@"\d+ requirements?"), new() { Timeout = 120000 });
             (await page.GetByTestId("mtd-requirement").First.InnerTextAsync()).Should().NotContain("**", "requirement text is shown without Markdown");
 
             // 5. Discover scenarios: the specification now contributes business scenarios.
-            await page.GetByTestId("mtd-discover").Or(page.GetByTestId("mtd-choose")).First.ClickAsync();
+            // Discover now (offered after the choice) opens Plan & prepare and runs discovery for the chosen specification.
+            await page.GetByTestId("ssp-discover").ClickAsync();
             await ReadyAsync(page, "tps");
-            await page.GetByTestId("tps-discover-run").ClickAsync();
             await MessageAsync(page, "candidates found");
+            page.Url.Should().NotContain("discover=now", "a reload does not run discovery again");
             await Assertions.Expect(page.GetByTestId("tps-capability-specification")).ToHaveAttributeAsync("data-state", "Available");
 
             // 6. Prepare three scenarios from the specification.
@@ -113,12 +117,6 @@ public sealed class RealM2lbManualTestingTests : IAsyncLifetime
             if ((await testCase.GetAttributeAsync("class"))?.Contains("is-open") != true) await testCase.Locator(".tps-case-head").ClickAsync();
             await page.GetByTestId($"tps-step-new-{sid}").FillAsync("Åpne meldingsloggen og finn meldingen for eleven");
             await page.GetByTestId($"tps-step-add-{sid}").ClickAsync();
-            var expectedCase = page.GetByTestId($"tps-edit-expected-{sid}");
-            if (await expectedCase.CountAsync() > 0 && string.IsNullOrWhiteSpace(await expectedCase.InputValueAsync()))
-            {
-                await expectedCase.FillAsync("Rapporten er mottatt og perioden er låst");
-                await expectedCase.DispatchEventAsync("change");
-            }
             var stepExpected = page.Locator($"[data-testid^=\"tps-step-expected-{sid}-\"]");
             for (var i = 0; i < await stepExpected.CountAsync(); i++)
             {

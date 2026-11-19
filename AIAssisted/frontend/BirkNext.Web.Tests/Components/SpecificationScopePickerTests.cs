@@ -79,7 +79,27 @@ public sealed class SpecificationScopePickerTests : BunitContext
         cut.Find("[data-testid=ssp-feature]").GetAttribute("value").Should().Be("004-translate");
         cut.FindAll("[data-testid=ssp-specification]").Should().BeEmpty("one specification needs no third list");
         cut.Find("[data-testid=ssp-changed]").TextContent.Should().Contain("came from the previous one");
-        cut.Find("[data-testid=ssp-discover]").GetAttribute("href").Should().Be("test-plan-suggestions?area=choose");
+        cut.Find("[data-testid=ssp-discover]").GetAttribute("href").Should().Be("test-plan-suggestions?area=choose&discover=now", "Discover now runs it on arrival");
+    }
+
+    [Fact]
+    public void Where_discovery_runs_on_the_page_Discover_now_runs_it_there()
+    {
+        var spec = Spec("h4", "HendelseAdapter/specs/004-translate/spec.md", "Translate HendelseAdapter", "HendelseAdapter");
+        _state = State(ExplorerArtifactStatus.SelectionRequired, module: "HendelseAdapter", packRequired: true, packs: true);
+        _explorer.Setup(x => x.GetStateAsync(WorkspaceArtifactType.Specification, It.IsAny<CancellationToken>())).ReturnsAsync(() => _state);
+        _save.Setup(x => x.SaveNowAsync()).ReturnsAsync(true);
+        Services.AddSingleton(_explorer.Object);
+        Services.AddSingleton(_save.Object);
+        var discovered = 0;
+        var cut = Render<SpecificationScopePicker>(p => p.Add(x => x.Discover, () => discovered++));
+        _state = State(ExplorerArtifactStatus.Loaded, [spec], spec, module: "HendelseAdapter", pack: "004-translate", packs: true);
+
+        cut.Find("[data-testid=ssp-feature]").Change("004-translate");
+        cut.Find("[data-testid=ssp-discover]").Click();
+
+        discovered.Should().Be(1);
+        cut.FindAll("[data-testid=ssp-changed]").Should().BeEmpty("the notice is answered");
     }
 
     [Fact]

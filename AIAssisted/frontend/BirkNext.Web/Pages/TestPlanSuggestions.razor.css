@@ -312,3 +312,14 @@ textarea.tps-input { resize: vertical; line-height: 1.45; }
 
 /* New step: action and its expected result side by side, stacking at phone width. */
 .tps-step-new-row .tps-input { flex: 1 1 14rem; min-width: 0; }
+
+/* Advanced: writing a test case by hand (normally done in Azure DevOps after import). */
+.tps-advanced { margin-top: 0.75rem; }
+.tps-advanced > summary { cursor: pointer; font-weight: 600; }
+
+/* More fields of a case: BirkNext planning detail that is not part of the Azure DevOps file. */
+.tps-more { margin: 0.75rem 0; }
+.tps-more > summary { cursor: pointer; font-weight: 600; }
+
+.tps-areas-advanced { display: inline-block; }
+.tps-areas-advanced > summary { cursor: pointer; display: inline; }

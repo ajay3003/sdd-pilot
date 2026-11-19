@@ -235,6 +235,19 @@ public sealed class AdoExportWizardTests : BunitContext
     }
 
     [Fact]
+    public void Rarely_needed_export_options_are_collapsed_under_Advanced_and_update_mode_keeps_it_open()
+    {
+        var cut = Open();
+        var advanced = cut.Find("[data-testid=adx-advanced]");
+        advanced.HasAttribute("open").Should().BeFalse();
+        advanced.QuerySelectorAll("[data-testid=adx-destination]").Should().ContainSingle();
+        advanced.QuerySelectorAll("[data-testid=adx-mode-update]").Should().ContainSingle();
+        cut.Find("[data-testid=adx-area]").Closest("[data-testid=adx-advanced]").Should().BeNull("Area Path stays in view");
+        cut.Find("[data-testid=adx-mode-update]").Change(true);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=adx-advanced]").HasAttribute("open").Should().BeTrue("the ids to confirm are never hidden"));
+    }
+
+    [Fact]
     public void Settings_equal_to_the_saved_ones_say_nothing_and_are_not_kept()
     {
         var cut = Open();

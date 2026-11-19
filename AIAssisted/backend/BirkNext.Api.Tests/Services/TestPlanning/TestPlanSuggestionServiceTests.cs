@@ -74,6 +74,15 @@ public sealed class TestPlanSuggestionServiceTests : IAsyncLifetime, IDisposable
     private async Task<TestPlanDraft> CreateSeven(AppDbContext db) =>
         await Service(db).CreateAsync(new CreateTestPlanDraftRequest("skolenaervaer", "Skolenærvær – Funksjonell testing", "Leveranse 1", [.. Seven]), "tester", default);
 
+    /// <summary>Gives a case what the Azure DevOps file needs (an expected result on every step), so it can be approved.</summary>
+    private static Task<TestPlanDraft> ReadyForApprovalAsync(TestPlanSuggestionService service, TestPlanDraft plan, string scenarioId)
+    {
+        var c = plan.Cases.Single(x => x.Source.ScenarioId == scenarioId);
+        List<string> steps = c.EffectiveSteps.Count > 0 ? [.. c.EffectiveSteps] : ["Utfør scenariet"];
+        return service.SaveAsync(plan.Id, Human(plan, (x, part) => x.Source.ScenarioId == scenarioId
+            ? part with { Edits = part.Edits with { Steps = steps, StepExpected = [.. steps.Select(_ => (string?)"Som beskrevet i scenariet")] } } : part), "r", default);
+    }
+
     private static SaveTestPlanDraftRequest Human(TestPlanDraft plan, Func<TestCaseDraft, TestCaseHumanPart, TestCaseHumanPart>? change = null) => new()
     {
         BaseRevision = plan.Revision, PlanName = plan.PlanName, DeliveryLabel = plan.DeliveryLabel, ScenarioIds = [.. plan.Cases.Select(c => c.Source.ScenarioId)], Suites = plan.Suites,
@@ -125,7 +134,7 @@ public sealed class TestPlanSuggestionServiceTests : IAsyncLifetime, IDisposable
     }
 
     [Fact]
-    public async Task Review_decisions_keep_their_history_need_a_rationale_to_exclude_and_never_accept_a_case_without_an_expected_result()
+    public async Task Review_decisions_keep_their_history_need_a_rationale_to_exclude_and_approve_only_what_the_export_can_carry()
     {
         await using var db = Context();
         var service = Service(db);
@@ -133,6 +142,11 @@ public sealed class TestPlanSuggestionServiceTests : IAsyncLifetime, IDisposable
         var noReason = () => service.ReviewAsync(plan.Id, new ReviewTestCaseRequest(plan.Revision, "periodelaas", TestCaseReviewState.Excluded, null), "r", default);
         (await noReason.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("rationale-required");
         var r1 = await service.ReviewAsync(plan.Id, new ReviewTestCaseRequest(plan.Revision, "gyldig-rapport", TestCaseReviewState.UnderReview, null), "Kari", default);
+        // Approval follows the Azure DevOps export's rules: a guide scenario whose steps state no expected result is refused until they do.
+        var early = () => service.ReviewAsync(plan.Id, new ReviewTestCaseRequest(r1.Revision, "gyldig-rapport", TestCaseReviewState.Accepted, null), "Kari", default);
+        if (TestPlanSuggestionService.ApproveBlocker(r1.Cases.Single(c => c.Source.ScenarioId == "gyldig-rapport")) is not null)
+            (await early.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("steps-incomplete");
+        r1 = await ReadyForApprovalAsync(service, r1, "gyldig-rapport");
         var r2 = await service.ReviewAsync(plan.Id, new ReviewTestCaseRequest(r1.Revision, "gyldig-rapport", TestCaseReviewState.Accepted, "Bekreftet med fagansvarlig"), "Kari", default);
         r2.Cases.Single(c => c.Source.ScenarioId == "gyldig-rapport").ReviewHistory.Select(e => (e.State, e.Reviewer)).Should().Equal(
             (TestCaseReviewState.UnderReview, "Kari"), (TestCaseReviewState.Accepted, "Kari"));
@@ -220,6 +234,7 @@ public sealed class TestPlanSuggestionServiceTests : IAsyncLifetime, IDisposable
         await using var db = Context();
         var service = Service(db);
         var plan = await CreateSeven(db);
+        plan = await ReadyForApprovalAsync(service, plan, "manglende-barn");
         plan = await service.ReviewAsync(plan.Id, new ReviewTestCaseRequest(plan.Revision, "manglende-barn", TestCaseReviewState.Accepted, null), "Kari", default);
         var before = await service.SaveSnapshotAsync(plan.Id, new SaveTestPlanSnapshotRequest(plan.Revision, "Leveranse 1", null), "lead", default);
 

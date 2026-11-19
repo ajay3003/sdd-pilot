@@ -81,11 +81,20 @@
                 </ol>
             </nav>
             <nav class="tps-areas" aria-label="Plan history and export">
-                @foreach (var a in P.MoreAreas)
+                @foreach (var a in P.MoreAreas.Where(a => !P.IsAdvancedArea(a.Id)))
                 {
                     var id = a.Id;
                     <button type="button" class="tps-area @(_area == id ? "is-current" : null)" aria-current="@(_area == id ? "page" : null)" data-testid="tps-area-@id" @onclick="() => OnStepAction(id)">@a.Label</button>
                 }
+                @* Snapshots and delivery comparison are BirkNext's own history (Azure DevOps keeps the test plan): collapsed. *@
+                <details class="tps-areas-advanced" data-testid="tps-areas-advanced" open="@P.IsAdvancedArea(_area)">
+                    <summary>Advanced</summary>
+                    @foreach (var a in P.MoreAreas.Where(a => P.IsAdvancedArea(a.Id)))
+                    {
+                        var id = a.Id;
+                        <button type="button" class="tps-area @(_area == id ? "is-current" : null)" aria-current="@(_area == id ? "page" : null)" data-testid="tps-area-@id" @onclick="() => OnStepAction(id)">@a.Label</button>
+                    }
+                </details>
             </nav>
         </div>
 
@@ -117,6 +126,8 @@
     [SupplyParameterFromQuery(Name = "case")] public string? CaseQuery { get; set; }
     /// <summary>The candidate view (manual, technical, all, attention); Manual testing when absent.</summary>
     [SupplyParameterFromQuery(Name = "view")] public string? ViewQuery { get; set; }
+    /// <summary>"now": run discovery once on arrival (the Discover now link after choosing another specification); removed from the address after.</summary>
+    [SupplyParameterFromQuery(Name = "discover")] public string? DiscoverQuery { get; set; }
 
     private ITestPlanSuggestionsApiService? _api;
     private ICurrentWorkspaceProjection? _projection;
@@ -203,6 +214,13 @@
         if (_projection is not null) _projection.Changed += OnProjectChanged;
         await LoadAsync();
         _loading = false;
+        if (string.Equals(DiscoverQuery, "now", StringComparison.OrdinalIgnoreCase) && !GuideMode && _projectKey is not null)
+        {
+            // Asked for explicitly (Discover now); a reload of the page must not run it again.
+            Nav.NavigateTo(Nav.GetUriWithQueryParameter("discover", (string?)null), replace: true);
+            _area = "choose";
+            await DiscoverAsync();
+        }
     }
 
     public void Dispose() { _unsaved?.Dispose(); if (_projection is not null) _projection.Changed -= OnProjectChanged; }
@@ -645,13 +663,8 @@
         _requirementsNote = L.EmptyReason(evidence, _requirements);
     }
 
-    /// <summary>The tester chose another module, feature or specification here: its requirements are read again; scenarios need a new discovery.</summary>
-    private async Task OnSpecificationChangedAsync()
-    {
-        await LoadRequirementsAsync();
-        Info(_discovery is null ? "Specification chosen. Discover test scenarios to find its scenarios."
-            : "Specification changed. The scenarios listed came from the previous one: choose Discover again. Test cases already prepared stay in the plan.");
-    }
+    /// <summary>The tester chose another module, feature or specification here: its requirements are read again; the picker offers Discover now.</summary>
+    private Task OnSpecificationChangedAsync() => LoadRequirementsAsync();
 
     private async Task DiscoverAsync()
     {
@@ -664,7 +677,7 @@
         if (result is null) { Fail(error ?? "Discovery failed."); return; }
         UseDiscovery(result);
         _limit = P.PageSize;
-        if (result.Candidates.Count == 0) Info("No test scenario was found in this project's evidence. You can still write test cases by hand.");
+        if (result.Candidates.Count == 0) Info("No test scenario was found in this project's evidence. Add tests in Azure DevOps Test Plans, or write test cases by hand under Advanced.");
         else Ok($"{result.Candidates.Count} scenario candidates found. Choose the ones to prepare; selecting approves nothing.");
     }
 
@@ -684,7 +697,7 @@
         <section class="tps-section" data-testid="tps-choose" aria-label="Choose scenarios" data-view="@P.ViewId(_view)">
             @if (!GuideMode)
             {
-                <BirkNext.Web.Components.SpecificationScopePicker ShowDiscoverLink="false" Changed="OnSpecificationChangedAsync" />
+                <BirkNext.Web.Components.SpecificationScopePicker Changed="OnSpecificationChangedAsync" Discover="DiscoverAsync" />
                 <div class="tps-actionbar tps-actionbar-compact" data-testid="tps-discover-bar">
                     <button type="button" class="tps-btn @(_discovery is null ? null : "tps-btn-quiet")" disabled="@_busy" @onclick="DiscoverAsync" data-testid="tps-discover-run">@(_discovery is null ? "Discover test scenarios" : "Discover again")</button>
                     <span class="tps-muted tps-small">@(_discovery is null ? "Reads the specification, source snapshot and contracts of this project. Nothing runs until you ask." : "The last result is reused until you discover again; changing a view or filter never re-runs analysis.")</span>
@@ -696,7 +709,7 @@
                     <h3 class="tps-h3">@(GuideMode ? "The guide has no scenarios yet." : _discovery is null ? "Not discovered yet" : "No scenario found in this project's evidence")</h3>
                     @if (!GuideMode && _discovery is not null)
                     {
-                        <p>None of the registered analyzers found a scenario: no specification acceptance scenarios or requirements, no Razor/HTML pages with a route, no OpenAPI/GraphQL operations and no integration journeys. Evidence sources above say what was read. You can still write test cases by hand.</p>
+                        <p>None of the registered analyzers found a scenario: no specification acceptance scenarios or requirements, no Razor/HTML pages with a route, no OpenAPI/GraphQL operations and no integration journeys. Evidence sources above say what was read. Add tests in Azure DevOps Test Plans, or write test cases by hand under Advanced below.</p>
                     }
                 </div>
             }
@@ -827,11 +840,7 @@
                 </div>
                 @if (!GuideMode)
                 {
-                    <div class="tps-actionbar tps-actionbar-compact" data-testid="tps-manual-bar">
-                        <label class="tps-field tps-field-grow"><span class="tps-k">Write a test case by hand</span><input class="tps-input" id="tps-manual-title" @bind="_manualTitle" @bind:event="oninput" placeholder="Title, e.g. Return a borrowed book" data-testid="tps-manual-title" /></label>
-                        <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || string.IsNullOrWhiteSpace(_manualTitle))" @onclick="AddManualAsync" data-testid="tps-manual-create">Add test case</button>
-                        @if (string.IsNullOrWhiteSpace(_manualTitle)) { <span class="tps-muted tps-small" data-testid="tps-manual-hint">Type a title to add a test case.</span> }
-                    </div>
+                    @ManualCaseAdvanced(ChooseManualForm)
                 }
             }
         </section>
@@ -863,6 +872,38 @@
         GoArea("prepare");
         _revealArea = true;
     }
+
+    /// <summary>
+    /// Writing a test case by hand is an advanced path: tests BirkNext did not discover are normally added in Azure DevOps Test Plans after the
+    /// file is imported. It stays for linking a requirement before export; collapsed unless a title is being written (or a variant was started).
+    /// </summary>
+    private RenderFragment ManualCaseAdvanced(RenderFragment form) => __builder =>
+    {
+        <details class="tps-advanced" data-testid="tps-advanced-manual" open="@(!string.IsNullOrWhiteSpace(_manualTitle))">
+            <summary>Advanced: write a test case by hand</summary>
+            <p class="tps-muted tps-small" data-testid="tps-manual-where">Tests BirkNext did not find are normally added in Azure DevOps Test Plans after you import the exported file. Write one here only when it must be linked to a requirement in BirkNext before the export.</p>
+            @form
+        </details>
+    };
+
+    private RenderFragment ChooseManualForm => __builder =>
+    {
+        <div class="tps-actionbar tps-actionbar-compact" data-testid="tps-manual-bar">
+            <label class="tps-field tps-field-grow"><span class="tps-k">Title</span><input class="tps-input" id="tps-manual-title" @bind="_manualTitle" @bind:event="oninput" placeholder="Title, e.g. Return a borrowed book" data-testid="tps-manual-title" /></label>
+            <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || string.IsNullOrWhiteSpace(_manualTitle))" @onclick="AddManualAsync" data-testid="tps-manual-create">Add test case</button>
+            @if (string.IsNullOrWhiteSpace(_manualTitle)) { <span class="tps-muted tps-small" data-testid="tps-manual-hint">Type a title to add a test case.</span> }
+        </div>
+    };
+
+    private RenderFragment PrepareManualForm => __builder =>
+    {
+        <div class="tps-actionbar tps-actionbar-compact">
+            <label class="tps-field tps-field-grow"><span class="tps-k">Title</span><input class="tps-input" @bind="_manualTitle" @bind:event="oninput" placeholder="Title of a new test case" data-testid="tps-manual-title" /></label>
+            <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || _dirty || string.IsNullOrWhiteSpace(_manualTitle))" @onclick="AddManualAsync" data-testid="tps-manual-add">Add test case</button>
+            @if (_dirty) { <span class="tps-muted tps-small" data-testid="tps-manual-hint">Save or discard your changes first.</span> }
+            else if (string.IsNullOrWhiteSpace(_manualTitle)) { <span class="tps-muted tps-small" data-testid="tps-manual-hint">Type a title to add a test case.</span> }
+        </div>
+    };
 
     /// <summary>A deliberate separate case for another data condition: written by hand, never a copy of the candidate record.</summary>
     private void StartVariant(DiscoveredScenario c)
@@ -1016,7 +1057,7 @@
 
     private RenderFragment NoDraft() => __builder =>
     {
-        <section class="tps-empty" data-testid="tps-no-draft"><h2>No test cases yet</h2><p>Choose scenarios and prepare them, or write a test case by hand.</p>
+        <section class="tps-empty" data-testid="tps-no-draft"><h2>No test cases yet</h2><p>Choose scenarios and prepare them.</p>
             <button type="button" class="tps-btn" @onclick="@(() => GoArea("choose"))">Choose scenarios</button></section>
     };
 
@@ -1048,18 +1089,19 @@
             }
             @if (CanWrite)
             {
-                <div class="tps-actionbar">
-                    <label class="tps-field"><span class="tps-k">New suite</span><input class="tps-input" @bind="_newSuite" @bind:event="oninput" placeholder="Suite name" /></label>
-                    <button type="button" class="tps-btn tps-btn-quiet" disabled="@string.IsNullOrWhiteSpace(_newSuite)" @onclick="AddSuite">Add suite</button>
-                    @if (d.ProjectKey is not null)
-                    {
-                        <label class="tps-field tps-field-grow"><span class="tps-k">Write a test case by hand</span><input class="tps-input" @bind="_manualTitle" @bind:event="oninput" placeholder="Title of a new test case" data-testid="tps-manual-title" /></label>
-                        <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || _dirty || string.IsNullOrWhiteSpace(_manualTitle))" @onclick="AddManualAsync" data-testid="tps-manual-add">Add test case</button>
-                        @if (_dirty) { <span class="tps-muted tps-small" data-testid="tps-manual-hint">Save or discard your changes first.</span> }
-                        else if (string.IsNullOrWhiteSpace(_manualTitle)) { <span class="tps-muted tps-small" data-testid="tps-manual-hint">Type a title to add a test case.</span> }
-                    }
-                    @SaveBar()
-                </div>
+                <div class="tps-actionbar">@SaveBar()</div>
+                @* Suites group cases inside BirkNext; in Azure DevOps the suite is chosen when the file is imported. *@
+                <details class="tps-advanced" data-testid="tps-advanced-suite">
+                    <summary>Advanced: add a suite</summary>
+                    <div class="tps-actionbar tps-actionbar-compact">
+                        <label class="tps-field"><span class="tps-k">New suite</span><input class="tps-input" @bind="_newSuite" @bind:event="oninput" placeholder="Suite name" /></label>
+                        <button type="button" class="tps-btn tps-btn-quiet" disabled="@string.IsNullOrWhiteSpace(_newSuite)" @onclick="AddSuite">Add suite</button>
+                    </div>
+                </details>
+                @if (d.ProjectKey is not null)
+                {
+                    @ManualCaseAdvanced(PrepareManualForm)
+                }
             }
         </section>
     };
@@ -1117,7 +1159,6 @@
                         <fieldset class="tps-fieldset" disabled="@_busy">
                         <div class="tps-edit-grid">
                             @EditField(c, "Title", c.Generated.Title, c.EffectiveTitle, v => c with { Edits = c.Edits with { Title = P.TextEdit(c.Generated.Title, v) } }, false, "title")
-                            @EditField(c, "Purpose", c.Generated.Purpose, c.EffectivePurpose, v => c with { Edits = c.Edits with { Purpose = P.TextEdit(c.Generated.Purpose, v) } }, true, "purpose")
                             @EditField(c, "Preconditions", c.Generated.Preconditions, c.EffectivePreconditions, v => c with { Edits = c.Edits with { Preconditions = P.TextEdit(c.Generated.Preconditions, v) } }, true, "preconditions")
                         </div>
                         <div class="tps-steps" data-testid="tps-steps-@sid">
@@ -1149,11 +1190,18 @@
                             </div>
                         </div>
                         <div class="tps-edit-grid">
-                            @EditField(c, "Expected result", c.Generated.ExpectedResult, c.EffectiveExpected, v => c with { Edits = c.Edits with { ExpectedResult = P.TextEdit(c.Generated.ExpectedResult, v) } }, true, "expected")
+                            @EditField(c, "Priority", null, c.Edits.Priority, v => c with { Edits = c.Edits with { Priority = P.TextEdit(null, v) } }, false, "priority")
+                        </div>
+                        @* What reaches the Azure DevOps file is shown above (title, preconditions, steps with their expected results, priority; requirements
+                           and Test Data go to the mapping report). The rest is BirkNext's own planning detail: kept, never lost, and collapsed. *@
+                        <details class="tps-more" data-testid="tps-more-fields-@sid">
+                        <summary>More fields <span class="tps-muted tps-small">— kept in BirkNext, not exported to Azure DevOps</span></summary>
+                        <div class="tps-edit-grid">
+                            @EditField(c, "Purpose", c.Generated.Purpose, c.EffectivePurpose, v => c with { Edits = c.Edits with { Purpose = P.TextEdit(c.Generated.Purpose, v) } }, true, "purpose")
+                            @EditField(c, "Expected result of the whole case", c.Generated.ExpectedResult, c.EffectiveExpected, v => c with { Edits = c.Edits with { ExpectedResult = P.TextEdit(c.Generated.ExpectedResult, v) } }, true, "expected")
                             @EditField(c, "Environment and prerequisites", c.Generated.EnvironmentPrerequisites, c.EffectiveEnvironment, v => c with { Edits = c.Edits with { EnvironmentPrerequisites = P.TextEdit(c.Generated.EnvironmentPrerequisites, v) } }, true, "environment")
                             @EditField(c, "Roles and access", null, c.Edits.Roles, v => c with { Edits = c.Edits with { Roles = P.TextEdit(null, v) } }, false, "roles")
                             @EditField(c, "Dependencies", null, c.Edits.Dependencies, v => c with { Edits = c.Edits with { Dependencies = P.TextEdit(null, v) } }, false, "dependencies")
-                            @EditField(c, "Priority", null, c.Edits.Priority, v => c with { Edits = c.Edits with { Priority = P.TextEdit(null, v) } }, false, "priority")
                             <label class="tps-field"><span class="tps-k">Risk</span>
                                 <select class="tps-input" @onchange="e => Change(P.WithCase(d, sid, x => x with { Risk = Enum.TryParse<TestCaseRisk>(e.Value?.ToString(), out var r) ? r : x.Risk }))" data-testid="tps-risk-@sid">
                                     @foreach (var r in Enum.GetValues<TestCaseRisk>()) { <option value="@r" selected="@(r == c.Risk)">@(r == TestCaseRisk.NotAssessed ? "Not assessed" : r.ToString())</option> }
@@ -1173,12 +1221,12 @@
                                 </select></label>
                         </div>
                         @if (c.EffectiveType == TestCaseType.Performance) { @PerformanceFields(d, c, sid) }
+                        </details>
                         <div class="tps-actionbar">@SaveBar()</div>
                         </fieldset>
                         @if (_dirty) { <p class="tps-muted tps-small" data-testid="tps-review-needs-save">Save or discard your changes before recording a review decision.</p> }
                         <div class="tps-review-bar" role="group" aria-label="Review decision for @c.EffectiveTitle">
                             <label class="tps-field tps-field-grow"><span class="tps-k">Rationale</span><input class="tps-input" value="@_rationale.GetValueOrDefault(sid)" @oninput="e => SetRationale(sid, e)" placeholder="Why (required to exclude or ask for clarification)" data-testid="tps-rationale-@sid" /></label>
-                            <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || _dirty)" @onclick="() => ReviewAsync(sid, TestCaseReviewState.UnderReview)">Start review</button>
                             <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || _dirty)" @onclick="() => ReviewAsync(sid, TestCaseReviewState.NeedsClarification)" data-testid="tps-clarify-@sid">Needs clarification</button>
                             <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || _dirty)" @onclick="() => ReviewAsync(sid, TestCaseReviewState.Excluded)" data-testid="tps-exclude-@sid">Exclude</button>
                             @{ var approveBlocker = P.ApproveBlocker(c); }
@@ -1602,19 +1650,31 @@
             @if (latest is not null) { <p class="tps-muted" data-testid="tps-latest-snapshot">Latest snapshot: #@latest.Sequence · @(latest.DeliveryLabel ?? "no delivery label") · @latest.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")@(latest.DraftRevision < d.Revision ? " — the plan changed since" : "")</p> }
             @if (CanWrite)
             {
-                <div class="tps-actionbar" data-testid="tps-snapshot-bar">
+                <div class="tps-actionbar" data-testid="tps-plan-name-bar">
                     <label class="tps-field tps-field-grow"><span class="tps-k">Test plan name</span><input class="tps-input" @bind="_planName" @bind:event="oninput" data-testid="tps-plan-name" /></label>
-                    <label class="tps-field"><span class="tps-k">Delivery label</span><input class="tps-input" @bind="_deliveryLabel" @bind:event="oninput" placeholder="e.g. Release 2026.11" data-testid="tps-delivery" /></label>
-                    <label class="tps-field tps-field-grow"><span class="tps-k">Note</span><input class="tps-input" @bind="_snapshotNote" @bind:event="oninput" /></label>
-                    <button type="button" class="tps-btn" disabled="@(_busy || _dirty || string.IsNullOrWhiteSpace(_planName))" @onclick="SaveSnapshotAsync" data-testid="tps-save-snapshot">Save snapshot</button>
-                    @if (_dirty) { <span class="tps-muted tps-small">Save the draft first.</span> }
+                    <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || _dirty || string.IsNullOrWhiteSpace(_planName) || string.Equals(_planName.Trim(), d.PlanName, StringComparison.Ordinal))" @onclick="RenamePlanAsync" data-testid="tps-rename-plan">Save name</button>
                 </div>
             }
             <div class="tps-actionbar">
-                <button type="button" class="tps-btn tps-btn-quiet" @onclick="@(() => GoArea("export"))" data-testid="tps-go-export">Prepare for Azure DevOps</button>
-                <button type="button" class="tps-btn tps-btn-quiet" @onclick="@(() => GoArea("compare"))" data-testid="tps-go-compare">Compare deliveries</button>
-                <button type="button" class="tps-btn tps-btn-quiet" @onclick="@(() => GoArea("snapshots"))" data-testid="tps-go-snapshots">All snapshots</button>
+                <button type="button" class="tps-btn" @onclick="@(() => GoArea("export"))" data-testid="tps-go-export">Export to Azure DevOps</button>
             </div>
+            @* Snapshots (a frozen copy per delivery) and delivery comparison are BirkNext's own history; the Azure DevOps export does not need them. *@
+            <details class="tps-advanced" data-testid="tps-snapshot-advanced">
+                <summary>Advanced: snapshots and delivery comparison</summary>
+                @if (CanWrite)
+                {
+                    <div class="tps-actionbar" data-testid="tps-snapshot-bar">
+                        <label class="tps-field"><span class="tps-k">Delivery label</span><input class="tps-input" @bind="_deliveryLabel" @bind:event="oninput" placeholder="e.g. Release 2026.11" data-testid="tps-delivery" /></label>
+                        <label class="tps-field tps-field-grow"><span class="tps-k">Note</span><input class="tps-input" @bind="_snapshotNote" @bind:event="oninput" /></label>
+                        <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || _dirty || string.IsNullOrWhiteSpace(_planName))" @onclick="SaveSnapshotAsync" data-testid="tps-save-snapshot">Save snapshot</button>
+                        @if (_dirty) { <span class="tps-muted tps-small">Save the draft first.</span> }
+                    </div>
+                }
+                <div class="tps-actionbar">
+                    <button type="button" class="tps-btn tps-btn-quiet" @onclick="@(() => GoArea("compare"))" data-testid="tps-go-compare">Compare deliveries</button>
+                    <button type="button" class="tps-btn tps-btn-quiet" @onclick="@(() => GoArea("snapshots"))" data-testid="tps-go-snapshots">All snapshots</button>
+                </div>
+            </details>
             @if (d.Cases.Any(c => c.Generated.CandidateType is ScenarioCandidateType.UiFunctional or ScenarioCandidateType.UiSmoke))
             {
                 <p class="tps-muted tps-small" data-testid="tps-e2e-handoff">UI cases can become automated flows only through <a href="critical-e2e-regression#sg-panel">Critical E2E Regression › Suggested tests</a>, where a person verifies and approves them. Nothing is promoted from here.</p>
@@ -1642,6 +1702,19 @@
     }
 
     // ── Saved snapshots ─────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Renames the plan (its name is the Azure DevOps file's name); no snapshot is needed for that.</summary>
+    private async Task RenamePlanAsync()
+    {
+        if (_draft is null || _dirty || string.IsNullOrWhiteSpace(_planName)) return;
+        _busy = true;
+        var (renamed, error) = await _api!.SaveAsync(_draft.Id, P.ToSaveRequest(_draft with { PlanName = _planName.Trim() }));
+        _busy = false;
+        if (renamed is null) { Fail(error ?? "The name could not be saved."); return; }
+        _draft = renamed; _planName = renamed.PlanName;
+        await ReloadWorkspaceAsync();
+        Ok("Test plan name saved.");
+    }
 
     private RenderFragment SnapshotsArea() => __builder =>
     {

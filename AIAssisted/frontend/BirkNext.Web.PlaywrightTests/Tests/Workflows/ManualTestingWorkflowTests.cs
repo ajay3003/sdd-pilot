@@ -85,16 +85,10 @@ public sealed class ManualTestingWorkflowTests : IAsyncLifetime
             (await page.Locator($"[data-testid=\"tps-steps-{candidateId}\"] input, [data-testid=\"tps-steps-{candidateId}\"] textarea")
                 .EvaluateAllAsync<string[]>("els => els.map(e => e.value)")).Should().Contain([stepText, expected]);
 
-            // Approve: the export's content rules apply (an expected result for the case and for every step), and a review decision is recorded
-            // on saved content (the button is disabled while edits are unsaved). Fill what the evidence left open, save, then approve.
+            // Approve: the export's content rules apply (an expected result on every step; the case-level expected result is not part of an Azure
+            // DevOps test case and sits collapsed under More fields), and a review decision is recorded on saved content. Fill open steps, save, approve.
             var changed = false;
-            var expectedCase = page.GetByTestId($"tps-edit-expected-{candidateId}");
-            if (await expectedCase.CountAsync() > 0 && string.IsNullOrWhiteSpace(await expectedCase.InputValueAsync()))
-            {
-                await expectedCase.FillAsync(expected);
-                await expectedCase.DispatchEventAsync("change");
-                changed = true;
-            }
+            await Assertions.Expect(page.GetByTestId($"tps-more-fields-{candidateId}")).Not.ToHaveAttributeAsync("open", "");
             var stepExpected = page.Locator($"[data-testid^=\"tps-step-expected-{candidateId}-\"]");
             for (var i = 0; i < await stepExpected.CountAsync(); i++)
             {

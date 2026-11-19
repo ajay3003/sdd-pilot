@@ -8,7 +8,7 @@
     <div class="sg-head">
         <div>
             <h2 id="sg-heading">Suggested tests</h2>
-            <p class="sg-muted">Drafts from an imported source snapshot: page checks, search, forms and user actions — including controls inside composed components. Review any suggestion as a manual test case without the Edge Companion; for automation, locators count only after the Edge Companion verifies them on the attended page.</p>
+            <p class="sg-muted">Drafts of automated browser tests from an imported source snapshot: page checks, search, forms and user actions — including controls inside composed components. Locators count only after the Edge Companion verifies them on the attended page. Manual test cases are prepared in <a href="test-plan-suggestions?area=choose" data-testid="sg-manual-home">Manual Testing → Plan &amp; prepare</a> and exported to Azure DevOps Test Plans.</p>
         </div>
         <div class="sg-actions">
             <label class="sg-field">Source snapshot
@@ -37,7 +37,6 @@
             @Count("data", "Missing Test Data", r.Summary.MissingTestData)
             @Count("ready", "Ready for approval", r.Summary.ReadyForApproval)
             @Count("functional", "UI Functional", r.Summary.UiFunctional)
-            @Count("manual", "Ready for manual test", r.Summary.ReadyForManualTest)
         </dl>
         <nav class="sg-areas" role="tablist" aria-label="Suggested tests areas">
             @foreach (var (key, label) in Areas)
@@ -312,7 +311,7 @@
             }
             @Manual(s)
             <h4 class="sg-subhead">Automation (optional) — needs the Edge Companion</h4>
-            @if (s.AutomationBlocker is { } blocker) { <p class="sg-note" data-testid="sg-automation-blocker">Manual test only for now: @blocker</p> }
+            @if (s.AutomationBlocker is { } blocker) { <p class="sg-note" data-testid="sg-automation-blocker">Cannot be automated yet: @blocker Test it manually through Manual Testing → Plan &amp; prepare.</p> }
             @if (s.DataVariables.Count > 0 && s.ApprovedFlowId is null)
             {
                 <fieldset class="sg-bindings" data-testid="sg-data-bindings">
@@ -373,9 +372,10 @@
     private RenderFragment Manual(TestSuggestion s) => __builder =>
     {
         var review = s.ManualReview;
+        @* What the suggested test does, in words (read only). Manual test cases are prepared in one place — Plan & prepare, which also discovers
+           these UI scenarios — and exported to Azure DevOps; this page is for automated flows only (2026-11-19). *@
         <section class="sg-manual" data-testid="sg-manual" aria-labelledby="sg-manual-heading" data-decision="@(review?.Decision.ToString() ?? "None")">
-            <h4 id="sg-manual-heading">Prepare manual test case</h4>
-            <p class="sg-muted">No Edge Companion and no source needed: read the steps, state what should happen and which Test Data to use.</p>
+            <h4 id="sg-manual-heading">What this test does</h4>
             <dl class="sg-facts">
                 <div><dt>Kind</dt><dd>@CategoryLabel(s.Category) · @KindLabel(s.Kind)</dd></div>
                 <div><dt>Start page</dt><dd>@s.Route</dd></div>
@@ -391,20 +391,12 @@
             }
             else if (s.ExpectedHint is { } hint)
             {
-                <p class="sg-note" data-testid="sg-manual-hint">Suggested expected result — confirm or change: <em>@hint</em>@(s.ExpectedHintBasis is { } hb ? $" ({hb})" : "")
-                    <button type="button" class="btn-secondary sg-small" data-testid="sg-manual-use-hint" disabled="@_busy" @onclick="() => UseHint(s)">Use this</button></p>
+                <p class="sg-note" data-testid="sg-manual-hint">Suggested expected result (to confirm): <em>@hint</em>@(s.ExpectedHintBasis is { } hb ? $" ({hb})" : "")</p>
             }
-            <label class="sg-field">Expected result
-                <textarea class="form-control" rows="2" maxlength="600" data-testid="sg-manual-expected" placeholder="What should the page show after the last step?" value="@_manualExpected" @oninput="e => _manualExpected = e.Value?.ToString()"></textarea></label>
-            <label class="sg-field">Test Data to use
-                <input class="form-control" maxlength="600" data-testid="sg-manual-data" placeholder="Approved alias or description — never a real person's data" value="@_manualData" @oninput="e => _manualData = e.Value?.ToString()" /></label>
-            <label class="sg-field">Notes
-                <textarea class="form-control" rows="2" maxlength="600" data-testid="sg-manual-notes" value="@_manualNotes" @oninput="e => _manualNotes = e.Value?.ToString()"></textarea></label>
+            <p class="sg-muted" data-testid="sg-manual-where">To test this by hand, prepare it in <a href="test-plan-suggestions?area=choose" data-testid="sg-manual-plan">Manual Testing → Plan &amp; prepare</a>
+                (the same UI scenarios are discovered there, with their requirements) and export it to Azure DevOps Test Plans.</p>
             <div class="sg-actions">
-                <button type="button" class="btn btn-secondary" data-testid="sg-manual-save" disabled="@_busy" @onclick="() => ManualReviewAsync(s, ManualReviewDecision.Draft)">Save draft</button>
-                <button type="button" class="btn btn-primary" data-testid="sg-manual-ready" disabled="@_busy" @onclick="() => ManualReviewAsync(s, ManualReviewDecision.ReadyForManualTest)">Ready for manual test</button>
                 <button type="button" class="btn btn-secondary" data-testid="sg-manual-reject" disabled="@_busy" @onclick="() => ManualReviewAsync(s, ManualReviewDecision.Rejected)">Reject suggestion</button>
-                <a class="btn-secondary" href="test-plan-suggestions" data-testid="sg-manual-plan">Add to a test plan</a>
             </div>
             @if (review is not null) { <p class="sg-sub" data-testid="sg-manual-reviewed">@ManualDecisionLabel(review.Decision) · @review.ReviewedBy · @review.ReviewedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</p> }
         </section>

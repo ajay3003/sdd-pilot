@@ -57,7 +57,12 @@ public sealed class ManualTestingReloadTests : IAsyncLifetime
             await page.GetByTestId("tps-clear-selection").ClickAsync();
 
             // 2. A hand-written case opens at its first step; the step is added with its expected result.
-            await page.GetByTestId("tps-manual-title").FillAsync("Return a book after the due date");
+            // Writing a case by hand is an advanced path (tests BirkNext did not find are normally added in Azure DevOps): open it first.
+            var advanced = page.GetByTestId("tps-advanced-manual").First;
+            await Assertions.Expect(advanced).Not.ToHaveAttributeAsync("open", "");
+            await advanced.Locator("summary").ClickAsync();
+            await Assertions.Expect(advanced).ToContainTextAsync("Azure DevOps Test Plans");
+            await advanced.GetByTestId("tps-manual-title").FillAsync("Return a book after the due date");
             await page.GetByTestId("tps-manual-create").ClickAsync();
             await MessageAsync(page, "Test case added");
             var empty = page.Locator("[data-testid^=tps-steps-empty-]").First;
@@ -68,9 +73,7 @@ public sealed class ManualTestingReloadTests : IAsyncLifetime
             await page.GetByTestId($"tps-step-new-expected-{sid}").FillAsync("A late fee is shown");
             await page.GetByTestId($"tps-step-add-{sid}").ClickAsync();
             await Assertions.Expect(page.GetByTestId($"tps-step-expected-{sid}-0")).ToHaveValueAsync("A late fee is shown");
-            var expected = page.GetByTestId($"tps-edit-expected-{sid}");
-            await expected.FillAsync("The book is returned and the fee is registered");
-            await expected.DispatchEventAsync("change");
+            // A step with its expected result is all the Azure DevOps file (and so Approve) needs; no case-level expected result.
             await page.GetByTestId($"tps-case-{sid}").GetByTestId("tps-save").ClickAsync();
             await MessageAsync(page, "Draft saved");
             await Assertions.Expect(page.GetByTestId($"tps-accept-{sid}")).ToBeEnabledAsync(new() { Timeout = 30000 });

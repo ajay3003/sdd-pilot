@@ -172,15 +172,12 @@ public sealed class CriticalE2ESuggestionsTests : BunitContext
             "Open /person", "Fill Søk etter person with approved Test Data: a known synthetic person that exists in the target environment", "Click \"Søk\"");
         manual.TextContent.Should().NotContain("${data:", "the tester reads words, not placeholders");
 
-        cut.Find("[data-testid=sg-manual-use-hint]").Click();
-        cut.Find("[data-testid=sg-manual-expected]").GetAttribute("value").Should().Be("The known person is shown in the search result.");
-        cut.Find("[data-testid=sg-manual-data]").Input("Test Data alias barn-a");
-        cut.Find("[data-testid=sg-manual-ready]").Click();
-
-        cut.WaitForAssertion(() => cut.Find("[data-testid=sg-message]").TextContent.Should().Contain("Ready for manual test").And.Contain("nothing was executed"));
-        sent.Should().Match<SuggestionManualReviewRequest>(r => r.Decision == ManualReviewDecision.ReadyForManualTest && r.TestData == "Test Data alias barn-a" && r.ExpectedResult == "The known person is shown in the search result.");
-        cut.Find("[data-testid=sg-manual]").GetAttribute("data-decision").Should().Be("ReadyForManualTest");
-        cut.Find("[data-testid=sg-manual-plan]").GetAttribute("href").Should().Be("test-plan-suggestions");
+        // Manual test cases are prepared in one place (Plan & prepare → Azure DevOps): this page shows what the test does and points there.
+        manual.TextContent.Should().Contain("What this test does");
+        cut.FindAll("[data-testid=sg-manual-expected], [data-testid=sg-manual-ready], [data-testid=sg-manual-data]").Should().BeEmpty("no second place to write manual test cases");
+        cut.Find("[data-testid=sg-manual-plan]").GetAttribute("href").Should().Be("test-plan-suggestions?area=choose");
+        cut.FindAll("[data-testid=sg-count-manual]").Should().BeEmpty();
+        sent.Should().BeNull();
         _api.Verify(a => a.VerifySuggestionAsync(It.IsAny<SuggestionVerifyRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -217,7 +214,7 @@ public sealed class CriticalE2ESuggestionsTests : BunitContext
         sent.EnvironmentName.Should().Be("QA");
 
         cut.Find("[data-testid=sg-item][data-id=sug-open] [data-testid=sg-review]").Click();
-        cut.Find("[data-testid=sg-automation-blocker]").TextContent.Should().Contain("Manual test only for now").And.Contain("depends on the Test Data record");
+        cut.Find("[data-testid=sg-automation-blocker]").TextContent.Should().Contain("Cannot be automated yet").And.Contain("Plan & prepare").And.Contain("depends on the Test Data record");
         cut.Find("[data-testid=sg-approve]").HasAttribute("disabled").Should().BeTrue("a blocked suggestion cannot become an automated flow");
         cut.Find("[data-testid=sg-manual]").TextContent.Should().Contain("Search: open a result");
     }

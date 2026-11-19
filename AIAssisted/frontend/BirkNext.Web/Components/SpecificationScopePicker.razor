@@ -73,8 +73,16 @@
         </p>
         @if (_changed && ShowDiscoverLink && s.Status == ExplorerArtifactStatus.Loaded)
         {
-            <p class="ssp-note" role="status" data-testid="ssp-changed">The specification changed. Scenarios found earlier came from the previous one:
-                <a href="test-plan-suggestions?area=choose" data-testid="ssp-discover">discover scenarios for this specification</a>. Test cases already prepared stay in the plan.</p>
+            <p class="ssp-note" role="status" data-testid="ssp-changed">The specification changed. Scenarios found earlier came from the previous one; test cases already prepared stay in the plan.
+                @if (Discover.HasDelegate)
+                {
+                    <button type="button" class="btn btn-primary btn-sm" disabled="@_busy" data-testid="ssp-discover" @onclick="DiscoverNowAsync">Discover now</button>
+                }
+                else
+                {
+                    <a class="btn btn-primary btn-sm" href="test-plan-suggestions?area=choose&discover=now" data-testid="ssp-discover">Discover now</a>
+                }
+            </p>
         }
         @if (_saveWarning is not null) { <p class="ssp-note" role="alert" data-testid="ssp-save-warning">@_saveWarning</p> }
     </section>
@@ -84,8 +92,17 @@
     /// <summary>Raised after the tester changed the module, feature or specification (the page reads its requirements again).</summary>
     [Parameter] public EventCallback Changed { get; set; }
 
-    /// <summary>False where discovery runs on the same page (Plan &amp; prepare says it there).</summary>
+    /// <summary>False to leave the "discover again" notice to the page.</summary>
     [Parameter] public bool ShowDiscoverLink { get; set; } = true;
+
+    /// <summary>Runs discovery on this page (Plan &amp; prepare); without it, Discover now opens Plan &amp; prepare and runs it there.</summary>
+    [Parameter] public EventCallback Discover { get; set; }
+
+    private async Task DiscoverNowAsync()
+    {
+        _changed = false;
+        await Discover.InvokeAsync();
+    }
 
     private IArtifactExplorerContext? _explorer;
     private ArtifactExplorerState? _state;

@@ -281,9 +281,14 @@ public static class SampleArtifactClassifier
         else if (specItems > 0) Add(WorkspaceArtifactType.Specification, 1, $"{specItems} requirement/scenario item{(specItems == 1 ? "" : "s")} (Specification extractor)");
 
         var tasks = TaskExplorerService.Parse(body);
-        var taskIds = Flatten(tasks.Roots, n => n.Children).Where(n => n.TaskId is not null).Select(n => n.TaskId).Distinct().Count();
+        // Tasks the document defines (task lines) are task-list evidence; IDs only mentioned in a table cell (a test catalogue's "OPK-T01 – OPK-T12",
+        // a traceability matrix) are references to tasks elsewhere and are weak evidence on their own.
+        var taskNodes = Flatten(tasks.Roots, n => n.Children).Where(n => n.TaskId is not null).ToList();
+        var taskIds = taskNodes.Where(n => n.NodeType != TaskNodeType.TableTaskRef).Select(n => n.TaskId).Distinct().Count();
+        var referencedIds = taskNodes.Where(n => n.NodeType == TaskNodeType.TableTaskRef).Select(n => n.TaskId).Distinct().Count();
         if (taskIds >= 3) Add(WorkspaceArtifactType.Tasks, 4, $"{taskIds} task IDs (Task extractor)");
         else if (taskIds > 0) Add(WorkspaceArtifactType.Tasks, 1, $"{taskIds} task ID{(taskIds == 1 ? "" : "s")} (Task extractor)");
+        else if (referencedIds > 0) Add(WorkspaceArtifactType.Tasks, 1, $"{referencedIds} task ID{(referencedIds == 1 ? "" : "s")} referenced in a table");
         var checkboxes = CheckboxRe.Matches(body).Count;
         if (checkboxes >= 5) Add(WorkspaceArtifactType.Tasks, 1, $"{checkboxes} checkbox items");
 

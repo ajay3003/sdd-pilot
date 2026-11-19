@@ -126,3 +126,20 @@ Real data (M2LB, empty database, Release build): every module and feature chosen
 opened — 37 module features and the 4 project-level features: every document is the feature's own or its module's shared one, every
 explorer follows the choice, 0 documents from another feature or module, 0 page or server errors.
 
+## Simplified to what Azure DevOps receives
+
+Tests are completed in Azure DevOps Test Plans after import, so Plan & prepare keeps in view only what the import file carries.
+
+| # | Change |
+|---|--------|
+| 24 | **Approve** = the export's rules (a step; an action and an expected result on every step), in the UI and the API (`steps-incomplete`). The case-level expected result is not part of an Azure DevOps test case and is no longer required |
+| 25 | Case editor: title, preconditions, steps, priority in view; purpose, case expected result, environment, roles, dependencies, risk, test type, execution method, suite and performance fields under **More fields** (kept, not exported); *Start review* removed |
+| 26 | Writing a case by hand, adding a suite, snapshots, delivery label and comparison under **Advanced**; the plan is renamed with **Save name** (no snapshot needed); the export's destination label, update-existing mode and CSV protection under **Advanced** (opens by itself in update mode) |
+| 27 | **Discover now** after choosing another specification (runs discovery once; `?discover=now` is removed from the address). The real-data browser test found the notice vanished on Discover & understand (the lists were remounted during the reload); fixed |
+| 28 | Critical E2E → Suggested tests no longer prepares manual test cases (one place: Plan & prepare → Azure DevOps); it shows what the test does and links there |
+| 29 | A test catalogue table (`OPK-T01 – OPK-T12`) was read as task IDs, so Frontend notes became a task list; only tasks a document defines count |
+
+Verification: frontend 9 258/9 258; backend TestPlanning + RequirementCoverage 108/108 (new `ApproveRuleTests`); Playwright on a fresh Release
+build and empty database: `RealM2lbManualTestingTests` (M2LB (8).zip, lists + Discover now, 2 min 25 s), `ManualTestingWorkflowTests` and
+`ManualTestingReloadTests` passed.
+

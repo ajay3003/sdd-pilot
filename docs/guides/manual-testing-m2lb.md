@@ -63,7 +63,7 @@ You choose it inside Manual Testing, without leaving it:
 
 The choice is the same one the explorers use: the Specification, Plan, Task, Data Model and Constitution Explorers then show this module and
 feature too (and choosing in an explorer changes it here). To test another service or feature, change the lists; after a change the page
-says that scenarios found earlier came from the previous specification and links to **discover scenarios** for the new one.
+says that scenarios found earlier came from the previous specification and offers **Discover now**, which runs discovery for the new one.
 
 ### A module with several specifications
 
@@ -132,32 +132,38 @@ the **Needs attention** view lists the 120 with an open point. Use **More filter
 3. Confirm. Each scenario becomes a draft test case in the plan. A case from the specification carries its starting situation (Given), action
    (When) and expected outcome (Then), marked *Stated in the project's documentation — confirm by accepting*; add steps where the tester needs
    them.
-4. To add something discovery did not find, use **Write a test case by hand**: type a title and choose **Add test case**. The new case opens
-   at its first step: write what the tester does and what should happen side by side, choose **Add step**, then write the case's expected
-   result and save.
+4. Tests BirkNext did not find are normally added in **Azure DevOps Test Plans** after you import the exported file. Only when such a test
+   must be linked to a requirement in BirkNext before the export, open **Advanced: write a test case by hand**, type a title and choose
+   **Add test case**. The new case opens at its first step: write what the tester does and what should happen side by side, choose
+   **Add step**, and save.
 
 ## 6. Edit, save and approve
 
 Open a test case (click its title) to edit it:
 
-- **Preconditions**, **steps** (action and expected result per step) and the overall **expected result**. Norwegian text is kept as typed.
+- **Title**, **Preconditions**, **steps** (action and expected result per step) and **Priority** — what the Azure DevOps file carries.
+  Norwegian text is kept as typed.
+- **More fields** (collapsed): purpose, expected result of the whole case, environment, roles and access, dependencies, risk, test type,
+  execution method and suite. They are kept in BirkNext but are not part of the Azure DevOps file; most testers can leave them.
 - **Linked requirements** — link the case to requirements of the chosen specification.
 - **Test Data** — link approved test data, or say what data is needed.
 
 Then:
 
-1. Choose **Save draft**. An *Unsaved changes* marker is shown until you save. Give the plan a name under **Save** (for example
-   *M2LB manuell regresjon*).
+1. Choose **Save draft**. An *Unsaved changes* marker is shown until you save. Name the plan under **Save & export → Save name** (for
+   example *M2LB manuell regresjon*); the name becomes the export file's name.
 2. Record a decision per case: **Approve**, **Needs clarification** (write why in *Rationale*) or **Exclude** (write why).
    - The decision buttons are disabled while there are unsaved changes: **save first**.
-   - **Approve** follows the same rules as the export: the case needs an expected result, at least one step, and an expected result for
-     **every** step. Until then a line under the buttons says what is missing, for example *To approve: step 2 needs an expected result*.
-     Guide scenarios (System Understanding) often list steps without an expected result; fill them in or ask for clarification.
+   - **Approve** follows the export's rules: at least one step, and an action and an expected result on **every** step. The expected
+     result of the whole case is not needed (Azure DevOps has no such field). Until then a line under the buttons says what is missing,
+     for example *To approve: step 2 needs an expected result*. Guide scenarios (System Understanding) often list steps without an
+     expected result; fill them in or ask for clarification.
 3. Every saved version is kept under **Version history**; restoring an old version saves it as a new version.
 
 The Manual Testing home now lists the plan with its number of cases and how many are approved, and its next step becomes
 **Export to Azure DevOps**. In Plan & prepare the step list shows *n of m approved* and, under *Save & export*, the saved plan revision
-(*Plan saved (revision 6) · no snapshot yet*). A *snapshot* is an optional frozen copy for comparing deliveries; the export does not need one.
+(*Plan saved (revision 6) · no snapshot yet*). Snapshots (a frozen copy per delivery) and delivery comparison are under **Advanced**; the
+export does not need them.
 
 ## 7. Export to a file for Azure DevOps
 
@@ -188,7 +194,8 @@ Record Pass, Fail or Blocked, attach evidence and raise defects there. BirkNext 
 |---------|---------|---------|
 | *Choose the specification* as the next step | The project has several specifications and none is chosen | Step 2 |
 | *No evidence* for business scenarios from the specification | Discovery ran before a specification was chosen | Choose it, then **Discover again** |
-| Approve is disabled | Unsaved changes, or an expected result is missing (case or step) | Save, or fill in what the *To approve* line names |
+| Approve is disabled | Unsaved changes, no step, or a step without an action or expected result | Save, or fill in what the *To approve* line names |
+| A field you expected is not shown | It is under **More fields** (not exported) or **Advanced** | Open the collapsed section |
 | The download button is disabled | A selected case misses required information | Open the case from the list, or deselect it |
 | A scenario says *No steps in the source* or *n of m steps without an expected result* | The evidence leaves the steps open | Prepare it and write the steps; Approve waits for them |
 | *These settings were kept from before the page was reloaded* (export) | You changed export fields without saving them for the project | Save them as the project's export settings, or change them back |

@@ -64,8 +64,6 @@
                         <option value="Services" selected="@(_profile.Target == AdoTarget.Services)">Azure DevOps Services</option>
                         <option value="Server" selected="@(_profile.Target == AdoTarget.Server)">Azure DevOps Server 2022 or later</option>
                     </select></label>
-                <label class="adx-field"><span>Destination (label for your records)</span>
-                    <input value="@_profile.DestinationLabel" placeholder="For example contoso / LibraryProject" maxlength="300" @onchange="e => Set(() => _profile = _profile with { DestinationLabel = e.Value?.ToString() })" data-testid="adx-destination" /></label>
                 <label class="adx-field"><span>Area Path @(_profile.Target == AdoTarget.Services ? "(required)" : "(optional)")</span>
                     <input value="@_profile.AreaPath" placeholder="Project\Area" maxlength="4000" @onchange="e => Set(() => _profile = _profile with { AreaPath = e.Value?.ToString() })" data-testid="adx-area" /></label>
                 <label class="adx-field"><span>Assigned To (optional)</span>
@@ -83,12 +81,17 @@
                 <label class="adx-check"><input type="radio" name="adx-format" checked="@(_profile.Format == AdoExportFormat.Xlsx)" @onchange="() => Set(() => _profile = _profile with { Format = AdoExportFormat.Xlsx })" data-testid="adx-format-xlsx" /> Excel (.xlsx) — recommended</label>
                 <label class="adx-check"><input type="radio" name="adx-format" checked="@(_profile.Format == AdoExportFormat.Csv)" @onchange="() => Set(() => _profile = _profile with { Format = AdoExportFormat.Csv })" data-testid="adx-format-csv" /> CSV</label>
             </fieldset>
+            <label class="adx-check"><input type="checkbox" checked="@_profile.IncludePriority" @onchange="e => Set(() => _profile = _profile with { IncludePriority = e.Value is true })" data-testid="adx-priority" /> Add a Priority column (Critical/High/Medium/Low → 1/2/3/4; map it in the import wizard)</label>
+            <label class="adx-check"><input type="checkbox" checked="@_profile.IncludeSourceReferences" @onchange="e => Set(() => _profile = _profile with { IncludeSourceReferences = e.Value is true })" data-testid="adx-source-refs" /> Add where each test case came from (specification, acceptance scenario, requirements) as a Description column — map it to Description in the import wizard</label>
+            @* Rarely needed: a label for your own records, updating test cases that already exist in Azure DevOps, CSV formula protection. *@
+            <details class="adx-advanced" data-testid="adx-advanced" open="@(_mode == AdoExportMode.UpdateExisting)">
+            <summary>Advanced</summary>
+            <label class="adx-field"><span>Destination (label for your records)</span>
+                <input value="@_profile.DestinationLabel" placeholder="For example contoso / LibraryProject" maxlength="300" @onchange="e => Set(() => _profile = _profile with { DestinationLabel = e.Value?.ToString() })" data-testid="adx-destination" /></label>
             @if (_profile.Format == AdoExportFormat.Csv)
             {
                 <label class="adx-check"><input type="checkbox" checked="@_profile.CsvSpreadsheetSafe" @onchange="e => Set(() => _profile = _profile with { CsvSpreadsheetSafe = e.Value is true })" data-testid="adx-csv-safe" /> Protect cells that start with = + - @@ when the CSV is opened in a spreadsheet program</label>
             }
-            <label class="adx-check"><input type="checkbox" checked="@_profile.IncludePriority" @onchange="e => Set(() => _profile = _profile with { IncludePriority = e.Value is true })" data-testid="adx-priority" /> Add a Priority column (Critical/High/Medium/Low → 1/2/3/4; map it in the import wizard)</label>
-            <label class="adx-check"><input type="checkbox" checked="@_profile.IncludeSourceReferences" @onchange="e => Set(() => _profile = _profile with { IncludeSourceReferences = e.Value is true })" data-testid="adx-source-refs" /> Add where each test case came from (specification, acceptance scenario, requirements) as a Description column — map it to Description in the import wizard</label>
             <fieldset class="adx-inline" data-testid="adx-mode">
                 <legend>Create or update</legend>
                 <label class="adx-check"><input type="radio" name="adx-mode" checked="@(_mode == AdoExportMode.CreateNew)" @onchange="() => Set(() => _mode = AdoExportMode.CreateNew)" data-testid="adx-mode-create" /> Create new test cases (recommended)</label>
@@ -109,6 +112,7 @@
                     <label class="adx-check"><input type="checkbox" checked="@_confirmed" @onchange="e => Set(() => _confirmed = e.Value is true)" data-testid="adx-confirm-ids" /> I checked these ids in Azure DevOps and their steps may be replaced.</label>
                 </div>
             }
+            </details>
             @if (Unsaved)
             {
                 <p class="adx-muted adx-small" role="status" data-testid="adx-settings-unsaved">@(_restored

@@ -15,6 +15,11 @@
         ProjectName="@_ws?.ProjectName" Context="@_ws?.SnapshotBasis"
         Lead="What needs testing? The requirements of the project's specification, scenario suggestions found in its evidence, existing tests and what still needs clarification." />
 
+    @if (_ws?.ProjectKey is not null)
+    {
+        @* Outside the loading branch: reading the requirements again after a change must not remove the lists (and their Discover now). *@
+        <BirkNext.Web.Components.SpecificationScopePicker Changed="LoadAsync" />
+    }
     @if (_loading)
     {
         <p class="mt-muted" role="status" data-testid="mtd-loading">Loading what the project's evidence says…</p>
@@ -25,7 +30,6 @@
     }
     else
     {
-        <BirkNext.Web.Components.SpecificationScopePicker Changed="LoadAsync" />
         @if (_ws.Error is { } error) { <p class="mt-alert" role="alert" data-testid="mtd-error">@error</p> }
         <div class="mt-grid">
             <section class="mt-card" aria-labelledby="mtd-req-title" data-testid="mtd-requirements">

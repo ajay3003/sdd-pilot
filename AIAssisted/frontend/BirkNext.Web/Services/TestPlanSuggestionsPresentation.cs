@@ -16,13 +16,17 @@ public static class TestPlanSuggestionsPresentation
     /// (2026-11-19) two approved cases were first refused by the export: a step added without its expected result, and a guide scenario whose
     /// steps state none.
     /// </summary>
+    /// <summary>What still stops approval: the Azure DevOps export's content rules (a step, an action and an expected result on every step). The
+    /// case-level expected result is not part of an Azure DevOps test case and is not required. The API applies the same rule.</summary>
     public static string? ApproveBlocker(TestCaseDraft c)
     {
-        if (string.IsNullOrWhiteSpace(c.EffectiveExpected)) return "write the expected result first.";
-        if (c.EffectiveSteps.Count == 0) return "add at least one step with its expected result.";
-        var missing = c.EffectiveStepExpected.Select((e, i) => (e, i)).Where(x => string.IsNullOrWhiteSpace(x.e)).Select(x => x.i + 1).ToList();
-        return missing.Count == 0 ? null
-            : $"step {string.Join(", ", missing)} need{(missing.Count == 1 ? "s" : "")} an expected result.";
+        var steps = c.EffectiveSteps;
+        if (steps.Count == 0 || steps.All(string.IsNullOrWhiteSpace)) return "add at least one step with its expected result.";
+        var expected = c.EffectiveStepExpected;
+        var noAction = steps.Select((a, i) => (a, i)).Where(x => string.IsNullOrWhiteSpace(x.a)).Select(x => x.i + 1).ToList();
+        if (noAction.Count > 0) return $"step {string.Join(", ", noAction)} need{(noAction.Count == 1 ? "s" : "")} an action.";
+        var missing = steps.Select((_, i) => i).Where(i => i >= expected.Count || string.IsNullOrWhiteSpace(expected[i])).Select(i => i + 1).ToList();
+        return missing.Count == 0 ? null : $"step {string.Join(", ", missing)} need{(missing.Count == 1 ? "s" : "")} an expected result.";
     }
 
     /// <param name="Purpose">One sentence: what this step of test preparation is for (shown under the step list).</param>
@@ -34,8 +38,11 @@ public static class TestPlanSuggestionsPresentation
         new("choose", "Choose scenarios", "Find what to test in this project's evidence and choose the scenarios to prepare."),
         new("prepare", "Prepare test cases", "Write readable test cases: preconditions, steps with an expected result each, and your review decision."),
         new("testability", "Check testability", "See which cases still need Test Data, a clarification or a prerequisite before someone can run them."),
-        new("save", "Save & export", "Name the plan, save an immutable snapshot for a delivery and prepare it for Azure DevOps."),
+        new("save", "Save & export", "Name the plan and export it as a file for Azure DevOps Test Plans."),
     ];
+
+    /// <summary>Snapshot history and delivery comparison: BirkNext's own history, collapsed under Advanced (Azure DevOps keeps the test plan).</summary>
+    public static bool IsAdvancedArea(string? id) => id is "snapshots" or "compare";
 
     /// <summary>Secondary areas (not steps): snapshot history, delivery comparison and the Azure DevOps preparation.</summary>
     public static readonly IReadOnlyList<Area> MoreAreas =

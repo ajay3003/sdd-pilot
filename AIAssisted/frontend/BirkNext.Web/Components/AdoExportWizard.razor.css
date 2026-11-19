@@ -44,3 +44,6 @@
     .adx-table tr { border-bottom: 1px solid var(--clr-border, #d0d7de); padding: 0.3rem 0; }
     .adx-table th, .adx-table td { border: 0; padding: 0.1rem 0; }
 }
+
+.adx-advanced { margin: 0.6rem 0; }
+.adx-advanced > summary { cursor: pointer; font-weight: 600; }

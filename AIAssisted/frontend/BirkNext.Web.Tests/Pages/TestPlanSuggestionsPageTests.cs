@@ -171,6 +171,45 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
     }
 
     [Fact]
+    public void What_reaches_Azure_DevOps_is_shown_and_BirkNext_only_detail_is_collapsed()
+    {
+        // 2026-11-19: tests are completed in Azure DevOps; only what the import file carries stays in view.
+        var draft = Draft();
+        var api = new Api(Workspace(drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, 3, 2, 0, 0, 1, 2, 2, "t", DateTimeOffset.UtcNow)]), draft);
+        var cut = Render(api, $"?draft={draft.Id}&area=review");
+        cut.Find("[data-testid=tps-case-manglende-barn] .tps-case-head").Click();
+        var editor = cut.Find("[data-testid=tps-case-manglende-barn]");
+        var more = cut.Find("[data-testid=tps-more-fields-manglende-barn]");
+        more.HasAttribute("open").Should().BeFalse("BirkNext-only fields start collapsed");
+        more.TextContent.Should().Contain("not exported to Azure DevOps").And.Contain("Purpose").And.Contain("Expected result of the whole case")
+            .And.Contain("Risk").And.Contain("Test type").And.Contain("Execution method").And.Contain("Suite");
+        editor.QuerySelectorAll("[data-testid=tps-step-new-manglende-barn]").Should().ContainSingle("steps stay in view");
+        more.QuerySelectorAll("[data-testid=tps-steps-manglende-barn]").Should().BeEmpty("steps are not under More fields");
+        editor.TextContent.Should().NotContain("Start review");
+        cut.FindAll("[data-testid=tps-advanced-suite]").Should().ContainSingle().Which.HasAttribute("open").Should().BeFalse();
+        cut.Find("[data-testid=tps-areas-advanced]").TextContent.Should().Contain("Saved snapshots").And.Contain("Compare deliveries");
+        cut.Find("[data-testid=tps-area-export]").Closest("[data-testid=tps-areas-advanced]").Should().BeNull("the export stays in view");
+
+        cut.Find("[data-testid=tps-area-save]").Click();
+        cut.Find("[data-testid=tps-go-export]").TextContent.Should().Be("Export to Azure DevOps");
+        cut.Find("[data-testid=tps-snapshot-advanced]").HasAttribute("open").Should().BeFalse();
+        cut.Find("[data-testid=tps-snapshot-advanced]").QuerySelectorAll("[data-testid=tps-delivery]").Should().ContainSingle("the delivery label belongs to snapshots");
+        cut.Find("[data-testid=tps-plan-name-bar]").QuerySelectorAll("[data-testid=tps-rename-plan]").Should().ContainSingle("the plan is renamed without a snapshot");
+    }
+
+    [Fact]
+    public void Discover_now_in_the_address_runs_discovery_once_and_is_removed_from_the_address()
+    {
+        SelectProject();
+        var api = new Api(Workspace()) { Project = ProjectWorkspace(), Discovery = Discovery("library", LibraryCandidates) };
+        var cut = Render(api, "?area=choose&discover=now");
+        cut.WaitForAssertion(() => api.Discovered.Should().NotBeNull("the tester asked to discover the newly chosen specification"));
+        api.Discovered!.ProjectKey.Should().Be("library");
+        Services.GetRequiredService<NavigationManager>().Uri.Should().NotContain("discover=now", "a reload does not run it again");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tps-message]").TextContent.Should().Contain("candidates found"));
+    }
+
+    [Fact]
     public void Scenarios_selected_in_What_to_test_arrive_selected_never_approved_and_generate_a_proposal_from_exactly_those()
     {
         var api = new Api(Workspace());
@@ -427,6 +466,11 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         P.ApproveBlocker(c with { Edits = c.Edits with { ExpectedResult = "Rapporten holdes", Steps = ["Send rapporten", "Åpne loggen"], StepExpected = ["Rapporten er mottatt", null] } })
             .Should().Be("step 2 needs an expected result.");
         P.ApproveBlocker(c with { Edits = c.Edits with { ExpectedResult = "Rapporten holdes", Steps = [], StepExpected = [] } }).Should().Be("add at least one step with its expected result.");
+        // Only what the Azure DevOps file holds is required: the case-level expected result is not part of an Azure DevOps test case.
+        var noCaseExpected = c with { Generated = c.Generated with { ExpectedResult = null }, Edits = c.Edits with { ExpectedResult = null, Steps = ["Send rapporten"], StepExpected = ["Rapporten er mottatt"] } };
+        string.IsNullOrWhiteSpace(noCaseExpected.EffectiveExpected).Should().BeTrue();
+        P.ApproveBlocker(noCaseExpected).Should().BeNull("approval needs the steps the file carries, not a case-level expected result");
+        P.ApproveBlocker(c with { Edits = c.Edits with { Steps = [" ", "Åpne loggen"], StepExpected = ["x", "y"] } }).Should().Be("step 1 needs an action.");
     }
 
     // ── Audit 2026-11-15 (§20): unsaved edits are never marked saved early and never discarded silently ──────────────────────────────────

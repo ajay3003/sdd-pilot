@@ -99,4 +99,38 @@ public sealed class MonorepoFeatureDocumentTests
         SampleArtifactClassifier.Classify(".specify/memory/constitution.md", "# Project Constitution\n\n## Core Principles\n\n### I. Tests first\n\nEvery change MUST have tests.\n\n## Governance\n\nThis constitution supersedes other practices.\n")
             .Role.Should().Be(WorkspaceArtifactType.Constitution);
     }
+
+    [Fact]
+    public void A_test_catalogue_table_is_not_a_task_list_while_a_spec_kit_task_list_still_is()
+    {
+        // Frontend/docs/tilgangsadministrasjon/…Implementation-Notes-V2.md: a "Test Coverage" table of bUnit test ids (OPK-T01 – OPK-T12).
+        const string notes = """
+            # Tilgangsadministrasjon — Implementation Notes
+
+            ## Module Overview
+
+            The admin screens.
+
+            ## Test Coverage
+
+            | Screen | Test ids | Count |
+            |---|---|---|
+            | Operasjonskatalog | OPK-T01 – OPK-T12 | 12 |
+            | Generelle roller | GRL-T01 – GRL-T09 | 9 |
+            | Revisjonslogg | REV-T01 – REV-T05 | 5 |
+            """;
+        var result = SampleArtifactClassifier.Classify("Frontend/docs/tilgangsadministrasjon/Implementation-Notes.md", notes);
+        result.Role.Should().NotBe(WorkspaceArtifactType.Tasks, "test ids mentioned in a table are not tasks this document defines");
+
+        const string tasks = """
+            # Tasks: Cart
+
+            ## Phase 1: Setup
+
+            - [ ] T001 Create project
+            - [ ] T002 [US1] Add cart entity
+            - [ ] T003 [US1] Add cart service
+            """;
+        SampleArtifactClassifier.Classify("docs/work.md", tasks).Role.Should().Be(WorkspaceArtifactType.Tasks);
+    }
 }

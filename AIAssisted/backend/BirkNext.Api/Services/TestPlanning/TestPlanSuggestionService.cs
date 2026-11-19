@@ -110,6 +110,18 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         return await FlagsAsync(plan, ct);
     }
 
+    /// <summary>What still stops approval (the export's content rules), or null.</summary>
+    public static string? ApproveBlocker(TestCaseDraft c)
+    {
+        var steps = c.EffectiveSteps;
+        if (steps.Count == 0 || steps.All(string.IsNullOrWhiteSpace)) return "add at least one step with its expected result.";
+        var expected = c.EffectiveStepExpected;
+        var noAction = steps.Select((a, i) => (a, i)).Where(x => string.IsNullOrWhiteSpace(x.a)).Select(x => x.i + 1).ToList();
+        if (noAction.Count > 0) return $"step {string.Join(", ", noAction)} need{(noAction.Count == 1 ? "s" : "")} an action.";
+        var missing = steps.Select((_, i) => i).Where(i => i >= expected.Count || string.IsNullOrWhiteSpace(expected[i])).Select(i => i + 1).ToList();
+        return missing.Count == 0 ? null : $"step {string.Join(", ", missing)} need{(missing.Count == 1 ? "s" : "")} an expected result.";
+    }
+
     /// <summary>Marks each case whose scenario differs in (or left) the guide readers see now. Read-time only for a draft; a snapshot records it.</summary>
     private static TestPlanDraft WithSourceFlags(TestPlanDraft plan, IReadOnlyDictionary<string, string> current) => plan with
     {
@@ -204,8 +216,10 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
             throw new TestPlanException(400, "rationale-required", "Say why (a rationale is required to exclude a case or ask for clarification).");
         var plan = await FlagsAsync(Read(row), ct);
         var target = plan.Cases.FirstOrDefault(c => c.Source.ScenarioId == request.ScenarioId) ?? throw new TestPlanException(404, "case-not-found", "No such case in this proposal.");
-        if (request.State == TestCaseReviewState.Accepted && string.IsNullOrWhiteSpace(target.EffectiveExpected))
-            throw new TestPlanException(409, "expected-result-missing", "A case without an expected result cannot be accepted. Clarify the expected result first.");
+        // Approving means ready for the Azure DevOps file: the same content rules as the export (a step, an action and an expected result on
+        // every step). The case-level expected result is not part of an Azure DevOps test case and is not required.
+        if (request.State == TestCaseReviewState.Accepted && ApproveBlocker(target) is { } blocker)
+            throw new TestPlanException(409, "steps-incomplete", $"This case cannot be approved yet: {blocker}");
         if (request.State == TestCaseReviewState.Accepted && target.SourceChanged)
             throw new TestPlanException(409, "source-changed", plan.ProjectKey is null ? "The scenario changed in the source since this draft was generated. Update the proposal from the current guide first."
                 : "The scenario changed in the latest discovery since this case was prepared. Update the plan from the latest discovery first.");
