@@ -8,6 +8,7 @@
 @inject NavigationManager Navigation
 @inject IServiceProvider Services
 @inject IJSRuntime JS
+@implements IDisposable
 
 <PageTitle>Integration Test Suites · BirkNext</PageTitle>
 
@@ -237,7 +238,8 @@
                             <label class="its-check"><input type="checkbox" @bind="_allowPartial" data-testid="its-allow-partial" /> Generate a partial draft (source coverage is @Readiness(cov.State))</label>
                         }
                     </div>
-                    <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="GenerateCompositeAsync" data-testid="its-generate-composite-btn">Generate draft suite</button>
+                    @if (_projectKey is null) { <p class="its-note" data-testid="its-no-project">A suite belongs to one project: <a href="project-import">import or choose the project</a> first (for Skolenærvær, the project you test it in).</p> }
+                    <button type="button" class="btn btn-primary" disabled="@(_busy || _projectKey is null)" @onclick="GenerateCompositeAsync" data-testid="its-generate-composite-btn">Generate draft suite</button>
                 </section>
             }
             else
@@ -287,7 +289,7 @@
                         </dl>
                     }
                     @if (ScopeDef is { } scopeDef) { <p class="its-note" data-testid="its-scope-description">@scopeDef.Description</p> }
-                    <button type="button" class="btn btn-primary" disabled="@(_busy || Picked is null)" @onclick="GenerateAsync" data-testid="its-generate">Generate suite</button>
+                    <button type="button" class="btn btn-primary" disabled="@(_busy || Picked is null || _projectKey is null)" title="@(_projectKey is null ? "Import or choose the project first" : null)" @onclick="GenerateAsync" data-testid="its-generate">Generate suite</button>
                 }
             </section>
 

@@ -9,7 +9,7 @@ gives a checklist.
 |------|------|-------|
 | Performance and load | Performance Test Review (`/performance-test-review`) | A non-production target reachable from the k6 container (Podman) |
 | Automated browser flows | Critical E2E Regression (`/critical-e2e-regression`) | An imported project with UI source; for verify and run, the Edge Companion on an attended page of a non-production target |
-| Integration chains (Skolenærvær) | Integration suites / Skolenærvær | *To be added* |
+| Integration chains (Skolenærvær) | Integration suites (`/integration-suites`) | A project, the services' source (OpenAPI) and a non-production Target Environment whose URL reaches every stage |
 
 Manual test cases are prepared in **Manual Testing → Plan & prepare** and exported to Azure DevOps Test Plans
 ([manual-testing-m2lb.md](manual-testing-m2lb.md)); the technical pages do not prepare manual test cases.
@@ -158,3 +158,56 @@ run → *Diagnostic pass* (4 of 4 steps) → the stand-in's link changed → run
 **Against the real application (attended):** pair the Companion with the DEV/QA Target Environment, sign in to the application in Edge
 yourself, open the suggestion's page, verify, approve and run one flow at a time. A full page reload during a step (instead of an in-app
 route change) ends that step as *Blocked*: keep one page of the application open and let the flow navigate inside it.
+
+---
+
+## 3. The Skolenærvær chain — Altinn → MU → MM → Skole → Bufdata
+
+Integration suites tests the whole chain as one composite run: a report is submitted in Altinn, received by MU (Meldingsutveksleren), validated
+by MM, ingested by SkoleService, the person is looked up, the period is locked and the delivery reaches Bufdata. BirkNext makes the
+data-changing calls (submit, period lock) once each and *observes* the other stages, following the identifiers each stage returns (submission
+→ message → report → period) across every boundary.
+
+The Skolenærvær page (`/extensions/skolenaervaer`) shows readiness per journey; the composite run itself is started in **Integration suites**.
+
+### Before you start
+
+- **A project** in BirkNext (Import Project). A suite belongs to one project; without one, Generate says so.
+- **The services' source** with their OpenAPI contracts, as Source Analysis snapshots (Import Project, or Source Analysis → upload). The
+  stages are recognised from the folder and project names (Altinn app, Meldingsutveksler, Meldingsutveksler receiver, SkoleService, Person,
+  Bufdata delivery).
+- **A Target Environment** of type Local, Development, QA or Test whose URL reaches every stage (production is refused). The chain is called
+  on that one origin; a stage's base path comes from its contract binding.
+
+### Step by step
+
+1. **Integration suites → Sources.** Choose the scope *Altinn → MU → MM → Skolenærvær → Bufdata* and **Discover**. BirkNext proposes one
+   source per stage (for example *package A: altinn, mu*). **Approve** each proposal and **Save** — the composite context gets a revision.
+2. **Generate.** *Generate draft suite* writes a draft; nothing is sent. Readiness lists what still needs a person (for example a Kode 6/7
+   domain decision).
+3. **Execute.** The plan lists the stages in order (altinn → mu → mm → skole-intake → person-tjeneste → period-lock → bufdata) with their role:
+   the first stage *executes*, later stages are *observed*, the period lock is an *action*. **Approve the plan.**
+4. **Preflight** says whether this is a full end-to-end run (*FULL_E2E*) or a subflow and names the data-changing calls. Tick **Confirm
+   data-changing calls** and **Authorise this run** (authorisation is for one run only) and **Run**.
+5. **The run follows itself** until it ends: each stage's state, each boundary's correlation (*altinn → mu: Confirmed*) and the verdict.
+
+### Reading the verdict
+
+| Verdict | Meaning |
+|---------|---------|
+| *FULL_E2E_VERIFIED* | Every stage was observed and every boundary's correlation was confirmed |
+| *SUBFLOW_VERIFIED* | The chosen part of the chain was verified — never reported as full end to end |
+| *INCOMPLETE* | A stage was not observed within its bounded waiting (*TimedOut*) — a rejected or lost message looks like this; it is not a pass and not proof of a failure |
+| *WRONG_CORRELATION* | A stage answered with another message's identifier |
+| *FAILED* / *UNKNOWN_OUTCOME* | A call failed, or a data-changing call got no answer (never retried automatically) |
+
+### What was verified
+
+`SkolenaervaerChainWorkflowTests` (browser test) against a local stand-in of every system (`SkolenaervaerStandIn`, with its own ledger):
+project → four source packages → discover, approve, save → generate → approve plan → preflight *FullE2E* → run: **FullE2EVerified**, 7 stages
+succeeded, 6 correlations confirmed, the stand-in's ledger shows one report through all seven transitions and exactly two data-changing calls;
+MM rejecting → **Incomplete** (MM *TimedOut*); MM answering with another id → **WrongCorrelation**.
+
+**Against TT02 / MU / MM (attended):** create a Target Environment for the test environment, bind each contract's base path, run a
+**subflow** first (for example Altinn → MU) before the full chain, and agree the submission with whoever owns the receiving systems.
+

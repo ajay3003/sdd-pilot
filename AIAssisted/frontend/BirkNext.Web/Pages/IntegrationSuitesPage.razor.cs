@@ -434,7 +434,7 @@ public partial class IntegrationSuitesPage
             _preflight = result.Preflight;
             if (result.RunId is { } runId)
             {
-                _message = $"Run started ({result.Preflight.Kind}). Stages are observed with bounded waiting; refresh the run to follow it.";
+                _message = $"Run started ({result.Preflight.Kind}). Stages are observed with bounded waiting; the run below follows itself until it ends.";
                 (_suite, _) = await Api.GetAsync(suite.Id);
                 await OpenRunAsync(runId);
             }
@@ -449,7 +449,35 @@ public partial class IntegrationSuitesPage
         (_run, var error) = await Api.CompositeRunAsync(suite.Id, runId);
         _error = error;
         _retestPlan = null; _retestStage = null;
+        if (_run?.Verdict == CompositeRunVerdict.Running) _ = FollowRunAsync(runId);
     }
+
+    private CancellationTokenSource? _follow;
+
+    /// <summary>While the opened run is running, read it again every 2 s, so stages, correlation and the verdict appear without the tester
+    /// reopening it (2026-11-19: a run opened as Running and stayed so until clicked again). Stops when it ends, another run is opened or the
+    /// page is left; bounded to 10 minutes.</summary>
+    private async Task FollowRunAsync(Guid runId)
+    {
+        _follow?.Cancel();
+        var follow = _follow = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+        try
+        {
+            while (!follow.IsCancellationRequested && _run is { } run && run.RunId == runId && run.Verdict == CompositeRunVerdict.Running)
+            {
+                await Task.Delay(2000, follow.Token);
+                if (_suite is not { } suite || _run?.RunId != runId) break;
+                var (latest, _) = await Api.CompositeRunAsync(suite.Id, runId);
+                if (latest is null || follow.IsCancellationRequested || _run?.RunId != runId) break;
+                _run = latest;
+                if (latest.Verdict != CompositeRunVerdict.Running) (_suite, _) = await Api.GetAsync(suite.Id) is ({ } s, _) ? (s, (string?)null) : (_suite, null);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    public void Dispose() => _follow?.Cancel();
 
     // ── Stage retest and finding follow-up ──────────────────────────────────────────────────────────────────────────────────────
 

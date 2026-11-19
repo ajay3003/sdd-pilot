@@ -230,6 +230,9 @@ public sealed class IntegrationSuitesPageTests : BunitContext
         var evidence = new Mock<BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService>();
         evidence.Setup(e => e.Peek(It.IsAny<string?>())).Returns(new BirkNext.Web.Services.ProjectEvidence.ProjectEvidenceView("dev", "DEV", null, package, [], [], [], []));
         Services.AddSingleton(evidence.Object);
+        var workspace = new Mock<ICurrentWorkspaceProjection>();
+        workspace.Setup(w => w.GetAsync()).ReturnsAsync(BirkNext.Web.Tests.Services.WorkspaceSnapshots.AllRoles(project: "m2lb"));
+        Services.AddSingleton(workspace.Object);
 
         var cut = RenderGenerateArea();
 
@@ -240,5 +243,16 @@ public sealed class IntegrationSuitesPageTests : BunitContext
         options[1].HasAttribute("checked").Should().BeFalse();
         cut.Find("[data-testid=its-snapshot-own]").TextContent.Should().Contain("this project");
         cut.Find("[data-testid=its-generate]").HasAttribute("disabled").Should().BeFalse();
+    }
+
+    [Fact]
+    public void Without_a_selected_project_generating_says_to_choose_the_project_first_instead_of_failing_after_the_click()
+    {
+        // Skolenærvær browser run (2026-11-19): on a fresh installation Generate answered 400 "Select a project first" only after the click.
+        var cut = RenderGenerateArea();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=its-page]").GetAttribute("aria-busy").Should().Be("false"));
+        Pick(cut);
+        cut.Find("[data-testid=its-generate]").HasAttribute("disabled").Should().BeTrue();
+        _api.Verify(a => a.GenerateAsync(It.IsAny<IntegrationSuiteGenerateRequest>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }
