@@ -488,25 +488,6 @@ public static class LocalAccess
     private sealed record BootstrapResponse(string Token, int ExpiresInSeconds);
 }
 
-/// <summary>One launcher per data folder (a per-user named mutex, held while BirkNext runs).</summary>
-public sealed class SingleInstance : IDisposable
-{
-    private readonly Mutex _mutex;
-    private SingleInstance(Mutex mutex) => _mutex = mutex;
-
-    public static SingleInstance? TryAcquire(string dataRoot)
-    {
-        var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(dataRoot).ToUpperInvariant())))[..24];
-        var mutex = new Mutex(false, $@"Local\BirkNext.Launcher.{key}");
-        try { if (mutex.WaitOne(0)) return new SingleInstance(mutex); }
-        catch (AbandonedMutexException) { return new SingleInstance(mutex); } // A crashed launcher: the lock is ours now.
-        mutex.Dispose();
-        return null;
-    }
-
-    public void Dispose() { try { _mutex.ReleaseMutex(); } catch (ApplicationException) { } _mutex.Dispose(); }
-}
-
 public static class Browser
 {
     /// <summary>Microsoft Edge when installed, else the default browser. Never with extra flags or profiles.</summary>

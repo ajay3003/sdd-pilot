@@ -100,6 +100,12 @@ try {
     Invoke-Checked 'dotnet' @('publish', (Join-Path $ai 'launcher/BirkNext.Launcher/BirkNext.Launcher.csproj'), '-c', $Configuration, '-r', 'win-x64', '--self-contained', 'true',
         '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true', '-p:DebugType=none', '-o', $launcherOut, "-p:BirkNextBuildIdentityProps=$props", '-nologo', '-v', 'q')
     Copy-Item (Join-Path $launcherOut 'Start-BirkNext.exe') (Join-Path $stage 'Start-BirkNext.exe')
+    Step 'Publish updater (self-contained single file)'
+    # Update-BirkNext.exe: upgrades a per-user installation from a later downloaded package of this same format (updateContract below).
+    $updaterOut = Join-Path $OutDir 'updater-publish'
+    Invoke-Checked 'dotnet' @('publish', (Join-Path $ai 'launcher/BirkNext.Updater/BirkNext.Updater.csproj'), '-c', $Configuration, '-r', 'win-x64', '--self-contained', 'true',
+        '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true', '-p:DebugType=none', '-o', $updaterOut, "-p:BirkNextBuildIdentityProps=$props", '-nologo', '-v', 'q')
+    Copy-Item (Join-Path $updaterOut 'Update-BirkNext.exe') (Join-Path $stage 'Update-BirkNext.exe')
 
     # Developer-only files never ship (the package is configured by the launcher, not by local settings files).
     foreach ($devOnly in @('appsettings.Development.json', 'appsettings.Local.json')) {
@@ -148,6 +154,8 @@ try {
     New-Item -ItemType Directory -Force -Path (Join-Path $stage 'config') | Out-Null
     $runtimeManifest = [ordered]@{
         format = 1
+        # The package contract Update-BirkNext.exe checks before it installs a package (bump only when the layout changes incompatibly).
+        updateContract = 1
         distribution = 'WindowsTesterPackage'
         defaultRuntimeProfile = 'TesterNative'
         postgreSql = [ordered]@{ version = $lock.postgresql.version; major = $lock.postgresql.major; directory = 'runtime/postgresql'; sourceSha256 = $lock.postgresql.sha256 }
@@ -191,6 +199,11 @@ k6 $($lock.k6.version) (Grafana Labs)                                           
         '',
         'STOP',
         '  Close the BirkNext window (or press Ctrl+C in it). Your data is kept.',
+        '',
+        'UPGRADE TO A NEWER VERSION',
+        '  1. Download the new BirkNext artifact from the Azure DevOps pipeline in your browser (keep the ZIP; do not extract it).',
+        '  2. Run Update-BirkNext.exe (or Start menu > BirkNext > BirkNext Updater after the first update) and select the downloaded ZIP.',
+        '  3. Check the versions shown and choose Upgrade. BirkNext is stopped, upgraded and started again; your data is kept.',
         '',
         'YOUR DATA',
         '  %LOCALAPPDATA%\BirkNext\TesterNative (outside this folder). A newer package uses the same data;',

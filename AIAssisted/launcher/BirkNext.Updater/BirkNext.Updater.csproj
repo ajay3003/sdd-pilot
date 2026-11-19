@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Update-BirkNext.exe: the Windows Tester Package updater. It validates a locally downloaded BirkNext tester ZIP (structure, every file's SHA-256,
+    version, product and the pipeline-origin trust policy), installs it into a versioned per-user folder next to the previous version, asks the
+    running BirkNext of the data folder to stop through the launcher's own stop request, activates the new version and starts it. It never touches
+    the tester's data folder: the new launcher takes its verified pre-upgrade backup and the backend migrates, as on any upgrade.
+    Kept small and independent of the launcher (no web host): it must run when the installed BirkNext cannot start. Published self-contained
+    single-file (win-x64) by scripts/build-tester-package.ps1.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Update-BirkNext</AssemblyName>
+    <RootNamespace>BirkNext.Updater</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <ApplicationManifest>..\BirkNext.Launcher\app.manifest</ApplicationManifest>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="BirkNext.Api.Tests" />
+    <!-- The launcher's instance lock: the updater must compute the identical mutex name. -->
+    <Compile Include="../BirkNext.Launcher/SingleInstance.cs" Link="Shared/SingleInstance.cs" />
+  </ItemGroup>
+
+  <Import Project="../../versioning/BirkNext.BuildIdentity.targets" />
+
+</Project>

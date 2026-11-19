@@ -2,13 +2,69 @@
 
 Your data lives in `%LOCALAPPDATA%\BirkNext\TesterNative`. The package folder holds only programs and can be replaced.
 
-## Upgrade BirkNext
+## Upgrade BirkNext with the updater
+
+1. Download the new BirkNext artifact (`BirkNext-Tester-Windows-x64-….zip`) from the approved Azure DevOps pipeline **in your browser**. Keep the ZIP; do not extract it.
+2. Open the updater:
+   - **first time:** `Update-BirkNext.exe` in the new package (extract that package once, anywhere) or in your current package folder;
+   - **after the first update:** Start menu → BirkNext → **BirkNext Updater**.
+3. Choose **Select BirkNext ZIP** and pick the downloaded file. The updater checks it:
+   - every file against the package's own list (SHA-256);
+   - that it is a BirkNext Windows tester package for this PC;
+   - that it is newer than the installed version;
+   - that Windows recorded it as downloaded from Azure DevOps.
+
+   Nothing is changed while it checks.
+4. Read what it will do: the version it replaces, whether BirkNext must be stopped, and whether the database is updated. Confirm with **y**.
+5. The updater installs the new version next to the current one, stops BirkNext, switches to the new version and starts it. It shows each step.
+
+You do not stop BirkNext yourself, copy files, run database commands or reset anything. After the first update, **Start menu → BirkNext → BirkNext** always starts the installed version.
+
+- **Where versions are installed:** `%LOCALAPPDATA%\BirkNext\Installations\<version>\`. The current and the previous version are kept; older ones are removed.
+- **Updater log:** `%LOCALAPPDATA%\BirkNext\Installations\logs\`.
+
+### Why a package can be refused
+
+| Message | Meaning | What to do |
+|---|---|---|
+| Not downloaded from the approved Azure DevOps pipeline | Windows has no record that the ZIP came from Azure DevOps: it was copied, mailed, re-zipped or built locally | Download the artifact from the pipeline in your browser and select that file |
+| Older than the installed BirkNext / last opened by a newer version | Installing it could damage data written by the newer version | Use the newest pipeline package |
+| Cannot be ordered against the installed BirkNext | One of the two is not a pipeline build (for example a developer build) | Use a pipeline package |
+| Too old for the updater | The package was built before the updater existed | Use a newer package |
+| Damaged, incomplete, or containing unexpected files | A file does not match the package's list | Download the package again |
+| BirkNext did not stop | The running BirkNext did not stop within 2 minutes; nothing was changed | Close the BirkNext window and run the update again |
+
+The updater never stops BirkNext by force and never touches other programs.
+
+### Going back
+
+- **No database changes in the new version:** `Update-BirkNext.exe --rollback` makes the previous version active again.
+- **Database changes in the new version:** the updater refuses to go back, because the previous version cannot use the updated database. See "Going back to the previous version" below.
+
+### Interrupted updates
+
+An update that is interrupted (power loss, closed window) is resolved the next time the updater opens:
+
+- **Interrupted before the switch:** the unpacked files are removed and your BirkNext is unchanged.
+- **Interrupted after the switch:** start BirkNext; its first start finishes the update.
+
+### Trust
+
+BirkNext packages are not signed yet. The updater therefore accepts only ZIPs that Windows recorded as downloaded from Azure DevOps (`dev.azure.com` or `*.visualstudio.com`) and checks every file. This shows where the file came from; it is not a cryptographic signature.
+
+An administrator can limit it to named Azure DevOps organizations in `%LOCALAPPDATA%\BirkNext\Installations\update-trust.json`:
+
+```json
+{ "hosts": ["dev.azure.com", "*.visualstudio.com"], "organizations": ["your-organization"] }
+```
+
+## Upgrade BirkNext by hand (without the updater)
 
 1. Stop BirkNext: Ctrl+C in its window, close the window, or `Start-BirkNext.exe --stop`.
 2. Extract the new version into a **new** folder. Do not extract over the old one.
 3. Start the new `Start-BirkNext.exe`.
 
-What happens on that first start:
+What happens on that first start (with or without the updater):
 - BirkNext sees that a different build last opened your database. It writes and verifies a backup first: `backups\birknext-<time>-pre-upgrade.dump`.
 - BirkNext checks that there is enough free disk space before it backs up; if not, it stops and changes nothing.
 - The new version then applies its database updates.

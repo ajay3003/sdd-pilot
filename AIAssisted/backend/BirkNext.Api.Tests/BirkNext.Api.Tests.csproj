@@ -32,6 +32,7 @@
     <ProjectReference Include="..\BirkNext.Api\BirkNext.Api.csproj" />
     <ProjectReference Include="..\..\frontend\BirkNext.Web\BirkNext.Web.csproj" Aliases="WebProject" />
     <ProjectReference Include="..\..\launcher\BirkNext.Launcher\BirkNext.Launcher.csproj" Aliases="LauncherProject" />
+    <ProjectReference Include="..\..\launcher\BirkNext.Updater\BirkNext.Updater.csproj" Aliases="UpdaterProject" />
   </ItemGroup>
 
   <ItemGroup>

@@ -21,6 +21,7 @@ It is the **same application**: same backend, frontend, API, EF Core model and m
 ```text
 BirkNext-Tester/                          (extracted from BirkNext-Tester-Windows-x64-<build version>.zip; read-only, replaced by an upgrade)
 ├── Start-BirkNext.exe                    launcher (self-contained single file, asInvoker)
+├── Update-BirkNext.exe                  updater (self-contained single file, asInvoker; no web host) — see §6
 ├── AIAssisted/backend/                   BirkNext.Api.exe, self-contained win-x64
 ├── AIAssisted/frontend/wwwroot/          Blazor WebAssembly
 ├── runtime/postgresql/{bin,lib,share}    PostgreSQL 16.13 (EDB Windows x64 binaries, pruned: no pgAdmin, StackBuilder or test tools)
@@ -125,7 +126,18 @@ Inherited `ConnectionStrings__*`, `BirkNext__*`, `PerformanceTests__*` and `ASPN
 
 ## 6. Upgrades
 
-- **Application upgrade:** extract the new package to a new folder and start it. The data folder is shared. A verified pre-upgrade `pg_dump` is taken before the new backend migrates.
+- **Updater (`Update-BirkNext.exe`, 2026-11-19):** the supported way to upgrade from a downloaded pipeline ZIP. It:
+  - validates the ZIP before anything changes: archive safety, every file against `package-manifest.json`, product, architecture,
+    `updateContract`, version order, and the pipeline-origin trust policy;
+  - installs it side by side under `%LOCALAPPDATA%\BirkNext\Installations\<build>\`;
+  - stops the data folder's instance through the launcher's stop request, confirmed by the instance lock and never by killing;
+  - activates the new version (`installations.json`) and starts it;
+  - journals every stage (`update-journal.json`), so an interrupted update is recovered.
+
+  The updater never touches the data folder or the database. The new launcher's first start takes the verified backup and the backend
+  migrates, exactly as below. Details: `docs/audits/birknext-windows-tester-artifact-updater-2026-11-19.md`.
+- **Application upgrade (what every upgrade does):** the new package starts on the shared data folder. A verified pre-upgrade `pg_dump` is
+  taken before the new backend migrates.
   - Rollback to the old package is safe only while the schema did not change.
   - The old TesterNative backend refuses a newer schema with "The database requires a newer BirkNext". Recovery is to restore the pre-upgrade backup (see the upgrade guide).
 - **PostgreSQL major upgrade:** never automatic. A data directory of another major version stops the start (`IncompatibleVersion`); an older binary is never started on a newer directory. The documented procedure is dump with the old package and restore with the new one.
