@@ -77,18 +77,28 @@ public sealed class UpdateEngine(InstallationStore store, InstanceControl instan
         try
         {
             // 3 · Install side by side (nothing is stopped yet: a damaged package is found while BirkNext still runs).
-            progress.Phase("Installing the new version");
-            store.Write(journal = journal with { Stage = UpdateStage.Staging, StagingFolder = staging });
-            PackageInspector.Extract(plan.Package, staging, progress.Fraction, ct);
-            if (Directory.Exists(target))
+            var installed = store.Read();
+            if (string.Equals(installed.Current?.Folder, folderName, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("That version is already the active one.");
+            if (Directory.Exists(target) && string.Equals(installed.Previous?.Folder, folderName, StringComparison.OrdinalIgnoreCase))
             {
-                // A version folder without an installation record (an earlier update stopped after moving it): replaced by the verified copy.
-                if (string.Equals(store.Read().Current?.Folder, folderName, StringComparison.OrdinalIgnoreCase) || string.Equals(store.Read().Previous?.Folder, folderName, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException("That version folder is in use.");
-                Directory.Delete(target, recursive: true);
+                // Still installed as the previous version (for example after a rollback): re-verified file by file and reused, never trusted blindly.
+                progress.Phase("Checking the installed copy of the new version");
+                if (PackageInspector.Differences(plan.Package, target, progress.Fraction, ct) is { Count: > 0 } changed)
+                    throw new PackageRejectedException($"The installed copy of {plan.Package.Version.Display} was changed after it was installed ({string.Join(", ", changed.Take(3))}), so it is not reused. " +
+                        "Nothing was changed; send the updater log to the BirkNext owner.", string.Join(", ", changed));
+                store.Write(journal = journal with { Stage = UpdateStage.Staged, CandidateFolder = folderName });
             }
-            Directory.Move(staging, target);
-            store.Write(journal = journal with { Stage = UpdateStage.Staged, StagingFolder = null, CandidateFolder = folderName });
+            else
+            {
+                progress.Phase("Installing the new version");
+                store.Write(journal = journal with { Stage = UpdateStage.Staging, StagingFolder = staging });
+                PackageInspector.Extract(plan.Package, staging, progress.Fraction, ct);
+                // A version folder without an installation record (an earlier update stopped after moving it): replaced by the verified copy.
+                if (Directory.Exists(target)) Directory.Delete(target, recursive: true);
+                Directory.Move(staging, target);
+                store.Write(journal = journal with { Stage = UpdateStage.Staged, StagingFolder = null, CandidateFolder = folderName });
+            }
         }
         catch (Exception e) when (e is PackageRejectedException or IOException or UnauthorizedAccessException or InvalidOperationException or OperationCanceledException)
         {

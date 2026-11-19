@@ -147,6 +147,31 @@ public static class PackageInspector
     }
 
     /// <summary>
+    /// Files of an already installed copy of the inspected package that are missing or differ from the package's list (empty = the folder is exactly
+    /// this package). Used when the version being installed is still installed as the previous version (after a rollback): it is re-verified and
+    /// reused instead of unpacked again.
+    /// </summary>
+    public static IReadOnlyList<string> Differences(PackageInfo info, string folder, Action<int, int>? progress = null, CancellationToken ct = default)
+    {
+        var differences = new List<string>();
+        var done = 0;
+        foreach (var (relative, expected) in info.FileHashes)
+        {
+            ct.ThrowIfCancellationRequested();
+            var path = Path.Combine(folder, relative.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(path)) differences.Add(relative);
+            else
+            {
+                using var stream = File.OpenRead(path);
+                if (Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant() != expected) differences.Add(relative);
+            }
+            progress?.Invoke(++done, info.FileHashes.Count);
+            if (differences.Count >= 20) break;
+        }
+        return differences;
+    }
+
+    /// <summary>
     /// Extracts the inspected package into <paramref name="staging"/> (which must be empty or absent), hashing every file as it is written and
     /// stopping at the first difference from the manifest. Never writes outside the staging folder.
     /// </summary>

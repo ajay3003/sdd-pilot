@@ -370,6 +370,18 @@ public sealed class UpdaterTests : IDisposable
         back.Ok.Should().BeTrue(back.Message);
         store.Read().Current!.BuildVersion.Should().Be("1.0.0-ci.1001");
 
+        // Forward again after the rollback (seen in the packaged acceptance run): the previous version's folder is re-verified and reused.
+        var again = await Install(engine, Build(new Pkg(BuildVersion: "1.0.0-ci.1002", RunId: "1002")));
+        again.Ok.Should().BeTrue(again.Message);
+        (store.Read().Current!.BuildVersion, store.Read().Previous!.BuildVersion).Should().Be(("1.0.0-ci.1002", "1.0.0-ci.1001"));
+        // A previous-version folder that was changed after installation is never reused.
+        (await engine.RollbackAsync(default)).Ok.Should().BeTrue();
+        File.WriteAllText(Path.Combine(store.FolderOf("1.0.0-ci.1002"), "Start-BirkNext.exe"), "tampered");
+        var tampered = await Install(engine, Build(new Pkg(BuildVersion: "1.0.0-ci.1002", RunId: "1002")));
+        tampered.Ok.Should().BeFalse();
+        tampered.Message.Should().Contain("was changed after it was installed");
+        store.Read().Current!.BuildVersion.Should().Be("1.0.0-ci.1001");
+
         var (store2, _, engine2) = Updater("b");
         (await Install(engine2, Build(new Pkg(BuildVersion: "1.0.0-ci.1001", RunId: "1001")))).Ok.Should().BeTrue();
         (await Install(engine2, Build(new Pkg(BuildVersion: "1.0.0-ci.1002", RunId: "1002", Migrations: [.. BaseMigrations, "20261119_New"])))).Ok.Should().BeTrue();
