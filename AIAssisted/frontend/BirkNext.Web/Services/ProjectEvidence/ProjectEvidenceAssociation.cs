@@ -30,6 +30,10 @@ public enum AssociationSuggestion { None, Strong, Possible }
 public sealed record PackageAssociation(ProjectEvidencePackage Package, EvidenceAssociationState State, PackageEvidenceRole Role, string Detail, bool UserConfirmed = false,
     AssociationSuggestion Suggestion = AssociationSuggestion.None, bool RoleConfirmed = false, bool AnalysisBaseline = false, bool AlternativeVersion = false)
 {
+    private readonly IReadOnlyList<PackageEvidenceRole>? _roles;
+    /// <summary>Every role of the package for this application: all confirmed roles (several allowed), else the one role in <see cref="Role"/>.</summary>
+    public IReadOnlyList<PackageEvidenceRole> Roles { get => _roles is { Count: > 0 } r ? r : [Role]; init => _roles = value; }
+
     public string StateLabel => State switch
     {
         EvidenceAssociationState.WaitingForTargetApplication => "Detected",
@@ -86,6 +90,7 @@ public static class ProjectEvidenceAssociation
         // role confirmed in Source Management is the canonical role (ApplicationContexts.Packages).
         var classified = lifecycle.Applications.SelectMany(a => ApplicationContexts.Packages(lifecycle, a.Id, setup)).ToList();
         var roles = classified.ToDictionary(p => p.ImportId, p => p.Role, StringComparer.Ordinal);
+        var allConfirmed = classified.Where(p => p.RoleConfirmed).ToDictionary(p => p.ImportId, p => p.Roles, StringComparer.Ordinal);
         var confirmedRoles = classified.Where(p => p.RoleConfirmed).Select(p => p.ImportId).ToHashSet(StringComparer.Ordinal);
         PackageEvidenceRole RoleOf(ProjectEvidencePackage p) => roles.TryGetValue(p.ImportId, out var r) ? r
             : setup is null && p.SnapshotId is not null ? PackageEvidenceRole.NotClassified : ApplicationContexts.RoleOf(p);
@@ -97,6 +102,12 @@ public static class ProjectEvidenceAssociation
             && string.Equals(p.DisplayName, name, StringComparison.OrdinalIgnoreCase));
 
         return [.. packages.Select(p =>
+        {
+            var association = Associate(p);
+            return allConfirmed.TryGetValue(p.ImportId, out var all) ? association with { Roles = all } : association;
+        })];
+
+        PackageAssociation Associate(ProjectEvidencePackage p)
         {
             var role = RoleOf(p);
             var roleConfirmed = confirmedRoles.Contains(p.ImportId);
@@ -157,7 +168,7 @@ public static class ProjectEvidenceAssociation
                     "Its role is not classified yet (its Source Analysis is not available). Refresh sources or confirm its role."),
                 _ => new(p, EvidenceAssociationState.Associated, role, $"{ApplicationContexts.RoleLabel(role)} of {name}, associated automatically."),
             };
-        })];
+        }
     }
 
     /// <summary>
@@ -235,8 +246,25 @@ public static class ProjectEvidenceAssociation
         return changed;
     }
 
-    /// <summary>Whether an associated package fills a role: by its deterministic role for source roles, by capability for the rest.</summary>
-    private static bool Fits(PackageAssociation association, EnvironmentProjectEvidenceBinding role) => role.Capability switch
+    /// <summary>
+    /// Whether an associated package fills a role. Roles a person confirmed decide alone — every confirmed role counts (several allowed), and a
+    /// capability the content shows but nobody confirmed is not added. A confirmed related application/system source is supporting evidence
+    /// (the supporting-source role takes several sources). Without confirmed roles: by its deterministic role for source roles, by capability for
+    /// the rest.
+    /// </summary>
+    public static bool Fits(PackageAssociation association, EnvironmentProjectEvidenceBinding role)
+    {
+        if (association.RoleConfirmed)
+        {
+            var categories = association.Roles.Select(SourceRoleVocabulary.CategoryOf).ToHashSet();
+            return role.Capability == ProjectEvidenceCapability.SupportingSource
+                ? categories.Contains(ProjectEvidenceCapability.SupportingSource) || categories.Contains(ProjectEvidenceCapability.IntegrationSource)
+                : categories.Contains(role.Capability);
+        }
+        return FitsByContent(association, role);
+    }
+
+    private static bool FitsByContent(PackageAssociation association, EnvironmentProjectEvidenceBinding role) => role.Capability switch
     {
         ProjectEvidenceCapability.ApplicationSource => association.Role == PackageEvidenceRole.PrimaryApplicationSource,
         ProjectEvidenceCapability.SupportingSource => association.Role == PackageEvidenceRole.SupportingSource,

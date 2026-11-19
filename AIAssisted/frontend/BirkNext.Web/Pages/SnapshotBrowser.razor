@@ -385,7 +385,7 @@
 
     /// <summary>
     /// Project ownership, never guessed: the project the owner recorded; for a Source Analysis snapshot the applications whose Project Evidence
-    /// references its import or the snapshot (shared records); otherwise "Unassigned" (imported, no association) or "Not recorded".
+    /// references its import or the snapshot (shared records); otherwise "Suggested for …" (computed suggestion, not an association), "Not associated" or "Not recorded".
     /// </summary>
     private string ProjectText(SnapshotMetadata m)
     {
@@ -394,7 +394,16 @@
         var profiles = (Services.GetService(typeof(IFrontendAnalysisSettingsService)) as IFrontendAnalysisSettingsService)?.Settings.Profiles ?? [];
         var apps = profiles.Where(p => p.Project?.Evidence.Any(e => e.Sources.Any(s => setup.ImportId is not null && s.ImportId == setup.ImportId || s.SnapshotId == setup.SnapshotId)) == true)
             .Select(p => TargetApplications.Of(p)?.Name ?? p.Project!.ProjectName).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        return apps.Count > 0 ? string.Join(", ", apps) : setup.ImportId is null ? "Not recorded" : "Unassigned";
+        if (apps.Count > 0) return string.Join(", ", apps);
+        if (setup.ImportId is null) return "Not recorded";
+        // Not associated anywhere. Project Evidence may still suggest it for a Target Application: say so, never as an association (2026-11-19:
+        // the bare "Unassigned" read as a contradiction next to Project Evidence's suggestion).
+        var evidence = Services.GetService(typeof(BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService)) as BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService;
+        var suggested = evidence is null ? [] : profiles.Where(p => TargetApplications.Of(p) is not null)
+            .Where(p => evidence.Peek(p.Id).Associations.Any(a => a.Package.ImportId == setup.ImportId
+                && a.State == BirkNext.Web.Services.ProjectEvidence.EvidenceAssociationState.NeedsReview && a.Suggestion != BirkNext.Web.Services.ProjectEvidence.AssociationSuggestion.None))
+            .Select(p => TargetApplications.Of(p)!.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return suggested.Count > 0 ? $"Suggested for {string.Join(", ", suggested)} (not associated yet)" : "Not associated";
     }
 
     private static string AreaWords(string status) => status switch

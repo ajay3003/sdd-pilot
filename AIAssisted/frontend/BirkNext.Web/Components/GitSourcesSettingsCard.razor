@@ -182,8 +182,8 @@
         if (link.EnvironmentId != _environmentId) return;
         // Resolved only when an import starts: opening System Settings never builds the import session.
         if (Services.GetService(typeof(ProjectImportSession)) is not ProjectImportSession session) { _error = "Project Import is not available."; return; }
-        var request = new GitImportRequest(link.RepositoryId, link.Branch) { OrganizationUrl = link.OrganizationUrl, EnvironmentId = link.EnvironmentId };
-        _ = session.StartGitPreviewAsync($"{link.Repository} @ {link.Branch}", ct => Git.ImportAsync(request, ct), null);
+        var request = new GitImportRequest(link.RepositoryId, link.Branch) { OrganizationUrl = link.OrganizationUrl, EnvironmentId = link.EnvironmentId, Roles = [.. link.Roles] };
+        _ = session.StartGitPreviewAsync($"{link.Repository} @ {link.Branch}", ct => Git.ImportAsync(request, ct), null, request.Roles);
         Navigation.NavigateTo("project-import");
     }
 

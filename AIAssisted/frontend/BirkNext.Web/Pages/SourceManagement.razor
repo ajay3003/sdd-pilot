@@ -228,6 +228,9 @@
 
     private IGitSourcesApiService? Git => Services.GetService(typeof(IGitSourcesApiService)) as IGitSourcesApiService;
 
+    /// <summary>The exact snapshot in the Snapshot Registry (opened with its detail), or the registry itself when the source has no snapshot yet.</summary>
+    public static string SnapshotHref(Guid? snapshot) => snapshot is { } id ? $"snapshots?open=SourceAnalysis:{id:D}" : "snapshots";
+
     protected override Task OnInitializedAsync() => ReloadAsync();
 
     /// <summary>Initial load and Retry: import records at once, then linked repositories and Project Evidence. "No sources" is shown only
@@ -405,7 +408,7 @@
                 <button type="button" class="sm-link-action" @onclick='() => SelectTab(row, "roles")' data-testid="sm-edit-roles">Manage roles</button>
                 <a class="sm-link-action" href="@ProjectEvidenceResolver.ProjectTabHref(_environmentId)" data-testid="sm-associate">Associate with application</a>
                 @if (row.Record?.SourceSnapshotId is { } evidence) { <a class="sm-link-action" href="@($"source-analysis?snapshot={evidence:D}")" data-testid="sm-evidence">View evidence</a> }
-                <a class="sm-link-action" href="snapshots" data-testid="sm-snapshots">View snapshots</a>
+                <a class="sm-link-action" href="@SnapshotHref(row.Record?.SourceSnapshotId)" data-testid="sm-snapshots">View snapshot</a>
             </div>
             <div class="sm-tabs" role="tablist" aria-label="@($"{row.Name} details")">
                 @foreach (var (key, label) in DetailTabs)
@@ -450,6 +453,7 @@
                                 <div class="sm-card-actions">
                                     <button type="button" class="btn-secondary btn-sm" @onclick="() => CopyAsync(current.ToString())" data-testid="sm-copy-snapshot">@(_copied ? "Copied" : "Copy id")</button>
                                     <a class="btn-secondary btn-sm" href="@($"source-analysis?snapshot={current:D}")">Open in Source Analysis</a>
+                                    <a class="btn-secondary btn-sm" href="@SnapshotHref(current)" data-testid="sm-snapshot-registry-exact">Open in Snapshot Registry</a>
                                 </div>
                             </div>
                         }
@@ -660,8 +664,8 @@
         // The revision the person reviewed: the commit the last check reported (or the pinned one) — a branch that moved since is never imported
         // silently; without a check, the branch head at import time (shown as the branch).
         var commit = GitUpdateStates.CommitToImport(link);
-        var request = new GitImportRequest(link.RepositoryId, link.Branch) { OrganizationUrl = link.OrganizationUrl, Commit = commit, EnvironmentId = link.EnvironmentId };
-        _ = Session.StartGitPreviewAsync($"{link.Repository} @ {commit?[..8] ?? link.Branch}", ct => git.ImportAsync(request, ct), null);
+        var request = new GitImportRequest(link.RepositoryId, link.Branch) { OrganizationUrl = link.OrganizationUrl, Commit = commit, EnvironmentId = link.EnvironmentId, Roles = [.. link.Roles] };
+        _ = Session.StartGitPreviewAsync($"{link.Repository} @ {commit?[..8] ?? link.Branch}", ct => git.ImportAsync(request, ct), null, request.Roles);
         Nav.NavigateTo("project-import");
     }
 

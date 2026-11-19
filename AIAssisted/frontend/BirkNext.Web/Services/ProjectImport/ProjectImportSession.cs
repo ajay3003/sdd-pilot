@@ -167,6 +167,8 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
     /// <summary>Repositories still to import from one Azure DevOps selection (each through its own review), and how many were selected.</summary>
     public IReadOnlyList<(BirkNext.GitSources.GitImportRequest Request, string Label)> GitQueue { get; set; } = [];
     public int GitQueueTotal { get; set; }
+    /// <summary>The roles of the Git link being imported (from the link the person configured): written to the import record when it has none yet.</summary>
+    public IReadOnlyList<string> GitRoles { get; private set; } = [];
 
     /// <summary>Automatic Test Data XML fixture drafts made after the import (one run per committed snapshot), shown on the result.</summary>
     public IReadOnlyList<XmlFixtureAutoDraftOutcome> AutoDrafts { get; set; } = [];
@@ -181,14 +183,15 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
     /// ZIP import (roles, duplicates, commit, activation). Started only by the person's explicit choice.
     /// </summary>
     public Task<OperationSnapshot> StartGitPreviewAsync(string label, Func<CancellationToken, Task<(BirkNext.GitSources.GitImportResult? Result, string? Error)>> fetch,
-        SourceSetupView? setup)
+        SourceSetupView? setup, IReadOnlyList<string>? roles = null)
     {
         if (IsBusy && _running is { } running) return running;
+        GitRoles = roles ?? [];
         Commit = null; SaveWarning = false; Duplicate = null; ImportAgain = false; Failure = null; KeptSelectionNote = null;
         Preview = null; Discovery = null; Classified = 0; ClassifyTotal = 0; UploadedBytes = 0; UploadTotalBytes = 0; GitRevision = null; AutoDrafts = [];
         FileName = label;
         Phase = ProjectImportPhase.Validating;
-        Progress = new ProjectImportCommitEvent { Stage = "Downloading the commit from Azure DevOps", Detail = "Resolving the branch to its commit and validating the archive." };
+        Progress = new ProjectImportCommitEvent { Stage = "Reading the commit with Git", Detail = "Resolving the branch to its commit and validating the archive." };
         StartedAt = DateTimeOffset.UtcNow;
         Notify();
         var run = operations.Start(new OperationRequest(OperationKind.ProjectImportUpload, $"Checking {label}", new OperationContext(label, "project-import:git"), Route)
@@ -196,7 +199,7 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
             IdempotencyKey = "project-import", Cancellable = true,
         }, async (progress, ct) =>
         {
-            progress.Stage("Downloading the commit from Azure DevOps", label, 0, 1, "steps");
+            progress.Stage("Reading the commit with Git", label, 0, 1, "steps");
             try
             {
                 var (result, error) = await fetch(ct);
@@ -293,6 +296,8 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
             var keepSelection = SelectionKey() != selectionAtStart;
             var target = Target;
             var record = activation.Activate(preview, discovery, commit, makeCurrent: !keepSelection, target: target);
+            // A Git import carries its link's roles to the package record (the store Project Evidence reads); a person's own earlier choice wins.
+            if (record.Git is not null && GitRoles.Count > 0 && record.ConfirmedRoles.Count == 0) record.ConfirmedRoles = [.. GitRoles];
             // The package's role needs the backend's classification of its snapshot: read once, then show the application's primary
             // documents (a supporting package imported last never replaces them) and refresh the application's name.
             var setup = await ReadSetupAsync();

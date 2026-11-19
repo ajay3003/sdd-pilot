@@ -30,10 +30,47 @@ public sealed class SourceRoleAssociationTests
         var packages = ApplicationContexts.Packages(lifecycle, "app", setup: null);
 
         packages.Single(p => p.ImportId == "l").Should().Match<ApplicationPackage>(p => p.Role == PackageEvidenceRole.PrimaryApplicationSource && p.RoleConfirmed,
-            "several confirmed roles: the association role is the first in role order");
+            "several confirmed roles: the primary (association) role is the first in role order; every confirmed role is in Roles");
         packages.Single(p => p.ImportId == "t").Should().Match<ApplicationPackage>(p => p.Role == PackageEvidenceRole.Infrastructure && p.RoleConfirmed);
         packages.Single(p => p.ImportId == "m").RoleConfirmed.Should().BeFalse("without a confirmation the role is detected from content (not classified without source setup)");
         ApplicationContexts.ConfirmedRole(new SddProjectImportRecord { ConfirmedRoles = ["Unknown", nameof(PackageEvidenceRole.NotClassified)] }).Should().BeNull();
+    }
+
+    [Fact]
+    public void Every_confirmed_role_counts_not_only_the_first()
+    {
+        var lifecycle = Lifecycle(("b", "Tiltak 2", "app", [nameof(PackageEvidenceRole.Contracts), nameof(PackageEvidenceRole.RelatedApplicationSource)]));
+
+        ApplicationContexts.ConfirmedRoles(lifecycle.ProjectImports[0]).Should().Equal(PackageEvidenceRole.RelatedApplicationSource, PackageEvidenceRole.Contracts);
+        var package = ApplicationContexts.Packages(lifecycle, "app", setup: null).Single();
+        package.Role.Should().Be(PackageEvidenceRole.RelatedApplicationSource, "the primary role is the first in role order");
+        package.Roles.Should().Equal(PackageEvidenceRole.RelatedApplicationSource, PackageEvidenceRole.Contracts);
+        ApplicationContexts.ConfirmedRoles(new SddProjectImportRecord { ConfirmedRoles = ["Contracts", "Contracts", "Unknown"] })
+            .Should().Equal([PackageEvidenceRole.Contracts], "repeated or unknown role names are one role or none");
+    }
+
+    [Fact]
+    public void Confirmed_roles_decide_which_evidence_a_source_fills_and_an_unconfirmed_capability_is_not_added()
+    {
+        var package = Package("b", "Tiltak 2",
+            new PackageCapability(ProjectEvidenceCapability.ContractSchema, PackageCapabilityStatus.Ready, "Melding.xsd"),
+            new PackageCapability(ProjectEvidenceCapability.Documentation, PackageCapabilityStatus.Ready, "README.md"));
+        var confirmed = new PackageAssociation(package, EvidenceAssociationState.Associated, PackageEvidenceRole.RelatedApplicationSource, "confirmed", RoleConfirmed: true)
+        {
+            Roles = [PackageEvidenceRole.RelatedApplicationSource, PackageEvidenceRole.Contracts],
+        };
+        var roles = ProjectEvidenceRoles.Defaults().ToDictionary(r => r.RoleKey);
+
+        ProjectEvidenceAssociation.Fits(confirmed, roles["contracts"]).Should().BeTrue("a confirmed contracts role");
+        ProjectEvidenceAssociation.Fits(confirmed, roles["supporting-source"]).Should().BeTrue(
+            "a confirmed related application/system source is supporting evidence (before: never persisted, so the Snapshots page said Unassigned)");
+        ProjectEvidenceAssociation.Fits(confirmed, roles["documentation"]).Should().BeFalse("its content has documentation, but nobody confirmed that role");
+        ProjectEvidenceAssociation.Fits(confirmed, roles["application-source"]).Should().BeFalse();
+
+        var detected = new PackageAssociation(package, EvidenceAssociationState.Associated, PackageEvidenceRole.Documentation, "detected");
+        ProjectEvidenceAssociation.Fits(detected, roles["documentation"]).Should().BeTrue("without confirmed roles the content decides, as before");
+        ProjectEvidenceAssociation.Fits(detected, roles["contracts"]).Should().BeTrue();
+        detected.Roles.Should().Equal(PackageEvidenceRole.Documentation);
     }
 
     private static ProjectEvidencePackage Package(string id, string name, params PackageCapability[] capabilities) =>

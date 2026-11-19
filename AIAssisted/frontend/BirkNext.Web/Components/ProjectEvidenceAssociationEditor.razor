@@ -3,7 +3,8 @@
 @using BirkNext.Web.Services.ProjectImport
 
 @* The one association editor of Project Evidence: (1) select imported sources — suggestions first, with why; (2) review the role each has for
-   the Target Application — only roles its content supports (capability ≠ role); (3) review and save — possible matches need an explicit
+   the Target Application — several roles per source are allowed, each one only when its content supports it (capability ≠ role); sources already
+   associated can get further roles; (3) review and save — possible matches need an explicit
    confirmation, and the save is all-or-nothing. Imports, snapshots and earlier associations are never changed by it. *@
 <section class="pae" data-testid="pae" aria-labelledby="pae-title">
     <header class="pae-head">
@@ -34,6 +35,13 @@
             <summary>Other imported sources (@Others.Count)</summary>
             <ul class="pae-list">@foreach (var a in Filter(Others)) { @Candidate(a) }</ul>
         </details>
+        @if (Associated.Count > 0)
+        {
+            <details class="pae-others" data-testid="pae-associated" open="@(!string.IsNullOrWhiteSpace(_search))">
+                <summary>Already associated: add a role (@Associated.Count)</summary>
+                <ul class="pae-list">@foreach (var a in Filter(Associated)) { @Candidate(a) }</ul>
+            </details>
+        }
         <div class="pae-actions">
             <button type="button" class="btn btn-primary btn-sm" data-testid="pae-next" disabled="@(_selected.Count == 0)" @onclick="() => _step = 2">Next: review roles (@_selected.Count)</button>
             <button type="button" class="btn btn-secondary btn-sm" data-testid="pae-cancel" @onclick="OnCancel">Cancel</button>
@@ -41,9 +49,9 @@
     }
     else if (_step == 2)
     {
-        <p class="pae-muted">Choose the role each source has for @Identity.Name. Capabilities show what its content contains; a role is your decision. Only roles its content supports are offered.</p>
+        <p class="pae-muted">Choose the roles each source has for @Identity.Name: one source can have several (for example integration source and contracts). Capabilities show what its content contains; a role is your decision. Only roles its content supports are offered.</p>
         <table class="pae-table" data-testid="pae-roles">
-            <thead><tr><th scope="col">Source</th><th scope="col">Detected capabilities</th><th scope="col">Role for @Identity.Name</th></tr></thead>
+            <thead><tr><th scope="col">Source</th><th scope="col">Detected capabilities</th><th scope="col">Roles for @Identity.Name</th></tr></thead>
             <tbody>
                 @foreach (var a in SelectedAssociations)
                 {
@@ -58,11 +66,21 @@
                             }
                             else
                             {
-                                <select class="form-select form-select-sm" aria-label="@($"Role of {a.Package.DisplayName} for {Identity.Name}")" data-testid="pae-role"
-                                        value="@_roles[a.Package.ImportId]" @onchange="e => _roles[a.Package.ImportId] = Enum.Parse<PackageEvidenceRole>(e.Value!.ToString()!)">
-                                    @foreach (var role in supported) { <option value="@role">@SourceRoleVocabulary.Label(role)</option> }
-                                </select>
-                                @if (a.RoleConfirmed) { <span class="pae-muted pae-small">Role confirmed in Source Management</span> }
+                                var chosen = _roles[a.Package.ImportId];
+                                <fieldset class="pae-role-set" data-testid="pae-role-set">
+                                    <legend class="visually-hidden">Roles of @a.Package.DisplayName for @Identity.Name</legend>
+                                    @foreach (var role in supported)
+                                    {
+                                        var roleId = $"pae-role-{a.Package.ImportId}-{role}";
+                                        <span class="pae-role-option">
+                                            <input id="@roleId" type="checkbox" checked="@chosen.Contains(role)" data-testid="pae-role" data-role="@role"
+                                                   @onchange="e => { if (e.Value is true) chosen.Add(role); else chosen.Remove(role); }" />
+                                            <label for="@roleId">@SourceRoleVocabulary.Label(role)</label>
+                                        </span>
+                                    }
+                                </fieldset>
+                                @if (chosen.Count == 0) { <span class="pae-problem" data-testid="pae-no-role">Choose at least one role</span> }
+                                @if (a.RoleConfirmed) { <span class="pae-muted pae-small">Roles confirmed in Source Management: @string.Join(", ", a.Roles.Select(SourceRoleVocabulary.Label))</span> }
                             }
                         </td>
                     </tr>
@@ -70,7 +88,7 @@
             </tbody>
         </table>
         <div class="pae-actions">
-            <button type="button" class="btn btn-primary btn-sm" data-testid="pae-next" disabled="@SelectedAssociations.Any(a => SourceRoleVocabulary.Supported(a.Package).Count == 0)" @onclick="() => _step = 3">Next: review and save</button>
+            <button type="button" class="btn btn-primary btn-sm" data-testid="pae-next" disabled="@SelectedAssociations.Any(a => SourceRoleVocabulary.Supported(a.Package).Count == 0 || _roles[a.Package.ImportId].Count == 0)" @onclick="() => _step = 3">Next: review and save</button>
             <button type="button" class="btn btn-secondary btn-sm" data-testid="pae-back" @onclick="() => _step = 1">Back</button>
             <button type="button" class="btn btn-link btn-sm" data-testid="pae-cancel" @onclick="OnCancel">Cancel</button>
         </div>
@@ -82,9 +100,9 @@
         <ul class="pae-summary" data-testid="pae-summary">
             @foreach (var a in SelectedAssociations)
             {
-                var role = _roles[a.Package.ImportId];
-                <li data-testid="pae-summary-item" data-import="@a.Package.ImportId"><strong>@a.Package.DisplayName</strong> → @SourceRoleVocabulary.Label(role)
-                    <span class="pae-muted">(@ProjectEvidencePackages.CapabilityLabel(SourceRoleVocabulary.CategoryOf(role)) · @Basis(a))</span></li>
+                var roles = Ordered(_roles[a.Package.ImportId]);
+                <li data-testid="pae-summary-item" data-import="@a.Package.ImportId"><strong>@a.Package.DisplayName</strong> → @string.Join(" · ", roles.Select(SourceRoleVocabulary.Label))
+                    <span class="pae-muted">(@Basis(a))</span></li>
             }
         </ul>
         @if (possible.Count > 0)
@@ -122,7 +140,8 @@
     private string? _search;
     private bool _confirmed, _saving;
     private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, PackageEvidenceRole> _roles = new(StringComparer.Ordinal);
+    /// <summary>The roles chosen per source (several allowed; each is saved as its own association choice).</summary>
+    private readonly Dictionary<string, HashSet<PackageEvidenceRole>> _roles = new(StringComparer.Ordinal);
     private IReadOnlyList<string> _problems = [];
 
     /// <summary>Suggestions and review items first: strong before possible before other review items.</summary>
@@ -131,6 +150,12 @@
 
     private IReadOnlyList<PackageAssociation> Others => [.. View.Associations.Where(a => a.State is EvidenceAssociationState.NotAssociated or EvidenceAssociationState.WaitingForTargetApplication)
         .OrderBy(a => a.Package.DisplayName, StringComparer.OrdinalIgnoreCase)];
+
+    /// <summary>Sources already associated with the Target Application: selectable to add a further role (existing roles stay).</summary>
+    private IReadOnlyList<PackageAssociation> Associated => [.. View.Associations.Where(a => a.State == EvidenceAssociationState.Associated)
+        .OrderBy(a => a.Package.DisplayName, StringComparer.OrdinalIgnoreCase)];
+
+    private static IReadOnlyList<PackageEvidenceRole> Ordered(IEnumerable<PackageEvidenceRole> roles) => [.. roles.Order()];
 
     private IReadOnlyList<PackageAssociation> SelectedAssociations => [.. View.Associations.Where(a => _selected.Contains(a.Package.ImportId))];
 
@@ -148,8 +173,13 @@
         if (!on) { _selected.Remove(a.Package.ImportId); return; }
         _selected.Add(a.Package.ImportId);
         var supported = SourceRoleVocabulary.Supported(a.Package);
+        // Start from the source's confirmed roles (or its one detected role) that its content supports; the person adds or removes from there.
         if (!_roles.ContainsKey(a.Package.ImportId) && supported.Count > 0)
-            _roles[a.Package.ImportId] = supported.Contains(a.Role) ? a.Role : supported[0];
+        {
+            var start = a.Roles.Where(supported.Contains).ToHashSet();
+            if (start.Count == 0) start.Add(supported.Contains(a.Role) ? a.Role : supported[0]);
+            _roles[a.Package.ImportId] = start;
+        }
         _confirmed = false;
     }
 
@@ -181,7 +211,8 @@
     {
         _saving = true;
         _problems = [];
-        var result = await Evidence.AssociateAsync(EnvironmentId, [.. SelectedAssociations.Select(a => new SourceAssociationChoice(a.Package.ImportId, _roles[a.Package.ImportId]))]);
+        var result = await Evidence.AssociateAsync(EnvironmentId,
+            [.. SelectedAssociations.SelectMany(a => Ordered(_roles[a.Package.ImportId]).Select(role => new SourceAssociationChoice(a.Package.ImportId, role)))]);
         _saving = false;
         if (!result.Saved) { _problems = result.Problems; return; }
         await OnSaved.InvokeAsync(SelectedAssociations.Count);

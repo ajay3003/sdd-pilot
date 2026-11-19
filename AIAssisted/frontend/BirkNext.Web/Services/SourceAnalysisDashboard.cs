@@ -439,6 +439,8 @@ public static class SourceAnalysisDashboard
     /// <summary>Packages of the same application whose own snapshot holds infrastructure evidence (Project Evidence capabilities), excluding this one.</summary>
     public static IReadOnlyList<SourceRelatedPackage> InfrastructureElsewhere(IqrSourceSnapshot s, IEnumerable<BirkNext.Web.Services.ProjectEvidence.PackageAssociation> associations) =>
         [.. associations.Where(a => a.State is not BirkNext.Web.Services.ProjectEvidence.EvidenceAssociationState.NotAssociated
+                // A suggestion (a package imported for another application) is not this application's evidence until someone confirms it.
+                && a.Suggestion == BirkNext.Web.Services.ProjectEvidence.AssociationSuggestion.None
                 && a.Package.SnapshotId != s.Id && a.Package.Has(BirkNext.Web.Models.ProjectEvidenceCapability.Infrastructure))
             .OrderBy(a => a.Package.DisplayName, StringComparer.OrdinalIgnoreCase)
             .Select(a => new SourceRelatedPackage(a.Package.DisplayName, a.Package.SnapshotId,

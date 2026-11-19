@@ -212,8 +212,10 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
         cut.Find("[data-testid=pae-candidate][data-import=b] [data-testid=pae-pick]").Change(true);
         cut.Find("[data-testid=pae-next]").Click();
 
-        cut.Find("[data-testid=pae-role-row][data-import=a] [data-testid=pae-role]").GetAttribute("value").Should().Be(nameof(PackageEvidenceRole.PrimaryApplicationSource));
-        cut.FindAll("[data-testid=pae-role-row][data-import=b] [data-testid=pae-role] option").Select(o => o.GetAttribute("value"))
+        // Several roles per source are allowed; each starts from the source's own role, and only roles its content supports are offered.
+        cut.FindAll("[data-testid=pae-role-row][data-import=a] [data-testid=pae-role]").Where(r => r.HasAttribute("checked")).Select(r => r.GetAttribute("data-role"))
+            .Should().Equal([nameof(PackageEvidenceRole.PrimaryApplicationSource)]);
+        cut.FindAll("[data-testid=pae-role-row][data-import=b] [data-testid=pae-role]").Select(r => r.GetAttribute("data-role"))
             .Should().Equal([nameof(PackageEvidenceRole.Documentation)], "only roles its content supports are offered");
         cut.Find("[data-testid=pae-next]").Click();
 

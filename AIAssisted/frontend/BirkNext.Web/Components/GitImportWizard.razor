@@ -160,7 +160,7 @@
             var (link, error) = await Git.UpdateLinkAsync(c.Link.Id, environment, c.Branch, null, [.. c.Roles]);
             if (link is null) { _error = $"{c.Link.Repository}: {error}"; return; }
             Replace(link);
-            queue.Add((new GitImportRequest(link.RepositoryId, c.Branch) { OrganizationUrl = link.OrganizationUrl, Commit = c.Commit, EnvironmentId = environment },
+            queue.Add((new GitImportRequest(link.RepositoryId, c.Branch) { OrganizationUrl = link.OrganizationUrl, Commit = c.Commit, EnvironmentId = environment, Roles = [.. c.Roles] },
                 $"{link.Repository} @ {(c.Commit is { Length: > 0 } sha ? sha[..8] : c.Branch)}"));
         }
         await OnImport.InvokeAsync(queue);

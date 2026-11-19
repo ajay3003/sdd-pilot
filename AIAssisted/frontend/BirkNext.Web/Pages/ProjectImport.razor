@@ -928,7 +928,7 @@
         _retrying = false; _currentRetryMessage = null; _useMessage = null;
         StartElapsedTimer();
         if (GitSources is not { } git) return;
-        _ = Session.StartGitPreviewAsync(choice.Label, ct => git.ImportAsync(choice.Request, ct), _setup);
+        _ = Session.StartGitPreviewAsync(choice.Label, ct => git.ImportAsync(choice.Request, ct), _setup, choice.Request.Roles);
     }
 
     /// <summary>Git mode, several repositories: the first is staged now; each next one is offered on the result (one review per package).</summary>

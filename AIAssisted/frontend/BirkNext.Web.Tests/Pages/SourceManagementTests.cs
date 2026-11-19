@@ -143,6 +143,14 @@ public sealed class SourceManagementTests : BunitContext
     }
 
     [Fact]
+    public void Snapshot_links_open_the_exact_snapshot_in_the_registry()
+    {
+        var id = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000001");
+        SourceManagementPage.SnapshotHref(id).Should().Be("snapshots?open=SourceAnalysis:aaaaaaaa-0000-0000-0000-000000000001", "the registry opens that snapshot's detail");
+        SourceManagementPage.SnapshotHref(null).Should().Be("snapshots", "without a snapshot the registry itself");
+    }
+
+    [Fact]
     public void Roles_are_saved_on_the_link_several_at_once()
     {
         (string Link, string Environment, string? Branch, string? Pin, IReadOnlyList<string> Roles)? saved = null;

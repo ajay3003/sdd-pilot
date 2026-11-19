@@ -204,6 +204,9 @@ public sealed record GitImportRequest(string RepositoryId, string Branch)
     /// <summary>The BirkNext project the repository is linked to. Required when the repository is linked to more than one project; an import never
     /// takes another project's link.</summary>
     public string? EnvironmentId { get; init; }
+    /// <summary>The link's roles (PackageEvidenceRole names), carried to the imported package's record so Project Evidence sees them. Not used by
+    /// the backend.</summary>
+    public List<string> Roles { get; init; } = [];
 }
 
 /// <summary>The archive of one commit, staged through the same Project Import preview as a chosen ZIP (commit it with the usual import commit).</summary>

@@ -15,6 +15,11 @@ public enum PackageEvidenceRole { PrimaryApplicationSource, RelatedApplicationSo
 /// <summary>One package of an application with its role and its own (package-specific) Source Analysis status.</summary>
 public sealed record ApplicationPackage(SddProjectImportRecord Record, ProjectEvidencePackage Package, PackageEvidenceRole Role, bool RoleConfirmed = false)
 {
+    private readonly IReadOnlyList<PackageEvidenceRole>? _roles;
+    /// <summary>Every role of the package: all roles a person confirmed (several allowed), else its one detected role. <see cref="Role"/> is
+    /// the primary one (for ordering and the one-line label).</summary>
+    public IReadOnlyList<PackageEvidenceRole> Roles { get => _roles is { Count: > 0 } r ? r : [Role]; init => _roles = value; }
+
     public string ImportId => Record.ImportId;
     public string DisplayName => Package.DisplayName;
 }
@@ -144,7 +149,7 @@ public static class ApplicationContexts
         {
             var package = ProjectEvidencePackages.Of(record, lifecycle, setup);
             // A role the person confirmed in Source Management is the package's canonical role; without one the role detected from content.
-            if (ConfirmedRole(record) is { } confirmed) return new ApplicationPackage(record, package, confirmed, RoleConfirmed: true);
+            if (ConfirmedRole(record) is { } confirmed) return new ApplicationPackage(record, package, confirmed, RoleConfirmed: true) { Roles = ConfirmedRoles(record) };
             var role = Classified(record, setup) ? RoleOf(package) : PackageEvidenceRole.NotClassified;
             return new ApplicationPackage(record, package, role);
         }).ToList();
@@ -159,9 +164,16 @@ public static class ApplicationContexts
     /// first in <see cref="PackageEvidenceRole"/> order, so an application source wins over its documentation). Null when none is confirmed.
     /// Capabilities stay what the content shows: a confirmed role never adds a capability.
     /// </summary>
-    public static PackageEvidenceRole? ConfirmedRole(SddProjectImportRecord record) =>
-        record.ConfirmedRoles.Select(r => Enum.TryParse<PackageEvidenceRole>(r, out var role) ? role : (PackageEvidenceRole?)null).OfType<PackageEvidenceRole>()
-            .Where(r => r != PackageEvidenceRole.NotClassified).Order().Cast<PackageEvidenceRole?>().FirstOrDefault();
+    public static PackageEvidenceRole? ConfirmedRole(SddProjectImportRecord record) => ConfirmedRoles(record).Cast<PackageEvidenceRole?>().FirstOrDefault();
+
+    /// <summary>
+    /// Every role a person confirmed for the package, in <see cref="PackageEvidenceRole"/> order (unknown names are skipped, never guessed).
+    /// Several roles are independent facts: a package can be an integration source and a contracts source at once (2026-11-19: before, only the
+    /// first one was used and the others were silently ignored downstream).
+    /// </summary>
+    public static IReadOnlyList<PackageEvidenceRole> ConfirmedRoles(SddProjectImportRecord record) =>
+        [.. record.ConfirmedRoles.Select(r => Enum.TryParse<PackageEvidenceRole>(r, out var role) ? role : (PackageEvidenceRole?)null).OfType<PackageEvidenceRole>()
+            .Where(r => r != PackageEvidenceRole.NotClassified).Distinct().Order()];
 
     /// <summary>
     /// Whether the backend has classified the package: a package without source is classified by its documents alone; a package with a source

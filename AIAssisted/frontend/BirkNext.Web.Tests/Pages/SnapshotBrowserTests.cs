@@ -1,5 +1,6 @@
 using BirkNext.Integrations;
 using BirkNext.Snapshots;
+using BirkNext.Web.Models;
 using BirkNext.Web.Pages;
 using BirkNext.Web.Services;
 using Bunit;
@@ -68,7 +69,7 @@ public sealed class SnapshotBrowserTests : BunitContext
         var terraform = cut.FindAll("[data-testid=sb-row]")[0];
         terraform.QuerySelector(".ssb")!.GetAttribute("data-status").Should().Be(nameof(SemanticStatus.Partial));
         terraform.TextContent.Should().Contain("Analysis: Partial", "a dimension-labelled status, never a bare Failed").And.Contain("Latest");
-        terraform.QuerySelector("[data-testid=sb-project-cell]")!.TextContent.Should().Be("Unassigned", "imported, but no Project Evidence associates it — never guessed from its name");
+        terraform.QuerySelector("[data-testid=sb-project-cell]")!.TextContent.Should().Be("Not associated", "imported, but no Project Evidence associates or suggests it — never guessed from its name");
         terraform.QuerySelector("[data-testid=sb-references]")!.TextContent.Should().Be("Reference discovery incomplete — none recorded in the checked stores; other consumers may exist",
             "zero recorded references is not 'nothing uses it' while payload and browser stores are unchecked");
         terraform.QuerySelector("[data-testid=sb-references]")!.GetAttribute("data-state").Should().Be("partially-assessed");
@@ -76,6 +77,32 @@ public sealed class SnapshotBrowserTests : BunitContext
         report.QuerySelector("[data-testid=sb-project-cell]")!.TextContent.Should().Be("M2LB");
         report.QuerySelector("[data-testid=sb-references]")!.TextContent.Should().Be("2 saved references");
         cut.FindAll("[data-testid=sb-table] thead th").Select(t => t.TextContent.Trim()).Should().Equal("Snapshot / source", "Type", "Project", "Created", "Analysis", "References", "Actions");
+    }
+
+    [Fact]
+    public void A_source_only_suggested_by_Project_Evidence_says_so_and_is_never_shown_as_associated()
+    {
+        var settings = new Mock<IFrontendAnalysisSettingsService>();
+        settings.SetupGet(s => s.Settings).Returns(new FrontendAnalysisSettings
+        {
+            Profiles = [new FrontendAnalysisProfile { Id = "dev", Name = "Development", TargetApplication = new TargetApplicationIdentity { Name = "M2LB" } }],
+        });
+        var package = new BirkNext.Web.Services.ProjectEvidence.ProjectEvidencePackage("import-1", "Terraform-iac-meldingsutveksler", "Terraform-iac-meldingsutveksler.zip", "sha",
+            DateTimeOffset.UnixEpoch, Terraform, [], new Dictionary<WorkspaceArtifactType, int>(), 0, [], [], [], null);
+        var evidence = new Mock<BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService>();
+        evidence.Setup(e => e.Peek("dev")).Returns(new BirkNext.Web.Services.ProjectEvidence.ProjectEvidenceView("dev", "Development", null, null, [], [], [package], [])
+        {
+            Associations = [new BirkNext.Web.Services.ProjectEvidence.PackageAssociation(package, BirkNext.Web.Services.ProjectEvidence.EvidenceAssociationState.NeedsReview,
+                BirkNext.Web.Services.ProjectImport.PackageEvidenceRole.Infrastructure, "Strong suggestion", Suggestion: BirkNext.Web.Services.ProjectEvidence.AssociationSuggestion.Strong)],
+        });
+        Services.AddSingleton(settings.Object);
+        Services.AddSingleton(evidence.Object);
+
+        var cut = Render<SnapshotBrowser>();
+
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=sb-row]").Should().HaveCount(2));
+        cut.FindAll("[data-testid=sb-row]")[0].QuerySelector("[data-testid=sb-project-cell]")!.TextContent
+            .Should().Be("Suggested for M2LB (not associated yet)", "Project Evidence suggests it; a suggestion is not an association");
     }
 
     [Fact]
@@ -112,7 +139,7 @@ public sealed class SnapshotBrowserTests : BunitContext
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=sb-detail]"));
         cut.Find("[data-testid=sb-dimensions]").TextContent.Should().Contain("Analysis: Partial").And.Contain("Storage: available").And.Contain("Immutable")
-            .And.Contain("Retention: Working").And.Contain("Project: Unassigned");
+            .And.Contain("Retention: Working").And.Contain("Project: Not associated");
         cut.Find("[data-testid=sb-set-approved]").HasAttribute("disabled").Should().BeTrue("only a completed analysis can be approved");
         cut.Find("[data-testid=sb-approve-reason]").TextContent.Should().Contain("only a snapshot whose analysis completed can be approved").And.Contain("partial");
         cut.Find("[data-testid=sb-set-approved]").GetAttribute("aria-describedby").Should().Be("sb-approve-reason");
