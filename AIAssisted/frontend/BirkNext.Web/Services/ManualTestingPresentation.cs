@@ -29,7 +29,8 @@ public static class ManualTestingPresentation
     public sealed record Facts(string? ProjectKey, string? ProjectName, IReadOnlyList<TestPlanDraftSummary> Plans, ScenarioDiscoveryResult? Discovery, int? Requirements,
         string? SpecificationChoice = null);
 
-    public const string SpecificationRoute = "specification-explorer";
+    /// <summary>Discover &amp; understand: its Module / Feature / Specification lists choose what manual testing reads.</summary>
+    public const string SpecificationRoute = "manual-testing/discover";
 
     public sealed record NextAction(string Label, string Href, string Why);
 

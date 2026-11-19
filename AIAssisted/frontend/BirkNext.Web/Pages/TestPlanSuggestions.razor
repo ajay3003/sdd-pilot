@@ -645,6 +645,14 @@
         _requirementsNote = L.EmptyReason(evidence, _requirements);
     }
 
+    /// <summary>The tester chose another module, feature or specification here: its requirements are read again; scenarios need a new discovery.</summary>
+    private async Task OnSpecificationChangedAsync()
+    {
+        await LoadRequirementsAsync();
+        Info(_discovery is null ? "Specification chosen. Discover test scenarios to find its scenarios."
+            : "Specification changed. The scenarios listed came from the previous one: choose Discover again. Test cases already prepared stay in the plan.");
+    }
+
     private async Task DiscoverAsync()
     {
         if (_projectKey is null) return;
@@ -676,6 +684,7 @@
         <section class="tps-section" data-testid="tps-choose" aria-label="Choose scenarios" data-view="@P.ViewId(_view)">
             @if (!GuideMode)
             {
+                <BirkNext.Web.Components.SpecificationScopePicker ShowDiscoverLink="false" Changed="OnSpecificationChangedAsync" />
                 <div class="tps-actionbar tps-actionbar-compact" data-testid="tps-discover-bar">
                     <button type="button" class="tps-btn @(_discovery is null ? null : "tps-btn-quiet")" disabled="@_busy" @onclick="DiscoverAsync" data-testid="tps-discover-run">@(_discovery is null ? "Discover test scenarios" : "Discover again")</button>
                     <span class="tps-muted tps-small">@(_discovery is null ? "Reads the specification, source snapshot and contracts of this project. Nothing runs until you ask." : "The last result is reused until you discover again; changing a view or filter never re-runs analysis.")</span>

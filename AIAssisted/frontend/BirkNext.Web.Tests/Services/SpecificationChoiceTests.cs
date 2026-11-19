@@ -18,7 +18,7 @@ public sealed class SpecificationChoiceTests
     public void A_monorepo_without_a_chosen_specification_names_the_counts_and_the_choice()
     {
         var text = RequirementLinkPresentation.SpecificationChoiceNeeded(State(ExplorerArtifactStatus.SelectionRequired, ("Frontend", 7), ("PersonService", 3), ("specs", 4)));
-        text.Should().StartWith("This project contains 14 specifications in 3 modules and none is chosen yet.").And.Contain("Specification Explorer");
+        text.Should().StartWith("This project contains 14 specifications in 3 modules and none is chosen yet.").And.Contain("Choose the module and specification you are testing");
     }
 
     [Fact]
@@ -46,5 +46,9 @@ public sealed class SpecificationChoiceTests
 
         var packs = files with { PackRequired = true, Packs = [new ArtifactPackSummary("SkoleService", "001-a", null, "A", [], 2), new ArtifactPackSummary("SkoleService", "002-b", null, "B", [], 2)] };
         RequirementLinkPresentation.SpecificationChoiceNeeded(packs).Should().StartWith("Module SkoleService has 2 features, each with its own specification, and none is chosen yet.");
+
+        var noOwn = packs with { Status = ExplorerArtifactStatus.Empty, PackRequired = false, Pack = "001-a", Artifacts = [] };
+        RequirementLinkPresentation.SpecificationChoiceNeeded(noOwn).Should().StartWith("Feature A of module SkoleService has no specification of its own")
+            .And.NotContain("none is chosen", "the feature is chosen; it simply has no specification");
     }
 }

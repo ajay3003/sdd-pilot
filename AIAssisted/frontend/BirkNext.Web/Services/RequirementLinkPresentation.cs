@@ -53,20 +53,24 @@ public static class RequirementLinkPresentation
     public static string? SpecificationChoiceNeeded(Explorers.ArtifactExplorerState? state)
     {
         if (state is null || state.Selected is not null && state.Status == Explorers.ExplorerArtifactStatus.Loaded) return null;
+        // The feature is chosen but has no specification of its own: say that, not that nothing is chosen.
+        if (state.Status == Explorers.ExplorerArtifactStatus.Empty && state.PackSummary is { } emptyFeature)
+            return $"Feature {emptyFeature.DisplayName}{(state.ModuleLabel is { } m ? $" of module {m}" : "")} has no specification of its own, so it has no requirements. "
+                + "Choose another feature, or open a shared document for it in the Specification Explorer.";
         // The module is chosen but it has several specifications (feature packs, or files nothing tells apart): name the module, not the project.
         if (state.ModuleLabel is { } module && state.Status == Explorers.ExplorerArtifactStatus.SelectionRequired)
         {
             var several = state.PackRequired && state.Packs is { Count: > 1 } packs
                 ? $"{packs.Count} features, each with its own specification,"
                 : $"{state.Artifacts.Count} specifications";
-            return $"Module {module} has {several} and none is chosen yet. Choose the one you are testing in the Specification Explorer; its requirements and "
+            return $"Module {module} has {several} and none is chosen yet. Choose the one you are testing; its requirements and "
                 + "their test design are then shown here. To test another one later, choose it there and discover again.";
         }
         var count = state.Modules is { Count: > 0 } modules ? modules.Sum(m => m.Candidates) : state.Artifacts.Count;
         if (count < 2 && state.Status != Explorers.ExplorerArtifactStatus.SelectionRequired) return null;
         var moduleCount = state.Modules?.Count(m => m.Candidates > 0) ?? 0;
         return $"This project contains {count} specification{(count == 1 ? "" : "s")}{(moduleCount > 1 ? $" in {moduleCount} modules" : "")} and none is chosen yet. "
-            + "Choose the module and specification you are testing in the Specification Explorer; requirements and their test design are then shown here.";
+            + "Choose the module and specification you are testing; requirements and their test design are then shown here.";
     }
 
     /// <summary>Why the requirement list is empty, in plain words (null when there are requirements).</summary>

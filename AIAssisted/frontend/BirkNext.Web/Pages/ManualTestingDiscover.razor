@@ -25,14 +25,14 @@
     }
     else
     {
+        <BirkNext.Web.Components.SpecificationScopePicker Changed="LoadAsync" />
         @if (_ws.Error is { } error) { <p class="mt-alert" role="alert" data-testid="mtd-error">@error</p> }
         <div class="mt-grid">
             <section class="mt-card" aria-labelledby="mtd-req-title" data-testid="mtd-requirements">
                 <h2 id="mtd-req-title" class="mt-h">Requirements</h2>
                 @if (_ws.Requirements is not { Count: > 0 } && RequirementLinkPresentation.SpecificationChoiceNeeded(_ws.Specification) is { } choose)
                 {
-                    <p class="mt-muted" data-testid="mtd-req-none" data-reason="choose-specification">@choose</p>
-                    <a class="btn btn-primary btn-sm" href="specification-explorer" data-testid="mtd-choose-specification">Choose the specification</a>
+                    <p class="mt-muted" data-testid="mtd-req-none" data-reason="choose-specification">@choose Use the lists above, or <a href="specification-explorer" data-testid="mtd-choose-specification">open the Specification Explorer</a>.</p>
                 }
                 else if (_ws.Requirements is null)
                 {

@@ -70,7 +70,7 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         const string choose = "This project contains 39 specifications in 14 modules and none is chosen yet.";
         M.Facts F(List<TestPlanDraftSummary>? plans = null, ScenarioDiscoveryResult? d = null) => new("m2lb", "M2LB", plans ?? [], d, null, choose);
 
-        M.Next(F()).Should().Match<M.NextAction>(n => n.Label == "Choose the specification" && n.Href == "specification-explorer" && n.Why == choose);
+        M.Next(F()).Should().Match<M.NextAction>(n => n.Label == "Choose the specification" && n.Href == "manual-testing/discover" && n.Why == choose);
         M.Next(F(d: Discovery(4))).Label.Should().Be("Choose the specification", "discovery without a specification finds no business scenarios");
         M.Next(F([Summary()], Discovery(4))).Label.Should().Be("Export to Azure DevOps", "prepared work is never held back by the choice");
         M.Steps(F())[0].Evidence.Should().Contain("Specification not chosen yet");

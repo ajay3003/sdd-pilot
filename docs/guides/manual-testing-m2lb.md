@@ -51,13 +51,19 @@ Until you choose, the Manual Testing home says **Choose the specification**, and
 specifications in 14 modules and none is chosen yet*. Discovery then finds no business scenarios from a specification (only UI pages, API
 operations, journeys and guide scenarios).
 
-1. On the Manual Testing home choose **Choose the specification**, or open **Specification Explorer**.
-2. Under **Choose a module**, choose the service you are testing — for school attendance (Skolenærvær), **SkoleService**.
-3. If the module has several features, choose the feature; if it has several specifications, choose the one you are testing.
-4. The explorer now shows that specification — for SkoleService, *SkoleService — school attendance reporting from private institutions and
-   foster homes*. Every manual testing page uses this choice until you change it. Discover & understand then lists its **65 requirements**.
+You choose it inside Manual Testing, without leaving it:
 
-To test another service, come back and choose another module. Requirements, discovery and coverage then follow the new choice.
+1. On the Manual Testing home choose **Choose the specification**. It opens **Discover & understand**, which (like **Plan & prepare →
+   Choose**) has the lists **Module**, **Feature** and, when a feature has several, **Specification**.
+2. In **Module**, choose the service you are testing — for school attendance (Skolenærvær), **SkoleService**.
+3. If the module has several features, choose one in **Feature**; if it has several specifications, choose one in **Specification**.
+4. The line under the lists names the specification in use — for SkoleService, *Requirements and scenarios come from SkoleService — school
+   attendance reporting from private institutions and foster homes* (`SkoleService/specs/001-skoleservice/spec.md`). Discover & understand
+   then lists its **65 requirements**.
+
+The choice is the same one the explorers use: the Specification, Plan, Task, Data Model and Constitution Explorers then show this module and
+feature too (and choosing in an explorer changes it here). To test another service or feature, change the lists; after a change the page
+says that scenarios found earlier came from the previous specification and links to **discover scenarios** for the new one.
 
 ### A module with several specifications
 

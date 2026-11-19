@@ -1,0 +1,9 @@
+.ssp { margin: 0 0 1rem; padding: 0.75rem 0.9rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 12px; background: var(--clr-surface, #f6f8fa); }
+.ssp-row { display: flex; flex-wrap: wrap; gap: 0.6rem 0.9rem; align-items: flex-end; }
+.ssp-field { display: flex; flex-direction: column; gap: 0.25rem; flex: 1 1 14rem; min-width: 0; }
+.ssp-k { font-size: 0.8rem; font-weight: 600; color: var(--clr-text-muted, #57606a); }
+.ssp-select { width: 100%; max-width: 100%; min-width: 0; padding: 0.4rem 0.5rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 8px; background: var(--clr-bg, #fff); color: inherit; font: inherit; text-overflow: ellipsis; }
+.ssp-current { margin: 0.6rem 0 0; display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: baseline; overflow-wrap: anywhere; }
+.ssp-path { color: var(--clr-text-muted, #57606a); font-size: 0.85rem; }
+.ssp-link { font-size: 0.85rem; }
+.ssp-note { margin: 0.5rem 0 0; font-size: 0.9rem; }

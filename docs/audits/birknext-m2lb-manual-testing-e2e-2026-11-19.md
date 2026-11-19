@@ -108,3 +108,21 @@ A browser probe went through every explorer (Specification, Plan, Task, Data Mod
 After: 0 analysis failures (all 42 features), 0 page errors, 0 server errors. Still open: `Frontend/docs/tilgangsadministrasjon/…Implementation-Notes`
 is classified as a task list; as a module-shared document it is offered for Frontend features without `tasks.md` after a choice (not silently).
 
+## Choosing the specification inside Manual Testing; several documents per feature
+
+| # | Found | Fix |
+|---|-------|-----|
+| 20 | Switching feature meant leaving Manual Testing for the Specification Explorer, and the feature in use was not shown | **Module / Feature / Specification** lists on Discover & understand and Plan & prepare → Choose (the same saved choice the explorers use), with the specification in use named; the home's *Choose the specification* opens them |
+| 21 | A change arriving while the review context was being rebuilt was dropped (*rebuild already in progress, skipping*): after a quick switch the requirements could stay those of the previous feature | A follow-up rebuild always runs; awaiting it returns the latest state; the lists wait for it |
+| 22 | A chosen feature without a specification read *…61 specifications in 14 modules and none is chosen yet* | *Feature … of module … has no specification of its own, so it has no requirements* |
+| 23 | The project-level module (root `specs/`) could not be chosen in the lists (its key is empty, like the placeholder) | Own option value |
+
+`MultipleDocumentsPerFeatureTests` covers every multiple-document shape for every role: one document per role; extra documents of a role in the
+feature (the Spec-Kit file is shown, others choosable, research never a plan); several and no Spec-Kit file (the tester chooses, per feature
+and role); a feature missing a role (module-shared used, never a sibling's or a project note); a module without feature folders and two
+specifications; a single-feature module with a module document; switching modules and back; quick switches (requirements follow the last choice).
+
+Real data (M2LB, empty database, Release build): every module and feature chosen once with the Manual Testing lists, then all five explorers
+opened — 37 module features and the 4 project-level features: every document is the feature's own or its module's shared one, every
+explorer follows the choice, 0 documents from another feature or module, 0 page or server errors.
+

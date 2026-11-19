@@ -1,0 +1,155 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@using BirkNext.Web.Services.Explorers
+@inject IServiceProvider Services
+
+@* Which specification manual testing reads, chosen where the tester works: the module, its feature and (when a feature has several) the
+   specification, as dropdowns. The choice is the same one the explorers save (one authority), so every explorer and review follows it.
+   Nothing is chosen automatically: an empty dropdown says what still has to be chosen. *@
+@if (_state is { } s && (s.HasModules || s.HasPacks || s.Artifacts.Count > 1 || s.Status == ExplorerArtifactStatus.Loaded))
+{
+    <section class="ssp" data-testid="ssp" aria-label="Specification used for manual testing" aria-busy="@(_busy ? "true" : "false")">
+        <div class="ssp-row">
+            @if (s.HasModules)
+            {
+                <label class="ssp-field"><span class="ssp-k">Module</span>
+                    <select class="ssp-select" data-testid="ssp-module" disabled="@_busy" value="@(s.Module is { } current ? ModuleValue(current) : "")" @onchange="OnModule">
+                        @if (s.Module is null) { <option value="">Choose a module…</option> }
+                        @foreach (var m in s.Modules!.Where(m => m.Candidates > 0))
+                        {
+                            <option value="@ModuleValue(m.Module)">@ModuleText(m)</option>
+                        }
+                    </select></label>
+            }
+            @if (s.HasPacks && !s.ModuleRequired)
+            {
+                <label class="ssp-field"><span class="ssp-k">Feature</span>
+                    <select class="ssp-select" data-testid="ssp-feature" disabled="@_busy" value="@(s.PackRequired ? "" : s.Pack ?? "")" @onchange="OnFeature">
+                        @if (s.PackRequired || s.Pack is null) { <option value="">Choose a feature…</option> }
+                        @foreach (var p in s.Packs!)
+                        {
+                            <option value="@p.Pack">@(p.DisplayName == p.Pack ? p.Pack : $"{p.DisplayName} ({p.Pack})")</option>
+                        }
+                    </select></label>
+            }
+            @if (!s.ModuleRequired && !s.PackRequired && SpecificationChoices(s) is { Count: > 1 } choices)
+            {
+                <label class="ssp-field"><span class="ssp-k">Specification</span>
+                    <select class="ssp-select" data-testid="ssp-specification" disabled="@_busy" value="@(s.Selected?.Id ?? "")" @onchange="OnSpecification">
+                        @if (s.Selected is null) { <option value="">Choose a specification…</option> }
+                        @foreach (var a in choices)
+                        {
+                            <option value="@a.Id">@(a.DisplayName == a.FileName ? a.FileName : $"{a.DisplayName} ({a.SourcePath ?? a.FileName})")</option>
+                        }
+                    </select></label>
+            }
+        </div>
+        <p class="ssp-current" role="status" data-testid="ssp-current" data-state="@CurrentState(s)">
+            @if (s.Status == ExplorerArtifactStatus.Loaded && s.Selected is { } selected)
+            {
+                <span>Requirements and scenarios come from <strong>@selected.DisplayName</strong> <span class="ssp-path">@(selected.SourcePath ?? selected.FileName)</span>.</span>
+            }
+            else if (s.ModuleRequired)
+            {
+                <span>Choose the module you are testing.</span>
+            }
+            else if (s.PackRequired)
+            {
+                <span>Choose the feature you are testing in @(s.ModuleLabel ?? "this module").</span>
+            }
+            else if (s.Status == ExplorerArtifactStatus.SelectionRequired)
+            {
+                <span>Several specifications are available; choose the one you are testing.</span>
+            }
+            else if (s.Status == ExplorerArtifactStatus.Empty && s.PackSummary is { } pack)
+            {
+                <span>@pack.DisplayName has no specification of its own. Choose another feature, or <a href="specification-explorer">open the Specification Explorer</a> to use a shared document for it.</span>
+            }
+            else
+            {
+                <span>No specification is available here.</span>
+            }
+            <a class="ssp-link" href="specification-explorer" data-testid="ssp-open-explorer">Open in the Specification Explorer</a>
+        </p>
+        @if (_changed && ShowDiscoverLink && s.Status == ExplorerArtifactStatus.Loaded)
+        {
+            <p class="ssp-note" role="status" data-testid="ssp-changed">The specification changed. Scenarios found earlier came from the previous one:
+                <a href="test-plan-suggestions?area=choose" data-testid="ssp-discover">discover scenarios for this specification</a>. Test cases already prepared stay in the plan.</p>
+        }
+        @if (_saveWarning is not null) { <p class="ssp-note" role="alert" data-testid="ssp-save-warning">@_saveWarning</p> }
+    </section>
+}
+
+@code {
+    /// <summary>Raised after the tester changed the module, feature or specification (the page reads its requirements again).</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    /// <summary>False where discovery runs on the same page (Plan &amp; prepare says it there).</summary>
+    [Parameter] public bool ShowDiscoverLink { get; set; } = true;
+
+    private IArtifactExplorerContext? _explorer;
+    private ArtifactExplorerState? _state;
+    private bool _busy;
+    private bool _changed;
+    private string? _saveWarning;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _explorer = Services.GetService(typeof(IArtifactExplorerContext)) as IArtifactExplorerContext;
+        await ReadAsync();
+    }
+
+    private async Task ReadAsync()
+    {
+        if (_explorer is null) return;
+        try { _state = await _explorer.GetStateAsync(WorkspaceArtifactType.Specification); }
+        catch (Exception e) when (e is not OperationCanceledException) { _state = null; }
+    }
+
+    /// <summary>The specifications to choose between in the current module or feature (a feature's own ones when it has any).</summary>
+    private static IReadOnlyList<ExplorerArtifact> SpecificationChoices(ArtifactExplorerState s) =>
+        s.Status is ExplorerArtifactStatus.Loaded or ExplorerArtifactStatus.SelectionRequired ? s.Artifacts : [];
+
+    private static string CurrentState(ArtifactExplorerState s) =>
+        s.Status == ExplorerArtifactStatus.Loaded ? "chosen" : s.ModuleRequired ? "module" : s.PackRequired ? "feature" : s.Status == ExplorerArtifactStatus.SelectionRequired ? "specification" : "none";
+
+    private static string ModuleText(ArtifactModuleRoleState m) =>
+        m.Packs > 1 ? $"{m.Label} — {m.Packs} features" : $"{m.Label} — {m.Candidates} specification{(m.Candidates == 1 ? "" : "s")}";
+
+    /// <summary>The project-level module's key is "" — the same as "nothing chosen" — so it has its own option value.</summary>
+    private const string ProjectLevelValue = "(project-level)";
+
+    private static string ModuleValue(string module) => module.Length == 0 ? ProjectLevelValue : module;
+
+    private Task OnModule(ChangeEventArgs e) => e.Value?.ToString() switch
+    {
+        ProjectLevelValue => ApplyAsync(() => _explorer!.SelectModuleAsync(ArtifactModules.ProjectLevel)),
+        { Length: > 0 } module => ApplyAsync(() => _explorer!.SelectModuleAsync(module)),
+        _ => Task.CompletedTask,
+    };
+
+    private Task OnFeature(ChangeEventArgs e) =>
+        e.Value?.ToString() is { Length: > 0 } pack ? ApplyAsync(() => _explorer!.SelectPackAsync(pack, _state?.Module)) : Task.CompletedTask;
+
+    private Task OnSpecification(ChangeEventArgs e) =>
+        e.Value?.ToString() is { Length: > 0 } id ? ApplyAsync(() => { _explorer!.Select(WorkspaceArtifactType.Specification, id); return Task.CompletedTask; }) : Task.CompletedTask;
+
+    private async Task ApplyAsync(Func<Task> change)
+    {
+        if (_explorer is null) return;
+        _busy = true;
+        try
+        {
+            await change();
+            // Saved like a choice in the explorers, so a reload and every explorer show the same specification.
+            if (Services.GetService(typeof(IWorkspaceAutoSaveService)) is IWorkspaceAutoSaveService autoSave)
+                _saveWarning = await autoSave.SaveNowAsync() ? null : "The choice is used in this session but could not be saved to the workspace, so it will be lost on reload.";
+            // Requirements are read from the review context: wait until it is rebuilt from the new choice.
+            if (Services.GetService(typeof(IReviewContextProvider)) is IReviewContextProvider context) await context.RebuildAsync();
+            await ReadAsync();
+            _changed = true;
+        }
+        finally { _busy = false; }
+        await Changed.InvokeAsync();
+    }
+}

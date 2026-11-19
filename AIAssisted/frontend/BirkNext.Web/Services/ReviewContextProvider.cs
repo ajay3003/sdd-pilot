@@ -77,17 +77,39 @@ public sealed class ReviewContextProvider : IReviewContextProvider, IDisposable
 
     private readonly IWorkspaceDocumentHydration? _documents;
 
-    public async Task RebuildAsync()
+    private Task? _running;
+    private bool _pending;
+
+    /// <summary>
+    /// Rebuilds the context. A request that arrives while a rebuild runs is never dropped: one more rebuild follows, so the context always ends
+    /// on the latest selection (a quick module or feature switch used to keep the previous feature's requirements). Awaiting the returned task
+    /// waits for that latest state.
+    /// </summary>
+    public Task RebuildAsync()
     {
         // Built from document bodies only: while they are deferred a rebuild would read nothing (and must not load them at start-up).
         // Loading the bodies rebuilds it.
-        if (_documents is { IsDeferred: true }) return;
-        if (_isRebuilding)
+        if (_documents is { IsDeferred: true }) return Task.CompletedTask;
+        if (_running is { IsCompleted: false } running)
         {
-            _logger.LogWarning("ReviewContext rebuild already in progress, skipping");
-            return;
+            _pending = true;
+            return running;
         }
+        return _running = RunUntilCurrentAsync();
+    }
 
+    private async Task RunUntilCurrentAsync()
+    {
+        do
+        {
+            _pending = false;
+            await RebuildOnceAsync();
+        }
+        while (_pending);
+    }
+
+    private async Task RebuildOnceAsync()
+    {
         _isRebuilding = true;
         try
         {
