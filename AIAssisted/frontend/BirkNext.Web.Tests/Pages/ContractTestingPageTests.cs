@@ -196,9 +196,10 @@ public sealed class ContractTestingPageTests : BunitContext
             return Task.FromResult<(ContractChainSaveResult?, string?)>((new(chain, []), null));
         }
         public SourceContractBulkImportRequest? Bulk { get; private set; }
+        public List<SourceContractBulkImportRequest> BulkCalls { get; } = [];
         public Task<(SourceContractBulkImportResult? Result, string? Error)> ImportFromSourceBulkAsync(SourceContractBulkImportRequest request, CancellationToken ct = default)
         {
-            Bulk = request; HasContract = true;
+            Bulk = request; BulkCalls.Add(request); HasContract = true;
             return Task.FromResult<(SourceContractBulkImportResult?, string?)>((new([
                 new("openapi:api/children.yaml", "api/children.yaml", "Children API", BulkImportOutcome.Imported, "children-api", 1, "Imported.") { TestsCreated = 6, DataBound = 2, DataNeedsReview = 1, DataNoInputs = 1 },
                 new("openapi:api/schools.yaml", "api/schools.yaml", "Schools API", BulkImportOutcome.NewVersion, "schools-api", 2, "Imported as version 2.") { TestsCreated = 1, DataBound = 1 }]), null));
@@ -407,7 +408,10 @@ public sealed class ContractTestingPageTests : BunitContext
         var page = Open("");
         page.Find("[data-testid=ct-import-source-mode]").Change(true);
         page.WaitForAssertion(() => page.FindAll("[data-testid=ct-source-contract]").Should().HaveCount(3));
-        page.Find("[data-testid=ct-source-imported]").TextContent.Should().Be("Imported as schema@v1");
+        page.FindAll("[data-testid=ct-source-details-toggle]")[2].Click();
+        page.Find("[data-testid=ct-source-import-state]").TextContent.Should().Contain("Up to date (schema@v1)");
+        page.Find("[data-testid=ct-source-open-contract]").GetAttribute("href").Should().Contain("contract=schema");
+        page.FindAll("[data-testid=ct-source-details-toggle]")[0].Click();
         page.Find("[data-testid=ct-source-import]").Click();
         page.WaitForAssertion(() => _api.SourceImport.Should().Be(new SourceContractImportRequest(Guid.Parse("11111111-1111-1111-1111-111111111111"), "openapi:api/children.yaml", null, null)));
         Services.GetRequiredService<NavigationManager>().Uri.Should().Contain("contract=children-api");
@@ -741,7 +745,7 @@ public sealed class ContractTestingPageTests : BunitContext
     }
 
     [Fact]
-    public void Bulk_import_sends_the_selected_contracts_with_generation_and_reports_tests_and_data_per_contract()
+    public void Import_and_generate_sends_the_selected_contracts_with_generation_and_reports_tests_and_data_per_contract()
     {
         _api.HasContract = false;
         var page = Open("");
@@ -750,9 +754,13 @@ public sealed class ContractTestingPageTests : BunitContext
         page.Find("[data-testid=ct-source-group-select]").Change(true);
         page.Find("[data-testid=ct-bulk-import]").TextContent.Should().Be("Import selected (2)");
         page.Find("[data-testid=ct-bulk-import]").Click();
+        _api.Bulk.Should().BeNull("the preview comes first; nothing is written yet");
+        page.Find("[data-testid=ct-preview-counts]").TextContent.Should().Contain("1 new").And.Contain("1 changed");
+        page.FindAll("[data-testid=ct-bulk-generate]").Should().BeEmpty("no remembered 'generate right away' checkbox");
+        page.Find("[data-testid=ct-import-generate]").Click();
         page.WaitForAssertion(() => _api.Bulk.Should().NotBeNull());
         _api.Bulk!.Items.Select(i => i.SourceContractId).Should().Equal("openapi:api/children.yaml", "openapi:api/schools.yaml");
-        _api.Bulk.GenerateTests.Should().BeTrue("tests and test data are generated in the same step by default");
+        _api.Bulk.GenerateTests.Should().BeTrue("the tester chose Import and generate");
         _api.Bulk.GenerateTestData.Should().BeTrue();
         _api.Bulk.EnvironmentId.Should().Be("local-synthetic");
         page.WaitForAssertion(() => page.FindAll("[data-testid=ct-bulk-row]").Select(r => r.GetAttribute("data-outcome")).Should().Equal("Imported", "NewVersion"));
@@ -948,5 +956,70 @@ public sealed class ContractTestingPageTests : BunitContext
         page.Find("[data-testid=ct-detail]").TextContent.Should().Contain("#legacy");
         page.Find("[data-testid=ct-identity-banner]").TextContent.Should().Contain("Identity needs review");
         page.FindAll("[data-testid=ct-assign-project] option").Select(o => o.GetAttribute("value")).Should().Contain(["m2lb", "m2lb-language"]);
+    }
+
+    // ── Import redesign (2026-11-18): import only by default, explicit generation, preview, filters, details, deep links ──────────────
+
+    [Fact]
+    public void Importing_never_generates_tests_unless_asked_and_generation_is_a_separate_explicit_step()
+    {
+        _api.HasContract = false;
+        var page = Open("");
+        page.WaitForAssertion(() => page.FindAll("[data-testid=ct-source-group-select]").Should().NotBeEmpty());
+        page.Find("[data-testid=ct-source-group-select]").Change(true);
+        page.Find("[data-testid=ct-bulk-import]").Click();
+        page.Find("[data-testid=ct-import-only]").TextContent.Should().Be("Import 2 contracts");
+        page.Find("[data-testid=ct-import-only]").Click();
+        page.WaitForAssertion(() => _api.BulkCalls.Should().ContainSingle());
+        _api.BulkCalls[0].GenerateTests.Should().BeFalse("Import only is the default action");
+        _api.BulkCalls[0].GenerateTestData.Should().BeFalse();
+        page.Find("[data-testid=ct-message]").TextContent.Should().Contain("No tests were generated");
+        page.Find("[data-testid=ct-generate-next]").TextContent.Should().Contain("2 contracts imported without tests");
+
+        page.Find("[data-testid=ct-generate-imported]").Click();
+        page.WaitForAssertion(() => _api.BulkCalls.Should().HaveCount(2));
+        _api.BulkCalls[1].GenerateTests.Should().BeTrue();
+        _api.BulkCalls[1].Items.Select(i => i.SourceContractId).Should().Equal("openapi:api/children.yaml", "openapi:api/schools.yaml");
+        page.FindAll("[data-testid=ct-generate-next]").Should().BeEmpty();
+        _api.Ran.Should().BeNull("neither importing nor generating runs a test");
+        new SourceContractBulkImportRequest().GenerateTests.Should().BeFalse("an omitted field never generates");
+    }
+
+    [Fact]
+    public void Protocol_and_state_filters_keep_the_selection_and_count_what_they_hide()
+    {
+        _api.HasContract = false;
+        var page = Open("");
+        page.WaitForAssertion(() => page.FindAll("[data-testid=ct-source-contract]").Should().HaveCount(3));
+        page.Find("[data-testid=ct-sum-files]").TextContent.Should().Contain("3");
+        page.Find("[data-testid=ct-sum-rest]").TextContent.Should().Contain("2");
+        page.Find("[data-testid=ct-sum-graphql]").TextContent.Should().Contain("1");
+        page.Find("[data-testid=ct-sum-imported]").TextContent.Should().Contain("1");
+        page.Find("[data-testid=ct-source-select]").Change(true);
+        page.Find("[data-testid=ct-source-protocol-graphql]").Click();
+        page.FindAll("[data-testid=ct-source-contract]").Select(r => r.GetAttribute("data-file")).Should().Equal("schema.graphql");
+        page.Find("[data-testid=ct-source-selected]").TextContent.Should().Contain("1 selected").And.Contain("1 hidden by filters");
+        page.Find("[data-testid=ct-source-protocol-rest]").Click();
+        page.FindAll("[data-testid=ct-source-contract]").Should().HaveCount(2);
+        page.Find("[data-testid=ct-source-state]").Change("UpToDate");
+        page.FindAll("[data-testid=ct-source-contract]").Should().BeEmpty("the only imported file is GraphQL");
+        page.Find("[data-testid=ct-source-protocol-all]").Click();
+        page.FindAll("[data-testid=ct-source-contract]").Select(r => r.GetAttribute("data-file")).Should().Equal("schema.graphql");
+        page.Find("[data-testid=ct-source-search]").Input("");
+        page.Find("[data-testid=ct-source-selected]").TextContent.Should().Contain("1 selected");
+    }
+
+    [Fact]
+    public void A_deep_link_opens_the_exact_source_file_with_its_operations_and_an_unknown_file_says_so()
+    {
+        _api.HasContract = false;
+        var page = Open("?mode=import&snapshot=11111111-1111-1111-1111-111111111111&file=api%2Fschools.yaml&operation=GET%20%2Fschools");
+        page.WaitForAssertion(() => page.Find("[data-testid=ct-source-detail]").Should().NotBeNull());
+        page.Find("[data-testid=ct-source-contract].is-open").GetAttribute("data-file").Should().Be("api/schools.yaml");
+        page.Find("[data-testid=ct-source-import-state]").TextContent.Should().Contain("Changed → v2 of schools-api");
+
+        var missing = Open("?mode=import&snapshot=11111111-1111-1111-1111-111111111111&file=nowhere.yaml");
+        missing.WaitForAssertion(() => missing.Find("[data-testid=ct-message]").TextContent.Should().Contain("nowhere.yaml").And.Contain("not in the current analysis baseline"));
+        missing.FindAll("[data-testid=ct-source-detail]").Should().BeEmpty("nothing is matched by name");
     }
 }

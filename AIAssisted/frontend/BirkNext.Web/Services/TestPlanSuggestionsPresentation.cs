@@ -357,6 +357,10 @@ public static class TestPlanSuggestionsPresentation
         switch (o.Specialist)
         {
             case SpecialistArea.ContractTesting:
+                // The exact source contract (snapshot + file path) and operation: Contract Testing opens that file's details (?mode=import&snapshot=&file=&operation=).
+                if (Guid.TryParse(c.SnapshotKey, out var snapshot) && ScenarioOwnership.ContractFile(c) is { } file)
+                    return new("Open in Contract Testing", ContractImportPresentation.SourceLink(snapshot, file, c.Template.FirstOrDefault(t => t.Key == "operation")?.Value),
+                        $"{project} Opens {file} from this source snapshot, at this operation.");
                 return new("Open Contract Testing", "api-quality-review/contracts",
                     $"{project} Contract Testing lists this snapshot's source contracts; look for {ScenarioOwnership.ContractFile(c) ?? "the contract"}.");
             case SpecialistArea.ApiQualityReview:

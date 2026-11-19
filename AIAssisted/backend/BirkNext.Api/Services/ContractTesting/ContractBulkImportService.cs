@@ -12,6 +12,29 @@ public sealed class ContractBulkImportService(ContractRegistryService registry, 
 {
     public const int MaxItems = 200;
 
+    /// <summary>
+    /// Project ownership of a bulk import, checked against each item's own snapshot project (never the browser's selection): with a project, every
+    /// item must belong to it (or to a repository identity declared the same); without one, items of several projects need an explicit
+    /// confirmation. Null = allowed; otherwise the reason nothing is imported.
+    /// </summary>
+    public async Task<string?> RefusalAsync(SourceContractBulkImportRequest request, CancellationToken ct)
+    {
+        var wanted = request.Items.Select(i => (i.SnapshotId, i.SourceContractId)).ToHashSet();
+        var candidates = (await registry.SourceCandidatesAsync(ct)).Where(c => wanted.Contains((c.SnapshotId, c.ContractId))).ToList();
+        var projects = candidates.Select(c => c.ProjectKey).Distinct(StringComparer.Ordinal).ToList();
+        if (!string.IsNullOrWhiteSpace(request.ProjectKey))
+        {
+            var group = await registry.ProjectGroupAsync(request.ProjectKey, ct);
+            var foreign = candidates.Where(c => !group.Contains(c.ProjectKey)).ToList();
+            if (foreign.Count > 0)
+                return $"{foreign.Count} selected contract(s) belong to another project ({string.Join(", ", foreign.Select(c => c.ProjectName).Distinct().Take(3))}); nothing was imported.";
+            return null;
+        }
+        return projects.Count > 1 && !request.ConfirmMultipleProjects
+            ? $"The selected contracts belong to {projects.Count} projects. Choose one project, or confirm importing for several projects; nothing was imported."
+            : null;
+    }
+
     public async Task<SourceContractBulkImportResult> ImportAsync(SourceContractBulkImportRequest request, CancellationToken ct)
     {
         var items = new List<SourceContractBulkItem>();

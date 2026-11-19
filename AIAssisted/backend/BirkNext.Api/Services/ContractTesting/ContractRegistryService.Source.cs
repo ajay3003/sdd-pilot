@@ -124,11 +124,24 @@ public sealed partial class ContractRegistryService
                 hit is not null ? ContractIdentity.ContractRef(hit.Key, hit.Version)
                     : state == SourceContractCandidateState.UpToDate && match.Contract is { } same ? ContractIdentity.ContractRef(same.Key, match.LatestVersion ?? 0) : null)
             {
-                Module = SourceModule(c.File), Protocol = protocol, State = state, ContractKey = match.Contract?.Key, ContractVersion = match.LatestVersion, Snapshots = count,
-                HasDocument = docSha is not null, ProjectKey = identity.Key, ProjectName = identity.DisplayName, Identity = match.Classification, Candidates = match.Candidates,
+                Module = SourceModule(WithoutArchiveFolder(c.File, snapshot.Archive.FileName)), Protocol = protocol, State = state, ContractKey = match.Contract?.Key,
+                ContractVersion = match.LatestVersion, Snapshots = count, HasDocument = docSha is not null, ProjectKey = identity.Key, ProjectName = identity.DisplayName,
+                Identity = match.Classification, Candidates = match.Candidates, DocumentSha256 = docSha, Operations = [.. c.Operations.Select(o => o.Name).Take(1000)],
             });
         }
         return [.. result.OrderBy(r => r.ProjectName, StringComparer.OrdinalIgnoreCase).ThenBy(r => r.Module, StringComparer.OrdinalIgnoreCase).ThenBy(r => r.File, StringComparer.OrdinalIgnoreCase)];
+    }
+
+    /// <summary>
+    /// A file path without the folder the archive wraps everything in ("SchoolHub.zip": "SchoolHub/SchoolService/x.yaml" → "SchoolService/x.yaml"),
+    /// so the service folder — not the archive's name — groups the contracts (2026-11-18: an archive with one wrapper folder showed every
+    /// contract as one module). Only that exact wrapper is removed; any other path is returned unchanged.
+    /// </summary>
+    public static string WithoutArchiveFolder(string file, string? archiveFileName)
+    {
+        var wrapper = System.IO.Path.GetFileNameWithoutExtension(archiveFileName ?? "");
+        var path = file.Replace('\\', '/').TrimStart('/');
+        return wrapper.Length > 0 && path.StartsWith(wrapper + "/", StringComparison.OrdinalIgnoreCase) && path.Count(ch => ch == '/') >= 2 ? path[(wrapper.Length + 1)..] : path;
     }
 
     /// <summary>The top-level folder of a source contract's file ("Autorisasjon/autodoc/openapi.yaml" → "Autorisasjon"); "(root)" for a top-level file.</summary>

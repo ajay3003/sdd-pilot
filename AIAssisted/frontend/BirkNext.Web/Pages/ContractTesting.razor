@@ -4,6 +4,7 @@
 @using BirkNext.SourceDomains
 @using BirkNext.Web.Models
 @using BirkNext.Web.Components
+@using CI = BirkNext.Web.Services.ContractImportPresentation
 @inject IServiceProvider Services
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject NavigationManager Nav
@@ -207,6 +208,10 @@
     [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
     [SupplyParameterFromQuery(Name = "project")] public string? Project { get; set; }
     [SupplyParameterFromQuery(Name = "keys")] public string? KeysQuery { get; set; }
+    /// <summary>Deep link to one source contract file: its Source Analysis snapshot and exact path (?mode=import&snapshot=&file=), optionally one operation.</summary>
+    [SupplyParameterFromQuery(Name = "snapshot")] public Guid? SnapshotQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "file")] public string? FileQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "operation")] public string? OperationQuery { get; set; }
 
     private static readonly (string Key, string Label)[] Modes = [("import", "Import"), ("configure", "Configure environment"), ("coverage", "Project coverage")];
     /// <summary>The workspace (import, bulk configuration, project coverage) shows when no contract is open, or on request next to one.</summary>
@@ -226,7 +231,13 @@
             mode is null ? null : $"mode={mode}", string.IsNullOrEmpty(project) ? null : $"project={Uri.EscapeDataString(project)}",
         }.Where(x => x is not null)));
     private string _contractFilter = "", _sourceFilter = "", _sourceState = "all", _testFilter = "", _testState = "all", _opFilter = "";
-    private bool _bulkGenerate = true, _breakingOnly;
+    private bool _breakingOnly;
+    /// <summary>Import list (2026-11-18): protocol filter, the file whose details are open, the preview, the multi-project confirmation and the last import.</summary>
+    private string _sourceProtocol = "all";
+    private string? _sourceOpen;
+    private bool _importPreview, _confirmProjects, _bulkGenerated;
+    private List<SourceContractRef>? _lastImported;
+    private bool _deepLinkApplied;
     private readonly HashSet<string> _sourceSelected = [];
     private SourceContractBulkImportResult? _bulkResult;
 
@@ -250,8 +261,7 @@
             ? $"integration-suites?snapshot={snapshot:D}&scope=api" + (SourceModule(info.SourcePath) is { } module ? $"&modules={Uri.EscapeDataString(module)}" : "")
             : "integration-suites";
 
-    private IEnumerable<SourceContractCandidate> VisibleSources => (_sourceContracts ?? []).Where(c => Matches(_sourceFilter, c.Name, c.File, c.Module)
-        && (_sourceState == "all" || (_sourceState == "actionable" ? Actionable(c) : c.State.ToString() == _sourceState)));
+    private IEnumerable<SourceContractCandidate> VisibleSources => CI.Apply(_sourceContracts ?? [], new CI.Filter(_sourceFilter, _sourceProtocol, _sourceState));
 
     private static string StateLabel(SourceContractCandidate c) => c.State switch
     {
@@ -275,27 +285,52 @@
         foreach (var c in group.Where(Actionable)) ToggleSource(c, on);
     }
 
-    /// <summary>Imports the selected source contracts (new ones and new versions), then generates their tests and test data in the same step.</summary>
-    private async Task BulkImportAsync()
+    /// <summary>Imports the selected source contracts. Generating tests and synthetic data is a separate, explicit choice (never a remembered checkbox).</summary>
+    private async Task BulkImportAsync(bool generate)
     {
         if (Api is not { } api || _sourceContracts is null) return;
-        var items = _sourceContracts.Where(c => _sourceSelected.Contains(SourceKey(c))).Select(c => new SourceContractRef(c.SnapshotId, c.ContractId)).ToList();
+        var chosen = _sourceContracts.Where(c => _sourceSelected.Contains(SourceKey(c))).ToList();
+        var items = chosen.Select(c => new SourceContractRef(c.SnapshotId, c.ContractId)).ToList();
         if (items.Count == 0) return;
+        var preview = CI.Preview(chosen, EffectiveProject);
+        if (preview.NeedsProjectConfirmation && !_confirmProjects) { _error = "The selected contracts belong to several projects: confirm importing for several projects, or choose one project."; return; }
         _busy = true; _error = null; _message = null; _bulkResult = null;
         var (result, error) = await api.ImportFromSourceBulkAsync(new SourceContractBulkImportRequest
-            { Items = items, GenerateTests = _bulkGenerate, GenerateTestData = _bulkGenerate, EnvironmentId = _environment?.EnvironmentId });
+        {
+            Items = items, GenerateTests = generate, GenerateTestData = generate, EnvironmentId = _environment?.EnvironmentId, ProjectKey = EffectiveProject,
+            ConfirmMultipleProjects = _confirmProjects,
+        });
         _busy = false;
         if (result is null) { _error = error ?? "Nothing was imported."; return; }
         _bulkResult = result;
-        _sourceSelected.Clear();
+        _bulkGenerated = generate;
+        _lastImported = items;
+        _sourceSelected.Clear(); _importPreview = false; _confirmProjects = false;
         var tests = result.Items.Sum(i => i.TestsCreated);
         var bound = result.Items.Sum(i => i.DataBound);
         var review = result.Items.Sum(i => i.DataNeedsReview + i.DataUnresolved + i.DataFailed);
         _message = $"{result.Imported} contract(s) imported or updated, {result.Unchanged} unchanged, {result.Failed} failed."
-            + (_bulkGenerate ? $" {tests} test(s) generated; test data bound automatically for {bound} operation(s), {review} need a value or a review." : " Tests were not generated.")
+            + (generate ? $" {tests} test(s) generated; test data bound automatically for {bound} operation(s), {review} need a value or a review." : " No tests were generated — generate them when you are ready.")
             + " Nothing was sent to any API.";
         (_contracts, _) = await api.ProjectContractsAsync(Project);
         (_sourceContracts, _) = await api.ProjectSourceContractsAsync(Project);
+    }
+
+    /// <summary>The explicit second step after an import-only: tests and synthetic data for exactly the contracts just imported (re-importing an
+    /// unchanged contract changes nothing; existing tests are never duplicated by the generator).</summary>
+    private async Task GenerateForImportedAsync()
+    {
+        if (Api is not { } api || _lastImported is not { Count: > 0 } items) return;
+        _busy = true; _error = null;
+        var (result, error) = await api.ImportFromSourceBulkAsync(new SourceContractBulkImportRequest
+        {
+            Items = items, GenerateTests = true, GenerateTestData = true, EnvironmentId = _environment?.EnvironmentId, ProjectKey = EffectiveProject, ConfirmMultipleProjects = true,
+        });
+        _busy = false;
+        if (result is null) { _error = error ?? "No tests were generated."; return; }
+        _bulkResult = result; _bulkGenerated = true;
+        _message = $"{result.Items.Sum(i => i.TestsCreated)} test(s) generated ({result.Items.Sum(i => i.TestsExisting)} already existed); test data bound for {result.Items.Sum(i => i.DataBound)} operation(s). Generated tests are drafts until reviewed. Nothing was sent to any API.";
+        (_contracts, _) = await api.ProjectContractsAsync(Project);
     }
 
     private RenderFragment SourceImport() => __builder =>
@@ -306,71 +341,164 @@
             <p class="ct-muted" data-testid="ct-source-none">No OpenAPI or GraphQL schema contract was found in Source Analysis snapshots. <a href="project-import">Import the project</a> first, or import a file or URL.</p>
             return;
         }
-        var counts = _sourceContracts.GroupBy(c => c.State).ToDictionary(g => g.Key, g => g.Count());
-        <p class="ct-muted" data-testid="ct-source-summary">@_sourceContracts.Count contract(s) in @_sourceContracts.Select(c => c.Module).Distinct().Count() module(s): @counts.GetValueOrDefault(SourceContractCandidateState.New) new,
-            @counts.GetValueOrDefault(SourceContractCandidateState.Changed) changed, @counts.GetValueOrDefault(SourceContractCandidateState.UpToDate) up to date. Only the newest snapshot of each file is listed.</p>
-        <div class="ct-filterbar">
-            <input type="search" class="form-control ct-search" placeholder="Search name, file or module" aria-label="Search source contracts" data-testid="ct-source-search" @bind="_sourceFilter" @bind:event="oninput" />
+        var all = _sourceContracts;
+        var sum = CI.Summarize(all);
+        var counts = all.GroupBy(c => c.State).ToDictionary(g => g.Key, g => g.Count());
+        var tests = (_contracts ?? []).Sum(c => c.TestCount);
+        @* Summary strip: contract files and operations are counted apart; generated test definitions are not executed tests. *@
+        <dl class="ct-summary" data-testid="ct-import-summary" aria-label="Contracts found by Source Analysis">
+            <div data-testid="ct-sum-files"><dt>Contract files</dt><dd>@sum.Files</dd></div>
+            <div data-testid="ct-sum-imported"><dt>Already imported</dt><dd>@sum.Imported</dd></div>
+            <div data-testid="ct-sum-actionable"><dt>New or changed</dt><dd>@sum.NewOrChanged</dd></div>
+            <div data-testid="ct-sum-rest"><dt>REST</dt><dd>@sum.Rest</dd></div>
+            <div data-testid="ct-sum-graphql"><dt>GraphQL</dt><dd>@sum.GraphQl@if (sum.Fragments > 0) { <span class="ct-sum-note">@sum.Fragments without root operations</span> }</dd></div>
+            <div data-testid="ct-sum-operations"><dt>Operations</dt><dd>@sum.DistinctOperations<span class="ct-sum-note">distinct · @sum.OperationEntries in all files</span></dd></div>
+            <div data-testid="ct-sum-tests"><dt>Generated test definitions</dt><dd>@tests<span class="ct-sum-note">drafts until reviewed; not executed</span></dd></div>
+        </dl>
+        <p class="ct-muted" data-testid="ct-source-summary">@all.Count contract(s) in @all.Select(c => c.Module).Distinct().Count() module(s): @counts.GetValueOrDefault(SourceContractCandidateState.New) new,
+            @counts.GetValueOrDefault(SourceContractCandidateState.Changed) changed, @counts.GetValueOrDefault(SourceContractCandidateState.UpToDate) up to date@(sum.Projects > 1 ? $", from {sum.Projects} projects" : ""). Only the analysis baseline snapshot of each source is listed.</p>
+        <div class="ct-filterbar" role="search" aria-label="Filter source contracts">
+            <input type="search" class="form-control ct-search" placeholder="Search name, file, module or operation" aria-label="Search source contracts" data-testid="ct-source-search" @bind="_sourceFilter" @bind:event="oninput" />
+            <span class="ct-segment" role="group" aria-label="Protocol" data-testid="ct-source-protocol">
+                @foreach (var (key, label) in new[] { ("all", "All"), ("rest", "REST / OpenAPI"), ("graphql", "GraphQL") })
+                {
+                    <button type="button" class="ct-segment-btn @(_sourceProtocol == key ? "is-on" : null)" aria-pressed="@(_sourceProtocol == key ? "true" : "false")" data-testid="ct-source-protocol-@key" @onclick="() => _sourceProtocol = key">@label</button>
+                }
+            </span>
             <label class="ct-inline">Show
                 <select class="form-control" data-testid="ct-source-state" @bind="_sourceState">
-                    <option value="all">All</option><option value="actionable">New and changed</option><option value="UpToDate">Up to date</option><option value="Archived">Archived</option>
+                    <option value="all">All</option><option value="actionable">New and changed</option><option value="UpToDate">Already imported</option>
+                    <option value="NeedsReview">Needs identity review</option><option value="fragments">Without root operations</option><option value="Archived">Archived</option>
                 </select>
             </label>
         </div>
         var visible = VisibleSources.ToList();
+        var visibleKeys = visible.Select(SourceKey).ToHashSet(StringComparer.Ordinal);
+        var hidden = _sourceSelected.Count(k => !visibleKeys.Contains(k));
         if (visible.Count == 0) { <p class="ct-muted" data-testid="ct-source-filtered">No contract matches. @(_sourceState == "actionable" ? "Everything found is already imported and up to date — choose Show: All to see it." : "")</p> }
-        <p class="ct-muted" role="status" data-testid="ct-source-summary">@ContractSourceVariants.Summary(visible)</p>
+        <p class="ct-muted" role="status" data-testid="ct-source-shown">@visible.Count of @all.Count file@(all.Count == 1 ? "" : "s") shown · @ContractSourceVariants.Summary(visible)</p>
         <div class="ct-groups" data-testid="ct-source-list">
-            @foreach (var group in visible.GroupBy(c => c.Module))
+            @foreach (var group in visible.GroupBy(c => (c.ProjectName, c.Module)))
             {
                 var selectable = group.Where(Actionable).ToList();
-                <details class="ct-group" open="@(visible.Count <= 40)" data-testid="ct-source-group" data-module="@group.Key">
+                var label = sum.Projects > 1 ? $"{group.Key.ProjectName} · {group.Key.Module}" : group.Key.Module;
+                var holdsOpen = group.Any(c => SourceKey(c) == _sourceOpen);
+                <details class="ct-group" open="@(visible.Count <= 40 || holdsOpen)" data-testid="ct-source-group" data-module="@group.Key.Module">
                     <summary>
                         @if (selectable.Count > 0)
                         {
-                            <input type="checkbox" aria-label="@($"Select every new or changed contract in {group.Key}")" data-testid="ct-source-group-select"
+                            <input type="checkbox" aria-label="@($"Select every new or changed contract in {label}")" data-testid="ct-source-group-select"
                                    checked="@selectable.All(c => _sourceSelected.Contains(SourceKey(c)))" @onchange="e => ToggleGroup(group, e.Value is true)" />
                         }
-                        <strong>@group.Key</strong> <span class="ct-muted">@group.Count() contract(s) · @group.Sum(c => c.OperationCount) operations</span>
+                        <strong>@label</strong> <span class="ct-muted">@group.Count() file@(group.Count() == 1 ? "" : "s") · @group.Sum(c => c.OperationCount) operations · @string.Join(" + ", group.Select(ContractSourceVariants.ProtocolLabel).Distinct())</span>
                     </summary>
-                    @* Within a module, REST and GraphQL files are candidate logical APIs (grouped by module and protocol — a proposal, not a confirmed
-                       identity). Each file shows the role its location suggests; the registry's identity rules decide continuation. *@
-                    @foreach (var api in group.GroupBy(ContractSourceVariants.ProtocolLabel).OrderBy(g => g.Key))
-                    {
-                    <p class="ct-api-head" data-testid="ct-source-api" data-protocol="@api.Key"><strong>@group.Key · @api.Key API</strong> <span class="ct-muted">candidate logical API · @api.Count() file@(api.Count() == 1 ? "" : "s")</span></p>
-                    <ul class="ct-list">
-                        @foreach (var c in api)
+                    <ul class="ct-list ct-source-rows">
+                        @foreach (var c in group.OrderBy(ContractSourceVariants.ProtocolLabel).ThenBy(x => x.File, StringComparer.OrdinalIgnoreCase))
                         {
                             var actionable = Actionable(c);
-                            <li data-testid="ct-source-contract" data-file="@c.File" data-state="@c.State" class="ct-source-row">
+                            var key = SourceKey(c);
+                            var open = _sourceOpen == key;
+                            <li data-testid="ct-source-contract" data-file="@c.File" data-state="@c.State" class="ct-source-row @(open ? "is-open" : null)" id="@($"ct-src-{c.SnapshotId:N}-{Math.Abs(c.ContractId.GetHashCode())}")">
                                 <span class="ct-source-name">
-                                    @if (actionable) { <input type="checkbox" aria-label="@($"Select {c.Name} ({c.File})")" data-testid="ct-source-select" checked="@_sourceSelected.Contains(SourceKey(c))" @onchange="e => ToggleSource(c, e.Value is true)" /> }
-                                    <strong>@c.Name</strong> <span class="ct-pill">@(c.Type == "OpenApi" ? "REST" : "GraphQL")</span>
+                                    @if (actionable) { <input type="checkbox" aria-label="@($"Select {c.Name} ({c.File})")" data-testid="ct-source-select" checked="@_sourceSelected.Contains(key)" @onchange="e => ToggleSource(c, e.Value is true)" /> }
+                                    <strong>@c.Name</strong> <span class="ct-pill">@ContractSourceVariants.ProtocolLabel(c)</span>
                                     <span class="ct-pill ct-src-@c.State.ToString().ToLowerInvariant()" data-testid="ct-source-state-pill">@StateLabel(c)</span>
+                                    <button type="button" class="btn btn-link btn-sm ct-source-toggle" aria-expanded="@(open ? "true" : "false")" data-testid="ct-source-details-toggle" @onclick="() => _sourceOpen = open ? null : key">@(open ? "Hide details" : "Details")</button>
                                 </span>
-                                <span class="ct-muted"><span class="ct-pill" data-testid="ct-source-role" title="Suggested by the file's location only">@ContractSourceVariants.RoleHint(c.File) (by location)</span> @SourceFacts(c)@(c.HasDocument ? "" : " · structural validation only")</span>
-                                @if (ContractSourceVariants.IsFragment(c)) { <span class="ct-muted" data-testid="ct-source-fragment">No root operations: a fragment or extension of a parent schema. Its types can matter, but no endpoint tests are generated from it on its own.</span> }
-                                @if (!actionable && c.ImportedAs is { } done) { <span class="ct-muted" data-testid="ct-source-imported">Imported as @done</span> }
-                                else if (actionable) { <button class="btn btn-link btn-sm" data-testid="ct-source-import" disabled="@_busy" @onclick="() => ImportSourceAsync(c)">Import only this one</button> }
+                                <span class="ct-muted ct-source-facts"><span class="ct-pill" data-testid="ct-source-role" title="Suggested by the file's location only">@ContractSourceVariants.RoleHint(c.File) (by location)</span> @c.File · @(ContractSourceVariants.IsFragment(c) ? "no root operations" : $"{c.OperationCount} operations")@(CI.IdenticalCopies(c, all).Count is > 0 and var copies ? $" · identical to {copies} other file{(copies == 1 ? "" : "s")}" : "")</span>
                                 @if (c.State == SourceContractCandidateState.NeedsReview) { @IdentityReview(c) }
+                                @if (open) { @SourceDetail(c, all) }
                             </li>
                         }
                     </ul>
-                    }
                 </details>
             }
         </div>
+        @if (_importPreview && _sourceSelected.Count > 0)
+        {
+            var chosen = all.Where(c => _sourceSelected.Contains(SourceKey(c))).ToList();
+            var p = CI.Preview(chosen, EffectiveProject);
+            @* Import preview: what an import writes, before anything is written; generation is the second, separate button. *@
+            <section class="ct-preview" role="region" aria-labelledby="ct-preview-h" data-testid="ct-import-preview">
+                <h3 id="ct-preview-h">Import @p.Contracts contract@(p.Contracts == 1 ? "" : "s")?</h3>
+                <ul class="ct-preview-list">
+                    <li data-testid="ct-preview-counts">@p.New new · @p.Changed changed (each becomes the next version of its contract) · @p.Moved moved · @p.Apis logical API group@(p.Apis == 1 ? "" : "s") · @p.Operations operations</li>
+                    <li data-testid="ct-preview-projects">Project@(p.Projects.Count == 1 ? "" : "s"): @string.Join(", ", p.Projects)</li>
+                    @if (p.Fragments > 0) { <li data-testid="ct-preview-fragments">@p.Fragments GraphQL file@(p.Fragments == 1 ? "" : "s") without root operations: imported as types for their schema; no endpoint test is generated from @(p.Fragments == 1 ? "it" : "them") on @(p.Fragments == 1 ? "its" : "their") own.</li> }
+                    @if (p.IdenticalPairs > 0) { <li data-testid="ct-preview-identical">@p.IdenticalPairs selected file@(p.IdenticalPairs == 1 ? " is a byte-identical copy" : "s are byte-identical copies") of another selected file — consider importing one of them.</li> }
+                    @if (p.StructuralOnly > 0) { <li data-testid="ct-preview-structural">@p.StructuralOnly without retained document text: structural validation only.</li> }
+                    <li>Importing writes contract versions only. Generating tests is a separate choice: the number of tests depends on each operation's inputs and responses and is known after generation; existing tests are never duplicated. Nothing is sent to any API.</li>
+                </ul>
+                @if (p.NeedsProjectConfirmation)
+                {
+                    <label class="ct-inline ct-warn" data-testid="ct-confirm-projects-label"><input type="checkbox" data-testid="ct-confirm-projects" @bind="_confirmProjects" /> These contracts belong to @p.Projects.Count projects; import each into its own project.</label>
+                }
+                <div class="ct-row">
+                    <button class="btn btn-primary" data-testid="ct-import-only" disabled="@(_busy || p.NeedsProjectConfirmation && !_confirmProjects)" @onclick="() => BulkImportAsync(false)">Import @p.Contracts contract@(p.Contracts == 1 ? "" : "s")</button>
+                    <button class="btn btn-secondary" data-testid="ct-import-generate" disabled="@(_busy || p.NeedsProjectConfirmation && !_confirmProjects)" @onclick="() => BulkImportAsync(true)">Import and generate tests and synthetic data</button>
+                    <button class="btn btn-link" data-testid="ct-preview-cancel" @onclick="() => _importPreview = false">Back to the selection</button>
+                </div>
+            </section>
+        }
         <div class="ct-row ct-runbar ct-sticky" data-testid="ct-bulk-bar">
-            <label class="ct-inline"><input type="checkbox" data-testid="ct-bulk-generate" @bind="_bulkGenerate" /> Generate tests and synthetic test data right away</label>
-            <button class="btn btn-primary" data-testid="ct-bulk-import" disabled="@(_busy || _sourceSelected.Count == 0)" @onclick="BulkImportAsync">Import selected (@_sourceSelected.Count)</button>
+            <span aria-live="polite" data-testid="ct-source-selected"><strong>@_sourceSelected.Count</strong> selected@(hidden > 0 ? $" · {hidden} hidden by filters" : "")</span>
+            <button class="btn btn-primary" data-testid="ct-bulk-import" disabled="@(_busy || _sourceSelected.Count == 0)" @onclick="() => { _importPreview = true; _error = null; }">Import selected (@_sourceSelected.Count)</button>
             @if (selectableCount(visible) > 0) { <button class="btn btn-link btn-sm" data-testid="ct-source-select-all" @onclick="() => ToggleGroup(visible, true)">Select all shown</button> }
+            @if (_sourceSelected.Count > 0) { <button class="btn btn-link btn-sm" data-testid="ct-source-clear" @onclick="() => { _sourceSelected.Clear(); _importPreview = false; }">Clear selection</button> }
         </div>
         <p class="ct-muted">A changed file becomes the next version of the contract it was imported as; existing tests stay on their version until you review the update. Nothing is sent to any API.</p>
-        if (_bulkResult is { } r) { @BulkResult(r) }
+        if (_bulkResult is { } r)
+        {
+            @BulkResult(r)
+            @if (!_bulkGenerated && _lastImported is { Count: > 0 } done)
+            {
+                <p class="ct-row" data-testid="ct-generate-next"><span>@done.Count contract@(done.Count == 1 ? "" : "s") imported without tests.</span>
+                    <button class="btn btn-secondary" data-testid="ct-generate-imported" disabled="@_busy" @onclick="GenerateForImportedAsync">Generate tests and synthetic data for @(done.Count == 1 ? "it" : $"these {done.Count}")</button></p>
+            }
+        }
+    };
+
+    /// <summary>One source contract file before (or after) import: where it comes from, what it declares and how it relates to the other files.</summary>
+    private RenderFragment SourceDetail(SourceContractCandidate c, IReadOnlyList<SourceContractCandidate> all) => __builder =>
+    {
+        var copies = CI.IdenticalCopies(c, all);
+        var related = CI.Related(c, all);
+        var parents = CI.PossibleParents(c, all);
+        var importedKey = CI.ImportedKey(c);
+        <dl class="ct-source-detail" data-testid="ct-source-detail">
+            <dt>Project</dt><dd data-testid="ct-source-project">@c.ProjectName</dd>
+            <dt>Source snapshot</dt><dd>@c.Archive · analysed @c.AnalyzedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")@(c.Commit is { } commit ? $" · commit {commit[..Math.Min(8, commit.Length)]}" : "")@(c.Snapshots > 1 ? $" · seen in {c.Snapshots} snapshots" : "")
+                <a href="@($"source-analysis?snapshot={c.SnapshotId:D}")" data-testid="ct-source-snapshot-link">Open in Source Analysis</a></dd>
+            <dt>File</dt><dd><code>@c.File</code> · @(c.Type == "OpenApi" ? "OpenAPI" : "GraphQL schema") · @(c.HasDocument ? "document text kept (full schema validation)" : "parsed contract only (structural validation)")</dd>
+            <dt>Import state</dt><dd data-testid="ct-source-import-state">@StateLabel(c)
+                @if (importedKey is { } k) { <a href="@(Link(contract: k, version: null, view: "operations", test: null) + (OperationQuery is { Length: > 0 } op ? $"&operation={Uri.EscapeDataString(op)}" : ""))" data-testid="ct-source-open-contract">Open the imported contract@(OperationQuery is { Length: > 0 } ? " at this operation" : "")</a> }
+                else if (Actionable(c)) { <button class="btn btn-link btn-sm" data-testid="ct-source-import" disabled="@_busy" @onclick="() => ImportSourceAsync(c)">Import this contract only</button> }</dd>
+            @if (ContractSourceVariants.IsFragment(c))
+            {
+                <dt>No root operations</dt>
+                <dd data-testid="ct-source-fragment">A fragment or extension: it declares types (inputs, objects, enums) for a schema but no Query, Mutation or Subscription field, so it cannot be tested on its own and no endpoint tests are generated from it.
+                    @if (parents.Count > 0) { <span data-testid="ct-source-parents"> Possible parent schema in the same module: @string.Join(", ", parents.Select(x => x.File)) <span class="ct-muted">(by location and protocol — not a recorded link)</span>.</span> }</dd>
+            }
+            else
+            {
+                <dt>Operations (@c.Operations.Count)</dt>
+                <dd><ul class="ct-op-names" data-testid="ct-source-operations">@foreach (var op in c.Operations.Take(40)) { <li data-op="@op" class="@(op == OperationQuery ? "is-current" : null)">@op</li> }</ul>
+                    @if (c.Operations.Count > 40) { <span class="ct-muted">… and @(c.Operations.Count - 40) more (all are listed in the contract after import)</span> }</dd>
+            }
+            @if (copies.Count > 0)
+            {
+                <dt>Identical copies</dt><dd data-testid="ct-source-copies">@string.Join(", ", copies.Select(x => x.File)) <span class="ct-muted">(same document hash — the same contract; one import is enough unless the copies are maintained separately)</span></dd>
+            }
+            @if (related.Count > 0)
+            {
+                <dt>Related files</dt><dd data-testid="ct-source-related">@foreach (var (file, shared) in related.Take(6)) { <span class="ct-related">@file.File — @shared of @c.Operations.Count operations also declared there (@ContractSourceVariants.RoleHint(file.File).ToLowerInvariant())</span> }
+                    <span class="ct-muted">Different documents declaring the same operations: client copies, generated documentation or test snapshots — related, never merged; they may differ.</span></dd>
+            }
+        </dl>
     };
 
     /// <summary>Importable: not in the registry yet, or changed since its latest version (and not already imported from this very snapshot).</summary>
-    private static bool Actionable(SourceContractCandidate c) => c.ImportedAs is null && c.State is SourceContractCandidateState.New or SourceContractCandidateState.Changed or SourceContractCandidateState.Moved;
+    private static bool Actionable(SourceContractCandidate c) => CI.Importable(c);
 
     private static int selectableCount(IEnumerable<SourceContractCandidate> list) => list.Count(Actionable);
 
@@ -473,6 +601,17 @@
         (_contracts, _error) = await api.ProjectContractsAsync(Project);
         if (ShowImport && _importFromSource && (_sourceContracts is null || _sourceProject != Project))
         { (_sourceContracts, var sourceError) = await api.ProjectSourceContractsAsync(Project); _sourceProject = Project; _error ??= sourceError; }
+        if (ShowImport && !_deepLinkApplied && FileQuery is { Length: > 0 } && _sourceContracts is not null)
+        {
+            // A deep link (Manual Testing, Integration Testing): the exact snapshot + file. Filters are cleared so it is visible; an unknown file says so.
+            _deepLinkApplied = true;
+            if (CI.Find(_sourceContracts, SnapshotQuery, FileQuery) is { } linked)
+            {
+                (_sourceFilter, _sourceProtocol, _sourceState) = ("", "all", "all");
+                _sourceOpen = SourceKey(linked);
+            }
+            else _message = $"The linked contract file {FileQuery} is not in the current analysis baseline of any listed project (another snapshot, a removed file, or another project filter).";
+        }
         if (ShowWorkspace && Mode == "configure") PrepareConfigure();
         if (ShowWorkspace && Mode == "coverage" && EffectiveProject is { } coverageProject) (_projectCoverage, _error) = await api.ProjectCoverageAsync(coverageProject, _environment);
         _detail = null; _tests = null; _options = null; _diff = null; _coverage = null; _retention = null;
@@ -849,7 +988,7 @@
                         {
                             var count = _tests?.Count(t => t.Test.Operation == op.Name) ?? 0;
                             var (dataLabel, dataState) = OperationData(op.Name);
-                            <tr data-testid="ct-op-row" data-op="@op.Name" data-data="@dataState">
+                            <tr data-testid="ct-op-row" data-op="@op.Name" data-data="@dataState" class="@(op.Name == OperationQuery ? "ct-op-current" : null)" aria-current="@(op.Name == OperationQuery ? "true" : null)">
                                 <td><input type="checkbox" aria-label="@($"Select {op.Name}")" data-testid="ct-op-select" checked="@_opSelected.Contains(op.Name)" @onchange="e => { if (e.Value is true) _opSelected.Add(op.Name); else _opSelected.Remove(op.Name); }" /></td>
                                 <th scope="row"><code>@op.Name</code>@if (MutatingOperation(op)) { <span class="ct-pill ct-mutating" data-testid="ct-op-mutating" title="Runs only with the explicit data-changing confirmation">changes data</span> }@if (op.Deprecated) { <span class="ct-pill">deprecated</span> }
                                     @if (op.Summary is { } s) { <div class="ct-muted">@s</div> }@if (op.OperationId is { } id) { <div class="ct-muted">operationId @id</div> }</th>

@@ -79,6 +79,7 @@ public sealed class ContractTestingController(ContractRegistryService registry, 
     {
         if (request.Items.Count == 0) return UnprocessableEntity(new { message = "Select at least one contract." });
         if (request.Items.Count > ContractBulkImportService.MaxItems) return UnprocessableEntity(new { message = $"At most {ContractBulkImportService.MaxItems} contracts per import." });
+        if (await bulk.RefusalAsync(request, ct) is { } refusal) return UnprocessableEntity(new { message = refusal });
         return Ok(await bulk.ImportAsync(request, ct));
     }
 

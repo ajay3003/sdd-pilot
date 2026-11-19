@@ -173,6 +173,11 @@ public sealed record SourceContractCandidate(Guid SnapshotId, DateTimeOffset Ana
     public ContractIdentityClassification Identity { get; init; } = ContractIdentityClassification.NewContract;
     /// <summary>Existing contracts of the same project this source contract may continue (relocation candidates), with evidence.</summary>
     public List<ContractIdentityCandidate> Candidates { get; init; } = [];
+    /// <summary>SHA-256 of the retained document text (null when the snapshot kept no text): equal values are byte-identical copies of one document.</summary>
+    public string? DocumentSha256 { get; init; }
+    /// <summary>The operations the analyzer read from the file ("GET /children/{id}", "mutation activateAccess"), so a file can be inspected before it is
+    /// imported. Empty for a GraphQL file with no root operation (a fragment or extension).</summary>
+    public List<string> Operations { get; init; } = [];
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -199,13 +204,20 @@ public sealed record SourceContractImportRequest(Guid SnapshotId, string SourceC
 
 public sealed record SourceContractRef(Guid SnapshotId, string SourceContractId);
 
-/// <summary>Import several source contracts at once; optionally generate their tests and synthetic test data right after (nothing is ever sent).</summary>
+/// <summary>
+/// Import several source contracts at once. Generating tests and synthetic test data is a separate, explicit choice (2026-11-18: off unless the
+/// request asks for it — an omitted field never generates). Nothing is ever sent to an API.
+/// </summary>
 public sealed record SourceContractBulkImportRequest
 {
     public List<SourceContractRef> Items { get; init; } = [];
-    public bool GenerateTests { get; init; } = true;
-    public bool GenerateTestData { get; init; } = true;
+    public bool GenerateTests { get; init; }
+    public bool GenerateTestData { get; init; }
     public string? EnvironmentId { get; init; }
+    /// <summary>The project the import is for: every item must belong to it (validated against the snapshot's own project, never trusted).</summary>
+    public string? ProjectKey { get; init; }
+    /// <summary>Without a project, items from more than one project are refused unless the tester confirmed importing for several projects.</summary>
+    public bool ConfirmMultipleProjects { get; init; }
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

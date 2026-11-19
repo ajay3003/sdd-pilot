@@ -86,12 +86,15 @@ public sealed class ContractBulkImportTests : IAsyncLifetime
     /// <summary>A snapshot holding the given OpenAPI files, with their document texts retained (as Source Analysis does at snapshot save).</summary>
     private Task<IqrSourceSnapshot> AddSnapshotAsync(DateTimeOffset at, params (string File, string Text)[] files) => AddSnapshotAsync(at, c => c, files);
 
-    private async Task<IqrSourceSnapshot> AddSnapshotAsync(DateTimeOffset at, Func<SourceContract, SourceContract> tweak, params (string File, string Text)[] files)
+    private Task<IqrSourceSnapshot> AddSnapshotAsync(DateTimeOffset at, Func<SourceContract, SourceContract> tweak, params (string File, string Text)[] files) =>
+        AddSnapshotAsync(at, "synthetic-source.zip", tweak, files);
+
+    private async Task<IqrSourceSnapshot> AddSnapshotAsync(DateTimeOffset at, string archive, Func<SourceContract, SourceContract> tweak, params (string File, string Text)[] files)
     {
         var contracts = files.Select(f => tweak(ContractAnalyzer.ReadOpenApiDocument(f.File, f.Text)! with { Id = $"openapi:{f.File}", File = f.File })).ToList();
         var snapshot = new IqrSourceSnapshot
         {
-            Id = Guid.NewGuid(), AnalyzedAt = at, Commit = "c0ffee", Archive = new("synthetic-source.zip", "abc123", 12),
+            Id = Guid.NewGuid(), AnalyzedAt = at, Commit = "c0ffee", Archive = new(archive, "abc123-" + archive, 12),
             EvidenceDomains = new SourceEvidenceDomainsSnapshot { Contracts = new() { Domain = SourceEvidenceDomain.Contracts, Contracts = contracts } },
         };
         _sources.All.Add(snapshot);
@@ -113,11 +116,18 @@ public sealed class ContractBulkImportTests : IAsyncLifetime
         return await scope.ServiceProvider.GetRequiredService<ContractRegistryService>().SourceCandidatesAsync(default);
     }
 
-    private async Task<SourceContractBulkImportResult> BulkAsync(IEnumerable<SourceContractCandidate> candidates)
+    /// <summary>Import and generate (both asked for explicitly, as the "Import and generate" action does).</summary>
+    private async Task<SourceContractBulkImportResult> BulkAsync(IEnumerable<SourceContractCandidate> candidates, bool generate = true)
     {
         using var scope = _services.CreateScope();
         return await scope.ServiceProvider.GetRequiredService<ContractBulkImportService>()
-            .ImportAsync(new() { Items = [.. candidates.Select(c => new SourceContractRef(c.SnapshotId, c.ContractId))] }, default);
+            .ImportAsync(new() { Items = [.. candidates.Select(c => new SourceContractRef(c.SnapshotId, c.ContractId))], GenerateTests = generate, GenerateTestData = generate }, default);
+    }
+
+    private async Task<string?> RefusalAsync(SourceContractBulkImportRequest request)
+    {
+        using var scope = _services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<ContractBulkImportService>().RefusalAsync(request, default);
     }
 
     [Fact]
@@ -191,5 +201,54 @@ public sealed class ContractBulkImportTests : IAsyncLifetime
         var candidate = (await CandidatesAsync()).Single();
         candidate.State.Should().Be(SourceContractCandidateState.UpToDate, "the contract document is identical");
         (await BulkAsync([candidate])).Items.Single().Outcome.Should().Be(BulkImportOutcome.Unchanged);
+    }
+
+    // ── Import redesign (2026-11-18) ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task An_import_without_an_explicit_generation_request_creates_no_tests_and_generating_later_does_not_duplicate()
+    {
+        await AddSnapshotAsync(DateTimeOffset.UtcNow, ("Orders/openapi.json", ContractTestDataTests.Orders));
+        var candidates = await CandidatesAsync();
+        using (var scope = _services.CreateScope())
+        {
+            var omitted = await scope.ServiceProvider.GetRequiredService<ContractBulkImportService>()
+                .ImportAsync(new() { Items = [.. candidates.Select(c => new SourceContractRef(c.SnapshotId, c.ContractId))] }, default);
+            omitted.Items.Single().Should().Match<SourceContractBulkItem>(i => i.Outcome == BulkImportOutcome.Imported && i.TestsCreated == 0 && i.DataBound == 0);
+            scope.ServiceProvider.GetRequiredService<AppDbContext>().ContractTests.Count().Should().Be(0, "importing writes contract versions only");
+        }
+        var generated = await BulkAsync(await CandidatesAsync());
+        generated.Items.Single().Should().Match<SourceContractBulkItem>(i => i.Outcome == BulkImportOutcome.Unchanged && i.TestsCreated >= 3);
+        var again = await BulkAsync(await CandidatesAsync());
+        again.Items.Single().TestsCreated.Should().Be(0, "generation is idempotent: existing tests are not created twice");
+    }
+
+    [Fact]
+    public async Task The_server_refuses_a_bulk_import_that_mixes_projects_or_names_another_project()
+    {
+        var now = DateTimeOffset.UtcNow;
+        await AddSnapshotAsync(now.AddMinutes(-2), "alpha-hub.zip", c => c, ("Orders/openapi.json", ContractTestDataTests.Orders));
+        await AddSnapshotAsync(now.AddMinutes(-1), "beta-shop.zip", c => c, ("Pets/openapi.json", Pets));
+        var candidates = await CandidatesAsync();
+        candidates.Select(c => c.ProjectKey).Distinct().Should().HaveCount(2);
+        var refs = candidates.Select(c => new SourceContractRef(c.SnapshotId, c.ContractId)).ToList();
+        (await RefusalAsync(new() { Items = refs })).Should().Contain("belong to 2 projects");
+        (await RefusalAsync(new() { Items = refs, ConfirmMultipleProjects = true })).Should().BeNull("a confirmed multi-project import is allowed");
+        var alpha = candidates.Single(c => c.File == "Orders/openapi.json");
+        (await RefusalAsync(new() { Items = refs, ProjectKey = alpha.ProjectKey })).Should().Contain("belong to another project");
+        (await RefusalAsync(new() { Items = [new(alpha.SnapshotId, alpha.ContractId)], ProjectKey = alpha.ProjectKey })).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Candidates_carry_the_document_hash_and_operations_and_group_by_service_without_the_archive_folder()
+    {
+        await AddSnapshotAsync(DateTimeOffset.UtcNow, "SchoolHub.zip", c => c, ("SchoolHub/Orders/openapi.json", ContractTestDataTests.Orders), ("SchoolHub/Copy/openapi.json", ContractTestDataTests.Orders));
+        var candidates = await CandidatesAsync();
+        candidates.Select(c => c.Module).Should().BeEquivalentTo(["Orders", "Copy"], "the archive's wrapper folder is not a service");
+        candidates.Select(c => c.DocumentSha256).Distinct().Should().ContainSingle("byte-identical documents share one hash").Which.Should().NotBeNullOrEmpty();
+        candidates.Should().OnlyContain(c => c.Operations.Count == c.OperationCount && c.Operations.Contains("POST /orders"));
+        ContractRegistryService.WithoutArchiveFolder("SchoolHub/Orders/openapi.json", "SchoolHub.zip").Should().Be("Orders/openapi.json");
+        ContractRegistryService.WithoutArchiveFolder("Orders/openapi.json", "SchoolHub.zip").Should().Be("Orders/openapi.json");
+        ContractRegistryService.WithoutArchiveFolder("SchoolHub/openapi.json", "SchoolHub.zip").Should().Be("SchoolHub/openapi.json", "a file directly in the wrapper keeps its path");
     }
 }
