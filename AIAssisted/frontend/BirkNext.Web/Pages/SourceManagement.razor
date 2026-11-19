@@ -3,6 +3,7 @@
 @using BirkNext.GitSources
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services.ProjectImport
+@using Microsoft.AspNetCore.WebUtilities
 @inject ProjectImportActivation Activation
 @inject ProjectImportSession Session
 @inject IFrontendAnalysisContextFactory Contexts
@@ -14,7 +15,7 @@
 
 <PageTitle>Source Management</PageTitle>
 
-@* One view of every imported source package, whatever its origin (a chosen ZIP or an Azure DevOps repository): its evidence capabilities
+@* One view of every imported source package, whatever its origin (a chosen ZIP or a linked Git repository): its evidence capabilities
    (what its content shows), its roles (the person's confirmed decision — the canonical role Project Evidence and every consumer reads;
    several allowed), the applications it is associated with (Target Environment → Project Evidence), its snapshots and analysis.
    Summary tiles (they filter the list), a toolbar, a scannable list and an inspector with the actions. Nothing here deletes a snapshot or a
@@ -24,7 +25,7 @@
         <div class="sm-head-text">
             <h1>Source Management</h1>
             <div class="page-header-project"><BirkNext.Web.Components.ProjectSelector /></div>
-            <p class="sm-lead">Imported ZIP archives and linked Azure DevOps repositories: what each contains, the role it plays, the applications it is evidence for, and how it is updated.</p>
+            <p class="sm-lead">Manage imported sources, their versions, capabilities and application associations.</p>
         </div>
         <div class="sm-head-actions" role="group" aria-label="Source actions">
             @if (_links.Count > 0)
@@ -43,7 +44,7 @@
             <dt><span class="sm-chip sm-chip-zip">ZIP</span></dt>
             <dd>An archive you uploaded. It never changes by itself; upload a newer ZIP to add a revision. Earlier revisions and their snapshots are kept.</dd>
             <dt><span class="sm-chip sm-chip-git">Git</span></dt>
-            <dd>A linked Azure DevOps repository and branch (or pinned commit). <em>Check for updates</em> only compares the remote commit with the imported one; a new revision is imported only when you choose <em>Import revision</em>, through the normal import review.</dd>
+            <dd>A linked Git repository and branch (or pinned commit). <em>Check for updates</em> only compares the remote commit with the imported one; a new revision is imported only when you choose <em>Import revision</em>, through the normal import review.</dd>
         </dl>
     </details>
 
@@ -59,7 +60,7 @@
     {
         <section class="sm-empty" data-testid="sm-empty">
             <h2>No sources yet</h2>
-            <p>Import a project ZIP, or link an Azure DevOps repository, to see its capabilities, roles and analysis here.</p>
+            <p>Import a project ZIP or a Git repository to see what it contains, its versions and the applications it is evidence for.</p>
             <a class="btn-primary" href="project-import?import=1">Import source</a>
         </section>
     }
@@ -92,7 +93,7 @@
                 <li>@Tile("sm-summary-failed", summary.Failed, "analysis failed", "No present area could be read", "attention", () => _filter = _filter with { Analysis = nameof(SourceAnalysisBucket.Failed) })</li>
             }
             <li>@Tile("sm-summary-not-analyzed", summary.NotAnalyzed, "not analyzed", "No snapshot, or nothing analyzable", null, () => _filter = _filter with { Analysis = nameof(SourceAnalysisBucket.NotAnalyzed) })</li>
-            <li>@Tile("sm-summary-applications", summary.Applications, summary.Applications == 1 ? "application" : "applications", "Distinct applications these sources serve", null, null)</li>
+            <li>@Tile("sm-summary-applications", summary.Applications, summary.Applications == 1 ? "target application" : "target applications", "Distinct applications these sources serve", null, null)</li>
         </ul>
         @if (_facts.Count > 1)
         {
@@ -124,7 +125,7 @@
                     {
                         <label><span class="visually-hidden">Capability</span>
                             <select value="@_filter.Capability" @onchange="e => _filter = _filter with { Capability = e.Value?.ToString() ?? string.Empty }" data-testid="sm-filter-capability">
-                                <option value="">All capabilities</option>
+                                <option value="">All detected capabilities</option>
                                 @foreach (var capability in capabilities) { <option value="@capability">@capability</option> }
                             </select></label>
                     }
@@ -163,7 +164,7 @@
                             </div>
                             <div class="sm-item-roles" data-testid="sm-roles">@RoleLine(f)</div>
                             <div class="sm-item-facts">
-                                <div class="sm-facet"><span class="sm-facet-label">Capabilities</span>
+                                <div class="sm-facet"><span class="sm-facet-label">Detected</span>
                                     <span class="sm-chips" data-testid="sm-capabilities">
                                         @if (f.Capabilities.Count == 0) { <span class="sm-quiet">@(f.Imported ? "None detected" : "Not imported")</span> }
                                         @foreach (var c in f.Capabilities.Take(4)) { <span class="sm-chip">@c</span> }
@@ -173,7 +174,7 @@
                                     <span class="sm-chips" data-testid="sm-analysis" data-bucket="@f.Bucket">@RowAnalysis(f)</span></div>
                             </div>
                             <div class="sm-item-meta">
-                                <span data-testid="sm-associated">@(f.Applications.Count > 0 ? string.Join(", ", f.Applications.Select(a => $"{a.Application} ({a.Environment})")) : "No application yet")</span>
+                                <span data-testid="sm-associated">@(f.Applications.Count > 0 ? string.Join(", ", f.Applications.Select(a => $"{a.Application} ({a.Environment})")) : "Not associated with an application")</span>
                                 @if (f.SnapshotId is { } snap) { <span>Snapshot <code>@snap.ToString()[..8]</code></span> }
                                 @if (f.Commit is { } commit) { <span>Commit <code>@commit</code></span> }
                                 <span>@SourceManagementPresentation.Updated(f.UpdatedAt)</span>
@@ -231,7 +232,53 @@
     /// <summary>The exact snapshot in the Snapshot Registry (opened with its detail), or the registry itself when the source has no snapshot yet.</summary>
     public static string SnapshotHref(Guid? snapshot) => snapshot is { } id ? $"snapshots?open=SourceAnalysis:{id:D}" : "snapshots";
 
-    protected override Task OnInitializedAsync() => ReloadAsync();
+    protected override Task OnInitializedAsync()
+    {
+        ReadAddress();
+        return ReloadAsync();
+    }
+
+    // ── Address state: the open source and the filters live in the query (?source=&q=&origin=&cap=&analysis=&review=1&sort=), so returning from
+    //    a snapshot, Source Analysis or Project Evidence (Back) and reloading restore the same view; an unknown source is said, never guessed. ──
+    private string? _requestedSource;
+
+    private void ReadAddress()
+    {
+        var query = QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query);
+        string Q(string key) => query.TryGetValue(key, out var v) ? v.ToString() : string.Empty;
+        _filter = new SourceListFilter(Q("q"), Q("origin"), Q("cap"), Q("analysis"), Q("review") == "1", Q("sort") is { Length: > 0 } sort ? sort : "name");
+        _requestedSource = Q("source") is { Length: > 0 } key ? key : null;
+    }
+
+    /// <summary>The page address for the current view (only what differs from the defaults).</summary>
+    public static string Address(SourceListFilter filter, string? source)
+    {
+        var parts = new List<string>();
+        void Add(string key, string? value) { if (!string.IsNullOrEmpty(value)) parts.Add($"{key}={Uri.EscapeDataString(value)}"); }
+        Add("source", source);
+        Add("q", filter.Search);
+        Add("origin", filter.Origin);
+        Add("cap", filter.Capability);
+        Add("analysis", filter.Analysis);
+        if (filter.ReviewOnly) parts.Add("review=1");
+        if (filter.Sort != "name") Add("sort", filter.Sort);
+        return parts.Count == 0 ? "sources" : "sources?" + string.Join("&", parts);
+    }
+
+    private void ApplyRequestedSource()
+    {
+        if (_requestedSource is not { } key) return;
+        _requestedSource = null;
+        if (_rows.Any(r => r.Key == key)) { if (_selectedKey != key) Open(key); }
+        else _notice = "The source in the link is not part of this project. It may belong to another project, or it was never imported.";
+    }
+
+    private void SyncAddress()
+    {
+        if (!_loaded) return;
+        var wanted = Address(_filter, _selectedKey);
+        if (!string.Equals(Nav.ToBaseRelativePath(Nav.Uri), wanted, StringComparison.Ordinal)) Nav.NavigateTo(wanted, replace: true);
+    }
 
     /// <summary>Initial load and Retry: import records at once, then linked repositories and Project Evidence. "No sources" is shown only
     /// after the load — never while it runs.</summary>
@@ -263,6 +310,7 @@
         }
         Build();
         _loaded = true;
+        ApplyRequestedSource();
         _loads.End(load);
     }
 
@@ -275,6 +323,7 @@
     /// scrolled into view instead of opening out of sight.</summary>
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        SyncAddress();
         if (!_focusDetail) return;
         _focusDetail = false;
         try { await _detailHeading.FocusAsync(); } catch (Exception ex) when (ex is JSException or InvalidOperationException or TaskCanceledException) { }
@@ -296,11 +345,13 @@
     private PackageAssociation? AssociationOf(Row row) => row.Record is { } r ? _evidence?.Associations.FirstOrDefault(a => a.Package.ImportId == r.ImportId) : null;
 
     /// <summary>Applications the source is evidence for: every Target Environment whose Project Evidence references the import (shared records).</summary>
-    private IReadOnlyList<(string Application, string Environment)> AssociatedApplications(Row row)
+    private IReadOnlyList<SourceApplication> AssociatedApplications(Row row)
     {
         if (row.Record is not { } record || Settings?.Settings.Profiles is not { } profiles) return [];
         return [.. profiles.Where(p => p.Project?.Evidence.Any(e => e.Sources.Any(s => s.ImportId == record.ImportId)) == true)
-            .Select(p => (TargetApplications.Of(p)?.Name ?? p.Project!.ProjectName, p.Name))];
+            .Select(p => new SourceApplication(TargetApplications.Of(p)?.Name ?? p.Project!.ProjectName, p.Name, p.Id,
+                [.. p.Project!.Evidence.Where(e => e.Sources.Any(s => s.ImportId == record.ImportId))
+                    .Select(e => string.IsNullOrWhiteSpace(e.Label) ? e.RoleKey : e.Label).Distinct(StringComparer.OrdinalIgnoreCase)]))];
     }
 
     /// <summary>A decision is open: the active environment's association needs review, or the role is neither confirmed nor classified.</summary>
@@ -339,11 +390,11 @@
     {
         if (filter is null)
         {
-            <div class="sm-tile @(tone is null ? null : $"is-{tone}")" data-testid="@testId"><strong class="sm-tile-value">@value</strong> <span class="sm-tile-label">@label</span><span class="sm-tile-detail">@detail</span></div>
+            <div class="sm-tile @(tone is null ? null : $"is-{tone}")" data-testid="@testId" title="@detail"><strong class="sm-tile-value">@value</strong> <span class="sm-tile-label">@label</span><span class="sm-tile-detail">@detail</span></div>
         }
         else
         {
-            <button type="button" class="sm-tile @(tone is null ? null : $"is-{tone}")" data-testid="@testId" @onclick="filter" title="Filter the list"><strong class="sm-tile-value">@value</strong> <span class="sm-tile-label">@label</span><span class="sm-tile-detail">@detail</span></button>
+            <button type="button" class="sm-tile @(tone is null ? null : $"is-{tone}")" data-testid="@testId" @onclick="filter" title="@($"{detail} — select to filter the list")"><strong class="sm-tile-value">@value</strong> <span class="sm-tile-label">@label</span><span class="sm-tile-detail">@detail</span></button>
         }
     };
 
@@ -356,7 +407,7 @@
             foreach (var role in f.ConfirmedRoles) { <span class="sm-chip sm-chip-role">@Label(role)</span> }
             <span class="sm-quiet">confirmed</span>
         }
-        else { <span class="sm-quiet">Role detected from content</span> }
+        else { <span class="sm-quiet">No confirmed role</span> }
     };
 
     /// <summary>A row's analysis: the overall state once ("Source Analysis: Partly analyzed"), and the per-area states behind "View analysis details"
@@ -406,9 +457,9 @@
                 else { <a class="btn-primary btn-sm" href="project-import?import=1" data-testid="sm-upload-version">Upload new version</a> }
                 <span class="sm-action-sep" aria-hidden="true"></span>
                 <button type="button" class="sm-link-action" @onclick='() => SelectTab(row, "roles")' data-testid="sm-edit-roles">Manage roles</button>
-                <a class="sm-link-action" href="@ProjectEvidenceResolver.ProjectTabHref(_environmentId)" data-testid="sm-associate">Associate with application</a>
-                @if (row.Record?.SourceSnapshotId is { } evidence) { <a class="sm-link-action" href="@($"source-analysis?snapshot={evidence:D}")" data-testid="sm-evidence">View evidence</a> }
-                <a class="sm-link-action" href="@SnapshotHref(row.Record?.SourceSnapshotId)" data-testid="sm-snapshots">View snapshot</a>
+                <a class="sm-link-action" href="@ProjectEvidenceResolver.ProjectTabHref(_environmentId)" data-testid="sm-associate">@(facts.Applications.Count == 0 ? "Associate with application" : "Review roles")</a>
+                @if (row.Record?.SourceSnapshotId is { } evidence) { <a class="sm-link-action" href="@($"source-analysis?snapshot={evidence:D}")" data-testid="sm-evidence">View analysis</a> }
+                <a class="sm-link-action" href="@SnapshotHref(row.Record?.SourceSnapshotId)" data-testid="sm-snapshots">View snapshots</a>
             </div>
             <div class="sm-tabs" role="tablist" aria-label="@($"{row.Name} details")">
                 @foreach (var (key, label) in DetailTabs)
@@ -433,13 +484,24 @@
                         else
                         {
                             <ul class="sm-assoc-list" data-testid="sm-association-list">
-                                @foreach (var (app, env) in apps) { <li><span class="sm-assoc-source">@row.Name</span><span aria-hidden="true">→</span><strong>@app</strong><span class="sm-chip">@env</span></li> }
+                                @foreach (var app in apps)
+                                {
+                                    <li data-testid="sm-association" data-environment="@app.EnvironmentId">
+                                        <strong>@app.Application</strong><span class="sm-chip">@app.Environment</span>
+                                        <span class="sm-assoc-roles" data-testid="sm-association-roles">
+                                            @if (app.Roles.Count == 0) { <span class="sm-quiet">No evidence role bound</span> }
+                                            else { <span class="sm-quiet">Confirmed:</span> @foreach (var r in app.Roles) { <span class="sm-chip sm-chip-role">@r</span> } }
+                                        </span>
+                                        <a class="sm-link-action" href="@ProjectEvidenceResolver.ProjectTabHref(app.EnvironmentId)" data-testid="sm-association-link">View association</a>
+                                    </li>
+                                }
                             </ul>
                         }
                         @if (association is { State: EvidenceAssociationState.NeedsReview or EvidenceAssociationState.NotAssociated } a)
                         {
                             <p class="sm-quiet" data-testid="sm-association-why">Active environment: @a.StateLabel — @a.Detail</p>
                         }
+                        <p class="sm-quiet sm-small" data-testid="sm-roles-vs-capabilities">Confirmed roles are the evidence roles this source is bound to in each application's Project Evidence. Detected capabilities are not roles.</p>
                         <a href="@ProjectEvidenceResolver.ProjectTabHref(_environmentId)" data-testid="sm-associate-link">Review associations in Project Evidence</a>
                         break;
                     case "snapshots":
@@ -489,10 +551,10 @@
                         <dl class="sm-overview">
                             <div><dt>Origin</dt><dd>@row.Origin@if (row.Link is { } l) { <span> · @l.Organization / @l.Project / @l.Repository · @(l.PinnedCommit is { } pin ? $"commit {pin[..8]}" : l.Branch)</span> } else if (row.Record is { } r) { <span> · @r.ArchiveFileName</span> }</dd></div>
                             <div><dt>Roles</dt><dd>@RoleLine(facts)</dd></div>
-                            <div><dt>Capabilities</dt><dd class="sm-chips">@if (facts.Capabilities.Count == 0) { <span class="sm-quiet">@(facts.Imported ? "None detected" : "Not imported")</span> } @foreach (var c in facts.Capabilities) { <span class="sm-chip">@c</span> }</dd></div>
+                            <div><dt>Detected capabilities</dt><dd class="sm-chips">@if (facts.Capabilities.Count == 0) { <span class="sm-quiet">@(facts.Imported ? "None detected" : "Not imported")</span> } @foreach (var c in facts.Capabilities) { <span class="sm-chip">@c</span> }</dd></div>
                             <div><dt>Update path</dt><dd data-testid="sm-updates">@Updates(row)</dd></div>
                             <div><dt>Analysis</dt><dd class="sm-chips">@AnalysisChips(facts)</dd></div>
-                            <div><dt>Applications</dt><dd>@(facts.Applications.Count == 0 ? "None yet" : string.Join(", ", facts.Applications.Select(a => a.Application).Distinct(StringComparer.OrdinalIgnoreCase)))</dd></div>
+                            <div><dt>Applications</dt><dd>@(facts.Applications.Count == 0 ? "Not associated" : string.Join(", ", facts.Applications.Select(a => a.Application).Distinct(StringComparer.OrdinalIgnoreCase)))</dd></div>
                         </dl>
                         break;
                 }

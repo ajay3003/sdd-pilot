@@ -29,7 +29,7 @@ public sealed class SourceManagementRedesignTests : BunitContext
             _ => [],
         };
         return new(name, name, origin, bucket != SourceAnalysisBucket.NotImported, capabilities ?? ["Documentation"], analysis, bucket, null, review, review ? "No role" : null, [],
-            [.. (apps ?? []).Select(a => (a, "Development"))], new DateTimeOffset(2026, 11, day, 12, 0, 0, TimeSpan.Zero), null, null);
+            [.. (apps ?? []).Select(a => new SourceApplication(a, "Development", "dev", []))], new DateTimeOffset(2026, 11, day, 12, 0, 0, TimeSpan.Zero), null, null);
     }
 
     [Fact]

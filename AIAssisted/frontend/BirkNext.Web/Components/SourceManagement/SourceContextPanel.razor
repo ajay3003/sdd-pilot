@@ -10,13 +10,14 @@
     <header class="scp-head">
         <div>
             <h2 id="scp-title" class="scp-title">Source versions</h2>
-            <p class="scp-sub">Each logical source is analysed with exactly one snapshot. When several versions exist, choose the analysis baseline; BirkNext never picks a branch for you and never combines alternative versions.</p>
+            <p class="scp-sub">Each source is analysed with exactly one snapshot. With several versions, you choose which one (the analysis baseline). It is not a deployment baseline.</p>
         </div>
         @if (_context is { } c)
         {
             <ul class="scp-metrics" aria-label="Source context summary">
                 <li data-testid="scp-metric-sources"><strong>@c.LogicalSources</strong> logical source@(c.LogicalSources == 1 ? "" : "s")</li>
                 <li data-testid="scp-metric-snapshots"><strong>@c.Snapshots</strong> imported snapshot@(c.Snapshots == 1 ? "" : "s")</li>
+                <li data-testid="scp-metric-multi"><strong>@c.Sources.Count(x => x.SnapshotCount > 1)</strong> with several snapshots</li>
                 <li data-testid="scp-metric-needs" class="@(c.NeedsBaseline > 0 ? "is-warn" : "")"><strong>@c.NeedsBaseline</strong> need@(c.NeedsBaseline == 1 ? "s" : "") a baseline</li>
             </ul>
         }
@@ -26,8 +27,20 @@
     @if (_error is not null) { <p class="scp-error" role="alert">@_error</p> }
     else if (_context is null) { <InlineLoading Text="Loading source versions…" /> }
     else if (_context.Sources.Count == 0) { <p class="scp-empty" data-testid="scp-empty">No source has been imported yet. Import a project or source archive to start.</p> }
+    else if (!Expanded)
+    {
+        @* Nothing to decide: the versions stay one line (a source with one snapshot needs no choice) and open on request. *@
+        <p class="scp-collapsed" data-testid="scp-collapsed">
+            @(_context.Sources.All(x => x.SnapshotCount == 1) ? "One snapshot per source — each is used for analysis." : "No analysis baseline needs choosing.")
+            <button type="button" class="btn-link" aria-expanded="false" data-testid="scp-expand" @onclick="() => _expanded = true">Show versions</button>
+        </p>
+    }
     else
     {
+        @if (_context.NeedsBaseline == 0)
+        {
+            <p class="scp-collapsed"><button type="button" class="btn-link" aria-expanded="true" data-testid="scp-collapse" @onclick="() => _expanded = false">Hide versions</button></p>
+        }
         @if (_denied is { Length: > 0 }) { <p class="scp-denied" role="note" data-testid="scp-denied">Choosing baselines is not available: @_denied</p> }
         @foreach (var s in _context.Sources)
         {
@@ -149,6 +162,10 @@
     private string? _historyKey;
     private IReadOnlyList<SourceDecisionView> _history = [];
     private readonly HashSet<string> _open = new(StringComparer.Ordinal), _closed = new(StringComparer.Ordinal);
+    private bool? _expanded;
+
+    /// <summary>The version list opens by itself only when a baseline must be chosen; otherwise on request (and stays as the person left it).</summary>
+    private bool Expanded => _expanded ?? _context is { NeedsBaseline: > 0 };
 
     protected override async Task OnInitializedAsync()
     {
@@ -182,6 +199,7 @@
         _busy = true; _notice = null;
         // The source a person acts on stays open: a decided source would otherwise collapse and hide the choice just made.
         _open.Add(source.RepositoryKey); _closed.Remove(source.RepositoryKey);
+        _expanded = true;
         var result = await Api.SelectBaselineAsync(new SourceBaselineRequest(source.RepositoryKey, snapshotId));
         _notice = result.Message;
         _busy = false;

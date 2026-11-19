@@ -186,7 +186,7 @@ public sealed class SourceManagementTests : BunitContext
         var row = cut.Find("[data-testid=sm-row]");
         row.QuerySelector("[data-testid=sm-origin]")!.TextContent.Should().Be("Git");
         row.QuerySelector("[data-testid=sm-analysis]")!.TextContent.Should().Be("Not imported");
-        row.QuerySelector("[data-testid=sm-associated]")!.TextContent.Should().Be("No application yet");
+        row.QuerySelector("[data-testid=sm-associated]")!.TextContent.Should().Be("Not associated with an application");
         cut.Markup.Should().NotContain("<table", "a scannable list, not a text-heavy table");
         cut.FindAll("[data-testid=sm-detail]").Should().BeEmpty();
 

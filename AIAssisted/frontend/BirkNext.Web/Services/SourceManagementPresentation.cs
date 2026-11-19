@@ -33,7 +33,11 @@ public sealed record SourceAnalysisChip(string Dimension, string Status)
 public sealed record SourceRowFacts(
     string Key, string Name, string Origin, bool Imported, IReadOnlyList<string> Capabilities, IReadOnlyList<SourceAnalysisChip> Analysis,
     SourceAnalysisBucket Bucket, string? AnalysisNote, bool NeedsReview, string? ReviewReason, IReadOnlyList<string> ConfirmedRoles,
-    IReadOnlyList<(string Application, string Environment)> Applications, DateTimeOffset? UpdatedAt, Guid? SnapshotId, string? Commit);
+    IReadOnlyList<SourceApplication> Applications, DateTimeOffset? UpdatedAt, Guid? SnapshotId, string? Commit);
+
+/// <summary>A target application (Target Environment profile) whose Project Evidence binds the source, with the evidence roles it is bound to
+/// there — the persisted, person-confirmed bindings; never derived from detected capabilities.</summary>
+public sealed record SourceApplication(string Application, string Environment, string EnvironmentId, IReadOnlyList<string> Roles);
 
 /// <summary>The list's filters. Empty strings mean "all".</summary>
 public sealed record SourceListFilter(string Search = "", string Origin = "", string Capability = "", string Analysis = "", bool ReviewOnly = false, string Sort = "name")

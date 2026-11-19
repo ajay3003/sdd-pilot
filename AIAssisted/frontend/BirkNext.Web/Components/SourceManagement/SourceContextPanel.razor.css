@@ -48,3 +48,4 @@
 button.btn-link { background: none; border: 0; padding: 0.15rem 0; font: inherit; color: var(--clr-primary, #2563eb); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; text-align: left; }
 button.btn-link:disabled { color: var(--clr-text-muted, #64748b); cursor: not-allowed; text-decoration: none; }
 button.btn-link:focus-visible { outline: 2px solid var(--clr-primary, #2563eb); outline-offset: 2px; border-radius: 2px; }
+.scp-collapsed { margin: 0; font-size: 0.88rem; color: var(--clr-text-muted, #57606a); display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: baseline; }

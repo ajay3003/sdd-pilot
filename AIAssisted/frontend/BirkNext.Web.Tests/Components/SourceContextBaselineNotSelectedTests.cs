@@ -55,6 +55,30 @@ public sealed class SourceContextBaselineNotSelectedTests : BunitContext
         }
     }
 
+    [Fact]
+    public void Single_snapshot_sources_need_no_decision_and_stay_one_line_until_opened()
+    {
+        SourceSnapshotView Only(Guid id) => new(id, "M2LB.zip", new string('a', 64), new string('c', 64), T0, "Ready", SourceBranchKind.Unknown, null, null, null, true, true, false, 1, 100, [], 0);
+        var single = new LogicalSourceView("m2lb", "M2LB", "Archive file name", SourceBaselineState.SingleSnapshot, null, V5, "One snapshot.", 1, 1, [Only(V5)], "SINGLE_SNAPSHOT", null);
+        Serve(new SourceContextView([single], 1, 1, 0, "fp"));
+        var cut = Render<SourceContextPanel>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=scp-collapsed]").TextContent.Should().Contain("One snapshot per source — each is used for analysis."));
+        cut.Find("[data-testid=scp-expand]").Click();
+        cut.Find("[data-testid=scp-source]").GetAttribute("data-state").Should().Be(nameof(SourceBaselineState.SingleSnapshot));
+        cut.Find("[data-testid=scp-collapse]").Click();
+        cut.FindAll("[data-testid=scp-source]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void An_open_baseline_decision_shows_the_versions_without_expanding_anything()
+    {
+        Serve(Context(selected: false));
+        var cut = Render<SourceContextPanel>();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=scp-snapshot]").Should().HaveCount(2));
+        cut.FindAll("[data-testid=scp-collapsed]").Should().BeEmpty();
+        cut.FindAll("[data-testid=scp-collapse]").Should().BeEmpty("while a decision is open the list cannot be hidden");
+    }
+
     [Fact] // Real-browser finding: choosing a baseline collapsed the source (decided sources start closed), hiding the choice just made
     public void The_source_stays_open_after_the_person_chooses_its_baseline()
     {
@@ -101,7 +125,10 @@ public sealed class SourceContextBaselineNotSelectedTests : BunitContext
     {
         Serve(Context(selected: true));
         var cut = Render<SourceContextPanel>();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=scp-source-toggle]"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=scp-collapsed]").TextContent.Should().Contain("No analysis baseline needs choosing"));
+        cut.FindAll("[data-testid=scp-source]").Should().BeEmpty("with nothing to decide the versions stay one line");
+        cut.Find("[data-testid=scp-metric-multi]").TextContent.Should().Be("1 with several snapshots");
+        cut.Find("[data-testid=scp-expand]").Click();
         cut.FindAll("[data-testid=scp-snapshot]").Should().BeEmpty("a decided source starts collapsed; an undecided one opens by itself");
         cut.Find("[data-testid=scp-source-toggle]").Click();
         cut.FindAll("[data-testid=scp-snapshot]").Should().HaveCount(2);

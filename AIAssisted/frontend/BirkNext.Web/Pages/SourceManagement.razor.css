@@ -158,3 +158,12 @@ button.sm-tile:focus-visible { outline: 2px solid var(--clr-primary-focus, var(-
 .sm-area-details[open] > .sm-chips { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .35rem; }
 .sm-single { margin: .75rem 0 1rem; padding: .6rem .85rem; border: 1px solid var(--clr-border); border-radius: .5rem; background: var(--clr-surface); }
 .sm-summary-note { margin: .4rem 0 .9rem; }
+
+/* Compact summary strip (2026-11-19): small pills instead of six large cards; the explanation stays as the tooltip and for screen readers. */
+.sm-tiles { display: flex; flex-wrap: wrap; gap: .4rem; }
+.sm-tile { display: inline-flex; align-items: baseline; gap: .3rem; width: auto; height: auto; padding: .3rem .7rem; border-radius: 999px; }
+.sm-tile-value { font-size: 1rem; }
+.sm-tile-label { font-weight: 500; font-size: .88rem; }
+.sm-tile-detail { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.sm-tile.is-partial { border-left-width: 1px; }
+.sm-assoc-roles { display: inline-flex; flex-wrap: wrap; gap: .25rem; align-items: baseline; }

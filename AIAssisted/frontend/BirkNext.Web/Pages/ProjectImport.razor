@@ -88,7 +88,7 @@
                 </div>
                 <div class="pi-method" data-testid="pi-method-git">
                     @if (GitSources is not null) { <BirkNext.Web.Components.GitImportWizard OnImport="StartGitQueueAsync" /> }
-                    else { <h3>Azure DevOps Git import</h3><p class="pi-muted">Not available in this BirkNext instance.</p> }
+                    else { <h3>Git import</h3><p class="pi-muted">Not available in this BirkNext instance.</p> }
                 </div>
             </div>
             <p class="pi-muted" data-testid="pi-source-only-note"><a href="demo-projects">Demo Projects</a> remain available as optional examples. To analyze a source archive on its own, upload it in <a href="source-analysis">Source Analysis</a>: it creates the same source analysis, but no project documents, and it does not become the current project. It is still listed below with the imported sources.</p>
@@ -429,7 +429,7 @@
             <h2 id="pi-archive-heading" tabindex="-1">@preview.Archive.FileName</h2>
             @if (Session.GitRevision is { } git)
             {
-                <p class="pi-muted" data-testid="pi-git-revision">From Azure DevOps: @git.Project / @git.Repository · branch @git.Branch · commit <code>@git.ShortSha</code>@(git.CommittedAt is { } at ? $" ({at.UtcDateTime:yyyy-MM-dd HH:mm} UTC)" : "") · retrieved @git.RetrievedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC. The commit, not the branch, is what is imported.</p>
+                <p class="pi-muted" data-testid="pi-git-revision">From Git: @git.Repository · branch @git.Branch · commit <code>@git.ShortSha</code>@(git.CommittedAt is { } at ? $" ({at.UtcDateTime:yyyy-MM-dd HH:mm} UTC)" : "") · retrieved @git.RetrievedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC. The commit, not the branch, is what is imported.</p>
             }
             <dl class="pi-facts">
                 <div><dt>Project name</dt><dd data-testid="pi-project-name">@preview.ProjectName <span class="pi-muted">(@ProjectImportPresentation.NameBasis(preview.ProjectNameBasis))</span></dd></div>
