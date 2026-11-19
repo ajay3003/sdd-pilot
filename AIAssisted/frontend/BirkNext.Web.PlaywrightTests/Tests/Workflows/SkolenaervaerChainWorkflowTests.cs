@@ -81,6 +81,14 @@ public sealed class SkolenaervaerChainWorkflowTests : IAsyncLifetime
             await AreaAsync(page, "sources");
             await page.GetByTestId("its-composite-scope").ClickAsync();
             await page.GetByTestId("its-discover").ClickAsync();
+            await page.GetByTestId("its-stage-card").First.WaitForAsync(new() { Timeout = 60000 });
+            // Other projects in the same database (a real import, an earlier run) can make a stage ambiguous: the test lead then picks the
+            // synthetic package for that stage explicitly.
+            foreach (var card in await page.GetByTestId("its-stage-card").AllAsync())
+            {
+                var mine = card.Locator("[data-testid=its-candidate][data-project^='synth.' i] input[type=radio]");
+                if (await mine.CountAsync() > 0 && !await mine.First.IsCheckedAsync()) await mine.First.CheckAsync();
+            }
             var selected = page.GetByTestId("its-selected-source");
             await Assertions.Expect(selected).ToHaveCountAsync(4, new() { Timeout = 60000 });
             (await selected.AllInnerTextsAsync()).Should().Contain(s => s.Contains("altinn, mu")).And.Contain(s => s.Contains("mm"))

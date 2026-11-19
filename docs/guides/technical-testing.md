@@ -257,3 +257,30 @@ and the HTML report is downloaded. Two defects in BirkNext were found and fixed 
 element by element (a wrong type and a missing required property read as "1 undocumented property", Info), and the contract document's
 own findings never reached the review's findings.
 
+
+---
+
+## 5. All workflow tests in one command (before a release)
+
+`scripts/run-workflow-tests.ps1` runs every browser workflow test in this guide (and the Manual Testing ones) on a throw-away installation:
+
+```powershell
+# from the repository root; Podman's PostgreSQL (birknext-studio-local_postgres_1) must be running
+.\scripts\run-workflow-tests.ps1                                  # all workflow tests except the two below
+.\scripts\run-workflow-tests.ps1 -M2lbArchive "$env:USERPROFILE\Downloads\M2LB (8).zip" -Performance   # the full set
+.\scripts\run-workflow-tests.ps1 -Filter "FullyQualifiedName~ApiQualityReviewWorkflowTests" -NoPublish  # one test, reuse the last publish
+```
+
+What it does:
+
+1. Copies the source (without `bin`/`obj`) into `%TEMP%\birknext-workflow-tests` and publishes the API and the web app in Release from that
+   copy, then checks the web app's integrity hashes (a stale `dotnet.native.wasm` would otherwise stop the browser from loading the app).
+2. Creates a fresh database `birknext_wf_<time>`; the API migrates it on start.
+3. Starts the API (a local tester installation: Production, loopback only) and the web app on their own free ports. Your own BirkNext on
+   5000/5173 and its database are not touched.
+4. Runs the real-data M2LB test first, on the empty database (with `-M2lbArchive`), then all other workflow tests; `-Performance` also starts
+   the k6 stand-in target (Podman).
+5. Stops everything it started, drops the database (`-KeepDatabase` keeps it) and prints a result table. Exit code 0 = everything passed.
+
+Logs and the test result files are in `%TEMP%\birknext-workflow-tests\logs`. Nothing external is contacted. A green run is the last local step
+before a release; the release itself (push, pipeline, deploy) is a separate, deliberate step.
