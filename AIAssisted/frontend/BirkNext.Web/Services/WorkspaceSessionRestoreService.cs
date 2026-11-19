@@ -228,6 +228,10 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
 
     public async Task ClearWorkspaceAsync()
     {
+        // The restored workspace is forgotten first: every change raised below makes readers (Dashboard, sidebar) compute the current
+        // workspace again, and none of them may still see this metadata. Otherwise the last snapshot cached during the clear names the
+        // previous workspace (seen after Local Data Reset in the packaged app: "Auto_…", "Auto-saved", until a reload).
+        _currentMetadata = null;
         _artifactRepository.ResetSddLifecycle();
         _artifactRepository.Clear(WorkspaceArtifactType.Constitution);
         _artifactRepository.Clear(WorkspaceArtifactType.Specification);
@@ -237,10 +241,11 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
         _artifactRepository.Clear(WorkspaceArtifactType.Research);
 
         _artifactRepository.ProjectName = null;
-        _currentMetadata = null;
 
-        // Notify root state manager: workspace cleared
+        // Notify root state manager: workspace cleared. It raises nothing when no workspace id was current (already cleared, or a project
+        // that was never saved), so the repository change below is what tells the current-workspace readers in every case.
         _stateManager.NotifyWorkspaceChanged(null);
+        if (_artifactRepository is IWorkspaceSessionService session) session.NotifyArtifactsChanged();
 
         _logger.LogInformation("Cleared workspace from session");
         await Task.CompletedTask;

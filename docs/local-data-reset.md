@@ -49,9 +49,14 @@ The reset does not run while something is writing to the stores it clears:
 4. **Frontend coordinator** (`ApplicationRuntimeResetService.ClearFrontendRuntimeStateAsync`). This runs only after a successful result:
    1. Record the new epoch.
    2. Clear every frontend store and project localStorage key, and reset Target Environments to the generic seed.
+      The restored-workspace metadata is cleared **first**. Every change raised while the stores are cleared makes the Dashboard and the
+      sidebar compute the current workspace again, and none of those computations may still see the previous workspace.
    3. Rebuild ReviewContext and the navigation badges.
-   4. Resume auto-save.
-   5. Navigate to the Dashboard. It shows "Local data was reset", or the warnings.
+   4. Invalidate the current-workspace projection (`ICurrentWorkspaceProjection`), so the Dashboard reads it again from the fully cleared
+      state. Target Environments raise a change only when their project changes, so without this a snapshot cached half-way through
+      the clear could survive until a reload.
+   5. Resume auto-save.
+   6. Navigate to the Dashboard. It shows "Local data was reset", or the warnings.
 5. A failed, refused or blocked reset leaves the frontend untouched.
 
 The reset is idempotent. Running it on an empty installation completes and advances the epoch again.
@@ -184,6 +189,8 @@ the declared schema refuses the step. Each appears in the plan and in the result
   - idempotence;
   - stale refusal raising the layout handler;
   - an unrelated 409 not treated as a reset.
+- **Frontend, current workspace:** `LocalDataResetWorkspaceProjectionTests` wire the real restore service, explorer context, projection
+  and coordinator. After a reset, a reader that recomputes on every change still sees no workspace, not the restored auto-saved one.
 - **Live smoke against an isolated database:**
   1. Populate it with a copy of an M2LB workspace.
   2. Reset through the UI.

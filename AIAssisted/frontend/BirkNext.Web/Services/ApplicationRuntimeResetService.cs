@@ -73,10 +73,11 @@ public sealed class ApplicationRuntimeResetService
         // The owned authenticated browser session is cancelled while the Target Environment it belongs to still exists.
         await Step("authenticated browser session", async () => { if (Get<IAuthenticatedBrowserSessionService>() is { } auth) await auth.ClearSessionAsync(); });
 
-        // Workspace: current workspace id, artifacts, project identity, SDD lifecycle, restore metadata.
+        // Workspace: restore metadata first (a reader computing the current workspace on any change below must not see the restored
+        // workspace any more), then the current workspace id, artifacts, project identity and SDD lifecycle.
+        await Step("workspace restore metadata", async () => { if (Get<IWorkspaceSessionRestoreService>() is { } restore) await restore.ClearWorkspaceAsync(); });
         _stateManager.NotifyWorkspaceChanged(null);
         _workspace.ClearAll();
-        await Step("workspace restore metadata", async () => { if (Get<IWorkspaceSessionRestoreService>() is { } restore) await restore.ClearWorkspaceAsync(); });
 
         // Review, dashboard and extraction sessions.
         _qualitySession.Clear();
@@ -109,6 +110,10 @@ public sealed class ApplicationRuntimeResetService
         // Derived views: ReviewContext and the sidebar applicability badges re-evaluate from the empty state.
         await Step("review context", async () => { if (Get<IReviewContextProvider>() is { } context) await context.RebuildAsync(); });
         await Step("navigation status", async () => { if (Get<ProjectApplicabilityState>() is { } applicability) await applicability.RefreshAsync(); });
+
+        // Last: the current workspace is computed again from the fully cleared state. A snapshot cached while the stores above were being
+        // cleared (and Target Environments only raise a change when their project changes) would otherwise survive until a reload.
+        Get<ICurrentWorkspaceProjection>()?.Invalidate();
     }
 
     private async Task Step(string what, Func<Task> action)
