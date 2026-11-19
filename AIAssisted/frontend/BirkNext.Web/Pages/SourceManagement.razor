@@ -351,8 +351,31 @@
         return [.. profiles.Where(p => p.Project?.Evidence.Any(e => e.Sources.Any(s => s.ImportId == record.ImportId)) == true)
             .Select(p => new SourceApplication(TargetApplications.Of(p)?.Name ?? p.Project!.ProjectName, p.Name, p.Id,
                 [.. p.Project!.Evidence.Where(e => e.Sources.Any(s => s.ImportId == record.ImportId))
-                    .Select(e => string.IsNullOrWhiteSpace(e.Label) ? e.RoleKey : e.Label).Distinct(StringComparer.OrdinalIgnoreCase)]))];
+                    .Select(e => string.IsNullOrWhiteSpace(e.Label) ? e.RoleKey : e.Label).Distinct(StringComparer.OrdinalIgnoreCase)])
+            {
+                Pending = PendingFor(p.Id, record.ImportId),
+                PendingKnown = EvidenceOf(p.Id)?.Classified == true,
+            })];
     }
+
+    // Each application's Project Evidence view, read once per list build: the active environment's from the load, the others resolved from the
+    // shared service without a backend call (Peek has no side effects; GetAsync may apply a target application, so it is never called here).
+    private readonly Dictionary<string, ProjectEvidenceView?> _evidenceByEnvironment = new(StringComparer.Ordinal);
+
+    private ProjectEvidenceView? EvidenceOf(string environmentId)
+    {
+        if (environmentId == _environmentId && _evidence is not null) return _evidence;
+        if (_evidenceByEnvironment.TryGetValue(environmentId, out var cached)) return cached;
+        ProjectEvidenceView? view = null;
+        try { view = Evidence?.Peek(environmentId); } catch (Exception ex) when (ex is not OutOfMemoryException) { }
+        return _evidenceByEnvironment[environmentId] = view;
+    }
+
+    /// <summary>Open association reviews of the source in one application (Project Evidence's own NeedsReview state, never inferred here).</summary>
+    private IReadOnlyList<string> PendingFor(string environmentId, string importId) =>
+        EvidenceOf(environmentId) is { Classified: true } view
+            ? [.. view.Associations.Where(a => a.Package.ImportId == importId && a.State == EvidenceAssociationState.NeedsReview).Select(a => a.Detail)]
+            : [];
 
     /// <summary>A decision is open: the active environment's association needs review, or the role is neither confirmed nor classified.</summary>
     private string? ReviewReason(Row row) =>
@@ -492,6 +515,11 @@
                                             @if (app.Roles.Count == 0) { <span class="sm-quiet">No evidence role bound</span> }
                                             else { <span class="sm-quiet">Confirmed:</span> @foreach (var r in app.Roles) { <span class="sm-chip sm-chip-role">@r</span> } }
                                         </span>
+                                        <span class="sm-assoc-pending" data-testid="sm-association-pending">
+                                            @if (!app.PendingKnown) { <span class="sm-quiet">Open reviews: see its Project Evidence</span> }
+                                            else if (app.Pending.Count == 0) { <span class="sm-quiet">No open review</span> }
+                                            else { @foreach (var reason in app.Pending) { <span class="sm-chip sm-chip-attention" title="@reason">Needs review</span> } }
+                                        </span>
                                         <a class="sm-link-action" href="@ProjectEvidenceResolver.ProjectTabHref(app.EnvironmentId)" data-testid="sm-association-link">View association</a>
                                     </li>
                                 }
@@ -596,6 +624,7 @@
             r.Git is { } g ? _links.FirstOrDefault(l => string.Equals(l.Organization, g.Organization, StringComparison.OrdinalIgnoreCase) && l.RepositoryId == g.RepositoryId) : null)).ToList();
         rows.AddRange(_links.Where(l => rows.All(r => r.Link?.Id != l.Id)).Select(l => new Row(l.Id, l.Repository, "Git", null, l)));
         _rows = rows;
+        _evidenceByEnvironment.Clear();
         _facts = [.. rows.Select(Facts)];
     }
 

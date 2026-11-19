@@ -23,8 +23,11 @@ public sealed class SourceManagementConsolidationTests : BunitContext
     private readonly WorkspaceArtifactRepository _repository = new();
     private readonly FrontendAnalysisSettings _settings = new();
 
-    public SourceManagementConsolidationTests()
+    private readonly Xunit.Abstractions.ITestOutputHelper _output;
+
+    public SourceManagementConsolidationTests(Xunit.Abstractions.ITestOutputHelper output)
     {
+        _output = output;
         var context = new Mock<IFrontendAnalysisContextFactory>();
         context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Name = "Development" } });
         var git = new Mock<IGitSourcesApiService>();
@@ -132,6 +135,61 @@ public sealed class SourceManagementConsolidationTests : BunitContext
         apps[1].QuerySelector("[data-testid=sm-association-link]")!.GetAttribute("href").Should().Contain("profile=test", "each application opens its own association, never the first");
         cut.Find("[data-testid=sm-roles-vs-capabilities]").TextContent.Should().Contain("Detected capabilities are not roles");
         cut.Find("[data-testid=sm-associate]").TextContent.Should().Be("Review roles");
+    }
+
+    [Theory] // Large inventories: one list build per load, no per-source request; search and filters stay in memory.
+    [InlineData(100)]
+    [InlineData(500)]
+    public void A_large_inventory_renders_filters_and_opens_without_per_source_requests(int count)
+    {
+        var journeys = new Mock<IIntegrationJourneysApiService>();
+        Services.AddSingleton(journeys.Object);
+        for (var i = 0; i < count; i++) Import($"imp-{i:D4}", $"Source {i:D4}");
+        Bind("dev", "Development", "M2LB", "imp-0001", "Integration implementation");
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var cut = Render<SourceManagementPage>();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=sm-row]").Should().HaveCount(count), TimeSpan.FromSeconds(30));
+        var rendered = watch.Elapsed;
+
+        watch.Restart();
+        cut.Find("[data-testid=sm-search]").Input("Source 0001");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=sm-row]").Should().HaveCount(1));
+        var searched = watch.Elapsed;
+        cut.Find("[data-testid=sm-open]").Click();
+        cut.Find("[data-testid=sm-associated]").TextContent.Should().Be("M2LB (Development)");
+
+        journeys.Verify(j => j.SourceSetupAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once(), "one source-setup read per load, never per source");
+        _output.WriteLine($"SM-PERF {count} sources: render {rendered.TotalMilliseconds:F0} ms, search {searched.TotalMilliseconds:F0} ms");
+    }
+
+    [Fact]
+    public void Open_reviews_are_shown_per_application_and_unknown_is_never_shown_as_none()
+    {
+        Import("imp-m", "M2LB");
+        Bind("dev", "Development", "M2LB", "imp-m", "Integration implementation");
+        Bind("test", "Test", "Skolenærvær", "imp-m", "Supporting source");
+        Bind("qa", "QA", "Other", "imp-m", "Documentation");
+        var package = new BirkNext.Web.Services.ProjectEvidence.ProjectEvidencePackage("imp-m", "M2LB", "M2LB.zip", "", DateTimeOffset.UtcNow, null, [],
+            new Dictionary<WorkspaceArtifactType, int>(), 0, [], [], [], null);
+        BirkNext.Web.Services.ProjectEvidence.ProjectEvidenceView View(string env, bool classified, params BirkNext.Web.Services.ProjectEvidence.PackageAssociation[] associations) =>
+            new(env, env, null, null, [], [], [package], []) { Classified = classified, Associations = associations };
+        var evidence = new Mock<BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService>();
+        evidence.Setup(e => e.GetAsync("dev", It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(View("dev", true));
+        evidence.Setup(e => e.Peek("test")).Returns(View("test", true,
+            new BirkNext.Web.Services.ProjectEvidence.PackageAssociation(package, BirkNext.Web.Services.ProjectEvidence.EvidenceAssociationState.NeedsReview,
+                PackageEvidenceRole.NotClassified, "Two applications match")));
+        evidence.Setup(e => e.Peek("qa")).Returns(View("qa", false));
+        Services.AddSingleton(evidence.Object);
+
+        var cut = Render<SourceManagementPage>();
+        cut.WaitForElement("[data-testid=sm-open]").Click();
+        cut.Find("[data-testid=sm-tab][data-tab=associations]").Click();
+        var pending = cut.FindAll("[data-testid=sm-association-pending]").Select(p => p.TextContent.Trim()).ToList();
+        pending.Should().HaveCount(3);
+        pending[0].Should().Be("No open review", "the active environment's Project Evidence was read");
+        pending[1].Should().Be("Needs review", "the other application's own NeedsReview state");
+        pending[2].Should().Be("Open reviews: see its Project Evidence", "not classified in this session: unknown, never \"none\"");
+        evidence.Verify(e => e.GetAsync("test", It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never(), "another application is only peeked: GetAsync may apply a target application");
     }
 
     [Fact]

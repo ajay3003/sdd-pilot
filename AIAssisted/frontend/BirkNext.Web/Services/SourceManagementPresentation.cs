@@ -37,7 +37,14 @@ public sealed record SourceRowFacts(
 
 /// <summary>A target application (Target Environment profile) whose Project Evidence binds the source, with the evidence roles it is bound to
 /// there — the persisted, person-confirmed bindings; never derived from detected capabilities.</summary>
-public sealed record SourceApplication(string Application, string Environment, string EnvironmentId, IReadOnlyList<string> Roles);
+public sealed record SourceApplication(string Application, string Environment, string EnvironmentId, IReadOnlyList<string> Roles)
+{
+    /// <summary>Open association reviews of the source in this application (Project Evidence's NeedsReview detail).</summary>
+    public IReadOnlyList<string> Pending { get; init; } = [];
+
+    /// <summary>False when that application's Project Evidence has not been classified in this session: open reviews are then unknown, not zero.</summary>
+    public bool PendingKnown { get; init; }
+}
 
 /// <summary>The list's filters. Empty strings mean "all".</summary>
 public sealed record SourceListFilter(string Search = "", string Origin = "", string Capability = "", string Analysis = "", bool ReviewOnly = false, string Sort = "name")

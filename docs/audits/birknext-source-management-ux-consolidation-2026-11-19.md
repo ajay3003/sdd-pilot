@@ -103,11 +103,44 @@ The existing source-level role editor (the *Capabilities & Roles* tab, which wri
   - full frontend suite: see the commit message.
 - **Backend:** unchanged, so no backend tests were added.
 
-## 6. Not done
+## 6. Follow-up (same day): gaps closed
 
-- **Real-browser acceptance** (Release build on isolated ports, the 1440/1280/1024/768/390 px widths, before/after screenshots): not run. The layout changes are CSS-only (flex-wrap pills, wrapped association rows). Their responsive behaviour still needs a browser check.
-- **Performance at 100/500 sources:** not measured. The page logic is unchanged and runs in memory: one Project Evidence read, one source-setup read and one links read per load, with no per-source requests. The new per-application role lookup walks the profiles' bindings once per row.
-- **Pending role reviews per application:** only the active environment's pending state is available (Project Evidence computes associations for one environment). Other applications show their confirmed bindings only. That is not presented as "no pending review".
+**Pending reviews per application.**
+- Each application in *Associations* now shows its open reviews from that application's own Project Evidence view (`NeedsReview`, with the detail as a tooltip).
+- The active environment comes from the page load. Other environments come from `IProjectEvidenceService.Peek`, which has no side effects; `GetAsync` can apply a target application, so it is never called for them.
+- When an application's evidence has not been classified in this session, the row says "Open reviews: see its Project Evidence". It never says "none".
+- Views are cached once per list build, not looked up per row.
+
+**Performance** (bUnit, the real page component, synthetic import records; one source-setup read per load verified):
+
+| Sources | Initial render | Search |
+| --- | --- | --- |
+| 100 | 34 ms | 3 ms |
+| 500 | 519 ms | 32 ms |
+
+**Real-browser acceptance.** Release publish of API + Web (0 build errors) on an isolated instance:
+- API on :5097, web on :5197, and a new disposable database `birknext_sm_20261119` cloned from the acceptance template;
+- Edge with the repository network guard, which blocks :5000/:5173 and external hosts.
+- **Result: 24/24 passed:**
+  - lead text; no Azure DevOps wording;
+  - versions collapsed when no decision is needed, and *Show versions* works;
+  - no horizontal overflow at 1440/1280/1024/768/390 px;
+  - search writes `q=`, and the visible/total count is shown;
+  - opening a source writes `source=`;
+  - the unassociated state is shown;
+  - *View snapshots* opens `snapshots?open=SourceAnalysis:<id>`;
+  - Back restores the same address and reopens the source; reload restores it;
+  - *View analysis* opens `source-analysis?snapshot=<id>`;
+  - keyboard toggle works;
+  - an unknown source is reported and opens nothing;
+  - 0 blocked requests and 0 browser errors.
+- After-screenshots (1440/1280/1024/768/390, plus the detail and associations panels) are in the session scratchpad (`sm-shots`).
+- No before-screenshots were taken. The pre-change layout is the one described in section 1.
+- Asset integrity: 86/86 framework assets match. The checker's one "missing hash" is the manifest's own `hash` key, not a file.
+- One cosmetic fix came from the screenshots: the *partly analyzed* pill had a left-only coloured border.
+
+**Still open**
+- **Dormant manual-run tables.** Dropping `manual_test_runs` and `manual_run_attachments` would delete data in existing databases, so it needs the owner's explicit approval (a forward EF migration).
 
 ## 7. Commits
 

@@ -165,5 +165,6 @@ button.sm-tile:focus-visible { outline: 2px solid var(--clr-primary-focus, var(-
 .sm-tile-value { font-size: 1rem; }
 .sm-tile-label { font-weight: 500; font-size: .88rem; }
 .sm-tile-detail { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.sm-tile.is-partial { border-left-width: 1px; }
+.sm-tile.is-partial { border-left-width: 1px; border-color: var(--clr-warning, #b45309); }
 .sm-assoc-roles { display: inline-flex; flex-wrap: wrap; gap: .25rem; align-items: baseline; }
+.sm-assoc-pending { display: inline-flex; flex-wrap: wrap; gap: .25rem; align-items: baseline; }
