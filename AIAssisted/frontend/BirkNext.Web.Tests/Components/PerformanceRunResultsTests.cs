@@ -153,4 +153,26 @@ public sealed class PerformanceRunResultsTests : BunitContext
         cut.Find("[data-testid=pt-no-results]").TextContent.Should().Contain("No completed run selected");
         cut.FindAll("[data-testid=pt-result-summary]").Should().BeEmpty();
     }
+
+    [Fact]
+    public void Passed_thresholds_never_hide_a_regression_against_the_baseline_in_the_summary_or_the_report()
+    {
+        // Performance Test Review end to end (2026-11-19): the second run was 10x slower; thresholds passed, the summary said "Thresholds passed"
+        // and the report "Quality: Pass", while the baseline comparison said Regression.
+        var deltas = new List<PerformanceMetricDelta> { PerformanceTestRules.Delta(PerformanceMetric.LatencyP95Ms, 22.2, 252.7) };
+        var run = Run(verdict: PerformanceQualityVerdict.Pass) with
+        {
+            BaselineIdAtRun = "base-1",
+            Drift = new PerformanceDriftAssessment { BaselineId = "base-1", BaselineVersion = 1, BaselineRunId = Guid.NewGuid(), Compatible = true, Deltas = deltas, State = PerformanceDriftState.Regression },
+        };
+        var cut = Render(run, new PerformanceBaseline { BaselineId = "base-1", Version = 1 });
+        cut.Find("[data-testid=pt-result-status-detail]").TextContent.Should().Be("Thresholds passed");
+        cut.Find("[data-testid=pt-result-baseline-verdict]").TextContent.Should().Contain("Regression against baseline v1");
+        cut.Find("[data-testid=pt-result-summary]").ClassList.Should().NotContain("prr-tone-ok").And.Contain("prr-tone-warning");
+        P.Export(run).Should().Contain("Baseline: <strong>Regression against baseline v1</strong>");
+
+        var noPolicy = run with { Drift = run.Drift with { State = PerformanceDriftState.NotAssessed } };
+        P.BaselineVerdict(noPolicy).Should().BeNull("without a drift policy there is no verdict to state");
+        P.BaselineVerdict(run with { Drift = null }).Should().BeNull();
+    }
 }

@@ -26,12 +26,16 @@
     else
     {
         var status = Status(r);
+        var baselineVerdict = P.BaselineVerdict(r);
+        // Thresholds can pass while the run regressed against its baseline: the summary never reads as all clear then.
+        if (r.Drift?.State == PerformanceDriftState.Regression && status.Tone == "ok") status = status with { Tone = "warning" };
         var m = r.Metrics;
         var thresholds = r.ThresholdResults;
         var snapshot = r.DefinitionSnapshot;
         <div class="prr-head prr-tone-@status.Tone" data-testid="pt-result-summary" data-state="@r.State">
             <div class="prr-status">
-                <p class="prr-status-main" data-testid="pt-result-status"><strong>@status.Primary</strong> <span class="prr-status-sub" data-testid="pt-result-status-detail">@status.Secondary</span></p>
+                <p class="prr-status-main" data-testid="pt-result-status"><strong>@status.Primary</strong> <span class="prr-status-sub" data-testid="pt-result-status-detail">@status.Secondary</span>
+                    @if (baselineVerdict is not null) { <span class="prr-status-sub" data-testid="pt-result-baseline-verdict" data-state="@r.Drift!.State">· @baselineVerdict</span> }</p>
                 <p class="prr-meta">Run @P.Short(r.RunId) · @P.Utc(r.StartedAt ?? r.CreatedAt) · definition v@(r.DefinitionVersion)@(r.VersionLabel is null ? "" : $" · version {r.VersionLabel}")
                     <button type="button" class="btn-link" @onclick="() => OnExport.InvokeAsync(r)" data-testid="pt-export">Export HTML</button>
                     <button type="button" class="btn-link" @onclick="() => OnOpenHistory.InvokeAsync(r)" data-testid="pt-results-view-history">View run in History</button></p>

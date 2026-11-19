@@ -131,6 +131,12 @@ public static class PerformanceTestPresentation
         _ => "muted",
     };
 
+    /// <summary>The run against its baseline, for the summary line next to the threshold outcome ("Regression against baseline v1"); null when
+    /// there was no baseline or no drift policy. Thresholds can pass while the run regressed against the baseline: both are shown.</summary>
+    public static string? BaselineVerdict(PerformanceTestRun r) =>
+        r.Drift is { } d && d.State is not (PerformanceDriftState.NotAssessed or PerformanceDriftState.NotComparable)
+            ? $"{Label(d.State)} against baseline v{d.BaselineVersion}" : null;
+
     public static string Label(PerformanceDriftState s) => s switch
     {
         PerformanceDriftState.DegradedWithinTolerance => "Degraded within tolerance",
@@ -190,7 +196,8 @@ public static class PerformanceTestPresentation
         sb.Append("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Performance Test Review</title><style>body{font-family:system-ui,sans-serif;margin:2rem;max-width:960px}table{border-collapse:collapse;width:100%;margin:.5rem 0}td,th{border:1px solid #cbd5e1;padding:.3rem .5rem;text-align:left}</style></head><body>");
         sb.Append($"<h1>Performance Test Review — {E(r.DefinitionSnapshot.Name)}</h1>");
         sb.Append($"<p>Run {E(Short(r.RunId))} · {E(Utc(r.StartedAt ?? r.CreatedAt))} · {E(r.DefinitionSnapshot.EnvironmentName)} ({E(r.EnvironmentType)}) · target {E(r.TargetOrigin)}</p>");
-        sb.Append($"<p>Execution: <strong>{E(Label(r.State))}</strong> · Quality: <strong>{E(Label(r.Verdict))}</strong>{(r.Quality?.QualityPercent is { } q ? $" ({q:0.#} % among {r.Quality.Denominator} assessed threshold(s))" : "")}</p>");
+        sb.Append($"<p>Execution: <strong>{E(Label(r.State))}</strong> · Quality: <strong>{E(Label(r.Verdict))}</strong>{(r.Quality?.QualityPercent is { } q ? $" ({q:0.#} % among {r.Quality.Denominator} assessed threshold(s))" : "")}"
+            + (BaselineVerdict(r) is { } baseline ? $" · Baseline: <strong>{E(baseline)}</strong>" : "") + "</p>");
         sb.Append($"<h2>Workload</h2><p>{E(r.DefinitionSnapshot.Workload.Purpose.ToString())}, {E(Load(r.DefinitionSnapshot.Workload))}</p><ul>");
         foreach (var t in PerformanceTestRules.Timeline(r.DefinitionSnapshot.Workload)) sb.Append($"<li>{E(t)}</li>");
         sb.Append("</ul>");

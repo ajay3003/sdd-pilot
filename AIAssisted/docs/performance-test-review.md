@@ -259,7 +259,7 @@ Finished runs are immutable: saving a finished run throws.
 ## Baselines, comparison and drift
 
 **Baselines:**
-- Always explicit: "Promote to baseline". The latest, fastest or passing run never becomes one automatically.
+- Always explicit: History → **Propose as baseline**, then **Propose and approve now** (active at once) or **Propose** (approved later with **Approve**). The latest, fastest or passing run never becomes one automatically.
 - Only Completed runs with complete metrics qualify. A run whose required thresholds failed needs explicit confirmation.
 - Each promotion creates a new versioned baseline (v1, v2 …) for the scope: definition + environment + comparison fingerprint. The previous Active baseline becomes Superseded (with time and successor) and is kept.
 - Archive marks a baseline Historical. Baselines are never deleted.

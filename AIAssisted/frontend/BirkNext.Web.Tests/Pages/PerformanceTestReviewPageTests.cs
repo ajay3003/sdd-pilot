@@ -395,7 +395,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         Register();
         var cut = Page();
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-hero-readiness]").TextContent.Should().Be("Ready"));
-        cut.Find("[data-testid=pt-purpose]").TextContent.Should().Contain("controlled load");
+        cut.Find("[data-testid=pt-intro]").TextContent.Should().Contain("controlled load");
         cut.Find("[data-testid=pt-hero-target]").TextContent.Should().Be("https://paymenthub-qa.example.test");
         cut.Find("[data-testid=pt-hero-provider]").TextContent.Should().Be("k6 0.52.0");
         cut.Find("[data-testid=pt-overview-latest]").TextContent.Should().Be("No run yet");
