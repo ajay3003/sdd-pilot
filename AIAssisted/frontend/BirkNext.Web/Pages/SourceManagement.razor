@@ -660,7 +660,7 @@
         // The revision the person reviewed: the commit the last check reported (or the pinned one) — a branch that moved since is never imported
         // silently; without a check, the branch head at import time (shown as the branch).
         var commit = GitUpdateStates.CommitToImport(link);
-        var request = new GitImportRequest(link.RepositoryId, link.Branch) { OrganizationUrl = link.OrganizationUrl, Commit = commit };
+        var request = new GitImportRequest(link.RepositoryId, link.Branch) { OrganizationUrl = link.OrganizationUrl, Commit = commit, EnvironmentId = link.EnvironmentId };
         _ = Session.StartGitPreviewAsync($"{link.Repository} @ {commit?[..8] ?? link.Branch}", ct => git.ImportAsync(request, ct), null);
         Nav.NavigateTo("project-import");
     }
@@ -693,7 +693,7 @@
         _error = null;
         if (row.Link is { } link && Git is { } git && _environmentId is not null)
         {
-            var (updated, error) = await git.LinkAsync(new GitLinkRequest(link.OrganizationUrl, link.RepositoryId, link.Branch, link.PinnedCommit, [.. roles], _environmentId, link.BirkNextProject));
+            var (updated, error) = await git.UpdateLinkAsync(link.Id, link.EnvironmentId, null, null, [.. roles]);
             if (updated is null) { _error = error; return; }
             _links = [.. _links.Select(l => l.Id == updated.Id ? updated : l)];
         }

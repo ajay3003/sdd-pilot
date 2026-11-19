@@ -1,7 +1,10 @@
 using BirkNext.GitSources;
 using BirkNext.Web.Components;
+using BirkNext.Web.Components.GitSources;
 using BirkNext.Web.Models;
 using BirkNext.Web.Services;
+using BirkNext.Web.Services.ProjectImport;
+using BirkNext.Web.Tests.Services;
 using Bunit;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,194 +12,219 @@ using Moq;
 
 namespace BirkNext.Web.Tests.Components;
 
-/// <summary>Git Sources UI: opening reads only the sign-in state (no Azure DevOps call), configured is not verified, the explicit test shows every
-/// step, disconnect keeps settings, and the Import Project picker loads repositories / branches only when asked and hands the choice over.</summary>
+/// <summary>
+/// Git Sources, Git-only (2026-11-19): System Settings shows the local Git and its credential helper (never a client id, tenant or BirkNext sign-in),
+/// connected repositories of every project with import only for the active one, and the add form (local folder or Git URL) refuses URLs with a
+/// credential or an option. Project Import → Git queues imports that carry the project and the exact commit. No real Git runs here.
+/// </summary>
 public sealed class GitSourcesUiTests : BunitContext
 {
-    const string Sha = "0123456789abcdef0123456789abcdef01234567";
-    static readonly GitTestResult Passed = new(true, "Ready",
-        [new("Microsoft Entra authentication", GitTestStepState.Verified, "Verified (tester@bufdir.no)", 12), new("Branch discovery", GitTestStepState.Verified, "4 branches", 30)],
-        new(2026, 11, 4, 8, 0, 0, TimeSpan.Zero), "bufdir", 3);
+    private const string Sha = "0123456789abcdef0123456789abcdef01234567";
+    private readonly Mock<IGitSourcesApiService> _git = new();
 
-    private Mock<IGitSourcesApiService> Api(GitConnectionStatus status)
+    private static GitConnectionStatus Ready => new()
     {
-        var api = new Mock<IGitSourcesApiService>();
-        api.Setup(a => a.StatusAsync(It.IsAny<CancellationToken>())).ReturnsAsync((status, (string?)null));
-        api.Setup(a => a.LinksAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitSourceLink>)[], (string?)null));
-        Services.AddSingleton(api.Object);
-        return api;
-    }
-
-
-    // ── Six guided steps: the specification's state matrix ─────────────────────────────────────────────────────────────────
-
-    private static GitConfigurationCheck Ok(string key) => key switch
-    {
-        "enabled" => new("enabled", "Microsoft sign-in enabled", GitCheckState.Ok, "AzureEnvironment:Enabled is true."),
-        "client-id" => new("client-id", "App registration (client id)", GitCheckState.Ok, "Client id 11111111-2222-3333-4444-555555555555."),
-        _ => new("tenant", "Tenant / authority", GitCheckState.Ok, "Authority https://login.microsoftonline.com/organizations."),
+        State = GitConnectionState.Connected, Message = "Git 2.47.1",
+        Installation = new GitInstallationView(true, @"C:\Program Files\Git\cmd\git.exe", "2.47.1.windows.1", ["manager"], null),
     };
 
-    private static readonly IReadOnlyList<GitConfigurationCheck> Configured = [Ok("enabled"), Ok("client-id"), Ok("tenant")];
-    private const string Org = "https://dev.azure.com/synthetic-org";
-
-    private static string Steps(IRenderedComponent<GitSourcesSettingsCard> cut) =>
-        string.Join(" ", cut.FindAll("[data-testid=gss-step]").Select(s => $"{s.GetAttribute("data-step")}:{s.GetAttribute("data-state")}"));
-
-    private static string Step(IRenderedComponent<GitSourcesSettingsCard> cut, string id) => cut.Find($"[data-testid=gss-step][data-step={id}]").TextContent;
-
-
-
-
-
-
-
-
-
-
-    [Fact]
-    public void Connection_state_vocabulary_follows_the_evidence()
+    private static GitSourceLink Link(string id, string environment, string project, string repository = "Contracts") => new()
     {
-        var failed = new GitTestResult(false, "Not ready", [new("Azure DevOps organization", GitTestStepState.Failed, "Not found (404)", 4)], DateTimeOffset.UtcNow, "x", null);
-        var other = new GitTestResult(false, "Not ready", [new("Repository discovery", GitTestStepState.Failed, "Timed out", 4)], DateTimeOffset.UtcNow, "x", null);
-        GitSourcesPresentation.ConnectionState(new() { State = GitConnectionState.Connected, LastTest = failed }).Should().Be("Organization not accessible");
-        GitSourcesPresentation.ConnectionState(new() { State = GitConnectionState.Connected, LastTest = other }).Should().Be("Failed");
-        GitSourcesPresentation.ConnectionState(new() { State = GitConnectionState.Connected }, testing: true).Should().Be("Testing");
-        GitSourcesPresentation.SignInState(new() { State = GitConnectionState.SigningIn }).Should().Be("Signing in");
-        GitSourcesPresentation.SignInState(new() { State = GitConnectionState.Failed }).Should().Be("Sign-in failed");
-        GitSourcesPresentation.SignInState(new() { State = GitConnectionState.NotConfigured }).Should().Be("Not configured");
-        GitSourcesPresentation.OrganizationProblem("https://contoso.visualstudio.com").Should().BeNull();
-        GitSourcesPresentation.TenantProblem(true, "common").Should().NotBeNull("only Organizations or one specific tenant");
-        GitSourcesPresentation.TenantProblem(true, "contoso.no").Should().BeNull();
-        GitSourcesPresentation.ClientIdProblem(false, " 11111111-2222-3333-4444-555555555555 ").Should().BeNull("whitespace is trimmed");
+        Id = id, EnvironmentId = environment, BirkNextProject = project, Kind = "Local", LocalPath = @"C:\source\" + repository, OrganizationUrl = "local:c:/source/" + repository,
+        Organization = "local", RepositoryId = "git-" + id, Repository = repository, Branch = "main", DefaultBranch = "main", LastFetchedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+    };
+
+    public GitSourcesUiTests()
+    {
+        var repository = new WorkspaceArtifactRepository();
+        var context = new Mock<IFrontendAnalysisContextFactory>();
+        context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Name = "LendoPlus" } });
+        _git.Setup(g => g.StatusAsync(It.IsAny<CancellationToken>())).ReturnsAsync((Ready, (string?)null));
+        _git.Setup(g => g.LinksAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitSourceLink>)[], (string?)null));
+        _git.Setup(g => g.BranchesAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(((IReadOnlyList<GitBranch>)[new GitBranch("main", Sha, DateTimeOffset.UtcNow, "A", "m", true), new GitBranch("release/1.0", Sha.Replace('0', 'f'), null, null, null, false)], (string?)null));
+        Services.AddSingleton(_git.Object);
+        Services.AddSingleton(context.Object);
+        Services.AddSingleton(repository);
+        Services.AddSingleton(new ProjectImportActivation(repository));
+        Services.AddSingleton(Mock.Of<IProjectImportApiService>());
+        Services.AddSingleton(Mock.Of<IWorkspaceAutoSaveService>());
+        Services.AddSingleton(WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
+        Services.AddSingleton(Mock.Of<IFrontendAnalysisSettingsService>());
+        Services.AddScoped<BirkNext.Web.Services.Operations.BackgroundOperationService>(_ => new BirkNext.Web.Services.Operations.BackgroundOperationService());
+        JSInterop.Mode = JSRuntimeMode.Loose;
     }
 
-    private void ActiveProject()
+    [Fact]
+    public void Settings_show_the_local_Git_and_never_ask_for_a_client_id_tenant_or_sign_in()
     {
-        var contexts = new Mock<IFrontendAnalysisContextFactory>();
-        contexts.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext
+        var cut = Render<GitSourcesSettingsCard>();
+
+        cut.WaitForElement("[data-testid=gss-installation]");
+        cut.Find("[data-testid=gss-overall]").TextContent.Trim().Should().Be("Git ready");
+        cut.Find("[data-testid=gss-version]").TextContent.Should().Be("2.47.1.windows.1");
+        cut.Find("[data-testid=gss-helper]").TextContent.Should().Be("manager");
+        cut.Find("[data-testid=gss-credentials]").TextContent.Should().Contain("Git Credential Manager").And.Contain("never sees the password or token");
+        foreach (var retired in new[] { "Client ID", "client id", "Tenant", "Entra", "Redirect URI", "Sign in with Microsoft", "app registration" })
+            cut.Markup.Should().NotContain(retired, "Git-only source management has no BirkNext sign-in setup");
+        cut.Find("[data-testid=gss-empty]");
+        cut.FindAll("[data-testid=gar]").Should().ContainSingle("a repository can be added to the active project");
+    }
+
+    [Fact]
+    public void Git_missing_is_a_prerequisite_with_instructions_not_a_configured_connection()
+    {
+        _git.Setup(g => g.StatusAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new GitConnectionStatus
         {
-            ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Project = new EnvironmentProject { ProjectName = "M2LB" } },
-        });
-        Services.AddSingleton(contexts.Object);
+            State = GitConnectionState.NotConfigured, Installation = new GitInstallationView(false, null, null, [], GitSourcePolicy.Describe(GitFailureKind.GitMissing)),
+        }, (string?)null));
+
+        var cut = Render<GitSourcesSettingsCard>();
+
+        cut.WaitForElement("[data-testid=gss-git-missing]").TextContent.Should().Contain("Install Git for Windows");
+        cut.Find("[data-testid=gss-overall]").TextContent.Trim().Should().Be("Git not found");
+        cut.FindAll("[data-testid=gar]").Should().BeEmpty();
+        cut.Find("[data-testid=gss-recheck]");
     }
 
     [Fact]
-    public void Import_wizard_browses_organization_project_repositories_links_each_and_queues_the_imports()
+    public void Repositories_of_every_project_are_listed_and_only_the_active_project_imports()
     {
-        ActiveProject();
-        var api = Api(new() { State = GitConnectionState.Connected, Account = "tester@bufdir.no", Message = "Signed in." });
-        const string Org = "https://dev.azure.com/bufdir";
-        api.Setup(a => a.LinksAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitSourceLink>)[], (string?)null));
-        api.Setup(a => a.OrganizationsAsync(It.IsAny<CancellationToken>())).ReturnsAsync((
-            (IReadOnlyList<GitOrganization>)[new GitOrganization("a1", "bufdir", Org, true), new GitOrganization("a2", "other", "https://dev.azure.com/other", true)], (string?)null, (string?)null));
-        api.Setup(a => a.ProjectsAsync(Org, null, It.IsAny<CancellationToken>())).ReturnsAsync((new GitProjectPage([new GitProject("p1", "M2LB", "wellFormed")], "next-1"), (string?)null));
-        api.Setup(a => a.ProjectsAsync(Org, "next-1", It.IsAny<CancellationToken>())).ReturnsAsync((new GitProjectPage([new GitProject("p2", "Meldingsutveksler", null)], null), (string?)null));
-        api.Setup(a => a.ProjectRepositoriesAsync(Org, "p1", It.IsAny<CancellationToken>())).ReturnsAsync((
-            (IReadOnlyList<GitRepository>)[new GitRepository("r1", "M2LB.Common", "M2LB", "main", null, false), new GitRepository("r2", "M2LB.Infra", "M2LB", "main", null, false)], (string?)null));
-        api.Setup(a => a.BranchesInAsync(Org, It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((
-            (IReadOnlyList<GitBranch>)[new GitBranch("feature/rapport", Sha, new(2026, 11, 3, 10, 0, 0, TimeSpan.Zero), "B", "recent", false), new GitBranch("main", new string('a', 40), null, null, null, true)], (string?)null));
-        var links = new List<GitLinkRequest>();
-        api.Setup(a => a.LinkAsync(It.IsAny<GitLinkRequest>(), It.IsAny<CancellationToken>()))
-            .Callback((GitLinkRequest r, CancellationToken _) => links.Add(r)).ReturnsAsync((new GitSourceLink { Id = "x" }, (string?)null));
+        _git.Setup(g => g.LinksAsync(null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(((IReadOnlyList<GitSourceLink>)[Link("a", "dev", "LendoPlus"), Link("b", "qa", "Other project", "Billing")], (string?)null));
+        var cut = Render<GitSourcesSettingsCard>();
+
+        cut.WaitForElements("[data-testid=gss-row]").Should().HaveCount(2);
+        cut.Find("[data-testid=gss-count]").TextContent.Should().Be("2");
+
+        cut.Find("[data-testid=gss-row][data-link=b] [data-testid=gss-open]").Click();
+        cut.WaitForElement("[data-testid=gss-details][data-link=b]");
+        cut.FindAll("[data-testid=gss-import]").Should().BeEmpty("another project's repository is never imported into the active workspace");
+        cut.Find("[data-testid=gss-other-project]").TextContent.Should().Contain("Other project");
+
+        cut.Find("[data-testid=gss-row][data-link=a] [data-testid=gss-open]").Click();
+        cut.WaitForElement("[data-testid=gss-details][data-link=a]");
+        cut.Find("[data-testid=gss-import]").TextContent.Should().Contain("Import main");
+        cut.FindAll("[data-testid=gss-branch] option").Select(o => o.GetAttribute("value")).Should().Equal("main", "release/1.0");
+
+        cut.Find("[data-testid=gss-search]").Input("billing");
+        cut.FindAll("[data-testid=gss-row]").Should().ContainSingle().Which.GetAttribute("data-link").Should().Be("b");
+    }
+
+    [Fact]
+    public void Fetch_latest_updates_the_repository_and_reports_the_branches()
+    {
+        var link = Link("a", "dev", "LendoPlus");
+        _git.Setup(g => g.LinksAsync(null, It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitSourceLink>)[link with { LastFetchedAt = null }], (string?)null));
+        _git.Setup(g => g.FetchAsync("a", "dev", It.IsAny<CancellationToken>())).ReturnsAsync((link, (string?)null));
+        var cut = Render<GitSourcesSettingsCard>();
+        cut.WaitForElement("[data-testid=gss-open]").Click();
+        cut.WaitForElement("[data-testid=gss-import]").HasAttribute("disabled").Should().BeTrue("nothing has been fetched yet");
+
+        cut.Find("[data-testid=gss-fetch-latest]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=gss-notice]").TextContent.Should().Be("Fetched: 2 branches."));
+        cut.Find("[data-testid=gss-import]").HasAttribute("disabled").Should().BeFalse();
+        _git.Verify(g => g.FetchAsync("a", "dev", It.IsAny<CancellationToken>()), Times.Once());
+    }
+
+    [Fact]
+    public void A_failed_fetch_explains_what_to_do_in_Git()
+    {
+        var failed = Link("a", "dev", "LendoPlus") with { LastFetchFailure = GitFailureKind.SignInRequired, LastFetchProblem = GitSourcePolicy.Describe(GitFailureKind.SignInRequired) };
+        _git.Setup(g => g.LinksAsync(null, It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitSourceLink>)[failed], (string?)null));
+        var cut = Render<GitSourcesSettingsCard>();
+        cut.WaitForElement("[data-testid=gss-open]").Click();
+
+        cut.WaitForElement("[data-testid=gss-hint]").TextContent.Should().Contain("Git Credential Manager sign-in");
+        cut.Find("[data-testid=gss-fetch]").TextContent.Should().StartWith("Fetch failed");
+    }
+
+    [Theory]
+    [InlineData("https://user:secret@dev.azure.com/org/p/_git/r", "password or token")]
+    [InlineData("file:///C:/source/repo", "local repositories")]
+    [InlineData("ext::sh -c touch% /tmp/pwned", "characters")]
+    [InlineData("-oProxyCommand=calc@host:repo", "characters")]
+    [InlineData("git@-oProxyCommand=calc:repo", "Not a Git URL")]
+    [InlineData("http://example.test/repo.git", "not supported")]
+    public void The_add_form_refuses_unsafe_Git_URLs(string url, string reason)
+    {
+        var cut = Render<GitAddRepositoryForm>(p => p.Add(x => x.EnvironmentId, "dev"));
+        cut.Find("[data-testid=gar-mode-url]").Click();
+
+        cut.Find("[data-testid=gar-url]").Input(url);
+
+        cut.Find("[data-testid=gar-url-problem]").TextContent.Should().Contain(reason);
+        cut.Find("[data-testid=gar-add]").HasAttribute("disabled").Should().BeTrue();
+    }
+
+    [Fact]
+    public void Adding_a_Git_URL_sends_the_canonical_URL_for_the_project()
+    {
+        GitAddRepositoryRequest? sent = null;
+        _git.Setup(g => g.AddAsync(It.IsAny<GitAddRepositoryRequest>(), It.IsAny<CancellationToken>()))
+            .Callback((GitAddRepositoryRequest r, CancellationToken _) => sent = r)
+            .ReturnsAsync((Link("a", "dev", "LendoPlus"), (string?)null));
+        GitSourceLink? added = null;
+        var cut = Render<GitAddRepositoryForm>(p => p.Add(x => x.EnvironmentId, "dev").Add(x => x.ProjectName, "LendoPlus").Add(x => x.OnAdded, (GitSourceLink l) => added = l));
+        cut.Find("[data-testid=gar-mode-url]").Click();
+        cut.Find("[data-testid=gar-url]").Input("https://dev.azure.com/org/project/_git/repo");
+        cut.FindAll("[data-testid=gar-url-problem]").Should().BeEmpty();
+
+        cut.Find("[data-testid=gar-add]").Click();
+
+        cut.WaitForAssertion(() => added.Should().NotBeNull());
+        sent!.RemoteUrl.Should().Be("https://dev.azure.com/org/project/_git/repo");
+        (sent.LocalPath, sent.EnvironmentId, sent.BirkNextProject).Should().Be(((string?)null, "dev", "LendoPlus"));
+    }
+
+    [Fact]
+    public void A_local_folder_is_checked_before_it_can_be_added()
+    {
+        _git.Setup(g => g.InspectAsync(@"C:\source\Contracts", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new GitLocalRepository("Contracts", @"C:\source\Contracts", "main", false, Sha, null, true, ["origin https://dev.azure.com/org/p/_git/Contracts"], false), (string?)null));
+        var cut = Render<GitAddRepositoryForm>(p => p.Add(x => x.EnvironmentId, "dev"));
+        cut.Find("[data-testid=gar-add]").HasAttribute("disabled").Should().BeTrue();
+
+        cut.Find("[data-testid=gar-path]").Input(@"C:\source\Contracts");
+        cut.Find("[data-testid=gar-inspect]").Click();
+
+        cut.WaitForElement("[data-testid=gar-local]").TextContent.Should().Contain("uncommitted changes (not imported)").And.Contain("on main");
+        cut.Find("[data-testid=gar-add]").HasAttribute("disabled").Should().BeFalse();
+    }
+
+    [Fact]
+    public void Project_Import_queues_imports_with_the_project_and_the_exact_commit()
+    {
+        var link = Link("a", "dev", "LendoPlus");
+        _git.Setup(g => g.LinksAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitSourceLink>)[link], (string?)null));
+        _git.Setup(g => g.UpdateLinkAsync("a", "dev", It.IsAny<string?>(), null, It.IsAny<IReadOnlyList<string>?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((link, (string?)null));
         IReadOnlyList<(GitImportRequest Request, string Label)>? queued = null;
-        var cut = Render<GitImportWizard>(p => p.Add(x => x.OnImport, (IReadOnlyList<(GitImportRequest Request, string Label)> q) => queued = q));
+        var cut = Render<GitImportWizard>(p => p.Add(x => x.OnImport, (IReadOnlyList<(GitImportRequest, string)> q) => queued = q));
 
-        cut.WaitForElement("[data-testid=giw-load-orgs]");
-        api.Verify(a => a.OrganizationsAsync(It.IsAny<CancellationToken>()), Times.Never(), "opening reads only the sign-in state");
-        cut.Find("[data-testid=giw-load-orgs]").Click();
-        cut.WaitForElement("[data-testid=giw-org]").Change(Org);
-        cut.WaitForElement("[data-testid=giw-more-projects]").Click();
-        cut.WaitForAssertion(() => cut.FindAll("[data-testid=giw-project] option").Select(o => o.TextContent).Should().Equal(["Choose…", "M2LB", "Meldingsutveksler"]));
-        cut.Find("[data-testid=giw-project]").Change("p1");
-        cut.WaitForAssertion(() => cut.FindAll("[data-testid=giw-repo]").Should().HaveCount(2));
-
-        cut.Find("[data-testid=giw-repo][data-repo=r1] [data-testid=giw-repo-check]").Change(true);
-        cut.WaitForAssertion(() => cut.FindAll("[data-testid=giw-branch] option").Select(o => o.GetAttribute("value")).Should().Equal(["feature/rapport", "main"]));
-        cut.Find("[data-testid=giw-branch]").Change("feature/rapport");
-        cut.Find("[data-testid=giw-role][data-role=Infrastructure]").Change(true);
-        cut.Find("[data-testid=giw-role][data-role=Contracts]").Change(true);
-        cut.Find("[data-testid=giw-repo][data-repo=r2] [data-testid=giw-repo-check]").Change(true);
-        cut.WaitForAssertion(() => cut.Find("[data-testid=giw-selected-count]").TextContent.Should().Be("2 selected"));
-        cut.FindAll("[data-testid=giw-review-row]").Should().HaveCount(2);
-
-        cut.Find("[data-testid=giw-import]").Click();
-        cut.WaitForAssertion(() => queued.Should().NotBeNull());
-        links.Select(l => (l.RepositoryId, l.Branch, l.EnvironmentId, l.BirkNextProject)).Should().Equal([("r1", "feature/rapport", "dev", "M2LB"), ("r2", "main", "dev", "M2LB")],
-            "each repository is linked by its stable id to the active BirkNext project");
-        links[0].Roles.Should().BeEquivalentTo(["Infrastructure", "Contracts"], "several roles per repository");
-        queued!.Select(q => (q.Request.RepositoryId, q.Request.Branch, q.Request.OrganizationUrl, q.Label))
-            .Should().Equal([("r1", "feature/rapport", Org, "M2LB.Common @ feature/rapport"), ("r2", "main", Org, "M2LB.Infra @ main")]);
-    }
-
-    [Fact]
-    public void Import_wizard_rejects_a_short_commit_and_blocks_import_until_fixed()
-    {
-        ActiveProject();
-        var api = Api(new() { State = GitConnectionState.Connected, Message = "Signed in." });
-        const string Org = "https://dev.azure.com/bufdir";
-        api.Setup(a => a.OrganizationsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitOrganization>)[new GitOrganization("a1", "bufdir", Org, true)], (string?)null, (string?)null));
-        api.Setup(a => a.ProjectsAsync(Org, null, It.IsAny<CancellationToken>())).ReturnsAsync((new GitProjectPage([new GitProject("p1", "M2LB", null)], null), (string?)null));
-        api.Setup(a => a.ProjectRepositoriesAsync(Org, "p1", It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitRepository>)[new GitRepository("r1", "M2LB.Common", "M2LB", "main", null, false)], (string?)null));
-        var cut = Render<GitImportWizard>(p => p.Add(x => x.OnImport, (IReadOnlyList<(GitImportRequest Request, string Label)> _) => { }));
-        cut.WaitForElement("[data-testid=giw-load-orgs]").Click();
-        cut.WaitForElement("[data-testid=giw-project]").Change("p1");
         cut.WaitForElement("[data-testid=giw-repo-check]").Change(true);
-        cut.WaitForElement("[data-testid=giw-commit]").Change("abc123");
-        cut.WaitForAssertion(() => cut.Find("[data-testid=giw-commit-problem]").TextContent.Should().Contain("40-character"));
+        cut.WaitForElement("[data-testid=giw-commit]").Change("NOT-A-SHA");
+        cut.Find("[data-testid=giw-commit-problem]");
         cut.Find("[data-testid=giw-import]").HasAttribute("disabled").Should().BeTrue();
-        api.Verify(a => a.CommitAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never());
+        cut.Find("[data-testid=giw-commit]").Change(Sha.ToUpperInvariant());
+        cut.Find("[data-testid=giw-import]").Click();
+
+        cut.WaitForAssertion(() => queued.Should().NotBeNull());
+        var request = queued!.Single().Request;
+        (request.RepositoryId, request.Branch, request.Commit, request.EnvironmentId).Should().Be(("git-a", "main", Sha, "dev"));
     }
 
     [Fact]
-    public void Import_wizard_sends_people_to_settings_when_not_connected()
+    public void Project_Import_without_Git_points_to_System_Settings()
     {
-        ActiveProject();
-        var api = Api(new() { State = GitConnectionState.NotConnected, Message = "Not connected." });
-        var cut = Render<GitImportWizard>(p => p.Add(x => x.OnImport, (IReadOnlyList<(GitImportRequest Request, string Label)> _) => { }));
-        cut.WaitForAssertion(() => cut.Find("[data-testid=giw-not-connected]").InnerHtml.Should().Contain("admin/system-settings?section=git-sources"));
-        api.Verify(a => a.OrganizationsAsync(It.IsAny<CancellationToken>()), Times.Never());
+        _git.Setup(g => g.StatusAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new GitConnectionStatus
+        {
+            State = GitConnectionState.NotConfigured, Message = "Git was not found.", Installation = new GitInstallationView(false, null, null, [], "Git was not found."),
+        }, (string?)null));
+
+        var cut = Render<GitImportWizard>(p => p.Add(x => x.OnImport, (IReadOnlyList<(GitImportRequest, string)> _) => { }));
+
+        cut.WaitForElement("[data-testid=giw-not-connected]").InnerHtml.Should().Contain("admin/system-settings?section=git-sources");
     }
-
-
-    // ── The screenshot state: Entra not enabled, no client id, organization URL set ─────────────────────────────────────────
-
-    private static GitConnectionStatus NotSetUp() => new()
-    {
-        State = GitConnectionState.NotConfigured, OrganizationUrl = "https://dev.azure.com/bufdir", Message = "Microsoft sign-in is not configured on this installation.",
-        Diagnostics =
-        [
-            new("enabled", "Azure environment (AzureEnvironment:Enabled)", GitCheckState.Missing, "Disabled.", "An administrator enables AzureEnvironment:Enabled."),
-            new("client-id", "App registration (AzureEnvironment:ClientId)", GitCheckState.Missing, "Not set.", "An administrator sets the app registration client id."),
-            new("organization", "Azure DevOps organization", GitCheckState.Ok, "https://dev.azure.com/bufdir"),
-        ],
-    };
-
-
-
-
-    [Fact]
-    public void A_failed_or_timed_out_test_is_never_shown_as_access()
-    {
-        var failed = new GitTestResult(false, "Timed out", [new("Azure DevOps organization", GitTestStepState.Failed, "Timed out after 30 s", 30000)], DateTimeOffset.UtcNow, "bufdir", null);
-        var status = new GitConnectionStatus { State = GitConnectionState.Connected, OrganizationUrl = "https://dev.azure.com/bufdir", LastTest = failed };
-        GitSourcesPresentation.AccessText(status).Should().StartWith("Not verified by the read-only Git test");
-        GitSourcesPresentation.HealthSummary(status).Should().Be("Configuration health — all prerequisites in place");
-    }
-
-    // ── Steps 1-2: the configuration form (saved to BirkNext's own App_Data settings, applied while BirkNext runs) ─────────────────────
-
-    private Mock<AdminApiService> Admin(MicrosoftSignInInfoDto signIn)
-    {
-        var admin = new Mock<AdminApiService>(new HttpClient()) { CallBase = false };
-        admin.Setup(a => a.GetSystemSettingsAsync()).ReturnsAsync(new SystemSettingsDto { MicrosoftSignIn = signIn });
-        Services.AddSingleton(admin.Object);
-        return admin;
-    }
-
-
-
-
-
-
 }

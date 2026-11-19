@@ -1,107 +1,244 @@
 @using BirkNext.GitSources
 @using BirkNext.Web.Components.GitSources
-@implements IDisposable
+@using BirkNext.Web.Services.ProjectImport
 @inject IGitSourcesApiService Git
+@inject IFrontendAnalysisContextFactory Contexts
 @inject IServiceProvider Services
 @inject NavigationManager Navigation
-@inject Microsoft.JSInterop.IJSRuntime JS
 
-@* System Settings → Git Sources: a guided setup with one focused step at a time. Every status comes from GitSourcesSetupState (backend state);
-   opening the section reads only local state — Microsoft and Azure DevOps are contacted only by actions the person starts. *@
+@* System Settings → Git Sources, Git-only: the person's Git (Git for Windows) and its credential helper (Git Credential Manager, or SSH keys)
+   connect and authenticate. There is no Microsoft Entra app registration, client id, tenant or BirkNext sign-in, and BirkNext stores no
+   credential. Opening this section reads only local state; fetch and import are explicit actions, read-only against the remote. *@
 <section class="gsx" aria-labelledby="gss-title" data-testid="gss">
     <header class="gsx-header">
         <div>
             <h2 id="gss-title" class="gsx-title">Git Sources</h2>
-            <p class="gsx-subtitle">Connect Azure DevOps to import and refresh source evidence without changing repositories.</p>
+            <p class="gsx-subtitle">Import and refresh source evidence with your own Git. BirkNext only reads repositories: no push, and your working folders are never changed.</p>
         </div>
-        @if (_setup?.Status is { } status)
+        @if (_status is { } s)
         {
-            <div class="gsx-header-side">
-                <span class="gsx-pill gsx-pill-@OverallTone(status)" data-testid="gss-overall" role="status">@Overall(status)</span>
-                <button type="button" class="gsx-link" aria-expanded="@(_setup.HelpOpen ? "true" : "false")" aria-controls="gss-help" @onclick="ToggleHelp" data-testid="gss-help-toggle">Help</button>
-            </div>
+            <span class="gsx-pill gsx-pill-@(s.Installation?.Found == true ? "ok" : "pending")" data-testid="gss-overall" role="status">
+                @(s.Installation?.Found == true ? "Git ready" : "Git not found")</span>
         }
     </header>
 
-    @if (_setup?.Status is null) { <p class="gsx-muted" role="status">@(_setup?.Error ?? "Reading the Git Sources state…")</p> }
+    @if (_status is null)
+    {
+        <p class="gsx-muted" role="status" data-testid="gss-loading">@(_statusError ?? "Reading the Git installation…")</p>
+    }
     else
     {
-        @if (_setup.HelpOpen)
-        {
-            <div id="gss-help" class="gsx-help" data-testid="gss-help">
-                <p>Six steps: enable Git Sources, enter your organization's Microsoft application, save the Azure DevOps organization, sign in as yourself,
-                    verify access, then import. BirkNext only reads; it never changes Azure DevOps and never stores a password, PAT or token.</p>
-                <button type="button" class="gsx-link" @onclick="OpenInstructions" data-testid="gss-help-instructions">Setup instructions for your Entra administrator</button>
-            </div>
-        }
-        <GitSetupProgress Setup="_setup" />
-        var step = _setup.Step(_setup.Active);
-        var (title, purpose) = Headings[_setup.Active];
-        <div class="gsx-panel" data-testid="gss-panel" data-step="@_setup.Active">
-            <div class="gsx-panel-head">
-                <h3 class="gsx-panel-title">@title</h3>
-                @if (step is not null) { <span class="gsx-pill gsx-pill-@Tone(step.State)" data-testid="gss-step-status">@step.StatusLabel</span> }
-            </div>
-            <p class="gsx-muted">@purpose</p>
-            @if (_setup.Notice is { } notice) { <p class="gsx-notice" role="status" data-testid="gss-notice">@notice</p> }
-            @switch (_setup.Active)
+        @* Git installation *@
+        <div class="gsx-panel" data-testid="gss-git">
+            <div class="gsx-panel-head"><h3 class="gsx-panel-title">Git on this computer</h3></div>
+            @if (_status.Installation is { Found: true } install)
             {
-                case "provider": <GitProviderStep Setup="_setup" /> break;
-                case "application": <GitEntraStep Setup="_setup" /> break;
-                case "organization": <GitOrganizationStep Setup="_setup" /> break;
-                case "authentication": <GitSignInStep Setup="_setup" /> break;
-                case "test": <GitConnectionStep Setup="_setup" /> break;
-                default: <GitImportStep Setup="_setup" /> break;
+                <dl class="gsx-facts" data-testid="gss-installation">
+                    <div><dt>Version</dt><dd data-testid="gss-version">@install.Version</dd></div>
+                    <div><dt>Executable</dt><dd class="gsx-wrap">@install.Path</dd></div>
+                    <div><dt>Credential helper</dt><dd data-testid="gss-helper">@(install.CredentialHelpers.Count == 0 ? "none configured" : string.Join(", ", install.CredentialHelpers))</dd></div>
+                </dl>
+                <p class="gsx-notice" data-testid="gss-credentials">@GitSourcesPresentation.CredentialText(install)</p>
             }
-            @if (_setup.Error is { } error) { <p class="gsx-error" role="alert" data-testid="gss-error">@error</p> }
+            else
+            {
+                <div class="gsx-state" data-testid="gss-git-missing">
+                    @foreach (var p in GitSourcesPresentation.Prerequisites(_status)) { <p>@p</p> }
+                    <p class="gsx-muted">BirkNext uses the Git already installed on this computer and never installs or upgrades it.</p>
+                    <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="ReloadAsync" data-testid="gss-recheck">Check again</button>
+                </div>
+            }
         </div>
-        <GitSetupSummary Setup="_setup" />
+
+        @* Connected repositories *@
+        <div class="gsx-panel" data-testid="gss-repositories">
+            <div class="gsx-panel-head">
+                <h3 class="gsx-panel-title">Connected repositories</h3>
+                <span class="gsx-pill gsx-pill-neutral" data-testid="gss-count">@_links.Count</span>
+            </div>
+            @if (_links.Count == 0)
+            {
+                <p class="gsx-muted" data-testid="gss-empty">No repository is connected yet. Add a local repository or a Git URL below.</p>
+            }
+            else
+            {
+                <input type="search" class="form-control gss-search" @bind="_search" @bind:event="oninput" placeholder="Search repositories, projects or branches" aria-label="Search repositories" data-testid="gss-search" />
+                <div class="gss-table-wrap">
+                    <table class="gss-table">
+                        <thead><tr><th scope="col">Repository</th><th scope="col">Project</th><th scope="col">Branch</th><th scope="col">Last fetch</th><th scope="col">Last import</th></tr></thead>
+                        <tbody>
+                            @foreach (var link in Visible)
+                            {
+                                <tr class="@(_selected?.Id == link.Id && _selected.EnvironmentId == link.EnvironmentId ? "is-selected" : "")" data-testid="gss-row" data-link="@link.Id">
+                                    <td data-label="Repository">
+                                        <button type="button" class="gsx-link" aria-expanded="@(IsSelected(link) ? "true" : "false")" @onclick="() => SelectAsync(link)" data-testid="gss-open">@link.Repository</button>
+                                        <span class="gss-sub">@GitSourcesPresentation.KindLabel(link)</span>
+                                    </td>
+                                    <td data-label="Project">@(link.BirkNextProject ?? link.EnvironmentId)@(link.EnvironmentId == _environmentId ? " (active)" : "")</td>
+                                    <td data-label="Branch">@(link.Branch.Length > 0 ? link.Branch : "—")</td>
+                                    <td data-label="Last fetch"><span class="gss-dot gss-dot-@GitSourcesPresentation.FetchTone(link)" aria-hidden="true"></span>@GitSourcesPresentation.FetchText(link, Now)</td>
+                                    <td data-label="Last import">@(link.LastImport is { } last ? $"{last.CommitSha[..8]} · {GitSourcesPresentation.Ago(last.ImportedAt, Now)}" : "Not imported")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (_selected is { } selectedLink) { @Details(selectedLink) }
+            }
+            @if (_error is { } error) { <p class="gsx-error" role="alert" data-testid="gss-error">@error</p> }
+        </div>
+
+        @* Add repository *@
+        <div class="gsx-panel" data-testid="gss-add">
+            <div class="gsx-panel-head"><h3 class="gsx-panel-title">Add repository</h3></div>
+            @if (_status.Installation is not { Found: true })
+            {
+                <p class="gsx-muted">Install Git first.</p>
+            }
+            else if (_environmentId is null)
+            {
+                <p class="gsx-muted" data-testid="gss-no-project">Choose a Target Environment (your BirkNext project) first: a repository is added as evidence for one project.</p>
+            }
+            else
+            {
+                <GitAddRepositoryForm EnvironmentId="@_environmentId" ProjectName="@_projectName" OnAdded="OnAddedAsync" />
+            }
+        </div>
     }
 </section>
 
 @code {
-    private GitSourcesSetupState? _setup;
+    private GitConnectionStatus? _status;
+    private IReadOnlyList<GitSourceLink> _links = [];
+    private GitSourceLink? _selected;
+    private IReadOnlyList<GitBranch> _branches = [];
+    private string? _statusError, _error, _notice, _environmentId, _projectName, _busyText;
+    private string _search = "";
+    private bool _busy;
+    private static DateTimeOffset Now => DateTimeOffset.UtcNow;
 
-    private static readonly Dictionary<string, (string Title, string Purpose)> Headings = new()
-    {
-        ["provider"] = ("Enable Git Sources", "Use your Azure DevOps account to import source evidence securely."),
-        ["application"] = ("Connect your Microsoft application", "Enter the application details provided by your Microsoft Entra administrator."),
-        ["organization"] = ("Choose your Azure DevOps organization", "Specify the organization containing the projects you want to import."),
-        ["authentication"] = ("Sign in with Microsoft", "Use your work account to access only the Azure DevOps projects you are permitted to read."),
-        ["test"] = ("Verify Azure DevOps access", "Confirm that BirkNext can read projects from your organization."),
-        ["import"] = ("Import source from Azure DevOps", "Select a project, repository and branch. BirkNext imports evidence without modifying Azure DevOps."),
-    };
+    private IEnumerable<GitSourceLink> Visible => _links.Where(l => _search.Trim().Length == 0
+        || new[] { l.Repository, l.BirkNextProject, l.Branch, GitSourcesPresentation.Location(l) }.Any(t => t?.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase) == true));
 
-    protected override async Task OnInitializedAsync()
+    private bool IsSelected(GitSourceLink link) => _selected?.Id == link.Id && _selected.EnvironmentId == link.EnvironmentId;
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
     {
-        _setup = new GitSourcesSetupState(Git, Services.GetService(typeof(AdminApiService)) as AdminApiService, JS, Navigation,
-            () => Services.GetService(typeof(BirkNext.Web.Services.ProjectImport.ProjectImportSession)) as BirkNext.Web.Services.ProjectImport.ProjectImportSession,
-            Services.GetService(typeof(IFrontendAnalysisContextFactory)) as IFrontendAnalysisContextFactory);
-        _setup.Changed += OnChanged;
-        await _setup.InitializeAsync();
+        try
+        {
+            var context = await Contexts.GetActiveContextAsync();
+            (_environmentId, _projectName) = (context.ActiveProfileOrNull?.Id, context.ActiveProfileOrNull?.Project?.ProjectName ?? context.ActiveProfileOrNull?.Name);
+        }
+        catch (InvalidOperationException) { }
+        (_status, _statusError) = await Git.StatusAsync();
+        if (_status is null) return;
+        var (items, error) = await Git.LinksAsync(null);
+        (_links, _error) = (items, error);
+        if (_selected is { } selected) _selected = _links.FirstOrDefault(l => l.Id == selected.Id && l.EnvironmentId == selected.EnvironmentId);
     }
 
-    private void OnChanged() => InvokeAsync(StateHasChanged);
-    public void Dispose() { if (_setup is not null) _setup.Changed -= OnChanged; }
-    private void ToggleHelp() => _setup!.HelpOpen = !_setup.HelpOpen;
-    private void OpenInstructions() { _setup!.HelpOpen = false; _setup.InstructionsOpen = true; _setup.Select("application"); }
-
-    /// <summary>One overall state for the header, from the same backend state as the steps.</summary>
-    private string Overall(GitConnectionStatus s) =>
-        s.State == GitConnectionState.NotConfigured ? "Setup required"
-        : s.State == GitConnectionState.AccessDenied ? "Access denied"
-        : _setup!.Discoverable ? "Connected"
-        : _setup.SignedIn ? "Signed in · access not verified"
-        : "Sign-in required";
-
-    private string OverallTone(GitConnectionStatus s) =>
-        _setup!.Discoverable ? "ok" : s.State is GitConnectionState.AccessDenied or GitConnectionState.Failed ? "bad" : "pending";
-
-    public static string Tone(GuidedStepState state) => state switch
+    private async Task SelectAsync(GitSourceLink link)
     {
-        GuidedStepState.Done => "ok",
-        GuidedStepState.Blocked => "bad",
-        GuidedStepState.Current => "pending",
-        _ => "neutral",
+        if (IsSelected(link)) { (_selected, _branches) = (null, []); return; }
+        (_selected, _branches, _error, _notice) = (link, [], null, null);
+        var (items, error) = await Git.BranchesAsync(link.Id, link.EnvironmentId);
+        if (IsSelected(link)) (_branches, _error) = (items, error);
+    }
+
+    private async Task Act(string text, Func<Task> work)
+    {
+        (_busy, _busyText, _error, _notice) = (true, text, null, null);
+        try { await work(); }
+        finally { (_busy, _busyText) = (false, null); }
+    }
+
+    private void Replace(GitSourceLink updated)
+    {
+        _links = [.. _links.Select(l => l.Id == updated.Id && l.EnvironmentId == updated.EnvironmentId ? updated : l)];
+        if (_selected is { } s && s.Id == updated.Id && s.EnvironmentId == updated.EnvironmentId) _selected = updated;
+    }
+
+    private Task FetchAsync(GitSourceLink link) => Act("Fetching the latest branches. If Git Credential Manager opens a sign-in window, complete it there…", async () =>
+    {
+        var (updated, error) = await Git.FetchAsync(link.Id, link.EnvironmentId);
+        if (updated is null) { _error = error; return; }
+        Replace(updated);
+        (_branches, var branchError) = await Git.BranchesAsync(updated.Id, updated.EnvironmentId);
+        _error = branchError;
+        if (updated.LastFetchFailure is null) _notice = $"Fetched: {_branches.Count} branch{(_branches.Count == 1 ? "" : "es")}.";
+    });
+
+    private Task BranchChangedAsync(GitSourceLink link, string? branch) => branch is not { Length: > 0 } b || b == link.Branch ? Task.CompletedTask : Act("Saving the branch…", async () =>
+    {
+        var (updated, error) = await Git.UpdateLinkAsync(link.Id, link.EnvironmentId, b, null, null);
+        if (updated is null) _error = error; else Replace(updated);
+    });
+
+    /// <summary>Stages the branch head as last fetched through the normal Project Import review (active project only).</summary>
+    private void Import(GitSourceLink link)
+    {
+        if (link.EnvironmentId != _environmentId) return;
+        // Resolved only when an import starts: opening System Settings never builds the import session.
+        if (Services.GetService(typeof(ProjectImportSession)) is not ProjectImportSession session) { _error = "Project Import is not available."; return; }
+        var request = new GitImportRequest(link.RepositoryId, link.Branch) { OrganizationUrl = link.OrganizationUrl, EnvironmentId = link.EnvironmentId };
+        _ = session.StartGitPreviewAsync($"{link.Repository} @ {link.Branch}", ct => Git.ImportAsync(request, ct), null);
+        Navigation.NavigateTo("project-import");
+    }
+
+    private Task RemoveAsync(GitSourceLink link) => Act("Removing the repository…", async () =>
+    {
+        if (await Git.UnlinkAsync(link.Id, link.EnvironmentId) is { } error) { _error = error; return; }
+        _links = [.. _links.Where(l => !(l.Id == link.Id && l.EnvironmentId == link.EnvironmentId))];
+        (_selected, _branches) = (null, []);
+        _notice = null;
+    });
+
+    private async Task OnAddedAsync(GitSourceLink link)
+    {
+        _links = [.. _links.Where(l => !(l.Id == link.Id && l.EnvironmentId == link.EnvironmentId)), link];
+        (_selected, _branches) = (null, []);
+        await SelectAsync(link);
+        _notice = link.LastFetchFailure is null ? $"{link.Repository} was added." : $"{link.Repository} was added, but its first fetch failed.";
+    }
+
+    private RenderFragment Details(GitSourceLink link) => __builder =>
+    {
+        var active = link.EnvironmentId == _environmentId;
+        <div class="gss-details" data-testid="gss-details" data-link="@link.Id">
+            <dl class="gsx-facts">
+                <div><dt>Source</dt><dd class="gsx-wrap" data-testid="gss-location">@GitSourcesPresentation.KindLabel(link): @GitSourcesPresentation.Location(link)</dd></div>
+                <div><dt>Branch</dt><dd>
+                    <select class="form-select gss-branch" value="@link.Branch" disabled="@(_busy || _branches.Count == 0)" aria-label="Branch of @link.Repository"
+                            @onchange="e => BranchChangedAsync(link, e.Value?.ToString())" data-testid="gss-branch">
+                        @if (_branches.All(b => b.Name != link.Branch)) { <option value="@link.Branch">@(link.Branch.Length > 0 ? link.Branch : "—")</option> }
+                        @foreach (var b in _branches)
+                        {
+                            <option value="@b.Name">@b.Name@(b.IsDefault ? " (default)" : "") · @b.CommitSha[..8]@(b.CommittedAt is { } d ? $" · {d.UtcDateTime:yyyy-MM-dd}" : "")</option>
+                        }
+                    </select>
+                </dd></div>
+                <div><dt>Last fetch</dt><dd data-testid="gss-fetch">@GitSourcesPresentation.FetchText(link, Now)</dd></div>
+                <div><dt>Imports</dt><dd data-testid="gss-imports">@(link.Imports.Count == 0 ? "none yet" : string.Join(" · ", link.Imports.TakeLast(3).Reverse().Select(i => $"{i.CommitSha[..8]} ({i.Branch}, {i.ImportedAt.UtcDateTime:yyyy-MM-dd})")))</dd></div>
+            </dl>
+            @if (GitSourcesPresentation.FetchHint(link.LastFetchFailure) is { } hint) { <p class="gsx-notice" data-testid="gss-hint">@hint</p> }
+            @if (_busyText is { } busy) { <p class="gsx-muted" role="status" data-testid="gss-busy">@busy</p> }
+            @if (_notice is { } notice) { <p class="gsx-notice" role="status" data-testid="gss-notice">@notice</p> }
+            <div class="gss-actions">
+                <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="() => FetchAsync(link)" data-testid="gss-fetch-latest">Fetch latest</button>
+                @if (active)
+                {
+                    <button type="button" class="btn-primary btn-sm" disabled="@(_busy || link.LastFetchedAt is null || link.Branch.Length == 0)" @onclick="() => Import(link)" data-testid="gss-import">Import @link.Branch</button>
+                }
+                else
+                {
+                    <span class="gsx-muted gss-other" data-testid="gss-other-project">Switch to @(link.BirkNextProject ?? "its project") to import.</span>
+                }
+                <a class="btn-secondary btn-sm" href="sources" data-testid="gss-open-sources">Open Source Management</a>
+                <button type="button" class="btn-secondary btn-sm gss-remove" disabled="@_busy" @onclick="() => RemoveAsync(link)" data-testid="gss-remove"
+                        title="Removes the connection only. Imported snapshots and reports stay.">Remove</button>
+            </div>
+        </div>
     };
 }

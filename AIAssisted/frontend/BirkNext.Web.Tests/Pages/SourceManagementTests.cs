@@ -145,10 +145,10 @@ public sealed class SourceManagementTests : BunitContext
     [Fact]
     public void Roles_are_saved_on_the_link_several_at_once()
     {
-        GitLinkRequest? saved = null;
-        _git.Setup(g => g.LinkAsync(It.IsAny<GitLinkRequest>(), It.IsAny<CancellationToken>()))
-            .Callback((GitLinkRequest r, CancellationToken _) => saved = r)
-            .ReturnsAsync((GitLinkRequest r, CancellationToken _) => (Link with { Roles = [.. r.Roles] }, (string?)null));
+        (string Link, string Environment, string? Branch, string? Pin, IReadOnlyList<string> Roles)? saved = null;
+        _git.Setup(g => g.UpdateLinkAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<IReadOnlyList<string>?>(), It.IsAny<CancellationToken>()))
+            .Callback((string l, string e, string? b, string? p, IReadOnlyList<string>? r, CancellationToken _) => saved = (l, e, b, p, r ?? []))
+            .ReturnsAsync((string l, string e, string? b, string? p, IReadOnlyList<string>? r, CancellationToken _) => (Link with { Roles = [.. r ?? []] }, (string?)null));
         var cut = Render<SourceManagementPage>();
         cut.WaitForElement("[data-testid=sm-open]").Click();
         cut.Find("[data-testid=sm-edit-roles]").Click();
@@ -157,8 +157,10 @@ public sealed class SourceManagementTests : BunitContext
         cut.Find("[data-testid=sm-unsaved]").TextContent.Should().Be("Unsaved role changes.");
         cut.Find("[data-testid=sm-save-roles]").Click();
         cut.WaitForAssertion(() => saved.Should().NotBeNull());
-        saved!.Should().Match<GitLinkRequest>(r => r.OrganizationUrl == Org && r.RepositoryId == "r1" && r.Branch == "main" && r.EnvironmentId == "dev");
-        saved.Roles.Should().BeEquivalentTo(["Infrastructure", "Contracts"]);
+        saved!.Value.Link.Should().Be(Link.Id);
+        saved.Value.Environment.Should().Be("dev");
+        (saved.Value.Branch, saved.Value.Pin).Should().Be(((string?)null, (string?)null), "saving roles leaves the branch and the pinned commit as they are");
+        saved.Value.Roles.Should().BeEquivalentTo(["Infrastructure", "Contracts"]);
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=sm-role-editor]").Should().BeEmpty());
         cut.Find("[data-testid=sm-notice]").TextContent.Should().Contain("Project Evidence and every review use them");
     }

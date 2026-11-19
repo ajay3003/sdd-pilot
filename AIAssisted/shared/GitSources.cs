@@ -14,6 +14,10 @@ public sealed record GitSourceRevision(
     DateTimeOffset RetrievedAt, string? RepositoryUrl = null)
 {
     public string ShortSha => CommitSha.Length > 8 ? CommitSha[..8] : CommitSha;
+
+    /// <summary>The BirkNext project (Target Environment profile id) the import was staged for: its history is recorded on that project's link only.
+    /// Null on provenance written before 2026-11-19.</summary>
+    public string? EnvironmentId { get; init; }
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -44,6 +48,8 @@ public sealed record GitConnectionStatus
     public IReadOnlyList<string> Organizations { get; init; } = [];
     /// <summary>The last test ran with another client id, tenant or organization than the current ones: it no longer proves access.</summary>
     public bool LastTestStale { get; init; }
+    /// <summary>The Git installation BirkNext uses (Git-only source management, 2026-11-19).</summary>
+    public GitInstallationView? Installation { get; init; }
 }
 
 public sealed record GitTrackedBranch(string RepositoryId, string Repository, string Project, string Branch);
@@ -141,6 +147,22 @@ public sealed record GitSourceLink
     /// <summary>Candidate snapshots a person decided to keep separate.</summary>
     public List<Guid> KeptSeparate { get; init; } = [];
 
+    /// <summary>Git-native origin (2026-11-19): "Local" (a working repository on this computer), "Remote" (a Git URL cloned into BirkNext-owned
+    /// storage), or null for a link created through the retired Azure DevOps sign-in (read as Remote with <see cref="WebUrl"/> as its URL).</summary>
+    public string? Kind { get; init; }
+    /// <summary>The canonical clone URL without any credential (Remote).</summary>
+    public string? RemoteUrl { get; init; }
+    /// <summary>The working repository's root folder (Local). BirkNext never checks out, resets, cleans or changes it.</summary>
+    public string? LocalPath { get; init; }
+    public DateTimeOffset? LastFetchedAt { get; init; }
+    public string? LastFetchProblem { get; init; }
+    public GitFailureKind? LastFetchFailure { get; init; }
+    /// <summary>The remote's default branch as Git reported it (not chosen by BirkNext).</summary>
+    public string? DefaultBranch { get; init; }
+
+    public string EffectiveKind => Kind ?? "Remote";
+    public string? EffectiveRemoteUrl => RemoteUrl ?? (Kind is null ? WebUrl : null);
+
     public static string IdentityOf(string organizationUrl, string repositoryId) => $"{GitSourcePolicy.OrganizationName(organizationUrl).ToLowerInvariant()}|{repositoryId.ToLowerInvariant()}";
     public GitLinkImport? LastImport => Imports.Count == 0 ? null : Imports[^1];
 }
@@ -151,8 +173,6 @@ public enum GitSourceMatchStrength { SameContent, SameCommit, PossibleSameStruct
 
 public sealed record GitSourceMatch(Guid SnapshotId, string ArchiveFileName, DateTimeOffset AnalyzedAt, GitSourceMatchStrength Strength, IReadOnlyList<string> Evidence,
     string? Decision);
-
-public sealed record GitLinkRequest(string OrganizationUrl, string RepositoryId, string Branch, string? PinnedCommit, List<string> Roles, string EnvironmentId, string? BirkNextProject);
 
 public sealed record GitAssociationRequest(Guid SnapshotId, bool Associate);
 
@@ -181,6 +201,9 @@ public sealed record GitImportRequest(string RepositoryId, string Branch)
     public string? OrganizationUrl { get; init; }
     /// <summary>A specific revision instead of the branch head (full SHA, validated against the repository).</summary>
     public string? Commit { get; init; }
+    /// <summary>The BirkNext project the repository is linked to. Required when the repository is linked to more than one project; an import never
+    /// takes another project's link.</summary>
+    public string? EnvironmentId { get; init; }
 }
 
 /// <summary>The archive of one commit, staged through the same Project Import preview as a chosen ZIP (commit it with the usual import commit).</summary>
@@ -188,13 +211,12 @@ public sealed record GitImportResult(GitSourceRevision Revision, BirkNext.Projec
 
 /// <summary>A diagnostic provider failure: never collapsed into "connection failed".</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum GitFailureKind { SignInRequired, AccessDenied, OrganizationNotFound, RepositoryNotFound, BranchNotFound, Unreachable, TooLarge, Unexpected, RevisionNotFound, Throttled }
+public enum GitFailureKind { SignInRequired, AccessDenied, OrganizationNotFound, RepositoryNotFound, BranchNotFound, Unreachable, TooLarge, Unexpected, RevisionNotFound, Throttled,
+    GitMissing, TimedOut, Cancelled, AuthenticationCancelled, HostKeyNotTrusted, UntrustedRepository, UnsupportedUrl, NotARepository }
 
 public static partial class GitSourcePolicy
 {
     public const string Provider = "AzureDevOps";
-    /// <summary>The Azure DevOps resource (delegated): read access as the signed-in person, never more.</summary>
-    public const string AzureDevOpsScope = "499b84ac-1321-427f-aa17-267ca6975798/.default";
     public const long MaxArchiveBytes = 512L * 1024 * 1024;
 
     /// <summary>The organization URL in canonical form (https://dev.azure.com/{org} or https://{org}.visualstudio.com), or null when it is not one.</summary>
@@ -226,16 +248,24 @@ public static partial class GitSourcePolicy
 
     public static string Describe(GitFailureKind kind) => kind switch
     {
-        GitFailureKind.SignInRequired => "Sign-in required (or the sign-in expired): sign in to Microsoft again.",
-        GitFailureKind.AccessDenied => "Microsoft Entra sign-in succeeded, but Azure DevOps denied access for this account.",
-        GitFailureKind.OrganizationNotFound => "The Azure DevOps organization was not found.",
-        GitFailureKind.RepositoryNotFound => "The repository was not found or is not visible to this account.",
+        GitFailureKind.SignInRequired => "Git needs you to sign in. Complete the Git Credential Manager sign-in window when it appears (or run git fetch in a terminal once), then try again.",
+        GitFailureKind.AccessDenied => "The remote refused access for the account Git used (permission or organization membership).",
+        GitFailureKind.GitMissing => "Git was not found. Install Git for Windows (https://git-scm.com/download/win) and restart BirkNext.",
+        GitFailureKind.TimedOut => "Git did not finish in time (a sign-in window may still be waiting, or the network is slow). Try again.",
+        GitFailureKind.Cancelled => "The Git operation was cancelled.",
+        GitFailureKind.AuthenticationCancelled => "The sign-in was cancelled. Start the operation again and complete the sign-in.",
+        GitFailureKind.HostKeyNotTrusted => "The SSH host key is not trusted on this computer. Connect once with ssh in a terminal to verify and accept it; BirkNext never accepts host keys for you.",
+        GitFailureKind.UntrustedRepository => "Git refused the folder because it is owned by another user (safe.directory). Add it with git config --global --add safe.directory <path> if you trust it.",
+        GitFailureKind.UnsupportedUrl => "Only https:// and SSH Git URLs without embedded passwords or tokens are supported.",
+        GitFailureKind.NotARepository => "The folder is not a Git repository.",
+        GitFailureKind.OrganizationNotFound => "The organization was not found.",
+        GitFailureKind.RepositoryNotFound => "The repository was not found or is not visible to the account Git used.",
         GitFailureKind.BranchNotFound => "The branch was not found (it may have been deleted or renamed).",
-        GitFailureKind.Unreachable => "Azure DevOps could not be reached from this BirkNext instance.",
+        GitFailureKind.Unreachable => "The Git remote could not be reached (network, proxy or host name).",
         GitFailureKind.TooLarge => "The repository archive is larger than BirkNext imports.",
         GitFailureKind.RevisionNotFound => "The chosen commit does not exist in this repository (a full 40-character SHA is required).",
-        GitFailureKind.Throttled => "Azure DevOps is rate-limiting requests; wait a moment and try again.",
-        _ => "Azure DevOps returned an unexpected response.",
+        GitFailureKind.Throttled => "The remote is rate-limiting requests; wait a moment and try again.",
+        _ => "Git reported an unexpected error.",
     };
 
     private static string Safe(string text) => InvalidRe().Replace(text, "-").Trim('-');
@@ -251,4 +281,78 @@ public static partial class GitSourcePolicy
 
     [GeneratedRegex(@"[^A-Za-z0-9._-]+")]
     private static partial Regex InvalidRe();
+}
+
+// ── Git-only source management (2026-11-19) ────────────────────────────────────────────────────────────────────────────────
+// Git for Windows and its configured credential helper (Git Credential Manager) handle connectivity and authentication; BirkNext stores no
+// credential, reads none and never pushes. Repositories come from local clones (one folder or a bounded folder scan) or a Git URL.
+
+/// <summary>What BirkNext found about the local Git installation (names only: never a credential).</summary>
+public sealed record GitInstallationView(bool Found, string? Path, string? Version, IReadOnlyList<string> CredentialHelpers, string? Problem)
+{
+    public bool UsesCredentialManager => CredentialHelpers.Any(h => h.Contains("manager", StringComparison.OrdinalIgnoreCase));
+}
+
+/// <summary>A Git repository found on this computer (folder scan or a chosen folder). Remote URLs are shown without any credential.</summary>
+public sealed record GitLocalRepository(string Name, string Path, string? Branch, bool Detached, string? HeadCommit, DateTimeOffset? HeadCommittedAt, bool Dirty,
+    IReadOnlyList<string> Remotes, bool IsWorktree, string? Problem = null);
+
+public sealed record GitScanRequest(string Folder, int MaxDepth = 3);
+
+public sealed record GitScanResult(IReadOnlyList<GitLocalRepository> Repositories, int FoldersVisited, bool Truncated, string? Problem);
+
+/// <summary>Add a repository: exactly one of <see cref="LocalPath"/> or <see cref="RemoteUrl"/>; the BirkNext project it is evidence for.</summary>
+public sealed record GitAddRepositoryRequest(string? LocalPath, string? RemoteUrl, string EnvironmentId, string? BirkNextProject, string? Branch = null, List<string>? Roles = null);
+
+public static partial class GitUrlPolicy
+{
+    /// <summary>
+    /// A clone URL BirkNext accepts, in canonical form without credentials, or the reason it is refused. https:// and SSH (ssh://… or user@host:path)
+    /// only; no file://, local paths, ext::/transport helpers, options ("-…"), whitespace or control characters; a password or token in the URL is
+    /// refused, and an https user name is dropped (it can itself be a token; Git Credential Manager supplies the account).
+    /// </summary>
+    public static (string? Url, string? Problem) Normalize(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return (null, "Enter a Git URL.");
+        var url = input.Trim();
+        if (url.StartsWith('-') || url.Any(char.IsControl) || url.Any(char.IsWhiteSpace)) return (null, "The URL contains characters Git URLs do not.");
+        if (url.Contains("::", StringComparison.Ordinal)) return (null, "Transport helpers (…::) are not allowed.");
+        var scp = ScpRe().Match(url);
+        if (scp.Success) return ($"{scp.Groups["user"].Value}@{scp.Groups["host"].Value}:{scp.Groups["path"].Value}", null);
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var u)) return (null, "Not a Git URL (use https://… or an SSH URL).");
+        if (u.IsFile || u.Scheme == "file") return (null, "Local paths and file:// URLs are added as local repositories, not as Git URLs.");
+        if (u.Scheme is not ("https" or "ssh")) return (null, $"The {u.Scheme} scheme is not supported (use https or ssh).");
+        if (u.Host.StartsWith('-') || u.UserInfo.StartsWith('-')) return (null, "The URL contains characters Git URLs do not.");
+        if (!string.IsNullOrEmpty(u.UserInfo) && u.UserInfo.Contains(':')) return (null, "The URL contains a password or token. Remove it: Git Credential Manager signs in for you.");
+        if (!string.IsNullOrEmpty(u.Query) || !string.IsNullOrEmpty(u.Fragment)) return (null, "A Git URL has no query or fragment.");
+        if (u.AbsolutePath.Trim('/').Length == 0) return (null, "The URL names no repository.");
+        var user = u.Scheme == "ssh" && !string.IsNullOrEmpty(u.UserInfo) ? u.UserInfo + "@" : "";
+        return ($"{u.Scheme}://{user}{u.Host}{(u.IsDefaultPort ? "" : ":" + u.Port)}{u.AbsolutePath.TrimEnd('/')}", null);
+    }
+
+    /// <summary>A URL as shown (the remotes of a person's repository): any https credential part removed, never displayed.</summary>
+    public static string Redact(string url) => Uri.TryCreate(url, UriKind.Absolute, out var u) && !string.IsNullOrEmpty(u.UserInfo) && u.Scheme != "ssh"
+        ? url.Replace(u.UserInfo + "@", "", StringComparison.Ordinal) : url;
+
+    /// <summary>A stable repository id from the canonical URL or the local root (not a name): "git-" + 16 hex.</summary>
+    public static string RepositoryId(string canonical) =>
+        "git-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical.ToLowerInvariant()))).ToLowerInvariant()[..16];
+
+    /// <summary>The repository's readable name: the last path segment without ".git".</summary>
+    public static string NameOf(string urlOrPath)
+    {
+        var last = urlOrPath.Replace('\\', '/').TrimEnd('/').Split('/', ':').Last();
+        return last.EndsWith(".git", StringComparison.OrdinalIgnoreCase) ? last[..^4] : last;
+    }
+
+    /// <summary>A branch name Git itself would accept as refs/heads/{name} (also checked with git check-ref-format before use).</summary>
+    public static bool IsBranchName(string? name) => name is { Length: > 0 and <= 250 } n && BranchRe().IsMatch(n) && !n.Contains("..", StringComparison.Ordinal)
+        && !n.StartsWith('-') && !n.EndsWith(".lock", StringComparison.Ordinal) && !n.EndsWith('/') && !n.Contains("//", StringComparison.Ordinal);
+
+    // No part may start with "-": ssh would read "-oProxyCommand=…" as an option (CVE-2017-1000117 class).
+    [GeneratedRegex(@"^(?<user>[A-Za-z0-9_][A-Za-z0-9._-]*)@(?<host>[A-Za-z0-9][A-Za-z0-9.-]*):(?<path>[A-Za-z0-9._~][A-Za-z0-9._~/-]*)$")]
+    private static partial Regex ScpRe();
+
+    [GeneratedRegex(@"^[A-Za-z0-9._/-]+$")]
+    private static partial Regex BranchRe();
 }

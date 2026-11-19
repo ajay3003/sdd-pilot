@@ -1,0 +1,146 @@
+@using BirkNext.GitSources
+@inject IGitSourcesApiService Git
+
+@* Add a repository to a BirkNext project, Git-only: an existing local repository (a folder, or one found by a bounded scan of a folder the person
+   chose) or a Git URL (https or SSH, never with a password or token). Adding fetches the branches into BirkNext-owned storage; the person's
+   working tree is never changed. Git Credential Manager signs in in its own window when a private HTTPS repository needs it. *@
+<div class="gar" data-testid="gar">
+    <div class="gar-tabs" role="tablist" aria-label="Where the repository is">
+        <button type="button" role="tab" id="gar-tab-local" aria-controls="gar-panel" aria-selected="@(_mode == Mode.Local ? "true" : "false")"
+                class="gar-tab @(_mode == Mode.Local ? "is-active" : "")" @onclick="() => Switch(Mode.Local)" data-testid="gar-mode-local">Local repository</button>
+        <button type="button" role="tab" id="gar-tab-url" aria-controls="gar-panel" aria-selected="@(_mode == Mode.Url ? "true" : "false")"
+                class="gar-tab @(_mode == Mode.Url ? "is-active" : "")" @onclick="() => Switch(Mode.Url)" data-testid="gar-mode-url">Clone from Git URL</button>
+    </div>
+
+    <div id="gar-panel" role="tabpanel" aria-labelledby="@(_mode == Mode.Local ? "gar-tab-local" : "gar-tab-url")" class="gar-panel">
+        @if (_mode == Mode.Local)
+        {
+            <div class="gar-field">
+                <label for="gar-path">Repository folder</label>
+                <div class="gar-inline">
+                    <input id="gar-path" class="form-control" @bind="_path" @bind:event="oninput" placeholder="C:\source\my-repository" spellcheck="false" data-testid="gar-path" />
+                    <button type="button" class="btn-secondary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_path))" @onclick="InspectAsync" data-testid="gar-inspect">Check</button>
+                    <button type="button" class="btn-secondary btn-sm" disabled="@(_busy || string.IsNullOrWhiteSpace(_path))" @onclick="ScanAsync" data-testid="gar-scan"
+                            title="Find Git repositories inside this folder (3 levels deep; links are not followed)">Find repositories in folder</button>
+                </div>
+                <span class="gar-help">The full path of a folder on this computer. BirkNext reads its commits; it never checks out, resets, cleans or pulls it.</span>
+            </div>
+            @if (_scan is { } scan)
+            {
+                <div class="gar-scan" data-testid="gar-scan-result">
+                    <p class="gar-help">@ScanSummary(scan)</p>
+                    @if (scan.Repositories.Count > 0)
+                    {
+                        <ul class="gar-list">
+                            @foreach (var r in scan.Repositories)
+                            {
+                                <li>
+                                    <button type="button" class="gar-pick @(_local?.Path == r.Path ? "is-picked" : "")" disabled="@(r.Problem is not null)" @onclick="() => Pick(r)" data-testid="gar-scan-repo">
+                                        <strong>@r.Name</strong> <span class="gar-muted">@r.Path</span>
+                                        <span class="gar-muted">@(r.Problem ?? GitSourcesPresentation.LocalState(r))</span>
+                                    </button>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            }
+            @if (_local is { } local)
+            {
+                <dl class="gar-facts" data-testid="gar-local">
+                    <div><dt>Repository</dt><dd>@local.Name</dd></div>
+                    <div><dt>Folder</dt><dd class="gar-wrap">@local.Path</dd></div>
+                    <div><dt>State</dt><dd>@GitSourcesPresentation.LocalState(local)</dd></div>
+                    <div><dt>Remotes</dt><dd class="gar-wrap">@(local.Remotes.Count == 0 ? "none" : string.Join(" · ", local.Remotes))</dd></div>
+                </dl>
+            }
+        }
+        else
+        {
+            <div class="gar-field">
+                <label for="gar-url">Git URL</label>
+                <input id="gar-url" class="form-control" @bind="_url" @bind:event="oninput" placeholder="https://dev.azure.com/org/project/_git/repository" spellcheck="false"
+                       aria-describedby="gar-url-help" data-testid="gar-url" />
+                <span id="gar-url-help" class="gar-help">https:// or SSH. Never put a password or token in the URL: Git Credential Manager signs you in.</span>
+                @if (UrlProblem is { } problem) { <span class="gar-field-error" data-testid="gar-url-problem">@problem</span> }
+            </div>
+        }
+
+        <div class="gar-field gar-narrow">
+            <label for="gar-branch">Branch <span class="gar-muted">(optional)</span></label>
+            <input id="gar-branch" class="form-control" @bind="_branch" @bind:event="oninput" placeholder="@(_mode == Mode.Local ? _local?.Branch ?? "current branch" : "default branch")" spellcheck="false" data-testid="gar-branch" />
+        </div>
+
+        @if (_error is { } error) { <p class="gar-error" role="alert" data-testid="gar-error">@error</p> }
+        @if (_busy) { <p class="gar-help" role="status" data-testid="gar-busy">@_busyText</p> }
+
+        <div class="gar-actions">
+            <button type="button" class="btn-primary" disabled="@(!CanAdd)" @onclick="AddAsync" data-testid="gar-add">Add repository@(ProjectName is { Length: > 0 } p ? $" to {p}" : "")</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>The BirkNext project (Target Environment profile id) the repository becomes evidence for.</summary>
+    [Parameter, EditorRequired] public string? EnvironmentId { get; set; }
+    [Parameter] public string? ProjectName { get; set; }
+    /// <summary>Raised with the added link (its fetch outcome included: a failed first fetch keeps the link and says why).</summary>
+    [Parameter] public EventCallback<GitSourceLink> OnAdded { get; set; }
+
+    private enum Mode { Local, Url }
+    private Mode _mode = Mode.Local;
+    private string _path = "", _url = "", _branch = "";
+    private GitLocalRepository? _local;
+    private GitScanResult? _scan;
+    private string? _error, _busyText;
+    private bool _busy;
+
+    private string? UrlProblem => _url.Trim().Length == 0 ? null : GitUrlPolicy.Normalize(_url).Problem;
+    private bool BranchOk => _branch.Trim().Length == 0 || GitUrlPolicy.IsBranchName(_branch.Trim());
+
+    private bool CanAdd => !_busy && EnvironmentId is { Length: > 0 } && BranchOk
+        && (_mode == Mode.Local ? _local is { Problem: null } : _url.Trim().Length > 0 && UrlProblem is null);
+
+    private void Switch(Mode mode) => (_mode, _error) = (mode, null);
+
+    private void Pick(GitLocalRepository repository) => (_local, _path, _error) = (repository, repository.Path, null);
+
+    private static string ScanSummary(GitScanResult scan) =>
+        scan.Problem ?? $"{scan.Repositories.Count} repositor{(scan.Repositories.Count == 1 ? "y" : "ies")} found in {scan.FoldersVisited} folders"
+            + (scan.Truncated ? " (search stopped at its limit: choose a narrower folder)" : "") + ". Choose one.";
+
+    private async Task Run(string text, Func<Task> work)
+    {
+        (_busy, _busyText, _error) = (true, text, null);
+        try { await work(); }
+        finally { (_busy, _busyText) = (false, null); }
+    }
+
+    private Task InspectAsync() => Run("Checking the folder…", async () =>
+    {
+        _scan = null;
+        var (repository, error) = await Git.InspectAsync(_path.Trim());
+        _local = repository;
+        _error = error ?? repository?.Problem;
+    });
+
+    private Task ScanAsync() => Run("Searching the folder for Git repositories…", async () =>
+    {
+        _local = null;
+        var (result, error) = await Git.ScanAsync(new GitScanRequest(_path.Trim()));
+        (_scan, _error) = (result, error);
+    });
+
+    private Task AddAsync() => Run(_mode == Mode.Url
+        ? "Adding the repository and fetching its branches. If Git Credential Manager opens a sign-in window, complete it there…"
+        : "Adding the repository and reading its branches…", async () =>
+    {
+        if (EnvironmentId is not { Length: > 0 } environment) { _error = "Choose the BirkNext project (Target Environment) first."; return; }
+        var request = new GitAddRepositoryRequest(_mode == Mode.Local ? _local?.Path : null, _mode == Mode.Url ? _url.Trim() : null, environment, ProjectName,
+            _branch.Trim().Length > 0 ? _branch.Trim() : null);
+        var (link, error) = await Git.AddAsync(request);
+        if (link is null) { _error = error ?? "The repository could not be added."; return; }
+        (_path, _url, _branch, _local, _scan) = ("", "", "", null, null);
+        await OnAdded.InvokeAsync(link);
+    });
+}

@@ -106,7 +106,7 @@
     private string ConfigLabel => ConfigIssueCount > 0 ? $"{ConfigIssueCount} issue{(ConfigIssueCount != 1 ? "s" : "")}{(GitPrerequisites > 0 ? " · Git Sources not set up" : "")}"
         : GitPrerequisites > 0 ? "No failures · Git Sources not set up" : "All clear";
     private string ConfigDetail => ConfigIssueCount > 0 ? "Required configuration is failing; see Configuration Health."
-        : GitPrerequisites > 0 ? "Optional: Git Sources needs setup before Azure DevOps sources can be linked." : "Platform configuration, migrations and Git Sources prerequisites.";
+        : GitPrerequisites > 0 ? "Optional: Git Sources needs Git for Windows on this computer before repositories can be linked." : "Platform configuration, migrations and Git Sources prerequisites.";
 
     private static string Glyph(string tone) => tone switch { "ok" => "●", "bad" => "■", "warn" => "▲", _ => "○" };
 

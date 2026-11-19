@@ -1823,7 +1823,7 @@ else if (_settings is not null)
         // Target Environments live in browser storage. Loading them here (idempotent) means a direct visit sees them too;
         // the browser automation diagnostic defaults to the active one.
         try { await FrontendAnalysisSettingsStore.LoadAsync(JS); } catch { /* the card then says none are configured */ }
-        // The local Git Sources sign-in state (never contacts Azure DevOps): the header's health uses the same prerequisite/failure split as the card.
+        // The local Git installation (never contacts a remote): the header's health uses the same prerequisite/failure split as the card.
         if (ServiceProvider.GetService(typeof(IGitSourcesApiService)) is IGitSourcesApiService gitSources)
             try
             {

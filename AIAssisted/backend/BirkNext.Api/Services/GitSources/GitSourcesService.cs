@@ -1,16 +1,14 @@
-using System.Diagnostics;
-using Path = System.IO.Path;
+using System.Globalization;
 using System.Text.Json;
-using BirkNext.Api.Services.AzureEnvironment;
 using BirkNext.Api.Services.ProjectImport;
 using BirkNext.GitSources;
-using Microsoft.Extensions.Options;
+using Path = System.IO.Path;
 
 namespace BirkNext.Api.Services.GitSources;
 
 /// <summary>
-/// Safe Git Sources settings (organization URL, tracked branches, last test summary) in one JSON file of this BirkNext instance. It never holds a
-/// password, PAT or token; tokens live only in MSAL's in-memory cache.
+/// Safe Git Sources settings (linked repositories, their branches, imports and checks) in one JSON file of this BirkNext instance. It never holds a
+/// password, PAT or token: Git and its credential helper own authentication.
 /// </summary>
 public sealed class GitSourceSettingsStore(string? directory = null)
 {
@@ -47,7 +45,7 @@ public sealed class GitSourceSettingsStore(string? directory = null)
 
     public string Folder => Path.GetDirectoryName(_path)!;
 
-    /// <summary>Read-modify-write of the settings under one lock (links and organizations change concurrently with tests and imports).</summary>
+    /// <summary>Read-modify-write of the settings under one lock (links change concurrently with fetches and imports).</summary>
     public GitSourceSettings Update(Func<GitSourceSettings, GitSourceSettings> change)
     {
         lock (_gate)
@@ -61,281 +59,311 @@ public sealed class GitSourceSettingsStore(string? directory = null)
 }
 
 /// <summary>
-/// Git Sources: Azure DevOps over Microsoft Entra ID (delegated, the person's own access). Sign-in reuses BirkNext's Microsoft app registration and
-/// MSAL broker (dedicated Edge profile, MFA / Conditional Access as Entra decides, tokens in memory only). Every remote call happens only on an
-/// explicit action (sign in, test, refresh, import) — never because a page opened. Read-only against the remote.
+/// Git Sources, Git-only (2026-11-19). The person's own Git (Git for Windows) and its credential helper (Git Credential Manager, or SSH keys) do the
+/// connecting and authenticating; BirkNext stores no credential, reads none and has no Microsoft Entra app registration. Repositories are added
+/// from a local clone (a chosen folder or a bounded folder scan) or a Git URL. Every remote operation is an explicit action (add, fetch latest,
+/// check for updates, import) and is read-only against the remote: Git fetches into a BirkNext-owned bare repository (hooks disabled), a commit is
+/// exported with git archive from that repository and staged through the same Project Import preview as a chosen ZIP. A person's working tree is
+/// never checked out, reset, cleaned, rebased, merged, pulled or reconfigured, and nothing is ever pushed.
 /// </summary>
-public sealed partial class GitSourcesService(
-    IOptions<AzureEnvironmentOptions> azure, IAzureTokenBroker broker, IAzureSignInBrowser browser, IAzureDevOpsGitClient client, GitSourceSettingsStore store,
-    IServiceScopeFactory scopes, ProjectImportStagingStore staging, ILogger<GitSourcesService> logger, TimeProvider? clock = null)
+public sealed partial class GitSourcesService(IGitCli git, GitSourceSettingsStore store, IServiceScopeFactory scopes, ProjectImportStagingStore staging,
+    ILogger<GitSourcesService> logger, TimeProvider? clock = null)
 {
-    private static readonly string[] Scopes = [GitSourcePolicy.AzureDevOpsScope];
+    public const string Provider = "Git";
+    public const string LocalOrganization = "local";
+    private static readonly TimeSpan LocalTimeout = TimeSpan.FromMinutes(2);
+    /// <summary>Network operations: long enough for a Git Credential Manager sign-in window, bounded so nothing waits forever.</summary>
+    public static readonly TimeSpan NetworkTimeout = TimeSpan.FromMinutes(10);
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
-    private readonly object _gate = new();
-    private GitConnectionState? _transient;
-    private string? _transientMessage;
-    private bool _wasConnected, _accessDenied;
-    private GitDeviceCode? _deviceCode;
-    private GitConfigurationCheck? _signInFailure;
 
-    public static IReadOnlyList<string> Requirements() =>
-    [
-        "Git Sources signs in with a Microsoft Entra app registration (a public client, redirect URI http://localhost): turn on Microsoft sign-in and enter its Application (client) ID in Microsoft sign-in setup below (applied at once, no restart).",
-        "Give that app registration the delegated Azure DevOps permission (user_impersonation). BirkNext reads only what your own account can read.",
-        "Enter your Azure DevOps organization URL below (https://dev.azure.com/{organization}).",
-    ];
+    // ── Installation and status ──────────────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Connection state from the in-memory token cache only: no remote call.</summary>
-    /// <summary>What a connection test depends on: the public client, the tenant and the organization (never a token).</summary>
-    private string ConfigurationKey(GitSourceSettings settings) =>
-        $"{azure.Value.ClientKey ?? "-"}|{GitSourcePolicy.NormalizeOrganizationUrl(settings.OrganizationUrl ?? settings.Organizations.FirstOrDefault()) ?? "-"}";
-
-    private bool Stale(GitSourceSettings settings, GitTestResult? lastTest) =>
-        lastTest?.ConfigurationKey is { } key && !string.Equals(key, ConfigurationKey(settings), StringComparison.OrdinalIgnoreCase);
-
-    public async Task<GitConnectionStatus> StatusAsync(CancellationToken ct)
+    public GitInstallationView Installation()
     {
-        var (settings, lastTest) = store.Read();
-        var diagnostics = Diagnostics(lastTest);
-        if (!azure.Value.Configured)
-            return new() { State = GitConnectionState.NotConfigured, Requirements = Requirements(), OrganizationUrl = settings.OrganizationUrl, LastTest = lastTest,
-                Message = diagnostics.FirstOrDefault(d => d.State is GitCheckState.Missing or GitCheckState.Invalid)?.Detail ?? "Microsoft sign-in is not configured for this BirkNext instance.",
-                Diagnostics = diagnostics, Organizations = settings.Organizations };
-        lock (_gate)
-            if (_transient is { } t)
-                return new() { State = t, Message = _transientMessage ?? "", OrganizationUrl = settings.OrganizationUrl, LastTest = lastTest, SignInAvailable = browser.Available,
-                    Diagnostics = diagnostics, DeviceCodeAllowed = azure.Value.AllowDeviceCode, DeviceCode = _deviceCode, Organizations = settings.Organizations };
-        var token = await broker.SilentForAsync(Scopes, ct);
-        GitConnectionState state;
-        lock (_gate)
-        {
-            state = token is not null ? (_accessDenied ? GitConnectionState.AccessDenied : GitConnectionState.Connected)
-                : _wasConnected ? GitConnectionState.ReconnectRequired : GitConnectionState.NotConnected;
-            if (token is not null) _wasConnected = true;
-        }
-        return new()
-        {
-            State = state, Account = token?.Account, OrganizationUrl = settings.OrganizationUrl, LastTest = lastTest, LastTestStale = Stale(settings, lastTest),
-            SignInAvailable = browser.Available, TrackedBranches = settings.TrackedBranches,
-            Diagnostics = diagnostics, DeviceCodeAllowed = azure.Value.AllowDeviceCode, Organizations = settings.Organizations,
-            Requirements = settings.OrganizationUrl is null ? [Requirements()[2]] : [],
-            Message = state switch
-            {
-                GitConnectionState.Connected => "Signed in with Microsoft Entra ID. Azure DevOps access is your own account's access.",
-                GitConnectionState.AccessDenied => "Signed in with Microsoft Entra ID, but Azure DevOps denied access for this account (organization membership or permission).",
-                GitConnectionState.ReconnectRequired => "The Azure DevOps sign-in expired or needs consent again: reconnect.",
-                _ => "Not connected. Sign in to read repositories and branches.",
-            },
-        };
+        var i = git.Detect();
+        return new(i.Found, i.Path, i.Version, i.CredentialHelpers, i.Problem);
     }
 
-    /// <summary>Starts interactive sign-in in the dedicated BirkNext Edge profile (background; poll <see cref="StatusAsync"/>).</summary>
-    public async Task<GitConnectionStatus> SignInAsync(CancellationToken ct)
+    /// <summary>Git readiness and the linked repositories. Never contacts a remote.</summary>
+    public Task<GitConnectionStatus> StatusAsync(CancellationToken ct)
     {
-        if (!azure.Value.Configured) return await StatusAsync(ct);
-        if (!browser.Available)
+        var installation = Installation();
+        var settings = store.Read().Settings;
+        return Task.FromResult(new GitConnectionStatus
         {
-            lock (_gate) { _transient = GitConnectionState.Failed; _transientMessage = browser.UnavailableReason; }
-            return await StatusAsync(ct);
-        }
-        lock (_gate) { _transient = GitConnectionState.SigningIn; _transientMessage = "Complete sign-in in the Microsoft Edge window that opened (dedicated BirkNext profile)."; }
-        _ = Task.Run(async () =>
-        {
-            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-            try
-            {
-                await broker.InteractiveForAsync(Scopes, browser.OpenAsync, timeout.Token);
-                lock (_gate) { _transient = null; _transientMessage = null; _wasConnected = true; _signInFailure = null; _accessDenied = false; }
-            }
-            catch (Exception e)
-            {
-                // The exception text can echo request details; only its type is logged.
-                logger.LogInformation("Git Sources sign-in did not complete ({ExceptionType}).", e.GetType().Name);
-                var failure = ClassifySignInFailure(e);
-                lock (_gate) { _transient = failure.Cancelled ? null : GitConnectionState.Failed; _transientMessage = failure.Message; _signInFailure = failure.Check; }
-            }
+            State = installation.Found ? GitConnectionState.Connected : GitConnectionState.NotConfigured,
+            Installation = installation,
+            Message = !installation.Found ? installation.Problem ?? GitSourcePolicy.Describe(GitFailureKind.GitMissing)
+                : installation.UsesCredentialManager ? $"Git {installation.Version} with Git Credential Manager: HTTPS sign-in happens in Git's own window when a repository needs it."
+                : installation.CredentialHelpers.Count == 0 ? $"Git {installation.Version}. No credential helper is configured: HTTPS repositories that need a sign-in will fail; SSH keys and public repositories work."
+                : $"Git {installation.Version} with credential helper {string.Join(", ", installation.CredentialHelpers)}.",
+            Requirements = installation.Found ? [] : [GitSourcePolicy.Describe(GitFailureKind.GitMissing)],
+            TrackedBranches = settings.TrackedBranches,
         });
-        return await StatusAsync(ct);
     }
+
+    // ── Local repositories ───────────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Disconnect: removes the cached Microsoft account from this BirkNext instance (which also signs Azure Environment Analysis out — one Microsoft
-    /// session). Never deletes settings, tracked branches, imported projects or snapshots.
+    /// The Git repositories below one folder the person chose (never the whole computer): at most <see cref="GitScanRequest.MaxDepth"/> levels
+    /// (≤ 5), at most 3 000 folders and 200 repositories; symbolic links and junctions are not followed; a repository's own subfolders are not
+    /// searched. Read-only: each repository is inspected without changing it.
     /// </summary>
-    public async Task<GitConnectionStatus> DisconnectAsync(CancellationToken ct)
+    public async Task<GitScanResult> ScanAsync(GitScanRequest request, CancellationToken ct)
     {
-        await broker.SignOutAsync();
-        lock (_gate) { _transient = null; _transientMessage = null; _wasConnected = false; _accessDenied = false; _deviceCode = null; }
-        return await StatusAsync(ct);
+        if (string.IsNullOrWhiteSpace(request.Folder) || !Path.IsPathFullyQualified(request.Folder) || !Directory.Exists(request.Folder))
+            return new([], 0, false, "Choose an existing folder (a full path).");
+        var root = Path.GetFullPath(request.Folder);
+        var depth = Math.Clamp(request.MaxDepth, 0, 5);
+        var found = new List<string>();
+        var visited = 0;
+        var truncated = false;
+        var queue = new Queue<(string Path, int Depth)>([(root, 0)]);
+        while (queue.Count > 0 && !ct.IsCancellationRequested)
+        {
+            var (dir, level) = queue.Dequeue();
+            if (++visited > 3000 || found.Count >= 200) { truncated = true; break; }
+            if (Directory.Exists(Path.Combine(dir, ".git")) || File.Exists(Path.Combine(dir, ".git"))) { found.Add(dir); continue; }
+            if (level >= depth) continue;
+            IEnumerable<string> children;
+            try { children = Directory.EnumerateDirectories(dir); }
+            catch (Exception e) when (e is UnauthorizedAccessException or IOException) { continue; }
+            foreach (var child in children)
+            {
+                try
+                {
+                    var info = new DirectoryInfo(child);
+                    if (info.LinkTarget is not null || info.Attributes.HasFlag(FileAttributes.ReparsePoint)) continue; // never leave the chosen folder
+                    if (info.Name is "node_modules" or "bin" or "obj" or ".vs") continue;
+                    queue.Enqueue((child, level + 1));
+                }
+                catch (Exception e) when (e is UnauthorizedAccessException or IOException) { }
+            }
+        }
+        var repositories = new List<GitLocalRepository>();
+        foreach (var path in found) repositories.Add(await InspectLocalAsync(path, ct));
+        return new(repositories, visited, truncated, found.Count == 0 ? "No Git repository was found in that folder (searched " + depth + " levels deep)." : null);
     }
 
-    public GitConnectionStatus SaveSettings(GitSourceSettings settings)
+    /// <summary>One local repository, read without changing it (no index refresh, no fsmonitor, no hooks).</summary>
+    public async Task<GitLocalRepository> InspectLocalAsync(string folder, CancellationToken ct)
     {
-        var url = settings.OrganizationUrl is null ? null : GitSourcePolicy.NormalizeOrganizationUrl(settings.OrganizationUrl)
-            ?? throw new GitSettingsException("Enter the organization URL as https://dev.azure.com/{organization} or https://{organization}.visualstudio.com.");
-        var (current, lastTest) = store.Read();
-        // A different organization makes the last test about something else: it is cleared, never shown as verified for the new one.
-        store.Write(settings with { OrganizationUrl = url }, url == current.OrganizationUrl ? lastTest : null);
-        return new() { State = GitConnectionState.NotConnected, OrganizationUrl = url, Message = "Saved. Test the Git connection to verify it." };
+        var name = Path.GetFileName(folder.TrimEnd('\\', '/'));
+        if (!Directory.Exists(folder)) return new(name, folder, null, false, null, null, false, [], false, GitSourcePolicy.Describe(GitFailureKind.NotARepository));
+        var top = await git.RunAsync("rev-parse", ["--show-toplevel", "--absolute-git-dir", "--git-common-dir"], folder, GitConfigMode.User, LocalTimeout, ct);
+        if (!top.Ok)
+        {
+            var kind = GitCli.Classify(top);
+            return new(name, folder, null, false, null, null, false, [], false, GitSourcePolicy.Describe(kind == GitFailureKind.RepositoryNotFound ? GitFailureKind.NotARepository : kind));
+        }
+        var lines = top.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var root = lines.ElementAtOrDefault(0)?.Replace('/', Path.DirectorySeparatorChar) ?? folder;
+        var isWorktree = lines.Length >= 3 && !string.Equals(Path.GetFullPath(lines[1]), Path.GetFullPath(Path.Combine(root, lines[2])), StringComparison.OrdinalIgnoreCase)
+            && !lines[2].Equals(".git", StringComparison.Ordinal);
+        var branch = await git.RunAsync("symbolic-ref", ["--short", "-q", "HEAD"], root, GitConfigMode.User, LocalTimeout, ct);
+        var head = await git.RunAsync("log", ["-1", "--format=%H%x09%cI"], root, GitConfigMode.User, LocalTimeout, ct);
+        var status = await git.RunAsync("status", ["--porcelain=v1", "--untracked-files=no"], root, GitConfigMode.User, LocalTimeout, ct);
+        var remotes = await git.RunAsync("remote", ["-v"], root, GitConfigMode.User, LocalTimeout, ct);
+        var headParts = head.Ok ? head.StdOut.Trim().Split('\t') : [];
+        return new(Path.GetFileName(root.TrimEnd('\\', '/')), root, branch.Ok && branch.StdOut.Trim().Length > 0 ? branch.StdOut.Trim() : null,
+            Detached: !branch.Ok || branch.StdOut.Trim().Length == 0,
+            HeadCommit: headParts.ElementAtOrDefault(0) is { Length: 40 } sha ? sha : null,
+            HeadCommittedAt: headParts.ElementAtOrDefault(1) is { } at && DateTimeOffset.TryParse(at, CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null,
+            Dirty: status.Ok && status.StdOut.Trim().Length > 0,
+            Remotes: [.. remotes.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => l.Split('\t', ' ')).Where(p => p.Length >= 2)
+                .Select(p => $"{p[0]} {GitUrlPolicy.Redact(p[1])}").Distinct(StringComparer.Ordinal)],
+            IsWorktree: isWorktree);
     }
+
+    // ── Adding repositories ──────────────────────────────────────────────────────────────────────────────────────────
+
+    public IReadOnlyList<GitSourceLink> Links(string? environmentId) =>
+        [.. store.Read().Settings.Links.Where(l => environmentId is null || string.Equals(l.EnvironmentId, environmentId, StringComparison.Ordinal))
+            .OrderBy(l => l.Repository, StringComparer.OrdinalIgnoreCase)];
+
+    /// <summary>The BirkNext-owned bare repository a link fetches into (never the person's working repository).</summary>
+    public string CacheOf(GitSourceLink link) => Path.Combine(store.Folder, "git-repositories", GitUrlPolicy.RepositoryId(link.Id));
 
     /// <summary>
-    /// The explicit Git test: sign-in → token → organization → repositories → branches → commit metadata → local storage. Each step diagnostic; it
-    /// never imports, creates a snapshot or writes to the remote. Only the safe summary is kept.
+    /// Adds a local repository (its root folder) or a Git URL as evidence for a BirkNext project, then fetches its branches into BirkNext-owned
+    /// storage. An existing link of the same repository and project keeps its imports, checks and decisions.
     /// </summary>
-    public async Task<GitTestResult> TestAsync(CancellationToken ct)
+    public async Task<GitSourceLink> AddRepositoryAsync(GitAddRepositoryRequest request, CancellationToken ct)
     {
-        var (settings, _) = store.Read();
-        var steps = new List<GitTestStep>();
-        int? repositoryCount = null;
-        async Task<T?> Step<T>(string name, Func<Task<(T? Value, string Message)>> run) where T : class
+        if (string.IsNullOrWhiteSpace(request.EnvironmentId)) throw new GitSettingsException("Choose the BirkNext project (Target Environment) the repository is evidence for.");
+        if (string.IsNullOrWhiteSpace(request.LocalPath) == string.IsNullOrWhiteSpace(request.RemoteUrl))
+            throw new GitSettingsException("Choose either a local repository folder or a Git URL.");
+        GitSourceLink link;
+        if (request.LocalPath is { Length: > 0 } path)
         {
-            var sw = Stopwatch.StartNew();
-            try
+            if (!Path.IsPathFullyQualified(path)) throw new GitSettingsException("Enter the full path of the repository folder.");
+            var local = await InspectLocalAsync(Path.GetFullPath(path), ct);
+            if (local.Problem is { } problem) throw new GitSettingsException(problem);
+            var canonical = "local:" + local.Path.Replace('\\', '/').ToLowerInvariant();
+            link = new GitSourceLink
             {
-                var (value, message) = await run();
-                steps.Add(new(name, value is null ? GitTestStepState.Failed : GitTestStepState.Verified, message, sw.ElapsedMilliseconds));
-                return value;
-            }
-            catch (GitProviderException e) { steps.Add(new(name, GitTestStepState.Failed, e.Message, sw.ElapsedMilliseconds)); return null; }
+                Kind = "Local", LocalPath = local.Path, OrganizationUrl = canonical, Organization = LocalOrganization, RepositoryId = GitUrlPolicy.RepositoryId(canonical),
+                Repository = local.Name, Project = "", Branch = request.Branch is { Length: > 0 } b ? b : local.Branch ?? "", DefaultBranch = local.Branch,
+            };
         }
-        void Skip(params string[] names) { foreach (var n in names) steps.Add(new(n, GitTestStepState.Skipped, "Not tested: an earlier step failed.", 0)); }
-
-        var org = settings.OrganizationUrl ?? settings.Organizations.FirstOrDefault();
-        var token = !azure.Value.Configured ? null : await Step("Microsoft Entra authentication", async () =>
-        {
-            var t = await broker.SilentForAsync(Scopes, ct);
-            return (t?.AccessToken, t is null ? GitSourcePolicy.Describe(GitFailureKind.SignInRequired) : $"Verified{(t.Account is null ? "" : $" ({t.Account})")}");
-        });
-        if (!azure.Value.Configured) steps.Add(new("Microsoft Entra authentication", GitTestStepState.Failed, "Microsoft sign-in is not configured for this BirkNext instance.", 0));
-        if (org is null) steps.Add(new("Azure DevOps organization", GitTestStepState.Failed, "No organization URL is set.", 0));
-        if (token is null || org is null) Skip("Repository discovery", "Branch discovery", "Commit metadata");
         else
         {
-            var repos = await Step("Azure DevOps organization and repository discovery", async () =>
+            var (url, problem) = GitUrlPolicy.Normalize(request.RemoteUrl);
+            if (url is null) throw new GitProviderException(GitFailureKind.UnsupportedUrl, problem);
+            link = new GitSourceLink
             {
-                var list = await client.RepositoriesAsync(org, token, ct);
-                repositoryCount = list.Count;
-                return (list, list.Count == 0 ? "The organization is accessible, but this account sees no repositories." : $"{list.Count} repositories found");
-            });
-            var repo = repos?.FirstOrDefault(r => !r.IsDisabled && settings.TrackedBranches.Any(t => t.RepositoryId == r.Id)) ?? repos?.FirstOrDefault(r => !r.IsDisabled);
-            if (repo is null) Skip("Branch discovery", "Commit metadata");
-            else
-            {
-                var branches = await Step("Branch discovery", async () =>
-                {
-                    var list = await client.BranchesAsync(org, repo.Id, token, ct);
-                    return (list, $"{list.Count} branches in {repo.Name}");
-                });
-                var head = branches?.FirstOrDefault();
-                steps.Add(head is { CommitSha.Length: > 0 }
-                    ? new("Commit metadata", GitTestStepState.Verified, $"{head.Name} @ {head.CommitSha[..Math.Min(8, head.CommitSha.Length)]}{(head.CommittedAt is { } d ? $" · {d:yyyy-MM-dd}" : "")}", 0)
-                    : new("Commit metadata", branches is null ? GitTestStepState.Skipped : GitTestStepState.Failed, branches is null ? "Not tested: an earlier step failed." : "No branch head commit was returned.", 0));
-            }
+                Kind = "Remote", RemoteUrl = url, OrganizationUrl = url, Organization = HostOf(url), RepositoryId = GitUrlPolicy.RepositoryId(url),
+                Repository = GitUrlPolicy.NameOf(url), Project = "", Branch = request.Branch ?? "", WebUrl = url.StartsWith("https://", StringComparison.Ordinal) ? url : null,
+            };
         }
-        steps.Add(StorageStep());
-
-        var ready = steps.All(s => s.State == GitTestStepState.Verified);
-        var failed = steps.FirstOrDefault(s => s.State == GitTestStepState.Failed);
-        var result = new GitTestResult(ready, ready ? "Ready" : $"Not ready: {failed?.Name} — {failed?.Message}", steps, _clock.GetUtcNow(),
-            org is null ? null : GitSourcePolicy.OrganizationName(org), repositoryCount) { ConfigurationKey = ConfigurationKey(settings) };
-        store.Write(settings, result);
-        return result;
+        if (request.Branch is { Length: > 0 } chosen && !GitUrlPolicy.IsBranchName(chosen)) throw new GitProviderException(GitFailureKind.BranchNotFound, "not a valid branch name");
+        var id = GitSourceLink.IdentityOf(link.OrganizationUrl, link.RepositoryId);
+        var roles = (request.Roles ?? []).Select(r => r.Trim()).Where(r => r.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        GitSourceLink? stored = null;
+        store.Update(s =>
+        {
+            var existing = s.Links.FirstOrDefault(l => l.Id == id && l.EnvironmentId == request.EnvironmentId);
+            stored = (existing ?? new GitSourceLink { Id = id, EnvironmentId = request.EnvironmentId, LinkedAt = _clock.GetUtcNow() }) with
+            {
+                Kind = link.Kind, LocalPath = link.LocalPath, RemoteUrl = link.RemoteUrl, OrganizationUrl = link.OrganizationUrl, Organization = link.Organization,
+                RepositoryId = link.RepositoryId, Repository = link.Repository, Project = link.Project, WebUrl = link.WebUrl,
+                Branch = link.Branch.Length > 0 ? link.Branch : existing?.Branch ?? "", DefaultBranch = link.DefaultBranch ?? existing?.DefaultBranch,
+                Roles = roles.Count > 0 ? roles : existing?.Roles ?? [], BirkNextProject = request.BirkNextProject ?? existing?.BirkNextProject,
+            };
+            return s with { Links = [.. s.Links.Where(l => !(l.Id == id && l.EnvironmentId == request.EnvironmentId)), stored] };
+        });
+        return await FetchAsync(stored!.Id, request.EnvironmentId, ct);
     }
 
-    private GitTestStep StorageStep()
+    private static string HostOf(string url) => url.Contains("://", StringComparison.Ordinal) && Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.Host
+        : url.Split('@', 2).Last().Split(':', 2)[0];
+
+    // ── Fetch, branches, import ──────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Fetch latest: the repository's branches into the BirkNext-owned bare repository (created on first use). From a URL with the person's Git
+    /// configuration (credential helper; a sign-in window may appear); from a local repository by its path (its working tree, index and refs are
+    /// not changed). Never pull, merge, rebase or push. The outcome (or the classified failure) is recorded on the link.
+    /// </summary>
+    public async Task<GitSourceLink> FetchAsync(string linkId, string environmentId, CancellationToken ct)
     {
-        var sw = Stopwatch.StartNew();
+        var link = Find(linkId, environmentId);
+        var cache = CacheOf(link);
+        GitFailureKind? failure = null;
+        string? defaultBranch = link.DefaultBranch;
         try
         {
-            System.IO.Directory.CreateDirectory(store.Folder);
-            var probe = Path.Combine(store.Folder, $".write-test-{Guid.NewGuid():N}");
-            File.WriteAllText(probe, "ok");
-            File.Delete(probe);
-            return new("Local storage", GitTestStepState.Verified, "Writable", sw.ElapsedMilliseconds);
+            if (!Directory.Exists(Path.Combine(cache, "objects")))
+            {
+                Directory.CreateDirectory(cache);
+                var init = await git.RunAsync("init", ["--bare", "--quiet", "--template=", cache], null, GitConfigMode.Isolated, LocalTimeout, ct);
+                if (!init.Ok) throw new GitProviderException(GitFailureKind.Unexpected, "the local cache could not be created");
+            }
+            if (link.EffectiveKind == "Local")
+            {
+                var source = link.LocalPath ?? throw new GitProviderException(GitFailureKind.NotARepository);
+                if (!Directory.Exists(source)) throw new GitProviderException(GitFailureKind.NotARepository);
+                var fetch = await git.RunAsync("fetch", ["--quiet", "--prune", "--no-tags", "--end-of-options", source, "+refs/heads/*:refs/heads/*"], cache, GitConfigMode.User,
+                    LocalTimeout, ct, configOverrides: ["protocol.file.allow=always"]);
+                if (!fetch.Ok) throw new GitProviderException(GitCli.Classify(fetch));
+                var current = await git.RunAsync("symbolic-ref", ["--short", "-q", "HEAD"], source, GitConfigMode.User, LocalTimeout, ct);
+                if (current.Ok && current.StdOut.Trim().Length > 0) defaultBranch = current.StdOut.Trim();
+            }
+            else
+            {
+                var url = link.EffectiveRemoteUrl is { } raw && GitUrlPolicy.Normalize(raw).Url is { } normalized ? normalized
+                    : throw new GitProviderException(GitFailureKind.UnsupportedUrl);
+                var head = await git.RunAsync("ls-remote", ["--symref", "--end-of-options", url, "HEAD"], cache, GitConfigMode.User, NetworkTimeout, ct,
+                    configOverrides: ["protocol.file.allow=never"]);
+                if (!head.Ok) throw new GitProviderException(GitCli.Classify(head));
+                var symref = head.StdOut.Split('\n').FirstOrDefault(l => l.StartsWith("ref: refs/heads/", StringComparison.Ordinal));
+                if (symref is not null) defaultBranch = symref["ref: refs/heads/".Length..].Split('\t')[0].Trim();
+                var fetch = await git.RunAsync("fetch", ["--quiet", "--prune", "--no-tags", "--end-of-options", url, "+refs/heads/*:refs/heads/*"], cache, GitConfigMode.User,
+                    NetworkTimeout, ct, configOverrides: ["protocol.file.allow=never"]);
+                if (!fetch.Ok) throw new GitProviderException(GitCli.Classify(fetch));
+            }
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        catch (GitProviderException e) { failure = e.Kind; }
+        var at = _clock.GetUtcNow();
+        GitSourceLink? updated = null;
+        store.Update(s => s with
         {
-            return new("Local storage", GitTestStepState.Failed, "The BirkNext settings folder is not writable.", sw.ElapsedMilliseconds);
-        }
+            Links = [.. s.Links.Select(l => l.Id == linkId && l.EnvironmentId == environmentId ? updated = l with
+            {
+                LastFetchedAt = failure is null ? at : l.LastFetchedAt, LastFetchFailure = failure, LastFetchProblem = failure is { } f ? GitSourcePolicy.Describe(f) : null,
+                DefaultBranch = defaultBranch, Branch = l.Branch.Length > 0 ? l.Branch : defaultBranch ?? "",
+            } : l)],
+        });
+        logger.LogInformation("Git Sources fetch for repository {Repository}: {Outcome}", link.Repository, failure?.ToString() ?? "fetched");
+        return updated ?? link;
     }
 
-    public async Task<IReadOnlyList<GitRepository>> RepositoriesAsync(CancellationToken ct, string? organizationUrl = null)
+    /// <summary>The branches Git fetched (from the BirkNext-owned repository; no remote call), newest commit first.</summary>
+    public async Task<IReadOnlyList<GitBranch>> BranchesAsync(string linkId, string environmentId, CancellationToken ct)
     {
-        var (org, token) = await AccessAsync(ct, organizationUrl);
-        return await Remote(() => client.RepositoriesAsync(org, token, ct));
-    }
-
-    public async Task<IReadOnlyList<GitBranch>> BranchesAsync(string repositoryId, CancellationToken ct, string? organizationUrl = null)
-    {
-        var (org, token) = await AccessAsync(ct, organizationUrl);
-        return await Remote(() => client.BranchesAsync(org, repositoryId, token, ct));
+        var link = Find(linkId, environmentId);
+        var cache = CacheOf(link);
+        if (!Directory.Exists(Path.Combine(cache, "objects"))) return [];
+        var r = await git.RunAsync("for-each-ref", ["--format=%(refname:short)%09%(objectname)%09%(committerdate:iso-strict)%09%(authorname)%09%(subject)", "refs/heads"],
+            cache, GitConfigMode.Isolated, LocalTimeout, ct);
+        if (!r.Ok) throw new GitProviderException(GitCli.Classify(r));
+        return GitSourcePolicy.LatestFirst(r.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => l.Split('\t')).Where(p => p.Length >= 2).Select(p =>
+            new GitBranch(p[0], p[1], p.ElementAtOrDefault(2) is { } d && DateTimeOffset.TryParse(d, CultureInfo.InvariantCulture, DateTimeStyles.None, out var at) ? at : null,
+                p.ElementAtOrDefault(3), p.ElementAtOrDefault(4), p[0] == link.DefaultBranch)));
     }
 
     /// <summary>
-    /// Resolves the branch to its current commit (or validates the chosen commit), downloads exactly that commit's archive and stages it through the
-    /// same Project Import preview as a chosen ZIP. The revision (repository, branch, SHA, retrieval time) travels to the commit as provenance;
-    /// nothing else differs from a ZIP import.
+    /// Imports one exact commit: the chosen commit (it must exist in the fetched history) or the branch head as last fetched. The commit is exported
+    /// with git archive from the BirkNext-owned repository (no global configuration: no filter driver or hook runs) and staged through the same
+    /// Project Import preview as a chosen ZIP; the revision (repository, branch, SHA, time) travels with it as provenance.
     /// </summary>
     public async Task<GitImportResult> ImportAsync(GitImportRequest request, CancellationToken ct)
     {
-        var (org, token) = await AccessAsync(ct, request.OrganizationUrl);
-        var repositories = await Remote(() => client.RepositoriesAsync(org, token, ct));
-        var repo = repositories.FirstOrDefault(r => r.Id == request.RepositoryId) ?? throw new GitProviderException(GitFailureKind.RepositoryNotFound);
-        var branchName = GitSourcePolicy.BranchName(request.Branch);
+        // The link of this repository in the requesting BirkNext project: never another project's (its branch, pin and history are its own).
+        var candidates = store.Read().Settings.Links.Where(l => l.RepositoryId == request.RepositoryId
+            && (request.OrganizationUrl is null || string.Equals(l.OrganizationUrl, request.OrganizationUrl, StringComparison.OrdinalIgnoreCase))
+            && (request.EnvironmentId is null || string.Equals(l.EnvironmentId, request.EnvironmentId, StringComparison.Ordinal))).ToList();
+        if (candidates.Count > 1) throw new GitSettingsException("This repository is linked to more than one BirkNext project. Import it from the project it belongs to.");
+        var link = candidates.SingleOrDefault() ?? throw new GitProviderException(GitFailureKind.RepositoryNotFound);
+        var cache = CacheOf(link);
+        if (!Directory.Exists(Path.Combine(cache, "objects"))) link = await FetchAsync(link.Id, link.EnvironmentId, ct);
+        if (link.LastFetchFailure is { } failed && link.LastFetchedAt is null) throw new GitProviderException(failed);
+        var branchName = GitSourcePolicy.BranchName(request.Branch is { Length: > 0 } b ? b : link.Branch);
         string sha;
-        DateTimeOffset? committedAt;
         if (request.Commit is { Length: > 0 } pinned)
         {
-            // A chosen revision: it must exist in this repository (never a guessed or partial SHA).
-            var commit = await Remote(() => client.CommitAsync(org, repo.Id, pinned.Trim().ToLowerInvariant(), token, ct))
-                         ?? throw new GitProviderException(GitFailureKind.RevisionNotFound);
-            (sha, committedAt) = (commit.CommitSha, commit.CommittedAt);
+            if (!GitSourcePolicy.IsCommitSha(pinned.Trim().ToLowerInvariant())) throw new GitProviderException(GitFailureKind.RevisionNotFound);
+            sha = pinned.Trim().ToLowerInvariant();
+            var exists = await git.RunAsync("cat-file", ["-e", $"{sha}^{{commit}}"], cache, GitConfigMode.Isolated, LocalTimeout, ct);
+            if (!exists.Ok) throw new GitProviderException(GitFailureKind.RevisionNotFound);
         }
         else
         {
-            var branch = (await Remote(() => client.BranchesAsync(org, repo.Id, token, ct))).FirstOrDefault(b => b.Name == branchName)
-                         ?? throw new GitProviderException(GitFailureKind.BranchNotFound);
-            (sha, committedAt) = (branch.CommitSha, branch.CommittedAt);
+            if (!GitUrlPolicy.IsBranchName(branchName)) throw new GitProviderException(GitFailureKind.BranchNotFound);
+            var head = await git.RunAsync("rev-parse", ["--verify", "--quiet", "--end-of-options", $"refs/heads/{branchName}^{{commit}}"], cache, GitConfigMode.Isolated, LocalTimeout, ct);
+            if (!head.Ok || !GitSourcePolicy.IsCommitSha(head.StdOut.Trim())) throw new GitProviderException(GitFailureKind.BranchNotFound);
+            sha = head.StdOut.Trim();
         }
-        if (!GitSourcePolicy.IsCommitSha(sha)) throw new GitProviderException(GitFailureKind.Unexpected, "no commit SHA for the revision");
-        var bytes = await Remote(() => client.CommitArchiveAsync(org, repo.Id, sha, token, GitSourcePolicy.MaxArchiveBytes, ct));
-        var revision = new GitSourceRevision(GitSourcePolicy.Provider, GitSourcePolicy.OrganizationName(org), repo.Project, repo.Id, repo.Name, branchName, sha,
-            committedAt, _clock.GetUtcNow(), repo.WebUrl);
+        var when = await git.RunAsync("log", ["-1", "--format=%cI", sha], cache, GitConfigMode.Isolated, LocalTimeout, ct);
+        DateTimeOffset? committedAt = when.Ok && DateTimeOffset.TryParse(when.StdOut.Trim(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var c) ? c : null;
+        using var archive = new MemoryStream();
+        var export = await git.RunAsync("archive", ["--format=zip", $"--prefix={Safe(link.Repository)}/", sha], cache, GitConfigMode.Isolated, NetworkTimeout, ct,
+            stdout: archive, maxOutputBytes: GitSourcePolicy.MaxArchiveBytes);
+        if (!export.Ok) throw new GitProviderException(GitCli.Classify(export));
+        var revision = new GitSourceRevision(Provider, link.Organization, link.Project, link.RepositoryId, link.Repository, branchName, sha, committedAt, _clock.GetUtcNow(),
+            link.EffectiveRemoteUrl ?? link.LocalPath) { EnvironmentId = link.EnvironmentId };
+        var bytes = archive.ToArray();
         using var scope = scopes.CreateScope();
         var preview = scope.ServiceProvider.GetRequiredService<ProjectImportService>().Preview(GitSourcePolicy.ArchiveFileName(revision), bytes, ct);
         if (preview.Preview is { } p) staging.SetGitRevision(p.StagingId, revision);
-        logger.LogInformation("Git Sources staged an import. Repository {Repository}; commit {Commit}; archive size {ArchiveBytes}", repo.Name, revision.ShortSha, bytes.Length);
+        logger.LogInformation("Git Sources staged an import. Repository {Repository}; commit {Commit}; archive size {ArchiveBytes}", link.Repository, revision.ShortSha, bytes.Length);
         return new(revision, preview.Preview, preview.Failure?.Message);
     }
 
-    /// <summary>An organization the person selected or entered (never an arbitrary URL), else the configured one.</summary>
-    private async Task<(string Organization, string Token)> AccessAsync(CancellationToken ct, string? organizationUrl = null)
-    {
-        var settings = store.Read().Settings;
-        var org = organizationUrl is { Length: > 0 }
-            ? GitSourcePolicy.NormalizeOrganizationUrl(organizationUrl) ?? throw new GitSettingsException("The organization URL is not an Azure DevOps organization.")
-            : settings.OrganizationUrl ?? settings.Organizations.FirstOrDefault()
-              ?? throw new GitSettingsException("Choose an Azure DevOps organization first (Import Project → Azure DevOps Git, or System Settings → Git Sources).");
-        var token = azure.Value.Configured ? await broker.SilentForAsync(Scopes, ct) : null;
-        return (org, token?.AccessToken ?? throw new GitProviderException(GitFailureKind.SignInRequired));
-    }
+    private static string Safe(string name) => new([.. name.Select(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' or '.' ? ch : '-')]);
 
-    /// <summary>A remote call; an access refusal after a valid sign-in is remembered as "Azure DevOps access denied" (not "not connected").</summary>
-    private async Task<T> Remote<T>(Func<Task<T>> call)
-    {
-        try
-        {
-            var result = await call();
-            lock (_gate) _accessDenied = false;
-            return result;
-        }
-        catch (GitProviderException e) when (e.Kind is GitFailureKind.AccessDenied or GitFailureKind.SignInRequired)
-        {
-            lock (_gate) _accessDenied = e.Kind == GitFailureKind.AccessDenied;
-            throw;
-        }
-    }
+    private GitSourceLink Find(string linkId, string environmentId) =>
+        Links(environmentId).FirstOrDefault(l => l.Id == linkId) ?? throw new GitProviderException(GitFailureKind.RepositoryNotFound, "no such link");
 }
 
 public sealed class GitSettingsException(string message) : Exception(message);

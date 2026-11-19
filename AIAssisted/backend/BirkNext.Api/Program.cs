@@ -764,10 +764,13 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.AzureEnvironment.IAzureMana
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddScoped<BirkNext.Api.Services.AzureEnvironment.IAzureEnvironmentCollector, BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentCollector>();
 builder.Services.AddScoped<BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentSnapshotStore>();
-// Git Sources: Azure DevOps over the same Microsoft sign-in (delegated, memory-only tokens); remote calls only on explicit actions.
-builder.Services.AddSingleton(new BirkNext.Api.Services.GitSources.GitSourceSettingsStore(builder.Configuration["GitSources:SettingsDirectory"] is { Length: > 0 } gitDir ? gitDir : null));
-builder.Services.AddHttpClient<BirkNext.Api.Services.GitSources.IAzureDevOpsGitClient, BirkNext.Api.Services.GitSources.AzureDevOpsGitClient>(client => client.Timeout = TimeSpan.FromMinutes(5))
-    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
+// Git Sources, Git-only (2026-11-19): the person's Git and its credential helper (Git Credential Manager / SSH) connect and authenticate;
+// BirkNext keeps no credential and needs no Entra app registration. Remote operations only on explicit actions; never a push.
+var gitSettingsDirectory = builder.Configuration["GitSources:SettingsDirectory"] is { Length: > 0 } gitDir ? gitDir : null;
+builder.Services.AddSingleton(new BirkNext.Api.Services.GitSources.GitSourceSettingsStore(gitSettingsDirectory));
+builder.Services.AddSingleton<BirkNext.Api.Services.GitSources.IGitCli>(sp => new BirkNext.Api.Services.GitSources.GitCli(
+    sp.GetService<ILogger<BirkNext.Api.Services.GitSources.GitCli>>(), gitSettingsDirectory is null ? null : System.IO.Path.Combine(gitSettingsDirectory, "git"),
+    builder.Configuration["GitSources:GitExecutable"] is { Length: > 0 } gitExe ? gitExe : null));
 builder.Services.AddSingleton<BirkNext.Api.Services.GitSources.GitSourcesService>();
 builder.Services.AddSingleton<BirkNext.Api.Services.GitSources.IGitImportRecorder>(sp => sp.GetRequiredService<BirkNext.Api.Services.GitSources.GitSourcesService>());
 builder.Services.AddScoped<BirkNext.Api.Services.AzureEnvironment.IAzureEnvironmentEvidenceProvider>(sp => BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentEvidenceProvider.FromConfiguration(

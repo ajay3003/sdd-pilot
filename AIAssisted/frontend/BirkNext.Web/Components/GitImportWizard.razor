@@ -1,124 +1,73 @@
 @using BirkNext.GitSources
 @using BirkNext.Web.Models
+@using BirkNext.Web.Components.GitSources
 @using BirkNext.Web.Services.ProjectImport
 @inject IGitSourcesApiService Git
 @inject IFrontendAnalysisContextFactory Contexts
 
-@* Import Project → Azure DevOps Git. Nothing is requested from Azure DevOps until the person acts: opening reads only the local sign-in state.
-   Organization → project → repositories (several) → branch or a specific commit + roles → review → import. Each repository is linked to the
-   BirkNext project by its stable Azure DevOps id with the chosen roles, then imported one at a time through the same Project Import as a ZIP. *@
+@* Import Project → Git (Git-only). The repositories connected to this BirkNext project (a local repository or a Git URL, fetched by the person's
+   own Git into BirkNext-owned storage) → branch, or one exact commit, and roles → import, each in turn through the same review as a ZIP.
+   Opening reads only local state; Fetch latest and Add contact a remote only when the person starts them. *@
 <section class="giw" aria-labelledby="giw-title" data-testid="giw">
-    <h3 id="giw-title" class="giw-title">Azure DevOps Git import</h3>
-    <p class="giw-muted">Connect with Microsoft, browse the repositories your account can read, and import selected revisions. Read-only: BirkNext never writes to a repository.</p>
+    <h3 id="giw-title" class="giw-title">Import from Git</h3>
+    <p class="giw-muted">Uses the Git installed on this computer and its sign-in (Git Credential Manager or SSH keys). Read-only: BirkNext never pushes and never changes your working folders.</p>
 
-    @if (_status is null) { <ReviewStageList Stages="@([new ReviewStage("status", "Reading the sign-in state", ReviewStageState.Running)])" TestId="giw-loading" /> }
-    else if (_status.State != GitConnectionState.Connected)
+    @if (_status is null)
     {
-        <p class="giw-muted" data-testid="giw-not-connected" data-state="@_status.State">@_status.Message
-            <a href="admin/system-settings?section=git-sources">Connect in System Settings → Git Sources</a>.</p>
+        <ReviewStageList Stages="@([new ReviewStage("status", "Reading the Git installation", ReviewStageState.Running)])" TestId="giw-loading" />
+    }
+    else if (_status.Installation is not { Found: true })
+    {
+        <p class="giw-muted" data-testid="giw-not-connected">@(_status.Installation?.Problem ?? _status.Message)
+            <a href="admin/system-settings?section=git-sources">Git Sources in System Settings</a>.</p>
+    }
+    else if (_environmentId is null)
+    {
+        <p class="giw-muted" data-testid="giw-no-project">Choose a Target Environment (your BirkNext project) first: repositories are connected per project.</p>
     }
     else
     {
-        <ol class="giw-steps" aria-label="Steps">
-            <li class="@(Step >= 1 ? "is-done" : "")">Organization</li><li class="@(Step >= 2 ? "is-done" : "")">Project</li>
-            <li class="@(Step >= 3 ? "is-done" : "")">Repositories</li><li class="@(Step >= 4 ? "is-done" : "")">Review</li>
-        </ol>
-        @if (_loading is { } stage) { <ReviewStageList Stages="@([new ReviewStage("load", stage, ReviewStageState.Running)])" TestId="giw-loading" /> }
-        @if (_error is not null) { <p class="giw-error" role="alert" data-testid="giw-error">@_error <button type="button" class="btn-secondary btn-sm" @onclick="RetryAsync">Retry</button></p> }
+        @if (_error is not null) { <p class="giw-error" role="alert" data-testid="giw-error">@_error</p> }
+        @if (_busyText is not null) { <p class="giw-muted" role="status" data-testid="giw-busy">@_busyText</p> }
 
-        @* 1 · Organization *@
-        <div class="giw-row">
-            @if (_organizations is null)
-            {
-                <button type="button" class="btn-secondary" disabled="@Busy" @onclick="LoadOrganizationsAsync" data-testid="giw-load-orgs">Find my organizations</button>
-            }
-            else
-            {
-                <label>Organization
-                    <select data-testid="giw-org" value="@_org" @onchange="OrganizationChangedAsync">
-                        <option value="">Choose…</option>
-                        @foreach (var o in _organizations) { <option value="@o.Url">@o.Name@(o.Discovered ? "" : " (entered)")</option> }
-                    </select>
-                </label>
-                @if (_orgProblem is not null) { <span class="giw-muted giw-small" data-testid="giw-org-problem">@_orgProblem</span> }
-            }
-            <details class="giw-advanced">
-                <summary>Advanced: enter an organization URL</summary>
-                <input class="form-control" @bind="_manualOrg" @bind:event="oninput" placeholder="https://dev.azure.com/your-organization" data-testid="giw-manual-org" />
-                <button type="button" class="btn-secondary btn-sm" @onclick="UseManualAsync" data-testid="giw-use-manual">Use</button>
-            </details>
-        </div>
-
-        @* 2 · Project *@
-        @if (_org is not null && _projects.Count > 0)
+        @if (_links.Count == 0)
         {
-            <div class="giw-row">
-                <label class="giw-grow">Project
-                    <input type="search" class="form-control" @bind="_projectSearch" @bind:event="oninput" placeholder="Search projects" data-testid="giw-project-search" />
-                </label>
-                <select data-testid="giw-project" value="@_projectId" @onchange="ProjectChangedAsync" aria-label="Azure DevOps project">
-                    <option value="">Choose…</option>
-                    @foreach (var p in _projects.Where(p => _projectSearch.Length == 0 || p.Name.Contains(_projectSearch, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        <option value="@p.Id">@p.Name</option>
-                    }
-                </select>
-                @if (_projectsNext is not null) { <button type="button" class="btn-secondary btn-sm" disabled="@Busy" @onclick="MoreProjectsAsync" data-testid="giw-more-projects">More projects</button> }
-            </div>
+            <p class="giw-muted" data-testid="giw-empty">No repository is connected to @(_projectName ?? "this project") yet. Add one:</p>
         }
-
-        @* 3 · Repositories (several) *@
-        @if (_repositories.Count > 0)
+        else
         {
-            <div class="giw-repos">
-                <div class="giw-row">
-                    <input type="search" class="form-control giw-grow" @bind="_repoSearch" @bind:event="oninput" placeholder="Filter repositories" data-testid="giw-repo-search" aria-label="Filter repositories" />
-                    <span class="giw-muted" data-testid="giw-selected-count">@_selected.Count selected</span>
-                    <button type="button" class="btn-secondary btn-sm" @onclick="SelectAllVisible">Select all shown</button>
+            <ul class="giw-list" data-testid="giw-repos">
+                @foreach (var link in _links)
+                {
+                    var selected = _selected.TryGetValue(link.Id, out var choice);
+                    <li data-testid="giw-repo" data-repo="@link.Id">
+                        <div class="giw-repo-head">
+                            <label><input type="checkbox" checked="@selected" disabled="@(link.LastFetchedAt is null)" @onchange="e => ToggleAsync(link, (bool)e.Value!)" data-testid="giw-repo-check" />
+                                <strong>@link.Repository</strong></label>
+                            <span class="giw-muted giw-small">@GitSourcesPresentation.KindLabel(link) · @(link.Branch.Length > 0 ? link.Branch : "—") · @GitSourcesPresentation.FetchText(link, DateTimeOffset.UtcNow)</span>
+                            @if (link.LastImport is { } last) { <span class="giw-badge" data-testid="giw-linked">last imported @last.CommitSha[..8]</span> }
+                            <button type="button" class="btn-secondary btn-sm giw-fetch" disabled="@Busy" @onclick="() => FetchAsync(link)" data-testid="giw-fetch">Fetch latest</button>
+                        </div>
+                        @if (GitSourcesPresentation.FetchHint(link.LastFetchFailure) is { } hint) { <p class="giw-muted giw-small" data-testid="giw-hint">@hint</p> }
+                        @if (selected) { @Configure(link, choice!) }
+                    </li>
+                }
+            </ul>
+
+            @if (_selected.Count > 0)
+            {
+                <div class="giw-review" data-testid="giw-review">
+                    <p class="giw-muted giw-small">Each repository is imported in turn through the same review as a ZIP. Earlier snapshots are never replaced.</p>
+                    <button type="button" class="btn-primary" disabled="@(Busy || _selected.Values.Any(c => c.CommitProblem is not null))" @onclick="ImportAsync" data-testid="giw-import">
+                        Import @_selected.Count repositor@(_selected.Count == 1 ? "y" : "ies")</button>
                 </div>
-                <ul class="giw-list" data-testid="giw-repos">
-                    @foreach (var r in VisibleRepositories)
-                    {
-                        var link = _links.FirstOrDefault(l => l.RepositoryId == r.Id);
-                        <li data-testid="giw-repo" data-repo="@r.Id">
-                            <label><input type="checkbox" checked="@_selected.ContainsKey(r.Id)" disabled="@r.IsDisabled" @onchange="e => ToggleAsync(r, (bool)e.Value!)" data-testid="giw-repo-check" />
-                                <strong>@r.Name</strong></label>
-                            <span class="giw-muted giw-small"> · default @(r.DefaultBranch ?? "—")@(r.IsDisabled ? " · disabled" : "")</span>
-                            @if (link is not null)
-                            {
-                                <span class="giw-badge" data-testid="giw-linked">Linked@(link.LastImport is { } last ? $" · last imported {last.CommitSha[..8]}" : "")</span>
-                            }
-                            @if (_selected.TryGetValue(r.Id, out var choice)) { @Configure(r, choice) }
-                        </li>
-                    }
-                </ul>
-            </div>
+            }
         }
 
-        @* 4 · Review *@
-        @if (_selected.Count > 0)
-        {
-            <div class="giw-review" data-testid="giw-review">
-                <h4>Review</h4>
-                <table class="giw-table">
-                    <thead><tr><th scope="col">Repository</th><th scope="col">Revision</th><th scope="col">Roles</th><th scope="col">Association</th></tr></thead>
-                    <tbody>
-                        @foreach (var c in _selected.Values)
-                        {
-                            <tr data-testid="giw-review-row">
-                                <td>@c.Repository.Name</td>
-                                <td>@(c.Commit is { Length: > 0 } sha ? $"commit {sha[..Math.Min(8, sha.Length)]}" : $"{c.Branch} (current head)")</td>
-                                <td>@(c.Roles.Count == 0 ? "Detected from content" : string.Join(", ", c.Roles.Select(r => ApplicationContexts.RoleLabel(Enum.Parse<PackageEvidenceRole>(r)))))</td>
-                                <td>@(_links.Any(l => l.RepositoryId == c.Repository.Id) ? "Already linked — update" : $"Link to {_projectName ?? "this project"}")</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-                <p class="giw-muted giw-small">Each repository is imported in turn through the same review as a ZIP. Nothing replaces earlier snapshots.</p>
-                <button type="button" class="btn-primary" disabled="@(Busy || _selected.Values.Any(c => c.CommitProblem is not null))" @onclick="ImportAsync" data-testid="giw-import">
-                    Import @_selected.Count repositor@(_selected.Count == 1 ? "y" : "ies")</button>
-            </div>
-        }
+        <details class="giw-add" open="@(_links.Count == 0)" data-testid="giw-add">
+            <summary>Add a repository</summary>
+            <GitAddRepositoryForm EnvironmentId="@_environmentId" ProjectName="@_projectName" OnAdded="OnAdded" />
+        </details>
     }
 </section>
 
@@ -126,166 +75,111 @@
     /// <summary>The queue of imports to run (each through the normal Project Import review), in order.</summary>
     [Parameter, EditorRequired] public EventCallback<IReadOnlyList<(GitImportRequest Request, string Label)>> OnImport { get; set; }
 
-    private sealed class Choice(GitRepository repository)
+    private sealed class Choice(GitSourceLink link)
     {
-        public GitRepository Repository { get; } = repository;
-        public string Branch { get; set; } = repository.DefaultBranch ?? "main";
+        public GitSourceLink Link { get; set; } = link;
+        public string Branch { get; set; } = link.Branch;
         public string? Commit { get; set; }
-        public string? CommitInfo { get; set; }
         public string? CommitProblem { get; set; }
         public IReadOnlyList<GitBranch> Branches { get; set; } = [];
-        public HashSet<string> Roles { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> Roles { get; } = new(link.Roles, StringComparer.Ordinal);
     }
 
     private static readonly PackageEvidenceRole[] RoleChoices = [.. Enum.GetValues<PackageEvidenceRole>().Where(r => r != PackageEvidenceRole.NotClassified)];
 
     private GitConnectionStatus? _status;
-    private IReadOnlyList<GitOrganization>? _organizations;
-    private List<GitProject> _projects = [];
-    private IReadOnlyList<GitRepository> _repositories = [];
     private IReadOnlyList<GitSourceLink> _links = [];
     private readonly Dictionary<string, Choice> _selected = new(StringComparer.Ordinal);
-    private string? _org, _orgProblem, _projectId, _projectsNext, _error, _loading, _environmentId, _projectName, _manualOrg;
-    private string _projectSearch = "", _repoSearch = "";
-    private Func<Task>? _retry;
-    private bool Busy => _loading is not null;
-    private int Step => _selected.Count > 0 ? 4 : _repositories.Count > 0 ? 3 : _projects.Count > 0 ? 2 : _org is not null ? 1 : 0;
-    // Stale-response protection: a later choice wins over a slower earlier request.
-    private int _generation;
-
-    private IEnumerable<GitRepository> VisibleRepositories =>
-        _repositories.Where(r => _repoSearch.Length == 0 || r.Name.Contains(_repoSearch, StringComparison.OrdinalIgnoreCase));
+    private string? _error, _busyText, _environmentId, _projectName;
+    private bool Busy => _busyText is not null;
 
     protected override async Task OnInitializedAsync()
     {
-        try { var context = await Contexts.GetActiveContextAsync(); _environmentId = context.ActiveProfileOrNull?.Id; _projectName = context.ActiveProfileOrNull?.Project?.ProjectName; }
+        try
+        {
+            var context = await Contexts.GetActiveContextAsync();
+            (_environmentId, _projectName) = (context.ActiveProfileOrNull?.Id, context.ActiveProfileOrNull?.Project?.ProjectName ?? context.ActiveProfileOrNull?.Name);
+        }
         catch (InvalidOperationException) { }
         (_status, _error) = await Git.StatusAsync();
-        if (_environmentId is not null && _status?.State == GitConnectionState.Connected) _links = (await Git.LinksAsync(_environmentId)).Items ?? [];
+        if (_environmentId is not null && _status?.Installation is { Found: true }) (_links, _error) = await Git.LinksAsync(_environmentId);
     }
 
-    private async Task Load(string label, Func<int, Task> work)
+    private async Task Act(string text, Func<Task> work)
     {
-        var generation = ++_generation;
-        (_loading, _error, _retry) = (label, null, () => Load(label, work));
-        try { await work(generation); }
-        finally { if (generation == _generation) _loading = null; }
+        (_busyText, _error) = (text, null);
+        try { await work(); }
+        finally { _busyText = null; }
     }
 
-    private Task RetryAsync() => _retry?.Invoke() ?? Task.CompletedTask;
-
-    private Task LoadOrganizationsAsync() => Load("Discovering your Azure DevOps organizations", async g =>
+    private void Replace(GitSourceLink updated)
     {
-        var (items, problem, error) = await Git.OrganizationsAsync();
-        if (g != _generation) return;
-        (_organizations, _orgProblem, _error) = (items, problem, error);
-        if (items.Count == 1) await SelectOrganizationAsync(items[0].Url);
+        _links = _links.Where(l => l.Id != updated.Id).Append(updated).OrderBy(l => l.Repository, StringComparer.OrdinalIgnoreCase).ToList();
+        if (_selected.TryGetValue(updated.Id, out var choice)) choice.Link = updated;
+    }
+
+    private Task FetchAsync(GitSourceLink link) => Act("Fetching the latest branches. If Git Credential Manager opens a sign-in window, complete it there…", async () =>
+    {
+        var (updated, error) = await Git.FetchAsync(link.Id, link.EnvironmentId);
+        if (updated is null) { _error = error; return; }
+        Replace(updated);
+        if (_selected.TryGetValue(updated.Id, out var choice)) choice.Branches = (await Git.BranchesAsync(updated.Id, updated.EnvironmentId)).Items;
     });
 
-    private Task OrganizationChangedAsync(ChangeEventArgs e) => SelectOrganizationAsync(e.Value?.ToString());
-
-    private async Task UseManualAsync()
+    private async Task ToggleAsync(GitSourceLink link, bool on)
     {
-        if (BirkNext.GitSources.GitSourcePolicy.NormalizeOrganizationUrl(_manualOrg) is not { } url) { _error = "Enter an organization URL like https://dev.azure.com/your-organization."; return; }
-        _organizations = [.. (_organizations ?? []).Where(o => !string.Equals(o.Url, url, StringComparison.OrdinalIgnoreCase)), new GitOrganization(url, BirkNext.GitSources.GitSourcePolicy.OrganizationName(url), url, false)];
-        await SelectOrganizationAsync(url);
+        if (!on) { _selected.Remove(link.Id); return; }
+        var choice = new Choice(link);
+        _selected[link.Id] = choice;
+        var (branches, error) = await Git.BranchesAsync(link.Id, link.EnvironmentId);
+        (choice.Branches, _error) = (branches, error);
+        if (choice.Branch.Length == 0 && branches.FirstOrDefault(b => b.IsDefault) is { } fallback) choice.Branch = fallback.Name;
     }
 
-    private Task SelectOrganizationAsync(string? url)
+    private void OnAdded(GitSourceLink link)
     {
-        (_org, _projectId, _projects, _projectsNext, _repositories) = (string.IsNullOrEmpty(url) ? null : url, null, [], null, []);
-        _selected.Clear();
-        if (_org is null) return Task.CompletedTask;
-        var org = _org;
-        return Load("Loading projects", async g =>
-        {
-            var (page, error) = await Git.ProjectsAsync(org, null);
-            if (g != _generation) return;
-            (_projects, _projectsNext, _error) = ([.. page?.Items ?? []], page?.Next, error);
-            if (page is { Items.Count: 0 } && error is null) _error = "This account sees no projects in the organization.";
-        });
+        Replace(link);
+        _error = link.LastFetchFailure is { } failure ? $"{link.Repository} was added, but fetching it failed: {link.LastFetchProblem ?? GitSourcePolicy.Describe(failure)}" : null;
     }
 
-    private Task MoreProjectsAsync() => _org is not { } org || _projectsNext is not { } next ? Task.CompletedTask : Load("Loading more projects", async g =>
+    private void CheckCommit(Choice choice)
     {
-        var (page, error) = await Git.ProjectsAsync(org, next);
-        if (g != _generation) return;
-        _projects.AddRange(page?.Items ?? []);
-        (_projectsNext, _error) = (page?.Next, error);
-    });
-
-    private Task ProjectChangedAsync(ChangeEventArgs e)
-    {
-        (_projectId, _repositories) = (e.Value?.ToString() is { Length: > 0 } id ? id : null, []);
-        _selected.Clear();
-        if (_org is not { } org || _projectId is not { } project) return Task.CompletedTask;
-        return Load("Loading repositories", async g =>
-        {
-            var (items, error) = await Git.ProjectRepositoriesAsync(org, project);
-            if (g != _generation) return;
-            (_repositories, _error) = (items, error);
-            if (items.Count == 0 && error is null) _error = "This project has no repositories your account can read.";
-        });
-    }
-
-    private async Task ToggleAsync(GitRepository repository, bool on)
-    {
-        if (!on) { _selected.Remove(repository.Id); return; }
-        var choice = new Choice(repository);
-        if (_links.FirstOrDefault(l => l.RepositoryId == repository.Id) is { } link)
-        {
-            choice.Branch = link.Branch;
-            choice.Commit = link.PinnedCommit;
-            foreach (var role in link.Roles) choice.Roles.Add(role);
-        }
-        _selected[repository.Id] = choice;
-        if (_org is { } org) choice.Branches = (await Git.BranchesInAsync(org, repository.Id)).Items ?? [];
-    }
-
-    private void SelectAllVisible()
-    {
-        foreach (var r in VisibleRepositories.Where(r => !r.IsDisabled && !_selected.ContainsKey(r.Id))) _selected[r.Id] = new Choice(r);
-    }
-
-    private async Task CheckCommitAsync(Choice choice)
-    {
-        (choice.CommitInfo, choice.CommitProblem) = (null, null);
+        choice.CommitProblem = null;
         if (string.IsNullOrWhiteSpace(choice.Commit)) { choice.Commit = null; return; }
-        if (!BirkNext.GitSources.GitSourcePolicy.IsCommitSha(choice.Commit.Trim().ToLowerInvariant())) { choice.CommitProblem = "A full 40-character commit SHA is required."; return; }
-        if (_org is null) return;
-        var (commit, error) = await Git.CommitAsync(_org, choice.Repository.Id, choice.Commit);
-        if (commit is null) choice.CommitProblem = error ?? "The commit does not exist in this repository.";
-        else choice.CommitInfo = $"{commit.CommitSha[..8]}{(commit.CommittedAt is { } d ? $" · {d.UtcDateTime:yyyy-MM-dd}" : "")}{(commit.Author is null ? "" : $" · {commit.Author}")}";
+        choice.Commit = choice.Commit.Trim().ToLowerInvariant();
+        if (!GitSourcePolicy.IsCommitSha(choice.Commit)) choice.CommitProblem = "A full 40-character commit SHA is required.";
     }
 
-    private async Task ImportAsync()
+    private Task ImportAsync() => Act("Saving the branch and roles…", async () =>
     {
-        if (_org is not { } org || _environmentId is not { } environment) { _error = "Choose a Target Environment (BirkNext project) first."; return; }
+        if (_environmentId is not { } environment) { _error = "Choose a Target Environment (BirkNext project) first."; return; }
         var queue = new List<(GitImportRequest, string)>();
         foreach (var c in _selected.Values)
         {
-            var (link, error) = await Git.LinkAsync(new GitLinkRequest(org, c.Repository.Id, c.Branch, c.Commit, [.. c.Roles], environment, _projectName));
-            if (link is null) { _error = $"{c.Repository.Name} could not be linked: {error}"; return; }
-            queue.Add((new GitImportRequest(c.Repository.Id, c.Branch) { OrganizationUrl = org, Commit = c.Commit }, $"{c.Repository.Name} @ {(c.Commit is { Length: > 0 } sha ? sha[..8] : c.Branch)}"));
+            // The branch and roles are the link's (shown in Source Management); a specific commit is this import only, never a pin.
+            var (link, error) = await Git.UpdateLinkAsync(c.Link.Id, environment, c.Branch, null, [.. c.Roles]);
+            if (link is null) { _error = $"{c.Link.Repository}: {error}"; return; }
+            Replace(link);
+            queue.Add((new GitImportRequest(link.RepositoryId, c.Branch) { OrganizationUrl = link.OrganizationUrl, Commit = c.Commit, EnvironmentId = environment },
+                $"{link.Repository} @ {(c.Commit is { Length: > 0 } sha ? sha[..8] : c.Branch)}"));
         }
         await OnImport.InvokeAsync(queue);
-    }
+    });
 
-    private RenderFragment Configure(GitRepository repository, Choice choice) => __builder =>
+    private RenderFragment Configure(GitSourceLink link, Choice choice) => __builder =>
     {
         <div class="giw-config" data-testid="giw-config">
             <label>Branch
                 <select value="@choice.Branch" @onchange="e => choice.Branch = e.Value?.ToString() ?? choice.Branch" data-testid="giw-branch">
-                    @if (choice.Branches.Count == 0) { <option value="@choice.Branch">@choice.Branch</option> }
-                    @foreach (var b in choice.Branches) { <option value="@b.Name">@b.Name@(b.IsDefault ? " (default)" : "")@(b.CommittedAt is { } d ? $" · {d.UtcDateTime:yyyy-MM-dd}" : "")</option> }
+                    @if (choice.Branches.All(b => b.Name != choice.Branch)) { <option value="@choice.Branch">@choice.Branch</option> }
+                    @foreach (var b in choice.Branches) { <option value="@b.Name">@b.Name@(b.IsDefault ? " (default)" : "") · @b.CommitSha[..8]@(b.CommittedAt is { } d ? $" · {d.UtcDateTime:yyyy-MM-dd}" : "")</option> }
                 </select>
             </label>
             <label>Specific commit (optional)
-                <input class="form-control" @bind="choice.Commit" @bind:after="() => CheckCommitAsync(choice)" placeholder="40-character SHA" data-testid="giw-commit" />
+                <input class="form-control" @bind="choice.Commit" @bind:after="() => CheckCommit(choice)" placeholder="40-character SHA" spellcheck="false" data-testid="giw-commit" />
             </label>
-            @if (choice.CommitInfo is { } info) { <span class="giw-small" data-testid="giw-commit-info">✓ @info</span> }
             @if (choice.CommitProblem is { } problem) { <span class="giw-error giw-small" data-testid="giw-commit-problem">@problem</span> }
-            <fieldset class="giw-roles" aria-label="Roles of @repository.Name">
+            <fieldset class="giw-roles" aria-label="Roles of @link.Repository">
                 <legend class="giw-small">Roles (several allowed; empty = detected from content after import)</legend>
                 @foreach (var role in RoleChoices)
                 {
