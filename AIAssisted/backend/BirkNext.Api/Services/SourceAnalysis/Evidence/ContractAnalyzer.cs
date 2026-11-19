@@ -268,7 +268,7 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
         }
     }
 
-    /// <summary>A namespace as a whole literal: "…v2.0.0.flat" must not match inside "…v2.0.0.flat.m2lb" or "…v2.0.0.flat2".</summary>
+    /// <summary>A namespace as a whole literal: "…v2.0.0.flat" must not match inside "…v2.0.0.flat.client" or "…v2.0.0.flat2".</summary>
     private static int IndexOfNamespace(string text, string ns)
     {
         for (var at = text.IndexOf(ns, StringComparison.Ordinal); at >= 0; at = text.IndexOf(ns, at + 1, StringComparison.Ordinal))
