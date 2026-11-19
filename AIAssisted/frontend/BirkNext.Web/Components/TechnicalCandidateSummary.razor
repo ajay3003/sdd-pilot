@@ -1,0 +1,70 @@
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@using P = BirkNext.Web.Services.TestPlanSuggestionsPresentation
+@inject IServiceProvider ServiceProvider
+
+@* Technical candidates of the selected project's last scenario discovery, per specialist module (2026-11-18). The same inventory Plan & prepare
+   shows: counts and links to the modules that own the work, never a second candidate list and never a new discovery (it only reads the last
+   stored result). Static candidates are not runtime results. *@
+<section class="mt-card tcs" data-testid="tcs" aria-labelledby="tcs-h">
+    <h2 class="mt-h" id="tcs-h">Technical candidates from scenario discovery</h2>
+    @if (_loading)
+    {
+        <p class="mt-muted" role="status" data-testid="tcs-loading">Reading the last discovery result…</p>
+    }
+    else if (_result is null)
+    {
+        <p class="mt-muted" data-testid="tcs-none">No scenario discovery has run for this project yet. Discovery runs on request in
+            <a href="@($"{P.Route}?area=choose")">Manual Testing › Plan &amp; prepare</a>; its technical candidates are then summarised here.</p>
+    }
+    else if (_shares.Count == 0)
+    {
+        <p class="mt-muted" data-testid="tcs-empty">The last discovery (@_result.DiscoveredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")) found no technical candidate — no contract operation, authorization check, page check or integration journey.</p>
+    }
+    else
+    {
+        <ul class="tcs-list" data-testid="tcs-list">
+            @foreach (var s in _shares)
+            {
+                <li data-testid="tcs-share" data-area="@s.Area">
+                    <a href="@s.Href" data-testid="tcs-open">@s.Label</a>
+                    <span class="tcs-count">@s.Candidates</span>
+                    <span class="mt-muted">@string.Join(" · ", s.Kinds.Select(k => $"{k.Count} {k.Kind.ToLowerInvariant()}"))@(s.Distinct < s.Candidates ? $" · {s.Distinct} distinct (the same operation appears in several contract files)" : "")</span>
+                </li>
+            }
+        </ul>
+        <p class="mt-muted mt-boundary">From the discovery of @_result.DiscoveredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")@(_result.SnapshotLabel is { } label ? $" ({label})" : ""). Candidates are static evidence, not verified behaviour.
+            <a href="@($"{P.Route}?area=choose&view=technical")" data-testid="tcs-browse">Browse or prepare them in Plan &amp; prepare</a></p>
+    }
+</section>
+
+@code {
+    private bool _loading = true;
+    private ScenarioDiscoveryResult? _result;
+    private IReadOnlyList<P.SpecialistShare> _shares = [];
+
+    [Parameter] public string? ProjectKey { get; set; }
+    private string? _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == ProjectKey && !_loading) return;
+        _loadedFor = ProjectKey;
+        _loading = true;
+        _result = null; _shares = [];
+        try
+        {
+            if (ProjectKey is { Length: > 0 } project && ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is ITestPlanSuggestionsApiService api)
+            {
+                var (snapshot, _) = ManualTestingWorkspace.ResolveSnapshot(ServiceProvider);
+                var (last, _) = await api.LastDiscoveryAsync(project, snapshot);
+                if (last is null && snapshot is not null) (last, _) = await api.LastDiscoveryAsync(project, null);
+                // Only this project's result (never another project's).
+                _result = last?.ProjectKey == project ? last : null;
+                if (_result is not null) _shares = P.TechnicalShares(_result.Candidates, P.Classify(_result.Candidates));
+            }
+        }
+        catch (Exception e) when (e is not OperationCanceledException) { _result = null; }
+        finally { _loading = false; }
+    }
+}

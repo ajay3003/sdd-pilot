@@ -1,0 +1,5 @@
+.tcs { margin-top: 1rem; }
+.tcs-list { list-style: none; margin: 0.4rem 0 0.6rem; padding: 0; display: grid; gap: 0.35rem; }
+.tcs-list li { display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
+.tcs-list a { font-weight: 650; }
+.tcs-count { font-weight: 700; }

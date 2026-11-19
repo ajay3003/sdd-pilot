@@ -63,6 +63,11 @@
                 <BirkNext.Web.Components.TechnicalAreaCard Area="area" Stage="@_stage.Id" TargetName="@facts.TargetName" TestDataAssets="_ws.TestDataAssets" />
             }
         </div>
+        @if (_stage.Id == "assess" && _area is null)
+        {
+            @* The technical share of the project's one scenario inventory, routed to the modules that own it (no second list). *@
+            <BirkNext.Web.Components.TechnicalCandidateSummary ProjectKey="@facts.ProjectKey" />
+        }
         @if (_stage.Id == "configure")
         {
             <p class="mt-muted mt-boundary">Settings stay in their modules: <a href="@T.TargetEnvironmentsRoute">Target Environments</a> (target, authentication), <a href="test-data">Test Data</a>, <a href="project-scopes">Project test setup</a>. Nothing is configured from this page.</p>

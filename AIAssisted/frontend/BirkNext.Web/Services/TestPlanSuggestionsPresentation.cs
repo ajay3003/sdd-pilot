@@ -266,7 +266,183 @@ public static class TestPlanSuggestionsPresentation
     /// <summary>Rows rendered per page of the scenario catalog; "Show more" adds the next page (hundreds of candidates stay responsive).</summary>
     public const int PageSize = 60;
 
-    public enum CatalogGrouping { Area, Type, Source }
+    public enum CatalogGrouping { Area, Type, Source, Kind, Requirement }
+
+    // ── Candidate views (2026-11-18): one inventory, four views ─────────────────────────────────────────────────────
+    // A manual tester starts on what a person can test (business, guide and UI behaviour); technical candidates (API operations, authorization
+    // checks, page checks, integration journeys) stay one click away in the same inventory. Nothing is copied, persisted per view or hidden from
+    // "All candidates", and a selection survives every view switch.
+
+    public enum CandidateView { Manual, Technical, All, Attention }
+
+    public static readonly IReadOnlyList<CandidateView> Views = [CandidateView.Manual, CandidateView.Technical, CandidateView.All, CandidateView.Attention];
+
+    public static CandidateView ViewOrDefault(string? view) => view switch
+    {
+        "technical" => CandidateView.Technical, "all" => CandidateView.All, "attention" => CandidateView.Attention, _ => CandidateView.Manual,
+    };
+
+    public static string ViewId(CandidateView view) => view switch
+    {
+        CandidateView.Technical => "technical", CandidateView.All => "all", CandidateView.Attention => "attention", _ => "manual",
+    };
+
+    public static string ViewLabel(CandidateView view) => view switch
+    {
+        CandidateView.Technical => "Technical candidates", CandidateView.All => "All candidates", CandidateView.Attention => "Needs attention", _ => "Manual testing",
+    };
+
+    public static string ViewHint(CandidateView view) => view switch
+    {
+        CandidateView.Technical => "API operations, authorization checks, page checks and integration journeys. They are normally verified in Technical Testing; you can still prepare one as a manual case.",
+        CandidateView.All => "Every discovered candidate, whatever workspace it belongs to.",
+        CandidateView.Attention => "Candidates a person must look at first: an unclear expected result, a classified open point, a possible duplicate or an unclassified source.",
+        _ => "Business scenarios, guide scenarios and UI behaviour a person can test by hand.",
+    };
+
+    /// <summary>The classified inventory of one discovery result: computed once per result, never per render or per row.</summary>
+    /// <param name="Operations">Structural operation identity → the candidate ids declaring it (the same operation in several contract files).</param>
+    public sealed record Inventory(IReadOnlyDictionary<string, ScenarioOwnershipInfo> Owners, IReadOnlyDictionary<string, IReadOnlyList<string>> Operations,
+        int Total, int Manual, int Technical, int Attention, int Unclassified, int OperationCandidates)
+    {
+        public static readonly Inventory Empty = new(new Dictionary<string, ScenarioOwnershipInfo>(), new Dictionary<string, IReadOnlyList<string>>(), 0, 0, 0, 0, 0, 0);
+        public ScenarioOwnershipInfo Of(DiscoveredScenario c) => Owners.TryGetValue(c.CandidateId, out var o) ? o : ScenarioOwnership.Of(c);
+        public int DistinctOperations => Operations.Count;
+        public int Count(CandidateView view) => view switch { CandidateView.Manual => Manual, CandidateView.Technical => Technical, CandidateView.Attention => Attention, _ => Total };
+
+        /// <summary>The other candidates that declare the same contract operation (another file of the same contract), never this one.</summary>
+        public IReadOnlyList<string> SameOperation(DiscoveredScenario c) =>
+            ScenarioOwnership.OperationIdentity(c) is { } key && Operations.TryGetValue(key, out var ids) ? [.. ids.Where(id => id != c.CandidateId)] : [];
+    }
+
+    public static Inventory Classify(IReadOnlyList<DiscoveredScenario> candidates)
+    {
+        if (candidates.Count == 0) return Inventory.Empty;
+        var owners = new Dictionary<string, ScenarioOwnershipInfo>(candidates.Count, StringComparer.Ordinal);
+        var operations = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        int manual = 0, technical = 0, attention = 0, unclassified = 0, operationCandidates = 0;
+        foreach (var c in candidates)
+        {
+            var o = ScenarioOwnership.Of(c);
+            owners[c.CandidateId] = o;
+            if (o.ManualRelevant) manual++;
+            else if (o.Technical) technical++;
+            if (o.NeedsReview) unclassified++;
+            if (o.NeedsReview || Warning(c) is not null) attention++;
+            if (ScenarioOwnership.OperationIdentity(c) is { } key)
+            {
+                operationCandidates++;
+                if (!operations.TryGetValue(key, out var list)) operations[key] = list = [];
+                list.Add(c.CandidateId);
+            }
+        }
+        return new(owners, operations.ToDictionary(p => p.Key, p => (IReadOnlyList<string>)p.Value, StringComparer.Ordinal), candidates.Count, manual, technical, attention, unclassified, operationCandidates);
+    }
+
+    public static bool InView(DiscoveredScenario c, ScenarioOwnershipInfo o, CandidateView view) => view switch
+    {
+        CandidateView.Manual => o.ManualRelevant,
+        CandidateView.Technical => o.Technical,
+        CandidateView.Attention => o.NeedsReview || Warning(c) is not null,
+        _ => true,
+    };
+
+    /// <summary>A handoff to the specialist module that owns the technical work. Only real routes, and only query parameters the destination reads.</summary>
+    /// <param name="Carries">What the destination receives (project selection always travels with the workspace; anything else is named).</param>
+    public sealed record Handoff(string Label, string Href, string Carries);
+
+    public static Handoff? HandoffOf(DiscoveredScenario c, ScenarioOwnershipInfo o)
+    {
+        const string project = "The selected project travels with you (the same project selector everywhere).";
+        switch (o.Specialist)
+        {
+            case SpecialistArea.ContractTesting:
+                return new("Open Contract Testing", "api-quality-review/contracts",
+                    $"{project} Contract Testing lists this snapshot's source contracts; look for {ScenarioOwnership.ContractFile(c) ?? "the contract"}.");
+            case SpecialistArea.ApiQualityReview:
+                return new("Open API Quality Review", "api-quality-review", $"{project} Authorization checks run there against the active Target Environment.");
+            case SpecialistArea.FrontendQualityReview:
+                return new("Open Frontend Quality Review", "frontend-quality-review", $"{project} Reviews the page's technical quality, not the behaviour itself.");
+            case SpecialistArea.CriticalE2E:
+                return new("Open Critical E2E Regression", "critical-e2e-regression", $"{project} The same UI analyzer proposes this check there for automation.");
+            case SpecialistArea.PerformanceTestReview:
+                return new("Open Performance Test Review", "performance-test-review", project);
+            case SpecialistArea.IntegrationTesting:
+                if (c.CapabilityId == ScenarioOwnership.IntegrationJourneys && ScenarioOwnership.JourneyParts(c) is { } declared)
+                    return new("Prepare in Integration Testing", IntegrationTestingPresentation.StageRoute("prepare", $"{declared.Pack}:{declared.Journey}"),
+                        $"{project} Opens the journey \"{c.Area ?? c.Title}\" in Integration Testing › Prepare test suite.");
+                return new("Open Integration Testing", IntegrationTestingPresentation.StageRoute("discover"), $"{project} Shows the integrations the systems of this scenario use.");
+            case SpecialistArea.TestPackJourney:
+                if (ScenarioOwnership.JourneyParts(c) is { } pack && TestPackPages.Registered.TryGetValue(pack.Pack, out var page))
+                    return new("Open the journey in its test pack", $"{page}?tab={Uri.EscapeDataString(pack.Journey)}", $"{project} Opens the journey \"{c.Area ?? pack.Journey}\" where its scenarios are prepared and run.");
+                return new("Open Integration Quality Review", "integration-quality-review", $"{project} Test packs without a page of their own are reviewed there.");
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>The home of a specialist module (no candidate context): where its own candidate selection lives.</summary>
+    public static string SpecialistHome(SpecialistArea area) => area switch
+    {
+        SpecialistArea.ContractTesting => "api-quality-review/contracts",
+        SpecialistArea.ApiQualityReview => "api-quality-review",
+        SpecialistArea.FrontendQualityReview => "frontend-quality-review",
+        SpecialistArea.CriticalE2E => "critical-e2e-regression",
+        SpecialistArea.PerformanceTestReview => "performance-test-review",
+        SpecialistArea.IntegrationTesting or SpecialistArea.TestPackJourney => IntegrationTestingPresentation.HomeRoute,
+        _ => "technical-testing/assess",
+    };
+
+    /// <summary>Technical candidates of one discovery result per specialist module, for Technical Testing (counts and links, never a second list).</summary>
+    public sealed record SpecialistShare(SpecialistArea Area, string Label, int Candidates, int Distinct, IReadOnlyList<(string Kind, int Count)> Kinds, string Href);
+
+    public static IReadOnlyList<SpecialistShare> TechnicalShares(IReadOnlyList<DiscoveredScenario> candidates, Inventory inventory) =>
+        [.. candidates.Where(c => inventory.Of(c).Technical).GroupBy(c => inventory.Of(c).Specialist).OrderByDescending(g => g.Count()).Select(g =>
+        {
+            var operations = g.Select(ScenarioOwnership.OperationIdentity).Where(k => k is not null).ToList();
+            var distinct = operations.Count == 0 ? g.Count() : g.Count() - operations.Count + operations.Distinct(StringComparer.Ordinal).Count();
+            var kinds = g.GroupBy(c => inventory.Of(c).SourceKind).Select(k => (k.Key, k.Count())).OrderByDescending(k => k.Item2).ToList();
+            var pack = g.Key == SpecialistArea.TestPackJourney ? g.Select(ScenarioOwnership.JourneyParts).FirstOrDefault(p => p is not null)?.Pack : null;
+            var href = pack is not null && TestPackPages.Registered.TryGetValue(pack, out var page) ? page : SpecialistHome(g.Key);
+            return new SpecialistShare(g.Key, ScenarioOwnership.SpecialistLabel(g.Key) is { Length: > 0 } label ? label : "Technical Testing", g.Count(), distinct, kinds, href);
+        })];
+
+    /// <summary>What preparing the selected candidates would do, shown before a bulk preparation (never for one ordinary case).</summary>
+    public sealed record PreparePreview(int Selected, int Adding, int AlreadyInPlan, int Technical, int Overlaps, int MissingExpected, int MissingPrerequisites,
+        IReadOnlyList<(string Kind, int Count)> Kinds, bool NeedsConfirmation);
+
+    /// <summary>Up to this many cases are prepared without a confirmation when nothing about them needs a look.</summary>
+    public const int ConfirmFrom = 5;
+
+    public static PreparePreview Preview(IReadOnlyCollection<string> selected, IReadOnlyList<DiscoveredScenario> candidates, Inventory inventory, IReadOnlySet<string> inPlan)
+    {
+        var byId = candidates.ToDictionary(c => c.CandidateId, StringComparer.Ordinal);
+        var adding = selected.Where(id => !inPlan.Contains(id) && byId.ContainsKey(id)).Select(id => byId[id]).ToList();
+        var technical = adding.Count(c => !inventory.Of(c).ManualRelevant);
+        // Overlap: a candidate already in the plan names the same requirement through another source, or declares the same contract operation.
+        var overlaps = adding.Count(c => c.PossibleDuplicates.Any(inPlan.Contains) || inventory.SameOperation(c).Any(inPlan.Contains)
+            || inventory.SameOperation(c).Any(id => selected.Contains(id) && string.CompareOrdinal(id, c.CandidateId) < 0));
+        var missingExpected = adding.Count(c => c.NeedsClarification);
+        var missingPrerequisites = adding.Count(c => c.Gaps.Any(g => g.Kind == EvidenceGapKind.TestPrerequisiteMissing));
+        var kinds = adding.GroupBy(c => inventory.Of(c).SourceKind).Select(g => (g.Key, g.Count())).OrderByDescending(k => k.Item2).ToList();
+        var issues = technical + overlaps + missingExpected + missingPrerequisites;
+        return new(selected.Count, adding.Count, selected.Count(inPlan.Contains), technical, overlaps, missingExpected, missingPrerequisites, kinds,
+            adding.Count >= ConfirmFrom || adding.Count >= 2 && issues > 0);
+    }
+
+    /// <summary>Selected candidates that would overlap a case already in the plan (shown on the preparation bar).</summary>
+    public static int OverlapsWithPlan(IEnumerable<string> selected, IReadOnlyList<DiscoveredScenario> candidates, Inventory inventory, IReadOnlySet<string> inPlan)
+    {
+        var set = selected.ToHashSet(StringComparer.Ordinal);
+        return candidates.Count(c => set.Contains(c.CandidateId) && !inPlan.Contains(c.CandidateId)
+            && (c.PossibleDuplicates.Any(inPlan.Contains) || inventory.SameOperation(c).Any(inPlan.Contains)));
+    }
+
+    /// <summary>The adaptive empty Manual view: why it is empty and what the tester can actually do.</summary>
+    public static string? ManualEmptyReason(Inventory inventory) => inventory.Manual > 0 || inventory.Total == 0 ? null
+        : inventory.Technical > 0
+            ? "No business-focused scenarios identified. You can prepare technical candidates manually or open Technical Testing."
+            : "No candidate could be classified for manual testing. Review the unclassified candidates under Needs attention.";
 
     /// <param name="Tests">"with" = only candidates with an associated existing test, "without" = only without; null = all.</param>
     public sealed record CatalogFilter(string Query = "", ScenarioCandidateType? Type = null, string? Area = null, string? Source = null, string? Tests = null, bool AttentionOnly = false);
@@ -301,9 +477,22 @@ public static class TestPlanSuggestionsPresentation
     public sealed record CatalogGroup(string Id, string Title, IReadOnlyList<DiscoveredScenario> Items);
 
     /// <summary>Groups by real metadata only (the area/module the evidence names, the candidate type or the source category), in first-seen order.</summary>
-    public static IReadOnlyList<CatalogGroup> Group(IReadOnlyList<DiscoveredScenario> items, CatalogGrouping by) =>
-        [.. items.GroupBy(c => by switch { CatalogGrouping.Type => ScenarioCandidateTypes.Label(c.Type), CatalogGrouping.Source => c.SourceCategory, _ => AreaOf(c) })
+    /// <param name="inventory">For <see cref="CatalogGrouping.Kind"/>: the producer's own kind of evidence (acceptance scenario, API operation …).</param>
+    public static IReadOnlyList<CatalogGroup> Group(IReadOnlyList<DiscoveredScenario> items, CatalogGrouping by, Inventory? inventory = null) =>
+        [.. items.GroupBy(c => by switch
+            {
+                CatalogGrouping.Type => ScenarioCandidateTypes.Label(c.Type),
+                CatalogGrouping.Source => c.SourceCategory,
+                CatalogGrouping.Kind => (inventory ?? Inventory.Empty).Of(c).SourceKind,
+                CatalogGrouping.Requirement => c.RequirementIds.FirstOrDefault() is { } r ? r.Trim().ToUpperInvariant() : "No requirement named",
+                _ => AreaOf(c),
+            })
             .Select(g => new CatalogGroup(Slug(g.Key), g.Key, [.. g]))];
+
+    public static string GroupingLabel(CatalogGrouping by) => by switch
+    {
+        CatalogGrouping.Type => "Type", CatalogGrouping.Source => "Source", CatalogGrouping.Kind => "Kind of evidence", CatalogGrouping.Requirement => "Requirement", _ => "Area / module",
+    };
 
     /// <summary>A readable group id from a real area title: letters (any script, e.g. "periodelås") and digits kept, everything else a hyphen.</summary>
     public static string Slug(string value)

@@ -566,6 +566,10 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         api.Discovered!.ProjectKey.Should().Be("library");
         cut.Find("[data-testid=tps-capability-system-guide]").GetAttribute("data-state").Should().Be("NotApplicable");
         cut.Find("[data-testid=tps-capability-api-contract]").TextContent.Should().Contain("1 found");
+        // Manual testing is the default view: the API operation stays in the inventory, one click away, never in the manual list.
+        cut.FindAll("li[data-testid^=tps-candidate-]").Should().HaveCount(3);
+        cut.FindAll("[data-testid=tps-candidate-tsc-getbook]").Should().BeEmpty();
+        cut.Find("[data-testid=tps-view-all]").Click();
         cut.FindAll("li[data-testid^=tps-candidate-]").Should().HaveCount(4);
         cut.Find("[data-testid=tps-candidate-tsc-return] [data-testid=tps-attention]").TextContent.Should().Be("Needs clarification");
         cut.FindAll("[data-testid=tps-candidate-tsc-borrow] [data-testid=tps-attention]").Should().BeEmpty("a warning only when attention is needed");
@@ -578,8 +582,10 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         SelectProject();
         var api = new Api(Workspace()) { Project = ProjectWorkspace(), Last = Discovery("library", LibraryCandidates) };
         var cut = Render(api);
-        cut.FindAll("li[data-testid^=tps-candidate-]").Should().HaveCount(4, "the last result for this project is reused without re-running analyzers");
+        cut.Find("[data-testid=tps-stat-total]").TextContent.Should().Contain("4", "the last result for this project is reused without re-running analyzers");
         api.Discovered.Should().BeNull();
+        cut.Find("[data-testid=tps-view-all]").Click();
+        cut.FindAll("li[data-testid^=tps-candidate-]").Should().HaveCount(4);
 
         cut.Find("[data-testid=tps-select-tsc-borrow]").Change(true);
         cut.Find("[data-testid=tps-select-tsc-getbook]").Change(true);
@@ -588,7 +594,11 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         cut.Find("[data-testid=tps-selected-count]").TextContent.Should().Contain("2");
         cut.Find("[data-testid=tps-selected-hidden]").TextContent.Should().Contain("1 hidden by filters");
 
+        // Two cases, one of them technical: the preparation preview says so before anything is created.
         cut.Find("[data-testid=tps-prepare]").Click();
+        api.CreatedProject.Should().BeNull("a selection that includes a technical candidate is confirmed first");
+        cut.Find("[data-testid=tps-preview-technical]").TextContent.Should().Contain("1 technical candidate");
+        cut.Find("[data-testid=tps-preview-confirm]").Click();
         api.CreatedProject!.ProjectKey.Should().Be("library");
         api.CreatedProject.DiscoveryId.Should().Be("disc-1");
         api.CreatedProject.CandidateIds.Should().BeEquivalentTo(["tsc-borrow", "tsc-getbook"]);
@@ -808,5 +818,197 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         P.InScope(scoped, Sel(new() { Kind = BirkNext.Scopes.ScopeMemberKind.Scenario, TargetId = "x" }), ["abc"]).Should().BeTrue("reached through an established Verifies link");
         P.InScope(scoped, Sel(new() { Kind = BirkNext.Scopes.ScopeMemberKind.Requirement, TargetId = "Requirement|library/001/fr-001", Label = "FR-001" }), []).Should().BeTrue();
         P.InScope(scoped, Sel(new() { Kind = BirkNext.Scopes.ScopeMemberKind.Scenario, TargetId = "other", Label = "Borrow a book" }), []).Should().BeFalse("a matching label is never a match");
+    }
+
+    // ── Scenario ownership views (2026-11-18): one inventory, Manual testing by default, technical candidates one click away ──────────────
+
+    private static DiscoveredScenario Operation(string id, string file, string operation = "mutation activateEmergencyAccess") => new()
+    {
+        CandidateId = id, ProjectKey = "library", CapabilityId = "api-contract", SourceCategory = "API contract", Area = "Authorization", Title = operation,
+        Purpose = "Verify " + operation, Type = ScenarioCandidateType.ApiContract, Confidence = CandidateConfidence.ContractDerived, ExpectedBehaviour = "Returns EmergencyAccess, as the schema declares.",
+        Template = [new("operation", "Operation", operation), new("input", "Input", null), new("expected-response", "Expected response", "Returns EmergencyAccess, as the schema declares.")],
+        Evidence = [new("contract-operation", $"{file}:1#{operation}", "GraphQlSchema Authorization")], CanonicalKey = $"contract-op:{file}#{operation}", Engine = "Contract analyzer", RuleVersion = "tsd-1",
+    };
+
+    [Fact]
+    public void Manual_testing_is_the_default_view_and_switching_views_keeps_every_selection()
+    {
+        SelectProject();
+        var cut = Render(new Api(Workspace()) { Project = ProjectWorkspace(), Last = Discovery("library", LibraryCandidates) });
+        cut.Find("[data-testid=tps-views] [aria-pressed=true]").GetAttribute("data-testid").Should().Be("tps-view-manual");
+        cut.Find("[data-testid=tps-stat-total]").TextContent.Should().Contain("4");
+        cut.Find("[data-testid=tps-stat-manual]").TextContent.Should().Contain("3");
+        cut.Find("[data-testid=tps-stat-technical]").TextContent.Should().Contain("1");
+        cut.FindAll("li[data-testid^=tps-candidate-]").Select(e => e.GetAttribute("data-testid")).Should().BeEquivalentTo(["tps-candidate-tsc-borrow", "tps-candidate-tsc-return", "tps-candidate-tsc-search"]);
+
+        cut.Find("[data-testid=tps-select-tsc-borrow]").Change(true);
+        cut.Find("[data-testid=tps-view-technical]").Click();
+        cut.FindAll("li[data-testid^=tps-candidate-]").Select(e => e.GetAttribute("data-testid")).Should().Equal("tps-candidate-tsc-getbook");
+        cut.Find("[data-testid=tps-selected-count]").TextContent.Should().Contain("1");
+        cut.Find("[data-testid=tps-selected-hidden]").TextContent.Should().Contain("1 hidden by filters", "a selection in another view stays selected and counted");
+        Services.GetRequiredService<NavigationManager>().Uri.Should().Contain("view=technical", "the view is part of the address");
+
+        cut.Find("[data-testid=tps-select-tsc-getbook]").Change(true);
+        cut.Find("[data-testid=tps-view-manual]").Click();
+        cut.Find("[data-testid=tps-select-tsc-borrow]").HasAttribute("checked").Should().BeTrue();
+        cut.Find("[data-testid=tps-view-technical]").TextContent.Should().Contain("1 selected");
+        cut.Find("[data-testid=tps-selected-count]").TextContent.Should().Contain("2");
+
+        // Select visible selects only what this view shows.
+        cut.Find("[data-testid=tps-clear-selection]").Click();
+        cut.Find("[data-testid=tps-select-shown]").Click();
+        cut.Find("[data-testid=tps-selected-count]").TextContent.Should().Contain("3");
+        cut.Find("[data-testid=tps-view-technical]").TextContent.Should().NotContain("selected");
+    }
+
+    [Fact]
+    public void A_link_opens_the_technical_view_and_the_all_view_lists_the_complete_inventory()
+    {
+        SelectProject();
+        var api = new Api(Workspace()) { Project = ProjectWorkspace(), Last = Discovery("library", LibraryCandidates) };
+        var cut = Render(api, "?view=technical");
+        cut.FindAll("li[data-testid^=tps-candidate-]").Select(e => e.GetAttribute("data-testid")).Should().Equal("tps-candidate-tsc-getbook");
+        cut.Find("[data-testid=tps-view-all]").Click();
+        cut.FindAll("li[data-testid^=tps-candidate-]").Should().HaveCount(4, "no candidate disappears from the complete inventory");
+        cut.Find("[data-testid=tps-candidate-tsc-getbook] [data-testid=tps-workspace]").TextContent.Should().Be("Technical Testing");
+        cut.Find("[data-testid=tps-view-attention]").Click();
+        cut.FindAll("li[data-testid^=tps-candidate-]").Select(e => e.GetAttribute("data-testid")).Should().Equal("tps-candidate-tsc-return");
+    }
+
+    [Fact]
+    public void An_api_only_project_says_why_the_manual_view_is_empty_and_offers_real_actions()
+    {
+        SelectProject();
+        var cut = Render(new Api(Workspace()) { Project = ProjectWorkspace(), Last = Discovery("library", Operation("op-1", "Svc/schema.graphql")) });
+        cut.Find("[data-testid=tps-manual-empty]").TextContent.Should().Contain("No business-focused scenarios identified. You can prepare technical candidates manually or open Technical Testing.");
+        cut.Find("[data-testid=tps-manual-empty-open-technical]").GetAttribute("href").Should().Be("technical-testing/assess");
+        cut.Find("[data-testid=tps-manual-empty-technical]").Click();
+        cut.FindAll("li[data-testid^=tps-candidate-]").Select(e => e.GetAttribute("data-testid")).Should().Equal("tps-candidate-op-1");
+        cut.Find("[data-testid=tps-select-op-1]").Change(true);
+        cut.Find("[data-testid=tps-prepare]").HasAttribute("disabled").Should().BeFalse("a technical candidate can be prepared as a manual case on purpose");
+    }
+
+    [Fact]
+    public void Candidate_details_say_where_to_test_and_hand_off_without_invented_parameters()
+    {
+        SelectProject();
+        var copies = new[] { Operation("op-1", "AuthService/autodoc/schema.graphql"), Operation("op-2", "Frontend/GraphQL/Authorization/schema.graphql") };
+        var cut = Render(new Api(Workspace()) { Project = ProjectWorkspace(), Last = Discovery("library", [.. LibraryCandidates, .. copies]) }, "?view=technical");
+        cut.Find("[data-testid=tps-stat-operations]").TextContent.Should().Contain("2 operation entries = 1 distinct operation");
+        cut.Find("[data-testid=tps-details-op-1]").Click();
+        var details = cut.Find("[data-testid=tps-candidate-details-op-1]");
+        details.QuerySelector("[data-testid=tps-ownership]")!.TextContent.Should().Contain("Technical Testing").And.Contain("API / contract (technical)");
+        details.QuerySelector("[data-testid=tps-handoff]")!.GetAttribute("href").Should().Be("api-quality-review/contracts");
+        details.QuerySelector("[data-testid=tps-same-operation]")!.TextContent.Should().Contain("Frontend/GraphQL/Authorization/schema.graphql").And.Contain("kept separate");
+
+        // Handoffs only use routes and parameters their destination reads.
+        var declared = new DiscoveredScenario { CapabilityId = "integration-journeys", Type = ScenarioCandidateType.Integration, CanonicalKey = "journey:project.import:imp-1:loan-flow", Area = "Loan flow" };
+        P.HandoffOf(declared, ScenarioOwnership.Of(declared))!.Href.Should().Be("technical-testing/integrations?stage=prepare&journey=project.import%3Aimp-1%3Aloan-flow", "a project key may contain a colon");
+        var pack = new DiscoveredScenario { CapabilityId = "integration-journeys", Type = ScenarioCandidateType.Integration, CanonicalKey = "journey:skolenaervaer:rapportmottak:e2e-09" };
+        P.HandoffOf(pack, ScenarioOwnership.Of(pack))!.Href.Should().Be("extensions/skolenaervaer?tab=rapportmottak");
+        var otherPack = pack with { CanonicalKey = "journey:orders:intake:two-buyers" };
+        P.HandoffOf(otherPack, ScenarioOwnership.Of(otherPack))!.Href.Should().Be("integration-quality-review", "a pack without a page of its own is reviewed in IQR");
+        var business = LibraryCandidates[0];
+        P.HandoffOf(business, ScenarioOwnership.Of(business)).Should().BeNull("a business scenario is tested here");
+    }
+
+    [Fact]
+    public void A_candidate_already_in_the_plan_offers_the_existing_case_and_a_separate_case_only_on_request()
+    {
+        SelectProject();
+        var plan = ProjectDraft("library");
+        var api = new Api(Workspace(), plan) { Project = ProjectWorkspace(), Last = Discovery("library", LibraryCandidates) };
+        var cut = Render(api, $"?draft={plan.Id}&area=choose");
+        cut.Find("[data-testid=tps-stat-saved]").TextContent.Should().Contain("1");
+        cut.Find("[data-testid=tps-candidate-tsc-borrow] [data-testid=tps-in-draft]").TextContent.Should().Be("In the plan");
+        cut.Find("[data-testid=tps-select-tsc-borrow]").Change(true);
+        cut.Find("[data-testid=tps-prepare-in-plan]").TextContent.Should().Contain("1 already in the plan");
+        cut.Find("[data-testid=tps-prepare]").HasAttribute("disabled").Should().BeTrue("nothing new would be added");
+
+        cut.Find("[data-testid=tps-details-tsc-borrow]").Click();
+        cut.Find("[data-testid=tps-add-variant]").Click();
+        cut.Find("[data-testid=tps-manual-title]").GetAttribute("value").Should().Be("Borrow a book — variant");
+        api.CreatedProject.Should().BeNull("a separate case is created only when the tester adds it");
+
+        cut.Find("[data-testid=tps-open-case]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tps-body]").GetAttribute("data-area").Should().Be("prepare"));
+        cut.Find("[data-testid=tps-case-tsc-borrow]").ClassList.Should().Contain("is-open");
+    }
+
+    [Fact]
+    public void One_ordinary_case_is_prepared_at_once_without_a_confirmation()
+    {
+        SelectProject();
+        var single = new Api(Workspace()) { Project = ProjectWorkspace(), Last = Discovery("library", LibraryCandidates) };
+        var cut = Render(single);
+        cut.Find("[data-testid=tps-select-tsc-borrow]").Change(true);
+        cut.Find("[data-testid=tps-prepare]").Click();
+        single.CreatedProject!.CandidateIds.Should().Equal("tsc-borrow");
+    }
+
+    [Fact]
+    public void A_bulk_preparation_preview_names_what_is_selected_and_backing_out_creates_nothing()
+    {
+        SelectProject();
+        var many = Enumerable.Range(1, 6).Select(i => Discovered($"tsc-ui-{i}", $"Search {i}", ScenarioCandidateType.UiFunctional, "Catalogue", "UI source", expected: i == 1 ? null : "Shown")).ToArray();
+        var api = new Api(Workspace()) { Project = ProjectWorkspace(), Last = Discovery("library", many) };
+        var cut = Render(api);
+        cut.Find("[data-testid=tps-select-shown]").Click();
+        cut.Find("[data-testid=tps-prepare]").TextContent.Should().Be("Prepare 6 test cases");
+        cut.Find("[data-testid=tps-prepare]").Click();
+        cut.Find("[data-testid=tps-preview]").TextContent.Should().Contain("Prepare 6 test cases?");
+        cut.Find("[data-testid=tps-preview-kinds]").TextContent.Should().Be("6 ui behaviour");
+        cut.Find("[data-testid=tps-preview-missing-expected]").TextContent.Should().StartWith("1 without an expected result");
+        cut.FindAll("[data-testid=tps-preview-technical]").Should().BeEmpty();
+        cut.WaitForAssertion(() => JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextRevealSection" && (string)i.Arguments[0]! == "tps-preview", "the preview takes focus"));
+
+        cut.Find("[data-testid=tps-preview-cancel]").Click();
+        api.CreatedProject.Should().BeNull();
+        cut.Find("[data-testid=tps-selected-count]").TextContent.Should().Contain("6", "backing out keeps the selection");
+
+        cut.Find("[data-testid=tps-prepare]").Click();
+        cut.Find("[data-testid=tps-preview-confirm]").Click();
+        api.CreatedProject!.CandidateIds.Should().HaveCount(6).And.OnlyContain(id => id.StartsWith("tsc-ui-"), "only the explicitly selected candidates");
+    }
+
+    [Fact]
+    public void The_preview_counts_overlaps_with_the_plan_and_between_copies_of_one_operation()
+    {
+        var a = Operation("op-a", "Auth/schema.graphql");
+        var b = Operation("op-b", "Frontend/schema.graphql");
+        var borrow = LibraryCandidates[0] with { PossibleDuplicates = ["tsc-in-plan"] };
+        var all = new[] { a, b, borrow };
+        var inventory = P.Classify(all);
+        var preview = P.Preview(["op-a", "op-b", borrow.CandidateId], all, inventory, new HashSet<string> { "tsc-in-plan" });
+        preview.Should().Match<P.PreparePreview>(p => p.Adding == 3 && p.Technical == 2 && p.Overlaps == 2 && p.NeedsConfirmation);
+        P.OverlapsWithPlan([borrow.CandidateId], all, inventory, new HashSet<string> { "tsc-in-plan" }).Should().Be(1);
+        P.Preview([borrow.CandidateId], all, inventory, new HashSet<string>()).NeedsConfirmation.Should().BeFalse();
+        P.Preview(["op-a"], all, inventory, new HashSet<string>()).NeedsConfirmation.Should().BeFalse("one case is never confirmed twice");
+    }
+
+    [Fact]
+    public void Rediscovery_keeps_only_selections_whose_candidate_still_exists()
+    {
+        SelectProject();
+        var api = new Api(Workspace()) { Project = ProjectWorkspace(), Last = Discovery("library", LibraryCandidates), Discovery = Discovery("library", LibraryCandidates[0], LibraryCandidates[2]) };
+        var cut = Render(api, "?view=all");
+        cut.Find("[data-testid=tps-select-tsc-borrow]").Change(true);
+        cut.Find("[data-testid=tps-select-tsc-return]").Change(true);
+        cut.Find("[data-testid=tps-discover-run]").Click();
+        cut.Find("[data-testid=tps-selected-count]").TextContent.Should().Contain("1", "tsc-return left the evidence; its selection is not carried to another candidate");
+        cut.Find("[data-testid=tps-select-tsc-borrow]").HasAttribute("checked").Should().BeTrue();
+    }
+
+    [Fact]
+    public void The_stepper_is_one_compact_row_whose_steps_all_open_and_say_why_when_they_wait()
+    {
+        SelectProject();
+        var cut = Render(new Api(Workspace()) { Project = ProjectWorkspace(), Last = Discovery("library", LibraryCandidates) });
+        cut.FindAll("[data-testid=tps-steps] [data-testid=tps-step]").Select(s => s.GetAttribute("data-step")).Should().Equal("choose", "prepare", "testability", "save");
+        cut.Find("[data-testid=tps-area-choose]").GetAttribute("aria-current").Should().Be("step");
+        cut.FindAll("[data-testid=tps-step-status]")[1].TextContent.Should().Be("Prepare test cases first.");
+        cut.Find("[data-testid=tps-area-prepare]").HasAttribute("disabled").Should().BeFalse("a waiting step opens and explains itself");
+        cut.Find("[data-testid=tps-area-prepare]").Click();
+        cut.Find("[data-testid=tps-no-draft]").TextContent.Should().Contain("No test cases yet");
     }
 }

@@ -359,7 +359,8 @@ public sealed class RequirementLinkingTests : BunitContext
     {
         var cut = Render(Draft(Case()));
         var current = cut.Find("[data-testid=tps-steps] [data-testid=tps-area-prepare]");
-        current.TextContent.Should().Be("Open now");
+        // Compact stepper (2026-11-18): the step's own name is the button; the current one is marked as the current step.
+        current.TextContent.Should().Contain("Prepare test cases");
         current.GetAttribute("aria-current").Should().Be("step");
 
         current.Click();

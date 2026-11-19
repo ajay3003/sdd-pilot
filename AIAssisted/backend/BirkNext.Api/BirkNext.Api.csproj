@@ -165,6 +165,7 @@
     <Compile Include="../../shared/SpecificationCatalogContracts.cs" Link="Models/SpecificationCatalogContracts.cs" />
     <Compile Include="../../shared/AdoTestPlanExportContracts.cs" Link="Models/AdoTestPlanExportContracts.cs" />
     <Compile Include="../../shared/TestScenarioDiscoveryContracts.cs" Link="Models/TestScenarioDiscoveryContracts.cs" />
+    <Compile Include="../../shared/ScenarioOwnershipContracts.cs" Link="Models/ScenarioOwnershipContracts.cs" />
     <Compile Include="../../shared/ContractTestDataContracts.cs" Link="Models/ContractTestDataContracts.cs" />
     <Compile Include="../../shared/PerformanceLocalExecutionContracts.cs" Link="Models/PerformanceLocalExecutionContracts.cs" />
     <Compile Include="../../shared/PerformanceResourceContracts.cs" Link="Models/PerformanceResourceContracts.cs" />

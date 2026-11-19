@@ -20,7 +20,7 @@
     @* Plan & prepare of the Manual Testing workspace IS Test Plan Suggestions: one planning page, same route and links as before. *@
     <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manual Testing" HomeRoute="@ManualTestingPresentation.HomeRoute" Stages="ManualTestingPresentation.Stages"
         Current="plan" Title="Plan & prepare" ShowProject="@(!_loading && _projectKey is null && !GuideMode)"
-        Lead="Test Plan Suggestions: find what to test in the selected project's evidence, prepare readable manual test cases, check what they still need and save a plan for a delivery. Suggestions are proposals: not Azure DevOps records and not executed tests.">
+        Lead="Choose what to test from the project's evidence, prepare readable test cases and save a plan. Candidates are proposals — not test cases, not executed tests.">
         <Help><BirkNext.Web.Components.HelpLink Topic="test-plan-suggestions" Text="What this page is" /></Help>
     </BirkNext.Web.Components.TestingWorkspaceHeader>
 
@@ -58,20 +58,43 @@
             <p class="tps-note tps-note-info" data-testid="tps-read-only">You can read plans. Preparing, reviewing and saving snapshots needs the configuration-write permission.</p>
         }
 
-        <BirkNext.Web.Components.GuidedStepList Steps="@Steps" TestId="tps-steps" StepTestId="tps-step" Label="Test Plan Suggestions steps" TitleLevel="2" Busy="_busy"
-                                                StepActions="@StepActionsFragment" />
-        <nav class="tps-areas" aria-label="More">
-            @foreach (var a in P.MoreAreas)
-            {
-                var id = a.Id;
-                <button type="button" class="tps-area @(_area == id ? "is-current" : null)" aria-current="@(_area == id ? "page" : null)" data-testid="tps-area-@id" @onclick="() => OnStepAction(id)">@a.Label</button>
-            }
-        </nav>
-        <p class="tps-area-purpose" data-testid="tps-area-purpose">@P.StepLine(_area)</p>
+        @* Compact stepper (2026-11-18): one row of four numbered steps with their stored status, replacing four large descriptive cards. Every step
+           opens (a step that cannot be worked on yet explains why in its own area); the purpose of the open step is one line under its heading. *@
+        <div class="tps-nav">
+            <nav class="tps-stepper-nav" aria-label="Test preparation steps">
+                <ol class="tps-stepper" data-testid="tps-steps">
+                    @{ var stepNo = 0; }
+                    @foreach (var step in Steps)
+                    {
+                        stepNo++;
+                        var id = step.Id;
+                        var current = _area == id;
+                        <li class="tps-step @(current ? "is-current" : null)" data-testid="tps-step" data-state="@step.State" data-step="@id">
+                            <button type="button" class="tps-step-btn" aria-current="@(current ? "step" : null)" aria-describedby="tps-step-status-@id" data-testid="tps-area-@id"
+                                    disabled="@_busy" @onclick="() => OnStepAction(id)">
+                                <span class="tps-step-no" aria-hidden="true">@(step.State == GuidedStepState.Done ? "✓" : stepNo.ToString())</span>
+                                <span class="tps-step-label">@step.Title</span>
+                            </button>
+                            <span class="tps-step-status" id="tps-step-status-@id" data-testid="tps-step-status">@(step.DisabledReason ?? step.StatusLabel)</span>
+                        </li>
+                    }
+                </ol>
+            </nav>
+            <nav class="tps-areas" aria-label="Plan history and export">
+                @foreach (var a in P.MoreAreas)
+                {
+                    var id = a.Id;
+                    <button type="button" class="tps-area @(_area == id ? "is-current" : null)" aria-current="@(_area == id ? "page" : null)" data-testid="tps-area-@id" @onclick="() => OnStepAction(id)">@a.Label</button>
+                }
+            </nav>
+        </div>
 
         <div class="tps-body" data-area="@_area" data-testid="tps-body">
             @* The active step's own heading: a step or area action scrolls here and moves focus here, so it never looks like nothing happened. *@
-            <h2 class="tps-area-heading" id="tps-area-heading" tabindex="-1" data-testid="tps-area-heading">@P.AreaLabel(_area)</h2>
+            <div class="tps-area-head">
+                <h2 class="tps-area-heading" id="tps-area-heading" tabindex="-1" data-testid="tps-area-heading">@P.AreaLabel(_area)</h2>
+                <p class="tps-area-purpose" data-testid="tps-area-purpose">@P.StepLine(_area)</p>
+            </div>
             @(_area switch
             {
                 "prepare" => PrepareArea(),
@@ -92,6 +115,8 @@
     [SupplyParameterFromQuery(Name = "draft")] public string? DraftQuery { get; set; }
     [SupplyParameterFromQuery(Name = "area")] public string? AreaQuery { get; set; }
     [SupplyParameterFromQuery(Name = "case")] public string? CaseQuery { get; set; }
+    /// <summary>The candidate view (manual, technical, all, attention); Manual testing when absent.</summary>
+    [SupplyParameterFromQuery(Name = "view")] public string? ViewQuery { get; set; }
 
     private ITestPlanSuggestionsApiService? _api;
     private ICurrentWorkspaceProjection? _projection;
@@ -119,6 +144,11 @@
     // Discovery: explicit only; the last result for this project + snapshot is reused.
     private ScenarioDiscoveryResult? _discovery;
     private List<DiscoveredScenario> _candidates = [];
+    /// <summary>The candidates classified once per discovery result (workspace, kind, same-operation links); views and counts read it.</summary>
+    private P.Inventory _inventory = P.Inventory.Empty;
+    private P.CandidateView _view = P.CandidateView.Manual;
+    /// <summary>The preparation preview of a bulk selection, shown before anything is created; null when closed.</summary>
+    private P.PreparePreview? _preview;
     private P.CatalogFilter _catalog = new();
     private P.CatalogGrouping _grouping = P.CatalogGrouping.Area;
     private int _limit = P.PageSize;
@@ -160,6 +190,7 @@
         _api = ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService;
         if (_api is null) { _loading = false; return; }
         _area = P.AreaOrDefault(AreaQuery);
+        _view = P.ViewOrDefault(ViewQuery);
         // Drill-down from Test Coverage / Requirements Traceability: open that saved case (it is only shown when it belongs to the loaded draft).
         if (!string.IsNullOrWhiteSpace(CaseQuery)) _openCases.Add(CaseQuery);
         _projection = ServiceProvider.GetService(typeof(ICurrentWorkspaceProjection)) as ICurrentWorkspaceProjection;
@@ -176,7 +207,7 @@
         var before = _projectKey;
         await ResolveProjectAsync();
         if (string.Equals(before, _projectKey, StringComparison.Ordinal) || GuideMode) return;
-        _selected.Clear(); _openDetails.Clear(); _draft = null; _dirty = false; _discovery = null; _candidates = []; _comparison = null; _export = null; _openSnapshot = null;
+        _selected.Clear(); _openDetails.Clear(); _draft = null; _dirty = false; _discovery = null; SetCandidates([]); _preview = null; _comparison = null; _export = null; _openSnapshot = null;
         await LoadProjectAsync();
         StateHasChanged();
     });
@@ -240,7 +271,7 @@
         var (ws, error) = await _api!.WorkspaceAsync(_guideKey);
         _ws = ws; _error = error;
         _guideKey = ws?.GuideKey ?? _guideKey;
-        _candidates = [.. (ws?.Candidates ?? []).Select(P.FromGuideCandidate)];
+        SetCandidates([.. (ws?.Candidates ?? []).Select(P.FromGuideCandidate)]);
         foreach (var id in P.ParseScenarios(ScenariosQuery).Where(id => _candidates.Any(c => c.CandidateId == id))) _selected.Add(id);
         if (_selected.Count > 0)
         {
@@ -263,8 +294,26 @@
     {
         if (result is not null && result.ProjectKey != _projectKey) result = null; // never another project's result
         _discovery = result;
-        _candidates = result?.Candidates ?? [];
-        _selected.RemoveWhere(id => _candidates.All(c => c.CandidateId != id));
+        SetCandidates(result?.Candidates ?? []);
+        // Rediscovery keeps a selection only for candidate ids that still exist (ids are stable per project and source identity).
+        var ids = _candidates.Select(c => c.CandidateId).ToHashSet(StringComparer.Ordinal);
+        _selected.RemoveWhere(id => !ids.Contains(id));
+        _preview = null;
+    }
+
+    private void SetCandidates(List<DiscoveredScenario> candidates)
+    {
+        _candidates = candidates;
+        _inventory = P.Classify(candidates);
+    }
+
+    /// <summary>Switching views keeps the selection and the filters; the view is part of the address so a link or reload opens it again.</summary>
+    private void SetView(P.CandidateView view)
+    {
+        _view = view;
+        _limit = P.PageSize;
+        _preview = null;
+        Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?> { ["view"] = view == P.CandidateView.Manual ? null : P.ViewId(view) }), replace: true);
     }
 
     private async Task LoadCoverageAsync()
@@ -305,6 +354,14 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_revealPreview)
+        {
+            // The preparation preview takes focus so keyboard and screen-reader users land on it.
+            _revealPreview = false;
+            try { await JS.InvokeVoidAsync("birknextRevealSection", "tps-preview"); }
+            catch (JSException) { }
+            catch (InvalidOperationException) { }
+        }
         if (!_revealArea) return;
         _revealArea = false;
         try { await JS.InvokeVoidAsync("birknextRevealSection", "tps-area-heading"); }
@@ -388,14 +445,6 @@
     private void ToggleCase(string id) { if (!_openCases.Remove(id)) _openCases.Add(id); }
 
     private IReadOnlyList<GuidedStep> Steps => P.Steps(_draft, _ws?.Snapshots ?? [], _candidates.Count, _discovery is not null || GuideMode, _selected.Count);
-
-    private RenderFragment<GuidedStep> StepActionsFragment => step => __builder =>
-    {
-        var id = step.Id;
-        var disabled = step.DisabledReason is not null || _busy;
-        <button type="button" class="tps-btn @(_area == id ? null : "tps-btn-quiet")" disabled="@disabled" aria-current="@(_area == id ? "step" : null)" data-testid="tps-area-@id"
-                title="@step.DisabledReason" @onclick="() => OnStepAction(id)">@(_area == id ? "Open now" : "Open")</button>
-    };
 
     // ── Context ─────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -491,10 +540,19 @@
         }
         @if (!GuideMode && _discovery is { } discovery)
         {
-            @* What the discovery read: open until a plan exists, then a one-line summary that opens on demand. *@
+            @* Compact evidence summary (2026-11-18): the five numbers a tester needs, then the per-source detail on demand. Saved cases are cases of
+               the open plan; a saved case is never an executed test. *@
             var found = discovery.Capabilities.Where(x => x.State == DiscoveryCapabilityState.Available).ToList();
-            <details class="tps-block tps-evidence" data-testid="tps-capabilities" aria-label="Evidence used" open="@(_draft is null)">
-                <summary class="tps-evidence-summary"><h2 class="tps-h3">Evidence in this project</h2>
+            var saved = _draft?.Cases.Count(c => c.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded)) ?? 0;
+            <dl class="tps-summary" data-testid="tps-stats" aria-label="Discovered candidates">
+                <div class="tps-summary-item" data-testid="tps-stat-total"><dt>Discovered</dt><dd>@_inventory.Total</dd></div>
+                <div class="tps-summary-item" data-testid="tps-stat-manual"><dt>For manual testing</dt><dd>@_inventory.Manual</dd></div>
+                <div class="tps-summary-item" data-testid="tps-stat-technical"><dt>Technical</dt><dd>@_inventory.Technical</dd>@if (_inventory.OperationCandidates > _inventory.DistinctOperations) { <dd class="tps-summary-note" data-testid="tps-stat-operations">@_inventory.OperationCandidates operation entries = @_inventory.DistinctOperations distinct operation@(_inventory.DistinctOperations == 1 ? "" : "s")</dd> }</div>
+                <div class="tps-summary-item" data-testid="tps-stat-saved"><dt>Cases in the plan</dt><dd>@saved</dd></div>
+                <div class="tps-summary-item" data-testid="tps-stat-attention"><dt>Need attention</dt><dd>@_inventory.Attention</dd></div>
+            </dl>
+            <details class="tps-block tps-evidence" data-testid="tps-capabilities" aria-label="Evidence sources">
+                <summary class="tps-evidence-summary"><span class="tps-h3">Evidence sources</span>
                     <span class="tps-muted tps-small" data-testid="tps-capabilities-summary">@found.Sum(x => x.Candidates) candidate@(found.Sum(x => x.Candidates) == 1 ? "" : "s") from @found.Count of @discovery.Capabilities.Count source@(discovery.Capabilities.Count == 1 ? "" : "s") · discovered @discovery.DiscoveredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span></summary>
                 <ul class="tps-capabilities">
                     @foreach (var c in discovery.Capabilities)
@@ -581,21 +639,23 @@
 
     private RenderFragment ChooseArea() => __builder =>
     {
-        var shown = P.Apply(_candidates, _catalog).Where(InScope).ToList();
+        // One inventory, four views (2026-11-18): the view narrows what is listed, the filters narrow the view; the selection is never touched by either.
+        var inView = _candidates.Where(c => P.InView(c, _inventory.Of(c), _view)).ToList();
+        var shown = P.Apply(inView, _catalog).Where(InScope).ToList();
         var visible = shown.Take(_limit).ToList();
-        var inDraft = _draft?.Cases.Select(c => c.Source.ScenarioId).ToHashSet(StringComparer.Ordinal) ?? [];
-        var hiddenSelected = _selected.Count(id => shown.All(c => c.CandidateId != id));
+        var inDraft = InPlan;
+        var shownIds = shown.Select(c => c.CandidateId).ToHashSet(StringComparer.Ordinal);
+        var hiddenSelected = _selected.Count(id => !shownIds.Contains(id));
         var adding = _selected.Count(id => !inDraft.Contains(id));
-        <section class="tps-section" data-testid="tps-choose" aria-labelledby="tps-choose-h">
-            <div class="tps-section-head">
-                <h2 id="tps-choose-h" class="tps-h2">Choose scenarios <span class="tps-count">@shown.Count of @_candidates.Count</span></h2>
-                <p class="tps-muted">A candidate is guidance found in the project's evidence — not a Test Case, not test coverage. Selecting approves nothing.</p>
-            </div>
+        var alreadyPrepared = _selected.Count(inDraft.Contains);
+        var overlaps = P.OverlapsWithPlan(_selected, _candidates, _inventory, inDraft);
+        var moreFilters = (_catalog.Type is null ? 0 : 1) + (_catalog.Tests is null ? 0 : 1) + (_catalog.AttentionOnly ? 1 : 0);
+        <section class="tps-section" data-testid="tps-choose" aria-label="Choose scenarios" data-view="@P.ViewId(_view)">
             @if (!GuideMode)
             {
-                <div class="tps-actionbar" data-testid="tps-discover-bar">
+                <div class="tps-actionbar tps-actionbar-compact" data-testid="tps-discover-bar">
                     <button type="button" class="tps-btn @(_discovery is null ? null : "tps-btn-quiet")" disabled="@_busy" @onclick="DiscoverAsync" data-testid="tps-discover-run">@(_discovery is null ? "Discover test scenarios" : "Discover again")</button>
-                    <span class="tps-muted tps-small">@(_discovery is null ? "Reads the specification, source snapshot and contracts of this project. Nothing runs until you ask." : "The last result is reused until you discover again.")</span>
+                    <span class="tps-muted tps-small">@(_discovery is null ? "Reads the specification, source snapshot and contracts of this project. Nothing runs until you ask." : "The last result is reused until you discover again; changing a view or filter never re-runs analysis.")</span>
                 </div>
             }
             <BirkNext.Web.Components.Scopes.ScopeFilter SelectionChanged="ScopeSelected" />
@@ -613,83 +673,138 @@
                     <h3 class="tps-h3">@(GuideMode ? "The guide has no scenarios yet." : _discovery is null ? "Not discovered yet" : "No scenario found in this project's evidence")</h3>
                     @if (!GuideMode && _discovery is not null)
                     {
-                        <p>None of the registered analyzers found a scenario: no specification acceptance scenarios or requirements, no Razor/HTML pages with a route, no OpenAPI/GraphQL operations and no integration journeys. The list above says what was read. You can still write test cases by hand.</p>
+                        <p>None of the registered analyzers found a scenario: no specification acceptance scenarios or requirements, no Razor/HTML pages with a route, no OpenAPI/GraphQL operations and no integration journeys. Evidence sources above say what was read. You can still write test cases by hand.</p>
                     }
                 </div>
             }
             else
             {
-                <div class="tps-filters" role="search">
-                    <label class="tps-field tps-field-grow"><span class="tps-k">Search</span><input class="tps-input" type="search" placeholder="Title, purpose, area or requirement" value="@_catalog.Query" @oninput="e => _catalog = _catalog with { Query = e.Value?.ToString() ?? string.Empty }" data-testid="tps-search" /></label>
-                    <label class="tps-field"><span class="tps-k">Type</span>
-                        <select class="tps-input" @onchange="e => _catalog = _catalog with { Type = Enum.TryParse<ScenarioCandidateType>(e.Value?.ToString(), out var t) ? t : null }" data-testid="tps-filter-type">
-                            <option value="">All</option>
-                            @foreach (var t in _candidates.Select(c => c.Type).Distinct().OrderBy(t => t)) { <option value="@t" selected="@(_catalog.Type == t)">@ScenarioCandidateTypes.Label(t)</option> }
-                        </select></label>
-                    <label class="tps-field"><span class="tps-k">Area</span>
-                        <select class="tps-input" @onchange="e => _catalog = _catalog with { Area = Empty(e) }" data-testid="tps-filter-area">
-                            <option value="">All</option>
-                            @foreach (var a in _candidates.Select(P.AreaOf).Distinct().OrderBy(a => a, StringComparer.CurrentCultureIgnoreCase)) { <option value="@a" selected="@(_catalog.Area == a)">@a</option> }
-                        </select></label>
-                    <label class="tps-field"><span class="tps-k">Source</span>
-                        <select class="tps-input" @onchange="e => _catalog = _catalog with { Source = Empty(e) }" data-testid="tps-filter-source">
-                            <option value="">All</option>
-                            @foreach (var s in _candidates.Select(c => c.SourceCategory).Distinct()) { <option value="@s" selected="@(_catalog.Source == s)">@s</option> }
-                        </select></label>
-                    <label class="tps-field"><span class="tps-k">Existing tests</span>
-                        <select class="tps-input" @onchange="e => _catalog = _catalog with { Tests = Empty(e) }" data-testid="tps-filter-tests">
-                            <option value="">All</option><option value="with">With an existing test</option><option value="without">Without an existing test</option>
-                        </select></label>
-                    <label class="tps-field"><span class="tps-k">Group by</span>
-                        <select class="tps-input" @onchange="e => _grouping = Enum.TryParse<P.CatalogGrouping>(e.Value?.ToString(), out var g) ? g : P.CatalogGrouping.Area" data-testid="tps-group-by">
-                            <option value="Area">Area / module</option><option value="Type">Type</option><option value="Source">Source</option>
-                        </select></label>
-                    <label class="tps-field tps-check"><input type="checkbox" checked="@_catalog.AttentionOnly" @onchange="e => _catalog = _catalog with { AttentionOnly = e.Value is true }" data-testid="tps-filter-attention" /> Only needing attention</label>
-                </div>
-                <div class="tps-selectbar" role="group" aria-label="Selection">
-                    <span data-testid="tps-selected-count" aria-live="polite"><strong>@_selected.Count</strong> selected</span>
-                    @if (hiddenSelected > 0) { <span class="tps-tone tps-tone-info" data-testid="tps-selected-hidden">@hiddenSelected hidden by filters — still selected</span> }
-                    <button type="button" class="tps-btn tps-btn-quiet" disabled="@(shown.Count == 0)" @onclick="() => { foreach (var c in shown) _selected.Add(c.CandidateId); }" data-testid="tps-select-shown">Select visible (@shown.Count)</button>
-                    <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_selected.Count == 0)" @onclick="() => _selected.Clear()" data-testid="tps-clear-selection">Clear selection</button>
-                </div>
-                @if (shown.Count == 0) { <p class="tps-muted" data-testid="tps-no-match">No scenario matches these filters.</p> }
-                <div class="tps-groups" data-testid="tps-candidates">
-                    @{ var groups = P.Group(visible, _grouping).ToList(); var firstGroup = true; }
-                    @foreach (var group in groups)
+                <div class="tps-views" role="group" aria-label="Candidate view" data-testid="tps-views">
+                    @foreach (var v in P.Views)
                     {
-                        // Many candidates: only the first group starts open (the headings with their counts are the overview); a few: all open.
-                        // The tester's own choice per group wins.
-                        var open = _groupOpen.TryGetValue(group.Id, out var chosen) ? chosen : firstGroup || shown.Count <= GroupsOpenUpTo;
-                        firstGroup = false;
-                        var selectedHere = group.Items.Count(c => _selected.Contains(c.CandidateId));
-                        <section class="tps-group" aria-labelledby="tps-g-@group.Id" data-testid="tps-group-@group.Id" data-open="@(open ? "true" : "false")">
-                            <h3 id="tps-g-@group.Id" class="tps-group-h">
-                                <button type="button" class="tps-group-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="tps-gl-@group.Id" data-testid="tps-group-toggle-@group.Id"
-                                        @onclick="() => _groupOpen[group.Id] = !open">@group.Title <span class="tps-count">@group.Items.Count</span>@if (selectedHere > 0) { <span class="tps-tone tps-tone-info">@selectedHere selected</span> }</button>
-                            </h3>
-                            <ul class="tps-rows" id="tps-gl-@group.Id" hidden="@(!open)">
-                                @if (open) { foreach (var c in group.Items) { @CandidateRow(c, inDraft.Contains(c.CandidateId)) } }
-                            </ul>
-                        </section>
+                        var view = v;
+                        var selectedHere = view == P.CandidateView.All ? _selected.Count : _candidates.Count(c => _selected.Contains(c.CandidateId) && P.InView(c, _inventory.Of(c), view));
+                        <button type="button" class="tps-view @(_view == view ? "is-current" : null)" aria-pressed="@(_view == view ? "true" : "false")" data-testid="tps-view-@P.ViewId(view)"
+                                @onclick="() => SetView(view)">@P.ViewLabel(view) <span class="tps-count" data-testid="tps-view-count">@_inventory.Count(view)</span>@if (selectedHere > 0 && _view != view) { <span class="tps-view-selected" title="Selected candidates in this view">@selectedHere selected</span> }</button>
                     }
                 </div>
-                @if (shown.Count > visible.Count)
+                <p class="tps-muted tps-small tps-view-hint" data-testid="tps-view-hint">@P.ViewHint(_view)</p>
+                @if (_view == P.CandidateView.Manual && P.ManualEmptyReason(_inventory) is { } emptyReason)
                 {
-                    <button type="button" class="tps-btn tps-btn-quiet" @onclick="() => _limit += P.PageSize" data-testid="tps-show-more">Show @Math.Min(P.PageSize, shown.Count - visible.Count) more (@visible.Count of @shown.Count shown)</button>
+                    @* Adaptive default: an API-only project is never shown as an empty manual list without saying why and what can be done. *@
+                    <div class="tps-empty tps-empty-compact" data-testid="tps-manual-empty" role="status">
+                        <p>@emptyReason</p>
+                        <p class="tps-inline-actions">
+                            @if (_inventory.Technical > 0) { <button type="button" class="tps-btn" data-testid="tps-manual-empty-technical" @onclick="() => SetView(P.CandidateView.Technical)">Show technical candidates (@_inventory.Technical)</button> }
+                            <a class="tps-btn tps-btn-quiet" href="technical-testing/assess" data-testid="tps-manual-empty-open-technical">Open Technical Testing</a>
+                            @if (_inventory.Unclassified > 0) { <button type="button" class="tps-btn tps-btn-quiet" @onclick="() => SetView(P.CandidateView.Attention)">Needs attention (@_inventory.Attention)</button> }
+                        </p>
+                    </div>
+                }
+                else
+                {
+                    <div class="tps-filters" role="search" aria-label="Filter candidates">
+                        <label class="tps-field tps-field-grow"><span class="tps-k">Search</span><input class="tps-input" type="search" placeholder="Title, purpose, area or requirement" value="@_catalog.Query" @oninput="e => _catalog = _catalog with { Query = e.Value?.ToString() ?? string.Empty }" data-testid="tps-search" /></label>
+                        <label class="tps-field"><span class="tps-k">Area</span>
+                            <select class="tps-input" @onchange="e => _catalog = _catalog with { Area = Empty(e) }" data-testid="tps-filter-area">
+                                <option value="">All</option>
+                                @foreach (var a in inView.Select(P.AreaOf).Distinct().OrderBy(a => a, StringComparer.CurrentCultureIgnoreCase)) { <option value="@a" selected="@(_catalog.Area == a)">@a</option> }
+                            </select></label>
+                        <label class="tps-field"><span class="tps-k">Source</span>
+                            <select class="tps-input" @onchange="e => _catalog = _catalog with { Source = Empty(e) }" data-testid="tps-filter-source">
+                                <option value="">All</option>
+                                @foreach (var s in inView.Select(c => c.SourceCategory).Distinct()) { <option value="@s" selected="@(_catalog.Source == s)">@s</option> }
+                            </select></label>
+                        <label class="tps-field"><span class="tps-k">Group by</span>
+                            <select class="tps-input" @onchange="e => _grouping = Enum.TryParse<P.CatalogGrouping>(e.Value?.ToString(), out var g) ? g : P.CatalogGrouping.Area" data-testid="tps-group-by">
+                                @foreach (var g in Enum.GetValues<P.CatalogGrouping>()) { <option value="@g" selected="@(_grouping == g)">@P.GroupingLabel(g)</option> }
+                            </select></label>
+                        <details class="tps-more-filters" data-testid="tps-more-filters" open="@(moreFilters > 0)">
+                            <summary>More filters@(moreFilters > 0 ? $" ({moreFilters})" : "")</summary>
+                            <div class="tps-more-filters-body">
+                                <label class="tps-field"><span class="tps-k">Type</span>
+                                    <select class="tps-input" @onchange="e => _catalog = _catalog with { Type = Enum.TryParse<ScenarioCandidateType>(e.Value?.ToString(), out var t) ? t : null }" data-testid="tps-filter-type">
+                                        <option value="">All</option>
+                                        @foreach (var t in inView.Select(c => c.Type).Distinct().OrderBy(t => t)) { <option value="@t" selected="@(_catalog.Type == t)">@ScenarioCandidateTypes.Label(t)</option> }
+                                    </select></label>
+                                <label class="tps-field"><span class="tps-k">Existing tests</span>
+                                    <select class="tps-input" @onchange="e => _catalog = _catalog with { Tests = Empty(e) }" data-testid="tps-filter-tests">
+                                        <option value="">All</option><option value="with" selected="@(_catalog.Tests == "with")">With an existing test</option><option value="without" selected="@(_catalog.Tests == "without")">Without an existing test</option>
+                                    </select></label>
+                                <label class="tps-field tps-check"><input type="checkbox" checked="@_catalog.AttentionOnly" @onchange="e => _catalog = _catalog with { AttentionOnly = e.Value is true }" data-testid="tps-filter-attention" /> Only needing attention</label>
+                            </div>
+                        </details>
+                    </div>
+                    <div class="tps-selectbar" role="group" aria-label="Selection">
+                        <span data-testid="tps-selected-count" aria-live="polite"><strong>@_selected.Count</strong> selected</span>
+                        @if (hiddenSelected > 0) { <span class="tps-tone tps-tone-info" data-testid="tps-selected-hidden">@hiddenSelected hidden by filters — still selected</span> }
+                        <span class="tps-muted tps-small" data-testid="tps-shown-count">@shown.Count of @inView.Count in this view</span>
+                        <button type="button" class="tps-btn tps-btn-quiet" disabled="@(shown.Count == 0)" @onclick="() => { foreach (var c in shown) _selected.Add(c.CandidateId); }" data-testid="tps-select-shown">Select visible (@shown.Count)</button>
+                        <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_selected.Count == 0)" @onclick="() => { _selected.Clear(); _preview = null; }" data-testid="tps-clear-selection">Clear selection</button>
+                    </div>
+                    @if (shown.Count == 0) { <p class="tps-muted" data-testid="tps-no-match">No scenario matches these filters in this view.</p> }
+                    <div class="tps-groups" data-testid="tps-candidates">
+                        @{ var groups = P.Group(visible, _grouping, _inventory).ToList(); var firstGroup = true; }
+                        @foreach (var group in groups)
+                        {
+                            // Many candidates: only the first group starts open (the headings with their counts are the overview); a few: all open.
+                            // The tester's own choice per group wins.
+                            var open = _groupOpen.TryGetValue(group.Id, out var chosen) ? chosen : firstGroup || shown.Count <= GroupsOpenUpTo;
+                            firstGroup = false;
+                            var selectedHere = group.Items.Count(c => _selected.Contains(c.CandidateId));
+                            <section class="tps-group" aria-labelledby="tps-g-@group.Id" data-testid="tps-group-@group.Id" data-open="@(open ? "true" : "false")">
+                                <h3 id="tps-g-@group.Id" class="tps-group-h">
+                                    <button type="button" class="tps-group-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="tps-gl-@group.Id" data-testid="tps-group-toggle-@group.Id"
+                                            @onclick="() => _groupOpen[group.Id] = !open">@group.Title <span class="tps-count">@group.Items.Count</span>@if (selectedHere > 0) { <span class="tps-tone tps-tone-info">@selectedHere selected</span> }</button>
+                                </h3>
+                                <ul class="tps-rows" id="tps-gl-@group.Id" hidden="@(!open)">
+                                    @if (open) { foreach (var c in group.Items) { @CandidateRow(c, inDraft.Contains(c.CandidateId)) } }
+                                </ul>
+                            </section>
+                        }
+                    </div>
+                    @if (shown.Count > visible.Count)
+                    {
+                        <button type="button" class="tps-btn tps-btn-quiet" @onclick="() => _limit += P.PageSize" data-testid="tps-show-more">Show @Math.Min(P.PageSize, shown.Count - visible.Count) more (@visible.Count of @shown.Count shown)</button>
+                    }
                 }
             }
             @if (CanWrite)
             {
+                @if (_preview is { } preview)
+                {
+                    @* Preparation preview: shown before a bulk preparation or one that needs a look (technical candidates, overlaps, missing expected
+                       results or prerequisites). Nothing is created until the tester confirms. *@
+                    <section class="tps-preview" role="region" aria-labelledby="tps-preview-h" tabindex="-1" id="tps-preview" data-testid="tps-preview">
+                        <h3 id="tps-preview-h" class="tps-h3">Prepare @preview.Adding test case@(preview.Adding == 1 ? "" : "s")?</h3>
+                        <ul class="tps-plain tps-preview-list">
+                            <li data-testid="tps-preview-kinds">@string.Join(" · ", preview.Kinds.Select(k => $"{k.Count} {k.Kind.ToLowerInvariant()}"))</li>
+                            @if (preview.AlreadyInPlan > 0) { <li data-testid="tps-preview-in-plan">@preview.AlreadyInPlan already in the plan — not added again</li> }
+                            @if (preview.Technical > 0) { <li data-testid="tps-preview-technical">@preview.Technical technical candidate@(preview.Technical == 1 ? " is" : "s are") normally verified in Technical Testing; @(preview.Technical == 1 ? "it becomes" : "they become") manual cases only because you chose so</li> }
+                            @if (preview.Overlaps > 0) { <li data-testid="tps-preview-overlaps">@preview.Overlaps may overlap a case already in the plan or another selected candidate (same requirement through another source, or the same contract operation in another file)</li> }
+                            @if (preview.MissingExpected > 0) { <li data-testid="tps-preview-missing-expected">@preview.MissingExpected without an expected result in the evidence — they start as Needs clarification</li> }
+                            @if (preview.MissingPrerequisites > 0) { <li data-testid="tps-preview-missing-prerequisites">@preview.MissingPrerequisites with a missing test prerequisite (Test Data, access or environment)</li> }
+                        </ul>
+                        <p class="tps-muted tps-small">Preparing creates reviewable drafts only: nothing is approved, executed or counted as coverage.</p>
+                        <p class="tps-inline-actions">
+                            <button type="button" class="tps-btn" disabled="@_busy" @onclick="PrepareAsync" data-testid="tps-preview-confirm">Prepare @preview.Adding test case@(preview.Adding == 1 ? "" : "s")</button>
+                            <button type="button" class="tps-btn tps-btn-quiet" @onclick="() => _preview = null" data-testid="tps-preview-cancel">Back to the selection</button>
+                        </p>
+                    </section>
+                }
                 <div class="tps-actionbar tps-actionbar-sticky" data-testid="tps-prepare-bar">
                     <span aria-live="polite"><strong>@_selected.Count</strong> scenario@(_selected.Count == 1 ? "" : "s") selected</span>
-                    <button type="button" class="tps-btn" disabled="@(_busy || adding == 0)" @onclick="PrepareAsync" data-testid="tps-prepare">@(_draft is null ? "Prepare test cases" : $"Add {adding} to the plan")</button>
+                    @if (hiddenSelected > 0 && _candidates.Count > 0) { <span class="tps-muted tps-small" data-testid="tps-prepare-hidden">@hiddenSelected not shown here</span> }
+                    @if (alreadyPrepared > 0) { <span class="tps-muted tps-small" data-testid="tps-prepare-in-plan">@alreadyPrepared already in the plan</span> }
+                    @if (overlaps > 0) { <span class="tps-tone tps-tone-warn" data-testid="tps-prepare-overlaps">@overlaps may overlap existing cases</span> }
+                    <button type="button" class="tps-btn" disabled="@(_busy || adding == 0)" @onclick="PrepareClickedAsync" data-testid="tps-prepare">@(_draft is null ? (adding > 1 ? $"Prepare {adding} test cases" : "Prepare test cases") : $"Add {adding} to the plan")</button>
                     @if (_selected.Count > 0 && adding == 0) { <span class="tps-muted tps-small">Every selected scenario is already in the plan.</span> }
                     @if (_selected.Count == 0) { <span class="tps-muted tps-small" data-testid="tps-select-hint">Select at least one scenario to prepare test cases.</span> }
                 </div>
                 @if (!GuideMode)
                 {
-                    <div class="tps-actionbar" data-testid="tps-manual-bar">
-                        <label class="tps-field tps-field-grow"><span class="tps-k">Write a test case by hand</span><input class="tps-input" @bind="_manualTitle" @bind:event="oninput" placeholder="Title, e.g. Return a borrowed book" data-testid="tps-manual-title" /></label>
+                    <div class="tps-actionbar tps-actionbar-compact" data-testid="tps-manual-bar">
+                        <label class="tps-field tps-field-grow"><span class="tps-k">Write a test case by hand</span><input class="tps-input" id="tps-manual-title" @bind="_manualTitle" @bind:event="oninput" placeholder="Title, e.g. Return a borrowed book" data-testid="tps-manual-title" /></label>
                         <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || string.IsNullOrWhiteSpace(_manualTitle))" @onclick="AddManualAsync" data-testid="tps-manual-create">Add test case</button>
                         @if (string.IsNullOrWhiteSpace(_manualTitle)) { <span class="tps-muted tps-small" data-testid="tps-manual-hint">Type a title to add a test case.</span> }
                     </div>
@@ -698,9 +813,39 @@
         </section>
     };
 
+    /// <summary>The candidate ids that are cases of the open plan (a saved case is never an executed test).</summary>
+    private IReadOnlySet<string> InPlan => _draft?.Cases.Select(c => c.Source.ScenarioId).ToHashSet(StringComparer.Ordinal) ?? (IReadOnlySet<string>)new HashSet<string>();
+
+    /// <summary>One ordinary case is prepared at once; a bulk selection, or one that needs a look, shows the preview first.</summary>
+    private async Task PrepareClickedAsync()
+    {
+        if (_dirty) { Fail("Save or discard your changes first."); return; }
+        var preview = P.Preview(_selected, _candidates, _inventory, InPlan);
+        if (!preview.NeedsConfirmation) { await PrepareAsync(); return; }
+        _preview = preview;
+        _revealPreview = true;
+    }
+
+    private bool _revealPreview;
+
     /// <summary>Up to this many matching candidates every group starts open; above it only the first group does.</summary>
     private const int GroupsOpenUpTo = 40;
     private readonly Dictionary<string, bool> _groupOpen = new(StringComparer.Ordinal);
+
+    /// <summary>Opens a case of the plan (Prepare test cases, the case expanded) — from a candidate that is already prepared.</summary>
+    private void OpenCase(string id)
+    {
+        _openCases.Add(id);
+        GoArea("prepare");
+        _revealArea = true;
+    }
+
+    /// <summary>A deliberate separate case for another data condition: written by hand, never a copy of the candidate record.</summary>
+    private void StartVariant(DiscoveredScenario c)
+    {
+        _manualTitle = $"{c.Title} — variant";
+        Info($"A separate case for \"{c.Title}\" is written by hand (for example another data condition). It is not linked to the candidate; edit the title and choose Add test case.");
+    }
 
     private RenderFragment CandidateRow(DiscoveredScenario c, bool inPlan) => __builder =>
     {
@@ -708,35 +853,65 @@
         var selected = _selected.Contains(id);
         var open = _openDetails.Contains(id);
         var warning = P.Warning(c);
-        <li class="tps-row @(selected ? "is-selected" : null)" data-testid="tps-candidate-@id">
-            <label class="tps-row-select">
-                <input type="checkbox" checked="@selected" @onchange="e => { if (e.Value is true) _selected.Add(id); else _selected.Remove(id); }" aria-describedby="tps-sum-@id" data-testid="tps-select-@id" />
-                <span class="tps-row-title">@c.Title</span>
-            </label>
+        var owner = _inventory.Of(c);
+        var otherWorkspace = _view == P.CandidateView.Manual ? null : owner.Primary;
+        <li class="tps-row @(selected ? "is-selected" : null)" data-testid="tps-candidate-@id" data-workspace="@owner.Primary">
+            <div class="tps-row-main">
+                <label class="tps-row-select">
+                    <input type="checkbox" checked="@selected" @onchange="e => { if (e.Value is true) _selected.Add(id); else _selected.Remove(id); _preview = null; }" aria-describedby="tps-sum-@id" data-testid="tps-select-@id" />
+                    <span class="tps-row-title">@c.Title</span>
+                </label>
+                <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" aria-expanded="@(open ? "true" : "false")" aria-controls="tps-cd-@id" @onclick="() => { if (!_openDetails.Remove(id)) _openDetails.Add(id); }" data-testid="tps-details-@id">@(open ? "Hide details" : "Details")</button>
+            </div>
             <p class="tps-row-sum" id="tps-sum-@id">@c.Purpose</p>
             <div class="tps-row-meta">
-                <span class="tps-chip" data-testid="tps-type">@ScenarioCandidateTypes.Label(c.Type)</span>
-                @if (inPlan) { <span class="tps-chip tps-chip-ok" data-testid="tps-in-draft">Already in plan</span> }
+                <span class="tps-chip" data-testid="tps-kind">@owner.SourceKind</span>
+                <span class="tps-chip tps-chip-quiet" data-testid="tps-type">@ScenarioCandidateTypes.Label(c.Type)</span>
+                @if (c.Area is { Length: > 0 } area) { <span class="tps-row-area" data-testid="tps-area">@area</span> }
+                @if (otherWorkspace == TestingWorkspace.TechnicalTesting) { <span class="tps-chip tps-chip-info" data-testid="tps-workspace">Technical Testing</span> }
+                @if (inPlan) { <span class="tps-chip tps-chip-ok" data-testid="tps-in-draft">In the plan</span> }
+                @if (c.ExistingTests.Count > 0) { <span class="tps-chip tps-chip-quiet" data-testid="tps-existing-tests" title="Associated through an explicit requirement reference; not an executed manual test">@c.ExistingTests.Count source test@(c.ExistingTests.Count == 1 ? "" : "s")</span> }
                 @if (warning is not null) { <span class="tps-chip tps-chip-warn" data-testid="tps-attention">@warning</span> }
-                <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" aria-expanded="@(open ? "true" : "false")" @onclick="() => { if (!_openDetails.Remove(id)) _openDetails.Add(id); }" data-testid="tps-details-@id">@(open ? "Hide details" : "Details")</button>
             </div>
             @if (open)
             {
-                <dl class="tps-dl tps-candidate-details" data-testid="tps-candidate-details-@id">
-                    <dt>Source</dt><dd>@c.SourceCategory · @(c.Area ?? "no area stated") · @c.Engine@(string.IsNullOrEmpty(c.RuleVersion) ? "" : $" · rules {c.RuleVersion}")</dd>
-                    <dt>Confidence</dt><dd>@ScenarioCandidateTypes.ConfidenceLabel(c.Confidence)</dd>
+                var handoff = P.HandoffOf(c, owner);
+                var sameOperation = _inventory.SameOperation(c);
+                <dl class="tps-dl tps-candidate-details" id="tps-cd-@id" data-testid="tps-candidate-details-@id">
+                    <dt>Where to test</dt>
+                    <dd data-testid="tps-ownership"><strong>@ScenarioOwnership.WorkspaceLabel(owner.Primary)</strong>@(owner.Secondary is { } second ? $" · also {ScenarioOwnership.WorkspaceLabel(second)} when chosen" : "") — @ScenarioOwnership.PurposeLabel(owner.Purpose).
+                        <span class="tps-muted">@owner.Basis</span>
+                        @if (handoff is not null)
+                        {
+                            <span class="tps-handoff"><a href="@handoff.Href" data-testid="tps-handoff">@handoff.Label</a> <span class="tps-muted tps-small">@handoff.Carries</span></span>
+                        }
+                    </dd>
+                    @if (inPlan)
+                    {
+                        <dt>Existing case</dt>
+                        <dd data-testid="tps-existing-case">Already prepared in this plan. <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" @onclick="() => OpenCase(id)" data-testid="tps-open-case">Open existing case</button>
+                            @if (CanWrite && !GuideMode) { <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" @onclick="() => StartVariant(c)" data-testid="tps-add-variant">Write a separate case by hand</button> <span class="tps-muted tps-small">A second case is legitimate for another data condition; it is not linked to this candidate.</span> }
+                        </dd>
+                    }
                     <dt>Expected behaviour</dt><dd data-testid="tps-expected">@(c.ExpectedBehaviour is { } eb ? $"{eb}{(c.ExpectedBasis is { } basis ? $" ({basis})" : "")}" : "Needs clarification — the evidence states no expected outcome.")</dd>
                     @if (c.Steps.Count > 0) { <dt>Steps in the evidence</dt><dd><ol class="tps-plain">@foreach (var s in c.Steps) { <li>@s.Action — <span class="tps-muted">@(s.Expected ?? "expected result not stated")</span></li> }</ol></dd> }
                     @if (c.RequirementIds.Count > 0) { <dt>Requirements</dt><dd>@string.Join(", ", c.RequirementIds)</dd> }
                     @if (c.TestDataNeeds.Count > 0) { <dt>Test Data</dt><dd>@string.Join("; ", c.TestDataNeeds)</dd> }
-                    <dt>Existing tests</dt><dd>@(c.ExistingTests.Count == 0 ? "None associated (only explicit references count)" : string.Join("; ", c.ExistingTests.Select(t => $"{t.Name}{(t.Confirmed ? "" : " (candidate — needs review)")}")))</dd>
+                    <dt>Existing tests</dt><dd>@(c.ExistingTests.Count == 0 ? "None associated (only explicit references count)" : string.Join("; ", c.ExistingTests.Select(t => $"{t.Name}{(t.Confirmed ? "" : " (candidate — needs review)")}")) + " — source tests, not executed manual tests.")</dd>
+                    <dt>Source</dt><dd>@c.SourceCategory · @(c.Area ?? "no area stated") · @c.Engine@(string.IsNullOrEmpty(c.RuleVersion) ? "" : $" · rules {c.RuleVersion}") · @ScenarioCandidateTypes.ConfidenceLabel(c.Confidence)</dd>
                     <dt>Evidence</dt><dd><ul class="tps-plain">@foreach (var e in c.Evidence.Take(8))
                         {
                             @* A run is named by what it showed, not by its internal id. *@
                             if (e.Kind == "journey-run") { <li data-testid="tps-evidence-run">Integration journey run — @e.Detail</li> }
                             else { <li><code>@e.Reference</code>@(e.Detail is { } detail ? $" — {detail}" : "")</li> }
                         }</ul></dd>
-                    @if (c.PossibleDuplicates.Count > 0) { <dt>Possible duplicate of</dt><dd data-testid="tps-possible-duplicates">@string.Join("; ", c.PossibleDuplicates.Select(d => _candidates.FirstOrDefault(x => x.CandidateId == d)?.Title ?? d)) <span class="tps-muted">(same requirement, different source — kept separate)</span></dd> }
+                    @if (sameOperation.Count > 0)
+                    {
+                        <dt>Same operation in</dt>
+                        <dd data-testid="tps-same-operation">@sameOperation.Count other contract file@(sameOperation.Count == 1 ? "" : "s"): @string.Join("; ", sameOperation.Take(6).Select(o => _candidates.FirstOrDefault(x => x.CandidateId == o) is { } other ? ScenarioOwnership.ContractFile(other) ?? other.Title : o))
+                            <span class="tps-muted">(same operation and signature — related, kept separate; prepare one unless the files differ on purpose)</span></dd>
+                    }
+                    @if (c.PossibleDuplicates.Count > 0) { <dt>Related candidates</dt><dd data-testid="tps-possible-duplicates">@string.Join("; ", c.PossibleDuplicates.Select(d => _candidates.FirstOrDefault(x => x.CandidateId == d)?.Title ?? d)) <span class="tps-muted">(same requirement, different source — kept separate)</span></dd> }
                     @if (c.Gaps.Count > 0)
                     {
                         @* What is still open, classified: who resolves it and the supported next step. A missing prerequisite or observation is not an
@@ -787,7 +962,7 @@
         _busy = false;
         if (draft is null) { Fail(error ?? "The test cases could not be prepared."); return; }
         var count = _selected.Count;
-        _draft = draft; _dirty = false; _selected.Clear();
+        _draft = draft; _dirty = false; _selected.Clear(); _preview = null;
         _planName = draft.PlanName; _deliveryLabel = draft.DeliveryLabel ?? "";
         await ReloadWorkspaceAsync();
         GoArea("prepare");
