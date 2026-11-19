@@ -10,56 +10,13 @@ using Microsoft.Extensions.Logging;
 
 namespace BirkNext.Launcher;
 
-/// <summary>
-/// A Windows job object that terminates its processes when the launcher ends (also when the launcher is killed), so a backend can never be
-/// orphaned on its port. PostgreSQL is deliberately NOT in the job: it is stopped cleanly by pg_ctl, and survives a launcher crash safely.
-/// </summary>
-internal sealed class KillOnCloseJob : IDisposable
-{
-    private readonly IntPtr _handle;
-
-    public KillOnCloseJob()
-    {
-        _handle = CreateJobObject(IntPtr.Zero, null);
-        var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION { BasicLimitInformation = new JOBOBJECT_BASIC_LIMIT_INFORMATION { LimitFlags = 0x2000 /* KILL_ON_JOB_CLOSE */ } };
-        var length = Marshal.SizeOf<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>();
-        var ptr = Marshal.AllocHGlobal(length);
-        try { Marshal.StructureToPtr(info, ptr, false); SetInformationJobObject(_handle, 9 /* ExtendedLimitInformation */, ptr, (uint)length); }
-        finally { Marshal.FreeHGlobal(ptr); }
-    }
-
-    public bool Add(Process process) => AssignProcessToJobObject(_handle, process.Handle);
-    public void Dispose() => CloseHandle(_handle);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct JOBOBJECT_BASIC_LIMIT_INFORMATION
-    {
-        public long PerProcessUserTimeLimit, PerJobUserTimeLimit; public uint LimitFlags; public UIntPtr MinimumWorkingSetSize, MaximumWorkingSetSize;
-        public uint ActiveProcessLimit; public UIntPtr Affinity; public uint PriorityClass, SchedulingClass;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct IO_COUNTERS { public ulong ReadOperationCount, WriteOperationCount, OtherOperationCount, ReadTransferCount, WriteTransferCount, OtherTransferCount; }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION
-    {
-        public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation; public IO_COUNTERS IoInfo;
-        public UIntPtr ProcessMemoryLimit, JobMemoryLimit, PeakProcessMemoryUsed, PeakJobMemoryUsed;
-    }
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr CreateJobObject(IntPtr attributes, string? name);
-    [DllImport("kernel32.dll")] private static extern bool SetInformationJobObject(IntPtr job, int infoClass, IntPtr info, uint length);
-    [DllImport("kernel32.dll")] private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
-    [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr handle);
-}
-
 /// <summary>The packaged backend (self-contained BirkNext.Api.exe), configured only through its own process environment.</summary>
-internal sealed class BackendProcess(PackageLayout package, DataLayout data, LauncherLog log) : IDisposable
+internal sealed class BackendProcess(PackageLayout package, DataLayout data, LauncherLog log, LauncherJob? job = null) : IDisposable
 {
     private Process? _process;
-    private KillOnCloseJob? _job;
     private StreamWriter? _console;
+    public int? ProcessId => _process?.Id;
+    public int? ExitCode => _process is { HasExited: true } p ? p.ExitCode : null;
     public string ConsoleLog => Path.Combine(data.Logs, "backend-console.log");
 
     /// <summary>
@@ -125,10 +82,12 @@ internal sealed class BackendProcess(PackageLayout package, DataLayout data, Lau
         {
             throw new LauncherException("Windows did not allow the BirkNext service to start.", "An application-control or antivirus policy may block it. Ask IT, and send the diagnostics.", e.Message);
         }
-        _job = new KillOnCloseJob();
-        if (!_job.Add(_process)) log.Warn("The backend could not be bound to the launcher's lifetime (job object); it is stopped explicitly on exit.");
+        // Into the launcher's job at once (before it has started anything of its own): every process the backend starts later (k6, a
+        // browser for Lighthouse…) is then in the job too, and all of it ends with the launcher.
+        var inJob = job?.Add(_process) == true;
+        if (job is not null && !inJob) log.Warn("The backend could not be bound to the launcher's lifetime (job object); it is stopped explicitly on exit.");
         _process.BeginOutputReadLine(); _process.BeginErrorReadLine();
-        log.Info($"Backend started (pid {_process.Id}) on http://localhost:{ports.Backend}.");
+        log.Info($"Backend started (pid {_process.Id}{(inJob ? ", in the launcher's job" : "")}) on http://localhost:{ports.Backend}.");
     }
 
     public bool HasExited => _process is null || _process.HasExited;
@@ -168,16 +127,20 @@ internal sealed class BackendProcess(PackageLayout package, DataLayout data, Lau
         return line;
     }
 
+    /// <summary>
+    /// Ends the backend and the processes it started (only this launcher's backend process tree, by its handle — never by name). The backend
+    /// holds no state that needs a graceful stop: every write is a committed database transaction, and the database is stopped cleanly next.
+    /// </summary>
     public void Stop()
     {
         if (_process is { HasExited: false })
         {
-            try { _process.Kill(entireProcessTree: true); _process.WaitForExit(15_000); } catch (InvalidOperationException) { }
+            try { _process.Kill(entireProcessTree: true); _process.WaitForExit(5_000); } catch (InvalidOperationException) { }
             log.Info("Backend stopped.");
         }
     }
 
-    public void Dispose() { Stop(); _job?.Dispose(); _console?.Dispose(); _process?.Dispose(); }
+    public void Dispose() { Stop(); _console?.Dispose(); _process?.Dispose(); }
 }
 
 /// <summary>
@@ -241,8 +204,17 @@ internal sealed class FrontendHost(PackageLayout package, LauncherLog log) : IAs
         log.Info($"Frontend served on http://localhost:{port}.");
     }
 
-    public async ValueTask DisposeAsync()
+    /// <summary>Stops serving within <paramref name="timeout"/> (open browser requests are not waited for longer: the window may be closing).</summary>
+    public async Task StopAsync(TimeSpan timeout)
     {
-        if (_app is not null) { await _app.StopAsync(); await _app.DisposeAsync(); }
+        if (_app is null) return;
+        var app = _app;
+        _app = null;
+        using var cts = new CancellationTokenSource(timeout);
+        try { await app.StopAsync(cts.Token); } catch (OperationCanceledException) { }
+        await app.DisposeAsync();
+        log.Info("Frontend stopped.");
     }
+
+    public ValueTask DisposeAsync() => new(StopAsync(TimeSpan.FromSeconds(5)));
 }

@@ -415,4 +415,79 @@ public sealed class TesterLauncherTests
         (await LocalAccess.ConnectedUrlAsync("http://localhost:5481/", 1, "ABCD-EFGH-JKLM", new LauncherLog(TempDir())))
             .Should().Be("http://localhost:5481/", "an unreachable backend never blocks the browser and never puts the code in the URL");
     }
+
+    // ── Process ownership (2026-11-19: closing the window left the local database running) ──────────────
+
+    [Theory]
+    [InlineData(new[] { "start", "-D", @"C:\Users\x\AppData\Local\BirkNext\TesterNative\database\postgres-data" }, @"C:\pg\pg_ctl.exe start -D C:\Users\x\AppData\Local\BirkNext\TesterNative\database\postgres-data")]
+    [InlineData(new[] { "-l", @"C:\Users\Ola Nordmann\logs\pg.log" }, @"C:\pg\pg_ctl.exe -l ""C:\Users\Ola Nordmann\logs\pg.log""")]
+    [InlineData(new[] { @"C:\dir with space\" }, @"C:\pg\pg_ctl.exe ""C:\dir with space\\""")]
+    [InlineData(new[] { "a\"b", "" }, @"C:\pg\pg_ctl.exe ""a\""b"" """"")]
+    public void The_hidden_process_command_line_quotes_like_Windows_parses_it(string[] arguments, string expected) =>
+        HiddenProcess.CommandLine(@"C:\pg\pg_ctl.exe", arguments).Should().Be(expected);
+
+    [Fact]
+    public async Task Closing_the_window_waits_for_the_stop_and_Ctrl_C_only_asks()
+    {
+        using var shutdown = new ShutdownCoordinator();
+        shutdown.Request(ShutdownReason.CtrlC);
+        shutdown.Token.IsCancellationRequested.Should().BeTrue();
+        shutdown.Hurried.Should().BeFalse("Ctrl+C leaves time for the ordinary stop");
+
+        // The close handler blocks until the launcher reports its stop (Windows ends the process as soon as the handler returns).
+        var handler = Task.Run(() => shutdown.RequestAndWait(ShutdownReason.WindowClosed, TimeSpan.FromSeconds(10)));
+        await Task.Delay(300);
+        handler.IsCompleted.Should().BeFalse("the stop has not completed yet");
+        shutdown.Hurried.Should().BeTrue("a close after Ctrl+C still uses the short waits");
+        shutdown.MarkCompleted();
+        (await handler).Should().BeTrue();
+
+        using var stuck = new ShutdownCoordinator();
+        stuck.RequestAndWait(ShutdownReason.LogoffOrShutdown, TimeSpan.FromMilliseconds(200)).Should().BeFalse("bounded: the job object ends what is left");
+        stuck.Reason.Should().Be(ShutdownReason.LogoffOrShutdown);
+        ShutdownCoordinator.CloseBudget.Should().BeLessThan(TimeSpan.FromSeconds(5), "Windows ends a closed console process after about 5 s");
+    }
+
+    [Fact]
+    public void A_process_started_in_the_launchers_job_ends_with_the_job_and_one_outside_it_does_not()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+        int owned;
+        using var outside = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(cmd, "/c ping -n 30 127.0.0.1 >nul") { CreateNoWindow = true, UseShellExecute = false })!;
+        try
+        {
+            using (var job = LauncherJob.TryCreate())
+            {
+                job.Should().NotBeNull();
+                // Started suspended inside the job, with its own hidden console (what pg_ctl start gets); returns while it still runs.
+                HiddenProcess.Run(cmd, ["/c", "ping -n 30 127.0.0.1 >nul"], job, TimeSpan.FromMilliseconds(300), out owned).Should().BeNull("still running");
+                job!.Contains(owned).Should().BeTrue();
+                job.Contains(outside.Id).Should().BeFalse("only processes this launcher started are in its job");
+                System.Diagnostics.Process.GetProcessById(owned).HasExited.Should().BeFalse();
+            }
+            // The job's last handle is closed (as when the launcher ends in any way): Windows ends what is in it.
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (DateTime.UtcNow < deadline && Alive(owned)) Thread.Sleep(100);
+            Alive(owned).Should().BeFalse("a process in the job never outlives the launcher");
+            outside.HasExited.Should().BeFalse("a process outside the job (the tester's browser, another BirkNext) is never affected");
+        }
+        finally { try { outside.Kill(entireProcessTree: true); } catch (InvalidOperationException) { } }
+
+        static bool Alive(int pid)
+        {
+            try { using var p = System.Diagnostics.Process.GetProcessById(pid); return !p.HasExited; }
+            catch (ArgumentException) { return false; }
+        }
+    }
+
+    [Fact]
+    public void A_hidden_process_reports_its_exit_code()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+        using var job = LauncherJob.TryCreate();
+        HiddenProcess.Run(cmd, ["/c", "exit 7"], job, TimeSpan.FromSeconds(30), out _).Should().Be(7);
+        HiddenProcess.Run(cmd, ["/c", "exit 0"], null, TimeSpan.FromSeconds(30), out _).Should().Be(0);
+    }
 }

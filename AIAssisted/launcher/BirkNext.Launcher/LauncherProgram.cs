@@ -94,32 +94,40 @@ public static class LauncherProgram
     {
         ConsoleMode.DisableQuickEdit();
         var ui = new ConsoleUi();
-        using var stop = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) => { e.Cancel = true; stop.Cancel(); };
-        // Closing the console window (CTRL_CLOSE_EVENT) arrives as SIGHUP: stop cleanly in the few seconds Windows allows.
-        using var hup = PosixSignalRegistration.Create(PosixSignal.SIGHUP, c => { c.Cancel = true; stop.Cancel(); });
-        using var term = PosixSignalRegistration.Create(PosixSignal.SIGTERM, c => { c.Cancel = true; stop.Cancel(); });
+        // Never disposed: a close handler may still be waiting on it while Main returns.
+        var shutdown = new ShutdownCoordinator();
+        // Ctrl+C / Ctrl+Break: the launcher keeps running and stops in order.
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; shutdown.Request(ShutdownReason.CtrlC); };
+        // Closing the console window (CTRL_CLOSE_EVENT → SIGHUP), logoff and shutdown (→ SIGTERM): Windows terminates this process as soon as
+        // the handler returns (about 5 s at most). Returning at once — as before 2026-11-19 — killed the launcher before its stop ran, leaving
+        // the local database running. The handler now waits for the stop to complete; whatever is still running after the budget is ended by
+        // the job object when Windows ends the launcher.
+        using var hup = PosixSignalRegistration.Create(PosixSignal.SIGHUP, c => { c.Cancel = true; shutdown.RequestAndWait(ShutdownReason.WindowClosed, ShutdownCoordinator.CloseBudget); });
+        using var term = PosixSignalRegistration.Create(PosixSignal.SIGTERM, c => { c.Cancel = true; shutdown.RequestAndWait(ShutdownReason.LogoffOrShutdown, ShutdownCoordinator.CloseBudget); });
         LauncherOptions? options = null;
         try
         {
             options = LauncherOptions.Parse(args);
-            var code = await new TesterLauncher(options, ui).RunAsync(stop.Token);
-            KeepWindowOpenOnFailure(code, options);
+            var code = await new TesterLauncher(options, ui, shutdown).RunAsync(shutdown.Token);
+            shutdown.MarkCompleted();
+            KeepWindowOpenOnFailure(code, options, shutdown);
             return code;
         }
         catch (LauncherException e)
         {
             // Failures before the log exists (usage, package manifest, data folder not writable): same message format, and the window stays
             // open so a double-clicked start does not just flash and vanish.
+            shutdown.MarkCompleted();
             ui.Failure(e.Message, e.Action, "(no log yet)");
-            KeepWindowOpenOnFailure(e.ExitCode, options);
+            KeepWindowOpenOnFailure(e.ExitCode, options, shutdown);
             return e.ExitCode;
         }
+        finally { shutdown.MarkCompleted(); }
     }
 
-    private static void KeepWindowOpenOnFailure(int code, LauncherOptions? options)
+    private static void KeepWindowOpenOnFailure(int code, LauncherOptions? options, ShutdownCoordinator shutdown)
     {
-        if (code == 0 || options is not { Command: "start", ExitAfterSeconds: null } || Console.IsInputRedirected) return;
+        if (code == 0 || shutdown.Hurried || options is not { Command: "start", ExitAfterSeconds: null } || Console.IsInputRedirected) return;
         Console.WriteLine();
         Console.WriteLine("  Press Enter to close this window.");
         Console.ReadLine();

@@ -4,7 +4,7 @@ Your data lives in `%LOCALAPPDATA%\BirkNext\TesterNative`. The package folder ho
 
 ## Upgrade BirkNext
 
-1. Stop BirkNext: Ctrl+C in its window, or `Start-BirkNext.exe --stop`.
+1. Stop BirkNext: Ctrl+C in its window, close the window, or `Start-BirkNext.exe --stop`.
 2. Extract the new version into a **new** folder. Do not extract over the old one.
 3. Start the new `Start-BirkNext.exe`.
 

@@ -57,10 +57,11 @@ public sealed record LauncherOptions
 /// migrations under its own lock), the frontend, health, and the browser. Every failure stops with a tester message; nothing falls back to Podman
 /// or to another database.
 /// </summary>
-public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
+public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui, ShutdownCoordinator? shutdown = null)
 {
     private LauncherLog? _log;
     private string? _stage;
+    private bool _ready;
     private readonly Stopwatch _stageClock = new();
 
     /// <summary>
@@ -153,7 +154,11 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
         }
         // We hold the lock: a session or stop request left behind by a launcher that was killed is stale.
         foreach (var stale in new[] { data.SessionFile, data.StopRequestFile }) if (File.Exists(stale)) { File.Delete(stale); log.Info($"Removed stale {Path.GetFileName(stale)} (a previous launcher did not exit normally)."); }
-        var postgres = new PostgresManager(package, data, log);
+        // Every process this launcher starts from here on (database server, backend) is in this job: when the launcher ends in any way, Windows
+        // ends them too. Stopping them in order (below) stays the normal path; the job is the guarantee.
+        using var job = options.Command is "start" or "backup" ? LauncherJob.TryCreate(log) : null;
+        log.Info($"Launcher pid {Environment.ProcessId}; owned processes in a kill-on-close job: {(job is null ? "no" : "yes")}.");
+        var postgres = new PostgresManager(package, data, log, job);
         switch (options.Command)
         {
             case "stop":
@@ -163,6 +168,31 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
                 return 0;
         }
 
+        BackendProcess? backend = null;
+        FrontendHost? frontend = null;
+        try
+        {
+            return await StartAndRunAsync(package, data, log, postgres, job, b => backend = b, f => frontend = f, stop);
+        }
+        finally
+        {
+            // One stop for every outcome: normal stop, Ctrl+C, window closed, backend exited, and a start that failed half-way (nothing it
+            // started is left running). Only what this launcher owns: its frontend, its backend process, and the database of its own data folder.
+            var hurried = shutdown?.Hurried == true;
+            var clock = Stopwatch.StartNew();
+            Stage("Stopping BirkNext");
+            log.Info($"Stopping ({(_ready ? "after running" : "start did not complete")}; reason {shutdown?.Reason ?? ShutdownReason.None}).");
+            if (frontend is not null) await frontend.StopAsync(hurried ? TimeSpan.FromMilliseconds(500) : TimeSpan.FromSeconds(5));
+            backend?.Dispose();
+            postgres.Stop(hurried);
+            if (File.Exists(data.SessionFile)) File.Delete(data.SessionFile);
+            log.Info($"Stopped in {clock.Elapsed.TotalSeconds:0.0} s.");
+        }
+    }
+
+    private async Task<int> StartAndRunAsync(PackageLayout package, DataLayout data, LauncherLog log, PostgresManager postgres, LauncherJob? job,
+        Action<BackendProcess> started, Action<FrontendHost> served, CancellationToken stop)
+    {
         Stage("Checking application files");
         await CheckPackageAsync(package, data, log, full: false, stop);
         var (ports, credentials, record) = PrepareDatabase(package, data, postgres, log);
@@ -174,9 +204,8 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
         if (options.Command == "backup")
         {
             Stage("Writing backup");
-            try { ui.Done($"Backup written: {postgres.Backup(ports.Database, credentials, "manual")}"); }
-            finally { postgres.Stop(); } // BirkNext is not running (we hold its lock): leave nothing running after a backup.
-            return 0;
+            ui.Done($"Backup written: {postgres.Backup(ports.Database, credentials, "manual")}");
+            return 0; // BirkNext is not running (we hold its lock): the caller stops the database.
         }
 
         // A different BirkNext build may migrate the schema: a verified backup first (never for the same build or a first run).
@@ -195,7 +224,8 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
         }
 
         Stage("Applying database updates and starting BirkNext");
-        using var backend = new BackendProcess(package, data, log);
+        var backend = new BackendProcess(package, data, log, job);
+        started(backend);
         backend.Start(ports, credentials);
         bool healthy;
         try { healthy = await backend.WaitHealthyAsync(ports.Backend, TimeSpan.FromMinutes(5), stop, elapsed => ui.Step($"Still starting BirkNext ({(int)elapsed.TotalSeconds} s; a first start can take a few minutes)")); }
@@ -203,12 +233,10 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
         if (!healthy)
         {
             var reason = backend.StartupFailure();
-            backend.Stop();
-            postgres.Stop();
             if (stop.IsCancellationRequested)
             {
-                // Ctrl+C or a closed window while BirkNext was starting: a cancelled start, not a failed one.
-                log.Warn($"Start cancelled while waiting for the BirkNext service; backend and local database stopped. {reason}");
+                // Ctrl+C or a closed window while BirkNext was starting: a cancelled start, not a failed one (the caller stops what was started).
+                log.Warn($"Start cancelled while waiting for the BirkNext service. {reason}");
                 throw new LauncherException("BirkNext start was cancelled. Everything it had started has been stopped.", "Start BirkNext again when you are ready.", exitCode: 130);
             }
             throw reason is not null && reason.Contains("requires a newer BirkNext", StringComparison.Ordinal)
@@ -217,37 +245,41 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
                     reason ?? PostgresManager.Tail(backend.ConsoleLog));
         }
         StateFile.Write(data.LastRunFile, new LastRunRecord(build, DateTimeOffset.UtcNow));
-        await using var frontend = new FrontendHost(package, log);
+        var frontend = new FrontendHost(package, log);
+        served(frontend);
         await frontend.StartAsync(ports.Frontend, ports.Backend);
         var url = $"http://localhost:{ports.Frontend}/";
         StateFile.Write(data.SessionFile, new SessionRecord(url, Environment.ProcessId, DateTimeOffset.UtcNow, build));
         if (File.Exists(data.LastErrorFile)) File.Delete(data.LastErrorFile);
         var code = ConnectionCode(data, TimeSpan.FromSeconds(20));
         if (_stage is not null) log.Info($"Stage done: {_stage} ({_stageClock.Elapsed.TotalSeconds:0.0} s)");
+        _stage = null;
+        _ready = true;
         ui.Ready(url, code, log.FilePath);
-        log.Info($"Ready at {url} (database cluster {record.SystemIdentifier}).");
+        var server = postgres.ServerProcessId();
+        log.Info($"Ready at {url} (database cluster {record.SystemIdentifier}). Owned: launcher {Environment.ProcessId}, backend {backend.ProcessId}{Owned(job, backend.ProcessId)}, "
+            + $"database server {server?.ToString() ?? "?"}{Owned(job, server)}; ports backend {ports.Backend}, frontend {ports.Frontend}, database {ports.Database}.");
         if (!options.NoBrowser) Browser.Open(await LocalAccess.ConnectedUrlAsync(url, ports.Backend, code, log), log);
 
-        try
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(stop);
+        if (options.ExitAfterSeconds is { } seconds) linked.CancelAfter(TimeSpan.FromSeconds(seconds));
+        if (File.Exists(data.StopRequestFile)) File.Delete(data.StopRequestFile);
+        while (!linked.IsCancellationRequested && !backend.HasExited && !File.Exists(data.StopRequestFile)) await Task.Delay(500, CancellationToken.None);
+        if (File.Exists(data.StopRequestFile)) { log.Info("Stop requested (Start-BirkNext.exe --stop)."); File.Delete(data.StopRequestFile); shutdown?.Request(ShutdownReason.StopRequested); }
+        else if (stop.IsCancellationRequested) log.Info($"Stop: {shutdown?.Reason ?? ShutdownReason.CtrlC}.");
+        else if (linked.IsCancellationRequested) log.Info("Stop: --exit-after elapsed.");
+        if (backend.HasExited && !stop.IsCancellationRequested)
         {
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(stop);
-            if (options.ExitAfterSeconds is { } seconds) linked.CancelAfter(TimeSpan.FromSeconds(seconds));
-            if (File.Exists(data.StopRequestFile)) File.Delete(data.StopRequestFile);
-            while (!linked.IsCancellationRequested && !backend.HasExited && !File.Exists(data.StopRequestFile)) await Task.Delay(500, CancellationToken.None);
-            if (File.Exists(data.StopRequestFile)) { log.Info("Stop requested (Start-BirkNext.exe --stop)."); File.Delete(data.StopRequestFile); linked.Cancel(); }
-            if (backend.HasExited && !linked.IsCancellationRequested) { log.Error("The backend stopped unexpectedly."); ui.Failure("BirkNext stopped unexpectedly.", "Start BirkNext again.", log.FilePath); }
-        }
-        finally
-        {
-            Stage("Stopping BirkNext");
-            await frontend.DisposeAsync();
-            backend.Stop();
-            postgres.Stop();
-            if (File.Exists(data.SessionFile)) File.Delete(data.SessionFile);
-            log.Info("Stopped.");
+            // The backend ended on its own: a failure (non-zero exit, so the window stays open with the message); the caller still stops the database.
+            log.Error($"The backend stopped unexpectedly (exit code {backend.ExitCode?.ToString() ?? "?"}).");
+            shutdown?.Request(ShutdownReason.BackendExited);
+            throw new LauncherException("BirkNext stopped unexpectedly.", "Start BirkNext again. If it happens again, send the diagnostics (Start-BirkNext.exe --diagnostics).",
+                PostgresManager.Tail(backend.ConsoleLog), exitCode: 2);
         }
         return 0;
     }
+
+    private static string Owned(LauncherJob? job, int? processId) => job is null || processId is null ? "" : job.Contains(processId.Value) ? " (in job)" : " (NOT in job)";
 
     /// <summary>How often a running package check reports its progress, and when a single file counts as slow (named, never aborted).</summary>
     public static readonly TimeSpan CheckHeartbeat = TimeSpan.FromSeconds(5), SlowFile = TimeSpan.FromSeconds(30);
@@ -349,13 +381,19 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui)
         Stage("Starting local database");
         if (postgres.IsRunning())
         {
-            // Already running on our data directory (e.g. after a launcher crash): reuse it only when it proves to be our cluster.
+            // Running on OUR data directory although we hold this data folder's lock: a server left behind by a launcher that did not stop it
+            // (a window closed before 2026-11-19, a crash, an older package). Never reused as is — it belongs to no window and would outlive this
+            // one too. Only when it proves to be our cluster (credentials, system identifier, data directory) is it stopped cleanly and started
+            // again below, owned by this launcher. Anything else is reported, never stopped.
             var identity = postgres.VerifyIdentity(current.Database, creds, existing);
             if (!identity.Ok)
                 throw new LauncherException("The local database is running but could not be verified.", "Close BirkNext, run Start-BirkNext.exe --stop, and start again.", identity.Detail);
-            log.Info($"Reusing the running local database: {identity.Detail}");
+            log.Info($"A local database left running by an earlier BirkNext window was found (server pid {postgres.ServerProcessId()?.ToString() ?? "?"}; {identity.Detail}); restarting it under this window.");
+            Stage("Restarting the local database left running earlier");
+            if (!postgres.Stop())
+                throw new LauncherException("A local database left running earlier could not be stopped.", "Restart Windows, then start BirkNext again. Nothing was changed.");
         }
-        else
+        if (!postgres.IsRunning())
         {
             var dbPort = current.Database;
             if (!Ports.IsFree(dbPort))

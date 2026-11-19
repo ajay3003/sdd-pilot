@@ -44,6 +44,8 @@ BirkNext is preparing your local environment.
 
 - **Start:** double-click `Start-BirkNext.exe` and keep its window open while you work.
 - **Stop:** press **Ctrl+C**, close the window, or run `Start-BirkNext.exe --stop`. BirkNext stops the web application, its service and the local database in order. Your data stays.
+  Nothing keeps running in the background afterwards: the BirkNext service and the local database belong to that window, so they also end if the window is ended another way (Task Manager, logoff, a crash). Your browser is not closed.
+- **A local database left running by an older BirkNext** (packages before 2026-11-19 left it running when the window was closed) is found at the next start, checked to be yours, and restarted under the new window. No other program is ever stopped.
 - **Second start:** starting BirkNext a second time opens the running BirkNext instead of starting another one.
 
 | Command | What it does |

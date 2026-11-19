@@ -24,7 +24,7 @@ public enum ClusterState { NotInitialized, Initialized, InterruptedInitializatio
 /// process (no Windows service, no elevation). It never runs initdb over existing files, never deletes database files, never stops a server
 /// whose identity it has not verified, and leaves crash recovery to PostgreSQL itself.
 /// </summary>
-public sealed class PostgresManager(PackageLayout package, DataLayout data, LauncherLog log)
+public sealed class PostgresManager(PackageLayout package, DataLayout data, LauncherLog log, LauncherJob? job = null)
 {
     public static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(180);
 
@@ -225,33 +225,63 @@ public sealed class PostgresManager(PackageLayout package, DataLayout data, Laun
     // ── Start / status / stop ──────────────────────────────────────────────────────────────────────────────
 
     /// <summary>pg_ctl's view: is a postmaster running on OUR data directory (postmaster.pid + live process)?</summary>
-    public bool IsRunning() => Run("pg_ctl", ["status", "-D", data.Database], TimeSpan.FromSeconds(30)).ExitCode == 0;
+    public bool IsRunning() => IsRunning(TimeSpan.FromSeconds(30));
+
+    private bool IsRunning(TimeSpan timeout) => Run("pg_ctl", ["status", "-D", data.Database], timeout).ExitCode == 0;
 
     /// <summary>
-    /// Starts the cluster as a detached server of this user. pg_ctl gets its own hidden console (no inherited handles), so the server keeps running
-    /// independently of this window. A stale postmaster.pid is handled by PostgreSQL itself; crash recovery is PostgreSQL's own.
+    /// Starts the cluster as this launcher's server. pg_ctl gets its own hidden console and inherits no handle of this launcher (no pipes, no
+    /// redirected files: pg_ctl start would otherwise hang or hold them), and it is created suspended inside the launcher's job, so the
+    /// postmaster and every server process belong to the job: if the launcher ends without stopping the server (window closed past Windows'
+    /// grace period, Task Manager, crash), Windows ends the server too — an abrupt end PostgreSQL recovers from on the next start (WAL), never
+    /// an orphaned server holding the data folder and its port. A stale postmaster.pid is handled by PostgreSQL itself.
     /// </summary>
     public void Start(int port, Action<string> step)
     {
         step("Starting local database");
         WriteConfiguration(port);
         var startupLog = Path.Combine(data.Logs, "postgresql-startup.log");
-        // ShellExecute with a hidden window: the server inherits no handle of this launcher (no pipes, no redirected files), so it is fully
-        // independent of this window and of whoever started the launcher.
-        var info = new ProcessStartInfo(package.Tool("pg_ctl")) { UseShellExecute = true, WindowStyle = ProcessWindowStyle.Hidden };
-        foreach (var a in new[] { "start", "-D", data.Database, "-l", startupLog, "-w", "-t", ((int)StartTimeout.TotalSeconds).ToString() }) info.ArgumentList.Add(a);
-        using var p = Process.Start(info)!;
-        if (!p.WaitForExit((int)StartTimeout.TotalMilliseconds + 30_000) || p.ExitCode != 0)
+        string[] arguments = ["start", "-D", data.Database, "-l", startupLog, "-w", "-t", ((int)StartTimeout.TotalSeconds).ToString()];
+        int? exit;
+        int pgCtl;
+        try { exit = HiddenProcess.Run(package.Tool("pg_ctl"), arguments, job, StartTimeout + TimeSpan.FromSeconds(30), out pgCtl); }
+        catch (System.ComponentModel.Win32Exception e)
+        {
+            throw new LauncherException("Unable to start the local database.", "An application-control or antivirus policy may block it. Ask IT, and send the diagnostics.", e.Message);
+        }
+        if (exit != 0)
             throw new LauncherException("Unable to start the local database.", "Start BirkNext again. If it keeps failing, send the diagnostics (Start-BirkNext.exe --diagnostics).",
-                Tail(startupLog) + Environment.NewLine + Tail(LatestServerLog()));
-        log.Info($"PostgreSQL started on 127.0.0.1:{port}.");
+                $"pg_ctl {(exit is null ? "timed out" : $"exit {exit}")}{Environment.NewLine}" + Tail(startupLog) + Environment.NewLine + Tail(LatestServerLog()));
+        var server = ServerProcessId();
+        var owned = job is not null && server is { } pid && job.Contains(pid);
+        log.Info($"PostgreSQL started on 127.0.0.1:{port} (server pid {server?.ToString() ?? "?"}{(job is null ? "" : owned ? ", in the launcher's job" : ", NOT in the launcher's job")}).");
+        if (job is not null && !owned) log.Warn("The database server is not bound to the launcher's lifetime; it is stopped explicitly on exit.");
     }
 
-    /// <summary>Stops OUR server (fast shutdown: committed data is safe), only on our own data directory.</summary>
-    public bool Stop()
+    /// <summary>The postmaster's process id from OUR data directory's postmaster.pid (null when not running or unreadable).</summary>
+    public int? ServerProcessId()
     {
-        if (!IsRunning()) return true;
-        var r = Run("pg_ctl", ["stop", "-D", data.Database, "-m", "fast", "-w", "-t", "60"], TimeSpan.FromSeconds(90));
+        try
+        {
+            var path = Path.Combine(data.Database, "postmaster.pid");
+            if (!File.Exists(path)) return null;
+            using var s = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            return int.TryParse(new StreamReader(s).ReadLine()?.Trim(), out var pid) ? pid : null;
+        }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+    }
+
+    /// <summary>
+    /// Stops OUR server (fast shutdown: committed data is safe), only on our own data directory. <paramref name="hurried"/>: the window is
+    /// closing and Windows ends this launcher within seconds — wait briefly; if the server is not down by then, the job ends it.
+    /// </summary>
+    public bool Stop(bool hurried = false)
+    {
+        if (!IsRunning(hurried ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(30))) return true;
+        var r = hurried
+            ? Run("pg_ctl", ["stop", "-D", data.Database, "-m", "fast", "-w", "-t", "3"], TimeSpan.FromSeconds(3.5))
+            : Run("pg_ctl", ["stop", "-D", data.Database, "-m", "fast", "-w", "-t", "60"], TimeSpan.FromSeconds(90));
         log.Info($"PostgreSQL stop: exit {r.ExitCode}.");
         return r.ExitCode == 0;
     }
