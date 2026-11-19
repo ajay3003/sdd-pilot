@@ -309,3 +309,6 @@ textarea.tps-input { resize: vertical; line-height: 1.45; }
     .tps-step { flex: 1 1 45%; }
     .tps-actionbar-sticky { position: static; }
 }
+
+/* New step: action and its expected result side by side, stacking at phone width. */
+.tps-step-new-row .tps-input { flex: 1 1 14rem; min-width: 0; }

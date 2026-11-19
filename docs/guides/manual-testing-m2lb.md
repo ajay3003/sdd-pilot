@@ -59,6 +59,21 @@ operations, journeys and guide scenarios).
 
 To test another service, come back and choose another module. Requirements, discovery and coverage then follow the new choice.
 
+### A module with several specifications
+
+When the module you choose has more than one specification, BirkNext again does not pick one:
+
+- **Feature packs** (for example `specs/001-…` and `specs/002-…` in the same service): the explorer shows **Choose a feature to explore**, one
+  button per feature with its number of documents. Documents shared by the whole project apply to every feature.
+- **Several specification files that nothing tells apart**: the explorer shows **Choose a Specification artifact** with the file names.
+
+Until you choose, Discover & understand names the module, for example *Module SkoleService has 3 specifications and none is chosen yet*.
+
+Manual testing works on **one specification at a time**: requirements and business scenarios come from the chosen one only (UI, API, journeys
+and existing tests do not depend on the choice). To cover the others, choose each in turn and choose **Discover again**. Test cases you
+already prepared stay in the plan, and each keeps the specification file it came from: the export's *Description* column and the mapping
+report name it, so cases from several specifications can share one plan and one export.
+
 ## 3. Check what needs testing — Discover & understand
 
 Open **Manual Testing → Discover & understand**. It shows, for the chosen specification:
@@ -95,13 +110,18 @@ the **Needs attention** view lists the 120 with an open point. Use **More filter
 
 ## 5. Prepare test cases
 
-1. Tick the scenarios you want to test. Your selection is kept when you change filters.
+1. Tick the scenarios you want to test. Your selection is kept when you change filters and when you reload the page (in the same browser
+   tab only; it is never saved for others and selecting prepares nothing). A scenario whose steps are incomplete in the evidence is marked,
+   for example *2 of 3 steps without an expected result* or *No steps in the source*: you will write those before you can approve it.
 2. Choose **Prepare test cases**. A preview shows what will be added by kind (for example *2 acceptance scenario · 2 UI behaviour · 2 guide
-   scenario*), which have no expected result in the evidence (they start as *Needs clarification*) and which overlap existing cases.
+   scenario*), which have no expected result in the evidence (they start as *Needs clarification*), which have no steps or steps without an
+   expected result, and which overlap existing cases.
 3. Confirm. Each scenario becomes a draft test case in the plan. A case from the specification carries its starting situation (Given), action
    (When) and expected outcome (Then), marked *Stated in the project's documentation — confirm by accepting*; add steps where the tester needs
    them.
-4. To add something discovery did not find, use **Write a test case by hand**: type a title and choose **Add test case**.
+4. To add something discovery did not find, use **Write a test case by hand**: type a title and choose **Add test case**. The new case opens
+   at its first step: write what the tester does and what should happen side by side, choose **Add step**, then write the case's expected
+   result and save.
 
 ## 6. Edit, save and approve
 
@@ -130,7 +150,8 @@ The Manual Testing home now lists the plan with its number of cases and how many
 
 1. On the Manual Testing home, choose **Export to Azure DevOps** next to the plan (or **Plan & prepare → Export to Azure DevOps**).
 2. Fill in **Area Path** (as it is in your Azure DevOps project, for example `M2LB\Manuell test`) and, if you like, **Assigned To**.
-   BirkNext cannot check these against Azure DevOps; it marks them *Confirm in Azure DevOps*.
+   BirkNext cannot check these against Azure DevOps; it marks them *Confirm in Azure DevOps*. Values you change are kept in this browser tab
+   across a reload (a note says so); choose **Save as this project's export settings** to use them for every export.
 3. Check the list of cases: each says whether it will be exported and, if not, why. Only **approved** cases are exported unless you tick
    *Include cases that are not approved yet*. A case missing information blocks the download until you fix or deselect it.
 4. Choose **Excel (.xlsx)** (default) or **CSV**, and **Download**. The file is named
@@ -156,6 +177,8 @@ Record Pass, Fail or Blocked, attach evidence and raise defects there. BirkNext 
 | *No evidence* for business scenarios from the specification | Discovery ran before a specification was chosen | Choose it, then **Discover again** |
 | Approve is disabled | Unsaved changes, or an expected result is missing (case or step) | Save, or fill in what the *To approve* line names |
 | The download button is disabled | A selected case misses required information | Open the case from the list, or deselect it |
+| A scenario says *No steps in the source* or *n of m steps without an expected result* | The evidence leaves the steps open | Prepare it and write the steps; Approve waits for them |
+| *These settings were kept from before the page was reloaded* (export) | You changed export fields without saving them for the project | Save them as the project's export settings, or change them back |
 | Plan & prepare is read-only | This installation does not allow changes | Ask whoever installed BirkNext |
 | *The source snapshot is partial* after import | Some files are in an unsupported language | Not a blocker for manual testing |
 

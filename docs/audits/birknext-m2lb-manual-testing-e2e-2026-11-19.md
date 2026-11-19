@@ -68,11 +68,29 @@ new tests `SpecificationChoiceTests` (3), `Approve_follows_the_export_rules_and_
 
 - **Requires a person's choice in a monorepo.** By design BirkNext does not choose one of several specifications; a tester testing several
   services chooses each in turn. Discovery must be run again after changing the choice (*Discover again*).
-- **Hand-written cases start without steps** and cannot be approved until steps are written; the message says so.
-- **Guide scenarios often list steps without expected results** (Skolenærvær: 3 of 4 steps); they need a tester's input or *Needs
-  clarification* before approval.
-- **Unsaved selection and export settings** (candidate selection, export field values unless saved as the project's export settings) are not
-  kept across a reload; unsaved case edits are protected by a leave-page confirmation.
+- Guide scenarios often list steps without expected results (Skolenærvær: 3 of 4 steps); they still need a tester's input, but are now named
+  before preparing (see the follow-up below).
 - **Importing the file into Azure DevOps** was not tested (agreed scope: file export only). The mapping report and the in-page *How to import*
   steps describe it.
 - `manual_test_runs` / `manual_run_attachments` remain dormant tables (separate cleanup decision; untouched).
+
+## Follow-up the same day (gaps closed)
+
+| # | Gap | Fix |
+|---|-----|-----|
+| 12 | Scenario selection lost on reload | Kept in the browser tab (sessionStorage, per project; never sent, nothing prepared by it); only ids the current discovery still has are restored, with a message |
+| 13 | Export field values lost on reload unless saved as the project's settings | Kept in the browser tab with a note (*kept from before the page was reloaded* / *differ from this project's export settings*); saving or changing back clears it; remembered Azure DevOps ids always come from the project |
+| 14 | Hand-written cases start without steps and the next action was unclear | The case opens with focus on its first step, a *No steps yet* line, and the new-step row takes the step's expected result too |
+| 15 | Incomplete steps in the evidence surfaced only after preparing | Candidates name the gap (*No steps in the source*, *2 of 3 steps without an expected result*) and the preparation preview counts them (project discovery only; guide-mode candidates do not carry their steps) |
+| 16 | A chosen module with several specifications still read *This project contains 63 specifications in 14 modules* | Names the module: *Module SkoleService has 3 specifications* (or *n features, each with its own specification*) and says to discover again for the next one |
+
+Each prepared case keeps the specification file it came from (export *Description* column, mapping report), so cases from several
+specifications can share one plan.
+
+Verification: frontend 9 234/9 234 (new page, export wizard, preview and specification-choice tests). Playwright on an isolated Release
+build with an empty database: `ManualTestingWorkflowTests` passed, and the new `ManualTestingReloadTests` passed (selection kept on reload,
+hand-written case focus and a step with its expected result, export field kept on reload and cleared after saving). Backend partition 6
+rerun: 2 723 passed, 1 failed (`CompositeSuitePostgresTests.Failures_are_reported_as_what_they_are_never_as_a_pass`: *Failed* instead of
+*Incomplete* under load, in integration suites, unrelated to manual testing); it passed in isolation (26/26 in its class). The five earlier
+timeout failures did not recur.
+

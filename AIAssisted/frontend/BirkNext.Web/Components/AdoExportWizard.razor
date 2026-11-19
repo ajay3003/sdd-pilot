@@ -109,6 +109,12 @@
                     <label class="adx-check"><input type="checkbox" checked="@_confirmed" @onchange="e => Set(() => _confirmed = e.Value is true)" data-testid="adx-confirm-ids" /> I checked these ids in Azure DevOps and their steps may be replaced.</label>
                 </div>
             }
+            @if (Unsaved)
+            {
+                <p class="adx-muted adx-small" role="status" data-testid="adx-settings-unsaved">@(_restored
+                    ? "These settings were kept from before the page was reloaded. They are not this project's export settings yet: only this browser tab has them."
+                    : "These settings differ from this project's export settings. This browser tab keeps them across a reload; save them to use them for every export.")</p>
+            }
             @if (CanWrite)
             {
                 <button type="button" class="adx-btn adx-btn-quiet" disabled="@_working" @onclick="SaveProfileAsync" data-testid="adx-save-profile">Save as this project's export settings</button>
@@ -207,6 +213,9 @@
 
     private IAdoExportApiService? _api;
     private AdoExportProfile _profile = new();
+    // The project's saved export settings; _profile differs from it while the tester has changed a field without saving (kept for this tab only).
+    private AdoExportProfile _saved = new();
+    private bool _restored;
     private AdoExportPreview? _preview;
     private List<AdoExportHistoryEntry> _history = [];
     // Explicit selection; empty = every eligible case.
@@ -234,7 +243,14 @@
         if (first)
         {
             var (profile, _) = await _api.ProfileAsync(ProjectKey);
-            if (profile is not null) _profile = profile;
+            if (profile is not null) _profile = _saved = profile;
+            // Field values changed in this tab but not saved for the project survive a reload; remembered Azure DevOps ids always come from the project.
+            if (await TabDraftStore.ReadAsync<AdoExportProfile>(JS, TabDraftStore.ExportSettingsKey(ProjectKey)) is { } kept)
+            {
+                _profile = kept with { KnownTestCaseIds = _saved.KnownTestCaseIds };
+                _restored = Unsaved;
+                if (!_restored) await TabDraftStore.RemoveAsync(JS, TabDraftStore.ExportSettingsKey(ProjectKey));
+            }
             var (history, _) = await _api.HistoryAsync(ProjectKey);
             _history = history ?? [];
         }
@@ -251,7 +267,22 @@
 
     private bool IsChecked(AdoExportCase c) => c.ExcludedReason is null || (_selected.Count > 0 && _selected.Contains(c.CaseId));
 
-    private async Task Set(Action change) { change(); _downloaded = null; await PreviewAsync(); }
+    private bool Unsaved => (_profile with { KnownTestCaseIds = _saved.KnownTestCaseIds }) != _saved;
+
+    private async Task Set(Action change)
+    {
+        var before = _profile;
+        change(); _downloaded = null;
+        if (_profile != before) await KeepSettingsAsync();
+        await PreviewAsync();
+    }
+
+    private async Task KeepSettingsAsync()
+    {
+        _restored = false;
+        if (Unsaved) await TabDraftStore.WriteAsync(JS, TabDraftStore.ExportSettingsKey(ProjectKey), _profile);
+        else await TabDraftStore.RemoveAsync(JS, TabDraftStore.ExportSettingsKey(ProjectKey));
+    }
 
     private async Task SelectNone() { _selected.Clear(); _noneSelected = true; _downloaded = null; await PreviewAsync(); }
 
@@ -318,7 +349,9 @@
         var (profile, error) = await _api!.SaveProfileAsync(ProjectKey, _profile);
         _working = false;
         if (profile is null) { _error = error ?? "The settings could not be saved."; return; }
-        _profile = profile;
+        _profile = _saved = profile;
+        _restored = false;
+        await TabDraftStore.RemoveAsync(JS, TabDraftStore.ExportSettingsKey(ProjectKey));
         _downloaded = "Export settings saved for this project.";
     }
 

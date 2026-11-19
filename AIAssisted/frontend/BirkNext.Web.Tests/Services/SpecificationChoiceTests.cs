@@ -36,4 +36,15 @@ public sealed class SpecificationChoiceTests
         RequirementLinkPresentation.Statement("FR-002", "The system MUST resolve the child's `identifier`.").Should().Be("The system MUST resolve the child's identifier.");
         RequirementLinkPresentation.Statement("FR-003", "**FR-003**").Should().BeNull();
     }
+
+    [Fact]
+    public void A_chosen_module_with_several_specifications_names_the_module_not_the_project()
+    {
+        static ExplorerArtifact artifact(string id) => new(id, WorkspaceArtifactType.Specification, id, id + ".md", null, ExplorerArtifactSource.SampleProject, null, null, 1, "Discovered", ExplorerArtifactCurrentness.Current, null, Module: "SkoleService");
+        var files = State(ExplorerArtifactStatus.SelectionRequired, ("SkoleService", 3), ("PersonService", 2)) with { Module = "SkoleService", Artifacts = [artifact("a"), artifact("b"), artifact("c")] };
+        RequirementLinkPresentation.SpecificationChoiceNeeded(files).Should().StartWith("Module SkoleService has 3 specifications and none is chosen yet.").And.Contain("discover again");
+
+        var packs = files with { PackRequired = true, Packs = [new ArtifactPackSummary("SkoleService", "001-a", null, "A", [], 2), new ArtifactPackSummary("SkoleService", "002-b", null, "B", [], 2)] };
+        RequirementLinkPresentation.SpecificationChoiceNeeded(packs).Should().StartWith("Module SkoleService has 2 features, each with its own specification, and none is chosen yet.");
+    }
 }

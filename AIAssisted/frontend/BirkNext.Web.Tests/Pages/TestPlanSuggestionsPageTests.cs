@@ -986,4 +986,63 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         cut.Find("[data-testid=tps-area-prepare]").Click();
         cut.Find("[data-testid=tps-no-draft]").TextContent.Should().Contain("No test cases yet");
     }
+
+    [Fact]
+    public void A_selection_survives_a_reload_of_the_tab_for_the_scenarios_discovery_still_has()
+    {
+        SelectProject();
+        JSInterop.Setup<string?>("sessionStorage.getItem", i => (string?)i.Arguments[0] == TabDraftStore.SelectionKey("library")).SetResult("[\"tsc-borrow\",\"tsc-gone\"]");
+        var api = new Api(Workspace()) { Project = ProjectWorkspace(), Last = Discovery("library", LibraryCandidates) };
+        var cut = Render(api);
+        cut.Find("[data-testid=tps-view-all]").Click();
+        cut.Find("[data-testid=tps-selected-count]").TextContent.Should().Contain("1", "a scenario the discovery no longer has is not restored");
+        cut.Find("[data-testid=tps-select-tsc-borrow]").HasAttribute("checked").Should().BeTrue();
+        cut.Find("[data-testid=tps-message]").TextContent.Should().Contain("kept from before the page was reloaded").And.Contain("Nothing is prepared");
+        api.CreatedProject.Should().BeNull("restoring a selection prepares nothing");
+
+        cut.Find("[data-testid=tps-select-tsc-getbook]").Change(true);
+        cut.WaitForAssertion(() => JSInterop.Invocations["sessionStorage.setItem"].Last().Arguments.Should().Equal(TabDraftStore.SelectionKey("library"), "[\"tsc-borrow\",\"tsc-getbook\"]"));
+        cut.Find("[data-testid=tps-clear-selection]").Click();
+        cut.WaitForAssertion(() => JSInterop.Invocations["sessionStorage.removeItem"].Should().Contain(i => (string?)i.Arguments[0] == TabDraftStore.SelectionKey("library")));
+    }
+
+    [Fact]
+    public void A_hand_written_case_opens_at_its_first_step_and_a_step_is_added_with_its_expected_result()
+    {
+        SelectProject("notes", "Notes only");
+        var api = new Api(Workspace()) { Project = ProjectWorkspace("notes"), Discovery = Discovery("notes") };
+        var cut = Render(api);
+        cut.Find("[data-testid=tps-discover-run]").Click();
+        cut.Find("[data-testid=tps-manual-title]").Input("Log in with an expired password");
+        cut.Find("[data-testid=tps-manual-create]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tps-steps-empty-manual-1]").TextContent.Should().Contain("No steps yet").And.Contain("before it can be approved"));
+        cut.WaitForAssertion(() => JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextRevealSection" && (string?)i.Arguments[0] == "tps-step-new-manual-1", "the tester continues at the first step"));
+        cut.Find("[data-testid=tps-step-new-manual-1]").Input("Log in with the expired password");
+        cut.Find("[data-testid=tps-step-new-expected-manual-1]").Input("The password change page is shown");
+        cut.Find("[data-testid=tps-step-add-manual-1]").Click();
+
+        cut.Find("[data-testid=tps-step-action-manual-1-0]").GetAttribute("value").Should().Be("Log in with the expired password");
+        cut.Find("[data-testid=tps-step-expected-manual-1-0]").GetAttribute("value").Should().Be("The password change page is shown");
+        cut.FindAll("[data-testid=tps-steps-empty-manual-1]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Steps_the_evidence_leaves_open_are_named_before_preparing()
+    {
+        var complete = Discovered("a", "Complete", ScenarioCandidateType.BusinessFunctional, "Loans", "Specification") with { Steps = [new("Open", "Shown"), new("Lend", "Lent")] };
+        var partly = Discovered("b", "Partly", ScenarioCandidateType.BusinessFunctional, "Loans", "Specification") with { Steps = [new("Open", "Shown"), new("Lend", null), new("Close", " ")] };
+        var none = Discovered("c", "No steps", ScenarioCandidateType.BusinessFunctional, "Loans", "Specification");
+        var silent = Discovered("d", "Silent", ScenarioCandidateType.BusinessFunctional, "Loans", "Specification") with { Steps = [new("Open", null)] };
+        P.StepGap(complete).Should().BeNull();
+        P.StepGap(partly).Should().Be("2 of 3 steps without an expected result");
+        P.StepGap(none).Should().Be("No steps in the source");
+        P.StepGap(silent).Should().Be("No step states its expected result");
+
+        var all = new[] { complete, partly, none };
+        var preview = P.Preview(["a", "b", "c"], all, P.Classify([.. all]), new HashSet<string>());
+        preview.IncompleteSteps.Should().Be(2);
+        preview.NeedsConfirmation.Should().BeTrue("the tester sees the work left before the cases are created");
+        P.Preview(["a"], all, P.Classify([.. all]), new HashSet<string>()).IncompleteSteps.Should().Be(0);
+    }
 }

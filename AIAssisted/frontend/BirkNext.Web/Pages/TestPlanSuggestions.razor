@@ -153,11 +153,17 @@
     private P.CatalogGrouping _grouping = P.CatalogGrouping.Area;
     private int _limit = P.PageSize;
     private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
+    // The selection survives a reload of this tab (sessionStorage, never sent anywhere): the project it was restored for and what was last kept.
+    private string? _selectionKey;
+    private string _keptSelection = "";
     private readonly HashSet<string> _openDetails = new(StringComparer.Ordinal);
 
     private readonly HashSet<string> _openCases = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _rationale = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _newStep = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _newStepExpected = new(StringComparer.Ordinal);
+    // A test case just written by hand: its first-step field takes focus after the render.
+    private string? _focusNewStep;
     private string _manualTitle = "";
     private bool _needsActionOnly;
     private string _planName = "";
@@ -260,6 +266,7 @@
             _snapshotOptions = (await sources.SourcesAsync()).Options?.Snapshots ?? [];
         var (last, _) = await _api.LastDiscoveryAsync(_projectKey!, _snapshotId);
         UseDiscovery(last);
+        await RestoreSelectionAsync();
         if (Guid.TryParse(DraftQuery, out var draftId)) await OpenDraftAsync(draftId);
         else if (_ws?.Drafts.FirstOrDefault() is { } latest) await OpenDraftAsync(latest.Id);
         _planName = _draft?.PlanName ?? "";
@@ -299,6 +306,33 @@
         var ids = _candidates.Select(c => c.CandidateId).ToHashSet(StringComparer.Ordinal);
         _selected.RemoveWhere(id => !ids.Contains(id));
         _preview = null;
+    }
+
+    /// <summary>A reload keeps the scenarios this tab had selected (only those the current discovery still has; nothing is prepared or approved by it).</summary>
+    private async Task RestoreSelectionAsync()
+    {
+        _selectionKey = null;
+        if (_projectKey is null) return;
+        var kept = await TabDraftStore.ReadAsync<string[]>(JS, TabDraftStore.SelectionKey(_projectKey)) ?? [];
+        var ids = _candidates.Select(c => c.CandidateId).ToHashSet(StringComparer.Ordinal);
+        var restored = 0;
+        foreach (var id in kept.Where(ids.Contains)) if (_selected.Add(id)) restored++;
+        _selectionKey = _projectKey;
+        _keptSelection = SelectionSignature();
+        if (restored > 0)
+            Info($"{restored} selected scenario{(restored == 1 ? " was" : "s were")} kept from before the page was reloaded. Nothing is prepared until you choose Prepare.");
+    }
+
+    private string SelectionSignature() => string.Join("|", _selected.Order(StringComparer.Ordinal));
+
+    private async Task KeepSelectionAsync()
+    {
+        if (GuideMode || _selectionKey is null || _selectionKey != _projectKey) return;
+        var signature = SelectionSignature();
+        if (signature == _keptSelection) return;
+        _keptSelection = signature;
+        if (_selected.Count == 0) await TabDraftStore.RemoveAsync(JS, TabDraftStore.SelectionKey(_selectionKey));
+        else await TabDraftStore.WriteAsync(JS, TabDraftStore.SelectionKey(_selectionKey), _selected.Order(StringComparer.Ordinal).ToArray());
     }
 
     private void SetCandidates(List<DiscoveredScenario> candidates)
@@ -354,6 +388,16 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        await KeepSelectionAsync();
+        if (_focusNewStep is { } focus)
+        {
+            _focusNewStep = null;
+            _revealArea = false; // the new case's first step is where the tester continues
+            try { await JS.InvokeVoidAsync("birknextRevealSection", $"tps-step-new-{focus}"); }
+            catch (JSException) { }
+            catch (InvalidOperationException) { }
+            return;
+        }
         if (_revealPreview)
         {
             // The preparation preview takes focus so keyboard and screen-reader users land on it.
@@ -753,6 +797,7 @@
                             @if (preview.Technical > 0) { <li data-testid="tps-preview-technical">@preview.Technical technical candidate@(preview.Technical == 1 ? " is" : "s are") normally verified in Technical Testing; @(preview.Technical == 1 ? "it becomes" : "they become") manual cases only because you chose so</li> }
                             @if (preview.Overlaps > 0) { <li data-testid="tps-preview-overlaps">@preview.Overlaps may overlap a case already in the plan or another selected candidate (same requirement through another source, or the same contract operation in another file)</li> }
                             @if (preview.MissingExpected > 0) { <li data-testid="tps-preview-missing-expected">@preview.MissingExpected without an expected result in the evidence — they start as Needs clarification</li> }
+                            @if (preview.IncompleteSteps > 0) { <li data-testid="tps-preview-incomplete-steps">@preview.IncompleteSteps with no steps, or steps without an expected result, in the evidence — write them before approving (the Azure DevOps export needs an expected result on every step)</li> }
                             @if (preview.MissingPrerequisites > 0) { <li data-testid="tps-preview-missing-prerequisites">@preview.MissingPrerequisites with a missing test prerequisite (Test Data, access or environment)</li> }
                         </ul>
                         <p class="tps-muted tps-small">Preparing creates reviewable drafts only: nothing is approved, executed or counted as coverage.</p>
@@ -790,7 +835,7 @@
     private async Task PrepareClickedAsync()
     {
         if (_dirty) { Fail("Save or discard your changes first."); return; }
-        var preview = P.Preview(_selected, _candidates, _inventory, InPlan);
+        var preview = P.Preview(_selected, _candidates, _inventory, InPlan, stepsKnown: !GuideMode);
         if (!preview.NeedsConfirmation) { await PrepareAsync(); return; }
         _preview = preview;
         _revealPreview = true;
@@ -842,6 +887,7 @@
                 @if (inPlan) { <span class="tps-chip tps-chip-ok" data-testid="tps-in-draft">In the plan</span> }
                 @if (c.ExistingTests.Count > 0) { <span class="tps-chip tps-chip-quiet" data-testid="tps-existing-tests" title="Associated through an explicit requirement reference; not an executed manual test">@c.ExistingTests.Count source test@(c.ExistingTests.Count == 1 ? "" : "s")</span> }
                 @if (warning is not null) { <span class="tps-chip tps-chip-warn" data-testid="tps-attention">@warning</span> }
+                @if (!GuideMode && owner.ManualRelevant && P.StepGap(c) is { } stepGap) { <span class="tps-chip tps-chip-quiet" data-testid="tps-step-gap" title="Write these before approving: the Azure DevOps export needs at least one step and an expected result on every step">@stepGap</span> }
             </div>
             @if (open)
             {
@@ -952,8 +998,9 @@
         await ReloadWorkspaceAsync();
         var added = draft.Cases[^1].Source.ScenarioId;
         _openCases.Add(added);
+        _focusNewStep = added;
         GoArea("prepare");
-        Ok("Test case added. Write its steps and expected results.");
+        Ok("Test case added. Write its first step and expected result, then the case's expected result, and save.");
     }
 
     // ── Step 2: Prepare test cases ───────────────────────────────────────────────────────────────────────────
@@ -1082,8 +1129,13 @@
                                     </li>
                                 }
                             </ol>
-                            <div class="tps-actionbar">
-                                <input class="tps-input" value="@_newStep.GetValueOrDefault(sid)" placeholder="New step action" aria-label="New step" @oninput="e => _newStep[sid] = e.Value?.ToString() ?? string.Empty" data-testid="@($"tps-step-new-{sid}")" />
+                            @if (c.EffectiveSteps.Count == 0)
+                            {
+                                <p class="tps-muted tps-small" data-testid="@($"tps-steps-empty-{sid}")">No steps yet. Write the first step and what should happen, then choose Add step — a test case needs at least one step with its expected result before it can be approved.</p>
+                            }
+                            <div class="tps-actionbar tps-step-new-row">
+                                <input class="tps-input" id="@($"tps-step-new-{sid}")" value="@_newStep.GetValueOrDefault(sid)" placeholder="@(c.EffectiveSteps.Count == 0 ? "First step: what the tester does" : "New step action")" aria-label="New step action" @oninput="e => _newStep[sid] = e.Value?.ToString() ?? string.Empty" data-testid="@($"tps-step-new-{sid}")" />
+                                <input class="tps-input" value="@_newStepExpected.GetValueOrDefault(sid)" placeholder="Expected result of this step" aria-label="New step expected result" @oninput="e => _newStepExpected[sid] = e.Value?.ToString() ?? string.Empty" data-testid="@($"tps-step-new-expected-{sid}")" />
                                 <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@string.IsNullOrWhiteSpace(_newStep.GetValueOrDefault(sid))" @onclick="() => AddStep(d, sid)" data-testid="@($"tps-step-add-{sid}")">Add step</button>
                             </div>
                         </div>
@@ -1155,8 +1207,9 @@
     private void AddStep(TestPlanDraft d, string sid)
     {
         if (_newStep.GetValueOrDefault(sid) is not { Length: > 0 } action) return;
-        Change(P.WithCase(d, sid, x => P.AddStep(x, action.Trim())));
+        Change(P.WithCase(d, sid, x => P.AddStep(x, action.Trim(), _newStepExpected.GetValueOrDefault(sid))));
         _newStep.Remove(sid);
+        _newStepExpected.Remove(sid);
     }
 
     /// <summary>"Linked requirements" of a project case: automatic (the case's own evidence) and manual (a tester's link) side by side, each checked

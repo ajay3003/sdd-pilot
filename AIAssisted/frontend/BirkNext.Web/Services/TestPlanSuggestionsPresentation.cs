@@ -427,13 +427,28 @@ public static class TestPlanSuggestionsPresentation
         })];
 
     /// <summary>What preparing the selected candidates would do, shown before a bulk preparation (never for one ordinary case).</summary>
+    /// <param name="IncompleteSteps">Candidates with no steps, or steps without an expected result: the export (and so Approve) needs both.</param>
     public sealed record PreparePreview(int Selected, int Adding, int AlreadyInPlan, int Technical, int Overlaps, int MissingExpected, int MissingPrerequisites,
-        IReadOnlyList<(string Kind, int Count)> Kinds, bool NeedsConfirmation);
+        IReadOnlyList<(string Kind, int Count)> Kinds, bool NeedsConfirmation, int IncompleteSteps = 0);
+
+    /// <summary>What the evidence leaves open in a candidate's steps (the export, and so Approve, needs at least one step and an expected result on
+    /// every step); null when its steps are complete. Shown before preparing so the work after preparation is no surprise.</summary>
+    public static string? StepGap(DiscoveredScenario c)
+    {
+        if (c.Steps.Count == 0) return "No steps in the source";
+        var open = c.Steps.Count(s => string.IsNullOrWhiteSpace(s.Expected));
+        return open == 0 ? null : open == c.Steps.Count
+            ? $"No step states its expected result"
+            : $"{open} of {c.Steps.Count} steps without an expected result";
+    }
 
     /// <summary>Up to this many cases are prepared without a confirmation when nothing about them needs a look.</summary>
     public const int ConfirmFrom = 5;
 
-    public static PreparePreview Preview(IReadOnlyCollection<string> selected, IReadOnlyList<DiscoveredScenario> candidates, Inventory inventory, IReadOnlySet<string> inPlan)
+    /// <param name="stepsKnown">False for System Understanding guide candidates read in guide mode: they do not carry their steps here, so
+    /// nothing is said about them (the prepared case shows them).</param>
+    public static PreparePreview Preview(IReadOnlyCollection<string> selected, IReadOnlyList<DiscoveredScenario> candidates, Inventory inventory, IReadOnlySet<string> inPlan,
+        bool stepsKnown = true)
     {
         var byId = candidates.ToDictionary(c => c.CandidateId, StringComparer.Ordinal);
         var adding = selected.Where(id => !inPlan.Contains(id) && byId.ContainsKey(id)).Select(id => byId[id]).ToList();
@@ -443,10 +458,11 @@ public static class TestPlanSuggestionsPresentation
             || inventory.SameOperation(c).Any(id => selected.Contains(id) && string.CompareOrdinal(id, c.CandidateId) < 0));
         var missingExpected = adding.Count(c => c.NeedsClarification);
         var missingPrerequisites = adding.Count(c => c.Gaps.Any(g => g.Kind == EvidenceGapKind.TestPrerequisiteMissing));
+        var incompleteSteps = stepsKnown ? adding.Count(c => StepGap(c) is not null) : 0;
         var kinds = adding.GroupBy(c => inventory.Of(c).SourceKind).Select(g => (g.Key, g.Count())).OrderByDescending(k => k.Item2).ToList();
         var issues = technical + overlaps + missingExpected + missingPrerequisites;
         return new(selected.Count, adding.Count, selected.Count(inPlan.Contains), technical, overlaps, missingExpected, missingPrerequisites, kinds,
-            adding.Count >= ConfirmFrom || adding.Count >= 2 && issues > 0);
+            adding.Count >= ConfirmFrom || adding.Count >= 2 && (issues > 0 || incompleteSteps > 0), incompleteSteps);
     }
 
     /// <summary>Selected candidates that would overlap a case already in the plan (shown on the preparation bar).</summary>
@@ -603,11 +619,11 @@ public static class TestPlanSuggestionsPresentation
         return WithSteps(c, steps, results);
     }
 
-    public static TestCaseDraft AddStep(TestCaseDraft c, string action)
+    public static TestCaseDraft AddStep(TestCaseDraft c, string action, string? expected = null)
     {
         var (steps, results) = StepsOf(c);
         steps.Add(action);
-        results.Add(null);
+        results.Add(string.IsNullOrWhiteSpace(expected) ? null : expected.Trim());
         return WithSteps(c, steps, results);
     }
 

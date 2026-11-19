@@ -211,4 +211,38 @@ public sealed class AdoExportWizardTests : BunitContext
         cut.Find("[data-testid=adx-source-refs]").Change(false);
         _previews.Last().Profile.IncludeSourceReferences.Should().BeFalse();
     }
+
+    [Fact]
+    public void Export_settings_changed_but_not_saved_survive_a_reload_of_the_tab_and_saving_them_clears_that()
+    {
+        var key = TabDraftStore.ExportSettingsKey("library");
+        JSInterop.Setup<string?>("sessionStorage.getItem", i => (string?)i.Arguments[0] == key)
+            .SetResult(System.Text.Json.JsonSerializer.Serialize(new AdoExportProfile { AreaPath = @"Library\Manual", AssignedTo = "tester@example.org" }));
+        var remembered = new AdoExportProfile { AreaPath = @"Library\Loans", KnownTestCaseIds = new() { [$"{PlanId:N}/c1"] = "4711" } };
+        var cut = Open(profile: remembered);
+
+        cut.Find("[data-testid=adx-area]").GetAttribute("value").Should().Be(@"Library\Manual", "the tab kept what the tester typed");
+        cut.Find("[data-testid=adx-settings-unsaved]").TextContent.Should().Contain("kept from before the page was reloaded").And.Contain("not this project's export settings");
+        _previews.Last().Profile.AreaPath.Should().Be(@"Library\Manual");
+        _previews.Last().Profile.KnownTestCaseIds.Should().ContainKey($"{PlanId:N}/c1", "remembered Azure DevOps ids always come from the project");
+
+        cut.Find("[data-testid=adx-assigned]").Change("lead@example.org");
+        cut.WaitForAssertion(() => JSInterop.Invocations["sessionStorage.setItem"].Last().Arguments[1]!.ToString().Should().Contain("lead@example.org"));
+
+        cut.Find("[data-testid=adx-save-profile]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=adx-settings-unsaved]").Should().BeEmpty());
+        JSInterop.Invocations["sessionStorage.removeItem"].Should().Contain(i => (string?)i.Arguments[0] == key);
+    }
+
+    [Fact]
+    public void Settings_equal_to_the_saved_ones_say_nothing_and_are_not_kept()
+    {
+        var cut = Open();
+        cut.FindAll("[data-testid=adx-settings-unsaved]").Should().BeEmpty();
+        cut.Find("[data-testid=adx-area]").Change(@"Library\Other");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=adx-settings-unsaved]").TextContent.Should().Contain("differ from this project's export settings"));
+        cut.Find("[data-testid=adx-area]").Change(@"Library\Loans");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=adx-settings-unsaved]").Should().BeEmpty());
+        JSInterop.Invocations["sessionStorage.removeItem"].Should().NotBeEmpty("a value changed back is no longer kept");
+    }
 }
