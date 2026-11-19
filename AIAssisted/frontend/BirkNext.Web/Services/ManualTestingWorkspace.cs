@@ -17,7 +17,11 @@ public sealed class ManualTestingWorkspace(IServiceProvider services)
         string? ProjectKey, string? ProjectName, string? EnvironmentId, Guid? SnapshotId, string? SnapshotBasis,
         TestPlanWorkspace? Plans, ScenarioDiscoveryResult? Discovery, CoverageWorkspaceEvidence? Evidence, List<ProjectRequirementOption>? Requirements, string? Error)
     {
-        public ManualTestingPresentation.Facts Facts => new(ProjectKey, ProjectName, Plans?.Drafts ?? [], Discovery, Requirements?.Count);
+        public ManualTestingPresentation.Facts Facts => new(ProjectKey, ProjectName, Plans?.Drafts ?? [], Discovery, Requirements?.Count,
+            Requirements is { Count: > 0 } ? null : RequirementLinkPresentation.SpecificationChoiceNeeded(Specification));
+
+        /// <summary>The Specification role as the explorers resolve it: says whether a specification still has to be chosen (a monorepo's modules).</summary>
+        public ArtifactExplorerState? Specification { get; init; }
     }
 
     private T? Get<T>() where T : class => services.GetService(typeof(T)) as T;
@@ -40,8 +44,8 @@ public sealed class ManualTestingWorkspace(IServiceProvider services)
             if (discovery) { var (d, _) = await api.LastDiscoveryAsync(key, snapshotId, ct); last = d?.ProjectKey == key ? d : null; }
         }
         else error = "Test Plan Suggestions is not available in this host.";
-        CoverageWorkspaceEvidence? evidence = requirements ? await EvidenceAsync(name) : null;
-        return new(key, name, environment, snapshotId, basis, plans, last, evidence, RequirementLinkPresentation.Options(evidence), error);
+        var (evidence, specification) = requirements ? await EvidenceWithStateAsync(name) : (null, null);
+        return new(key, name, environment, snapshotId, basis, plans, last, evidence, RequirementLinkPresentation.Options(evidence), error) { Specification = specification };
     }
 
     private async Task<(string? Key, string? Name)> ProjectAsync()
@@ -56,17 +60,19 @@ public sealed class ManualTestingWorkspace(IServiceProvider services)
     }
 
     /// <summary>The project's own documents, parsed by the existing specification parser (the evidence Test Coverage reads); null when unreadable.</summary>
-    public async Task<CoverageWorkspaceEvidence?> EvidenceAsync(string? projectName)
+    public async Task<CoverageWorkspaceEvidence?> EvidenceAsync(string? projectName) => (await EvidenceWithStateAsync(projectName)).Evidence;
+
+    private async Task<(CoverageWorkspaceEvidence? Evidence, ArtifactExplorerState? Specification)> EvidenceWithStateAsync(string? projectName)
     {
+        ArtifactExplorerState? specification = null;
         try
         {
-            ArtifactExplorerState? specification = null;
             if (Get<IArtifactExplorerContext>() is { } artifacts) specification = await artifacts.GetStateAsync(WorkspaceArtifactType.Specification);
             if (Get<IWorkspaceSessionService>() is { } session)
-                return TestCoveragePresentation.WorkspaceEvidence(session, Get<IReviewContextProvider>()?.GetCurrent(), projectName, specification);
+                return (TestCoveragePresentation.WorkspaceEvidence(session, Get<IReviewContextProvider>()?.GetCurrent(), projectName, specification), specification);
         }
         catch (Exception e) when (e is not OperationCanceledException) { }
-        return null;
+        return (null, specification);
     }
 
     /// <summary>The project's snapshot: the imported package of the current workspace scope, else the project evidence's main package. Never the

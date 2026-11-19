@@ -10,6 +10,21 @@ public static class TestPlanSuggestionsPresentation
 {
     public const string Route = "test-plan-suggestions";
 
+    /// <summary>
+    /// Why a test case cannot be approved yet, or null when it can. The same content rules as the Azure DevOps export (AdoTestPlanExporter: an
+    /// expected result, at least one step, an expected result per step), so an approved case is never blocked only later, at the export. On M2LB
+    /// (2026-11-19) two approved cases were first refused by the export: a step added without its expected result, and a guide scenario whose
+    /// steps state none.
+    /// </summary>
+    public static string? ApproveBlocker(TestCaseDraft c)
+    {
+        if (string.IsNullOrWhiteSpace(c.EffectiveExpected)) return "write the expected result first.";
+        if (c.EffectiveSteps.Count == 0) return "add at least one step with its expected result.";
+        var missing = c.EffectiveStepExpected.Select((e, i) => (e, i)).Where(x => string.IsNullOrWhiteSpace(x.e)).Select(x => x.i + 1).ToList();
+        return missing.Count == 0 ? null
+            : $"step {string.Join(", ", missing)} need{(missing.Count == 1 ? "s" : "")} an expected result.";
+    }
+
     /// <param name="Purpose">One sentence: what this step of test preparation is for (shown under the step list).</param>
     public sealed record Area(string Id, string Label, string Purpose = "");
 
@@ -92,7 +107,7 @@ public static class TestPlanSuggestionsPresentation
     {
         TestCaseReviewState.UnderReview => new("Under review", "info"),
         TestCaseReviewState.NeedsClarification => new("Needs clarification", "warn"),
-        TestCaseReviewState.Accepted => new("Accepted for preparation", "ok"),
+        TestCaseReviewState.Accepted => new("Approved", "ok"),
         TestCaseReviewState.Excluded => new("Excluded", "muted"),
         TestCaseReviewState.Superseded => new("Superseded (left the source)", "muted"),
         _ => new("Generated — not reviewed", "muted"),
@@ -246,7 +261,7 @@ public static class TestPlanSuggestionsPresentation
         var unreviewed = draft.Cases - draft.Accepted;
         var facts = new List<PlanFact>
         {
-            new("cases", "Prepared Test Case drafts", draft.Cases), new("accepted", "Accepted for preparation", draft.Accepted), new("expected", "Missing expected results", draft.MissingExpected),
+            new("cases", "Prepared Test Case drafts", draft.Cases), new("accepted", "Approved", draft.Accepted), new("expected", "Missing expected results", draft.MissingExpected),
             new("data", "Without Test Data", draft.MissingTestData), new("blocked", "Testability blockers", draft.Blocked),
         };
         if (unreviewed > 0) actions.Add(new("tps-review", "Review Test Plan Suggestions", $"{unreviewed} of {draft.Cases} drafts not accepted.", draftLink + "&area=review", FocusActionState.CanDoNow, "Ready now", null));
@@ -560,10 +575,10 @@ public static class TestPlanSuggestionsPresentation
         [
             new("choose", Areas[0].Label, State(0), active.Count > 0 ? $"{active.Count} in the plan" : discovered ? $"{candidates} candidates · {selected} selected" : "Not discovered yet",
                 Areas[0].Purpose, ActionLabel: "Open", ActionId: "choose"),
-            new("prepare", Areas[1].Label, State(1), draft is null ? "Waiting" : $"{accepted} of {active.Count} accepted", Areas[1].Purpose, ActionLabel: "Open", ActionId: "prepare", DisabledReason: noDraft),
+            new("prepare", Areas[1].Label, State(1), draft is null ? "Waiting" : $"{accepted} of {active.Count} approved", Areas[1].Purpose, ActionLabel: "Open", ActionId: "prepare", DisabledReason: noDraft),
             new("testability", Areas[2].Label, State(2), draft is null ? "Waiting" : action == 0 ? "No case needs action" : $"{action} need action", Areas[2].Purpose,
                 ActionLabel: "Open", ActionId: "testability", DisabledReason: noDraft),
-            new("save", Areas[3].Label, State(3), snapshot is null ? "Not saved" : snapshot.DraftRevision >= (draft?.Revision ?? 0) ? $"Saved as snapshot #{snapshot.Sequence}" : $"Changed since snapshot #{snapshot.Sequence}",
+            new("save", Areas[3].Label, State(3), snapshot is null ? (draft is { Revision: > 0 } saved ? $"Plan saved (revision {saved.Revision}) · no snapshot yet" : "Not saved") : snapshot.DraftRevision >= (draft?.Revision ?? 0) ? $"Saved as snapshot #{snapshot.Sequence}" : $"Changed since snapshot #{snapshot.Sequence}",
                 Areas[3].Purpose, ActionLabel: "Open", ActionId: "save", DisabledReason: noDraft),
         ];
     }

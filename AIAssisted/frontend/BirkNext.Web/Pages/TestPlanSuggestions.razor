@@ -410,7 +410,7 @@
     {
         if (_draft is not { } current || _api is null || _dirty) return;
         var next = current.Revision + 1;
-        if (!await JS.InvokeAsync<bool>("confirm", $"Restore version {revision}? It is saved as version {next}; the current version {current.Revision} stays in the history. Test cases added after version {revision} leave the plan; their test runs stay in run history.")) return;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Restore version {revision}? It is saved as version {next}; the current version {current.Revision} stays in the history. Test cases added after version {revision} leave the plan.")) return;
         _busy = true;
         try
         {
@@ -508,7 +508,7 @@
             @* Version history: every saved revision of this plan (append-only). A restore saves the chosen version as the next revision. *@
             <section class="tps-block" id="tps-history" data-testid="tps-history" aria-labelledby="tps-history-title">
                 <h2 id="tps-history-title" class="tps-h">Version history of "@hd.PlanName"</h2>
-                <p class="tps-muted tps-small">Every saved version is kept. Restoring one saves it as a new version; nothing is deleted, and test runs stay in run history.</p>
+                <p class="tps-muted tps-small">Every saved version is kept. Restoring one saves it as a new version; nothing is deleted.</p>
                 @if (_historyError is not null) { <p class="tps-note tps-note-warn" role="alert">@_historyError</p> }
                 else if (_revisions is null) { <p class="tps-muted" role="status">Loading versions…</p> }
                 else if (_revisions.Count == 0) { <p class="tps-muted" data-testid="tps-history-none">No saved version is recorded yet. Versions saved from now on appear here.</p> }
@@ -1120,8 +1120,10 @@
                             <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || _dirty)" @onclick="() => ReviewAsync(sid, TestCaseReviewState.UnderReview)">Start review</button>
                             <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || _dirty)" @onclick="() => ReviewAsync(sid, TestCaseReviewState.NeedsClarification)" data-testid="tps-clarify-@sid">Needs clarification</button>
                             <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_busy || _dirty)" @onclick="() => ReviewAsync(sid, TestCaseReviewState.Excluded)" data-testid="tps-exclude-@sid">Exclude</button>
-                            <button type="button" class="tps-btn" disabled="@(_busy || _dirty || string.IsNullOrWhiteSpace(c.EffectiveExpected))" @onclick="() => ReviewAsync(sid, TestCaseReviewState.Accepted)" data-testid="tps-accept-@sid">Accept for preparation</button>
+                            @{ var approveBlocker = P.ApproveBlocker(c); }
+                            <button type="button" class="tps-btn" disabled="@(_busy || _dirty || approveBlocker is not null)" @onclick="() => ReviewAsync(sid, TestCaseReviewState.Accepted)" data-testid="tps-accept-@sid" title="@(_dirty ? "Save your changes first" : approveBlocker ?? "Approved cases are exported to Azure DevOps")">Approve</button>
                         </div>
+                        @if (!_dirty && approveBlocker is not null && c.Review != TestCaseReviewState.Accepted) { <p class="tps-muted tps-small" data-testid="tps-approve-why-@sid">To approve: @approveBlocker</p> }
                     }
                     else
                     {
@@ -1704,11 +1706,13 @@
         {
             <p class="tps-muted" data-testid="tps-export-no-plan">Prepare and save a test plan first: the Azure DevOps export is built from saved test cases.</p>
         }
-        <section class="tps-section" data-testid="tps-export" aria-labelledby="tps-exp-h">
-            <div class="tps-section-head">
-                <h2 id="tps-exp-h" class="tps-h2">BirkNext JSON of a saved snapshot</h2>
+        @* Secondary: the Azure DevOps export above is the tester's export. This one archives a saved snapshot as BirkNext JSON; collapsed so the
+           two are never mistaken for one another (M2LB end-to-end, 2026-11-19). *@
+        <details class="tps-section" data-testid="tps-export" open="@(_export is not null)">
+            <summary class="tps-section-head">
+                <h2 id="tps-exp-h" class="tps-h2" style="display:inline">Other export: BirkNext JSON of a saved snapshot</h2>
                 <p class="tps-muted">Azure DevOps Test Plans stays the authority for formal Test Plans, Suites, Cases, Runs and Results. BirkNext prepares a reviewable proposal from a saved snapshot: copyable text and a structured BirkNext JSON file. Nothing is written to Azure DevOps, and import compatibility is not verified.</p>
-            </div>
+            </summary>
             @if (snapshots.Count == 0) { <p class="tps-muted" data-testid="tps-export-need">Save a snapshot first: an export is always of one saved snapshot.</p> }
             else
             {
@@ -1732,7 +1736,7 @@
                 </div>
                 <label class="tps-field tps-field-wide"><span class="tps-k">Copyable Test Case drafts</span><textarea class="tps-input tps-export-text" rows="16" readonly data-testid="tps-export-text">@x.Text</textarea></label>
             }
-        </section>
+        </details>
     };
 
     private async Task ExportAsync()

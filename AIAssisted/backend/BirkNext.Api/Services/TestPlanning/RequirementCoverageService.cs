@@ -128,7 +128,7 @@ public sealed class RequirementCoverageService(CanonicalInterpretationDbContext 
                 // An association proposed on an older scenario text is not verified for the current one, whatever was decided on it.
                 Trust = outdated && trust != AssociationTrust.Rejected ? AssociationTrust.SuggestedAssociation : trust,
                 RuleId = a.RuleId, Resolution = a.Resolution.ToString(), ReviewState = a.ReviewState.ToString(), Explanation = a.Explanation, Reviewer = a.Reviewer, DecidedAt = a.DecidedAt,
-                ScenarioReview = review is null ? "No draft" : accepted ? (reviewCurrent ? "Accepted for preparation" : "Accepted for an earlier scenario revision") : review.Review switch
+                ScenarioReview = review is null ? "No draft" : accepted ? (reviewCurrent ? "Approved" : "Approved for an earlier scenario revision") : review.Review switch
                 {
                     TestCaseReviewState.Excluded => "Excluded by the tester",
                     TestCaseReviewState.NeedsClarification => "Needs clarification",

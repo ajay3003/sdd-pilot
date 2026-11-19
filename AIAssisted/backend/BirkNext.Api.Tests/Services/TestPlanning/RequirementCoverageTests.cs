@@ -250,7 +250,7 @@ public sealed class RequirementCoverageTests
         var revalidate = await Coverage();
         var a = revalidate.Associations.Single();
         a.ReviewState.Should().Be(nameof(RelationReviewState.RevalidationRequired));
-        a.ScenarioReview.Should().Be("Accepted for an earlier scenario revision");
+        a.ScenarioReview.Should().Be("Approved for an earlier scenario revision");
         Row(revalidate, "FR-021").State.Should().Be(RequirementCoverageState.NeedsRelationshipReview);
     }
 

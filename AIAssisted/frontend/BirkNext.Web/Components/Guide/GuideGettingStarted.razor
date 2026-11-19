@@ -147,6 +147,8 @@
     <ul data-testid="guide-mt-evidence">
         <li><strong>Execution is in Azure DevOps.</strong> After the export, organise suites, assign testers, execute the cases, record Pass, Fail or Blocked, attach evidence, raise defects and retest in Azure DevOps Test Plans. BirkNext does not read those results back.</li>
         <li><strong>Coverage stays honest.</strong> Test Coverage and Requirements Traceability show <em>test design</em> (prepared / approved, and exported where recorded) — never execution: a prepared, approved or exported case is not an executed test.</li>
+        <li data-testid="guide-mt-monorepo"><strong>A project with several modules (a monorepo such as M2LB): choose the specification first.</strong> BirkNext never picks one of several specifications for you. Until you choose the module and specification in the <a href="/specification-explorer">Specification Explorer</a>, Discover &amp; understand lists no requirements and discovery finds no business scenarios from the specification (only UI pages, API operations, journeys and guide scenarios). The Manual Testing home then says <em>Choose the specification</em>. After choosing, run <em>Discover again</em> in Plan &amp; prepare.</li>
+        <li><strong>Approve after saving.</strong> A review decision (Approve, Needs clarification, Exclude) is recorded on saved content: save your edits first. Approve follows the export's rules — an expected result for the case, at least one step and an expected result for every step — and says what is missing. Only approved cases are exported unless you include the others on purpose.</li>
     </ul>
     <p>The <strong>Manual Testing</strong> workspace (sidebar → Workspace) lists Manual Testing first, then the modules around it:</p>
     <ol>

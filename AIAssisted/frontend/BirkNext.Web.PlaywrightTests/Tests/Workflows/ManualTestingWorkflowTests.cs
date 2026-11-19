@@ -7,8 +7,8 @@ namespace BirkNext.Web.PlaywrightTests.Tests.Workflows;
 
 /// <summary>
 /// Manual Testing, end to end on the test's own synthetic project: discover scenarios from the specification → prepare one as a test case →
-/// edit and save it → reload and find exactly the saved content → run it (a prepared case is not an executed case) → record results →
-/// complete → the completed run is read-only and listed in history, and survives a reload.
+/// edit and save it → reload and find exactly the saved content → approve it → the Manual Testing home lists the plan → export it to an XLSX file
+/// for Azure DevOps Test Plans and read the file back. Execution happens in Azure DevOps, not in BirkNext.
 /// </summary>
 [Collection(BrowserServersCollection.Name)]
 public sealed class ManualTestingWorkflowTests : IAsyncLifetime
@@ -30,7 +30,7 @@ public sealed class ManualTestingWorkflowTests : IAsyncLifetime
         Assertions.Expect(page.GetByTestId(testId)).ToHaveTextAsync(new Regex(pattern, RegexOptions.IgnoreCase), new() { Timeout = 240000 });
 
     [BrowserFact]
-    public async Task Discover_prepare_save_run_and_review_history_on_a_synthetic_project()
+    public async Task Discover_prepare_save_approve_and_export_on_a_synthetic_project()
     {
         var page = await _fixture.Context.NewPageAsync();
         var pageErrors = new List<string>();
@@ -85,36 +85,62 @@ public sealed class ManualTestingWorkflowTests : IAsyncLifetime
             (await page.Locator($"[data-testid=\"tps-steps-{candidateId}\"] input, [data-testid=\"tps-steps-{candidateId}\"] textarea")
                 .EvaluateAllAsync<string[]>("els => els.map(e => e.value)")).Should().Contain([stepText, expected]);
 
-            // Execute: start a run of the saved case, record every step, complete.
-            await saved.GetByTestId("tps-run-case").ClickAsync();
-            await ReadyAsync(page, "mte");
-            await Assertions.Expect(page.GetByTestId("mte-start")).ToContainTextAsync(stepText);
-            await page.GetByTestId("mte-start-env").FillAsync("Playwright isolated (disposable)");
-            await page.GetByTestId("mte-start-run").ClickAsync();
-            await page.GetByTestId("mte-runner").WaitForAsync(new() { Timeout = 120000 });
-            var runId = Regex.Match(page.Url, @"[?&]run=([^&]+)").Groups[1].Value;
-            runId.Should().NotBeNullOrEmpty("the run has its own address");
-            await Assertions.Expect(page.GetByTestId("mte-complete")).ToBeDisabledAsync(new() { Timeout = 30000 });
+            // Approve: the export's content rules apply (an expected result for the case and for every step), and a review decision is recorded
+            // on saved content (the button is disabled while edits are unsaved). Fill what the evidence left open, save, then approve.
+            var changed = false;
+            var expectedCase = page.GetByTestId($"tps-edit-expected-{candidateId}");
+            if (await expectedCase.CountAsync() > 0 && string.IsNullOrWhiteSpace(await expectedCase.InputValueAsync()))
+            {
+                await expectedCase.FillAsync(expected);
+                await expectedCase.DispatchEventAsync("change");
+                changed = true;
+            }
+            var stepExpected = page.Locator($"[data-testid^=\"tps-step-expected-{candidateId}-\"]");
+            for (var i = 0; i < await stepExpected.CountAsync(); i++)
+            {
+                if (!string.IsNullOrWhiteSpace(await stepExpected.Nth(i).InputValueAsync())) continue;
+                await stepExpected.Nth(i).FillAsync($"PW-STEP-EXPECTED {i + 1}");
+                await stepExpected.Nth(i).DispatchEventAsync("change");
+                changed = true;
+            }
+            if (changed)
+            {
+                await saved.GetByTestId("tps-save").ClickAsync();
+                await MessageAsync(page, "tps-message", "Draft saved");
+            }
+            var approve = page.GetByTestId($"tps-accept-{candidateId}");
+            await Assertions.Expect(approve).ToBeEnabledAsync(new() { Timeout = 30000 });
+            await approve.ClickAsync();
+            // The decision is saved by the API: wait until the case shows it before leaving the page.
+            await Assertions.Expect(page.GetByTestId($"tps-case-{candidateId}")).ToContainTextAsync("Approved", new() { Timeout = 60000 });
+            var draftId = Regex.Match(page.Url, @"[?&]draft=([^&]+)").Groups[1].Value;
+            draftId.Should().NotBeNullOrEmpty("the saved plan has its own address");
 
-            var steps = await page.GetByTestId("mte-step").EvaluateAllAsync<string[]>("els => els.map(e => e.getAttribute('data-step'))");
-            steps.Should().NotBeEmpty();
-            foreach (var n in steps) await page.GetByTestId($"mte-outcome-{n}-Pass").CheckAsync();
-            await page.GetByTestId("mte-save").ClickAsync();
-            await MessageAsync(page, "mte-message", "Progress saved");
-            await page.GetByTestId("mte-complete").ClickAsync();
-            await MessageAsync(page, "mte-message", "Run completed");
-            await Assertions.Expect(page.GetByTestId("mte-run-state")).ToHaveTextAsync("Passed");
-            await Assertions.Expect(page.Locator("[data-testid=mte-runner] input[type=radio], [data-testid=mte-save]")).ToHaveCountAsync(0);
+            // Manual Testing home: the saved plan with its approved case, and the way to export it.
+            await page.GotoAsync($"{BrowserTestServers.FrontendUrl}/manual-testing", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+            await ReadyAsync(page, "mt");
+            await Assertions.Expect(page.GetByTestId("mt-plan").First).ToContainTextAsync("1 approved", new() { Timeout = 60000 });
+            await page.Locator($"[data-testid=mt-plan-export][href*=\"{draftId}\"]").ClickAsync();
 
-            // History lists the completed run; after a reload the run is still completed and read-only.
-            await page.GetByTestId("mte-back").ClickAsync();
-            await ReadyAsync(page, "mte");
-            var row = page.Locator($"[data-testid=mte-history-row][data-run=\"{runId}\"]");
-            await Assertions.Expect(row).ToContainTextAsync("Playwright isolated (disposable)");
-            await page.GotoAsync($"{BrowserTestServers.FrontendUrl}/manual-testing/execute?run={runId}", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
-            await ReadyAsync(page, "mte");
-            await Assertions.Expect(page.GetByTestId("mte-run-state")).ToHaveTextAsync("Passed");
-            await Assertions.Expect(page.Locator("[data-testid=mte-runner] input[type=radio], [data-testid=mte-save]")).ToHaveCountAsync(0);
+            // Export to a file for Azure DevOps Test Plans (BirkNext never writes to Azure DevOps): the XLSX carries the saved step.
+            var wizard = page.Locator("[data-testid=adx][aria-busy=false]");
+            await wizard.WaitForAsync(new() { Timeout = 120000 });
+            await page.GetByTestId("adx-area").FillAsync($@"{project}\Manual");
+            await page.GetByTestId("adx-area").DispatchEventAsync("change");
+            await wizard.WaitForAsync(new() { Timeout = 60000 });
+            await Assertions.Expect(page.GetByTestId("adx-can-download")).ToContainTextAsync("ready", new() { Timeout = 60000 });
+            var download = await page.RunAndWaitForDownloadAsync(() => page.GetByTestId("adx-download-xlsx").ClickAsync());
+            download.SuggestedFilename.Should().MatchRegex(@"-azure-test-plans-r\d+\.xlsx$");
+            var file = Path.Combine(Path.GetTempPath(), $"{project}-{download.SuggestedFilename}");
+            await download.SaveAsAsync(file);
+            try
+            {
+                using var zip = System.IO.Compression.ZipFile.OpenRead(file);
+                var xml = string.Concat(zip.Entries.Where(e => e.FullName.StartsWith("xl/", StringComparison.Ordinal) && e.FullName.EndsWith(".xml", StringComparison.Ordinal))
+                    .Select(e => { using var r = new StreamReader(e.Open()); return r.ReadToEnd(); }));
+                xml.Should().Contain("Step Action").And.Contain(System.Security.SecurityElement.Escape(stepText), "the exported file carries the saved step");
+            }
+            finally { File.Delete(file); }
             pageErrors.Should().BeEmpty();
         }
         finally { await page.CloseAsync(); }

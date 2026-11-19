@@ -28,7 +28,36 @@ public static class RequirementLinkPresentation
     {
         if (evidence is not { SpecificationAvailable: true } || evidence.SpecificationArtifacts.FirstOrDefault()?.Path is not { Length: > 0 } path) return null;
         return [.. evidence.Requirements.Where(r => !string.IsNullOrWhiteSpace(r.Id)).DistinctBy(r => r.Id.Trim(), StringComparer.OrdinalIgnoreCase)
-            .Select(r => new ProjectRequirementOption(r.Id.Trim(), string.IsNullOrWhiteSpace(r.Text) ? r.Id.Trim() : r.Text.Trim(), path))];
+            .Select(r => new ProjectRequirementOption(r.Id.Trim(), Statement(r.Id.Trim(), r.Text) ?? r.Id.Trim(), path))];
+    }
+
+    /// <summary>
+    /// A requirement's statement for display, without its own id label and Markdown emphasis ("- **FR-001**: The system MUST …" → "The system
+    /// MUST …"), as discovery shows it. Shown next to the id, the label used to read "FR-001 **FR-001**: …" on Discover &amp; understand (M2LB,
+    /// 2026-11-19). The words are never rewritten.
+    /// </summary>
+    public static string? Statement(string id, string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var t = text.Trim();
+        if (t.StartsWith("- ", StringComparison.Ordinal) || t.StartsWith("* ", StringComparison.Ordinal)) t = t[2..].TrimStart();
+        t = t.Replace("**", "", StringComparison.Ordinal).Replace("__", "", StringComparison.Ordinal).Replace("`", "", StringComparison.Ordinal).Trim();
+        if (t.StartsWith(id, StringComparison.OrdinalIgnoreCase)) t = t[id.Length..].TrimStart(':', '.', ' ', '-', '–').Trim();
+        return t.Length == 0 ? null : t;
+    }
+
+    /// <summary>
+    /// When the project holds several specifications and none is chosen (a monorepo such as M2LB: one specs folder per module), what the tester
+    /// must do, with the counts; null when a specification is selected or there is at most one. Nothing is chosen for the tester.
+    /// </summary>
+    public static string? SpecificationChoiceNeeded(Explorers.ArtifactExplorerState? state)
+    {
+        if (state is null || state.Selected is not null && state.Status == Explorers.ExplorerArtifactStatus.Loaded) return null;
+        var count = state.Modules is { Count: > 0 } modules ? modules.Sum(m => m.Candidates) : state.Artifacts.Count;
+        if (count < 2 && state.Status != Explorers.ExplorerArtifactStatus.SelectionRequired) return null;
+        var moduleCount = state.Modules?.Count(m => m.Candidates > 0) ?? 0;
+        return $"This project contains {count} specification{(count == 1 ? "" : "s")}{(moduleCount > 1 ? $" in {moduleCount} modules" : "")} and none is chosen yet. "
+            + "Choose the module and specification you are testing in the Specification Explorer; requirements and their test design are then shown here.";
     }
 
     /// <summary>Why the requirement list is empty, in plain words (null when there are requirements).</summary>

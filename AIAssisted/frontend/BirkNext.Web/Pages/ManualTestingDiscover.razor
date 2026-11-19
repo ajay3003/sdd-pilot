@@ -29,7 +29,12 @@
         <div class="mt-grid">
             <section class="mt-card" aria-labelledby="mtd-req-title" data-testid="mtd-requirements">
                 <h2 id="mtd-req-title" class="mt-h">Requirements</h2>
-                @if (_ws.Requirements is null)
+                @if (_ws.Requirements is not { Count: > 0 } && RequirementLinkPresentation.SpecificationChoiceNeeded(_ws.Specification) is { } choose)
+                {
+                    <p class="mt-muted" data-testid="mtd-req-none" data-reason="choose-specification">@choose</p>
+                    <a class="btn btn-primary btn-sm" href="specification-explorer" data-testid="mtd-choose-specification">Choose the specification</a>
+                }
+                else if (_ws.Requirements is null)
                 {
                     <p class="mt-muted" data-testid="mtd-req-none">@(RequirementLinkPresentation.EmptyReason(_ws.Evidence, null))</p>
                     <a href="specification-explorer">Open the Specification Explorer</a>
@@ -37,6 +42,7 @@
                 else if (_ws.Requirements.Count == 0)
                 {
                     <p class="mt-muted" data-testid="mtd-req-none">@(RequirementLinkPresentation.EmptyReason(_ws.Evidence, _ws.Requirements))</p>
+                    <a href="specification-explorer">Open the Specification Explorer</a>
                 }
                 else
                 {

@@ -400,13 +400,33 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         var api = new Api(Workspace(drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, 3, 2, 0, 0, 1, 2, 2, "t", DateTimeOffset.UtcNow)]), draft);
         var cut = Render(api, $"?draft={draft.Id}&area=review");
         cut.Find("[data-testid=tps-case-manglende-barn] .tps-case-head").Click();
-        cut.Find("[data-testid=tps-accept-manglende-barn]").HasAttribute("disabled").Should().BeFalse();
+        // Approve also needs an expected result per step (the export's rule); the review decisions as such are open before the edit.
+        cut.Find("[data-testid=tps-clarify-manglende-barn]").HasAttribute("disabled").Should().BeFalse();
         cut.FindAll("[data-testid=tps-case-manglende-barn] textarea")[2].Change("Rapporten holdes til barnet finnes");
         cut.Find("[data-testid=tps-review-needs-save]").TextContent.Should().Contain("Save or discard");
         cut.Find("[data-testid=tps-accept-manglende-barn]").HasAttribute("disabled").Should().BeTrue();
         cut.Find("[data-testid=tps-clarify-manglende-barn]").HasAttribute("disabled").Should().BeTrue();
         cut.Find("[data-testid=tps-save]").Click();
         api.Saved!.Cases.Single(c => c.ScenarioId == "manglende-barn").Edits.ExpectedResult.Should().Be("Rapporten holdes til barnet finnes");
+    }
+
+    [Fact]
+    public void Approve_follows_the_export_rules_and_says_what_is_missing()
+    {
+        // M2LB end-to-end (2026-11-19): cases were approved with steps lacking an expected result and then refused by the Azure DevOps export.
+        var draft = Draft();
+        var api = new Api(Workspace(drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, 3, 2, 0, 0, 1, 2, 2, "t", DateTimeOffset.UtcNow)]), draft);
+        var cut = Render(api, $"?draft={draft.Id}&area=review");
+        var c = draft.Cases.Single(x => x.Source.ScenarioId == "manglende-barn");
+        cut.Find("[data-testid=tps-case-manglende-barn] .tps-case-head").Click();
+        var blocker = P.ApproveBlocker(c);
+        cut.Find("[data-testid=tps-accept-manglende-barn]").HasAttribute("disabled").Should().Be(blocker is not null);
+        if (blocker is not null)
+            cut.Find("[data-testid=tps-approve-why-manglende-barn]").TextContent.Should().Be($"To approve: {blocker}");
+        P.ApproveBlocker(c with { Edits = c.Edits with { ExpectedResult = "Rapporten holdes", Steps = ["Send rapporten"], StepExpected = ["Rapporten er mottatt"] } }).Should().BeNull();
+        P.ApproveBlocker(c with { Edits = c.Edits with { ExpectedResult = "Rapporten holdes", Steps = ["Send rapporten", "Åpne loggen"], StepExpected = ["Rapporten er mottatt", null] } })
+            .Should().Be("step 2 needs an expected result.");
+        P.ApproveBlocker(c with { Edits = c.Edits with { ExpectedResult = "Rapporten holdes", Steps = [], StepExpected = [] } }).Should().Be("add at least one step with its expected result.");
     }
 
     // ── Audit 2026-11-15 (§20): unsaved edits are never marked saved early and never discarded silently ──────────────────────────────────

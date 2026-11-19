@@ -23,7 +23,7 @@ public sealed class ReviewedRequirementCoverageTests : BunitContext
         RelationKey = $"Scenario|system-understanding/skolenaervaer/{scenario}->Verifies->Requirement|skole/001-skoletjenesten/{req}", GuideKey = "skolenaervaer", ScenarioId = scenario,
         ScenarioTitle = scenario, RequirementKey = $"Requirement|skole/001-skoletjenesten/{req}", RequirementId = req, Trust = trust, RuleId = rule, Resolution = "Candidate",
         ReviewState = trust == AssociationTrust.ReviewedCanonicalAssociation ? "Confirmed" : "NotReviewed", Reviewer = trust == AssociationTrust.ReviewedCanonicalAssociation ? "reviewer@bufdir" : null,
-        DecidedAt = new DateTimeOffset(2026, 11, 12, 10, 0, 0, TimeSpan.Zero), ScenarioReview = current ? "Accepted for preparation" : "Not reviewed", ScenarioReviewCurrent = current,
+        DecidedAt = new DateTimeOffset(2026, 11, 12, 10, 0, 0, TimeSpan.Zero), ScenarioReview = current ? "Approved" : "Not reviewed", ScenarioReviewCurrent = current,
     };
 
     static RequirementCoverageView View()

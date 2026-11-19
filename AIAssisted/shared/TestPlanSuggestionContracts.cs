@@ -548,7 +548,7 @@ public sealed record RequirementScenarioAssociation
     public string Explanation { get; init; } = "";
     public string? Reviewer { get; init; }
     public DateTimeOffset? DecidedAt { get; init; }
-    /// <summary>"Accepted for preparation", "Accepted for an earlier scenario revision", "Not reviewed", "No draft".</summary>
+    /// <summary>"Approved", "Approved for an earlier scenario revision", "Not reviewed", "No draft".</summary>
     public string ScenarioReview { get; init; } = "";
     public bool ScenarioReviewCurrent { get; init; }
     public Guid? DraftId { get; init; }

@@ -24,7 +24,12 @@ public static class ManualTestingPresentation
 
     /// <summary>What the home and the stages are derived from.</summary>
     /// <param name="Requirements">Requirements of the project's selected specification; null = no specification selected or readable.</param>
-    public sealed record Facts(string? ProjectKey, string? ProjectName, IReadOnlyList<TestPlanDraftSummary> Plans, ScenarioDiscoveryResult? Discovery, int? Requirements);
+    /// <param name="SpecificationChoice">Set when the project holds several specifications and none is chosen (a monorepo): what to choose and why.
+    /// Discovery then finds no business scenarios from the specification, so choosing comes first.</param>
+    public sealed record Facts(string? ProjectKey, string? ProjectName, IReadOnlyList<TestPlanDraftSummary> Plans, ScenarioDiscoveryResult? Discovery, int? Requirements,
+        string? SpecificationChoice = null);
+
+    public const string SpecificationRoute = "specification-explorer";
 
     public sealed record NextAction(string Label, string Href, string Why);
 
@@ -44,7 +49,7 @@ public static class ManualTestingPresentation
             "What needs testing? Requirements, scenario suggestions from the project's evidence, existing tests and what needs clarification.",
             Evidence: string.Join(" · ", new[]
             {
-                f.Requirements is { } r ? $"{r} requirement{(r == 1 ? "" : "s")} in the specification" : "No specification selected",
+                f.SpecificationChoice is not null ? "Specification not chosen yet" : f.Requirements is { } r ? $"{r} requirement{(r == 1 ? "" : "s")} in the specification" : "No specification selected",
                 f.Discovery is null ? null : $"discovered {f.Discovery.DiscoveredAt.ToLocalTime():yyyy-MM-dd HH:mm}",
                 clarify > 0 ? $"{clarify} need clarification" : null,
             }.Where(x => x is not null)),
@@ -63,6 +68,8 @@ public static class ManualTestingPresentation
     public static NextAction Next(Facts f)
     {
         if (f.ProjectKey is null) return new("Select a project", "project-import", "Manual Testing works on one imported project at a time.");
+        if ((f.Plans.Count == 0 || Cases(f) == 0) && f.SpecificationChoice is { } choose)
+            return new("Choose the specification", SpecificationRoute, choose);
         if (f.Plans.Count == 0 || Cases(f) == 0)
             return f.Discovery is null
                 ? new("Discover what to test", $"{PlanRoute}?area=choose", "Nothing is prepared yet. Find scenarios in the project's evidence, or write a test case by hand.")
