@@ -827,8 +827,7 @@ builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.RequirementCoverag
 builder.Services.AddSingleton<BirkNext.Api.Services.TestPlanning.ScenarioDiscoveryCache>();
 // The cache's durable copy: the last discovery per project survives an API restart (read back on demand, never re-run).
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ScenarioDiscoveryStore>();
-// Manual Testing → Execute & document: manual runs of saved test cases (pinned case content, step results, evidence references, local defects).
-builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ManualTestRunService>();
+// Manual test execution is owned by Azure DevOps Test Plans (2026-11-19): BirkNext prepares and exports cases; it records no manual runs.
 // Plan & prepare → Export to Azure DevOps: offline XLSX/CSV import files from saved test cases (no Azure DevOps connection).
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.AdoTestPlanExportService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.SpecificationScenarioProvider>();

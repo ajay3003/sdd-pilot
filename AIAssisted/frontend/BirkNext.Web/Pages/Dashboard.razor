@@ -17,7 +17,7 @@
 @inject IServiceProvider Services
 @implements IDisposable
 
-<PageTitle>Project Quality Dashboard</PageTitle>
+<PageTitle>BirkNext — Project Dashboard</PageTitle>
 
 @if (ResetNotice is { } notice)
 {
@@ -32,20 +32,20 @@
     <div class="dashboard-onboarding-card" data-testid="onboarding-card">
         <div class="dashboard-onboarding-text">
             <strong>New to BirkNext?</strong>
-            <span>Follow the recommended workflow to get started with the platform phase by phase.</span>
+            <span>Start by importing your project (documents and source in one ZIP). The <a href="user-guide">User Guide</a> walks through the first steps.</span>
         </div>
-        <a href="getting-started" class="btn-primary dashboard-onboarding-btn">Start Recommended Workflow</a>
+        <a href="project-import" class="btn-primary dashboard-onboarding-btn">Import a project</a>
     </div>
 }
 
-    <PageHeader ShowProjectSelector="true" Title="Project Quality Dashboard" Description="Overview of project evidence, specification quality, traceability, reviews and verification. Shows what is available, what has been assessed and what still requires attention.">
+    <PageHeader ShowProjectSelector="true" Title="Project Dashboard" Description="Overview of project evidence, specification quality, traceability, reviews and verification. Shows what is available, what has been assessed and what still requires attention.">
         <BirkNext.Web.Components.HelpLink Topic="project-quality" Text="How to read this page" />
         @if (_hasAnySnapshot)
         {
             <button type="button" class="btn-secondary db-export-btn" @onclick="ExportHtml">Export HTML</button>
         }
     </PageHeader>
-    <BirkNext.Web.Components.SourceManagement.SourceContextNotice Purpose="Project Quality" />
+    <BirkNext.Web.Components.SourceManagement.SourceContextNotice Purpose="Project Dashboard" />
     @if (_workflowReadiness is { } focusReadiness) { <WorkspaceFocusPanel Capabilities="focusReadiness.Capabilities" Compact="true" /> }
 
     @* ══ 1 · Workspace summary ═══════════════════════════════════════════════════
@@ -115,6 +115,7 @@
                     <span data-testid="db-workspace-modules">No module chosen yet — reviews check one module at a time</span>
                 }
                 <span data-testid="db-save-status" title="Save status. A workspace is loaded whether or not it is saved.">@_workspace.SaveStatusLabel</span>
+                <WorkspaceActionsMenu WorkspaceLoaded="@_workspace.WorkspaceLoaded" OnChanged="RefreshWorkspaceAsync" />
             </div>
             @if (_workspace.WorkspaceLoaded && _workspace.State == CurrentWorkspaceState.Loaded)
             {
@@ -176,6 +177,12 @@
                 <InlineLoading Text="Working out the recommended next step…" Class="db-workspace-message" TestId="db-readiness-loading" />
             }
         </section>
+    }
+
+    @* ══ Review decisions (moved here from Recommended Workflow): recorded on purpose, against exact artifact revisions ══ *@
+    @if (_workspace is { WorkspaceLoaded: true, State: CurrentWorkspaceState.Loaded } && _workflowReadiness is not null)
+    {
+        <ReviewDecisionPanel Readiness="@_workflowReadiness" OnDecided="RefreshWorkspaceAsync" />
     }
 
     @* ══ Charts: evidence readiness (Review availability rows) and review execution (review navigator capabilities) ══ *@

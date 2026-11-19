@@ -59,8 +59,6 @@ builder.Services.AddHttpClient<AdminApiService>(client =>
 builder.Services.AddHttpClient<IBuildInfoApiService, BuildInfoApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ISystemUnderstandingApiService, SystemUnderstandingApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ITestPlanSuggestionsApiService, TestPlanSuggestionsApiService>(client => client.BaseAddress = backendBase);
-// Manual Testing → Execute & document: manual runs of saved test cases (records what a tester did; executes nothing).
-builder.Services.AddHttpClient<IManualTestRunsApiService, ManualTestRunsApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ITechnicalHistoryApiService, TechnicalHistoryApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ISpecificationCatalogApiService, SpecificationCatalogApiService>(client => client.BaseAddress = backendBase);
 // Plan & prepare → Export to Azure DevOps: offline XLSX / CSV import files (no Azure DevOps connection).

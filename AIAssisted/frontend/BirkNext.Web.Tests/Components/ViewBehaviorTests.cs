@@ -611,25 +611,6 @@ public class ViewBehaviorTests : BunitContext
     }
 
     [Fact]
-    public void Workflow_UsesTraceabilityFirstModel()
-    {
-        var cut = RenderRecommendedWorkflowForTraceability();
-
-        var text = cut.Markup;
-        text.Should().Contain("Open Traceability &amp; Coverage first");
-        text.Should().Contain("Review coverage and gaps");
-        text.Should().Contain("Use Flow View for QA readiness");
-        text.Should().Contain("Use Spec Explorer for specification structure");
-        text.Should().NotContain("Extraction Review");
-        text.Should().NotContain("Architecture View");
-        text.Should().NotContain("optional advanced extraction quality control");
-    }
-
-    // =========================================================================
-    // T13 — FlowView groups by user story heading, not by candidate classification
-    // =========================================================================
-
-    [Fact]
     public void FlowView_groups_by_user_story_heading_not_by_candidate_classification()
     {
         IReadOnlyList<ExtractionCandidate> candidates =
@@ -1120,32 +1101,6 @@ public class ViewBehaviorTests : BunitContext
 
     // =========================================================================
     // QA Artifact Library — repository positioning
-    // =========================================================================
-
-    [Fact]
-    public void RecommendedWorkflow_MarksQaLibraryAsOptional()
-    {
-        var cut = RenderRecommendedWorkflowForTraceability();
-
-        var text = cut.Markup;
-
-        // Phase 2 must be marked as optional
-        text.Should().Contain("Optional",
-            "RecommendedWorkflow must mark the QA Artifact Library phase as optional");
-
-        // The key workflow message: Traceability works without publishing
-        text.Should().Contain("Traceability",
-            "RecommendedWorkflow must mention Traceability & Coverage");
-        text.Should().Contain("no publishing required",
-            "RecommendedWorkflow must state that Traceability & Coverage works without publishing to the library");
-
-        // Phase 2 must explain it is about reuse, not required for coverage
-        text.Should().Contain("reuse",
-            "RecommendedWorkflow Phase 2 must emphasize the library is for reuse");
-    }
-
-    // =========================================================================
-    // ArchitectureView — extraction correctness and empty-state prevention
     // =========================================================================
 
     [Fact]
@@ -1787,28 +1742,6 @@ public class ViewBehaviorTests : BunitContext
         text.Should().Contain("M2LB child-security-classification extension");
         text.Should().Contain("href=\"/source-analysis\"");
         text.Should().Contain("href=\"/performance-test-review\"");
-    }
-
-    private IRenderedComponent<RecommendedWorkflow> RenderRecommendedWorkflowForTraceability()
-    {
-        var readinessService = new Mock<IWorkflowReadinessService>();
-        readinessService
-            .Setup(service => service.GetReadinessAsync())
-            .ReturnsAsync(CreateTraceabilityFirstReadiness());
-
-        var autoSave = new Mock<IWorkspaceAutoSaveService>();
-        autoSave.Setup(service => service.StartMonitoringAsync()).Returns(Task.CompletedTask);
-        autoSave.Setup(service => service.StopMonitoringAsync()).Returns(Task.CompletedTask);
-
-        Services.AddSingleton(readinessService.Object);
-        Services.AddSingleton(new Mock<ICurrentWorkspaceProjection> { CallBase = true }.Object);
-        Services.AddSingleton(new Mock<IWorkspacePersistenceApiService> { CallBase = true }.Object);
-        Services.AddSingleton(Mock.Of<IWorkspaceSessionRestoreService>());
-        Services.AddSingleton(autoSave.Object);
-        Services.AddSingleton(Mock.Of<IRecommendedWorkflowApiService>());
-        Services.AddSingleton(NullLogger<RecommendedWorkflow>.Instance);
-
-        return Render<RecommendedWorkflow>();
     }
 
     private static WorkflowReadiness CreateTraceabilityFirstReadiness()

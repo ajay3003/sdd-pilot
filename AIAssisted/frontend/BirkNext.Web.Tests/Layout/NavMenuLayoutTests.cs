@@ -275,13 +275,13 @@ public sealed class NavMenuLayoutTests : BunitContext
     }
 
     [Theory]
-    [InlineData("getting-started", new[] { "dashboard", "all-modules", "getting-started", "system-understanding", "project-import", "sources", "demo-projects", NavigationCatalog.TargetEnvironmentsRoute })]
+    [InlineData("getting-started", new[] { "dashboard", "all-modules", "system-understanding", "project-import", "sources", "demo-projects", NavigationCatalog.TargetEnvironmentsRoute })]
     [InlineData("delivery-reporting", new[] { NavigationCatalog.DeliverySnapshotsRoute, NavigationCatalog.DeliveryOverviewRoute, "delivery-reporting" })]
     [InlineData("document-review", new[] { "specification-explorer", "constitution-explorer", "data-model-explorer", "plan-explorer", "task-explorer", "quality/document", "task-alignment", "documentation-drift" })]
-    [InlineData("traceability", new[] { "artifact-traceability", "correlation-review", "release-readiness", "snapshots" })] // Impact Analysis is optional and off by default
+    [InlineData("traceability", new[] { "artifact-traceability", "correlation-review", "snapshots" })] // Impact Analysis is optional and off by default
     [InlineData("source-review", new[] { "source-analysis", "schema-studio", "generated-documentation-explorer", "generated-documentation-health", "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
     // The Manual Testing workspace: home, then its three stages in the tester's order (Plan & prepare is Test Plan Suggestions, moved here).
-    [InlineData("manual-testing-workspace", new[] { "manual-testing", "manual-testing/discover", "test-plan-suggestions", "manual-testing/execute" })]
+    [InlineData("manual-testing-workspace", new[] { "manual-testing", "manual-testing/discover", "test-plan-suggestions" })]
     // The Technical Testing workspace: home, then its three stages (summaries over the specialist modules, which stay in Quality & Testing).
     [InlineData("technical-testing-workspace", new[] { "technical-testing", "technical-testing/assess", "technical-testing/configure", "technical-testing/verify", "technical-testing/integrations" })]
     [InlineData("quality-testing", new[] { "test-coverage-review", "code-risk-review", "test-data", "api-quality-review/contracts", "integration-suites", "execution-results", "parquet-viewer", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "integration-journeys", "performance-test-review", "critical-e2e-regression" })]
@@ -302,7 +302,7 @@ public sealed class NavMenuLayoutTests : BunitContext
         cut.Find("a[href='implementation-traceability']").GetAttribute("title").Should().StartWith("Change Traceability: Azure DevOps work items");
 
         cut.FindAll("#nav-section-traceability a.nav-link").Select(a => a.GetAttribute("href")).Should()
-            .Equal("artifact-traceability", "implementation-traceability", "impact-analysis", "correlation-review", "release-readiness", "snapshots");
+            .Equal("artifact-traceability", "implementation-traceability", "impact-analysis", "correlation-review", "snapshots");
     }
 
     [Fact]

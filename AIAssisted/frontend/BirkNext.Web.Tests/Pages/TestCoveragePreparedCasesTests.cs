@@ -94,8 +94,8 @@ public sealed class TestCoveragePreparedCasesTests : BunitContext
         row.GetAttribute("data-requirement").Should().Be("FR-001");
         row.TextContent.Should().Contain("Approved test case");
         cut.Find("[data-testid=pct-requirement-case]").GetAttribute("href").Should().Be($"test-plan-suggestions?draft={DraftId}&area=prepare&case=tsc-borrow");
-        cut.Find("[data-testid=pct-executed]").TextContent.Should().StartWith("0").And.Contain("not executions");
-        cut.FindAll("[data-testid=pct-case-execution]").Select(e => e.TextContent).Should().OnlyContain(t => t == PreparedCaseTraceView.NotExecuted);
+        cut.FindAll("[data-testid=pct-executed]").Should().BeEmpty("test design only: manual tests are executed in Azure DevOps Test Plans");
+        cut.FindAll("[data-testid=pct-case-execution]").Should().BeEmpty();
         cut.Find("[data-testid=pct-boundary]").TextContent.Should().Contain("not test execution");
         // The review's own counts are not changed by the traced cases.
         result.Inventory.TestsDiscovered.Should().Be(4);

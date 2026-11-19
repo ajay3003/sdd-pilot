@@ -29,7 +29,7 @@ public sealed class ManualRunOriginTests
     [Fact]
     public void A_run_pins_the_specification_scenario_and_each_requirements_file_and_basis()
     {
-        var origin = ManualTestRunService.Origin(FromSpecification());
+        var origin = ManualCaseIdentity.Origin(FromSpecification());
 
         origin.SourceKind.Should().Be(ScenarioSourceKind.ProjectDiscovery);
         origin.ScenarioFingerprint.Should().Be("f00d");
@@ -49,7 +49,7 @@ public sealed class ManualRunOriginTests
             Source = new ScenarioReference { Kind = ScenarioSourceKind.Manual, Owner = "import:p1", ScenarioId = "manual-1" },
             Generated = FromSpecification().Generated with { Capability = null },
         };
-        var origin = ManualTestRunService.Origin(manual);
+        var origin = ManualCaseIdentity.Origin(manual);
 
         (origin.SourceKind, origin.SpecificationFile, origin.SpecificationScenarioId).Should().Be((ScenarioSourceKind.Manual, (string?)null, (string?)null));
         origin.Requirements.Should().ContainSingle().Which.Basis.Should().Be("Manual link");
@@ -63,16 +63,6 @@ public sealed class ManualRunOriginTests
             new { c.EffectiveTitle, c.EffectivePreconditions, Steps = c.EffectiveSteps, Expected = c.EffectiveStepExpected, c.EffectiveExpected }, TestPlanSuggestionEngine.Json));
 
         ManualRunRules.CaseFingerprint(c).Should().Be(old);
-        ManualTestRunService.Fingerprint(c).Should().Be(old);
-    }
-
-    [Fact]
-    public void A_run_stored_before_origin_was_recorded_still_reads()
-    {
-        var legacy = JsonSerializer.Serialize(new { id = Guid.NewGuid(), caseId = "c1", title = "Old run", requirementIds = new[] { "FR-001" } }, TestPlanSuggestionEngine.Json);
-        var run = JsonSerializer.Deserialize<ManualTestRun>(legacy, TestPlanSuggestionEngine.Json)!;
-
-        (run.Origin, run.RetestOf, run.RequirementIds.Single()).Should().Be(((ManualRunOrigin?)null, (Guid?)null, "FR-001"));
-        ManualRunRules.Summary(run).RetestOf.Should().BeNull();
+        ManualCaseIdentity.Fingerprint(c).Should().Be(old);
     }
 }

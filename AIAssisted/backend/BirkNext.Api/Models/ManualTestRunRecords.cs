@@ -4,6 +4,9 @@ namespace BirkNext.Api.Models;
 /// One manual test run (table <c>manual_test_runs</c>): a person executing one saved test case (plan id + case id) of one project. The run's
 /// content (<see cref="ContentJson"/>, a <c>ManualTestRun</c>) pins the case's steps, expected results and content fingerprint at start, so a
 /// later case edit never rewrites the result. <see cref="Revision"/> is an optimistic-concurrency token; a completed or abandoned run is final.
+/// <para>Dormant since 2026-11-19: manual execution is owned by Azure DevOps Test Plans and nothing writes or reads this table any more. It
+/// stays in the model so existing databases keep their migration history and Local Data Reset still clears it; a later cleanup migration can drop
+/// it together with <see cref="ManualRunAttachmentRecord"/>.</para>
 /// </summary>
 public sealed class ManualTestRunRecord
 {

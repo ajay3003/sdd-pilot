@@ -31,7 +31,7 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         cut.FindAll("a").Count(a => a.TextContent.Trim() == "Source Analysis").Should().Be(1);
         entries[0].Should().Be("§Workspace", "Source Analysis is no longer a special item above the groups");
         entries.Should().ContainInConsecutiveOrder("Import Project", "Source Management", "Demo Projects", "Target Environments", "§Delivery Management");
-        entries.Should().ContainInConsecutiveOrder("§Traceability & Impact", "Requirements Traceability", "Relationship Review", "Release Readiness", "Snapshots", "§Source & Architecture");
+        entries.Should().ContainInConsecutiveOrder("§Traceability & Impact", "Requirements Traceability", "Relationship Review", "Snapshots", "§Source & Architecture");
         entries.Should().NotContain("Change Traceability", "optional Azure DevOps provenance is off by default");
         entries.Should().ContainInConsecutiveOrder("§Source & Architecture", "Source Analysis", "Schema Studio", "Generated Documentation Explorer", "Generated Documentation Health", "Technology Coverage", "Dependency Review", "Pipeline Review", "Environment Analysis");
         cut.FindAll("a[href='azure-environment']").Should().ContainSingle();
@@ -77,7 +77,7 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         var cut = Render<NavMenu>();
 
         // Import Project feeds Source Analysis too, so it stays visible with it; Source Analysis itself is a source review.
-        Entries(cut).Should().ContainInConsecutiveOrder("Recommended Workflow", "System Understanding", "Import Project", "Source Management", "§Delivery Management");
+        Entries(cut).Should().ContainInConsecutiveOrder("All modules", "System Understanding", "Import Project", "Source Management", "§Delivery Management");
         Entries(cut).Should().ContainInConsecutiveOrder("§Source & Architecture", "Source Analysis", "Schema Studio", "Generated Documentation Explorer", "Generated Documentation Health", "Technology Coverage");
     }
 

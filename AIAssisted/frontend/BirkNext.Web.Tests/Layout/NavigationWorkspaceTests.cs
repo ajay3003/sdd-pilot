@@ -118,11 +118,11 @@ public sealed class NavigationWorkspaceTests : BunitContext
     }
 
     [Theory]
-    [InlineData(WorkspaceView.TestLead, new[] { "artifact-traceability", "test-data", "test-plan-suggestions", "system-understanding", "specification-explorer", "test-coverage-review", "api-quality-review", "api-quality-review/contracts", "integration-quality-review", "performance-test-review", "critical-e2e-regression", "execution-results", "release-readiness" })]
-    [InlineData(WorkspaceView.TechnicalTester, new[] { "api-quality-review/contracts", "api-quality-review", "integration-suites", "execution-results", "critical-e2e-regression", "integration-quality-review", "test-data", "test-coverage-review", "performance-test-review", "integration-topology", "getting-started" })]
-    [InlineData(WorkspaceView.ManualTesting, new[] { "manual-testing", "manual-testing/discover", "manual-testing/execute", "system-understanding", "specification-explorer", "quality/document", "test-plan-suggestions", "test-data", "artifact-traceability", "test-coverage-review", "getting-started" })]
-    [InlineData(WorkspaceView.ScrumMaster, new[] { "delivery-reporting", "delivery-overview", "task-alignment", "getting-started", "release-readiness" })]
-    [InlineData(WorkspaceView.ProjectLeader, new[] { "dashboard", "delivery-overview", "delivery-reporting", "getting-started", "release-readiness", "snapshots", "correlation-review" })]
+    [InlineData(WorkspaceView.TestLead, new[] { "artifact-traceability", "test-data", "test-plan-suggestions", "system-understanding", "specification-explorer", "test-coverage-review", "api-quality-review", "api-quality-review/contracts", "integration-quality-review", "performance-test-review", "critical-e2e-regression", "execution-results" })]
+    [InlineData(WorkspaceView.TechnicalTester, new[] { "api-quality-review/contracts", "api-quality-review", "integration-suites", "execution-results", "critical-e2e-regression", "integration-quality-review", "test-data", "test-coverage-review", "performance-test-review", "integration-topology" })]
+    [InlineData(WorkspaceView.ManualTesting, new[] { "manual-testing", "manual-testing/discover", "system-understanding", "specification-explorer", "quality/document", "test-plan-suggestions", "test-data", "artifact-traceability", "test-coverage-review" })]
+    [InlineData(WorkspaceView.ScrumMaster, new[] { "delivery-reporting", "delivery-overview", "task-alignment" })]
+    [InlineData(WorkspaceView.ProjectLeader, new[] { "dashboard", "delivery-overview", "delivery-reporting", "critical-e2e-regression", "snapshots", "correlation-review" })]
     [InlineData(WorkspaceView.Developer, new[] { "source-analysis", "specification-explorer", "schema-studio", "api-quality-review", "technology-coverage", "dependency-review", "pipeline-review" })]
     [InlineData(WorkspaceView.Architect, new[] { "source-analysis", "integration-topology", "integration-quality-review", "schema-studio", "data-model-explorer" })]
     public void Presets_HoldTheirRolesModules(WorkspaceView view, string[] routes)
@@ -146,7 +146,7 @@ public sealed class NavigationWorkspaceTests : BunitContext
         var rendered = cut.FindAll("[id^='nav-section-'] a").Select(a => a.GetAttribute("href")).ToList();
         rendered.Should().Equal(eligible, "every eligible module once, in catalogue order");
         rendered.Should().OnlyHaveUniqueItems();
-        rendered.Should().Contain(["test-data", "test-plan-suggestions", "system-understanding", "dashboard", "getting-started", "artifact-traceability",
+        rendered.Should().Contain(["test-data", "test-plan-suggestions", "system-understanding", "dashboard", "artifact-traceability",
             "correlation-review", "critical-e2e-regression", "integration-suites", "execution-results", "performance-test-review"]);
         cut.FindAll("[data-testid=nav-outside-badge]").Should().BeEmpty("nothing is outside All Modules");
         cut.FindAll("[data-outside=true]").Should().BeEmpty();
@@ -544,7 +544,7 @@ public sealed class NavigationWorkspaceTests : BunitContext
         cut.FindAll("[data-testid=nav-outside-badge]").Should().BeEmpty();
         cut.FindAll("[data-outside=true]").Should().BeEmpty();
         foreach (var route in new[] { NavigationCatalog.DeliveryOverviewRoute, "delivery-reporting", "constitution-explorer", "data-model-explorer", "plan-explorer",
-                     "task-explorer", "correlation-review", "release-readiness", "snapshots", "source-analysis", "schema-studio", "api-quality-review/contracts",
+                     "task-explorer", "correlation-review", "snapshots", "source-analysis", "schema-studio", "api-quality-review/contracts",
                      "integration-suites", "api-quality-review", "integration-quality-review" })
             cut.FindAll($"#nav-groups a[href='{route}']").Should().BeEmpty($"{route} is outside Manual Tester (the modules from the defect report)");
     }

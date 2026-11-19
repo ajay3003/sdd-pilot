@@ -1055,11 +1055,6 @@
                             @if (c.Generated.Confidence is { } conf) { <span class="tps-muted"> · @ScenarioCandidateTypes.ConfidenceLabel(conf)</span> }</dd>
                     </dl>
                     @LinkedRequirements(d, c, sid)
-                    @if (d.ProjectKey is not null && c.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded))
-                    {
-                        <p class="tps-run-link"><a href="@($"{ManualTestingPresentation.ExecuteRoute}?draft={d.Id}&case={Uri.EscapeDataString(sid)}")" data-testid="tps-run-case">Run this test case</a>
-                            <span class="tps-muted tps-small">@(_dirty ? "Save your changes first: a run uses the saved case." : "Execute & document: record what happens, step by step.")</span></p>
-                    }
                     @if (CanWrite)
                     {
                         @* Locked while a request is in flight, so a late response can never replace an edit made meanwhile. *@

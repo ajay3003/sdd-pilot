@@ -11,7 +11,7 @@ using Moq;
 namespace BirkNext.Web.Tests.Pages;
 
 /// <summary>
-/// Review decisions in Recommended Workflow: availability, review, approval and staleness are separate states read from one
+/// Review decisions (on Project Dashboard since Recommended Workflow was retired): availability, review, approval and staleness are separate states read from one
 /// presentation; a decision is explicit and names the exact artifact revisions; Manual Review counts the required gates
 /// that apply, and says which they are.
 /// </summary>
@@ -71,20 +71,12 @@ public sealed class ReviewDecisionSemanticsTests : BunitContext
 
     private readonly Mock<IRecommendedWorkflowApiService> _api = new();
 
-    private IRenderedComponent<RecommendedWorkflow> RenderPage(WorkflowReadiness readiness)
+    /// <summary>The review decisions as Project Dashboard shows them (moved there from the retired Recommended Workflow page).</summary>
+    private IRenderedComponent<BirkNext.Web.Components.ReviewDecisionPanel> RenderPanel(WorkflowReadiness readiness)
     {
-        var service = new Mock<IWorkflowReadinessService>();
-        service.Setup(s => s.GetReadinessAsync()).ReturnsAsync(readiness);
-        var autoSave = new Mock<IWorkspaceAutoSaveService>();
-        autoSave.Setup(a => a.StartMonitoringAsync()).Returns(Task.CompletedTask);
-        Services.AddSingleton(service.Object);
-        Services.AddSingleton(new Mock<ICurrentWorkspaceProjection> { CallBase = true }.Object);
-        Services.AddSingleton(new Mock<IWorkspacePersistenceApiService> { CallBase = true }.Object);
-        Services.AddSingleton(Mock.Of<IWorkspaceSessionRestoreService>());
-        Services.AddSingleton(autoSave.Object);
         Services.AddSingleton(_api.Object);
-        Services.AddSingleton(NullLogger<RecommendedWorkflow>.Instance);
-        return Render<RecommendedWorkflow>();
+        Services.AddSingleton(NullLogger<BirkNext.Web.Components.ReviewDecisionPanel>.Instance);
+        return Render<BirkNext.Web.Components.ReviewDecisionPanel>(p => p.Add(x => x.Readiness, readiness));
     }
 
     private static CurrentWorkspaceSnapshot PersonModule() => WorkspaceSnapshots.AllRoles("Person Module", "person-module");
@@ -124,59 +116,59 @@ public sealed class ReviewDecisionSemanticsTests : BunitContext
         ArtifactReviewPresentation.Of(legacy).Summary.Should().Be("Review stale · the earlier decision (approved on 6 Oct 2026) names no artifact revision");
     }
 
-    // ── Workflow page ────────────────────────────────────────────────────────────────────────────────────────────────────
+    // ── Review decisions on Project Dashboard ───────────────────────────────────────────────────────────────────────────
+
+    private static string Item(string key) => $"[data-testid=review-decision][data-step={key}]";
 
     [Fact]
-    public void StepBadges_AndStatusLines_SayTheStateInText_NeverReadyAsCompletion()
+    public void States_AreSaidInText_NeverReadyAsCompletion()
     {
-        var cut = RenderPage(Readiness(PersonModule(), MixedSteps()));
+        var cut = RenderPanel(Readiness(PersonModule(), MixedSteps()));
 
-        string Badge(string key) => cut.Find($"[data-testid=rw-step][data-step={key}] [data-testid=rw-step-state]").TextContent;
-        string Line(string key) => cut.Find($"[data-testid=rw-step][data-step={key}] [data-testid=rw-step-status]").TextContent;
-        Badge("ConstitutionExplorer").Should().Be("Approved");
+        string State(string key) => cut.Find($"{Item(key)} [data-testid=review-decision-state]").TextContent;
+        string Line(string key) => cut.Find($"{Item(key)} [data-testid=review-decision-summary]").TextContent;
+        State("ConstitutionExplorer").Should().Be("Approved");
         Line("ConstitutionExplorer").Should().EndWith("Approved on 7 Oct 2026 · current revision");
-        Badge("PlanExplorer").Should().Be("Review stale");
+        State("PlanExplorer").Should().Be("Review stale");
         Line("PlanExplorer").Should().StartWith("⟳", "stale has an icon and text, not colour alone");
-        Badge("DataModelExplorer").Should().Be("Ready to review");
-        Badge("ImplementationReview").Should().Be("Blocked");
+        State("DataModelExplorer").Should().Be("Ready to review");
+        State("ImplementationReview").Should().Be("Blocked");
         Line("ImplementationReview").Should().EndWith("Approve Artifact Traceability first");
-        cut.FindAll("[data-testid=rw-step-state]").Select(b => b.TextContent).Should().NotContain("Ready");
+        cut.FindAll("[data-testid=review-decision-state]").Select(b => b.TextContent).Should().NotContain("Ready");
         cut.Markup.Should().NotContain("Approval Invalidated");
     }
 
     [Fact]
     public void Decision_IsExplicit_AndNamesTheExactRevision()
     {
-        var cut = RenderPage(Readiness(PersonModule(), MixedSteps()));
+        var cut = RenderPanel(Readiness(PersonModule(), MixedSteps()));
 
-        var dataModel = cut.Find("[data-testid=rw-step][data-step=DataModelExplorer]");
-        var decision = dataModel.QuerySelector("[data-testid=rw-decision]")!;
+        var decision = cut.Find($"{Item("DataModelExplorer")} [data-testid=review-decision-record]");
         decision.TagName.Should().Be("DETAILS", "the decision is behind an explicit disclosure");
         decision.HasAttribute("open").Should().BeFalse();
         decision.QuerySelector("summary")!.TextContent.Should().Be("Record review decision");
-        decision.QuerySelector("[data-testid=rw-decision-target]")!.TextContent.Should().Be("Applies to DataModel: DataModel.md @ A1A1A1A1");
-        decision.QuerySelector("[role=group]")!.GetAttribute("aria-labelledby").Should().Be("rw-decision-DataModelExplorer");
-        // Approve is offered only because this fixture's steps require approval (policy); a recorded review decision completes a step.
+        decision.QuerySelector("[data-testid=review-decision-target]")!.TextContent.Should().Be("Applies to DataModel: DataModel.md @ A1A1A1A1");
+        decision.QuerySelector("[role=group]")!.GetAttribute("aria-labelledby").Should().Be("rdp-target-DataModelExplorer");
         decision.QuerySelectorAll("button").Select(b => b.TextContent.Trim()).Should().Equal("Mark reviewed", "Reviewed with gaps", "Approve");
 
         // Approved: no second approval; reviewed with gaps: no second one; blocked: no decision at all.
-        cut.Find("[data-testid=rw-step][data-step=ConstitutionExplorer] [data-testid=rw-decision]").QuerySelectorAll("button")
+        cut.Find($"{Item("ConstitutionExplorer")} [data-testid=review-decision-record]").QuerySelectorAll("button")
             .Select(b => b.TextContent.Trim()).Should().Equal("Reviewed with gaps");
-        cut.Find("[data-testid=rw-step][data-step=SpecificationExplorer] [data-testid=rw-decision]").QuerySelectorAll("button")
+        cut.Find($"{Item("SpecificationExplorer")} [data-testid=review-decision-record]").QuerySelectorAll("button")
             .Select(b => b.TextContent.Trim()).Should().Equal("Mark reviewed", "Approve");
-        cut.Find("[data-testid=rw-step][data-step=ImplementationReview]").QuerySelectorAll("button, details").Should().BeEmpty();
+        cut.Find(Item("ImplementationReview")).QuerySelectorAll("button, details").Should().BeEmpty();
     }
 
     [Fact]
-    public void Approve_SendsTheRevisionsThePageShows_AndOpeningAnExplorerRecordsNothing()
+    public void Approve_SendsTheRevisionsShown_AndOpeningAReviewRecordsNothing()
     {
         var workspace = PersonModule();
-        var cut = RenderPage(Readiness(workspace, MixedSteps()));
+        var cut = RenderPanel(Readiness(workspace, MixedSteps()));
 
-        cut.Find("[data-testid=rw-step][data-step=DataModelExplorer] a").GetAttribute("href").Should().Be("datamodelexplorer");
+        cut.Find($"{Item("DataModelExplorer")} a").GetAttribute("href").Should().Be("datamodelexplorer");
         _api.VerifyNoOtherCalls();
 
-        cut.Find("[data-testid=rw-step][data-step=DataModelExplorer] .rw-approve-button").Click();
+        cut.Find($"{Item("DataModelExplorer")} .rdp-approve").Click();
 
         _api.Verify(a => a.ApproveStepAsync(workspace.WorkspaceId!.Value, "DataModelExplorer",
             It.Is<IReadOnlyList<ArtifactRevisionRef>>(refs => refs.Count == 5
@@ -190,48 +182,42 @@ public sealed class ReviewDecisionSemanticsTests : BunitContext
     {
         _api.Setup(a => a.ApproveStepAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<IReadOnlyList<ArtifactRevisionRef>>(), It.IsAny<string?>()))
             .ThrowsAsync(new InvalidOperationException("A decision on Data Model Explorer must name the exact revision of its DataModel artifact."));
-        var cut = RenderPage(Readiness(PersonModule(), MixedSteps()));
+        var cut = RenderPanel(Readiness(PersonModule(), MixedSteps()));
 
-        cut.Find("[data-testid=rw-step][data-step=DataModelExplorer] .rw-approve-button").Click();
+        cut.Find($"{Item("DataModelExplorer")} .rdp-approve").Click();
 
-        cut.Find(".rw-error-alert[role=alert]").TextContent.Should().Contain("must name the exact revision");
+        cut.WaitForElement("[data-testid=review-decisions-error][role=alert]").TextContent.Should().Contain("must name the exact revision");
     }
 
-    // ── Manual Review denominator ────────────────────────────────────────────────────────────────────────────────────────
+    // ── Count of required decisions ─────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void ManualReview_CountsApplicableRequiredGates_AndListsWhatItCounts()
+    public void Count_IsApplicableRequiredGates_AndEachGateSaysWhetherItIsCounted()
     {
         var steps = MixedSteps();
         steps.Single(s => s.Key == "ArtifactTraceability").Status = WorkflowStepStatus.NotApplicable;
-        var cut = RenderPage(Readiness(PersonModule(), steps));
+        var cut = RenderPanel(Readiness(PersonModule(), steps));
 
-        // Required and applicable: Constitution, Specification, Plan, Tasks, Implementation Review — not the optional Data Model
-        // review, not the not-applicable traceability step. One of them (Constitution) is approved.
-        var card = cut.Find("[data-testid=rw-manual-review-card]");
-        // Decided: Constitution (approved), Specification (reviewed with gaps), Tasks (reviewed).
-        card.TextContent.Should().Contain("3 / 5").And.Contain("required review decisions recorded").And.Contain("1 optional not counted");
-        card.TextContent.Should().NotContain("incl. optional");
-
-        var gates = cut.FindAll("[data-testid=rw-review-gate]");
+        // Required and applicable: Constitution, Specification, Plan, Tasks, Implementation Review — not the optional Data Model review, not the
+        // not-applicable traceability step. Decided: Constitution (approved), Specification (reviewed with gaps), Tasks (reviewed).
+        cut.Find("[data-testid=review-decisions-count]").TextContent.Should().Be("3 / 5 required review decisions recorded · 1 optional not counted");
+        var gates = cut.FindAll("[data-testid=review-decision]");
         gates.Select(g => g.GetAttribute("data-step")).Should().Equal(
             "ConstitutionExplorer", "SpecificationExplorer", "PlanExplorer", "TaskExplorer", "DataModelExplorer", "ArtifactTraceability", "ImplementationReview");
         gates.Count(g => g.GetAttribute("data-counted") == "required").Should().Be(5);
         gates.Single(g => g.GetAttribute("data-counted") == "optional").GetAttribute("data-step").Should().Be("DataModelExplorer");
         gates.Single(g => g.GetAttribute("data-counted") == "not-counted").GetAttribute("data-step").Should().Be("ArtifactTraceability");
-        cut.Find("[data-testid=rw-review-gates] summary").TextContent.Should().Be("Which review decisions are counted");
     }
 
     [Fact]
-    public void ManualReview_DenominatorFollowsApplicability()
+    public void Count_FollowsApplicability()
     {
         var four = MixedSteps().Where(s => s.Key != "DataModelExplorer").ToList();
         four.Single(s => s.Key == "PlanExplorer").Status = WorkflowStepStatus.NotApplicable;
 
-        var cut = RenderPage(Readiness(PersonModule(), four));
+        var cut = RenderPanel(Readiness(PersonModule(), four));
 
-        cut.Find("[data-testid=rw-manual-review-card]").TextContent.Should().Contain("3 / 5").And.Contain("required review decisions recorded")
-            .And.NotContain("optional", "no optional gate applies");
+        cut.Find("[data-testid=review-decisions-count]").TextContent.Should().Be("3 / 5 required review decisions recorded", "no optional gate applies");
     }
 
     // ── Revision identity in the current workspace ───────────────────────────────────────────────────────────────────────

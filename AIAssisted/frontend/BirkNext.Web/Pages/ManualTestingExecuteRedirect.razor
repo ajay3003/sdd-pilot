@@ -1,0 +1,17 @@
+@page "/manual-testing/execute"
+@inject NavigationManager Navigation
+
+@* Manual Testing → Execute & document was retired on 2026-11-19: Azure DevOps Test Plans executes manual tests. An old link lands on the saved case
+   in Plan & prepare when it names one (draft and case kept), else on Manual Testing; the history entry is replaced, so Back does not loop. *@
+
+@code {
+    protected override void OnInitialized()
+    {
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query);
+        var draft = query.TryGetValue("draft", out var d) ? d.ToString() : null;
+        var target = Guid.TryParse(draft, out var id)
+            ? $"test-plan-suggestions?draft={id}&area=prepare" + (query.TryGetValue("case", out var c) && c.ToString().Length > 0 ? $"&case={Uri.EscapeDataString(c.ToString())}" : "")
+            : "manual-testing";
+        Navigation.NavigateTo(target, replace: true);
+    }
+}

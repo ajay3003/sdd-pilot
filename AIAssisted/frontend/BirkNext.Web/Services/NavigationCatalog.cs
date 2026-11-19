@@ -96,14 +96,11 @@ public static class NavigationCatalog
         // Demo Projects are optional examples; Target Environments is runtime configuration of the deployed system.
         new("getting-started", "Workspace",
         [
-            new("dashboard", "Project Quality", "nav-icon-dashboard", f => f.Dashboard, NavLinkMatch.Prefix,
-                Hint: "Project Quality Dashboard: evidence, specification quality, traceability, reviews and verification", Aliases: ["Dashboard", "Project Quality Dashboard"]),
+            new("dashboard", "Project Dashboard", "nav-icon-dashboard", f => f.Dashboard, NavLinkMatch.Prefix,
+                Hint: "the project homepage: status, what needs attention, review decisions and where to go next",
+                Aliases: ["Dashboard", "Project Quality", "Project Quality Dashboard", "Recommended Workflow", "Getting Started", "Review decisions", "Release Readiness", "Release decision"]),
             new(AllModulesRoute, "All modules", "nav-icon-sample-projects", Always,
                 Hint: "every module of BirkNext, searchable and grouped by area — whatever workspace is selected", Aliases: ["Module catalog", "All features", "Find a module"]),
-            // The review-decision workspace (the only place decisions are recorded): one row in each view's follow-up group; module discovery is All modules.
-            new("getting-started", "Recommended Workflow", "nav-icon-workflow", f => f.RecommendedWorkflow,
-                Hint: "record review decisions, choose the review path and set up project inputs — every module is listed in All modules",
-                Aliases: ["Getting Started", "Review decisions", "Review path"]),
             new("system-understanding", "System Understanding", "nav-icon-system-understanding", f => f.RecommendedWorkflow,
                 Hint: "how the system under test works: flow, step by step, data and contracts, rules and what to test", Aliases: ["Systemforståelse", "System guide"]),
             new("project-import", "Import Project", "nav-icon-import", f => f.SampleProjects || f.SourceAnalysis,
@@ -157,10 +154,6 @@ public static class NavigationCatalog
             // Shared canonical correlation: one review registry for aliases, capability candidates, contract versions and test VERIFIES links.
             new("correlation-review", "Relationship Review", "nav-icon-traceability", Always,
                 Hint: "canonical entities, typed relations and the shared review decisions every module uses", Aliases: ["Correlation Review", "Canonical interpretation", "Aliases"]),
-            // Test lead's release decision for a project or modules: dimensions, governance, frozen reports and sign-off.
-            new("release-readiness", "Release Readiness", "nav-icon-traceability", Always,
-                Hint: "Ready / Ready with limitations / Blocked / Not assessed for a release scope, with reasons, frozen reports and sign-off",
-                Aliases: ["Test lead", "Release decision", "Go/no-go"]),
             // Shared snapshot registry: every stored snapshot as metadata, with lineage, current/approved pointers and retention.
             new("snapshots", "Snapshots", "nav-icon-traceability", Always, Hint: "stored snapshots across modules: lineage, current/latest, retention", Aliases: ["Snapshot registry", "Lineage"]),
             new("traceability", "Traceability & Coverage", "nav-icon-traceability", f => f.LegacyTraceabilityNavigationEnabled && f.TraceabilityCoverage, OptionalByDefault: true),
@@ -190,20 +183,17 @@ public static class NavigationCatalog
                 Aliases: ["Azure Environment Analysis"]),
             new("ai-change-auditor", "AI Change Review", "nav-icon-ai-auditor", f => f.AiChangeReview, OptionalByDefault: true, Aliases: ["AI Review", "AI Change Auditor"]),
         ], "nav-icon-source-analysis"),
-        // Manual Testing: one workspace for the manual tester's journey (understand → plan → execute). "Plan & prepare" IS Test Plan Suggestions (same
+        // Manual Testing: one workspace for the manual tester's journey (understand → plan and prepare → export to Azure DevOps Test Plans, which executes). "Plan & prepare" IS Test Plan Suggestions (same
         // page and route, renamed in the menu; the old name stays searchable), so there is one planning interface, not two.
         new("manual-testing-workspace", "Manual Testing",
         [
-            new("manual-testing", "Manual Testing", "nav-icon-workflow", Always, Hint: "the manual tester's home: current project, work in progress and the next step",
+            new("manual-testing", "Manual Testing", "nav-icon-workflow", Always, Hint: "the manual tester's home: current project, prepared cases, export to Azure DevOps and the next step",
                 Aliases: ["Manual tester", "Testing workspace"]),
             new("manual-testing/discover", "Discover & understand", "nav-icon-system-understanding", Always, WrapLabel: true,
                 Hint: "what needs testing: requirements, scenario suggestions, existing tests and what needs clarification", Aliases: ["Requirements to test", "What to test"]),
             new("test-plan-suggestions", "Plan & prepare", "nav-icon-workflow", Always, WrapLabel: true,
                 Hint: "choose scenarios, prepare and edit manual test cases, link requirements and Test Data, check testability, save plans and snapshots — proposals, not Azure DevOps records",
                 Aliases: ["Test Plan Suggestions", "Test Plan", "Test Cases", "Manual test cases"]),
-            new("manual-testing/execute", "Execute & document", "nav-icon-task-alignment", Always, WrapLabel: true,
-                Hint: "run a saved test case step by step, record results, evidence references and defects, resume runs and review run history",
-                Aliases: ["Test run", "Manual test run", "Execute test case"]),
         ], "nav-icon-workflow"),
         // Technical Testing: one workspace over the existing technical engines (assess → configure → verify). The stages summarise and link to the
         // specialist modules (Frontend/API/Integration Quality Review, Performance Test Review, Critical E2E); they configure and run nothing.
@@ -287,7 +277,7 @@ public static class NavigationCatalog
         new("data-models-schemas", "Data Models & Schemas", ["data-model-explorer", "schema-studio"]),
         new("api-integration-quality", "API & Integration Quality", ["api-quality-review", "integration-topology", "integration-quality-review"]),
         new("generated-documentation", "Generated Documentation", [GeneratedDocumentationExplorerRoute, GeneratedDocumentationHealthRoute]),
-        new("traceability-impact", "Traceability & Impact", ["artifact-traceability", "implementation-traceability", "impact-analysis", "correlation-review", "release-readiness", "snapshots"]),
+        new("traceability-impact", "Traceability & Impact", ["artifact-traceability", "implementation-traceability", "impact-analysis", "correlation-review", "snapshots"]),
     ];
 
     /// <summary>The visible rows of a shared workspace, in its order (rows hidden by Feature Visibility are left out).</summary>
@@ -473,9 +463,9 @@ public static class WorkspaceViews
         new(WorkspaceView.AllModules, "All Modules", "Every module, grouped by area. Nothing is hidden by a workspace here.", "all-modules", [], []),
         Groups(WorkspaceView.ProjectLeader, "Project Manager", "Monitor project health, risks and delivery readiness.", "dashboard",
         [
-            new("pm-status", "Status & next steps", "nav-icon-dashboard", ["dashboard", "getting-started"]),
+            new("pm-status", "Status & next steps", "nav-icon-dashboard", ["dashboard"]),
             new("pm-delivery", "Delivery", "nav-icon-workflow", [NavigationCatalog.DeliverySnapshotsRoute, NavigationCatalog.DeliveryOverviewRoute, "delivery-reporting"]),
-            new("pm-release", "Release decision", "nav-icon-traceability", ["release-readiness", "snapshots", "correlation-review"]),
+            new("pm-release", "Release decision", "nav-icon-traceability", ["critical-e2e-regression", "snapshots", "correlation-review"]),
             new("pm-context", "Scope & context", "nav-icon-system-understanding", ["system-understanding", "artifact-traceability", "sources", NavigationCatalog.TargetEnvironmentsRoute]),
             new("pm-help", "Help", "nav-icon-user-guide", ["user-guide"]),
         ]),
@@ -483,16 +473,16 @@ public static class WorkspaceViews
         [
             new("sm-progress", "Delivery progress", "nav-icon-workflow", [NavigationCatalog.DeliverySnapshotsRoute, "delivery-reporting", NavigationCatalog.DeliveryOverviewRoute]),
             new("sm-work", "Plans & tasks", "nav-icon-task-explorer", ["specification-explorer", "plan-explorer", "task-explorer", "task-alignment", "implementation-traceability"]),
-            new("sm-follow-up", "Impediments & follow-up", "nav-icon-dashboard", ["getting-started", "dashboard", "release-readiness"]),
+            new("sm-follow-up", "Impediments & follow-up", "nav-icon-dashboard", ["dashboard"]),
             new("sm-help", "Help", "nav-icon-user-guide", ["user-guide"]),
         ]),
         Groups(WorkspaceView.TestLead, "Test Management", "Monitor test progress, coverage, risk, readiness and release confidence.", "dashboard",
         [
-            new("tl-overview", "Readiness & follow-up", "nav-icon-dashboard", ["dashboard", "getting-started", "release-readiness"]),
+            new("tl-overview", "Readiness & follow-up", "nav-icon-dashboard", ["dashboard"]),
             new("tl-understand", "System & requirements", "nav-icon-system-understanding", ["system-understanding", "specification-explorer", "quality/document"]),
             new("tl-prepare", "Functional test preparation", "nav-icon-workflow", ["manual-testing", "test-plan-suggestions", "test-data"]),
             new("tl-coverage", "Coverage & traceability", "nav-icon-artifact-traceability", ["artifact-traceability", "test-coverage-review", "correlation-review"]),
-            new("tl-execution", "Execution & regression", "nav-icon-task-alignment", ["manual-testing/execute", "critical-e2e-regression", "execution-results", "integration-suites"]),
+            new("tl-execution", "Execution & regression", "nav-icon-task-alignment", ["critical-e2e-regression", "execution-results", "integration-suites"]),
             new("tl-technical", "Technical quality", "nav-icon-constitution-compliance",
                 ["technical-testing", "api-quality-review/contracts", "api-quality-review", "integration-quality-review", "performance-test-review", "frontend-quality-review"]),
             new("tl-environment", "Environments & setup", "nav-icon-target", [NavigationCatalog.TargetEnvironmentsRoute]),
@@ -506,7 +496,7 @@ public static class WorkspaceViews
             new("tt-integration", "Integration & E2E", "nav-icon-source-analysis", ["integration-suites", "critical-e2e-regression", "integration-quality-review", "integration-journeys", "integration-topology"]),
             new("tt-data", "Test data & execution", "nav-icon-task-alignment", ["test-data", "execution-results", "parquet-viewer"]),
             new("tt-risk", "Performance & risk", "nav-icon-constitution-compliance", ["performance-test-review", "test-coverage-review", "code-risk-review"]),
-            new("tt-follow-up", "Quality & follow-up", "nav-icon-dashboard", ["dashboard", "getting-started", "artifact-traceability", "user-guide"]),
+            new("tt-follow-up", "Quality & follow-up", "nav-icon-dashboard", ["dashboard", "artifact-traceability", "user-guide"]),
         ]),
         Groups(WorkspaceView.Developer, "Developer", "Review implementation, source changes and code quality.", "source-analysis",
         [
@@ -515,7 +505,7 @@ public static class WorkspaceViews
             new("dev-quality", "Code quality & build", "nav-icon-constitution-compliance", ["code-risk-review", "dependency-review", "pipeline-review", "technology-coverage", NavigationCatalog.GeneratedDocumentationHealthRoute]),
             new("dev-api", "APIs & contracts", "nav-icon-task-alignment", ["api-quality-review", "api-quality-review/contracts", "schema-studio"]),
             new("dev-impact", "Change impact & tests", "nav-icon-impact-analysis", ["impact-analysis", "execution-results"]),
-            new("dev-follow-up", "Follow-up", "nav-icon-dashboard", ["dashboard", "getting-started", "user-guide"]),
+            new("dev-follow-up", "Follow-up", "nav-icon-dashboard", ["dashboard", "user-guide"]),
         ]),
         Groups(WorkspaceView.Architect, "Architect", "Explore architecture, dependencies and integration boundaries.", "system-understanding",
         [
@@ -524,7 +514,7 @@ public static class WorkspaceViews
                 ["sources", "source-analysis", "technology-coverage", "dependency-review", NavigationCatalog.GeneratedDocumentationExplorerRoute, NavigationCatalog.GeneratedDocumentationHealthRoute]),
             new("arch-data", "Data & contracts", "nav-icon-data-model-explorer", ["data-model-explorer", "schema-studio", "api-quality-review/contracts", "api-quality-review"]),
             new("arch-governance", "Governance & environments", "nav-icon-constitution", ["constitution-explorer", "artifact-traceability", "snapshots", "azure-environment"]),
-            new("arch-follow-up", "Follow-up", "nav-icon-dashboard", ["dashboard", "getting-started", "user-guide"]),
+            new("arch-follow-up", "Follow-up", "nav-icon-dashboard", ["dashboard", "user-guide"]),
         ]),
     ];
 
@@ -540,7 +530,7 @@ public static class WorkspaceViews
     private static WorkspaceViewDefinition CreateManualTesting() => Groups(WorkspaceView.ManualTesting, "Manual Testing",
         "Review requirements, prepare functional tests and test data, run them and record results.", "manual-testing",
         [
-            new("manual-workspace", "Manual Testing", "nav-icon-workflow", ["manual-testing", "manual-testing/discover", "test-plan-suggestions", "manual-testing/execute"]),
+            new("manual-workspace", "Manual Testing", "nav-icon-workflow", ["manual-testing", "manual-testing/discover", "test-plan-suggestions"]),
             new("manual-setup", "Project setup", "nav-icon-import", ["project-import", "sources", "demo-projects"]),
             new("manual-understand", "Understand the system", "nav-icon-system-understanding", ["system-understanding"]),
             new("manual-requirements", "Requirements", "nav-icon-task-alignment", ["specification-explorer", "quality/document", "documentation-drift"]),
@@ -548,7 +538,7 @@ public static class WorkspaceViews
             // and competed with Test Plan Suggestions, the place where scenarios are prepared. The tab and its deep link stay.
             new("manual-prepare", "Test preparation", "nav-icon-constitution-compliance", ["test-data"]),
             new("manual-coverage", "Coverage & traceability", "nav-icon-workflow", ["artifact-traceability", "test-coverage-review"]),
-            new("manual-follow-up", "Quality & follow-up", "nav-icon-dashboard", ["dashboard", "getting-started", "user-guide"]),
+            new("manual-follow-up", "Quality & follow-up", "nav-icon-dashboard", ["dashboard", "user-guide"]),
         ]);
 
     private static WorkspaceViewDefinition Groups(WorkspaceView view, string label, string description, string landing, IReadOnlyList<WorkspaceViewGroup> groups) =>

@@ -13,9 +13,9 @@ using Moq;
 namespace BirkNext.Web.Tests.Pages;
 
 /// <summary>
-/// One current workspace, many pages. The Dashboard, Recommended Workflow and the sidebar read the same current-workspace
-/// projection, so for the same workspace they agree on whether a workspace, project and each artifact role exists — whatever
-/// page was opened first, and after a project switch, an import or a reset, without a reload.
+/// One current workspace, many pages. Project Dashboard and the sidebar read the same current-workspace projection, so for the same workspace
+/// they agree on whether a workspace, project and each artifact role exists — whatever opened first, and after a project switch, an import or a
+/// reset, without a reload. (Recommended Workflow, which this also compared, was retired on 2026-11-19; its review decisions are on the Dashboard.)
 /// </summary>
 public sealed class CrossPageWorkspaceContractTests : BunitContext
 {
@@ -44,7 +44,7 @@ public sealed class CrossPageWorkspaceContractTests : BunitContext
         Services.AddSingleton<IWorkspaceSessionService>(_workspace);
         DashboardPageTests.AddCurrentWorkspace(Services, _workspace, _catalog);
 
-        // Recommended Workflow
+        // Review decisions and workspace actions (moved to the Dashboard from Recommended Workflow)
         Services.AddSingleton(_workflowApi.Object);
         Services.AddScoped<IWorkflowReadinessService, WorkflowReadinessService>();
         Services.AddSingleton(new Mock<IWorkspacePersistenceApiService> { CallBase = true }.Object);
@@ -76,7 +76,7 @@ public sealed class CrossPageWorkspaceContractTests : BunitContext
         new(slug, name, "test", name, $"C:\\SampleData\\{slug}", false,
             files.Select(f => new SampleFileDto(f, true, null, "", "", true, false)).ToArray());
 
-    /// <summary>What a page states about the workspace, read from its markup.</summary>
+    /// <summary>What the Dashboard states about the workspace, read from its markup.</summary>
     private sealed record PageView(bool HasWorkspace, string? Name, IReadOnlyDictionary<string, string> Roles);
 
     private static PageView Dashboard(IRenderedComponent<Dashboard> cut) => new(
@@ -84,132 +84,71 @@ public sealed class CrossPageWorkspaceContractTests : BunitContext
         cut.FindAll("[data-testid=db-workspace-name]").SingleOrDefault()?.TextContent.Replace("📁", "").Trim(),
         cut.FindAll("[data-testid=db-artifact-card]").ToDictionary(b => b.GetAttribute("data-role")!, b => b.GetAttribute("data-availability")!));
 
-    private static PageView Workflow(IRenderedComponent<RecommendedWorkflow> cut) => new(
-        cut.FindAll("[data-testid=rw-no-workspace]").Count == 0,
-        cut.Find("[data-testid=rw-project]").TextContent.Trim(),
-        cut.FindAll("[data-testid=rw-role-badge]").ToDictionary(b => b.GetAttribute("data-role")!, b => b.GetAttribute("data-availability")!));
-
-    private static void ShouldAgree(PageView dashboard, PageView workflow)
-    {
-        workflow.HasWorkspace.Should().Be(dashboard.HasWorkspace, "both pages must agree whether a workspace exists");
-        // A page that shows no badge for a role (the Dashboard without a workspace) states it is missing.
-        static string Of(PageView page, WorkspaceArtifactType role) => page.Roles.GetValueOrDefault(role.ToString(), nameof(ArtifactRoleAvailability.Missing));
-        foreach (var role in CurrentWorkspaceSnapshot.WorkflowRoles)
-            Of(workflow, role).Should().Be(Of(dashboard, role), $"both pages must agree on {role} availability");
-        if (dashboard.HasWorkspace) workflow.Name.Should().Be(dashboard.Name, "both pages must name the same project");
-    }
-
     [Fact]
-    public void PersonModule_DashboardAndWorkflow_AgreeOnWorkspaceProjectAndAllFiveRoles()
+    public void PersonModule_TheDashboardShowsTheWorkspaceProjectAllFiveRolesAndItsReviewDecisions()
     {
         _workspace.CurrentProject = "person-module";
 
         var dashboard = Render<Dashboard>();
-        var workflow = Render<RecommendedWorkflow>();
 
-        workflow.WaitForAssertion(() => workflow.Find("[data-testid=rw-artifact-roles]").TextContent.Should().Be("5 artifact roles available"));
         dashboard.WaitForAssertion(() => dashboard.Find("[data-testid=db-workspace-roles]").TextContent.Should().Be("5 document types"));
-        ShouldAgree(Dashboard(dashboard), Workflow(workflow));
         Dashboard(dashboard).Name.Should().Be("Person Module");
-        Workflow(workflow).Roles.Values.Should().OnlyContain(a => a == nameof(ArtifactRoleAvailability.Available));
-        workflow.Markup.Should().NotContain("No workspace loaded");
-        workflow.Find("[data-testid=rw-next-action] .rw-next-action-title").TextContent.Should().NotBe("Load project artifacts");
-        workflow.Markup.Should().NotContain("of 5");
-        workflow.Find("[data-testid=rw-manual-review-card] .metric-value").TextContent.Should().StartWith("0 / ", "nothing has been decided yet");
-        workflow.Find("[data-testid=rw-release-note]").TextContent.Should().Contain("not assessed here", "the workflow never claims release readiness without a policy");
-        workflow.Find("[data-testid=rw-save-status]").TextContent.Should().Be("Not saved", "an unsaved workspace is still loaded");
-        workflow.Markup.Should().Contain("Specification Explorer", "the real next step comes from the review steps");
-    }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void NavigationOrder_DoesNotChangeTheState(bool dashboardFirst)
-    {
-        _workspace.CurrentProject = "skole";
-
-        IRenderedComponent<Dashboard>? dashboard = null;
-        IRenderedComponent<RecommendedWorkflow>? workflow = null;
-        if (dashboardFirst) { dashboard = Render<Dashboard>(); workflow = Render<RecommendedWorkflow>(); }
-        else { workflow = Render<RecommendedWorkflow>(); dashboard = Render<Dashboard>(); }
-
-        workflow.WaitForAssertion(() => workflow.Find("[data-testid=rw-artifact-roles]").TextContent.Should().Be("2 artifact roles available"));
-        dashboard.WaitForAssertion(() => dashboard.Find("[data-testid=db-workspace-roles]").TextContent.Should().Be("2 document types"));
-        ShouldAgree(Dashboard(dashboard), Workflow(workflow));
-    }
-
-    /// <summary>One engine, one presentation: for the same project the Dashboard and Recommended Workflow show the same next action — same key,
-    /// same title, same reason — and both follow a project switch.</summary>
-    [Theory]
-    [InlineData("person-module")]
-    [InlineData("skole")]
-    public void Both_pages_show_the_same_next_action_with_the_same_wording(string project)
-    {
-        _workspace.CurrentProject = project;
-        var dashboard = Render<Dashboard>();
-        var workflow = Render<RecommendedWorkflow>();
-        workflow.WaitForAssertion(() => workflow.FindAll("[data-testid=rw-next-action]").Should().ContainSingle());
-        dashboard.WaitForAssertion(() => dashboard.FindAll("[data-testid=db-next-step][data-key]").Should().ContainSingle());
-        var d = dashboard.Find("[data-testid=db-next-step]");
-        var w = workflow.Find("[data-testid=rw-next-action]");
-        w.GetAttribute("data-key").Should().Be(d.GetAttribute("data-key"));
-        workflow.Find("[data-testid=rw-next-action-title]").TextContent.Trim().Should().Be(dashboard.Find("[data-testid=db-next-title]").TextContent.Trim());
-        dashboard.Find("[data-testid=db-next-reason]").TextContent.Should().Contain(workflow.Find("[data-testid=rw-next-action-why]").TextContent.Trim());
-        // "Learn how" goes to the same Help Center article on both pages.
-        var dHelp = dashboard.FindAll("[data-testid=db-next-step] [data-testid=help-link]").Select(a => a.GetAttribute("href")).Single();
-        var wHelp = workflow.FindAll("[data-testid=rw-next-action] [data-testid=help-link]").Select(a => a.GetAttribute("href")).Single();
-        wHelp.Should().Be(dHelp);
+        // Review decisions moved here from Recommended Workflow: the same readiness, the same review steps.
+        dashboard.WaitForAssertion(() => dashboard.Find("[data-testid=review-decision][data-step=SpecificationExplorer]"));
+        dashboard.Find("[data-testid=review-decisions-count]").TextContent.Should().StartWith("0 / ", "nothing has been decided yet");
+        dashboard.FindAll("[data-testid=workspace-menu]").Should().ContainSingle("Save, Save As, Manage Workspaces and Clear moved here too");
     }
 
     [Fact]
-    public void ProjectSwitch_UpdatesBothPages_WithoutReload_AndNeverShowsTheOldProject()
+    public void Opening_the_sidebar_first_does_not_change_the_Dashboard()
+    {
+        _workspace.CurrentProject = "skole";
+        Render<NavMenu>();
+
+        var dashboard = Render<Dashboard>();
+
+        dashboard.WaitForAssertion(() => dashboard.Find("[data-testid=db-workspace-roles]").TextContent.Should().Be("2 document types"));
+        Dashboard(dashboard).Name.Should().Be("Skole");
+    }
+
+    [Fact]
+    public void ProjectSwitch_UpdatesTheDashboard_WithoutReload_AndNeverShowsTheOldProject()
     {
         _workspace.CurrentProject = "person-module";
         var dashboard = Render<Dashboard>();
-        var workflow = Render<RecommendedWorkflow>();
-        workflow.WaitForAssertion(() => Workflow(workflow).Name.Should().Be("Person Module"));
+        dashboard.WaitForAssertion(() => Dashboard(dashboard).Name.Should().Be("Person Module"));
 
         _workspace.CurrentProject = "skole";
 
-        workflow.WaitForAssertion(() => Workflow(workflow).Name.Should().Be("Skole"));
         dashboard.WaitForAssertion(() => Dashboard(dashboard).Name.Should().Be("Skole"));
-        ShouldAgree(Dashboard(dashboard), Workflow(workflow));
-        workflow.Markup.Should().NotContain("Person Module");
         dashboard.Markup.Should().NotContain("Person Module");
     }
 
     [Fact]
-    public void Reset_EmptiesBothPagesConsistently_WithoutReload()
+    public void Reset_EmptiesTheDashboard_WithoutReload()
     {
         _workspace.CurrentProject = "person-module";
         var dashboard = Render<Dashboard>();
-        var workflow = Render<RecommendedWorkflow>();
-        workflow.WaitForAssertion(() => Workflow(workflow).HasWorkspace.Should().BeTrue());
+        dashboard.WaitForAssertion(() => Dashboard(dashboard).HasWorkspace.Should().BeTrue());
 
         _workspace.ClearAll();
 
-        workflow.WaitForAssertion(() => Workflow(workflow).HasWorkspace.Should().BeFalse());
         dashboard.WaitForAssertion(() => Dashboard(dashboard).HasWorkspace.Should().BeFalse());
-        ShouldAgree(Dashboard(dashboard), Workflow(workflow));
-        workflow.Find("[data-testid=rw-next-action-title]").TextContent.Should().Be("Start with one of these", "an empty workspace offers import or runtime setup");
-        workflow.Markup.Should().NotContain("Person Module");
         dashboard.Markup.Should().NotContain("Person Module");
+        dashboard.FindAll("[data-testid=review-decisions]").Should().BeEmpty("no workspace, no review decisions");
     }
 
     [Fact]
-    public void ManualImportWithoutSampleProject_UpdatesBothPages()
+    public void ManualImportWithoutSampleProject_UpdatesTheDashboard()
     {
         var dashboard = Render<Dashboard>();
-        var workflow = Render<RecommendedWorkflow>();
-        workflow.WaitForAssertion(() => Workflow(workflow).HasWorkspace.Should().BeFalse());
+        dashboard.WaitForAssertion(() => Dashboard(dashboard).HasWorkspace.Should().BeFalse());
 
         Services.GetRequiredService<IArtifactExplorerContext>()
             .Import(new ArtifactImportRequest(WorkspaceArtifactType.Specification, "# Requirements\n\nFR-001", "requirements.md", "File"));
 
-        workflow.WaitForAssertion(() => workflow.Find("[data-testid=rw-artifact-roles]").TextContent.Should().Be("1 artifact role available"));
         dashboard.WaitForAssertion(() => dashboard.Find("[data-testid=db-workspace-roles]").TextContent.Should().Be("1 document type"));
-        workflow.Find("[data-testid=rw-project]").TextContent.Should().Be("Not assigned", "a manual workspace has no project, and is still a workspace");
-        ShouldAgree(Dashboard(dashboard), Workflow(workflow) with { Name = "Unsaved workspace" });
+        Dashboard(dashboard).Roles.GetValueOrDefault(nameof(WorkspaceArtifactType.Specification)).Should().Be(nameof(ArtifactRoleAvailability.Available));
     }
 
     [Fact]

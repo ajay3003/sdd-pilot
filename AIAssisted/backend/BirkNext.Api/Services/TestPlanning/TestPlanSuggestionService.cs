@@ -508,8 +508,7 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         CancellationToken ct, IReadOnlyDictionary<string, string>? requirementTitles = null)
     {
         var key = TestScenarioDiscoveryService.Key(projectKey);
-        var view = PreparedCaseTraceability.Build(key, await ProjectDraftsAsync(key, ct), specificationPaths, requirementIds, requirementTitles,
-            await ManualTestRunService.ReadTraceabilityRunsAsync(db, key, ct));
+        var view = PreparedCaseTraceability.Build(key, await ProjectDraftsAsync(key, ct), specificationPaths, requirementIds, requirementTitles);
         return await BirkNext.Api.Services.IntegrationSuites.IntegrationRequirementTrace.WithIntegrationAsync(view, projectKey.Trim(), requirementLinks, declaredJourneys, integrationSuites, ct);
     }
 

@@ -28,8 +28,6 @@
             {
                 <div><dt>Requirements without test design</dt><dd data-testid="pct-req-none">@View.WithoutTestDesign.Count</dd></div>
             }
-            <div><dt>Executed (manual runs)</dt><dd data-testid="pct-executed">@View.ExecutedCases@(View.ExecutedCases == 0 ? " — prepared cases are not executions" : $" case{(View.ExecutedCases == 1 ? "" : "s")}")</dd></div>
-            <div><dt>Passed (manual runs)</dt><dd data-testid="pct-passed">@View.PassedCases</dd></div>
         </dl>
         <p class="pct-muted" data-testid="pct-explain">@Explain(View)</p>
         @foreach (var limitation in View.Limitations)
@@ -43,7 +41,7 @@
         @if (View.Requirements.Count > 0)
         {
             <table class="pct-table" data-testid="pct-requirements">
-                <thead><tr><th scope="col">Requirement</th><th scope="col">Test design</th><th scope="col">How linked</th><th scope="col">Execution</th><th scope="col">Saved cases</th></tr></thead>
+                <thead><tr><th scope="col">Requirement</th><th scope="col">Test design</th><th scope="col">How linked</th><th scope="col">Saved cases</th></tr></thead>
                 <tbody>
                     @foreach (var r in View.Requirements)
                     {
@@ -51,7 +49,6 @@
                             <th scope="row" data-label="Requirement"><span class="pct-req-id">@r.RequirementId</span>@if (r.Title is { Length: > 0 } title) { <span class="pct-req-title" data-testid="pct-requirement-title">@title</span> }</th>
                             <td data-label="Test design">@r.State <span class="pct-muted">(@r.ApprovedCases approved, @r.PreparedCases prepared)</span></td>
                             <td data-label="How linked" data-testid="pct-requirement-origin">@Origins(r)</td>
-                            <td data-label="Execution" data-testid="pct-requirement-execution">@r.Execution</td>
                             <td data-label="Saved cases">
                                 @foreach (var key in r.CaseKeys)
                                 {
@@ -113,7 +110,6 @@
                         <li class="pct-case" data-testid="pct-case" data-case="@c.CaseKey" data-stage="@c.Stage" data-counted="@(c.Counted ? "true" : "false")">
                             <a href="@c.Href" class="pct-case-title" data-testid="pct-case-open">@c.Title</a>
                             <span class="pct-chip" data-testid="pct-case-stage">@c.StageLabel</span>
-                            <span class="pct-chip pct-chip-quiet" data-testid="pct-case-execution">@c.Execution</span>
                             <span class="pct-muted">@c.PlanName · @(c.SourceKind == ScenarioSourceKind.Manual ? "written by hand" : $"from {c.Capability ?? "discovery"}")</span>
                             @if (c.Requirements.Count == 0)
                             {
@@ -163,9 +159,7 @@
         var of = v.SpecificationRequirements is { } total ? $"{designed} of {total} requirements" : $"{designed} requirement{(designed == 1 ? "" : "s")}";
         return $"{of} have a saved test case designed for them ({v.RequirementsWithApprovedCase} approved, {v.RequirementsWithPreparedCaseOnly} prepared only). "
             + "Each requirement counts once, however many cases cover it. "
-            + (v.ExecutedCases == 0
-                ? "None of these cases has been executed in a manual run yet: designing a case never counts as running it."
-                : $"{v.RequirementsExecuted} requirement{(v.RequirementsExecuted == 1 ? " was" : "s were")} executed in completed manual runs ({v.RequirementsPassed} with a passed case); a Blocked or Not run result is not an execution.");
+            + "This is test design, not execution: manual tests are executed in Azure DevOps Test Plans, and BirkNext does not read those results.";
     }
 
     private static string Origins(PreparedRequirementTrace r) => (r.AutomaticCases, r.ManualCases) switch

@@ -1,0 +1,9 @@
+@page "/release-readiness"
+@inject NavigationManager Navigation
+
+@* Release Readiness was retired on 2026-11-19: Project Dashboard shows testing status and evidence gaps, Critical E2E Regression keeps the
+   build-specific release gate, and release approval happens outside BirkNext. Old links land on the Dashboard; Back does not loop. *@
+
+@code {
+    protected override void OnInitialized() => Navigation.NavigateTo("dashboard", replace: true);
+}

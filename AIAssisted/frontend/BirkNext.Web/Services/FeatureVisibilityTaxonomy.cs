@@ -37,8 +37,8 @@ public static class FeatureVisibilityTaxonomy
     [
         new("ImplementationTraceability", FeatureLifecycle.Optional,
             "Depends on the optional Azure DevOps integration and never counts toward workflow, coverage or readiness, so it is off by default."),
-        new("ImpactAnalysis", FeatureLifecycle.Optional, "Off by default. Release Readiness and Relationship Review use the shared canonical relations.",
-            Successor: "release-readiness"),
+        new("ImpactAnalysis", FeatureLifecycle.Optional, "Off by default. Relationship Review uses the shared canonical relations.",
+            Successor: "correlation-review"),
         new("AiChangeReview", FeatureLifecycle.Optional, "Off by default in every shipped configuration."),
         new("LegacyTraceabilityNavigationEnabled", FeatureLifecycle.Legacy,
             "Shows the three legacy traceability entries (Traceability & Coverage, Traceability Suggestions, Code Traceability) when their own switches are on too.",
@@ -65,7 +65,7 @@ public static class FeatureVisibilityTaxonomy
     /// <summary>Pages with no sidebar entry, by design. Every page must be a sidebar entry or listed here (checked by the inventory).</summary>
     public static IReadOnlyList<ContextualRoute> ContextualRoutes { get; } =
     [
-        new("", ContextualRouteKind.Redirect, "dashboard", "The start address opens Project Quality."),
+        new("", ContextualRouteKind.Redirect, "dashboard", "The start address opens Project Dashboard."),
         new("authentication/{action}", ContextualRouteKind.Infrastructure, null, "Microsoft sign-in callback."),
         new("ai-generated-code-review", ContextualRouteKind.Alias, "code-risk-review", "Earlier address of Code Risk Review."),
         new("change-traceability", ContextualRouteKind.Alias, "implementation-traceability", "Alternative address of Change Traceability."),
@@ -78,6 +78,9 @@ public static class FeatureVisibilityTaxonomy
         new("compare/reviews", ContextualRouteKind.Redirect, "documentation-drift", "Retired list; redirects to Documentation Drift."),
         new("compare/reviews/{id}", ContextualRouteKind.Contextual, "documentation-drift", "Detail of one stored comparison review, opened from its list."),
         new("task-deltas", ContextualRouteKind.Redirect, "task-explorer", "Retired Task Deltas; redirects to Task Explorer → Changes."),
+        new("getting-started", ContextualRouteKind.Redirect, "dashboard", "Retired Recommended Workflow (2026-11-19); review decisions and workspace actions are on Project Dashboard."),
+        new("manual-testing/execute", ContextualRouteKind.Redirect, "test-plan-suggestions", "Retired Execute & document (2026-11-19); Azure DevOps Test Plans executes manual tests. Redirects to the saved case in Plan & prepare."),
+        new("release-readiness", ContextualRouteKind.Redirect, "dashboard", "Retired Release Readiness (2026-11-19); the release gate stays in Critical E2E Regression."),
         new("project-scopes", ContextualRouteKind.Redirect, "project-import", "Retired Project Test Setup (2026-11-19); redirects to project selection, or Integration Topology for the systems and connections views."),
         new("quality/source", ContextualRouteKind.Redirect, "source-analysis", "Earlier source quality page; redirects to Source Analysis."),
         new("source-analysis/application-messaging", ContextualRouteKind.Contextual, "source-analysis", "Application messaging detail, opened from Source Analysis."),

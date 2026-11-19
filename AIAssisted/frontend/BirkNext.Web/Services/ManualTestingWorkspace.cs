@@ -8,29 +8,28 @@ namespace BirkNext.Web.Services;
 /// <summary>
 /// The context every Manual Testing page reads, from the same authorities the rest of BirkNext uses: the selected project (shared workspace
 /// projection), its source snapshot (project evidence / imported package), its saved plans (Test Plan Suggestions), its last stored discovery,
-/// its specification's requirements (the existing parser, as Test Coverage reads them) and its manual runs. Nothing is copied or cached here
+/// its specification's requirements (the existing parser, as Test Coverage reads them). Manual runs are not BirkNext's: Azure DevOps Test Plans executes. Nothing is copied or cached here
 /// beyond one page load; a missing service simply leaves its part empty.
 /// </summary>
 public sealed class ManualTestingWorkspace(IServiceProvider services)
 {
     public sealed record Snapshot(
         string? ProjectKey, string? ProjectName, string? EnvironmentId, Guid? SnapshotId, string? SnapshotBasis,
-        TestPlanWorkspace? Plans, ScenarioDiscoveryResult? Discovery, CoverageWorkspaceEvidence? Evidence, List<ProjectRequirementOption>? Requirements,
-        List<ManualRunSummary> Runs, string? Error)
+        TestPlanWorkspace? Plans, ScenarioDiscoveryResult? Discovery, CoverageWorkspaceEvidence? Evidence, List<ProjectRequirementOption>? Requirements, string? Error)
     {
-        public ManualTestingPresentation.Facts Facts => new(ProjectKey, ProjectName, Plans?.Drafts ?? [], Discovery, Requirements?.Count, Runs);
+        public ManualTestingPresentation.Facts Facts => new(ProjectKey, ProjectName, Plans?.Drafts ?? [], Discovery, Requirements?.Count);
     }
 
     private T? Get<T>() where T : class => services.GetService(typeof(T)) as T;
 
-    public async Task<Snapshot> LoadAsync(bool runs = true, bool discovery = true, bool requirements = true, CancellationToken ct = default)
+    public async Task<Snapshot> LoadAsync(bool discovery = true, bool requirements = true, CancellationToken ct = default)
     {
         var (key, name) = await ProjectAsync();
         string? environment = null;
         if (Get<IFrontendAnalysisContextFactory>() is { } contexts)
             try { environment = (await contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id; } catch (InvalidOperationException) { }
         var (snapshotId, basis) = ResolveSnapshot(services);
-        if (key is null) return new(null, null, environment, snapshotId, basis, null, null, null, null, [], null);
+        if (key is null) return new(null, null, environment, snapshotId, basis, null, null, null, null, null);
 
         string? error = null;
         TestPlanWorkspace? plans = null;
@@ -41,15 +40,8 @@ public sealed class ManualTestingWorkspace(IServiceProvider services)
             if (discovery) { var (d, _) = await api.LastDiscoveryAsync(key, snapshotId, ct); last = d?.ProjectKey == key ? d : null; }
         }
         else error = "Test Plan Suggestions is not available in this host.";
-        var list = new List<ManualRunSummary>();
-        if (runs && Get<IManualTestRunsApiService>() is { } runApi)
-        {
-            var (r, runError) = await runApi.ListAsync(key, ct: ct);
-            list = r ?? [];
-            error ??= runError;
-        }
         CoverageWorkspaceEvidence? evidence = requirements ? await EvidenceAsync(name) : null;
-        return new(key, name, environment, snapshotId, basis, plans, last, evidence, RequirementLinkPresentation.Options(evidence), list, error);
+        return new(key, name, environment, snapshotId, basis, plans, last, evidence, RequirementLinkPresentation.Options(evidence), error);
     }
 
     private async Task<(string? Key, string? Name)> ProjectAsync()

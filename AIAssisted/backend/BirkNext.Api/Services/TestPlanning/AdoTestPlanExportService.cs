@@ -115,7 +115,7 @@ public sealed class AdoTestPlanExportService(AppDbContext db, TestPlanSuggestion
     }
 
     private static Dictionary<string, string> Revisions(TestPlanDraft plan) =>
-        plan.Cases.ToDictionary(c => c.Source.ScenarioId, c => ManualTestRunService.Fingerprint(c)[..12], StringComparer.Ordinal);
+        plan.Cases.ToDictionary(c => c.Source.ScenarioId, c => ManualCaseIdentity.Fingerprint(c)[..12], StringComparer.Ordinal);
 
     private static List<string> Cases(string json)
     {

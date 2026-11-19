@@ -5,7 +5,7 @@
 @implements IDisposable
 @inject IServiceProvider ServiceProvider
 
-@* Discover & understand: what needs testing in the selected project — its specification's requirements with their test design and execution
+@* Discover & understand: what needs testing in the selected project — its specification's requirements with their test design
    state (the shared traceability rule), the stored scenario discovery by source and type, existing tests and what needs clarification. Read
    only: discovery itself runs in Plan & prepare, where scenarios are chosen. Source-derived suggestions are never shown as confirmed tests. *@
 <PageTitle>Discover & understand — Manual Testing</PageTitle>
@@ -41,7 +41,7 @@
                 else
                 {
                     var designed = _trace?.Requirements.ToDictionary(r => r.RequirementId, StringComparer.OrdinalIgnoreCase) ?? [];
-                    <p class="mt-muted" data-testid="mtd-req-summary">@_ws.Requirements.Count requirement@(_ws.Requirements.Count == 1 ? "" : "s") · @designed.Count with test design · @(_trace?.RequirementsExecuted ?? 0) executed · @(_trace?.RequirementsPassed ?? 0) passed</p>
+                    <p class="mt-muted" data-testid="mtd-req-summary">@_ws.Requirements.Count requirement@(_ws.Requirements.Count == 1 ? "" : "s") · @designed.Count with test design</p>
                     @if (_traceError is not null) { <p class="mt-muted" data-testid="mtd-trace-error">Test design state could not be read: @_traceError</p> }
                     <ul class="mt-list mtd-req-list">
                         @foreach (var r in _ws.Requirements.Take(_reqLimit))
@@ -50,7 +50,6 @@
                             <li data-testid="mtd-requirement" data-requirement="@r.RequirementId" data-design="@(row is null ? "none" : row.ApprovedCases > 0 ? "approved" : "prepared")">
                                 <strong>@r.RequirementId</strong> <span class="mtd-req-text">@r.Title</span>
                                 <span class="mt-chip @(row is null ? "mt-tone-warn" : row.ApprovedCases > 0 ? "mt-tone-ok" : "mt-tone-info")">@(row is null ? "No test design yet" : row.State)</span>
-                                <span class="mt-chip mt-tone-muted" data-testid="mtd-requirement-execution">@(row?.Execution ?? PreparedCaseTraceView.NotExecuted)</span>
                             </li>
                         }
                     </ul>
@@ -135,7 +134,7 @@
         _loading = true;
         try
         {
-            _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync(runs: false);
+            _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync();
             _trace = null; _traceError = null;
             if (_ws.ProjectKey is { } key && _ws.Requirements is { Count: > 0 } requirements
                 && ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is ITestPlanSuggestionsApiService api)

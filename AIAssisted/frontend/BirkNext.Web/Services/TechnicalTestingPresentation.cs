@@ -113,7 +113,7 @@ public static class TechnicalTestingPresentation
         (TechnicalArea.Performance, _) => [("Performance runs", "performance-test-review")],
         (TechnicalArea.CriticalE2E, "assess") => [("Critical flows", "critical-e2e-regression")],
         (TechnicalArea.CriticalE2E, "configure") => [("Flows and build", "critical-e2e-regression")],
-        _ => [("Critical E2E results", "critical-e2e-regression"), ("Release readiness", "release-readiness")],
+        _ => [("Critical E2E results", "critical-e2e-regression")],
     };
 
     // ---- dimensions -------------------------------------------------------------------------------------------------------------------

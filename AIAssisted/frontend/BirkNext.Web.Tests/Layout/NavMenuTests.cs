@@ -28,7 +28,7 @@ public class NavMenuTests : BunitContext
         navText.Should().Contain("Specifications & Planning");
         navText.Should().Contain("Source & Architecture");
         navText.Should().Contain("Quality & Testing");
-        navText.Should().Contain("Project Quality");
+        navText.Should().Contain("Project Dashboard");
         navText.Should().Contain("Specification Explorer");
         navText.Should().NotContain("Specification Review");
         navText.Should().NotContain("QA Artifact Library");

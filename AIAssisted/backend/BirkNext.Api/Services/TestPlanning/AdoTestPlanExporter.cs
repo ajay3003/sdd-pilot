@@ -89,7 +89,7 @@ public static partial class AdoTestPlanExporter
             }
 
             var included = excluded is null && caseIssues.All(i => i.Level != AdoIssueLevel.Blocking);
-            var origin = ManualTestRunService.Origin(c);
+            var origin = ManualCaseIdentity.Origin(c);
             var requirementSources = origin.Requirements.Select(q => q.SpecificationFile is { } f ? $"{q.RequirementId} ({f})" : q.RequirementId).ToList();
             var description = Describe(origin, requirementSources, $"{plan.Id:N}/{id}", plan.PlanName);
             cases.Add(new AdoExportCase

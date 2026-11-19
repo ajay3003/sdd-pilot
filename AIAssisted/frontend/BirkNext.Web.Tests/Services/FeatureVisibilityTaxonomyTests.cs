@@ -36,9 +36,9 @@ public sealed class FeatureVisibilityTaxonomyTests
         // Traceability & Impact: Impact Analysis joined the group (its own key still gates it).
         // Relationship Review (shared canonical review registry) is always available at the end of the group.
         // Without a backend answer the fallback uses the backend's defaults: Impact Analysis is optional and off.
-        Visible(null).Should().Equal("Requirements Traceability", "Relationship Review", "Release Readiness", "Snapshots");
-        Visible(new FeatureVisibilityDto { ImplementationTraceability = true, ImpactAnalysis = true }).Should().Equal("Requirements Traceability", "Change Traceability", "Impact Analysis", "Relationship Review", "Release Readiness", "Snapshots");
-        Visible(new FeatureVisibilityDto { ImplementationTraceability = false, ImpactAnalysis = false }).Should().Equal("Requirements Traceability", "Relationship Review", "Release Readiness", "Snapshots");
+        Visible(null).Should().Equal("Requirements Traceability", "Relationship Review", "Snapshots");
+        Visible(new FeatureVisibilityDto { ImplementationTraceability = true, ImpactAnalysis = true }).Should().Equal("Requirements Traceability", "Change Traceability", "Impact Analysis", "Relationship Review", "Snapshots");
+        Visible(new FeatureVisibilityDto { ImplementationTraceability = false, ImpactAnalysis = false }).Should().Equal("Requirements Traceability", "Relationship Review", "Snapshots");
         new FeatureVisibilityDto().ImplementationTraceability.Should().BeFalse("no explicit value means disabled");
         SidebarLabels("traceability").Should().NotContain(["Task Alignment Review", "Documentation Drift"], "document reviews stay in Specifications & Planning").And.Contain("Impact Analysis");
     }

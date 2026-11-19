@@ -47,7 +47,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
         cut.Find(".fvp-sub").TextContent.Should().Be("Explore available BirkNext capabilities, their visibility and requirements.");
         Metric(cut, "switches").Should().Be("25");
         cut.Find("[data-testid=fv-metric-switches] .fvp-md").TextContent.Should().Contain("each gating a sidebar entry").And.Contain("4 platform").And.Contain("8 retired");
-        Metric(cut, "shown").Should().StartWith("59").And.EndWith("of 65"); // −1 Project Test Setup (removed 2026-11-19); +3 Manual Testing home, Discover & understand, Execute & document; +1 All modules; +1 Integration Journeys; +4 Technical Testing home and stages
+        Metric(cut, "shown").Should().StartWith("56").And.EndWith("of 62"); // −3 retired 2026-11-19 (Recommended Workflow, Execute & document, Release Readiness); −1 Project Test Setup (removed 2026-11-19); +3 Manual Testing home, Discover & understand, Execute & document; +1 All modules; +1 Integration Journeys; +4 Technical Testing home and stages
         Metric(cut, "hidden").Should().Be("6");
         cut.Find("[data-testid=fv-metric-navigation]").GetAttribute("data-state").Should().Be("consistent");
         cut.FindAll("[data-testid=fv-issues]").Should().BeEmpty();
@@ -91,7 +91,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
         cut.Find("[data-testid=fv-filter-unavailable]").Click();
         cut.FindAll("[data-testid=fv-entry]").Select(r => r.GetAttribute("data-route")).Should().Equal("azure-environment");
         cut.Find("[data-testid=fv-filter-shown]").Click();
-        cut.FindAll("[data-testid=fv-entry]").Should().HaveCount(59);
+        cut.FindAll("[data-testid=fv-entry]").Should().HaveCount(56);
     }
 
     [Fact]
@@ -105,7 +105,7 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests
         impact.QuerySelector("[data-testid=fv-detail-toggle]")!.GetAttribute("aria-expanded").Should().Be("true");
         var detail = impact.QuerySelector("[data-testid=fv-detail]")!.TextContent;
         detail.Should().Contain("Shown when Impact Analysis is on").And.Contain("FeatureVisibility:ImpactAnalysis = off").And.Contain("Optional")
-            .And.Contain("Use instead: Release Readiness").And.Contain("hiding the entry only removes it from the sidebar");
+            .And.Contain("Use instead: Relationship Review").And.Contain("hiding the entry only removes it from the sidebar");
         impact.QuerySelectorAll("[data-testid=fv-open]").Should().BeEmpty("a hidden entry is never offered as a link");
 
         EntryRow(cut, "documentation-drift").QuerySelector("[data-testid=fv-detail-toggle]")!.Click();

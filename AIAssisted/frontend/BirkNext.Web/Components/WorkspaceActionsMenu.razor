@@ -1,0 +1,88 @@
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+@inject IJSRuntime JS
+@inject ILogger<WorkspaceActionsMenu> Logger
+
+@* Save, Save As, Manage Workspaces and Clear (moved from Recommended Workflow, 2026-11-19). Auto-save keeps running; these are the
+   explicit actions. *@
+<details class="wam" @ref="_menu" data-testid="workspace-menu">
+    <summary class="btn-secondary btn-sm wam-trigger">Workspace</summary>
+    <div class="wam-list">
+        <button type="button" @onclick="SaveAsync" disabled="@(_busy || !WorkspaceLoaded)" data-testid="workspace-save">@(_busy ? "Saving..." : "Save")</button>
+        <button type="button" @onclick="SaveAsAsync" disabled="@(_busy || !WorkspaceLoaded)" data-testid="workspace-save-as">Save As</button>
+        <button type="button" @onclick="ManageAsync" disabled="@_busy" data-testid="workspace-manage">Manage Workspaces</button>
+        <button type="button" class="is-danger" @onclick="ClearAsync" disabled="@(_busy || !WorkspaceLoaded)" data-testid="workspace-clear">Clear Workspace</button>
+    </div>
+</details>
+@if (_error is { } error) { <p class="wam-error" role="alert" data-testid="workspace-menu-error">@error</p> }
+@if (_manager) { <WorkspaceManager OnClose="ManagerClosedAsync" /> }
+
+@code {
+    [Parameter] public bool WorkspaceLoaded { get; set; }
+    /// <summary>Raised after the workspace changed (saved, renamed, resumed or cleared).</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private ElementReference _menu;
+    private bool _busy, _manager;
+    private string? _error;
+
+    // Resolved when an action runs: the Dashboard renders in hosts without workspace persistence (the menu then says so instead of failing).
+    private IWorkspacePersistenceApiService? WorkspacePersistence => Services.GetService(typeof(IWorkspacePersistenceApiService)) as IWorkspacePersistenceApiService;
+    private IWorkspaceSessionRestoreService? WorkspaceRestore => Services.GetService(typeof(IWorkspaceSessionRestoreService)) as IWorkspaceSessionRestoreService;
+    private ICurrentWorkspaceProjection? CurrentWorkspace => Services.GetService(typeof(ICurrentWorkspaceProjection)) as ICurrentWorkspaceProjection;
+
+    private async Task Run(Func<Task<bool>> action, string what)
+    {
+        if (_busy) return;
+        if (WorkspacePersistence is null || WorkspaceRestore is null) { _error = "Workspace saving is not available in this view."; return; }
+        (_busy, _error) = (true, null);
+        try
+        {
+            if (await action())
+            {
+                CurrentWorkspace?.Invalidate();
+                await OnChanged.InvokeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Workspace {Action} failed", what);
+            _error = $"The workspace could not be {what}: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+            await CloseAsync();
+        }
+    }
+
+    private Task SaveAsync() => Run(async () => await WorkspacePersistence!.SaveCurrentAsync() is not null, "saved");
+
+    private Task SaveAsAsync() => Run(async () =>
+    {
+        var name = await JS.InvokeAsync<string?>("prompt", "Enter workspace name:");
+        return !string.IsNullOrWhiteSpace(name) && await WorkspacePersistence!.SaveAsAsync(name) is not null;
+    }, "saved");
+
+    private Task ClearAsync() => Run(async () =>
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Clear current workspace? You can resume it later from Manage Workspaces.")) return false;
+        await WorkspaceRestore!.ClearWorkspaceAsync();
+        return true;
+    }, "cleared");
+
+    private async Task ManageAsync() { _manager = true; await CloseAsync(); }
+
+    private async Task ManagerClosedAsync()
+    {
+        _manager = false;
+        CurrentWorkspace?.Invalidate();
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task CloseAsync()
+    {
+        try { await JS.InvokeVoidAsync("closeDetailsElement", _menu); }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or TaskCanceledException) { Logger.LogDebug(ex, "Workspace menu not closed"); }
+    }
+}

@@ -92,9 +92,10 @@ public static class ProjectQualityStages
                 $"{e.Passed} passed · {e.Failed} failed or error. A historical result is not evidence for changed definitions.", "Open Test Execution & Evidence", "execution-results", "execution-results", ProjectQualityStageState.InProgress),
         };
 
-        // 5. Evidence & release readiness: owned by Release Readiness; never calculated here.
-        ProjectQualityStage readiness = new("readiness", 5, "Review evidence & release readiness", "Decide readiness from the recorded evidence.", "Not assessed here",
-            "Release readiness is owned by Release Readiness; this page never calculates it.", "Open Release Readiness", "release-readiness", "readiness", ProjectQualityStageState.NotAssessedHere);
+        // 5. Release evidence: the build-specific release gate is Critical E2E Regression's; a release decision is made outside BirkNext.
+        ProjectQualityStage readiness = new("readiness", 5, "Review release evidence", "Check the release gate of the build you test.", "Not assessed here",
+            "BirkNext does not decide releases: the build-specific release gate is in Critical E2E Regression, and approval happens outside BirkNext.",
+            "Open Critical E2E Regression", "critical-e2e-regression", "readiness", ProjectQualityStageState.NotAssessedHere);
 
         return [understand, requirements, assess, run, readiness];
     }

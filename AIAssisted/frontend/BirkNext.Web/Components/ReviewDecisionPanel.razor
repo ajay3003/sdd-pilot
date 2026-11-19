@@ -1,0 +1,108 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+@inject ILogger<ReviewDecisionPanel> Logger
+
+@* Review decisions (moved from Recommended Workflow, 2026-11-19): every review gate of the current workspace with its state in words. A decision
+   is recorded on purpose, behind an explicit disclosure that names the exact artifact revisions it applies to; opening an explorer never records
+   one. Blocked and not-applicable gates are listed without decision controls. *@
+@if (Readiness is not null && Gates.Count > 0)
+{
+    <section class="rdp" aria-labelledby="rdp-heading" data-testid="review-decisions">
+        <div class="rdp-head">
+            <h2 id="rdp-heading" class="rdp-title">Review decisions</h2>
+            <span class="rdp-count" data-testid="review-decisions-count">@CountText</span>
+        </div>
+        @if (_error is { } error) { <p class="rdp-error" role="alert" data-testid="review-decisions-error">@error</p> }
+        <ul class="rdp-list">
+            @foreach (var step in Gates)
+            {
+                var review = ArtifactReviewPresentation.Of(step);
+                var busy = _busy == step.Key;
+                var decidable = step.Status is not (WorkflowStepStatus.Locked or WorkflowStepStatus.NotApplicable) && !string.IsNullOrWhiteSpace(step.ArtifactReferences);
+                <li class="rdp-item is-@review.State.ToString().ToLowerInvariant()" data-testid="review-decision" data-step="@step.Key" data-state="@review.State"
+                    data-counted="@Counted(step)">
+                    <div class="rdp-item-head">
+                        @if (step.CanOpen) { <a href="@step.Route" class="rdp-name">@step.Title</a> } else { <span class="rdp-name">@step.Title</span> }
+                        <span class="rdp-state" data-testid="review-decision-state">@review.Label</span>
+                    </div>
+                    <p class="rdp-summary" data-testid="review-decision-summary"><span aria-hidden="true">@review.Icon </span>@(step.Status == WorkflowStepStatus.Locked && !string.IsNullOrEmpty(step.DisabledReason) ? step.DisabledReason : review.Summary)</p>
+                    @if (decidable)
+                    {
+                        <details class="rdp-decision" data-testid="review-decision-record">
+                            <summary>Record review decision</summary>
+                            <p class="rdp-target" id="rdp-target-@step.Key" data-testid="review-decision-target">Applies to @step.ArtifactReferences</p>
+                            <div class="rdp-actions" role="group" aria-labelledby="rdp-target-@step.Key">
+                                @if (step.RequiresManualReview && review.State is not (ArtifactReviewState.Reviewed or ArtifactReviewState.Approved))
+                                {
+                                    <PrimaryButton Class="rdp-review" Disabled="busy" OnClick="() => DecideAsync(step, Decision.Reviewed)">@(busy ? "Saving..." : "Mark reviewed")</PrimaryButton>
+                                }
+                                @if (review.State != ArtifactReviewState.NeedsChanges)
+                                {
+                                    @* A review with known gaps is a completed review decision, not a failure. *@
+                                    <SecondaryButton Class="rdp-gaps" Disabled="busy" OnClick="() => DecideAsync(step, Decision.Gaps)">@(busy ? "Saving..." : "Reviewed with gaps")</SecondaryButton>
+                                }
+                                @if (step.RequiresApproval && review.State != ArtifactReviewState.Approved)
+                                {
+                                    <SecondaryButton Class="rdp-approve" Disabled="busy" OnClick="() => DecideAsync(step, Decision.Approved)">@(busy ? "Saving..." : "Approve")</SecondaryButton>
+                                }
+                            </div>
+                        </details>
+                    }
+                </li>
+            }
+        </ul>
+    </section>
+}
+
+@code {
+    /// <summary>The workspace's readiness (the same read the Dashboard shows); null while it loads.</summary>
+    [Parameter] public WorkflowReadiness? Readiness { get; set; }
+    /// <summary>Raised after a decision was recorded, so the host reads readiness again.</summary>
+    [Parameter] public EventCallback OnDecided { get; set; }
+
+    private enum Decision { Reviewed, Gaps, Approved }
+    private string? _busy, _error;
+
+    /// <summary>Every review gate, in workflow order (required, optional, blocked and not-applicable alike: each says its state).</summary>
+    private IReadOnlyList<WorkflowStepViewModel> Gates => Readiness is null ? [] : [.. Readiness.Steps.Where(WorkflowReadinessService.IsReviewGate)];
+
+    private string Counted(WorkflowStepViewModel step) =>
+        Readiness!.RequiredReviewGates.Contains(step) ? "required" : step.IsOptional && step.Status != WorkflowStepStatus.NotApplicable ? "optional" : "not-counted";
+
+    private string CountText
+    {
+        get
+        {
+            var required = Readiness!.RequiredReviewGates.Count;
+            var optional = Gates.Count(s => Counted(s) == "optional");
+            return $"{Readiness.DecidedReviewCount} / {required} required review decisions recorded" + (optional > 0 ? $" · {optional} optional not counted" : "");
+        }
+    }
+
+    private async Task DecideAsync(WorkflowStepViewModel step, Decision decision)
+    {
+        if (_busy is not null || Readiness is null) return;
+        // Resolved when a decision is recorded: a host without the review-decision API still renders the decisions (read-only).
+        if (Services.GetService(typeof(IRecommendedWorkflowApiService)) is not IRecommendedWorkflowApiService WorkflowApi) { _error = "Review decisions cannot be saved in this view."; return; }
+        (_busy, _error) = (step.Key, null);
+        var workspace = Readiness.WorkspaceId ?? Guid.Empty;
+        var revisions = Readiness.Workspace.ArtifactRevisions;
+        try
+        {
+            switch (decision)
+            {
+                case Decision.Reviewed: await WorkflowApi.MarkStepReviewedAsync(workspace, step.Key, revisions); break;
+                case Decision.Gaps: await WorkflowApi.RejectStepAsync(workspace, step.Key, revisions); break;
+                default: await WorkflowApi.ApproveStepAsync(workspace, step.Key, revisions); break;
+            }
+            await OnDecided.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Review decision {Decision} for {Step} failed", decision, step.Key);
+            _error = $"The decision for {step.Title} was not saved: {ex.Message}";
+        }
+        finally { _busy = null; }
+    }
+}

@@ -5,14 +5,14 @@
 @implements IDisposable
 @inject IServiceProvider ServiceProvider
 
-@* Manual Testing home: which project, what exists, what is in progress, what needs attention and the one next step — from stored records only
-   (saved plans, the last stored discovery, manual runs). The three stages are destinations, never gates. *@
+@* Manual Testing home: which project, what exists, what needs attention and the one next step — from stored records only (saved plans, the last
+   stored discovery). The two stages are destinations, never gates; test cases are executed in Azure DevOps Test Plans after the export. *@
 <PageTitle>Manual Testing</PageTitle>
 
 <div class="mt" data-testid="mt" aria-busy="@(_loading ? "true" : "false")">
     <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manual Testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="@null" Title="Manual Testing"
         ProjectName="@_ws?.ProjectName" Context="@_ws?.SnapshotBasis"
-        Lead="Your manual testing work for the selected project in one place: understand what needs testing, prepare test cases, run them and record what happened.">
+        Lead="Your manual testing work for the selected project in one place: understand what needs testing, prepare and review test cases, and export them to Azure DevOps Test Plans, where they are executed.">
         <Help><BirkNext.Web.Components.HelpLink Topic="manual-testing" Text="How this works" /></Help>
     </BirkNext.Web.Components.TestingWorkspaceHeader>
 
@@ -63,28 +63,8 @@
                         </ul>
                     }
                 </section>
-                <section class="mt-card" aria-labelledby="mt-runs-title" data-testid="mt-runs">
-                    <h2 id="mt-runs-title" class="mt-h">Test runs</h2>
-                    @if (facts.Runs.Count == 0)
-                    {
-                        <p class="mt-muted" data-testid="mt-runs-none">No test run recorded yet. Open a saved case and choose <em>Run this test case</em>, or start one in <a href="@M.ExecuteRoute">Execute &amp; document</a>.</p>
-                    }
-                    else
-                    {
-                        <ul class="mt-list">
-                            @foreach (var r in M.InProgress(facts).Concat(M.Completed(facts).OrderByDescending(x => x.CompletedAt)).Take(8))
-                            {
-                                <li data-testid="mt-run" data-state="@r.State" data-outcome="@r.Outcome">
-                                    <a href="@($"{M.ExecuteRoute}?run={r.Id}")">@r.Title</a>
-                                    <span class="mt-chip mt-tone-@M.RunTone(r.State, r.Outcome)">@M.RunLabel(r.State, r.Outcome)</span>
-                                    <span class="mt-muted">@((r.CompletedAt ?? r.StartedAt).ToLocalTime().ToString("yyyy-MM-dd HH:mm")) · @r.Tester@(r.OpenDefects > 0 ? $" · {r.OpenDefects} open defect{(r.OpenDefects == 1 ? "" : "s")}" : "")</span>
-                                </li>
-                            }
-                        </ul>
-                    }
-                </section>
             </div>
-            <p class="mt-muted mt-boundary">Counts come from saved records only. A prepared or approved test case is not an executed test; a run's result is what the tester recorded. Nothing is sent to Azure DevOps.</p>
+            <p class="mt-muted mt-boundary">Counts come from saved records only. A prepared, approved or exported test case is not an executed test: manual tests are executed, and their results recorded, in Azure DevOps Test Plans. BirkNext never writes to Azure DevOps; the export is a file you import there.</p>
         }
     }
 </div>

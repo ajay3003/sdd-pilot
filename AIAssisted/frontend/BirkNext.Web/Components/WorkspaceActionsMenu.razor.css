@@ -1,0 +1,12 @@
+.wam { position: relative; flex: 0 0 auto; }
+.wam-trigger { list-style: none; user-select: none; cursor: pointer; }
+.wam-trigger::-webkit-details-marker { display: none; }
+.wam-trigger::after { content: " ▾"; font-size: .7rem; }
+.wam-list { position: absolute; right: 0; top: calc(100% + .35rem); z-index: 5; min-width: 11rem; display: flex; flex-direction: column; gap: .125rem;
+    padding: .375rem; background: var(--clr-surface-white); border: 1px solid var(--clr-border); border-radius: var(--radius-md); box-shadow: var(--shadow-md, 0 4px 12px rgba(0,0,0,.12)); }
+.wam-list button { width: 100%; padding: .45rem .6rem; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--clr-text-body); text-align: left; font: inherit; cursor: pointer; }
+.wam-list button:hover:not(:disabled) { background: var(--clr-surface); }
+.wam-list button:disabled { opacity: .5; cursor: not-allowed; }
+.wam-list button.is-danger { color: var(--clr-danger); }
+.wam-error { margin: .25rem 0 0; font-size: .8rem; color: var(--clr-danger); }
+@media (max-width: 30rem) { .wam-list { right: auto; left: 0; } }

@@ -51,9 +51,9 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("Project Quality Dashboard");
+            cut.Markup.Should().Contain("Project Dashboard");
             cut.Markup.Should().Contain("Assessment status");
-            cut.Markup.Should().Contain("Workflow");
+            cut.Markup.Should().NotContain("href=\"getting-started\"", "Recommended Workflow is retired; the Dashboard never links to it");
             cut.Markup.Should().Contain("Needs setup", "without a project every area needs a project first");
             cut.Markup.Should().NotContain(">—<", "no area shows a bare dash as its state");
         }, timeout: TimeSpan.FromSeconds(1));
@@ -120,7 +120,7 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("Project Quality Dashboard");
+            cut.Markup.Should().Contain("Project Dashboard");
             cut.Markup.Should().Contain("Project Artifacts");
             cut.Markup.Should().NotContain("Governance Status");
             cut.Markup.Should().Contain("Test and release evidence", "release evidence is separate from review readiness");
@@ -147,7 +147,7 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("Project Quality Dashboard");
+            cut.Markup.Should().Contain("Project Dashboard");
             cut.Markup.Should().Contain("No workspace loaded");
             cut.Markup.Should().Contain("Needs setup");
         }, timeout: TimeSpan.FromSeconds(1));
