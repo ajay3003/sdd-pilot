@@ -271,7 +271,7 @@
         }
 
         @* ── Suggested tests: drafts from the imported source, verified on the attended page, approved into flows above. ── *@
-        <CriticalE2ESuggestions EnvironmentId="@_environmentId" ProfileId="@_profileId" CurrentRoute="@_overview?.Attended?.CurrentRoute" OnApproved="RefreshAsync"
+        <CriticalE2ESuggestions EnvironmentId="@_environmentId" ProfileId="@_profileId" CurrentRoute="@_overview?.Attended?.CurrentRoute" Attended="@_overview?.Attended" OnApproved="OnSuggestionApprovedAsync"
                                 TestDataAssets="@_testDataAssets" EnvironmentName="@_environmentName" EnvironmentType="@_environmentType" />
 
         @if (_lastRun is { } run)
@@ -703,6 +703,15 @@
     /// overview (target, build, coverage, browser readiness) on screen. No active Target Environment is a configuration
     /// state the overview reports itself — it is never sent to the flows endpoint as an empty id.
     /// </summary>
+    /// <summary>An approved suggestion becomes a Diagnostic flow: show the diagnostic flows so the tester sees it and its Run button at once
+    /// (they were hidden by default, while the approval message pointed at "the flows above").</summary>
+    private async Task OnSuggestionApprovedAsync()
+    {
+        _showDiagnostic = true;
+        _showDiagnosticRuns = true;
+        await RefreshAsync();
+    }
+
     private async Task RefreshAsync()
     {
         FrontendAnalysisContext context;

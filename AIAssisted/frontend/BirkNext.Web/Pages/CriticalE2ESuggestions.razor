@@ -131,6 +131,8 @@
     [Parameter] public string EnvironmentId { get; set; } = "";
     [Parameter] public string? ProfileId { get; set; }
     [Parameter] public string? CurrentRoute { get; set; }
+    /// <summary>The paired browser as the page sees it (null: not known here, nothing is disabled for it).</summary>
+    [Parameter] public CriticalE2EAttendedReadiness? Attended { get; set; }
     [Parameter] public EventCallback OnApproved { get; set; }
     /// <summary>Central Test Data summaries (never values): the approved aliases a placeholder can be mapped to at approval.</summary>
     [Parameter] public IReadOnlyList<BirkNext.TestData.TestDataAssetSummary> TestDataAssets { get; set; } = [];
@@ -285,16 +287,32 @@
     private RenderFragment Detail(TestSuggestion s) => __builder =>
     {
         var onRoute = CurrentRoute is not null && CriticalE2ERoutes.Matches(s.Route, CurrentRoute);
+        var verifyBlocker = Attended switch
+        {
+            null => null,
+            { CompanionConnected: false } => "Pair the Edge Companion first (Browser Companion), then open the page in the attended browser.",
+            { OpenApprovedPages: 0 } => $"Open {s.Route} of the target in the attended browser.",
+            { OpenApprovedPages: > 1 } => "Keep exactly one approved page of the target open in the attended browser.",
+            _ when !onRoute => $"Go to {s.Route} in the attended browser.",
+            _ => null,
+        };
+        var approveProblems = SuggestionApprovalRules.Problems(s, _bindings.Keys, string.IsNullOrWhiteSpace(_expectedRoute) ? null : _expectedRoute.Trim());
         <article class="sg-detail" data-testid="sg-detail" data-id="@s.SuggestionId" aria-labelledby="sg-detail-heading">
             <div class="sg-head">
                 <h3 id="sg-detail-heading">@s.Title</h3>
                 <div class="sg-actions">
-                    <button type="button" class="btn btn-secondary" data-testid="sg-verify" disabled="@(_busy || s.ApprovedFlowId is not null)" @onclick="() => VerifyAsync(s)">Verify DOM in Edge</button>
-                    <button type="button" class="btn btn-primary" data-testid="sg-approve" disabled="@(_busy || s.ApprovedFlowId is not null || s.AutomationBlocker is not null)" title="@s.AutomationBlocker" @onclick="() => ApproveAsync(s)">Approve test</button>
+                    <button type="button" class="btn btn-secondary" data-testid="sg-verify" disabled="@(_busy || s.ApprovedFlowId is not null || verifyBlocker is not null)" title="@verifyBlocker" @onclick="() => VerifyAsync(s)">Verify DOM in Edge</button>
+                    <button type="button" class="btn btn-primary" data-testid="sg-approve" disabled="@(_busy || approveProblems.Count > 0)" @onclick="() => ApproveAsync(s)">Approve test</button>
                     @if (s.CoveredByFlowId is { } covered) { <a class="btn-secondary" href="@($"critical-e2e-regression#e2e-flow-{covered}")" data-testid="sg-open-existing">Open existing test</a> }
                 </div>
             </div>
             <p class="sg-muted" data-testid="sg-route-state">@(onRoute ? $"The attended page is on {CurrentRoute}: locators can be verified now." : $"Open {s.Route} in the attended browser to verify locators{(CurrentRoute is null ? "" : $" (it is on {CurrentRoute})")}.")</p>
+            @if (verifyBlocker is not null && s.ApprovedFlowId is null) { <p class="sg-note" data-testid="sg-verify-why">To verify locators: @verifyBlocker</p> }
+            @if (approveProblems.Count > 0 && s.ApprovedFlowId is null)
+            {
+                <div class="sg-note" data-testid="sg-approve-why"><strong>To approve:</strong>
+                    <ul>@foreach (var problem in approveProblems) { <li>@problem</li> }</ul></div>
+            }
             @if (s.CoverageNote is { } note) { <p class="sg-note" data-testid="sg-coverage-note">@note</p> }
             <dl class="sg-facts">
                 <div><dt>Expected result</dt><dd data-testid="sg-expected">@(s.ExpectedResult ?? "NEEDS EXPECTED RESULT — not stated in the source")</dd></div>

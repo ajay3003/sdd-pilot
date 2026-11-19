@@ -330,3 +330,36 @@ public sealed record CompanionSelectorCheck
     /// <summary>Matches inside frames or shadow roots are not reachable; reported, never counted.</summary>
     public string? Limitation { get; init; }
 }
+
+/// <summary>
+/// What still stops a suggestion from being approved as a Diagnostic flow — the one rule set the API enforces and the page shows before
+/// anything is sent (2026-11-19: Approve looked available on every suggestion and was refused only after the click).
+/// </summary>
+public static class SuggestionApprovalRules
+{
+    /// <summary>A step's locator counts once a reviewer accepted it (or chose an alternative) after verification, or when the step only checks validation.</summary>
+    public static bool HasUsableLocator(TestSuggestion s, SuggestedStep step) =>
+        s.Decisions.LastOrDefault(x => x.StepId == step.StepId) is { Decision: LocatorDecision.Accepted or LocatorDecision.AlternativeChosen, Selector: not null }
+        || step.Locators.Count > 0 && step.Locators.All(l => l.Basis.Contains("Validation", StringComparison.Ordinal));
+
+    /// <param name="boundVariables">The Test Data placeholders the reviewer mapped to an approved alias.</param>
+    /// <param name="expectedRoute">The route the reviewer stated as the expected result (used when the source states none).</param>
+    public static List<string> Problems(TestSuggestion s, IEnumerable<string> boundVariables, string? expectedRoute)
+    {
+        var bound = boundVariables.ToHashSet(StringComparer.Ordinal);
+        var problems = new List<string>();
+        if (s.ApprovedFlowId is not null) problems.Add("Already approved: open the flow in Critical E2E Regression.");
+        if (s.Coverage == SuggestionCoverage.AlreadyCovered) problems.Add($"Already covered by an existing flow ({s.CoverageNote}); extend that flow instead of adding a copy.");
+        foreach (var step in s.Steps.Where(st => st.ControlId is not null && !HasUsableLocator(s, st)))
+            problems.Add($"Step {step.StepId} ({step.Description}): no accepted locator.");
+        if (s.AutomationBlocker is { } blocker) problems.Add(blocker);
+        foreach (var variable in s.DataVariables.Where(v => !bound.Contains(v.Variable)))
+            problems.Add($"Choose approved Test Data for ${{data:{variable.Variable}}} ({variable.Description}).");
+        if (s.TestDataNeeds.Count > 0 && s.DataVariables.Count == 0) problems.Add($"Test Data needed first: {string.Join("; ", s.TestDataNeeds)}.");
+        foreach (var unaddressed in s.Steps.Where(st => st.ControlId is null && st.Action is CompanionActionKind.Click or CompanionActionKind.Fill or CompanionActionKind.Select))
+            problems.Add($"Step {unaddressed.StepId} ({unaddressed.Description}) has no element from source: pick it in the flow editor.");
+        if (!s.Steps.Any(st => st.IsFinalAssertion) && !(expectedRoute is { Length: > 0 } e && e.StartsWith('/')))
+            problems.Add("No expected result: the source does not state one. State the expected route (or add the outcome in the flow editor after approval is possible).");
+        return problems;
+    }
+}

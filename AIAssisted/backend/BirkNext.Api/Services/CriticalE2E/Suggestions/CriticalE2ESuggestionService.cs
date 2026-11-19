@@ -253,9 +253,6 @@ public sealed partial class CriticalE2ESuggestionService(
         var loaded = await LoadAsync(request.SnapshotId, request.EnvironmentId, ct);
         var s = loaded?.Suggestions.FirstOrDefault(x => x.SuggestionId == request.SuggestionId);
         if (s is null) return new(null, ["Suggestion not found for this snapshot."]);
-        var problems = new List<string>();
-        if (s.ApprovedFlowId is not null) problems.Add("Already approved: open the flow in Critical E2E Regression.");
-        if (s.Coverage == SuggestionCoverage.AlreadyCovered) problems.Add($"Already covered by an existing flow ({s.CoverageNote}); extend that flow instead of adding a copy.");
         var mapping = new Dictionary<string, (CompanionSelector Selector, bool Manual)>();
         foreach (var step in s.Steps.Where(st => st.ControlId is not null))
         {
@@ -263,29 +260,19 @@ public sealed partial class CriticalE2ESuggestionService(
             var validationOnly = step.Locators.All(l => l.Basis.Contains("Validation", StringComparison.Ordinal));
             if (d is { Decision: LocatorDecision.Accepted or LocatorDecision.AlternativeChosen, Selector: { } sel }) mapping[step.StepId] = (sel, d.Reason is not null);
             else if (validationOnly && step.Locators.FirstOrDefault() is { } conv) mapping[step.StepId] = (conv.Selector, true);   // verified when the test runs
-            else problems.Add($"Step {step.StepId} ({step.Description}): no accepted locator.");
         }
-        if (s.AutomationBlocker is { } blocker) problems.Add(blocker);
         // Each ${data:…} placeholder is mapped to an approved Test Data alias chosen by the reviewer; the value stays in Test Data and is revealed
         // to the backend only while a run executes. A need that no placeholder carries cannot be mapped here.
         var bindings = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var variable in s.DataVariables)
-        {
-            var alias = request.TestData?.FirstOrDefault(b => string.Equals(b.Variable, variable.Variable, StringComparison.Ordinal))?.Alias?.Trim();
-            if (string.IsNullOrEmpty(alias)) problems.Add($"Choose approved Test Data for ${{data:{variable.Variable}}} ({variable.Description}).");
-            else bindings[variable.Variable] = alias;
-        }
-        if (s.TestDataNeeds.Count > 0 && s.DataVariables.Count == 0) problems.Add($"Test Data needed first: {string.Join("; ", s.TestDataNeeds)}.");
-        foreach (var unaddressed in s.Steps.Where(st => st.ControlId is null && st.Action is CompanionActionKind.Click or CompanionActionKind.Fill or CompanionActionKind.Select))
-            problems.Add($"Step {unaddressed.StepId} ({unaddressed.Description}) has no element from source: pick it in the flow editor.");
+            if (request.TestData?.FirstOrDefault(b => string.Equals(b.Variable, variable.Variable, StringComparison.Ordinal))?.Alias?.Trim() is { Length: > 0 } alias) bindings[variable.Variable] = alias;
+        var statedRoute = request.OutcomeKind is CriticalE2EOutcomeKind.UrlEquals or CriticalE2EOutcomeKind.UrlContains ? request.Expected : null;
+        // The same rules the page shows before the click (SuggestionApprovalRules).
+        var problems = SuggestionApprovalRules.Problems(s, bindings.Keys, statedRoute);
         var steps = s.Steps.ToList();
-        if (!steps.Any(st => st.IsFinalAssertion))
-        {
-            if (request.OutcomeKind is CriticalE2EOutcomeKind.UrlEquals or CriticalE2EOutcomeKind.UrlContains && request.Expected is { Length: > 0 } expected && expected.StartsWith('/'))
-                steps.Add(new SuggestedStep { StepId = $"s{steps.Count + 1}", Description = $"The browser is on {expected} (expected result stated by the reviewer)", Action = CompanionActionKind.AssertRoute,
-                    Expected = expected, Match = request.OutcomeKind == CriticalE2EOutcomeKind.UrlContains ? CompanionTextMatch.Contains : CompanionTextMatch.Equals, IsFinalAssertion = true });
-            else problems.Add("No expected result: the source does not state one. State the expected route (or add the outcome in the flow editor after approval is possible).");
-        }
+        if (!steps.Any(st => st.IsFinalAssertion) && statedRoute is { Length: > 0 } expected && expected.StartsWith('/'))
+            steps.Add(new SuggestedStep { StepId = $"s{steps.Count + 1}", Description = $"The browser is on {expected} (expected result stated by the reviewer)", Action = CompanionActionKind.AssertRoute,
+                Expected = expected, Match = request.OutcomeKind == CriticalE2EOutcomeKind.UrlContains ? CompanionTextMatch.Contains : CompanionTextMatch.Equals, IsFinalAssertion = true });
         if (problems.Count > 0) return new(null, problems);
 
         var final = steps.Last(st => st.IsFinalAssertion);

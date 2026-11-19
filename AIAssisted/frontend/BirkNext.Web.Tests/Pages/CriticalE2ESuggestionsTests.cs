@@ -146,6 +146,45 @@ public sealed class CriticalE2ESuggestionsTests : BunitContext
     };
 
     [Fact]
+    public void Verify_and_Approve_say_what_is_missing_before_the_click_instead_of_failing_after_it()
+    {
+        // M2LB real data (2026-11-19): every one of 59 suggestions offered Verify and Approve while the Companion was not connected and no locator
+        // was verified; both were refused only after the click.
+        _api.Setup(a => a.GenerateSuggestionsAsync(It.IsAny<SuggestionGenerateRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync(Result(Search()));
+        var cut = Render<CriticalE2ESuggestions>(p => p.Add(x => x.EnvironmentId, "env-1").Add(x => x.ProfileId, "p1").Add(x => x.CurrentRoute, (string?)null)
+            .Add(x => x.Attended, new CriticalE2EAttendedReadiness { CompanionConnected = false }));
+        cut.Find("[data-testid=sg-generate]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sg-summary]"));
+        cut.Find("[data-testid=sg-item][data-id=sug-search] [data-testid=sg-review]").Click();
+
+        cut.Find("[data-testid=sg-verify]").HasAttribute("disabled").Should().BeTrue();
+        cut.Find("[data-testid=sg-verify-why]").TextContent.Should().Contain("Pair the Edge Companion first");
+        cut.Find("[data-testid=sg-approve]").HasAttribute("disabled").Should().BeTrue();
+        var why = cut.FindAll("[data-testid=sg-approve-why] li").Select(li => li.TextContent).ToList();
+        why.Should().Contain(w => w.Contains("s2") && w.Contains("no accepted locator")).And.Contain(w => w.StartsWith("Test Data needed first"))
+            .And.Contain(w => w.StartsWith("No expected result"), "the same list the API would refuse with (SuggestionApprovalRules)");
+        why.Should().Equal(SuggestionApprovalRules.Problems(Search(), [], null));
+
+        cut.Find("[data-testid=sg-expected-route]").Input("/person/1");
+        cut.FindAll("[data-testid=sg-approve-why] li").Should().NotContain(li => li.TextContent.StartsWith("No expected result"), "stating the route answers that point");
+        _api.Verify(a => a.VerifySuggestionAsync(It.IsAny<SuggestionVerifyRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+        _api.Verify(a => a.ApproveSuggestionAsync(It.IsAny<SuggestionApproveRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public void A_connected_Companion_on_the_suggestion_s_page_enables_Verify()
+    {
+        _api.Setup(a => a.GenerateSuggestionsAsync(It.IsAny<SuggestionGenerateRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync(Result(Search()));
+        var cut = Render<CriticalE2ESuggestions>(p => p.Add(x => x.EnvironmentId, "env-1").Add(x => x.ProfileId, "p1").Add(x => x.CurrentRoute, "/person")
+            .Add(x => x.Attended, new CriticalE2EAttendedReadiness { CompanionConnected = true, OpenApprovedPages = 1, CurrentRoute = "/person" }));
+        cut.Find("[data-testid=sg-generate]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sg-summary]"));
+        cut.Find("[data-testid=sg-item][data-id=sug-search] [data-testid=sg-review]").Click();
+        cut.Find("[data-testid=sg-verify]").HasAttribute("disabled").Should().BeFalse();
+        cut.FindAll("[data-testid=sg-verify-why]").Should().BeEmpty();
+    }
+
+    [Fact]
     public void A_manual_tester_prepares_a_functional_search_test_case_without_the_companion()
     {
         var smoke = Valid() with { SuggestionId = "sug-opens", Title = "Personsøk opens", Kind = SuggestionKind.PageOpens, Category = SuggestionCategory.UiSmoke, TestDataNeeds = [] };

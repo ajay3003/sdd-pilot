@@ -8,7 +8,7 @@ gives a checklist.
 | Area | Page | Needs |
 |------|------|-------|
 | Performance and load | Performance Test Review (`/performance-test-review`) | A non-production target reachable from the k6 container (Podman) |
-| Automated browser flows | Critical E2E Regression (`/critical-e2e-regression`) | *To be added* |
+| Automated browser flows | Critical E2E Regression (`/critical-e2e-regression`) | An imported project with UI source; for verify and run, the Edge Companion on an attended page of a non-production target |
 | Integration chains (Skolenærvær) | Integration suites / Skolenærvær | *To be added* |
 
 Manual test cases are prepared in **Manual Testing → Plan & prepare** and exported to Azure DevOps Test Plans
@@ -103,3 +103,58 @@ To run it yourself: start the stand-in with `performance-target/start-target.ps1
 
 **Against a real environment (attended):** create a Target Environment for the DEV/QA/TEST service, check *Target reachability* first,
 start small (1–2 users, 10–30 s), agree the load with whoever owns the service, and promote a baseline only from a run you trust.
+
+---
+
+## 2. Critical E2E Regression — suggested browser tests
+
+Critical E2E Regression turns the UI found in the imported source (pages, links, search, forms, buttons) into **suggested** browser tests,
+checks their element locators on the real page with the **Edge Companion**, and runs approved tests as automated flows in your own signed-in
+Edge. The steps run automatically; *attended* means you sign in yourself and keep the page open while they run.
+
+Manual test cases are not prepared here: use Manual Testing → Plan & prepare (the same UI scenarios are discovered there) and Azure DevOps.
+
+### What needs what
+
+| Step | Needs |
+|------|-------|
+| Generate and review suggestions | An imported project with UI source and a Target Environment (any non-production type). No browser, no Companion |
+| Verify locators, approve, run | The Edge Companion paired with BirkNext and **exactly one** approved page of the target open in Edge, on the suggestion's route |
+| Run | A Development, QA, Test, RC or Local Target Environment (production — or an unknown type — is refused) |
+
+### Step by step
+
+1. **Open Critical E2E Regression.** The *Attended browser* card says whether the Companion is connected and which approved page is open.
+2. **Suggested tests → Source snapshot →** choose the imported project's snapshot → **Generate suggestions.** Nothing runs. The summary counts
+   the suggestions (for M2LB: 59 from 61 UI files — 48 UI functional, 11 page checks) and what they still need (DOM mapping, expected
+   result, Test Data).
+3. **Review a suggestion.** It shows the steps in words, the expected result (only when the source states one; otherwise *NEEDS EXPECTED
+   RESULT*), the source file and line, and preconditions. Under the buttons:
+   - *To verify locators:* what is missing for **Verify DOM in Edge** (pair the Companion, open the page, go to the route);
+   - *To approve:* the list of what still stops approval — a step without an accepted locator, Test Data to choose, no expected result, an
+     existing flow that already covers it. The buttons stay disabled until the list is empty, so nothing is refused after the click.
+4. **Verify DOM in Edge.** The Companion checks each locator on the open page (*Verified unique*, or why not). **Accept** the locator per
+   step (or choose an alternative). Choose approved Test Data for each placeholder, and state the expected route when the source states none.
+5. **Approve test.** The suggestion becomes a **Diagnostic** flow, shown at once in the flow list with its **Run** button. Diagnostic
+   flows never count as release evidence; a flow becomes release-critical only when you make it one in the flow editor.
+6. **Run.** The Companion performs the steps on the attended page. The run says *Diagnostic pass*, *Failed* (with what was expected and
+   what was observed, for example *Expected route /children/new, observed /children/old-form*) or *Blocked* (the page or the Companion
+   was not available — not a test result).
+
+### Pairing the Edge Companion
+
+Install the Companion in Edge, open **Browser Companion** in BirkNext (or *Prepare attended browser* on Critical E2E), generate a pairing
+code for the Target Environment and enter it in the Companion's popup. The pairing approves only that environment's origin; the Companion
+never reads cookies, storage or headers.
+
+### What was verified
+
+`CriticalE2ECompanionWorkflowTests` (browser test) with the **real** Companion extension paired with an isolated BirkNext, against a
+stand-in single-page application that the browser serves itself (no network): import a project with Razor UI → pair → *Attended browser:
+Ready* → generate → *To approve: … no accepted locator* → Verify DOM in Edge → *Verified unique* → accept → approve → the flow is shown →
+run → *Diagnostic pass* (4 of 4 steps) → the stand-in's link changed → run → *Failed: Expected route /children/new, observed
+/children/old-form*. On real M2LB data (offline part): 59 suggestions generated in about 2 s, reviewable, no page errors.
+
+**Against the real application (attended):** pair the Companion with the DEV/QA Target Environment, sign in to the application in Edge
+yourself, open the suggestion's page, verify, approve and run one flow at a time. A full page reload during a step (instead of an in-app
+route change) ends that step as *Blocked*: keep one page of the application open and let the flow navigate inside it.
