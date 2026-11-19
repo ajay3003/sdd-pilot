@@ -8,7 +8,7 @@ namespace BirkNext.Web.Services;
 /// pre-selected only when it is the single best-evidenced schema; a tie or no evidence leaves the choice to the tester, with the reason.
 /// Static evidence only: "referenced by validation code" is never "verified in a runtime test".
 /// </summary>
-public static class SchemaSourceSelection
+public static partial class SchemaSourceSelection
 {
     public const string ValidationTier = "ReferencedByValidationCode", SourceTier = "ReferencedBySource", DeclaredTier = "Declared";
 
@@ -72,9 +72,9 @@ public static class SchemaSourceSelection
     public static string Family(string path)
     {
         var name = FileName(path);
-        name = Regex.Replace(name, @"\.xsd$", "", RegexOptions.IgnoreCase);
-        name = Regex.Replace(name, @"[._-]v?\d+([._]\d+)*([._-](flat|altinn|m2lb))*$", "", RegexOptions.IgnoreCase);
-        name = Regex.Replace(name, @"[._-](flat|altinn|m2lb)$", "", RegexOptions.IgnoreCase);
+        name = XsdExtension().Replace(name, "");
+        name = VersionSuffix().Replace(name, "");
+        name = VariantSuffix().Replace(name, "");
         return name;
     }
 
@@ -86,10 +86,15 @@ public static class SchemaSourceSelection
     }
 
     public static string? VersionOf(SourceSchemaFile file) =>
-        file.Usage?.Version ?? (Regex.Match(FileName(file.Path), @"v(\d+(?:[._]\d+)+)", RegexOptions.IgnoreCase) is { Success: true } m ? m.Groups[1].Value.Replace('_', '.') : null);
+        file.Usage?.Version ?? (VersionInName().Match(FileName(file.Path)) is { Success: true } m ? m.Groups[1].Value.Replace('_', '.') : null);
 
     private static Version VersionKey(SourceSchemaFile file) =>
         System.Version.TryParse(VersionOf(file) is { } v && v.Count(c => c == '.') >= 1 ? v : "0.0", out var parsed) ? parsed : new Version(0, 0);
+
+    [GeneratedRegex(@"\.xsd$", RegexOptions.IgnoreCase)] private static partial Regex XsdExtension();
+    [GeneratedRegex(@"[._-]v?\d+([._]\d+)*([._-](flat|altinn|m2lb))*$", RegexOptions.IgnoreCase)] private static partial Regex VersionSuffix();
+    [GeneratedRegex(@"[._-](flat|altinn|m2lb)$", RegexOptions.IgnoreCase)] private static partial Regex VariantSuffix();
+    [GeneratedRegex(@"v(\d+(?:[._]\d+)+)", RegexOptions.IgnoreCase)] private static partial Regex VersionInName();
 
     private static string FileName(string path) => System.IO.Path.GetFileName(path.Replace('\\', '/'));
 }
