@@ -74,12 +74,44 @@ public static class RequirementLinkPresentation
     }
 
     /// <summary>Why the requirement list is empty, in plain words (null when there are requirements).</summary>
-    public static string? EmptyReason(CoverageWorkspaceEvidence? evidence, IReadOnlyCollection<ProjectRequirementOption>? options) =>
+    public static string? EmptyReason(CoverageWorkspaceEvidence? evidence, IReadOnlyCollection<ProjectRequirementOption>? options,
+        Explorers.ArtifactExplorerState? specification = null) =>
         options is { Count: > 0 } ? null
         : evidence is null ? "The project's specification could not be read, so requirements cannot be linked right now."
+        : (!evidence.SpecificationAvailable || evidence.SpecificationArtifacts.Count == 0) && NoSpecificationInProject(specification) ? NotInSource
         : !evidence.SpecificationAvailable || evidence.SpecificationArtifacts.Count == 0
-            ? "This project has no selected specification, so there are no requirements to link. Choose the specification in the Specification Explorer."
+            ? "This project has no selected specification, so there are no requirements to link. Choose the specification under \"Specification used for manual testing\" (Choose scenarios)."
         : "The project's specification names no requirements (no requirement ids such as FR-001 were found), so there is nothing to link.";
+
+    public const string NotInSource = "Not identified in source: this project's documents contain no specification (no spec.md with User Stories or requirement "
+        + "ids such as FR-001), so there is nothing to link. Nothing is assumed; import the project's specification to link requirements.";
+
+    /// <summary>The explorers found no specification anywhere in the project (no candidate in any module): requirements are absent, not unchosen.</summary>
+    public static bool NoSpecificationInProject(Explorers.ArtifactExplorerState? s) =>
+        s is { Status: Explorers.ExplorerArtifactStatus.Empty, Artifacts.Count: 0, SourceUnresolved: false, PackSummary: null }
+        && (s.Modules is null || s.Modules.Sum(m => m.Candidates) == 0);
+
+    /// <summary>A test case's parent User Story: found (the stories of the current specification that name a linked requirement, directly or via
+    /// their tasks) or why none is shown. Never inferred from titles.</summary>
+    public sealed record StoryStatus(IReadOnlyList<CoverageUserStory> Stories, string? Reason, string? Via);
+
+    public static StoryStatus ParentStory(TestCaseDraft c, IReadOnlyCollection<Row> rows, IReadOnlyList<CoverageUserStory> stories, bool noSpecification)
+    {
+        var ids = rows.Select(r => r.RequirementId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var found = stories.Where(s => s.NamedRequirements.Any(ids.Contains) || s.TaskRequirements.Any(t => ids.Contains(t.RequirementId)))
+            .DistinctBy(s => CoverageUserStory.KeyOf(s.SpecificationPath, s.Key)).ToList();
+        if (found.Count > 0)
+            return new(found, null, "via " + string.Join(", ", found.SelectMany(s => s.NamedRequirements.Concat(s.TaskRequirements.Select(t => t.RequirementId)))
+                .Where(ids.Contains).Distinct(StringComparer.OrdinalIgnoreCase)));
+        var guide = c.Source.Kind == ScenarioSourceKind.SystemGuide || string.Equals(c.Generated.Capability, "system-guide", StringComparison.Ordinal);
+        var reference = c.Generated.Evidence.FirstOrDefault(e => e.Kind == "guide-scenario")?.Reference;
+        return new([], guide
+            ? $"Not identified in source: this case comes from the System Understanding guide{(reference is null ? "" : $" ({reference})")}, which names no User Story"
+              + (c.Generated.Requirements.Count > 0 ? $"; {string.Join(", ", c.Generated.Requirements.Select(r => r.RuleId))} is a guide rule, not a specification requirement." : ".")
+            : noSpecification ? "Not identified in source: this project has no specification with User Stories."
+            : rows.Count == 0 ? "Not identified: no requirement is linked, so no User Story can be found. Link a requirement to see its story."
+            : "Not identified: no User Story of the specification names the linked requirements.", null);
+    }
 
     /// <summary>Automatic links only for a case prepared from the specification (a guide's business rules and a journey's declared ids are not
     /// specification requirements); manual links as recorded. One row per requirement, both origins shown when both apply.</summary>

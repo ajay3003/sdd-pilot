@@ -165,12 +165,30 @@ public static class TestScenarioDiscoveryEngine
 
     // ── System Understanding guide ───────────────────────────────────────────────────────────────────────────
 
-    public static List<DiscoveredScenario> FromGuide(string projectKey, SystemGuideRevision revision)
+    /// <summary>The source roles a guide scenario's evidence lies in: its own, its steps', and the rules that name it. Empty = the guide does not say.</summary>
+    public static IReadOnlySet<string> ScenarioRoles(SystemGuideContent guide, GuideTestScenario s) =>
+        s.Evidence.Concat(s.StepIds.Select(id => guide.Steps.FirstOrDefault(x => x.Id == id)).OfType<GuideStep>().SelectMany(x => x.Evidence))
+            .Concat(guide.Rules.Where(r => r.TestScenarioIds.Contains(s.Id, StringComparer.Ordinal)).SelectMany(r => r.Evidence))
+            .Select(e => e.SourceRole).Where(r => !string.IsNullOrWhiteSpace(r)).Select(r => r!.Trim()).ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Whether a guide scenario belongs to a project whose source the guide recognised as <paramref name="recognisedRoles"/>: its evidence names at
+    /// least one of them, or names no role at all (the guide does not say where it lies). A cross-system guide recognised through one role (a
+    /// Meldingsutveksler archive, "mu") never offers scenarios evidenced only in another system's source ("m2lb"): the project cannot test them.
+    /// </summary>
+    public static bool InProjectSource(SystemGuideContent guide, GuideTestScenario s, IReadOnlySet<string>? recognisedRoles)
+    {
+        if (recognisedRoles is null) return true;
+        var roles = ScenarioRoles(guide, s);
+        return roles.Count == 0 || roles.Overlaps(recognisedRoles);
+    }
+
+    public static List<DiscoveredScenario> FromGuide(string projectKey, SystemGuideRevision revision, IReadOnlySet<string>? recognisedRoles = null)
     {
         var guide = revision.Content;
         var reviewed = revision.State == GuideRevisionState.Published;
         var list = new List<DiscoveredScenario>();
-        foreach (var s in guide.Scenarios)
+        foreach (var s in guide.Scenarios.Where(s => InProjectSource(guide, s, recognisedRoles)))
         {
             var steps = s.StepIds.Select(id => guide.Steps.FirstOrDefault(x => x.Id == id)).OfType<GuideStep>().ToList();
             var components = steps.Select(x => x.ComponentId).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal).ToList();

@@ -194,6 +194,8 @@
     // Manual requirement links: the project's current specification requirements (the same parser and evidence Test Coverage reads).
     private List<ProjectRequirementOption>? _requirements;
     private string? _requirementsNote;
+    /// <summary>The Specification role as the explorers resolve it: tells "none chosen" (choose it above) from "none in the project" (not in source).</summary>
+    private BirkNext.Web.Services.Explorers.ArtifactExplorerState? _specificationState;
     private readonly Dictionary<string, string> _requirementQuery = new(StringComparer.Ordinal);
 
     private bool CanWrite => _ws?.CanWrite == true;
@@ -659,6 +661,7 @@
             if (ServiceProvider.GetService(typeof(BirkNext.Web.Services.Explorers.IArtifactExplorerContext)) is BirkNext.Web.Services.Explorers.IArtifactExplorerContext artifacts)
             {
                 specification = await artifacts.GetStateAsync(WorkspaceArtifactType.Specification);
+                _specificationState = specification;
                 tasks = await artifacts.GetStateAsync(WorkspaceArtifactType.Tasks); // story → requirement references in the same feature's tasks.md
                 try
                 {
@@ -685,7 +688,7 @@
     {
         var evidence = await WorkspaceEvidenceAsync();
         _requirements = L.Options(evidence);
-        _requirementsNote = L.EmptyReason(evidence, _requirements);
+        _requirementsNote = _requirements is { Count: > 0 } ? null : L.SpecificationChoiceNeeded(_specificationState) ?? L.EmptyReason(evidence, _requirements, _specificationState);
     }
 
     /// <summary>The tester chose another module, feature or specification here: its requirements are read again; the picker offers Discover now.</summary>
@@ -1332,6 +1335,26 @@
         var rows = L.Rows(c, _requirements);
         var query = _requirementQuery.GetValueOrDefault(sid) ?? string.Empty;
         <section class="tps-links" aria-labelledby="@($"tps-links-title-{sid}")" data-testid="@($"tps-links-{sid}")">
+            @{ var parent = L.ParentStory(c, rows, _stories, L.NoSpecificationInProject(_specificationState)); }
+            <div class="tps-parent-story" data-testid="@($"tps-parent-story-{sid}")" data-state="@(parent.Stories.Count > 0 ? "identified" : "not-identified")">
+                <h4 class="tps-links-title">Parent User Story</h4>
+                @if (parent.Stories.Count > 0)
+                {
+                    <ul class="tps-link-list">
+                        @foreach (var story in parent.Stories)
+                        {
+                            <li class="tps-link-row" data-testid="tps-parent-story-item" data-story="@(story.StoryId ?? story.Key)">
+                                <span class="tps-link-text"><strong>@(story.StoryId ?? "User Story")</strong> @story.Title</span>
+                                <span class="tps-muted tps-small">@parent.Via@(story.SpecificationPath is { } storyPath ? $" · {storyPath}" : "")</span>
+                            </li>
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <p class="tps-muted tps-small" data-testid="tps-parent-story-none">@parent.Reason</p>
+                }
+            </div>
             <h4 id="@($"tps-links-title-{sid}")" class="tps-links-title">Linked requirements</h4>
             @if (rows.Count == 0)
             {

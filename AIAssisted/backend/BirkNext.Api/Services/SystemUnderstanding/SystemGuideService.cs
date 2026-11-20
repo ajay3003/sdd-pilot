@@ -138,15 +138,27 @@ public sealed class SystemGuideService(AppDbContext db, IEnumerable<SystemGuideC
     /// </summary>
     /// <param name="applicationSourceOnly">True: a role recognised only because the snapshot declares infrastructure as code does not count (any IaC
     /// package would match it), so a guide is offered for a project only when its application source is the guide's (Test Plan Suggestions).</param>
-    public async Task<IReadOnlyList<SystemGuideRevision>> RecognisedGuidesAsync(IReadOnlyList<IqrSourceSnapshot> snapshots, CancellationToken ct, bool applicationSourceOnly = false)
+    public async Task<IReadOnlyList<SystemGuideRevision>> RecognisedGuidesAsync(IReadOnlyList<IqrSourceSnapshot> snapshots, CancellationToken ct, bool applicationSourceOnly = false) =>
+        [.. (await RecognisedGuideRolesAsync(snapshots, ct, applicationSourceOnly)).Select(g => g.Shown)];
+
+    /// <summary>
+    /// As <see cref="RecognisedGuidesAsync"/>, with the guide's source roles the snapshots were recognised as (e.g. only "mu" for a Meldingsutveksler
+    /// archive under a guide that also describes "m2lb"). A consumer that offers the guide's scenarios for one project keeps only the scenarios whose
+    /// evidence lies in these roles.
+    /// </summary>
+    public async Task<IReadOnlyList<(SystemGuideRevision Shown, IReadOnlySet<string> Roles, IReadOnlyDictionary<string, string> RoleLabels)>> RecognisedGuideRolesAsync(
+        IReadOnlyList<IqrSourceSnapshot> snapshots, CancellationToken ct, bool applicationSourceOnly = false)
     {
-        var result = new List<SystemGuideRevision>();
+        var result = new List<(SystemGuideRevision, IReadOnlySet<string>, IReadOnlyDictionary<string, string>)>();
         if (snapshots.Count == 0) return result;
         foreach (var entry in catalog)
         {
             var (shown, _) = await ShownAsync(entry.GuideKey, ct);
-            if (Roles(entry, shown.Content).Where(role => !applicationSourceOnly || !role.RequiresInfrastructureAsCode)
-                .Any(role => snapshots.Any(s => TestPackSources.Recognizes(role, s)))) result.Add(shown);
+            var roles = Roles(entry, shown.Content);
+            var recognised = roles.Where(role => !applicationSourceOnly || !role.RequiresInfrastructureAsCode)
+                .Where(role => snapshots.Any(s => TestPackSources.Recognizes(role, s))).Select(role => role.Key).ToHashSet(StringComparer.Ordinal);
+            if (recognised.Count > 0)
+                result.Add((shown, recognised, roles.GroupBy(r => r.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First().Label, StringComparer.Ordinal)));
         }
         return result;
     }

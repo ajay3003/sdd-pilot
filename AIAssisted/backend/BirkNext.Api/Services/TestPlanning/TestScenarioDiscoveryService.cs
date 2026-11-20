@@ -37,12 +37,25 @@ public sealed class SystemGuideScenarioProvider(SystemGuideService guides) : ITe
     {
         if (context.Snapshot is null)
             return new(D.Capability(D.SystemGuide, DiscoveryCapabilityState.NotApplicable, 0, "No source snapshot is linked to this project, so no guide can be matched to it.", "System Understanding"), []);
-        var recognised = await guides.RecognisedGuidesAsync([context.Snapshot], ct, applicationSourceOnly: true);
+        var recognised = await guides.RecognisedGuideRolesAsync([context.Snapshot], ct, applicationSourceOnly: true);
         if (recognised.Count == 0)
             return new(D.Capability(D.SystemGuide, DiscoveryCapabilityState.NotApplicable, 0, "No System Understanding guide describes this project's source.", "System Understanding"), []);
-        var list = recognised.SelectMany(g => D.FromGuide(context.ProjectKey, g)).ToList();
+        // Only the scenarios whose evidence lies in the part of the system this project's source is (see D.InProjectSource).
+        var list = recognised.SelectMany(g => D.FromGuide(context.ProjectKey, g.Shown, g.Roles)).ToList();
         return new(D.Capability(D.SystemGuide, list.Count == 0 ? DiscoveryCapabilityState.NoEvidence : DiscoveryCapabilityState.Available, list.Count,
-            string.Join("; ", recognised.Select(g => $"{g.Content.Title}: {g.Content.Scenarios.Count} scenarios (revision {g.Revision}, {g.State})")), "System Understanding"), list);
+            string.Join("; ", recognised.Select(g => Detail(g.Shown, g.Roles, g.RoleLabels))), "System Understanding"), list);
+    }
+
+    /// <summary>"Guide: 4 of 21 scenarios apply to this project's source (MU); 17 are evidenced only in M2LB and are not offered (revision 1, Draft)".</summary>
+    internal static string Detail(SystemGuideRevision g, IReadOnlySet<string> roles, IReadOnlyDictionary<string, string> labels)
+    {
+        var all = g.Content.Scenarios;
+        var outside = all.Where(s => !D.InProjectSource(g.Content, s, roles)).ToList();
+        string Names(IEnumerable<string> keys) => string.Join(", ", keys.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).Select(k => labels.GetValueOrDefault(k, k)));
+        if (outside.Count == 0) return $"{g.Content.Title}: {all.Count} scenarios (revision {g.Revision}, {g.State})";
+        var elsewhere = outside.SelectMany(s => D.ScenarioRoles(g.Content, s)).Where(r => !roles.Contains(r));
+        return $"{g.Content.Title}: {all.Count - outside.Count} of {all.Count} scenarios apply to this project's source ({Names(roles)}); {outside.Count} "
+            + $"{(outside.Count == 1 ? "is" : "are")} evidenced only in {Names(elsewhere)} and {(outside.Count == 1 ? "is" : "are")} not offered here (revision {g.Revision}, {g.State})";
     }
 }
 

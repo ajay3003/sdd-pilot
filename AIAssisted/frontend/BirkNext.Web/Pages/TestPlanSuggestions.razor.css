@@ -457,4 +457,6 @@ textarea.tps-input { resize: vertical; line-height: 1.45; }
 @media (hover: none) { .tps-drag, .tps-case-order { opacity: 1; } }
 .tps-step-row:has(> .tps-drag) > .tps-step-tools { grid-column: 3; }
 .tps-step-row:has(> .tps-drag) > .tps-chip { grid-column: 2; justify-self: start; }
-
+
+/* Parent User Story above Linked requirements: found from the linked requirements, or why not (never inferred). */
+.tps-parent-story { margin: 0 0 .75rem; padding-bottom: .6rem; border-bottom: 1px solid var(--clr-border-subtle, #eaeef2); }
