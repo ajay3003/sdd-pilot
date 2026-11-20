@@ -86,7 +86,9 @@ public static class FrontendQualityEngineOutcomeNormalizer
         return Base(FrontendQualityEngineId.StaticSecurity, FrontendQualityActiveEngines.DisplayName(FrontendQualityEngineId.StaticSecurity), enabled,
             policy.GetRequirement(FrontendQualityEngineId.StaticSecurity), state,
             report?.TargetUrl ?? targetUrl, findings: assessed ? report!.Findings.Count : null,
-            evidence: assessed ? report!.Findings.Sum(f => f.Evidence.Count) : null, failure: failure,
+            // Evidence = what the scan checked (each expected response header evaluated) plus the evidence of its findings: a site whose
+            // headers are all correct was assessed with evidence, not "No evidence".
+            evidence: assessed ? report!.Headers.Count + report.Findings.Sum(f => f.Evidence.Count) : null, failure: failure,
             started: report?.ScannedAt == default ? null : report?.ScannedAt,
             limitations: report?.Limitations, strength: FrontendQualityEvidenceStrength.StaticIndicator,
             reason: fetch?.Reason ?? (assessed ? FrontendQualityEngineOutcomeReason.None : ReasonForState(state)));
@@ -103,7 +105,8 @@ public static class FrontendQualityEngineOutcomeNormalizer
         return Base(FrontendQualityEngineId.PassivePerformance, FrontendQualityActiveEngines.DisplayName(FrontendQualityEngineId.PassivePerformance), enabled,
             policy.GetRequirement(FrontendQualityEngineId.PassivePerformance), state,
             report?.TargetUrl ?? targetUrl, findings: assessed ? report!.Findings.Count : null,
-            evidence: assessed ? report!.Findings.Sum(f => f.Evidence.Count) : null, failure: failure,
+            // Evidence = the assets reviewed plus the evidence of its findings (see StaticSecurity).
+            evidence: assessed ? report!.Assets.Count + report.Findings.Sum(f => f.Evidence.Count) : null, failure: failure,
             started: report?.ReviewedAt == default ? null : report?.ReviewedAt,
             limitations: report?.Limitations, strength: FrontendQualityEvidenceStrength.StaticIndicator,
             reason: fetch?.Reason ?? (assessed ? FrontendQualityEngineOutcomeReason.None : ReasonForState(state)));
@@ -232,7 +235,9 @@ public static class FrontendQualityEngineOutcomeNormalizer
         return Base(FrontendQualityEngineId.Accessibility, FrontendQualityActiveEngines.DisplayName(FrontendQualityEngineId.Accessibility), enabled,
             policy.GetRequirement(FrontendQualityEngineId.Accessibility), state,
             report?.RequestedUrl ?? targetUrl, report?.FinalUrl, report?.BrowserName, report?.BrowserVersion,
-            findings: report?.Findings?.Count, evidence: report?.Findings?.Sum(f => f.Selectors.Count + f.FailureSummaries.Count),
+            // Evidence = the axe rule results this run evaluated (violations, needs-review and passes). A clean page whose rules all passed was
+            // assessed with evidence; counting only failure references made it "No evidence" and kept coverage "partial" for a clean site.
+            findings: report?.Findings?.Count, evidence: report is null ? null : report.ViolationCount + report.IncompleteCount + report.PassCount,
             failure: error ?? report?.EngineError, started: NullIfDefault(report?.StartedAt), completed: report?.CompletedAt,
             duration: report?.DurationMs, limitations: report?.Limitations, toolName: "axe-core",
             toolVersion: report?.AxeVersion, strength: FrontendQualityEvidenceStrength.ToolDiagnostic,

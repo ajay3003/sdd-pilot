@@ -92,6 +92,30 @@ public sealed class RealAxeIntegrationTests : IAsyncLifetime
         Assert.False(string.IsNullOrWhiteSpace(readiness.BrowserVersion));
     }
 
+    [Fact]
+    public async Task Accessibility_PageWithStrictContentSecurityPolicy_IsStillAssessed()
+    {
+        // A strict CSP (no inline scripts) is the recommended setting; it refused the injected axe <script>, so no such site could be reviewed.
+        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
+        var result = await Review("/csp");
+        Assert.Equal(AccessibilityExecutionStatus.Assessed, result.ExecutionStatus);
+        Assert.Contains(result.Findings, f => f.RuleId == "image-alt" && f.Kind == AccessibilityFindingKind.Violation);
+    }
+
+    [Fact]
+    public async Task Accessibility_PageWithSeveralDefects_IsAssessedWithEveryRule()
+    {
+        // axe shares objects between results; transferred as a browser object, a repeated reference arrived where an array was expected and
+        // the engine failed with "requires an element of type 'Array'".
+        if (!ExternalFrontendQualityTestGate.IsEnabled) return;
+        var result = await Review("/many");
+        Assert.Equal(AccessibilityExecutionStatus.Assessed, result.ExecutionStatus);
+        Assert.Contains(result.Findings, f => f.RuleId == "image-alt");
+        Assert.Contains(result.Findings, f => f.RuleId == "button-name");
+        Assert.Contains(result.Findings, f => f.RuleId == "html-has-lang");
+        Assert.Contains(result.Findings, f => f.RuleId == "document-title");
+    }
+
     private async Task<AccessibilityReviewResult> Review(string path)
     {
         return await _service!.ReviewAsync(_server!.Url(path), new AccessibilityReviewOptions(StabilizationMs: 50));
@@ -130,7 +154,8 @@ public sealed class RealAxeIntegrationTests : IAsyncLifetime
                     var path = request.Split(' ')[1];
                     var body = Html(path);
                     var bytes = Encoding.UTF8.GetBytes(body);
-                    var header = Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {bytes.Length}\r\nConnection: close\r\n\r\n");
+                    var csp = path == "/csp" ? "Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'\r\n" : "";
+                    var header = Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\n{csp}Content-Length: {bytes.Length}\r\nConnection: close\r\n\r\n");
                     await stream.WriteAsync(header, ct);
                     await stream.WriteAsync(bytes, ct);
                 }
@@ -142,6 +167,11 @@ public sealed class RealAxeIntegrationTests : IAsyncLifetime
         {
             "/button" => Shell("<main><h1>Test</h1><button id='empty-button'></button></main>"),
             "/image" => Shell("<main><h1>Test</h1><img id='hero' src='data:image/gif;base64,R0lGODlhAQABAAAAACw='></main>"),
+            "/csp" => Shell("<main><h1>Test</h1><img id='hero' src='data:image/gif;base64,R0lGODlhAQABAAAAACw='></main>"),
+            "/many" => "<!doctype html><html><head><meta charset='utf-8'></head><body><main><h1>Children</h1>"
+                + "<img src='data:image/gif;base64,R0lGODlhAQABAAAAACw='><img src='data:image/gif;base64,R0lGODlhAQABAAAAACw='>"
+                + "<form><input type='text' name='q'><button type='submit'></button><button type='button'></button></form>"
+                + "<p style='color:#c8c8c8'>Opening hours</p></main></body></html>",
             "/secret" => Shell("<main><h1>Test</h1><input id='secret-input' value='SECRET-AXE-DOM-12345'></main>"),
             _ => Shell("<main><h1>Accessible test</h1><button type='button'>Continue</button><img alt='Decorative sample' src='data:image/gif;base64,R0lGODlhAQABAAAAACw='></main>")
         };

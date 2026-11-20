@@ -288,8 +288,8 @@
                                                 <div><dt>Engine ID</dt><dd>@engine.EngineId</dd></div>
                                                 <div><dt>Deployment policy</dt><dd>@(engine.Layer1Allowed ? "Allowed" : "Blocked")</dd></div>
                                                 <div><dt>System Settings</dt><dd>@(engine.Layer2Enabled ? "Enabled" : "Disabled")</dd></div>
-                                                <div><dt>Runtime</dt><dd>@(engine.Layer3Readiness is null ? "Not checked" : engine.Layer3Readiness.IsAvailable ? "Ready" : "Unavailable")</dd></div>
-                                                @if (engine.Layer3Readiness is { IsAvailable: false, StatusReason: { Length: > 0 } statusReason })
+                                                <div><dt>Runtime</dt><dd>@(engine.Layer3Readiness is null || FrontendQualityLandingPresentation.ReadinessNotYetChecked(engine) ? "Not checked yet" : engine.Layer3Readiness.IsAvailable ? "Ready" : "Unavailable")</dd></div>
+                                                @if (engine.Layer3Readiness is { IsAvailable: false, StatusReason: { Length: > 0 } statusReason } && !FrontendQualityLandingPresentation.ReadinessNotYetChecked(engine))
                                                 {
                                                     <div><dt>Runtime reason</dt><dd>@statusReason</dd></div>
                                                 }

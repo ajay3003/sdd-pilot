@@ -21,7 +21,7 @@ public sealed class AccessibilityReadinessProvider : IFrontendQualityEngineReadi
     {
         try
         {
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
 
             var result = await _service.CheckReadinessAsync(linked.Token);

@@ -319,7 +319,7 @@ public static class FrontendQualityLandingPresentation
                     return Build(FrontendQualityCapabilityState.DisabledInSystemSettings, "Disabled in System Settings.", null, "Open System Settings", SystemSettingsHref);
                 if (engine.EngineId == FrontendQualityEngineId.PassiveSecurity && FrontendReviewEnginePresentation.PassiveWebSecurityUnavailable(record) is { } zap)
                     return Build(FrontendQualityCapabilityState.Unavailable, zap.Summary, zap.Technical);
-                if (record.Layer3Readiness is { IsAvailable: false } readiness)
+                if (record.Layer3Readiness is { IsAvailable: false } readiness && !ReadinessNotYetChecked(record))
                     return Build(FrontendQualityCapabilityState.Unavailable, $"The {engine.DisplayName} engine is not available in this environment.",
                         readiness.StatusReason is { Length: > 0 } reason ? reason : "Runtime unavailable.");
             }
@@ -367,6 +367,14 @@ public static class FrontendQualityLandingPresentation
     private static string Pages(int count) => $"{count.ToString(System.Globalization.CultureInfo.InvariantCulture)} page{(count == 1 ? "" : "s")}";
 
     /// <summary>Why an active backend engine is "Enabled" rather than "Ready": status fetch failed, or readiness still being probed.</summary>
+    /// <summary>
+    /// The runtime probe was deliberately skipped (the first, fast status phase leaves Layer 3 out so Run is enabled at once): that is
+    /// "not checked yet", never "not available in this environment". The engine shows as Enabled (being checked / checked at run).
+    /// </summary>
+    public static bool ReadinessNotYetChecked(FrontendQualityEngineStatusDto record) =>
+        record.Reasons.Contains(FrontendQualityEngineUnavailableReasonDto.NotActiveForReview)
+        && !record.Reasons.Any(r => r is FrontendQualityEngineUnavailableReasonDto.RuntimeUnavailable or FrontendQualityEngineUnavailableReasonDto.RuntimeStatusUnknown);
+
     private static string? EnabledSummary(bool isBackend, FrontendQualityEngineStatusDto? record, FrontendQualityEngineStatusReportDto? status, bool statusPending, bool readinessPending)
     {
         if (!isBackend) return null;

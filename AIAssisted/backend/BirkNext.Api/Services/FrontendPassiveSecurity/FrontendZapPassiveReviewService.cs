@@ -152,11 +152,16 @@ public sealed class FrontendZapPassiveReviewService(
         }
     }
 
+    /// <summary>ZAP plugins that report on ZAP rather than on the target: 10116 "ZAP is Out of Date" (the pinned image is deliberately fixed).</summary>
+    internal static readonly IReadOnlySet<string> ToolOnlyPluginIds = new HashSet<string>(StringComparer.Ordinal) { "10116" };
+
     internal List<PassiveSecurityFinding> Normalize(string json, string requestedUrl, string containerRuntime)
     {
         using var doc = JsonDocument.Parse(json);
-        var alerts = doc.RootElement.GetProperty("alerts").EnumerateArray();
-        if (alerts.Count() > 1000) throw new InvalidOperationException("Alert count limit exceeded.");
+        var all = doc.RootElement.GetProperty("alerts").EnumerateArray();
+        if (all.Count() > 1000) throw new InvalidOperationException("Alert count limit exceeded.");
+        // Alerts about ZAP itself (its version check) say nothing about the target and are not findings of the reviewed site.
+        var alerts = all.Where(a => !ToolOnlyPluginIds.Contains(Get(a, "pluginId")));
         var loopbackAlias = containerRuntime == "podman" ? "host.containers.internal" : "host.docker.internal";
         return alerts.GroupBy(a => $"{Get(a,"pluginId")}|{Get(a,"alertRef")}|{SanitizeUrl(Get(a,"url").Replace(loopbackAlias, new Uri(requestedUrl).Host, StringComparison.OrdinalIgnoreCase))}|{Get(a,"param")}")
             .Select(g => { var a = g.First(); var risk = NormalizeRisk(Get(a,"risk")); return new PassiveSecurityFinding(

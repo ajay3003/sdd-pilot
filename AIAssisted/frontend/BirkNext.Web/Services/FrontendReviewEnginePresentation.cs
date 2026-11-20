@@ -155,7 +155,7 @@ public static class FrontendReviewEnginePresentation
         : status.Reasons.Contains(FrontendQualityEngineUnavailableReasonDto.TargetNotTrusted)
             ? ("Target not trusted for Passive Web Security: the BirkNext server has not registered this Target Environment for passive scanning.",
                $"{PassiveWebSecurityTrustOwner} Every scan of an unregistered target would be skipped. {ApiReviewSecurityIsNotZap}")
-        : status.Layer3Readiness?.IsAvailable == false
+        : status.Layer3Readiness?.IsAvailable == false && !FrontendQualityLandingPresentation.ReadinessNotYetChecked(status)
             ? ($"Passive Web Security provider unavailable: {status.Layer3Readiness.StatusReason ?? "the OWASP ZAP runtime is not ready on the server."}",
                "The target trust check passed or was not reached; the provider (OWASP ZAP container runtime) is what is missing.")
         : null;

@@ -253,7 +253,7 @@ public sealed class FrontendQualityPostRunConsistencyTests : BunitContext
     [InlineData(FrontendQualityEngineId.BrowserQuality, 5, 15, "5 pages with evidence", "15 findings")]
     [InlineData(FrontendQualityEngineId.PerformanceQuality, 1, 1, "1 page with evidence", "1 finding")]
     [InlineData(FrontendQualityEngineId.Lighthouse, 12, 30, "12 metrics", "30 audits")]
-    [InlineData(FrontendQualityEngineId.Accessibility, 4, 2, "4 element/failure references", "2 findings")]
+    [InlineData(FrontendQualityEngineId.Accessibility, 4, 2, "4 axe rule results", "2 findings")]
     [InlineData(FrontendQualityEngineId.PassiveSecurity, 3, 7, "3 findings with evidence", "7 findings")]
     public void EngineCoverageValuesAreLabelledInTheEnginesOwnUnit(FrontendQualityEngineId id, int evidence, int findings, string evidenceLabel, string findingsLabel)
     {

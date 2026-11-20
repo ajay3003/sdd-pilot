@@ -10,6 +10,7 @@ gives a checklist.
 | Performance and load | Performance Test Review (`/performance-test-review`) | A non-production target reachable from the k6 container (Podman) |
 | Automated browser flows | Critical E2E Regression (`/critical-e2e-regression`) | An imported project with UI source; for verify and run, the Edge Companion on an attended page of a non-production target |
 | API quality | API Quality Review (`/api-quality-review`) | A non-production Target Environment with the API's base URL (and health endpoint, OpenAPI contract) |
+| Front-end quality | Frontend Quality Review (`/frontend-quality-review`) | A non-production Target Environment with the front end's URL; Chromium, Node (Lighthouse) and Podman with the ZAP image on the BirkNext server for the browser engines |
 | Integration chains (Skolenærvær) | Integration suites (`/integration-suites`) | A project, the services' source (OpenAPI) and a non-production Target Environment whose URL reaches every stage |
 
 Manual test cases are prepared in **Manual Testing → Plan & prepare** and exported to Azure DevOps Test Plans
@@ -260,14 +261,88 @@ own findings never reached the review's findings.
 
 ---
 
-## 5. All workflow tests in one command (before a release)
+## 5. Frontend Quality Review
+
+Frontend Quality Review reviews a web front end with up to six automated engines and turns their findings into one list of logical issues
+and a release decision:
+
+| Engine | What it checks | Runs where |
+|--------|----------------|------------|
+| HTTP Security | Expected security headers (CSP, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, HSTS on HTTPS), CORS, exposed configuration and source maps, cookies | BirkNext backend (HTTP) |
+| HTTP Performance | Caching headers, compression and size of the page's CSS/JS/fonts/images | BirkNext backend (HTTP) |
+| Browser Runtime | Script errors, console errors and failed requests while the page loads | Chromium in the BirkNext backend |
+| Accessibility | axe-core WCAG 2.x A/AA rules on the rendered page | Chromium in the BirkNext backend |
+| Lighthouse | Performance audits (cache policy, render-blocking resources, unused code, …) | Node + Chromium in the BirkNext backend |
+| Passive Web Security | OWASP ZAP passive rules on one page load (no attack, no spider) | ZAP container (Podman) |
+
+Severity alone never blocks a release. A result is **Blocked** only when a required engine could not assess the target or an issue is listed
+in the Target Environment's release policy. When Accessibility ran, the best result is **Review required**, because automated checks never
+replace manual WCAG testing.
+
+### Before you start
+
+- A Target Environment (Local, Development, QA or Test) with the front end's URL. Turn on the engines you want under **Engines**.
+  Optionally, list release-blocking issues in its release policy (for example `headers:csp:missing`).
+- The installation has to allow the browser engines. Browser Runtime, Accessibility, Lighthouse and Passive Web Security are switched on
+  per installation (`FrontendQualityCapabilities`, `FrontendQualityEnginePreferences`). Lighthouse needs Node and its runner packages
+  (`npm ci` in `Tools/LighthouseRunner`). Passive Web Security needs Podman, the pinned ZAP image, and the Target Environment registered for
+  passive scanning on the server (`FrontendPassiveSecurity:TrustedProfiles:<environment id>`).
+
+### Step by step
+
+1. **Open Frontend Quality Review.** Each engine card says *Enabled* or *Ready*, or why it cannot run. While the runtime check is still
+   running, a card says so: it does not say "not available".
+2. **Run Frontend Quality Review.** A run takes about a minute with all six engines.
+3. **Summary** shows the release decision and the key issues. **Issues** lists every logical issue. One issue can come from several
+   engines: a missing CSP is reported by HTTP Security, the standards check and ZAP, and appears once. **Coverage** shows each engine's
+   outcome (*View engine diagnostics* opens the engine matrix). **Evidence** shows the details. **History** keeps your last ten runs in
+   this browser.
+4. **Run again** after a fix. The new result replaces the old one, and both runs stay in **History**.
+5. **Export → HTML** downloads `frontend-quality-review-<date>.html`.
+
+### What the issues mean (examples)
+
+| Issue | Meaning |
+|-------|---------|
+| *Content Security Policy header missing* (Critical) | The page can run any script; a team rule can make it release-blocking |
+| *TypeError: cannot read properties of undefined* (Browser Runtime, High) | A script failed while the page loaded |
+| *Failed important resource* (High) | A script or stylesheet the page needs answered 404/500 |
+| *Images must have alternative text*, *Form elements must have labels*, *Buttons must have discernible text* (Accessibility, Critical) | axe-core WCAG violations; the element selectors are under the issue |
+| *Contrast (minimum)* (WCAG 1.4.3) | Text is too faint for its background |
+| *Static assets missing caching headers* (HTTP Performance), *Serve static assets with an efficient cache policy* (Lighthouse) | Every visit downloads CSS/JS again |
+| *Cookie no HttpOnly flag*, *Cookie without SameSite attribute* (ZAP, Low) | A session cookie is readable by scripts / sent cross-site |
+
+### What was verified
+
+`FrontendQualityReviewWorkflowTests` (browser test) against a local stand-in website (`frontend-target/server.js` in Podman) with all six
+engines on.
+
+- **Broken site:** every engine completed and found what it is for. The release was **Blocked** by the team rule on the missing CSP.
+- **Fixed site:** all of those issues were gone, the decision was **Review required** with full coverage, both runs were in History, and
+  the HTML report named the site.
+
+Seven defects in BirkNext were found and fixed on the way:
+
+1. Accessibility could not review a site with a strict Content-Security-Policy: the injected axe script was refused.
+2. Accessibility failed on pages with several defects (*"requires an element of type 'Array'"*).
+3. ZAP's own "ZAP is out of date" notice was reported as an issue of the tested site.
+4. Before the runtime check had run, four engines were shown as "not available in this environment".
+5. A clean accessibility run and a site with all expected headers read as "No evidence", so a clean site could never get full coverage.
+6. A published installation had no Lighthouse runner packages, so Lighthouse could never run there. The workflow-test script now copies
+   them; a real installation needs `npm ci` in `Tools/LighthouseRunner`.
+7. On a busy machine, Lighthouse and Accessibility were skipped as "Not ready". The run gave every engine's readiness check 5 s, while
+   Lighthouse's own check may take 35 s and a Chromium start more than 5 s. The run now waits for each engine's own budget.
+
+---
+
+## 6. All workflow tests in one command (before a release)
 
 `scripts/run-workflow-tests.ps1` runs every browser workflow test in this guide (and the Manual Testing ones) on a throw-away installation:
 
 ```powershell
 # from the repository root; Podman's PostgreSQL (birknext-studio-local_postgres_1) must be running
-.\scripts\run-workflow-tests.ps1                                  # all workflow tests except the two below
-.\scripts\run-workflow-tests.ps1 -M2lbArchive "$env:USERPROFILE\Downloads\M2LB (8).zip" -Performance   # the full set
+.\scripts\run-workflow-tests.ps1                                  # all workflow tests except the three below
+.\scripts\run-workflow-tests.ps1 -M2lbArchive "$env:USERPROFILE\Downloads\M2LB (8).zip" -Performance -FrontendQuality   # the full set
 .\scripts\run-workflow-tests.ps1 -Filter "FullyQualifiedName~ApiQualityReviewWorkflowTests" -NoPublish  # one test, reuse the last publish
 ```
 
@@ -279,7 +354,8 @@ What it does:
 3. Starts the API (a local tester installation: Production, loopback only) and the web app on their own free ports. Your own BirkNext on
    5000/5173 and its database are not touched.
 4. Runs the real-data M2LB test first, on the empty database (with `-M2lbArchive`), then all other workflow tests; `-Performance` also starts
-   the k6 stand-in target (Podman).
+   the k6 stand-in target and `-FrontendQuality` the stand-in website (both in Podman). The API gets its own settings: every Frontend
+   Quality Review engine allowed and only the stand-in registered for ZAP; your `appsettings.Local.json` is never copied.
 5. Stops everything it started, drops the database (`-KeepDatabase` keeps it) and prints a result table. Exit code 0 = everything passed.
 
 Logs and the test result files are in `%TEMP%\birknext-workflow-tests\logs`. Nothing external is contacted. A green run is the last local step

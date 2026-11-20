@@ -18,7 +18,7 @@ public sealed class AccessibilityNormalizer(AccessibilityEvidenceSanitizer sanit
         var findings = new List<AccessibilityFinding>();
         foreach (var item in items.EnumerateArray())
         {
-            var nodes = item.TryGetProperty("nodes", out var nodesElement)
+            var nodes = item.TryGetProperty("nodes", out var nodesElement) && nodesElement.ValueKind == JsonValueKind.Array
                 ? nodesElement.EnumerateArray().ToList()
                 : [];
             var selectors = new List<string>();
@@ -26,7 +26,7 @@ public sealed class AccessibilityNormalizer(AccessibilityEvidenceSanitizer sanit
             var summaries = new List<string>();
             foreach (var node in nodes.Take(AccessibilityEvidenceSanitizer.MaxNodesPerRule))
             {
-                if (node.TryGetProperty("target", out var targets))
+                if (node.TryGetProperty("target", out var targets) && targets.ValueKind == JsonValueKind.Array)
                     selectors.AddRange(targets.EnumerateArray().Select(t => sanitizer.SanitizeSelector(t.ToString())));
                 if (node.TryGetProperty("html", out var html)) snippets.Add(sanitizer.SanitizeHtml(html.GetString()));
                 if (node.TryGetProperty("failureSummary", out var summary)) summaries.Add(sanitizer.SanitizeSummary(summary.GetString()));
@@ -40,7 +40,7 @@ public sealed class AccessibilityNormalizer(AccessibilityEvidenceSanitizer sanit
                 item.TryGetProperty("impact", out impact) ? impact.GetString() : null,
                 item.TryGetProperty("help", out var help) ? help.GetString() ?? ruleId : ruleId,
                 item.TryGetProperty("description", out var description) ? description.GetString() ?? string.Empty : string.Empty,
-                item.TryGetProperty("tags", out var tags) ? tags.EnumerateArray().Select(t => t.GetString() ?? "").Where(t => t.Length > 0).ToList() : [],
+                item.TryGetProperty("tags", out var tags) && tags.ValueKind == JsonValueKind.Array ? tags.EnumerateArray().Select(t => t.GetString() ?? "").Where(t => t.Length > 0).ToList() : [],
                 nodes.Count,
                 selectors.Distinct().ToList(),
                 snippets.Distinct().ToList(),

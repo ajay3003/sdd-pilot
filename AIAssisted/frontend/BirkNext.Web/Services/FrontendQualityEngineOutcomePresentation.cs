@@ -28,7 +28,7 @@ public static class FrontendQualityEngineOutcomePresentation
     private static (string One, string Many) EvidenceUnit(FrontendQualityEngineId engine) => engine switch
     {
         FrontendQualityEngineId.BrowserQuality or FrontendQualityEngineId.PerformanceQuality => ("page with evidence", "pages with evidence"),
-        FrontendQualityEngineId.Accessibility => ("element/failure reference", "element/failure references"),
+        FrontendQualityEngineId.Accessibility => ("axe rule result", "axe rule results"),
         FrontendQualityEngineId.Lighthouse => ("metric", "metrics"),
         FrontendQualityEngineId.PassiveSecurity => ("finding with evidence", "findings with evidence"),
         _ => ("evidence item", "evidence items"),

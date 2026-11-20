@@ -352,13 +352,19 @@ public sealed class FrontendAccessibilityReviewService : IFrontendAccessibilityR
                     "axe-core bundled asset is unavailable.", request.ExecutionMode);
 
             await Task.Delay(options.StabilizationMs, cancellationToken);
-            await page.AddScriptTagAsync(new PageAddScriptTagOptions { Content = axeScript });
+            // Evaluated through the browser protocol, not added as a <script> element: a page with a strict Content-Security-Policy (no inline
+            // scripts, the recommended setting) refuses a script tag, so a well-secured site could never be reviewed (as @axe-core/playwright does).
+            await page.EvaluateAsync(axeScript);
             var axeVersion = await page.EvaluateAsync<string>("() => window.axe && window.axe.version");
             await _analysisObserver.BeforeAxeRunAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            var raw = await page.EvaluateAsync<JsonElement>(
-                "tags => axe.run(document, { runOnly: { type: 'tag', values: tags }, resultTypes: ['violations','incomplete','passes','inapplicable'] })",
+            // The result comes back as JSON text: axe shares objects between results, and the browser-object transfer turns a repeated reference
+            // into a reference object where an array is expected ("requires an element of type 'Array'").
+            var json = await page.EvaluateAsync<string>(
+                "async tags => JSON.stringify(await axe.run(document, { runOnly: { type: 'tag', values: tags }, resultTypes: ['violations','incomplete','passes','inapplicable'] }))",
                 ExecutedRuleTags);
+            using var document = JsonDocument.Parse(json);
+            var raw = document.RootElement.Clone();
 
             if (!raw.TryGetProperty("violations", out var violations))
                 return Failure(AccessibilityExecutionStatus.EngineError, request.TargetUrl, startedAt,

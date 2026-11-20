@@ -78,4 +78,22 @@ public class PassiveSecurityContractTests
             .And.Contain("--memory=768m").And.Contain("--cpus=1").And.Contain("--pids-limit=512")
             .And.Contain("--name birknext-zap-readiness-test").And.Contain("-Xmx512m").And.Contain("-dir /tmp/zap").And.NotContain("-daemon");
     }
+
+    [Fact]
+    public void An_alert_about_ZAP_itself_is_not_a_finding_of_the_reviewed_site()
+    {
+        // The pinned ZAP image reports "ZAP is Out of Date" (10116) on every run; it was shown as a Low issue of the tested site.
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build();
+        var service = new FrontendZapPassiveReviewService(Microsoft.Extensions.Logging.Abstractions.NullLogger<FrontendZapPassiveReviewService>.Instance,
+            new PassiveSecurityTargetAuthorizer(new BirkNext.Api.Services.FrontendBrowserRuntime.BrowserTargetValidator(), config),
+            new PassiveSecurityEvidenceSanitizer(), config, new ZapProcessRunner());
+        const string json = """
+            { "alerts": [
+              { "pluginId": "10116", "alertRef": "10116", "alert": "ZAP is Out of Date", "risk": "Low", "confidence": "High", "url": "http://host.containers.internal:18092/" },
+              { "pluginId": "10021", "alertRef": "10021", "alert": "X-Content-Type-Options Header Missing", "risk": "Low", "confidence": "Medium", "url": "http://host.containers.internal:18092/" } ] }
+            """;
+        var findings = service.Normalize(json, "http://localhost:18092/", "podman");
+        findings.Select(f => f.PluginId).Should().Equal("10021");
+        findings.Single().Url.Should().Contain("localhost:18092", "the container alias is mapped back to the target");
+    }
 }

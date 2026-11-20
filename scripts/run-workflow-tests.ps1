@@ -8,7 +8,10 @@
   3. Starts the API and the web app on their own free ports (never 5000/5173), the API as a local tester installation
      (Production + Local Tester Mode, loopback only).
   4. Runs the workflow tests (BirkNext.Web.PlaywrightTests, Tests.Workflows) against it. The real-data M2LB test runs first, on the empty
-     database, when -M2lbArchive is given; the Performance Test Review test runs when -Performance is given (needs Podman with the k6 image).
+     database, when -M2lbArchive is given; the Performance Test Review test runs when -Performance is given (needs Podman with the k6 image);
+     the Frontend Quality Review test runs when -FrontendQuality is given (needs Podman with node:20-bookworm and the ZAP image).
+     The API gets its own appsettings.Local.json (every engine allowed, the frontend stand-in registered for ZAP); a developer's
+     appsettings.Local.json is never copied.
   5. Stops everything it started and drops the database (unless -KeepDatabase), and reports the results. Exit code 0 = all passed.
 
   Nothing external is contacted: every test uses BirkNext and local stand-ins only. Your own BirkNext (5000/5173) and its database are not
@@ -17,7 +20,7 @@
 .EXAMPLE
   .\scripts\run-workflow-tests.ps1
 .EXAMPLE
-  .\scripts\run-workflow-tests.ps1 -M2lbArchive "$env:USERPROFILE\Downloads\M2LB (8).zip" -Performance
+  .\scripts\run-workflow-tests.ps1 -M2lbArchive "$env:USERPROFILE\Downloads\M2LB (8).zip" -Performance -FrontendQuality
 .EXAMPLE
   .\scripts\run-workflow-tests.ps1 -Filter "FullyQualifiedName~ApiQualityReviewWorkflowTests" -NoPublish
 #>
@@ -33,6 +36,8 @@ param(
     [string]$PostgresPassword = 'birknext',
     [string]$M2lbArchive,
     [switch]$Performance,
+    [switch]$FrontendQuality,
+    [int]$FrontendTargetPort = 18092,
     [string]$Filter,
     [switch]$NoPublish,
     [switch]$KeepDatabase
@@ -79,6 +84,7 @@ function Remove-Tree([string]$Path) {
 }
 
 $standinStarted = $false
+$fqrStandinStarted = $false
 $databaseCreated = $false
 $exitCode = 1
 try {
@@ -90,7 +96,7 @@ try {
         # Publish from a clean copy of the source (no bin/obj): an incremental publish from a working tree can pair an older
         # dotnet.native.wasm with a newer boot manifest, and the browser then refuses to start the app (integrity mismatch).
         foreach ($part in 'backend\BirkNext.Api', 'frontend\BirkNext.Web', 'shared', 'versioning', 'browser-companion') {
-            robocopy (Join-Path $ai $part) (Join-Path $src "AIAssisted\$part") /E /XD bin obj node_modules TestResults .lighthouse-profile-* /NFL /NDL /NJH /NJS /NP | Out-Null
+            robocopy (Join-Path $ai $part) (Join-Path $src "AIAssisted\$part") /E /XD bin obj node_modules TestResults .lighthouse-profile-* /XF appsettings.Local.json /NFL /NDL /NJH /NJS /NP | Out-Null
             if ($LASTEXITCODE -ge 8) { throw "Copying $part failed (robocopy $LASTEXITCODE)." }
         }
         $env:DOTNET_gcServer = '0'
@@ -104,6 +110,25 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "The published web app would not start (integrity mismatch): see $logs\integrity.log" }
     }
     elseif (-not (Test-Path (Join-Path $apiDir 'BirkNext.Api.dll'))) { throw "-NoPublish: no earlier publish in $OutDir" }
+
+    # The isolated API never reads a developer's appsettings.Local.json (it is not copied). Its own local settings allow every Frontend Quality
+    # Review engine and register the frontend stand-in (and only it) for Passive Web Security (ZAP) as a loopback test target.
+    $localSettings = [ordered]@{
+        FrontendQualityCapabilities = [ordered]@{ BrowserRuntimeAllowed = $true; AccessibilityAllowed = $true; LighthouseAllowed = $true; PassiveSecurityAllowed = $true }
+        FrontendQualityEnginePreferences = [ordered]@{ BrowserRuntimeEnabled = $true; AccessibilityEnabled = $true; LighthouseEnabled = $true; PassiveSecurityEnabled = $true }
+        FrontendPassiveSecurity = [ordered]@{
+            Enabled = $true; ContainerRuntime = 'podman'
+            TrustedProfiles = [ordered]@{ 'fqr-standin' = [ordered]@{ BaseUrl = "http://localhost:$FrontendTargetPort"; EnvironmentType = 'LoopbackLocalTest' } }
+        }
+    }
+    [IO.File]::WriteAllText((Join-Path $apiDir 'appsettings.Local.json'), ($localSettings | ConvertTo-Json -Depth 6), [Text.UTF8Encoding]::new($false))
+    # Lighthouse runs a pinned Node runner whose packages are not in the publish output: the installed ones are copied next to it.
+    $lighthouseModules = Join-Path $ai 'backend\BirkNext.Api\Tools\LighthouseRunner\node_modules'
+    if (Test-Path $lighthouseModules) {
+        robocopy $lighthouseModules (Join-Path $apiDir 'Tools\LighthouseRunner\node_modules') /E /NFL /NDL /NJH /NJS /NP | Out-Null
+        if ($LASTEXITCODE -ge 8) { throw "Copying the Lighthouse runner packages failed (robocopy $LASTEXITCODE)." }
+    }
+    else { Write-Host 'Lighthouse runner packages are not installed (npm ci in Tools\LighthouseRunner): Lighthouse will report itself unavailable.' }
 
     # The published web app must call this API, never the developer default (http://localhost:5000). Only the isolated copy is changed.
     $settings = Join-Path $webDir 'wwwroot\appsettings.json'
@@ -162,6 +187,13 @@ try {
         $standinStarted = $true
         $env:BIRKNEXT_PERFORMANCE_TARGET_URL = $target
     }
+    if ($FrontendQuality) {
+        Write-Step 'Starting the frontend stand-in website (Podman)'
+        $fqrTarget = & (Join-Path $ai 'frontend\BirkNext.Web.PlaywrightTests\frontend-target\start-target.ps1') -Port $FrontendTargetPort
+        if ($LASTEXITCODE -ne 0 -or -not $fqrTarget) { throw 'The frontend stand-in did not start (Podman and node:20-bookworm needed).' }
+        $fqrStandinStarted = $true
+        $env:BIRKNEXT_FQR_TARGET_URL = $fqrTarget
+    }
 
     $runs = @()
     $workflows = 'FullyQualifiedName~BirkNext.Web.PlaywrightTests.Tests.Workflows'
@@ -205,7 +237,8 @@ finally {
     Write-Step 'Stopping'
     foreach ($p in $started) { if ($p -and -not $p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } }
     if ($standinStarted) { podman rm --force --ignore birknext-pt-standin | Out-Null }
-    foreach ($name in 'BIRKNEXT_PLAYWRIGHT_FRONTEND_URL', 'BIRKNEXT_PLAYWRIGHT_BACKEND_URL', 'BIRKNEXT_PLAYWRIGHT_LAUNCH_CODE_FILE', 'BIRKNEXT_M2LB_MANUAL_ARCHIVE', 'BIRKNEXT_PERFORMANCE_TARGET_URL') { Remove-Item "env:$name" -ErrorAction SilentlyContinue }
+    if ($fqrStandinStarted) { podman rm --force --ignore birknext-fqr-standin | Out-Null }
+    foreach ($name in 'BIRKNEXT_PLAYWRIGHT_FRONTEND_URL', 'BIRKNEXT_PLAYWRIGHT_BACKEND_URL', 'BIRKNEXT_PLAYWRIGHT_LAUNCH_CODE_FILE', 'BIRKNEXT_M2LB_MANUAL_ARCHIVE', 'BIRKNEXT_PERFORMANCE_TARGET_URL', 'BIRKNEXT_FQR_TARGET_URL') { Remove-Item "env:$name" -ErrorAction SilentlyContinue }
     if ($databaseCreated -and -not $KeepDatabase) {
         Start-Sleep -Seconds 2
         podman exec $PostgresContainer psql -U $PostgresUser -d postgres -c "DROP DATABASE IF EXISTS $Database WITH (FORCE);" | Out-Null

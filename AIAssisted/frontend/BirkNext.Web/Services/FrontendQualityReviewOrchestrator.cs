@@ -1269,6 +1269,14 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
     private async Task<bool> RevalidateEngineReadinessAsync(FrontendQualityEngineIdDto engineId, CancellationToken cancellationToken) =>
         (await RevalidateEngineReadinessDetailedAsync(engineId, cancellationToken))?.IsAvailable ?? false;
 
+    /// <summary>How long a run waits for one engine's readiness re-check: the server's probe budget plus a margin for the round trip.</summary>
+    internal static TimeSpan ReadinessRevalidationBudget(FrontendQualityEngineIdDto engineId) => engineId switch
+    {
+        FrontendQualityEngineIdDto.PassiveSecurity => TimeSpan.FromSeconds(80),   // server: ZAP container start, 75 s
+        FrontendQualityEngineIdDto.Lighthouse => TimeSpan.FromSeconds(40),        // server: Node runner + Chromium, 35 s
+        _ => TimeSpan.FromSeconds(20),                                              // server: Chromium launch, 15 s
+    };
+
     private async Task<FrontendQualityEngineReadinessReportDto?> RevalidateEngineReadinessDetailedAsync(
         FrontendQualityEngineIdDto engineId,
         CancellationToken cancellationToken)
@@ -1281,10 +1289,11 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
 
         try
         {
-            // Bounded readiness revalidation: 5 s, except Passive Web Security whose readiness starts the ZAP container (JVM) on the server
-            // (server budget 75 s). With 5 s a working ZAP installation always timed out and was skipped as unavailable.
+            // Bounded readiness revalidation, a little above each engine's own server budget: the probe starts real tooling (Chromium for
+            // Browser Runtime/Accessibility, Node + Chromium for Lighthouse, the ZAP container). A tighter client limit skipped a working engine
+            // as "Not ready" whenever the machine was busy — ZAP always (fixed earlier), Lighthouse and Accessibility under load.
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            cts.CancelAfter(engineId == FrontendQualityEngineIdDto.PassiveSecurity ? TimeSpan.FromSeconds(80) : TimeSpan.FromSeconds(5));
+            cts.CancelAfter(ReadinessRevalidationBudget(engineId));
 
             var readiness = await _engineStatusService.RevalidateEngineReadinessAsync(engineId, cts.Token);
 
