@@ -591,9 +591,6 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.ContractAnalysis.IContractS
     client.DefaultRequestHeaders.TryAddWithoutValidation(BirkNext.LocalHttpsProxy.NetworkEvidencePolicy.ProvenanceHeader, "BirkNextDiagnostic");
 }).ConfigurePrimaryHttpMessageHandler(BirkNext.Api.Services.ContractAnalysis.ContractSourcePolicy.CreateHandler);
 
-// Contract Analysis — messaging schema discovery
-builder.Services.AddScoped<BirkNext.Api.Services.ContractAnalysis.IMessageSchemaDiscoveryService, BirkNext.Api.Services.ContractAnalysis.MessageSchemaDiscoveryService>();
-
 // Contract Analysis (Phase 3-4)
 builder.Services.AddHttpClient<IOpenApiSourceFetcher, OpenApiSourceFetcher>(client =>
 {
@@ -1034,11 +1031,9 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.DependencyReview.IDeployedD
 builder.Services.AddScoped<BirkNext.Api.Services.DependencyReview.IDependencyHealthService, BirkNext.Api.Services.DependencyReview.DependencyHealthService>();
 builder.Services.AddScoped<BirkNext.Api.Services.DependencyReview.DependencyEvidenceProviderRegistry>();
 builder.Services.AddScoped<BirkNext.Api.Services.SchemaEvidence.ContractEvidenceService>();
-builder.Services.AddScoped<IContractDiscoveryService, ContractDiscoveryService>();
 
 // Contract Analysis - Messaging/EventHub (Phase 5)
 builder.Services.AddScoped<IAssemblyMetadataInspector, AssemblyMetadataInspector>();
-builder.Services.AddScoped<IMessagingContractDiscoveryService, MessagingContractDiscoveryService>();
 
 builder.Services.AddHttpClient("Anthropic", client =>
 {

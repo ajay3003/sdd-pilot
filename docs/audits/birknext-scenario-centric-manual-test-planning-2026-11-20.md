@@ -168,12 +168,14 @@ re-run for this commit.
 
 - UI labels are English (no localisation infrastructure); only content is translated.
 - Level B structural matching depends on requirement wording naming the user story / acceptance scenario; M2LB requirements rarely do, so
-  its scenarios are matched at level C. `tasks.md` story→FR references are not yet read (the User Story hierarchy task will add story identity).
-- Translation providers were verified against stand-ins/fakes only; no real Azure Translator or LibreTranslate server was called.
-  LibreTranslate's code for Norwegian bokmål (`nb`) should be confirmed against the installed server (`/languages`).
-- Provider choice moved to System Settings → Translation (see §18); the LibreTranslate image tag (`v1.6.0`) and its `nb` language code are
-  not verified against Docker Hub or a real server from this PC (no image downloaded in this task).
-- Re-import with a changed specification was verified in backend tests (refresh, stale translation), not in the browser run.
+  its scenarios are matched at level C for a test case. *Resolved for user stories (later the same day):* story → FR references are read from
+  the same feature's `tasks.md`, `plan.md` and `quickstart.md` (see `birknext-spec-md-user-story-hierarchy-2026-11-20.md` §6 and §14).
+- *Resolved:* LibreTranslate was verified against a real local server (`libretranslate/libretranslate:v1.6.0`, the tag exists; `nb` listed
+  by `/languages`; opt-in `RealLibreTranslateTests`), which found and fixed a dropped colon after identifiers. Azure AI Translator is still
+  verified against a stand-in only (a live check needs the organisation's key and sends text to Azure).
+- *Resolved:* the browser workflows (`ScenarioCentricManualTestingWorkflowTests`, both tests) pass on the final code, including drag and drop
+  in Chromium. Re-import with a changed specification (refresh, stale translation, renumbered scenarios) is verified in backend tests, not in
+  the browser run.
 
 ## 17. Commits
 

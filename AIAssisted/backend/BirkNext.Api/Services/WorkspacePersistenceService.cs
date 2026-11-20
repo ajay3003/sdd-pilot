@@ -14,7 +14,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
     /// <summary>Document bodies are stored once by content address; the lifecycle keeps addresses (see <see cref="WorkspaceDocumentBodies"/>).</summary>
     private WorkspaceDocumentBodies Bodies => new(_db);
     private Guid? _currentWorkspaceId;
-    private string? _currentUserId = "default-user"; // TODO: Get from auth context
+    private string? _currentUserId = "default-user"; // single-user local tool: one local user owns every saved workspace (no per-user ACL)
 
     public WorkspacePersistenceService(AppDbContext db, ILogger<WorkspacePersistenceService> logger)
     {

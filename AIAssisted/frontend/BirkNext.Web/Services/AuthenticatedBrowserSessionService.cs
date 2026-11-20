@@ -20,59 +20,6 @@ public interface IAuthenticatedBrowserSessionService
 public sealed record AuthenticatedBrowserExecutionReference(string SessionId, string ReviewSessionId, string ProfileId, string TargetUrl);
 
 /// <summary>
-/// Safe placeholder — authenticated browser automation is not yet implemented.
-/// Returns NotRequired when no auth is configured; RequiredButNotAvailable otherwise.
-/// Anonymous analysis continues in both cases.
-/// </summary>
-public sealed class PlaceholderAuthenticatedBrowserSessionService : IAuthenticatedBrowserSessionService
-{
-    private readonly IFrontendAnalysisSettingsService _settings;
-
-    public PlaceholderAuthenticatedBrowserSessionService(IFrontendAnalysisSettingsService settings)
-        => _settings = settings;
-
-    public Task<AuthenticatedBrowserSessionStatus> GetStatusAsync()
-    {
-        var profile = _settings.ActiveProfile;
-        if (profile is null || !EffectiveAuthentication.Resolve(profile, _settings.GetDetectionSnapshot(profile.Id)).SignInRequired)
-            return Task.FromResult(AuthenticatedBrowserSessionStatus.NotRequired);
-
-        return Task.FromResult(AuthenticatedBrowserSessionStatus.RequiredButNotAvailable);
-    }
-
-    public Task<AuthenticatedBrowserSession> GetOrCreateSessionAsync(FrontendAnalysisContext context)
-    {
-        if (!context.RequiresAuthentication)
-        {
-            return Task.FromResult(new AuthenticatedBrowserSession
-            {
-                StatusMessage   = "Authentication not required for this profile.",
-                SafeDiagnostics = ["auth_required=false"]
-            });
-        }
-
-        return Task.FromResult(new AuthenticatedBrowserSession
-        {
-            TargetUrl          = context.TargetUrl,
-            AuthenticationType = context.AuthenticationType.ToString(),
-            StatusMessage      = "Authenticated browser session is required but not implemented yet. " +
-                                 "Anonymous analysis will run where possible.",
-            SafeDiagnostics    = [$"auth_type={context.AuthenticationType}", "session_available=false"]
-        });
-    }
-
-    public Task<AuthenticatedBrowserSession?> GetCurrentSessionAsync() =>
-        Task.FromResult<AuthenticatedBrowserSession?>(null);
-
-    public Task ClearSessionAsync() => Task.CompletedTask;
-
-    public Task<AuthenticatedBrowserSession> BeginAuthenticationAsync(FrontendAnalysisContext context) =>
-        GetOrCreateSessionAsync(context);
-
-    public Task<AuthenticatedBrowserExecutionReference?> GetExecutionReferenceAsync(FrontendAnalysisContext context) => Task.FromResult<AuthenticatedBrowserExecutionReference?>(null);
-}
-
-/// <summary>
 /// Safe frontend client for the backend-owned ephemeral browser session. It transports
 /// identifiers and status only; Playwright objects and browser authentication state never
 /// leave the local backend process.

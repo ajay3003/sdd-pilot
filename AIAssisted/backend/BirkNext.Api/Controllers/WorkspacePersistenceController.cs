@@ -165,7 +165,7 @@ public class WorkspacePersistenceController : ControllerBase
         try
         {
             _logger.LogDebug("[Controller] List ENTERED");
-            // TODO: Get actual userId from auth context
+            // BirkNext is a single-user local tool: every saved workspace belongs to the one local user ("default-user"; no per-user ACL).
             var result = await _service.ListAsync("default-user");
             _logger.LogDebug($"[Controller] ListAsync returned {result.Count} workspaces");
             foreach (var ws in result)
