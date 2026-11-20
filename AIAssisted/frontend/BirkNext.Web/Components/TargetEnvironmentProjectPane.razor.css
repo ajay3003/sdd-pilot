@@ -135,3 +135,8 @@
 .tep-check { display: inline-flex; gap: .4rem; align-items: center; font-size: .875rem; overflow-wrap: anywhere; }
 .tep-primary-check { margin-left: 1.4rem; font-size: .825rem; }
 .tep-small { font-size: .8rem; }
+/* The sources table wraps between words only (the shared .tep-table rule breaks anywhere, which split "Documentation" and the headers in
+   the narrow settings column); badges stay whole and wrap as units. */
+.tep-associated th, .tep-associated td { overflow-wrap: normal; word-break: normal; }
+.tep-associated th[scope=row] { min-width: 8rem; overflow-wrap: break-word; }
+.tep-associated .tep-badge { white-space: nowrap; }

@@ -297,7 +297,7 @@
         if (_identity is null || sources.Count == 0) return;
         <div class="tep-table-wrap">
             <table class="tep-table tep-associated" data-testid="tep-associated" aria-label="@($"Sources of {_identity.Name} and their roles")">
-                <thead><tr><th scope="col">Source</th><th scope="col">Detected capabilities</th><th scope="col">Assigned roles for @_identity.Name</th><th scope="col">Review status</th><th scope="col">Evidence completeness</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                <thead><tr><th scope="col">Source</th><th scope="col">Detected capabilities</th><th scope="col">Assigned roles</th><th scope="col">Review status</th><th scope="col">Evidence completeness</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
                 <tbody>
                     @foreach (var s in sources)
                     {
