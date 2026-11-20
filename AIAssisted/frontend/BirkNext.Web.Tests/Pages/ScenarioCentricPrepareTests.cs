@@ -132,7 +132,9 @@ public sealed class ScenarioCentricPrepareTests : BunitContext
         s42.QuerySelector("[data-testid=tps-scenario-counts]")!.TextContent.Should().Be("2 test cases · 2 need review");
         s42.QuerySelector("[data-testid=tps-scenario-toggle]")!.GetAttribute("aria-expanded").Should().Be("true");
         s42.QuerySelector("[data-testid=tps-scenario-translate]")!.GetAttribute("aria-label").Should().Be("Translate scenario and test cases to Norwegian (bokmål)", "English → Norwegian bokmål is the default");
-        s42.QuerySelector("[data-testid=tps-scenario-overview]")!.TextContent.Should().Contain("Starting situation").And.Contain("a child past compulsory school age").And.Contain($"{Spec}#scenario-42");
+        s42.QuerySelector("[data-testid=tps-scenario-overview]")!.TextContent.Should().Contain("Starting situation").And.Contain("a child past compulsory school age").And.Contain("spec.md#scenario-42");
+        // The full path is the tooltip; the text shows the file and anchor (2026-11-20).
+        s42.QuerySelector("[data-testid=tps-scenario-evidence]")!.GetAttribute("title").Should().Contain($"{Spec}#scenario-42");
         s42.QuerySelectorAll("[data-case]").Select(c => c.GetAttribute("data-case")).Should().Equal("tsc-42", "manual-a");
         Scenario(cut, "tsc-7").QuerySelectorAll("[data-case]").Should().BeEmpty("a closed scenario shows only its header");
 
