@@ -113,6 +113,11 @@ public sealed class RealM2lbManualTestingTests : IAsyncLifetime
 
             // 7. Fill what the evidence left open (a Norwegian step included), save, approve.
             var sid = ids[0];
+            // Scenario-centric Plan & prepare (2026-11-20): a case is shown inside its scenario, which opens on demand.
+            var scenario = page.Locator($"[data-testid=tps-scenario][data-scenario=\"{sid}\"]");
+            await scenario.WaitForAsync(new() { Timeout = 60000 });
+            if (await scenario.GetAttributeAsync("data-open") != "true") await scenario.GetByTestId("tps-scenario-toggle").ClickAsync();
+            await Assertions.Expect(scenario).ToHaveAttributeAsync("data-open", "true");
             var testCase = page.GetByTestId($"tps-case-{sid}");
             if ((await testCase.GetAttributeAsync("class"))?.Contains("is-open") != true) await testCase.Locator(".tps-case-head").ClickAsync();
             await page.GetByTestId($"tps-step-new-{sid}").FillAsync("Åpne meldingsloggen og finn meldingen for eleven");
@@ -123,6 +128,13 @@ public sealed class RealM2lbManualTestingTests : IAsyncLifetime
                 if (!string.IsNullOrWhiteSpace(await stepExpected.Nth(i).InputValueAsync())) continue;
                 await stepExpected.Nth(i).FillAsync("Meldingen vises med riktig periode og status");
                 await stepExpected.Nth(i).DispatchEventAsync("change");
+            }
+            // How the tester verifies the outcome (required before approval since the scenario-centric redesign).
+            var observation = page.GetByTestId($"tps-edit-observation-{sid}");
+            if (await observation.CountAsync() > 0 && string.IsNullOrWhiteSpace(await observation.InputValueAsync()))
+            {
+                await observation.FillAsync("Les meldingsloggen for perioden");
+                await observation.DispatchEventAsync("change");
             }
             await testCase.GetByTestId("tps-save").ClickAsync();
             await MessageAsync(page, "Draft saved");
