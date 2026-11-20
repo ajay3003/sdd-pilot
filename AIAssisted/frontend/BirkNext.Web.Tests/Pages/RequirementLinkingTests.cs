@@ -156,7 +156,9 @@ public sealed class RequirementLinkingTests : BunitContext
     {
         var cut = Render(Draft(Case()), specification: false);
 
-        cut.Find("[data-testid=tps-links-unavailable]").TextContent.Should().Contain("no selected specification");
+        // The project's documents hold no specification at all (2026-11-20 audit): requirements are absent from the source, not unchosen.
+        cut.Find("[data-testid=tps-links-unavailable]").TextContent.Should().StartWith("Not identified in source").And.NotContain("Specification Explorer");
+        cut.Find("[data-testid=tps-parent-story-tsc-borrow]").GetAttribute("data-state").Should().Be("not-identified");
         cut.FindAll("[data-testid=tps-link-search-tsc-borrow]").Should().BeEmpty();
         Links(cut).Single().QuerySelector("[data-testid=tps-link-validity]")!.TextContent.Should().StartWith("Not checked");
     }
@@ -181,7 +183,7 @@ public sealed class RequirementLinkingTests : BunitContext
         search.Closest("label")!.TextContent.Should().Contain("Find a requirement to link");
         cut.FindAll("[data-testid=tps-link-add]").Should().OnlyContain(b => b.TagName == "BUTTON" && b.GetAttribute("type") == "button" && b.GetAttribute("aria-label")!.StartsWith("Link FR-"));
         cut.Find("[data-testid=tps-link-remove]").GetAttribute("aria-label").Should().Be("Remove the manual link to FR-002");
-        cut.Find("[data-testid=tps-links-tsc-borrow] h4").TextContent.Should().Be("Linked requirements");
+        cut.Find("[data-testid=tps-links-tsc-borrow] h4[id^=tps-links-title]").TextContent.Should().Be("Linked requirements");
     }
 
     // ── Presentation rules (pure) ─────────────────────────────────────────────────────────────────────────────

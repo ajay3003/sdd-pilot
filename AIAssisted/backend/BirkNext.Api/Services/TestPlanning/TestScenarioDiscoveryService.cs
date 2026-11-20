@@ -47,7 +47,7 @@ public sealed class SystemGuideScenarioProvider(SystemGuideService guides) : ITe
     }
 
     /// <summary>"Guide: 4 of 21 scenarios apply to this project's source (MU); 17 are evidenced only in M2LB and are not offered (revision 1, Draft)".</summary>
-    internal static string Detail(SystemGuideRevision g, IReadOnlySet<string> roles, IReadOnlyDictionary<string, string> labels)
+    internal static string Detail(BirkNext.SystemUnderstanding.SystemGuideRevision g, IReadOnlySet<string> roles, IReadOnlyDictionary<string, string> labels)
     {
         var all = g.Content.Scenarios;
         var outside = all.Where(s => !D.InProjectSource(g.Content, s, roles)).ToList();
