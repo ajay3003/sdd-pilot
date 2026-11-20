@@ -40,8 +40,10 @@ public sealed class BirkNextWebApplicationFixture : IAsyncLifetime
     public BirkNextWebApplicationFixture()
     {
         // Find repo root from current test project location
+        // (run-workflow-tests.ps1 builds the tests outside the repository and names the root in BIRKNEXT_REPOSITORY_ROOT)
         var testProjectDir = AppDomain.CurrentDomain.BaseDirectory;
-        _repoRoot = FindRepositoryRoot(testProjectDir);
+        _repoRoot = Environment.GetEnvironmentVariable("BIRKNEXT_REPOSITORY_ROOT") is { Length: > 0 } root && File.Exists(Path.Combine(root, "azure-pipelines.yml"))
+            ? root : FindRepositoryRoot(testProjectDir);
 
         _backendPath = Path.Combine(_repoRoot, "AIAssisted", "backend");
         _frontendPath = Path.Combine(_repoRoot, "AIAssisted", "frontend");

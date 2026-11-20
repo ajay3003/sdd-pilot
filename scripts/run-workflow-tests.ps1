@@ -188,6 +188,7 @@ try {
     dotnet build BirkNext.Web.PlaywrightTests --artifacts-path $testArtifacts -v:q -nologo *> (Join-Path $logs 'build-tests.log')
     if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Test build failed: see $logs\build-tests.log" }
 
+    $env:BIRKNEXT_REPOSITORY_ROOT = $repo
     $env:BIRKNEXT_PLAYWRIGHT_FRONTEND_URL = $webUrl
     $env:BIRKNEXT_PLAYWRIGHT_BACKEND_URL = $apiUrl
     $env:BIRKNEXT_PLAYWRIGHT_LAUNCH_CODE_FILE = $launchCode
