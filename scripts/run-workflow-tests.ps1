@@ -110,6 +110,9 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "The published web app would not start (integrity mismatch): see $logs\integrity.log" }
     }
     elseif (-not (Test-Path (Join-Path $apiDir 'BirkNext.Api.dll'))) { throw "-NoPublish: no earlier publish in $OutDir" }
+    # A fresh start for the file-backed state too (Test Data, Critical E2E flows, credentials, sessions): -NoPublish used to keep the previous
+    # run's App_Data, so a test met its own leftovers.
+    Remove-Tree (Join-Path $apiDir 'App_Data')
 
     # The isolated API never reads a developer's appsettings.Local.json (it is not copied). Its own local settings allow every Frontend Quality
     # Review engine and register the frontend stand-in (and only it) for Passive Web Security (ZAP) as a loopback test target.
@@ -153,9 +156,11 @@ try {
     $env:ASPNETCORE_URLS = $apiUrl
     $env:ConnectionStrings__Default = "Host=$PostgresHost;Port=$PostgresPort;Database=$Database;Username=$PostgresUser;Password=$PostgresPassword"
     $env:FRONTEND_ORIGIN = $webUrl
+    # The isolated API keeps its file-backed state in its own folder even when the developer has redirected App_Data for their own BirkNext.
+    $env:BIRKNEXT_APP_DATA_DIR = (Join-Path $apiDir 'App_Data')
     $started += Start-Process dotnet -ArgumentList 'BirkNext.Api.dll' -WorkingDirectory $apiDir -PassThru -WindowStyle Hidden `
         -RedirectStandardOutput (Join-Path $logs 'api.log') -RedirectStandardError (Join-Path $logs 'api-error.log')
-    foreach ($name in 'ASPNETCORE_ENVIRONMENT', 'BirkNext__LocalTesterMode', 'ASPNETCORE_URLS', 'ConnectionStrings__Default', 'FRONTEND_ORIGIN') { Remove-Item "env:$name" -ErrorAction SilentlyContinue }
+    foreach ($name in 'ASPNETCORE_ENVIRONMENT', 'BirkNext__LocalTesterMode', 'ASPNETCORE_URLS', 'ConnectionStrings__Default', 'FRONTEND_ORIGIN', 'BIRKNEXT_APP_DATA_DIR') { Remove-Item "env:$name" -ErrorAction SilentlyContinue }
     $started += Start-Process node -ArgumentList "`"$(Join-Path $PSScriptRoot 'workflow-tests\serve-web.cjs')`"", "`"$(Join-Path $webDir 'wwwroot')`"", $WebPort -PassThru -WindowStyle Hidden `
         -RedirectStandardOutput (Join-Path $logs 'web.log') -RedirectStandardError (Join-Path $logs 'web-error.log')
     $ready = $false

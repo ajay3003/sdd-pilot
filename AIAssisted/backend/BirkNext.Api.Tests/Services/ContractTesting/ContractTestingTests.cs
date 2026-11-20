@@ -140,6 +140,34 @@ public sealed class ContractTestingTests : IAsyncLifetime
                   type: string
         """;
 
+    [Fact]
+    public void A_field_added_to_a_type_only_ever_returned_is_compatible_even_when_required()
+    {
+        // Found by the Contract Testing workflow test: v2 of a REST contract added a required field to a response-only type, and Changes called it
+        // "Potentially breaking" while its own impact analysis said "no evidence of impact" - the server sends more, consumers are unaffected.
+        SourceContract Contract() => new()
+        {
+            Operations =
+            [
+                new("GET /children/{id}", "get", "/children/{id}", ["id"]) { ResponseSchemas = new() { ["200"] = "Child" } },
+                new("POST /children", "post", "/children", []) { RequestSchema = "NewChild", ResponseSchemas = new() { ["201"] = "Child" } },
+            ],
+        };
+        SourceEvidenceChange Change(ContractChangeClass kind, string member) =>
+            new(SourceEvidenceDomain.Contracts, SourceEvidenceChangeKind.Added, "Field", $"contract|{member}", member, member, kind);
+        var changes = ContractTestRules.WithDirection(
+        [
+            Change(ContractChangeClass.FieldAddedRequired, "Child.fullName"), Change(ContractChangeClass.FieldRemoved, "Child.name"),
+            Change(ContractChangeClass.FieldAddedRequired, "NewChild.birthYear"), Change(ContractChangeClass.FieldAddedOptional, "NewChild.note"),
+            Change(ContractChangeClass.FieldRemoved, "NewChild.legacy"), Change(ContractChangeClass.FieldAddedRequired, "Address.zip"),
+        ], Contract(), Contract());
+
+        changes.Select(c => (c.Name, c.CompatibilityConcern)).Should().Equal(
+            ("Child.fullName", ContractCompatibilityConcern.PotentiallyCompatible), ("Child.name", ContractCompatibilityConcern.PotentiallyBreaking),
+            ("NewChild.birthYear", ContractCompatibilityConcern.PotentiallyBreaking), ("NewChild.note", ContractCompatibilityConcern.PotentiallyCompatible),
+            ("NewChild.legacy", ContractCompatibilityConcern.NeedsReview), ("Address.zip", (ContractCompatibilityConcern?)null));
+    }
+
     /// <summary>v2: GET /children gains a required query parameter, NewChild a required field, Child loses age, /admin/reports is removed.</summary>
     public const string V2Json = """
         { "openapi": "3.0.3", "info": { "title": "Synthetic Children API", "version": "2.0" },
@@ -401,6 +429,11 @@ public sealed class ContractTestingTests : IAsyncLifetime
         var diff = (await tests.DiffAsync(key, 1, 2, default))!;
         diff.Changes.Select(c => c.ContractChange).Should().Contain([ContractChangeClass.OperationRemoved, ContractChangeClass.ParameterAddedRequired, ContractChangeClass.FieldAddedRequired, ContractChangeClass.FieldRemoved]);
         diff.Impacts.Should().HaveCount(6);
+        // Direction decides what a field change means for consumers: NewChild is only ever a request body, Child only ever a response.
+        diff.Changes.Single(c => c.ContractChange == ContractChangeClass.FieldAddedRequired && c.Key.EndsWith("NewChild.birthYear"))
+            .CompatibilityConcern.Should().Be(ContractCompatibilityConcern.PotentiallyBreaking, "callers must now send birthYear");
+        diff.Changes.Single(c => c.ContractChange == ContractChangeClass.FieldRemoved && c.Key.EndsWith("Child.age"))
+            .CompatibilityConcern.Should().Be(ContractCompatibilityConcern.PotentiallyBreaking, "consumers no longer receive age");
 
         var getChildren = impacted[("GET /children", ContractTestKind.Positive)].Test;
         var proposal = (await tests.MigrationAsync(getChildren.Id, default))!;

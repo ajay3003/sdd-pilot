@@ -12,6 +12,7 @@ gives a checklist.
 | API quality | API Quality Review (`/api-quality-review`) | A non-production Target Environment with the API's base URL (and health endpoint, OpenAPI contract) |
 | Front-end quality | Frontend Quality Review (`/frontend-quality-review`) | A non-production Target Environment with the front end's URL; Chromium, Node (Lighthouse) and Podman with the ZAP image on the BirkNext server for the browser engines |
 | Graded access (Kode 6/7) | M01 – Gradert tilgang (`/security-classification-review`) | The application source in Source Analysis; for runtime checks a Development/Local or QA/Test Target Environment, the Person GraphQL endpoint, synthetic test children and two synthetic identity tokens |
+| API contracts (REST, GraphQL) | Contract Testing (`/api-quality-review/contracts`) | The OpenAPI contract or GraphQL schema (file, URL or Source Analysis), a non-production Target Environment whose URL reaches the API, and Test Data for identifiers of existing records |
 | Integration chains (Skolenærvær) | Integration suites (`/integration-suites`) | A project, the services' source (OpenAPI) and a non-production Target Environment whose URL reaches every stage |
 
 Manual test cases are prepared in **Manual Testing → Plan & prepare** and exported to Azure DevOps Test Plans
@@ -409,7 +410,71 @@ children count in Bufdata aggregates (K67-05), corrections and reclassification 
 
 ---
 
-## 7. All workflow tests in one command (before a release)
+## 7. Contract Testing — REST and GraphQL
+
+Contract Testing checks that an API answers as its contract says. The contract is an OpenAPI 3 / Swagger 2 document for REST, or a GraphQL
+schema (SDL or an introspection result). Each imported document is an immutable version. Tests are generated per operation, and every
+response is validated against the full schema. The result says where the response differs from the contract and by which schema rule.
+
+### Before you start
+
+- A Target Environment (Local, Development, QA or Test) whose URL reaches the API.
+- The contract: imported from Source Analysis, uploaded as a file, or fetched once from a URL.
+- Test Data for every identifier of an existing record. BirkNext generates values from the contract (enums, formats, bounds), but it never
+  invents the id of a record that has to exist.
+
+### Step by step
+
+1. **Import contracts.** Choose *From Source Analysis*, *File* or *URL*, give the contract a name and select **Import**. The contract opens on
+   *Operations*. *Fully read* and *Full schema validation* tell you that every rule of the document is checked.
+2. **Endpoint & authentication.** Set a REST base path if the API is not at the root, or the GraphQL path (for example `/graphql`). Then
+   choose *None*, the attended session, or an unattended client-credentials / API-key credential, and save.
+3. **Generate tests and test data.** This gives a positive test per operation and the negative tests the contract supports (for example a
+   GraphQL query without a required argument). Values that can be derived from the contract are approved and pinned automatically.
+   Operations that need an existing record are listed with the value they need.
+4. **Add the missing values.** In **Test Data → Test Data assets**, choose **Add data** → *Key-value collection* → **Next**. Add a row (for
+   example `id` = a record that exists in this environment), select **Validate** and **Save draft**, then open the asset and approve it.
+   Back on the test, choose **Use** for that collection. The test becomes *Ready*. The hint on a test that needs data links straight to the
+   right tab.
+5. **Run.** On *Tests*, tick the ready tests and choose **Run selected**. Data-changing calls need an extra confirmation. Then select
+   **Open the run in Execution Results**.
+6. **Read a failure.** In Execution Results, open the call and look at two tabs:
+   - **Assertions** shows what failed.
+   - **Contract** lists every violation with its place in the response and the schema rule (for example `$.id` *Expected string, got
+     integer*, or `$.data.child.name` *null in a non-null position*).
+7. **A new contract version.** Import the next document *as the next version of* the contract. **Changes** lists every difference and says
+   what it means for consumers, then lists the tests it affects and how certain that is.
+   - A field added to a type the API only returns is *Compatible*.
+   - A removed field, or a new required field in a request, is *Potentially breaking*.
+
+### What was verified
+
+`ContractTestingWorkflowTests` (browser test) against a local stand-in API that serves both protocols (`Fixtures/ContractStandIn.cs`).
+
+- **Documented API:** every test passed after the `id` collection was approved and pinned. REST had 2 tests, and GraphQL had 3, including
+  "query `child` without `id`", which expects a GraphQL error.
+- **Broken API:** every positive test failed, with the exact findings:
+  - REST: `name` missing (required) and `id` given as a number;
+  - GraphQL: `name` null for `String!` and `age` given as a string.
+
+  The negative test still passed.
+- **v2:** renaming `name` to `fullName` showed one breaking change (the removed `name`), the new required field as compatible, and both REST
+  tests as affected.
+- **Calls:** only the documented operations and the contract documents were called.
+
+Defects in BirkNext found and fixed on the way:
+
+1. **Changes ignored direction.** A required field added to a type the API only returns was shown as *Potentially breaking*, while the
+   impact analysis on the same page said "no evidence of impact". Field changes are now classified by where the type is used: request,
+   response, or both.
+2. **"Add data in Test Data" opened the overview,** where there is no *Add data*. It now opens *Test Data assets*.
+3. **With `-NoPublish`, the one-command script kept the previous run's file-backed state** (Test Data, Critical E2E flows, sessions), so a test
+   could meet its own leftovers. It now starts with an empty `App_Data`, and the isolated API never follows a `BIRKNEXT_APP_DATA_DIR` of your
+   own.
+
+---
+
+## 8. All workflow tests in one command (before a release)
 
 `scripts/run-workflow-tests.ps1` runs every browser workflow test in this guide (and the Manual Testing ones) on a throw-away installation:
 

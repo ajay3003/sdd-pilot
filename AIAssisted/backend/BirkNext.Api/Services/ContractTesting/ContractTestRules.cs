@@ -26,6 +26,47 @@ public static partial class ContractTestRules
     /// <summary>"Child" from "Child", "[Child]" or "#/components/schemas/Child"; null for primitives.</summary>
     public static string? TypeName(string? schema) => schema is null ? null : schema.Replace("!", "").Trim('[', ']').Split('/').Last() is var n && n.Length > 0 && !n.Contains(':') && n is not ("string" or "integer" or "number" or "boolean" or "object" or "array") ? n : null;
 
+    /// <summary>Where each named type is used across the given contract versions: in a request (REST body schema, GraphQL argument) and/or a
+    /// response (success schemas, GraphQL result type). Only direct uses; a type reached only through another type is in neither set.</summary>
+    public static (HashSet<string> Request, HashSet<string> Response) Directions(params SourceContract[] contracts)
+    {
+        var request = new HashSet<string>(StringComparer.Ordinal);
+        var response = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var op in contracts.SelectMany(c => c.Operations))
+        {
+            if (TypeName(op.RequestSchema) is { } body) request.Add(body);
+            foreach (var p in op.ParameterDetails.Where(p => p.In == "argument")) if (TypeName(p.Type) is { } argument) request.Add(argument);
+            foreach (var s in op.ResponseSchemas.Values.Append(op.ResultType)) if (TypeName(s) is { } result) response.Add(result);
+        }
+        return (request, response);
+    }
+
+    /// <summary>
+    /// Field changes with their compatibility for consumers, by the direction the type is used in. A field added to a type that is only ever a
+    /// RESPONSE (even a required one) is compatible: the server sends more; removing one is potentially breaking. For a type that is only ever a
+    /// REQUEST, a new required field is potentially breaking, a new optional one compatible, a removed one needs review. Types used both ways, or
+    /// only nested, keep the direction-blind classification. A change that already carries a concern is kept as it is.
+    /// </summary>
+    public static List<SourceEvidenceChange> WithDirection(List<SourceEvidenceChange> changes, SourceContract before, SourceContract after)
+    {
+        var (request, response) = Directions(before, after);
+        return [.. changes.Select(c =>
+        {
+            if (c.CompatibilityConcern is not null || c.Area != "Field") return c;
+            var type = c.Key.Split('|').Last().Split('.')[0];
+            ContractCompatibilityConcern? concern = (response.Contains(type), request.Contains(type), c.ContractChange) switch
+            {
+                (true, false, ContractChangeClass.FieldAddedRequired or ContractChangeClass.FieldAddedOptional) => ContractCompatibilityConcern.PotentiallyCompatible,
+                (true, false, ContractChangeClass.FieldRemoved) => ContractCompatibilityConcern.PotentiallyBreaking,
+                (false, true, ContractChangeClass.FieldAddedRequired) => ContractCompatibilityConcern.PotentiallyBreaking,
+                (false, true, ContractChangeClass.FieldAddedOptional) => ContractCompatibilityConcern.PotentiallyCompatible,
+                (false, true, ContractChangeClass.FieldRemoved) => ContractCompatibilityConcern.NeedsReview,
+                _ => null,
+            };
+            return concern is null ? c : c with { CompatibilityConcern = concern };
+        })];
+    }
+
     public static bool IsRest(ContractOperation op) => Verbs.Contains(op.Kind.ToUpperInvariant()) && op.Path is { Length: > 0 };
     public static bool IsGraphQl(ContractOperation op) => op.Kind is "query" or "mutation";
 

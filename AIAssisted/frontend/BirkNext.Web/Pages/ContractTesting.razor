@@ -1364,7 +1364,7 @@
         {
             @if (_options is null || _options.Count == 0)
             {
-                <p class="ct-muted" data-testid="ct-no-datasets">No dataset or key-value collection in Test Data yet. <a href="test-data">Add data in Test Data</a> with the values above, approve it, and pick it here.</p>
+                <p class="ct-muted" data-testid="ct-no-datasets">No dataset or key-value collection in Test Data yet. <a href="test-data?section=assets" data-testid="ct-add-data-link">Add data in Test Data</a> with the values above, approve it, and pick it here.</p>
             }
             else
             {
@@ -1414,7 +1414,7 @@
                 </label>
                 <span>with v@(_diff.ToVersion)</span>
             </p>
-            var breaking = _diff.Changes.Count(c => ChangeSeverity(c.ContractChange) != "Compatible");
+            var breaking = _diff.Changes.Count(c => ChangeSeverity(c) != "Compatible");
             <dl class="ct-stats ct-stats-sm" data-testid="ct-change-stats">
                 <div><dt>Changes</dt><dd>@_diff.Changes.Count</dd></div>
                 <div><dt>Potentially breaking</dt><dd data-testid="ct-breaking-count">@breaking</dd></div>
@@ -1428,9 +1428,9 @@
                     <table class="ct-table" data-testid="ct-change-table">
                         <thead><tr><th scope="col">Change</th><th scope="col">Kind</th><th scope="col">For consumers</th></tr></thead>
                         <tbody>
-                            @foreach (var c in _diff.Changes.Where(c => !_breakingOnly || ChangeSeverity(c.ContractChange) != "Compatible"))
+                            @foreach (var c in _diff.Changes.Where(c => !_breakingOnly || ChangeSeverity(c) != "Compatible"))
                             {
-                                <tr data-testid="ct-change-row" data-class="@c.ContractChange"><td>@c.Detail</td><td>@ChangeLabel(c.ContractChange)</td><td>@ChangeSeverity(c.ContractChange)</td></tr>
+                                <tr data-testid="ct-change-row" data-class="@c.ContractChange"><td>@c.Detail</td><td>@ChangeLabel(c.ContractChange)</td><td>@ChangeSeverity(c)</td></tr>
                             }
                         </tbody>
                     </table>
@@ -1582,6 +1582,16 @@
         ContractChangeClass.ParameterRemoved => "Parameter removed", ContractChangeClass.ParameterChanged => "Parameter changed",
         ContractChangeClass.RequestBodyChanged => "Request body changed", ContractChangeClass.ResponseChanged => "Response changed",
         _ => c.ToString(),
+    };
+
+    /// <summary>The consumer impact of one change: the direction-aware concern the server attached (a required field added to a response-only type is
+    /// compatible), otherwise the change class alone.</summary>
+    public static string ChangeSeverity(SourceEvidenceChange change) => change.CompatibilityConcern switch
+    {
+        ContractCompatibilityConcern.PotentiallyCompatible => "Compatible",
+        ContractCompatibilityConcern.PotentiallyBreaking => "Potentially breaking",
+        ContractCompatibilityConcern.NeedsReview => "Review required",
+        _ => ChangeSeverity(change.ContractChange),
     };
 
     private static string ChangeSeverity(ContractChangeClass c) => c is ContractChangeClass.OperationAdded or ContractChangeClass.FieldAddedOptional or ContractChangeClass.TypeAdded

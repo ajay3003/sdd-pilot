@@ -326,7 +326,7 @@ public sealed class ContractTestService(AppDbContext db, ContractRegistryService
         var impacts = new List<ContractTestImpact>();
         foreach (var t in (await ListDefinitionsAsync(key, ct)).Where(t => t.ContractVersion == from))
             impacts.Add(ContractTestRules.Impact(t, before, after, to, BoundStrings(t)));
-        return new(key, from, to, ContractRegistryService.Changes(before, after), impacts);
+        return new(key, from, to, ContractTestRules.WithDirection(ContractRegistryService.Changes(before, after), before, after), impacts);
     }
 
     private async Task<List<ContractTestDefinition>> ListDefinitionsAsync(string key, CancellationToken ct) =>
