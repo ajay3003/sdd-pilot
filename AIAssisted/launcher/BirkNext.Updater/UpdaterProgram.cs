@@ -81,6 +81,7 @@ public static class UpdaterProgram
         Line("New version", plan.Package.Version.Display);
         Line("Source", plan.TrustDetail);
         Line("Files", $"{plan.Package.FileCount} files, all listed with their SHA-256");
+        Line("Translation", plan.Package.OfflineTranslation is { } translation ? $"offline, {translation}" : "not part of this package");
         if (plan.Blocker is { } blocker)
         {
             Failure(blocker, "Nothing was changed.", store.LogFile);

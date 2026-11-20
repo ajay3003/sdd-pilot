@@ -301,7 +301,10 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui, Shutd
         var needFull = full || verified is null || verified.ManifestSha256 != manifestHash || !PostgresManager.SamePath(verified.PackageRoot, package.Root);
         string Rel(string p) => Path.GetRelativePath(package.Root, p).Replace('\\', '/');
         var critical = new[] { package.BackendExe, Path.Combine(package.Backend, "BirkNext.Api.dll"), package.K6Exe, package.Tool("postgres"), package.Tool("initdb"), package.Tool("pg_ctl"),
-            package.Tool("pg_dump"), package.Tool("pg_restore"), PackageLayout.RuntimeManifestPath(package.Root) }.Select(Rel).ToList();
+            package.Tool("pg_dump"), package.Tool("pg_restore"), PackageLayout.RuntimeManifestPath(package.Root) }
+            .Concat(package.TranslationDirectory is { } translation
+                ? new[] { Path.Combine(translation, "translation-manifest.json"), Path.Combine(translation, "python", "python.exe"), Path.Combine(translation, "model", "model.bin") }
+                : []).Select(Rel).ToList();
         log.Info(needFull
             ? $"Package check: every file ({(verified is null ? "first check of this package folder" : "package or folder changed since the last full check")}) in {package.Root}."
             : "Package check: runtime files (every file was verified for this package and folder before).");
@@ -430,6 +433,7 @@ public sealed class TesterLauncher(LauncherOptions options, IConsoleUi ui, Shutd
         ui.Line($"Package         : {package.BuildVersion()}");
         ui.Line($"PostgreSQL      : bundled {package.Manifest.PostgreSql.Version}");
         ui.Line($"k6              : bundled {package.Manifest.K6.Version}");
+        ui.Line($"Translation     : {(package.Manifest.OfflineTranslation is { } t ? $"offline, {t.Model} ({t.Engine})" : "not part of this package")}");
         ui.Line($"Database        : {state} — {detail}");
         ui.Line($"Database server : {(state == ClusterState.Initialized && postgres.IsRunning() ? "running" : "stopped")}");
         ui.Line($"Data folder     : {data.Root}");

@@ -24,6 +24,18 @@ public sealed record RuntimeManifest
     public BundledPostgres PostgreSql { get; init; } = new();
     public BundledK6 K6 { get; init; } = new();
     public string? DotNetRuntime { get; init; }
+    /// <summary>The embedded offline translator (runtime/translation); null in packages built before it existed (translation is then unavailable).</summary>
+    public BundledTranslation? OfflineTranslation { get; init; }
+
+    public sealed record BundledTranslation
+    {
+        public string Directory { get; init; } = "runtime/translation";
+        public int Protocol { get; init; }
+        public string Model { get; init; } = "";
+        public string ModelRevision { get; init; } = "";
+        public string Engine { get; init; } = "";
+        public string ManifestSha256 { get; init; } = "";
+    }
 
     public sealed record BundledPostgres
     {
@@ -65,6 +77,8 @@ public sealed class PackageLayout(string root, RuntimeManifest manifest)
     public string Wwwroot => Path.Combine(Root, "AIAssisted", "frontend", "wwwroot");
     public string PostgresBin => Path.Combine(Root, Manifest.PostgreSql.Directory.Replace('/', Path.DirectorySeparatorChar), "bin");
     public string K6Exe => Path.Combine(Root, Manifest.K6.Executable.Replace('/', Path.DirectorySeparatorChar));
+    /// <summary>The offline translation folder (null when the package has none).</summary>
+    public string? TranslationDirectory => Manifest.OfflineTranslation is { Directory.Length: > 0 } t ? Path.Combine(Root, t.Directory.Replace('/', Path.DirectorySeparatorChar)) : null;
     public string PackageManifest => Path.Combine(Root, "package-manifest.json");
     public string BuildManifest => Path.Combine(Root, "build-manifest.json");
     public string Tool(string name) => Path.Combine(PostgresBin, name + ".exe");

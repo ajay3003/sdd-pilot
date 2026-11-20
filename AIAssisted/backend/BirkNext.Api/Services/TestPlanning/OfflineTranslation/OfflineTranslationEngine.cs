@@ -175,6 +175,9 @@ public sealed class OfflineTranslationEngine : IAsyncDisposable
                      || k.StartsWith("ManualTesting", StringComparison.OrdinalIgnoreCase) || k.StartsWith("Backup", StringComparison.OrdinalIgnoreCase)).ToList())
             info.Environment.Remove(key);
         info.Environment["OMP_NUM_THREADS"] = threads.ToString();
+        // CTranslate2's own CPU kernels instead of Intel MKL: measured 125 MB private memory instead of ~950 MB (MKL reserves a large pool), for
+        // ~30 % slower translation (0.11 s instead of 0.08 s for three sentences). AVD sessions share memory, so memory wins.
+        info.Environment["CT2_USE_MKL"] = "0";
         Process process;
         try { process = Process.Start(info) ?? throw new InvalidOperationException("no process"); }
         catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)

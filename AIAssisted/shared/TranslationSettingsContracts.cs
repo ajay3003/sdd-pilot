@@ -30,14 +30,16 @@ public static class TranslationGlossary
 {
     public const int MaxEntries = 200;
 
-    /// <summary>Starting terms for English → Norwegian bokmål test text (System Settings → Translation → Advanced, editable). Validated against a
-    /// human-reviewed example set (docs/audits/birknext-embedded-offline-translation-2026-11-20.md).</summary>
+    /// <summary>Starting terms for English → Norwegian bokmål test text (System Settings → Translation → Advanced, editable): only the terms the
+    /// packaged model gets wrong or inconsistent on its own (school attendance → "skolen", reporting obligation → "meldeplikt", correction →
+    /// "korreksjon", withdrawal → "uttak", educational relationship → sometimes "pedagogisk forhold"). Terms it already translates correctly
+    /// (fosterhjem, periodelåsen, kode 6/7, forventet rapportering) are left to the model, which then also inflects them correctly. Norwegian terms written in English text are kept as they are. Measured in
+    /// docs/audits/birknext-embedded-offline-translation-2026-11-20.md.</summary>
     public static readonly IReadOnlyList<TranslationGlossaryEntry> DefaultEnNb =
     [
-        new("school attendance", "skolenærvær"), new("educational relationship", "utdanningsforhold"), new("education relationship", "utdanningsforhold"),
-        new("period lock", "periodelås"), new("reporting obligation", "rapporteringsplikt"), new("obligation to report", "rapporteringsplikt"),
-        new("expected reporting", "forventet rapportering"), new("correction", "korrigering"), new("withdrawal", "tilbaketrekking"),
-        new("foster home", "fosterhjem"), new("code 6/7", "kode 6/7"),
+        new("school attendance", "skolenærvær"), new("reporting obligation", "rapporteringsplikt"), new("obligation to report", "rapporteringsplikt"),
+        new("correction", "korrigering"), new("withdrawal", "tilbaketrekking"),
+        new("educational relationship", "utdanningsforhold"), new("education relationship", "utdanningsforhold"),
         new("Skolenærvær", "Skolenærvær"), new("Utdanningsforhold", "Utdanningsforhold"), new("Periodelås", "Periodelås"), new("Rapporteringsplikt", "Rapporteringsplikt"),
         new("Fosterhjem", "Fosterhjem"), new("Korrigering", "Korrigering"), new("Tilbaketrekking", "Tilbaketrekking"), new("Kode 6/7", "Kode 6/7"),
     ];

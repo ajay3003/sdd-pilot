@@ -76,8 +76,10 @@ public sealed partial class EmbeddedOfflineTestCaseTranslator(OfflineTranslation
             var pattern = $@"(?<![\p{{L}}\p{{N}}<]){Regex.Escape(entry.Source.Trim())}(?![\p{{L}}\p{{N}}>])";
             masked = Regex.Replace(masked, pattern, m =>
             {
-                values.Add(entry.Target.Trim());
-                capitalize.Add(char.IsUpper(m.Value[0]));
+                // A term kept as it is (Source = Target) keeps the text exactly as written, including its case.
+                var keep = string.Equals(entry.Source.Trim(), entry.Target.Trim(), StringComparison.OrdinalIgnoreCase);
+                values.Add(keep ? m.Value : entry.Target.Trim());
+                capitalize.Add(!keep && char.IsUpper(m.Value[0]));
                 return $"<x{values.Count - 1}>";
             }, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
         }

@@ -48,7 +48,7 @@ public sealed class EmbeddedOfflineTranslationTests
         var m = T.Mask("Withdrawal of a report. Corrections are not withdrawals.", TranslationGlossary.DefaultEnNb);
         m.Text.Should().StartWith("<x0> of a report.").And.Contain("Corrections").And.Contain("withdrawals", "only whole words are glossary terms");
         T.Unmask("<x0> av en rapport.", m).Should().Be("Tilbaketrekking av en rapport.");
-        T.Mask("code 6/7 and Kode 6/7", TranslationGlossary.DefaultEnNb).Values.Should().Equal("kode 6/7", "Kode 6/7");
+        T.Mask("correction, Korrigering and korrigering", TranslationGlossary.DefaultEnNb).Values.Should().Equal(new[] { "Korrigering", "korrigering", "korrigering" }, "a kept term keeps its own case");
     }
 
     [Theory]
@@ -161,8 +161,42 @@ public sealed class EmbeddedOfflineTranslationTests
 /// The real packaged model (opt-in: BIRKNEXT_OFFLINE_TRANSLATION_DIR = a folder built by scripts/build-offline-translation.ps1, its "translation"
 /// subfolder). Starts the helper, translates M2LB-style test text and checks identifiers, glossary terms and that the helper stops with the engine.
 /// </summary>
-public sealed class RealModelTests
+public sealed class RealModelTests(Xunit.Abstractions.ITestOutputHelper output)
 {
+    /// <summary>M2LB terminology (the nine terms of the 2026-11-20 brief): English test text, and the Norwegian term a reviewer expects in it.</summary>
+    public static readonly (string English, string ExpectedTerm, string Reference)[] Terminology =
+    [
+        ("The child lives in a foster home.", "fosterhjem", "Barnet bor i et fosterhjem."),
+        ("The school reports school attendance every month.", "skolenærvær", "Skolen rapporterer skolenærvær hver måned."),
+        ("Register the child's educational relationship with the school.", "utdanningsforhold", "Registrer barnets utdanningsforhold til skolen."),
+        ("Check that the period lock prevents new reports.", "periodelås", "Kontroller at periodelåsen hindrer nye rapporter."),
+        ("The municipality has a reporting obligation for the child.", "rapporteringsplikt", "Kommunen har rapporteringsplikt for barnet."),
+        ("The child is not part of expected reporting.", "forventet rapportering", "Barnet er ikke med i forventet rapportering."),
+        ("Children with code 6/7 must not be shown.", "kode 6/7", "Barn med kode 6/7 skal ikke vises."),
+        ("A correction replaces the previous report.", "korrigering", "En korrigering erstatter forrige rapport."),
+        ("A withdrawal removes the report from the statistics.", "tilbaketrekking", "En tilbaketrekking fjerner rapporten fra statistikken."),
+    ];
+
+    [Fact]
+    public async Task M2LB_terminology_uses_the_reviewed_Norwegian_terms()
+    {
+        if (Dir is not { } dir) return;
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { [OfflineTranslationBundle.DirectoryKey] = dir }).Build();
+        await using var engine = new OfflineTranslationEngine(config, NullLogger<OfflineTranslationEngine>.Instance);
+        var translator = new EmbeddedOfflineTestCaseTranslator(engine, TranslationGlossary.DefaultEnNb);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var result = await translator.TranslateAsync([.. Terminology.Select(t => (string?)t.English)], "en", "nb", default);
+        output.WriteLine($"{Terminology.Length} texts in {watch.Elapsed.TotalSeconds:0.00} s (including start)");
+        for (var i = 0; i < Terminology.Length; i++)
+        {
+            output.WriteLine($"| {Terminology[i].English} | {result.Texts[i]} | {Terminology[i].Reference} |");
+            result.Texts[i]!.Should().ContainEquivalentOf(Terminology[i].ExpectedTerm);
+        }
+        // Without the glossary the same model misses most of these terms: the glossary is what makes the terminology reliable.
+        var plain = await new EmbeddedOfflineTestCaseTranslator(engine, []).TranslateAsync([.. Terminology.Select(t => (string?)t.English)], "en", "nb", default);
+        for (var i = 0; i < Terminology.Length; i++) output.WriteLine($"no glossary | {plain.Texts[i]}");
+    }
+
     private static string? Dir => Environment.GetEnvironmentVariable("BIRKNEXT_OFFLINE_TRANSLATION_DIR") is { Length: > 0 } d && Directory.Exists(d) ? d : null;
 
     [Fact]

@@ -17,11 +17,15 @@ import os
 import re
 import sys
 
+# CTranslate2's own CPU kernels instead of Intel MKL: ~125 MB private memory instead of ~950 MB (see OfflineTranslationEngine). Set before import.
+os.environ.setdefault("CT2_USE_MKL", "0")
+
 PROTOCOL = 1
 MAX_TEXTS = 200
 MAX_CHARS = 20000
 SAMPLE = "Open the page, fill in all required fields and select Save."
 
+_END = re.compile(r"[.!?:;…]['\")\]]?$")
 _SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"'(<])")
 _MARKER = re.compile(r"^(\s*(?:[-*•]|\d{1,3}[.)])\s+)")
 
@@ -85,9 +89,14 @@ def main():
             batch.extend(pieces)
         out = []
         if batch:
-            results = translator.translate_batch([sp.encode(s, out_type=str) for s in batch], beam_size=beam, max_input_length=512,
+            # A title or fragment without closing punctuation is translated as a sentence (the model reads a bare "Duplicate message" as a
+            # headline and guesses: "Uformell melding"; "Duplicate message." gives "Duplisert melding."); the added full stop is removed again.
+            added = [not _END.search(s.strip()) for s in batch]
+            source = [s.strip() + "." if a else s for s, a in zip(batch, added)]
+            results = translator.translate_batch([sp.encode(s, out_type=str) for s in source], beam_size=beam, max_input_length=512,
                                                  max_decoding_length=512, max_batch_size=16)
             out = [sp.decode(r.hypotheses[0]) for r in results]
+            out = [o.rstrip()[:-1].rstrip() if a and o.rstrip().endswith(".") else o for o, a in zip(out, added)]
         return [_rebuild(layout, out[start:start + count]) for layout, start, count in layouts]
 
     for line in sys.stdin:

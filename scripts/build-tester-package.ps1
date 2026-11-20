@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
 Build the BirkNext Windows Tester Package (TesterNative runtime profile): self-contained backend and launcher, the frontend, the pinned native
-PostgreSQL and k6, licenses, runtime/build/package manifests, and the versioned archive BirkNext-Tester-Windows-x64-<build version>.zip.
+PostgreSQL and k6, the embedded offline translator (runtime/translation, built by build-offline-translation.ps1 from pinned inputs), licenses,
+runtime/build/package manifests, and the versioned archive BirkNext-Tester-Windows-x64-<build version>.zip.
 
 .DESCRIPTION
 Inputs are pinned in AIAssisted/versioning/native-runtime.lock.json. Runtime archives are taken from -DownloadCache and verified against their
@@ -148,6 +149,16 @@ try {
     [IO.File]::WriteAllText((Join-Path $stage 'licenses/k6-SOURCE.txt'),
         "k6 $($lock.k6.version) is distributed unmodified under the GNU Affero General Public License v3 (licenses/k6-LICENSE.md).`r`nCorresponding source: $($lock.k6.license.sourceOffer)`r`nBinary: $($lock.k6.url)`r`n")
 
+    Step "Embedded offline translation ($($lock.offlineTranslation.model.id))"
+    $translationArgs = @{ OutDir = (Join-Path $OutDir 'offline-translation'); DownloadCache = $DownloadCache }
+    if ($AllowDownload) { $translationArgs.AllowDownload = $true }
+    & (Join-Path $PSScriptRoot 'build-offline-translation.ps1') @translationArgs
+    if ($LASTEXITCODE -ne 0) { throw 'The offline translation bundle could not be built (see above); a package without it is not produced' }
+    $translationDir = Join-Path $stage ($lock.offlineTranslation.directory -replace '/', '\')
+    New-Item -ItemType Directory -Force -Path (Split-Path $translationDir) | Out-Null
+    Move-Item -LiteralPath (Join-Path $OutDir 'offline-translation/translation') -Destination $translationDir
+    $translationManifest = Get-Content (Join-Path $translationDir 'translation-manifest.json') -Raw | ConvertFrom-Json
+
     Step 'Runtime manifest'
     $runtimeConfig = Get-Content (Join-Path $stage 'AIAssisted/backend/BirkNext.Api.runtimeconfig.json') -Raw | ConvertFrom-Json
     $dotnet = @($runtimeConfig.runtimeOptions.includedFrameworks | Where-Object { $_.name -eq 'Microsoft.NETCore.App' } | ForEach-Object { $_.version })[0]
@@ -160,6 +171,12 @@ try {
         defaultRuntimeProfile = 'TesterNative'
         postgreSql = [ordered]@{ version = $lock.postgresql.version; major = $lock.postgresql.major; directory = 'runtime/postgresql'; sourceSha256 = $lock.postgresql.sha256 }
         k6 = [ordered]@{ version = $lock.k6.version; executable = 'runtime/k6/k6.exe'; sha256 = (Sha256 (Join-Path $stage 'runtime/k6/k6.exe')); sourceSha256 = $lock.k6.sha256; extensions = @() }
+        offlineTranslation = [ordered]@{
+            directory = $lock.offlineTranslation.directory; protocol = $translationManifest.protocol
+            model = $translationManifest.model.id; modelRevision = $translationManifest.model.revision; license = $translationManifest.model.license
+            engine = "$($translationManifest.engine.name) $($translationManifest.engine.version)"; languages = "$($translationManifest.model.source)->$($translationManifest.model.target)"
+            manifestSha256 = (Sha256 (Join-Path $translationDir 'translation-manifest.json'))
+        }
         dotNetRuntime = $dotnet
         targetOs = 'Windows 10 1809+ / Windows 11'
         architecture = 'x64'
@@ -177,6 +194,9 @@ PostgreSQL $($lock.postgresql.version) (EnterpriseDB Windows x64 binaries)      
   libcurl (curl). Their license texts are not part of the upstream archive (see docs/deployment/birknext-windows-package-sbom.md).
 k6 $($lock.k6.version) (Grafana Labs)                                             AGPL-3.0-only            licenses/k6-LICENSE.md, licenses/k6-SOURCE.txt
 .NET $dotnet runtime (self-contained in AIAssisted/backend and Start-BirkNext.exe)  MIT                      https://github.com/dotnet/runtime/blob/main/LICENSE.TXT
+Offline translation (runtime/translation): model $($translationManifest.model.id) ($($translationManifest.model.license), attribution in
+  runtime/translation/licenses/NOTICE.txt), CTranslate2 $($translationManifest.engine.version) (MIT), SentencePiece (Apache-2.0), Python $($translationManifest.engine.python)
+  embeddable (PSF-2.0)                                                            runtime/translation/licenses/
 "@
     [IO.File]::WriteAllText((Join-Path $stage 'licenses/THIRD-PARTY-NOTICES.txt'), $notices, (New-Object Text.UTF8Encoding($false)))
     New-Item -ItemType Directory -Force -Path (Join-Path $stage 'docs') | Out-Null
@@ -204,6 +224,10 @@ k6 $($lock.k6.version) (Grafana Labs)                                           
         '  1. Download the new BirkNext artifact from the Azure DevOps pipeline in your browser (keep the ZIP; do not extract it).',
         '  2. Run Update-BirkNext.exe (or Start menu > BirkNext > BirkNext Updater after the first update) and select the downloaded ZIP.',
         '  3. Check the versions shown and choose Upgrade. BirkNext is stopped, upgraded and started again; your data is kept.',
+        '',
+        'TRANSLATION',
+        '  English test cases can be translated to Norwegian (bokmal) on this PC, offline: nothing to install, no internet, no account.',
+        '  System Settings > Translation shows "Offline translation - Ready" once the packaged model has translated a test sentence.',
         '',
         'YOUR DATA',
         '  %LOCALAPPDATA%\BirkNext\TesterNative (outside this folder). A newer package uses the same data;',

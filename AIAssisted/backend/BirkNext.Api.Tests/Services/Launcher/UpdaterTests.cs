@@ -29,7 +29,8 @@ public sealed class UpdaterTests : IDisposable
 
     private sealed record Pkg(string BuildVersion = "1.0.0-ci.1002", string App = "1.0.0", string Channel = "CI", string? RunId = "1002", string[]? Migrations = null,
         int? UpdateContract = 1, string Product = "BirkNext", string Architecture = "x64", string Prefix = "BirkNext-Tester/", bool OmitUpdater = false,
-        Action<Dictionary<string, byte[]>>? Tamper = null, Action<ZipArchive>? Extra = null, bool ListEverything = true);
+        Action<Dictionary<string, byte[]>>? Tamper = null, Action<ZipArchive>? Extra = null, bool ListEverything = true,
+        int? TranslationProtocol = null, bool TranslationWithoutModel = false);
 
     private static readonly string[] BaseMigrations = ["20261101_Initial", "20261110_Sources"];
 
@@ -48,9 +49,19 @@ public sealed class UpdaterTests : IDisposable
                 distribution = new { kind = "WindowsTesterPackage", runtimeProfile = "TesterNative", architecture = p.Architecture },
             }),
             ["config/runtime-manifest.json"] = p.UpdateContract is { } c
-                ? JsonSerializer.SerializeToUtf8Bytes(new { format = 1, updateContract = c, distribution = "WindowsTesterPackage" })
+                ? p.TranslationProtocol is { } protocol
+                    ? JsonSerializer.SerializeToUtf8Bytes(new { format = 1, updateContract = c, distribution = "WindowsTesterPackage",
+                        offlineTranslation = new { directory = "runtime/translation", protocol, model = "HPLT/translate-en-nb-v2.0-hplt", engine = "CTranslate2 4.9.0" } })
+                    : JsonSerializer.SerializeToUtf8Bytes(new { format = 1, updateContract = c, distribution = "WindowsTesterPackage" })
                 : JsonSerializer.SerializeToUtf8Bytes(new { format = 1, distribution = "WindowsTesterPackage" }),
         };
+        if (p.TranslationProtocol is not null)
+        {
+            files["runtime/translation/translation-manifest.json"] = "{}"u8.ToArray();
+            files["runtime/translation/python/python.exe"] = "python"u8.ToArray();
+            files["runtime/translation/helper/birknext_translate.py"] = "print()"u8.ToArray();
+            if (!p.TranslationWithoutModel) files["runtime/translation/model/model.bin"] = "weights"u8.ToArray();
+        }
         if (!p.OmitUpdater) files["Update-BirkNext.exe"] = Encoding.UTF8.GetBytes("updater " + p.BuildVersion);
         var listed = files.Where(f => p.ListEverything || f.Key != "docs/readme.txt")
             .Select(f => new { path = f.Key, sha256 = Convert.ToHexString(SHA256.HashData(f.Value)).ToLowerInvariant() }).ToList();
@@ -217,6 +228,18 @@ public sealed class UpdaterTests : IDisposable
         }
         var act = () => PackageInspector.Inspect(zip);
         act.Should().Throw<PackageRejectedException>().Which.Message.Should().Contain(reason);
+    }
+
+    [Fact]
+    public void The_offline_translator_is_checked_as_part_of_the_package_and_named_in_the_plan()
+    {
+        PackageInspector.Inspect(Build(new Pkg(TranslationProtocol: 1))).OfflineTranslation.Should().Be("HPLT/translate-en-nb-v2.0-hplt (CTranslate2 4.9.0, protocol 1)");
+        PackageInspector.Inspect(Build(new Pkg())).OfflineTranslation.Should().BeNull("an older package without it still installs");
+        var missing = () => PackageInspector.Inspect(Build(new Pkg(TranslationProtocol: 1, TranslationWithoutModel: true)));
+        missing.Should().Throw<PackageRejectedException>().Which.Message.Should().Contain("offline translator is missing files");
+        var malformed = () => PackageInspector.Inspect(Build(new Pkg(TranslationProtocol: 0)));
+        malformed.Should().Throw<PackageRejectedException>().Which.Message.Should().Contain("offline translation entry is damaged");
+        PackageInspector.Inspect(Build(new Pkg(TranslationProtocol: 2))).OfflineTranslation.Should().Contain("newer than this updater knows");
     }
 
     [Fact]

@@ -44,6 +44,8 @@ internal sealed class BackendProcess(PackageLayout package, DataLayout data, Lau
         // Backup & Transfer: pg_dump/pg_restore are the package's own bundled tools (same build as the managed server), never the global PATH.
         ["Backup__PostgresTools__Mode"] = "Host",
         ["Backup__PostgresTools__BinDirectory"] = package.PostgresBin,
+        // The embedded offline translator: the package's own runtime/translation (empty = not part of this package, reported as unavailable).
+        ["ManualTesting__Translation__Offline__Directory"] = package.TranslationDirectory ?? "",
         ["BIRKNEXT_APP_DATA_DIR"] = data.AppData,
         ["LoggingSettings__LogPath"] = Path.Combine(data.Logs, "backend"),
         ["GitSources__SettingsDirectory"] = Path.Combine(data.AppData, "git-sources"),
@@ -61,6 +63,7 @@ internal sealed class BackendProcess(PackageLayout package, DataLayout data, Lau
         foreach (var key in info.Environment.Keys.Where(k => k.StartsWith("ConnectionStrings__", StringComparison.OrdinalIgnoreCase) || k.StartsWith("BirkNext__", StringComparison.OrdinalIgnoreCase)
                      || k.StartsWith("PerformanceTests__", StringComparison.OrdinalIgnoreCase) || k.StartsWith("ASPNETCORE_", StringComparison.OrdinalIgnoreCase)
                      || k.StartsWith("Backup__", StringComparison.OrdinalIgnoreCase) || k.StartsWith("Authorization__", StringComparison.OrdinalIgnoreCase)
+                     || k.StartsWith("ManualTesting__", StringComparison.OrdinalIgnoreCase)
                      || k.StartsWith("FRONTEND_ORIGIN", StringComparison.OrdinalIgnoreCase)).ToList())
             info.Environment.Remove(key);
         foreach (var (k, v) in Environment(package, data, ports, credentials)) info.Environment[k] = v;

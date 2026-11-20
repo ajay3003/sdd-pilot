@@ -13,7 +13,7 @@ public sealed class PackageRejectedException(string message, string? detail = nu
 /// <summary>What the updater learned from a ZIP before anything was changed.</summary>
 public sealed record PackageInfo(
     string ZipPath, string Prefix, PackageVersion Version, int UpdateContract, IReadOnlyList<string> Migrations, int FileCount, long UncompressedBytes,
-    IReadOnlyDictionary<string, string> FileHashes);
+    IReadOnlyDictionary<string, string> FileHashes, string? OfflineTranslation = null);
 
 /// <summary>
 /// Reads a BirkNext Windows tester ZIP without extracting it, then extracts it into a staging folder while checking every file. A ZIP is untrusted
@@ -24,6 +24,9 @@ public sealed record PackageInfo(
 public static class PackageInspector
 {
     public const int SupportedUpdateContract = 1;
+    /// <summary>The offline translation protocol this updater knows (runtime-manifest offlineTranslation.protocol). A package with a newer one
+    /// carries its own matching backend, so it stays installable; the check guards a malformed entry and says when the protocol is newer.</summary>
+    public const int MaxKnownTranslationProtocol = 1;
     public const int MaxEntries = 20_000;
     public const long MaxUncompressedBytes = 4L * 1024 * 1024 * 1024;
     private const long MaxManifestBytes = 64L * 1024 * 1024;
@@ -140,9 +143,24 @@ public static class PackageInspector
             if (notListed.Count > 0) throw new PackageRejectedException("The archive contains files that are not part of this BirkNext package.", string.Join(", ", notListed.Take(5)));
             if (absent.Count > 0) throw new PackageRejectedException($"This BirkNext package is incomplete: {absent.Count} file(s) missing.", string.Join(", ", absent.Take(5)));
 
+            // The embedded offline translator, when the package declares it: its manifest, runtime and model must be part of the package (their
+            // hashes are checked with every other file) and the entry must be well formed. Packages without it install as before.
+            string? translation = null;
+            if (runtime.TryGetProperty("offlineTranslation", out var t) && t.ValueKind == JsonValueKind.Object)
+            {
+                var dir = Str(t, "directory");
+                var protocol = t.TryGetProperty("protocol", out var pr) && pr.TryGetInt32(out var pn) ? pn : 0;
+                if (dir is not { Length: > 0 } || Problem(dir.TrimEnd('/') + "/translation-manifest.json") is not null || protocol < 1)
+                    throw new PackageRejectedException("The package's offline translation entry is damaged.", "runtime-manifest offlineTranslation");
+                foreach (var required in new[] { "translation-manifest.json", "python/python.exe", "model/model.bin", "helper/birknext_translate.py" })
+                    if (!expected.ContainsKey($"{dir.TrimEnd('/')}/{required}"))
+                        throw new PackageRejectedException("This BirkNext package is incomplete: the offline translator is missing files.", $"{dir}/{required}");
+                translation = $"{Str(t, "model")} ({Str(t, "engine")}, protocol {protocol}{(protocol > MaxKnownTranslationProtocol ? ", newer than this updater knows" : "")})";
+            }
+
             var migrations = package.TryGetProperty("migrations", out var m) && m.ValueKind == JsonValueKind.Array
                 ? m.EnumerateArray().Select(x => Str(x, "id")).Where(x => x is not null).Cast<string>().ToList() : [];
-            return new(Path.GetFullPath(zipPath), prefix, version, contract, migrations, expected.Count, total, expected);
+            return new(Path.GetFullPath(zipPath), prefix, version, contract, migrations, expected.Count, total, expected, translation);
         }
     }
 
