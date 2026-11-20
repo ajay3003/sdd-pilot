@@ -182,7 +182,10 @@ try {
     # ── 4. Tests ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
     Write-Step 'Building the workflow tests'
     Push-Location (Join-Path $ai 'frontend')
-    dotnet build BirkNext.Web.PlaywrightTests -v:q -nologo *> (Join-Path $logs 'build-tests.log')
+    # Own build output (artifacts path), never the working tree's bin/obj: a developer's running BirkNext.Api.exe (5000) locks
+    # the API projects bin\Debug folder, and the test project references the API project.
+    $testArtifacts = Join-Path $OutDir 'test-build'
+    dotnet build BirkNext.Web.PlaywrightTests --artifacts-path $testArtifacts -v:q -nologo *> (Join-Path $logs 'build-tests.log')
     if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Test build failed: see $logs\build-tests.log" }
 
     $env:BIRKNEXT_PLAYWRIGHT_FRONTEND_URL = $webUrl
@@ -221,7 +224,7 @@ try {
         # Windows PowerShell turns a native tool's stderr into error records; a failing test must be reported, never stop the script.
         $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
         $log = Join-Path $logs "tests-$($run.Name).log"
-        & cmd.exe /c "dotnet test BirkNext.Web.PlaywrightTests --no-build --filter `"$($run.Filter)`" --logger `"trx;LogFileName=$trx`" --results-directory `"$results`" > `"$log`" 2>&1"
+        & cmd.exe /c "dotnet test BirkNext.Web.PlaywrightTests --no-build --artifacts-path `"$testArtifacts`" --filter `"$($run.Filter)`" --logger `"trx;LogFileName=$trx`" --results-directory `"$results`" > `"$log`" 2>&1"
         $code = $LASTEXITCODE
         $ErrorActionPreference = $previous
         Select-String -Path $log -Pattern 'Passed!|Failed!|^\s+Failed |^\s+Skipped ' | ForEach-Object { Write-Host $_.Line }
