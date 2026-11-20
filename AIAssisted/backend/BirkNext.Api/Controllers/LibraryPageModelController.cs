@@ -8,7 +8,7 @@ namespace BirkNext.Api.Controllers;
 /// Each library page receives a consistent LibraryPageModel with readiness status and items.
 /// </summary>
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/library-page-model")] // the route the Web client calls (the class name would give api/LibraryPageModel)
 public class LibraryPageModelController : ControllerBase
 {
     private readonly ILibraryPageModelService _modelService;

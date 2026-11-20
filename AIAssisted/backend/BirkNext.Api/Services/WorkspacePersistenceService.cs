@@ -93,11 +93,11 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 
     public async Task<SavedWorkspace> SaveAsAsync(string name, List<WorkspaceArtifactDto>? artifacts = null, string? sddLifecycleJson = null)
     {
-        _logger.LogInformation($"DIAG: [SaveAs] ENTERED with name={name}, artifactCount={artifacts?.Count ?? 0}");
+        _logger.LogDebug($"[SaveAs] ENTERED with name={name}, artifactCount={artifacts?.Count ?? 0}");
 
         if (artifacts != null && artifacts.Count > 0)
         {
-            _logger.LogInformation($"DIAG: [SaveAs] Artifacts received:");
+            _logger.LogDebug($"[SaveAs] Artifacts received:");
             foreach (var art in artifacts)
             {
                 _logger.LogInformation($"      - {art.ArtifactType}: {art.Content?.Length ?? 0} bytes, fileName={art.FileName}");
@@ -129,12 +129,12 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             UpdatedAt = DateTimeOffset.UtcNow,
             AutoSaved = false
         };
-        _logger.LogInformation($"DIAG: [SaveAs] Created SavedWorkspace entity Id={workspace.Id}");
+        _logger.LogDebug($"[SaveAs] Created SavedWorkspace entity Id={workspace.Id}");
 
         // Copy artifacts from request (frontend already has them from WorkspaceArtifactRepository)
         if (artifacts != null && artifacts.Any())
         {
-            _logger.LogInformation($"DIAG: [SaveAs] Processing {artifacts.Count} artifacts");
+            _logger.LogDebug($"[SaveAs] Processing {artifacts.Count} artifacts");
             int addedCount = 0;
             foreach (var artifact in artifacts)
             {
@@ -156,18 +156,18 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
                     };
                     workspace.Artifacts.Add(saved);
                     addedCount++;
-                    _logger.LogInformation($"DIAG: [SaveAs] Added artifact {artifact.ArtifactType} ({artifact.Content.Length} bytes)");
+                    _logger.LogDebug($"[SaveAs] Added artifact {artifact.ArtifactType} ({artifact.Content.Length} bytes)");
                 }
                 else
                 {
-                    _logger.LogWarning($"DIAG: [SaveAs] Skipped artifact {artifact.ArtifactType} - empty content");
+                    _logger.LogDebug($"[SaveAs] Skipped artifact {artifact.ArtifactType} - empty content");
                 }
             }
-            _logger.LogInformation($"DIAG: [SaveAs] Total artifacts added: {addedCount}, Total in entity: {workspace.Artifacts.Count}");
+            _logger.LogDebug($"[SaveAs] Total artifacts added: {addedCount}, Total in entity: {workspace.Artifacts.Count}");
         }
         else
         {
-            _logger.LogInformation($"DIAG: [SaveAs] No artifacts provided");
+            _logger.LogDebug($"[SaveAs] No artifacts provided");
         }
 
         workspace.ArtifactSetHash = await ComputeArtifactSetHashAsync(workspace.Id);
@@ -175,9 +175,9 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         _db.SavedWorkspaces.Add(workspace);
         await MarkCurrentWorkspaceAsync(workspace);
         await _db.SaveChangesAsync();
-        _logger.LogInformation($"DIAG: [SaveAs] SaveChangesAsync completed, saved to DB");
+        _logger.LogDebug($"[SaveAs] SaveChangesAsync completed, saved to DB");
 
-        _logger.LogInformation($"DIAG: [SaveAs] RETURNING WorkspaceId={workspace.Id}, name={workspace.Name}, artifacts={workspace.Artifacts.Count}");
+        _logger.LogDebug($"[SaveAs] RETURNING WorkspaceId={workspace.Id}, name={workspace.Name}, artifacts={workspace.Artifacts.Count}");
         return workspace;
     }
 
@@ -208,17 +208,17 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 
     public async Task<List<SavedWorkspace>> ListAsync(string userId)
     {
-        _logger.LogInformation($"DIAG: [List] ENTERED for userId={userId}");
+        _logger.LogDebug($"[List] ENTERED for userId={userId}");
         var workspaces = await _db.SavedWorkspaces
             .Include(w => w.Artifacts)
             .Where(w => w.UserId == userId && !w.IsDeleted)
             .OrderByDescending(w => w.UpdatedAt)
             .ToListAsync();
 
-        _logger.LogInformation($"DIAG: [List] Found {workspaces.Count} workspaces");
+        _logger.LogDebug($"[List] Found {workspaces.Count} workspaces");
         foreach (var ws in workspaces)
         {
-            _logger.LogInformation($"DIAG: [List]   - Id={ws.Id}, name={ws.Name}, artifacts={ws.Artifacts.Count}, autoSaved={ws.AutoSaved}");
+            _logger.LogDebug($"[List]   - Id={ws.Id}, name={ws.Name}, artifacts={ws.Artifacts.Count}, autoSaved={ws.AutoSaved}");
         }
         return workspaces;
     }
@@ -341,15 +341,15 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 
     public async Task<SavedWorkspace> AutoSaveAsync(string? generatedName = null, string? projectName = null, List<WorkspaceArtifactDto>? artifacts = null, string? sddLifecycleJson = null)
     {
-        _logger.LogInformation($"DIAG: [AutoSaveAsync] ENTERED");
-        _logger.LogInformation($"DIAG: [AutoSaveAsync]   generatedName={generatedName}");
-        _logger.LogInformation($"DIAG: [AutoSaveAsync]   projectName={projectName}");
-        _logger.LogInformation($"DIAG: [AutoSaveAsync]   artifactCount={artifacts?.Count ?? 0}");
-        _logger.LogInformation($"DIAG: [AutoSaveAsync]   currentWorkspaceId={_currentWorkspaceId}");
+        _logger.LogDebug($"[AutoSaveAsync] ENTERED");
+        _logger.LogDebug($"[AutoSaveAsync]   generatedName={generatedName}");
+        _logger.LogDebug($"[AutoSaveAsync]   projectName={projectName}");
+        _logger.LogDebug($"[AutoSaveAsync]   artifactCount={artifacts?.Count ?? 0}");
+        _logger.LogDebug($"[AutoSaveAsync]   currentWorkspaceId={_currentWorkspaceId}");
 
         if (artifacts != null && artifacts.Count > 0)
         {
-            _logger.LogInformation($"DIAG: [AutoSaveAsync] Artifacts provided:");
+            _logger.LogDebug($"[AutoSaveAsync] Artifacts provided:");
             foreach (var art in artifacts)
             {
                 _logger.LogInformation($"      - {art.ArtifactType}: {art.Content?.Length ?? 0} bytes, fileName={art.FileName}");
@@ -375,7 +375,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             _db.SavedWorkspaces.Update(workspace);
             await _db.SaveChangesAsync();
             _logger.LogInformation($"TRACE: AutoSaveAsync created new workspace {workspace.Id} with {workspace.Artifacts.Count} artifacts");
-            _logger.LogInformation($"DIAG: [AutoSaveAsync] Returned workspace with {workspace.Artifacts.Count} artifacts");
+            _logger.LogDebug($"[AutoSaveAsync] Returned workspace with {workspace.Artifacts.Count} artifacts");
             return workspace;
         }
 
@@ -595,13 +595,13 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 
     public async Task<WorkspaceStateDto> GetCurrentStateAsync()
     {
-        _logger.LogInformation($"DIAG: [GetCurrentState] ENTERED, _currentWorkspaceId={_currentWorkspaceId}");
+        _logger.LogDebug($"[GetCurrentState] ENTERED, _currentWorkspaceId={_currentWorkspaceId}");
         if (!_currentWorkspaceId.HasValue)
             _currentWorkspaceId = await ResolvePersistedCurrentWorkspaceIdAsync();
 
         if (!_currentWorkspaceId.HasValue)
         {
-            _logger.LogInformation("DIAG: [GetCurrentState] No current workspace ID, returning NotSaved");
+            _logger.LogDebug("[GetCurrentState] No current workspace ID, returning NotSaved");
             return new WorkspaceStateDto
             {
                 CurrentWorkspaceId = null,
@@ -617,7 +617,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 
         if (workspace == null)
         {
-            _logger.LogInformation($"DIAG: [GetCurrentState] Workspace {_currentWorkspaceId} not found in DB, returning NotSaved");
+            _logger.LogDebug($"[GetCurrentState] Workspace {_currentWorkspaceId} not found in DB, returning NotSaved");
             _currentWorkspaceId = null;
             return new WorkspaceStateDto
             {
@@ -628,13 +628,13 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             };
         }
 
-        _logger.LogInformation($"DIAG: [GetCurrentState] Found workspace {workspace.Id}, name={workspace.Name}, artifacts={workspace.Artifacts.Count}, autoSaved={workspace.AutoSaved}");
+        _logger.LogDebug($"[GetCurrentState] Found workspace {workspace.Id}, name={workspace.Name}, artifacts={workspace.Artifacts.Count}, autoSaved={workspace.AutoSaved}");
         var isDirty = await HasUnsavedChangesAsync();
         var status = workspace.AutoSaved ? WorkspaceStatus.AutoSaved :
                      isDirty ? WorkspaceStatus.UnsavedChanges :
                      WorkspaceStatus.Saved;
 
-        _logger.LogInformation($"DIAG: [GetCurrentState] RETURNING status={status}, artifactCount={workspace.Artifacts.Count}, isDirty={isDirty}");
+        _logger.LogDebug($"[GetCurrentState] RETURNING status={status}, artifactCount={workspace.Artifacts.Count}, isDirty={isDirty}");
         return new WorkspaceStateDto
         {
             CurrentWorkspaceId = workspace.Id,
@@ -876,12 +876,6 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
 
         workspace.IsCurrent = true;
         _currentWorkspaceId = workspace.Id;
-    }
-
-    private async Task<List<WorkspaceArtifactDto>> GetCurrentArtifactsFromSessionAsync()
-    {
-        // TODO: Get from WorkspaceSession service
-        return await Task.FromResult(new List<WorkspaceArtifactDto>());
     }
 
     private SavedWorkspaceDto MapWorkspaceToDto(SavedWorkspace workspace)

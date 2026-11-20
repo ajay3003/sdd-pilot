@@ -2,15 +2,17 @@
 @using BirkNext.Web.Components
 @using BirkNext.Web.Models.Analysis
 @using BirkNext.Web.Services
+@implements IDisposable
 
 @inject IAnalysisPageModelService AnalysisPageModelService
 @inject IWorkspaceSessionService Workspace
+@inject ISddEvidenceApiService SddEvidenceApi
 
 <PageTitle>Code Traceability</PageTitle>
 
 <div class="code-trace-page">
     <PageHeader ShowProjectSelector="true" Title="Code Traceability"
-                Description='Register source-code files and link them to requirements and tests. Answer "if this file changes, what must I retest?" and "which files implement this requirement?"' />
+                Description='Source-code files linked to requirements and tests. Answer "if this file changes, what must I retest?" and "which files implement this requirement?"' />
 
     <!-- ── Readiness Panel ────────────────────────────────────────── -->
     @if (PageModel is not null)
@@ -26,14 +28,58 @@
         <div class="notification notification-error" role="alert">@LoadError</div>
     }
 
-    <!-- ── Analysis Content (only if ready) ────────────────────────── -->
+    <!-- ── Code links (read-only): the persisted CodeLinks of this project ── -->
     @if (PageModel?.Summary.CanRun == true)
     {
-        <div class="code-trace-content">
-            @* Placeholder for existing Code Traceability UI *@
-            @* To be filled with existing code registry, file list, master-detail, etc. *@
-            <p class="placeholder-text">Detailed Code Traceability will be displayed here.</p>
-        </div>
+        <section class="code-trace-content" data-testid="ct-links" aria-labelledby="ct-title">
+            <h2 id="ct-title" class="ct-title">Saved code links</h2>
+            @if (Project is null)
+            {
+                <p class="ct-muted" data-testid="ct-no-project">Select or import a project first: code links are stored per project.</p>
+            }
+            else if (_linksLoading)
+            {
+                <InlineLoading Text="Reading code links…" Class="loading-state" />
+            }
+            else if (_linksError is not null)
+            {
+                <div class="notification notification-error" role="alert" data-testid="ct-error">Could not read the code links: @_linksError</div>
+            }
+            else if (_links.Count == 0)
+            {
+                <p class="ct-muted" data-testid="ct-empty">No code link is saved for @Project yet. Links are recorded when implementation evidence is bound to requirements (Implementation Review → Bind explicit CodeLinks); BirkNext never infers them from file names.</p>
+            }
+            else
+            {
+                <div class="ct-bar">
+                    <div class="ct-seg" role="group" aria-label="Group code links by">
+                        <button type="button" class="@(_byFile ? "" : "is-on")" aria-pressed="@(!_byFile)" @onclick="() => _byFile = false" data-testid="ct-by-requirement">By requirement</button>
+                        <button type="button" class="@(_byFile ? "is-on" : "")" aria-pressed="@_byFile" @onclick="() => _byFile = true" data-testid="ct-by-file">By file</button>
+                    </div>
+                    <input class="ct-filter" type="search" placeholder="Filter by requirement or file…" aria-label="Filter code links" @bind="_filter" @bind:event="oninput" data-testid="ct-filter" />
+                    <span class="ct-muted" data-testid="ct-count">@Shown.Count() of @_links.Count link@(_links.Count == 1 ? "" : "s") · @_links.Select(l => l.RequirementReference).Distinct(StringComparer.OrdinalIgnoreCase).Count() requirements · @_links.Select(l => l.FilePath).Distinct(StringComparer.OrdinalIgnoreCase).Count() files</span>
+                </div>
+                <ul class="ct-groups">
+                    @foreach (var g in Shown.GroupBy(l => _byFile ? l.FilePath : l.RequirementReference, StringComparer.OrdinalIgnoreCase).OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+                    {
+                        <li class="ct-group" data-testid="ct-group" data-key="@g.Key">
+                            <div class="ct-group-head"><code>@g.Key</code> <span class="ct-muted">@g.Count() link@(g.Count() == 1 ? "" : "s")</span></div>
+                            <ul class="ct-items">
+                                @foreach (var l in g.OrderBy(l => _byFile ? l.RequirementReference : l.FilePath, StringComparer.OrdinalIgnoreCase))
+                                {
+                                    <li data-testid="ct-link" data-link="@l.LinkId">
+                                        <code>@(_byFile ? l.RequirementReference : l.FilePath)</code>
+                                        <span class="ct-chip">@l.ScenarioKind</span>
+                                        <span class="ct-muted">@l.Origin · @l.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd")</span>
+                                    </li>
+                                }
+                            </ul>
+                        </li>
+                    }
+                </ul>
+                <p class="ct-muted" data-testid="ct-boundary">A code link says a file was registered as implementing (or testing) a requirement. It is not proof that the implementation is correct, and it is not a test result.</p>
+            }
+        </section>
     }
 </div>
 
@@ -41,15 +87,26 @@
     private AnalysisPageModel? PageModel;
     private bool IsLoading = true;
     private string? LoadError;
+    private List<SddCodeLinkSourceReference> _links = [];
+    private bool _linksLoading;
+    private string? _linksError;
+    private bool _byFile;
+    private string _filter = "";
+
+    /// <summary>The project the code links are stored under (the same identifier Implementation Review uses).</summary>
+    private string? Project => !string.IsNullOrWhiteSpace(Workspace.ProjectName) ? Workspace.ProjectName
+        : Workspace.SddLifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == Workspace.SddLifecycle.CurrentProjectImportId)?.ProjectName;
+
+    private IEnumerable<SddCodeLinkSourceReference> Shown => string.IsNullOrWhiteSpace(_filter) ? _links
+        : _links.Where(l => l.RequirementReference.Contains(_filter.Trim(), StringComparison.OrdinalIgnoreCase) || l.FilePath.Contains(_filter.Trim(), StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnInitializedAsync()
     {
-        // Subscribe to workspace changes
-        Workspace.ReviewContextRebuildNeeded += (s, e) => _ = RefreshPageModel();
-
-        // Load initial model
+        Workspace.ReviewContextRebuildNeeded += OnWorkspaceChanged;
         await RefreshPageModel();
     }
+
+    private void OnWorkspaceChanged(object? sender, EventArgs e) => _ = InvokeAsync(async () => { await RefreshPageModel(); StateHasChanged(); });
 
     private async Task RefreshPageModel()
     {
@@ -58,11 +115,7 @@
             IsLoading = true;
             LoadError = null;
             PageModel = await AnalysisPageModelService.GetImplementationReviewModelAsync();
-
-            if (PageModel is null)
-            {
-                LoadError = "Failed to load page configuration";
-            }
+            if (PageModel is null) LoadError = "Failed to load page configuration";
         }
         catch (Exception ex)
         {
@@ -72,25 +125,36 @@
         {
             IsLoading = false;
         }
+        if (PageModel?.Summary.CanRun == true) await LoadLinksAsync();
     }
+
+    private async Task LoadLinksAsync()
+    {
+        _links = [];
+        _linksError = null;
+        if (Project is not { } project) return;
+        _linksLoading = true;
+        try { _links = [.. await SddEvidenceApi.CodeLinksAsync(project)]; }
+        catch (Exception ex) when (ex is not OperationCanceledException) { _linksError = ex.Message; }
+        finally { _linksLoading = false; }
+    }
+
+    public void Dispose() => Workspace.ReviewContextRebuildNeeded -= OnWorkspaceChanged;
 }
 
 <style>
-.code-trace-page {
-    padding: 0 20px;
-}
-
-.loading-state {
-    text-align: center;
-    color: #6b7280;
-    padding: 40px 20px;
-}
-
-.placeholder-text {
-    text-align: center;
-    color: #9ca3af;
-    padding: 20px;
-    background-color: #f9fafb;
-    border-radius: 6px;
-}
+.code-trace-page { padding: 0 20px; }
+.loading-state { text-align: center; color: #6b7280; padding: 40px 20px; }
+.ct-title { font-size: 1.05rem; margin: 1rem 0 0.5rem; }
+.ct-muted { color: var(--clr-text-muted, #6b7280); font-size: 0.85rem; }
+.ct-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin-bottom: 0.75rem; }
+.ct-seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--clr-surface, #f6f8fa); border: 1px solid var(--clr-border, #d0d7de); }
+.ct-seg button { border: 0; background: transparent; font: inherit; font-size: 0.84rem; font-weight: 600; padding: 0.3rem 0.8rem; border-radius: 999px; cursor: pointer; color: var(--clr-text-muted, #57606a); }
+.ct-seg button.is-on { background: var(--clr-surface-white, #fff); color: var(--clr-primary, #0969da); box-shadow: 0 1px 3px rgb(0 0 0 / 12%); }
+.ct-filter { flex: 1 1 14rem; min-width: 0; padding: 0.4rem 0.6rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 8px; font: inherit; }
+.ct-groups, .ct-items { list-style: none; margin: 0; padding: 0; }
+.ct-group { border: 1px solid var(--clr-border, #d0d7de); border-radius: 10px; padding: 0.6rem 0.8rem; margin-bottom: 0.5rem; background: var(--clr-surface-white, #fff); }
+.ct-group-head { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; font-weight: 600; overflow-wrap: anywhere; }
+.ct-items li { display: flex; flex-wrap: wrap; gap: 0.4rem 0.6rem; align-items: baseline; padding: 0.25rem 0 0 0.75rem; overflow-wrap: anywhere; }
+.ct-chip { font-size: 0.75rem; padding: 0.05rem 0.5rem; border-radius: 999px; background: var(--clr-surface, #f6f8fa); border: 1px solid var(--clr-border, #d0d7de); }
 </style>

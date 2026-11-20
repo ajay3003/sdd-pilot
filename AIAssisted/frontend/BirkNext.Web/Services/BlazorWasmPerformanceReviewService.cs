@@ -129,10 +129,10 @@ public sealed class BlazorWasmPerformanceReviewService : IBlazorWasmPerformanceR
             },
             Limitations =
             [
-                "Phase 5 complete: startup, caching & compression, and API analysis are active.",
+                "Startup, caching & compression, and API calls are assessed.",
                 "API operations shown are those observed during the automated scan; runtime request interception requires browser instrumentation.",
                 "Runtime metrics (FCP, LCP, TTI) require browser instrumentation.",
-                "Blazor runtime analysis not yet implemented."
+                "Blazor runtime behaviour (render and JavaScript interop timing) is not measured."
             ]
         };
 

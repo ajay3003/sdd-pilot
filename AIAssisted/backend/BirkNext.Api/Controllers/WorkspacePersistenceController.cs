@@ -164,22 +164,22 @@ public class WorkspacePersistenceController : ControllerBase
     {
         try
         {
-            _logger.LogInformation("DIAG: [Controller] List ENTERED");
+            _logger.LogDebug("[Controller] List ENTERED");
             // TODO: Get actual userId from auth context
             var result = await _service.ListAsync("default-user");
-            _logger.LogInformation($"DIAG: [Controller] ListAsync returned {result.Count} workspaces");
+            _logger.LogDebug($"[Controller] ListAsync returned {result.Count} workspaces");
             foreach (var ws in result)
             {
-                _logger.LogInformation($"DIAG: [Controller]   - Id={ws.Id}, name={ws.Name}, artifacts={ws.Artifacts.Count}");
+                _logger.LogDebug($"[Controller]   - Id={ws.Id}, name={ws.Name}, artifacts={ws.Artifacts.Count}");
             }
             // A list is summaries: no lifecycle and no artifact bodies (load/{id} and bootstrap/{id} return one workspace's state).
             var dtos = result.Select(w => MapWorkspaceToDto(w, lifecycle: false, artifactContent: false)).ToList();
-            _logger.LogInformation($"DIAG: [Controller] List returning {dtos.Count} DTOs");
+            _logger.LogDebug($"[Controller] List returning {dtos.Count} DTOs");
             return Ok(dtos);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "DIAG: [Controller] Error listing workspaces");
+            _logger.LogError(ex, "Error listing workspaces");
             return BadRequest(new { error = ex.Message });
         }
     }
@@ -296,15 +296,15 @@ public class WorkspacePersistenceController : ControllerBase
     {
         try
         {
-            _logger.LogInformation("DIAG: [Controller] GetCurrentState ENTERED");
+            _logger.LogDebug("[Controller] GetCurrentState ENTERED");
             var result = await _service.GetCurrentStateAsync();
-            _logger.LogInformation($"DIAG: [Controller] GetCurrentState returned: workspaceId={result?.CurrentWorkspaceId}, artifacts={result?.ArtifactCount}");
+            _logger.LogDebug($"[Controller] GetCurrentState returned: workspaceId={result?.CurrentWorkspaceId}, artifacts={result?.ArtifactCount}");
             if (result is not null) result.ResetEpoch = HttpContext.RequestServices.GetService<BirkNext.Api.Services.LocalDataReset.LocalDataResetState>()?.Epoch ?? 0;
             return Ok(result);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "DIAG: [Controller] Error getting current workspace state");
+            _logger.LogError(ex, "Error getting current workspace state");
             return BadRequest(new { error = ex.Message });
         }
     }
