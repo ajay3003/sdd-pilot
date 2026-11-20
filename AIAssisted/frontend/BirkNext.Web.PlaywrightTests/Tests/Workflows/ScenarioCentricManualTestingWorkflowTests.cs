@@ -184,8 +184,8 @@ public sealed class ScenarioCentricManualTestingWorkflowTests : IAsyncLifetime
             // 9–11. Translate the scenario (LibreTranslate provider → local stand-in): Norwegian shown, the original one click away; edit by hand.
             await scenario.GetByTestId("tps-scenario-translate").ClickAsync();
             await MessageAsync(page, "Translated 1 test case to Norwegian");
-            await Assertions.Expect(scenario.GetByTestId("tps-scenario-title")).ToContainTextAsync("Barn over opplæringspliktig alder");
-            await Assertions.Expect(scenario.GetByTestId("tps-scenario-original")).ToHaveTextAsync(new Regex("Child past compulsory school age"));
+            await Assertions.Expect(scenario.GetByTestId("tps-scenario-title")).ToContainTextAsync("Et barn over opplæringspliktig alder");
+            await Assertions.Expect(scenario.GetByTestId("tps-scenario-original")).ToHaveTextAsync(new Regex("child past compulsory school age"));
             lock (translator.Bodies) translator.Bodies.Should().NotBeEmpty().And.OnlyContain(b => !b.Contains('⟦') && !b.Contains("FR-0"), "identifiers never reach the translator");
             await Assertions.Expect(page.GetByTestId("tps-nb-state")).ToContainTextAsync("Machine translation");
             await SetAsync(page.GetByTestId($"tps-nb-title-{s42}"), "Barn over opplæringspliktig alder ved periodelås");
@@ -217,7 +217,7 @@ public sealed class ScenarioCentricManualTestingWorkflowTests : IAsyncLifetime
             await scenario.GetByTestId("tps-scenario-language-toggle").ClickAsync();
             await Assertions.Expect(scenario.GetByTestId("tps-scenario-title")).ToHaveTextAsync("Barn over opplæringspliktig alder ved periodelås");
             await scenario.GetByTestId("tps-scenario-language-toggle").ClickAsync();
-            await Assertions.Expect(scenario.GetByTestId("tps-scenario-title")).ToContainTextAsync("Child past compulsory school age");
+            await Assertions.Expect(scenario.GetByTestId("tps-scenario-title")).ToContainTextAsync("child past compulsory school age");
 
             // 23–25. Needs clarification (with a reason), then approve the complete case.
             primary = await OpenCaseAsync(page, s42);
@@ -246,7 +246,7 @@ public sealed class ScenarioCentricManualTestingWorkflowTests : IAsyncLifetime
             await page.GetByTestId("adx-language").SelectOptionAsync("nb");
             await wizard.WaitForAsync(new() { Timeout = 60000 });
             await Assertions.Expect(page.GetByTestId("adx-language-summary")).ToContainTextAsync("1 in Norwegian", new() { Timeout = 60000 });
-            await Assertions.Expect(page.Locator($"[data-testid=adx-case][data-case=\"{addedId}\"] [data-testid=adx-case-scenario]")).ToContainTextAsync("Child past compulsory school age");
+            await Assertions.Expect(page.Locator($"[data-testid=adx-case][data-case=\"{addedId}\"] [data-testid=adx-case-scenario]")).ToContainTextAsync("child past compulsory school age");
             await Assertions.Expect(page.Locator($"[data-testid=adx-case][data-case=\"{addedId}\"] [data-testid=adx-case-ado]")).ToHaveTextAsync("New in Azure DevOps (no id)");
             await page.GetByTestId("adx-area").FillAsync($@"{project}\Manual");
             await page.GetByTestId("adx-area").DispatchEventAsync("change");

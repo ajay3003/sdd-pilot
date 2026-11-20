@@ -25,6 +25,7 @@ public sealed class LibreTranslateStandIn : IAsyncDisposable
         ("Prepare the starting situation in the test environment:", "Klargjør startsituasjonen i testmiljøet:"),
         ("The starting situation is in place before the action (check the prepared data and state).", "Startsituasjonen er på plass før handlingen (kontroller klargjorte data og tilstand)."),
         ("Carry out or trigger:", "Utfør eller utløs:"),
+        ("A child past compulsory school age", "Et barn over opplæringspliktig alder"),
         ("a child past compulsory school age", "et barn over opplæringspliktig alder"),
         ("the period locks", "perioden låses"),
         ("the child is not expected", "barnet er ikke forventet"),
