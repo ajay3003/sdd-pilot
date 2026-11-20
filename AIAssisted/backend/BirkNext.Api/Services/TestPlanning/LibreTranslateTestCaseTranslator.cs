@@ -47,6 +47,15 @@ public sealed partial class LibreTranslateTestCaseTranslator : ITestCaseTranslat
     private static partial Regex Placeholder();
 
     /// <summary>A text split into plain-language pieces (translated) and placeholders (kept), in order. Whitespace around a piece is kept apart.</summary>
+    /// <summary>
+    /// The words of a piece without the separators around it: leading whitespace and punctuation such as ": " after an identifier
+    /// ("spec.md: the child …") and trailing whitespace stay on our side, because a real LibreTranslate model drops a leading colon or comma.
+    /// </summary>
+    public static string Core(string piece) => LeadingSeparators().Replace(piece, "").TrimEnd();
+
+    [GeneratedRegex(@"^[\s:;,\-–—/|]+")]
+    private static partial Regex LeadingSeparators();
+
     public static List<(string Text, bool Translate)> Split(string text) =>
         [.. Placeholder().Split(text).Where(p => p.Length > 0).Select(p => (p, !Placeholder().IsMatch(p) && p.Any(char.IsLetter)))];
 
@@ -54,7 +63,7 @@ public sealed partial class LibreTranslateTestCaseTranslator : ITestCaseTranslat
     {
         var result = texts.Select(_ => (string?)null).ToList();
         var parts = texts.Select(t => string.IsNullOrWhiteSpace(t) ? null : Split(t)).ToList();
-        var pieces = parts.Where(p => p is not null).SelectMany(p => p!.Where(x => x.Translate).Select(x => x.Text.Trim())).Distinct(StringComparer.Ordinal).ToList();
+        var pieces = parts.Where(p => p is not null).SelectMany(p => p!.Where(x => x.Translate).Select(x => Core(x.Text))).Distinct(StringComparer.Ordinal).ToList();
         var translated = new Dictionary<string, string>(StringComparer.Ordinal);
         if (pieces.Count > 0)
         {
@@ -87,9 +96,9 @@ public sealed partial class LibreTranslateTestCaseTranslator : ITestCaseTranslat
             result[i] = string.Concat(p.Select(x =>
             {
                 if (!x.Translate) return x.Text;
-                var lead = x.Text[..(x.Text.Length - x.Text.TrimStart().Length)];
-                var trail = x.Text[x.Text.TrimEnd().Length..];
-                return lead + translated[x.Text.Trim()].Trim() + trail;
+                var core = Core(x.Text);
+                var start = x.Text.IndexOf(core, StringComparison.Ordinal);
+                return x.Text[..start] + translated[core].Trim() + x.Text[(start + core.Length)..];
             }));
         }
         return new(result, Availability.Provider!);

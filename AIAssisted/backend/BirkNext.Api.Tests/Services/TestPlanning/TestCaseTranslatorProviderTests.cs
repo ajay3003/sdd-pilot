@@ -164,6 +164,25 @@ public sealed class TestCaseTranslatorProviderTests
     }
 
     [Fact]
+    public async Task LibreTranslate_keeps_the_separator_after_an_identifier_because_a_real_model_drops_a_leading_colon()
+    {
+        // As the real en→nb model does: ": the child is not expected" comes back without its colon. The separator must never be sent.
+        var handler = new Handler((_, body) =>
+        {
+            var q = JsonDocument.Parse(body).RootElement.GetProperty("q").EnumerateArray().Select(e => e.GetString()!).ToList();
+            return Json(new { translatedText = q.Select(t => t.TrimStart(':', ' ').Replace("the child is not expected", "barnet er ikke forventet").Replace("Check", "Sjekk").Replace("in", "i")).ToList() });
+        });
+        var libre = LibreTranslateTestCaseTranslator.Create("http://localhost:5050", null, new Factory(handler));
+        var (masked, tokens) = ScenarioPlanning.Protect("Check FR-027 in spec.md: the child is not expected");
+
+        var result = await libre.TranslateAsync([masked], "en", "nb", default);
+
+        JsonDocument.Parse(handler.Calls.Single().Body).RootElement.GetProperty("q").EnumerateArray().Select(e => e.GetString())
+            .Should().OnlyContain(p => !p!.StartsWith(':') && !p.StartsWith(' '));
+        ScenarioPlanning.Restore(result.Texts[0]!, tokens).Should().Be("Sjekk FR-027 i spec.md: barnet er ikke forventet");
+    }
+
+    [Fact]
     public async Task A_LibreTranslate_error_names_the_missing_language_model_and_a_stopped_server()
     {
         var refusing = LibreTranslateTestCaseTranslator.Create("http://localhost:5050", null, new Factory(new Handler((_, _) => Json(new { error = "nb is not supported" }, HttpStatusCode.BadRequest))));

@@ -87,6 +87,25 @@
                 </tbody>
             </table>
         }
+        @if (View.StoryAssociations.Count > 0)
+        {
+            @* Requirements confirmed for a user story as a whole: an association, never counted above and never inherited by the story's cases. *@
+            <details class="pct-gaps" data-testid="pct-stories">
+                <summary>Requirements associated with user stories (@View.StoryAssociations.Count, not counted)</summary>
+                <p class="pct-muted">A tester confirmed these for a whole user story in Plan &amp; prepare. They describe what the story is about; they are not a test case's design, so they never count as coverage and its scenarios and cases do not inherit them.</p>
+                <ul class="pct-gap-list">
+                    @foreach (var a in View.StoryAssociations)
+                    {
+                        <li data-testid="pct-story-association" data-story="@a.StoryKey" data-requirement="@a.RequirementId">
+                            <strong>@a.RequirementId</strong>@(a.Title is { Length: > 0 } at ? $" — {at}" : "")
+                            <span class="pct-chip" data-testid="pct-story-association-story">@(a.StoryId ?? a.StoryKey)</span>
+                            @if (L.ValidityLabel(a.Validity) is { Length: > 0 } validity) { <span class="pct-chip pct-chip-quiet" data-testid="pct-story-association-validity">@validity</span> }
+                            <span class="pct-muted">@(a.StoryTitle is { Length: > 0 } st ? st + " · " : "")confirmed by @(string.IsNullOrWhiteSpace(a.LinkedBy) ? "a tester" : a.LinkedBy) · <a href="@a.Href">@a.PlanName</a></span>
+                        </li>
+                    }
+                </ul>
+            </details>
+        }
         @if (View.WithoutTestDesign.Count > 0)
         {
             <details class="pct-gaps" data-testid="pct-gaps">

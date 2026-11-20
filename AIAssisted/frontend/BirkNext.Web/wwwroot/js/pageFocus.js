@@ -91,8 +91,19 @@ window.birknextRovingAttach = function (container, itemSelector) {
 
 // Drag to reorder (Plan & prepare): browsers such as Firefox only start a drag when data is set; Blazor's drag events cannot set it, so any
 // element marked data-drag sets a plain, empty payload here. The order itself is handled by the page (drop target + Save draft).
+// While such a drag is in progress, dragover and drop are default-prevented so the browser allows the drop (Blazor's :preventDefault alone did
+// not enable it in Chromium) and never pastes the payload into an input under the pointer; the page's own drop handlers still run.
+var birknextReorderDrag = false;
 document.addEventListener('dragstart', function (e) {
     var source = e.target && e.target.closest ? e.target.closest('[data-drag]') : null;
     if (!source || !e.dataTransfer) return;
+    birknextReorderDrag = true;
     try { e.dataTransfer.setData('text/plain', source.getAttribute('data-drag') || ''); e.dataTransfer.effectAllowed = 'move'; } catch (_) { }
 }, true);
+document.addEventListener('dragover', function (e) {
+    if (!birknextReorderDrag) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+}, true);
+document.addEventListener('drop', function (e) { if (birknextReorderDrag) e.preventDefault(); }, true);
+document.addEventListener('dragend', function () { birknextReorderDrag = false; }, true);

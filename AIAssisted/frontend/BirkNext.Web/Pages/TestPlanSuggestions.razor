@@ -655,14 +655,23 @@
         {
             BirkNext.Web.Services.Explorers.ArtifactExplorerState? specification = null;
             BirkNext.Web.Services.Explorers.ArtifactExplorerState? tasks = null;
+            List<(string Path, string Text)>? featureDocuments = null;
             if (ServiceProvider.GetService(typeof(BirkNext.Web.Services.Explorers.IArtifactExplorerContext)) is BirkNext.Web.Services.Explorers.IArtifactExplorerContext artifacts)
             {
                 specification = await artifacts.GetStateAsync(WorkspaceArtifactType.Specification);
                 tasks = await artifacts.GetStateAsync(WorkspaceArtifactType.Tasks); // story → requirement references in the same feature's tasks.md
+                try
+                {
+                    // … and in its plan.md / quickstart.md (lines naming the story and a requirement), from the pack's document inventory.
+                    if (await artifacts.GetPackInventoryAsync() is { } inventory)
+                        featureDocuments = [.. inventory.Documents.Where(doc => doc.Text is { Length: > 0 } && TestCoveragePresentation.StoryRelationDocuments.Contains(doc.FileName, StringComparer.OrdinalIgnoreCase))
+                            .Select(doc => (doc.Path, doc.Text!))];
+                }
+                catch (Exception e) when (e is not OperationCanceledException) { featureDocuments = null; }
             }
             if (ServiceProvider.GetService(typeof(IWorkspaceSessionService)) is IWorkspaceSessionService session)
             {
-                var evidence = TestCoveragePresentation.WorkspaceEvidence(session, (ServiceProvider.GetService(typeof(IReviewContextProvider)) as IReviewContextProvider)?.GetCurrent(), _projectName, specification, tasks);
+                var evidence = TestCoveragePresentation.WorkspaceEvidence(session, (ServiceProvider.GetService(typeof(IReviewContextProvider)) as IReviewContextProvider)?.GetCurrent(), _projectName, specification, tasks, featureDocuments);
                 _stories = evidence.Stories;
                 return evidence;
             }
@@ -2664,7 +2673,8 @@
         foreach (var t in story.TaskRequirements.GroupBy(t => t.RequirementId, StringComparer.OrdinalIgnoreCase))
             if (Option(t.Key) is { } o && items.All(i => !string.Equals(i.RequirementId, o.RequirementId, StringComparison.OrdinalIgnoreCase)))
                 items.Add(new(o.RequirementId, o.SpecificationPath, o.Title, RequirementSuggestionLevel.Structural,
-                    $"tasks.md: {string.Join("; ", t.Take(3).Select(x => $"{x.TaskId ?? "task"}{(x.Line is { } line ? $" (line {line})" : "")}"))} — {t.First().TaskText}"));
+                    string.Join("; ", t.Take(3).Select(x => $"{x.TasksPath[(x.TasksPath.LastIndexOf('/') + 1)..]}: {(x.TaskId is { } task ? task + " " : "")}{(x.Line is { } line ? $"(line {line})" : "")}"))
+                    + $" — {t.First().TaskText}"));
         var taken = items.Select(i => L.Key(i.RequirementId, i.SpecificationPath)).ToHashSet();
         var text = string.Join("\n", new[] { story.Title, story.Description, story.WhyThisPriority, story.IndependentTest }.Where(x => x is not null));
         foreach (var s in ScenarioPlanning.SuggestRequirements(text, [], [], options, taken.Concat(confirmed).Concat(rejected)))

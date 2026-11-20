@@ -58,7 +58,18 @@ public static class PreparedCaseTraceability
         List<PreparedRequirementGap> gaps = ids is null || paths.Count == 0 ? [] : [.. ids.Where(i => !covered.Contains(i)).OrderBy(i => i, NaturalId.Instance)
             .Select(i => new PreparedRequirementGap(i, titles.GetValueOrDefault(i)))];
         var stale = cases.SelectMany(c => c.Requirements).Count(r => r.Manual && r.Validity == PreparedLinkValidity.RequirementNotFound);
+        // Requirements confirmed for a user story as a whole: listed with who and when, checked like a manual link, never counted or inherited.
+        var stories = plans.SelectMany(plan => (plan.StoryRequirementLinks ?? []).Where(l => !string.IsNullOrWhiteSpace(l.Link.RequirementId)).Select(l =>
+        {
+            var story = plan.Cases.Select(c => c.Generated.Story).FirstOrDefault(s => s?.Key == l.StoryKey);
+            var file = string.IsNullOrWhiteSpace(l.Link.SpecificationPath) ? null : l.Link.SpecificationPath.Trim();
+            var id = l.Link.RequirementId.Trim();
+            return new PreparedStoryAssociation(l.StoryKey, story?.StoryId, story?.Title, id, file, titles.GetValueOrDefault(id) ?? (string.IsNullOrWhiteSpace(l.Link.Title) ? null : l.Link.Title),
+                l.Link.LinkedBy, l.Link.LinkedAt, file is null ? null : Validity(file, id, paths, ids), plan.PlanName, $"test-plan-suggestions?draft={plan.Id}&area=prepare");
+        })).DistinctBy(a => (a.StoryKey, a.RequirementId.ToUpperInvariant(), NormalizePath(a.SpecificationPath ?? ""))).ToList();
         var limitations = new List<string>();
+        if (stories.Count > 0)
+            limitations.Add("Requirements confirmed for a user story as a whole are listed apart: an association with the story, never counted as a test case's design and never inherited by its scenarios or cases.");
         if (paths.Count == 0)
             limitations.Add("No specification was given, so no requirement link is counted. Select the specification in the Specification Explorer.");
         if (cases.Any(c => c.Requirements.Any(r => r.Manual)))
@@ -77,7 +88,7 @@ public static class PreparedCaseTraceability
             RequirementsWithApprovedCase = requirements.Count(r => r.ApprovedCases > 0),
             RequirementsWithPreparedCaseOnly = requirements.Count(r => r.ApprovedCases == 0),
             CaseList = cases, Requirements = requirements, Limitations = limitations,
-            SpecificationRequirements = ids is null || paths.Count == 0 ? null : ids.Count, WithoutTestDesign = gaps, StaleManualLinks = stale,
+            SpecificationRequirements = ids is null || paths.Count == 0 ? null : ids.Count, WithoutTestDesign = gaps, StaleManualLinks = stale, StoryAssociations = stories,
             ExecutedCases = cases.Count(c => c.Executed), PassedCases = cases.Count(c => c.Passed),
             RequirementsExecuted = requirements.Count(r => r.ExecutedCases > 0), RequirementsPassed = requirements.Count(r => r.PassedCases > 0),
         };

@@ -193,6 +193,24 @@ public sealed class UserStoryPrepareTests : BunitContext
         TestCoveragePresentation.NamedRequirements("The story covers FR-8 and FR-027a.").Should().Equal("FR-008", "FR-027A");
     }
 
+    [Fact]
+    public void Plan_and_quickstart_lines_that_name_the_story_and_a_requirement_count_in_the_same_feature_folder_only()
+    {
+        const string quickstart = "# Quickstart\n\n| # | Story | Command | Expect |\n|---|---|---|---|\n| 2 | US6, FR-027a | `send --late` | not expected |\n| 3 | US60, FR-099 | x | y |\n| 4 | US-6 FR-029 | x | y |\n";
+        const string plan = "# Plan\n\nUser Story 6 relies on FR-030 for the lock.\nUser Story 1 relies on FR-001.\n";
+        var docs = new List<(string, string)>
+        {
+            ("SkoleService/specs/001-skoleservice/quickstart.md", quickstart), ("SkoleService/specs/001-skoleservice/plan.md", plan),
+            ("Person/specs/001-person-module/plan.md", "User Story 6 needs FR-500."), ("SkoleService/specs/001-skoleservice/research.md", "US6 FR-700"),
+        };
+
+        var refs = TestCoveragePresentation.DocumentRequirements(docs, Spec, "US6");
+        refs.Select(r => (r.RequirementId, r.TasksPath[(r.TasksPath.LastIndexOf('/') + 1)..], r.Line)).Should().Equal(
+            [("FR-027A", "quickstart.md", 5), ("FR-029", "quickstart.md", 7), ("FR-030", "plan.md", 3)],
+            "US60 is another story; another feature's plan and other documents never count");
+        refs.Should().OnlyContain(r => r.TaskId == null);
+    }
+
     private static ExplorerArtifact Tasks(string path) =>
         new("t1", WorkspaceArtifactType.Tasks, "tasks.md", "tasks.md", path, ExplorerArtifactSource.Workspace, "ProjectImport", 1, 1, "Draft", ExplorerArtifactCurrentness.Current, null);
 }

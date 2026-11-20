@@ -16,7 +16,7 @@ public static class TestCoveragePresentation
     /// whether a specification is available and is recorded on the result; the requirements come from the review context built from it.
     /// </param>
     public static CoverageWorkspaceEvidence WorkspaceEvidence(IWorkspaceSessionService workspace, ReviewContext? context, string? projectName,
-        Explorers.ArtifactExplorerState? specification = null, Explorers.ArtifactExplorerState? tasks = null)
+        Explorers.ArtifactExplorerState? specification = null, Explorers.ArtifactExplorerState? tasks = null, IReadOnlyList<(string Path, string Text)>? featureDocuments = null)
     {
         var selected = specification is { Status: Explorers.ExplorerArtifactStatus.Loaded, Selected: { } artifact, Content: { } text } ? artifact : null;
         if (specification is not null && selected is null) context = null; // no selected specification: no requirement is attributed to one
@@ -32,7 +32,7 @@ public static class TestCoveragePresentation
             Description = u.Description, WhyThisPriority = u.Why, IndependentTest = u.IndependentTest, SpecificationPath = specPath, Module = storyModule,
             LineStart = u.LineStart, LineEnd = u.LineEnd, Scenarios = u.LinkedAcceptanceScenarios.Count(s => s.ParentStoryKey == u.StableKey),
             NamedRequirements = NamedRequirements($"{u.Title}\n{u.Description}\n{u.Why}\n{u.IndependentTest}"),
-            TaskRequirements = u.AuthoredId is { } storyTag ? TaskRequirements(tasks, specPath, storyTag) : [],
+            TaskRequirements = u.AuthoredId is { } storyTag ? [.. TaskRequirements(tasks, specPath, storyTag), .. DocumentRequirements(featureDocuments, specPath, storyTag)] : [],
         }).ToList();
         // Scenario ids stay as before (identity of prepared cases); the parent story and the number within it are added beside them.
         var scenarios = (spec?.AcceptanceScenarios ?? []).Select((s, i) => new QaTestCandidate
@@ -77,6 +77,38 @@ public static class TestCoveragePresentation
             .SelectMany(t => t.ReferencedFrIds.Select(fr => new StoryTaskRequirement(fr, t.TaskId, t.RawText.Length > 300 ? t.RawText[..300] + "…" : t.RawText, tasksPath,
                 t.Provenance?.Sources.FirstOrDefault()?.StartLine)))
             .DistinctBy(r => (r.RequirementId, r.TaskId))];
+    }
+
+    /// <summary>The feature documents besides tasks.md that may relate a story to requirements (Spec Kit plan.md and quickstart.md).</summary>
+    public static readonly string[] StoryRelationDocuments = ["plan.md", "quickstart.md"];
+
+    /// <summary>
+    /// Requirements a line of the same feature's plan.md or quickstart.md names together with the story ("| 2 | US1, FR-012 | … |",
+    /// "[US6] … FR-027a", "User Story 6 … FR-027"). Structural like tasks.md: the line names both. Only documents in the specification's own folder;
+    /// a story number is matched whole (US6 never matches US60).
+    /// </summary>
+    public static List<StoryTaskRequirement> DocumentRequirements(IReadOnlyList<(string Path, string Text)>? documents, string? specPath, string storyTag)
+    {
+        if (documents is null || specPath is null || System.Text.RegularExpressions.Regex.Match(storyTag, @"\d+") is not { Success: true } number) return [];
+        static string Folder(string path) => path.Contains('/') ? path[..path.LastIndexOf('/')] : "";
+        var folder = Folder(specPath.Replace('\\', '/'));
+        var names = new System.Text.RegularExpressions.Regex($@"(?<![\w-])(?:US-?{number.Value}|User Story {number.Value}|Brukerhistorie {number.Value})(?!\d)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var result = new List<StoryTaskRequirement>();
+        foreach (var (rawPath, text) in documents)
+        {
+            var path = rawPath.Replace('\\', '/');
+            var file = path[(path.LastIndexOf('/') + 1)..];
+            if (!StoryRelationDocuments.Contains(file, StringComparer.OrdinalIgnoreCase) || !string.Equals(Folder(path), folder, StringComparison.OrdinalIgnoreCase)) continue;
+            var lines = (text ?? "").Split('\n');
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i].Trim();
+                if (!names.IsMatch(line)) continue;
+                foreach (var fr in NamedRequirements(line))
+                    result.Add(new StoryTaskRequirement(fr, null, line.Length > 300 ? line[..300] + "…" : line, path, i + 1));
+            }
+        }
+        return [.. result.DistinctBy(r => (r.RequirementId, r.TasksPath, r.Line))];
     }
 
     /// <summary>Which specification the requirement views read, in plain words.</summary>

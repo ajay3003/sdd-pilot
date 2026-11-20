@@ -785,6 +785,13 @@ public sealed record PreparedRequirementTrace
 /// <summary>A requirement of the reviewed specification no active saved case covers (no test design yet).</summary>
 public sealed record PreparedRequirementGap(string RequirementId, string? Title);
 
+/// <summary>
+/// A requirement a tester confirmed for a whole user story (Plan &amp; prepare → story card → Requirements). An association with the story, shown
+/// apart: never inherited by the story's scenarios or cases and never counted as test design or coverage.
+/// </summary>
+public sealed record PreparedStoryAssociation(string StoryKey, string? StoryId, string? StoryTitle, string RequirementId, string? SpecificationPath, string? Title,
+    string LinkedBy, DateTimeOffset LinkedAt, PreparedLinkValidity? Validity, string PlanName, string Href);
+
 public sealed record PreparedCaseTraceView
 {
     public string ProjectKey { get; init; } = "";
@@ -805,6 +812,8 @@ public sealed record PreparedCaseTraceView
     public int? SpecificationRequirements { get; init; }
     /// <summary>Requirements of the reviewed specification with no counted case (empty when <see cref="SpecificationRequirements"/> is null).</summary>
     public List<PreparedRequirementGap> WithoutTestDesign { get; init; } = [];
+    /// <summary>Requirements confirmed for a user story as a whole: shown, never counted (see <see cref="PreparedStoryAssociation"/>).</summary>
+    public List<PreparedStoryAssociation> StoryAssociations { get; init; } = [];
     /// <summary>Manual links whose requirement is no longer in the reviewed specification (kept with the case, not counted).</summary>
     public int StaleManualLinks { get; init; }
     /// <summary>Cases executed in a completed manual run (latest run Passed or Failed), and how many passed. Test design never adds to these.</summary>

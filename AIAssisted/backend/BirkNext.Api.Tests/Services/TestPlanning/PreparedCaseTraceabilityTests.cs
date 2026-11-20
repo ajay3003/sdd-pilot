@@ -219,4 +219,25 @@ public sealed class PreparedCaseTraceabilityTests
         legacy.Validity.Should().BeNull();
         legacy.Manual.Should().BeFalse();
     }
+
+    [Fact]
+    public void A_requirement_confirmed_for_a_user_story_is_listed_apart_and_never_counted()
+    {
+        var story = new BirkNext.TestCoverage.CoverageUserStory { Key = Spec + "#US6", StoryId = "US6", Title = "User Story 6 - Expected population" };
+        var s = SpecCase("tsc-1", "Child past school age", "FR-001", fromScenario: true);
+        var c = s with { Generated = s.Generated with { Story = story } };
+        var plan = Plan(Project, c) with
+        {
+            StoryRequirementLinks = [new StoryRequirementLink(story.Key, new ManualRequirementLink { RequirementId = "FR-027", SpecificationPath = Spec, Title = "Population rule", LinkedBy = "inger", LinkedAt = DateTimeOffset.UtcNow })],
+        };
+
+        var view = Build([plan], ids: ["FR-001", "FR-027"]);
+
+        var a = view.StoryAssociations.Should().ContainSingle().Subject;
+        (a.StoryId, a.RequirementId, a.LinkedBy, a.Validity).Should().Be(("US6", "FR-027", "inger", PreparedLinkValidity.Current));
+        a.Href.Should().Be($"test-plan-suggestions?draft={plan.Id}&area=prepare");
+        view.Requirements.Select(r => r.RequirementId).Should().Equal(["FR-001"], "the story association is not test design");
+        view.WithoutTestDesign.Select(g => g.RequirementId).Should().Equal(["FR-027"], "a story-level association never closes a gap");
+        view.Limitations.Should().Contain(l => l.Contains("user story as a whole"));
+    }
 }
