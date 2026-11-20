@@ -115,6 +115,17 @@ public sealed class FrontendLighthouseReviewService : IFrontendLighthouseReviewS
             return new(LighthouseReadinessState.Disabled, false, Error: "Lighthouse review engine is disabled.");
         if (!File.Exists(_runnerPath))
             return new(LighthouseReadinessState.LighthouseUnavailable, false, Error: "Pinned Lighthouse runner is unavailable.");
+        // The probe starts Node and a headless Chromium (~15-20 s). A successful probe is reused for a short time; the enablement and runner
+        // checks above always run, and a failure is never reused, so turning the engine off or fixing an installation shows at once.
+        var cacheKey = LighthouseReadinessCache.Key(_nodeExecutable, _runnerPath);
+        if (LighthouseReadinessCache.TryGet(cacheKey) is { } cached) return cached;
+        var result = await ProbeAsync(cancellationToken);
+        if (result is { State: LighthouseReadinessState.Ready, Available: true }) LighthouseReadinessCache.Set(cacheKey, result);
+        return result;
+    }
+
+    private async Task<LighthouseReadinessResult> ProbeAsync(CancellationToken cancellationToken)
+    {
         var execution = await ExecuteAsync([_runnerPath, "--readiness"], 30000, cancellationToken);
         if (execution.TimedOut)
             return new(LighthouseReadinessState.LaunchFailed, false, Error: "Lighthouse readiness timed out.");
@@ -140,6 +151,33 @@ public sealed class FrontendLighthouseReviewService : IFrontendLighthouseReviewS
             return new(LighthouseReadinessState.ConfigurationInvalid, false,
                 Error: "Lighthouse readiness response was invalid.");
         }
+    }
+
+    /// <summary>
+    /// Successful Lighthouse readiness probes, reused for <see cref="Validity"/> per Node executable and runner file (its path and last
+    /// write time, so an updated runner is probed again). Process-wide because the service is created per request. Failures are never stored.
+    /// </summary>
+    internal static class LighthouseReadinessCache
+    {
+        public static readonly TimeSpan Validity = TimeSpan.FromMinutes(5);
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (LighthouseReadinessResult Result, DateTimeOffset At)> Entries = new();
+
+        public static string Key(string node, string runner)
+        {
+            var written = File.Exists(runner) ? File.GetLastWriteTimeUtc(runner).Ticks : 0;
+            return $"{node}\n{System.IO.Path.GetFullPath(runner)}\n{written}";
+        }
+
+        public static LighthouseReadinessResult? TryGet(string key, DateTimeOffset? now = null) =>
+            Entries.TryGetValue(key, out var entry) && (now ?? DateTimeOffset.UtcNow) - entry.At < Validity ? entry.Result : null;
+
+        public static void Set(string key, LighthouseReadinessResult result, DateTimeOffset? at = null)
+        {
+            if (Entries.Count > 50) Entries.Clear();
+            Entries[key] = (result, at ?? DateTimeOffset.UtcNow);
+        }
+
+        public static void Clear() => Entries.Clear();
     }
 
     private async Task<ProcessResult> ExecuteAsync(IReadOnlyList<string> arguments, int timeoutMs, CancellationToken cancellationToken)
