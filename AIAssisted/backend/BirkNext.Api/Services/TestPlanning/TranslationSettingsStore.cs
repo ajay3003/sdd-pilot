@@ -11,7 +11,7 @@ namespace BirkNext.Api.Services.TestPlanning;
 /// The installation's translation settings (System Settings → Translation): one JSON file under App_Data, and the Azure AI Translator key
 /// encrypted with ASP.NET Core Data Protection (a key ring for this purpose only; DPAPI-protected on Windows) — never in appsettings, the
 /// database or a response. Until System Settings saves its own, the server configuration (ManualTesting:Translation:*) applies, else the default
-/// (Azure AI Translator, English → Norwegian bokmål, offline fallback to the local LibreTranslate server).
+/// (the embedded offline translator, English → Norwegian bokmål; no internet fallback). Saved settings keep their own choice.
 /// </summary>
 public sealed partial class TranslationSettingsStore
 {
@@ -99,6 +99,11 @@ public sealed partial class TranslationSettingsStore
         var url = (s.LibreTranslateUrl ?? "").Trim();
         if (!s.LibreTranslateManaged && (!Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme is not ("http" or "https")))
             return (null, "Give the LibreTranslate server's address (http or https), or let BirkNext run it locally.");
+        var glossary = (s.Glossary ?? []).Where(g => g is not null && !string.IsNullOrWhiteSpace(g.Source) && !string.IsNullOrWhiteSpace(g.Target))
+            .Select(g => new TranslationGlossaryEntry(g.Source.Trim(), g.Target.Trim())).DistinctBy(g => g.Source, StringComparer.OrdinalIgnoreCase).ToList();
+        if (glossary.Count > TranslationGlossary.MaxEntries) return (null, $"At most {TranslationGlossary.MaxEntries} glossary terms.");
+        if (glossary.FirstOrDefault(g => g.Source.Length > 100 || g.Target.Length > 100 || g.Source.Any(char.IsControl) || g.Target.Any(char.IsControl) || g.Source.Contains('⟦') || g.Source.Contains('<')) is { } badTerm)
+            return (null, $"The glossary term \"{(badTerm.Source.Length > 40 ? badTerm.Source[..40] + "…" : badTerm.Source)}\" is not valid (one line, at most 100 characters each side).");
         var region = s.AzureRegion?.Trim();
         if (!string.IsNullOrEmpty(region) && !RegionPattern().IsMatch(region)) return (null, "The Azure region is a name such as \"norwayeast\" or \"westeurope\".");
         var endpoint = s.AzureEndpoint?.Trim();
@@ -107,7 +112,7 @@ public sealed partial class TranslationSettingsStore
         return (s with
         {
             SourceLanguage = source, TargetLanguages = targets, LibreTranslateUrl = url, AzureRegion = string.IsNullOrEmpty(region) ? null : region,
-            AzureEndpoint = string.IsNullOrEmpty(endpoint) ? null : endpoint, LibreTranslateImage = s.LibreTranslateImage!.Trim(),
+            AzureEndpoint = string.IsNullOrEmpty(endpoint) ? null : endpoint, LibreTranslateImage = s.LibreTranslateImage!.Trim(), Glossary = glossary,
         }, null);
     }
 

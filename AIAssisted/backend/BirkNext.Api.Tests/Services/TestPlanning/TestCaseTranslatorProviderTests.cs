@@ -48,10 +48,13 @@ public sealed class TestCaseTranslatorProviderTests
     // ── Choice of provider ─────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void The_default_is_Azure_English_to_Norwegian_bokmal_with_the_local_server_as_offline_fallback()
+    public void The_default_is_the_embedded_offline_translator_and_Azure_under_Advanced_falls_back_to_the_local_server()
     {
-        var defaults = new TranslationSettings();
-        defaults.Provider.Should().Be(TranslationProviderKind.AzureTranslator);
+        // 2026-11-20: new installations translate offline with the model packaged with BirkNext (no internet, container or account).
+        new TranslationSettings().Provider.Should().Be(TranslationProviderKind.EmbeddedOffline);
+        TestCaseTranslators.Create(new TranslationSettings(), null, Config(), NoNetwork).Availability.Reason.Should().Be(TestCaseTranslators.NoOfflineEngine,
+            "without the offline engine (not part of this installation) nothing else is used silently");
+        var defaults = new TranslationSettings { Provider = TranslationProviderKind.AzureTranslator };
         defaults.SourceLanguage.Should().Be("en");
         defaults.TargetLanguages.Should().Equal("nb");
         defaults.OfflineFallback.Should().BeTrue();
@@ -209,7 +212,7 @@ public sealed class TestCaseTranslatorProviderTests
     {
         var handler = new Handler((request, body) => request.RequestUri!.Host.Contains("microsofttranslator", StringComparison.Ordinal)
             ? throw new HttpRequestException("offline") : LibreAnswer(body));
-        var translator = TestCaseTranslators.Create(new TranslationSettings(), "secret-key-0123456789", Config(), new Factory(handler));
+        var translator = TestCaseTranslators.Create(new TranslationSettings { Provider = TranslationProviderKind.AzureTranslator }, "secret-key-0123456789", Config(), new Factory(handler));
 
         var result = await translator.TranslateAsync(["Check the report"], "en", "nb", default);
 
@@ -221,7 +224,7 @@ public sealed class TestCaseTranslatorProviderTests
     [Fact]
     public async Task When_no_choice_can_translate_one_message_names_both_and_nothing_is_returned()
     {
-        var translator = TestCaseTranslators.Create(new TranslationSettings(), azureKey: null, Config(), new Factory(new Handler((_, _) => throw new HttpRequestException("refused"))));
+        var translator = TestCaseTranslators.Create(new TranslationSettings { Provider = TranslationProviderKind.AzureTranslator }, azureKey: null, Config(), new Factory(new Handler((_, _) => throw new HttpRequestException("refused"))));
         var error = (await translator.Invoking(t => t.TranslateAsync(["Check"], "en", "nb", default)).Should().ThrowAsync<TestCaseTranslationException>()).Which.Message;
         error.Should().Contain("Azure AI Translator has no key").And.Contain("The offline fallback failed too").And.Contain("127.0.0.1:5050").And.Contain("Is it running?");
     }

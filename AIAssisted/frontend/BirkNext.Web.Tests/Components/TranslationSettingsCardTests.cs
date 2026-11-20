@@ -9,34 +9,49 @@ using Moq;
 namespace BirkNext.Web.Tests.Components;
 
 /// <summary>
-/// System Settings → Translation: the default (Azure AI Translator, English → Norwegian bokmål, offline fallback to the local LibreTranslate
-/// server) is shown as such; a save sends the choices and a key only when typed (the key is never shown); the local server's actions follow its
-/// status (download → start → stop, never before saving); Test translation names the service that answered; without permission nothing is editable.
+/// System Settings → Translation (2026-11-20): the default is the offline translator packaged with BirkNext (English → Norwegian bokmål, no
+/// internet fallback); "Ready" appears only after the packaged model translated the probe sentence; online services, LibreTranslate/Podman, extra
+/// languages and the glossary live under Advanced; a save sends the choices and a key only when typed (never shown again); Test translation names
+/// the translator that answered; without permission nothing is editable.
 /// </summary>
 public sealed class TranslationSettingsCardTests : BunitContext
 {
     private readonly Mock<ITranslationSettingsApiService> _api = new();
     private SaveTranslationSettingsRequest? _saved;
     private readonly List<string> _actions = [];
+    private int _probes;
 
-    private static TranslationSettingsView View(TranslationSettings? settings = null, bool keySet = false, bool canWrite = true, bool available = false) => new()
+    private static readonly OfflineTranslationStatus Installed = new()
     {
-        Settings = settings ?? new TranslationSettings(), AzureKeySet = keySet, CanWrite = canWrite, CanManageLibreTranslate = true, Origin = "default",
-        Availability = available ? new(true, "Azure AI Translator (norwayeast)", "Translation by Azure AI Translator.")
-            : new(true, "LibreTranslate (local, offline)", "Azure AI Translator has no key yet (System Settings → Translation). The local LibreTranslate server is used instead (offline), if it is running."),
+        State = "Installed", Summary = "Offline translation — installed, not started yet", Model = "HPLT/translate-en-nb-v2.0-hplt (revision 24a48dba7fa6)",
+        ModelLicense = "CC-BY-4.0", Engine = "CTranslate2 4.9.0, SentencePiece 0.2.3, CPU", Languages = "English → Norwegian (bokmål)", Attribution = "HPLT MT release v2.0",
     };
 
-    private IRenderedComponent<TranslationSettingsCard> Render(TranslationSettingsView view, LibreTranslateServiceStatus? libre = null)
+    private static readonly OfflineTranslationStatus Ready = Installed with
+    {
+        State = "Ready", Summary = "Offline translation — Ready", ProbeSource = "Open the page, fill in all required fields and select Save.",
+        ProbeResult = "Åpne siden, fyll ut alle obligatoriske felt og velg Lagre.", ProbeSeconds = 1.4,
+    };
+
+    private static TranslationSettingsView View(TranslationSettings? settings = null, bool keySet = false, bool canWrite = true, OfflineTranslationStatus? offline = null) => new()
+    {
+        Settings = settings ?? new TranslationSettings(), AzureKeySet = keySet, CanWrite = canWrite, CanManageLibreTranslate = true, Origin = "default",
+        Availability = new(true, "BirkNext offline translator (HPLT/translate-en-nb-v2.0-hplt)", "Offline translation on this PC by the model packaged with BirkNext; nothing leaves this PC."),
+        Offline = offline ?? Installed,
+    };
+
+    private IRenderedComponent<TranslationSettingsCard> Render(TranslationSettingsView view, LibreTranslateServiceStatus? libre = null, OfflineTranslationStatus? probe = null)
     {
         _api.Setup(a => a.GetAsync(It.IsAny<CancellationToken>())).ReturnsAsync((view, (string?)null));
         _api.Setup(a => a.SaveAsync(It.IsAny<SaveTranslationSettingsRequest>(), It.IsAny<CancellationToken>()))
             .Callback<SaveTranslationSettingsRequest, CancellationToken>((r, _) => _saved = r)
             .ReturnsAsync((SaveTranslationSettingsRequest r, CancellationToken _) => (view with { Settings = r.Settings, Origin = "saved", AzureKeySet = r.AzureKey is { Length: > 0 } || view.AzureKeySet }, (string?)null));
+        _api.Setup(a => a.OfflineAsync(It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).Callback(() => _probes++).ReturnsAsync((probe ?? Ready, (string?)null));
         _api.Setup(a => a.LibreTranslateAsync(It.IsAny<CancellationToken>())).ReturnsAsync((libre ?? new LibreTranslateServiceStatus { PodmanAvailable = true, PodmanDetail = "Podman 5.4.2",
             Url = "http://127.0.0.1:5050", Detail = "The image is not downloaded yet: choose Download image (needs internet once)." }, (string?)null));
         _api.Setup(a => a.LibreTranslateActionAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).Callback<string, CancellationToken>((a, _) => _actions.Add(a)).ReturnsAsync("Done.");
-        _api.Setup(a => a.TestAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new TranslationTestResult(true, "LibreTranslate (local, offline)", "Prepare a child … (FR-027).",
-            "Klargjør et barn … (FR-027).", "Translated by LibreTranslate (local, offline) (English → Norwegian (bokmål))."), (string?)null));
+        _api.Setup(a => a.TestAsync(It.IsAny<CancellationToken>())).ReturnsAsync((new TranslationTestResult(true, "BirkNext offline translator", "Prepare a child … (FR-027).",
+            "Klargjør et barn … (FR-027).", "Translated by BirkNext offline translator (English → Norwegian (bokmål))."), (string?)null));
         Services.AddSingleton(_api.Object);
         var cut = Render<TranslationSettingsCard>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=trx-settings]"));
@@ -44,23 +59,49 @@ public sealed class TranslationSettingsCardTests : BunitContext
     }
 
     [Fact]
-    public void The_default_is_Azure_English_to_Norwegian_bokmal_with_the_offline_fallback()
+    public void The_default_is_the_offline_translator_English_to_Norwegian_and_Ready_only_after_the_probe_translated()
     {
         var cut = Render(View());
-        cut.Find("[data-testid=trx-provider] option[selected]").GetAttribute("value").Should().Be("AzureTranslator");
+        cut.Find("[data-testid=trx-provider] option[selected]").GetAttribute("value").Should().Be("EmbeddedOffline");
         cut.Find("[data-testid=trx-source] option[selected]").GetAttribute("value").Should().Be("en");
-        cut.FindAll("[data-testid=trx-target]").Where(t => t.HasAttribute("checked")).Select(t => t.GetAttribute("data-language")).Should().Equal("nb");
-        cut.Find("[data-testid=trx-fallback]").HasAttribute("checked").Should().BeTrue();
-        cut.Find("[data-testid=trx-availability]").TextContent.Should().Contain("has no key yet").And.Contain("local LibreTranslate server is used instead");
-        cut.Find("[data-testid=trx-azure-key]").GetAttribute("type").Should().Be("password");
+        cut.Find("[data-testid=trx-to] option[selected]").GetAttribute("value").Should().Be("nb");
+        cut.Find("[data-testid=trx-internet]").TextContent.Should().Contain("disabled");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=trx-offline]").GetAttribute("data-state").Should().Be("Ready"));
+        _probes.Should().Be(1, "opening the page checks the packaged model once, for real");
+        cut.Find("[data-testid=trx-overall]").TextContent.Should().Be("Offline translation — Ready");
+        cut.Find("[data-testid=trx-offline-probe]").TextContent.Should().Contain("velg Lagre");
+        cut.Find("[data-testid=trx-offline-model]").TextContent.Should().Contain("HPLT").And.Contain("CC-BY-4.0");
+        cut.FindAll("[data-testid=trx-azure-key]").Should().BeEmpty("online services are optional, under Advanced");
+        cut.FindAll("[data-testid=trx-libre]").Should().BeEmpty("no Podman controls in the normal view");
+        cut.FindAll("[data-testid=trx-provider] optgroup").Should().BeEmpty();
         cut.Find("[data-testid=trx-origin]").TextContent.Should().Be("Default settings (not saved yet)");
         cut.Find("[data-testid=trx-save]").HasAttribute("disabled").Should().BeTrue("nothing changed yet");
     }
 
     [Fact]
-    public void A_save_sends_the_choices_and_the_key_only_when_typed_and_the_key_is_never_shown_again()
+    public void A_failing_probe_is_never_shown_as_Ready()
     {
-        var cut = Render(View());
+        var failed = Installed with { State = "Failed", Summary = "Offline translation — not working", Detail = "The offline translation model could not be loaded: …" };
+        var cut = Render(View(), probe: failed);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=trx-offline]").GetAttribute("data-state").Should().Be("Failed"));
+        cut.Find("[data-testid=trx-overall]").TextContent.Should().Be("Offline translation — not available");
+        cut.Find("[data-testid=trx-offline-detail]").TextContent.Should().Contain("could not be loaded");
+    }
+
+    [Fact]
+    public void A_missing_model_is_not_started_and_says_so()
+    {
+        var missing = new OfflineTranslationStatus { State = "NotInstalled", Summary = "Offline translation — not available", Detail = "The offline translation model is not installed with this BirkNext." };
+        var none = Render(View(offline: missing));
+        _probes.Should().Be(0, "a missing package is not started");
+        none.Find("[data-testid=trx-offline-state]").TextContent.Should().Be("Offline translation — not available");
+    }
+
+    [Fact]
+    public void Azure_under_Advanced_saves_the_choices_and_the_key_only_when_typed_and_the_key_is_never_shown_again()
+    {
+        var cut = Render(View(new TranslationSettings { Provider = TranslationProviderKind.AzureTranslator }));
+        cut.Find("[data-testid=trx-advanced]").HasAttribute("open").Should().BeTrue("a saved online choice opens Advanced");
         cut.Find("[data-testid=trx-azure-key]").Input("0123456789abcdef0123456789abcdef");
         cut.Find("[data-testid=trx-azure-region]").Input("norwayeast");
         cut.Find("[data-testid=trx-target][data-language=sv]").Change(true);
@@ -79,6 +120,23 @@ public sealed class TranslationSettingsCardTests : BunitContext
         cut.Find("[data-testid=trx-save]").Click();
         cut.WaitForAssertion(() => _saved.Should().NotBeNull());
         _saved!.AzureKey.Should().BeNull("an untouched key field keeps the stored key");
+    }
+
+    [Fact]
+    public void Glossary_terms_can_be_added_changed_and_removed_and_are_saved_with_the_settings()
+    {
+        var cut = Render(View());
+        var before = cut.FindAll("[data-testid=trx-gloss-row]").Count;
+        before.Should().Be(TranslationGlossary.DefaultEnNb.Count);
+        cut.Find("[data-testid=trx-gloss-add]").Click();
+        cut.FindAll("[data-testid=trx-gloss-source]")[^1].Change("municipality");
+        cut.FindAll("[data-testid=trx-gloss-target]")[^1].Change("kommune");
+        cut.FindAll("[data-testid=trx-gloss-remove]")[0].Click();
+        cut.Find("[data-testid=trx-save]").Click();
+
+        cut.WaitForAssertion(() => _saved.Should().NotBeNull());
+        _saved!.Settings.Glossary.Should().HaveCount(before).And.Contain(new TranslationGlossaryEntry("municipality", "kommune"))
+            .And.NotContain(TranslationGlossary.DefaultEnNb[0]);
     }
 
     [Fact]
@@ -105,11 +163,11 @@ public sealed class TranslationSettingsCardTests : BunitContext
     }
 
     [Fact]
-    public void Test_translation_names_the_service_that_answered()
+    public void Test_translation_names_the_translator_that_answered()
     {
         var cut = Render(View());
         cut.Find("[data-testid=trx-test]").Click();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=trx-test-result]").TextContent.Should().Contain("Translated by LibreTranslate (local, offline)"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=trx-test-result]").TextContent.Should().Contain("Translated by BirkNext offline translator"));
         cut.Find("[data-testid=trx-test-text]").TextContent.Should().Contain("(FR-027)", "identifiers are kept");
     }
 

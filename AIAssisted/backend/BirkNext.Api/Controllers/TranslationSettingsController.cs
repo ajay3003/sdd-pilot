@@ -1,6 +1,7 @@
 using BirkNext.Api.Services.ActiveEventTesting;
 using BirkNext.Api.Services.LocalSecurity;
 using BirkNext.Api.Services.TestPlanning;
+using BirkNext.Api.Services.TestPlanning.OfflineTranslation;
 using BirkNext.TestPlanning;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -8,14 +9,14 @@ using Microsoft.AspNetCore.Mvc;
 namespace BirkNext.Api.Controllers;
 
 /// <summary>
-/// System Settings → Translation: the translator for test-case text (default Azure AI Translator, English → Norwegian bokmål, with the local
-/// LibreTranslate server as offline fallback) and the local server itself. Reading is open; changing settings and starting or stopping the local
-/// server need the system-configuration permission. The Azure key is write-only.
+/// System Settings → Translation: the translator for test-case text (default: the embedded offline translator packaged with BirkNext, English →
+/// Norwegian bokmål) and, under Advanced, optional online services and a LibreTranslate server. Reading is open; changing settings and starting
+/// or stopping the local LibreTranslate server need the system-configuration permission. The Azure key is write-only.
 /// </summary>
 [ApiController]
 [Route("api/translation-settings")]
 public sealed class TranslationSettingsController(TranslationSettingsStore store, TestCaseTranslatorResolver resolver, LibreTranslateServiceManager libre,
-    IConfiguration config, IAuthorizationService authorization, LocalTrustedExecution local, TimeProvider? clock = null) : ControllerBase
+    IConfiguration config, IAuthorizationService authorization, LocalTrustedExecution local, OfflineTranslationEngine offline, TimeProvider? clock = null) : ControllerBase
 {
     private string Actor => SystemConfigurationPermissions.Actor(User,
         local.EvaluateFor(SystemConfigurationPermissions.LocalSetting, SystemConfigurationPermissions.LocalCapability, HttpContext).Allowed) ?? "not attributed";
@@ -25,11 +26,12 @@ public sealed class TranslationSettingsController(TranslationSettingsStore store
     public async Task<ActionResult<TranslationSettingsView>> Get()
     {
         var (settings, origin, by, at) = store.Effective();
+        var offlineStatus = await offline.StatusAsync(probe: false, HttpContext?.RequestAborted ?? default);
         return new TranslationSettingsView
         {
             Settings = settings, Origin = origin, UpdatedBy = by, UpdatedAt = at, AzureKeySet = store.AzureKeySet,
             AnthropicKeyConfigured = !string.IsNullOrWhiteSpace(config["Anthropic:ApiKey"]), Availability = resolver.Current().Availability,
-            CanManageLibreTranslate = libre.CanManage,
+            CanManageLibreTranslate = libre.CanManage, Offline = offlineStatus,
             CanWrite = (await authorization.AuthorizeAsync(User, null, SystemConfigurationPermissions.Policy)).Succeeded,
         };
     }
@@ -40,6 +42,15 @@ public sealed class TranslationSettingsController(TranslationSettingsStore store
     {
         if (store.Save(request, Actor, Now) is { } problem) return BadRequest(new { message = problem });
         return await Get();
+    }
+
+    /// <summary>The embedded offline translator. <paramref name="probe"/>: start it if needed and translate the probe sentence ("Ready" only then);
+    /// <paramref name="recheck"/>: verify the package files again first (after the package was repaired). Nothing is downloaded.</summary>
+    [HttpGet("offline")]
+    public async Task<OfflineTranslationStatus> Offline([FromQuery] bool probe = false, [FromQuery] bool recheck = false, CancellationToken ct = default)
+    {
+        if (recheck) offline.Forget();
+        return await offline.StatusAsync(probe, ct);
     }
 
     [HttpGet("libretranslate")]

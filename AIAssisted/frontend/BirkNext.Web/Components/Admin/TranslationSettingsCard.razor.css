@@ -27,4 +27,20 @@
 .trx-facts > div { display: contents; }
 .trx-facts dt { color: var(--clr-text-muted); font-weight: 500; }
 .trx-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-@media (max-width: 600px) { .trx { padding: 1rem; } .trx-facts { grid-template-columns: 1fr; } }
+.trx-grid-3 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
+.trx-pill-neutral { background: var(--clr-surface-subtle, #f6f8fa); color: var(--clr-text-body); border-color: var(--clr-border); }
+/* Offline model: one compact status block, facts in a two-column list. */
+.trx-offline { gap: .5rem; }
+.trx-offline-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+.trx-offline-head .trx-panel-title { margin: 0; padding: 0; }
+.trx-more > summary, .trx-advanced > summary { cursor: pointer; font-size: .875rem; color: var(--clr-text-muted); }
+.trx-advanced { border-top: 1px solid var(--clr-border); padding-top: .75rem; }
+.trx-advanced > summary { font-weight: 600; color: var(--clr-text-heading); }
+.trx-advanced > summary:focus-visible, .trx-more > summary:focus-visible { outline: 2px solid var(--clr-focus, #0969da); outline-offset: 2px; border-radius: var(--radius-sm); }
+.trx-advanced-body { display: grid; gap: .875rem; margin-top: .75rem; }
+/* Glossary: English | Norwegian | Remove, one row per term; stacks on narrow screens. */
+.trx-gloss { display: grid; gap: .375rem; }
+.trx-gloss-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: .5rem; align-items: center; }
+.trx-gloss-head { font-size: .8rem; font-weight: 600; color: var(--clr-text-muted); }
+.trx-gloss-row input { padding: .3rem .5rem; border: 1px solid var(--clr-border-input, var(--clr-border)); border-radius: var(--radius-sm); font: inherit; min-width: 0; background: var(--clr-surface-white); color: inherit; }
+@media (max-width: 600px) { .trx { padding: 1rem; } .trx-facts { grid-template-columns: 1fr; } .trx-gloss-row { grid-template-columns: 1fr 1fr; } .trx-gloss-row > button { grid-column: 1 / -1; justify-self: start; } .trx-gloss-head { display: none; } }

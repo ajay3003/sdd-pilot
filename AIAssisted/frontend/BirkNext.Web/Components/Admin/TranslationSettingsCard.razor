@@ -1,18 +1,19 @@
 @using BirkNext.TestPlanning
 @inject ITranslationSettingsApiService Api
 
-@* System Settings → Translation: the translator for test-case text in Manual Testing. Default Azure AI Translator (online), English → Norwegian
-   bokmål, with the local LibreTranslate server as offline fallback. Opening this section reads settings and the local server's status only;
-   downloading, starting, stopping and the test translation are explicit actions. The Azure key is write-only. *@
+@* System Settings → Translation (2026-11-20): the translator for test-case text in Manual Testing. Default: the offline translator packaged with
+   BirkNext (English → Norwegian bokmål, CPU, nothing leaves this PC). The normal view is six things: default translator, From, To, the offline
+   model's status, Test translation, Advanced. Online services, LibreTranslate/Podman, extra languages and the glossary live under Advanced. "Ready"
+   is shown only after the packaged model loaded and translated the probe sentence. The Azure key is write-only. *@
 <section class="trx" aria-labelledby="trx-title" data-testid="trx">
     <header class="trx-header">
         <div>
             <h2 id="trx-title" class="trx-title">Translation</h2>
-            <p class="trx-subtitle">Which service translates test cases in Manual Testing → Plan &amp; prepare, and between which languages. Text is sent only when a tester chooses Translate; the original is never replaced and translating approves nothing.</p>
+            <p class="trx-subtitle">How test cases in Manual Testing → Plan &amp; prepare are translated. The original text is always kept, a translation is a draft a tester reviews, and translating approves nothing.</p>
         </div>
         @if (_view is { } hv)
         {
-            <span class="trx-pill trx-pill-@(hv.Availability.Available ? "ok" : "pending")" data-testid="trx-overall" role="status">@(hv.Availability.Available ? $"Ready: {hv.Availability.Provider}" : "No translator available")</span>
+            <span class="trx-pill trx-pill-@(Overall(hv).Tone)" data-testid="trx-overall" role="status">@Overall(hv).Text</span>
         }
     </header>
 
@@ -23,105 +24,67 @@
     else
     {
         var v = _view;
-        <p class="@(v.Availability.Available ? "trx-notice" : "trx-warn")" data-testid="trx-availability" role="status">@v.Availability.Reason</p>
+        var offlineChosen = _draft.Provider == TranslationProviderKind.EmbeddedOffline;
+        @if (!offlineChosen || !_offlineShown) { <p class="@(v.Availability.Available ? "trx-notice" : "trx-warn")" data-testid="trx-availability" role="status">@v.Availability.Reason</p> }
         @if (_message is not null) { <p class="trx-notice" data-testid="trx-message" role="status">@_message</p> }
         @if (_error is not null) { <p class="trx-error" data-testid="trx-error" role="alert">@_error</p> }
 
         <fieldset class="trx-panel" disabled="@(!v.CanWrite || _busy)" data-testid="trx-settings">
-            <legend class="trx-panel-title">Service and languages</legend>
-            <div class="trx-grid">
-                <label class="trx-field"><span>Translation service</span>
-                    <select @bind="_draft.Provider" @bind:after="Edited" data-testid="trx-provider">
-                        <option value="@TranslationProviderKind.AzureTranslator">Azure AI Translator (online, default)</option>
-                        <option value="@TranslationProviderKind.LibreTranslate">LibreTranslate (offline, local)</option>
-                        <option value="@TranslationProviderKind.Anthropic">Anthropic (online, server key)</option>
+            <legend class="trx-panel-title">Translator and languages</legend>
+            <div class="trx-grid trx-grid-3">
+                <label class="trx-field"><span>Default translator</span>
+                    <select @bind="_draft.Provider" @bind:after="ProviderChanged" data-testid="trx-provider">
+                        <option value="@TranslationProviderKind.EmbeddedOffline">Offline translator (packaged with BirkNext)</option>
                         <option value="@TranslationProviderKind.Off">Off — write translations by hand</option>
+                        @if (_advanced || !IsStandard(_draft.Provider))
+                        {
+                            <optgroup label="Optional — needs setup (Advanced)">
+                                <option value="@TranslationProviderKind.AzureTranslator">Azure AI Translator (online)</option>
+                                <option value="@TranslationProviderKind.Anthropic">Anthropic (online, server key)</option>
+                                <option value="@TranslationProviderKind.LibreTranslate">LibreTranslate server</option>
+                            </optgroup>
+                        }
                     </select></label>
                 <label class="trx-field"><span>From</span>
                     <select @bind="_draft.Source" @bind:after="Edited" data-testid="trx-source">
-                        <option value="@TranslationLanguages.Auto">@TranslationLanguages.Name(TranslationLanguages.Auto)</option>
-                        @foreach (var l in v.Languages) { <option value="@l.Code">@l.Name</option> }
+                        @if (!offlineChosen) { <option value="@TranslationLanguages.Auto">@TranslationLanguages.Name(TranslationLanguages.Auto)</option> }
+                        @foreach (var l in Languages(v)) { <option value="@l.Code">@l.Name</option> }
                     </select></label>
-                <fieldset class="trx-field trx-targets" data-testid="trx-targets"><legend>To (the first is the default)</legend>
-                    @foreach (var l in v.Languages.Where(l => l.Code != _draft.Source))
-                    {
-                        var lang = l.Code;
-                        <label class="trx-check"><input type="checkbox" checked="@_draft.Targets.Contains(lang)" @onchange="e => ToggleTarget(lang, e.Value is true)" data-testid="trx-target" data-language="@lang" /> @l.Name</label>
-                    }
-                </fieldset>
+                <label class="trx-field"><span>To</span>
+                    <select value="@_draft.Targets.FirstOrDefault()" @onchange="e => MakeDefault(e.Value?.ToString(), add: true)" data-testid="trx-to">
+                        @foreach (var l in Languages(v).Where(l => l.Code != _draft.Source)) { <option value="@l.Code">@l.Name</option> }
+                    </select></label>
             </div>
-            @if (_draft.Targets.Count > 1)
+            @if (offlineChosen && (_draft.Source != TranslationLanguages.English || _draft.Targets.FirstOrDefault() != TranslationLanguages.NorwegianBokmal))
             {
-                <label class="trx-field trx-narrow"><span>Default "To" language</span>
-                    <select value="@_draft.Targets[0]" @onchange="e => MakeDefault(e.Value?.ToString())" data-testid="trx-default-target">
-                        @foreach (var target in _draft.Targets) { <option value="@target">@TranslationLanguages.Name(target)</option> }
-                    </select></label>
+                <p class="trx-warn" data-testid="trx-pair-warning">The offline translator translates English → Norwegian (bokmål) only. Choose those languages, or another translator under Advanced.</p>
             }
-            @if (_draft.Provider is TranslationProviderKind.AzureTranslator or TranslationProviderKind.Anthropic)
-            {
-                <label class="trx-check"><input type="checkbox" checked="@_draft.OfflineFallback" @onchange="e => { _draft.OfflineFallback = e.Value is true; Edited(); }" data-testid="trx-fallback" />
-                    If the online service has no key or cannot be reached, use the local LibreTranslate server (offline) when it is running</label>
-            }
+            <p class="trx-muted trx-small" data-testid="trx-internet">Internet fallback: @(offlineChosen ? "disabled — the offline translator never sends text anywhere." : _draft.OfflineFallback ? "the online service falls back to offline translation, never the other way round." : "off.")</p>
         </fieldset>
 
-        @if (_draft.Provider == TranslationProviderKind.AzureTranslator)
+        @if (offlineChosen || _offline is not null)
         {
-            <fieldset class="trx-panel" disabled="@(!v.CanWrite || _busy)" data-testid="trx-azure">
-                <legend class="trx-panel-title">Azure AI Translator</legend>
-                <div class="trx-grid">
-                    <label class="trx-field"><span>Key @(v.AzureKeySet ? "(saved — leave empty to keep it)" : "(not set)")</span>
-                        <input type="password" autocomplete="off" value="@_azureKey" @oninput="e => { _azureKey = e.Value?.ToString() ?? string.Empty; Edited(); }" data-testid="trx-azure-key" placeholder="@(v.AzureKeySet ? "••••••••" : "Translator resource key")" /></label>
-                    <label class="trx-field"><span>Region</span><input value="@_draft.Region" @oninput="e => { _draft.Region = e.Value?.ToString(); Edited(); }" placeholder="e.g. norwayeast" data-testid="trx-azure-region" /></label>
-                    <label class="trx-field"><span>Endpoint (optional)</span><input value="@_draft.Endpoint" @oninput="e => { _draft.Endpoint = e.Value?.ToString(); Edited(); }" placeholder="https://api.cognitive.microsofttranslator.com" data-testid="trx-azure-endpoint" /></label>
+            <section class="trx-panel trx-offline" aria-labelledby="trx-offline-title" data-testid="trx-offline" data-state="@(_offline?.State ?? v.Offline.State)">
+                @{ var o = _offline ?? v.Offline; }
+                <div class="trx-offline-head">
+                    <h3 id="trx-offline-title" class="trx-panel-title">Offline model</h3>
+                    <span class="trx-pill trx-pill-@(o.Ready ? "ok" : o.State is "Installed" ? "neutral" : "pending")" data-testid="trx-offline-state" role="status">@(_checking ? "Checking…" : o.Summary)</span>
                 </div>
-                @if (v.AzureKeySet) { <button type="button" class="btn-secondary btn-sm" @onclick="RemoveKey" data-testid="trx-azure-remove">Remove the saved key</button> }
-                <p class="trx-muted">The key is stored encrypted on this BirkNext server and never shown again.</p>
-            </fieldset>
-        }
-
-        @if (_draft.Provider == TranslationProviderKind.LibreTranslate || _draft.OfflineFallback && _draft.Provider is TranslationProviderKind.AzureTranslator or TranslationProviderKind.Anthropic)
-        {
-            <fieldset class="trx-panel" disabled="@_busy" data-testid="trx-libre">
-                <legend class="trx-panel-title">LibreTranslate (offline)</legend>
-                <label class="trx-check"><input type="radio" name="trx-libre-mode" checked="@_draft.Managed" disabled="@(!v.CanWrite)" @onchange="() => { _draft.Managed = true; Edited(); }" data-testid="trx-libre-managed" /> Run it on this PC with Podman (127.0.0.1 only)</label>
-                <label class="trx-check"><input type="radio" name="trx-libre-mode" checked="@(!_draft.Managed)" disabled="@(!v.CanWrite)" @onchange="() => { _draft.Managed = false; Edited(); }" data-testid="trx-libre-external" /> Use another LibreTranslate server</label>
-                @if (_draft.Managed)
+                @if (o.Detail is { } detail) { <p class="trx-muted trx-small" data-testid="trx-offline-detail">@detail</p> }
+                @if (o.Model is not null)
                 {
-                    <div class="trx-grid">
-                        <label class="trx-field"><span>Port</span><input type="number" min="1024" max="65535" value="@_draft.Port" disabled="@(!v.CanWrite)" @onchange="e => { _draft.Port = int.TryParse(e.Value?.ToString(), out var p) ? p : _draft.Port; Edited(); }" data-testid="trx-libre-port" /></label>
-                        <label class="trx-field"><span>Image (pinned)</span><input value="@_draft.Image" disabled="@(!v.CanWrite)" @onchange="e => { _draft.Image = e.Value?.ToString() ?? _draft.Image; Edited(); }" data-testid="trx-libre-image" /></label>
-                    </div>
-                    @if (!v.CanManageLibreTranslate) { <p class="trx-warn" data-testid="trx-libre-native">BirkNext runs without Podman here (Tester Package), so it cannot run the local server. Choose "Use another LibreTranslate server", or Azure AI Translator.</p> }
-                }
-                else
-                {
-                    <label class="trx-field"><span>Server address</span><input value="@_draft.Url" disabled="@(!v.CanWrite)" @oninput="e => { _draft.Url = e.Value?.ToString() ?? string.Empty; Edited(); }" placeholder="http://localhost:5050" data-testid="trx-libre-url" /></label>
-                }
-                @if (_libre is { } ls)
-                {
-                    <dl class="trx-facts" data-testid="trx-libre-status">
-                        @if (_draft.Managed)
-                        {
-                            <div><dt>Podman</dt><dd data-testid="trx-libre-podman">@(ls.PodmanAvailable ? ls.PodmanDetail : ls.PodmanDetail.Length > 0 ? ls.PodmanDetail : "Not checked")</dd></div>
-                            <div><dt>Image</dt><dd data-testid="trx-libre-image-state">@(ls.ImagePresent ? "Downloaded" : "Not downloaded")</dd></div>
-                            <div><dt>Server</dt><dd data-testid="trx-libre-running">@(ls.Running ? "Running" : "Stopped")</dd></div>
-                        }
-                        <div><dt>Answers</dt><dd data-testid="trx-libre-answering">@(ls.Answering ? $"Yes — {ls.Languages.Count} language(s)" : "No")</dd></div>
-                        <div><dt>Languages</dt><dd data-testid="trx-libre-pair">@(ls.PairAvailable ? "The From → To pair is offered" : ls.Answering ? "The From → To pair is not offered" : "—")</dd></div>
+                    <dl class="trx-facts" data-testid="trx-offline-facts">
+                        <div><dt>Languages</dt><dd>@o.Languages</dd></div>
+                        <div><dt>Model</dt><dd data-testid="trx-offline-model">@o.Model · @o.ModelLicense</dd></div>
+                        <div><dt>Engine</dt><dd>@o.Engine</dd></div>
+                        @if (o.ProbeResult is { } probe) { <div><dt>Probe</dt><dd data-testid="trx-offline-probe">“@o.ProbeSource” → “@probe” (@(o.ProbeSeconds?.ToString("0.0") ?? "?") s)</dd></div> }
                     </dl>
-                    <p class="trx-muted" data-testid="trx-libre-detail" role="status">@ls.Detail</p>
+                    <details class="trx-more"><summary>Attribution</summary><p class="trx-small">@o.Attribution</p></details>
                 }
                 <div class="trx-actions">
-                    <button type="button" class="btn-secondary btn-sm" @onclick="RefreshLibreAsync" data-testid="trx-libre-check">Check status</button>
-                    @if (_draft.Managed && v.CanManageLibreTranslate && v.CanWrite && !_dirty)
-                    {
-                        @if (_libre is { ImagePresent: false }) { <button type="button" class="btn-secondary btn-sm" @onclick='() => LibreAsync("pull")' data-testid="trx-libre-pull">Download image (needs internet once)</button> }
-                        @if (_libre is { ImagePresent: true, Running: false }) { <button type="button" class="btn-primary btn-sm" @onclick='() => LibreAsync("start")' data-testid="trx-libre-start">Start</button> }
-                        @if (_libre is { Running: true }) { <button type="button" class="btn-secondary btn-sm" @onclick='() => LibreAsync("stop")' data-testid="trx-libre-stop">Stop</button> }
-                    }
-                    @if (_dirty && _draft.Managed) { <span class="trx-muted">Save first, then start the server with these settings.</span> }
+                    <button type="button" class="btn-secondary btn-sm" disabled="@_checking" @onclick="() => CheckOfflineAsync(recheck: true)" data-testid="trx-offline-check">Check again</button>
                 </div>
-            </fieldset>
+            </section>
         }
 
         <div class="trx-actions trx-footer">
@@ -142,6 +105,113 @@
                 @if (t.Translated is { } tr) { <p class="trx-small" data-testid="trx-test-text">Result: @tr</p> }
             </div>
         }
+
+        <details class="trx-advanced" open="@_advanced" @ontoggle="ToggleAdvanced" data-testid="trx-advanced">
+            <summary>Advanced: other translators, more languages, glossary</summary>
+            <div class="trx-advanced-body">
+                <fieldset class="trx-panel" disabled="@(!v.CanWrite || _busy)" data-testid="trx-languages">
+                    <legend class="trx-panel-title">More "To" languages</legend>
+                    <p class="trx-muted trx-small">Testers can choose any of these when translating; the first is the default. The offline translator supports Norwegian (bokmål) only.</p>
+                    <div class="trx-targets" data-testid="trx-targets">
+                        @foreach (var l in v.Languages.Where(l => l.Code != _draft.Source))
+                        {
+                            var lang = l.Code;
+                            <label class="trx-check"><input type="checkbox" checked="@_draft.Targets.Contains(lang)" @onchange="e => ToggleTarget(lang, e.Value is true)" data-testid="trx-target" data-language="@lang" /> @l.Name</label>
+                        }
+                    </div>
+                </fieldset>
+
+                <fieldset class="trx-panel" disabled="@(!v.CanWrite || _busy)" data-testid="trx-glossary">
+                    <legend class="trx-panel-title">Glossary (@_draft.Glossary.Count)</legend>
+                    <p class="trx-muted trx-small">The offline translator always writes these terms as given (whole words, any case). A term that is already Norwegian is kept as it is. Terms only — no business rules.</p>
+                    <div class="trx-gloss" role="table" aria-label="Glossary terms">
+                        <div class="trx-gloss-row trx-gloss-head" role="row"><span role="columnheader">English</span><span role="columnheader">Norwegian</span><span role="columnheader"><span class="visually-hidden">Remove</span></span></div>
+                        @for (var i = 0; i < _draft.Glossary.Count; i++)
+                        {
+                            var index = i;
+                            var entry = _draft.Glossary[index];
+                            <div class="trx-gloss-row" role="row" data-testid="trx-gloss-row">
+                                <input aria-label="@($"English term {index + 1}")" value="@entry.Source" @onchange="e => SetTerm(index, e.Value?.ToString(), null)" data-testid="trx-gloss-source" />
+                                <input aria-label="@($"Norwegian term {index + 1}")" value="@entry.Target" @onchange="e => SetTerm(index, null, e.Value?.ToString())" data-testid="trx-gloss-target" />
+                                <button type="button" class="btn-secondary btn-sm" aria-label="@($"Remove the term {entry.Source}")" @onclick="() => RemoveTerm(index)" data-testid="trx-gloss-remove">Remove</button>
+                            </div>
+                        }
+                    </div>
+                    <div class="trx-actions">
+                        <button type="button" class="btn-secondary btn-sm" @onclick="AddTerm" data-testid="trx-gloss-add">Add term</button>
+                        <button type="button" class="btn-secondary btn-sm" @onclick="ResetGlossary" data-testid="trx-gloss-reset">Restore the starting terms</button>
+                    </div>
+                </fieldset>
+
+                @if (_draft.Provider is TranslationProviderKind.AzureTranslator or TranslationProviderKind.Anthropic)
+                {
+                    <label class="trx-check"><input type="checkbox" checked="@_draft.OfflineFallback" disabled="@(!v.CanWrite || _busy)" @onchange="e => { _draft.OfflineFallback = e.Value is true; Edited(); }" data-testid="trx-fallback" />
+                        If the online service has no key or cannot be reached, translate offline instead</label>
+                }
+
+                @if (_draft.Provider == TranslationProviderKind.AzureTranslator)
+                {
+                    <fieldset class="trx-panel" disabled="@(!v.CanWrite || _busy)" data-testid="trx-azure">
+                        <legend class="trx-panel-title">Azure AI Translator (online, optional)</legend>
+                        <div class="trx-grid">
+                            <label class="trx-field"><span>Key @(v.AzureKeySet ? "(saved — leave empty to keep it)" : "(not set)")</span>
+                                <input type="password" autocomplete="off" value="@_azureKey" @oninput="e => { _azureKey = e.Value?.ToString() ?? string.Empty; Edited(); }" data-testid="trx-azure-key" placeholder="@(v.AzureKeySet ? "••••••••" : "Translator resource key")" /></label>
+                            <label class="trx-field"><span>Region</span><input value="@_draft.Region" @oninput="e => { _draft.Region = e.Value?.ToString(); Edited(); }" placeholder="e.g. norwayeast" data-testid="trx-azure-region" /></label>
+                            <label class="trx-field"><span>Endpoint (optional)</span><input value="@_draft.Endpoint" @oninput="e => { _draft.Endpoint = e.Value?.ToString(); Edited(); }" placeholder="https://api.cognitive.microsofttranslator.com" data-testid="trx-azure-endpoint" /></label>
+                        </div>
+                        @if (v.AzureKeySet) { <button type="button" class="btn-secondary btn-sm" @onclick="RemoveKey" data-testid="trx-azure-remove">Remove the saved key</button> }
+                        <p class="trx-muted">The key is stored encrypted on this BirkNext server and never shown again. Scenario text is sent to Azure when a tester chooses Translate.</p>
+                    </fieldset>
+                }
+
+                @if (_draft.Provider == TranslationProviderKind.LibreTranslate)
+                {
+                    <fieldset class="trx-panel" disabled="@_busy" data-testid="trx-libre">
+                        <legend class="trx-panel-title">LibreTranslate server (optional)</legend>
+                        @if (v.CanManageLibreTranslate)
+                        {
+                            <label class="trx-check"><input type="radio" name="trx-libre-mode" checked="@_draft.Managed" disabled="@(!v.CanWrite)" @onchange="() => { _draft.Managed = true; Edited(); }" data-testid="trx-libre-managed" /> Run it on this PC with Podman (127.0.0.1 only)</label>
+                            <label class="trx-check"><input type="radio" name="trx-libre-mode" checked="@(!_draft.Managed)" disabled="@(!v.CanWrite)" @onchange="() => { _draft.Managed = false; Edited(); }" data-testid="trx-libre-external" /> Use another LibreTranslate server</label>
+                        }
+                        @if (_draft.Managed && v.CanManageLibreTranslate)
+                        {
+                            <div class="trx-grid">
+                                <label class="trx-field"><span>Port</span><input type="number" min="1024" max="65535" value="@_draft.Port" disabled="@(!v.CanWrite)" @onchange="e => { _draft.Port = int.TryParse(e.Value?.ToString(), out var p) ? p : _draft.Port; Edited(); }" data-testid="trx-libre-port" /></label>
+                                <label class="trx-field"><span>Image (pinned)</span><input value="@_draft.Image" disabled="@(!v.CanWrite)" @onchange="e => { _draft.Image = e.Value?.ToString() ?? _draft.Image; Edited(); }" data-testid="trx-libre-image" /></label>
+                            </div>
+                        }
+                        else
+                        {
+                            <label class="trx-field"><span>Server address</span><input value="@_draft.Url" disabled="@(!v.CanWrite)" @oninput="e => { _draft.Url = e.Value?.ToString() ?? string.Empty; _draft.Managed = false; Edited(); }" placeholder="http://localhost:5050" data-testid="trx-libre-url" /></label>
+                        }
+                        @if (_libre is { } ls)
+                        {
+                            <dl class="trx-facts" data-testid="trx-libre-status">
+                                @if (_draft.Managed && v.CanManageLibreTranslate)
+                                {
+                                    <div><dt>Podman</dt><dd data-testid="trx-libre-podman">@(ls.PodmanDetail.Length > 0 ? ls.PodmanDetail : "Not checked")</dd></div>
+                                    <div><dt>Image</dt><dd data-testid="trx-libre-image-state">@(ls.ImagePresent ? "Downloaded" : "Not downloaded")</dd></div>
+                                    <div><dt>Server</dt><dd data-testid="trx-libre-running">@(ls.Running ? "Running" : "Stopped")</dd></div>
+                                }
+                                <div><dt>Answers</dt><dd data-testid="trx-libre-answering">@(ls.Answering ? $"Yes — {ls.Languages.Count} language(s)" : "No")</dd></div>
+                                <div><dt>Languages</dt><dd data-testid="trx-libre-pair">@(ls.PairAvailable ? "The From → To pair is offered" : ls.Answering ? "The From → To pair is not offered" : "—")</dd></div>
+                            </dl>
+                            <p class="trx-muted" data-testid="trx-libre-detail" role="status">@ls.Detail</p>
+                        }
+                        <div class="trx-actions">
+                            <button type="button" class="btn-secondary btn-sm" @onclick="RefreshLibreAsync" data-testid="trx-libre-check">Check status</button>
+                            @if (_draft.Managed && v.CanManageLibreTranslate && v.CanWrite && !_dirty)
+                            {
+                                @if (_libre is { ImagePresent: false }) { <button type="button" class="btn-secondary btn-sm" @onclick='() => LibreAsync("pull")' data-testid="trx-libre-pull">Download image (needs internet once)</button> }
+                                @if (_libre is { ImagePresent: true, Running: false }) { <button type="button" class="btn-primary btn-sm" @onclick='() => LibreAsync("start")' data-testid="trx-libre-start">Start</button> }
+                                @if (_libre is { Running: true }) { <button type="button" class="btn-secondary btn-sm" @onclick='() => LibreAsync("stop")' data-testid="trx-libre-stop">Stop</button> }
+                            }
+                            @if (_dirty && _draft.Managed && v.CanManageLibreTranslate) { <span class="trx-muted">Save first, then start the server with these settings.</span> }
+                        </div>
+                    </fieldset>
+                }
+            </div>
+        </details>
     }
 </section>
 
@@ -158,30 +228,53 @@
         public string Image { get; set; } = TranslationSettings.DefaultLibreTranslateImage;
         public string? Region { get; set; }
         public string? Endpoint { get; set; }
+        public List<TranslationGlossaryEntry> Glossary { get; set; } = [];
 
         public static Draft From(TranslationSettings s) => new()
         {
             Provider = s.Provider, Source = s.SourceLanguage, Targets = [.. s.TargetLanguages], OfflineFallback = s.OfflineFallback, Managed = s.LibreTranslateManaged,
-            Url = s.LibreTranslateUrl, Port = s.LibreTranslatePort, Image = s.LibreTranslateImage, Region = s.AzureRegion, Endpoint = s.AzureEndpoint,
+            Url = s.LibreTranslateUrl, Port = s.LibreTranslatePort, Image = s.LibreTranslateImage, Region = s.AzureRegion, Endpoint = s.AzureEndpoint, Glossary = [.. s.Glossary],
         };
 
         public TranslationSettings ToSettings() => new()
         {
             Provider = Provider, SourceLanguage = Source, TargetLanguages = [.. Targets], OfflineFallback = OfflineFallback, LibreTranslateManaged = Managed,
             LibreTranslateUrl = Url, LibreTranslatePort = Port, LibreTranslateImage = Image, AzureRegion = Region, AzureEndpoint = Endpoint,
+            Glossary = [.. Glossary.Where(g => !string.IsNullOrWhiteSpace(g.Source) && !string.IsNullOrWhiteSpace(g.Target))],
         };
     }
 
     private TranslationSettingsView? _view;
     private LibreTranslateServiceStatus? _libre;
+    private OfflineTranslationStatus? _offline;
     private TranslationTestResult? _test;
     private Draft _draft = new();
     private string _azureKey = "";
     private bool _removeKey;
     private bool _dirty;
     private bool _busy;
+    private bool _checking;
+    private bool _advanced;
+    private bool _offlineShown => _offline is not null || _view?.Offline is { State: not "NotInstalled" };
     private string? _message;
     private string? _error;
+
+    private static bool IsStandard(TranslationProviderKind p) => p is TranslationProviderKind.EmbeddedOffline or TranslationProviderKind.Off;
+
+    /// <summary>The header pill: the offline model's own state when it is the translator (Ready only after a probe), else the availability.</summary>
+    private (string Text, string Tone) Overall(TranslationSettingsView v)
+    {
+        if (v.Settings.Provider == TranslationProviderKind.EmbeddedOffline)
+        {
+            var o = _offline ?? v.Offline;
+            return o.Ready ? ("Offline translation — Ready", "ok") : o.State is "Installed" ? ("Offline translation — not checked yet", "neutral") : ("Offline translation — not available", "pending");
+        }
+        if (v.Settings.Provider == TranslationProviderKind.Off) return ("Translation off", "neutral");
+        return v.Availability.Available ? ($"Ready: {v.Availability.Provider}", "ok") : ("No translator available", "pending");
+    }
+
+    /// <summary>The offline translator offers English → Norwegian (bokmål); the language lists stay complete for the other translators.</summary>
+    private IEnumerable<TranslationLanguage> Languages(TranslationSettingsView v) => v.Languages;
 
     protected override Task OnInitializedAsync() => ReloadAsync();
 
@@ -193,25 +286,63 @@
         _view = view; _error = error;
         if (view is null) return;
         _draft = Draft.From(view.Settings);
+        _advanced = !IsStandard(_draft.Provider);
         _azureKey = ""; _removeKey = false; _dirty = false;
-        if (_draft.Provider == TranslationProviderKind.LibreTranslate || _draft.OfflineFallback) await RefreshLibreAsync();
+        if (_draft.Provider == TranslationProviderKind.LibreTranslate) await RefreshLibreAsync();
+        // Opening this page checks the packaged model for real (it starts it once and translates the probe sentence): "Ready" is never assumed.
+        if (_draft.Provider == TranslationProviderKind.EmbeddedOffline && view.Offline.State is not ("NotInstalled" or "Damaged")) await CheckOfflineAsync(recheck: false);
+    }
+
+    private async Task CheckOfflineAsync(bool recheck)
+    {
+        _checking = true;
+        StateHasChanged();
+        var (status, error) = await Api.OfflineAsync(probe: true, recheck);
+        _checking = false;
+        if (status is not null) _offline = status;
+        if (error is not null) _error = error;
     }
 
     private void Edited() { _dirty = true; _message = null; _test = null; }
 
+    private async Task ProviderChanged()
+    {
+        Edited();
+        if (_draft.Provider == TranslationProviderKind.EmbeddedOffline)
+        {
+            if (_draft.Source == TranslationLanguages.Auto) _draft.Source = TranslationLanguages.English;
+            if (_offline is null) await CheckOfflineAsync(recheck: false);
+        }
+        if (_draft.Provider == TranslationProviderKind.LibreTranslate && _libre is null) await RefreshLibreAsync();
+    }
+
+    private void ToggleAdvanced() => _advanced = !_advanced;
+
     private void ToggleTarget(string code, bool on)
     {
         if (on && !_draft.Targets.Contains(code)) _draft.Targets.Add(code);
-        if (!on) _draft.Targets.Remove(code);
+        if (!on && _draft.Targets.Count > 1) _draft.Targets.Remove(code);
         Edited();
     }
 
-    private void MakeDefault(string? code)
+    private void MakeDefault(string? code, bool add = false)
     {
-        if (code is null || !_draft.Targets.Remove(code)) return;
+        if (code is null) return;
+        if (!_draft.Targets.Remove(code) && !add) return;
         _draft.Targets.Insert(0, code);
         Edited();
     }
+
+    private void SetTerm(int index, string? source, string? target)
+    {
+        var e = _draft.Glossary[index];
+        _draft.Glossary[index] = new(source ?? e.Source, target ?? e.Target);
+        Edited();
+    }
+
+    private void RemoveTerm(int index) { _draft.Glossary.RemoveAt(index); Edited(); }
+    private void AddTerm() { _draft.Glossary.Add(new("", "")); Edited(); }
+    private void ResetGlossary() { _draft.Glossary = [.. TranslationGlossary.DefaultEnNb]; Edited(); }
 
     private void RemoveKey() { _removeKey = true; _azureKey = ""; Edited(); _message = "The saved key is removed when you save."; }
 
@@ -223,7 +354,7 @@
         if (view is null) { _error = error ?? "The settings could not be saved."; return; }
         _view = view; _draft = Draft.From(view.Settings); _azureKey = ""; _removeKey = false; _dirty = false;
         _message = "Saved. Manual Testing uses these settings from now on (no restart needed).";
-        if (_draft.Provider == TranslationProviderKind.LibreTranslate || _draft.OfflineFallback) await RefreshLibreAsync();
+        if (_draft.Provider == TranslationProviderKind.LibreTranslate) await RefreshLibreAsync();
     }
 
     private async Task RefreshLibreAsync()

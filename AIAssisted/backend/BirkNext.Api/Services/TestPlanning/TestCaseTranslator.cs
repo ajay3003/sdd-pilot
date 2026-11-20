@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using BirkNext.Api.Services.TestPlanning.OfflineTranslation;
 using BirkNext.TestPlanning;
 
 namespace BirkNext.Api.Services.TestPlanning;
@@ -23,14 +24,18 @@ public sealed record TranslatedTexts(List<string?> Texts, string Provider);
 public sealed class TestCaseTranslationException(string message) : Exception(message);
 
 /// <summary>
-/// The chosen online service with the local LibreTranslate server as offline fallback: when the online service has no key or cannot be reached,
-/// the local server is used if it answers. The result names the service that translated. Both failing → one message naming both.
+/// The chosen online service (Advanced) with an offline fallback: when the online service has no key or cannot be reached, the embedded offline
+/// translator (or, without it, the local LibreTranslate server) is used. The result names the service that translated. Both failing → one message
+/// naming both. The offline translator itself never falls back to an online service.
 /// </summary>
 public sealed class FallbackTestCaseTranslator(ITestCaseTranslator primary, ITestCaseTranslator offline) : ITestCaseTranslator
 {
+    private static string Name(ITestCaseTranslator t) => t is EmbeddedOfflineTestCaseTranslator ? "the offline translator packaged with BirkNext" : "the local LibreTranslate server";
+
     public TranslationAvailability Availability { get; } = primary.Availability.Available
-        ? primary.Availability with { Reason = primary.Availability.Reason + " If it cannot be reached, the local LibreTranslate server is used (offline)." }
-        : new(true, offline.Availability.Provider, $"{primary.Availability.Reason.Split(" You can", 2)[0]} The local LibreTranslate server is used instead (offline), if it is running.");
+        ? primary.Availability with { Reason = primary.Availability.Reason + $" If it cannot be reached, {Name(offline)} is used (offline)." }
+        : new(offline.Availability.Available || offline is LibreTranslateTestCaseTranslator, offline.Availability.Provider,
+            $"{primary.Availability.Reason.Split(" You can", 2)[0]} {char.ToUpper(Name(offline)[0])}{Name(offline)[1..]} is used instead (offline){(offline is LibreTranslateTestCaseTranslator ? ", if it is running" : "")}.");
 
     public async Task<TranslatedTexts> TranslateAsync(IReadOnlyList<string?> texts, string source, string target, CancellationToken ct)
     {
@@ -57,12 +62,12 @@ public sealed class UnavailableTestCaseTranslator(string reason) : ITestCaseTran
 }
 
 /// <summary>
-/// The translator the current settings choose (System Settings → Translation, else the server configuration, else the default: LibreTranslate
-/// on this PC, English → Norwegian bokmål). Read on every request, so a change takes effect without a restart. Nothing is called to decide this.
+/// The translator the current settings choose (System Settings → Translation, else the server configuration, else the default: the embedded
+/// offline translator, English → Norwegian bokmål). Read on every request, so a change takes effect without a restart. Nothing is called to decide this.
 /// </summary>
-public sealed class TestCaseTranslatorResolver(TranslationSettingsStore store, IConfiguration config, IHttpClientFactory http)
+public sealed class TestCaseTranslatorResolver(TranslationSettingsStore store, IConfiguration config, IHttpClientFactory http, OfflineTranslationEngine? offline = null)
 {
-    public ITestCaseTranslator Current() => TestCaseTranslators.Create(store.Effective().Settings, store.AzureKey(), config, http);
+    public ITestCaseTranslator Current() => TestCaseTranslators.Create(store.Effective().Settings, store.AzureKey(), config, http, offline);
     public TranslationSettings Settings() => store.Effective().Settings;
 }
 
@@ -71,16 +76,20 @@ public static class TestCaseTranslators
     public const string NotEnabled = "Translation is switched off (System Settings → Translation). You can write the translated text by hand.";
     public const string NoAnthropicKey = "Anthropic is chosen for translation but no Anthropic API key is configured on the server. You can write the translated text by hand.";
 
-    public static ITestCaseTranslator Create(TranslationSettings s, string? azureKey, IConfiguration config, IHttpClientFactory http)
+    public const string NoOfflineEngine = "The offline translator is not part of this BirkNext installation. You can write the translated text by hand.";
+
+    public static ITestCaseTranslator Create(TranslationSettings s, string? azureKey, IConfiguration config, IHttpClientFactory http, OfflineTranslationEngine? offline = null)
     {
-        var chosen = Single(s, azureKey, config, http);
-        return s.OfflineFallback && s.Provider is TranslationProviderKind.AzureTranslator or TranslationProviderKind.Anthropic
-            ? new FallbackTestCaseTranslator(chosen, LibreTranslateTestCaseTranslator.Create(s.EffectiveLibreTranslateUrl, config["ManualTesting:Translation:LibreTranslate:ApiKey"], http))
-            : chosen;
+        var chosen = Single(s, azureKey, config, http, offline);
+        if (!(s.OfflineFallback && s.Provider is TranslationProviderKind.AzureTranslator or TranslationProviderKind.Anthropic)) return chosen;
+        var embedded = offline is null ? null : new EmbeddedOfflineTestCaseTranslator(offline, s.Glossary);
+        return new FallbackTestCaseTranslator(chosen, embedded is { Availability.Available: true } ? embedded
+            : LibreTranslateTestCaseTranslator.Create(s.EffectiveLibreTranslateUrl, config["ManualTesting:Translation:LibreTranslate:ApiKey"], http));
     }
 
-    private static ITestCaseTranslator Single(TranslationSettings s, string? azureKey, IConfiguration config, IHttpClientFactory http) => s.Provider switch
+    private static ITestCaseTranslator Single(TranslationSettings s, string? azureKey, IConfiguration config, IHttpClientFactory http, OfflineTranslationEngine? offline) => s.Provider switch
     {
+        TranslationProviderKind.EmbeddedOffline => offline is null ? new UnavailableTestCaseTranslator(NoOfflineEngine) : new EmbeddedOfflineTestCaseTranslator(offline, s.Glossary),
         TranslationProviderKind.AzureTranslator => AzureTranslatorTestCaseTranslator.Create(azureKey, s.AzureRegion, s.AzureEndpoint, http),
         TranslationProviderKind.LibreTranslate => LibreTranslateTestCaseTranslator.Create(s.EffectiveLibreTranslateUrl, config["ManualTesting:Translation:LibreTranslate:ApiKey"], http),
         TranslationProviderKind.Anthropic => string.IsNullOrWhiteSpace(config["Anthropic:ApiKey"]) ? new UnavailableTestCaseTranslator(NoAnthropicKey)

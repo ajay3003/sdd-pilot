@@ -4,7 +4,8 @@ namespace BirkNext.TestPlanning;
 
 // ── Translation settings (System Settings → Translation) ───────────────────────────────────────────────────────────────────
 // One installation-wide choice of translator for test-case text, with its languages. Not a Target Environment setting: the translator serves
-// every project and environment. Secrets (the Azure key) are stored encrypted on the server and never returned.
+// every project and environment. Secrets (the Azure key) are stored encrypted on the server and never returned. The default is the embedded
+// offline translator packaged with BirkNext (English → Norwegian bokmål; no internet, container, account or installation).
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TranslationProviderKind
@@ -13,10 +14,33 @@ public enum TranslationProviderKind
     Off,
     /// <summary>A LibreTranslate server (the local one BirkNext runs with Podman; offline once its language models are installed).</summary>
     LibreTranslate,
-    /// <summary>Azure AI Translator (online; key and region). The default.</summary>
+    /// <summary>Azure AI Translator (online; key and region). Optional (Advanced).</summary>
     AzureTranslator,
-    /// <summary>The Anthropic client BirkNext already has (online; Anthropic:ApiKey in the server configuration).</summary>
+    /// <summary>The Anthropic client BirkNext already has (online; Anthropic:ApiKey in the server configuration). Optional (Advanced).</summary>
     Anthropic,
+    /// <summary>The offline translator packaged with BirkNext (CTranslate2 + the HPLT English → Norwegian bokmål model, CPU only). The default.</summary>
+    EmbeddedOffline,
+}
+
+/// <summary>One glossary term: <see cref="Source"/> (any case, whole words) is always written as <see cref="Target"/>. A term that is already
+/// Norwegian (Source = Target) is kept unchanged. Used by the embedded offline translator; never a business rule.</summary>
+public sealed record TranslationGlossaryEntry(string Source, string Target);
+
+public static class TranslationGlossary
+{
+    public const int MaxEntries = 200;
+
+    /// <summary>Starting terms for English → Norwegian bokmål test text (System Settings → Translation → Advanced, editable). Validated against a
+    /// human-reviewed example set (docs/audits/birknext-embedded-offline-translation-2026-11-20.md).</summary>
+    public static readonly IReadOnlyList<TranslationGlossaryEntry> DefaultEnNb =
+    [
+        new("school attendance", "skolenærvær"), new("educational relationship", "utdanningsforhold"), new("education relationship", "utdanningsforhold"),
+        new("period lock", "periodelås"), new("reporting obligation", "rapporteringsplikt"), new("obligation to report", "rapporteringsplikt"),
+        new("expected reporting", "forventet rapportering"), new("correction", "korrigering"), new("withdrawal", "tilbaketrekking"),
+        new("foster home", "fosterhjem"), new("code 6/7", "kode 6/7"),
+        new("Skolenærvær", "Skolenærvær"), new("Utdanningsforhold", "Utdanningsforhold"), new("Periodelås", "Periodelås"), new("Rapporteringsplikt", "Rapporteringsplikt"),
+        new("Fosterhjem", "Fosterhjem"), new("Korrigering", "Korrigering"), new("Tilbaketrekking", "Tilbaketrekking"), new("Kode 6/7", "Kode 6/7"),
+    ];
 }
 
 public sealed record TranslationLanguage(string Code, string Name);
@@ -45,10 +69,11 @@ public static class TranslationLanguages
 
 public sealed record TranslationSettings
 {
-    /// <summary>Default: Azure AI Translator (online). Until its key is saved, translation is unavailable (or the offline fallback is used).</summary>
-    public TranslationProviderKind Provider { get; init; } = TranslationProviderKind.AzureTranslator;
-    /// <summary>When the chosen online service has no key or cannot be reached, use the local LibreTranslate server (offline) if it answers.
-    /// The result always names the service that translated.</summary>
+    /// <summary>Default: the embedded offline translator (English → Norwegian bokmål, packaged with BirkNext). Saved settings keep their choice.</summary>
+    public TranslationProviderKind Provider { get; init; } = TranslationProviderKind.EmbeddedOffline;
+    /// <summary>Only for an online service chosen under Advanced: when it has no key or cannot be reached, translate offline instead (the embedded
+    /// translator when it is installed, else the local LibreTranslate server). Never the other way round: the embedded translator never falls back
+    /// to the internet. The result always names the service that translated.</summary>
     public bool OfflineFallback { get; init; } = true;
     /// <summary>The language of the original text ("auto" = the service detects it).</summary>
     public string SourceLanguage { get; init; } = TranslationLanguages.English;
@@ -61,6 +86,8 @@ public sealed record TranslationSettings
     public string LibreTranslateImage { get; init; } = DefaultLibreTranslateImage;
     public string? AzureRegion { get; init; }
     public string? AzureEndpoint { get; init; }
+    /// <summary>Terms the embedded offline translator always writes the same way (see <see cref="TranslationGlossary.DefaultEnNb"/>).</summary>
+    public List<TranslationGlossaryEntry> Glossary { get; init; } = [.. TranslationGlossary.DefaultEnNb];
 
     public const int DefaultLibreTranslatePort = 5050;
     public const string DefaultLibreTranslateImage = "docker.io/libretranslate/libretranslate:v1.6.0";
@@ -83,6 +110,8 @@ public sealed record TranslationSettingsView
     public DateTimeOffset? UpdatedAt { get; init; }
     /// <summary>Whether BirkNext can run the local LibreTranslate server here (Podman runner); false in the Tester Package (native runner).</summary>
     public bool CanManageLibreTranslate { get; init; }
+    /// <summary>The embedded offline translator, as far as known without starting it (the package check); "Ready" only after a translation probe.</summary>
+    public OfflineTranslationStatus Offline { get; init; } = new();
     public bool CanWrite { get; init; }
     public IReadOnlyList<TranslationLanguage> Languages { get; init; } = TranslationLanguages.Known;
 }
@@ -110,3 +139,25 @@ public sealed record LibreTranslateServiceStatus
 
 /// <summary>One fixed sample sentence translated with the current settings (what System Settings → Test translation shows).</summary>
 public sealed record TranslationTestResult(bool Ok, string? Provider, string Source, string? Translated, string Message);
+
+/// <summary>
+/// The embedded offline translator, fact by fact. <see cref="State"/>: "Ready" (the packaged model loaded and translated the probe sentence),
+/// "Installed" (the package is complete and unchanged; not started yet), "NotInstalled", "Damaged" or "Failed" (it did not load or translate).
+/// </summary>
+public sealed record OfflineTranslationStatus
+{
+    public string State { get; init; } = "NotInstalled";
+    public string Summary { get; init; } = "";
+    public string? Detail { get; init; }
+    public string? Model { get; init; }
+    public string? ModelLicense { get; init; }
+    public string? Attribution { get; init; }
+    public string? Engine { get; init; }
+    public string? Languages { get; init; }
+    /// <summary>The probe sentence and its translation, when probed.</summary>
+    public string? ProbeSource { get; init; }
+    public string? ProbeResult { get; init; }
+    public double? ProbeSeconds { get; init; }
+    public DateTimeOffset? CheckedAt { get; init; }
+    [JsonIgnore] public bool Ready => State == "Ready";
+}

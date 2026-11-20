@@ -14,6 +14,8 @@ public interface ITranslationSettingsApiService
     /// <summary>"pull", "start" or "stop" — returns the server's message.</summary>
     Task<string> LibreTranslateActionAsync(string action, CancellationToken ct = default);
     Task<(TranslationTestResult? Result, string? Error)> TestAsync(CancellationToken ct = default);
+    /// <summary>The embedded offline translator: <paramref name="probe"/> starts it and translates the probe sentence; <paramref name="recheck"/> verifies the package again first.</summary>
+    Task<(OfflineTranslationStatus? Status, string? Error)> OfflineAsync(bool probe, bool recheck = false, CancellationToken ct = default) => Task.FromResult<(OfflineTranslationStatus?, string?)>((null, null));
 }
 
 public sealed class TranslationSettingsApiService(HttpClient http) : ITranslationSettingsApiService
@@ -33,6 +35,8 @@ public sealed class TranslationSettingsApiService(HttpClient http) : ITranslatio
         return error ?? (result.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "");
     }
     public Task<(TranslationTestResult?, string?)> TestAsync(CancellationToken ct = default) => Send<TranslationTestResult>(() => http.PostAsync($"{Base}/test", null, ct), ct);
+    public Task<(OfflineTranslationStatus?, string?)> OfflineAsync(bool probe, bool recheck = false, CancellationToken ct = default) =>
+        Send<OfflineTranslationStatus>(() => http.GetAsync($"{Base}/offline?probe={(probe ? "true" : "false")}&recheck={(recheck ? "true" : "false")}", ct), ct);
 
     private static async Task<(T? Value, string? Error)> Send<T>(Func<Task<HttpResponseMessage>> call, CancellationToken ct)
     {

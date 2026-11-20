@@ -27,6 +27,41 @@
     "license": { "url": "https://raw.githubusercontent.com/grafana/k6/v1.0.0/LICENSE.md", "sha256": "45bd5efa5e66840e253253f3cc172d07213cb812206cda7bb71cd5b9dbd5a985", "spdx": "AGPL-3.0-only",
                  "sourceOffer": "https://github.com/grafana/k6/tree/v1.0.0" }
   },
+  "offlineTranslation": {
+    "description": "Embedded offline English -> Norwegian (bokmal) translation for Manual Testing: CTranslate2 (CPU, int8) with the HPLT v2.0 Marian model, run by a helper process with the embeddable Python runtime. Built by scripts/build-offline-translation.ps1 from these inputs only; the tester's PC never downloads anything.",
+    "protocol": 1,
+    "directory": "runtime/translation",
+    "python": { "version": "3.12.10", "url": "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip", "sha256": "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3",
+                "checksumProvenance": "SHA-256 of the archive downloaded over HTTPS from python.org on 2026-11-20 (trust on first use).", "spdx": "PSF-2.0",
+                "removeModules": [ "_socket.pyd", "_ssl.pyd", "libssl-3.dll", "libcrypto-3.dll", "_hashlib.pyd", "_sqlite3.pyd", "sqlite3.dll", "_msi.pyd", "_wmi.pyd", "winsound.pyd", "_overlapped.pyd", "_asyncio.pyd" ] },
+    "wheels": {
+      "ctranslate2": { "version": "4.9.0", "url": "https://files.pythonhosted.org/packages/c6/ee/0f5bafde2a434b90bec1f979906963ecda6f0d18afc5abaec6f19c7feab1/ctranslate2-4.9.0-cp312-cp312-win_amd64.whl", "sha256": "ee930e984679ad16c5fb7bc8da2eaca8c269f86d02cb9eeec087baa1837b5bd2", "spdx": "MIT", "runtime": true },
+      "sentencepiece": { "version": "0.2.3", "url": "https://files.pythonhosted.org/packages/b5/78/47be22c27976afed9f88cb9bcdb225abb37991c1ff442a9234e64e7a3d23/sentencepiece-0.2.3-cp312-cp312-win_amd64.whl", "sha256": "972af959c63cde446210a8935524806820c253afa4b0a97d83c206b857085f44", "spdx": "Apache-2.0", "runtime": true },
+      "numpy": { "version": "2.5.5", "url": "https://files.pythonhosted.org/packages/d1/71/b1ce51834c21020d189332979d38ba7350eb6cd7ca8c8ec424a663b0ca6f/numpy-2.5.5-cp312-cp312-win_amd64.whl", "sha256": "919eb420662b0b4ba34889df503f3d5329775b0c1d5f7e5f5af4fba8315b1e30", "spdx": "BSD-3-Clause", "runtime": false },
+      "pyyaml": { "version": "6.0.3", "url": "https://files.pythonhosted.org/packages/86/bf/899e81e4cce32febab4fb42bb97dcdf66bc135272882d1987881a4b519e9/pyyaml-6.0.3-cp312-cp312-win_amd64.whl", "sha256": "5fcd34e47f6e0b794d17de1b4ff496c00986e1c83f7ab2fb8fcfe9616ff7477b", "spdx": "MIT", "runtime": false }
+    },
+    "checksumProvenanceWheels": "SHA-256 values as published by PyPI for these files. numpy and PyYAML are used only to convert the model while building; they are not shipped.",
+    "model": {
+      "id": "HPLT/translate-en-nb-v2.0-hplt",
+      "revision": "24a48dba7fa622d090bf5bfb7d2ebc08d5a58932",
+      "source": "en", "target": "nb", "architecture": "Transformer-base (Marian), SentencePiece unigram vocabulary", "spdx": "CC-BY-4.0",
+      "attribution": "HPLT MT release v2.0 (English -> Norwegian Bokmal), the HPLT project (hplt-project.org), CC BY 4.0. Converted to CTranslate2 int8 by the BirkNext build; weights otherwise unchanged.",
+      "note": "HPLT/translate-en-nb-v2.0-hplt_opus (HPLT + OPUS data) was the first choice, but its repository holds no weights (README only, checked 2026-11-20) and data.statmt.org has no copy; the HPLT-data model is used.",
+      "files": [
+        { "name": "model.npz.best-chrf.npz", "url": "https://huggingface.co/HPLT/translate-en-nb-v2.0-hplt/resolve/24a48dba7fa622d090bf5bfb7d2ebc08d5a58932/model.npz.best-chrf.npz", "sha256": "733a6ec5bbc9584d95d3d3da0a2e6da9183920e206376232fa3475a5af24379b" },
+        { "name": "model.en-nb.spm", "url": "https://huggingface.co/HPLT/translate-en-nb-v2.0-hplt/resolve/24a48dba7fa622d090bf5bfb7d2ebc08d5a58932/model.en-nb.spm", "sha256": "a7ce7b7ebf81963febab4700054095f0d5b541942a903f47c8b737038a8f1576" },
+        { "name": "model.en-nb.vocab", "url": "https://huggingface.co/HPLT/translate-en-nb-v2.0-hplt/resolve/24a48dba7fa622d090bf5bfb7d2ebc08d5a58932/model.en-nb.vocab", "sha256": "4614855695c104b3f3daa19cbcac62a26f7e6cb3006b175b624914991fb785ad" },
+        { "name": "README.md", "url": "https://huggingface.co/HPLT/translate-en-nb-v2.0-hplt/resolve/24a48dba7fa622d090bf5bfb7d2ebc08d5a58932/README.md", "sha256": "9d65b676715ae7801d048ddd0abc803afc85c9387f6993667e265d5d24b92c5b" }
+      ],
+      "checksumProvenance": "The weight and SentencePiece hashes equal the Git LFS object ids Hugging Face lists for the revision; the vocabulary and README are SHA-256 of the files downloaded over HTTPS on 2026-11-20."
+    },
+    "licenses": [
+      { "name": "CTranslate2-LICENSE.txt", "url": "https://raw.githubusercontent.com/OpenNMT/CTranslate2/v4.9.0/LICENSE", "sha256": "54aa79d9fe3c09e67a16dcd95b9e88676405a6ec174efda31036983cf7672ecb" },
+      { "name": "SentencePiece-LICENSE.txt", "url": "https://raw.githubusercontent.com/google/sentencepiece/v0.2.3/LICENSE", "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30" },
+      { "name": "CC-BY-4.0.txt", "url": "https://creativecommons.org/licenses/by/4.0/legalcode.txt", "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411" }
+    ],
+    "windowsPrerequisites": [ "Microsoft Visual C++ 2015-2022 Redistributable (x64), as for PostgreSQL: ctranslate2.dll imports msvcp140.dll (a copy vendored by the SentencePiece wheel is placed beside python.exe)" ]
+  },
   "dotnet": {
     "note": "The backend and the launcher are published self-contained for win-x64 with the .NET 8 runtime of the SDK that builds the package (recorded in config/runtime-manifest.json)."
   }
