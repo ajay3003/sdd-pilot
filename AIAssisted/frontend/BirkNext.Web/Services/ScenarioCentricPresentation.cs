@@ -20,6 +20,29 @@ public static class ScenarioCentricPresentation
         return string.Join(" · ", parts);
     }
 
+    /// <summary>Rows for a text field that shows its whole text: about 70 characters per row, 1–6 rows (the field still resizes by hand).</summary>
+    public static int Rows(string? text) => string.IsNullOrEmpty(text) ? 1
+        : Math.Clamp(text.Split('\n').Sum(line => 1 + line.Length / 70), 1, 6);
+
+    /// <summary>
+    /// A readable evidence reference: "spec.md#scenario-3" for "Project/SkoleService/specs/001-skoleservice/spec.md#scenario-3" — the file and its
+    /// anchor, the folders in the tooltip. References without a path ("skolenaervaer/duplikat-melding") keep their last two parts.
+    /// </summary>
+    public static string ShortReference(string reference)
+    {
+        var text = reference.Trim();
+        var hash = text.IndexOf('#');
+        var path = hash >= 0 ? text[..hash] : text;
+        var anchor = hash >= 0 ? text[hash..] : "";
+        var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length <= 2) return text;
+        var last = parts[^1];
+        return (last.Contains('.') ? last : $"{parts[^2]}/{last}") + anchor;
+    }
+
+    /// <summary>The first 8 characters of a GUID-like id ("025eb58c"), the whole id in the tooltip.</summary>
+    public static string ShortId(string id) => id.Length > 12 ? id.Replace("-", "")[..8] : id;
+
     /// <summary>The scenario's identifier as the source names it ("acceptance scenario US1-2", "spec.md#scenario-42"), never an internal key.</summary>
     public static string? SourceReference(TestCaseDraft? primary) =>
         primary?.Generated.Evidence.FirstOrDefault(e => e.Kind is "specification" or "requirement")?.Reference ?? primary?.Generated.Evidence.FirstOrDefault()?.Reference;

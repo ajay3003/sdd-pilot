@@ -1095,8 +1095,9 @@
         if (_draft is not { } d) { __builder.AddContent(0, NoDraft()); return; }
         <section class="tps-section" data-testid="tps-prepare-step" aria-labelledby="tps-prepare-h">
             <div class="tps-section-head">
-                <h2 id="tps-prepare-h" class="tps-h2">Prepare test cases <span class="tps-count">@d.Cases.Count(c => c.Review == TestCaseReviewState.Accepted) of @d.Cases.Count accepted</span></h2>
-                <p class="tps-muted">What came from the evidence stays as it was; your changes are kept separately and never overwritten when scenarios are discovered again. A missing expected result stays <strong>Needs clarification</strong> until someone states it.</p>
+                <h2 id="tps-prepare-h" class="visually-hidden">Prepare test cases</h2>
+                <p class="tps-prepare-status" data-testid="tps-prepare-count"><strong>@d.Cases.Count(c => c.Review == TestCaseReviewState.Accepted) of @d.Cases.Count accepted</strong>
+                    <span class="tps-muted tps-small">Your edits are kept apart from the evidence and never overwritten by a new discovery. A missing expected result stays <strong>Needs clarification</strong> until someone states it.</span></p>
             </div>
             @if (d.Cases.Any(c => c.SourceChanged))
             {
@@ -1169,6 +1170,8 @@
                 <div class="tps-case-body" id="@($"tps-case-body-{sid}")">
                     @CaseStatus(d, c, sid)
                     @if (shown is { } editLanguage) { @TranslationEditor(d, c, sid, editLanguage) }
+                    <details class="tps-source-facts" open="@(!CanWrite)" data-testid="@($"tps-source-facts-{sid}")">
+                    <summary>From the evidence <span class="tps-muted tps-small">purpose, details, requirements and where it came from</span></summary>
                     <dl class="tps-dl" data-testid="tps-generated-@sid">
                         <dt>Purpose</dt><dd>@c.EffectivePurpose</dd>
                         @* MT-7: a guide's rule ids are its business rules, never called specification requirements; project cases carry specification ids. *@
@@ -1192,11 +1195,12 @@
                         @if (c.Generated.ExistingTests.Count > 0) { <dt>Existing tests</dt><dd>@string.Join("; ", c.Generated.ExistingTests.Select(t => t.Name)) <span class="tps-muted">(explicit requirement references)</span></dd> }
                         else if (c.Generated.NamedExistingTests.Count > 0) { <dt>Tests the guide names</dt><dd>@string.Join(" · ", c.Generated.NamedExistingTests) <span class="tps-muted">(names, not verified identities)</span></dd> }
                         <dt>Evidence</dt><dd class="tps-small" data-testid="tps-evidence-@sid">
-                            @if (c.Generated.Evidence.Count > 0) { @string.Join(" · ", c.Generated.Evidence.Take(6).Select(e => e.Reference)) }
+                            @if (c.Generated.Evidence.Count > 0) { @foreach (var e in c.Generated.Evidence.Take(6)) { <span class="tps-ref" title="@e.Reference">@C.ShortReference(e.Reference)</span> } }
                             else if (c.Source.Kind == ScenarioSourceKind.Manual) { <span>Written by hand — no discovered evidence.</span> }
                             else { <span>@c.Source.Owner · @sid@(c.Source.Revision is { } rev ? $" · guide revision {rev}" : "")</span> }
                             @if (c.Generated.Confidence is { } conf) { <span class="tps-muted"> · @ScenarioCandidateTypes.ConfidenceLabel(conf)</span> }</dd>
                     </dl>
+                    </details>
                     @LinkedRequirements(d, c, sid)
                     @if (CanWrite)
                     {
@@ -1216,8 +1220,8 @@
                                         @ondragover:preventDefault @ondragenter='() => DragEnter($"step:{sid}:{index}")' @ondrop="() => DropStep(d, sid, index)">
                                         <span class="tps-drag" draggable="true" data-drag="@($"step:{sid}:{index}")" title="Drag to reorder the step" aria-hidden="true"
                                               @ondragstart='() => _drag = ("step", sid, index)' @ondragend="DragEnd" data-testid="@($"tps-step-drag-{sid}-{index}")">⋮⋮</span>
-                                        <input class="tps-input" value="@c.EffectiveSteps[index]" aria-label="Step @(index + 1) action" @onchange="e => Change(P.WithCase(d, sid, x => P.SetStep(x, index, e.Value?.ToString() ?? x.EffectiveSteps[index], null)))" data-testid="@($"tps-step-action-{sid}-{index}")" />
-                                        <input class="tps-input" value="@stepResults[index]" placeholder="Needs clarification — expected result not stated" aria-label="Step @(index + 1) expected result" @onchange="e => Change(P.WithCase(d, sid, x => P.SetStep(x, index, null, e.Value?.ToString() ?? string.Empty)))" data-testid="@($"tps-step-expected-{sid}-{index}")" />
+                                        <textarea class="tps-input tps-step-text" rows="@C.Rows(c.EffectiveSteps[index])" value="@c.EffectiveSteps[index]" aria-label="Step @(index + 1) action" @onchange="e => Change(P.WithCase(d, sid, x => P.SetStep(x, index, e.Value?.ToString() ?? x.EffectiveSteps[index], null)))" data-testid="@($"tps-step-action-{sid}-{index}")"></textarea>
+                                        <textarea class="tps-input tps-step-text tps-step-result" rows="@C.Rows(stepResults[index])" value="@stepResults[index]" placeholder="Needs clarification — expected result not stated" aria-label="Step @(index + 1) expected result" @onchange="e => Change(P.WithCase(d, sid, x => P.SetStep(x, index, null, e.Value?.ToString() ?? string.Empty)))" data-testid="@($"tps-step-expected-{sid}-{index}")"></textarea>
                                         <span class="tps-step-tools">
                                             <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@(index == 0)" aria-label="Move step @(index + 1) up" @onclick="() => Change(P.WithCase(d, sid, x => P.MoveStep(x, index, -1)))" data-testid="@($"tps-step-up-{sid}-{index}")">↑</button>
                                             <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@(index == c.EffectiveSteps.Count - 1)" aria-label="Move step @(index + 1) down" @onclick="() => Change(P.WithCase(d, sid, x => P.MoveStep(x, index, 1)))" data-testid="@($"tps-step-down-{sid}-{index}")">↓</button>
@@ -1552,8 +1556,8 @@
     {
         var edited = !string.Equals(generated ?? "", effective ?? "", StringComparison.Ordinal);
         var sid = c.Source.ScenarioId;
-        <label class="tps-field @(multi ? "tps-field-wide" : null)"><span class="tps-k">@label @if (edited) { <span class="tps-chip tps-chip-ok">Edited</span> } else if (string.IsNullOrWhiteSpace(generated) && key is "expected" or "preconditions") { <span class="tps-chip tps-chip-bad">Not in source</span> }</span>
-            @if (multi) { <textarea class="tps-input" rows="2" value="@effective" @onchange="e => Change(P.WithCase(_draft!, sid, _ => apply(e.Value?.ToString())))" data-testid="@($"tps-edit-{key}-{sid}")"></textarea> }
+        <label class="tps-field @(multi || key == "title" ? "tps-field-wide" : null)"><span class="tps-k">@label @if (edited) { <span class="tps-chip tps-chip-ok">Edited</span> } else if (string.IsNullOrWhiteSpace(generated) && key is "expected" or "preconditions") { <span class="tps-chip tps-chip-bad">Not in source</span> }</span>
+            @if (multi) { <textarea class="tps-input" rows="@Math.Max(2, C.Rows(effective))" value="@effective" @onchange="e => Change(P.WithCase(_draft!, sid, _ => apply(e.Value?.ToString())))" data-testid="@($"tps-edit-{key}-{sid}")"></textarea> }
             else { <input class="tps-input" value="@effective" @onchange="e => Change(P.WithCase(_draft!, sid, _ => apply(e.Value?.ToString())))" data-testid="@($"tps-edit-{key}-{sid}")" /> }
             @if (edited && generated is not null) { <span class="tps-muted tps-small">From the evidence: @generated</span> }
         </label>
@@ -2282,7 +2286,7 @@
                                     @if (story.IndependentTest is { } it) { <dt>Independent Test</dt><dd class="tps-small" data-testid="tps-scenario-independent">@(storyText?.IndependentTest ?? it)</dd> }
                                 }
                                 else if (primary.Generated.Capability == "specification") { <dt>User story</dt><dd class="tps-muted" data-testid="tps-scenario-story">Not identified</dd> }
-                            <dt>Source</dt><dd class="tps-small" data-testid="tps-scenario-evidence">@(C.SourceReference(primary) ?? "Not stated")@(primary.Generated.GroupTitle is { } area ? $" · {area}" : "")@(d.SnapshotKey is { } snap ? $" · snapshot {snap}" : "")</dd>
+                            <dt>Source</dt><dd class="tps-small" data-testid="tps-scenario-evidence" title="@($"{C.SourceReference(primary)}{(d.SnapshotKey is { } fullSnap ? $" · snapshot {fullSnap}" : "")}")">@(C.SourceReference(primary) is { } sourceRef ? C.ShortReference(sourceRef) : "Not stated")@(primary.Generated.GroupTitle is { } area ? $" · {area}" : "")@(d.SnapshotKey is { } snap ? $" · snapshot {C.ShortId(snap)}" : "")</dd>
                             <dt>Scenario requirements</dt><dd data-testid="tps-scenario-requirements">@(scenarioLinks.Count == 0 ? "None confirmed for the scenario as a whole." : string.Join(", ", scenarioLinks.Select(l => l.RequirementId)))
                                 <span class="tps-muted tps-small"> — apply to the business scenario; never counted as a test case's test design.</span></dd>
                             @if (nb) { <dt>Original</dt><dd class="tps-muted tps-small" data-testid="tps-scenario-original">@g.Title</dd> }

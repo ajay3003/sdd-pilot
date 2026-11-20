@@ -201,8 +201,9 @@ textarea.tps-input { resize: vertical; line-height: 1.45; }
 .tps-step-list { margin: 0; padding-left: 1.4rem; display: flex; flex-direction: column; gap: 0.45rem; }
 /* Each step reads as its action with the expected result under it; reorder/remove tools beside them (no cramped side-by-side inputs). */
 .tps-step-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.3rem 0.5rem; align-items: center; }
-.tps-step-row > input { grid-column: 1; min-width: 0; }
-.tps-step-row > input + input { border-left: 3px solid var(--clr-border, #d0d7de); }
+.tps-step-row > input, .tps-step-row > textarea { grid-column: 1; min-width: 0; }
+.tps-step-row > input + input, .tps-step-row > .tps-step-result { border-left: 3px solid var(--clr-border, #d0d7de); }
+textarea.tps-step-text { resize: vertical; min-height: 2.2rem; }
 .tps-step-tools { grid-column: 2; grid-row: 1 / span 2; display: inline-flex; gap: 0.25rem; flex-wrap: wrap; justify-content: flex-end; }
 .tps-step-row > .tps-chip { grid-column: 1 / -1; justify-self: start; }
 .tps-perf { border-top: 1px solid var(--clr-border-subtle, #eaeef2); padding-top: 0.6rem; }
@@ -450,7 +451,7 @@ textarea.tps-input { resize: vertical; line-height: 1.45; }
 .tps-case:has(> .tps-case-order) > .tps-case-head { padding-right: 6.75rem; }
 .tps-step-row:has(> .tps-drag) { grid-template-columns: auto minmax(0, 1fr) auto; }
 .tps-step-row:has(> .tps-drag) > .tps-drag { grid-column: 1; grid-row: 1 / span 2; align-self: start; }
-.tps-step-row:has(> .tps-drag) > input { grid-column: 2; }
+.tps-step-row:has(> .tps-drag) > input, .tps-step-row:has(> .tps-drag) > textarea { grid-column: 2; }
 .tps-inline-card { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem 0.9rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 12px;
     background: var(--clr-surface, #f6f8fa); animation: tps-pop .14s ease-out; }
 @media (prefers-reduced-motion: reduce) { .tps-drag, .tps-case-order { transition: none; } .tps-inline-card { animation: none; } }
@@ -460,3 +461,15 @@ textarea.tps-input { resize: vertical; line-height: 1.45; }
 
 /* Parent User Story above Linked requirements: found from the linked requirements, or why not (never inferred). */
 .tps-parent-story { margin: 0 0 .75rem; padding-bottom: .6rem; border-bottom: 1px solid var(--clr-border-subtle, #eaeef2); }
+/* Plan & prepare polish (2026-11-20): one heading, folded evidence facts, readable references, the same chevron disclosure everywhere. */
+.tps-prepare-status { display: flex; flex-wrap: wrap; gap: 0.2rem 0.75rem; align-items: baseline; margin: 0 0 0.5rem; }
+.tps-source-facts { border: 1px solid var(--clr-border-subtle, #eaeef2); border-radius: 10px; padding: 0.45rem 0.7rem; margin: 0.4rem 0 0.6rem; background: var(--clr-surface, #f6f8fa); }
+.tps-source-facts[open] { background: transparent; }
+.tps-source-facts > .tps-dl { margin-top: 0.4rem; }
+.tps-ref { display: inline-block; margin-right: 0.5rem; font-family: var(--font-mono, ui-monospace, SFMono-Regular, Consolas, monospace); font-size: 0.8rem; overflow-wrap: anywhere; }
+.tps-advanced > summary, .tps-source-facts > summary { display: flex; flex-wrap: wrap; gap: 0.2rem 0.6rem; align-items: baseline; cursor: pointer; list-style: none; font-weight: 600; }
+.tps-advanced > summary::-webkit-details-marker, .tps-source-facts > summary::-webkit-details-marker { display: none; }
+.tps-advanced > summary::before, .tps-source-facts > summary::before { content: ""; width: 0.42rem; height: 0.42rem; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); margin-right: 0.15rem; align-self: center; transition: transform 0.12s; }
+.tps-advanced[open] > summary::before, .tps-source-facts[open] > summary::before { transform: rotate(45deg); }
+.tps-advanced > summary:focus-visible, .tps-source-facts > summary:focus-visible { outline: 2px solid var(--clr-focus, #0969da); outline-offset: 2px; border-radius: 4px; }
+.tps-advanced { border-top: 1px solid var(--clr-border-subtle, #eaeef2); padding: 0.55rem 0 0.25rem; }
