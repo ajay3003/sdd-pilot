@@ -129,11 +129,25 @@ scenarios.
   service test (order kept and followed by the export; exclusion needs a reason, keeps every case, excluded cases not exported), and the browser
   workflow (keyboard reorder within a story, step drag, reload).
 
-## 14. Remaining limitations
+## 14. Follow-up: renumbering, traceability, plan.md / quickstart.md
 
-- Scenario identity stays positional within the file (`scenario-N`, the pre-existing scheme) so prepared cases keep their identity; inserting a
-  scenario earlier in the file flags later scenarios as changed (never silently rebound).
-- Story-level requirement links are shown in Plan & prepare only; Requirements Traceability does not list them yet (by design they are not
-  coverage).
-- tasks.md is read only when it sits in the specification's folder; plan.md/quickstart.md are not used for story relationships.
-- Translation providers are verified against stand-ins only (see the scenario-centric audit, §16/§18).
+- **Renumbered scenarios** (`scenario-N` stays the identity): when a scenario is inserted or removed earlier in `spec.md`, the same text gets
+  another id. The case is flagged; on **Update** it follows the candidate with the same content fingerprint — only when unambiguous (exactly one
+  match, not held by a case that stays, not wanted by two cases). Edits, links, translations and review are kept; cases written under the
+  scenario move with it; the case history records "Moved in the specification: the same scenario text is now …#scenario-43 (was …#scenario-42)".
+  Ambiguous cases keep the earlier behaviour (flagged as changed). `TestPlanSuggestionService.Renumbered`; tests in `UserStoryHierarchyTests`
+  and a PostgreSQL service test.
+- **Requirements Traceability** lists requirements confirmed for a user story in their own section ("Requirements associated with user stories
+  (n, not counted)") with the story, who confirmed it and whether the requirement is still in the reviewed specification
+  (`PreparedCaseTraceView.StoryAssociations`). They are never counted and never close a "without test design" gap.
+- **plan.md / quickstart.md**: a line of the same feature folder's `plan.md` or `quickstart.md` that names the story (`US6`, `US-6`, `[US6]`,
+  `User Story 6`, `Brukerhistorie 6`; `US60` is another story) and FR ids is structural evidence (B) like `tasks.md`, shown with file and
+  line. Real M2LB: 9 such lines (7 quickstart table rows, 2 plan lines) in MeldingsutvekslerReceiver, SkoleAdapter, Person and SkoleService.
+
+## 15. Remaining limitations
+
+- Translation: the LibreTranslate path is verified against a real local server (`libretranslate/libretranslate:v1.6.0` — the default
+  image tag exists — with the en/nb models; opt-in `RealLibreTranslateTests`, `BIRKNEXT_REAL_LIBRETRANSLATE_URL`). That run found and fixed a
+  real defect: the model drops a colon that starts a piece ("spec.md: the child" came back as "spec.mdbarnet"); leading separators now stay
+  on BirkNext's side. Drag and drop was verified in Chromium: Blazor's `:preventDefault` did not enable dropping, so `pageFocus.js` prevents
+  the default of `dragover`/`drop` during a reorder drag. Azure AI Translator is verified against a stand-in only — a live check needs the organisation's key and sends text to Azure, so it is left to the user.
