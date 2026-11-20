@@ -218,3 +218,6 @@ AIAssisted/bisect-wt/
 
 # Critical E2E flow definitions and run history (workstation-local QA evidence)
 AIAssisted/backend/BirkNext.Api/App_Data/
+
+# Local test archives (real project sources and Terraform with environment values): never committed.
+AIAssisted/testdata/
