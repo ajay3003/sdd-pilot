@@ -95,7 +95,69 @@ public static partial class IntegrationSuiteComposer
         SecurityClassificationConsumerAssessment? Consumer,
         bool Kode6IdentityApproved, bool Kode7IdentityApproved, bool OrdinaryChildApproved,
         bool AltinnSubmissionExecutable, bool MuMmObservable, bool IntakeObservedPerMessage, bool BufdataVerifierRegistered,
-        IReadOnlyList<SuiteSourceRef> SourceRuleEvidence, IReadOnlyDictionary<string, string?> Decisions);
+        IReadOnlyList<SuiteSourceRef> SourceRuleEvidence, IReadOnlyDictionary<string, string?> Decisions,
+        IReadOnlyDictionary<string, List<SuiteSpecificationLink>>? SpecificationLinks = null, IReadOnlyDictionary<string, string?>? DecisionNotes = null);
+
+    /// <summary>A decision note that records a confirmed specification link starts with this (the requirement id and file follow).</summary>
+    public const string SpecificationNotePrefix = "Specification ";
+
+    private static readonly string[] Classified = ["kode 6/7", "kode 6", "kode 7", "kode6", "kode7", "gradert", "graded", "classified child", "classification"];
+
+    /// <summary>
+    /// What each Kode 6/7 question is about, as term groups for <see cref="Specifications.SpecificationAnswerMatcher"/>: a requirement is proposed
+    /// only when its wording has a term of every group (Kode 6/7 AND the subject AND, where it matters, the outcome).
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string[][]> QuestionTopics = new Dictionary<string, string[][]>(StringComparer.Ordinal)
+    {
+        ["security:intake-rule"] = [Classified, ["report", "rapport", "intake", "mottak"],
+            ["processed like any other", "like any other report", "behandles", "stored", "lagres", "withheld", "held", "reject", "avvis"]],
+        ["security:bufdata-aggregate"] = [Classified, ["population", "coverage", "dekning", "aggregate", "figure", "statistic"]],
+        ["security:correction"] = [Classified, ["correction", "korriger", "replay", "resubmi", "new version"]],
+        ["security:reclassification"] = [Classified, ["at lock", "frozen", "fryses", "classification changes", "change in person", "every time it is needed", "read from person"]],
+        ["security:period-lock"] = [Classified, ["bufdata dataset", "dataset", "delivered", "levert"], ["lock", "lås"]],
+    };
+
+    /// <summary>The proposed specification links per Kode 6/7 question, without the requirements a tester rejected for that question.</summary>
+    public static Dictionary<string, List<SuiteSpecificationLink>> SpecificationLinksFor(IEnumerable<BirkNext.Specifications.SpecificationRequirementEntry> requirements,
+        IReadOnlyDictionary<string, string?> decisions)
+    {
+        var list = requirements.ToList();
+        return QuestionTopics.ToDictionary(t => t.Key, t => Specifications.SpecificationAnswerMatcher.Match(list, t.Value, RejectedLinks(t.Key, decisions.Keys)), StringComparer.Ordinal);
+    }
+
+    /// <summary>The review subject that records a rejected specification link of one question.</summary>
+    public static string RejectedLinkKey(string reviewKey, string requirementId) => $"{reviewKey}#spec:{BirkNext.Specifications.SpecificationCatalogRules.NormalizeId(requirementId)}";
+
+    public static HashSet<string> RejectedLinks(string reviewKey, IEnumerable<string> decisionKeys) =>
+        [.. decisionKeys.Where(k => k.StartsWith(reviewKey + "#spec:", StringComparison.Ordinal)).Select(k => k[(reviewKey.Length + "#spec:".Length)..])];
+
+    /// <summary>
+    /// Faglig avklart for one question: a recorded decision wins (from a confirmed specification link, or a reviewed rule); otherwise the best
+    /// proposal decides between "proposed from the specification" and "open in the specification" (an OQ marker: it stays open until a decision
+    /// is documented); with neither it is not clarified. A proposal never closes the question.
+    /// </summary>
+    public static (SuiteClarification State, string? Detail) Clarify(string? openQuestion, string? decision, string? note, IReadOnlyList<SuiteSpecificationLink> links)
+    {
+        if (openQuestion is null && decision is null) return (SuiteClarification.NotNeeded, null);
+        if (decision is not null)
+            return note is { } n && n.StartsWith(SpecificationNotePrefix, StringComparison.Ordinal)
+                ? (SuiteClarification.ConfirmedFromSpecification, $"Confirmed by a tester: {n}")
+                : (SuiteClarification.ReviewedRule, $"Reviewed: {decision}{(string.IsNullOrWhiteSpace(note) ? "" : $" — {note}")}");
+        if (links.FirstOrDefault() is { } best)
+            return best.Answer == SuiteSpecificationAnswer.OpenInSpecification
+                ? (SuiteClarification.OpenInSpecification, $"{best.RequirementId} ({best.SpecificationPath}) names this as open{(best.OpenQuestion is { } oq ? $" ({oq})" : "")}: it stays open until a documented decision exists.")
+                : (SuiteClarification.ProposedFromSpecification, $"{string.Join(", ", links.Where(l => l.Answer == SuiteSpecificationAnswer.Answers).Select(l => l.RequirementId))} appears to answer this. Confirm or reject the link; until then the question is open.");
+        return (SuiteClarification.NotClarified, "No requirement in the project's specification was found that answers this, and no decision is recorded.");
+    }
+
+    public static (SuiteVerificationState State, string Detail) Verified(SecurityRequirementAssessment? probe) => probe?.State switch
+    {
+        null => (SuiteVerificationState.NotRun, "No run of this scenario is recorded."),
+        SecurityRequirementState.Verified => (SuiteVerificationState.Verified, $"M01 runtime check: {probe.RuntimeTest}"),
+        SecurityRequirementState.IssueDetected => (SuiteVerificationState.IssueDetected, $"M01 runtime check found an issue: {probe.RuntimeTest}"),
+        SecurityRequirementState.NotTested or SecurityRequirementState.Missing => (SuiteVerificationState.NotRun, $"M01 runtime check: {probe.RuntimeTest}"),
+        _ => (SuiteVerificationState.Partial, $"M01 runtime check: {SecurityClassificationAssessments.Label(probe.State)} — {probe.RuntimeTest}"),
+    };
 
     /// <summary>
     /// Existing Kode 6/7 coverage (the M01 Security Classification requirements the Skolenærvær consumer declares, reused by key and run id)
@@ -127,6 +189,8 @@ public static partial class IntegrationSuiteComposer
         {
             var decided = Decided(reviewKey);
             var question = decided is "Acceptable" ? null : openQuestion;
+            var links = i.SpecificationLinks?.TryGetValue(reviewKey, out var found) == true ? found : [];
+            var (clarification, clarificationDetail) = Clarify(openQuestion, openQuestion is null ? null : decided, i.DecisionNotes?.TryGetValue(reviewKey, out var dn) == true ? dn : null, links);
             var prereq = new List<string>(missing);
             if (levels.Contains("Kode 6") && !i.Kode6IdentityApproved) prereq.Add("An approved synthetic Kode 6 child (Test Data capability classification-level-3) registered in the target Person service");
             if (levels.Contains("Kode 7") && !i.Kode7IdentityApproved) prereq.Add("An approved synthetic Kode 7 child (Test Data capability classification-level-2) registered in the target Person service");
@@ -141,6 +205,12 @@ public static partial class IntegrationSuiteComposer
             {
                 ScenarioId = id, Title = title, Basis = decided is "Acceptable" ? SuiteScenarioBasis.ReviewedBusinessRule : SuiteScenarioBasis.Candidate, Levels = [.. levels],
                 Readiness = readiness, Triage = triage, Prerequisites = prereq, OpenQuestion = question, ReviewKey = reviewKey, Reuses = reuses, Evidence = [.. i.SourceRuleEvidence], References = [.. refs ?? []],
+                Clarification = clarification, ClarificationDetail = clarificationDetail, SpecificationLinks = openQuestion is null ? [] : links,
+                Implementation = i.SourceRuleEvidence.Count > 0 ? SuiteImplementationEvidence.SourceEvidence : SuiteImplementationEvidence.NotAssessed,
+                ImplementationDetail = i.SourceRuleEvidence.Count > 0
+                    ? $"{i.SourceRuleEvidence.Count} classification symbol(s) in the selected source — static evidence of a mechanism, not proof that this behaviour works."
+                    : "Not assessed: no classification source evidence in the selected snapshots.",
+                Verification = SuiteVerificationState.NotRun, VerificationDetail = "No run of this scenario is recorded.",
             };
         }
 
@@ -161,13 +231,15 @@ public static partial class IntegrationSuiteComposer
                                                        ("K67-07", "Authorized user reads allowed information", SecurityRequirementKind.AuthorizedRuntimeAccess, "security:authorized") })
         {
             var probe = Probe(kind);
+            var (verification, verificationDetail) = Verified(probe);
             list.Add(Variant(id, title, ["Kode 6", "Kode 7"], probe is not null, probe is not null, null, key,
                 probe is null || probe.State == SecurityRequirementState.Verified ? [] : [$"M01 runtime probe: {probe.RuntimeTest} (test-lead approved context, Person endpoint, tokens supplied at run)"],
-                $"Security Classification review · {kind}"));
+                $"Security Classification review · {kind}") with { Verification = verification, VerificationDetail = verificationDetail });
         }
         list.Add(Variant("K67-08", "BirkNext evidence and exports never expose protected identifiers (synthetic canaries)", [], true, true, null, "security:evidence-redaction", [],
             "Execution Evidence redaction — only BirkNext's own evidence and exports are inspectable; target-system logs are NOT ASSESSED"));
-        list.Add(Variant("K67-09", "Period lock and downstream publication respect confidentiality", ["Kode 6", "Kode 7"], false, false, null, "security:period-lock", []));
+        list.Add(Variant("K67-09", "Period lock and downstream publication respect confidentiality", ["Kode 6", "Kode 7"], false, false,
+            "Are rows for a Kode 6/7 child at lock ever delivered to Bufdata (later), and how? No approved rule is recorded.", "security:period-lock", []));
         list.Add(Variant("K67-10", "Correction/replay does not bypass protection handling", ["Kode 6", "Kode 7"], false, false,
             "How are corrections of a protected child's report handled? No approved rule is recorded.", "security:correction", []));
         list.Add(Variant("K67-11", "Protection classification changes between processing stages", ["Kode 6", "Kode 7"], false, false,

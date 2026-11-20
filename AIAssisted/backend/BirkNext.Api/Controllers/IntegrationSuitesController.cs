@@ -41,6 +41,15 @@ public sealed class IntegrationSuitesController(IntegrationSuiteService suites, 
         return error is null ? Ok(decision) : error.Contains("not found", StringComparison.OrdinalIgnoreCase) ? NotFound(new { error }) : BadRequest(new { error });
     }
 
+    /// <summary>Confirms or rejects a proposed specification answer of a review question (a tester's decision; nothing is decided automatically).</summary>
+    [HttpPost("{id:guid}/specification-links")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public async Task<IActionResult> SpecificationLink(Guid id, [FromBody] IntegrationSuiteSpecificationLinkRequest request, CancellationToken ct)
+    {
+        var (decision, error) = await suites.SpecificationLinkAsync(id, request, Initiator, ct);
+        return error is null ? Ok(decision) : error.Contains("not found", StringComparison.OrdinalIgnoreCase) ? NotFound(new { error }) : BadRequest(new { error });
+    }
+
     // ── Multi-source (composite) ────────────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>Candidate source snapshots per stage of a scope (read-only; nothing is associated).</summary>

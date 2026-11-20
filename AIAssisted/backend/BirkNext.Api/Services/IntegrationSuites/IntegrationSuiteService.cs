@@ -36,7 +36,8 @@ public sealed partial class IntegrationSuiteService(
     ManualReviewDecisionStore reviews, ExecutionEvidenceStore evidence, ILogger<IntegrationSuiteService> logger,
     SecurityClassificationConsumerService? security = null, BirkNext.Api.Services.IntegrationTopology.IntegrationTopologyService? topology = null,
     TimeProvider? clock = null, ContractTestDataService? contractData = null, Composite.CompositeContextService? composites = null,
-    BirkNext.Api.Services.IntegrationJourneys.DeclaredIntegrationJourneyStore? journeys = null)
+    BirkNext.Api.Services.IntegrationJourneys.DeclaredIntegrationJourneyStore? journeys = null,
+    BirkNext.Api.Services.Specifications.SpecificationCatalogService? specifications = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private DateTimeOffset Now => (clock ?? TimeProvider.System).GetUtcNow();
@@ -195,12 +196,14 @@ public sealed partial class IntegrationSuiteService(
                 MuMmObservable: stageReady.TryGetValue("mm", out var m) && m.Coverage is SuiteStageCoverage.Observable or SuiteStageCoverage.ExecutableAndObservable,
                 IntakeObservedPerMessage: false, // message telemetry is aggregate unless correlated: never a per-message observation by itself
                 BufdataVerifierRegistered: stageReady.TryGetValue("bufdata", out var b) && b.Coverage is not SuiteStageCoverage.Unsupported,
-                SourceRuleEvidence: [.. securityEvidence.Take(8)], Decisions: decisions.ToDictionary(d => d.Key, d => (string?)d.Value.Decision)));
+                SourceRuleEvidence: [.. securityEvidence.Take(8)], Decisions: decisions.ToDictionary(d => d.Key, d => (string?)d.Value.Decision),
+                SpecificationLinks: await SpecificationLinksAsync(request.WorkspaceProjectKey, decisions, limitations, ct),
+                DecisionNotes: decisions.ToDictionary(d => d.Key, d => d.Value.Note)));
         }
 
         // 7. Review queue and readiness.
         var review = Review(contractRefs, config, testData, xml, mappings, securityScenarios, request.EnvironmentId)
-            .Select(r => decisions.TryGetValue(r.Key, out var d) ? r with { Decision = d.Decision, DecidedBy = d.By, DecidedAt = d.At } : r).ToList();
+            .Select(r => decisions.TryGetValue(r.Key, out var d) ? r with { Decision = d.Decision, DecidedBy = d.By, DecidedAt = d.At, DecisionNote = d.Note } : r).ToList();
         var readiness = Readiness(provenance, contractRefs, testRefs, xml, testData, mappings, stages, request.EnvironmentId, securityScenarios, review);
         var (status, reason) = IntegrationSuiteComposer.Status(readiness, review, stages);
 
@@ -558,7 +561,11 @@ public sealed partial class IntegrationSuiteService(
             items.Add(new() { Key = m.Key, Area = "Topology", Question = $"Confirm {m.From} → {m.To} ({m.Relationship}, {m.Class})", Why = "Uncertain routes never enable execution before approval.", Evidence = m.Evidence });
         // Keyed by the scenario's stable review key: the same key the composer reads the decision from, so deciding the item answers the question.
         foreach (var s in security.Where(s => s.OpenQuestion is not null && s.ReviewKey is not null).GroupBy(s => s.ReviewKey!))
-            items.Add(new() { Key = s.Key, Area = "Security (Kode 6/7)", Question = s.First().OpenQuestion!, Why = $"Needed by {string.Join(", ", s.Select(x => x.ScenarioId))}; no approved rule is recorded." });
+            items.Add(new()
+            {
+                Key = s.Key, Area = "Security (Kode 6/7)", Question = s.First().OpenQuestion!, SpecificationLinks = s.First().SpecificationLinks,
+                Why = $"Needed by {string.Join(", ", s.Select(x => x.ScenarioId))}. {s.First().ClarificationDetail ?? "No approved rule is recorded."}",
+            });
         _ = contracts;
         return items;
     }
@@ -679,7 +686,9 @@ public sealed partial class IntegrationSuiteService(
     {
         var suite = JsonSerializer.Deserialize<IntegrationSuite>(row.DefinitionJson, Json)!;
         var decisions = await DecisionsAsync(row.SuiteKey, ct);
-        var review = suite.Review.Select(r => decisions.TryGetValue(r.Key, out var d) ? r with { Decision = d.Decision, DecidedBy = d.By, DecidedAt = d.At } : r).ToList();
+        var review = suite.Review.Select(r => decisions.TryGetValue(r.Key, out var d) ? r with { Decision = d.Decision, DecidedBy = d.By, DecidedAt = d.At, DecisionNote = d.Note } : r).ToList();
+        (review, var clarified) = await ClarifyAsync(suite, review, decisions, ct);
+        suite = suite with { Security = clarified };
         var links = await db.IntegrationSuiteRuns.AsNoTracking().Where(r => r.SuiteKey == row.SuiteKey).OrderByDescending(r => r.StartedAt).ToListAsync(ct);
         var runs = new List<SuiteRunLink>();
         var callStates = new List<(ExecutionState State, int Assertions)>();
@@ -725,9 +734,72 @@ public sealed partial class IntegrationSuiteService(
         return suite with { Review = review, Runs = runs, Outcome = outcome, Readiness = readiness, Status = status, StatusReason = reason };
     }
 
-    private async Task<Dictionary<string, (string Decision, string By, DateTimeOffset At)>> DecisionsAsync(string suiteKey, CancellationToken ct) =>
+    private async Task<Dictionary<string, (string Decision, string By, DateTimeOffset At, string? Note)>> DecisionsAsync(string suiteKey, CancellationToken ct) =>
         (await reviews.ListAsync(ManualReviewModules.IntegrationSuites, suiteKey, ct: ct)).Where(r => r.Current)
-            .ToDictionary(r => r.SubjectKey, r => (r.Decision.ToString(), r.Reviewer, r.DecidedAt), StringComparer.Ordinal);
+            .ToDictionary(r => r.SubjectKey, r => (r.Decision.ToString(), r.Reviewer, r.DecidedAt, r.Note), StringComparer.Ordinal);
+
+    /// <summary>The proposed specification answers of every Kode 6/7 question, from the project's CURRENT server-held specification catalog and
+    /// without the links a tester rejected. Without a catalog there are none (and the limitation says why).</summary>
+    private async Task<Dictionary<string, List<SuiteSpecificationLink>>> SpecificationLinksAsync(string? projectKey,
+        IReadOnlyDictionary<string, (string Decision, string By, DateTimeOffset At, string? Note)> decisions, List<string>? limitations, CancellationToken ct)
+    {
+        var catalog = specifications is null || string.IsNullOrWhiteSpace(projectKey) ? null : await specifications.CurrentAsync(projectKey.Trim(), ct);
+        if (catalog is null)
+            limitations?.Add("Kode 6/7: the project has no server-held specification catalog (re-import the project), so the questions are not matched to its requirements.");
+        return IntegrationSuiteComposer.SpecificationLinksFor(catalog?.Requirements ?? [], decisions.ToDictionary(d => d.Key, d => (string?)d.Value.Decision));
+    }
+
+    /// <summary>
+    /// Read-time clarification of the Kode 6/7 questions: proposals from the current specification, rejected links left out, and the three
+    /// dimensions of each scenario updated with the decisions recorded since generation (a confirmed link, a reviewed rule). Nothing is decided here.
+    /// </summary>
+    private async Task<(List<SuiteReviewItem> Review, List<SuiteSecurityScenario> Security)> ClarifyAsync(IntegrationSuite suite, List<SuiteReviewItem> review,
+        IReadOnlyDictionary<string, (string Decision, string By, DateTimeOffset At, string? Note)> decisions, CancellationToken ct)
+    {
+        if (suite.Security.Count == 0) return (review, suite.Security);
+        var links = await SpecificationLinksAsync(suite.WorkspaceProjects.FirstOrDefault(), decisions, null, ct);
+        var items = review.Select(r => links.TryGetValue(r.Key, out var l)
+            ? r with { SpecificationLinks = r.Decision is null ? l : r.SpecificationLinks, RejectedSpecificationLinks = [.. IntegrationSuiteComposer.RejectedLinks(r.Key, decisions.Keys)] }
+            : r).ToList();
+        var security = suite.Security.Select(s =>
+        {
+            if (s.ReviewKey is not { } key || !(s.OpenQuestion is not null || decisions.ContainsKey(key) || s.Clarification != SuiteClarification.NotNeeded)) return s;
+            var current = links.GetValueOrDefault(key) ?? [];
+            var decided = decisions.TryGetValue(key, out var d);
+            var (state, detail) = IntegrationSuiteComposer.Clarify(s.OpenQuestion ?? "(answered)", decided ? d.Decision : null, decided ? d.Note : null, current);
+            return s with { Clarification = state, ClarificationDetail = detail, SpecificationLinks = decided ? s.SpecificationLinks : current };
+        }).ToList();
+        return (items, security);
+    }
+
+    /// <summary>
+    /// A tester's answer to a proposed specification link. Confirm records the question's decision (Acceptable) with the requirement as the note, so
+    /// the question is answered by that requirement; reject records that this requirement is not the answer (it is no longer proposed; the question
+    /// stays open). A requirement that names the matter as open (OQ) cannot be confirmed as an answer.
+    /// </summary>
+    public async Task<(ManualReviewDecisionView? Decision, string? Error)> SpecificationLinkAsync(Guid id, IntegrationSuiteSpecificationLinkRequest request, string reviewer, CancellationToken ct)
+    {
+        var suite = await GetAsync(id, ct);
+        if (suite is null) return (null, "Suite not found.");
+        var item = suite.Review.FirstOrDefault(r => r.Key == request.Key);
+        if (item is null) return (null, "Review item not found in this suite revision.");
+        if (item.Decision is not null) return (null, "This question already has a decision.");
+        var link = item.SpecificationLinks.FirstOrDefault(l => string.Equals(BirkNext.Specifications.SpecificationCatalogRules.NormalizeId(l.RequirementId),
+            BirkNext.Specifications.SpecificationCatalogRules.NormalizeId(request.RequirementId), StringComparison.Ordinal));
+        if (link is null) return (null, "That requirement is not proposed for this question.");
+        if (request.Confirm && link.Answer == SuiteSpecificationAnswer.OpenInSpecification)
+            return (null, $"{link.RequirementId} names this as open{(link.OpenQuestion is { } oq ? $" ({oq})" : "")}: it cannot be confirmed as the answer. Record a decision when one is documented.");
+        return await reviews.RecordAsync(new ManualReviewDecisionRequest
+        {
+            Module = ManualReviewModules.IntegrationSuites, ScopeKey = suite.SuiteKey, Reviewer = reviewer,
+            SubjectKey = request.Confirm ? item.Key : IntegrationSuiteComposer.RejectedLinkKey(item.Key, link.RequirementId),
+            Decision = request.Confirm ? ManualReviewDecisionValue.Acceptable : ManualReviewDecisionValue.NotApplicable,
+            Note = request.Confirm
+                ? $"{IntegrationSuiteComposer.SpecificationNotePrefix}{link.RequirementId} ({link.SpecificationPath}) answers this question."
+                : $"{link.RequirementId} ({link.SpecificationPath}) is not the answer to this question.",
+            EvidenceReferences = [link.SpecificationPath],
+        }, ct);
+    }
 
     public async Task<(ManualReviewDecisionView? Decision, string? Error)> ReviewAsync(Guid id, IntegrationSuiteReviewRequest request, string reviewer, CancellationToken ct)
     {

@@ -40,3 +40,9 @@
 @media (max-width: 40rem) { .its-dimensions li { grid-template-columns: 1fr; } }
 .its-items, .its-items > li, .its-stages > li { min-width: 0; max-width: 100%; box-sizing: border-box; }
 .its-items strong, .its-items .its-muted, .its-items a { overflow-wrap: anywhere; word-break: break-word; }
+/* Three independent dimensions of a Kode 6/7 gap: clarified (spec), implemented (code), verified (run). */
+.its-dims { display: grid; gap: .25rem; margin: .4rem 0 0; font-size: .875rem; }
+.its-dims > div { display: flex; flex-wrap: wrap; gap: .4rem; align-items: baseline; min-width: 0; }
+.its-dims dt { font-weight: 600; min-width: 10rem; }
+.its-dims dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.its-list blockquote { margin: .25rem 0; padding-left: .5rem; border-left: 3px solid #94a3b8; overflow-wrap: anywhere; }

@@ -157,9 +157,13 @@ public sealed class SkolenaervaerStandIn : IAsyncDisposable
             ("Synth.Bufdata.Delivery/Synth.Bufdata.Delivery.csproj", Csproj), ("Synth.Bufdata.Delivery/Program.cs", Code("Synth_Bufdata_Delivery")), ("Synth.Bufdata.Delivery/openapi.json", BufdataApi)])),
     ];
 
-    /// <summary>The project the chain is tested in (a specification only; the services come from the four packages).</summary>
+    /// <summary>The project the chain is tested in (a specification only; the services come from the four packages). FR-008 answers the Kode 6/7
+    /// intake question; FR-008B names Bufdata delivery of withheld rows as an open question (OQ-26 style) — own synthetic wording.</summary>
     public static byte[] Project(string name) => Zip([($"{name}/specs/001-skolenaervaer/spec.md",
-        "# Feature Specification: Skolenaervaer reporting\n\n## Requirements\n\n### Functional Requirements\n\n- **FR-001**: The system MUST deliver an attendance report from Altinn to the school service and on to Bufdata.\n")]);
+        "# Feature Specification: Skolenaervaer reporting\n\n## Requirements\n\n### Functional Requirements\n\n"
+        + "- **FR-001**: The system MUST deliver an attendance report from Altinn to the school service and on to Bufdata.\n"
+        + "- **FR-008**: Reports for Kode 6/7 children MUST be processed like any other report: validated, stored and versioned.\n"
+        + "- **FR-008b**: Rows for children who are Kode 6/7 at lock MUST NOT be part of the Bufdata dataset; their reports stay stored. Whether they are delivered later is open (OQ-26).\n")]);
 
     private static byte[] Zip(IEnumerable<(string Path, string Text)> files)
     {

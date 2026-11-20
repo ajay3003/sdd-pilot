@@ -361,6 +361,14 @@ public partial class IntegrationSuitesPage
         _busy = false;
     }
 
+    private async Task SpecificationLinkAsync((string Key, string RequirementId, bool Confirm) link)
+    {
+        if (_suite is not { } suite) return;
+        _busy = true; _error = await Api.SpecificationLinkAsync(suite.Id, new IntegrationSuiteSpecificationLinkRequest(link.Key, link.RequirementId, link.Confirm));
+        if (_error is null) (_suite, _error) = await Api.GetAsync(suite.Id);
+        _busy = false;
+    }
+
     private async Task ExecuteAsync(bool confirmMutating)
     {
         if (_suite is not { } suite || _environment is not { } env) return;

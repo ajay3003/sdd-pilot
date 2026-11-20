@@ -408,6 +408,25 @@ Defects in BirkNext found and fixed on the way:
 Still open (needs a domain decision or an adapter, not a test): intake handling of a Kode 6/7 report (K67-01/02/04), whether Kode 6/7
 children count in Bufdata aggregates (K67-05), corrections and reclassification (K67-10/11), and a per-message observer for intake.
 
+### Kode 6/7 questions the specification already answers
+
+In **Integration suites → Review**, each Kode 6/7 question shows the requirements of the project's specification that appear to answer it,
+with their wording. BirkNext only proposes these; it never decides:
+
+- **Confirm FR-xxx answers this** records the answer, with the requirement as the reference. **Not the answer** removes the proposal, and
+  the question stays open.
+- A requirement that names the matter as open (for example *"… is open (OQ-26)"*) is shown as **Open in the specification** and cannot be
+  confirmed. It stays open until a decision is documented.
+- On the **Kode 6/7** tab, every scenario has three separate states:
+  - *Clarified (spec)*: what the specification or a review decision says.
+  - *Implemented (code)*: static source evidence only.
+  - *Verified (run)*: what a test run showed.
+
+  A scenario can be clarified and still have a serious implementation defect.
+
+Proposals follow the project's current specification (imported with the project) and the latest confirmations, without regenerating the
+suite. Verified by `IntegrationSuiteSpecificationLinkTests`, `SpecificationAnswerTests` and the Skolenærvær chain browser test.
+
 ---
 
 ## 7. Contract Testing — REST and GraphQL

@@ -16,6 +16,8 @@ public interface IIntegrationSuiteApiService
     Task<(IntegrationSuite? Suite, string? Error)> GetAsync(Guid id, CancellationToken ct = default);
     Task<(IntegrationSuiteGenerateResult? Result, string? Error)> GenerateAsync(IntegrationSuiteGenerateRequest request, CancellationToken ct = default);
     Task<string?> ReviewAsync(Guid id, IntegrationSuiteReviewRequest request, CancellationToken ct = default);
+    /// <summary>Confirms or rejects a proposed specification answer (null on success, else the reason).</summary>
+    Task<string?> SpecificationLinkAsync(Guid id, IntegrationSuiteSpecificationLinkRequest request, CancellationToken ct = default) => Task.FromResult<string?>("Not supported.");
     Task<(IntegrationSuiteExecuteResult? Result, string? Error)> ExecuteAsync(Guid id, IntegrationSuiteExecuteRequest request, CancellationToken ct = default);
 
     // ── Multi-source (composite) ──
@@ -75,6 +77,17 @@ public sealed class IntegrationSuiteApiService(HttpClient http) : IIntegrationSu
         try
         {
             using var response = await http.PostAsJsonAsync($"{Base}/{id:D}/reviews", request, Json, ct);
+            if (response.IsSuccessStatusCode) return null;
+            return response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized ? "You do not have permission to record reviews (integration configuration write permission)." : await Message(response, ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { return BackendRequestClassifier.FromException(Area, ex).UserMessage; }
+    }
+
+    public async Task<string?> SpecificationLinkAsync(Guid id, IntegrationSuiteSpecificationLinkRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.PostAsJsonAsync($"{Base}/{id:D}/specification-links", request, Json, ct);
             if (response.IsSuccessStatusCode) return null;
             return response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized ? "You do not have permission to record reviews (integration configuration write permission)." : await Message(response, ct);
         }

@@ -228,7 +228,59 @@ public sealed record SuiteSecurityScenario
     public string? ReviewKey { get; init; }
     public List<SuiteSourceRef> Evidence { get; init; } = [];
     public List<string> References { get; init; } = [];
+    /// <summary>Faglig avklart: whether the specification (or a reviewed decision) says what the expected behaviour is.</summary>
+    public SuiteClarification Clarification { get; init; }
+    public string? ClarificationDetail { get; init; }
+    /// <summary>Implementert: whether the code supports it — here only static source evidence, never a verification.</summary>
+    public SuiteImplementationEvidence Implementation { get; init; }
+    public string? ImplementationDetail { get; init; }
+    /// <summary>Verifisert: whether the behaviour was actually tested in a relevant environment.</summary>
+    public SuiteVerificationState Verification { get; init; }
+    public string? VerificationDetail { get; init; }
+    /// <summary>Requirements of the project's specification proposed as the answer to <see cref="OpenQuestion"/> (never applied by themselves).</summary>
+    public List<SuiteSpecificationLink> SpecificationLinks { get; init; } = [];
 }
+
+/// <summary>
+/// Three independent dimensions of a gap (a scenario can be clarified and still have a serious implementation defect): what the specification
+/// says, what the code shows, what was tested. None follows from another.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SuiteClarification
+{
+    /// <summary>No question to answer for this scenario.</summary>
+    NotNeeded,
+    /// <summary>A question is open and neither the specification (as matched) nor a reviewer answers it.</summary>
+    NotClarified,
+    /// <summary>A specification requirement appears to answer the question; a tester has not confirmed the link yet. The gap stays open.</summary>
+    ProposedFromSpecification,
+    /// <summary>A tester confirmed that the specification requirement answers the question.</summary>
+    ConfirmedFromSpecification,
+    /// <summary>A reviewer recorded the rule (not from a specification link).</summary>
+    ReviewedRule,
+    /// <summary>The specification itself names the question as open (e.g. OQ-26): it stays open until a documented decision exists.</summary>
+    OpenInSpecification,
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SuiteImplementationEvidence { NotAssessed, SourceEvidence }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SuiteVerificationState { NotRun, Verified, IssueDetected, Partial }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SuiteSpecificationAnswer
+{
+    /// <summary>The requirement's text states the expected behaviour.</summary>
+    Answers,
+    /// <summary>The requirement's text says the matter is open (an OQ reference, "is open", "decided later").</summary>
+    OpenInSpecification,
+}
+
+/// <summary>A requirement of the project's specification catalog matched to a review question: id, file, the matched wording (shortened) and why it
+/// was proposed. A proposal only — the question is answered when a tester confirms it.</summary>
+public sealed record SuiteSpecificationLink(string RequirementId, string SpecificationPath, string Excerpt, string TextSha256, SuiteSpecificationAnswer Answer,
+    string Basis, string? OpenQuestion = null);
 
 public sealed record SuiteReviewItem
 {
@@ -241,6 +293,11 @@ public sealed record SuiteReviewItem
     public string? Decision { get; init; }
     public string? DecidedBy { get; init; }
     public DateTimeOffset? DecidedAt { get; init; }
+    public string? DecisionNote { get; init; }
+    /// <summary>Specification requirements proposed as the answer (Kode 6/7 questions); confirming one records the decision with its reference.</summary>
+    public List<SuiteSpecificationLink> SpecificationLinks { get; init; } = [];
+    /// <summary>Requirement ids a tester rejected as the answer to this question (they are no longer proposed).</summary>
+    public List<string> RejectedSpecificationLinks { get; init; } = [];
 }
 
 public sealed record SuiteReadinessDimension(string Name, SuiteItemReadiness State, string Detail);
@@ -298,6 +355,10 @@ public sealed record IntegrationSuiteSummary(Guid Id, string SuiteKey, int Revis
 public sealed record IntegrationSuiteGenerateResult(IntegrationSuite? Suite, bool Reused, string? Error);
 
 public sealed record IntegrationSuiteReviewRequest(string Key, string Decision, string? Note);
+
+/// <summary>A tester's answer to a proposed specification link: confirm (the question is answered by that requirement) or reject (not the answer;
+/// the question stays open).</summary>
+public sealed record IntegrationSuiteSpecificationLinkRequest(string Key, string RequirementId, bool Confirm);
 
 public sealed record IntegrationSuiteExecuteRequest
 {

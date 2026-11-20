@@ -143,6 +143,11 @@
                     <li data-testid="its-sec" data-id="@s.ScenarioId" data-triage="@s.Triage"><strong>@s.ScenarioId</strong> @s.Title <span class="its-badge">@Label(s.Readiness)</span>
                         @if (s.Reuses is { } reuse) { <div class="its-muted">Reuses @reuse@(s.ExistingState is { } es ? $" · {es}" : "")</div> }
                         @if (s.OpenQuestion is { } q) { <div class="its-prereq" data-testid="its-sec-question">@q</div> }
+                        <dl class="its-dims" data-testid="its-sec-dims">
+                            <div data-testid="its-sec-clarified" data-state="@s.Clarification"><dt>Clarified (spec)</dt><dd><span class="its-badge">@ClarificationLabel(s.Clarification)</span> <span class="its-muted">@s.ClarificationDetail</span></dd></div>
+                            <div data-testid="its-sec-implemented" data-state="@s.Implementation"><dt>Implemented (code)</dt><dd><span class="its-badge">@(s.Implementation == SuiteImplementationEvidence.SourceEvidence ? "Source evidence" : "Not assessed")</span> <span class="its-muted">@s.ImplementationDetail</span></dd></div>
+                            <div data-testid="its-sec-verified" data-state="@s.Verification"><dt>Verified (run)</dt><dd><span class="its-badge">@VerificationLabel(s.Verification)</span> <span class="its-muted">@s.VerificationDetail</span></dd></div>
+                        </dl>
                         @if (s.Prerequisites.Count > 0) { <ul class="its-list">@foreach (var pr in s.Prerequisites) { <li>@pr</li> }</ul> }
                     </li>
                 }</ul>
@@ -157,9 +162,31 @@
             {
                 <li data-testid="its-review-item" data-key="@r.Key"><strong>@r.Area</strong> · @r.Question
                     <div class="its-muted">@r.Why</div>
-                    @if (r.Decision is { } dec) { <div data-testid="its-review-decision">@dec by @r.DecidedBy @(r.DecidedAt is { } at ? Utc(at) : "")</div> }
+                    @if (r.Decision is { } dec) { <div data-testid="its-review-decision">@dec by @r.DecidedBy @(r.DecidedAt is { } at ? Utc(at) : "")@(r.DecisionNote is { } note ? $" · {note}" : "")</div> }
                     else
                     {
+                        @if (r.SpecificationLinks.Count > 0)
+                        {
+                            <ul class="its-list" data-testid="its-spec-links" aria-label="Proposed answers from the specification">
+                                @foreach (var l in r.SpecificationLinks)
+                                {
+                                    <li data-testid="its-spec-link" data-requirement="@l.RequirementId" data-answer="@l.Answer">
+                                        <strong>@(l.Answer == SuiteSpecificationAnswer.OpenInSpecification ? $"Open in the specification{(l.OpenQuestion is { } oq ? $" ({oq})" : "")}" : "Proposed answer")</strong>:
+                                        @l.RequirementId <span class="its-muted">· @l.SpecificationPath</span>
+                                        <blockquote class="its-muted">@l.Excerpt</blockquote>
+                                        <div class="its-muted">@l.Basis</div>
+                                        <div class="its-actions">
+                                            @if (l.Answer == SuiteSpecificationAnswer.Answers)
+                                            {
+                                                <button type="button" class="btn btn-primary btn-sm" disabled="@Busy" data-testid="its-spec-confirm" @onclick="() => OnSpecificationLink.InvokeAsync((r.Key, l.RequirementId, true))">Confirm @l.RequirementId answers this</button>
+                                            }
+                                            <button type="button" class="btn btn-secondary btn-sm" disabled="@Busy" data-testid="its-spec-reject" @onclick="() => OnSpecificationLink.InvokeAsync((r.Key, l.RequirementId, false))">Not the answer</button>
+                                        </div>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                        @if (r.RejectedSpecificationLinks.Count > 0) { <div class="its-muted" data-testid="its-spec-rejected">Rejected as the answer: @string.Join(", ", r.RejectedSpecificationLinks)</div> }
                         <div class="its-actions">
                             @foreach (var choice in new[] { "Acceptable", "IssueFound", "NeedsEvidence", "NotApplicable" })
                             {
@@ -210,6 +237,25 @@
     [Parameter] public string? EnvironmentName { get; set; }
     [Parameter] public HashSet<Guid> Selected { get; set; } = [];
     [Parameter] public EventCallback<(string Key, string Decision)> OnReview { get; set; }
+    [Parameter] public EventCallback<(string Key, string RequirementId, bool Confirm)> OnSpecificationLink { get; set; }
+
+    private static string ClarificationLabel(SuiteClarification c) => c switch
+    {
+        SuiteClarification.NotNeeded => "No question",
+        SuiteClarification.NotClarified => "Not clarified",
+        SuiteClarification.ProposedFromSpecification => "Proposed from the specification",
+        SuiteClarification.ConfirmedFromSpecification => "Clarified by the specification",
+        SuiteClarification.ReviewedRule => "Clarified by review",
+        _ => "Open in the specification",
+    };
+
+    private static string VerificationLabel(SuiteVerificationState v) => v switch
+    {
+        SuiteVerificationState.Verified => "Verified",
+        SuiteVerificationState.IssueDetected => "Issue detected",
+        SuiteVerificationState.Partial => "Partly verified",
+        _ => "Not run",
+    };
     [Parameter] public EventCallback<bool> OnExecute { get; set; }
     [Parameter] public EventCallback<(Guid Id, bool On)> OnToggle { get; set; }
     private bool _authorized, _confirmMutating;

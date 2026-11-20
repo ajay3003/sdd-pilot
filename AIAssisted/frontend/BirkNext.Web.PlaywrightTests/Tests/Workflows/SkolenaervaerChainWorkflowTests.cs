@@ -102,6 +102,25 @@ public sealed class SkolenaervaerChainWorkflowTests : IAsyncLifetime
             await Assertions.Expect(page.GetByTestId("its-no-project")).ToHaveCountAsync(0, new() { Timeout = 30000 });
             await page.GetByTestId("its-generate-composite-btn").ClickAsync();
             await Assertions.Expect(page.GetByTestId("its-message")).ToContainTextAsync("generated as a draft", new() { Timeout = 60000 });
+
+            // 3b. Kode 6/7 questions the specification already answers: proposed with the requirement, decided only by the tester. An open
+            //     question named in the specification (OQ-26) stays open and cannot be confirmed as an answer.
+            await page.GetByRole(AriaRole.Tab, new() { Name = "Review", Exact = true }).ClickAsync();
+            var intake = page.Locator("[data-testid=its-review-item][data-key='security:intake-rule']");
+            await Assertions.Expect(intake.Locator("[data-testid=its-spec-link][data-answer=Answers]")).ToHaveAttributeAsync("data-requirement", "FR-008", new() { Timeout = 30000 });
+            var periodLock = page.Locator("[data-testid=its-review-item][data-key='security:period-lock']");
+            await Assertions.Expect(periodLock.GetByTestId("its-spec-link")).ToHaveAttributeAsync("data-answer", "OpenInSpecification");
+            await Assertions.Expect(periodLock).ToContainTextAsync("OQ-26");
+            await Assertions.Expect(periodLock.GetByTestId("its-spec-confirm")).ToHaveCountAsync(0);
+            await page.GetByRole(AriaRole.Tab, new() { Name = "Kode 6/7", Exact = true }).ClickAsync();
+            await Assertions.Expect(page.Locator("[data-testid=its-sec][data-id=K67-01] [data-testid=its-sec-clarified]")).ToHaveAttributeAsync("data-state", "ProposedFromSpecification");
+            await Assertions.Expect(page.Locator("[data-testid=its-sec][data-id=K67-09] [data-testid=its-sec-clarified]")).ToHaveAttributeAsync("data-state", "OpenInSpecification");
+            await page.GetByRole(AriaRole.Tab, new() { Name = "Review", Exact = true }).ClickAsync();
+            await intake.GetByTestId("its-spec-confirm").ClickAsync();
+            await Assertions.Expect(intake.GetByTestId("its-review-decision")).ToContainTextAsync("Specification FR-008", new() { Timeout = 30000 });
+            await page.GetByRole(AriaRole.Tab, new() { Name = "Kode 6/7", Exact = true }).ClickAsync();
+            await Assertions.Expect(page.Locator("[data-testid=its-sec][data-id=K67-01] [data-testid=its-sec-clarified]")).ToHaveAttributeAsync("data-state", "ConfirmedFromSpecification");
+            await Assertions.Expect(page.Locator("[data-testid=its-sec][data-id=K67-09] [data-testid=its-sec-clarified]")).ToHaveAttributeAsync("data-state", "OpenInSpecification", new() { Timeout = 30000 });
             await AreaAsync(page, "execute");
             var steps = page.GetByTestId("its-plan-step");
             await Assertions.Expect(steps).ToHaveCountAsync(7, new() { Timeout = 30000 });
