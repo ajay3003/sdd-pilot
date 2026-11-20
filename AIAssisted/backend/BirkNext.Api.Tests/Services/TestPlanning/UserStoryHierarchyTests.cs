@@ -221,4 +221,24 @@ public sealed class UserStoryHierarchyTests
         TestPlanSuggestionService.SpecificationOrder(listed).Select(c => c.CandidateId).Should().Equal(["s40", "ui", "s42", "s49", "s50"],
             "each story's scenarios take its slots in their number order; the scenario without a story keeps its place");
     }
+
+    [Fact]
+    public void A_case_follows_its_scenario_text_to_a_new_position_only_when_that_is_unambiguous()
+    {
+        DiscoveredScenario C(string id, string fp) => new() { CandidateId = id, Fingerprint = fp, CapabilityId = TestScenarioDiscoveryEngine.Specification };
+        TestCaseDraft Case(string id, string fp) => new()
+        {
+            Source = new ScenarioReference { Kind = ScenarioSourceKind.ProjectDiscovery, ScenarioId = id, Fingerprint = fp }, Generated = new TestCaseContent { Title = id },
+        };
+        // A scenario was inserted before scenario 3: "c" moved from s3 to s4, "d" from s4 to s5; s3 now holds the new text "x".
+        var plan = new TestPlanDraft { Cases = [Case("s1", "a"), Case("s3", "c"), Case("s4", "d")] };
+        var latest = new[] { C("s1", "a"), C("s3", "x"), C("s4", "c"), C("s5", "d") };
+
+        var moves = TestPlanSuggestionService.Renumbered(plan, latest);
+        moves.ToDictionary(m => m.Key, m => m.Value.CandidateId).Should().BeEquivalentTo(new Dictionary<string, string> { ["s3"] = "s4", ["s4"] = "s5" });
+
+        // The same text twice in the file, or a target held by a case that stays: nothing moves (the case is flagged as changed instead).
+        TestPlanSuggestionService.Renumbered(plan, [C("s1", "a"), C("s3", "x"), C("s4", "c"), C("s9", "c"), C("s5", "d")]).Keys.Should().Equal("s4");
+        TestPlanSuggestionService.Renumbered(new TestPlanDraft { Cases = [Case("s1", "a"), Case("s2", "b")] }, [C("s1", "b"), C("s2", "z")]).Should().BeEmpty();
+    }
 }

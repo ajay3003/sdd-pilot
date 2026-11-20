@@ -1036,8 +1036,20 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         await RestoreDiscoveryAsync(current.ProjectKey, ct);
         var latest = discoveries?.Latest(current.ProjectKey!) ?? throw new TestPlanException(409, "discovery-missing", "Discover test scenarios for this project first, then update the plan.");
         var byId = latest.Candidates.ToDictionary(c => c.CandidateId, StringComparer.Ordinal);
+        var moves = Renumbered(current, latest.Candidates);
         var cases = current.Cases.Select(c =>
         {
+            if (c.Source.Kind == ScenarioSourceKind.Manual && c.ScenarioKey is { } under && moves.TryGetValue(under, out var to)) return c with { ScenarioKey = to.CandidateId };
+            if (c.Source.Kind == ScenarioSourceKind.ProjectDiscovery && moves.TryGetValue(c.Source.ScenarioId, out var follows))
+            {
+                // Same scenario text at another position in the specification: the case follows it (content, edits, links and review kept), recorded.
+                return E.Assess(c with
+                {
+                    Source = c.Source with { ScenarioId = follows.CandidateId }, SourceChanged = false,
+                    Generated = c.Generated with { Story = follows.Story, NumberInStory = follows.NumberInStory, Evidence = TestScenarioDiscoveryEngine.Content(follows).Evidence },
+                    EditHistory = [.. c.EditHistory.TakeLast(99), new TestCaseEditEvent("BirkNext", Now, [Renumbering(c, follows)])],
+                });
+            }
             if (c.Source.Kind != ScenarioSourceKind.ProjectDiscovery || !byId.TryGetValue(c.Source.ScenarioId, out var candidate)) return E.Assess(c with { SourceChanged = false });
             if (candidate.Fingerprint == c.Source.Fingerprint)
             {
@@ -1089,6 +1101,35 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
 
     private static string? StoryKey(BirkNext.TestCoverage.CoverageUserStory? story) => story?.Key;
 
+    /// <summary>
+    /// Specification scenarios have positional ids (scenario-N): when a scenario is inserted or removed earlier in the file, the same text gets
+    /// another id. A plan case follows its text to the new id only when that is unambiguous: exactly one specification candidate of the latest
+    /// discovery has the case's fingerprint, its id is not held by a case that stays, and no two cases want it. Otherwise nothing moves.
+    /// </summary>
+    internal static Dictionary<string, DiscoveredScenario> Renumbered(TestPlanDraft plan, IEnumerable<DiscoveredScenario> latest)
+    {
+        var all = latest.ToList();
+        var byId = all.ToDictionary(c => c.CandidateId, StringComparer.Ordinal);
+        var byText = all.Where(c => c.CapabilityId == TestScenarioDiscoveryEngine.Specification && c.Fingerprint.Length > 0)
+            .GroupBy(c => c.Fingerprint, StringComparer.Ordinal).Where(g => g.Count() == 1).ToDictionary(g => g.Key, g => g.Single(), StringComparer.Ordinal);
+        var proposals = new Dictionary<string, DiscoveredScenario>(StringComparer.Ordinal);
+        foreach (var c in plan.Cases.Where(c => c.Source.Kind == ScenarioSourceKind.ProjectDiscovery && c.Review != TestCaseReviewState.Superseded))
+        {
+            var same = byId.TryGetValue(c.Source.ScenarioId, out var now) && now.Fingerprint == c.Source.Fingerprint;
+            if (!same && c.Source.Fingerprint is { Length: > 0 } fp && byText.TryGetValue(fp, out var target) && target.CandidateId != c.Source.ScenarioId)
+                proposals[c.Source.ScenarioId] = target;
+        }
+        var staying = plan.Cases.Where(c => c.Source.Kind != ScenarioSourceKind.Manual && !proposals.ContainsKey(c.Source.ScenarioId)).Select(c => c.Source.ScenarioId).ToHashSet(StringComparer.Ordinal);
+        var contested = proposals.Values.GroupBy(t => t.CandidateId, StringComparer.Ordinal).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet(StringComparer.Ordinal);
+        return proposals.Where(p => !staying.Contains(p.Value.CandidateId) && !contested.Contains(p.Value.CandidateId)).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
+    }
+
+    /// <summary>"Moved in the specification: the same scenario text is now spec.md#scenario-5 (was spec.md#scenario-4)" for the case's history.</summary>
+    private static string Renumbering(TestCaseDraft c, DiscoveredScenario moved) =>
+        $"Moved in the specification: the same scenario text is now {moved.Evidence.FirstOrDefault(e => e.Kind == "specification")?.Reference ?? moved.CandidateId}"
+        + (c.Generated.Evidence.FirstOrDefault(e => e.Kind == "specification")?.Reference is { } was ? $" (was {was})" : "")
+        + (StoryKey(c.Generated.Story) != StoryKey(moved.Story) && moved.Story is not null ? $"; user story {moved.Story.StoryId ?? moved.Story.Key}" : "");
+
     /// <summary>"User story: US6 → US7" (or "identified: US6", "no longer under a user story (was US6)") for the case's history.</summary>
     private static string StoryMove(BirkNext.TestCoverage.CoverageUserStory? before, BirkNext.TestCoverage.CoverageUserStory? after) =>
         before is null ? $"User story identified: {after!.StoryId ?? after.Key} ({after.Title})"
@@ -1100,14 +1141,16 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         if (plan.ProjectKey is not { } key || discoveries?.Latest(key) is not { } latest) return plan;
         var current = latest.Candidates.ToDictionary(c => c.CandidateId, c => c.Fingerprint, StringComparer.Ordinal);
         var storyNow = latest.Candidates.ToDictionary(c => c.CandidateId, c => c.Story?.Key, StringComparer.Ordinal);
+        var moves = Renumbered(plan, latest.Candidates);
         return plan with
         {
             Cases = [.. plan.Cases.Select(c => c with
             {
-                // Changed in the evidence, or moved to another user story (a story identified for the first time is not a change of the scenario).
+                // Changed in the evidence, moved to another user story (a story identified for the first time is not a change of the scenario), or the
+                // same text now at another position in the specification (Update moves the case with it).
                 SourceChanged = c.Source.Kind == ScenarioSourceKind.ProjectDiscovery && c.Review != TestCaseReviewState.Superseded
-                    && current.TryGetValue(c.Source.ScenarioId, out var now)
-                    && (now != c.Source.Fingerprint || c.Generated.Story is not null && storyNow[c.Source.ScenarioId] != c.Generated.Story.Key),
+                    && (moves.ContainsKey(c.Source.ScenarioId) || current.TryGetValue(c.Source.ScenarioId, out var now)
+                        && (now != c.Source.Fingerprint || c.Generated.Story is not null && storyNow[c.Source.ScenarioId] != c.Generated.Story.Key)),
             })],
         };
     }

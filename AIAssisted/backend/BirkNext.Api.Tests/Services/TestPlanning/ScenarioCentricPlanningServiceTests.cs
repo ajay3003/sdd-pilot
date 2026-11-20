@@ -76,7 +76,7 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
         Description = $"About {title}.", IndependentTest = $"Test {title} on its own.", SpecificationPath = Spec,
     };
 
-    private Task<ScenarioDiscoveryResult> DiscoverAsync(string project, string? storyOf42 = null) =>
+    private Task<ScenarioDiscoveryResult> DiscoverAsync(string project, string? storyOf42 = null, string id42 = "scenario-42") =>
         new TestScenarioDiscoveryService(new IqrSourceStore(null!), [new SpecificationScenarioProvider()], _discoveries).DiscoverAsync(new ScenarioDiscoveryRequest
         {
             ProjectKey = project, ProjectName = "SkoleService",
@@ -88,7 +88,7 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
                 Stories = storyOf42 is null ? [] : [Story(storyOf42, storyOf42 == "US6" ? "Expected population" : "Coverage breakdown"), Story("US1", "Accept a valid report")],
                 AcceptanceScenarios =
                 [
-                    new QaTestCandidate { Id = "scenario-42", Title = "Child past compulsory school age", Given = "a child past compulsory school age", When = "the period locks",
+                    new QaTestCandidate { Id = id42, Title = "Child past compulsory school age", Given = "a child past compulsory school age", When = "the period locks",
                         Then = "the child is not expected, even with an upper secondary education relationship", StoryKey = storyOf42 is null ? null : CoverageUserStory.KeyOf(Spec, storyOf42), NumberInStory = storyOf42 is null ? null : 3 },
                     new QaTestCandidate { Id = "scenario-7", Title = "Valid report", Given = "a valid report", When = "the report is submitted", Then = "the report is accepted", RequirementIds = ["FR-001"],
                         StoryKey = storyOf42 is null ? null : CoverageUserStory.KeyOf(Spec, "US1"), NumberInStory = storyOf42 is null ? null : 1 },
@@ -438,6 +438,32 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
         moved.Generated.Story!.StoryId.Should().Be("US7");
         moved.EditHistory.Last().Fields.Single().Should().Be("User story: US6 → US7 (User Story 7 - Coverage breakdown (Priority: P2))");
         refreshed.Cases.Single(x => x.Source.ScenarioId == s7).EditHistory.Should().BeEmpty("an unchanged story records nothing");
+    }
+
+    [Fact]
+    public async Task A_scenario_renumbered_in_the_specification_is_flagged_and_on_update_its_cases_follow_the_same_text()
+    {
+        await using var db = Context();
+        var (service, plan, s42, s7) = await PlanWithStoriesAsync(db);
+        plan = await service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, "No report submitted", null, null, ScenarioKey: s42), "anna", default);
+        plan = await service.SaveAsync(plan.Id, Human(plan, (c, part) => c.Source.ScenarioId == s42 ? part with { Edits = part.Edits with { ObservationMethod = "Read the frozen report" } } : part), "anna", default);
+
+        // A scenario was inserted earlier in the file: the same text is now scenario 43 (another candidate id), nothing else changed.
+        var newer = await DiscoverAsync("import:p1", "US6", id42: "scenario-43");
+        var s43 = newer.Candidates.Single(c => c.CanonicalKey.EndsWith("|scenario-43", StringComparison.Ordinal)).CandidateId;
+        s43.Should().NotBe(s42);
+        var flagged = await Service(Context()).DraftAsync(plan.Id, default);
+        flagged.Cases.Single(x => x.Source.ScenarioId == s42).SourceChanged.Should().BeTrue("a renumbering is shown, never applied silently");
+
+        var refreshed = await service.RefreshAsync(plan.Id, flagged.Revision, "anna", default);
+        var followed = refreshed.Cases.Single(x => x.Source.Kind == ScenarioSourceKind.ProjectDiscovery && x.EffectiveTitle.Contains("past"));
+        followed.Source.ScenarioId.Should().Be(s43);
+        followed.SourceChanged.Should().BeFalse();
+        followed.Edits.ObservationMethod.Should().Be("Read the frozen report", "the person's edits stay with the case");
+        followed.EditHistory.Last().Fields.Single().Should().Be($"Moved in the specification: the same scenario text is now {Spec}#scenario-43 (was {Spec}#scenario-42)");
+        refreshed.Cases.Single(x => x.Source.Kind == ScenarioSourceKind.Manual).ScenarioKey.Should().Be(s43, "a case written under the scenario moves with it");
+        refreshed.Cases.Should().NotContain(x => x.Source.ScenarioId == s42);
+        refreshed.Cases.Single(x => x.Source.ScenarioId == s7).EditHistory.Should().BeEmpty();
     }
 
     [Fact]
