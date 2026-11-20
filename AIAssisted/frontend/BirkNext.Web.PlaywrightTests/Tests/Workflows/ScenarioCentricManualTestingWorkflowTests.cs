@@ -347,6 +347,14 @@ public sealed class ScenarioCentricManualTestingWorkflowTests : IAsyncLifetime
 
             await page.SetViewportSizeAsync(1440, 1000);
             await page.ScreenshotAsync(new() { Path = Path.Combine(ShotFolder, "prepare-stories-1440.png"), FullPage = true });
+            // The open case at every supported width: no horizontal scrolling, readable step fields (2026-11-20 polish).
+            foreach (var width in new[] { 1280, 1024, 768 })
+            {
+                await page.SetViewportSizeAsync(width, 900);
+                await page.ScreenshotAsync(new() { Path = Path.Combine(ShotFolder, $"prepare-stories-{width}.png"), FullPage = true });
+                (await page.EvaluateAsync<bool>("() => document.documentElement.scrollWidth <= window.innerWidth + 1")).Should().BeTrue($"no horizontal scrolling at {width} px");
+            }
+            await page.SetViewportSizeAsync(1440, 1000);
 
             // Translate all: a preview first, then the whole plan in Norwegian (scenarios' Given/When/Then, stories, cases).
             await page.GetByTestId("tps-translate-all").ClickAsync();
