@@ -29,6 +29,17 @@ public sealed class ScenarioCentricManualTestingWorkflowTests : IAsyncLifetime
 
     public async Task DisposeAsync() => await _fixture.DisposeAsync();
 
+    /// <summary>The innermost elements that reach past the window's right edge (tag.class[testid] → right edge px), for a failing width check.</summary>
+    private static Task<string> OverflowingAsync(IPage page) => page.EvaluateAsync<string>(@"() => {
+        const w = window.innerWidth, out = [];
+        for (const e of document.querySelectorAll('body *')) {
+            const r = e.getBoundingClientRect();
+            if (r.right > w + 1 && r.width > 0 && ![...e.children].some(c => c.getBoundingClientRect().right > w + 1))
+                out.push(`${e.tagName.toLowerCase()}.${[...e.classList].join('.')}[${e.getAttribute('data-testid') ?? ''}] → ${Math.round(r.right)}`);
+        }
+        return out.slice(0, 8).join(' | ') || 'none found';
+    }");
+
     private static async Task ReadyAsync(IPage page, string testId) =>
         await page.Locator($"[data-testid={testId}][aria-busy=false]").WaitForAsync(new() { Timeout = 240000 });
 
@@ -153,7 +164,9 @@ public sealed class ScenarioCentricManualTestingWorkflowTests : IAsyncLifetime
             // 6–8. The scenario is the parent: its purpose, source and its generated case (a procedure, not one copied line).
             var scenario = await OpenScenarioAsync(page, s42);
             await Assertions.Expect(scenario.GetByTestId("tps-scenario-overview")).ToContainTextAsync("a child past compulsory school age");
-            await Assertions.Expect(scenario.GetByTestId("tps-scenario-evidence")).ToContainTextAsync(Spec);
+            // The text shows the file and anchor; the full path is the tooltip (2026-11-20).
+            await Assertions.Expect(scenario.GetByTestId("tps-scenario-evidence")).ToContainTextAsync("spec.md#");
+            await Assertions.Expect(scenario.GetByTestId("tps-scenario-evidence")).ToHaveAttributeAsync("title", new Regex(Regex.Escape(Spec)));
             await Assertions.Expect(scenario.GetByTestId("tps-scenario-counts")).ToHaveTextAsync("1 test case · 1 needs review");
             var primary = await OpenCaseAsync(page, s42);
             await Assertions.Expect(primary.GetByTestId("tps-case-generated")).ToHaveTextAsync("Generated — not reviewed");
@@ -352,7 +365,8 @@ public sealed class ScenarioCentricManualTestingWorkflowTests : IAsyncLifetime
             {
                 await page.SetViewportSizeAsync(width, 900);
                 await page.ScreenshotAsync(new() { Path = Path.Combine(ShotFolder, $"prepare-stories-{width}.png"), FullPage = true });
-                (await page.EvaluateAsync<bool>("() => document.documentElement.scrollWidth <= window.innerWidth + 1")).Should().BeTrue($"no horizontal scrolling at {width} px");
+                (await page.EvaluateAsync<bool>("() => document.documentElement.scrollWidth <= window.innerWidth + 1")).Should().BeTrue(
+                    $"no horizontal scrolling at {width} px; elements past the edge: {await OverflowingAsync(page)}");
             }
             await page.SetViewportSizeAsync(1440, 1000);
 

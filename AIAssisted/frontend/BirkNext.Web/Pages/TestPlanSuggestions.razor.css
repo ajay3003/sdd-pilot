@@ -23,7 +23,9 @@
 .tps-note-info { background: #ddf4ff; border-color: #a6d8ff; color: #0a3069; }
 .tps-note-ok { background: #dafbe1; border-color: #aceebb; color: #116329; }
 .tps-note-warn { background: #fff8c5; border-color: #eac54f; color: #5c3c00; }
-.tps-tone, .tps-chip { display: inline-flex; align-items: center; gap: 0.25rem; border-radius: 999px; padding: 0.08rem 0.55rem; font-size: 0.76rem; font-weight: 650; border: 1px solid transparent; white-space: nowrap; }
+.tps-tone, .tps-chip { display: inline-flex; align-items: center; gap: 0.25rem; border-radius: 999px; padding: 0.08rem 0.55rem; font-size: 0.76rem; font-weight: 650; border: 1px solid transparent; white-space: nowrap; max-width: 100%; }
+/* A long chip (e.g. "Expected: Stated in the project's documentation — confirm by accepting") wraps inside a narrow column instead of pushing the page wider (768 px, 2026-11-21). */
+.tps-tone, .tps-chip { white-space: normal; overflow-wrap: anywhere; border-radius: 0.9rem; }
 .tps-tone-ok { background: #dafbe1; color: #116329; border-color: #aceebb; }
 .tps-tone-warn { background: #fff8c5; color: #6b4300; border-color: #eac54f; }
 .tps-tone-bad { background: #ffebe9; color: #a40e26; border-color: #ffcecb; }
