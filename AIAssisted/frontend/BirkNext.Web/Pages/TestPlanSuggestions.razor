@@ -2765,7 +2765,7 @@
                         {
                             var link = l.Link;
                             <li class="tps-req" data-testid="tps-story-req-confirmed" data-requirement="@link.RequirementId">
-                                <span class="tps-req-id">@link.RequirementId</span><span class="tps-req-text">@link.Title</span>
+                                <span class="tps-req-id">@link.RequirementId</span><span class="tps-req-text">@C.RequirementWording(link.Title, link.RequirementId)</span>
                                 <span class="tps-req-meta">@(link.LinkedAt == default ? "Not saved yet" : $"{link.LinkedBy} · {link.LinkedAt.ToLocalTime():yyyy-MM-dd}")</span>
                                 @if (CanWrite) { <button type="button" class="tps-icon-btn tps-icon-btn-sm" aria-label="@($"Remove {link.RequirementId} from this story")" title="Remove" @onclick="() => UnlinkFromStory(story.Key, link)" data-testid="tps-story-req-remove">✕</button> }
                             </li>
@@ -2784,7 +2784,7 @@
                             <li class="tps-req" data-testid="tps-story-req" data-requirement="@item.RequirementId" data-level="@item.Level">
                                 <span class="tps-level tps-level-@item.Level" title="@C.LevelLabel(item.Level)" data-testid="tps-story-req-level">@C.LevelLabel(item.Level)[..1]</span>
                                 <span class="tps-req-id">@item.RequirementId</span>
-                                <span class="tps-req-text">@(item.Title.Length > 200 ? item.Title[..199] + "…" : item.Title)
+                                <span class="tps-req-text">@(C.RequirementWording(item.Title, item.RequirementId) switch { var w when w.Length > 200 => w[..199] + "…", var w => w })
                                     <span class="tps-req-why" data-testid="tps-story-req-why">@item.Reason</span></span>
                                 @if (CanWrite)
                                 {

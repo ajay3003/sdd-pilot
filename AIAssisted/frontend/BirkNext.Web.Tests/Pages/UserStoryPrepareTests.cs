@@ -211,6 +211,14 @@ public sealed class UserStoryPrepareTests : BunitContext
         refs.Should().OnlyContain(r => r.TaskId == null);
     }
 
+    [Fact]
+    public void A_requirements_list_markup_is_not_shown_in_front_of_its_wording()
+    {
+        ScenarioCentricPresentation.RequirementWording("- **FR-027**: A child MUST be counted.", "FR-027").Should().Be("A child MUST be counted.");
+        ScenarioCentricPresentation.RequirementWording("**FR-027** – A child **MUST** be counted.", "FR-027").Should().Be("A child MUST be counted.");
+        ScenarioCentricPresentation.RequirementWording("A child is counted (see FR-027).", "FR-027").Should().Be("A child is counted (see FR-027).");
+    }
+
     private static ExplorerArtifact Tasks(string path) =>
         new("t1", WorkspaceArtifactType.Tasks, "tasks.md", "tasks.md", path, ExplorerArtifactSource.Workspace, "ProjectImport", 1, 1, "Draft", ExplorerArtifactCurrentness.Current, null);
 }

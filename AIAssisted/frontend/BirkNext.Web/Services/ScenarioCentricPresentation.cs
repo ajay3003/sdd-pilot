@@ -206,6 +206,18 @@ public static class ScenarioCentricPresentation
     public static TestCaseDraft WithTranslation(TestCaseDraft c, string language, Func<TestCaseTranslation, TestCaseTranslation> change) =>
         c.WithTranslation(language, change(Editable(c, language)));
 
+    /// <summary>
+    /// A requirement's wording for display: the specification's list markup in front of it ("- **FR-027**: …", "**FR-027** – …") and bold
+    /// markers removed, so the id is not shown twice. The text itself is unchanged.
+    /// </summary>
+    public static string RequirementWording(string? title, string requirementId)
+    {
+        var text = (title ?? "").Trim();
+        var lead = new System.Text.RegularExpressions.Regex(@"^[-*•]?\s*\**\s*" + System.Text.RegularExpressions.Regex.Escape(requirementId) + @"\s*\**\s*[:–—-]?\s*",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return lead.Replace(text, "").Replace("**", "").Trim();
+    }
+
     public static TestCaseTranslation SetStep(TestCaseTranslation n, int index, string? action, string? expected)
     {
         var steps = n.Steps.ToList();

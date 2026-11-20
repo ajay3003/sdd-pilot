@@ -369,7 +369,7 @@ public sealed class ScenarioCentricManualTestingWorkflowTests : IAsyncLifetime
             (await us6.Locator("[data-testid=tps-scenario]").EvaluateAllAsync<string[]>("els => els.map(e => e.getAttribute('data-scenario'))")).Should().Equal(s42, s40);
             await us6.GetByTestId("tps-story-tab-requirements").ClickAsync();
             await Assertions.Expect(us6.Locator("[data-testid=tps-story-req-confirmed][data-requirement=FR-027]")).ToContainTextAsync("FR-027");
-            await page.Locator($"[data-testid=tps-scenario][data-scenario=\"{s42}\"] [data-testid=tps-scenario-toggle]").ClickAsync();
+            await OpenScenarioAsync(page, s42); // opens it only when it is closed (the open scenario is remembered across the reload)
             await OpenCaseAsync(page, s42);
             await Assertions.Expect(page.GetByTestId($"tps-step-action-{s42}-0")).ToHaveValueAsync("Carry out or trigger: the period locks");
 
