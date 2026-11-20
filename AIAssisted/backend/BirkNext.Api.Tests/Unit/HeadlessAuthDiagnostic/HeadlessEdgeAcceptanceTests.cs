@@ -45,8 +45,11 @@ public sealed class HeadlessEdgeAcceptanceTests
         var proof = new BrowserAutomationEvidenceStore();
         // Unit integration fixture seeds only the prerequisite; launch/control/navigation/auth observation are real Edge.
         proof.Record(new() { TargetEnvironmentId = request.TargetEnvironmentId, TargetUrl = request.TargetUrl, TargetEnvironmentType = request.EnvironmentType,
-            Modes = [new() { Mode = BrowserAutomationDiagnosticMode.Headless, Result = BrowserAutomationDiagnosticModeResult.Available,
-                Stages = [new(BrowserAutomationDiagnosticStage.TargetControl, BrowserAutomationDiagnosticStageState.Passed)] }] });
+            // As the Browser Automation Diagnostic records a pass today: headless control kept through navigation to the target's own origin.
+            Modes = [new() { Mode = BrowserAutomationDiagnosticMode.Headless, Headless = true, Result = BrowserAutomationDiagnosticModeResult.Available,
+                Stages = [new(BrowserAutomationDiagnosticStage.TargetControl, BrowserAutomationDiagnosticStageState.Passed),
+                          new(BrowserAutomationDiagnosticStage.TargetStability, BrowserAutomationDiagnosticStageState.Passed)],
+                Target = new() { FinalLocation = BrowserAutomationFinalLocation.TargetOrigin } }] });
         var options = Options.Create(new HeadlessDiagnosticOptions { Verification = new() { [request.TargetEnvironmentId] = new() { TargetOrigin = fixture.Url, AuthenticatedSelector = "#authenticated-shell" } } });
         var service = new HeadlessDiagnosticService(new PlaywrightHeadlessBrowserFactory(options), proof, options, NullLogger<HeadlessDiagnosticService>.Instance)
             { ObservationTimeout = TimeSpan.FromSeconds(2) };
