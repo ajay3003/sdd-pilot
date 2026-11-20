@@ -499,6 +499,35 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
         (again.Draft ?? edited).StoryTranslations!.Single(t => t.StoryKey == storyKey).Title.Should().Be("Brukerhistorie 6 – Forventet populasjon");
     }
 
+    // ── Order and exclusion ───────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_saved_order_is_kept_and_the_export_follows_it_and_excluding_a_scenario_keeps_its_cases()
+    {
+        await using var db = Context();
+        var (service, plan, s42, s7) = await PlanAsync(db);
+        plan = await service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, "No report submitted", null, null, ScenarioKey: s42), "anna", default);
+        var manual = plan.Cases.Single(c => c.Source.Kind == ScenarioSourceKind.Manual).Source.ScenarioId;
+        // The tester puts the valid-report scenario first and the hand-written case before the scenario's own case.
+        var order = new[] { s7, manual, s42 };
+        plan = await service.SaveAsync(plan.Id, Human(plan) with { ScenarioIds = [.. order] }, "anna", default);
+        (await Service(Context()).DraftAsync(plan.Id, default)).Cases.Select(c => c.Source.ScenarioId).Should().Equal(order);
+        AdoTestPlanExporter.Preview(plan, new AdoExportRequest { ProjectKey = plan.ProjectKey!, DraftId = plan.Id, PlanRevision = plan.Revision, IncludeNotApproved = true })
+            .Cases.Select(c => c.CaseId).Should().Equal(order, "the export follows the plan's order");
+
+        var noReason = () => service.ExcludeScenarioAsync(plan.Id, new ExcludeScenarioRequest(plan.Revision, s42, " "), "lead", default);
+        (await noReason.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("rationale-required");
+        plan = await service.ExcludeScenarioAsync(plan.Id, new ExcludeScenarioRequest(plan.Revision, s42, "Covered by the integration suite"), "lead", default);
+
+        var excluded = plan.Cases.Where(c => c.ParentScenario == s42).ToList();
+        excluded.Should().HaveCount(2).And.OnlyContain(c => c.Review == TestCaseReviewState.Excluded && c.ReviewHistory.Last().Rationale == "Scenario excluded: Covered by the integration suite");
+        plan.Cases.Single(c => c.Source.ScenarioId == s7).Review.Should().Be(TestCaseReviewState.Generated, "another scenario is untouched");
+        plan.Cases.Should().HaveCount(3, "nothing is deleted");
+        (await service.RevisionsAsync(plan.Id, default)).First().Reason.Should().Be("Scenario excluded (2 test cases)");
+        AdoTestPlanExporter.Preview(plan, new AdoExportRequest { ProjectKey = plan.ProjectKey!, DraftId = plan.Id, PlanRevision = plan.Revision, IncludeNotApproved = true })
+            .Rows.Should().NotContain(r => excluded.Any(c => c.EffectiveTitle == r.Title), "excluded cases are never exported");
+    }
+
     private sealed class NoValues : ITestDataProvider
     {
         public string Id => "values";

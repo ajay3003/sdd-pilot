@@ -209,4 +209,16 @@ public sealed class UserStoryHierarchyTests
         ScenarioPlanning.StructuralReferences(c).Should().Contain("US6").And.Contain("User Story 6");
         c.RequirementLinks.Should().BeEmpty("a story's requirements are never copied into its cases");
     }
+
+    [Fact]
+    public void Scenarios_of_one_story_are_prepared_in_the_specifications_order_and_nothing_else_moves()
+    {
+        var us6 = new CoverageUserStory { Key = "spec.md#US6", StoryId = "US6" };
+        var us7 = new CoverageUserStory { Key = "spec.md#US7", StoryId = "US7" };
+        DiscoveredScenario S(string id, CoverageUserStory? story, int? number) => new() { CandidateId = id, Story = story, NumberInStory = number };
+        var listed = new List<DiscoveredScenario> { S("s42", us6, 3), S("ui", null, null), S("s40", us6, 1), S("s50", us7, 2), S("s49", us7, 1) };
+
+        TestPlanSuggestionService.SpecificationOrder(listed).Select(c => c.CandidateId).Should().Equal(["s40", "ui", "s42", "s49", "s50"],
+            "each story's scenarios take its slots in their number order; the scenario without a story keeps its place");
+    }
 }

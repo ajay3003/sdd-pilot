@@ -1127,7 +1127,22 @@
         var expected = P.Expected(c);
         var stepResults = c.EffectiveStepExpected;
         var shown = ShownLanguage(c);
-        <li class="tps-case @(open ? "is-open" : null)" data-testid="tps-case-@sid" data-case="@sid" data-language="@(shown ?? "original")">
+        var caseSiblings = d.Cases.Where(x => (x.ParentScenario ?? "") == (c.ParentScenario ?? "")).Select(x => x.Source.ScenarioId).ToList();
+        var casePosition = caseSiblings.IndexOf(sid);
+        var caseReorder = CanWrite && d.ProjectKey is not null && caseSiblings.Count > 1;
+        <li class="tps-case @(open ? "is-open" : null) @(_dropTarget == "case:" + sid ? "is-drop-target" : null)" data-testid="tps-case-@sid" data-case="@sid" data-language="@(shown ?? "original")"
+            @ondragover:preventDefault @ondragenter='() => DragEnter("case:" + sid)' @ondrop="() => DropCase(d, sid)">
+            @if (caseReorder)
+            {
+                <span class="tps-case-order">
+                    <span class="tps-drag" draggable="true" data-drag="@($"case:{sid}")" title="Drag to reorder the test case" aria-hidden="true"
+                          @ondragstart='() => _drag = ("case", sid, -1)' @ondragend="DragEnd" data-testid="@($"tps-case-drag-{sid}")">⋮⋮</span>
+                    <button type="button" class="tps-icon-btn tps-icon-btn-sm" disabled="@(_busy || casePosition <= 0)" aria-label="@($"Move test case {c.EffectiveTitle} up")" title="Move up"
+                            @onclick="() => Change(PlanOrdering.MoveCase(d, sid, casePosition - 1))" data-testid="@($"tps-case-up-{sid}")">↑</button>
+                    <button type="button" class="tps-icon-btn tps-icon-btn-sm" disabled="@(_busy || casePosition >= caseSiblings.Count - 1)" aria-label="@($"Move test case {c.EffectiveTitle} down")" title="Move down"
+                            @onclick="() => Change(PlanOrdering.MoveCase(d, sid, casePosition + 1))" data-testid="@($"tps-case-down-{sid}")">↓</button>
+                </span>
+            }
             <button type="button" class="tps-case-head" aria-expanded="@(open ? "true" : "false")" aria-controls="@($"tps-case-body-{sid}")" @onclick="() => ToggleCase(sid)">
                 <span class="tps-card-title" data-testid="tps-case-title">@(shown is not null && !string.IsNullOrWhiteSpace(c.Translation(shown)?.Title) ? c.Translation(shown)!.Title : c.EffectiveTitle)</span>
                 @if (C.GeneratedNotReviewed(c) is { } gen) { <span class="tps-chip tps-chip-quiet" data-testid="tps-case-generated">@gen</span> }
@@ -1185,7 +1200,10 @@
                                 @for (var i = 0; i < c.EffectiveSteps.Count; i++)
                                 {
                                     var index = i;
-                                    <li class="tps-step-row" data-testid="@($"tps-step-{sid}-{index}")">
+                                    <li class="tps-step-row @(_dropTarget == $"step:{sid}:{index}" ? "is-drop-target" : null)" data-testid="@($"tps-step-{sid}-{index}")"
+                                        @ondragover:preventDefault @ondragenter='() => DragEnter($"step:{sid}:{index}")' @ondrop="() => DropStep(d, sid, index)">
+                                        <span class="tps-drag" draggable="true" data-drag="@($"step:{sid}:{index}")" title="Drag to reorder the step" aria-hidden="true"
+                                              @ondragstart='() => _drag = ("step", sid, index)' @ondragend="DragEnd" data-testid="@($"tps-step-drag-{sid}-{index}")">⋮⋮</span>
                                         <input class="tps-input" value="@c.EffectiveSteps[index]" aria-label="Step @(index + 1) action" @onchange="e => Change(P.WithCase(d, sid, x => P.SetStep(x, index, e.Value?.ToString() ?? x.EffectiveSteps[index], null)))" data-testid="@($"tps-step-action-{sid}-{index}")" />
                                         <input class="tps-input" value="@stepResults[index]" placeholder="Needs clarification — expected result not stated" aria-label="Step @(index + 1) expected result" @onchange="e => Change(P.WithCase(d, sid, x => P.SetStep(x, index, null, e.Value?.ToString() ?? string.Empty)))" data-testid="@($"tps-step-expected-{sid}-{index}")" />
                                         <span class="tps-step-tools">
@@ -2084,7 +2102,7 @@
         @if (stories is null)
         {
             <div class="tps-scenarios" data-testid="tps-scenarios">
-                @foreach (var g in groups) { @ScenarioItem(d, g, openKey, project, false) }
+                @foreach (var g in groups) { @ScenarioItem(d, g, openKey, project, false, [.. groups.Where(x => !x.Unresolved).Select(x => x.Key)]) }
             </div>
         }
         else
@@ -2117,7 +2135,7 @@
                         </div>
                         @StoryCard(d, sg)
                         <div class="tps-story-scenarios">
-                            @foreach (var g in sg.Scenarios) { @ScenarioItem(d, g, openKey, project, true) }
+                            @foreach (var g in sg.Scenarios) { @ScenarioItem(d, g, openKey, project, true, [.. sg.Scenarios.Select(x => x.Key)]) }
                         </div>
                     </section>
                 }
@@ -2125,8 +2143,10 @@
         }
     };
 
-    private RenderFragment ScenarioItem(TestPlanDraft d, ScenarioGroup g, string? openKey, bool project, bool storied) => __builder =>
+    private RenderFragment ScenarioItem(TestPlanDraft d, ScenarioGroup g, string? openKey, bool project, bool storied, List<string> siblings) => __builder =>
     {
+        var position = siblings.IndexOf(g.Key);
+        var reorder = CanWrite && project && !g.Unresolved && siblings.Count > 1;
         var isOpen = g.Key == openKey;
         var domId = ScenarioDomId(g.Key);
         var lang = _shownLanguage.GetValueOrDefault(g.Key);
@@ -2135,8 +2155,14 @@
         var target = lang ?? Targets[0];
         var targetName = TranslationLanguages.Name(target);
         var group = g;
-        <section class="tps-scn @(isOpen ? "is-open" : null)" data-testid="tps-scenario" data-scenario="@g.Key" data-open="@(isOpen ? "true" : "false")" aria-labelledby="@($"{domId}-h")">
+        <section class="tps-scn @(isOpen ? "is-open" : null) @(_dropTarget == "scenario:" + g.Key ? "is-drop-target" : null)" data-testid="tps-scenario" data-scenario="@g.Key" data-open="@(isOpen ? "true" : "false")" aria-labelledby="@($"{domId}-h")"
+                 @ondragover:preventDefault @ondragenter='() => DragEnter("scenario:" + group.Key)' @ondrop="() => { PinOpen(openKey); DropScenario(d, siblings, group.Key); }">
             <div class="tps-scn-head">
+                @if (reorder)
+                {
+                    <span class="tps-drag" draggable="true" data-drag="@($"scenario:{g.Key}")" title="Drag to reorder the scenario" aria-hidden="true"
+                          @ondragstart='() => _drag = ("scenario", group.Key, -1)' @ondragend="DragEnd" data-testid="tps-scenario-drag">⋮⋮</span>
+                }
                 <div class="tps-scn-h" role="heading" aria-level="@(storied ? 4 : 3)" id="@($"{domId}-h")">
                     <button type="button" class="tps-scn-toggle" aria-expanded="@(isOpen ? "true" : "false")" aria-controls="@($"{domId}-body")" @onclick="() => ToggleScenario(group.Key, isOpen)" data-testid="tps-scenario-toggle">
                         <span class="tps-scn-chevron" aria-hidden="true">@(isOpen ? "▾" : "▸")</span>
@@ -2175,6 +2201,28 @@
                                 </select>
                         }
                         @if (CanWrite) { <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@_busy" @onclick="() => StartAddUnder(group)" data-testid="tps-scenario-add">+ Add test case</button> }
+                        @if (reorder)
+                        {
+                            <span class="tps-order" role="group" aria-label="@($"Order of {g.Title}")">
+                                <button type="button" class="tps-icon-btn tps-icon-btn-sm" disabled="@(_busy || position <= 0)" aria-label="@($"Move scenario {g.Title} up")" title="Move up"
+                                        @onclick="() => { PinOpen(openKey); Change(PlanOrdering.MoveScenario(d, group.Key, siblings, position - 1)); }" data-testid="tps-scenario-up">↑</button>
+                                <button type="button" class="tps-icon-btn tps-icon-btn-sm" disabled="@(_busy || position >= siblings.Count - 1)" aria-label="@($"Move scenario {g.Title} down")" title="Move down"
+                                        @onclick="() => { PinOpen(openKey); Change(PlanOrdering.MoveScenario(d, group.Key, siblings, position + 1)); }" data-testid="tps-scenario-down">↓</button>
+                            </span>
+                        }
+                        @if (CanWrite && !g.Unresolved)
+                        {
+                            @if (PlanOrdering.RemoveScenarioBlocker(d, g.Key) is null)
+                            {
+                                <button type="button" class="tps-icon-btn tps-icon-btn-sm" disabled="@_busy" aria-label="@($"Remove scenario {g.Title} from the plan")" title="Remove from the plan (never reviewed; earlier versions keep it)"
+                                        @onclick="() => RemoveScenario(d, group)" data-testid="tps-scenario-remove">🗑</button>
+                            }
+                            else if (g.Cases.Any(c => c.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded)))
+                            {
+                                <button type="button" class="tps-icon-btn tps-icon-btn-sm" disabled="@_busy" aria-label="@($"Exclude scenario {g.Title}")" title="@PlanOrdering.RemoveScenarioBlocker(d, g.Key)"
+                                        @onclick="() => { _excludeScenario = group.Key; _excludeReason = string.Empty; _scenarioChosen = true; _openScenario = group.Key; }" data-testid="tps-scenario-exclude">⊘</button>
+                            }
+                        }
                     </div>
                 }
             </div>
@@ -2221,6 +2269,19 @@
                     @if (_overwriteOffer == g.Key && CanWrite)
                     {
                         <p class="tps-note tps-note-info" data-testid="tps-translate-kept">@targetName text written by a person was kept. <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@_busy" @onclick="() => TranslateScenarioAsync(group, true)" data-testid="tps-translate-overwrite">Replace it with a new machine translation</button></p>
+                    }
+                    @if (_excludeScenario == g.Key && CanWrite)
+                    {
+                        <div class="tps-inline-card" role="group" aria-label="@($"Exclude {g.Title}")" data-testid="tps-scenario-exclude-form">
+                            <p class="tps-popover-title">Exclude the scenario and its @g.Cases.Count(c => c.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded)) test case(s)?</p>
+                            <p class="tps-muted tps-small">A test case of it has been reviewed, so it is excluded with a reason instead of removed. Nothing is deleted: its cases, their history and the evidence stay, and each case can be reviewed again.</p>
+                            <label class="tps-field"><span class="tps-k">Reason</span><input class="tps-input" @bind="_excludeReason" @bind:event="oninput" placeholder="Why it is not tested in this plan" data-testid="tps-scenario-exclude-reason" /></label>
+                            <div class="tps-popover-actions">
+                                <button type="button" class="tps-btn" disabled="@(_busy || _dirty || string.IsNullOrWhiteSpace(_excludeReason))" @onclick="() => ExcludeScenarioAsync(group)" data-testid="tps-scenario-exclude-confirm">Exclude scenario</button>
+                                <button type="button" class="tps-btn tps-btn-quiet" @onclick="() => _excludeScenario = null" data-testid="tps-scenario-exclude-cancel">Cancel</button>
+                            </div>
+                            @if (_dirty) { <p class="tps-muted tps-small">Save or discard your changes first.</p> }
+                        </div>
                     }
                     @if (_addUnder == g.Key && CanWrite)
                     {
@@ -2390,6 +2451,68 @@
     private bool _translateAllOverwrite;
     private string? _translateAllHelp;
     private readonly Dictionary<string, string> _storyTab = new(StringComparer.Ordinal);
+
+    // ── Reordering and removing (drag with a handle, or the ↑/↓ buttons for keyboard and screen-reader users; saved with Save draft) ──
+
+    private (string Kind, string Key, int Index)? _drag;
+    private string? _dropTarget;
+    private string? _excludeScenario;
+    private string _excludeReason = "";
+
+    private void DragEnter(string target) { if (_drag is not null) _dropTarget = target; }
+
+    /// <summary>A move never changes which scenario is open: the one shown open stays open.</summary>
+    private void PinOpen(string? openKey) { if (!_scenarioChosen) { _scenarioChosen = true; _openScenario = openKey; } }
+    private void DragEnd() { _drag = null; _dropTarget = null; }
+
+    private void DropScenario(TestPlanDraft d, List<string> siblings, string targetKey)
+    {
+        if (_drag is ("scenario", var key, _) && key != targetKey && siblings.Contains(key))
+            Change(PlanOrdering.MoveScenario(d, key, siblings, siblings.IndexOf(targetKey)));
+        DragEnd();
+    }
+
+    private void DropCase(TestPlanDraft d, string targetId)
+    {
+        if (_drag is ("case", var key, _) && key != targetId)
+        {
+            var moving = d.Cases.FirstOrDefault(c => c.Source.ScenarioId == key);
+            var target = d.Cases.FirstOrDefault(c => c.Source.ScenarioId == targetId);
+            if (moving is not null && target is not null && (moving.ParentScenario ?? "") == (target.ParentScenario ?? ""))
+            {
+                var siblings = d.Cases.Where(c => (c.ParentScenario ?? "") == (target.ParentScenario ?? "")).Select(c => c.Source.ScenarioId).ToList();
+                Change(PlanOrdering.MoveCase(d, key, siblings.IndexOf(targetId)));
+            }
+        }
+        DragEnd();
+    }
+
+    private void DropStep(TestPlanDraft d, string sid, int targetIndex)
+    {
+        if (_drag is ("step", var key, var from) && key == sid && from != targetIndex)
+            Change(P.WithCase(d, sid, x => PlanOrdering.MoveStep(x, from, targetIndex)));
+        DragEnd();
+    }
+
+    private void RemoveScenario(TestPlanDraft d, ScenarioGroup g)
+    {
+        Change(PlanOrdering.RemoveScenario(d, g.Key));
+        foreach (var c in g.Cases) _openCases.Remove(c.Source.ScenarioId);
+        Info($"\"{g.Title}\" and its {g.Cases.Count} test case{(g.Cases.Count == 1 ? "" : "s")} are removed when you save. Earlier versions of the plan keep them.");
+    }
+
+    private async Task ExcludeScenarioAsync(ScenarioGroup g)
+    {
+        if (_draft is null || string.IsNullOrWhiteSpace(_excludeReason)) return;
+        if (_dirty) { Fail("Save or discard your changes first."); return; }
+        _busy = true;
+        var (draft, error) = await _api!.ExcludeScenarioAsync(_draft.Id, new ExcludeScenarioRequest(_draft.Revision, g.Key, _excludeReason.Trim()));
+        _busy = false;
+        if (draft is null) { Fail(error ?? "The scenario could not be excluded."); return; }
+        _draft = draft; _excludeScenario = null; _excludeReason = "";
+        await ReloadWorkspaceAsync();
+        Ok($"\"{g.Title}\" is excluded: its test cases stay in the plan with the reason, and none is exported.");
+    }
 
     private StoryTranslation? StoryText(string storyKey, string language) =>
         _draft?.StoryTranslations?.FirstOrDefault(t => t.StoryKey == storyKey && string.Equals(t.Language, language, StringComparison.OrdinalIgnoreCase));

@@ -172,6 +172,17 @@ expected. One scenario is open at a time:
 - Older hand-written cases that were never written under a scenario are listed under *Written by hand — no scenario established*. BirkNext
   does not guess a scenario for them.
 
+### Order, remove and exclude
+
+- **Reorder** scenarios (within their user story), test cases (within their scenario) and steps (within their case) by dragging the
+  **⋮⋮** handle, or with the **↑ / ↓** buttons (keyboard and screen readers). The order is saved with **Save draft** and is the order of the
+  Azure DevOps export. User stories keep the specification's order; the scenario's number in its story ("scenario 3") stays as the source
+  reference.
+- **Remove a scenario** (🗑) when none of its test cases has been reviewed: it and its cases leave the plan when you save; earlier versions keep
+  them.
+- **Exclude a scenario** (⊘) when a case of it has been reviewed (or has an Azure DevOps id): give a reason; every case under it is excluded
+  with that reason in one saved version. Nothing is deleted, and each case can be reviewed again.
+
 ### Translated text (default Norwegian bokmål)
 
 **Translate all** (top of the list) translates the whole plan — every scenario with its Given/When/Then, its user story, every test-case

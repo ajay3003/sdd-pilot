@@ -435,3 +435,24 @@ textarea.tps-input { resize: vertical; line-height: 1.45; }
     .tps-req-actions, .tps-req-meta { grid-column: 2; }
 }
 @media (prefers-reduced-motion: reduce) { .tps-popover, .tps-story-panel { animation: none; } .tps-seg, .tps-tab, .tps-req { transition: none; } }
+
+/* Reorder and remove (2026-11-20): a grab handle that shows on hover/focus, ↑/↓ for keyboard users, a clear drop target. */
+.tps-drag { display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; min-height: 1.6rem; border-radius: 6px; cursor: grab; user-select: none;
+    color: var(--clr-text-muted, #57606a); letter-spacing: -2px; font-weight: 700; opacity: .45; transition: opacity .15s ease, background-color .15s ease; }
+.tps-drag:active { cursor: grabbing; }
+.tps-scn:hover .tps-drag, .tps-case:hover .tps-drag, .tps-step-row:hover > .tps-drag, .tps-drag:hover { opacity: 1; background: var(--clr-surface, #f6f8fa); }
+.is-drop-target { outline: 2px dashed var(--clr-primary, #0969da); outline-offset: 2px; }
+.tps-order { display: inline-flex; gap: 2px; }
+.tps-case { position: relative; }
+.tps-case-order { position: absolute; top: 0.45rem; right: 0.55rem; display: inline-flex; align-items: center; gap: 2px; opacity: .6; transition: opacity .15s ease; z-index: 1; }
+.tps-case:hover .tps-case-order, .tps-case-order:focus-within { opacity: 1; }
+.tps-case:has(> .tps-case-order) > .tps-case-head { padding-right: 6.75rem; }
+.tps-step-row:has(> .tps-drag) { grid-template-columns: auto minmax(0, 1fr) auto; }
+.tps-step-row:has(> .tps-drag) > .tps-drag { grid-column: 1; grid-row: 1 / span 2; align-self: start; }
+.tps-step-row:has(> .tps-drag) > input { grid-column: 2; }
+.tps-inline-card { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.75rem 0.9rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: 12px;
+    background: var(--clr-surface, #f6f8fa); animation: tps-pop .14s ease-out; }
+@media (prefers-reduced-motion: reduce) { .tps-drag, .tps-case-order { transition: none; } .tps-inline-card { animation: none; } }
+@media (hover: none) { .tps-drag, .tps-case-order { opacity: 1; } }
+.tps-step-row:has(> .tps-drag) > .tps-step-tools { grid-column: 3; }
+.tps-step-row:has(> .tps-drag) > .tps-chip { grid-column: 2; justify-self: start; }

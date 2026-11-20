@@ -57,6 +57,9 @@ public interface ITestPlanSuggestionsApiService
     Task<TranslationAvailability> TranslationAsync(CancellationToken ct = default) =>
         Task.FromResult(new TranslationAvailability(false, null, "Translation is not available in this host. You can write the Norwegian text by hand."));
     /// <summary>Translates one scenario's cases to Norwegian with the configured service.</summary>
+    /// <summary>Excludes a whole scenario with one reason (every case under it; nothing deleted).</summary>
+    Task<(TestPlanDraft? Draft, string? Error)> ExcludeScenarioAsync(Guid id, ExcludeScenarioRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(TestPlanDraft?, string?)>((null, NotAvailable));
     /// <summary>Translate all: every scenario of the plan with its user story and linked requirement wording (one saved revision).</summary>
     Task<(TranslateScenarioResult? Result, string? Error)> TranslateAllAsync(Guid id, TranslatePlanRequest request, CancellationToken ct = default) =>
         Task.FromResult<(TranslateScenarioResult?, string?)>((null, NotAvailable));
@@ -149,6 +152,9 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http) : ITestPlanSu
         var (availability, error) = await Send<TranslationAvailability>(() => http.GetAsync($"{Base}/translation", ct), ct);
         return availability ?? new TranslationAvailability(false, null, error ?? "Whether translation is available could not be read. You can write the Norwegian text by hand.");
     }
+
+    public Task<(TestPlanDraft?, string?)> ExcludeScenarioAsync(Guid id, ExcludeScenarioRequest request, CancellationToken ct = default) =>
+        Send<TestPlanDraft>(() => http.PostAsJsonAsync($"{Base}/drafts/{id}/exclude-scenario", request, Json, ct), ct);
 
     public Task<(TranslateScenarioResult?, string?)> TranslateAllAsync(Guid id, TranslatePlanRequest request, CancellationToken ct = default) =>
         Send<TranslateScenarioResult>(() => http.PostAsJsonAsync($"{Base}/drafts/{id}/translate-all", request, Json, ct), ct);

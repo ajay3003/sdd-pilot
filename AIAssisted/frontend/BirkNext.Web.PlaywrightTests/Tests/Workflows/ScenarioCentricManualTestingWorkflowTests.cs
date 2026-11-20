@@ -280,4 +280,102 @@ public sealed class ScenarioCentricManualTestingWorkflowTests : IAsyncLifetime
         }
         finally { await page.CloseAsync(); }
     }
+
+    /// <summary>Where the browser screenshots of the redesigned Plan &amp; prepare go (set by the workflow script; the test's temp folder otherwise).</summary>
+    private static string ShotFolder => Environment.GetEnvironmentVariable("BIRKNEXT_PLAYWRIGHT_SHOTS") is { Length: > 0 } dir ? dir : Path.Combine(Path.GetTempPath(), "birknext-shots");
+
+    [BrowserFact(LibreTranslateStandIn.PortVariable, BrowserTestServers.FrontendVariable, BrowserTestServers.BackendVariable)]
+    public async Task A_tester_works_by_user_story_translates_the_whole_plan_and_reorders_scenarios_cases_and_steps()
+    {
+        await using var translator = new LibreTranslateStandIn(LibreTranslateStandIn.ConfiguredPort!.Value);
+        translator.Start();
+        var page = await _fixture.Context.NewPageAsync();
+        var pageErrors = new List<string>();
+        page.PageError += (_, error) => pageErrors.Add(error);
+        page.Dialog += async (_, dialog) => await dialog.AcceptAsync();
+        var project = SyntheticProjects.NewName("PwStories");
+        Directory.CreateDirectory(ShotFolder);
+        try
+        {
+            await SyntheticProjects.ImportAndUseAsync(page, project, Archive(project));
+            await page.GotoAsync($"{BrowserTestServers.FrontendUrl}/test-plan-suggestions", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+            await ReadyAsync(page, "tps");
+            await SyntheticProjects.ExpectSelectedProjectAsync(page, project);
+            await page.GetByTestId("tps-discover-run").ClickAsync();
+            await MessageAsync(page, "candidates found");
+            var s42 = await SelectAsync(page, "past compulsory school age");
+            var s40 = await SelectAsync(page, "state institution");
+            await SelectAsync(page, "valid attendance report");
+            await page.GetByTestId("tps-prepare").ClickAsync();
+            var confirm = page.GetByTestId("tps-preview-confirm");
+            for (var i = 0; i < 60; i++)
+            {
+                if (await confirm.IsVisibleAsync()) { await confirm.ClickAsync(); break; }
+                if (Regex.IsMatch(await page.GetByTestId("tps-message").InnerTextAsync(), "prepared as test cases")) break;
+                await page.WaitForTimeoutAsync(500);
+            }
+            await MessageAsync(page, "3 scenarios prepared as test cases");
+
+            // Feature → User Story → Scenario: User Story 6 holds its two scenarios in the specification's order, with priority and Independent Test.
+            await Assertions.Expect(page.GetByTestId("tps-feature").First).ToContainTextAsync("001-skoleservice");
+            var us6 = page.Locator("[data-testid=tps-story][data-kind=Story]", new() { HasText = "User Story 6" });
+            await Assertions.Expect(us6.GetByTestId("tps-story-priority")).ToHaveTextAsync("P2");
+            await Assertions.Expect(us6.GetByTestId("tps-story-independent")).ToBeVisibleAsync();
+            (await us6.Locator("[data-testid=tps-scenario]").EvaluateAllAsync<string[]>("els => els.map(e => e.getAttribute('data-scenario'))")).Should().Equal(s40, s42);
+            await us6.GetByTestId("tps-story-tab-story").ClickAsync();
+            await Assertions.Expect(us6.GetByTestId("tps-story-independent-text")).ToContainTextAsync("Set up placements and birth dates");
+            await Assertions.Expect(us6.GetByTestId("tps-story-source")).ToContainTextAsync($"{Spec}#US6");
+
+            // Story requirements: FR-027 named by a [US6] task in the same feature's tasks.md (structural), confirmed for the story.
+            await us6.GetByTestId("tps-story-tab-requirements").ClickAsync();
+            var fr027 = us6.Locator("[data-testid=tps-story-req][data-requirement=FR-027]");
+            await Assertions.Expect(fr027).ToHaveAttributeAsync("data-level", "Structural");
+            await Assertions.Expect(fr027.GetByTestId("tps-story-req-why")).ToContainTextAsync("T001");
+            await fr027.GetByTestId("tps-story-req-confirm").ClickAsync();
+            await Assertions.Expect(us6.Locator("[data-testid=tps-story-req-confirmed][data-requirement=FR-027]")).ToBeVisibleAsync();
+
+            // Keyboard reorder within the story, then drag a step of the open case, and save.
+            await us6.Locator("[data-testid=tps-scenario]", new() { Has = page.Locator($"[data-scenario=\"{s40}\"]") }).First.WaitForAsync();
+            await page.Locator($"[data-testid=tps-scenario][data-scenario=\"{s40}\"] [data-testid=tps-scenario-down]").ClickAsync();
+            (await us6.Locator("[data-testid=tps-scenario]").EvaluateAllAsync<string[]>("els => els.map(e => e.getAttribute('data-scenario'))")).Should().Equal(s42, s40);
+            await page.Locator($"[data-testid=tps-scenario][data-scenario=\"{s42}\"] [data-testid=tps-scenario-toggle]").ClickAsync();
+            var primary = await OpenCaseAsync(page, s42);
+            await Assertions.Expect(page.GetByTestId($"tps-step-action-{s42}-1")).ToHaveValueAsync("Carry out or trigger: the period locks");
+            await page.GetByTestId($"tps-step-drag-{s42}-1").DragToAsync(page.GetByTestId($"tps-step-{s42}-0"));
+            await Assertions.Expect(page.GetByTestId($"tps-step-action-{s42}-0")).ToHaveValueAsync("Carry out or trigger: the period locks");
+            await primary.GetByTestId("tps-save").ClickAsync();
+            await MessageAsync(page, "Draft saved");
+
+            await page.SetViewportSizeAsync(1440, 1000);
+            await page.ScreenshotAsync(new() { Path = Path.Combine(ShotFolder, "prepare-stories-1440.png"), FullPage = true });
+
+            // Translate all: a preview first, then the whole plan in Norwegian (scenarios' Given/When/Then, stories, cases).
+            await page.GetByTestId("tps-translate-all").ClickAsync();
+            await Assertions.Expect(page.GetByTestId("tps-ta-scenarios")).ToHaveTextAsync("3");
+            await page.ScreenshotAsync(new() { Path = Path.Combine(ShotFolder, "prepare-translate-all-1440.png") });
+            await page.GetByTestId("tps-ta-confirm").ClickAsync();
+            await MessageAsync(page, "in 3 scenarios");
+            await Assertions.Expect(page.Locator("[data-testid=tps-plan-show][data-language=nb]")).ToHaveAttributeAsync("aria-pressed", "true");
+            await Assertions.Expect(page.Locator($"[data-testid=tps-scenario][data-scenario=\"{s42}\"] [data-testid=tps-scenario-given]")).ToContainTextAsync("[nb]");
+            await Assertions.Expect(us6.GetByTestId("tps-story-title")).ToContainTextAsync("[nb]");
+            await page.SetViewportSizeAsync(390, 900);
+            await page.ScreenshotAsync(new() { Path = Path.Combine(ShotFolder, "prepare-stories-390.png"), FullPage = true });
+            (await page.EvaluateAsync<bool>("() => document.documentElement.scrollWidth <= window.innerWidth + 1")).Should().BeTrue("no horizontal scrolling at 390 px");
+            await page.SetViewportSizeAsync(1280, 900);
+
+            // Reload: the order, the step move and the confirmed story requirement are saved.
+            await page.ReloadAsync();
+            await ReadyAsync(page, "tps");
+            us6 = page.Locator("[data-testid=tps-story][data-kind=Story]", new() { HasText = "User Story 6" });
+            (await us6.Locator("[data-testid=tps-scenario]").EvaluateAllAsync<string[]>("els => els.map(e => e.getAttribute('data-scenario'))")).Should().Equal(s42, s40);
+            await us6.GetByTestId("tps-story-tab-requirements").ClickAsync();
+            await Assertions.Expect(us6.Locator("[data-testid=tps-story-req-confirmed][data-requirement=FR-027]")).ToContainTextAsync("FR-027");
+            await page.Locator($"[data-testid=tps-scenario][data-scenario=\"{s42}\"] [data-testid=tps-scenario-toggle]").ClickAsync();
+            await OpenCaseAsync(page, s42);
+            await Assertions.Expect(page.GetByTestId($"tps-step-action-{s42}-0")).ToHaveValueAsync("Carry out or trigger: the period locks");
+
+            pageErrors.Should().BeEmpty();
+        }
+        finally { await page.CloseAsync(); }
+    }
 }

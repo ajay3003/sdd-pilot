@@ -88,3 +88,11 @@ window.birknextRovingAttach = function (container, itemSelector) {
         moveTo(items, target);
     });
 };
+
+// Drag to reorder (Plan & prepare): browsers such as Firefox only start a drag when data is set; Blazor's drag events cannot set it, so any
+// element marked data-drag sets a plain, empty payload here. The order itself is handled by the page (drop target + Save draft).
+document.addEventListener('dragstart', function (e) {
+    var source = e.target && e.target.closest ? e.target.closest('[data-drag]') : null;
+    if (!source || !e.dataTransfer) return;
+    try { e.dataTransfer.setData('text/plain', source.getAttribute('data-drag') || ''); e.dataTransfer.effectAllowed = 'move'; } catch (_) { }
+}, true);

@@ -124,6 +124,12 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     public Task<ActionResult> Translate(Guid id, [FromBody] TranslateScenarioRequest request, [FromServices] BirkNext.Api.Services.TestPlanning.TestCaseTranslatorResolver translators, CancellationToken ct) =>
         Run(async () => Ok(await service.TranslateScenarioAsync(id, request, translators.Current(), translators.Settings(), Actor, ct)));
 
+    /// <summary>Excludes every test case of a scenario with one reason (nothing is deleted; history kept).</summary>
+    [HttpPost("drafts/{id:guid}/exclude-scenario")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public Task<ActionResult> ExcludeScenario(Guid id, [FromBody] ExcludeScenarioRequest request, CancellationToken ct) =>
+        Run(async () => Ok(await service.ExcludeScenarioAsync(id, request, Actor, ct)));
+
     /// <summary>Translate all: every scenario of the plan with its user story and linked requirement wording, saved as one revision.</summary>
     [HttpPost("drafts/{id:guid}/translate-all")]
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]

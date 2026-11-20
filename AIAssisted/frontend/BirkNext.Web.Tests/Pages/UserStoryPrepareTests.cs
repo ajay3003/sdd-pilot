@@ -52,7 +52,8 @@ public sealed class UserStoryPrepareTests : BunitContext
         Id = DraftId, GuideKey = "project:skole", ProjectKey = "skole", ProjectName = "SkoleService", PlanName = "SkoleService – test plan", Revision = 3, Suites = [new("suite:s", "S", "area", null)],
         Cases =
         [
-            Case("tsc-42", "Child past compulsory school age", Us6, 3), Case("tsc-7", "Valid report", Us1, 1), Case("tsc-40", "State institution only", Us6, 2),
+            // Discovery order (the specification's): US6 scenario 2 before scenario 3.
+            Case("tsc-40", "State institution only", Us6, 2), Case("tsc-42", "Child past compulsory school age", Us6, 3), Case("tsc-7", "Valid report", Us1, 1),
             Case("tsc-x", "Scenario directly under the feature", null, null), Case("tsc-api", "GET /reports", null, null, "api-contract"),
         ],
     };

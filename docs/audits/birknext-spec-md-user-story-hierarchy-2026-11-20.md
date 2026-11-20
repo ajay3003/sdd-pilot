@@ -114,7 +114,22 @@ listed under "other sources". A project without a specification works as before.
 6 scenarios without a story (before 0). Frontend/004 has stories without an Independent Test section; Frontend/006 has neither stories nor
 scenarios.
 
-## 13. Remaining limitations
+## 13. Order, remove and exclude (follow-up)
+
+- One order for everything: the plan's case list (already what the save keeps and the export reads). `PlanOrdering` moves a case among its own
+  scenario's cases, a scenario as one block among the scenarios of its group (same story, or the same "other" group) — nothing outside the group
+  moves — and a step with its expected result (the evidence is kept apart). User stories keep the specification's order; scenarios within a
+  story follow the plan's order, which is the specification's until a tester moves them.
+- UI: a ⋮⋮ drag handle (HTML5 drag and drop; one global `dragstart` line in `pageFocus.js` sets the drag data browsers such as Firefox need)
+  and ↑ / ↓ buttons with accessible names for keyboard and screen-reader users; a dashed drop target; a move never collapses the open scenario.
+- Remove a scenario only when none of its cases was reviewed and none has an Azure DevOps id (earlier versions keep it); otherwise **Exclude
+  scenario** with a reason: `POST drafts/{id}/exclude-scenario` excludes every case under it in one revision ("Scenario excluded (n test
+  cases)"); nothing is deleted and excluded cases are never exported.
+- Tests: `PlanOrderingTests` (4), `PrepareReorderTests` (4 bUnit: keyboard, drag of scenarios / cases / steps, remove vs exclude), a PostgreSQL
+  service test (order kept and followed by the export; exclusion needs a reason, keeps every case, excluded cases not exported), and the browser
+  workflow (keyboard reorder within a story, step drag, reload).
+
+## 14. Remaining limitations
 
 - Scenario identity stays positional within the file (`scenario-N`, the pre-existing scheme) so prepared cases keep their identity; inserting a
   scenario earlier in the file flags later scenarios as changed (never silently rebound).

@@ -78,7 +78,7 @@ public static class ScenarioCentricPresentation
             foreach (var story in feature.GroupBy(g => StoryOf(g)!.Key, StringComparer.Ordinal).OrderBy(x => StoryOf(x.First())!.Ordinal))
             {
                 var s = StoryOf(story.First())!;
-                result.Add(new(StoryGroupKind.Story, s.Key, StoryLabel(s), FeatureLabel(s), s, [.. story.OrderBy(g => StoryOf(g)!.Key == s.Key ? g.Primary?.Generated.NumberInStory ?? int.MaxValue : int.MaxValue)]));
+                result.Add(new(StoryGroupKind.Story, s.Key, StoryLabel(s), FeatureLabel(s), s, [.. story])); // the plan's order: the specification's unless a tester reordered
             }
         var rest = groups.Where(g => StoryOf(g) is null).ToList();
         var noStory = rest.Where(g => !g.Unresolved && g.Primary?.Generated.Capability == "specification").ToList();

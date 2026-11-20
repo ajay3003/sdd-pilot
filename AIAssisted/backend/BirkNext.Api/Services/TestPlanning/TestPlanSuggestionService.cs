@@ -232,6 +232,31 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         return await WriteAsync(row, plan, ct);
     }
 
+    /// <summary>
+    /// Excludes a whole scenario: each of its test cases (not yet excluded or superseded) gets the Excluded decision with the same reason, in one saved
+    /// revision. Nothing is deleted: the cases, their history and the scenario's evidence stay, and each case can be reviewed again later.
+    /// </summary>
+    public async Task<TestPlanDraft> ExcludeScenarioAsync(Guid id, ExcludeScenarioRequest request, string actor, CancellationToken ct)
+    {
+        var row = await Row(id, ct);
+        if (row.Revision != request.BaseRevision) throw Stale(row);
+        var rationale = request.Rationale?.Trim();
+        if (string.IsNullOrWhiteSpace(rationale)) throw new TestPlanException(400, "rationale-required", "Say why the scenario is excluded.");
+        var plan = Read(row);
+        var cases = plan.Cases.Where(c => (c.ParentScenario ?? "") == (request.ScenarioKey ?? "") && c.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded)).ToList();
+        if (cases.Count == 0) throw new TestPlanException(404, "scenario-not-found", "That scenario has no test case to exclude.");
+        var ids = cases.Select(c => c.Source.ScenarioId).ToHashSet(StringComparer.Ordinal);
+        var reason = rationale[..Math.Min(rationale.Length, 1000)];
+        plan = plan with
+        {
+            Cases = [.. plan.Cases.Select(c => ids.Contains(c.Source.ScenarioId)
+                ? c with { Review = TestCaseReviewState.Excluded, ReviewHistory = [.. c.ReviewHistory, new TestCaseReviewEvent(TestCaseReviewState.Excluded, actor, $"Scenario excluded: {reason}", Now)] }
+                : c)],
+            Revision = row.Revision + 1, UpdatedBy = actor, UpdatedAt = Now,
+        };
+        return await WriteAsync(row, plan, ct, $"Scenario excluded ({cases.Count} test case{(cases.Count == 1 ? "" : "s")})");
+    }
+
     /// <summary>Creates a new proposal revision against the guide's current revision and sources: generated content is rebuilt, human edits,
     /// links and review history are kept, and a case whose scenario changed goes back to review (flagged), never silently accepted.</summary>
     public async Task<TestPlanDraft> RefreshAsync(Guid id, int baseRevision, string actor, CancellationToken ct)
@@ -556,7 +581,7 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         if (discovery is null && request.CandidateIds.Count > 0)
             throw new TestPlanException(409, "discovery-missing", "The discovery result is no longer available (BirkNext restarted or the project changed). Discover test scenarios again.");
         var wanted = request.CandidateIds.ToHashSet(StringComparer.Ordinal);
-        var chosen = discovery?.Candidates.Where(c => wanted.Contains(c.CandidateId) && c.ProjectKey == key).ToList() ?? [];
+        var chosen = SpecificationOrder(discovery?.Candidates.Where(c => wanted.Contains(c.CandidateId) && c.ProjectKey == key).ToList() ?? []);
         if (chosen.Count == 0 && manualTitle is null) throw new TestPlanException(400, "no-scenarios", "Select at least one scenario, or write a test case by hand.");
         if (chosen.Count > MaxCases) throw new TestPlanException(400, "too-many-cases", $"At most {MaxCases} cases per plan.");
         var cases = chosen.Select(c => ProjectCase(key, c)).ToList();
@@ -843,6 +868,20 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         var why = detail.Split(" You can write", 2)[0].Split(" Nothing was changed", 2)[0].Trim();
         return new(503, "translation-unavailable",
             $"No translation service is available right now. {why} Set up Azure AI Translator or start the local LibreTranslate server in System Settings → Translation. Nothing was changed; you can write the {language} text by hand meanwhile.");
+    }
+
+    /// <summary>Scenarios of one user story are prepared in the specification's order (their number within the story), whatever order discovery
+    /// listed them in; each story keeps the slots its scenarios had, so nothing else moves. The tester's later reordering is the plan's order.</summary>
+    internal static List<DiscoveredScenario> SpecificationOrder(List<DiscoveredScenario> chosen)
+    {
+        var result = chosen.ToList();
+        foreach (var story in chosen.Select((c, i) => (c, i)).Where(x => x.c.Story is not null && x.c.NumberInStory is not null).GroupBy(x => x.c.Story!.Key, StringComparer.Ordinal))
+        {
+            var slots = story.Select(x => x.i).ToList();
+            var ordered = story.Select(x => x.c).OrderBy(c => c.NumberInStory).ToList();
+            for (var k = 0; k < slots.Count; k++) result[slots[k]] = ordered[k];
+        }
+        return result;
     }
 
     private static TestCaseDraft ProjectCase(string projectKey, DiscoveredScenario c)

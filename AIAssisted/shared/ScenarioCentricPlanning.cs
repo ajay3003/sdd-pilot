@@ -65,6 +65,9 @@ public sealed record StoryTranslation
 /// Bound to the wording it translates by <see cref="SourceSha256"/>.</summary>
 public sealed record RequirementTextTranslation(string RequirementId, string SpecificationPath, string Language, string Text, string SourceSha256, string? Provider, DateTimeOffset At);
 
+/// <summary>Exclude a whole scenario: every test case under it is excluded with the same reason (one saved revision; history kept).</summary>
+public sealed record ExcludeScenarioRequest(int BaseRevision, string ScenarioKey, string Rationale);
+
 /// <summary>Translate every scenario of the plan (and their user stories and linked requirement wording) into <see cref="Target"/>.</summary>
 public sealed record TranslatePlanRequest(int BaseRevision, bool Overwrite = false, string? Target = null);
 
