@@ -49,10 +49,40 @@ public static partial class SchemaSourceSelection
         .ThenByDescending(r => VersionKey(r.File))
         .ThenBy(r => r.File.Path, StringComparer.OrdinalIgnoreCase)];
 
-    public static Recommendation Recommend(IReadOnlyList<SourceSchemaFile> files)
+    /// <summary>
+    /// An XSD of the snapshot a person bound to an integration (Integrations → contract, or a message flow's XML Schema contract): the Source
+    /// Analysis contract id ("xsd:&lt;path&gt;") and who uses it. A person's choice for this snapshot, so it outranks static source evidence.
+    /// </summary>
+    public sealed record BoundSchema(string SourceContractId, string UsedBy);
+
+    /// <summary>Whether a Source Analysis XSD contract id names this file (the id is "xsd:" + the path, with unusual characters made safe).</summary>
+    public static bool Names(string sourceContractId, SourceSchemaFile file)
+    {
+        if (!sourceContractId.StartsWith("xsd:", StringComparison.Ordinal)) return false;
+        static string Norm(string path) => path.Replace('\\', '/').TrimStart('/');
+        var named = Norm(sourceContractId[4..]);
+        return string.Equals(named, Norm(file.Path), StringComparison.OrdinalIgnoreCase)
+            || string.Equals(named, UnsafeCharacters().Replace(Norm(file.Path), "_"), StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static Recommendation Recommend(IReadOnlyList<SourceSchemaFile> files, IReadOnlyList<BoundSchema>? bound = null)
     {
         var ranked = Rank(files.Where(f => f.Path.EndsWith(".xsd", StringComparison.OrdinalIgnoreCase)));
         if (ranked.Count == 0) return new(null, "This snapshot contains no XSD files.", false, []);
+        // A schema bound to an integration of this very snapshot is what the tester already chose to test with: pre-select it when it is the
+        // only one; several bound schemas are a tie the tester decides (never the first of them).
+        var used = ranked.Select(r => (r.File, By: (bound ?? []).Where(b => Names(b.SourceContractId, r.File)).Select(b => b.UsedBy).Distinct(StringComparer.Ordinal).ToList()))
+            .Where(x => x.By.Count > 0).ToList();
+        if (used.Count == 1)
+        {
+            var (file, by) = used[0];
+            return new(file, $"Pre-selected {FileName(file.Path)}{(VersionOf(file) is { } bv ? $" (version {bv})" : "")}: {string.Join(", ", by)} "
+                + $"{(by.Count == 1 ? "uses" : "use")} it for this snapshot (chosen in Integrations). Source evidence: {TierLabel(TierOf(file)).ToLowerInvariant()}. "
+                + (file.Usage?.RuntimeVerification ?? "Not verified at runtime."), false, []);
+        }
+        if (used.Count > 1)
+            return new(null, $"{used.Count} schemas of this snapshot are bound to integrations, so none is pre-selected: "
+                + string.Join("; ", used.Take(4).Select(u => $"{FileName(u.File.Path)} ({string.Join(", ", u.By)})")) + (used.Count > 4 ? " …" : "") + ".", true, [.. used.Select(u => u.File)]);
         var best = ranked[0];
         if (best.Score == 0)
             return new(null, "No XSD in this snapshot is named by validation code, configuration or tests, so none is pre-selected. Choose the schema to work on.", false, []);
@@ -92,6 +122,8 @@ public static partial class SchemaSourceSelection
         System.Version.TryParse(VersionOf(file) is { } v && v.Count(c => c == '.') >= 1 ? v : "0.0", out var parsed) ? parsed : new Version(0, 0);
 
     [GeneratedRegex(@"\.xsd$", RegexOptions.IgnoreCase)] private static partial Regex XsdExtension();
+    // The characters Source Analysis keeps in a contract id's path (SourceEvidenceRedaction.SafePath); others become "_".
+    [GeneratedRegex(@"[^\p{L}\p{N}_./<>\[\]{}*~^=@$() `:+?,\-#!|]")] private static partial Regex UnsafeCharacters();
     [GeneratedRegex(@"[._-]v?\d+([._]\d+)*([._-](flat|altinn|m2lb))*$", RegexOptions.IgnoreCase)] private static partial Regex VersionSuffix();
     [GeneratedRegex(@"[._-](flat|altinn|m2lb)$", RegexOptions.IgnoreCase)] private static partial Regex VariantSuffix();
     [GeneratedRegex(@"v(\d+(?:[._]\d+)+)", RegexOptions.IgnoreCase)] private static partial Regex VersionInName();

@@ -1506,6 +1506,33 @@
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _pair = null; }
     }
 
+    /// <summary>
+    /// The XSDs of this snapshot that integrations of the Target Environment are bound to: an integration's contract selected from source
+    /// evidence, and the message flow's XML Schema contract. Read only; nothing is bound here. Unavailable data means no binding signal.
+    /// </summary>
+    private async Task<IReadOnlyList<SchemaSourceSelection.BoundSchema>> BoundSchemasAsync(Guid snapshotId)
+    {
+        var environment = !string.IsNullOrWhiteSpace(EnvironmentParameter) ? EnvironmentParameter
+            : (ServiceProvider.GetService(typeof(IFrontendAnalysisSettingsService)) as IFrontendAnalysisSettingsService)?.ActiveProfile?.Id;
+        if (string.IsNullOrWhiteSpace(environment) || ServiceProvider.GetService<IIntegrationCatalogApiService>() is not { } api) return [];
+        var bound = new List<SchemaSourceSelection.BoundSchema>();
+        try
+        {
+            foreach (var c in await api.ContractsAsync(environment))
+                if (c.SourceSnapshotId == snapshotId && c.SourceContractId is { Length: > 0 } id)
+                    bound.Add(new(id, $"integration {c.IntegrationId} ({c.Role.ToString().ToLowerInvariant()})"));
+        }
+        catch (Exception) { } // no binding signal; the static ranking applies
+        try
+        {
+            var flow = await api.GetMessageFlowReviewAsync(environment);
+            if (flow.AltinnConfiguration.SourceSnapshotId == snapshotId && flow.AltinnConfiguration.SourceContractId is { Length: > 0 } id)
+                bound.Add(new(id, $"the message flow \"{flow.Flow.Name}\""));
+        }
+        catch (Exception) { } // no binding signal; the static ranking applies
+        return bound;
+    }
+
     private async Task LoadSourceContracts()
     {
         if (!Guid.TryParse(_sourceSnapshotId, out var snapshotId)) return;
@@ -1532,7 +1559,7 @@
             _sourcePackage = artifact;
             // Source-aware default (2026-11-18): only the single best-evidenced schema is pre-selected; a tie or no evidence leaves the choice
             // to the tester with the reason. A deep link (?contract=) still decides afterwards.
-            _sourceRecommendation = SchemaSourceSelection.Recommend(artifact.Files);
+            _sourceRecommendation = SchemaSourceSelection.Recommend(artifact.Files, await BoundSchemasAsync(snapshotId));
             _sourceContractPath = _sourceRecommendation.Selected?.Path ?? "";
             if (!artifact.Files.Any(f => f.Path.EndsWith(".xsd", StringComparison.OrdinalIgnoreCase))) _sourceError = "The selected snapshot contains no stored XSD files.";
         }

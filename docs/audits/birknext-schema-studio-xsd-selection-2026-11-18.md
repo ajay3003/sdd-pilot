@@ -111,7 +111,9 @@ counts as *declared*, only naming references raise the tier — fixed and pinned
 
 * Runtime verification of a schema is not available: Skolenærvær run records show MM's outcome (`Aarsak`) but not the version applied.
 * Namespaces built at runtime from parts, or registries in non-JSON formats, are not recognised (reported as declared only, not guessed).
-* The IQR-bound XSD (`config.SourceContractId`) is not yet used as a ranking signal in Schema Studio.
+* *Resolved 2026-11-20:* an XSD bound to an integration of the same snapshot (an integration's source-selected contract, or the message
+  flow's `SourceContractId`) is the strongest ranking signal: one bound schema is pre-selected with who uses it; several bound schemas are a
+  tie the tester decides; a binding that names no file of the snapshot leaves the static ranking in charge (`SchemaSourceSelection.BoundSchema`).
 * Existing snapshots need a re-import for namespace/registry references (the page says so).
 
 ## 8. Local commits

@@ -90,4 +90,39 @@ public sealed class SchemaSourceSelectionTests
         SchemaSourceSelection.Rank(many).Should().HaveCount(2001);
         watch.ElapsedMilliseconds.Should().BeLessThan(2000);
     }
+
+    [Fact]
+    public void A_schema_an_integration_is_bound_to_in_this_snapshot_outranks_static_evidence()
+    {
+        // The tester bound the older flat schema to the integration: that choice wins over the best static evidence (ReportFlat).
+        var bound = new[] { new SchemaSourceSelection.BoundSchema("xsd:xsds/example.report.v0.8.2.flat.xsd", "integration skole-hub (consumer)") };
+        var r = SchemaSourceSelection.Recommend([Referral, ReportOld, ReportStandard, ReportFlat], bound);
+        r.Selected.Should().Be(ReportOld);
+        r.Message.Should().StartWith("Pre-selected example.report.v0.8.2.flat.xsd (version 0.8.2): integration skole-hub (consumer) uses it for this snapshot (chosen in Integrations).")
+            .And.Contain("Source evidence: referenced by validation code").And.EndWith("which schema was applied to a message.");
+
+        // Matching is by the contract id's path (separators and case-insensitive); a JSON or other contract id never matches an XSD.
+        SchemaSourceSelection.Names(@"xsd:xsds\EXAMPLE.report.v0.8.2.flat.xsd", ReportOld).Should().BeTrue();
+        SchemaSourceSelection.Names("json:xsds/example.report.v0.8.2.flat.xsd", ReportOld).Should().BeFalse();
+        SchemaSourceSelection.Names("xsd:x/my schema(1).xsd", File("x/my schema(1).xsd")).Should().BeTrue();
+        SchemaSourceSelection.Names("xsd:x/r_sum_.xsd", File("x/résumé.xsd")).Should().BeFalse("letters are kept by Source Analysis, so they must match exactly");
+    }
+
+    [Fact]
+    public void Several_bound_schemas_are_a_tie_the_tester_decides_and_a_binding_to_another_snapshots_file_is_no_signal()
+    {
+        var two = new[]
+        {
+            new SchemaSourceSelection.BoundSchema("xsd:xsds/example.report.v2.0.0.xsd", "integration a (producer)"),
+            new SchemaSourceSelection.BoundSchema("xsd:xsds/a.referral.v2.0.0.xsd", "the message flow \"Referral\""),
+        };
+        var r = SchemaSourceSelection.Recommend([Referral, ReportStandard, ReportFlat], two);
+        r.Selected.Should().BeNull();
+        r.Ambiguous.Should().BeTrue();
+        r.Tied.Should().BeEquivalentTo([ReportStandard, Referral]);
+        r.Message.Should().StartWith("2 schemas of this snapshot are bound to integrations, so none is pre-selected:").And.Contain("integration a (producer)");
+
+        SchemaSourceSelection.Recommend([Referral, ReportStandard, ReportFlat], [new("xsd:other/elsewhere.xsd", "integration b (consumer)")]).Selected
+            .Should().Be(ReportFlat, "a binding that names no file of this snapshot leaves the static ranking in charge");
+    }
 }
