@@ -36,11 +36,28 @@ public sealed class EndpointDiscoveryUITests : IAsyncLifetime
         await TargetEnvironmentSettingsPage.OpenAsync(page);
         await TargetEnvironmentSettingsPage.SelectAsync(page, Environment);
         await TargetEnvironmentSettingsPage.OpenTabAsync(page, "Target Application");
+        await EnsureApplicationAsync(page);
         await Assertions.Expect(page.GetByTestId("target-detection-state")).ToHaveTextAsync("Not checked");
         // Before the first check the action says "Check target" (not "again").
         await page.GetByRole(AriaRole.Button, new() { Name = "Check target", Exact = true }).ClickAsync();
         await Assertions.Expect(page.GetByTestId("target-detection-state")).ToHaveTextAsync("Detection complete");
         return fake;
+    }
+
+    /// <summary>
+    /// The next action asks for the application before anything else ("Select application"); the synthetic environment may have none, depending
+    /// on which tests ran before. Name one (Advanced → add manually) so each test starts from the same state.
+    /// </summary>
+    private static async Task EnsureApplicationAsync(IPage page)
+    {
+        var empty = page.GetByTestId("tai-empty");
+        // Wait until the panel has read the environment (either the chosen application or "not chosen"), not just until it is rendered.
+        await page.Locator("[data-testid=tai-empty], [data-testid=tai-current]").First.WaitForAsync(new() { Timeout = 60000 });
+        if (!await empty.IsVisibleAsync()) return;
+        await page.GetByTestId("tai-advanced").Locator("summary").ClickAsync();
+        await page.GetByTestId("tai-manual-name").FillAsync("Synthetic Blazor app");
+        await page.GetByTestId("tai-manual-save").ClickAsync();
+        await Assertions.Expect(page.GetByTestId("tai-name")).ToHaveTextAsync("Synthetic Blazor app", new() { Timeout = 30000 });
     }
 
     private static Task<string> SelectedUrlAsync(IPage page) => page.GetByTestId("target-detection-url").InnerTextAsync();

@@ -375,7 +375,7 @@ public sealed class FrontendAnalysisContextFactoryTests
 
         var session = await sessionSvc.GetOrCreateSessionAsync(ctx);
 
-        session.StatusMessage.Should().Contain("not implemented");
+        session.StatusMessage.Should().Contain("not available");
         session.IsAuthenticated.Should().BeFalse();
     }
 

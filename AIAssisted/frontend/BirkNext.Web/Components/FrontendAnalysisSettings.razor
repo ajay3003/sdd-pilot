@@ -1961,6 +1961,9 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private BrowserCompanionRuntime? _companionRuntime;
     private IEndpointDiscoveryService? _discovery;
+    private BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService? _projectEvidence;
+    /// <summary>The Target Application panel saves through the evidence service; re-render so the next action reflects the new application at once.</summary>
+    private void ProjectEvidenceChanged() { if (!_disposed) _ = InvokeAsync(StateHasChanged); }
     private bool _disposed;
     private ManagedEdgeStatus EdgeStatus => _edgeRuntime?.For(CurrentProfile) ?? new();
     /// <summary>Transient Local HTTPS proxy status for the current configuration. Never persisted; never contains a credential.</summary>
@@ -2067,6 +2070,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         if (_edgeRuntime is not null) _edgeRuntime.Changed -= EdgeRuntimeChanged;
         if (_proxyRuntime is not null) _proxyRuntime.Changed -= EdgeRuntimeChanged;
         if (_companionRuntime is not null) _companionRuntime.Changed -= EdgeRuntimeChanged;
+        if (_projectEvidence is not null) _projectEvidence.Changed -= ProjectEvidenceChanged;
         return ValueTask.CompletedTask;
     }
 
@@ -2098,6 +2102,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         _companionRuntime = ServiceProvider.GetService<BrowserCompanionRuntime>();
         if (_companionRuntime is not null) _companionRuntime.Changed += EdgeRuntimeChanged;
         _discovery = ServiceProvider.GetService<IEndpointDiscoveryService>();
+        _projectEvidence = ServiceProvider.GetService<BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService>();
+        if (_projectEvidence is not null) _projectEvidence.Changed += ProjectEvidenceChanged;
         await LoadEnvironmentValuesAsync();
         await FaSettings.LoadAsync(JS);
         // Detection snapshots live in a separate evidence store (never in the saved profile), so load them before restoring.
