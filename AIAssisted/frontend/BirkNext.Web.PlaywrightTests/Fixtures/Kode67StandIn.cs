@@ -9,7 +9,8 @@ namespace BirkNext.Web.PlaywrightTests.Fixtures;
 /// <summary>
 /// Local stand-in for the M2LB Person module's GraphQL endpoint (http://localhost:&lt;free port&gt;/graphql; nothing external) and a synthetic
 /// M2LB source package, for M01 – Gradert tilgang (Kode 6/7). Three synthetic children (level 0 Ingen, level 2 Kode 7, level 3 Kode 6) and two
-/// synthetic tokens. It answers only the three queries BirkNext may send (hentBarn, soekBarn by exact BiRK id, hentRevisjonslogg) and records
+/// synthetic tokens. It speaks the Person module's current English schema and answers only the three queries BirkNext may send (getBarn,
+/// searchBarn by exact BiRK id, getAuditLog); like Hot Chocolate it rejects the earlier Norwegian field names with errors and no data. It records
 /// every request so a test can prove no other document, mutation or broad search was sent.
 /// <para><see cref="Broken"/> = true reproduces graded-access defects of the kind the M2LB audit found:</para>
 /// <list type="bullet">
@@ -89,16 +90,16 @@ public sealed class Kode67StandIn : IAsyncDisposable
                 var token = c.Request.Headers["Authorization"] is { } auth && auth.StartsWith("Bearer ", StringComparison.Ordinal) ? auth[7..] : null;
                 var known = token is UnauthorizedToken or AuthorizedToken;
                 var authorized = token == AuthorizedToken;
-                var field = query.Contains("hentBarn(") ? "hentBarn" : query.Contains("soekBarn(") ? "soekBarn" : query.Contains("hentRevisjonslogg(") ? "hentRevisjonslogg" : "other";
+                var field = query.Contains("getBarn(") ? "getBarn" : query.Contains("searchBarn(") ? "searchBarn" : query.Contains("getAuditLog(") ? "getAuditLog" : "other";
                 lock (Requests) Requests.Add((field, query, known));
-                body = !known ? "{\"data\":null,\"errors\":[{\"message\":\"Not authenticated\",\"extensions\":{\"code\":\"AUTH_NOT_AUTHENTICATED\"}}]}"
-                    : field switch
-                    {
-                        "hentBarn" => Profile(variables.GetProperty("id").GetGuid(), authorized),
-                        "soekBarn" => Search(variables.GetProperty("birkId").GetString(), authorized),
-                        "hentRevisjonslogg" => Audit(variables.GetProperty("id").GetGuid(), authorized),
-                        _ => "{\"data\":null,\"errors\":[{\"message\":\"Unknown operation\",\"extensions\":{\"code\":\"UNKNOWN\"}}]}",
-                    };
+                if (!known) { status = 401; body = ""; }
+                else if (field == "other") { status = 400; body = "{\"errors\":[{\"message\":\"The field does not exist on the type Query.\",\"extensions\":{\"code\":\"HC0020\"}}]}"; }
+                else body = field switch
+                {
+                    "getBarn" => Profile(variables.GetProperty("id").GetGuid(), authorized),
+                    "searchBarn" => Search(variables.GetProperty("birkId").GetString(), authorized),
+                    _ => Audit(variables.GetProperty("id").GetGuid(), authorized),
+                };
             }
         }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
@@ -120,14 +121,14 @@ public sealed class Kode67StandIn : IAsyncDisposable
 
     private string Profile(Guid id, bool authorized)
     {
-        const string none = "{\"data\":{\"hentBarn\":null}}";
+        const string none = "{\"data\":{\"getBarn\":null}}";
         if (!Exists(id)) return none;
         var level = LevelOf(id);
-        var data = $"{{\"data\":{{\"hentBarn\":{{\"barnRegistreringId\":\"{id}\",\"sikkerhetsnivaaKode\":{level}}}}}}}";
+        var data = $"{{\"data\":{{\"getBarn\":{{\"barnRegistreringId\":\"{id}\",\"sikkerhetsnivaaCode\":{level}}}}}}}";
         if (level < 2) return data;
         if (!Broken) return authorized ? data : none;
         // Broken: the resolver's own check answers Kode 7 with a distinguishable error, and the repository hides every graded child.
-        if (!authorized && level == 2) return "{\"data\":{\"hentBarn\":null},\"errors\":[{\"message\":\"Ingen tilgang\",\"extensions\":{\"code\":\"AUTH_NOT_AUTHORIZED\"}}]}";
+        if (!authorized && level == 2) return "{\"data\":{\"getBarn\":null},\"errors\":[{\"message\":\"Ingen tilgang\",\"extensions\":{\"code\":\"AUTH_NOT_AUTHORIZED\"}}]}";
         return none;
     }
 
@@ -136,15 +137,15 @@ public sealed class Kode67StandIn : IAsyncDisposable
         var match = Children.Values.Where(c => c.BirkId == birkId).Select(c => c.Id).ToList();
         var visible = match.Where(id => LevelOf(id) < 2 || authorized).ToList();
         var total = Broken ? match.Count : visible.Count; // Broken: counted before the graded filter
-        return $"{{\"data\":{{\"soekBarn\":{{\"totaltAntall\":{total},\"resultater\":[{string.Join(",", visible.Select(id => $"{{\"barnRegistreringId\":\"{id}\"}}"))}]}}}}}}";
+        return $"{{\"data\":{{\"searchBarn\":{{\"totalCount\":{total},\"results\":[{string.Join(",", visible.Select(id => $"{{\"barnRegistreringId\":\"{id}\"}}"))}]}}}}}}";
     }
 
     private string Audit(Guid id, bool authorized)
     {
-        if (!Exists(id)) return "{\"data\":{\"hentRevisjonslogg\":null}}";
+        if (!Exists(id)) return "{\"data\":{\"getAuditLog\":null}}";
         var level = LevelOf(id);
         var visible = level < 2 || authorized || Broken && level == 3; // Broken: the Kode 6 revision log has no graded check
-        return visible ? "{\"data\":{\"hentRevisjonslogg\":{\"totaltAntall\":2}}}" : "{\"data\":{\"hentRevisjonslogg\":null}}";
+        return visible ? "{\"data\":{\"getAuditLog\":{\"totalCount\":2}}}" : "{\"data\":{\"getAuditLog\":null}}";
     }
 
     public async ValueTask DisposeAsync()

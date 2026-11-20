@@ -10,8 +10,10 @@ public interface IClassificationLiveProbe
 }
 
 /// <summary>
-/// Safe live security checks against the Person module GraphQL endpoint of an APPROVED DEV/QA test context. Only three fixed query
-/// documents are ever sent — profile by id, search by the exact BiRK id, revision log by id — and only for the configured synthetic test
+/// Safe live security checks against the Person module GraphQL endpoint of an APPROVED DEV/QA test context. Only three fixed queries are
+/// ever sent — profile by id, search by the exact BiRK id, revision log by id — in the Person module's current English field names
+/// (getBarn, searchBarn, getAuditLog) or, for an endpoint that does not know those, its earlier Norwegian ones (hentBarn, soekBarn,
+/// hentRevisjonslogg); the dialect is detected once per run. They are sent only for the configured synthetic test
 /// children (plus one random, nonexistent id for the anti-disclosure comparison). No mutation, no list or "find all" query, no search for
 /// real classified children. The queries ask for ids, levels and counts only (never names or national ids); responses are reduced to
 /// derived facts and discarded. Tokens come with the run request, are sent as Authorization headers and are never stored or logged.
@@ -19,10 +21,23 @@ public interface IClassificationLiveProbe
 public sealed class GraphQlClassificationProbe(HttpClient http, ILogger<GraphQlClassificationProbe> logger) : IClassificationLiveProbe
 {
     public const string Adapter = "Security classification safe checks";
-    public const string ProfileQuery = "query SafeProfile($id: UUID!) { hentBarn(barnRegistreringId: $id) { barnRegistreringId sikkerhetsnivaaKode } }";
-    public const string SearchQuery = "query SafeSearch($birkId: String) { soekBarn(kriterier: { birkId: $birkId }, side: 1, sideStoerrelse: 5) { totaltAntall resultater { barnRegistreringId } } }";
-    public const string AuditQuery = "query SafeAudit($id: UUID!) { hentRevisjonslogg(barnRegistreringId: $id, side: 1, sideStoerrelse: 1) { totaltAntall } }";
-    public static readonly string[] AllowedDocuments = [ProfileQuery, SearchQuery, AuditQuery];
+    /// <summary>The three fixed queries in one schema dialect, with the root field each answer must carry.</summary>
+    public sealed record Dialect(string Name, string ProfileQuery, string ProfileField, string SearchQuery, string SearchField, string AuditQuery, string AuditField);
+
+    /// <summary>The Person module's schema since its English translation (M2LB spec 003): getBarn / searchBarn / getAuditLog.</summary>
+    public static readonly Dialect Current = new("current",
+        "query SafeProfile($id: UUID!) { getBarn(barnRegistreringId: $id) { barnRegistreringId sikkerhetsnivaaCode } }", "getBarn",
+        "query SafeSearch($birkId: String) { searchBarn(criteria: { birkId: $birkId }, page: 1, pageSize: 5) { totalCount results { barnRegistreringId } } }", "searchBarn",
+        "query SafeAudit($id: UUID!) { getAuditLog(barnRegistreringId: $id, page: 1, pageSize: 1) { totalCount } }", "getAuditLog");
+
+    /// <summary>The earlier Norwegian schema: hentBarn / soekBarn / hentRevisjonslogg.</summary>
+    public static readonly Dialect Earlier = new("earlier",
+        "query SafeProfile($id: UUID!) { hentBarn(barnRegistreringId: $id) { barnRegistreringId sikkerhetsnivaaKode } }", "hentBarn",
+        "query SafeSearch($birkId: String) { soekBarn(kriterier: { birkId: $birkId }, side: 1, sideStoerrelse: 5) { totaltAntall resultater { barnRegistreringId } } }", "soekBarn",
+        "query SafeAudit($id: UUID!) { hentRevisjonslogg(barnRegistreringId: $id, side: 1, sideStoerrelse: 1) { totaltAntall } }", "hentRevisjonslogg");
+
+    public static readonly Dialect[] Dialects = [Current, Earlier];
+    public static readonly string[] AllowedDocuments = [.. Dialects.SelectMany(d => new[] { d.ProfileQuery, d.SearchQuery, d.AuditQuery })];
     private const int MaxBodyBytes = 256 * 1024;
 
     /// <summary>Why the live checks cannot run, or null. Production and unknown environment types are refused.</summary>
@@ -54,48 +69,67 @@ public sealed class GraphQlClassificationProbe(HttpClient http, ILogger<GraphQlC
         var endpoint = new Uri(context.GraphQlEndpoint!.Trim());
         var observations = new List<ClassificationObservation>();
         var nonexistent = Guid.NewGuid();
+        // Which schema the endpoint speaks: the first dialect whose profile query for a random id is executed and answers with its own field.
+        Dialect? dialect = null;
+        var tried = new List<string>();
+        foreach (var candidate in Dialects)
+        {
+            var detected = await QueryAsync(endpoint, identities[0].Token, candidate.ProfileQuery, candidate.ProfileField, new { id = nonexistent }, ct);
+            if (detected.Answered && detected.FieldPresent) { dialect = candidate; break; }
+            tried.Add($"{candidate.ProfileField}: {detected.Describe()}");
+        }
+        if (dialect is null)
+            return new ClassificationLiveEvidence
+            {
+                State = IntegrationEvidenceState.Unavailable, CapturedAt = now, Target = $"{endpoint.Scheme}://{endpoint.Authority}",
+                Reason = $"The endpoint did not execute the safe profile query in either known Person schema ({string.Join("; ", tried)}). Nothing was assessed.",
+            };
         foreach (var (identity, token) in identities)
         {
-            var missing = await QueryAsync(endpoint, token, ProfileQuery, new { id = nonexistent }, ct);
+            var missing = await QueryAsync(endpoint, token, dialect.ProfileQuery, dialect.ProfileField, new { id = nonexistent }, ct);
             foreach (var child in context.TestChildren.OrderBy(c => c.Nivaa))
             {
                 var graded = levels.FirstOrDefault(l => l.Nivaa == child.Nivaa)?.KreverGradertTilgang ?? child.Nivaa >= 2;
                 var shouldSee = !graded || identity == ClassificationIdentity.Authorized;
                 if (child.BarnRegistreringId is { } id)
                 {
-                    var profile = await QueryAsync(endpoint, token, ProfileQuery, new { id }, ct);
+                    var profile = await QueryAsync(endpoint, token, dialect.ProfileQuery, dialect.ProfileField, new { id }, ct);
                     observations.Add(ProfileObservation(child.Nivaa, identity, graded, shouldSee, profile, id));
                     if (graded && identity == ClassificationIdentity.Unauthorized)
                         observations.Add(Compare(child.Nivaa, profile, missing));
-                    var audit = await QueryAsync(endpoint, token, AuditQuery, new { id }, ct);
+                    var audit = await QueryAsync(endpoint, token, dialect.AuditQuery, dialect.AuditField, new { id }, ct);
                     observations.Add(AuditObservation(child.Nivaa, identity, graded, shouldSee, audit));
                 }
                 if (child.BirkId is { Length: > 0 } birkId)
                 {
-                    var search = await QueryAsync(endpoint, token, SearchQuery, new { birkId }, ct);
+                    var search = await QueryAsync(endpoint, token, dialect.SearchQuery, dialect.SearchField, new { birkId }, ct);
                     observations.AddRange(SearchObservations(child.Nivaa, identity, graded, shouldSee, search, child.BarnRegistreringId));
                 }
             }
         }
         var answered = observations.Count(o => o.State != ClassificationState.NotAvailable);
-        logger.LogInformation("Security classification safe checks against {Host}: {Answered} of {Total} observation(s) answered for {Identities} identity label(s) and {Children} test child(ren).",
-            endpoint.Host, answered, observations.Count, identities.Count, context.TestChildren.Count);
+        logger.LogInformation("Security classification safe checks against {Host} ({Dialect} Person schema): {Answered} of {Total} observation(s) answered for {Identities} identity label(s) and {Children} test child(ren).",
+            endpoint.Host, dialect.Name, answered, observations.Count, identities.Count, context.TestChildren.Count);
         return new ClassificationLiveEvidence
         {
             State = answered == 0 ? IntegrationEvidenceState.Unavailable : IntegrationEvidenceState.Available,
-            Reason = answered == 0 ? "The endpoint did not answer any safe query." : $"{answered} safe GraphQL query observation(s).",
+            Reason = answered == 0 ? "The endpoint did not answer any safe query." : $"{answered} safe GraphQL query observation(s) ({dialect.Name} Person schema: {dialect.ProfileField}, {dialect.SearchField}, {dialect.AuditField}).",
             Target = $"{endpoint.Scheme}://{endpoint.Authority}", CapturedAt = now, Observations = observations,
         };
     }
 
-    /// <summary>What a GraphQL response showed: whether the field had data, its derived values and the error codes. Never the body.</summary>
-    internal sealed record Shape(bool Answered, int? Status, bool HasData, List<Guid> Ids, int? Level, int? Total, List<string> Errors, string? Failure)
+    /// <summary>
+    /// What a GraphQL response showed: whether the query was executed (a <c>data</c> object came back), whether the asked field was in it
+    /// and had data, its derived values and the error codes. Never the body. A response without <c>data</c> (a rejected document, 401/403,
+    /// a gateway page, non-JSON) is NOT an answer: it used to read as "no data", so an unauthorized check passed although the query never ran.
+    /// </summary>
+    internal sealed record Shape(bool Answered, int? Status, bool HasData, List<Guid> Ids, int? Level, int? Total, List<string> Errors, string? Failure, bool FieldPresent = false)
     {
         public string Describe() => !Answered ? $"no response ({Failure})" : HasData ? "data returned" : Errors.Count > 0 ? $"no data, error {string.Join("/", Errors)}" : "null (no data, no error)";
         public string Signature => $"{Answered}|{Status}|{HasData}|{string.Join(",", Errors)}";
     }
 
-    private async Task<Shape> QueryAsync(Uri endpoint, string token, string document, object variables, CancellationToken ct)
+    private async Task<Shape> QueryAsync(Uri endpoint, string token, string document, string field, object variables, CancellationToken ct)
     {
         if (!AllowedDocuments.Contains(document)) throw new InvalidOperationException("Only the fixed safe query documents may be sent.");
         try
@@ -108,7 +142,7 @@ public sealed class GraphQlClassificationProbe(HttpClient http, ILogger<GraphQlC
             var read = 0;
             int n;
             while (read < buffer.Length && (n = await stream.ReadAsync(buffer.AsMemory(read), ct)) > 0) read += n;
-            return Reduce((int)response.StatusCode, System.Text.Encoding.UTF8.GetString(buffer, 0, read));
+            return Reduce((int)response.StatusCode, System.Text.Encoding.UTF8.GetString(buffer, 0, read), field);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
@@ -116,30 +150,35 @@ public sealed class GraphQlClassificationProbe(HttpClient http, ILogger<GraphQlC
         }
     }
 
-    internal static Shape Reduce(int status, string body)
+    internal static Shape Reduce(int status, string body, string field)
     {
         try
         {
             using var doc = JsonDocument.Parse(body);
             var root = doc.RootElement;
-            var errors = root.TryGetProperty("errors", out var e) && e.ValueKind == JsonValueKind.Array
+            var errors = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("errors", out var e) && e.ValueKind == JsonValueKind.Array
                 ? e.EnumerateArray().Select(x => x.TryGetProperty("extensions", out var ext) && ext.TryGetProperty("code", out var code) ? code.GetString() ?? "ERROR" : "ERROR").Distinct().ToList()
                 : [];
-            var field = root.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object ? data.EnumerateObject().Select(p => p.Value).FirstOrDefault() : default;
-            var has = field.ValueKind == JsonValueKind.Object;
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
+                return new Shape(false, status, false, [], null, null, errors, $"query not executed (HTTP {status}{(errors.Count > 0 ? ", " + string.Join("/", errors) : "")})");
+            var present = data.TryGetProperty(field, out var value);
+            var has = present && value.ValueKind == JsonValueKind.Object;
             var ids = new List<Guid>();
             int? level = null, total = null;
             if (has)
             {
-                if (field.TryGetProperty("barnRegistreringId", out var id) && id.TryGetGuid(out var g)) ids.Add(g);
-                if (field.TryGetProperty("sikkerhetsnivaaKode", out var lv) && lv.ValueKind == JsonValueKind.Number) level = lv.GetInt32();
-                if (field.TryGetProperty("totaltAntall", out var t) && t.ValueKind == JsonValueKind.Number) total = t.GetInt32();
-                if (field.TryGetProperty("resultater", out var r) && r.ValueKind == JsonValueKind.Array)
-                    ids.AddRange(r.EnumerateArray().Select(x => x.TryGetProperty("barnRegistreringId", out var rid) && rid.TryGetGuid(out var rg) ? rg : Guid.Empty).Where(x => x != Guid.Empty));
+                if (value.TryGetProperty("barnRegistreringId", out var id) && id.TryGetGuid(out var g)) ids.Add(g);
+                foreach (var name in new[] { "sikkerhetsnivaaCode", "sikkerhetsnivaaKode" })
+                    if (level is null && value.TryGetProperty(name, out var lv) && lv.ValueKind == JsonValueKind.Number) level = lv.GetInt32();
+                foreach (var name in new[] { "totalCount", "totaltAntall" })
+                    if (total is null && value.TryGetProperty(name, out var t) && t.ValueKind == JsonValueKind.Number) total = t.GetInt32();
+                foreach (var name in new[] { "results", "resultater" })
+                    if (value.TryGetProperty(name, out var r) && r.ValueKind == JsonValueKind.Array)
+                        ids.AddRange(r.EnumerateArray().Select(x => x.TryGetProperty("barnRegistreringId", out var rid) && rid.TryGetGuid(out var rg) ? rg : Guid.Empty).Where(x => x != Guid.Empty));
             }
-            return new Shape(true, status, has, ids, level, total, errors, null);
+            return new Shape(true, status, has, ids, level, total, errors, null, present);
         }
-        catch (JsonException) { return new Shape(true, status, false, [], null, null, ["NON_JSON"], null); }
+        catch (JsonException) { return new Shape(false, status, false, [], null, null, [], $"not a GraphQL response (HTTP {status})"); }
     }
 
     private static ClassificationObservation ProfileObservation(int level, ClassificationIdentity identity, bool graded, bool shouldSee, Shape s, Guid id)

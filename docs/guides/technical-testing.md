@@ -399,6 +399,10 @@ Defects in BirkNext found and fixed on the way:
 2. With the usual ungraded control child, a fully passed runtime review left both shared requirements at *Partial* for ever: the child's
    observed-only revision-log check counted as "not passed".
 3. The "Include Kode 6/7 security scenarios" checkboxes and the authorization matrix cells had no test ids.
+4. The live checks still sent the Person module's earlier Norwegian queries (`hentBarn`, `soekBarn`, `hentRevisjonslogg`); the current
+   module answers `getBarn`, `searchBarn`, `getAuditLog`. Worse, a query the endpoint rejected (errors without data, 401, a non-JSON page)
+   read as "no data", so every check for the identity without graded access passed although nothing was asked. The schema is now detected
+   per run (current first, earlier second), and a rejected query is "not answered", never a pass.
 
 Still open (needs a domain decision or an adapter, not a test): intake handling of a Kode 6/7 report (K67-01/02/04), whether Kode 6/7
 children count in Bufdata aggregates (K67-05), corrections and reclassification (K67-10/11), and a per-message observer for intake.

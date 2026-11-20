@@ -83,9 +83,13 @@ public sealed class ApiQualityReviewWorkflowTests(ITestOutputHelper output) : IA
             // 2. The API is fixed; the same review again.
             _api.Broken = false;
             await page.GetByTestId("aqr-run").First.ClickAsync();
-            await page.WaitForFunctionAsync("() => ![...document.querySelectorAll('[data-testid=aqr-finding-row]')].some(r => r.dataset.findingId === 'rest-5xx')", null, new() { Timeout = 120000 });
+            // The finding rows also vanish while the Findings tab is not shown, so "rest-5xx is gone" alone could read the previous run under
+            // load: wait for the run to end, then read the Findings tab until the new result is there.
+            await Assertions.Expect(page.GetByTestId("aqr-run").First).Not.ToContainTextAsync("Reviewing", new() { Timeout = 120000 });
             await Assertions.Expect(page.GetByTestId("aqr-outcome-execution")).ToContainTextAsync("Completed", new() { Timeout = 60000 });
             var after = await FindingIdsAsync(page);
+            for (var deadline = DateTime.UtcNow.AddMinutes(2); after.Contains("rest-5xx") && DateTime.UtcNow < deadline; after = await FindingIdsAsync(page))
+                await page.WaitForTimeoutAsync(2000);
             output.WriteLine("after: " + string.Join(", ", after));
             after.Should().NotContain(["rest-5xx", "cors-wildcard-credentials", "rest-slow", "sec-no-xcto", "errors-leak", "errors-unknown-route-5xx"])
                 .And.NotContain(id => id.StartsWith("contract-", StringComparison.Ordinal), "the response now matches the contract");

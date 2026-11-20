@@ -132,6 +132,9 @@ public sealed class CriticalE2ECompanionWorkflowTests
             await app.GotoAsync($"{BrowserTestServers.FrontendUrl}/critical-e2e-regression", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
             await app.GetByTestId("sg-panel").WaitForAsync(new() { Timeout = 240000 });
             await Assertions.Expect(app.GetByTestId("e2e-attended-state")).ToHaveTextAsync("Ready", new() { Timeout = 60000 });
+            // The snapshot list loads after the panel: wait for the imported project's snapshot rather than reading the list once.
+            await app.WaitForFunctionAsync("n => [...document.querySelectorAll('[data-testid=sg-snapshot] option')].some(o => o.textContent.trim().startsWith(n))",
+                name.ToLowerInvariant(), new() { Timeout = 120000 });
             var snapshot = (await app.Locator("[data-testid=sg-snapshot] option").EvaluateAllAsync<string[][]>("os => os.map(o => [o.value, o.textContent.trim()])"))
                 .First(o => o[1].StartsWith(name.ToLowerInvariant(), StringComparison.Ordinal))[0];
             await app.GetByTestId("sg-snapshot").SelectOptionAsync(snapshot);

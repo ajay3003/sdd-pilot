@@ -608,7 +608,11 @@ public sealed class SecurityClassificationTests
         TestChildren = [new() { Nivaa = 0, BarnRegistreringId = Ungraded, BirkId = "B999-0000" }, new() { Nivaa = 2, BarnRegistreringId = Graded, BirkId = "B999-0002" }],
     };
 
-    private sealed class FakePerson(bool leakProfile = false, bool leakCount = false, bool distinguishable = false, bool authorizedBlocked = false) : HttpMessageHandler
+    /// <summary>A fake Person GraphQL endpoint in the current English schema (<paramref name="current"/>) or the earlier Norwegian one. Like Hot
+    /// Chocolate it rejects a document with fields of the other schema with errors and no <c>data</c>. <paramref name="unauthenticated"/>:
+    /// every request gets 401 with an empty body.</summary>
+    private sealed class FakePerson(bool leakProfile = false, bool leakCount = false, bool distinguishable = false, bool authorizedBlocked = false,
+        bool current = false, bool unauthenticated = false) : HttpMessageHandler
     {
         public List<(string Query, JsonElement Variables, string? Auth)> Requests { get; } = [];
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
@@ -618,27 +622,36 @@ public sealed class SecurityClassificationTests
             var variables = doc.RootElement.GetProperty("variables").Clone();
             var auth = request.Headers.Authorization?.Parameter;
             Requests.Add((query, variables, auth));
+            if (unauthenticated) return new HttpResponseMessage(HttpStatusCode.Unauthorized) { Content = new StringContent("") };
+            var (profile, level, search, total, results, audit) = current
+                ? ("getBarn", "sikkerhetsnivaaCode", "searchBarn", "totalCount", "results", "getAuditLog")
+                : ("hentBarn", "sikkerhetsnivaaKode", "soekBarn", "totaltAntall", "resultater", "hentRevisjonslogg");
+            if (!query.Contains(profile + "(") && !query.Contains(search + "(") && !query.Contains(audit + "("))
+                return new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent("{\"errors\":[{\"message\":\"The field does not exist on the type Query.\",\"extensions\":{\"code\":\"HC0020\"}}]}", Encoding.UTF8, "application/json"),
+                };
             var authorized = auth == "tok-auth" && !authorizedBlocked;
             string body;
-            if (query.Contains("hentBarn("))
+            if (query.Contains(profile + "("))
             {
                 var id = variables.GetProperty("id").GetGuid();
                 var visible = id == Ungraded || id == Graded && (authorized || leakProfile);
-                body = visible ? $"{{\"data\":{{\"hentBarn\":{{\"barnRegistreringId\":\"{id}\",\"sikkerhetsnivaaKode\":{(id == Graded ? 2 : 0)}}}}}}}"
-                    : id == Graded && distinguishable ? "{\"data\":{\"hentBarn\":null},\"errors\":[{\"message\":\"forbidden\",\"extensions\":{\"code\":\"AUTH_NOT_AUTHORIZED\"}}]}"
-                    : "{\"data\":{\"hentBarn\":null}}";
+                body = visible ? $"{{\"data\":{{\"{profile}\":{{\"barnRegistreringId\":\"{id}\",\"{level}\":{(id == Graded ? 2 : 0)}}}}}}}"
+                    : id == Graded && distinguishable ? $"{{\"data\":{{\"{profile}\":null}},\"errors\":[{{\"message\":\"forbidden\",\"extensions\":{{\"code\":\"AUTH_NOT_AUTHORIZED\"}}}}]}}"
+                    : $"{{\"data\":{{\"{profile}\":null}}}}";
             }
-            else if (query.Contains("soekBarn("))
+            else if (query.Contains(search + "("))
             {
                 var birk = variables.GetProperty("birkId").GetString();
                 var id = birk == "B999-0002" ? Graded : Ungraded;
                 var visible = id == Ungraded || authorized;
-                body = $"{{\"data\":{{\"soekBarn\":{{\"totaltAntall\":{(visible || leakCount ? 1 : 0)},\"resultater\":[{(visible ? $"{{\"barnRegistreringId\":\"{id}\"}}" : "")}]}}}}}}";
+                body = $"{{\"data\":{{\"{search}\":{{\"{total}\":{(visible || leakCount ? 1 : 0)},\"{results}\":[{(visible ? $"{{\"barnRegistreringId\":\"{id}\"}}" : "")}]}}}}}}";
             }
             else
             {
                 var id = variables.GetProperty("id").GetGuid();
-                body = id == Graded && !authorized ? "{\"data\":{\"hentRevisjonslogg\":null}}" : "{\"data\":{\"hentRevisjonslogg\":{\"totaltAntall\":3}}}";
+                body = id == Graded && !authorized ? $"{{\"data\":{{\"{audit}\":null}}}}" : $"{{\"data\":{{\"{audit}\":{{\"{total}\":3}}}}}}";
             }
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
         }
@@ -655,6 +668,48 @@ public sealed class SecurityClassificationTests
 
     private static ClassificationObservation Obs(ClassificationLiveEvidence live, int level, ClassificationIdentity identity, ClassificationSurface surface) =>
         live.Observations.Single(o => o.Nivaa == level && o.Identity == identity && o.Surface == surface);
+
+    [Fact]
+    public async Task TheCurrentEnglishPersonSchemaIsDetectedAndAssessedLikeTheEarlierOne()
+    {
+        // M2LB translated the Person schema (getBarn / searchBarn / getAuditLog); the probe kept sending hentBarn / soekBarn /
+        // hentRevisjonslogg, which the current endpoint rejects.
+        var (current, server) = await Live(new FakePerson(current: true));
+        var (earlier, _) = await Live(new FakePerson());
+
+        current.State.Should().Be(IntegrationEvidenceState.Available);
+        current.Reason.Should().Contain("current Person schema").And.Contain("getBarn");
+        earlier.Reason.Should().Contain("earlier Person schema").And.Contain("hentBarn");
+        current.Observations.Select(o => (o.Nivaa, o.Identity, o.Surface, o.State))
+            .Should().BeEquivalentTo(earlier.Observations.Select(o => (o.Nivaa, o.Identity, o.Surface, o.State)), "the same behaviour gives the same result in either schema");
+        Obs(current, 2, ClassificationIdentity.Authorized, ClassificationSurface.DirectProfile).Observed.Should().Contain("level 2");
+        Obs(current, 2, ClassificationIdentity.Unauthorized, ClassificationSurface.SearchTotalCount).Observed.Should().Be("totaltAntall 0");
+        server.Requests.Should().OnlyContain(r => GraphQlClassificationProbe.AllowedDocuments.Contains(r.Query))
+            .And.NotContain(r => r.Query.Contains("hentBarn"), "the current schema answered the first detection query");
+    }
+
+    [Fact]
+    public void AQueryTheEndpointRejectsIsNeverAPass()
+    {
+        // A document the endpoint does not execute (unknown fields → errors without data) used to read as "no data": every unauthorized
+        // check then passed as anti-disclosure although nothing was asked.
+        var shape = GraphQlClassificationProbe.Reduce(400, "{\"errors\":[{\"message\":\"The field `hentBarn` does not exist\",\"extensions\":{\"code\":\"HC0020\"}}]}", "hentBarn");
+        shape.Answered.Should().BeFalse();
+        shape.Describe().Should().Contain("query not executed").And.Contain("HC0020");
+        GraphQlClassificationProbe.Reduce(200, "{\"data\":{\"getBarn\":null}}", "getBarn").Should().Match<GraphQlClassificationProbe.Shape>(s => s.Answered && s.FieldPresent && !s.HasData);
+        GraphQlClassificationProbe.Reduce(502, "<html>Bad gateway</html>", "getBarn").Answered.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task AnEndpointThatRejectsEveryCallAssessesNothing()
+    {
+        var (live, server) = await Live(new FakePerson(unauthenticated: true));
+
+        live.State.Should().Be(IntegrationEvidenceState.Unavailable);
+        live.Reason.Should().Contain("either known Person schema").And.Contain("HTTP 401");
+        live.Observations.Should().BeEmpty("a 401 is not an anti-disclosure answer");
+        server.Requests.Should().HaveCount(2, "one detection query per schema, then nothing");
+    }
 
     [Fact]
     public async Task UnauthorizedGradedChildIsNotDisclosedAndAuthorizedPositiveControlPasses()

@@ -112,7 +112,8 @@ public static class SyntheticProjects
         if (await importAgain.CountAsync() > 0) await importAgain.ClickAsync();
         await page.GetByTestId("pi-import").ClickAsync();
         var result = page.GetByTestId("pi-result");
-        await result.WaitForAsync(new() { Timeout = 300000 });
+        // A real 10 MB archive (M2LB) takes about 3 minutes alone and more on a busy machine: 10 minutes before it counts as hung.
+        await result.WaitForAsync(new() { Timeout = 600000 });
         var outcome = await result.GetAttributeAsync("data-outcome");
         if (outcome is "failed" or "rejected")
             throw new InvalidOperationException($"Synthetic project {name} was not imported: {await result.InnerTextAsync()}");

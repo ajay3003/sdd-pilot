@@ -175,7 +175,7 @@ public sealed class Kode67SecurityWorkflowTests(ITestOutputHelper output) : IAsy
             List<(string Field, string Document, bool KnownToken)> requests;
             lock (_person.Requests) requests = [.. _person.Requests];
             requests.Should().NotBeEmpty().And.OnlyContain(r => r.KnownToken && r.Field != "other" && !r.Document.Contains("mutation"));
-            requests.Select(r => r.Field).Distinct().Should().BeEquivalentTo(["hentBarn", "soekBarn", "hentRevisjonslogg"]);
+            requests.Select(r => r.Field).Distinct().Should().BeEquivalentTo(["getBarn", "searchBarn", "getAuditLog"], "the current Person schema");
 
             // 7. The report: the result, never a token.
             var download = await page.RunAndWaitForDownloadAsync(() => page.GetByTestId("sc-export").ClickAsync());
