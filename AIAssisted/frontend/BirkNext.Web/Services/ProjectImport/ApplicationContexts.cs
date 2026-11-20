@@ -117,6 +117,49 @@ public static class ApplicationContexts
         return application;
     }
 
+    /// <summary>
+    /// "Belongs to project" (2026-11-20): moves an imported package to another application of the workspace, or to a new one named
+    /// <paramref name="newName"/> — for a package imported as "more evidence" of the wrong application (M2LB under Tiltak 2), so it becomes its
+    /// own project without re-importing. Only the package's application changes: the import, its Source Analysis snapshot, documents, plans and
+    /// every Target Environment's Project Evidence bindings (they reference the import id) are untouched. An application left without packages
+    /// is removed; the other application's derived name is recomputed. Returns the target application, or the problem.
+    /// </summary>
+    public static (SddApplicationContext? Application, string? Problem) MoveImport(SddLifecycleState lifecycle, string importId, string? targetApplicationId, string? newName, DateTimeOffset now)
+    {
+        Ensure(lifecycle, now);
+        if (lifecycle.ProjectImports.FirstOrDefault(i => i.ImportId == importId) is not { } record) return (null, "This package is no longer imported.");
+        var from = Find(lifecycle, record.ApplicationId);
+        SddApplicationContext target;
+        if (!string.IsNullOrWhiteSpace(targetApplicationId))
+        {
+            if (Find(lifecycle, targetApplicationId) is not { } existing) return (null, "That project no longer exists.");
+            if (existing.Id == from?.Id) return (null, "The package already belongs to that project.");
+            target = existing;
+        }
+        else
+        {
+            var name = newName?.Trim() ?? "";
+            if (name.Length is 0 or > 120) return (null, "Give the new project a name (at most 120 characters).");
+            if (lifecycle.Applications.Any(a => string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase)))
+                return (null, $"A project named {name} already exists: choose it instead of creating another.");
+            target = new SddApplicationContext { Id = "app-" + Guid.NewGuid().ToString("N"), Name = name, NameBasis = ManualBasis, CreatedAt = now };
+            lifecycle.Applications.Add(target);
+        }
+        record.ApplicationId = target.Id;
+        if (from is not null)
+        {
+            var remaining = Imports(lifecycle, from.Id);
+            if (remaining.Count == 0)
+            {
+                lifecycle.Applications.Remove(from);
+                if (lifecycle.CurrentApplicationId == from.Id) lifecycle.CurrentApplicationId = target.Id;
+            }
+            else if (from.NameBasis != ManualBasis) (from.Name, from.NameBasis) = NameOf(remaining);
+        }
+        if (target.NameBasis != ManualBasis) (target.Name, target.NameBasis) = NameOf(Imports(lifecycle, target.Id));
+        return (target, null);
+    }
+
     /// <summary>The role of a package, from its capabilities. Null-safe: without source setup a package's source is not classified.</summary>
     public static PackageEvidenceRole RoleOf(ProjectEvidencePackage package) =>
         package.Has(ProjectEvidenceCapability.ApplicationSource) ? PackageEvidenceRole.PrimaryApplicationSource

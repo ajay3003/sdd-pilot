@@ -225,7 +225,9 @@ public sealed class TargetEnvironmentProjectPaneTests : BunitContext
         cut.Find("[data-testid=pae-save]").Click();
 
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=tep-associated-row]").Should().HaveCount(2));
-        cut.Find("[data-testid=tep-associated-row][data-import=a]").GetAttribute("data-role").Should().Be(nameof(PackageEvidenceRole.PrimaryApplicationSource));
+        // The row shows the roles this Target Environment assigned (several allowed), the application source marked primary.
+        cut.Find("[data-testid=tep-associated-row][data-import=a]").GetAttribute("data-roles").Should().Contain(ProjectEvidenceRoles.ApplicationSource);
+        cut.Find("[data-testid=tep-associated-row][data-import=a] [data-testid=tep-row-role][data-role=application-source]").TextContent.Should().Be("Application source (primary)");
         cut.Find("[data-testid=tep-associated-row][data-import=b]").TextContent.Should().Contain("Confirmed by you");
         cut.Find("[data-testid=tep-notice]").TextContent.Should().StartWith("Project Evidence");
         cut.Find("[data-testid=tep-fact-associated]").TextContent.Should().Be("2 associated with M2LB");

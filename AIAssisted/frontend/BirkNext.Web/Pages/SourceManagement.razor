@@ -847,8 +847,56 @@
                 <BusyButton Class="btn-primary btn-sm" Text="Save roles" BusyText="Saving…" Disabled="@(!RolesChanged(row))" OnClick="() => SaveRolesAsync(row, current)" TestId="sm-save-roles" />
                 <button type="button" class="btn-secondary btn-sm" disabled="@(!RolesChanged(row))" @onclick="() => ToggleRoleEditor(row, open: true)" data-testid="sm-reset-roles">Discard changes</button>
             </div>
+            @if (row.Record is { } record) { @BelongsTo(record) }
         </div>
     };
+
+    private string _moveTarget = "";
+    private string _moveName = "";
+
+    /// <summary>
+    /// "Belongs to project": which project (workspace application) the imported package is part of — the entries of the Project list. A package
+    /// imported as more evidence of the wrong project (M2LB under Tiltak 2) becomes its own project, or moves to another one, without re-importing.
+    /// </summary>
+    private RenderFragment BelongsTo(SddProjectImportRecord record) => __builder =>
+    {
+        var lifecycle = Activation.Lifecycle;
+        var current = ApplicationContexts.Find(lifecycle, record.ApplicationId);
+        var siblings = current is null ? 0 : ApplicationContexts.Imports(lifecycle, current.Id).Count - 1;
+        var others = (lifecycle.Applications ?? []).Where(a => a.Id != current?.Id).OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        <fieldset class="sm-roles sm-belongs" data-testid="sm-belongs-to">
+            <legend>Belongs to project</legend>
+            <p class="sm-small" data-testid="sm-belongs-current">@(current is null ? "Not part of a project yet." : $"Part of {current.Name}{(siblings > 0 ? $" with {siblings} other package{(siblings == 1 ? "" : "s")}" : "")}.")
+                <span class="sm-quiet">The Project list shows one entry per project.</span></p>
+            <div class="sm-belongs-row">
+                <label class="sm-field"><span class="sm-facet-label">Move to</span>
+                    <select @bind="_moveTarget" data-testid="sm-move-target">
+                        <option value="">A new project…</option>
+                        @foreach (var a in others) { <option value="@a.Id">@a.Name</option> }
+                    </select></label>
+                @if (_moveTarget.Length == 0)
+                {
+                    <label class="sm-field"><span class="sm-facet-label">New project name</span>
+                        <input value="@(_moveName.Length > 0 ? _moveName : record.ProjectName ?? "")" @oninput="e => _moveName = e.Value?.ToString() ?? string.Empty" data-testid="sm-move-name" /></label>
+                }
+                <BusyButton Class="btn-secondary btn-sm" Text="@(_moveTarget.Length == 0 ? "Make it its own project" : "Move")" BusyText="Moving…" OnClick="() => MoveAsync(record)" TestId="sm-move" />
+            </div>
+            <p class="sm-quiet sm-small" data-testid="sm-move-impact">Only the project it belongs to changes. The import, its Source Analysis snapshot, documents, test plans and every Target Environment's Project Evidence stay as they are.</p>
+        </fieldset>
+    };
+
+    private async Task MoveAsync(SddProjectImportRecord record)
+    {
+        _error = null;
+        var name = _moveName.Length > 0 ? _moveName : record.ProjectName;
+        var (application, problem) = ApplicationContexts.MoveImport(Activation.Lifecycle, record.ImportId, _moveTarget.Length == 0 ? null : _moveTarget, name, DateTimeOffset.UtcNow);
+        if (application is null) { _error = problem; return; }
+        if (Services.GetService(typeof(IWorkspaceAutoSaveService)) is IWorkspaceAutoSaveService autoSave && !await autoSave.SaveNowAsync()) { _error = "The change could not be saved durably; try again."; return; }
+        (Services.GetService(typeof(BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService)) as BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService)?.Invalidate();
+        _notice = $"{record.ArchiveFileName} now belongs to {application.Name}. It is listed in the Project list; nothing was re-imported or deleted.";
+        _moveTarget = ""; _moveName = "";
+        Build();
+    }
 
     private RenderFragment MatchList(GitSourceLink link, IReadOnlyList<GitSourceMatch> matches) => __builder =>
     {

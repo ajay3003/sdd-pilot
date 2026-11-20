@@ -122,3 +122,16 @@
 .tep-row-actions { white-space: nowrap; text-align: right; }
 .tep-details { margin-top: 1rem; }
 .tep-details > summary { cursor: pointer; font-weight: 600; color: var(--clr-text-muted, #475569); }
+
+/* Sources and their roles (2026-11-20): role badges, the primary application source, and the inline Edit roles checklist. */
+.tep-badge-role { background: var(--clr-surface-subtle, #f6f8fa); }
+.tep-badge-primary { border-color: var(--clr-primary, #0969da); color: var(--clr-primary, #0969da); font-weight: 600; }
+.tep-editor-row > td { background: var(--clr-surface-subtle, #f6f8fa); }
+.tep-role-editor { display: grid; gap: .5rem; margin: 0; padding: .75rem .875rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: var(--radius-md, 8px); background: var(--clr-surface-white, #fff); min-width: 0; }
+.tep-role-editor:focus-visible { outline: 2px solid var(--clr-focus, #0969da); outline-offset: 2px; }
+.tep-role-editor > legend { float: left; width: 100%; margin: 0 0 .25rem; font-size: .95rem; }
+.tep-role-options { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); gap: .375rem 1rem; }
+.tep-role-options > li { display: grid; gap: .125rem; min-width: 0; }
+.tep-check { display: inline-flex; gap: .4rem; align-items: center; font-size: .875rem; overflow-wrap: anywhere; }
+.tep-primary-check { margin-left: 1.4rem; font-size: .825rem; }
+.tep-small { font-size: .8rem; }

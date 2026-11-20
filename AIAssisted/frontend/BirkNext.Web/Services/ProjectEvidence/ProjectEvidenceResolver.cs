@@ -201,7 +201,9 @@ public static class ProjectEvidenceRoles
 
     public static IReadOnlyList<EnvironmentProjectEvidenceBinding> Defaults() =>
     [
-        Role(ApplicationSource, "Application source", ProjectEvidenceCapability.ApplicationSource, ProjectEvidenceRequirement.Required, ProjectEvidenceCardinality.Single,
+        // Several repositories or packages may jointly implement an application (M2LB): one is the primary application source (the project's main
+        // import), others contribute. The role is therefore Multiple; "primary" is EnvironmentProject.ProjectImportId, not exclusivity (2026-11-20).
+        Role(ApplicationSource, "Application source", ProjectEvidenceCapability.ApplicationSource, ProjectEvidenceRequirement.Required, ProjectEvidenceCardinality.Multiple,
             "Project definition (main application)"),
         Role(Documentation, "Project documentation", ProjectEvidenceCapability.Documentation, ProjectEvidenceRequirement.Required, ProjectEvidenceCardinality.Multiple,
             "Recommended Workflow document reviews"),
@@ -214,6 +216,15 @@ public static class ProjectEvidenceRoles
         Role(GeneratedDocumentation, "Generated documentation", ProjectEvidenceCapability.GeneratedDocumentation, ProjectEvidenceRequirement.Optional, ProjectEvidenceCardinality.Single,
             "Generated Documentation Health and Documentation Drift"),
     ];
+
+    /// <summary>Saved Project evidence from before 2026-11-20 holds the default application-source role as single-source: it becomes multi-source
+    /// (one primary + contributing). Only that default role; named expected evidence keeps its own cardinality. True when something changed.</summary>
+    public static bool Upgrade(EnvironmentProject? project)
+    {
+        if (project?.Evidence.FirstOrDefault(r => r.RoleKey == ApplicationSource) is not { Cardinality: ProjectEvidenceCardinality.Single } role) return false;
+        role.Cardinality = ProjectEvidenceCardinality.Multiple;
+        return true;
+    }
 
     public static EnvironmentProjectEvidenceBinding Role(string key, string label, ProjectEvidenceCapability capability, ProjectEvidenceRequirement requirement,
         ProjectEvidenceCardinality cardinality, string requiredBy, ProjectEvidenceRoleOrigin origin = ProjectEvidenceRoleOrigin.ProjectDefinition) =>
@@ -406,9 +417,15 @@ public static class ProjectEvidenceResolver
         : lifecycle.ProjectImports.FirstOrDefault(i => project.ProjectImportId is not null && i.ImportId == project.ProjectImportId)
           ?? lifecycle.ProjectImports.FirstOrDefault(i => !string.IsNullOrEmpty(project.ArchiveSha256) && i.ArchiveSha256 == project.ArchiveSha256);
 
-    /// <summary>The exact snapshot bound to a source-backed role (Single roles only; several bound snapshots are not collapsed into one).</summary>
+    /// <summary>The exact snapshot bound to a source-backed role: its only source, or for the application source with several contributing sources
+    /// the primary one's (the project's main import). Several bound snapshots are otherwise never collapsed into one.</summary>
     public static Guid? BoundSnapshot(EnvironmentProject? project, string roleKey) =>
-        project?.Evidence.FirstOrDefault(r => r.RoleKey == roleKey)?.Sources is { Count: 1 } sources ? sources[0].SnapshotId : null;
+        project?.Evidence.FirstOrDefault(r => r.RoleKey == roleKey)?.Sources switch
+        {
+            { Count: 1 } sources => sources[0].SnapshotId,
+            { Count: > 1 } sources when roleKey == ProjectEvidenceRoles.ApplicationSource => sources.FirstOrDefault(s => s.ImportId == project!.ProjectImportId)?.SnapshotId,
+            _ => null,
+        };
 
     /// <summary>Every exact snapshot bound to any role of the project: the high-confidence discovery scope for source consumers.</summary>
     public static IReadOnlyList<Guid> BoundSnapshots(EnvironmentProject? project) =>

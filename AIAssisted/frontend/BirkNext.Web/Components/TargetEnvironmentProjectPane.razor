@@ -40,6 +40,31 @@
             <ProjectEvidenceAssociationEditor @key="@($"{EnvironmentId}|{editing.Name}|{_setupVersion}")" EnvironmentId="@EnvironmentId" EnvironmentName="@(_view.EnvironmentName ?? EnvironmentId)"
                                               View="_view" Identity="editing" Evidence="Evidence!" OnSaved="AssociationsSavedAsync" OnCancel="() => _associating = false" />
         }
+        @if (_identity is not null && ReviewItems.Count > 0)
+        {
+            @* Only a human decision belongs here (ambiguous role, possible other component, conflict) — never limited analyzer coverage (Partial). *@
+            <section class="tep-review" id="tep-needs-review" aria-labelledby="tep-review-h" data-testid="tep-needs-review">
+                <h4 id="tep-review-h" class="tep-subtitle">Needs review</h4>
+                <p class="tep-muted">@ReviewItems.Count source@(ReviewItems.Count == 1 ? " needs" : "s need") your decision. Strong matches were associated automatically.</p>
+                <ul class="tep-review-list">
+                    @foreach (var item in ReviewItems)
+                    {
+                        var importId = item.Package.ImportId;
+                        <li data-testid="tep-review-item" data-import="@importId">
+                            <strong>@item.Package.ArchiveFileName</strong> <span class="tep-state tep-tone-partial">Needs review</span>
+                            <span class="tep-muted" data-testid="tep-review-why">Why: @item.Detail</span>
+                            <span class="tep-review-actions">
+                                <button type="button" class="btn btn-primary btn-sm" data-testid="tep-review-associate" @onclick="() => ReviewSource(item)">Review roles<span class="visually-hidden"> of @item.Package.ArchiveFileName</span></button>
+                                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-review-ignore" @onclick="() => IgnoreAsync(importId)">Not used for @_identity.Name<span class="visually-hidden"> (@item.Package.ArchiveFileName)</span></button>
+                                @if (item.Package.SnapshotId is { } snapshot) { <a class="btn btn-link btn-sm" data-testid="tep-review-inspect" href="@($"source-analysis?snapshot={snapshot:D}")">Inspect<span class="visually-hidden"> @item.Package.ArchiveFileName</span></a> }
+                            </span>
+                            @if (_editingSource == importId && SourceRoleAssignments.RolesOf(_view!, importId).Count == 0) { @RoleEditor(item.Package) }
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+
         @AssociatedTable
         <details class="tep-details" data-testid="tep-details" open="@(_detailsOpen || _openRole is not null)">
         <summary @onclick="() => _detailsOpen = !_detailsOpen" @onclick:preventDefault="true" data-testid="tep-details-toggle">Evidence roles, requirements and diagnostics</summary>
@@ -67,30 +92,6 @@
                 </li>
             }
         </ul>
-
-        @if (_identity is not null && ReviewItems.Count > 0)
-        {
-            @* Only a human decision belongs here (ambiguous role, possible other component, conflict) — never limited analyzer coverage (Partial). *@
-            <section class="tep-review" aria-labelledby="tep-review-h" data-testid="tep-needs-review">
-                <h4 id="tep-review-h" class="tep-subtitle">Needs review</h4>
-                <p class="tep-muted">@ReviewItems.Count source@(ReviewItems.Count == 1 ? " needs" : "s need") your decision. Strong matches were associated automatically.</p>
-                <ul class="tep-review-list">
-                    @foreach (var item in ReviewItems)
-                    {
-                        var importId = item.Package.ImportId;
-                        <li data-testid="tep-review-item" data-import="@importId">
-                            <strong>@item.Package.ArchiveFileName</strong> <span class="tep-state tep-tone-partial">Needs review</span>
-                            <span class="tep-muted" data-testid="tep-review-why">Why: @item.Detail</span>
-                            <span class="tep-review-actions">
-                                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-review-associate" @onclick="() => AssociateAsync(item)">Associate<span class="visually-hidden"> @item.Package.ArchiveFileName</span></button>
-                                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-review-ignore" @onclick="() => IgnoreAsync(importId)">Not used for @_identity.Name<span class="visually-hidden"> (@item.Package.ArchiveFileName)</span></button>
-                                @if (item.Package.SnapshotId is { } snapshot) { <a class="btn btn-link btn-sm" data-testid="tep-review-inspect" href="@($"source-analysis?snapshot={snapshot:D}")">Inspect<span class="visually-hidden"> @item.Package.ArchiveFileName</span></a> }
-                            </span>
-                        </li>
-                    }
-                </ul>
-            </section>
-        }
 
         @if (!_view.IsConfigured)
         {
@@ -265,14 +266,14 @@
     private RenderFragment Overview => __builder =>
     {
         var view = _view!;
-        var primary = view.Associations.FirstOrDefault(a => a.State == EvidenceAssociationState.Associated && a.Role == PackageEvidenceRole.PrimaryApplicationSource);
+        var bound = view.Row(ProjectEvidenceRoles.ApplicationSource)?.Bound.Count > 0;
         var candidate = view.Associations.FirstOrDefault(a => a.State == EvidenceAssociationState.NeedsReview && a.Role == PackageEvidenceRole.PrimaryApplicationSource);
         <BirkNext.Web.Components.SourceManagement.SourceContextNotice Purpose="project evidence" />
         <div class="tep-overview" data-testid="tep-overview">
             <ul class="tep-facts" aria-label="Project Evidence summary">
                 <li data-testid="tep-fact-available"><strong>@view.Packages.Count</strong> imported source@(view.Packages.Count == 1 ? "" : "s") available</li>
                 <li data-testid="tep-fact-associated"><strong>@AssociatedCount</strong> associated with @(_identity?.Name ?? "the Target Application")</li>
-                <li data-testid="tep-fact-application-source">@if (primary is not null) { <span>Application source: <strong>@primary.Package.DisplayName</strong></span> }
+                <li data-testid="tep-fact-application-source">@if (bound) { <span>@SourceRoleAssignments.ApplicationSourceSummary(view)</span> }
                     else if (_identity is not null) { <span class="tep-fact-missing">Application source not selected@(candidate is not null ? $" · candidate: {candidate.Package.DisplayName}" : "")</span> }
                     else { <span>Application source: choose the Target Application first</span> }</li>
                 @if (SuggestionCount > 0) { <li data-testid="tep-fact-suggestions"><strong>@SuggestionCount</strong> suggestion@(SuggestionCount == 1 ? "" : "s") to review</li> }
@@ -285,32 +286,111 @@
         </div>
     };
 
-    /// <summary>The associated sources of the Target Application: one compact row each, with its role for the application and where it came from.</summary>
+    /// <summary>
+    /// The sources of the Target Application (2026-11-20): one row each with four separate facts — detected capabilities (what it contains),
+    /// assigned roles for THIS application (several allowed; read from this Target Environment's bindings, so another application's roles never
+    /// show or change here), review status (who decided) and evidence completeness. Edit roles opens a compact checklist in place.
+    /// </summary>
     private RenderFragment AssociatedTable => __builder =>
     {
-        var associated = _view!.Associations.Where(a => a.State == EvidenceAssociationState.Associated).ToList();
-        if (_identity is null || associated.Count == 0) return;
+        var sources = SourceRoleAssignments.Sources(_view!);
+        if (_identity is null || sources.Count == 0) return;
         <div class="tep-table-wrap">
-            <table class="tep-table tep-associated" data-testid="tep-associated" aria-label="@($"Sources associated with {_identity.Name}")">
-                <thead><tr><th scope="col">Source</th><th scope="col">Capabilities</th><th scope="col">Role for @_identity.Name</th><th scope="col">Status</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+            <table class="tep-table tep-associated" data-testid="tep-associated" aria-label="@($"Sources of {_identity.Name} and their roles")">
+                <thead><tr><th scope="col">Source</th><th scope="col">Detected capabilities</th><th scope="col">Assigned roles for @_identity.Name</th><th scope="col">Review status</th><th scope="col">Evidence completeness</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
                 <tbody>
-                    @foreach (var a in associated)
+                    @foreach (var s in sources)
                     {
-                        <tr data-testid="tep-associated-row" data-import="@a.Package.ImportId" data-role="@a.Role">
-                            <th scope="row">@a.Package.DisplayName</th>
-                            <td>@(a.Package.Capabilities.Count == 0 ? "—" : string.Join(", ", a.Package.Capabilities.Select(c => ShortCapability(c.Capability))))</td>
-                            <td>@ApplicationContexts.RoleLabel(a.Role)</td>
-                            <td><span class="tep-state tep-tone-available">@(a.UserConfirmed ? "Confirmed by you" : a.RoleConfirmed ? "Associated · role confirmed" : "Associated automatically")</span></td>
+                        var p = s.Package;
+                        var completeness = s.Completeness;
+                        var editing = _editingSource == p.ImportId;
+                        <tr data-testid="tep-associated-row" data-import="@p.ImportId" data-roles="@string.Join(",", s.Roles.Select(r => r.Row.Role.RoleKey))" class="@(editing ? "tep-row-open" : null)">
+                            <th scope="row">@p.DisplayName@if (p.SnapshotId is { } sid) { <span class="tep-muted tep-source-meta" data-testid="tep-row-snapshot">snapshot @sid.ToString("N")[..8]</span> }</th>
+                            <td><ul class="tep-badges" aria-label="@($"Detected capabilities of {p.DisplayName}")">@foreach (var c in s.Detected) { <li class="tep-badge tep-badge-compact" data-testid="tep-row-capability">@ShortCapability(c.Capability)</li> }</ul>
+                                @if (s.Detected.Count == 0) { <span class="tep-muted">None detected</span> }</td>
+                            <td data-testid="tep-row-roles">@if (s.Roles.Count == 0) { <span class="tep-muted">No role yet</span> }
+                                else { <ul class="tep-badges" aria-label="@($"Roles of {p.DisplayName} for {_identity.Name}")">@foreach (var r in s.Roles) { <li class="tep-badge tep-badge-role @(r.Primary ? "tep-badge-primary" : null)" data-testid="tep-row-role" data-role="@r.Row.Role.RoleKey">@r.Label</li> }</ul> }</td>
+                            <td><span class="tep-state tep-tone-@s.ReviewTone" data-testid="tep-row-review">@s.ReviewStatus</span></td>
+                            <td><span class="tep-state tep-tone-@completeness.Tone" data-testid="tep-row-completeness">@completeness.Label</span></td>
                             <td class="tep-row-actions">
-                                @if (a.Package.SnapshotId is { } snapshot) { <a class="btn btn-link btn-sm" href="@($"source-analysis?snapshot={snapshot:D}")" data-testid="tep-view-evidence">View evidence<span class="visually-hidden"> of @a.Package.DisplayName</span></a> }
-                                <button type="button" class="btn btn-link btn-sm" data-testid="tep-remove-association" @onclick="() => RemoveAssociationAsync(a)">Remove<span class="visually-hidden"> @a.Package.DisplayName from @_identity.Name</span></button>
+                                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-edit-roles" aria-expanded="@(editing ? "true" : "false")" aria-controls="@($"tep-role-editor-{p.ImportId}")"
+                                        @onclick="() => EditRoles(p.ImportId)">Edit roles<span class="visually-hidden"> of @p.DisplayName</span></button>
+                                @if (p.SnapshotId is { } snapshot) { <a class="btn btn-link btn-sm" href="@($"source-analysis?snapshot={snapshot:D}")" data-testid="tep-view-evidence">View evidence<span class="visually-hidden"> of @p.DisplayName</span></a> }
+                                @if (s.Association is { } a) { <button type="button" class="btn btn-link btn-sm" data-testid="tep-remove-association" @onclick="() => RemoveAssociationAsync(a)">Remove<span class="visually-hidden"> @p.DisplayName from @_identity.Name</span></button> }
                             </td>
                         </tr>
+                        @if (editing) { <tr class="tep-editor-row"><td colspan="6">@RoleEditor(p)</td></tr> }
                     }
                 </tbody>
             </table>
         </div>
     };
+
+    private string? _editingSource;
+    private HashSet<string> _editRoles = new(StringComparer.Ordinal);
+    private bool _editPrimary;
+    private IReadOnlyList<string> _editProblems = [];
+
+    /// <summary>Opens Edit roles for one source (from its row or from a Needs review item), prefilled with its current roles here.</summary>
+    private void EditRoles(string importId)
+    {
+        if (_editingSource == importId) { _editingSource = null; return; }
+        _editingSource = importId;
+        _editRoles = SourceRoleAssignments.RolesOf(_view!, importId).Select(r => r.Row.Role.RoleKey).ToHashSet(StringComparer.Ordinal);
+        _editPrimary = _view!.Project?.ProjectImportId == importId && _editRoles.Contains(ProjectEvidenceRoles.ApplicationSource);
+        _editProblems = [];
+        _focusTarget = $"tep-role-editor-{importId}";
+    }
+
+    /// <summary>The compact role checklist: every role of the project, with the ones this source cannot provide shown and explained, never offered.</summary>
+    private RenderFragment RoleEditor(ProjectEvidencePackage p) => __builder =>
+    {
+        var options = SourceRoleAssignments.Options(_view!, p);
+        <fieldset class="tep-role-editor" id="@($"tep-role-editor-{p.ImportId}")" tabindex="-1" data-testid="tep-role-editor" data-import="@p.ImportId">
+            <legend class="tep-subtitle">Roles of @p.DisplayName for @_identity?.Name</legend>
+            <p class="tep-muted tep-small">Detected: @(p.Capabilities.Count == 0 ? "nothing" : string.Join(" · ", p.Capabilities.Select(c => ShortCapability(c.Capability))))@(p.SnapshotId is { } sid ? $" · snapshot {sid.ToString("N")[..8]}" : ""). Choose every role it has for @_identity?.Name; other Target Applications keep their own choices.</p>
+            <ul class="tep-role-options">
+                @foreach (var o in options)
+                {
+                    var key = o.Row.Role.RoleKey;
+                    <li data-testid="tep-role-option" data-role="@key" data-supported="@(o.Supported ? "true" : "false")">
+                        <label class="tep-check"><input type="checkbox" checked="@_editRoles.Contains(key)" disabled="@(!o.Supported)" data-testid="tep-role-check"
+                                   @onchange="e => ToggleEditRole(key, e.Value is true)" /> @o.Row.Role.Label <span class="tep-muted tep-small">@o.Row.RequirementLabel</span></label>
+                        @if (key == ProjectEvidenceRoles.ApplicationSource && _editRoles.Contains(key))
+                        {
+                            <label class="tep-check tep-primary-check"><input type="checkbox" checked="@_editPrimary" data-testid="tep-role-primary" @onchange="e => _editPrimary = e.Value is true" /> Primary application source</label>
+                        }
+                        @if (o.Reason is { } reason) { <span class="tep-muted tep-small" data-testid="tep-role-unsupported">@reason</span> }
+                    </li>
+                }
+            </ul>
+            @if (_editProblems.Count > 0) { <ul class="tep-banner tep-banner-error" role="alert" data-testid="tep-role-problems">@foreach (var problem in _editProblems) { <li>@problem</li> }</ul> }
+            <p class="tep-muted tep-small" data-testid="tep-role-impact">Saving changes only @_identity?.Name's evidence in @(_view!.EnvironmentName ?? EnvironmentId). The import, its snapshots, Source Analysis and saved test cases are unchanged.</p>
+            <div class="tep-row-actions">
+                <button type="button" class="btn btn-primary btn-sm" data-testid="tep-role-save" @onclick="() => SaveRolesAsync(p)">Save roles</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-testid="tep-role-cancel" @onclick="() => _editingSource = null">Cancel</button>
+            </div>
+        </fieldset>
+    };
+
+    private void ToggleEditRole(string key, bool on)
+    {
+        if (on) _editRoles.Add(key); else _editRoles.Remove(key);
+        if (key == ProjectEvidenceRoles.ApplicationSource && !on) _editPrimary = false;
+    }
+
+    private async Task SaveRolesAsync(ProjectEvidencePackage p)
+    {
+        if (Evidence is null) return;
+        var result = await Evidence.SetSourceRolesAsync(EnvironmentId, p.ImportId, _editRoles, _editPrimary);
+        if (!result.Saved) { _editProblems = result.Problems; return; }
+        _editingSource = null;
+        await ReloadAsync();
+        var roles = SourceRoleAssignments.RolesOf(_view!, p.ImportId);
+        _notice = roles.Count == 0
+            ? $"{p.DisplayName} has no role for {_identity?.Name} now. The import is kept."
+            : $"Roles of {p.DisplayName} for {_identity?.Name} saved: {string.Join(", ", roles.Select(r => r.Label))}.";
+    }
 
     private void OpenAssociationEditor()
     {
@@ -666,11 +746,15 @@
         if (await Evidence.IgnoreSourceAsync(EnvironmentId, importId)) { _notice = $"Set aside for {_identity?.Name}. The import is kept; re-evaluation will not associate it again."; await ReloadAsync(); }
     }
 
-    /// <summary>Associate a source that needs review: open the role it fits (the user confirms the binding there).</summary>
-    private void AssociateAsync(PackageAssociation item)
+    /// <summary>Review a source that needs a decision: open Edit roles for exactly that source, prefilled with the roles its content suggests.</summary>
+    private void ReviewSource(PackageAssociation item)
     {
-        var role = _view?.Rows.FirstOrDefault(r => item.Package.Has(r.Role.Capability)) ?? _view?.Rows.FirstOrDefault();
-        if (role is not null) { _openRole = role.Role.RoleKey; _focusPending = true; _appliedFocus = role.Role.RoleKey; }
+        EditRoles(item.Package.ImportId);
+        if (_editRoles.Count == 0)
+            foreach (var o in SourceRoleAssignments.Options(_view!, item.Package).Where(o => o.Supported
+                         && item.Roles.Select(SourceRoleVocabulary.CategoryOf).Contains(o.Row.Role.Capability)))
+                _editRoles.Add(o.Row.Role.RoleKey);
+        _detailsOpen = true;
     }
 
     private string? CatalogProject => Services.GetService(typeof(PackageCatalogService)) is null ? null : _identity?.Name ?? _view?.Project?.ProjectName;

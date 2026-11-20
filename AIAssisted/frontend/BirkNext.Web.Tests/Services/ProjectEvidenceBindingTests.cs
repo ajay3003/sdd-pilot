@@ -212,6 +212,9 @@ public sealed class ProjectEvidenceBindingTests
     {
         var project = SourceAndDocs();
         var other = Import("x", "Other.zip", 5, App("Other.zip"));
+        // The default application source takes several sources since 2026-11-20 (one primary); a role that is still single-source (here made so)
+        // keeps the rule: two bound sources are a conflict, never resolved silently.
+        project.Evidence.Single(r => r.RoleKey == ProjectEvidenceRoles.ApplicationSource).Cardinality = ProjectEvidenceCardinality.Single;
         project.Evidence.Single(r => r.RoleKey == ProjectEvidenceRoles.ApplicationSource).Sources.Add(ProjectEvidenceResolver.Reference(Package(other), ProjectEvidenceCapability.ApplicationSource, T0));
         var view = ProjectEvidenceResolver.Resolve("dev", "Development", project, Packages, Setup);
         view.Row(ProjectEvidenceRoles.ApplicationSource)!.State.Should().Be(EvidenceRoleState.Conflict);

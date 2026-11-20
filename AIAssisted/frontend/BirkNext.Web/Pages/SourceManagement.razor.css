@@ -168,3 +168,8 @@ button.sm-tile:focus-visible { outline: 2px solid var(--clr-primary-focus, var(-
 .sm-tile.is-partial { border-left-width: 1px; border-color: var(--clr-warning, #b45309); }
 .sm-assoc-roles { display: inline-flex; flex-wrap: wrap; gap: .25rem; align-items: baseline; }
 .sm-assoc-pending { display: inline-flex; flex-wrap: wrap; gap: .25rem; align-items: baseline; }
+
+/* Belongs to project (2026-11-20): move an imported package to its own or another project. */
+.sm-belongs-row { display: flex; flex-wrap: wrap; gap: .5rem .75rem; align-items: flex-end; }
+.sm-belongs .sm-field { display: grid; gap: .2rem; min-width: min(100%, 14rem); }
+.sm-belongs .sm-field select, .sm-belongs .sm-field input { padding: .3rem .5rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: var(--radius-sm, 4px); font: inherit; min-width: 0; background: var(--clr-surface-white, #fff); color: inherit; }

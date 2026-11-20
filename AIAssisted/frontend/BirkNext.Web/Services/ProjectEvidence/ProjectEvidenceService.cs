@@ -73,6 +73,15 @@ public interface IProjectEvidenceService
     /// associates it again automatically. The import and its snapshots are untouched.</summary>
     Task<bool> RemoveAssociationAsync(string environmentId, string importId) => Task.FromResult(false);
 
+    /// <summary>
+    /// Edit roles (2026-11-20): sets exactly which evidence roles one source has for THIS Target Environment's Target Application, in one step —
+    /// all or nothing. Roles not listed are removed from the source (a removed automatic association is remembered, so it is not re-added); a role
+    /// whose capability the source does not contain is refused. <paramref name="primary"/> makes it the primary application source (the project's
+    /// main import). Other Target Environments, the import, its snapshots and Source Analysis are never touched.
+    /// </summary>
+    Task<AssociationSaveResult> SetSourceRolesAsync(string environmentId, string importId, IReadOnlyCollection<string> roleKeys, bool primary) =>
+        Task.FromResult(new AssociationSaveResult(false, ["Not supported in this view."]));
+
     event Action? Changed;
 }
 
@@ -131,12 +140,15 @@ public sealed class ProjectEvidenceService : IProjectEvidenceService
         // match is unique and strong (an existing same-named application is confirmed, never duplicated; an explicit different choice wins);
         // (2) deterministic association: strong matches are associated without a manual step (recomputed on every read; explicit choices win).
         // Only with the backend's classification — an unreachable backend never removes or guesses associations or applications.
+        // Saved evidence from before multi-source application sources is upgraded once (persisted below with any other change).
+        var upgraded = ProjectEvidenceRoles.Upgrade(profile?.Project);
+        if (upgraded && profile is not null && setup is null) { await _settings.MaterializeAsync(_js, profile.Id); await _settings.SaveAsync(_js); }
         if (profile is not null && setup is not null)
         {
             await EnsureDetectionSnapshotsAsync();
             var inferred = TargetApplicationInference.Apply(profile, Inference(profile, setup), _time.GetUtcNow());
             var associated = ProjectEvidenceAssociation.Apply(profile, Associations(profile, setup), _time.GetUtcNow());
-            if (inferred || associated)
+            if (inferred || associated || upgraded)
             {
                 await _settings.MaterializeAsync(_js, profile.Id);
                 await _settings.SaveAsync(_js);
@@ -216,6 +228,59 @@ public sealed class ProjectEvidenceService : IProjectEvidenceService
             return true;
         });
         return new(saved, saved ? [] : problems.Count > 0 ? problems : ["The association could not be saved."]);
+    }
+
+    public async Task<AssociationSaveResult> SetSourceRolesAsync(string environmentId, string importId, IReadOnlyCollection<string> roleKeys, bool primary)
+    {
+        var problems = new List<string>();
+        var saved = await MutateAsync(environmentId, profile =>
+        {
+            if (TargetApplications.Of(profile) is not { } identity) { problems.Add("Choose the Target Application first."); return false; }
+            if (Package(environmentId, importId) is not { } package) { problems.Add("This source is no longer imported."); return false; }
+            var now = _time.GetUtcNow();
+            var draft = profile.Project is { } current
+                ? System.Text.Json.JsonSerializer.Deserialize<EnvironmentProject>(System.Text.Json.JsonSerializer.Serialize(current))!
+                : new EnvironmentProject { ProjectName = identity.Name, SelectedAt = now, Manual = true, Evidence = [.. ProjectEvidenceRoles.Defaults()] };
+            ProjectEvidenceRoles.Upgrade(draft);
+            var wanted = roleKeys.ToHashSet(StringComparer.Ordinal);
+            foreach (var key in wanted.Where(k => draft.Evidence.All(r => r.RoleKey != k))) problems.Add($"Unknown evidence role {key}.");
+            if (primary && !wanted.Contains(ProjectEvidenceRoles.ApplicationSource)) problems.Add("Only an application source can be the primary application source.");
+            foreach (var role in draft.Evidence)
+            {
+                var has = role.Sources.Any(s => s.ImportId == importId);
+                if (wanted.Contains(role.RoleKey))
+                {
+                    if (!ProjectEvidencePackages.Satisfies(package, role.Capability))
+                    {
+                        problems.Add($"{package.DisplayName}: its content does not show {ProjectEvidencePackages.CapabilityLabel(role.Capability).ToLowerInvariant()}, so it cannot be {role.Label}.");
+                        continue;
+                    }
+                    draft.Declined.RemoveAll(d => d.ImportId == importId && (d.RoleKey == IgnoredRole || d.RoleKey == role.RoleKey));
+                    // A kept automatic binding becomes the person's decision; a single-source role is replaced by this choice.
+                    if (!has || role.Sources.Any(s => s.ImportId == importId && s.BoundBy == ProjectEvidenceAssociation.Detected))
+                        ProjectEvidenceResolver.Bind(draft, role.RoleKey, package, now);
+                }
+                else if (has)
+                {
+                    var automatic = role.Sources.Any(s => s.ImportId == importId && s.BoundBy == ProjectEvidenceAssociation.Detected);
+                    ProjectEvidenceResolver.Unbind(draft, role.RoleKey, importId);
+                    if (automatic && !draft.Declined.Any(d => d.RoleKey == role.RoleKey && d.ImportId == importId))
+                        draft.Declined.Add(new ProjectEvidenceDecline { RoleKey = role.RoleKey, ImportId = importId, At = now });
+                }
+            }
+            if (problems.Count > 0) return false;
+            var appSources = draft.Evidence.FirstOrDefault(r => r.RoleKey == ProjectEvidenceRoles.ApplicationSource)?.Sources ?? [];
+            if (primary) { draft.ProjectImportId = package.ImportId; draft.ArchiveSha256 = package.ArchiveSha256; draft.Manual = false; }
+            else if (draft.ProjectImportId == importId && !wanted.Contains(ProjectEvidenceRoles.ApplicationSource))
+            {
+                // The primary application source lost that role: the only remaining application source becomes primary; several stay a decision.
+                var next = appSources.Count == 1 ? appSources[0] : null;
+                draft.ProjectImportId = next?.ImportId; draft.ArchiveSha256 = next?.ArchiveSha256; draft.Manual = next is null;
+            }
+            profile.Project = draft;
+            return true;
+        });
+        return new(saved, saved ? [] : problems.Count > 0 ? problems : ["The roles could not be saved."]);
     }
 
     public Task<bool> RemoveAssociationAsync(string environmentId, string importId) => MutateAsync(environmentId, profile =>
