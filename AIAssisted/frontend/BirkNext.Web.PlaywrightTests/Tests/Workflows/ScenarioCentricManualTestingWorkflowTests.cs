@@ -335,7 +335,6 @@ public sealed class ScenarioCentricManualTestingWorkflowTests : IAsyncLifetime
             await Assertions.Expect(us6.Locator("[data-testid=tps-story-req-confirmed][data-requirement=FR-027]")).ToBeVisibleAsync();
 
             // Keyboard reorder within the story, then drag a step of the open case, and save.
-            await us6.Locator("[data-testid=tps-scenario]", new() { Has = page.Locator($"[data-scenario=\"{s40}\"]") }).First.WaitForAsync();
             await page.Locator($"[data-testid=tps-scenario][data-scenario=\"{s40}\"] [data-testid=tps-scenario-down]").ClickAsync();
             (await us6.Locator("[data-testid=tps-scenario]").EvaluateAllAsync<string[]>("els => els.map(e => e.getAttribute('data-scenario'))")).Should().Equal(s42, s40);
             await page.Locator($"[data-testid=tps-scenario][data-scenario=\"{s42}\"] [data-testid=tps-scenario-toggle]").ClickAsync();
