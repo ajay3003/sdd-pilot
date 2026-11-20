@@ -1,0 +1,30 @@
+/* System Settings → Translation. Design tokens only (same family as Git Sources). */
+.trx { display: grid; gap: .875rem; max-width: 64rem; padding: 1.25rem; background: var(--clr-surface-white); border: 1px solid var(--clr-border); border-radius: var(--radius-lg); min-width: 0; }
+.trx-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+.trx-title { margin: 0; font-size: 1.25rem; color: var(--clr-text-heading); }
+.trx-subtitle, .trx-muted { margin: .125rem 0 0; color: var(--clr-text-muted); font-size: .9rem; }
+.trx-small { font-size: .825rem; }
+.trx-pill { display: inline-flex; align-items: center; padding: .125rem .625rem; border-radius: var(--radius-pill); font-size: .8rem; font-weight: 600; border: 1px solid transparent; overflow-wrap: anywhere; }
+.trx-pill-ok { background: var(--clr-success-bg-light); color: var(--clr-success); border-color: var(--clr-success-border); }
+.trx-pill-pending { background: var(--clr-warning-bg-light); color: var(--clr-text-heading); border-color: var(--clr-warning-border); }
+.trx-panel { display: grid; gap: .75rem; padding: 1rem 1.125rem; margin: 0; border: 1px solid var(--clr-border); border-radius: var(--radius-md); min-width: 0; }
+.trx-panel-title { padding: 0 .25rem; font-size: 1.05rem; font-weight: 600; color: var(--clr-text-heading); }
+.trx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: .75rem 1rem; }
+.trx-field { display: grid; gap: .25rem; font-size: .875rem; color: var(--clr-text-body); min-width: 0; margin: 0; border: 0; padding: 0; }
+.trx-field > span, .trx-field > legend { font-weight: 600; color: var(--clr-text-heading); padding: 0; }
+.trx-field input, .trx-field select { padding: .375rem .5rem; border: 1px solid var(--clr-border-input, var(--clr-border)); border-radius: var(--radius-sm); font: inherit; min-width: 0; background: var(--clr-surface-white); color: inherit; }
+.trx-narrow { max-width: 20rem; }
+.trx-targets { display: flex; flex-wrap: wrap; gap: .25rem 1rem; }
+.trx-targets > legend { width: 100%; margin-bottom: .25rem; }
+.trx-check { display: inline-flex; gap: .4rem; align-items: center; font-size: .875rem; }
+.trx-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.trx-footer { border-top: 1px solid var(--clr-border); padding-top: .75rem; }
+.trx-notice { margin: 0; padding: .5rem .75rem; background: var(--clr-info-bg-light); border-left: 3px solid var(--clr-info); border-radius: var(--radius-sm); font-size: .875rem; overflow-wrap: anywhere; }
+.trx-warn { margin: 0; padding: .5rem .75rem; background: var(--clr-warning-bg-light); border-left: 3px solid var(--clr-warning-border); border-radius: var(--radius-sm); font-size: .875rem; overflow-wrap: anywhere; }
+.trx-error { margin: 0; padding: .5rem .75rem; background: var(--clr-danger-bg-light); border-left: 3px solid var(--clr-danger); border-radius: var(--radius-sm); font-size: .875rem; overflow-wrap: anywhere; }
+.trx-notice p, .trx-warn p { margin: 0 0 .25rem; }
+.trx-facts { display: grid; grid-template-columns: max-content 1fr; gap: .375rem 1.25rem; margin: 0; font-size: .9rem; }
+.trx-facts > div { display: contents; }
+.trx-facts dt { color: var(--clr-text-muted); font-weight: 500; }
+.trx-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .trx { padding: 1rem; } .trx-facts { grid-template-columns: 1fr; } }

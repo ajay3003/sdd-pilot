@@ -80,7 +80,8 @@ public sealed record AdoExportRequest
     /// <summary>Update mode: the user confirms the ids were verified in Azure DevOps and that the import replaces their steps.</summary>
     public bool ExistingIdsConfirmed { get; init; }
     public AdoExportProfile Profile { get; init; } = new();
-    /// <summary>"nb" = export each case's Norwegian text where the case has a complete one (else its original, with a note); null = the original.</summary>
+    /// <summary>A language code ("nb" = Norwegian bokmål, …) = export each case's text in that language where the case has a complete one (else its
+    /// original, with a note); null = the original.</summary>
     public string? Language { get; init; }
 }
 
@@ -122,8 +123,9 @@ public sealed record AdoExportCase
     public List<string> RequirementSources { get; init; } = [];
     /// <summary>The Azure DevOps id came from an earlier confirmed export (not typed now).</summary>
     public bool AzureDevOpsIdRemembered { get; init; }
-    /// <summary>The language this case is exported in ("Original" or "Norwegian").</summary>
-    public string Language { get; init; } = "Original";
+    /// <summary>The language this case is exported in: <see cref="OriginalLanguage"/> or the requested language code.</summary>
+    public string Language { get; init; } = OriginalLanguage;
+    public const string OriginalLanguage = "original";
     /// <summary>The scenario the case belongs to (null = none established) and the saved plan revision the text comes from.</summary>
     public string? ScenarioKey { get; init; }
     public string? ScenarioTitle { get; init; }

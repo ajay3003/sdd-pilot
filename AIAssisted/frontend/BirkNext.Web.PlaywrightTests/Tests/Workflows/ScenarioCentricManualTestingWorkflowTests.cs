@@ -187,11 +187,11 @@ public sealed class ScenarioCentricManualTestingWorkflowTests : IAsyncLifetime
             await Assertions.Expect(scenario.GetByTestId("tps-scenario-title")).ToContainTextAsync("Et barn over opplæringspliktig alder");
             await Assertions.Expect(scenario.GetByTestId("tps-scenario-original")).ToHaveTextAsync(new Regex("child past compulsory school age"));
             lock (translator.Bodies) translator.Bodies.Should().NotBeEmpty().And.OnlyContain(b => !b.Contains('⟦') && !b.Contains("FR-0"), "identifiers never reach the translator");
-            await Assertions.Expect(page.GetByTestId("tps-nb-state")).ToContainTextAsync("Machine translation");
-            await SetAsync(page.GetByTestId($"tps-nb-title-{s42}"), "Barn over opplæringspliktig alder ved periodelås");
+            await Assertions.Expect(page.GetByTestId("tps-tr-state")).ToContainTextAsync("Machine translation");
+            await SetAsync(page.GetByTestId($"tps-tr-title-{s42}"), "Barn over opplæringspliktig alder ved periodelås");
             await primary.GetByTestId("tps-save").ClickAsync();
             await MessageAsync(page, "Draft saved");
-            await Assertions.Expect(page.GetByTestId("tps-nb-state")).ToContainTextAsync("edited by a person");
+            await Assertions.Expect(page.GetByTestId("tps-tr-state")).ToContainTextAsync("edited by a person");
 
             // 12–14. Add another test case beneath the scenario, with a step and its expected result, and save.
             await scenario.GetByTestId("tps-scenario-add").ClickAsync();
@@ -266,6 +266,15 @@ public sealed class ScenarioCentricManualTestingWorkflowTests : IAsyncLifetime
                 xml.Should().Contain("under the scenario", "the Description says which scenario a hand-written case belongs to");
             }
             finally { File.Delete(file); }
+
+            // System Settings → Translation: the server configuration's choice (LibreTranslate at the stand-in) and a test translation that names it.
+            await page.GotoAsync($"{BrowserTestServers.FrontendUrl}/admin/system-settings?section=translation", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+            var card = page.GetByTestId("trx");
+            await Assertions.Expect(card.GetByTestId("trx-origin")).ToHaveTextAsync("From the server configuration (not saved here yet)", new() { Timeout = 120000 });
+            await Assertions.Expect(card.GetByTestId("trx-libre-answering")).ToContainTextAsync("Yes", new() { Timeout = 60000 });
+            await card.GetByTestId("trx-test").ClickAsync();
+            await Assertions.Expect(card.GetByTestId("trx-test-result")).ToContainTextAsync("Translated by LibreTranslate", new() { Timeout = 60000 });
+            await Assertions.Expect(card.GetByTestId("trx-test-text")).ToContainTextAsync("(FR-027)");
 
             pageErrors.Should().BeEmpty();
         }

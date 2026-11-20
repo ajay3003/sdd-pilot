@@ -110,15 +110,19 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     [HttpGet("drafts/{id:guid}/variants")]
     public Task<ActionResult> Variants(Guid id, [FromQuery] string scenario, CancellationToken ct) => Run(async () => Ok(await service.VariantsAsync(id, scenario ?? "", ct)));
 
-    /// <summary>Whether a translation service is configured for Manual Testing (no call is made to find out).</summary>
+    /// <summary>Which translator the current settings choose and its languages (System Settings → Translation; no call is made to find out).</summary>
     [HttpGet("translation")]
-    public ActionResult Translation([FromServices] BirkNext.Api.Services.TestPlanning.ITestCaseTranslator translator) => Ok(translator.Availability);
+    public ActionResult Translation([FromServices] BirkNext.Api.Services.TestPlanning.TestCaseTranslatorResolver translators)
+    {
+        var settings = translators.Settings();
+        return Ok(translators.Current().Availability with { Source = settings.SourceLanguage, Targets = settings.TargetLanguages });
+    }
 
-    /// <summary>Translates the chosen scenario's test cases to Norwegian with the configured service (a person's explicit action).</summary>
+    /// <summary>Translates the chosen scenario's test cases with the current translator (a person's explicit action).</summary>
     [HttpPost("drafts/{id:guid}/translate")]
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
-    public Task<ActionResult> Translate(Guid id, [FromBody] TranslateScenarioRequest request, [FromServices] BirkNext.Api.Services.TestPlanning.ITestCaseTranslator translator, CancellationToken ct) =>
-        Run(async () => Ok(await service.TranslateScenarioAsync(id, request, translator, Actor, ct)));
+    public Task<ActionResult> Translate(Guid id, [FromBody] TranslateScenarioRequest request, [FromServices] BirkNext.Api.Services.TestPlanning.TestCaseTranslatorResolver translators, CancellationToken ct) =>
+        Run(async () => Ok(await service.TranslateScenarioAsync(id, request, translators.Current(), translators.Settings(), Actor, ct)));
 
     /// <summary>
     /// MT-7 reviewed requirement coverage of one project scope: specification requirements of the latest relationship interpretation, the

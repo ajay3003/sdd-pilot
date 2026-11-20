@@ -59,6 +59,7 @@ builder.Services.AddHttpClient<AdminApiService>(client =>
 builder.Services.AddHttpClient<IBuildInfoApiService, BuildInfoApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ISystemUnderstandingApiService, SystemUnderstandingApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ITestPlanSuggestionsApiService, TestPlanSuggestionsApiService>(client => client.BaseAddress = backendBase);
+builder.Services.AddHttpClient<ITranslationSettingsApiService, TranslationSettingsApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ITechnicalHistoryApiService, TechnicalHistoryApiService>(client => client.BaseAddress = backendBase);
 builder.Services.AddHttpClient<ISpecificationCatalogApiService, SpecificationCatalogApiService>(client => client.BaseAddress = backendBase);
 // Plan & prepare → Export to Azure DevOps: offline XLSX / CSV import files (no Azure DevOps connection).

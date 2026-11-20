@@ -1,0 +1,255 @@
+@using BirkNext.TestPlanning
+@inject ITranslationSettingsApiService Api
+
+@* System Settings → Translation: the translator for test-case text in Manual Testing. Default Azure AI Translator (online), English → Norwegian
+   bokmål, with the local LibreTranslate server as offline fallback. Opening this section reads settings and the local server's status only;
+   downloading, starting, stopping and the test translation are explicit actions. The Azure key is write-only. *@
+<section class="trx" aria-labelledby="trx-title" data-testid="trx">
+    <header class="trx-header">
+        <div>
+            <h2 id="trx-title" class="trx-title">Translation</h2>
+            <p class="trx-subtitle">Which service translates test cases in Manual Testing → Plan &amp; prepare, and between which languages. Text is sent only when a tester chooses Translate; the original is never replaced and translating approves nothing.</p>
+        </div>
+        @if (_view is { } hv)
+        {
+            <span class="trx-pill trx-pill-@(hv.Availability.Available ? "ok" : "pending")" data-testid="trx-overall" role="status">@(hv.Availability.Available ? $"Ready: {hv.Availability.Provider}" : "No translator available")</span>
+        }
+    </header>
+
+    @if (_view is null)
+    {
+        <p class="trx-muted" role="status" data-testid="trx-loading">@(_error ?? "Reading the translation settings…")</p>
+    }
+    else
+    {
+        var v = _view;
+        <p class="@(v.Availability.Available ? "trx-notice" : "trx-warn")" data-testid="trx-availability" role="status">@v.Availability.Reason</p>
+        @if (_message is not null) { <p class="trx-notice" data-testid="trx-message" role="status">@_message</p> }
+        @if (_error is not null) { <p class="trx-error" data-testid="trx-error" role="alert">@_error</p> }
+
+        <fieldset class="trx-panel" disabled="@(!v.CanWrite || _busy)" data-testid="trx-settings">
+            <legend class="trx-panel-title">Service and languages</legend>
+            <div class="trx-grid">
+                <label class="trx-field"><span>Translation service</span>
+                    <select @bind="_draft.Provider" @bind:after="Edited" data-testid="trx-provider">
+                        <option value="@TranslationProviderKind.AzureTranslator">Azure AI Translator (online, default)</option>
+                        <option value="@TranslationProviderKind.LibreTranslate">LibreTranslate (offline, local)</option>
+                        <option value="@TranslationProviderKind.Anthropic">Anthropic (online, server key)</option>
+                        <option value="@TranslationProviderKind.Off">Off — write translations by hand</option>
+                    </select></label>
+                <label class="trx-field"><span>From</span>
+                    <select @bind="_draft.Source" @bind:after="Edited" data-testid="trx-source">
+                        <option value="@TranslationLanguages.Auto">@TranslationLanguages.Name(TranslationLanguages.Auto)</option>
+                        @foreach (var l in v.Languages) { <option value="@l.Code">@l.Name</option> }
+                    </select></label>
+                <fieldset class="trx-field trx-targets" data-testid="trx-targets"><legend>To (the first is the default)</legend>
+                    @foreach (var l in v.Languages.Where(l => l.Code != _draft.Source))
+                    {
+                        var lang = l.Code;
+                        <label class="trx-check"><input type="checkbox" checked="@_draft.Targets.Contains(lang)" @onchange="e => ToggleTarget(lang, e.Value is true)" data-testid="trx-target" data-language="@lang" /> @l.Name</label>
+                    }
+                </fieldset>
+            </div>
+            @if (_draft.Targets.Count > 1)
+            {
+                <label class="trx-field trx-narrow"><span>Default "To" language</span>
+                    <select value="@_draft.Targets[0]" @onchange="e => MakeDefault(e.Value?.ToString())" data-testid="trx-default-target">
+                        @foreach (var target in _draft.Targets) { <option value="@target">@TranslationLanguages.Name(target)</option> }
+                    </select></label>
+            }
+            @if (_draft.Provider is TranslationProviderKind.AzureTranslator or TranslationProviderKind.Anthropic)
+            {
+                <label class="trx-check"><input type="checkbox" checked="@_draft.OfflineFallback" @onchange="e => { _draft.OfflineFallback = e.Value is true; Edited(); }" data-testid="trx-fallback" />
+                    If the online service has no key or cannot be reached, use the local LibreTranslate server (offline) when it is running</label>
+            }
+        </fieldset>
+
+        @if (_draft.Provider == TranslationProviderKind.AzureTranslator)
+        {
+            <fieldset class="trx-panel" disabled="@(!v.CanWrite || _busy)" data-testid="trx-azure">
+                <legend class="trx-panel-title">Azure AI Translator</legend>
+                <div class="trx-grid">
+                    <label class="trx-field"><span>Key @(v.AzureKeySet ? "(saved — leave empty to keep it)" : "(not set)")</span>
+                        <input type="password" autocomplete="off" value="@_azureKey" @oninput="e => { _azureKey = e.Value?.ToString() ?? string.Empty; Edited(); }" data-testid="trx-azure-key" placeholder="@(v.AzureKeySet ? "••••••••" : "Translator resource key")" /></label>
+                    <label class="trx-field"><span>Region</span><input value="@_draft.Region" @oninput="e => { _draft.Region = e.Value?.ToString(); Edited(); }" placeholder="e.g. norwayeast" data-testid="trx-azure-region" /></label>
+                    <label class="trx-field"><span>Endpoint (optional)</span><input value="@_draft.Endpoint" @oninput="e => { _draft.Endpoint = e.Value?.ToString(); Edited(); }" placeholder="https://api.cognitive.microsofttranslator.com" data-testid="trx-azure-endpoint" /></label>
+                </div>
+                @if (v.AzureKeySet) { <button type="button" class="btn-secondary btn-sm" @onclick="RemoveKey" data-testid="trx-azure-remove">Remove the saved key</button> }
+                <p class="trx-muted">The key is stored encrypted on this BirkNext server and never shown again.</p>
+            </fieldset>
+        }
+
+        @if (_draft.Provider == TranslationProviderKind.LibreTranslate || _draft.OfflineFallback && _draft.Provider is TranslationProviderKind.AzureTranslator or TranslationProviderKind.Anthropic)
+        {
+            <fieldset class="trx-panel" disabled="@_busy" data-testid="trx-libre">
+                <legend class="trx-panel-title">LibreTranslate (offline)</legend>
+                <label class="trx-check"><input type="radio" name="trx-libre-mode" checked="@_draft.Managed" disabled="@(!v.CanWrite)" @onchange="() => { _draft.Managed = true; Edited(); }" data-testid="trx-libre-managed" /> Run it on this PC with Podman (127.0.0.1 only)</label>
+                <label class="trx-check"><input type="radio" name="trx-libre-mode" checked="@(!_draft.Managed)" disabled="@(!v.CanWrite)" @onchange="() => { _draft.Managed = false; Edited(); }" data-testid="trx-libre-external" /> Use another LibreTranslate server</label>
+                @if (_draft.Managed)
+                {
+                    <div class="trx-grid">
+                        <label class="trx-field"><span>Port</span><input type="number" min="1024" max="65535" value="@_draft.Port" disabled="@(!v.CanWrite)" @onchange="e => { _draft.Port = int.TryParse(e.Value?.ToString(), out var p) ? p : _draft.Port; Edited(); }" data-testid="trx-libre-port" /></label>
+                        <label class="trx-field"><span>Image (pinned)</span><input value="@_draft.Image" disabled="@(!v.CanWrite)" @onchange="e => { _draft.Image = e.Value?.ToString() ?? _draft.Image; Edited(); }" data-testid="trx-libre-image" /></label>
+                    </div>
+                    @if (!v.CanManageLibreTranslate) { <p class="trx-warn" data-testid="trx-libre-native">BirkNext runs without Podman here (Tester Package), so it cannot run the local server. Choose "Use another LibreTranslate server", or Azure AI Translator.</p> }
+                }
+                else
+                {
+                    <label class="trx-field"><span>Server address</span><input value="@_draft.Url" disabled="@(!v.CanWrite)" @oninput="e => { _draft.Url = e.Value?.ToString() ?? string.Empty; Edited(); }" placeholder="http://localhost:5050" data-testid="trx-libre-url" /></label>
+                }
+                @if (_libre is { } ls)
+                {
+                    <dl class="trx-facts" data-testid="trx-libre-status">
+                        @if (_draft.Managed)
+                        {
+                            <div><dt>Podman</dt><dd data-testid="trx-libre-podman">@(ls.PodmanAvailable ? ls.PodmanDetail : ls.PodmanDetail.Length > 0 ? ls.PodmanDetail : "Not checked")</dd></div>
+                            <div><dt>Image</dt><dd data-testid="trx-libre-image-state">@(ls.ImagePresent ? "Downloaded" : "Not downloaded")</dd></div>
+                            <div><dt>Server</dt><dd data-testid="trx-libre-running">@(ls.Running ? "Running" : "Stopped")</dd></div>
+                        }
+                        <div><dt>Answers</dt><dd data-testid="trx-libre-answering">@(ls.Answering ? $"Yes — {ls.Languages.Count} language(s)" : "No")</dd></div>
+                        <div><dt>Languages</dt><dd data-testid="trx-libre-pair">@(ls.PairAvailable ? "The From → To pair is offered" : ls.Answering ? "The From → To pair is not offered" : "—")</dd></div>
+                    </dl>
+                    <p class="trx-muted" data-testid="trx-libre-detail" role="status">@ls.Detail</p>
+                }
+                <div class="trx-actions">
+                    <button type="button" class="btn-secondary btn-sm" @onclick="RefreshLibreAsync" data-testid="trx-libre-check">Check status</button>
+                    @if (_draft.Managed && v.CanManageLibreTranslate && v.CanWrite && !_dirty)
+                    {
+                        @if (_libre is { ImagePresent: false }) { <button type="button" class="btn-secondary btn-sm" @onclick='() => LibreAsync("pull")' data-testid="trx-libre-pull">Download image (needs internet once)</button> }
+                        @if (_libre is { ImagePresent: true, Running: false }) { <button type="button" class="btn-primary btn-sm" @onclick='() => LibreAsync("start")' data-testid="trx-libre-start">Start</button> }
+                        @if (_libre is { Running: true }) { <button type="button" class="btn-secondary btn-sm" @onclick='() => LibreAsync("stop")' data-testid="trx-libre-stop">Stop</button> }
+                    }
+                    @if (_dirty && _draft.Managed) { <span class="trx-muted">Save first, then start the server with these settings.</span> }
+                </div>
+            </fieldset>
+        }
+
+        <div class="trx-actions trx-footer">
+            @if (v.CanWrite)
+            {
+                <button type="button" class="btn-primary" disabled="@(_busy || !_dirty)" @onclick="SaveAsync" data-testid="trx-save" title="@(_dirty ? "Save the translation settings" : "Nothing to save")">Save</button>
+                @if (_dirty) { <button type="button" class="btn-secondary" disabled="@_busy" @onclick="ReloadAsync" data-testid="trx-discard">Discard changes</button> }
+                <button type="button" class="btn-secondary" disabled="@(_busy || _dirty)" @onclick="TestAsync" data-testid="trx-test" title="@(_dirty ? "Save first" : "Translate one sample sentence with the saved settings")">Test translation</button>
+            }
+            else { <p class="trx-muted" data-testid="trx-read-only">You can read these settings. Changing them needs the system-configuration permission.</p> }
+            <span class="trx-muted trx-small" data-testid="trx-origin">@(v.Origin switch { "saved" => $"Saved{(v.UpdatedAt is { } at ? $" {at.ToLocalTime():yyyy-MM-dd HH:mm}" : "")}", "configuration" => "From the server configuration (not saved here yet)", _ => "Default settings (not saved yet)" })</span>
+        </div>
+        @if (_test is { } t)
+        {
+            <div class="@(t.Ok ? "trx-notice" : "trx-warn")" data-testid="trx-test-result" role="status">
+                <p><strong>@(t.Ok ? "Translated" : "Not translated")</strong> — @t.Message</p>
+                <p class="trx-small">Sample: @t.Source</p>
+                @if (t.Translated is { } tr) { <p class="trx-small" data-testid="trx-test-text">Result: @tr</p> }
+            </div>
+        }
+    }
+</section>
+
+@code {
+    private sealed class Draft
+    {
+        public TranslationProviderKind Provider { get; set; }
+        public string Source { get; set; } = TranslationLanguages.English;
+        public List<string> Targets { get; set; } = [TranslationLanguages.NorwegianBokmal];
+        public bool OfflineFallback { get; set; } = true;
+        public bool Managed { get; set; } = true;
+        public string Url { get; set; } = "";
+        public int Port { get; set; } = TranslationSettings.DefaultLibreTranslatePort;
+        public string Image { get; set; } = TranslationSettings.DefaultLibreTranslateImage;
+        public string? Region { get; set; }
+        public string? Endpoint { get; set; }
+
+        public static Draft From(TranslationSettings s) => new()
+        {
+            Provider = s.Provider, Source = s.SourceLanguage, Targets = [.. s.TargetLanguages], OfflineFallback = s.OfflineFallback, Managed = s.LibreTranslateManaged,
+            Url = s.LibreTranslateUrl, Port = s.LibreTranslatePort, Image = s.LibreTranslateImage, Region = s.AzureRegion, Endpoint = s.AzureEndpoint,
+        };
+
+        public TranslationSettings ToSettings() => new()
+        {
+            Provider = Provider, SourceLanguage = Source, TargetLanguages = [.. Targets], OfflineFallback = OfflineFallback, LibreTranslateManaged = Managed,
+            LibreTranslateUrl = Url, LibreTranslatePort = Port, LibreTranslateImage = Image, AzureRegion = Region, AzureEndpoint = Endpoint,
+        };
+    }
+
+    private TranslationSettingsView? _view;
+    private LibreTranslateServiceStatus? _libre;
+    private TranslationTestResult? _test;
+    private Draft _draft = new();
+    private string _azureKey = "";
+    private bool _removeKey;
+    private bool _dirty;
+    private bool _busy;
+    private string? _message;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _busy = true;
+        var (view, error) = await Api.GetAsync();
+        _busy = false;
+        _view = view; _error = error;
+        if (view is null) return;
+        _draft = Draft.From(view.Settings);
+        _azureKey = ""; _removeKey = false; _dirty = false;
+        if (_draft.Provider == TranslationProviderKind.LibreTranslate || _draft.OfflineFallback) await RefreshLibreAsync();
+    }
+
+    private void Edited() { _dirty = true; _message = null; _test = null; }
+
+    private void ToggleTarget(string code, bool on)
+    {
+        if (on && !_draft.Targets.Contains(code)) _draft.Targets.Add(code);
+        if (!on) _draft.Targets.Remove(code);
+        Edited();
+    }
+
+    private void MakeDefault(string? code)
+    {
+        if (code is null || !_draft.Targets.Remove(code)) return;
+        _draft.Targets.Insert(0, code);
+        Edited();
+    }
+
+    private void RemoveKey() { _removeKey = true; _azureKey = ""; Edited(); _message = "The saved key is removed when you save."; }
+
+    private async Task SaveAsync()
+    {
+        _busy = true; _error = null;
+        var (view, error) = await Api.SaveAsync(new SaveTranslationSettingsRequest(_draft.ToSettings(), _removeKey ? "" : _azureKey.Length > 0 ? _azureKey : null));
+        _busy = false;
+        if (view is null) { _error = error ?? "The settings could not be saved."; return; }
+        _view = view; _draft = Draft.From(view.Settings); _azureKey = ""; _removeKey = false; _dirty = false;
+        _message = "Saved. Manual Testing uses these settings from now on (no restart needed).";
+        if (_draft.Provider == TranslationProviderKind.LibreTranslate || _draft.OfflineFallback) await RefreshLibreAsync();
+    }
+
+    private async Task RefreshLibreAsync()
+    {
+        var (status, error) = await Api.LibreTranslateAsync();
+        _libre = status;
+        if (error is not null) _error = error;
+    }
+
+    private async Task LibreAsync(string action)
+    {
+        _busy = true; _error = null;
+        _message = action == "pull" ? "Downloading the image… this can take several minutes." : null;
+        StateHasChanged();
+        _message = await Api.LibreTranslateActionAsync(action);
+        _busy = false;
+        await RefreshLibreAsync();
+        if (_view is not null) { var (view, _) = await Api.GetAsync(); if (view is not null) _view = view with { Settings = _view.Settings }; }
+    }
+
+    private async Task TestAsync()
+    {
+        _busy = true; _error = null;
+        var (result, error) = await Api.TestAsync();
+        _busy = false;
+        _test = result;
+        if (error is not null) _error = error;
+    }
+}

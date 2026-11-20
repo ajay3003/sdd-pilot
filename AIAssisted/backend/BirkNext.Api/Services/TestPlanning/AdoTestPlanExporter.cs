@@ -47,7 +47,7 @@ public static partial class AdoTestPlanExporter
         {
             var id = c.Source.ScenarioId;
             var caseIssues = new List<AdoExportIssue>();
-            // The chosen language for the whole case (never mixed): Norwegian only when the case has a complete Norwegian text.
+            // The chosen language for the whole case (never mixed): translated only when the case has a complete text in that language.
             var text = ScenarioPlanning.Localized(c, request.Language);
             var title = CleanTitle(text.Title);
             var review = ReviewLabel(c.Review);
@@ -57,8 +57,8 @@ public static partial class AdoTestPlanExporter
                 : null;
 
             var steps = Steps(text.Steps, text.StepExpected, text.Preconditions, profile.Preconditions);
-            if (excluded is null && request.Language == ScenarioPlanning.Norwegian && text.Note is { } languageNote)
-                caseIssues.Add(new(text.Norwegian ? AdoIssueLevel.Warning : AdoIssueLevel.Info, languageNote, id));
+            if (excluded is null && !string.IsNullOrWhiteSpace(request.Language) && text.Note is { } languageNote)
+                caseIssues.Add(new(text.Translated ? AdoIssueLevel.Warning : AdoIssueLevel.Info, languageNote, id));
             if (excluded is null)
             {
                 if (title.Length == 0) caseIssues.Add(new(AdoIssueLevel.Blocking, "The test case has no title.", id));
@@ -104,7 +104,7 @@ public static partial class AdoTestPlanExporter
                 CaseId = id, CaseKey = $"{plan.Id:N}/{id}", Title = title, Review = review, Included = excluded is null, ExcludedReason = excluded, Steps = steps.Count,
                 AzureDevOpsId = adoId.Length == 0 ? null : adoId, Requirements = RequirementIds(c), TestData = [.. c.TestData.Select(d => string.IsNullOrWhiteSpace(d.Alias) ? d.AssetId : $"{d.Alias} ({d.AssetId})")],
                 Preconditions = text.Preconditions, Priority = priority, Issues = caseIssues,
-                Language = text.Norwegian ? "Norwegian" : "Original", ScenarioKey = scenario.Key, ScenarioTitle = scenario.Title, CaseRevision = plan.Revision,
+                Language = text.Translated ? request.Language! : AdoExportCase.OriginalLanguage, ScenarioKey = scenario.Key, ScenarioTitle = scenario.Title, CaseRevision = plan.Revision,
             });
             if (!included) continue;
             for (var i = 0; i < steps.Count; i++)

@@ -820,9 +820,12 @@ builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegratio
 builder.Services.AddSingleton(new BirkNext.Api.Services.SystemUnderstanding.SystemGuideCatalogEntry("skolenaervaer", "SystemGuide.skolenaervaer.guide.json", BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerJourneyPack.Id));
 builder.Services.AddScoped<BirkNext.Api.Services.SystemUnderstanding.SystemGuideService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.TestPlanSuggestionService>();
-// Norwegian translation of test cases: unavailable unless explicitly enabled (ManualTesting:Translation:Provider) and an API key is configured.
-builder.Services.AddSingleton<BirkNext.Api.Services.TestPlanning.ITestCaseTranslator>(sp =>
-    BirkNext.Api.Services.TestPlanning.AnthropicTestCaseTranslator.FromConfiguration(sp.GetRequiredService<IConfiguration>(), sp.GetRequiredService<IHttpClientFactory>()));
+// Translation of test-case text (System Settings → Translation; default Azure AI Translator, English → Norwegian bokmål, offline fallback to the
+// local LibreTranslate server). The translator is resolved from the current settings on every request: a change applies without a restart.
+builder.Services.AddSingleton(sp => new BirkNext.Api.Services.TestPlanning.TranslationSettingsStore(
+    BirkNext.Api.Services.TestPlanning.TranslationSettingsStore.DefaultDirectory(sp.GetRequiredService<IHostEnvironment>()), sp.GetRequiredService<IConfiguration>()));
+builder.Services.AddSingleton<BirkNext.Api.Services.TestPlanning.TestCaseTranslatorResolver>();
+builder.Services.AddSingleton<BirkNext.Api.Services.TestPlanning.LibreTranslateServiceManager>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.IScenarioReviewSource>(sp => sp.GetRequiredService<BirkNext.Api.Services.TestPlanning.TestPlanSuggestionService>());
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.RequirementCoverageService>();
 // Project-scoped test scenario discovery for Test Plan Suggestions: one provider per registered analyzer (specification, guide, UI source, contracts,

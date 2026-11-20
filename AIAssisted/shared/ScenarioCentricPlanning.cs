@@ -13,11 +13,11 @@ namespace BirkNext.TestPlanning;
 // every suggestion is a proposal a tester confirms or rejects.
 // Audit: docs/audits/birknext-scenario-centric-manual-test-planning-2026-11-20.md.
 
-/// <summary>Who wrote the Norwegian text: a translation service, a person, or a person editing a machine translation.</summary>
+/// <summary>Who wrote the translated text: a translation service, a person, or a person editing a machine translation.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TranslationOrigin { Machine, Manual, MachineEdited }
 
-/// <summary>The Norwegian text of a test case. Kept beside the original (which stays authoritative and is never replaced); bound to the original
+/// <summary>The text of a test case in one other language (default Norwegian bokmål). Kept beside the original (which stays authoritative and is never replaced); bound to the original
 /// text it translates by <see cref="SourceFingerprint"/>, so a later change of the original is visible as "translated from an older text".</summary>
 public sealed record TestCaseTranslation
 {
@@ -37,7 +37,7 @@ public sealed record TestCaseTranslation
     public DateTimeOffset At { get; init; }
 }
 
-/// <summary>Whether a case's Norwegian text matches its current original.</summary>
+/// <summary>Whether a case's translated text matches its current original.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TranslationState { None, Current, SourceChanged }
 
@@ -62,14 +62,21 @@ public sealed record RequirementSuggestion(string RequirementId, string Specific
 /// response). A proposal only: nothing is added until a tester adds it. <see cref="Expected"/> is null when the evidence states no outcome.</summary>
 public sealed record TestCaseVariantProposal(string Key, string Title, string Dimension, string Basis, string? Preconditions, string? Action, string? Expected);
 
-/// <summary>Is a translation service available, and if not, why (shown as is; manual Norwegian editing is always possible).</summary>
-public sealed record TranslationAvailability(bool Available, string? Provider, string Reason);
+/// <summary>Is a translation service available, and if not, why (shown as is; writing the text by hand is always possible). <see cref="Source"/>
+/// and <see cref="Targets"/> are the configured languages (default English → Norwegian bokmål).</summary>
+public sealed record TranslationAvailability(bool Available, string? Provider, string Reason, string Source = "en", IReadOnlyList<string>? Targets = null)
+{
+    public IReadOnlyList<string> TargetLanguages => Targets is { Count: > 0 } t ? t : [ScenarioPlanning.Norwegian];
+}
 
-/// <summary>Translate the scenario and its cases (the chosen scenario only). <see cref="Overwrite"/> = also replace Norwegian text a person wrote.</summary>
-public sealed record TranslateScenarioRequest(int BaseRevision, string ScenarioKey, bool Overwrite = false);
+/// <summary>Translate the scenario and its cases (the chosen scenario only) into <see cref="Target"/> (null = the default target language).
+/// <see cref="Overwrite"/> = also replace text a person wrote in that language.</summary>
+public sealed record TranslateScenarioRequest(int BaseRevision, string ScenarioKey, bool Overwrite = false, string? Target = null);
 
-/// <summary>What a translation request did, case by case. A translation never changes a review decision.</summary>
-public sealed record TranslateScenarioResult(TestPlanDraft? Draft, List<string> Translated, List<string> KeptPersonEdits, List<string> Failed, string Message);
+/// <summary>What a translation request did, case by case. A translation never changes a review decision. <see cref="Provider"/> = the service
+/// that translated (with an offline fallback, the one actually used).</summary>
+public sealed record TranslateScenarioResult(TestPlanDraft? Draft, List<string> Translated, List<string> KeptPersonEdits, List<string> Failed, string Message,
+    string? Target = null, string? Provider = null);
 
 /// <summary>One scenario of a plan with its cases. <see cref="Primary"/> is the case prepared directly from the scenario (null when only cases written
 /// under it remain). Key "" = cases no scenario is established for.</summary>
@@ -137,13 +144,13 @@ public static partial class ScenarioPlanning
         c.EffectiveTitle, c.EffectivePurpose, c.EffectivePreconditions, Steps = c.EffectiveSteps, Expected = c.EffectiveStepExpected, c.EffectiveExpected,
     }, FingerprintJson));
 
-    public static TranslationState StateOf(TestCaseDraft c) =>
-        c.Norwegian is not { } n ? TranslationState.None : n.SourceFingerprint == SourceFingerprint(c) ? TranslationState.Current : TranslationState.SourceChanged;
+    public static TranslationState StateOf(TestCaseDraft c, string language = Norwegian) =>
+        c.Translation(language) is not { } n ? TranslationState.None : n.SourceFingerprint == SourceFingerprint(c) ? TranslationState.Current : TranslationState.SourceChanged;
 
-    /// <summary>A Norwegian text that covers every exported field: a title and the same number of steps (with results) as the original.</summary>
-    public static bool Complete(TestCaseDraft c)
+    /// <summary>A translation that covers every exported field: a title and the same number of steps (with results) as the original.</summary>
+    public static bool Complete(TestCaseDraft c, string language = Norwegian)
     {
-        if (c.Norwegian is not { } n || string.IsNullOrWhiteSpace(n.Title) || n.Steps.Count != c.EffectiveSteps.Count || n.Steps.Any(string.IsNullOrWhiteSpace)) return false;
+        if (c.Translation(language) is not { } n || string.IsNullOrWhiteSpace(n.Title) || n.Steps.Count != c.EffectiveSteps.Count || n.Steps.Any(string.IsNullOrWhiteSpace)) return false;
         if (!string.IsNullOrWhiteSpace(c.EffectivePreconditions) && string.IsNullOrWhiteSpace(n.Preconditions)) return false;
         var expected = c.EffectiveStepExpected;
         return expected.Select((e, i) => e is null || i < n.StepExpected.Count && !string.IsNullOrWhiteSpace(n.StepExpected[i])).All(ok => ok);
@@ -154,7 +161,8 @@ public static partial class ScenarioPlanning
         [c.EffectiveTitle, c.EffectivePurpose, c.EffectivePreconditions, .. c.EffectiveSteps, .. c.EffectiveStepExpected, c.EffectiveExpected];
 
     /// <summary>Builds the translation from the translated fields (same order as <see cref="TranslatableFields"/>); null if the count does not match.</summary>
-    public static TestCaseTranslation? FromFields(TestCaseDraft c, IReadOnlyList<string?> fields, TranslationOrigin origin, string? provider, string by, DateTimeOffset at)
+    public static TestCaseTranslation? FromFields(TestCaseDraft c, IReadOnlyList<string?> fields, TranslationOrigin origin, string? provider, string by, DateTimeOffset at,
+        string language = Norwegian)
     {
         var steps = c.EffectiveSteps.Count;
         if (fields.Count != 4 + 2 * steps) return null;
@@ -162,7 +170,7 @@ public static partial class ScenarioPlanning
         {
             Title = fields[0], Purpose = fields[1], Preconditions = fields[2], Steps = [.. fields.Skip(3).Take(steps).Select(s => s ?? "")],
             StepExpected = [.. fields.Skip(3 + steps).Take(steps)], ExpectedResult = fields[3 + 2 * steps],
-            SourceFingerprint = SourceFingerprint(c), Origin = origin, Provider = provider, By = by, At = at,
+            SourceFingerprint = SourceFingerprint(c), Origin = origin, Provider = provider, By = by, At = at, Language = language,
         };
     }
 
@@ -196,18 +204,19 @@ public static partial class ScenarioPlanning
         return Regex.Replace(translated, "⟦(\\d+)⟧", m => tokens[int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture)]);
     }
 
-    /// <summary>The exported text of a case in the chosen language: Norwegian only when the case has a complete Norwegian text (all fields from
-    /// one language, never mixed), else the original with the reason.</summary>
-    public static (string Title, string? Preconditions, List<string> Steps, List<string?> StepExpected, bool Norwegian, string? Note) Localized(TestCaseDraft c, string? language)
+    /// <summary>The exported text of a case in the chosen language: translated only when the case has a complete text in that language (all
+    /// fields from one language, never mixed), else the original with the reason. <c>Translated</c> = the text is in <paramref name="language"/>.</summary>
+    public static (string Title, string? Preconditions, List<string> Steps, List<string?> StepExpected, bool Translated, string? Note) Localized(TestCaseDraft c, string? language)
     {
-        if (language != Norwegian) return (c.EffectiveTitle, c.EffectivePreconditions, c.EffectiveSteps, c.EffectiveStepExpected, false, null);
-        if (!Complete(c)) return (c.EffectiveTitle, c.EffectivePreconditions, c.EffectiveSteps, c.EffectiveStepExpected, false,
-            c.Norwegian is null ? "No Norwegian text: exported in the original language." : "The Norwegian text does not cover every step: exported in the original language.");
-        var n = c.Norwegian!;
+        if (string.IsNullOrWhiteSpace(language)) return (c.EffectiveTitle, c.EffectivePreconditions, c.EffectiveSteps, c.EffectiveStepExpected, false, null);
+        var name = TranslationLanguages.Name(language);
+        if (!Complete(c, language)) return (c.EffectiveTitle, c.EffectivePreconditions, c.EffectiveSteps, c.EffectiveStepExpected, false,
+            c.Translation(language) is null ? $"No {name} text: exported in the original language." : $"The {name} text does not cover every step: exported in the original language.");
+        var n = c.Translation(language)!;
         var expected = c.EffectiveStepExpected;
         return (n.Title!, string.IsNullOrWhiteSpace(n.Preconditions) ? null : n.Preconditions, n.Steps,
             [.. n.Steps.Select((_, i) => expected[i] is null ? null : n.StepExpected[i])],
-            true, StateOf(c) == TranslationState.SourceChanged ? "The Norwegian text was made from an older original: review it." : null);
+            true, StateOf(c, language) == TranslationState.SourceChanged ? $"The {name} text was made from an older original: review it." : null);
     }
 
     // ── Requirement suggestions ─────────────────────────────────────────────────────────────────────────────────────
@@ -265,7 +274,9 @@ public static partial class ScenarioPlanning
             if (shared.Count == 0) continue;
             var phrases = Phrases(r.Title).Where(scenarioPhrases.Contains).ToList();
             var score = (shared.Sum(Idf) + 1.5 * phrases.Count) / maxPossible;
-            scored.Add((r, score, shared, phrases));
+            // The reason quotes the requirement's own words (never the stems matching works on).
+            var surface = Surface(r.Title);
+            scored.Add((r, score, [.. shared.Select(w => surface.GetValueOrDefault(w, w))], [.. phrases.Select(ph => surface.GetValueOrDefault(ph, ph))]));
         }
         foreach (var (r, score, shared, phrases) in scored.OrderByDescending(s => s.Score).ThenBy(s => s.R.RequirementId, StringComparer.OrdinalIgnoreCase))
         {
@@ -351,6 +362,17 @@ public static partial class ScenarioPlanning
 
     private static HashSet<string> Words(string? text) =>
         string.IsNullOrWhiteSpace(text) ? [] : [.. Regex.Matches(text.ToLowerInvariant(), @"[\p{L}][\p{L}\p{Nd}]{2,}").Select(m => Stem(m.Value)).Where(w => w.Length >= 3 && !Stop.Contains(w))];
+
+    /// <summary>Stem (and stemmed two-word phrase) → the words as written in <paramref name="text"/> (first occurrence, lower case).</summary>
+    private static Dictionary<string, string> Surface(string? text)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(text)) return map;
+        var words = Regex.Matches(text.ToLowerInvariant(), @"[\p{L}][\p{L}\p{Nd}]{2,}").Select(m => (Stem: Stem(m.Value), Word: m.Value)).Where(w => !Stop.Contains(w.Stem)).ToList();
+        foreach (var w in words) map.TryAdd(w.Stem, w.Word);
+        foreach (var (a, b) in words.Zip(words.Skip(1))) map.TryAdd($"{a.Stem} {b.Stem}", $"{a.Word} {b.Word}");
+        return map;
+    }
 
     private static HashSet<string> Phrases(string? text)
     {

@@ -90,40 +90,51 @@ public static class ScenarioCentricPresentation
         RejectedSuggestions = [.. c.RejectedSuggestions ?? [], new RejectedRequirementSuggestion { RequirementId = s.RequirementId, SpecificationPath = s.SpecificationPath }],
     };
 
-    // ── Norwegian text ──────────────────────────────────────────────────────────────────────────────────────────────
+    // ── Translated text (per language; default Norwegian bokmål) ─────────────────────────────────────────────────────
 
-    public static string TranslationLabel(TestCaseDraft c) => ScenarioPlanning.StateOf(c) switch
+    public static string TranslationLabel(TestCaseDraft c, string language)
     {
-        TranslationState.None => "No Norwegian text",
-        TranslationState.SourceChanged => "Norwegian text made from an older original — review it",
-        _ => c.Norwegian!.Origin switch
+        var name = TranslationLanguages.Name(language);
+        return ScenarioPlanning.StateOf(c, language) switch
         {
-            TranslationOrigin.Machine => $"Machine translation{(c.Norwegian.Provider is { } p ? $" ({p})" : "")} — not reviewed",
-            TranslationOrigin.MachineEdited => "Machine translation, edited by a person",
-            _ => "Written in Norwegian by a person",
-        },
-    };
+            TranslationState.None => $"No {name} text",
+            TranslationState.SourceChanged => $"{name} text made from an older original — review it",
+            _ => c.Translation(language)!.Origin switch
+            {
+                TranslationOrigin.Machine => $"Machine translation{(c.Translation(language)!.Provider is { } p ? $" ({p})" : "")} — not reviewed",
+                TranslationOrigin.MachineEdited => "Machine translation, edited by a person",
+                _ => $"Written in {name} by a person",
+            },
+        };
+    }
 
-    public static string TranslationTone(TestCaseDraft c) => ScenarioPlanning.StateOf(c) switch
+    public static string TranslationTone(TestCaseDraft c, string language) => ScenarioPlanning.StateOf(c, language) switch
     {
         TranslationState.None => "quiet",
         TranslationState.SourceChanged => "warn",
-        _ => c.Norwegian!.Origin == TranslationOrigin.Machine ? "info" : "ok",
+        _ => c.Translation(language)!.Origin == TranslationOrigin.Machine ? "info" : "ok",
     };
 
-    /// <summary>The Norwegian text to edit: the saved one, or an empty one with a slot per step (nothing is pre-filled from the original).</summary>
-    public static TestCaseTranslation Editable(TestCaseDraft c)
+    /// <summary>All languages a case has text in, in words ("Norwegian (bokmål)", "Swedish: review"), or "None".</summary>
+    public static string Languages(TestCaseDraft c) => c.TranslatedLanguages.Any()
+        ? string.Join(" · ", c.TranslatedLanguages.Select(l => TranslationLanguages.Name(l) + (ScenarioPlanning.StateOf(c, l) == TranslationState.SourceChanged ? ": review" : "")))
+        : "None";
+
+    /// <summary>The text to edit in <paramref name="language"/>: the saved one, or an empty one with a slot per step (nothing is pre-filled from the original).</summary>
+    public static TestCaseTranslation Editable(TestCaseDraft c, string language)
     {
-        var n = c.Norwegian ?? new TestCaseTranslation();
+        var n = c.Translation(language) ?? new TestCaseTranslation { Language = language };
         var count = c.EffectiveSteps.Count;
         return n with
         {
+            Language = language,
             Steps = [.. Enumerable.Range(0, count).Select(i => i < n.Steps.Count ? n.Steps[i] : "")],
             StepExpected = [.. Enumerable.Range(0, count).Select(i => i < n.StepExpected.Count ? n.StepExpected[i] : null)],
         };
     }
 
-    public static TestCaseDraft WithNorwegian(TestCaseDraft c, Func<TestCaseTranslation, TestCaseTranslation> change) => c with { Norwegian = change(Editable(c)) };
+    public static TestCaseDraft WithTranslation(TestCaseDraft c, string language, Func<TestCaseTranslation, TestCaseTranslation> change) =>
+        c.WithTranslation(language, change(Editable(c, language)));
 
     public static TestCaseTranslation SetStep(TestCaseTranslation n, int index, string? action, string? expected)
     {

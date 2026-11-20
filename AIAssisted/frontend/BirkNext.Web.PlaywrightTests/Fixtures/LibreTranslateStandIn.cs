@@ -8,7 +8,7 @@ namespace BirkNext.Web.PlaywrightTests.Fixtures;
 /// A local stand-in for a self-hosted LibreTranslate server (http://127.0.0.1:&lt;port&gt;/translate; nothing external). It speaks the documented
 /// request (<c>q</c> as an array, <c>source</c>, <c>target</c>, <c>format</c>) and answers <c>translatedText</c> as an array: each text is
 /// translated with a small fixed phrase table and marked "[nb]" so a test can tell machine text from a person's. Every request body is
-/// recorded, so a test can prove what was sent (only plain-language pieces, never an identifier).
+/// recorded, so a test can prove what was sent (only plain-language pieces, never an identifier). GET /languages lists English and Norwegian.
 /// </summary>
 public sealed class LibreTranslateStandIn : IAsyncDisposable
 {
@@ -68,7 +68,9 @@ public sealed class LibreTranslateStandIn : IAsyncDisposable
             using var reader = new StreamReader(c.Request.InputStream, Encoding.UTF8);
             var request = await reader.ReadToEndAsync();
             lock (Bodies) Bodies.Add(request);
-            if (c.Request.HttpMethod != "POST" || c.Request.Url!.AbsolutePath != "/translate") (status, body) = (404, """{"error":"Not found"}""");
+            if (c.Request.HttpMethod == "GET" && c.Request.Url!.AbsolutePath == "/languages")
+                body = """[{"code":"en","name":"English","targets":["en","nb"]},{"code":"nb","name":"Norwegian","targets":["en","nb"]}]""";
+            else if (c.Request.HttpMethod != "POST" || c.Request.Url!.AbsolutePath != "/translate") (status, body) = (404, """{"error":"Not found"}""");
             else
             {
                 var json = JsonDocument.Parse(request).RootElement;

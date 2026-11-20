@@ -160,18 +160,31 @@ expected. One scenario is open at a time:
 - Older hand-written cases that were never written under a scenario are listed under *Written by hand — no scenario established*. BirkNext
   does not guess a scenario for them.
 
-### Norwegian text
+### Translated text (default Norwegian bokmål)
 
-The language icon (**Translate scenario and test cases to Norwegian**) translates the open scenario and its test cases — no other scenario.
+The language icon (**Translate scenario and test cases to Norwegian (bokmål)**) translates the open scenario and its test cases — no other
+scenario. When more languages are configured, choose the language in the scenario header first.
 The original text is never replaced: each case shows the Norwegian fields with the original under each one, and **Show original** switches
 back. Requirement ids, field names, codes, file paths and similar identifiers are kept exactly as they are; a translation that would change
 one is not used. A machine translation is marked *Machine translation — not reviewed*; when you edit it, it becomes *edited by a person*,
 and translating again keeps your text unless you choose to replace it. If the original changes later, the Norwegian text is kept and
 marked *made from an older original — review it*. Translating never approves anything.
 
-Which translator is used is a BirkNext setting (`ManualTesting:Translation:Provider`): **AzureTranslator** (Azure AI Translator; needs a key
-and normally a region), **LibreTranslate** (a local server, for offline use) or **Anthropic**. With none configured, or when the service
-cannot be reached, the icon opens the Norwegian fields so you can write the Norwegian text yourself; everything else works offline.
+The translator and the languages are chosen in **System Settings → Translation** (no restart needed):
+
+- **Azure AI Translator** — the default (online). Enter the Translator resource **key** (stored encrypted, never shown again) and **region**
+  (for example `norwayeast`).
+- **LibreTranslate** — offline. BirkNext can run it on this PC with Podman: **Download image** (needs internet once), **Start**, **Stop**;
+  the first start downloads the language models once. Or give the address of another LibreTranslate server.
+- **Offline fallback** (on by default): if Azure has no key or cannot be reached, the local LibreTranslate server is used when it is running.
+  Every translation records which service made it.
+- **From / To**: default **English → Norwegian (bokmål)**; more "To" languages can be added (the first is the default).
+- **Test translation** translates one sample sentence and says which service answered.
+
+If no choice can translate, Manual Testing says so in one message — what was tried and why (for example *Azure AI Translator has no key*,
+*the local server is not running*) — links to System Settings → Translation, and opens the fields so you can write the text yourself.
+Everything else in Manual Testing works offline. After a translation every field stays editable: your edits are marked *edited by a
+person* and are kept when translating again.
 
 ### Suggested requirements
 
@@ -227,8 +240,9 @@ export does not need them.
 3. Check the list of cases: each says whether it will be exported and, if not, why, its scenario, and whether it is new in Azure DevOps
    (no id) or has a known id. Only **approved** cases are exported unless you tick *Include cases that are not approved yet* (they are then
    exported as drafts; importing them approves nothing).
-   **Export language**: *Original language* or *Norwegian*. In Norwegian, a case with a complete Norwegian text is exported entirely in
-   Norwegian; a case without one is exported in its original language (the list says which) — never half and half. A case missing information blocks the download until you fix or deselect it.
+   **Export language**: *Original language* or a language the plan's cases are translated into (for example *Norwegian (bokmål)*). A case
+   with a complete text in that language is exported entirely in it; a case without one is exported in its original language (the list says
+   which) — never half and half. A case missing information blocks the download until you fix or deselect it.
 4. Choose **Excel (.xlsx)** (default) or **CSV**, and **Download**. The file is named
    `<plan>-azure-test-plans-r<version>.xlsx`. The columns are the ones Azure DevOps imports: *ID, Work Item Type, Title, Test Step, Step Action,
    Step Expected, Area Path, Assigned To, State* (plus *Description*, which says where each case came from).

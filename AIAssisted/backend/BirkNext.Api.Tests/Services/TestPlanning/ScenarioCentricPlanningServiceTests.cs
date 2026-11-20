@@ -101,7 +101,7 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
         Cases = [.. plan.Cases.Select(c =>
         {
             var part = new TestCaseHumanPart { ScenarioId = c.Source.ScenarioId, SuiteId = c.SuiteId, Edits = c.Edits, Risk = c.Risk, RequirementLinks = [.. c.RequirementLinks],
-                Norwegian = c.Norwegian, RejectedSuggestions = c.RejectedSuggestions };
+                Translations = c.TranslatedLanguages.ToDictionary(l => l, l => c.Translation(l)!), RejectedSuggestions = c.RejectedSuggestions };
             return change is null ? part : change(c, part);
         })],
         RequirementCatalog = new ProjectRequirementCatalog { ProjectKey = plan.ProjectKey!, Requirements =
@@ -208,14 +208,19 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
     private sealed class FakeTranslator(bool available = true, bool losePlaceholders = false, bool fail = false) : ITestCaseTranslator
     {
         public int Calls { get; private set; }
-        public TranslationAvailability Availability => new(available, available ? "Fake" : null, available ? "Fake translator." : "No translation service is enabled.");
-        public Task<List<string?>> TranslateAsync(IReadOnlyList<string?> texts, CancellationToken ct)
+        public List<(string Source, string Target)> Pairs { get; } = [];
+        public TranslationAvailability Availability => new(available, available ? "Fake" : null, available ? "Fake translator." : "Azure AI Translator has no key yet (System Settings → Translation). You can write the translated text by hand.");
+        public Task<TranslatedTexts> TranslateAsync(IReadOnlyList<string?> texts, string source, string target, CancellationToken ct)
         {
             Calls++;
+            Pairs.Add((source, target));
             if (fail) throw new TestCaseTranslationException("The fake service is down. Nothing was changed.");
-            return Task.FromResult(texts.Select(t => t is null ? null : losePlaceholders ? "NB: " + System.Text.RegularExpressions.Regex.Replace(t, "⟦\\d+⟧", "") : "NB: " + t).ToList());
+            var prefix = target.ToUpperInvariant() + ": ";
+            return Task.FromResult(new TranslatedTexts([.. texts.Select(t => t is null ? null : losePlaceholders ? prefix + System.Text.RegularExpressions.Regex.Replace(t, "⟦\\d+⟧", "") : prefix + t)], "Fake"));
         }
     }
+
+    private static readonly TranslationSettings Settings = new();
 
     [Fact]
     public async Task Translating_a_scenario_translates_only_its_cases_keeps_identifiers_and_the_original_and_approves_nothing()
@@ -224,16 +229,19 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
         var (service, plan, s42, s7) = await PlanAsync(db);
         plan = await service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, "Report for FR-027 is accepted", null, null, ScenarioKey: s42), "anna", default);
 
-        var result = await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(), "anna", default);
+        var result = await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(), Settings, "anna", default);
 
         result.Translated.Should().HaveCount(2);
         var after = result.Draft!;
-        after.Cases.Where(c => c.ParentScenario == s42).Should().OnlyContain(c => c.Norwegian != null && c.Norwegian.Origin == TranslationOrigin.Machine && c.Review == TestCaseReviewState.Generated);
-        after.Cases.Single(c => c.Source.ScenarioId == s7).Norwegian.Should().BeNull("another scenario is not translated");
+        after.Cases.Where(c => c.ParentScenario == s42).Should().OnlyContain(c => c.Translation("nb") != null && c.Translation("nb")!.Origin == TranslationOrigin.Machine && c.Review == TestCaseReviewState.Generated);
+        after.Cases.Single(c => c.Source.ScenarioId == s7).Translation("nb").Should().BeNull("another scenario is not translated");
+        result.Target.Should().Be("nb", "English → Norwegian bokmål is the default");
+        result.Provider.Should().Be("Fake");
         var manual = after.Cases.Single(c => c.Source.Kind == ScenarioSourceKind.Manual);
-        manual.Norwegian!.Title.Should().Be("NB: Report for FR-027 is accepted", "the id came back unchanged");
+        manual.Translation("nb")!.Title.Should().Be("NB: Report for FR-027 is accepted", "the id came back unchanged");
+        manual.Translation("nb")!.Provider.Should().Be("Fake", "the service that translated is recorded");
         manual.EffectiveTitle.Should().Be("Report for FR-027 is accepted", "the original is never replaced");
-        (await Service(Context()).RevisionsAsync(plan.Id, default)).First().Reason.Should().Be("Translated to Norwegian");
+        (await Service(Context()).RevisionsAsync(plan.Id, default)).First().Reason.Should().Be("Translated to Norwegian (bokmål)");
     }
 
     [Fact]
@@ -241,28 +249,47 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
     {
         await using var db = Context();
         var (service, plan, s42, _) = await PlanAsync(db);
-        plan = (await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(), "anna", default)).Draft!;
+        plan = (await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(), Settings, "anna", default)).Draft!;
 
         // A person edits the Norwegian title: Machine → MachineEdited, recorded with who.
-        plan = await service.SaveAsync(plan.Id, Human(plan, (c, part) => c.Source.ScenarioId == s42 ? part with { Norwegian = c.Norwegian! with { Title = "Barn over opplæringspliktig alder" } } : part), "inger", default);
-        var edited = plan.Cases.Single(c => c.Source.ScenarioId == s42).Norwegian!;
+        plan = await service.SaveAsync(plan.Id, Human(plan, (c, part) => c.Source.ScenarioId == s42 ? part with { Translations = new() { ["nb"] = c.Translation("nb")! with { Title = "Barn over opplæringspliktig alder" } } } : part), "inger", default);
+        var edited = plan.Cases.Single(c => c.Source.ScenarioId == s42).Translation("nb")!;
         edited.Origin.Should().Be(TranslationOrigin.MachineEdited);
         edited.By.Should().Be("inger");
 
-        var again = await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(), "anna", default);
+        var again = await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(), Settings, "anna", default);
         again.KeptPersonEdits.Should().ContainSingle();
         again.Draft.Should().BeNull("nothing changed");
-        (await service.DraftAsync(plan.Id, default)).Cases.Single(c => c.Source.ScenarioId == s42).Norwegian!.Title.Should().Be("Barn over opplæringspliktig alder");
+        (await service.DraftAsync(plan.Id, default)).Cases.Single(c => c.Source.ScenarioId == s42).Translation("nb")!.Title.Should().Be("Barn over opplæringspliktig alder");
 
-        var overwritten = await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42, Overwrite: true), new FakeTranslator(), "anna", default);
-        overwritten.Draft!.Cases.Single(c => c.Source.ScenarioId == s42).Norwegian!.Origin.Should().Be(TranslationOrigin.Machine);
+        var overwritten = await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42, Overwrite: true), new FakeTranslator(), Settings, "anna", default);
+        overwritten.Draft!.Cases.Single(c => c.Source.ScenarioId == s42).Translation("nb")!.Origin.Should().Be(TranslationOrigin.Machine);
         plan = overwritten.Draft!;
 
         // The original changes after the translation: the Norwegian text is kept and flagged.
         plan = await service.SaveAsync(plan.Id, Human(plan, (c, part) => c.Source.ScenarioId == s42 ? part with { Edits = part.Edits with { Title = "Child past school age at lock" } } : part), "anna", default);
         var stale = plan.Cases.Single(c => c.Source.ScenarioId == s42);
         ScenarioPlanning.StateOf(stale).Should().Be(TranslationState.SourceChanged);
-        stale.Norwegian.Should().NotBeNull();
+        stale.Translation("nb").Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task A_scenario_can_also_be_translated_into_another_configured_language_kept_apart_from_Norwegian()
+    {
+        await using var db = Context();
+        var (service, plan, s42, _) = await PlanAsync(db);
+        var translator = new FakeTranslator();
+        var settings = Settings with { TargetLanguages = ["nb", "sv"] };
+        plan = (await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), translator, settings, "anna", default)).Draft!;
+        var sv = await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42, Target: "sv"), translator, settings, "anna", default);
+
+        translator.Pairs.Should().Equal(("en", "nb"), ("en", "sv"));
+        var c = sv.Draft!.Cases.Single(x => x.Source.ScenarioId == s42);
+        c.TranslatedLanguages.Should().BeEquivalentTo(["nb", "sv"]);
+        c.Translation("sv")!.Title.Should().StartWith("SV: ");
+        c.Translation("nb")!.Title.Should().StartWith("NB: ", "the Norwegian text is untouched");
+        var same = () => service.TranslateScenarioAsync(sv.Draft!.Id, new TranslateScenarioRequest(sv.Draft.Revision, s42, Target: "en"), translator, settings, "anna", default);
+        (await same.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("translation-language");
     }
 
     [Fact]
@@ -271,17 +298,20 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
         await using var db = Context();
         var (service, plan, s42, _) = await PlanAsync(db);
 
-        var unavailable = () => service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(available: false), "anna", default);
-        (await unavailable.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("translation-unavailable");
+        var unavailable = () => service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(available: false), Settings, "anna", default);
+        var refused = (await unavailable.Should().ThrowAsync<TestPlanException>()).Which;
+        refused.Code.Should().Be("translation-unavailable");
+        refused.Message.Should().StartWith("No translation service is available right now.").And.Contain("Azure AI Translator has no key")
+            .And.Contain("System Settings → Translation").And.Contain("write the Norwegian (bokmål) text by hand").And.NotContain("You can write the translated");
 
-        var down = await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(fail: true), "anna", default);
-        down.Failed.Should().ContainSingle(f => f.Contains("down"));
-        down.Draft.Should().BeNull();
+        // Every choice fails when called: one clear message, nothing changed (no list of per-case failures).
+        var down = () => service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(fail: true), Settings, "anna", default);
+        (await down.Should().ThrowAsync<TestPlanException>()).Which.Message.Should().Contain("The fake service is down").And.Contain("System Settings → Translation");
 
         plan = await service.AddManualCaseAsync(plan.Id, new AddManualTestCaseRequest(plan.Revision, "Report for FR-027", null, null, ScenarioKey: s42), "anna", default);
-        var lossy = await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(losePlaceholders: true), "anna", default);
+        var lossy = await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(losePlaceholders: true), Settings, "anna", default);
         lossy.Failed.Should().Contain(f => f.Contains("technical identifier"));
-        (await service.DraftAsync(plan.Id, default)).Cases.Single(c => c.Source.Kind == ScenarioSourceKind.Manual).Norwegian.Should().BeNull();
+        (await service.DraftAsync(plan.Id, default)).Cases.Single(c => c.Source.Kind == ScenarioSourceKind.Manual).Translation("nb").Should().BeNull();
     }
 
     // ── Requirement suggestions, scenario-level links, traceability ────────────────────────────────────────────────
@@ -333,19 +363,19 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
         var manual = plan.Cases.Single(c => c.Source.Kind == ScenarioSourceKind.Manual).Source.ScenarioId;
         plan = await service.SaveAsync(plan.Id, Human(plan, (c, part) => c.Source.ScenarioId == manual
             ? part with { Edits = part.Edits with { Steps = ["Lock the period without a report"], StepExpected = ["The child is not expected"] } } : part), "anna", default);
-        plan = (await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(), "anna", default)).Draft!;
+        plan = (await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(), Settings, "anna", default)).Draft!;
 
         var nb = AdoTestPlanExporter.Preview(plan, new AdoExportRequest { ProjectKey = plan.ProjectKey!, DraftId = plan.Id, PlanRevision = plan.Revision, IncludeNotApproved = true, Language = ScenarioPlanning.Norwegian });
         var original = AdoTestPlanExporter.Preview(plan, new AdoExportRequest { ProjectKey = plan.ProjectKey!, DraftId = plan.Id, PlanRevision = plan.Revision, IncludeNotApproved = true });
 
         var nbCases = nb.Cases.Where(c => c.ScenarioKey == s42).ToList();
-        nbCases.Should().HaveCount(2).And.OnlyContain(c => c.Language == "Norwegian" && c.AzureDevOpsId == null);
+        nbCases.Should().HaveCount(2).And.OnlyContain(c => c.Language == "nb" && c.AzureDevOpsId == null);
         nb.Rows.Where(r => r.Title.StartsWith("NB: ", StringComparison.Ordinal)).Should().NotBeEmpty().And.OnlyContain(r => r.StepAction.StartsWith("NB: ", StringComparison.Ordinal) && r.StepExpected.StartsWith("NB: ", StringComparison.Ordinal),
             "a Norwegian case is Norwegian in every cell");
         nb.Rows.Single(r => r.StepAction == "NB: Lock the period without a report").Description.Should().Contain("under the scenario \"Child past compulsory school age\"");
         original.Rows.Should().NotContain(r => r.Title.StartsWith("NB: ", StringComparison.Ordinal));
-        original.Cases.Should().OnlyContain(c => c.Language == "Original");
-        nb.Cases.Where(c => c.ScenarioKey != s42).Should().OnlyContain(c => c.Language == "Original" && c.Issues.Any(i => i.Message.Contains("original language")), "an untranslated case says so");
+        original.Cases.Should().OnlyContain(c => c.Language == AdoExportCase.OriginalLanguage);
+        nb.Cases.Where(c => c.ScenarioKey != s42).Should().OnlyContain(c => c.Language == AdoExportCase.OriginalLanguage && c.Issues.Any(i => i.Message.Contains("original language")), "an untranslated case says so");
         nb.Boundary.Should().Contain("Downloading is not importing");
     }
 

@@ -168,7 +168,7 @@ public static class TestPlanSuggestionsPresentation
             Correlations = c.Correlations.Where(x => x.State != CorrelationState.Candidate).ToDictionary(x => x.Target.Key, x => x.State, StringComparer.Ordinal),
             ManualLinks = [.. c.Correlations.Where(x => x.Basis.StartsWith("Linked by a reviewer", StringComparison.Ordinal)).Select(x => x.Target.Key)],
             RequirementLinks = draft.ProjectKey is null ? null : [.. c.RequirementLinks],
-            Norwegian = draft.ProjectKey is null ? null : c.Norwegian ?? new TestCaseTranslation(),
+            Translations = draft.ProjectKey is null ? null : c.TranslatedLanguages.ToDictionary(l => l, l => c.Translation(l)!, StringComparer.OrdinalIgnoreCase),
             RejectedSuggestions = draft.ProjectKey is null ? null : [.. c.RejectedSuggestions ?? []],
         })],
     };

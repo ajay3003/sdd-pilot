@@ -258,8 +258,29 @@ public sealed record TestCaseDraft
     public string? ScenarioTitle { get; init; }
     /// <summary>The case this one was duplicated from (a new identity; nothing else is shared, no Azure DevOps id is copied).</summary>
     public string? DuplicatedFrom { get; init; }
-    /// <summary>The Norwegian text of the case (machine-translated and/or written by a person). The original stays authoritative and unchanged.</summary>
-    public TestCaseTranslation? Norwegian { get; init; }
+    /// <summary>Translations of the case by language code ("nb" = Norwegian bokmål, …), machine-translated and/or written by a person. The
+    /// original stays authoritative and unchanged.</summary>
+    public Dictionary<string, TestCaseTranslation>? Translations { get; init; }
+    /// <summary>Read-only compatibility: plans saved on 2026-11-20 before translations were kept per language stored the Norwegian text here.</summary>
+    [JsonPropertyName("norwegian")] public TestCaseTranslation? LegacyNorwegian { get; init; }
+
+    /// <summary>The case's text in <paramref name="language"/>, or null.</summary>
+    public TestCaseTranslation? Translation(string? language) => language is null ? null
+        : Translations is { } all && all.TryGetValue(language, out var t) ? t
+        : language == ScenarioPlanning.Norwegian ? LegacyNorwegian : null;
+
+    /// <summary>The languages the case has text in.</summary>
+    [JsonIgnore] public IEnumerable<string> TranslatedLanguages =>
+        (Translations?.Keys ?? Enumerable.Empty<string>()).Concat(LegacyNorwegian is not null && Translations?.ContainsKey(ScenarioPlanning.Norwegian) != true ? [ScenarioPlanning.Norwegian] : []);
+
+    /// <summary>The case with its text in <paramref name="language"/> set (null removes it); the legacy Norwegian field is folded in.</summary>
+    public TestCaseDraft WithTranslation(string language, TestCaseTranslation? translation)
+    {
+        var all = new Dictionary<string, TestCaseTranslation>(Translations ?? [], StringComparer.OrdinalIgnoreCase);
+        if (LegacyNorwegian is { } legacy && !all.ContainsKey(ScenarioPlanning.Norwegian)) all[ScenarioPlanning.Norwegian] = legacy;
+        if (translation is null) all.Remove(language); else all[language] = translation with { Language = language };
+        return this with { Translations = all.Count == 0 ? null : all, LegacyNorwegian = null };
+    }
     /// <summary>Requirement suggestions a tester rejected for this case (never proposed again for it; a rejection is not a decision on the requirement).</summary>
     public List<RejectedRequirementSuggestion>? RejectedSuggestions { get; init; }
 
@@ -416,8 +437,9 @@ public sealed record TestCaseHumanPart
     /// <summary>The case's manually linked requirements after this save (id + specification file). Null = unchanged (an older client). A link the
     /// case does not hold yet must name a requirement of <see cref="SaveTestPlanDraftRequest.RequirementCatalog"/>.</summary>
     public List<ManualRequirementLink>? RequirementLinks { get; init; }
-    /// <summary>The Norwegian text after this save (null = unchanged). The server records who changed it and marks it written by a person.</summary>
-    public TestCaseTranslation? Norwegian { get; init; }
+    /// <summary>Translated text after this save, by language (null = unchanged; a language left out is unchanged; an entry with no text removes
+    /// that language). The server records who changed it and marks it written by a person.</summary>
+    public Dictionary<string, TestCaseTranslation>? Translations { get; init; }
     /// <summary>Suggestions rejected for this case after this save (null = unchanged). The server records who and when for a new rejection.</summary>
     public List<RejectedRequirementSuggestion>? RejectedSuggestions { get; init; }
 }

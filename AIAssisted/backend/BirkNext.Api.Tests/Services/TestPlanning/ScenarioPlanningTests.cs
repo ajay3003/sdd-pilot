@@ -103,21 +103,23 @@ public sealed class ScenarioPlanningTests
     public void Norwegian_export_uses_one_language_per_case_and_says_when_the_original_is_used()
     {
         var c = Discovered("tsc-42", "Child past school age", "a child past compulsory school age", "the period locks", "the child is not expected");
-        var complete = c with
-        {
-            Norwegian = ScenarioPlanning.FromFields(c, ["Barn over skolealder", "Formål", "et barn over opplæringspliktig alder", "Utløs: perioden låses", "barnet er ikke forventet", "barnet er ikke forventet"],
-                TranslationOrigin.Machine, "fake", "tester", DateTimeOffset.UnixEpoch),
-        };
+        var complete = c.WithTranslation("nb",
+            ScenarioPlanning.FromFields(c, ["Barn over skolealder", "Formål", "et barn over opplæringspliktig alder", "Utløs: perioden låses", "barnet er ikke forventet", "barnet er ikke forventet"],
+                TranslationOrigin.Machine, "fake", "tester", DateTimeOffset.UnixEpoch));
         ScenarioPlanning.StateOf(complete).Should().Be(TranslationState.Current);
         var nb = ScenarioPlanning.Localized(complete, ScenarioPlanning.Norwegian);
-        nb.Norwegian.Should().BeTrue();
+        nb.Translated.Should().BeTrue();
         nb.Title.Should().Be("Barn over skolealder");
         nb.Steps.Should().Equal("Utløs: perioden låses");
         nb.StepExpected.Should().Equal("barnet er ikke forventet");
 
-        ScenarioPlanning.Localized(c, ScenarioPlanning.Norwegian).Should().Match<(string, string?, List<string>, List<string?>, bool Norwegian, string? Note)>(x => !x.Norwegian && x.Note!.Contains("original language"));
-        var partly = complete with { Norwegian = complete.Norwegian! with { StepExpected = [null] } };
-        ScenarioPlanning.Localized(partly, ScenarioPlanning.Norwegian).Norwegian.Should().BeFalse("a Norwegian step without its result would mix languages");
+        ScenarioPlanning.Localized(c, ScenarioPlanning.Norwegian).Should().Match<(string, string?, List<string>, List<string?>, bool Translated, string? Note)>(x => !x.Translated && x.Note!.Contains("No Norwegian (bokmål) text"));
+        var partly = complete.WithTranslation("nb", complete.Translation("nb")! with { StepExpected = [null] });
+        ScenarioPlanning.Localized(partly, ScenarioPlanning.Norwegian).Translated.Should().BeFalse("a Norwegian step without its result would mix languages");
+        ScenarioPlanning.Localized(complete, "sv").Note.Should().Contain("No Swedish text", "each language is its own");
+        var legacy = c with { LegacyNorwegian = complete.Translation("nb") };
+        legacy.Translation("nb").Should().NotBeNull("plans saved before per-language storage keep their Norwegian text");
+        legacy.WithTranslation("sv", null).Translations!.Keys.Should().Equal("nb");
         ScenarioPlanning.Localized(complete, null).Title.Should().Be("Child past school age");
 
         var changed = complete with { Edits = new TestCaseEdits { Title = "Child past compulsory school age — lock" } };

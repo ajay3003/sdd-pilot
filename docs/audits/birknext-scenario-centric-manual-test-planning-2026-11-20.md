@@ -171,10 +171,35 @@ re-run for this commit.
   its scenarios are matched at level C. `tasks.md` story→FR references are not yet read (the User Story hierarchy task will add story identity).
 - Translation providers were verified against stand-ins/fakes only; no real Azure Translator or LibreTranslate server was called.
   LibreTranslate's code for Norwegian bokmål (`nb`) should be confirmed against the installed server (`/languages`).
-- Provider choice is a startup setting; a System Settings → Translation tab (switch without restart, managed LibreTranslate container) is the
-  next task.
+- Provider choice moved to System Settings → Translation (see §18); the LibreTranslate image tag (`v1.6.0`) and its `nb` language code are
+  not verified against Docker Hub or a real server from this PC (no image downloaded in this task).
 - Re-import with a changed specification was verified in backend tests (refresh, stale translation), not in the browser run.
 
 ## 17. Commits
 
 Recorded in the handoff (local only; nothing pushed).
+
+## 18. System Settings → Translation (follow-up, same day)
+
+- **Placement**: System Settings → Analysis → **Translation** (`?section=translation`), not Target Environments: the translator serves every
+  project and environment.
+- **Defaults** (user decision): **Azure AI Translator**, **English → Norwegian bokmål**, **offline fallback** to the local LibreTranslate
+  server. Order of precedence: saved settings → server configuration (`ManualTesting:Translation:*`) → defaults.
+- **Storage**: `App_Data/translation/translation-settings.json`; the Azure key encrypted with ASP.NET Core Data Protection (DPAPI on Windows),
+  write-only (never returned; "" removes it). Changing needs the system-configuration permission.
+- **No restart**: `TestCaseTranslatorResolver` builds the translator from the current settings on every request.
+- **Languages**: From (a code or auto-detect) and up to six To languages (the first is the default). Translations are stored per language on
+  the case (`Translations["nb"]`, …); the first version's `norwegian` field is still read as the `nb` text (`LegacyNorwegian`) and folded in on
+  the next change. Azure gets `from`/`to` in the address; LibreTranslate `source`/`target`; Anthropic the language names.
+- **Fallback**: `FallbackTestCaseTranslator` tries the online service, then the local server; the translation records the service that
+  produced it. When nothing can translate, Manual Testing gets one 503 `translation-unavailable` message naming what was tried and why, a link
+  to the settings and the fields to write by hand — never a list of per-case failures.
+- **Managed LibreTranslate** (`LibreTranslateServiceManager`, Podman via the existing process runner): `podman run --detach --name
+  birknext-libretranslate --pull=never` with BirkNext labels, `--publish 127.0.0.1:<port>:5000` (loopback only), a `birknext-libretranslate-models`
+  volume and `LT_LOAD_ONLY=<from>,<to…>`. Download image, Start, Stop and Check status are explicit actions; status is fact by fact (Podman,
+  image, running, answering `GET /languages`, pair offered). Not offered with the native runner (Tester Package). Ports 5000/5173 refused.
+- **Test translation** translates one fixed sentence with `FR-027` in it and shows the result and the service that answered.
+- **Tests**: `TranslationSettingsTests`, `TestCaseTranslatorProviderTests` (incl. fallback and language pair), service tests updated
+  (+1 other-language case) — 50/50 backend translation-related tests, `TranslationSettingsCardTests` (6 bUnit), `ScenarioCentricPrepareTests` (+3: one clear no-service message with the
+  settings link, service failure on translate, choosing another language); the browser workflow also opens System Settings → Translation and
+  runs Test translation against the local LibreTranslate stand-in.

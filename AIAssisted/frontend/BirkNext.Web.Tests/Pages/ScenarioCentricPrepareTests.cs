@@ -69,7 +69,8 @@ public sealed class ScenarioCentricPrepareTests : BunitContext
         Suites = [new("suite:area:skoleservice", "SkoleService", "area", null)], Cases = [.. cases],
     };
 
-    private IRenderedComponent<TestPlanSuggestions> Render(TestPlanDraft draft, TranslationAvailability? translation = null, TestPlanDraft? translatedDraft = null, string query = "")
+    private IRenderedComponent<TestPlanSuggestions> Render(TestPlanDraft draft, TranslationAvailability? translation = null, TestPlanDraft? translatedDraft = null, string query = "",
+        string? translateError = null)
     {
         Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Imported", "skole", "SkoleService")).Object);
         var api = new Mock<ITestPlanSuggestionsApiService>();
@@ -88,10 +89,11 @@ public sealed class ScenarioCentricPrepareTests : BunitContext
             {
                 Revision = draft.Revision + 1, Cases = [.. draft.Cases, Written("manual-new", r.Title, r.ScenarioKey) with { DuplicatedFrom = r.CopyFrom }],
             }, (string?)null));
-        api.Setup(x => x.TranslationAsync(It.IsAny<CancellationToken>())).ReturnsAsync(translation ?? new TranslationAvailability(false, null, "No translation service is enabled for Manual Testing."));
+        api.Setup(x => x.TranslationAsync(It.IsAny<CancellationToken>())).ReturnsAsync(translation ?? new TranslationAvailability(false, null, "Azure AI Translator has no key yet (System Settings → Translation). You can write the translated text by hand."));
         api.Setup(x => x.TranslateAsync(DraftId, It.IsAny<TranslateScenarioRequest>(), It.IsAny<CancellationToken>()))
             .Callback<Guid, TranslateScenarioRequest, CancellationToken>((_, r, _) => _translated.Add(r))
-            .ReturnsAsync((new TranslateScenarioResult(translatedDraft, ["Child past compulsory school age when the period locks"], [], [], "Translated 1 test case to Norwegian. Review the text; translating approves nothing."), (string?)null));
+            .ReturnsAsync(() => translateError is not null ? ((TranslateScenarioResult?)null, translateError)
+                : (new TranslateScenarioResult(translatedDraft, ["Child past compulsory school age when the period locks"], [], [], "Translated 1 test case to Norwegian (bokmål). Review the text; translating approves nothing.", "nb", "Azure AI Translator"), (string?)null));
         api.Setup(x => x.VariantsAsync(DraftId, "tsc-42", It.IsAny<CancellationToken>())).ReturnsAsync(([new TestCaseVariantProposal("clause:1", "Child past compulsory school age — Even with an upper secondary education relationship",
             "Business-rule combination", "The expected outcome states a further condition: \"even with an upper secondary education relationship\".", "An upper secondary education relationship", null, "Even with an upper secondary education relationship.")], (string?)null));
         Services.AddSingleton(api.Object);
@@ -129,7 +131,7 @@ public sealed class ScenarioCentricPrepareTests : BunitContext
         s42.GetAttribute("data-open").Should().Be("true", "the first scenario is open");
         s42.QuerySelector("[data-testid=tps-scenario-counts]")!.TextContent.Should().Be("2 test cases · 2 need review");
         s42.QuerySelector("[data-testid=tps-scenario-toggle]")!.GetAttribute("aria-expanded").Should().Be("true");
-        s42.QuerySelector("[data-testid=tps-scenario-translate]")!.GetAttribute("aria-label").Should().Be("Translate scenario and test cases to Norwegian");
+        s42.QuerySelector("[data-testid=tps-scenario-translate]")!.GetAttribute("aria-label").Should().Be("Translate scenario and test cases to Norwegian (bokmål)", "English → Norwegian bokmål is the default");
         s42.QuerySelector("[data-testid=tps-scenario-overview]")!.TextContent.Should().Contain("Starting situation").And.Contain("a child past compulsory school age").And.Contain($"{Spec}#scenario-42");
         s42.QuerySelectorAll("[data-case]").Select(c => c.GetAttribute("data-case")).Should().Equal("tsc-42", "manual-a");
         Scenario(cut, "tsc-7").QuerySelectorAll("[data-case]").Should().BeEmpty("a closed scenario shows only its header");
@@ -193,49 +195,79 @@ public sealed class ScenarioCentricPrepareTests : BunitContext
     }
 
     [Fact]
-    public void Without_a_translation_service_the_icon_opens_Norwegian_fields_to_write_by_hand_and_the_save_carries_them()
+    public void Without_any_translation_choice_one_clear_message_links_to_the_settings_and_the_fields_open_to_write_by_hand()
     {
         var cut = Render(Draft(Scenario42()), query: "&case=tsc-42");
 
         cut.Find("[data-testid=tps-scenario-translate]").Click();
 
-        cut.WaitForAssertion(() => cut.Find("[data-testid=tps-message]").TextContent.Should().Contain("No translation service is enabled").And.Contain("Norwegian fields are open"));
-        _translated.Should().BeEmpty("nothing is sent when no service is configured");
-        cut.Find("[data-testid=tps-scenario-language]").TextContent.Should().Be("Norsk");
-        cut.Find("[data-testid=tps-nb-tsc-42]").TextContent.Should().Contain("Original: Child past compulsory school age when the period locks");
-        cut.Find("[data-testid=tps-nb-title-tsc-42]").Change("Barn over opplæringspliktig alder når perioden låses");
-        cut.Find("[data-testid=tps-nb-step-tsc-42-1]").Change("Utfør eller utløs: perioden låses");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tps-message]").TextContent.Should().StartWith("No translation service is available.")
+            .And.Contain("Azure AI Translator has no key").And.Contain("Norwegian (bokmål) fields are open").And.NotContain("You can write the translated"));
+        _translated.Should().BeEmpty("nothing is sent when no service is available");
+        cut.Find("[data-testid=tps-translate-help]").TextContent.Should().Contain("No translation was made").And.Contain("write the Norwegian (bokmål) text");
+        cut.Find("[data-testid=tps-translate-settings]").GetAttribute("href").Should().Be("admin/system-settings?section=translation");
+        cut.Find("[data-testid=tps-scenario-language]").TextContent.Should().Be("Norwegian (bokmål)");
+        cut.Find("[data-testid=tps-tr-tsc-42]").TextContent.Should().Contain("Original: Child past compulsory school age when the period locks");
+        cut.Find("[data-testid=tps-tr-title-tsc-42]").Change("Barn over opplæringspliktig alder når perioden låses");
+        cut.Find("[data-testid=tps-tr-step-tsc-42-1]").Change("Utfør eller utløs: perioden låses");
         cut.Find("[data-testid=tps-save]").Click();
 
         cut.WaitForAssertion(() => _saves.Should().ContainSingle());
-        var nb = _saves[0].Cases.Single().Norwegian!;
+        var nb = _saves[0].Cases.Single().Translations!["nb"];
         nb.Title.Should().Be("Barn over opplæringspliktig alder når perioden låses");
         nb.Steps.Should().Equal("", "Utfør eller utløs: perioden låses");
         _saves[0].Cases.Single().Edits.Title.Should().BeNull("the original is not touched");
     }
 
     [Fact]
-    public void Translating_shows_the_Norwegian_text_and_the_original_stays_one_click_away()
+    public void When_every_service_fails_on_translate_the_reason_is_shown_with_the_settings_link_and_nothing_changes()
+    {
+        var cut = Render(Draft(Scenario42()), new TranslationAvailability(true, "Azure AI Translator", "Translation by Azure AI Translator."), query: "&case=tsc-42",
+            translateError: "No translation service is available right now. Azure AI Translator could not be reached. The offline fallback failed too: The LibreTranslate server at 127.0.0.1:5050 could not be reached or answered unexpectedly. Is it running? Set up Azure AI Translator or start the local LibreTranslate server in System Settings → Translation. Nothing was changed; you can write the Norwegian (bokmål) text by hand meanwhile.");
+
+        cut.Find("[data-testid=tps-scenario-translate]").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tps-message]").TextContent.Should().Contain("Is it running?").And.Contain("Nothing was changed"));
+        cut.Find("[data-testid=tps-translate-settings]").GetAttribute("href").Should().Be("admin/system-settings?section=translation");
+        cut.FindAll("[data-testid=tps-tr-tsc-42]").Should().ContainSingle("the fields open to write by hand");
+        _saves.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Translating_shows_the_translated_text_and_the_original_stays_one_click_away()
     {
         var translated = Scenario42();
-        translated = translated with
-        {
-            Norwegian = ScenarioPlanning.FromFields(translated, ["Barn over opplæringspliktig alder", "Bekreft at barnet ikke er forventet", "et barn over opplæringspliktig alder",
-                "Klargjør startsituasjonen", "Utfør eller utløs: perioden låses", "Startsituasjonen er på plass", "barnet er ikke forventet", "barnet er ikke forventet"], TranslationOrigin.Machine, "Azure AI Translator", "anna", DateTimeOffset.UtcNow),
-        };
+        translated = translated.WithTranslation("nb", ScenarioPlanning.FromFields(translated, ["Barn over opplæringspliktig alder", "Bekreft at barnet ikke er forventet", "et barn over opplæringspliktig alder",
+            "Klargjør startsituasjonen", "Utfør eller utløs: perioden låses", "Startsituasjonen er på plass", "barnet er ikke forventet", "barnet er ikke forventet"], TranslationOrigin.Machine, "Azure AI Translator", "anna", DateTimeOffset.UtcNow));
         var cut = Render(Draft(Scenario42()), new TranslationAvailability(true, "Azure AI Translator", "Translation by Azure AI Translator."), Draft(translated) with { Revision = 5 }, "&case=tsc-42");
 
         cut.Find("[data-testid=tps-scenario-translate]").Click();
 
-        cut.WaitForAssertion(() => _translated.Should().ContainSingle(r => r.ScenarioKey == "tsc-42" && r.BaseRevision == 4 && !r.Overwrite));
+        cut.WaitForAssertion(() => _translated.Should().ContainSingle(r => r.ScenarioKey == "tsc-42" && r.BaseRevision == 4 && !r.Overwrite && r.Target == "nb"));
         cut.WaitForAssertion(() => cut.Find("[data-testid=tps-scenario-title]").TextContent.Should().Be("Barn over opplæringspliktig alder"));
         cut.Find("[data-testid=tps-scenario-original]").TextContent.Should().Be("Child past compulsory school age when the period locks");
-        cut.Find("[data-testid=tps-nb-state]").TextContent.Should().Contain("Machine translation").And.Contain("not reviewed");
+        cut.Find("[data-testid=tps-tr-state]").TextContent.Should().Contain("Machine translation (Azure AI Translator)").And.Contain("not reviewed");
         cut.Find("[data-testid=tps-case-review-state]").TextContent.Should().NotContain("Approved", "translating approves nothing");
+        cut.Find("[data-testid=tps-case-language-state]").TextContent.Should().Be("Norwegian (bokmål)");
 
         cut.Find("[data-testid=tps-scenario-language-toggle]").Click();
         cut.Find("[data-testid=tps-scenario-title]").TextContent.Should().Be("Child past compulsory school age when the period locks");
-        cut.FindAll("[data-testid=tps-nb-tsc-42]").Should().BeEmpty();
+        cut.FindAll("[data-testid=tps-tr-tsc-42]").Should().BeEmpty();
+        cut.Find("[data-testid=tps-scenario-language-toggle]").TextContent.Should().Be("Show Norwegian (bokmål)");
+    }
+
+    [Fact]
+    public void With_several_configured_languages_the_tester_chooses_which_one_to_translate_into()
+    {
+        var cut = Render(Draft(Scenario42()), new TranslationAvailability(true, "Azure AI Translator", "Translation by Azure AI Translator.", "en", ["nb", "sv"]), Draft(Scenario42()) with { Revision = 5 }, "&case=tsc-42");
+        cut.Find("[data-testid=tps-scenario-translate]").Click(); // loads the configured languages (and translates into the default)
+        cut.WaitForAssertion(() => _translated.Should().ContainSingle(r => r.Target == "nb"));
+
+        cut.Find("[data-testid=tps-scenario-target]").Change("sv");
+        cut.Find("[data-testid=tps-scenario-translate]").GetAttribute("aria-label").Should().Be("Translate scenario and test cases to Swedish");
+        cut.Find("[data-testid=tps-scenario-translate]").Click();
+        cut.WaitForAssertion(() => _translated.Should().HaveCount(2));
+        _translated[1].Target.Should().Be("sv");
     }
 
     [Fact]

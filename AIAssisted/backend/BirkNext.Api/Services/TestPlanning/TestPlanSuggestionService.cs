@@ -682,24 +682,33 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
     }
 
     /// <summary>
-    /// Translates one scenario's cases to Norwegian (only that scenario). Technical identifiers are protected by placeholders and must come back
-    /// unchanged, else that case keeps its previous text and is reported as failed. Norwegian text a person wrote or edited is kept unless the
-    /// tester asks to overwrite it. The original text and every review decision stay as they are.
+    /// Translates one scenario's cases (only that scenario) into the requested language (default: the first configured target, Norwegian bokmål).
+    /// Technical identifiers are protected by placeholders and must come back unchanged, else that case keeps its previous text and is reported as
+    /// failed. Text a person wrote or edited in that language is kept unless the tester asks to overwrite it. The original text and every review
+    /// decision stay as they are. When no service can translate at all, one clear message says what was tried and where to set it up.
     /// </summary>
-    public async Task<TranslateScenarioResult> TranslateScenarioAsync(Guid id, TranslateScenarioRequest request, ITestCaseTranslator translator, string actor, CancellationToken ct)
+    public async Task<TranslateScenarioResult> TranslateScenarioAsync(Guid id, TranslateScenarioRequest request, ITestCaseTranslator translator, TranslationSettings settings,
+        string actor, CancellationToken ct)
     {
         var row = await Row(id, ct);
         if (row.Revision != request.BaseRevision) throw Stale(row);
         var current = Read(row);
         var cases = current.Cases.Where(c => c.ParentScenario == request.ScenarioKey && c.Review != TestCaseReviewState.Superseded).ToList();
         if (string.IsNullOrWhiteSpace(request.ScenarioKey) || cases.Count == 0) throw new TestPlanException(404, "scenario-not-found", "That scenario has no test case in this plan.");
-        if (!translator.Availability.Available) throw new TestPlanException(409, "translation-unavailable", translator.Availability.Reason);
+        var target = string.IsNullOrWhiteSpace(request.Target) ? settings.DefaultTarget : request.Target.Trim();
+        if (!TranslationLanguages.IsCode(target) || string.Equals(target, settings.SourceLanguage, StringComparison.OrdinalIgnoreCase))
+            throw new TestPlanException(400, "translation-language", "Choose a language to translate into that differs from the original's.");
+        var name = TranslationLanguages.Name(target);
+        if (!translator.Availability.Available) throw NoTranslationService(translator.Availability.Reason, name);
 
         var translated = new List<string>(); var kept = new List<string>(); var failed = new List<string>();
         var updated = new Dictionary<string, TestCaseDraft>(StringComparer.Ordinal);
+        string? provider = null;
+        string? serviceDown = null;
         foreach (var c in cases)
         {
-            if (c.Norwegian is { Origin: TranslationOrigin.Manual or TranslationOrigin.MachineEdited } && !request.Overwrite) { kept.Add(c.EffectiveTitle); continue; }
+            if (c.Translation(target) is { Origin: TranslationOrigin.Manual or TranslationOrigin.MachineEdited } && !request.Overwrite) { kept.Add(c.EffectiveTitle); continue; }
+            if (serviceDown is not null) { failed.Add($"{c.EffectiveTitle}: {serviceDown}"); continue; }
             var fields = ScenarioPlanning.TranslatableFields(c);
             var masked = new List<string?>();
             var tokens = new List<List<string>>();
@@ -709,22 +718,33 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
                 var (m, t) = ScenarioPlanning.Protect(f);
                 masked.Add(m); tokens.Add(t);
             }
-            List<string?> answer;
-            try { answer = await translator.TranslateAsync(masked, ct); }
-            catch (TestCaseTranslationException e) { failed.Add($"{c.EffectiveTitle}: {e.Message}"); continue; }
-            if (answer.Count != fields.Count) { failed.Add($"{c.EffectiveTitle}: the service returned a different number of texts."); continue; }
+            TranslatedTexts answer;
+            try { answer = await translator.TranslateAsync(masked, settings.SourceLanguage, target, ct); }
+            catch (TestCaseTranslationException e)
+            {
+                // The service itself is unavailable: nothing more is sent; with nothing translated yet, one clear message instead of a list.
+                if (translated.Count == 0) throw NoTranslationService(e.Message, name);
+                serviceDown = e.Message;
+                failed.Add($"{c.EffectiveTitle}: {e.Message}");
+                continue;
+            }
+            if (answer.Texts.Count != fields.Count) { failed.Add($"{c.EffectiveTitle}: the service returned a different number of texts."); continue; }
             var restored = new List<string?>();
             var lost = false;
             for (var i = 0; i < fields.Count && !lost; i++)
             {
                 if (fields[i] is null) { restored.Add(null); continue; }
-                if (answer[i] is not { } text || ScenarioPlanning.Restore(text, tokens[i]) is not { } back) { lost = true; break; }
+                if (answer.Texts[i] is not { } text || ScenarioPlanning.Restore(text, tokens[i]) is not { } back) { lost = true; break; }
                 restored.Add(back);
             }
             if (lost) { failed.Add($"{c.EffectiveTitle}: a technical identifier was changed or lost in the translation, so it was not used."); continue; }
-            var translation = ScenarioPlanning.FromFields(c, restored, TranslationOrigin.Machine, translator.Availability.Provider, actor, Now);
+            var translation = ScenarioPlanning.FromFields(c, restored, TranslationOrigin.Machine, answer.Provider, actor, Now, target);
             if (translation is null) { failed.Add($"{c.EffectiveTitle}: the translation did not match the case's fields."); continue; }
-            updated[c.Source.ScenarioId] = c with { Norwegian = translation, EditHistory = [.. c.EditHistory.TakeLast(99), new TestCaseEditEvent(actor, Now, ["Norwegian text (machine translation)"])] };
+            provider = answer.Provider;
+            updated[c.Source.ScenarioId] = c.WithTranslation(target, translation) with
+            {
+                EditHistory = [.. c.EditHistory.TakeLast(99), new TestCaseEditEvent(actor, Now, [$"{name} text (machine translation, {answer.Provider})"])],
+            };
             translated.Add(c.EffectiveTitle);
         }
         TestPlanDraft? plan = null;
@@ -732,11 +752,20 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
             plan = await WriteAsync(row, current with
             {
                 Cases = [.. current.Cases.Select(c => updated.GetValueOrDefault(c.Source.ScenarioId) ?? c)], Revision = row.Revision + 1, UpdatedBy = actor, UpdatedAt = Now,
-            }, ct, "Translated to Norwegian");
-        var message = updated.Count == 0 ? "Nothing was translated." : $"Translated {translated.Count} test case{(translated.Count == 1 ? "" : "s")} to Norwegian. Review the text; translating approves nothing.";
-        if (kept.Count > 0) message += $" Kept {kept.Count} Norwegian text{(kept.Count == 1 ? "" : "s")} written by a person.";
+            }, ct, $"Translated to {name}");
+        var message = updated.Count == 0 ? "Nothing was translated."
+            : $"Translated {translated.Count} test case{(translated.Count == 1 ? "" : "s")} to {name}{(provider is null ? "" : $" ({provider})")}. Review the text; translating approves nothing.";
+        if (kept.Count > 0) message += $" Kept {kept.Count} {name} text{(kept.Count == 1 ? "" : "s")} written by a person.";
         if (failed.Count > 0) message += $" {failed.Count} could not be translated.";
-        return new TranslateScenarioResult(plan, translated, kept, failed, message);
+        return new TranslateScenarioResult(plan, translated, kept, failed, message, target, provider);
+    }
+
+    /// <summary>No translation choice could translate: what was tried and why, where to set it up, and that the text can be written by hand.</summary>
+    private static TestPlanException NoTranslationService(string detail, string language)
+    {
+        var why = detail.Split(" You can write", 2)[0].Split(" Nothing was changed", 2)[0].Trim();
+        return new(503, "translation-unavailable",
+            $"No translation service is available right now. {why} Set up Azure AI Translator or start the local LibreTranslate server in System Settings → Translation. Nothing was changed; you can write the {language} text by hand meanwhile.");
     }
 
     private static TestCaseDraft ProjectCase(string projectKey, DiscoveredScenario c)
@@ -809,9 +838,14 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
                 Correlations = correlations, Risk = part?.Risk ?? before.Risk, SuiteId = suite, RequirementLinks = requirementLinks,
                 RejectedSuggestions = part?.RejectedSuggestions is { } rejected ? Rejections(before, rejected, actor) : before.RejectedSuggestions,
             };
-            if (part?.Norwegian is { } norwegian) saved = saved with { Norwegian = Translation(before.Norwegian, norwegian, saved, actor) };
-            if (!ReferenceEquals(saved.Norwegian, before.Norwegian) && saved.Norwegian is not null)
-                saved = saved with { EditHistory = [.. saved.EditHistory.TakeLast(99), new TestCaseEditEvent(actor, Now, ["Norwegian text"])] };
+            foreach (var (language, wantedText) in (part?.Translations ?? []).Where(t => TranslationLanguages.IsCode(t.Key)).Take(TranslationSettingsStore.MaxTargets))
+            {
+                var held = before.Translation(language);
+                var next = Translation(held, wantedText, saved, actor);
+                if (ReferenceEquals(next, held)) continue;
+                saved = saved.WithTranslation(language, next);
+                saved = saved with { EditHistory = [.. saved.EditHistory.TakeLast(99), new TestCaseEditEvent(actor, Now, [$"{TranslationLanguages.Name(language)} text"])] };
+            }
             cases.Add(E.Assess(saved));
         }
         var plan = current with
@@ -982,7 +1016,7 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
     public const int MaxTranslatedField = 4000;
 
     /// <summary>
-    /// The Norwegian text after a save. Unchanged text keeps what was recorded (who, when, service, the original it was made from). Changed text is
+    /// The translated text (one language) after a save. Unchanged text keeps what was recorded (who, when, service, the original it was made from). Changed text is
     /// a person's: Manual, or MachineEdited when it started as a machine translation, bound to the case's original as saved now. Empty = removed.
     /// </summary>
     private TestCaseTranslation? Translation(TestCaseTranslation? before, TestCaseTranslation wanted, TestCaseDraft saved, string actor)

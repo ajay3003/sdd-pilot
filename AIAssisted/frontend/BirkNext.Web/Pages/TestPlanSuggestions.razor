@@ -1118,12 +1118,12 @@
         var review = P.Review(c.Review);
         var expected = P.Expected(c);
         var stepResults = c.EffectiveStepExpected;
-        var norwegian = ShowNorwegian(c);
-        <li class="tps-case @(open ? "is-open" : null)" data-testid="tps-case-@sid" data-case="@sid" data-language="@(norwegian ? "nb" : "original")">
+        var shown = ShownLanguage(c);
+        <li class="tps-case @(open ? "is-open" : null)" data-testid="tps-case-@sid" data-case="@sid" data-language="@(shown ?? "original")">
             <button type="button" class="tps-case-head" aria-expanded="@(open ? "true" : "false")" aria-controls="@($"tps-case-body-{sid}")" @onclick="() => ToggleCase(sid)">
-                <span class="tps-card-title" data-testid="tps-case-title">@(norwegian && !string.IsNullOrWhiteSpace(c.Norwegian?.Title) ? c.Norwegian!.Title : c.EffectiveTitle)</span>
+                <span class="tps-card-title" data-testid="tps-case-title">@(shown is not null && !string.IsNullOrWhiteSpace(c.Translation(shown)?.Title) ? c.Translation(shown)!.Title : c.EffectiveTitle)</span>
                 @if (C.GeneratedNotReviewed(c) is { } gen) { <span class="tps-chip tps-chip-quiet" data-testid="tps-case-generated">@gen</span> }
-                @if (c.Norwegian is not null) { <span class="tps-tone tps-tone-@C.TranslationTone(c)" data-testid="tps-case-translation">@(ScenarioPlanning.StateOf(c) == TranslationState.SourceChanged ? "Norwegian: review" : "Norwegian")</span> }
+                @foreach (var lang in c.TranslatedLanguages) { <span class="tps-tone tps-tone-@C.TranslationTone(c, lang)" data-testid="tps-case-translation" data-language="@lang">@TranslationLanguages.Name(lang)@(ScenarioPlanning.StateOf(c, lang) == TranslationState.SourceChanged ? ": review" : "")</span> }
                 <span class="tps-chip">@P.TypeLabel(c.EffectiveType)</span>
                 <span class="tps-tone tps-tone-@review.Tone" data-testid="tps-case-review">@review.Text</span>
                 <span class="tps-tone tps-tone-@expected.Tone">Expected: @expected.Text</span>
@@ -1133,7 +1133,7 @@
             {
                 <div class="tps-case-body" id="@($"tps-case-body-{sid}")">
                     @CaseStatus(d, c, sid)
-                    @if (norwegian) { @NorwegianEditor(d, c, sid) }
+                    @if (shown is { } editLanguage) { @TranslationEditor(d, c, sid, editLanguage) }
                     <dl class="tps-dl" data-testid="tps-generated-@sid">
                         <dt>Purpose</dt><dd>@c.EffectivePurpose</dd>
                         @* MT-7: a guide's rule ids are its business rules, never called specification requirements; project cases carry specification ids. *@
@@ -1918,7 +1918,10 @@
     private bool _scenarioChosen;
     private string? _addUnder;
     private string _addTitle = "";
-    private readonly HashSet<string> _norwegianScenarios = new(StringComparer.Ordinal);
+    // Which language each scenario is shown in (absent = the original).
+    private readonly Dictionary<string, string> _shownLanguage = new(StringComparer.Ordinal);
+    // A scenario whose translation could not be done: its note links to System Settings → Translation.
+    private string? _translationHelp;
     private readonly Dictionary<string, List<TestCaseVariantProposal>> _variants = new(StringComparer.Ordinal);
     private readonly HashSet<string> _dirtyCases = new(StringComparer.Ordinal);
     private TranslationAvailability? _translation;
@@ -1940,9 +1943,15 @@
         if (isOpen && _addUnder == key) _addUnder = null;
     }
 
-    private void ToggleNorwegian(string key) { if (!_norwegianScenarios.Remove(key)) _norwegianScenarios.Add(key); }
+    private void ShowLanguage(string key, string? language) { if (language is null) _shownLanguage.Remove(key); else _shownLanguage[key] = language; }
 
-    private bool ShowNorwegian(TestCaseDraft c) => c.ParentScenario is { } k && _norwegianScenarios.Contains(k);
+    private string? ShownLanguage(TestCaseDraft c) => c.ParentScenario is { } k && _shownLanguage.TryGetValue(k, out var l) ? l : null;
+
+    /// <summary>The languages a tester can translate into (the configured ones once known; Norwegian bokmål by default).</summary>
+    private IReadOnlyList<string> Targets => _translation?.TargetLanguages ?? [ScenarioPlanning.Norwegian];
+
+    /// <summary>Languages to offer "Show …" for in a scenario: the configured targets plus any language its cases already have text in.</summary>
+    private List<string> ScenarioLanguages(ScenarioGroup g) => [.. Targets.Concat(g.Cases.SelectMany(c => c.TranslatedLanguages)).Distinct(StringComparer.OrdinalIgnoreCase)];
 
     private static TestCaseDraft? ScenarioCase(TestPlanDraft d, TestCaseDraft c) =>
         c.ParentScenario is { } k ? d.Cases.FirstOrDefault(x => x.Source.Kind != ScenarioSourceKind.Manual && x.Source.ScenarioId == k) : null;
@@ -2027,20 +2036,30 @@
         if (_draft is null) return;
         if (_dirty) { Fail("Save or discard your changes first, then translate."); return; }
         _translation ??= await _api!.TranslationAsync();
+        var target = _shownLanguage.TryGetValue(g.Key, out var shown) ? shown : Targets[0];
+        var name = TranslationLanguages.Name(target);
+        _scenarioChosen = true; _openScenario = g.Key;
         if (!_translation.Available)
         {
-            _norwegianScenarios.Add(g.Key);
-            _scenarioChosen = true; _openScenario = g.Key;
-            Info($"{_translation.Reason} The Norwegian fields are open in each test case of this scenario.");
+            // No translation choice is available: say why, where to set it up, and open the fields to write the text by hand.
+            _shownLanguage[g.Key] = target;
+            _translationHelp = g.Key;
+            Fail($"No translation service is available. {_translation.Reason.Split(" You can write", 2)[0]} The {name} fields are open in each test case of this scenario so you can write the text by hand.");
             return;
         }
         _busy = true;
-        var (result, error) = await _api!.TranslateAsync(_draft.Id, new TranslateScenarioRequest(_draft.Revision, g.Key, overwrite));
+        var (result, error) = await _api!.TranslateAsync(_draft.Id, new TranslateScenarioRequest(_draft.Revision, g.Key, overwrite, target));
         _busy = false;
-        if (result is null) { Fail(error ?? "The scenario could not be translated."); return; }
+        if (result is null)
+        {
+            _shownLanguage[g.Key] = target;
+            _translationHelp = g.Key;
+            Fail(error ?? "The scenario could not be translated.");
+            return;
+        }
+        _translationHelp = null;
         if (result.Draft is { } draft) { _draft = draft; await ReloadWorkspaceAsync(); }
-        _norwegianScenarios.Add(g.Key);
-        _scenarioChosen = true; _openScenario = g.Key;
+        _shownLanguage[g.Key] = result.Target ?? target;
         _overwriteOffer = result.KeptPersonEdits.Count > 0 && !overwrite ? g.Key : null;
         var detail = result.Failed.Count > 0 ? " " + string.Join(" ", result.Failed.Take(3)) : "";
         if (result.Failed.Count > 0 && result.Translated.Count == 0) Fail(result.Message + detail); else Ok(result.Message + detail);
@@ -2057,8 +2076,11 @@
             {
                 var isOpen = g.Key == openKey;
                 var domId = ScenarioDomId(g.Key);
-                var nb = _norwegianScenarios.Contains(g.Key);
-                var primaryNb = nb ? g.Primary?.Norwegian : null;
+                var lang = _shownLanguage.GetValueOrDefault(g.Key);
+                var nb = lang is not null;
+                var primaryNb = lang is null ? null : g.Primary?.Translation(lang);
+                var target = lang ?? Targets[0];
+                var targetName = TranslationLanguages.Name(target);
                 var group = g;
                 <section class="tps-scn @(isOpen ? "is-open" : null)" data-testid="tps-scenario" data-scenario="@g.Key" data-open="@(isOpen ? "true" : "false")" aria-labelledby="@($"{domId}-h")">
                     <div class="tps-scn-head">
@@ -2072,17 +2094,32 @@
                         @if (!g.Unresolved && project)
                         {
                             <div class="tps-scn-tools" role="group" aria-label="@($"Scenario actions: {g.Title}")">
-                                <span class="tps-chip tps-chip-quiet" data-testid="tps-scenario-language">@(nb ? "Norsk" : "Original")</span>
+                                <span class="tps-chip tps-chip-quiet" data-testid="tps-scenario-language" data-language="@(lang ?? "original")">@(lang is null ? "Original" : TranslationLanguages.Name(lang))</span>
                                 @if (CanWrite)
                                 {
-                                    <button type="button" class="tps-icon-btn" disabled="@_busy" aria-label="Translate scenario and test cases to Norwegian" title="Translate scenario and test cases to Norwegian"
+                                    <button type="button" class="tps-icon-btn" disabled="@_busy" aria-label="@($"Translate scenario and test cases to {targetName}")" title="@($"Translate scenario and test cases to {targetName}")"
                                             @onclick="() => TranslateScenarioAsync(group)" data-testid="tps-scenario-translate">
                                         <svg aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>
                                     </button>
                                 }
-                                @if (nb || g.Cases.Any(c => c.Norwegian is not null))
+                                @if (nb)
                                 {
-                                    <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" aria-pressed="@(nb ? "true" : "false")" @onclick="() => ToggleNorwegian(group.Key)" data-testid="tps-scenario-language-toggle">@(nb ? "Show original" : "Show Norwegian")</button>
+                                    <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" @onclick="() => ShowLanguage(group.Key, null)" data-testid="tps-scenario-language-toggle">Show original</button>
+                                }
+                                else if (g.Cases.Any(c => c.TranslatedLanguages.Any()))
+                                {
+                                    @foreach (var available in ScenarioLanguages(g).Where(l => g.Cases.Any(c => c.Translation(l) is not null)))
+                                    {
+                                        var show = available;
+                                        <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" @onclick="() => ShowLanguage(group.Key, show)" data-testid="tps-scenario-language-toggle" data-language="@show">Show @TranslationLanguages.Name(show)</button>
+                                    }
+                                }
+                                @if (CanWrite && ScenarioLanguages(g).Count > 1)
+                                {
+                                        <select class="tps-input tps-input-sm" aria-label="Language to show and translate into" @onchange="e => ShowLanguage(group.Key, string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString())" data-testid="tps-scenario-target">
+                                            <option value="" selected="@(lang is null)">Original</option>
+                                            @foreach (var l in ScenarioLanguages(g)) { <option value="@l" selected="@(l == lang)">@TranslationLanguages.Name(l)</option> }
+                                        </select>
                                 }
                                 @if (CanWrite) { <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@_busy" @onclick="() => StartAddUnder(group)" data-testid="tps-scenario-add">+ Add test case</button> }
                             </div>
@@ -2111,9 +2148,15 @@
                             {
                                 <p class="tps-muted tps-small" data-testid="tps-scenario-no-primary">The scenario's own case is no longer in this plan; the cases written under "@g.Title" stay here.</p>
                             }
+                            @if (_translationHelp == g.Key)
+                            {
+                                <p class="tps-note tps-note-warn" data-testid="tps-translate-help" role="status">No translation was made. Set up Azure AI Translator or start the local LibreTranslate server in
+                                    <a href="admin/system-settings?section=translation" data-testid="tps-translate-settings">System Settings → Translation</a>,
+                                    or write the @targetName text in the fields below — it is saved like any other change.</p>
+                            }
                             @if (_overwriteOffer == g.Key && CanWrite)
                             {
-                                <p class="tps-note tps-note-info" data-testid="tps-translate-kept">Norwegian text written by a person was kept. <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@_busy" @onclick="() => TranslateScenarioAsync(group, true)" data-testid="tps-translate-overwrite">Replace it with a new machine translation</button></p>
+                                <p class="tps-note tps-note-info" data-testid="tps-translate-kept">@targetName text written by a person was kept. <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@_busy" @onclick="() => TranslateScenarioAsync(group, true)" data-testid="tps-translate-overwrite">Replace it with a new machine translation</button></p>
                             }
                             @if (_addUnder == g.Key && CanWrite)
                             {
@@ -2170,42 +2213,43 @@
             <div><dt>Review</dt><dd data-testid="tps-case-review-state"><span class="tps-tone tps-tone-@review.Tone">@review.Text</span></dd></div>
             <div><dt>Testability</dt><dd data-testid="tps-case-testability-state">@(c.Testability.Ready ? "Ready" : "Needs action")</dd></div>
             <div><dt>Export</dt><dd data-testid="tps-case-export-state">@C.ExportState(c)</dd></div>
-            @if (d.ProjectKey is not null) { <div><dt>Norwegian</dt><dd data-testid="tps-case-language-state"><span class="tps-tone tps-tone-@C.TranslationTone(c)">@C.TranslationLabel(c)</span></dd></div> }
+            @if (d.ProjectKey is not null) { <div><dt>Translations</dt><dd data-testid="tps-case-language-state">@C.Languages(c)</dd></div> }
             @if (c.DuplicatedFrom is { } from) { <div><dt>Copied from</dt><dd data-testid="tps-case-copied-from">@(d.Cases.FirstOrDefault(x => x.Source.ScenarioId == from)?.EffectiveTitle ?? from)</dd></div> }
         </dl>
         <p class="tps-muted tps-small">Approving records a review of the test design. It does not mean the requirement is right, the code works or the test was run.</p>
     };
 
-    private RenderFragment NorwegianEditor(TestPlanDraft d, TestCaseDraft c, string sid) => __builder =>
+    private RenderFragment TranslationEditor(TestPlanDraft d, TestCaseDraft c, string sid, string language) => __builder =>
     {
-        var n = C.Editable(c);
+        var n = C.Editable(c, language);
         var steps = c.EffectiveSteps;
         var results = c.EffectiveStepExpected;
         var write = CanWrite;
-        <fieldset class="tps-fieldset tps-nb" disabled="@(_busy || !write)" data-testid="@($"tps-nb-{sid}")">
-            <legend>Norwegian text <span class="tps-tone tps-tone-@C.TranslationTone(c)" data-testid="tps-nb-state">@C.TranslationLabel(c)</span></legend>
-            <p class="tps-muted tps-small">The original below stays as it is. Requirement ids, field names, codes and paths are kept exactly as in the original.</p>
-            <label class="tps-field"><span class="tps-k">Tittel</span>
-                <input class="tps-input" value="@n.Title" @onchange="e => Change(P.WithCase(d, sid, x => C.WithNorwegian(x, t => t with { Title = e.Value?.ToString() })))" data-testid="@($"tps-nb-title-{sid}")" />
-                <span class="tps-orig">Original: @c.EffectiveTitle</span></label>
-            <label class="tps-field"><span class="tps-k">Forutsetninger</span>
-                <textarea class="tps-input" rows="2" value="@n.Preconditions" @onchange="e => Change(P.WithCase(d, sid, x => C.WithNorwegian(x, t => t with { Preconditions = e.Value?.ToString() })))" data-testid="@($"tps-nb-preconditions-{sid}")"></textarea>
-                <span class="tps-orig">Original: @(c.EffectivePreconditions ?? "—")</span></label>
+        var name = TranslationLanguages.Name(language);
+        <fieldset class="tps-fieldset tps-nb" disabled="@(_busy || !write)" data-testid="@($"tps-tr-{sid}")" data-language="@language" lang="@language">
+            <legend>@name text <span class="tps-tone tps-tone-@C.TranslationTone(c, language)" data-testid="tps-tr-state">@C.TranslationLabel(c, language)</span></legend>
+            <p class="tps-muted tps-small" lang="en">The original below stays as it is. Requirement ids, field names, codes and paths are kept exactly as in the original.</p>
+            <label class="tps-field"><span class="tps-k" lang="en">Title (@name)</span>
+                <input class="tps-input" value="@n.Title" @onchange="e => Change(P.WithCase(d, sid, x => C.WithTranslation(x, language, t => t with { Title = e.Value?.ToString() })))" data-testid="@($"tps-tr-title-{sid}")" />
+                <span class="tps-orig" lang="en">Original: @c.EffectiveTitle</span></label>
+            <label class="tps-field"><span class="tps-k" lang="en">Preconditions (@name)</span>
+                <textarea class="tps-input" rows="2" value="@n.Preconditions" @onchange="e => Change(P.WithCase(d, sid, x => C.WithTranslation(x, language, t => t with { Preconditions = e.Value?.ToString() })))" data-testid="@($"tps-tr-preconditions-{sid}")"></textarea>
+                <span class="tps-orig" lang="en">Original: @(c.EffectivePreconditions ?? "—")</span></label>
             <ol class="tps-step-list">
                 @for (var i = 0; i < steps.Count; i++)
                 {
                     var index = i;
-                    <li class="tps-step-row" data-testid="@($"tps-nb-step-row-{sid}-{index}")">
-                        <input class="tps-input" value="@n.Steps[index]" aria-label="@($"Steg {index + 1}, handling")" @onchange="e => Change(P.WithCase(d, sid, x => C.WithNorwegian(x, t => C.SetStep(t, index, e.Value?.ToString() ?? string.Empty, null))))" data-testid="@($"tps-nb-step-{sid}-{index}")" />
-                        <input class="tps-input" value="@n.StepExpected[index]" aria-label="@($"Steg {index + 1}, forventet resultat")" @onchange="e => Change(P.WithCase(d, sid, x => C.WithNorwegian(x, t => C.SetStep(t, index, null, e.Value?.ToString() ?? string.Empty))))" data-testid="@($"tps-nb-step-expected-{sid}-{index}")" />
-                        <span class="tps-orig">Original: @steps[index] — @(results[index] ?? "Needs clarification")</span>
+                    <li class="tps-step-row" data-testid="@($"tps-tr-step-row-{sid}-{index}")">
+                        <input class="tps-input" value="@n.Steps[index]" aria-label="@($"Step {index + 1} action ({name})")" @onchange="e => Change(P.WithCase(d, sid, x => C.WithTranslation(x, language, t => C.SetStep(t, index, e.Value?.ToString() ?? string.Empty, null))))" data-testid="@($"tps-tr-step-{sid}-{index}")" />
+                        <input class="tps-input" value="@n.StepExpected[index]" aria-label="@($"Step {index + 1} expected result ({name})")" @onchange="e => Change(P.WithCase(d, sid, x => C.WithTranslation(x, language, t => C.SetStep(t, index, null, e.Value?.ToString() ?? string.Empty))))" data-testid="@($"tps-tr-step-expected-{sid}-{index}")" />
+                        <span class="tps-orig" lang="en">Original: @steps[index] — @(results[index] ?? "Needs clarification")</span>
                     </li>
                 }
             </ol>
-            <label class="tps-field"><span class="tps-k">Forventet resultat</span>
-                <textarea class="tps-input" rows="2" value="@n.ExpectedResult" @onchange="e => Change(P.WithCase(d, sid, x => C.WithNorwegian(x, t => t with { ExpectedResult = e.Value?.ToString() })))" data-testid="@($"tps-nb-expected-{sid}")"></textarea>
-                <span class="tps-orig">Original: @(c.EffectiveExpected ?? "Needs clarification")</span></label>
-            @if (steps.Count > 0 && !ScenarioPlanning.Complete(c with { Norwegian = n })) { <p class="tps-muted tps-small" data-testid="tps-nb-incomplete">Until every step has Norwegian text (and its result), a Norwegian export uses the original language for this case.</p> }
+            <label class="tps-field"><span class="tps-k" lang="en">Expected result (@name)</span>
+                <textarea class="tps-input" rows="2" value="@n.ExpectedResult" @onchange="e => Change(P.WithCase(d, sid, x => C.WithTranslation(x, language, t => t with { ExpectedResult = e.Value?.ToString() })))" data-testid="@($"tps-tr-expected-{sid}")"></textarea>
+                <span class="tps-orig" lang="en">Original: @(c.EffectiveExpected ?? "Needs clarification")</span></label>
+            @if (steps.Count > 0 && !ScenarioPlanning.Complete(c.WithTranslation(language, n), language)) { <p class="tps-muted tps-small" data-testid="tps-tr-incomplete" lang="en">Until every step has @name text (and its result), an export in @name uses the original language for this case.</p> }
         </fieldset>
     };
 

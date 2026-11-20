@@ -558,6 +558,10 @@ else if (_settings is not null)
                 <GitSourcesSettingsCard />
             }
 
+            @if (_activeSection == "translation")
+            {
+                <BirkNext.Web.Components.Admin.TranslationSettingsCard />
+            }
             @if (_activeSection == "ai")
             {
                 <div class="settings-card settings-card-full-width">
