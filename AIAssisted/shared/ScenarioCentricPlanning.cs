@@ -28,6 +28,14 @@ public sealed record TestCaseTranslation
     public List<string> Steps { get; init; } = [];
     public List<string?> StepExpected { get; init; } = [];
     public string? ExpectedResult { get; init; }
+    /// <summary>The scenario's starting situation, trigger and expected business outcome (Given/When/Then) as the source states them.</summary>
+    public string? Given { get; init; }
+    public string? When { get; init; }
+    public string? Then { get; init; }
+    public string? ObservationMethod { get; init; }
+    public string? Environment { get; init; }
+    public string? Roles { get; init; }
+    public string? Dependencies { get; init; }
     /// <summary>SHA-256 of the original text (title, purpose, preconditions, steps, step results, expected result) this translation was made from.</summary>
     public string SourceFingerprint { get; init; } = "";
     public TranslationOrigin Origin { get; init; }
@@ -36,6 +44,29 @@ public sealed record TestCaseTranslation
     public string By { get; init; } = "";
     public DateTimeOffset At { get; init; }
 }
+
+/// <summary>A user story's text in another language (title, description, why this priority, Independent Test), kept beside the original.</summary>
+public sealed record StoryTranslation
+{
+    public string StoryKey { get; init; } = "";
+    public string Language { get; init; } = ScenarioPlanning.Norwegian;
+    public string? Title { get; init; }
+    public string? Description { get; init; }
+    public string? WhyThisPriority { get; init; }
+    public string? IndependentTest { get; init; }
+    public string SourceFingerprint { get; init; } = "";
+    public TranslationOrigin Origin { get; init; }
+    public string? Provider { get; init; }
+    public string By { get; init; } = "";
+    public DateTimeOffset At { get; init; }
+}
+
+/// <summary>A requirement's wording in another language, for display beside links and suggestions only (the specification is never changed).
+/// Bound to the wording it translates by <see cref="SourceSha256"/>.</summary>
+public sealed record RequirementTextTranslation(string RequirementId, string SpecificationPath, string Language, string Text, string SourceSha256, string? Provider, DateTimeOffset At);
+
+/// <summary>Translate every scenario of the plan (and their user stories and linked requirement wording) into <see cref="Target"/>.</summary>
+public sealed record TranslatePlanRequest(int BaseRevision, bool Overwrite = false, string? Target = null);
 
 /// <summary>Whether a case's translated text matches its current original.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -142,7 +173,16 @@ public static partial class ScenarioPlanning
     public static string SourceFingerprint(TestCaseDraft c) => Sha(JsonSerializer.Serialize(new
     {
         c.EffectiveTitle, c.EffectivePurpose, c.EffectivePreconditions, Steps = c.EffectiveSteps, Expected = c.EffectiveStepExpected, c.EffectiveExpected,
+        Scenario = ScenarioFields(c), c.EffectiveObservation, c.EffectiveEnvironment, c.Edits.Roles, c.Edits.Dependencies,
     }, FingerprintJson));
+
+    /// <summary>The scenario's Given / When / Then as its evidence states them (template values), for display and translation.</summary>
+    public static (string? Given, string? When, string? Then) ScenarioFields(TestCaseDraft c) =>
+        (c.Generated.Template.FirstOrDefault(t => t.Key == "given")?.Value, c.Generated.Template.FirstOrDefault(t => t.Key == "when")?.Value,
+         c.Generated.Template.FirstOrDefault(t => t.Key == "then")?.Value);
+
+    /// <summary>Fields after the steps: expected result, then scenario Given/When/Then, how to verify, environment, roles, dependencies.</summary>
+    public const int FieldsAfterSteps = 8;
 
     public static TranslationState StateOf(TestCaseDraft c, string language = Norwegian) =>
         c.Translation(language) is not { } n ? TranslationState.None : n.SourceFingerprint == SourceFingerprint(c) ? TranslationState.Current : TranslationState.SourceChanged;
@@ -157,19 +197,26 @@ public static partial class ScenarioPlanning
     }
 
     /// <summary>The text fields of a case to translate, in a fixed order (title, purpose, preconditions, each step, each step result, expected).</summary>
-    public static List<string?> TranslatableFields(TestCaseDraft c) =>
-        [c.EffectiveTitle, c.EffectivePurpose, c.EffectivePreconditions, .. c.EffectiveSteps, .. c.EffectiveStepExpected, c.EffectiveExpected];
+    public static List<string?> TranslatableFields(TestCaseDraft c)
+    {
+        var (given, when, then) = ScenarioFields(c);
+        return [c.EffectiveTitle, c.EffectivePurpose, c.EffectivePreconditions, .. c.EffectiveSteps, .. c.EffectiveStepExpected, c.EffectiveExpected,
+            given, when, then, c.EffectiveObservation, c.EffectiveEnvironment, c.Edits.Roles, c.Edits.Dependencies];
+    }
 
     /// <summary>Builds the translation from the translated fields (same order as <see cref="TranslatableFields"/>); null if the count does not match.</summary>
     public static TestCaseTranslation? FromFields(TestCaseDraft c, IReadOnlyList<string?> fields, TranslationOrigin origin, string? provider, string by, DateTimeOffset at,
         string language = Norwegian)
     {
         var steps = c.EffectiveSteps.Count;
-        if (fields.Count != 4 + 2 * steps) return null;
+        if (fields.Count != 3 + 2 * steps + FieldsAfterSteps) return null;
+        var after = 3 + 2 * steps;
         return new TestCaseTranslation
         {
             Title = fields[0], Purpose = fields[1], Preconditions = fields[2], Steps = [.. fields.Skip(3).Take(steps).Select(s => s ?? "")],
-            StepExpected = [.. fields.Skip(3 + steps).Take(steps)], ExpectedResult = fields[3 + 2 * steps],
+            StepExpected = [.. fields.Skip(3 + steps).Take(steps)], ExpectedResult = fields[after],
+            Given = fields[after + 1], When = fields[after + 2], Then = fields[after + 3], ObservationMethod = fields[after + 4], Environment = fields[after + 5],
+            Roles = fields[after + 6], Dependencies = fields[after + 7],
             SourceFingerprint = SourceFingerprint(c), Origin = origin, Provider = provider, By = by, At = at, Language = language,
         };
     }
@@ -297,6 +344,12 @@ public static partial class ScenarioPlanning
     public static List<string> StructuralReferences(TestCaseDraft c)
     {
         var refs = new List<string>();
+        // The user story the scenario is written under (from the document structure), by its number: "US6", "User Story 6".
+        if (c.Generated.Story?.StoryId is { } storyId)
+        {
+            refs.Add(storyId);
+            if (Regex.Match(storyId, @"^US(\d+)$", RegexOptions.IgnoreCase) is { Success: true } n) refs.Add($"User Story {n.Groups[1].Value}");
+        }
         foreach (var e in c.Generated.Evidence.Where(e => e.Kind == "specification"))
         {
             var anchor = e.Reference.Contains('#') ? e.Reference[(e.Reference.LastIndexOf('#') + 1)..] : null;

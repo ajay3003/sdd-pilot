@@ -131,6 +131,10 @@ public sealed record QaTestCandidate
     public string? Given { get; init; }
     public string? When { get; init; }
     public string? Then { get; init; }
+    /// <summary>The user story the scenario is written under (<see cref="CoverageUserStory.Key"/>), from the document structure; null = none.</summary>
+    public string? StoryKey { get; init; }
+    /// <summary>The scenario's number within that story (1-based); null without a story.</summary>
+    public int? NumberInStory { get; init; }
     public TestLevel IntendedLevel { get; init; } = TestLevel.Unknown;
     public string IntendedLevelBasis { get; init; } = "";
     public TestExecutionState Execution { get; init; } = TestExecutionState.NotVerified;
@@ -381,6 +385,42 @@ public sealed record CoverageWorkspaceEvidence
     public List<CoverageRequirement> Requirements { get; init; } = [];
     public List<QaTestCandidate> AcceptanceScenarios { get; init; } = [];
     public List<CoverageExecution> Executions { get; init; } = [];
+    /// <summary>The user stories of the selected specification (story headings only; in-text references are not stories). Empty for older
+    /// clients and for specifications without user stories.</summary>
+    public List<CoverageUserStory> Stories { get; init; } = [];
+}
+
+/// <summary>A requirement a task of the story names in tasks.md: the task id, its line and text (evidence for a structural story → requirement link).</summary>
+public sealed record StoryTaskRequirement(string RequirementId, string? TaskId, string TaskText, string TasksPath, int? Line);
+
+/// <summary>
+/// A user story of a specification feature as the document states it. <see cref="Key"/> = specification file + the story's own number
+/// ("SkoleService/specs/001-skoleservice/spec.md#US6"), or its position when unnumbered ("…#story-2") — never the title, and the same number in
+/// another feature's file is another story. Text is the source's, unchanged.
+/// </summary>
+public sealed record CoverageUserStory
+{
+    public string Key { get; init; } = "";
+    /// <summary>The number the document gives ("US6"); null when the story is unnumbered.</summary>
+    public string? StoryId { get; init; }
+    public int Ordinal { get; init; }
+    public string Title { get; init; } = "";
+    public string? Priority { get; init; }
+    public string? Description { get; init; }
+    public string? WhyThisPriority { get; init; }
+    /// <summary>The story's "Independent Test" text: test-design evidence (setup, what to observe), never turned into steps by itself.</summary>
+    public string? IndependentTest { get; init; }
+    public string? SpecificationPath { get; init; }
+    public string? Module { get; init; }
+    public int? LineStart { get; init; }
+    public int? LineEnd { get; init; }
+    public int Scenarios { get; init; }
+    /// <summary>Requirement ids the story's own text names (level A evidence).</summary>
+    public List<string> NamedRequirements { get; init; } = [];
+    /// <summary>Requirement ids named by tasks tagged with this story in the same feature's tasks.md (level B, structural), with the task as evidence.</summary>
+    public List<StoryTaskRequirement> TaskRequirements { get; init; } = [];
+
+    public static string KeyOf(string? specificationPath, string storyKey) => $"{(specificationPath ?? "specification").Replace('\\', '/')}#{storyKey}";
 }
 
 public sealed record CoverageRequirement(string Id, string Text, string? Priority);

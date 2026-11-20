@@ -70,6 +70,42 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
     }
 
     /// <summary>A plan with acceptance scenario 42 (child past compulsory school age) and scenario 7 (valid report) prepared from discovery.</summary>
+    private static CoverageUserStory Story(string id, string title) => new()
+    {
+        Key = CoverageUserStory.KeyOf(Spec, id), StoryId = id, Ordinal = int.Parse(id[2..]), Title = $"User Story {id[2..]} - {title} (Priority: P2)", Priority = "P2",
+        Description = $"About {title}.", IndependentTest = $"Test {title} on its own.", SpecificationPath = Spec,
+    };
+
+    private Task<ScenarioDiscoveryResult> DiscoverAsync(string project, string? storyOf42 = null) =>
+        new TestScenarioDiscoveryService(new IqrSourceStore(null!), [new SpecificationScenarioProvider()], _discoveries).DiscoverAsync(new ScenarioDiscoveryRequest
+        {
+            ProjectKey = project, ProjectName = "SkoleService",
+            Workspace = new CoverageWorkspaceEvidence
+            {
+                SpecificationAvailable = true, SpecificationArtifacts = [new("spec-1", Spec, "SkoleService", "fp")],
+                Requirements = [new("FR-027", "A child MUST be counted as expected only when of compulsory school age; children past compulsory school age are not expected.", null),
+                                new("FR-001", "The service MUST accept a valid report.", null)],
+                Stories = storyOf42 is null ? [] : [Story(storyOf42, storyOf42 == "US6" ? "Expected population" : "Coverage breakdown"), Story("US1", "Accept a valid report")],
+                AcceptanceScenarios =
+                [
+                    new QaTestCandidate { Id = "scenario-42", Title = "Child past compulsory school age", Given = "a child past compulsory school age", When = "the period locks",
+                        Then = "the child is not expected, even with an upper secondary education relationship", StoryKey = storyOf42 is null ? null : CoverageUserStory.KeyOf(Spec, storyOf42), NumberInStory = storyOf42 is null ? null : 3 },
+                    new QaTestCandidate { Id = "scenario-7", Title = "Valid report", Given = "a valid report", When = "the report is submitted", Then = "the report is accepted", RequirementIds = ["FR-001"],
+                        StoryKey = storyOf42 is null ? null : CoverageUserStory.KeyOf(Spec, "US1"), NumberInStory = storyOf42 is null ? null : 1 },
+                ],
+            },
+        }, default);
+
+    private async Task<(TestPlanSuggestionService Service, TestPlanDraft Plan, string S42, string S7)> PlanWithStoriesAsync(AppDbContext db, string project = "import:p1")
+    {
+        var discovery = await DiscoverAsync(project, "US6");
+        var service = Service(db);
+        var scenarios = discovery.Candidates.Where(c => c.CanonicalKey.StartsWith("scenario:", StringComparison.Ordinal)).ToList();
+        var plan = await service.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = project, ProjectName = "SkoleService", DiscoveryId = discovery.DiscoveryId,
+            CandidateIds = [.. scenarios.Select(c => c.CandidateId)] }, "tester", default);
+        return (service, plan, scenarios.Single(c => c.Title.Contains("past")).CandidateId, scenarios.Single(c => c.Title == "Valid report").CandidateId);
+    }
+
     private async Task<(TestPlanSuggestionService Service, TestPlanDraft Plan, string S42, string S7)> PlanAsync(AppDbContext db, string project = "import:p1")
     {
         var discovery = await new TestScenarioDiscoveryService(new IqrSourceStore(null!), [new SpecificationScenarioProvider()], _discoveries).DiscoverAsync(new ScenarioDiscoveryRequest
@@ -377,6 +413,90 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
         original.Cases.Should().OnlyContain(c => c.Language == AdoExportCase.OriginalLanguage);
         nb.Cases.Where(c => c.ScenarioKey != s42).Should().OnlyContain(c => c.Language == AdoExportCase.OriginalLanguage && c.Issues.Any(i => i.Message.Contains("original language")), "an untranslated case says so");
         nb.Boundary.Should().Contain("Downloading is not importing");
+    }
+
+    // ── User stories ────────────────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_prepared_case_keeps_its_user_story_and_a_move_to_another_story_is_flagged_and_recorded_never_silent()
+    {
+        await using var db = Context();
+        var (service, plan, s42, s7) = await PlanWithStoriesAsync(db);
+        var c = plan.Cases.Single(x => x.Source.ScenarioId == s42);
+        c.Generated.Story!.StoryId.Should().Be("US6");
+        c.Generated.NumberInStory.Should().Be(3);
+        c.Generated.Story.IndependentTest.Should().Be("Test Expected population on its own.");
+        c.RequirementLinks.Should().BeEmpty("nothing is inherited from the story");
+
+        await DiscoverAsync("import:p1", "US7"); // a newer source: the same scenario text, now under User Story 7
+        var flagged = await Service(Context()).DraftAsync(plan.Id, default);
+        flagged.Cases.Single(x => x.Source.ScenarioId == s42).SourceChanged.Should().BeTrue("a move to another story asks for review");
+        flagged.Cases.Single(x => x.Source.ScenarioId == s42).Generated.Story!.StoryId.Should().Be("US6", "nothing is rebound until the tester updates");
+
+        var refreshed = await service.RefreshAsync(plan.Id, flagged.Revision, "anna", default);
+        var moved = refreshed.Cases.Single(x => x.Source.ScenarioId == s42);
+        moved.Generated.Story!.StoryId.Should().Be("US7");
+        moved.EditHistory.Last().Fields.Single().Should().Be("User story: US6 → US7 (User Story 7 - Coverage breakdown (Priority: P2))");
+        refreshed.Cases.Single(x => x.Source.ScenarioId == s7).EditHistory.Should().BeEmpty("an unchanged story records nothing");
+    }
+
+    [Fact]
+    public async Task A_requirement_confirmed_for_a_story_is_saved_with_who_and_never_counted_as_coverage()
+    {
+        await using var db = Context();
+        var (service, plan, _, _) = await PlanWithStoriesAsync(db);
+        var storyKey = CoverageUserStory.KeyOf(Spec, "US6");
+        var request = Human(plan) with
+        {
+            StoryRequirementLinks = [new StoryRequirementLink(storyKey, new ManualRequirementLink { RequirementId = "FR-027", SpecificationPath = Spec, SuggestionLevel = RequirementSuggestionLevel.Structural, SuggestionReason = "tasks.md: T099" })],
+            StoryRejectedSuggestions = [new StoryRequirementRejection(storyKey, new RejectedRequirementSuggestion { RequirementId = "FR-001", SpecificationPath = Spec, RejectedBy = "spoofed" })],
+        };
+        plan = await service.SaveAsync(plan.Id, request, "inger", default);
+
+        var reloaded = await Service(Context()).DraftAsync(plan.Id, default);
+        reloaded.StoryRequirementLinks!.Single().Should().Match<StoryRequirementLink>(l => l.StoryKey == storyKey && l.Link.RequirementId == "FR-027" && l.Link.LinkedBy == "inger"
+            && l.Link.SuggestionLevel == RequirementSuggestionLevel.Structural);
+        reloaded.StoryRejectedSuggestions!.Single().Rejection.RejectedBy.Should().Be("inger");
+        reloaded.Cases.Should().OnlyContain(c => c.RequirementLinks.Count == 0, "a story link is never copied to its cases");
+        var trace = await Service(Context()).PreparedCaseTraceAsync(plan.ProjectKey!, [Spec], ["FR-027", "FR-001"], default);
+        trace.Requirements.Should().NotContain(r => r.RequirementId == "FR-027", "an association with a story is not test design of any case");
+
+        var unknown = () => service.SaveAsync(plan.Id, Human(reloaded) with { StoryRequirementLinks = [new StoryRequirementLink(storyKey, new ManualRequirementLink { RequirementId = "FR-999", SpecificationPath = Spec })] }, "inger", default);
+        (await unknown.Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("requirement-unknown");
+    }
+
+    [Fact]
+    public async Task Translate_all_translates_every_scenario_its_story_and_the_linked_requirement_wording_in_one_revision()
+    {
+        await using var db = Context();
+        var (service, plan, s42, s7) = await PlanWithStoriesAsync(db);
+        plan = await service.SaveAsync(plan.Id, Human(plan, (c, part) => c.Source.ScenarioId == s42
+            ? part with { RequirementLinks = [new ManualRequirementLink { RequirementId = "FR-027", SpecificationPath = Spec }] } : part), "inger", default);
+        var revisionsBefore = (await service.RevisionsAsync(plan.Id, default)).Count;
+
+        var result = await service.TranslatePlanAsync(plan.Id, new TranslatePlanRequest(plan.Revision), new FakeTranslator(), Settings, "anna", default);
+
+        result.Translated.Should().HaveCount(2);
+        var after = result.Draft!;
+        after.Cases.Should().OnlyContain(c => c.Translation("nb") != null);
+        var c42 = after.Cases.Single(c => c.Source.ScenarioId == s42).Translation("nb")!;
+        c42.Given.Should().Be("NB: a child past compulsory school age", "the scenario's Given/When/Then are translated");
+        c42.When.Should().Be("NB: the period locks");
+        after.StoryTranslations!.Select(t => t.StoryKey).Should().BeEquivalentTo([CoverageUserStory.KeyOf(Spec, "US6"), CoverageUserStory.KeyOf(Spec, "US1")]);
+        after.StoryTranslations!.Single(t => t.StoryKey.EndsWith("#US6", StringComparison.Ordinal)).IndependentTest.Should().Be("NB: Test Expected population on its own.");
+        after.RequirementTranslations!.Should().Contain(t => t.RequirementId == "FR-027" && t.Text.StartsWith("NB: ", StringComparison.Ordinal), "the linked requirement's wording is translated for display");
+        (await service.RevisionsAsync(plan.Id, default)).Should().HaveCount(revisionsBefore + 1, "Translate all is one saved revision");
+        result.Message.Should().Contain("in 2 scenarios").And.Contain("Saved");
+
+        // A person's story text is kept the next time.
+        var storyKey = CoverageUserStory.KeyOf(Spec, "US6");
+        var edited = await service.SaveAsync(after.Id, Human(after) with
+        {
+            StoryTranslations = [.. after.StoryTranslations!.Select(t => t.StoryKey == storyKey ? t with { Title = "Brukerhistorie 6 – Forventet populasjon" } : t)],
+        }, "inger", default);
+        edited.StoryTranslations!.Single(t => t.StoryKey == storyKey).Origin.Should().Be(TranslationOrigin.MachineEdited);
+        var again = await service.TranslatePlanAsync(edited.Id, new TranslatePlanRequest(edited.Revision), new FakeTranslator(), Settings, "anna", default);
+        (again.Draft ?? edited).StoryTranslations!.Single(t => t.StoryKey == storyKey).Title.Should().Be("Brukerhistorie 6 – Forventet populasjon");
     }
 
     private sealed class NoValues : ITestDataProvider

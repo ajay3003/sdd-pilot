@@ -171,6 +171,9 @@ public static class TestPlanSuggestionsPresentation
             Translations = draft.ProjectKey is null ? null : c.TranslatedLanguages.ToDictionary(l => l, l => c.Translation(l)!, StringComparer.OrdinalIgnoreCase),
             RejectedSuggestions = draft.ProjectKey is null ? null : [.. c.RejectedSuggestions ?? []],
         })],
+        StoryRequirementLinks = draft.ProjectKey is null ? null : [.. draft.StoryRequirementLinks ?? []],
+        StoryRejectedSuggestions = draft.ProjectKey is null ? null : [.. draft.StoryRejectedSuggestions ?? []],
+        StoryTranslations = draft.ProjectKey is null ? null : [.. draft.StoryTranslations ?? []],
     };
 
     public static TestPlanDraft WithCase(TestPlanDraft draft, string scenarioId, Func<TestCaseDraft, TestCaseDraft> change) =>

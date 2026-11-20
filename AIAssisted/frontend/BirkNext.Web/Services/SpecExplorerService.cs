@@ -66,9 +66,9 @@ public static class SpecExplorerService
         @"^Scenario\s*(?:#|\d+|[:\-–])",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    // Numbered inline BDD item: "1. **Given** ..." or "1. Given ..."
+    // Numbered inline BDD item: "1. **Given** ..." or "1. Given ..." (Norwegian: "1. **Gitt** ...")
     private static readonly Regex NumberedBddStartRe = new(
-        @"^\d+\.\s+\*{0,2}Given\*{0,2}\s+",
+        @"^\d+\.\s+\*{0,2}(?:Given|Gitt)\*{0,2}\s+",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     // BDD step keywords on their own line — supports English and Norwegian
@@ -152,6 +152,7 @@ public static class SpecExplorerService
 
         // ── Traditional BDD state ────────────────────────────────────────────
         string? bddTitle = null;
+        bool bddFromHeading = false; // the open scenario was started by a "Scenario N:" heading
         var bddGiven = new List<string>();
         var bddWhen = new List<string>();
         var bddThen = new List<string>();
@@ -294,6 +295,9 @@ public static class SpecExplorerService
 
         void FlushBddScenario()
         {
+            // A "Scenario N:" heading opens a scenario; without step lines under it, it is a section title, never an empty scenario.
+            if (bddFromHeading && bddGiven.Count == 0 && bddWhen.Count == 0 && bddThen.Count == 0) { bddTitle = null; bddFromHeading = false; return; }
+            bddFromHeading = false;
             if (bddTitle == null && bddGiven.Count == 0 && bddWhen.Count == 0 && bddThen.Count == 0)
                 return;
             var par = ActiveParent();
@@ -391,6 +395,14 @@ public static class SpecExplorerService
                 if (headingStack.Count == 0) roots.Add(node);
                 else headingStack[^1].Node.Children.Add(node);
                 headingStack.Add((level, node, semantics));
+                if (ScenarioHeadingRe.IsMatch(title))
+                {
+                    bddTitle = ExtractScenarioTitle(title);
+                    bddFromHeading = true;
+                    bddStartLine = tok.LineIndex;
+                    bddEndLine = tok.LineIndex;
+                    bddPhase = 0;
+                }
                 continue;
             }
 
@@ -873,14 +885,20 @@ public static class SpecExplorerService
     // be followed by a colon. Everything after Then (including "And …"/"But …" clauses and continuation lines) stays in Then; a step that is
     // absent in the source stays null — it is never manufactured.
 
-    private static readonly Regex BoldBddKeyword = new(@"\*\*\s*(Given|When|Then)\s*\*\*\s*:?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex PlainBddKeyword = new(@"\b(Given|When|Then)\b\s*:?", RegexOptions.Compiled);
+    // Norwegian keywords count as the same steps: Gitt = Given, Når/Naar = When, Så/Saa = Then (M2LB Frontend specifications).
+    private static readonly Regex BoldBddKeyword = new(@"\*\*\s*(Given|When|Then|Gitt|Når|Naar|Så|Saa)\s*\*\*\s*:?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex PlainBddKeyword = new(@"\b(Given|When|Then|Gitt|Når|Så)\b\s*:?", RegexOptions.Compiled);
+
+    private static string BddStep(string keyword) => keyword.ToLowerInvariant() switch
+    {
+        "gitt" => "given", "når" or "naar" => "when", "så" or "saa" => "then", var k => k,
+    };
 
     internal static (string? Given, string? When, string? Then) SplitInlineBdd(string text)
     {
         var bold = BoldBddKeyword.Matches(text);
         var marks = (bold.Count > 0 ? bold : PlainBddKeyword.Matches(text))
-            .Select(m => (Key: m.Groups[1].Value.ToLowerInvariant(), m.Index, End: m.Index + m.Length)).ToList();
+            .Select(m => (Key: BddStep(m.Groups[1].Value), m.Index, End: m.Index + m.Length)).ToList();
         var given = marks.FirstOrDefault(m => m.Key == "given");
         var hasGiven = given.Key is not null;
         var when = marks.FirstOrDefault(m => m.Key == "when" && (!hasGiven || m.Index > given.Index));
@@ -1396,6 +1414,7 @@ public static class SpecExplorerService
         LinkUserStoriesToRequirements(userStories, requirements);
         LinkRequirementsToSuccessCriteria(requirements, successCriteria);
         LinkUserStoriesToAcceptanceScenarios(userStories, acceptanceScenarios);
+        LinkUserStoriesToAcceptanceScenariosStructurally(specTree, userStories, acceptanceScenarios);
         LinkRequirementsToAcceptanceScenarios(requirements, acceptanceScenarios);
         LinkClarifications(clarifications, userStories, requirements, successCriteria);
         LinkSecurityToRequirements(securityConsiderations, requirements);
@@ -1449,19 +1468,99 @@ public static class SpecExplorerService
         var userStories = new List<SemanticUserStory>();
         var allNodes = AllNodes(tree.Roots);
         var usNodes = allNodes.Where(n => n.NodeType == SpecNodeType.UserStory).ToList();
+        var ordinal = 0;
 
         foreach (var usNode in usNodes)
         {
+            // A real story heading ("### User Story 6 - …", "### Brukerhistorie 1 — …"); an in-text reference ("[US-A3]") or a "Scenario N:" heading is not.
+            var heading = usNode.HeadingLevel > 0 && !ScenarioHeadingRe.IsMatch(usNode.Title);
+            var parts = StoryParts(usNode.FullContent);
+            var authored = usNode.SpecItemId is { Length: > 0 } item ? NormalizeSpecItemId(item) : AuthoredUserStoryId(usNode.Title) ?? AuthoredStoryNumber(usNode.Title);
             var story = new SemanticUserStory
             {
                 Id = usNode.SpecItemId ?? AuthoredUserStoryId(usNode.Title) ?? GeneratedUserStoryPrefix + usNode.Id[..3],
                 Title = usNode.Title,
-                Description = usNode.FullContent,
+                Description = heading ? parts.Description ?? usNode.FullContent : usNode.FullContent,
+                Priority = heading ? StoryPriority(usNode.Title, usNode.FullContent) : null,
+                Why = heading ? parts.Why : null,
+                IndependentTest = heading ? parts.IndependentTest : null,
+                AuthoredId = authored,
+                IsStoryHeading = heading,
+                Ordinal = heading ? ++ordinal : 0,
+                LineStart = usNode.Provenance?.Sources.FirstOrDefault()?.StartLine,
+                LineEnd = AllNodes([usNode]).SelectMany(n => n.Provenance?.Sources ?? []).Select(x => (int?)x.EndLine).DefaultIfEmpty(null).Max(),
             };
             userStories.Add(story);
         }
 
         return userStories;
+    }
+
+    // Story fields Spec Kit writes as bold labels (English and Norwegian): "**Why this priority**:", "**Independent Test**:", "**Acceptance Scenarios**:".
+    private static readonly Regex StoryLabelRe = new(
+        @"\*\*\s*(Why this priority|Hvorfor denne prioriteten|Independent Test|Selvstendig test|Acceptance Scenarios|Acceptance Criteria|Akseptansekriterier|Akseptansescenarier)\s*\*\*\s*:?",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex StoryPriorityRe = new(@"\((?:Priority|Prioritet)\s*:\s*(P\d+)\s*\)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex StoryNumberRe = new(@"^\s*Brukerhistorie\s+(\d+)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /// <summary>"Brukerhistorie 3 — …" → "US3" (the same convention as "User Story 3"); null when the heading carries no number.</summary>
+    private static string? AuthoredStoryNumber(string title) => StoryNumberRe.Match(title) is { Success: true } m ? "US" + int.Parse(m.Groups[1].Value) : null;
+
+    /// <summary>The priority the heading (or its text) states: "(Priority: P1)", "(Prioritet: P2)"; null when none is written.</summary>
+    public static string? StoryPriority(string title, string? content) =>
+        StoryPriorityRe.Match(title) is { Success: true } t ? t.Groups[1].Value.ToUpperInvariant()
+        : content is not null && Regex.Match(content, @"\*{0,2}(?:Priority|Prioritet)\*{0,2}\s*:\s*\*{0,2}\s*(P\d+)", RegexOptions.IgnoreCase) is { Success: true } c ? c.Groups[1].Value.ToUpperInvariant()
+        : null;
+
+    /// <summary>A story's text split at its bold labels: the description before them, "Why this priority" and "Independent Test" (source text, unchanged).</summary>
+    public static (string? Description, string? Why, string? IndependentTest) StoryParts(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return (null, null, null);
+        var marks = StoryLabelRe.Matches(content).ToList();
+        string? Clean(string text) => Regex.Replace(text, @"\s+", " ").Trim() is { Length: > 0 } t ? t : null;
+        var description = Clean(marks.Count == 0 ? content : content[..marks[0].Index]);
+        string? Section(params string[] labels)
+        {
+            for (var i = 0; i < marks.Count; i++)
+                if (labels.Any(l => marks[i].Groups[1].Value.Equals(l, StringComparison.OrdinalIgnoreCase)))
+                    return Clean(content[(marks[i].Index + marks[i].Length)..(i + 1 < marks.Count ? marks[i + 1].Index : content.Length)]);
+            return null;
+        }
+        return (description, Section("Why this priority", "Hvorfor denne prioriteten"), Section("Independent Test", "Selvstendig test"));
+    }
+
+    /// <summary>
+    /// Each acceptance scenario's parent story from the document structure: the nearest story heading above it in the heading hierarchy. A scenario
+    /// under no story heading (directly under the feature, or under a "Scenario N:" heading) has none; an in-text story reference never becomes a
+    /// parent. Numbers the scenarios within their story and links both ways (in addition to the text-reference links).
+    /// </summary>
+    private static void LinkUserStoriesToAcceptanceScenariosStructurally(SpecTree tree, List<SemanticUserStory> userStories, List<SemanticAcceptanceScenario> scenarios)
+    {
+        var allNodes = AllNodes(tree.Roots);
+        var storyByNode = allNodes.Where(n => n.NodeType == SpecNodeType.UserStory).Zip(userStories).ToDictionary(x => x.First, x => x.Second);
+        var scenarioNodes = allNodes.Where(n => n.NodeType is SpecNodeType.BddScenario or SpecNodeType.AcceptanceTest).ToList();
+        if (scenarioNodes.Count != scenarios.Count) return; // defensive: the two walks must agree, otherwise nothing is linked
+        var counts = new Dictionary<SemanticUserStory, int>();
+        void Walk(SpecNode node, SemanticUserStory? story)
+        {
+            var here = storyByNode.TryGetValue(node, out var s) && s.IsStoryHeading ? s : story;
+            var index = scenarioNodes.IndexOf(node);
+            if (index >= 0)
+            {
+                var scenario = scenarios[index];
+                scenario.LineStart = node.Provenance?.Sources.FirstOrDefault()?.StartLine;
+                if (here is not null)
+                {
+                    counts[here] = counts.GetValueOrDefault(here) + 1;
+                    scenario.ParentStoryKey = here.StableKey;
+                    scenario.NumberInStory = counts[here];
+                    if (!here.LinkedAcceptanceScenarios.Contains(scenario)) here.LinkedAcceptanceScenarios.Add(scenario);
+                    if (!scenario.LinkedUserStories.Contains(here)) scenario.LinkedUserStories.Add(here);
+                }
+            }
+            foreach (var child in node.Children) Walk(child, here);
+        }
+        foreach (var root in tree.Roots) Walk(root, null);
     }
 
     private static List<SemanticRequirement> ExtractRequirements(SpecTree tree)

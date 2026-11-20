@@ -238,7 +238,8 @@ public sealed class ScenarioCentricPrepareTests : BunitContext
     {
         var translated = Scenario42();
         translated = translated.WithTranslation("nb", ScenarioPlanning.FromFields(translated, ["Barn over opplæringspliktig alder", "Bekreft at barnet ikke er forventet", "et barn over opplæringspliktig alder",
-            "Klargjør startsituasjonen", "Utfør eller utløs: perioden låses", "Startsituasjonen er på plass", "barnet er ikke forventet", "barnet er ikke forventet"], TranslationOrigin.Machine, "Azure AI Translator", "anna", DateTimeOffset.UtcNow));
+            "Klargjør startsituasjonen", "Utfør eller utløs: perioden låses", "Startsituasjonen er på plass", "barnet er ikke forventet", "barnet er ikke forventet",
+            "et barn over opplæringspliktig alder", "perioden låses", "barnet er ikke forventet", null, null, null, null], TranslationOrigin.Machine, "Azure AI Translator", "anna", DateTimeOffset.UtcNow));
         var cut = Render(Draft(Scenario42()), new TranslationAvailability(true, "Azure AI Translator", "Translation by Azure AI Translator."), Draft(translated) with { Revision = 5 }, "&case=tsc-42");
 
         cut.Find("[data-testid=tps-scenario-translate]").Click();

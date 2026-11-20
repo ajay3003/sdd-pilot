@@ -33,6 +33,76 @@ public static class ScenarioCentricPresentation
         return list;
     }
 
+    /// <summary>The overview's Given / When / Then with a key per field (given, when, then), for showing them in another language.</summary>
+    public static List<(string Label, string Key, string Value)> OverviewFields(TestCaseDraft primary) =>
+        [.. primary.Generated.Template.Where(t => !string.IsNullOrWhiteSpace(t.Value) && t.Key is "given" or "when" or "then")
+            .Select(t => (t.Key switch { "given" => "Starting situation", "when" => "Trigger or action", _ => "Expected business outcome" }, t.Key, t.Value!))];
+
+    public static string? TranslatedOverview(TestCaseTranslation t, string key) => key switch
+    {
+        "given" => t.Given, "when" => t.When, "then" => t.Then, _ => null,
+    } is { Length: > 0 } v ? v : null;
+
+    /// <summary>What Translate all will do before anything is sent: scenarios and cases it covers, and text a person wrote that it keeps.</summary>
+    public sealed record TranslateAllPreview(int Scenarios, int Cases, int KeptPersonText, int AlreadyCurrent, int Stories);
+
+    public static TranslateAllPreview PreviewTranslateAll(TestPlanDraft plan, string language, bool overwrite)
+    {
+        var cases = plan.Cases.Where(c => c.Review != TestCaseReviewState.Superseded).ToList();
+        var person = cases.Count(c => c.Translation(language) is { Origin: TranslationOrigin.Manual or TranslationOrigin.MachineEdited });
+        var current = cases.Count(c => ScenarioPlanning.StateOf(c, language) == TranslationState.Current && c.Translation(language)!.Origin == TranslationOrigin.Machine);
+        return new(cases.Select(c => c.ParentScenario ?? "").Distinct().Count(), cases.Count - (overwrite ? 0 : person), overwrite ? 0 : person, current,
+            cases.Select(c => c.Generated.Story?.Key).OfType<string>().Distinct().Count());
+    }
+
+    // ── Feature → User Story → Scenario ──────────────────────────────────────────────────────────────────────────────
+
+    public enum StoryGroupKind { Story, NoStory, OtherSources, Unresolved }
+
+    /// <summary>One group of scenarios: a user story (with its feature), specification scenarios under no story, other sources, or hand-written cases.</summary>
+    public sealed record StoryGroup(StoryGroupKind Kind, string Key, string Label, string? Feature, BirkNext.TestCoverage.CoverageUserStory? Story, List<ScenarioGroup> Scenarios);
+
+    /// <summary>The story a scenario belongs to: from its own case (prepared from the specification), else from any case written under it.</summary>
+    public static BirkNext.TestCoverage.CoverageUserStory? StoryOf(ScenarioGroup g) => g.Primary?.Generated.Story ?? g.Cases.Select(c => c.Generated.Story).FirstOrDefault(s => s is not null);
+
+    /// <summary>
+    /// The plan's scenarios grouped by the user story the specification writes them under, stories in document order per feature; then
+    /// specification scenarios with no story identified ("Parent user story: not identified"), scenarios from other sources (UI, contracts …),
+    /// and hand-written cases without a scenario. Null when no scenario has a story: the plain scenario list is shown then.
+    /// </summary>
+    public static List<StoryGroup>? StoryGroups(List<ScenarioGroup> groups)
+    {
+        if (!groups.Any(g => StoryOf(g) is not null)) return null;
+        var result = new List<StoryGroup>();
+        foreach (var feature in groups.Where(g => StoryOf(g) is not null).GroupBy(g => StoryOf(g)!.SpecificationPath ?? "", StringComparer.Ordinal))
+            foreach (var story in feature.GroupBy(g => StoryOf(g)!.Key, StringComparer.Ordinal).OrderBy(x => StoryOf(x.First())!.Ordinal))
+            {
+                var s = StoryOf(story.First())!;
+                result.Add(new(StoryGroupKind.Story, s.Key, StoryLabel(s), FeatureLabel(s), s, [.. story.OrderBy(g => StoryOf(g)!.Key == s.Key ? g.Primary?.Generated.NumberInStory ?? int.MaxValue : int.MaxValue)]));
+            }
+        var rest = groups.Where(g => StoryOf(g) is null).ToList();
+        var noStory = rest.Where(g => !g.Unresolved && g.Primary?.Generated.Capability == "specification").ToList();
+        var other = rest.Where(g => !g.Unresolved && g.Primary?.Generated.Capability != "specification").ToList();
+        if (noStory.Count > 0) result.Add(new(StoryGroupKind.NoStory, "no-story", "Scenarios not under a user story", null, null, noStory));
+        if (other.Count > 0) result.Add(new(StoryGroupKind.OtherSources, "other-sources", "Scenarios from other sources", null, null, other));
+        if (rest.FirstOrDefault(g => g.Unresolved) is { } unresolved) result.Add(new(StoryGroupKind.Unresolved, "unresolved", ScenarioPlanning.UnresolvedTitle, null, null, [unresolved]));
+        return result;
+    }
+
+    /// <summary>"User Story 6 — Expected population and coverage breakdown" as written (the heading text without its priority suffix).</summary>
+    public static string StoryLabel(BirkNext.TestCoverage.CoverageUserStory s) =>
+        System.Text.RegularExpressions.Regex.Replace(s.Title, @"\s*\((?:Priority|Prioritet)\s*:\s*P\d+\s*\)\s*$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+
+    /// <summary>The feature a story belongs to: its module and specification folder ("SkoleService · 001-skoleservice").</summary>
+    public static string? FeatureLabel(BirkNext.TestCoverage.CoverageUserStory s)
+    {
+        if (s.SpecificationPath is not { Length: > 0 } path) return s.Module;
+        var parts = path.Replace('\\', '/').Split('/');
+        var feature = parts.Length >= 2 ? parts[^2] : null;
+        var module = s.Module ?? (parts.Length >= 4 && parts[^3] == "specs" ? parts[^4] : null);
+        return string.Join(" · ", new[] { module, feature }.Where(x => !string.IsNullOrWhiteSpace(x)));
+    }
+
     // ── Requirement suggestions ───────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>

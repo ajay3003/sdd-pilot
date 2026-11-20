@@ -16,19 +16,32 @@ public static class TestCoveragePresentation
     /// whether a specification is available and is recorded on the result; the requirements come from the review context built from it.
     /// </param>
     public static CoverageWorkspaceEvidence WorkspaceEvidence(IWorkspaceSessionService workspace, ReviewContext? context, string? projectName,
-        Explorers.ArtifactExplorerState? specification = null)
+        Explorers.ArtifactExplorerState? specification = null, Explorers.ArtifactExplorerState? tasks = null)
     {
         var selected = specification is { Status: Explorers.ExplorerArtifactStatus.Loaded, Selected: { } artifact, Content: { } text } ? artifact : null;
         if (specification is not null && selected is null) context = null; // no selected specification: no requirement is attributed to one
         var spec = context?.Specification;
         var requirements = (spec?.Requirements ?? []).Where(r => !string.IsNullOrWhiteSpace(r.Id)).GroupBy(r => r.Id, StringComparer.Ordinal).Select(g => g.First())
             .Select(r => new CoverageRequirement(r.Id, r.Text, null)).ToList();
+        // User stories by the document's structure (story headings only); the key is the specification file + the story's own number.
+        var specPath = selected is null ? null : selected.SourcePath ?? selected.FileName;
+        var storyModule = specification?.HasModules == true ? selected?.Module : null;
+        var stories = (spec?.UserStories ?? []).Where(u => u.IsStoryHeading).Select(u => new CoverageUserStory
+        {
+            Key = CoverageUserStory.KeyOf(specPath, u.StableKey), StoryId = u.AuthoredId, Ordinal = u.Ordinal, Title = u.Title, Priority = u.Priority,
+            Description = u.Description, WhyThisPriority = u.Why, IndependentTest = u.IndependentTest, SpecificationPath = specPath, Module = storyModule,
+            LineStart = u.LineStart, LineEnd = u.LineEnd, Scenarios = u.LinkedAcceptanceScenarios.Count(s => s.ParentStoryKey == u.StableKey),
+            NamedRequirements = NamedRequirements($"{u.Title}\n{u.Description}\n{u.Why}\n{u.IndependentTest}"),
+            TaskRequirements = u.AuthoredId is { } storyTag ? TaskRequirements(tasks, specPath, storyTag) : [],
+        }).ToList();
+        // Scenario ids stay as before (identity of prepared cases); the parent story and the number within it are added beside them.
         var scenarios = (spec?.AcceptanceScenarios ?? []).Select((s, i) => new QaTestCandidate
         {
             Id = string.IsNullOrWhiteSpace(s.Id) ? $"scenario-{i + 1}" : s.Id!, Title = string.IsNullOrWhiteSpace(s.Title) ? s.When ?? $"Scenario {i + 1}" : s.Title,
             Source = "Acceptance scenario in the specification", Ownership = TestOwnership.QaManual,
             RequirementIds = s.LinkedRequirements.Select(r => r.Id).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal).ToList(),
             Given = s.Given, When = s.When, Then = s.Then,
+            StoryKey = s.ParentStoryKey is { } parent ? CoverageUserStory.KeyOf(specPath, parent) : null, NumberInStory = s.NumberInStory,
         }).ToList();
         var executions = workspace.SddLifecycle.TestExecutions.Select(e => new CoverageExecution(e.TestId, e.TestName, e.Result, e.EnvironmentReference, e.FinishedAt ?? e.StartedAt)).ToList();
         return new CoverageWorkspaceEvidence
@@ -38,8 +51,32 @@ public static class TestCoveragePresentation
             SpecificationArtifacts = selected is null ? [] :
                 [new CoverageArtifactRef(selected.Id, selected.SourcePath ?? selected.FileName, specification!.HasModules ? selected.Module : null, ArtifactFingerprint.Compute(specification.Content!))],
             SpecificationAvailable = specification is null ? workspace.Specification is not null : selected is not null,
-            Requirements = requirements, AcceptanceScenarios = scenarios, Executions = executions,
+            Requirements = requirements, AcceptanceScenarios = scenarios, Executions = executions, Stories = stories,
         };
+    }
+
+    /// <summary>Requirement ids a story's own text names (FR-008, FR-008a …), normalised like the specification's ids.</summary>
+    public static List<string> NamedRequirements(string text) =>
+        [.. System.Text.RegularExpressions.Regex.Matches(text ?? "", @"\b(FR)-?(\d{1,4})([a-z])?\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+            .Select(m => BirkNext.Sdd.RequirementReferenceParser.Normalize($"FR-{m.Groups[2].Value}") + m.Groups[3].Value.ToUpperInvariant()).Distinct(StringComparer.Ordinal)];
+
+    /// <summary>
+    /// Requirements the tasks of one story name in the same feature's tasks.md ("T099 [US6] … (FR-027a)"), through the shared task parser. Read only
+    /// when that tasks.md is in the specification's own folder: tasks of another feature never link to this story.
+    /// </summary>
+    public static List<StoryTaskRequirement> TaskRequirements(Explorers.ArtifactExplorerState? tasks, string? specPath, string storyTag)
+    {
+        if (tasks is not { Status: Explorers.ExplorerArtifactStatus.Loaded, Selected: { } file, Content: { } text } || specPath is null) return [];
+        var tasksPath = (file.SourcePath ?? file.FileName).Replace('\\', '/');
+        static string Folder(string path) => path.Contains('/') ? path[..path.LastIndexOf('/')] : "";
+        if (!string.Equals(Folder(tasksPath), Folder(specPath.Replace('\\', '/')), StringComparison.OrdinalIgnoreCase)) return [];
+        var all = new List<TaskNode>();
+        void Walk(IEnumerable<TaskNode> nodes) { foreach (var n in nodes) { all.Add(n); Walk(n.Children); } }
+        Walk(TaskExplorerService.Parse(text).Roots);
+        return [.. all.Where(t => t.NodeType == TaskNodeType.Task && string.Equals(t.UserStoryTag, storyTag, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(t => t.ReferencedFrIds.Select(fr => new StoryTaskRequirement(fr, t.TaskId, t.RawText.Length > 300 ? t.RawText[..300] + "…" : t.RawText, tasksPath,
+                t.Provenance?.Sources.FirstOrDefault()?.StartLine)))
+            .DistinctBy(r => (r.RequirementId, r.TaskId))];
     }
 
     /// <summary>Which specification the requirement views read, in plain words.</summary>

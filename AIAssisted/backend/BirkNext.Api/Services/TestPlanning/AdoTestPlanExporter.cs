@@ -96,7 +96,9 @@ public static partial class AdoTestPlanExporter
             var origin = ManualCaseIdentity.Origin(c);
             var requirementSources = origin.Requirements.Select(q => q.SpecificationFile is { } f ? $"{q.RequirementId} ({f})" : q.RequirementId).ToList();
             var scenario = c.ParentScenario is { } scenarioKey ? (Key: scenarioKey, Title: plan.Cases.FirstOrDefault(x => x.Source.Kind != ScenarioSourceKind.Manual && x.Source.ScenarioId == scenarioKey)?.Generated.Title ?? c.ScenarioTitle) : default;
-            var description = Describe(origin, requirementSources, $"{plan.Id:N}/{id}", plan.PlanName, c.Source.Kind == ScenarioSourceKind.Manual ? scenario.Title : null);
+            var story = c.Generated.Story ?? plan.Cases.FirstOrDefault(x => x.Source.Kind != ScenarioSourceKind.Manual && x.Source.ScenarioId == c.ParentScenario)?.Generated.Story;
+            var description = Describe(origin, requirementSources, $"{plan.Id:N}/{id}", plan.PlanName, c.Source.Kind == ScenarioSourceKind.Manual ? scenario.Title : null)
+                + (story is null ? "" : $" User story: {story.StoryId ?? $"story {story.Ordinal}"} — {story.Title}.");
             cases.Add(new AdoExportCase
             {
                 SourceSpecification = origin.SpecificationFile, SourceScenario = origin.SpecificationScenarioId, RequirementSources = requirementSources,

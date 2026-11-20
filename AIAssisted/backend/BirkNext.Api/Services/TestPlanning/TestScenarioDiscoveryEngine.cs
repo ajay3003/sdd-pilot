@@ -85,8 +85,10 @@ public static class TestScenarioDiscoveryEngine
         var module = Text(workspace.ArtifactScope);
         var file = workspace.SpecificationArtifacts.FirstOrDefault()?.Path;
         var list = new List<DiscoveredScenario>();
+        var stories = workspace.Stories.GroupBy(s => s.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         foreach (var s in workspace.AcceptanceScenarios.Where(s => !string.IsNullOrWhiteSpace(s.Id)))
         {
+            var story = s.StoryKey is { } storyKey ? stories.GetValueOrDefault(storyKey) : null;
             var then = Text(Plain(s.Then));
             var when = Text(Plain(s.When));
             list.Add(Finish(new DiscoveredScenario
@@ -102,10 +104,12 @@ public static class TestScenarioDiscoveryEngine
                     new("given", "Starting situation (Given)", Text(Plain(s.Given))), new("when", "Action (When)", when), new("then", "Expected outcome (Then)", then),
                 ],
                 RequirementIds = [.. s.RequirementIds.Distinct(StringComparer.OrdinalIgnoreCase)],
-                Evidence = [new("specification", $"{file ?? "specification"}#{s.Id}", Clip(s.Title, 200)), .. s.RequirementIds.Select(r => new CandidateEvidenceRef("requirement", r))],
+                Evidence = [new("specification", $"{file ?? "specification"}#{s.Id}", Clip(s.Title, 200)),
+                    .. story is null ? Array.Empty<CandidateEvidenceRef>() : [new CandidateEvidenceRef("story", story.Key, Clip(story.Title, 200))],
+                    .. s.RequirementIds.Select(r => new CandidateEvidenceRef("requirement", r))],
                 CanonicalKey = $"scenario:{module}|{s.Id}", Engine = "Specification parser (acceptance scenarios)",
                 OpenQuestions = [.. when is null ? new[] { "The scenario states no action (When): add the steps." } : [], .. then is null ? new[] { "The scenario states no outcome (Then): clarify the expected result." } : []],
-            }, projectKey));
+            }, projectKey) with { Story = story, NumberInStory = story is null ? null : s.NumberInStory });
         }
         var named = workspace.AcceptanceScenarios.SelectMany(s => s.RequirementIds).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var r in workspace.Requirements.Where(r => !string.IsNullOrWhiteSpace(r.Id) && !named.Contains(r.Id)))
@@ -487,6 +491,7 @@ public static class TestScenarioDiscoveryEngine
             StageId = AreaSuiteId(group), GroupTitle = group, CandidateType = c.Type, Confidence = c.Confidence,
             Template = [.. c.Template], Evidence = [.. c.Evidence], ExistingTests = [.. c.ExistingTests], OpenQuestions = [.. c.OpenQuestions],
             TestDataNeed = c.TestDataNeeds.Count > 0 ? TestDataNeed.Required : TestDataNeed.Unknown, Capability = c.CapabilityId,
+            Story = c.Story, NumberInStory = c.NumberInStory,
         };
     }
 

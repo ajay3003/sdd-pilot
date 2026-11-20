@@ -124,6 +124,12 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     public Task<ActionResult> Translate(Guid id, [FromBody] TranslateScenarioRequest request, [FromServices] BirkNext.Api.Services.TestPlanning.TestCaseTranslatorResolver translators, CancellationToken ct) =>
         Run(async () => Ok(await service.TranslateScenarioAsync(id, request, translators.Current(), translators.Settings(), Actor, ct)));
 
+    /// <summary>Translate all: every scenario of the plan with its user story and linked requirement wording, saved as one revision.</summary>
+    [HttpPost("drafts/{id:guid}/translate-all")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public Task<ActionResult> TranslateAll(Guid id, [FromBody] TranslatePlanRequest request, [FromServices] BirkNext.Api.Services.TestPlanning.TestCaseTranslatorResolver translators, CancellationToken ct) =>
+        Run(async () => Ok(await service.TranslatePlanAsync(id, request, translators.Current(), translators.Settings(), Actor, ct)));
+
     /// <summary>
     /// MT-7 reviewed requirement coverage of one project scope: specification requirements of the latest relationship interpretation, the
     /// scenario → requirement associations (decided in Relationship Review) and the tester reviews of those scenarios. Read-only.

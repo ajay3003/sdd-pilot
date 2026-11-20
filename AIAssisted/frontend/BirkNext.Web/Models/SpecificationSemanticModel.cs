@@ -56,9 +56,21 @@ public sealed class SemanticUserStory
     public string? Description { get; init; }
     public string? Why { get; init; }
     public string? IndependentTest { get; init; }
+    /// <summary>The story number the document gives ("US6" from "User Story 6", "US-A1" from an id), else null (unnumbered).</summary>
+    public string? AuthoredId { get; init; }
+    /// <summary>Position among the document's story headings (1-based); 0 for an in-text reference (not a heading).</summary>
+    public int Ordinal { get; init; }
+    /// <summary>A real story heading ("User Story 6 …", "Brukerhistorie 1 …"). False for an in-text reference such as "[US-A3]" and for a
+    /// "Scenario N:" heading the parser groups with stories: neither is ever a scenario's parent story.</summary>
+    public bool IsStoryHeading { get; init; }
+    /// <summary>Stable identity within the document: the authored number, else the position ("story-2"); never derived from the title.</summary>
+    public string StableKey => AuthoredId ?? $"story-{Ordinal}";
+    public int? LineStart { get; init; }
+    public int? LineEnd { get; init; }
 
     // ── Semantic links ──────────────────────────────────────────────────────
     public List<SemanticRequirement> LinkedRequirements { get; init; } = [];
+    /// <summary>Text-reference links and the acceptance scenarios written under this story heading (document structure).</summary>
     public List<SemanticAcceptanceScenario> LinkedAcceptanceScenarios { get; init; } = [];
     public List<SemanticSuccessCriterion> LinkedSuccessCriteria { get; init; } = [];
 }
@@ -112,6 +124,12 @@ public sealed class SemanticAcceptanceScenario
     public string? Given { get; init; }
     public string? When { get; init; }
     public string? Then { get; init; }
+    /// <summary>The story heading this scenario is written under (its <see cref="SemanticUserStory.StableKey"/>); null when the document
+    /// structure names none (a scenario directly under the feature) — never guessed from nearby text.</summary>
+    public string? ParentStoryKey { get; set; }
+    /// <summary>The scenario's number within its story (1-based, document order); null without a parent story.</summary>
+    public int? NumberInStory { get; set; }
+    public int? LineStart { get; set; }
 
     // ── Semantic links ──────────────────────────────────────────────────────
     public List<SemanticUserStory> LinkedUserStories { get; init; } = [];

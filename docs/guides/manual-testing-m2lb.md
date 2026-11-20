@@ -139,7 +139,19 @@ the **Needs attention** view lists the 120 with an open point. Use **More filter
    **Add test case**. The new case opens at its first step: write what the tester does and what should happen side by side, choose
    **Add step**, and save.
 
-### Scenarios and their test cases
+### User stories, scenarios and their test cases
+
+When the specification has user stories, Prepare test cases shows them as the specification does: **Feature → User Story → Scenario → Test
+cases**. Each story is a card with its number, priority and an *Independent Test* chip; open **Story** for its description, why it has that
+priority, its Independent Test and the exact lines in spec.md, or **Requirements** for:
+
+- requirements the story names, and requirements its tasks name in the same feature's tasks.md (for example `T099 [US6] … (FR-027a)`);
+- suggested requirements (with why);
+- requirements already linked to the story's test cases (read-only).
+
+**Confirm** or **Not related** decides a requirement for the story as a whole. It is never passed on to its scenarios or test cases and never
+counts as coverage. Scenarios the specification does not place under a story are listed under *Scenarios not under a user story* (Parent user
+story: not identified); BirkNext never guesses one. The Independent Test is shown as help for preparing the cases, never as steps.
 
 Prepare test cases is organised **by scenario**. A scenario says *what* is tested and why; its test cases say *how* and what result is
 expected. One scenario is open at a time:
@@ -161,6 +173,11 @@ expected. One scenario is open at a time:
   does not guess a scenario for them.
 
 ### Translated text (default Norwegian bokmål)
+
+**Translate all** (top of the list) translates the whole plan — every scenario with its Given/When/Then, its user story, every test-case
+field (title, purpose, preconditions, steps and results, expected result, how to verify, environment, roles, dependencies) and the wording of
+linked requirements — after showing how many scenarios, test cases and stories it covers. The **Original | Norwegian** switch beside it shows the
+whole plan in one language. Translations are saved at once; edit any field afterwards and choose Save draft.
 
 The language icon (**Translate scenario and test cases to Norwegian (bokmål)**) translates the open scenario and its test cases — no other
 scenario. When more languages are configured, choose the language in the scenario header first.

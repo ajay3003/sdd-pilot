@@ -26,8 +26,11 @@ public static class TaskExplorerService
     private static readonly Regex UserStoryTagRe = new(
         @"\[US(\d+(?:[–\-]\d+)?)\]|\[Story\???\]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // FR-027 and suffixed requirements such as FR-027a (a separate requirement in the specification, FR-027A after normalization).
     private static readonly Regex FrRefRe = new(
-        @"\b(FR)-?(\d{1,4})\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        @"\b(FR)-?(\d{1,4})([a-z])?\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static string FrId(Match m) => BirkNext.Sdd.RequirementReferenceParser.Normalize($"FR-{m.Groups[2].Value}") + m.Groups[3].Value.ToUpperInvariant();
 
     /// <summary>A bracket or parenthesis that holds nothing but FR/SC ids — a reference marker, not prose.</summary>
     private static readonly Regex ReferenceOnlyGroupRe = new(
@@ -467,7 +470,7 @@ public static class TaskExplorerService
         // The shared identifier grammar (FR-1, FR01, FR-001 → FR-001), the same normalization the specification uses, so a task's reference
         // matches the requirement it names.
         var frIds = FrRefRe.Matches(body)
-            .Select(m => BirkNext.Sdd.RequirementReferenceParser.Normalize($"FR-{m.Groups[2].Value}")).Distinct().ToList();
+            .Select(FrId).Distinct().ToList();
         var scIds = ScRefRe.Matches(body)
             .Select(m => BirkNext.Sdd.RequirementReferenceParser.Normalize($"SC-{m.Groups[2].Value}")).Distinct().ToList();
 
@@ -577,7 +580,7 @@ public static class TaskExplorerService
                 ReferencedScIds = ScRefRe.Matches(allCellText)
                     .Select(m => BirkNext.Sdd.RequirementReferenceParser.Normalize($"SC-{m.Groups[2].Value}")).Distinct().ToList(),
                 ReferencedFrIds = FrRefRe.Matches(allCellText)
-                    .Select(m => BirkNext.Sdd.RequirementReferenceParser.Normalize($"FR-{m.Groups[2].Value}")).Distinct().ToList(),
+                    .Select(FrId).Distinct().ToList(),
                 Provenance = ProjectionProvenance.Create("Tasks", "TableRow", $"{rowTitle}:{lines[i].LineIndex + 1}",
                     ProjectionProvenance.Source(documentFingerprint, lines[i].LineIndex + 1, lines[i].LineIndex + 1,
                         "TaskTableRow", lines[i].RawLine)),

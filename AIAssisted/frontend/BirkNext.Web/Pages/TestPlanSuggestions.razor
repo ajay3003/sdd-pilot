@@ -654,10 +654,18 @@
         try
         {
             BirkNext.Web.Services.Explorers.ArtifactExplorerState? specification = null;
+            BirkNext.Web.Services.Explorers.ArtifactExplorerState? tasks = null;
             if (ServiceProvider.GetService(typeof(BirkNext.Web.Services.Explorers.IArtifactExplorerContext)) is BirkNext.Web.Services.Explorers.IArtifactExplorerContext artifacts)
+            {
                 specification = await artifacts.GetStateAsync(WorkspaceArtifactType.Specification);
+                tasks = await artifacts.GetStateAsync(WorkspaceArtifactType.Tasks); // story → requirement references in the same feature's tasks.md
+            }
             if (ServiceProvider.GetService(typeof(IWorkspaceSessionService)) is IWorkspaceSessionService session)
-                return TestCoveragePresentation.WorkspaceEvidence(session, (ServiceProvider.GetService(typeof(IReviewContextProvider)) as IReviewContextProvider)?.GetCurrent(), _projectName, specification);
+            {
+                var evidence = TestCoveragePresentation.WorkspaceEvidence(session, (ServiceProvider.GetService(typeof(IReviewContextProvider)) as IReviewContextProvider)?.GetCurrent(), _projectName, specification, tasks);
+                _stories = evidence.Stories;
+                return evidence;
+            }
         }
         catch (Exception e) when (e is not OperationCanceledException) { }
         return null;
@@ -1308,7 +1316,7 @@
                     @foreach (var row in rows)
                     {
                         <li class="tps-link-row" data-testid="tps-link" data-requirement="@row.RequirementId" data-origin="@(row.Automatic && row.Manual ? "both" : row.Manual ? "manual" : "automatic")">
-                            <span class="tps-link-text"><strong>@row.RequirementId</strong> @row.Title</span>
+                            <span class="tps-link-text"><strong>@row.RequirementId</strong> @row.Title@if (ShownLanguage(c) is { } linkLanguage && RequirementText(row.RequirementId, row.SpecificationPath, linkLanguage) is { } translatedRequirement) { <span class="tps-orig" data-testid="tps-link-translated" lang="@linkLanguage">@TranslationLanguages.Name(linkLanguage): @translatedRequirement</span> }</span>
                             <span class="tps-chip @(row.Manual ? "tps-chip-ok" : null)" data-testid="tps-link-origin">@row.Origin</span>
                             <span class="tps-tone tps-tone-@row.Tone" data-testid="tps-link-validity">@row.Validity</span>
                             @if (row.Manual && !row.Saved) { <span class="tps-tone tps-tone-warn" data-testid="tps-link-unsaved">Not saved yet</span> }
@@ -2070,139 +2078,193 @@
         var groups = ScenarioPlanning.Groups(d);
         var openKey = OpenScenarioKey(groups);
         var project = d.ProjectKey is not null;
-        <p class="tps-muted tps-small" data-testid="tps-scenario-summary">@groups.Count(g => !g.Unresolved) scenario@(groups.Count(g => !g.Unresolved) == 1 ? "" : "s") · @d.Cases.Count test case@(d.Cases.Count == 1 ? "" : "s"). A scenario says what is tested and why; its test cases say how and what result is expected.</p>
-        <div class="tps-scenarios" data-testid="tps-scenarios">
-            @foreach (var g in groups)
-            {
-                var isOpen = g.Key == openKey;
-                var domId = ScenarioDomId(g.Key);
-                var lang = _shownLanguage.GetValueOrDefault(g.Key);
-                var nb = lang is not null;
-                var primaryNb = lang is null ? null : g.Primary?.Translation(lang);
-                var target = lang ?? Targets[0];
-                var targetName = TranslationLanguages.Name(target);
-                var group = g;
-                <section class="tps-scn @(isOpen ? "is-open" : null)" data-testid="tps-scenario" data-scenario="@g.Key" data-open="@(isOpen ? "true" : "false")" aria-labelledby="@($"{domId}-h")">
-                    <div class="tps-scn-head">
-                        <h3 class="tps-scn-h" id="@($"{domId}-h")">
-                            <button type="button" class="tps-scn-toggle" aria-expanded="@(isOpen ? "true" : "false")" aria-controls="@($"{domId}-body")" @onclick="() => ToggleScenario(group.Key, isOpen)" data-testid="tps-scenario-toggle">
-                                <span class="tps-scn-chevron" aria-hidden="true">@(isOpen ? "▾" : "▸")</span>
-                                <span class="tps-scn-title" data-testid="tps-scenario-title">@(string.IsNullOrWhiteSpace(primaryNb?.Title) ? g.Title : primaryNb!.Title)</span>
-                                <span class="tps-scn-meta" data-testid="tps-scenario-counts">@C.Counts(g)</span>
-                            </button>
-                        </h3>
-                        @if (!g.Unresolved && project)
-                        {
-                            <div class="tps-scn-tools" role="group" aria-label="@($"Scenario actions: {g.Title}")">
-                                <span class="tps-chip tps-chip-quiet" data-testid="tps-scenario-language" data-language="@(lang ?? "original")">@(lang is null ? "Original" : TranslationLanguages.Name(lang))</span>
-                                @if (CanWrite)
-                                {
-                                    <button type="button" class="tps-icon-btn" disabled="@_busy" aria-label="@($"Translate scenario and test cases to {targetName}")" title="@($"Translate scenario and test cases to {targetName}")"
-                                            @onclick="() => TranslateScenarioAsync(group)" data-testid="tps-scenario-translate">
-                                        <svg aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>
-                                    </button>
-                                }
-                                @if (nb)
-                                {
-                                    <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" @onclick="() => ShowLanguage(group.Key, null)" data-testid="tps-scenario-language-toggle">Show original</button>
-                                }
-                                else if (g.Cases.Any(c => c.TranslatedLanguages.Any()))
-                                {
-                                    @foreach (var available in ScenarioLanguages(g).Where(l => g.Cases.Any(c => c.Translation(l) is not null)))
-                                    {
-                                        var show = available;
-                                        <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" @onclick="() => ShowLanguage(group.Key, show)" data-testid="tps-scenario-language-toggle" data-language="@show">Show @TranslationLanguages.Name(show)</button>
-                                    }
-                                }
-                                @if (CanWrite && ScenarioLanguages(g).Count > 1)
-                                {
-                                        <select class="tps-input tps-input-sm" aria-label="Language to show and translate into" @onchange="e => ShowLanguage(group.Key, string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString())" data-testid="tps-scenario-target">
-                                            <option value="" selected="@(lang is null)">Original</option>
-                                            @foreach (var l in ScenarioLanguages(g)) { <option value="@l" selected="@(l == lang)">@TranslationLanguages.Name(l)</option> }
-                                        </select>
-                                }
-                                @if (CanWrite) { <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@_busy" @onclick="() => StartAddUnder(group)" data-testid="tps-scenario-add">+ Add test case</button> }
-                            </div>
-                        }
-                    </div>
-                    @if (isOpen)
+        var stories = C.StoryGroups(groups);
+        @if (project) { @TranslateAllBar(d, groups) }
+        <p class="tps-muted tps-small" data-testid="tps-scenario-summary">@groups.Count(g => !g.Unresolved) scenario@(groups.Count(g => !g.Unresolved) == 1 ? "" : "s") · @d.Cases.Count test case@(d.Cases.Count == 1 ? "" : "s")@(stories is null ? "" : $" · {stories.Count(s => s.Kind == C.StoryGroupKind.Story)} user stor{(stories.Count(s => s.Kind == C.StoryGroupKind.Story) == 1 ? "y" : "ies")}"). A scenario says what is tested and why; its test cases say how and what result is expected.</p>
+        @if (stories is null)
+        {
+            <div class="tps-scenarios" data-testid="tps-scenarios">
+                @foreach (var g in groups) { @ScenarioItem(d, g, openKey, project, false) }
+            </div>
+        }
+        else
+        {
+            // Feature → User Story → Scenario → Test cases, as the specification structures them.
+            <div class="tps-scenarios" data-testid="tps-scenarios">
+                @{ string? lastFeature = null; }
+                @foreach (var sg in stories)
+                {
+                    @if (sg.Feature is { Length: > 0 } feature && feature != lastFeature)
                     {
-                        <div class="tps-scn-body" id="@($"{domId}-body")">
-                            @if (g.Unresolved)
+                        lastFeature = feature;
+                        <p class="tps-feature" data-testid="tps-feature"><span class="tps-k">Feature</span> @feature</p>
+                    }
+                    var storyId = "tps-story-" + ScenarioPlanning.Sha(sg.Key)[..10];
+                    <section class="tps-story" data-testid="tps-story" data-story="@sg.Key" data-kind="@sg.Kind" aria-labelledby="@($"{storyId}-h")">
+                        <div class="tps-story-head">
+                            <h3 class="tps-story-h" id="@($"{storyId}-h")" data-testid="tps-story-title">@(sg.Story is { } hs && StoryLanguage(sg) is { } hl && StoryText(hs.Key, hl)?.Title is { Length: > 0 } ht ? ht : sg.Label)</h3>
+                            @if (sg.Story is { } st)
                             {
-                                <p class="tps-note tps-note-info" data-testid="tps-scenario-unresolved">These test cases were written by hand without a scenario. No scenario can be established for them from the evidence, so none is assigned; they work as before.</p>
+                                @if (st.StoryId is { } sid) { <span class="tps-badge" data-testid="tps-story-id">@sid</span> }
+                                @if (st.Priority is { } priority) { <span class="tps-badge tps-badge-@priority.ToLowerInvariant()" data-testid="tps-story-priority">@priority</span> }
+                                @if (st.IndependentTest is not null) { <span class="tps-chip tps-chip-quiet" data-testid="tps-story-independent">Independent Test</span> }
+                                <span class="tps-muted tps-small" data-testid="tps-story-counts">@sg.Scenarios.Count of @st.Scenarios scenario@(st.Scenarios == 1 ? "" : "s") in the plan</span>
                             }
-                            else if (g.Primary is { } primary)
+                            else if (sg.Kind == C.StoryGroupKind.NoStory)
                             {
-                                var scenarioLinks = primary.RequirementLinks.Where(l => l.Scope == RequirementLinkScope.Scenario).ToList();
-                                <dl class="tps-dl tps-scn-overview" data-testid="tps-scenario-overview">
-                                    <dt>Purpose</dt><dd data-testid="tps-scenario-purpose">@(string.IsNullOrWhiteSpace(primaryNb?.Purpose) ? primary.EffectivePurpose : primaryNb!.Purpose)</dd>
-                                    @foreach (var (label, value) in C.Overview(primary)) { <dt>@label</dt><dd>@value</dd> }
-                                    <dt>Source</dt><dd class="tps-small" data-testid="tps-scenario-evidence">@(C.SourceReference(primary) ?? "Not stated")@(primary.Generated.GroupTitle is { } area ? $" · {area}" : "")@(d.SnapshotKey is { } snap ? $" · snapshot {snap}" : "")</dd>
-                                    <dt>Scenario requirements</dt><dd data-testid="tps-scenario-requirements">@(scenarioLinks.Count == 0 ? "None confirmed for the scenario as a whole." : string.Join(", ", scenarioLinks.Select(l => l.RequirementId)))
-                                        <span class="tps-muted tps-small"> — apply to the business scenario; never counted as a test case's test design.</span></dd>
-                                    @if (nb) { <dt>Original</dt><dd class="tps-muted tps-small" data-testid="tps-scenario-original">@g.Title</dd> }
-                                </dl>
+                                <span class="tps-muted tps-small" data-testid="tps-story-none">Parent user story: not identified in the specification</span>
                             }
-                            else
+                        </div>
+                        @StoryCard(d, sg)
+                        <div class="tps-story-scenarios">
+                            @foreach (var g in sg.Scenarios) { @ScenarioItem(d, g, openKey, project, true) }
+                        </div>
+                    </section>
+                }
+            </div>
+        }
+    };
+
+    private RenderFragment ScenarioItem(TestPlanDraft d, ScenarioGroup g, string? openKey, bool project, bool storied) => __builder =>
+    {
+        var isOpen = g.Key == openKey;
+        var domId = ScenarioDomId(g.Key);
+        var lang = _shownLanguage.GetValueOrDefault(g.Key);
+        var nb = lang is not null;
+        var primaryNb = lang is null ? null : g.Primary?.Translation(lang);
+        var target = lang ?? Targets[0];
+        var targetName = TranslationLanguages.Name(target);
+        var group = g;
+        <section class="tps-scn @(isOpen ? "is-open" : null)" data-testid="tps-scenario" data-scenario="@g.Key" data-open="@(isOpen ? "true" : "false")" aria-labelledby="@($"{domId}-h")">
+            <div class="tps-scn-head">
+                <div class="tps-scn-h" role="heading" aria-level="@(storied ? 4 : 3)" id="@($"{domId}-h")">
+                    <button type="button" class="tps-scn-toggle" aria-expanded="@(isOpen ? "true" : "false")" aria-controls="@($"{domId}-body")" @onclick="() => ToggleScenario(group.Key, isOpen)" data-testid="tps-scenario-toggle">
+                        <span class="tps-scn-chevron" aria-hidden="true">@(isOpen ? "▾" : "▸")</span>
+                        <span class="tps-scn-title" data-testid="tps-scenario-title">@(string.IsNullOrWhiteSpace(primaryNb?.Title) ? g.Title : primaryNb!.Title)</span>
+                        <span class="tps-scn-meta" data-testid="tps-scenario-counts">@C.Counts(g)</span>
+                    </button>
+                </div>
+                @if (!g.Unresolved && project)
+                {
+                    <div class="tps-scn-tools" role="group" aria-label="@($"Scenario actions: {g.Title}")">
+                        <span class="tps-chip tps-chip-quiet" data-testid="tps-scenario-language" data-language="@(lang ?? "original")">@(lang is null ? "Original" : TranslationLanguages.Name(lang))</span>
+                        @if (CanWrite)
+                        {
+                            <button type="button" class="tps-icon-btn" disabled="@_busy" aria-label="@($"Translate scenario and test cases to {targetName}")" title="@($"Translate scenario and test cases to {targetName}")"
+                                    @onclick="() => TranslateScenarioAsync(group)" data-testid="tps-scenario-translate">
+                                <svg aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>
+                            </button>
+                        }
+                        @if (nb)
+                        {
+                            <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" @onclick="() => ShowLanguage(group.Key, null)" data-testid="tps-scenario-language-toggle">Show original</button>
+                        }
+                        else if (g.Cases.Any(c => c.TranslatedLanguages.Any()))
+                        {
+                            @foreach (var available in ScenarioLanguages(g).Where(l => g.Cases.Any(c => c.Translation(l) is not null)))
                             {
-                                <p class="tps-muted tps-small" data-testid="tps-scenario-no-primary">The scenario's own case is no longer in this plan; the cases written under "@g.Title" stay here.</p>
+                                var show = available;
+                                <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" @onclick="() => ShowLanguage(group.Key, show)" data-testid="tps-scenario-language-toggle" data-language="@show">Show @TranslationLanguages.Name(show)</button>
                             }
-                            @if (_translationHelp == g.Key)
+                        }
+                        @if (CanWrite && ScenarioLanguages(g).Count > 1)
+                        {
+                                <select class="tps-input tps-input-sm" aria-label="Language to show and translate into" @onchange="e => ShowLanguage(group.Key, string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString())" data-testid="tps-scenario-target">
+                                    <option value="" selected="@(lang is null)">Original</option>
+                                    @foreach (var l in ScenarioLanguages(g)) { <option value="@l" selected="@(l == lang)">@TranslationLanguages.Name(l)</option> }
+                                </select>
+                        }
+                        @if (CanWrite) { <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@_busy" @onclick="() => StartAddUnder(group)" data-testid="tps-scenario-add">+ Add test case</button> }
+                    </div>
+                }
+            </div>
+            @if (isOpen)
+            {
+                <div class="tps-scn-body" id="@($"{domId}-body")">
+                    @if (g.Unresolved)
+                    {
+                        <p class="tps-note tps-note-info" data-testid="tps-scenario-unresolved">These test cases were written by hand without a scenario. No scenario can be established for them from the evidence, so none is assigned; they work as before.</p>
+                    }
+                    else if (g.Primary is { } primary)
+                    {
+                        var scenarioLinks = primary.RequirementLinks.Where(l => l.Scope == RequirementLinkScope.Scenario).ToList();
+                        <dl class="tps-dl tps-scn-overview" data-testid="tps-scenario-overview">
+                            <dt>Purpose</dt><dd data-testid="tps-scenario-purpose">@(string.IsNullOrWhiteSpace(primaryNb?.Purpose) ? primary.EffectivePurpose : primaryNb!.Purpose)</dd>
+                            @foreach (var (label, key, value) in C.OverviewFields(primary))
                             {
-                                <p class="tps-note tps-note-warn" data-testid="tps-translate-help" role="status">No translation was made. Set up Azure AI Translator or start the local LibreTranslate server in
-                                    <a href="admin/system-settings?section=translation" data-testid="tps-translate-settings">System Settings → Translation</a>,
-                                    or write the @targetName text in the fields below — it is saved like any other change.</p>
+                                var translatedValue = primaryNb is null ? null : C.TranslatedOverview(primaryNb, key);
+                                <dt>@label</dt><dd data-testid="@($"tps-scenario-{key}")">@(translatedValue ?? value)@if (translatedValue is not null) { <span class="tps-orig" lang="en">Original: @value</span> }</dd>
                             }
-                            @if (_overwriteOffer == g.Key && CanWrite)
+                                @if (C.StoryOf(g) is { } story)
+                                {
+                                    var storyText = lang is null ? null : StoryText(story.Key, lang);
+                                    <dt>User story</dt><dd data-testid="tps-scenario-story">@(storyText?.Title is { Length: > 0 } st ? st : C.StoryLabel(story))@(primary.Generated.NumberInStory is { } n ? $" · scenario {n}" : "")</dd>
+                                    @if (story.IndependentTest is { } it) { <dt>Independent Test</dt><dd class="tps-small" data-testid="tps-scenario-independent">@(storyText?.IndependentTest ?? it)</dd> }
+                                }
+                                else if (primary.Generated.Capability == "specification") { <dt>User story</dt><dd class="tps-muted" data-testid="tps-scenario-story">Not identified</dd> }
+                            <dt>Source</dt><dd class="tps-small" data-testid="tps-scenario-evidence">@(C.SourceReference(primary) ?? "Not stated")@(primary.Generated.GroupTitle is { } area ? $" · {area}" : "")@(d.SnapshotKey is { } snap ? $" · snapshot {snap}" : "")</dd>
+                            <dt>Scenario requirements</dt><dd data-testid="tps-scenario-requirements">@(scenarioLinks.Count == 0 ? "None confirmed for the scenario as a whole." : string.Join(", ", scenarioLinks.Select(l => l.RequirementId)))
+                                <span class="tps-muted tps-small"> — apply to the business scenario; never counted as a test case's test design.</span></dd>
+                            @if (nb) { <dt>Original</dt><dd class="tps-muted tps-small" data-testid="tps-scenario-original">@g.Title</dd> }
+                        </dl>
+                    }
+                    else
+                    {
+                        <p class="tps-muted tps-small" data-testid="tps-scenario-no-primary">The scenario's own case is no longer in this plan; the cases written under "@g.Title" stay here.</p>
+                    }
+                    @if (_translationHelp == g.Key)
+                    {
+                        <p class="tps-note tps-note-warn" data-testid="tps-translate-help" role="status">No translation was made. Set up Azure AI Translator or start the local LibreTranslate server in
+                            <a href="admin/system-settings?section=translation" data-testid="tps-translate-settings">System Settings → Translation</a>,
+                            or write the @targetName text in the fields below — it is saved like any other change.</p>
+                    }
+                    @if (_overwriteOffer == g.Key && CanWrite)
+                    {
+                        <p class="tps-note tps-note-info" data-testid="tps-translate-kept">@targetName text written by a person was kept. <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@_busy" @onclick="() => TranslateScenarioAsync(group, true)" data-testid="tps-translate-overwrite">Replace it with a new machine translation</button></p>
+                    }
+                    @if (_addUnder == g.Key && CanWrite)
+                    {
+                        var duplicates = ScenarioPlanning.LikelyDuplicates(_addTitle, g.Primary?.EffectivePreconditions, [], g.Cases);
+                        <div class="tps-actionbar tps-actionbar-compact" data-testid="tps-scenario-add-form">
+                            <label class="tps-field tps-field-grow"><span class="tps-k">New test case under this scenario</span>
+                                <input class="tps-input" @bind="_addTitle" @bind:event="oninput" placeholder="Title, e.g. No report submitted" data-testid="tps-scenario-add-title" /></label>
+                            <button type="button" class="tps-btn" disabled="@(_busy || _dirty || string.IsNullOrWhiteSpace(_addTitle))" @onclick="() => AddUnderAsync(group)" data-testid="tps-scenario-add-confirm">Add test case</button>
+                            <button type="button" class="tps-btn tps-btn-quiet" @onclick="() => _addUnder = null" data-testid="tps-scenario-add-cancel">Cancel</button>
+                        </div>
+                        @if (_dirty) { <p class="tps-muted tps-small">Save or discard your changes first.</p> }
+                        else if (string.IsNullOrWhiteSpace(_addTitle)) { <p class="tps-muted tps-small" data-testid="tps-scenario-add-hint">Type a title. The case starts from the scenario's starting situation; steps and expected results are yours to write.</p> }
+                        @if (duplicates.Count > 0 && !string.IsNullOrWhiteSpace(_addTitle)) { <p class="tps-note tps-note-warn" data-testid="tps-scenario-add-duplicate">Looks like an existing case: @string.Join("; ", duplicates.Select(x => x.EffectiveTitle)). Keep it only if it tests something different.</p> }
+                    }
+                    @if (!g.Unresolved && g.Primary is not null && CanWrite && project)
+                    {
+                        <div class="tps-variants" data-testid="tps-variants-panel">
+                            <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@(_busy || _dirty)" @onclick="() => LoadVariantsAsync(group.Key)" data-testid="tps-scenario-suggest">Suggest more test cases</button>
+                            @if (_variants.TryGetValue(g.Key, out var proposals))
                             {
-                                <p class="tps-note tps-note-info" data-testid="tps-translate-kept">@targetName text written by a person was kept. <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@_busy" @onclick="() => TranslateScenarioAsync(group, true)" data-testid="tps-translate-overwrite">Replace it with a new machine translation</button></p>
-                            }
-                            @if (_addUnder == g.Key && CanWrite)
-                            {
-                                var duplicates = ScenarioPlanning.LikelyDuplicates(_addTitle, g.Primary?.EffectivePreconditions, [], g.Cases);
-                                <div class="tps-actionbar tps-actionbar-compact" data-testid="tps-scenario-add-form">
-                                    <label class="tps-field tps-field-grow"><span class="tps-k">New test case under this scenario</span>
-                                        <input class="tps-input" @bind="_addTitle" @bind:event="oninput" placeholder="Title, e.g. No report submitted" data-testid="tps-scenario-add-title" /></label>
-                                    <button type="button" class="tps-btn" disabled="@(_busy || _dirty || string.IsNullOrWhiteSpace(_addTitle))" @onclick="() => AddUnderAsync(group)" data-testid="tps-scenario-add-confirm">Add test case</button>
-                                    <button type="button" class="tps-btn tps-btn-quiet" @onclick="() => _addUnder = null" data-testid="tps-scenario-add-cancel">Cancel</button>
-                                </div>
-                                @if (_dirty) { <p class="tps-muted tps-small">Save or discard your changes first.</p> }
-                                else if (string.IsNullOrWhiteSpace(_addTitle)) { <p class="tps-muted tps-small" data-testid="tps-scenario-add-hint">Type a title. The case starts from the scenario's starting situation; steps and expected results are yours to write.</p> }
-                                @if (duplicates.Count > 0 && !string.IsNullOrWhiteSpace(_addTitle)) { <p class="tps-note tps-note-warn" data-testid="tps-scenario-add-duplicate">Looks like an existing case: @string.Join("; ", duplicates.Select(x => x.EffectiveTitle)). Keep it only if it tests something different.</p> }
-                            }
-                            @if (!g.Unresolved && g.Primary is not null && CanWrite && project)
-                            {
-                                <div class="tps-variants" data-testid="tps-variants-panel">
-                                    <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@(_busy || _dirty)" @onclick="() => LoadVariantsAsync(group.Key)" data-testid="tps-scenario-suggest">Suggest more test cases</button>
-                                    @if (_variants.TryGetValue(g.Key, out var proposals))
-                                    {
-                                        @if (proposals.Count == 0)
+                                @if (proposals.Count == 0)
+                                {
+                                    <p class="tps-muted tps-small" data-testid="tps-variants-none">The scenario's evidence supports no further variant (no stated failure case, further condition or error response). Add a case by hand if you know one.</p>
+                                }
+                                else
+                                {
+                                    <ul class="tps-plain tps-variant-list" data-testid="tps-variants">
+                                        @foreach (var v in proposals)
                                         {
-                                            <p class="tps-muted tps-small" data-testid="tps-variants-none">The scenario's evidence supports no further variant (no stated failure case, further condition or error response). Add a case by hand if you know one.</p>
+                                            var variant = v;
+                                            <li data-testid="tps-variant" data-key="@v.Key"><strong>@v.Title</strong> <span class="tps-chip tps-chip-quiet">@v.Dimension</span>
+                                                <div class="tps-muted tps-small">@v.Basis@(v.Expected is null ? " Expected result: needs clarification." : "")</div>
+                                                <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@(_busy || _dirty)" @onclick="() => AddVariantAsync(group, variant)" data-testid="tps-variant-add">Add as test case</button></li>
                                         }
-                                        else
-                                        {
-                                            <ul class="tps-plain tps-variant-list" data-testid="tps-variants">
-                                                @foreach (var v in proposals)
-                                                {
-                                                    var variant = v;
-                                                    <li data-testid="tps-variant" data-key="@v.Key"><strong>@v.Title</strong> <span class="tps-chip tps-chip-quiet">@v.Dimension</span>
-                                                        <div class="tps-muted tps-small">@v.Basis@(v.Expected is null ? " Expected result: needs clarification." : "")</div>
-                                                        <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@(_busy || _dirty)" @onclick="() => AddVariantAsync(group, variant)" data-testid="tps-variant-add">Add as test case</button></li>
-                                                }
-                                            </ul>
-                                            <p class="tps-muted tps-small">Proposals from this scenario's evidence only. Nothing is added until you choose one.</p>
-                                        }
-                                    }
-                                </div>
+                                    </ul>
+                                    <p class="tps-muted tps-small">Proposals from this scenario's evidence only. Nothing is added until you choose one.</p>
+                                }
                             }
-                            <ul class="tps-cases" aria-label="@($"Test cases of {g.Title}")">@foreach (var c in g.Cases) { @CaseEditor(d, c) }</ul>
                         </div>
                     }
-                </section>
+                    <ul class="tps-cases" aria-label="@($"Test cases of {g.Title}")">@foreach (var c in g.Cases) { @CaseEditor(d, c) }</ul>
+                </div>
             }
-        </div>
+        </section>
     };
 
     private RenderFragment CaseStatus(TestPlanDraft d, TestCaseDraft c, string sid) => __builder =>
@@ -2249,6 +2311,17 @@
             <label class="tps-field"><span class="tps-k" lang="en">Expected result (@name)</span>
                 <textarea class="tps-input" rows="2" value="@n.ExpectedResult" @onchange="e => Change(P.WithCase(d, sid, x => C.WithTranslation(x, language, t => t with { ExpectedResult = e.Value?.ToString() })))" data-testid="@($"tps-tr-expected-{sid}")"></textarea>
                 <span class="tps-orig" lang="en">Original: @(c.EffectiveExpected ?? "Needs clarification")</span></label>
+            @if (c.Source.Kind != ScenarioSourceKind.Manual)
+            {
+                var (given, when, then) = ScenarioPlanning.ScenarioFields(c);
+                @if (given is not null) { @TranslatedField(d, sid, language, $"Starting situation ({name})", n.Given, given, "given", (t, v) => t with { Given = v }) }
+                @if (when is not null) { @TranslatedField(d, sid, language, $"Trigger or action ({name})", n.When, when, "when", (t, v) => t with { When = v }) }
+                @if (then is not null) { @TranslatedField(d, sid, language, $"Expected business outcome ({name})", n.Then, then, "then", (t, v) => t with { Then = v }) }
+            }
+            @if (c.EffectiveObservation is { } observation) { @TranslatedField(d, sid, language, $"How to verify ({name})", n.ObservationMethod, observation, "observation", (t, v) => t with { ObservationMethod = v }) }
+            @if (c.EffectiveEnvironment is { } environment) { @TranslatedField(d, sid, language, $"Environment and prerequisites ({name})", n.Environment, environment, "environment", (t, v) => t with { Environment = v }) }
+            @if (c.Edits.Roles is { } roles) { @TranslatedField(d, sid, language, $"Roles and access ({name})", n.Roles, roles, "roles", (t, v) => t with { Roles = v }) }
+            @if (c.Edits.Dependencies is { } dependencies) { @TranslatedField(d, sid, language, $"Dependencies ({name})", n.Dependencies, dependencies, "dependencies", (t, v) => t with { Dependencies = v }) }
             @if (steps.Count > 0 && !ScenarioPlanning.Complete(c.WithTranslation(language, n), language)) { <p class="tps-muted tps-small" data-testid="tps-tr-incomplete" lang="en">Until every step has @name text (and its result), an export in @name uses the original language for this case.</p> }
         </fieldset>
     };
@@ -2289,7 +2362,7 @@
                         var suggestion = s;
                         <li class="tps-suggest-row" data-testid="tps-suggestion" data-requirement="@s.RequirementId" data-level="@s.Level">
                             <div><strong>@s.RequirementId</strong> <span class="tps-tone tps-tone-@C.LevelTone(s.Level)" data-testid="tps-suggestion-level">@C.LevelLabel(s.Level)</span></div>
-                            <div class="tps-small" data-testid="tps-suggestion-text">@(s.Title.Length > 240 ? s.Title[..239] + "…" : s.Title)</div>
+                            <div class="tps-small" data-testid="tps-suggestion-text">@(s.Title.Length > 240 ? s.Title[..239] + "…" : s.Title)@if (ShownLanguage(c) is { } suggestionLanguage && RequirementText(s.RequirementId, s.SpecificationPath, suggestionLanguage) is { } translatedSuggestion) { <span class="tps-orig" lang="@suggestionLanguage">@TranslationLanguages.Name(suggestionLanguage): @translatedSuggestion</span> }</div>
                             <div class="tps-muted tps-small" data-testid="tps-suggestion-why">Why: @s.Reason Source: @s.SpecificationPath</div>
                             <div class="tps-actionbar tps-actionbar-compact">
                                 <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" disabled="@_busy" aria-label="@($"Link {s.RequirementId} to this test case")" @onclick="() => Change(P.WithCase(d, sid, x => C.Confirm(x, suggestion, null)))" data-testid="tps-suggestion-link">Link to this case</button>
@@ -2306,5 +2379,301 @@
             }
             <p class="tps-muted tps-small">A suggestion is not a link. Only a link you confirm and save counts as test design, and never as an executed test.</p>
         </div>
+    };
+}
+
+@code {
+    // ── Translate all, user story text and story requirements (2026-11-20) ─────────────────────────────────────────────
+
+    private List<BirkNext.TestCoverage.CoverageUserStory> _stories = [];
+    private bool _translateAllOpen;
+    private bool _translateAllOverwrite;
+    private string? _translateAllHelp;
+    private readonly Dictionary<string, string> _storyTab = new(StringComparer.Ordinal);
+
+    private StoryTranslation? StoryText(string storyKey, string language) =>
+        _draft?.StoryTranslations?.FirstOrDefault(t => t.StoryKey == storyKey && string.Equals(t.Language, language, StringComparison.OrdinalIgnoreCase));
+
+    private string? RequirementText(string requirementId, string? path, string language) =>
+        (_draft?.RequirementTranslations ?? []).Where(t => string.Equals(t.Language, language, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(t.RequirementId, requirementId, StringComparison.OrdinalIgnoreCase)
+                && (path is null || L.Key(t.RequirementId, t.SpecificationPath) == L.Key(requirementId, path)))
+            .Select(t => t.Text).FirstOrDefault();
+
+    /// <summary>The language a story is shown in: the language any of its scenarios is shown in (the plan-wide switch sets them all).</summary>
+    private string? StoryLanguage(C.StoryGroup sg) => sg.Scenarios.Select(g => _shownLanguage.GetValueOrDefault(g.Key)).FirstOrDefault(l => l is not null);
+
+    /// <summary>The whole plan's language (all scenarios shown in one language), or null when mixed / original.</summary>
+    private string? PlanLanguage(List<ScenarioGroup> groups)
+    {
+        var languages = groups.Where(g => !g.Unresolved).Select(g => _shownLanguage.GetValueOrDefault(g.Key)).Distinct().ToList();
+        return languages.Count == 1 ? languages[0] : null;
+    }
+
+    private void ShowPlanIn(List<ScenarioGroup> groups, string? language)
+    {
+        foreach (var g in groups) ShowLanguage(g.Key, language);
+    }
+
+    private async Task OpenTranslateAllAsync()
+    {
+        _translation ??= await _api!.TranslationAsync();
+        _translateAllOpen = !_translateAllOpen;
+        _translateAllOverwrite = false;
+    }
+
+    private async Task TranslateAllAsync(List<ScenarioGroup> groups)
+    {
+        if (_draft is null) return;
+        if (_dirty) { Fail("Save or discard your changes first, then translate."); return; }
+        _translation ??= await _api!.TranslationAsync();
+        var target = Targets[0];
+        var name = TranslationLanguages.Name(target);
+        _translateAllOpen = false;
+        if (!_translation.Available)
+        {
+            ShowPlanIn(groups, target);
+            _translateAllHelp = target;
+            Fail($"No translation service is available. {_translation.Reason.Split(" You can write", 2)[0]} The {name} fields are open in every test case so you can write the text by hand.");
+            return;
+        }
+        _busy = true;
+        Info($"Translating every scenario to {name}…");
+        var (result, error) = await _api!.TranslateAllAsync(_draft.Id, new TranslatePlanRequest(_draft.Revision, _translateAllOverwrite, target));
+        _busy = false;
+        if (result is null) { ShowPlanIn(groups, target); _translateAllHelp = target; Fail(error ?? "The plan could not be translated."); return; }
+        _translateAllHelp = null;
+        if (result.Draft is { } draft) { _draft = draft; await ReloadWorkspaceAsync(); }
+        ShowPlanIn(ScenarioPlanning.Groups(_draft!), result.Target ?? target);
+        var detail = result.Failed.Count > 0 ? " " + string.Join(" ", result.Failed.Take(3)) : "";
+        if (result.Failed.Count > 0 && result.Translated.Count == 0) Fail(result.Message + detail); else Ok(result.Message + detail);
+    }
+
+    /// <summary>The slim toolbar above the scenarios: Original / translated segmented switch for the whole plan, and Translate all with a preview.</summary>
+    private RenderFragment TranslateAllBar(TestPlanDraft d, List<ScenarioGroup> groups) => __builder =>
+    {
+        var target = Targets[0];
+        var name = TranslationLanguages.Name(target);
+        var planLanguage = PlanLanguage(groups);
+        var hasTranslations = d.Cases.Any(c => c.TranslatedLanguages.Any());
+        <div class="tps-toolbar" role="toolbar" aria-label="Language of the plan" data-testid="tps-language-toolbar">
+            <div class="tps-segmented" role="group" aria-label="Show the plan in">
+                <button type="button" class="tps-seg @(planLanguage is null ? "is-on" : null)" aria-pressed="@(planLanguage is null ? "true" : "false")" @onclick="() => ShowPlanIn(groups, null)" data-testid="tps-plan-show-original">Original</button>
+                @foreach (var l in Targets.Concat(d.Cases.SelectMany(c => c.TranslatedLanguages)).Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    var language = l;
+                    <button type="button" class="tps-seg @(planLanguage == language ? "is-on" : null)" aria-pressed="@(planLanguage == language ? "true" : "false")" disabled="@(!hasTranslations && language != target)"
+                            @onclick="() => ShowPlanIn(groups, language)" data-testid="tps-plan-show" data-language="@language">@TranslationLanguages.Name(language)</button>
+                }
+            </div>
+            @if (CanWrite)
+            {
+                <div class="tps-popover-anchor">
+                    <button type="button" class="tps-btn tps-btn-pill" disabled="@_busy" aria-expanded="@(_translateAllOpen ? "true" : "false")" aria-controls="tps-translate-all" @onclick="OpenTranslateAllAsync" data-testid="tps-translate-all">
+                        <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>
+                        Translate all
+                    </button>
+                    @if (_translateAllOpen)
+                    {
+                        var preview = C.PreviewTranslateAll(d, target, _translateAllOverwrite);
+                        <div class="tps-popover" id="tps-translate-all" role="dialog" aria-label="Translate all" data-testid="tps-translate-all-preview">
+                            <p class="tps-popover-title">Translate the whole plan to @name?</p>
+                            <ul class="tps-stat-row">
+                                <li><strong data-testid="tps-ta-scenarios">@preview.Scenarios</strong><span>scenarios</span></li>
+                                <li><strong data-testid="tps-ta-cases">@preview.Cases</strong><span>test cases</span></li>
+                                <li><strong data-testid="tps-ta-stories">@preview.Stories</strong><span>user stories</span></li>
+                            </ul>
+                            @if (preview.KeptPersonText > 0 || _translateAllOverwrite)
+                            {
+                                <label class="tps-check-inline"><input type="checkbox" checked="@_translateAllOverwrite" @onchange="e => _translateAllOverwrite = e.Value is true" data-testid="tps-ta-overwrite" />
+                                    Also replace @(_translateAllOverwrite ? "" : $"{preview.KeptPersonText} ")text written by a person</label>
+                            }
+                            <p class="tps-muted tps-small">Scenarios with their Given/When/Then, user stories, every test-case field a tester reads and the linked requirement wording. Identifiers stay as written; it is saved at once and approves nothing.</p>
+                            <div class="tps-popover-actions">
+                                <button type="button" class="tps-btn" disabled="@_busy" @onclick="() => TranslateAllAsync(groups)" data-testid="tps-ta-confirm">Translate @preview.Cases test case@(preview.Cases == 1 ? "" : "s")</button>
+                                <button type="button" class="tps-btn tps-btn-quiet" @onclick="() => _translateAllOpen = false" data-testid="tps-ta-cancel">Cancel</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+        @if (_translateAllHelp is { } helpLanguage)
+        {
+            <p class="tps-note tps-note-warn" data-testid="tps-translate-all-help" role="status">No translation was made. Set up Azure AI Translator or start the local LibreTranslate server in
+                <a href="admin/system-settings?section=translation" data-testid="tps-translate-settings">System Settings → Translation</a>, or write the @TranslationLanguages.Name(helpLanguage) text in each test case — it is saved like any other change.</p>
+        }
+    };
+
+    /// <summary>One translated field of a case with the original beneath (edited text is a person's; saved with Save draft).</summary>
+    private RenderFragment TranslatedField(TestPlanDraft d, string sid, string language, string label, string? value, string original, string key, Func<TestCaseTranslation, string?, TestCaseTranslation> apply) => __builder =>
+    {
+        <label class="tps-field"><span class="tps-k" lang="en">@label</span>
+            <textarea class="tps-input" rows="2" value="@value" @onchange="e => Change(P.WithCase(d, sid, x => C.WithTranslation(x, language, t => apply(t, e.Value?.ToString()))))" data-testid="@($"tps-tr-{key}-{sid}")"></textarea>
+            <span class="tps-orig" lang="en">Original: @original</span></label>
+    };
+
+    private void ChangeStoryText(string storyKey, string language, Func<StoryTranslation, StoryTranslation> change)
+    {
+        if (_draft is null) return;
+        var all = (_draft.StoryTranslations ?? []).ToList();
+        var held = all.FirstOrDefault(t => t.StoryKey == storyKey && t.Language == language) ?? new StoryTranslation { StoryKey = storyKey, Language = language };
+        all.RemoveAll(t => t.StoryKey == storyKey && t.Language == language);
+        all.Add(change(held));
+        Change(_draft with { StoryTranslations = all });
+    }
+
+    // ── Requirements of a user story: named (A), tasks.md (B), suggested (C/D), confirmed for the story, and the cases' links (read-only) ──
+
+    private sealed record StoryRequirementItem(string RequirementId, string SpecificationPath, string Title, RequirementSuggestionLevel Level, string Reason);
+
+    private List<StoryRequirementItem> StoryCandidates(BirkNext.TestCoverage.CoverageUserStory story, TestPlanDraft d)
+    {
+        var options = _requirements ?? [];
+        var confirmed = (d.StoryRequirementLinks ?? []).Where(l => l.StoryKey == story.Key).Select(l => L.Key(l.Link.RequirementId, l.Link.SpecificationPath)).ToHashSet();
+        var rejected = (d.StoryRejectedSuggestions ?? []).Where(r => r.StoryKey == story.Key).Select(r => L.Key(r.Rejection.RequirementId, r.Rejection.SpecificationPath)).ToHashSet();
+        var path = story.SpecificationPath ?? "";
+        ProjectRequirementOption? Option(string id) => options.FirstOrDefault(o => string.Equals(o.RequirementId, id, StringComparison.OrdinalIgnoreCase) && L.Key(o.RequirementId, o.SpecificationPath) == L.Key(id, path))
+            ?? options.FirstOrDefault(o => string.Equals(o.RequirementId, id, StringComparison.OrdinalIgnoreCase));
+        var items = new List<StoryRequirementItem>();
+        foreach (var id in story.NamedRequirements)
+            if (Option(id) is { } o) items.Add(new(o.RequirementId, o.SpecificationPath, o.Title, RequirementSuggestionLevel.Explicit, $"The story's text names {o.RequirementId}."));
+        foreach (var t in story.TaskRequirements.GroupBy(t => t.RequirementId, StringComparer.OrdinalIgnoreCase))
+            if (Option(t.Key) is { } o && items.All(i => !string.Equals(i.RequirementId, o.RequirementId, StringComparison.OrdinalIgnoreCase)))
+                items.Add(new(o.RequirementId, o.SpecificationPath, o.Title, RequirementSuggestionLevel.Structural,
+                    $"tasks.md: {string.Join("; ", t.Take(3).Select(x => $"{x.TaskId ?? "task"}{(x.Line is { } line ? $" (line {line})" : "")}"))} — {t.First().TaskText}"));
+        var taken = items.Select(i => L.Key(i.RequirementId, i.SpecificationPath)).ToHashSet();
+        var text = string.Join("\n", new[] { story.Title, story.Description, story.WhyThisPriority, story.IndependentTest }.Where(x => x is not null));
+        foreach (var s in ScenarioPlanning.SuggestRequirements(text, [], [], options, taken.Concat(confirmed).Concat(rejected)))
+            items.Add(new(s.RequirementId, s.SpecificationPath, s.Title, s.Level, s.Reason));
+        return [.. items.Where(i => !confirmed.Contains(L.Key(i.RequirementId, i.SpecificationPath)) && !rejected.Contains(L.Key(i.RequirementId, i.SpecificationPath)))];
+    }
+
+    private void ConfirmForStory(string storyKey, StoryRequirementItem item)
+    {
+        if (_draft is null) return;
+        Change(_draft with
+        {
+            StoryRequirementLinks = [.. _draft.StoryRequirementLinks ?? [], new StoryRequirementLink(storyKey, new ManualRequirementLink
+            {
+                RequirementId = item.RequirementId, SpecificationPath = item.SpecificationPath, Title = item.Title, SuggestionLevel = item.Level, SuggestionReason = item.Reason,
+            })],
+        });
+    }
+
+    private void RejectForStory(string storyKey, StoryRequirementItem item)
+    {
+        if (_draft is null) return;
+        Change(_draft with
+        {
+            StoryRejectedSuggestions = [.. _draft.StoryRejectedSuggestions ?? [], new StoryRequirementRejection(storyKey, new RejectedRequirementSuggestion { RequirementId = item.RequirementId, SpecificationPath = item.SpecificationPath })],
+        });
+    }
+
+    private void UnlinkFromStory(string storyKey, ManualRequirementLink link)
+    {
+        if (_draft is null) return;
+        Change(_draft with { StoryRequirementLinks = [.. (_draft.StoryRequirementLinks ?? []).Where(l => !(l.StoryKey == storyKey && L.Key(l.Link.RequirementId, l.Link.SpecificationPath) == L.Key(link.RequirementId, link.SpecificationPath)))] });
+    }
+
+    /// <summary>The story card's two tabs: the story (description, why, Independent Test — translated when the story is shown in another language,
+    /// editable) and its requirements.</summary>
+    private RenderFragment StoryCard(TestPlanDraft d, C.StoryGroup sg) => __builder =>
+    {
+        if (sg.Story is not { } story) return;
+        var language = StoryLanguage(sg);
+        var text = language is null ? null : StoryText(story.Key, language);
+        var tab = _storyTab.GetValueOrDefault(story.Key, "");
+        var candidates = tab == "requirements" ? StoryCandidates(story, d) : [];
+        var confirmed = (d.StoryRequirementLinks ?? []).Where(l => l.StoryKey == story.Key).ToList();
+        var caseLinks = sg.Scenarios.SelectMany(g => g.Cases).SelectMany(c => L.Rows(c, _requirements).Select(r => (Case: c, Row: r))).GroupBy(x => x.Row.RequirementId, StringComparer.OrdinalIgnoreCase).ToList();
+        var storyDom = "tps-story-" + ScenarioPlanning.Sha(story.Key)[..10];
+        <div class="tps-story-tabs" role="tablist" aria-label="@($"About {C.StoryLabel(story)}")">
+            <button type="button" role="tab" id="@($"{storyDom}-tab-story")" aria-selected="@(tab == "story" ? "true" : "false")" aria-controls="@($"{storyDom}-panel")" class="tps-tab @(tab == "story" ? "is-on" : null)"
+                    @onclick='() => _storyTab[story.Key] = tab == "story" ? "" : "story"' data-testid="tps-story-tab-story">Story</button>
+            <button type="button" role="tab" id="@($"{storyDom}-tab-req")" aria-selected="@(tab == "requirements" ? "true" : "false")" aria-controls="@($"{storyDom}-panel")" class="tps-tab @(tab == "requirements" ? "is-on" : null)"
+                    @onclick='() => _storyTab[story.Key] = tab == "requirements" ? "" : "requirements"' data-testid="tps-story-tab-requirements">Requirements
+                @if (confirmed.Count > 0) { <span class="tps-tab-count">@confirmed.Count</span> }</button>
+        </div>
+        @if (tab == "story")
+        {
+            <div class="tps-story-panel" role="tabpanel" id="@($"{storyDom}-panel")" aria-labelledby="@($"{storyDom}-tab-story")" data-testid="tps-story-details">
+                @if (language is not null && CanWrite)
+                {
+                    var name = TranslationLanguages.Name(language);
+                    <div class="tps-story-fields" lang="@language">
+                        <label class="tps-field"><span class="tps-k" lang="en">Title (@name)</span><input class="tps-input" value="@text?.Title" @onchange="e => ChangeStoryText(story.Key, language, t => t with { Title = e.Value?.ToString() })" data-testid="tps-story-tr-title" />
+                            <span class="tps-orig" lang="en">Original: @C.StoryLabel(story)</span></label>
+                        @if (story.Description is { } description) { <label class="tps-field"><span class="tps-k" lang="en">Story (@name)</span><textarea class="tps-input" rows="3" value="@text?.Description" @onchange="e => ChangeStoryText(story.Key, language, t => t with { Description = e.Value?.ToString() })" data-testid="tps-story-tr-description"></textarea><span class="tps-orig" lang="en">Original: @description</span></label> }
+                        @if (story.WhyThisPriority is { } why) { <label class="tps-field"><span class="tps-k" lang="en">Why this priority (@name)</span><textarea class="tps-input" rows="2" value="@text?.WhyThisPriority" @onchange="e => ChangeStoryText(story.Key, language, t => t with { WhyThisPriority = e.Value?.ToString() })"></textarea><span class="tps-orig" lang="en">Original: @why</span></label> }
+                        @if (story.IndependentTest is { } independent) { <label class="tps-field"><span class="tps-k" lang="en">Independent Test (@name)</span><textarea class="tps-input" rows="3" value="@text?.IndependentTest" @onchange="e => ChangeStoryText(story.Key, language, t => t with { IndependentTest = e.Value?.ToString() })" data-testid="tps-story-tr-independent"></textarea><span class="tps-orig" lang="en">Original: @independent</span></label> }
+                    </div>
+                }
+                else
+                {
+                    <dl class="tps-dl">
+                        @if (story.Description is { } description) { <dt>Story</dt><dd data-testid="tps-story-description">@(text?.Description ?? description)</dd> }
+                        @if (story.WhyThisPriority is { } why) { <dt>Why this priority</dt><dd>@(text?.WhyThisPriority ?? why)</dd> }
+                        @if (story.IndependentTest is { } independent) { <dt>Independent Test</dt><dd data-testid="tps-story-independent-text">@(text?.IndependentTest ?? independent)</dd> }
+                    </dl>
+                }
+                <p class="tps-story-source" data-testid="tps-story-source">@story.Key@(story.LineStart is { } from ? $" · lines {from}–{story.LineEnd ?? from}" : "")</p>
+                <p class="tps-muted tps-small">The Independent Test describes how the story can be tested on its own. It is evidence for preparing the cases, not steps by itself.</p>
+            </div>
+        }
+        else if (tab == "requirements")
+        {
+            <div class="tps-story-panel" role="tabpanel" id="@($"{storyDom}-panel")" aria-labelledby="@($"{storyDom}-tab-req")" data-testid="tps-story-requirements">
+                @if (confirmed.Count > 0)
+                {
+                    <p class="tps-sub">Confirmed for this story</p>
+                    <ul class="tps-req-list">
+                        @foreach (var l in confirmed)
+                        {
+                            var link = l.Link;
+                            <li class="tps-req" data-testid="tps-story-req-confirmed" data-requirement="@link.RequirementId">
+                                <span class="tps-req-id">@link.RequirementId</span><span class="tps-req-text">@link.Title</span>
+                                <span class="tps-req-meta">@(link.LinkedAt == default ? "Not saved yet" : $"{link.LinkedBy} · {link.LinkedAt.ToLocalTime():yyyy-MM-dd}")</span>
+                                @if (CanWrite) { <button type="button" class="tps-icon-btn tps-icon-btn-sm" aria-label="@($"Remove {link.RequirementId} from this story")" title="Remove" @onclick="() => UnlinkFromStory(story.Key, link)" data-testid="tps-story-req-remove">✕</button> }
+                            </li>
+                        }
+                    </ul>
+                }
+                <p class="tps-sub">From the specification</p>
+                @if (_requirements is not { Count: > 0 }) { <p class="tps-muted tps-small" data-testid="tps-story-req-unavailable">@(_requirementsNote ?? "The project's specification could not be read, so requirements cannot be linked right now.")</p> }
+                else if (candidates.Count == 0) { <p class="tps-muted tps-small" data-testid="tps-story-req-none">No requirement is named by the story or its tasks, or suggested by its wording.</p> }
+                else
+                {
+                    <ul class="tps-req-list">
+                        @foreach (var item in candidates)
+                        {
+                            var candidate = item;
+                            <li class="tps-req" data-testid="tps-story-req" data-requirement="@item.RequirementId" data-level="@item.Level">
+                                <span class="tps-level tps-level-@item.Level" title="@C.LevelLabel(item.Level)" data-testid="tps-story-req-level">@C.LevelLabel(item.Level)[..1]</span>
+                                <span class="tps-req-id">@item.RequirementId</span>
+                                <span class="tps-req-text">@(item.Title.Length > 200 ? item.Title[..199] + "…" : item.Title)
+                                    <span class="tps-req-why" data-testid="tps-story-req-why">@item.Reason</span></span>
+                                @if (CanWrite)
+                                {
+                                    <span class="tps-req-actions">
+                                        <button type="button" class="tps-icon-btn tps-icon-btn-sm tps-icon-ok" aria-label="@($"Confirm {item.RequirementId} for this story")" title="Confirm for this story" @onclick="() => ConfirmForStory(story.Key, candidate)" data-testid="tps-story-req-confirm">✓</button>
+                                        <button type="button" class="tps-icon-btn tps-icon-btn-sm" aria-label="@($"{item.RequirementId} is not related to this story")" title="Not related" @onclick="() => RejectForStory(story.Key, candidate)" data-testid="tps-story-req-reject">✕</button>
+                                    </span>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+                <p class="tps-sub">Linked to the story's test cases <span class="tps-muted tps-small">(read-only)</span></p>
+                @if (caseLinks.Count == 0) { <p class="tps-muted tps-small" data-testid="tps-story-case-links-none">No test case of this story is linked to a requirement yet.</p> }
+                else
+                {
+                    <ul class="tps-chip-list" data-testid="tps-story-case-links">
+                        @foreach (var g in caseLinks) { <li class="tps-chip" title="@string.Join("; ", g.Select(x => x.Case.EffectiveTitle).Distinct())">@g.Key · @g.Select(x => x.Case.Source.ScenarioId).Distinct().Count() case@(g.Select(x => x.Case.Source.ScenarioId).Distinct().Count() == 1 ? "" : "s")</li> }
+                    </ul>
+                }
+                <p class="tps-muted tps-small">A requirement confirmed for a story is an association with the story: it is never inherited by its scenarios or test cases and never counted as test coverage. Save the draft to keep your choices.</p>
+            </div>
+        }
     };
 }

@@ -682,10 +682,11 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
     }
 
     /// <summary>
-    /// Translates one scenario's cases (only that scenario) into the requested language (default: the first configured target, Norwegian bokmål).
-    /// Technical identifiers are protected by placeholders and must come back unchanged, else that case keeps its previous text and is reported as
-    /// failed. Text a person wrote or edited in that language is kept unless the tester asks to overwrite it. The original text and every review
-    /// decision stay as they are. When no service can translate at all, one clear message says what was tried and where to set it up.
+    /// Translates one scenario (only that scenario) into the requested language (default: the first configured target, Norwegian bokmål): every
+    /// case's text a tester reads, the scenario's Given/When/Then, its user story and the wording of the requirements linked to it. Saved at once
+    /// as a new plan revision. Technical identifiers are protected by placeholders and must come back unchanged, else that text keeps its previous
+    /// version and is reported as failed. Text a person wrote or edited in that language is kept unless the tester asks to overwrite it. The
+    /// original text and every review decision stay as they are. When no service can translate at all, one clear message says what was tried.
     /// </summary>
     public async Task<TranslateScenarioResult> TranslateScenarioAsync(Guid id, TranslateScenarioRequest request, ITestCaseTranslator translator, TranslationSettings settings,
         string actor, CancellationToken ct)
@@ -693,25 +694,44 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         var row = await Row(id, ct);
         if (row.Revision != request.BaseRevision) throw Stale(row);
         var current = Read(row);
-        var cases = current.Cases.Where(c => c.ParentScenario == request.ScenarioKey && c.Review != TestCaseReviewState.Superseded).ToList();
-        if (string.IsNullOrWhiteSpace(request.ScenarioKey) || cases.Count == 0) throw new TestPlanException(404, "scenario-not-found", "That scenario has no test case in this plan.");
-        var target = string.IsNullOrWhiteSpace(request.Target) ? settings.DefaultTarget : request.Target.Trim();
+        if (string.IsNullOrWhiteSpace(request.ScenarioKey) || current.Cases.All(c => c.ParentScenario != request.ScenarioKey || c.Review == TestCaseReviewState.Superseded))
+            throw new TestPlanException(404, "scenario-not-found", "That scenario has no test case in this plan.");
+        return await TranslateAsync(row, current, [request.ScenarioKey], request.Target, request.Overwrite, translator, settings, actor, ct);
+    }
+
+    /// <summary>Translate all: every scenario of the plan (with its user story and linked requirement wording), saved as one revision.</summary>
+    public async Task<TranslateScenarioResult> TranslatePlanAsync(Guid id, TranslatePlanRequest request, ITestCaseTranslator translator, TranslationSettings settings,
+        string actor, CancellationToken ct)
+    {
+        var row = await Row(id, ct);
+        if (row.Revision != request.BaseRevision) throw Stale(row);
+        var current = Read(row);
+        if (current.ProjectKey is null) throw new TestPlanException(400, "not-a-project-plan", "Translation is available for project plans.");
+        var scenarios = current.Cases.Where(c => c.Review != TestCaseReviewState.Superseded).Select(c => c.ParentScenario ?? "").Distinct(StringComparer.Ordinal).ToList();
+        return await TranslateAsync(row, current, scenarios, request.Target, request.Overwrite, translator, settings, actor, ct);
+    }
+
+    private async Task<TranslateScenarioResult> TranslateAsync(TestPlanDraftRecord row, TestPlanDraft current, List<string> scenarioKeys, string? requestedTarget, bool overwrite,
+        ITestCaseTranslator translator, TranslationSettings settings, string actor, CancellationToken ct)
+    {
+        var target = string.IsNullOrWhiteSpace(requestedTarget) ? settings.DefaultTarget : requestedTarget.Trim();
         if (!TranslationLanguages.IsCode(target) || string.Equals(target, settings.SourceLanguage, StringComparison.OrdinalIgnoreCase))
             throw new TestPlanException(400, "translation-language", "Choose a language to translate into that differs from the original's.");
         var name = TranslationLanguages.Name(target);
         if (!translator.Availability.Available) throw NoTranslationService(translator.Availability.Reason, name);
+        var keys = scenarioKeys.ToHashSet(StringComparer.Ordinal);
+        var cases = current.Cases.Where(c => keys.Contains(c.ParentScenario ?? "") && c.Review != TestCaseReviewState.Superseded).ToList();
 
         var translated = new List<string>(); var kept = new List<string>(); var failed = new List<string>();
         var updated = new Dictionary<string, TestCaseDraft>(StringComparer.Ordinal);
         string? provider = null;
         string? serviceDown = null;
-        foreach (var c in cases)
+
+        // One request per text group; identifiers are replaced by placeholders and must all come back.
+        async Task<(List<string?>? Texts, string? Problem)> Translate(IReadOnlyList<string?> fields)
         {
-            if (c.Translation(target) is { Origin: TranslationOrigin.Manual or TranslationOrigin.MachineEdited } && !request.Overwrite) { kept.Add(c.EffectiveTitle); continue; }
-            if (serviceDown is not null) { failed.Add($"{c.EffectiveTitle}: {serviceDown}"); continue; }
-            var fields = ScenarioPlanning.TranslatableFields(c);
-            var masked = new List<string?>();
-            var tokens = new List<List<string>>();
+            if (serviceDown is not null) return (null, serviceDown);
+            var masked = new List<string?>(); var tokens = new List<List<string>>();
             foreach (var f in fields)
             {
                 if (f is null) { masked.Add(null); tokens.Add([]); continue; }
@@ -725,40 +745,97 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
                 // The service itself is unavailable: nothing more is sent; with nothing translated yet, one clear message instead of a list.
                 if (translated.Count == 0) throw NoTranslationService(e.Message, name);
                 serviceDown = e.Message;
-                failed.Add($"{c.EffectiveTitle}: {e.Message}");
-                continue;
+                return (null, e.Message);
             }
-            if (answer.Texts.Count != fields.Count) { failed.Add($"{c.EffectiveTitle}: the service returned a different number of texts."); continue; }
+            if (answer.Texts.Count != fields.Count) return (null, "the service returned a different number of texts.");
             var restored = new List<string?>();
-            var lost = false;
-            for (var i = 0; i < fields.Count && !lost; i++)
+            for (var i = 0; i < fields.Count; i++)
             {
                 if (fields[i] is null) { restored.Add(null); continue; }
-                if (answer.Texts[i] is not { } text || ScenarioPlanning.Restore(text, tokens[i]) is not { } back) { lost = true; break; }
+                if (answer.Texts[i] is not { } text || ScenarioPlanning.Restore(text, tokens[i]) is not { } back)
+                    return (null, "a technical identifier was changed or lost in the translation, so it was not used.");
                 restored.Add(back);
             }
-            if (lost) { failed.Add($"{c.EffectiveTitle}: a technical identifier was changed or lost in the translation, so it was not used."); continue; }
-            var translation = ScenarioPlanning.FromFields(c, restored, TranslationOrigin.Machine, answer.Provider, actor, Now, target);
-            if (translation is null) { failed.Add($"{c.EffectiveTitle}: the translation did not match the case's fields."); continue; }
             provider = answer.Provider;
+            return (restored, null);
+        }
+
+        foreach (var c in cases)
+        {
+            if (c.Translation(target) is { Origin: TranslationOrigin.Manual or TranslationOrigin.MachineEdited } && !overwrite) { kept.Add(c.EffectiveTitle); continue; }
+            var (texts, problem) = await Translate(ScenarioPlanning.TranslatableFields(c));
+            var translation = texts is null ? null : ScenarioPlanning.FromFields(c, texts, TranslationOrigin.Machine, provider, actor, Now, target);
+            if (translation is null) { failed.Add($"{c.EffectiveTitle}: {problem ?? "the translation did not match the case's fields."}"); continue; }
             updated[c.Source.ScenarioId] = c.WithTranslation(target, translation) with
             {
-                EditHistory = [.. c.EditHistory.TakeLast(99), new TestCaseEditEvent(actor, Now, [$"{name} text (machine translation, {answer.Provider})"])],
+                EditHistory = [.. c.EditHistory.TakeLast(99), new TestCaseEditEvent(actor, Now, [$"{name} text (machine translation, {provider})"])],
             };
             translated.Add(c.EffectiveTitle);
         }
+
+        // The user stories of these scenarios (once each), unless a person wrote that story's text.
+        var storyTranslations = (current.StoryTranslations ?? []).ToList();
+        foreach (var story in cases.Select(c => c.Generated.Story).OfType<BirkNext.TestCoverage.CoverageUserStory>().DistinctBy(s => s.Key))
+        {
+            var held = storyTranslations.FirstOrDefault(t => t.StoryKey == story.Key && t.Language == target);
+            if (held is { Origin: TranslationOrigin.Manual or TranslationOrigin.MachineEdited } && !overwrite) continue;
+            if (held is not null && held.SourceFingerprint == StoryFingerprint(story) && !overwrite) continue;
+            var (texts, problem) = await Translate([story.Title, story.Description, story.WhyThisPriority, story.IndependentTest]);
+            if (texts is null) { failed.Add($"User story {story.StoryId ?? story.Title}: {problem}"); continue; }
+            storyTranslations.RemoveAll(t => t.StoryKey == story.Key && t.Language == target);
+            storyTranslations.Add(new StoryTranslation
+            {
+                StoryKey = story.Key, Language = target, Title = texts[0], Description = texts[1], WhyThisPriority = texts[2], IndependentTest = texts[3],
+                SourceFingerprint = StoryFingerprint(story), Origin = TranslationOrigin.Machine, Provider = provider, By = actor, At = Now,
+            });
+        }
+
+        // The wording of the requirements linked to these cases (display only), when it is known and not yet translated as it now reads.
+        var requirementTranslations = (current.RequirementTranslations ?? []).ToList();
+        var serverCatalog = specificationCatalogs is null || current.ProjectKey is null ? null : await specificationCatalogs.CurrentAsync(current.ProjectKey, ct);
+        var wording = new Dictionary<(string, string), (string Id, string Path, string Text)>();
+        foreach (var c in cases)
+        {
+            foreach (var l in c.RequirementLinks.Where(l => !string.IsNullOrWhiteSpace(l.Title)))
+                wording.TryAdd(LinkKey(l.RequirementId, l.SpecificationPath), (l.RequirementId, l.SpecificationPath, l.Title));
+            foreach (var r in c.Generated.Requirements)
+                if (serverCatalog?.Requirements.FirstOrDefault(e => string.Equals(e.RequirementId, r.RuleId, StringComparison.OrdinalIgnoreCase)) is { } entry)
+                    wording.TryAdd(LinkKey(entry.RequirementId, entry.Path), (entry.RequirementId, entry.Path, entry.Title));
+        }
+        foreach (var l in (current.StoryRequirementLinks ?? []).Where(l => cases.Any(c => c.Generated.Story?.Key == l.StoryKey) && !string.IsNullOrWhiteSpace(l.Link.Title)))
+            wording.TryAdd(LinkKey(l.Link.RequirementId, l.Link.SpecificationPath), (l.Link.RequirementId, l.Link.SpecificationPath, l.Link.Title));
+        var pending = wording.Values.Where(w => !requirementTranslations.Any(t => t.Language == target && LinkKey(t.RequirementId, t.SpecificationPath) == LinkKey(w.Id, w.Path)
+            && t.SourceSha256 == ScenarioPlanning.Sha(w.Text))).Take(200).ToList();
+        if (pending.Count > 0)
+        {
+            var (texts, problem) = await Translate([.. pending.Select(p => (string?)p.Text)]);
+            if (texts is null) failed.Add($"Requirement wording: {problem}");
+            else
+                for (var i = 0; i < pending.Count; i++)
+                {
+                    requirementTranslations.RemoveAll(t => t.Language == target && LinkKey(t.RequirementId, t.SpecificationPath) == LinkKey(pending[i].Id, pending[i].Path));
+                    requirementTranslations.Add(new RequirementTextTranslation(pending[i].Id, pending[i].Path, target, texts[i]!, ScenarioPlanning.Sha(pending[i].Text), provider, Now));
+                }
+        }
+
         TestPlanDraft? plan = null;
-        if (updated.Count > 0)
+        var storiesChanged = !storyTranslations.SequenceEqual(current.StoryTranslations ?? []);
+        var requirementsChanged = !requirementTranslations.SequenceEqual(current.RequirementTranslations ?? []);
+        if (updated.Count > 0 || storiesChanged || requirementsChanged)
             plan = await WriteAsync(row, current with
             {
                 Cases = [.. current.Cases.Select(c => updated.GetValueOrDefault(c.Source.ScenarioId) ?? c)], Revision = row.Revision + 1, UpdatedBy = actor, UpdatedAt = Now,
+                StoryTranslations = storyTranslations.Count == 0 ? null : storyTranslations,
+                RequirementTranslations = requirementTranslations.Count == 0 ? null : requirementTranslations,
             }, ct, $"Translated to {name}");
-        var message = updated.Count == 0 ? "Nothing was translated."
-            : $"Translated {translated.Count} test case{(translated.Count == 1 ? "" : "s")} to {name}{(provider is null ? "" : $" ({provider})")}. Review the text; translating approves nothing.";
+        var message = updated.Count == 0 && plan is null ? "Nothing was translated."
+            : $"Translated {translated.Count} test case{(translated.Count == 1 ? "" : "s")}{(scenarioKeys.Count > 1 ? $" in {cases.Select(c => c.ParentScenario).Distinct().Count()} scenarios" : "")} to {name}{(provider is null ? "" : $" ({provider})")}. Saved; translating approves nothing.";
         if (kept.Count > 0) message += $" Kept {kept.Count} {name} text{(kept.Count == 1 ? "" : "s")} written by a person.";
         if (failed.Count > 0) message += $" {failed.Count} could not be translated.";
         return new TranslateScenarioResult(plan, translated, kept, failed, message, target, provider);
     }
+
+    public static string StoryFingerprint(BirkNext.TestCoverage.CoverageUserStory s) => ScenarioPlanning.Sha($"{s.Title}\u001f{s.Description}\u001f{s.WhyThisPriority}\u001f{s.IndependentTest}");
 
     /// <summary>No translation choice could translate: what was tried and why, where to set it up, and that the text can be written by hand.</summary>
     private static TestPlanException NoTranslationService(string detail, string language)
@@ -852,8 +929,65 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         {
             PlanName = string.IsNullOrWhiteSpace(request.PlanName) ? current.PlanName : Name(request.PlanName), DeliveryLabel = Label(request.DeliveryLabel),
             Revision = row.Revision + 1, Suites = suites, Cases = cases, UpdatedBy = actor, UpdatedAt = Now,
+            StoryRequirementLinks = request.StoryRequirementLinks is { } storyLinks ? StoryLinks(current, storyLinks, catalog, serverCatalog, actor) : current.StoryRequirementLinks,
+            StoryRejectedSuggestions = request.StoryRejectedSuggestions is { } storyRejections ? StoryRejections(current, storyRejections, actor) : current.StoryRejectedSuggestions,
+            StoryTranslations = request.StoryTranslations is { } storyTexts ? StoryTexts(current, storyTexts, actor) : current.StoryTranslations,
         };
         return await WriteAsync(row, FlagProject(plan), ct);
+    }
+
+    public const int MaxStories = 500;
+
+    /// <summary>User story translations after a save: unchanged text keeps what was recorded; changed text is a person's (Manual / MachineEdited).</summary>
+    private List<StoryTranslation>? StoryTexts(TestPlanDraft current, List<StoryTranslation> wanted, string actor)
+    {
+        static string? T(string? v) => string.IsNullOrWhiteSpace(v) ? null : v.Trim()[..Math.Min(v.Trim().Length, MaxTranslatedField)];
+        var stories = current.Cases.Select(c => c.Generated.Story).OfType<BirkNext.TestCoverage.CoverageUserStory>().GroupBy(s => s.Key).ToDictionary(g => g.Key, g => g.First());
+        var result = new List<StoryTranslation>();
+        foreach (var w in wanted.Where(w => stories.ContainsKey(w.StoryKey) && TranslationLanguages.IsCode(w.Language)).DistinctBy(w => (w.StoryKey, w.Language)).Take(MaxStories))
+        {
+            var held = (current.StoryTranslations ?? []).FirstOrDefault(t => t.StoryKey == w.StoryKey && t.Language == w.Language);
+            var clean = new StoryTranslation { StoryKey = w.StoryKey, Language = w.Language, Title = T(w.Title), Description = T(w.Description), WhyThisPriority = T(w.WhyThisPriority), IndependentTest = T(w.IndependentTest) };
+            if (clean.Title is null && clean.Description is null && clean.WhyThisPriority is null && clean.IndependentTest is null) continue;
+            if (held is not null && held.Title == clean.Title && held.Description == clean.Description && held.WhyThisPriority == clean.WhyThisPriority && held.IndependentTest == clean.IndependentTest)
+            { result.Add(held); continue; }
+            result.Add(clean with
+            {
+                SourceFingerprint = StoryFingerprint(stories[w.StoryKey]), By = actor, At = Now, Provider = held?.Provider,
+                Origin = held?.Origin is TranslationOrigin.Machine or TranslationOrigin.MachineEdited ? TranslationOrigin.MachineEdited : TranslationOrigin.Manual,
+            });
+        }
+        return result.Count == 0 ? null : result;
+    }
+
+    /// <summary>
+    /// Story-level requirement links after a save, per user story: each checked exactly like a case link (kept as recorded, new ones only from the
+    /// project's catalog, who and when recorded). An association with the story — never inherited by its scenarios or cases, never counted.
+    /// </summary>
+    private List<StoryRequirementLink>? StoryLinks(TestPlanDraft current, List<StoryRequirementLink> wanted,
+        Dictionary<(string, string), ProjectRequirementOption>? catalog, BirkNext.Specifications.SpecificationCatalogView? serverCatalog, string actor)
+    {
+        var result = new List<StoryRequirementLink>();
+        foreach (var story in wanted.Where(w => !string.IsNullOrWhiteSpace(w.StoryKey)).GroupBy(w => w.StoryKey.Trim(), StringComparer.Ordinal).Take(MaxStories))
+        {
+            var held = (current.StoryRequirementLinks ?? []).Where(l => l.StoryKey == story.Key).Select(l => l.Link);
+            result.AddRange(RequirementLinks(held, [.. story.Select(w => w.Link)], catalog, serverCatalog, actor).Select(l => new StoryRequirementLink(story.Key, l with { Scope = null })));
+        }
+        return result.Count == 0 ? null : result;
+    }
+
+    private List<StoryRequirementRejection>? StoryRejections(TestPlanDraft current, List<StoryRequirementRejection> wanted, string actor)
+    {
+        var held = (current.StoryRejectedSuggestions ?? []).ToDictionary(r => (r.StoryKey, ScenarioPlanning.Key(r.Rejection.RequirementId, r.Rejection.SpecificationPath)), r => r);
+        var result = wanted.Where(w => !string.IsNullOrWhiteSpace(w.StoryKey) && !string.IsNullOrWhiteSpace(w.Rejection.RequirementId))
+            .DistinctBy(w => (w.StoryKey, ScenarioPlanning.Key(w.Rejection.RequirementId, w.Rejection.SpecificationPath))).Take(MaxRejectedSuggestions * 4)
+            .Select(w => held.TryGetValue((w.StoryKey, ScenarioPlanning.Key(w.Rejection.RequirementId, w.Rejection.SpecificationPath)), out var kept) ? kept
+                : new StoryRequirementRejection(w.StoryKey.Trim(), new RejectedRequirementSuggestion
+                {
+                    RequirementId = w.Rejection.RequirementId.Trim(), SpecificationPath = (w.Rejection.SpecificationPath ?? "").Trim(), RejectedBy = actor, RejectedAt = Now,
+                }))
+            .ToList();
+        return result.Count == 0 ? null : result;
     }
 
     /// <summary>Rebuilds generated content from the project's latest discovery. Human edits, links, Test Data and review history are kept; an accepted
@@ -865,8 +999,17 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         var byId = latest.Candidates.ToDictionary(c => c.CandidateId, StringComparer.Ordinal);
         var cases = current.Cases.Select(c =>
         {
-            if (c.Source.Kind != ScenarioSourceKind.ProjectDiscovery || !byId.TryGetValue(c.Source.ScenarioId, out var candidate) || candidate.Fingerprint == c.Source.Fingerprint)
-                return E.Assess(c with { SourceChanged = false });
+            if (c.Source.Kind != ScenarioSourceKind.ProjectDiscovery || !byId.TryGetValue(c.Source.ScenarioId, out var candidate)) return E.Assess(c with { SourceChanged = false });
+            if (candidate.Fingerprint == c.Source.Fingerprint)
+            {
+                // Same scenario text: only its user story may have changed (moved, renumbered, or identified for the first time). Recorded, never silent.
+                if (StoryKey(c.Generated.Story) == StoryKey(candidate.Story)) return E.Assess(c with { SourceChanged = false });
+                return E.Assess(c with
+                {
+                    Generated = c.Generated with { Story = candidate.Story, NumberInStory = candidate.NumberInStory }, SourceChanged = false,
+                    EditHistory = [.. c.EditHistory.TakeLast(99), new TestCaseEditEvent("BirkNext", Now, [StoryMove(c.Generated.Story, candidate.Story)])],
+                });
+            }
             var review = c.Review;
             var history = c.ReviewHistory;
             if (review == TestCaseReviewState.Accepted)
@@ -875,9 +1018,11 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
                 history = [.. history, new TestCaseReviewEvent(TestCaseReviewState.UnderReview, "BirkNext", "The scenario changed in the latest discovery; review it again.", Now)];
             }
             // Generated content is replaced; the person's edits (Edits) are kept as they are and still take precedence.
+            var moved = StoryKey(c.Generated.Story) != StoryKey(candidate.Story);
             return E.Assess(c with
             {
                 Generated = TestScenarioDiscoveryEngine.Content(candidate), Source = c.Source with { Fingerprint = candidate.Fingerprint }, Review = review, ReviewHistory = history, SourceChanged = false,
+                EditHistory = moved ? [.. c.EditHistory.TakeLast(99), new TestCaseEditEvent("BirkNext", Now, [StoryMove(c.Generated.Story, candidate.Story)])] : c.EditHistory,
             });
         }).ToList();
         var suites = current.Suites.Concat(TestScenarioDiscoveryEngine.ProjectSuites(cases.Select(c => c.Generated)).Where(s => current.Suites.All(x => x.Id != s.Id))).ToList();
@@ -903,16 +1048,27 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         if (projectKey is not null && discoveryStore is not null) await discoveryStore.RestoreAsync(projectKey, null, ct);
     }
 
+    private static string? StoryKey(BirkNext.TestCoverage.CoverageUserStory? story) => story?.Key;
+
+    /// <summary>"User story: US6 → US7" (or "identified: US6", "no longer under a user story (was US6)") for the case's history.</summary>
+    private static string StoryMove(BirkNext.TestCoverage.CoverageUserStory? before, BirkNext.TestCoverage.CoverageUserStory? after) =>
+        before is null ? $"User story identified: {after!.StoryId ?? after.Key} ({after.Title})"
+        : after is null ? $"No longer under a user story in the latest source (was {before.StoryId ?? before.Key})"
+        : $"User story: {before.StoryId ?? before.Key} → {after.StoryId ?? after.Key} ({after.Title})";
+
     private TestPlanDraft FlagProject(TestPlanDraft plan)
     {
         if (plan.ProjectKey is not { } key || discoveries?.Latest(key) is not { } latest) return plan;
         var current = latest.Candidates.ToDictionary(c => c.CandidateId, c => c.Fingerprint, StringComparer.Ordinal);
+        var storyNow = latest.Candidates.ToDictionary(c => c.CandidateId, c => c.Story?.Key, StringComparer.Ordinal);
         return plan with
         {
             Cases = [.. plan.Cases.Select(c => c with
             {
+                // Changed in the evidence, or moved to another user story (a story identified for the first time is not a change of the scenario).
                 SourceChanged = c.Source.Kind == ScenarioSourceKind.ProjectDiscovery && c.Review != TestCaseReviewState.Superseded
-                    && current.TryGetValue(c.Source.ScenarioId, out var now) && now != c.Source.Fingerprint,
+                    && current.TryGetValue(c.Source.ScenarioId, out var now)
+                    && (now != c.Source.Fingerprint || c.Generated.Story is not null && storyNow[c.Source.ScenarioId] != c.Generated.Story.Key),
             })],
         };
     }
@@ -954,9 +1110,13 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
     /// project's catalog (never free text); the server records who and when. Automatic links (the case's evidence) are not touched here.
     /// </summary>
     private List<ManualRequirementLink> RequirementLinks(TestCaseDraft before, List<ManualRequirementLink> wanted, Dictionary<(string, string), ProjectRequirementOption>? catalog,
+        BirkNext.Specifications.SpecificationCatalogView? serverCatalog, string actor) => RequirementLinks(before.RequirementLinks, wanted, catalog, serverCatalog, actor);
+
+    /// <summary>The same check for any held links (a case's, or one user story's): kept as recorded, new ones only from the project's catalog.</summary>
+    private List<ManualRequirementLink> RequirementLinks(IEnumerable<ManualRequirementLink> heldLinks, List<ManualRequirementLink> wanted, Dictionary<(string, string), ProjectRequirementOption>? catalog,
         BirkNext.Specifications.SpecificationCatalogView? serverCatalog, string actor)
     {
-        var held = before.RequirementLinks.GroupBy(l => LinkKey(l.RequirementId, l.SpecificationPath)).ToDictionary(g => g.Key, g => g.First());
+        var held = heldLinks.GroupBy(l => LinkKey(l.RequirementId, l.SpecificationPath)).ToDictionary(g => g.Key, g => g.First());
         var result = new List<ManualRequirementLink>();
         foreach (var w in wanted.Where(w => !string.IsNullOrWhiteSpace(w.RequirementId)).DistinctBy(w => LinkKey(w.RequirementId, w.SpecificationPath)))
         {
@@ -1025,8 +1185,14 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
         var steps = wanted.Steps.Take(saved.EffectiveSteps.Count).Select(s => T(s) ?? "").ToList();
         var results = wanted.StepExpected.Take(steps.Count).Select(T).ToList();
         while (results.Count < steps.Count) results.Add(null);
-        var clean = new TestCaseTranslation { Title = T(wanted.Title), Purpose = T(wanted.Purpose), Preconditions = T(wanted.Preconditions), Steps = steps, StepExpected = results, ExpectedResult = T(wanted.ExpectedResult) };
-        if (clean.Title is null && clean.Purpose is null && clean.Preconditions is null && clean.ExpectedResult is null && steps.All(s => s.Length == 0)) return null;
+        var clean = new TestCaseTranslation
+        {
+            Title = T(wanted.Title), Purpose = T(wanted.Purpose), Preconditions = T(wanted.Preconditions), Steps = steps, StepExpected = results, ExpectedResult = T(wanted.ExpectedResult),
+            Given = T(wanted.Given), When = T(wanted.When), Then = T(wanted.Then), ObservationMethod = T(wanted.ObservationMethod), Environment = T(wanted.Environment),
+            Roles = T(wanted.Roles), Dependencies = T(wanted.Dependencies),
+        };
+        if (new[] { clean.Title, clean.Purpose, clean.Preconditions, clean.ExpectedResult, clean.Given, clean.When, clean.Then, clean.ObservationMethod, clean.Environment, clean.Roles, clean.Dependencies }
+            .All(v => v is null) && steps.All(s => s.Length == 0)) return null;
         if (before is not null && SameText(before, clean)) return before;
         return clean with
         {
@@ -1037,6 +1203,8 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
 
     private static bool SameText(TestCaseTranslation a, TestCaseTranslation b) =>
         a.Title == b.Title && a.Purpose == b.Purpose && a.Preconditions == b.Preconditions && a.ExpectedResult == b.ExpectedResult
+        && a.Given == b.Given && a.When == b.When && a.Then == b.Then && a.ObservationMethod == b.ObservationMethod && a.Environment == b.Environment
+        && a.Roles == b.Roles && a.Dependencies == b.Dependencies
         && a.Steps.SequenceEqual(b.Steps) && a.StepExpected.Select(x => x ?? "").SequenceEqual(b.StepExpected.Select(x => x ?? ""));
 
     private static (string, string) LinkKey(string id, string? path) => (id.Trim().ToUpperInvariant(), (path ?? "").Replace('\\', '/').Trim().TrimStart('/').ToUpperInvariant());

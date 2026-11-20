@@ -104,8 +104,13 @@ public sealed class ScenarioPlanningTests
     {
         var c = Discovered("tsc-42", "Child past school age", "a child past compulsory school age", "the period locks", "the child is not expected");
         var complete = c.WithTranslation("nb",
-            ScenarioPlanning.FromFields(c, ["Barn over skolealder", "Formål", "et barn over opplæringspliktig alder", "Utløs: perioden låses", "barnet er ikke forventet", "barnet er ikke forventet"],
+            ScenarioPlanning.FromFields(c, ["Barn over skolealder", "Formål", "et barn over opplæringspliktig alder", "Utløs: perioden låses", "barnet er ikke forventet", "barnet er ikke forventet",
+                "et barn over opplæringspliktig alder", "perioden låses", "barnet er ikke forventet", null, null, null, null],
                 TranslationOrigin.Machine, "fake", "tester", DateTimeOffset.UnixEpoch));
+        complete.Translation("nb")!.Given.Should().Be("et barn over opplæringspliktig alder", "the scenario's Given/When/Then are translated too");
+        complete.Translation("nb")!.Then.Should().Be("barnet er ikke forventet");
+        ScenarioPlanning.FromFields(c, ["only", "six", "fields", "as", "before", "x"], TranslationOrigin.Machine, null, "t", DateTimeOffset.UnixEpoch)
+            .Should().BeNull("a translation must cover every field");
         ScenarioPlanning.StateOf(complete).Should().Be(TranslationState.Current);
         var nb = ScenarioPlanning.Localized(complete, ScenarioPlanning.Norwegian);
         nb.Translated.Should().BeTrue();

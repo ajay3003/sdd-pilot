@@ -149,6 +149,10 @@ public sealed record TestCaseContent
     /// <summary>Required when the evidence states inputs; otherwise Unknown — absence of a description never means "not required".</summary>
     public TestDataNeed TestDataNeed { get; init; }
     public string? Capability { get; init; }
+    /// <summary>The user story the scenario was written under when the case was prepared (its key, number, priority, Independent Test …);
+    /// null when none was identified. Evidence for preparing the case; requirements are never inherited from it.</summary>
+    public BirkNext.TestCoverage.CoverageUserStory? Story { get; init; }
+    public int? NumberInStory { get; init; }
 }
 
 /// <summary>One change a person made to a case's human-owned fields (the fields named, never the old values).</summary>
@@ -356,7 +360,22 @@ public sealed record TestPlanDraft
     public DateTimeOffset CreatedAt { get; init; }
     public string UpdatedBy { get; init; } = "";
     public DateTimeOffset UpdatedAt { get; init; }
+    /// <summary>Requirements a tester confirmed for a user story as a whole (an association with the story; never inherited by its scenarios or
+    /// cases and never counted as coverage). Omitted when empty.</summary>
+    public List<StoryRequirementLink>? StoryRequirementLinks { get; init; }
+    /// <summary>Requirement suggestions a tester rejected for a user story (not proposed again for it). Omitted when empty.</summary>
+    public List<StoryRequirementRejection>? StoryRejectedSuggestions { get; init; }
+    /// <summary>User story text translated per language (omitted when empty).</summary>
+    public List<StoryTranslation>? StoryTranslations { get; init; }
+    /// <summary>Requirement wording translated for display (omitted when empty).</summary>
+    public List<RequirementTextTranslation>? RequirementTranslations { get; init; }
 }
+
+/// <summary>A requirement confirmed for a user story (<see cref="StoryKey"/> = specification file + story number). Who, when and the catalog check
+/// are in <see cref="Link"/> as for a case link.</summary>
+public sealed record StoryRequirementLink(string StoryKey, ManualRequirementLink Link);
+
+public sealed record StoryRequirementRejection(string StoryKey, RejectedRequirementSuggestion Rejection);
 
 public sealed record TestPlanDraftSummary(Guid Id, string GuideKey, string PlanName, string? DeliveryLabel, int Revision, int Cases, int Accepted, int NeedsClarification,
     int MissingExpected, int MissingTestData, int Blocked, string UpdatedBy, DateTimeOffset UpdatedAt);
@@ -421,6 +440,12 @@ public sealed record SaveTestPlanDraftRequest
     public List<TestCaseHumanPart> Cases { get; init; } = [];
     /// <summary>The project's current specification requirements, needed only when a save adds a manual requirement link.</summary>
     public ProjectRequirementCatalog? RequirementCatalog { get; init; }
+    /// <summary>Story-level requirement links after this save (null = unchanged). New links are checked like case links; the server records who and when.</summary>
+    public List<StoryRequirementLink>? StoryRequirementLinks { get; init; }
+    /// <summary>Story-level rejected suggestions after this save (null = unchanged).</summary>
+    public List<StoryRequirementRejection>? StoryRejectedSuggestions { get; init; }
+    /// <summary>User story translations after this save (null = unchanged); a changed text is marked written by a person.</summary>
+    public List<StoryTranslation>? StoryTranslations { get; init; }
 }
 
 public sealed record TestCaseHumanPart
