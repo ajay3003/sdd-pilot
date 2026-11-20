@@ -155,7 +155,8 @@ public static partial class IntegrationSuiteComposer
             "Are Kode 6/7 children counted in Bufdata aggregate figures, or excluded entirely? Only identifier exclusion is recorded (bufdata-exclusion).", "security:bufdata-aggregate", [],
             "Skolenærvær security consumer · bufdata-exclusion", ["DATA-03"]));
         // K67-06/07 are the M01 runtime probe (unauthorized / authorized identity): not a second implementation — they inherit its requirement state.
-        SecurityRequirementAssessment? Probe(SecurityRequirementKind kind) => i.Consumer?.Requirements.FirstOrDefault(r => r.Key.Contains(kind.ToString(), StringComparison.OrdinalIgnoreCase));
+        // Matched by the shared requirement key ("unauthorized-access", "authorized-graded-access"); the enum name never occurs in a key.
+        SecurityRequirementAssessment? Probe(SecurityRequirementKind kind) => i.Consumer?.Requirements.FirstOrDefault(r => r.Key == SecurityClassificationAssessments.Key(kind));
         foreach (var (id, title, kind, key) in new[] { ("K67-06", "Unauthorized user attempts a protected-child lookup", SecurityRequirementKind.UnauthorizedRuntimeDenial, "security:unauthorized"),
                                                        ("K67-07", "Authorized user reads allowed information", SecurityRequirementKind.AuthorizedRuntimeAccess, "security:authorized") })
         {

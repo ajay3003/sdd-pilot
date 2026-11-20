@@ -92,7 +92,7 @@ public sealed class SkolenaervaerChainWorkflowTests : IAsyncLifetime
             var selected = page.GetByTestId("its-selected-source");
             await Assertions.Expect(selected).ToHaveCountAsync(4, new() { Timeout = 60000 });
             (await selected.AllInnerTextsAsync()).Should().Contain(s => s.Contains("altinn, mu")).And.Contain(s => s.Contains("mm"))
-                .And.Contain(s => s.Contains("skole-intake, person-tjeneste, period-lock")).And.Contain(s => s.Contains("bufdata"));
+                .And.Contain(s => s.Contains("skole-intake") && s.Contains("person-tjeneste") && s.Contains("period-lock"), "one package serves these three stages, in any order").And.Contain(s => s.Contains("bufdata"));
             foreach (var approve in await page.GetByTestId("its-approve-source").AllAsync()) await approve.ClickAsync();
             await page.GetByTestId("its-save-context").ClickAsync();
             await Assertions.Expect(page.GetByTestId("its-message")).ToContainTextAsync("Revision 1 saved", new() { Timeout = 30000 });

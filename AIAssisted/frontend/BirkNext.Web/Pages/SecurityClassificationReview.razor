@@ -413,7 +413,7 @@
                                     @foreach (var (identity, surface) in ClassificationPresentation.MatrixColumns)
                                     {
                                         var observation = ClassificationPresentation.Observation(result, level.Nivaa, identity, surface);
-                                        <td data-label="@($"{identity} · {ClassificationLabels.Surface(surface)}")"><span class="sc-badge sc-badge-@(observation is null ? "muted" : ClassificationPresentation.Tone(observation.State))" title="@(observation?.Detail ?? "")">@ClassificationPresentation.Cell(observation)</span></td>
+                                        <td data-label="@($"{identity} · {ClassificationLabels.Surface(surface)}")" data-testid="sc-matrix-cell" data-identity="@identity" data-surface="@surface" data-state="@(observation?.State.ToString() ?? "None")"><span class="sc-badge sc-badge-@(observation is null ? "muted" : ClassificationPresentation.Tone(observation.State))" title="@(observation?.Detail ?? "")">@ClassificationPresentation.Cell(observation)</span></td>
                                     }
                                 </tr>
                             }

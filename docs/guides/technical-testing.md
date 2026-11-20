@@ -11,6 +11,7 @@ gives a checklist.
 | Automated browser flows | Critical E2E Regression (`/critical-e2e-regression`) | An imported project with UI source; for verify and run, the Edge Companion on an attended page of a non-production target |
 | API quality | API Quality Review (`/api-quality-review`) | A non-production Target Environment with the API's base URL (and health endpoint, OpenAPI contract) |
 | Front-end quality | Frontend Quality Review (`/frontend-quality-review`) | A non-production Target Environment with the front end's URL; Chromium, Node (Lighthouse) and Podman with the ZAP image on the BirkNext server for the browser engines |
+| Graded access (Kode 6/7) | M01 – Gradert tilgang (`/security-classification-review`) | The application source in Source Analysis; for runtime checks a Development/Local or QA/Test Target Environment, the Person GraphQL endpoint, synthetic test children and two synthetic identity tokens |
 | Integration chains (Skolenærvær) | Integration suites (`/integration-suites`) | A project, the services' source (OpenAPI) and a non-production Target Environment whose URL reaches every stage |
 
 Manual test cases are prepared in **Manual Testing → Plan & prepare** and exported to Azure DevOps Test Plans
@@ -335,7 +336,76 @@ Seven defects in BirkNext were found and fixed on the way:
 
 ---
 
-## 6. All workflow tests in one command (before a release)
+## 6. M01 – Gradert tilgang (Kode 6/7)
+
+M01 reviews whether a Kode 6 / Kode 7 child stays protected. It has two separate parts:
+
+- **Static review** reads the application source (from Source Analysis): the classification levels, whether the level survives the change
+  capture (CDC) pipeline, and whether the Person module's profile, search, revision log and GraphQL resolvers check graded access. A guard
+  found in source is a mechanism, never proof that it works.
+- **Runtime verification** sends three fixed GraphQL queries (profile by id, search by the exact BiRK id, revision log by id) to the
+  Person endpoint, for synthetic test children only, with two test identities: one **without** graded access and one **with** it. No
+  mutation, no broad search, never Production. Tokens are used for one run and never stored; the test context lives in the backend's memory
+  only.
+
+### Before you start
+
+- The application source imported (Import Project or Source Analysis). The page picks it when it is the only source with security evidence;
+  otherwise choose it under **Advanced source evidence**.
+- A Target Environment of type Development/Local (for a DEV context) or QA/Test (for a QA context). Production is refused.
+- From the test lead: the Person GraphQL endpoint, one approved synthetic test child per level you test (registration id and BiRK id —
+  never a real child), and a token for each test identity.
+
+### Step by step
+
+1. **Open M01 – Gradert tilgang.** *Security readiness* shows the source dimensions; *Source evidence* names the snapshot in use.
+2. **Configure test context:** environment DEV or QA, the endpoint, a test child per level, short labels for the two identities, and
+   **Approved by the test lead**. Select **Keep in memory**. *Temporary security test context* now says *Ready*.
+3. Open **Run options**, enter the two tokens. *Live checks* changes from *Not run* to *Available*.
+4. **Run both in one review** (or the static review and runtime verification separately).
+5. Read **Authorization tests**: one row per level, one column per identity and check. For a graded child, an identity without graded access
+   must get exactly what a nonexistent child gets (*Pass — anti-disclosure*); an identity with graded access must get the child. A level
+   without a test child shows *Not tested* — never passed.
+6. **Consumers** (*Show consumer assessments*) shows the shared requirements other reviews reuse (Skolenærvær, Integration suites K67-06/07).
+7. After a fix, enter the tokens again and run again; **Previous reviews** keeps both. **Export HTML** downloads the result. **Clear test
+   context** removes the context from memory.
+
+### What the results mean (examples)
+
+| You see | It means |
+|---------|----------|
+| *Fail* under *Authorized · Profile* for Kode 6/7 | Positive control failed: an identity WITH graded access does not get the child (missing grant, test data, or a query that hides all graded children) |
+| *Fail* under *Unauthorized · Nonexistent comparison* | The graded child answers differently from a random id (for example an "access denied" error), so its existence can be inferred |
+| *Fail* under *Unauthorized · Revision log* | The child's revision log is returned to an identity without graded access |
+| *Fail* under *Unauthorized · Search total count* | The search count includes a child the identity may not see |
+| *Observed* for an ungraded child's revision log | Recorded only; access for ungraded children depends on the general operation |
+| Consumer requirement *Review required* | Runtime checks passed, but the source review still has authorization findings: source and runtime disagree |
+
+### What was verified
+
+`Kode67SecurityWorkflowTests` (browser test) against a local stand-in of the Person GraphQL endpoint (`Fixtures/Kode67StandIn.cs`, in the
+test process) and a synthetic M2LB source, with test children for levels 0, 2 and 3.
+
+- **Defective endpoint:** each of the four defects above was reported in its own cell, the review was *Issue detected*, and both runtime
+  requirements were *Issue detected* for the consumers.
+- **Fixed endpoint:** every runtime check passed, no runtime finding was left, the source findings stayed, and both runtime requirements
+  were *Review required*. Both reviews were stored, only the three allowed queries were sent, and the tokens were neither in the page nor in
+  the report.
+
+Defects in BirkNext found and fixed on the way:
+
+1. Integration suites never linked K67-06/07 to the M01 runtime check: they looked for the requirement under a name it never has, so both
+   stayed *Not supported* whatever M01 had verified. The unit test used the same wrong name and hid it.
+2. With the usual ungraded control child, a fully passed runtime review left both shared requirements at *Partial* for ever: the child's
+   observed-only revision-log check counted as "not passed".
+3. The "Include Kode 6/7 security scenarios" checkboxes and the authorization matrix cells had no test ids.
+
+Still open (needs a domain decision or an adapter, not a test): intake handling of a Kode 6/7 report (K67-01/02/04), whether Kode 6/7
+children count in Bufdata aggregates (K67-05), corrections and reclassification (K67-10/11), and a per-message observer for intake.
+
+---
+
+## 7. All workflow tests in one command (before a release)
 
 `scripts/run-workflow-tests.ps1` runs every browser workflow test in this guide (and the Manual Testing ones) on a throw-away installation:
 

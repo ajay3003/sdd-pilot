@@ -57,6 +57,20 @@ public sealed class SecurityClassificationConsumerTests
     }
 
     [Fact]
+    public void An_observed_only_check_of_an_ungraded_child_does_not_hold_a_runtime_requirement_back()
+    {
+        // Found by the Kode 6/7 workflow test: with the usual ungraded positive-control child, its revision log is recorded as Observed
+        // (never assessed), and every passed run stayed Partial.
+        var observedOnly = new ClassificationObservation { Nivaa = 0, Identity = ClassificationIdentity.Unauthorized, Surface = ClassificationSurface.AuditLog, State = ClassificationState.Observed };
+        Shared(SecurityRequirementKind.UnauthorizedRuntimeDenial, Run(ClassificationState.SourceVerified, Obs(ClassificationIdentity.Unauthorized, ClassificationState.Pass), observedOnly))
+            .State.Should().Be(SecurityRequirementState.Verified);
+        Shared(SecurityRequirementKind.UnauthorizedRuntimeDenial, Run(ClassificationState.SourceVerified, observedOnly))
+            .State.Should().Be(SecurityRequirementState.Partial, "nothing was assessed, so nothing is verified");
+        Shared(SecurityRequirementKind.UnauthorizedRuntimeDenial, Run(ClassificationState.SourceVerified, Obs(ClassificationIdentity.Unauthorized, ClassificationState.NotAvailable), observedOnly))
+            .State.Should().Be(SecurityRequirementState.Partial, "an unanswered check is still not a pass");
+    }
+
+    [Fact]
     public void Source_and_runtime_disagreeing_is_review_required_and_a_runtime_leak_is_an_issue()
     {
         Shared(SecurityRequirementKind.UnauthorizedRuntimeDenial, Run(ClassificationState.Fail, Obs(ClassificationIdentity.Unauthorized, ClassificationState.Pass)))

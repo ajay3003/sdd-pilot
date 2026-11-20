@@ -231,7 +231,7 @@
                     <p class="its-note">From context <strong>@gctx.ContextKey</strong> revision @gctx.Revision: only approved sources are used. Generating writes drafts to their owners and sends nothing.</p>
                     <div class="its-form">
                         <label class="its-check"><input type="checkbox" @bind="_negatives" /> Include negative proposals</label>
-                        <label class="its-check"><input type="checkbox" @bind="_security" /> Include Kode 6/7 security scenarios</label>
+                        <label class="its-check"><input type="checkbox" @bind="_security" data-testid="its-include-security-composite" /> Include Kode 6/7 security scenarios</label>
                         <label class="its-check"><input type="checkbox" @bind="_testData" /> Generate synthetic test data drafts</label>
                         @if (gctx.SourceCoverage is { State: not CompositeReadiness.Ready } cov)
                         {
@@ -266,7 +266,7 @@
                             <label>Modules (top-level folders, comma-separated) <input @bind="_modules" data-testid="its-modules" /></label>
                         }
                         <label class="its-check"><input type="checkbox" @bind="_negatives" /> Include negative proposals</label>
-                        <label class="its-check"><input type="checkbox" @bind="_security" /> Include Kode 6/7 security scenarios</label>
+                        <label class="its-check"><input type="checkbox" @bind="_security" data-testid="its-include-security" /> Include Kode 6/7 security scenarios</label>
                         <label class="its-check"><input type="checkbox" @bind="_testData" /> Generate synthetic test data drafts</label>
                     </div>
                     <fieldset class="its-snapshot-list" data-testid="its-snapshot"><legend class="visually-hidden">Source snapshot</legend>

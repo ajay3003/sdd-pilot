@@ -112,7 +112,10 @@ public static class SecurityClassificationAssessments
                 return new(key, title, SecurityRequirementState.NotTested, $"Source: {(source is null ? "not assessed" : FromSource(source).ToString())}", "Not tested at runtime", ReviewOwner);
             var surfaces = string.Join(", ", observations.Select(o => $"{o.Surface} (level {o.Nivaa})").Distinct());
             var failed = observations.Any(o => Bad.Contains(o.State));
-            var passed = observations.All(o => o.State is ClassificationState.Pass or ClassificationState.Verified);
+            // Observed = recorded only, never assessed (an ungraded child's revision log): it neither passes nor holds back a requirement.
+            // It used to count as "not passed", so configuring the usual ungraded positive-control child kept the requirement Partial forever.
+            var assessed = observations.Where(o => o.State != ClassificationState.Observed).ToList();
+            var passed = assessed.Count > 0 && assessed.All(o => o.State is ClassificationState.Pass or ClassificationState.Verified);
             var state = !current ? SecurityRequirementState.NotCurrent
                 : failed ? SecurityRequirementState.IssueDetected
                 : passed && source is { } s && Bad.Contains(s) ? SecurityRequirementState.ReviewRequired

@@ -285,8 +285,8 @@ public sealed class IntegrationSuiteTests : IAsyncLifetime
         var runId = Guid.NewGuid();
         var consumer = new SecurityClassificationConsumerAssessment("skolenaervaer", "Skolenærvær", "ctx", runId, DateTimeOffset.UnixEpoch,
         [
-            new("UnauthorizedRuntimeDenial", "Unauthorized identity gets no graded child", SecurityRequirementState.NotTested, "", "Run the runtime verification", "Security Classification review"),
-            new("AuthorizedRuntimeAccess", "Authorized identity sees the child", SecurityRequirementState.Verified, "", "", "Security Classification review"),
+            new(SecurityClassificationAssessments.Key(SecurityRequirementKind.UnauthorizedRuntimeDenial), "Unauthorized identity gets no graded child", SecurityRequirementState.NotTested, "", "Run the runtime verification", "Security Classification review"),
+            new(SecurityClassificationAssessments.Key(SecurityRequirementKind.AuthorizedRuntimeAccess), "Authorized identity sees the child", SecurityRequirementState.Verified, "", "", "Security Classification review"),
             new("bufdata-exclusion", "Bufdata dataset never holds fødselsnummer or DUF", SecurityRequirementState.NotTested, "", "", "Skolenærvær") { DomainSpecific = true },
         ], "summary");
         IntegrationSuiteComposer.SecurityInputs Inputs(bool ids, bool observer, Dictionary<string, string?> decisions) =>
@@ -294,12 +294,15 @@ public sealed class IntegrationSuiteTests : IAsyncLifetime
 
         var none = IntegrationSuiteComposer.Security(Inputs(false, false, []));
         none.Where(s => s.ScenarioId.StartsWith("M01:")).Select(s => s.ReviewRunId).Should().OnlyContain(id => id == runId, "existing coverage is referenced by its review run, never copied");
-        none.Single(s => s.ScenarioId == "M01:AuthorizedRuntimeAccess").Triage.Should().Be(SuiteTriage.CanRunNow);
+        none.Single(s => s.ScenarioId == "M01:authorized-graded-access").Triage.Should().Be(SuiteTriage.CanRunNow);
         var k67_01 = none.Single(s => s.ScenarioId == "K67-01");
         k67_01.Triage.Should().Be(SuiteTriage.NeedsDomainDecision, "the intake rule for a Kode 6/7 report is not approved");
         k67_01.Prerequisites.Should().Contain(p => p.Contains("Kode 6 child")).And.Contain(p => p.Contains("observer"));
         none.Single(s => s.ScenarioId == "K67-02").Levels.Should().Equal("Kode 7");
-        none.Single(s => s.ScenarioId == "K67-06").Prerequisites.Should().Contain(p => p.StartsWith("M01 runtime probe"));
+        // The real shared keys ("unauthorized-access", "authorized-graded-access"): K67-06/07 used to look for the enum name in the key, never
+        // found the M01 requirement and so stayed "Not supported" whatever M01 had verified.
+        none.Single(s => s.ScenarioId == "K67-06").Should().Match<SuiteSecurityScenario>(s => s.Readiness != SuiteItemReadiness.NotSupported
+            && s.Prerequisites.Any(p => p.StartsWith("M01 runtime probe") && p.Contains("Run the runtime verification")));
         none.Single(s => s.ScenarioId == "K67-07").Triage.Should().Be(SuiteTriage.WaitingForPrerequisite, "identities are still missing");
 
         var decided = IntegrationSuiteComposer.Security(Inputs(true, false, new() { ["security:intake-rule"] = "Acceptable" }));
