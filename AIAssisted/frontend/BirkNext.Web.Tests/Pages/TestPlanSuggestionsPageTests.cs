@@ -160,6 +160,19 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Imported", slug, name)).Object);
     }
 
+    /// <summary>Opens a case the way a tester does: its scenario first (one scenario is open at a time), then the case's header.</summary>
+    private static void OpenCase(IRenderedComponent<TestPlanSuggestions> cut, string caseId)
+    {
+        if (cut.FindAll($"[data-testid=tps-case-{caseId}] .tps-case-head").Count == 0)
+        {
+            var scenario = cut.FindAll("[data-testid=tps-scenario]").First(s => s.GetAttribute("data-open") != "true"
+                && (s.GetAttribute("data-scenario") == caseId || s.GetAttribute("data-scenario") == ""));
+            scenario.QuerySelector("[data-testid=tps-scenario-toggle]")!.Click();
+        }
+        if (cut.Find($"[data-testid=tps-case-{caseId}]").ClassList.Contains("is-open")) return; // already open: opening never collapses it
+        cut.Find($"[data-testid=tps-case-{caseId}] .tps-case-head").Click();
+    }
+
     private IRenderedComponent<TestPlanSuggestions> Render(Api api, string query = "")
     {
         Services.AddSingleton<ITestPlanSuggestionsApiService>(api);
@@ -177,7 +190,7 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         var draft = Draft();
         var api = new Api(Workspace(drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, 3, 2, 0, 0, 1, 2, 2, "t", DateTimeOffset.UtcNow)]), draft);
         var cut = Render(api, $"?draft={draft.Id}&area=review");
-        cut.Find("[data-testid=tps-case-manglende-barn] .tps-case-head").Click();
+        OpenCase(cut, "manglende-barn");
         var editor = cut.Find("[data-testid=tps-case-manglende-barn]");
         var more = cut.Find("[data-testid=tps-more-fields-manglende-barn]");
         more.HasAttribute("open").Should().BeFalse("BirkNext-only fields start collapsed");
@@ -260,12 +273,13 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         var draft = Draft();
         var api = new Api(Workspace(drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, 3, 2, 0, 0, 1, 2, 2, "t", DateTimeOffset.UtcNow)]), draft);
         var cut = Render(api, $"?draft={draft.Id}&area=review");
-        cut.Find("[data-testid=tps-case-bufdata-fil] .tps-case-head").Click();
+        OpenCase(cut, "bufdata-fil");
         cut.Find("[data-testid=tps-case-bufdata-fil]").TextContent.Should().Contain("NEEDS CLARIFICATION");
         cut.Find("[data-testid=tps-accept-bufdata-fil]").HasAttribute("disabled").Should().BeTrue("a case without an expected result cannot be accepted");
-        cut.Find("[data-testid=tps-case-manglende-barn] .tps-case-head").Click();
+        OpenCase(cut, "manglende-barn");
         cut.Find("[data-testid=tps-case-manglende-barn]").TextContent.Should().Contain("From an unreviewed guide draft");
 
+        OpenCase(cut, "bufdata-fil"); // one scenario is open at a time: back to the first case
         cut.Find("[data-testid=tps-rationale-bufdata-fil]").Input("Avklar filformat med Bufdata");
         cut.Find("[data-testid=tps-clarify-bufdata-fil]").Click();
         api.Reviewed.Should().Be(new ReviewTestCaseRequest(3, "bufdata-fil", TestCaseReviewState.NeedsClarification, "Avklar filformat med Bufdata"));
@@ -405,7 +419,7 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         var draft = Draft();
         var api = new Api(Workspace(drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, 3, 2, 0, 1, 1, 2, 2, "u", DateTimeOffset.UtcNow)]), draft) { Coverage = coverage };
         var cut = Render(api, $"?draft={draft.Id}&area=review");
-        cut.Find("[data-testid=tps-case-manglende-barn] .tps-case-head").Click();
+        OpenCase(cut, "manglende-barn");
         var spec = cut.Find("[data-testid=tps-case-manglende-barn] [data-testid=tps-spec-requirements]");
         spec.QuerySelector("[data-testid=tps-spec-verified]")!.TextContent.Should().Contain("FR-006").And.Contain("Confirmed in Relationship Review").And.NotContain("FR-040");
         spec.QuerySelector("[data-testid=tps-spec-suggested]")!.TextContent.Should().Contain("FR-040").And.NotContain("FR-006");
@@ -419,7 +433,7 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         // Accepting goes only to Test Plan Suggestions; there is no call that could change an association (the API has none).
 
         // The other case has no association at all.
-        cut.Find("[data-testid=tps-case-bufdata-fil] .tps-case-head").Click();
+        OpenCase(cut, "bufdata-fil");
         cut.Find("[data-testid=tps-case-bufdata-fil] [data-testid=tps-spec-none]").TextContent.Should().Contain("No association");
     }
 
@@ -428,7 +442,7 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
     {
         var draft = Draft();
         var cut = Render(new Api(Workspace(drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, 3, 2, 0, 1, 1, 2, 2, "u", DateTimeOffset.UtcNow)]), draft), $"?draft={draft.Id}&area=review");
-        cut.Find("[data-testid=tps-case-manglende-barn] .tps-case-head").Click();
+        OpenCase(cut, "manglende-barn");
         cut.Find("[data-testid=tps-case-manglende-barn] [data-testid=tps-spec-unknown]").TextContent.Should().StartWith("Unknown");
     }
 
@@ -438,10 +452,10 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         var draft = Draft();
         var api = new Api(Workspace(drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, 3, 2, 0, 0, 1, 2, 2, "t", DateTimeOffset.UtcNow)]), draft);
         var cut = Render(api, $"?draft={draft.Id}&area=review");
-        cut.Find("[data-testid=tps-case-manglende-barn] .tps-case-head").Click();
+        OpenCase(cut, "manglende-barn");
         // Approve also needs an expected result per step (the export's rule); the review decisions as such are open before the edit.
         cut.Find("[data-testid=tps-clarify-manglende-barn]").HasAttribute("disabled").Should().BeFalse();
-        cut.FindAll("[data-testid=tps-case-manglende-barn] textarea")[2].Change("Rapporten holdes til barnet finnes");
+        cut.Find("[data-testid=tps-edit-expected-manglende-barn]").Change("Rapporten holdes til barnet finnes");
         cut.Find("[data-testid=tps-review-needs-save]").TextContent.Should().Contain("Save or discard");
         cut.Find("[data-testid=tps-accept-manglende-barn]").HasAttribute("disabled").Should().BeTrue();
         cut.Find("[data-testid=tps-clarify-manglende-barn]").HasAttribute("disabled").Should().BeTrue();
@@ -457,7 +471,7 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         var api = new Api(Workspace(drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, 3, 2, 0, 0, 1, 2, 2, "t", DateTimeOffset.UtcNow)]), draft);
         var cut = Render(api, $"?draft={draft.Id}&area=review");
         var c = draft.Cases.Single(x => x.Source.ScenarioId == "manglende-barn");
-        cut.Find("[data-testid=tps-case-manglende-barn] .tps-case-head").Click();
+        OpenCase(cut, "manglende-barn");
         var blocker = P.ApproveBlocker(c);
         cut.Find("[data-testid=tps-accept-manglende-barn]").HasAttribute("disabled").Should().Be(blocker is not null);
         if (blocker is not null)
@@ -481,10 +495,10 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         var draft = Draft();
         var api = new Api(Workspace(drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, 3, 2, 0, 0, 1, 2, 2, "t", DateTimeOffset.UtcNow)]), draft) { HoldSave = new() };
         var cut = Render(api, $"?draft={draft.Id}&area=review");
-        cut.Find("[data-testid=tps-case-manglende-barn] .tps-case-head").Click();
-        cut.FindAll("[data-testid=tps-case-manglende-barn] textarea")[2].Change("First wording");
+        OpenCase(cut, "manglende-barn");
+        cut.Find("[data-testid=tps-edit-expected-manglende-barn]").Change("First wording");
         cut.Find("[data-testid=tps-save]").Click();                                   // the save is on its way
-        cut.FindAll("[data-testid=tps-case-manglende-barn] textarea")[2].Change("Newer wording");
+        cut.Find("[data-testid=tps-edit-expected-manglende-barn]").Change("Newer wording");
         cut.InvokeAsync(() => api.HoldSave!.SetResult());                            // the first save completes after the newer edit
 
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Your newer changes are not saved yet"));
@@ -506,8 +520,8 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         var cut = Render(api, $"?draft={draft.Id}&area=review");
         var confirm = JSInterop.Setup<bool>("confirm", _ => true);
         confirm.SetResult(false);
-        cut.Find("[data-testid=tps-case-manglende-barn] .tps-case-head").Click();
-        cut.FindAll("[data-testid=tps-case-manglende-barn] textarea")[2].Change("Not saved yet");
+        OpenCase(cut, "manglende-barn");
+        cut.Find("[data-testid=tps-edit-expected-manglende-barn]").Change("Not saved yet");
 
         var nav = Services.GetRequiredService<NavigationManager>();
         cut.InvokeAsync(() => nav.NavigateTo("manual-testing"));
@@ -524,8 +538,8 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         var api = new Api(Workspace(drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, 3, 2, 0, 0, 1, 2, 2, "t", DateTimeOffset.UtcNow)]), draft);
         var cut = Render(api, $"?draft={draft.Id}&area=review");
         JSInterop.Setup<bool>("confirm", _ => true).SetResult(false);
-        cut.Find("[data-testid=tps-case-manglende-barn] .tps-case-head").Click();
-        cut.FindAll("[data-testid=tps-case-manglende-barn] textarea")[2].Change("Not saved yet");
+        OpenCase(cut, "manglende-barn");
+        cut.Find("[data-testid=tps-edit-expected-manglende-barn]").Change("Not saved yet");
         var nav = Services.GetRequiredService<NavigationManager>();
         cut.InvokeAsync(() => nav.NavigateTo($"test-plan-suggestions?draft={draft.Id}&area=prepare"));
         cut.WaitForAssertion(() => nav.Uri.Should().Contain("area=prepare"));
@@ -538,7 +552,7 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         var draft = Draft();
         var api = new Api(Workspace(drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, 3, 2, 0, 0, 1, 2, 2, "t", DateTimeOffset.UtcNow)]), draft);
         var cut = Render(api, $"?draft={draft.Id}&area=review");
-        cut.Find("[data-testid=tps-case-bufdata-fil] .tps-case-head").Click();
+        OpenCase(cut, "bufdata-fil");
 
         cut.FindAll("[data-testid=tps-perf-bufdata-fil]").Should().BeEmpty("performance fields appear only for a performance case");
         cut.Find("[data-testid=tps-type-bufdata-fil]").Change(nameof(TestCaseType.Performance));

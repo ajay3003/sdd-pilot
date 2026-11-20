@@ -248,6 +248,25 @@ public sealed record TestCaseDraft
     /// <summary>Stored form of <see cref="RequirementLinks"/>: omitted when empty, so a plan without links keeps its content fingerprint.</summary>
     [JsonPropertyName("requirementLinks")] public List<ManualRequirementLink>? StoredRequirementLinks { get; init; }
 
+    // ── Scenario-centric planning (2026-11-20). Every field below is omitted when empty, so older plans keep their content fingerprint. ──
+
+    /// <summary>The scenario a hand-written case was written under (the discovered scenario's id in this plan). Discovered cases do not store it:
+    /// their own scenario id is their scenario. Null on an older hand-written case = no scenario can be established (shown as unresolved, never
+    /// assigned by guesswork).</summary>
+    public string? ScenarioKey { get; init; }
+    /// <summary>The scenario's title when the case was written under it (shown if the scenario's own case later leaves the plan).</summary>
+    public string? ScenarioTitle { get; init; }
+    /// <summary>The case this one was duplicated from (a new identity; nothing else is shared, no Azure DevOps id is copied).</summary>
+    public string? DuplicatedFrom { get; init; }
+    /// <summary>The Norwegian text of the case (machine-translated and/or written by a person). The original stays authoritative and unchanged.</summary>
+    public TestCaseTranslation? Norwegian { get; init; }
+    /// <summary>Requirement suggestions a tester rejected for this case (never proposed again for it; a rejection is not a decision on the requirement).</summary>
+    public List<RejectedRequirementSuggestion>? RejectedSuggestions { get; init; }
+
+    /// <summary>The scenario this case belongs to: its own id for a discovered or guide case; the stored scenario for a case written under one;
+    /// null for a hand-written case no scenario is established for.</summary>
+    [JsonIgnore] public string? ParentScenario => Source.Kind == ScenarioSourceKind.Manual ? ScenarioKey : Source.ScenarioId;
+
     [JsonIgnore] public string EffectiveTitle => Edits.Title ?? Generated.Title;
     [JsonIgnore] public string EffectivePurpose => Edits.Purpose ?? Generated.Purpose;
     /// <summary>The expected result per effective step (null = Needs clarification).</summary>
@@ -397,6 +416,10 @@ public sealed record TestCaseHumanPart
     /// <summary>The case's manually linked requirements after this save (id + specification file). Null = unchanged (an older client). A link the
     /// case does not hold yet must name a requirement of <see cref="SaveTestPlanDraftRequest.RequirementCatalog"/>.</summary>
     public List<ManualRequirementLink>? RequirementLinks { get; init; }
+    /// <summary>The Norwegian text after this save (null = unchanged). The server records who changed it and marks it written by a person.</summary>
+    public TestCaseTranslation? Norwegian { get; init; }
+    /// <summary>Suggestions rejected for this case after this save (null = unchanged). The server records who and when for a new rejection.</summary>
+    public List<RejectedRequirementSuggestion>? RejectedSuggestions { get; init; }
 }
 
 /// <summary>A requirement a tester linked to a saved case (manually confirmed). Identity: requirement id + specification file. Title, who and when
@@ -419,6 +442,18 @@ public sealed record ManualRequirementLink
     /// <summary>Server-checked links: the server catalog revision and the requirement's wording hash when it was linked (null otherwise).</summary>
     public int? CatalogRevision { get; init; }
     public string? RequirementTextSha256 { get; init; }
+    /// <summary>"Scenario" = the requirement applies to the business scenario as a whole (an association, never counted as this case's coverage);
+    /// null = the case itself is designed to test it (counted as test design).</summary>
+    public string? Scope { get; init; }
+    /// <summary>When the tester confirmed a BirkNext suggestion: its evidence strength and why it was suggested (what the tester saw). Null = linked
+    /// from the search.</summary>
+    public RequirementSuggestionLevel? SuggestionLevel { get; init; }
+    public string? SuggestionReason { get; init; }
+}
+
+public static class RequirementLinkScope
+{
+    public const string Scenario = "Scenario";
 }
 
 public static class ManualRequirementLinkBasis

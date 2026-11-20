@@ -134,7 +134,8 @@ public static class PreparedCaseTraceability
             var file = string.IsNullOrWhiteSpace(m.SpecificationPath) ? null : m.SpecificationPath.Trim();
             var validity = Validity(file, id, paths, ids);
             var who = string.IsNullOrWhiteSpace(m.LinkedBy) ? "a tester" : m.LinkedBy;
-            var (counted, why) = !active ? (false, $"Linked by {who}; the case is {StageLabel(stage).ToLowerInvariant()}: not counted.")
+            var (counted, why) = m.Scope == RequirementLinkScope.Scenario ? (false, $"Linked by {who} to the scenario as a whole (scenario-level association): not counted as this case's test design.")
+                : !active ? (false, $"Linked by {who}; the case is {StageLabel(stage).ToLowerInvariant()}: not counted.")
                 : file is null ? (false, $"Linked by {who} without a specification file: not counted.")
                 : validity == PreparedLinkValidity.NotChecked ? (false, $"Linked by {who}; no specification is being reviewed, so the link cannot be checked.")
                 : validity == PreparedLinkValidity.OtherSpecification ? (false, $"Linked by {who} to {file}, not the reviewed specification.")

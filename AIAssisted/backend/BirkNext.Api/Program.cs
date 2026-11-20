@@ -820,6 +820,9 @@ builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegratio
 builder.Services.AddSingleton(new BirkNext.Api.Services.SystemUnderstanding.SystemGuideCatalogEntry("skolenaervaer", "SystemGuide.skolenaervaer.guide.json", BirkNext.Api.Services.IntegrationJourneys.Packs.SkoleNaervaer.SkoleNaervaerJourneyPack.Id));
 builder.Services.AddScoped<BirkNext.Api.Services.SystemUnderstanding.SystemGuideService>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.TestPlanSuggestionService>();
+// Norwegian translation of test cases: unavailable unless explicitly enabled (ManualTesting:Translation:Provider) and an API key is configured.
+builder.Services.AddSingleton<BirkNext.Api.Services.TestPlanning.ITestCaseTranslator>(sp =>
+    BirkNext.Api.Services.TestPlanning.AnthropicTestCaseTranslator.FromConfiguration(sp.GetRequiredService<IConfiguration>(), sp.GetRequiredService<IHttpClientFactory>()));
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.IScenarioReviewSource>(sp => sp.GetRequiredService<BirkNext.Api.Services.TestPlanning.TestPlanSuggestionService>());
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.RequirementCoverageService>();
 // Project-scoped test scenario discovery for Test Plan Suggestions: one provider per registered analyzer (specification, guide, UI source, contracts,

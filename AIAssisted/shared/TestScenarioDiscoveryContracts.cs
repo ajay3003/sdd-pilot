@@ -245,5 +245,9 @@ public sealed record CreateProjectTestPlanRequest
     public string? ManualCaseTitle { get; init; }
 }
 
-/// <summary>A test case a person writes by hand (no discovered scenario): title and purpose only; steps are added while editing.</summary>
-public sealed record AddManualTestCaseRequest(int BaseRevision, string Title, string? Purpose, ScenarioCandidateType? Type);
+/// <summary>A test case a person writes by hand: title and purpose; steps are added while editing. <see cref="ScenarioKey"/> = write it under that
+/// scenario of the plan (it starts from the scenario's starting situation; expected results are never filled in). <see cref="CopyFrom"/> = a new
+/// case with its own identity, starting from that case's current text (review, history and Azure DevOps id are not copied).
+/// <see cref="Variant"/> = start from a variant the scenario's evidence supports (its key from the variant proposals).</summary>
+public sealed record AddManualTestCaseRequest(int BaseRevision, string Title, string? Purpose, ScenarioCandidateType? Type,
+    string? ScenarioKey = null, string? CopyFrom = null, string? Variant = null);

@@ -50,6 +50,15 @@ public interface ITestPlanSuggestionsApiService
         Task.FromResult<(TestPlanDraft?, string?)>((null, NotAvailable));
     Task<(TestPlanDraft? Draft, string? Error)> AddManualCaseAsync(Guid id, AddManualTestCaseRequest request, CancellationToken ct = default) =>
         Task.FromResult<(TestPlanDraft?, string?)>((null, NotAvailable));
+    /// <summary>Test-case variants the evidence of one scenario supports (proposals only).</summary>
+    Task<(List<TestCaseVariantProposal>? Variants, string? Error)> VariantsAsync(Guid id, string scenarioKey, CancellationToken ct = default) =>
+        Task.FromResult<(List<TestCaseVariantProposal>?, string?)>((null, NotAvailable));
+    /// <summary>Whether a translation service is configured (nothing is sent to find out).</summary>
+    Task<TranslationAvailability> TranslationAsync(CancellationToken ct = default) =>
+        Task.FromResult(new TranslationAvailability(false, null, "Translation is not available in this host. You can write the Norwegian text by hand."));
+    /// <summary>Translates one scenario's cases to Norwegian with the configured service.</summary>
+    Task<(TranslateScenarioResult? Result, string? Error)> TranslateAsync(Guid id, TranslateScenarioRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(TranslateScenarioResult?, string?)>((null, NotAvailable));
     /// <summary>The project's saved test cases traced to a specification's requirements (POST project/traceability). Read-only.</summary>
     Task<(PreparedCaseTraceView? Trace, string? Error)> PreparedCaseTraceAsync(string projectKey, PreparedCaseTraceRequest request, CancellationToken ct = default) =>
         Task.FromResult<(PreparedCaseTraceView?, string?)>((null, NotAvailable));
@@ -128,6 +137,18 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http) : ITestPlanSu
 
     public Task<(TestPlanDraft?, string?)> AddManualCaseAsync(Guid id, AddManualTestCaseRequest request, CancellationToken ct = default) =>
         Send<TestPlanDraft>(() => http.PostAsJsonAsync($"{Base}/drafts/{id}/manual-cases", request, Json, ct), ct);
+
+    public Task<(List<TestCaseVariantProposal>?, string?)> VariantsAsync(Guid id, string scenarioKey, CancellationToken ct = default) =>
+        Send<List<TestCaseVariantProposal>>(() => http.GetAsync($"{Base}/drafts/{id}/variants?scenario={Uri.EscapeDataString(scenarioKey)}", ct), ct);
+
+    public async Task<TranslationAvailability> TranslationAsync(CancellationToken ct = default)
+    {
+        var (availability, error) = await Send<TranslationAvailability>(() => http.GetAsync($"{Base}/translation", ct), ct);
+        return availability ?? new TranslationAvailability(false, null, error ?? "Whether translation is available could not be read. You can write the Norwegian text by hand.");
+    }
+
+    public Task<(TranslateScenarioResult?, string?)> TranslateAsync(Guid id, TranslateScenarioRequest request, CancellationToken ct = default) =>
+        Send<TranslateScenarioResult>(() => http.PostAsJsonAsync($"{Base}/drafts/{id}/translate", request, Json, ct), ct);
 
     public Task<(PreparedCaseTraceView?, string?)> PreparedCaseTraceAsync(string projectKey, PreparedCaseTraceRequest request, CancellationToken ct = default) =>
         Send<PreparedCaseTraceView>(() => http.PostAsJsonAsync($"{Base}/project/traceability?projectKey={Uri.EscapeDataString(projectKey)}", request, Json, ct), ct);

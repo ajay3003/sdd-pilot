@@ -62,7 +62,10 @@ function Test-PortFree([int]$port) {
 
 if ($ApiPort -eq 0) { $ApiPort = Get-FreePort }
 if ($WebPort -eq 0) { do { $WebPort = Get-FreePort } while ($WebPort -eq $ApiPort) }
-foreach ($p in $ApiPort, $WebPort) {
+# Manual Testing translation: the isolated API uses the LibreTranslate provider pointed at a stand-in the browser tests serve on this port
+# (in the test process; nothing external). Without the stand-in the provider reports the server unreachable.
+do { $TranslatePort = Get-FreePort } while ($TranslatePort -in $ApiPort, $WebPort)
+foreach ($p in $ApiPort, $WebPort, $TranslatePort) {
     if ($p -in 5000, 5173) { throw "Port $p is a developer port; the workflow tests never use 5000/5173." }
     if (-not (Test-PortFree $p)) { throw "Port $p is in use." }
 }
@@ -117,6 +120,7 @@ try {
     # The isolated API never reads a developer's appsettings.Local.json (it is not copied). Its own local settings allow every Frontend Quality
     # Review engine and register the frontend stand-in (and only it) for Passive Web Security (ZAP) as a loopback test target.
     $localSettings = [ordered]@{
+        ManualTesting = [ordered]@{ Translation = [ordered]@{ Provider = 'LibreTranslate'; LibreTranslate = [ordered]@{ Url = "http://127.0.0.1:$TranslatePort" } } }
         FrontendQualityCapabilities = [ordered]@{ BrowserRuntimeAllowed = $true; AccessibilityAllowed = $true; LighthouseAllowed = $true; PassiveSecurityAllowed = $true }
         FrontendQualityEnginePreferences = [ordered]@{ BrowserRuntimeEnabled = $true; AccessibilityEnabled = $true; LighthouseEnabled = $true; PassiveSecurityEnabled = $true }
         FrontendPassiveSecurity = [ordered]@{
@@ -184,6 +188,7 @@ try {
     $env:BIRKNEXT_PLAYWRIGHT_FRONTEND_URL = $webUrl
     $env:BIRKNEXT_PLAYWRIGHT_BACKEND_URL = $apiUrl
     $env:BIRKNEXT_PLAYWRIGHT_LAUNCH_CODE_FILE = $launchCode
+    $env:BIRKNEXT_PLAYWRIGHT_TRANSLATE_PORT = "$TranslatePort"
     if ($M2lbArchive) { $env:BIRKNEXT_M2LB_MANUAL_ARCHIVE = (Resolve-Path $M2lbArchive).Path }
     if ($Performance) {
         Write-Step 'Starting the performance stand-in target (Podman)'
@@ -243,7 +248,7 @@ finally {
     foreach ($p in $started) { if ($p -and -not $p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } }
     if ($standinStarted) { podman rm --force --ignore birknext-pt-standin | Out-Null }
     if ($fqrStandinStarted) { podman rm --force --ignore birknext-fqr-standin | Out-Null }
-    foreach ($name in 'BIRKNEXT_PLAYWRIGHT_FRONTEND_URL', 'BIRKNEXT_PLAYWRIGHT_BACKEND_URL', 'BIRKNEXT_PLAYWRIGHT_LAUNCH_CODE_FILE', 'BIRKNEXT_M2LB_MANUAL_ARCHIVE', 'BIRKNEXT_PERFORMANCE_TARGET_URL', 'BIRKNEXT_FQR_TARGET_URL') { Remove-Item "env:$name" -ErrorAction SilentlyContinue }
+    foreach ($name in 'BIRKNEXT_PLAYWRIGHT_FRONTEND_URL', 'BIRKNEXT_PLAYWRIGHT_BACKEND_URL', 'BIRKNEXT_PLAYWRIGHT_LAUNCH_CODE_FILE', 'BIRKNEXT_PLAYWRIGHT_TRANSLATE_PORT', 'BIRKNEXT_M2LB_MANUAL_ARCHIVE', 'BIRKNEXT_PERFORMANCE_TARGET_URL', 'BIRKNEXT_FQR_TARGET_URL') { Remove-Item "env:$name" -ErrorAction SilentlyContinue }
     if ($databaseCreated -and -not $KeepDatabase) {
         Start-Sleep -Seconds 2
         podman exec $PostgresContainer psql -U $PostgresUser -d postgres -c "DROP DATABASE IF EXISTS $Database WITH (FORCE);" | Out-Null

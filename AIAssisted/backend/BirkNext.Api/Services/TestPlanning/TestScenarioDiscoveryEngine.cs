@@ -474,10 +474,11 @@ public static class TestScenarioDiscoveryEngine
     public static TestCaseContent Content(DiscoveredScenario c)
     {
         var group = c.Area ?? ScenarioCandidateTypes.Label(c.Type);
+        var steps = ProcedureSteps(c);
         return new TestCaseContent
         {
             Title = c.Title, Purpose = c.Purpose, Preconditions = c.Preconditions.Count == 0 ? null : string.Join("\n", c.Preconditions),
-            Steps = [.. c.Steps.Select(s => s.Action)], StepExpected = [.. c.Steps.Select(s => s.Expected)],
+            Steps = [.. steps.Select(s => s.Action)], StepExpected = [.. steps.Select(s => s.Expected)],
             ExpectedResult = c.ExpectedBehaviour, ExpectedBasis = Basis(c),
             RequiredTestData = c.TestDataNeeds.Count == 0 ? null : string.Join("; ", c.TestDataNeeds),
             EnvironmentPrerequisites = c.Prerequisites.Count == 0 ? null : string.Join("\n", c.Prerequisites),
@@ -487,6 +488,26 @@ public static class TestScenarioDiscoveryEngine
             Template = [.. c.Template], Evidence = [.. c.Evidence], ExistingTests = [.. c.ExistingTests], OpenQuestions = [.. c.OpenQuestions],
             TestDataNeed = c.TestDataNeeds.Count > 0 ? TestDataNeed.Required : TestDataNeed.Unknown, Capability = c.CapabilityId,
         };
+    }
+
+    public const string PrepareStepPrefix = "Prepare the starting situation in the test environment: ";
+    public const string PrepareStepExpected = "The starting situation is in place before the action (check the prepared data and state).";
+    public const string ActionStepPrefix = "Carry out or trigger: ";
+
+    /// <summary>
+    /// The manual procedure of a specification acceptance scenario: first prepare its starting situation (Given), then carry out or trigger the
+    /// action (When) with the stated outcome (Then) as its expected result. Nothing else is added: how the action is triggered in the environment
+    /// and how the outcome is observed are not in the specification, so the case names them as needing clarification (never invented). Other
+    /// sources keep their own steps. Built when a case is prepared, so the scenario's evidence fingerprint does not change.
+    /// </summary>
+    public static List<DiscoveredStep> ProcedureSteps(DiscoveredScenario c)
+    {
+        if (c.CapabilityId != Specification || c.Steps.Count != 1) return c.Steps;
+        var given = c.Template.FirstOrDefault(t => t.Key == "given")?.Value;
+        var when = c.Template.FirstOrDefault(t => t.Key == "when")?.Value;
+        if (string.IsNullOrWhiteSpace(when)) return c.Steps;
+        var action = new DiscoveredStep(ActionStepPrefix + when, c.Steps[0].Expected);
+        return string.IsNullOrWhiteSpace(given) ? [action] : [new DiscoveredStep(PrepareStepPrefix + given, PrepareStepExpected), action];
     }
 
     public static ExpectedResultBasis Basis(DiscoveredScenario c) => c.ExpectedBehaviour is null ? ExpectedResultBasis.Missing : c.CapabilityId switch

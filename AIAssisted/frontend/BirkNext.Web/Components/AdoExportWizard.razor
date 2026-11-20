@@ -31,6 +31,13 @@
                 </p>
             }
             <label class="adx-check"><input type="checkbox" checked="@_includeNotApproved" @onchange="e => Set(() => _includeNotApproved = e.Value is true)" data-testid="adx-include-unapproved" /> Include cases that are not approved yet</label>
+            @if (_includeNotApproved) { <p class="adx-muted adx-small" data-testid="adx-unapproved-note">Cases that are not approved are exported as drafts: their review state is listed in the mapping report; importing them approves nothing.</p> }
+            <label class="adx-field" data-testid="adx-language-field"><span>Export language</span>
+                <select @onchange="e => Set(() => _language = e.Value?.ToString() == ScenarioPlanning.Norwegian ? ScenarioPlanning.Norwegian : null)" data-testid="adx-language">
+                    <option value="" selected="@(_language is null)">Original language</option>
+                    <option value="@ScenarioPlanning.Norwegian" selected="@(_language == ScenarioPlanning.Norwegian)">Norwegian (cases with a complete Norwegian text)</option>
+                </select></label>
+            @if (_language == ScenarioPlanning.Norwegian && _preview is { } lp) { <p class="adx-muted adx-small" data-testid="adx-language-summary">@lp.Cases.Count(c => c.Included && c.Language == "Norwegian") in Norwegian · @lp.Cases.Count(c => c.Included && c.Language != "Norwegian") in the original language (no complete Norwegian text). Each case is in one language only.</p> }
             <div class="adx-bar">
                 <button type="button" class="adx-btn adx-btn-quiet" @onclick="() => Set(() => _selected.Clear())" data-testid="adx-select-eligible">Select all eligible</button>
                 <button type="button" class="adx-btn adx-btn-quiet" @onclick="SelectNone" data-testid="adx-select-none">Select none</button>
@@ -47,6 +54,9 @@
                             <span class="adx-case-title">@(c.Title.Length > 0 ? c.Title : "(no title)")</span></label>
                         <span class="adx-chip">@c.Review</span>
                         <span class="adx-chip">@c.Steps step@(c.Steps == 1 ? "" : "s")</span>
+                        @if (c.ScenarioTitle is { } scenarioTitle) { <span class="adx-muted adx-small" data-testid="adx-case-scenario">Scenario: @scenarioTitle</span> }
+                        @if (_language is not null) { <span class="adx-chip" data-testid="adx-case-language">@(c.Language == "Norwegian" ? "Norsk" : "Original")</span> }
+                        <span class="adx-muted adx-small" data-testid="adx-case-ado">@(c.AzureDevOpsId is { } adoId ? $"Azure DevOps id {adoId}" : "New in Azure DevOps (no id)")</span>
                         <span class="adx-chip adx-chip-@state" data-testid="adx-case-state">@(state switch { "ready" => "Ready", "attention" => "Needs attention", _ => "Not exported" })</span>
                         @if (c.ExcludedReason is { } why) { <span class="adx-muted adx-small" data-testid="adx-case-why">@why</span> }
                         @if (blocked) { <a class="adx-small" href="@($"test-plan-suggestions?draft={Draft.Id}&area=prepare&case={Uri.EscapeDataString(id)}")" data-testid="adx-case-open">Open the test case</a> }
@@ -226,6 +236,7 @@
     private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
     private bool _noneSelected;
     private bool _includeNotApproved;
+    private string? _language;
     private AdoExportMode _mode = AdoExportMode.CreateNew;
     private readonly Dictionary<string, string> _existing = new(StringComparer.Ordinal);
     private bool _confirmed;
@@ -264,7 +275,7 @@
     private AdoExportRequest Request(AdoExportFormat? format = null) => new()
     {
         ProjectKey = ProjectKey, DraftId = Draft.Id, PlanRevision = Draft.Revision,
-        CaseIds = _noneSelected ? ["\u0000none"] : [.. _selected], IncludeNotApproved = _includeNotApproved, Mode = _mode,
+        CaseIds = _noneSelected ? ["\u0000none"] : [.. _selected], IncludeNotApproved = _includeNotApproved, Mode = _mode, Language = _language,
         ExistingIds = _existing.Where(e => !string.IsNullOrWhiteSpace(e.Value)).ToDictionary(e => e.Key, e => e.Value.Trim(), StringComparer.Ordinal), ExistingIdsConfirmed = _confirmed,
         Profile = format is { } f ? _profile with { Format = f } : _profile,
     };

@@ -47,14 +47,18 @@ public static partial class AdoTestPlanExporter
         {
             var id = c.Source.ScenarioId;
             var caseIssues = new List<AdoExportIssue>();
-            var title = CleanTitle(c.EffectiveTitle);
+            // The chosen language for the whole case (never mixed): Norwegian only when the case has a complete Norwegian text.
+            var text = ScenarioPlanning.Localized(c, request.Language);
+            var title = CleanTitle(text.Title);
             var review = ReviewLabel(c.Review);
             string? excluded = c.Review is TestCaseReviewState.Excluded or TestCaseReviewState.Superseded ? $"{review} in the plan — never exported"
                 : selected is not null && !selected.Contains(id) ? "Not selected"
                 : c.Review != TestCaseReviewState.Accepted && !request.IncludeNotApproved ? "Not approved yet — choose \"Include cases that are not approved\" to export it"
                 : null;
 
-            var steps = Steps(c, profile.Preconditions);
+            var steps = Steps(text.Steps, text.StepExpected, text.Preconditions, profile.Preconditions);
+            if (excluded is null && request.Language == ScenarioPlanning.Norwegian && text.Note is { } languageNote)
+                caseIssues.Add(new(text.Norwegian ? AdoIssueLevel.Warning : AdoIssueLevel.Info, languageNote, id));
             if (excluded is null)
             {
                 if (title.Length == 0) caseIssues.Add(new(AdoIssueLevel.Blocking, "The test case has no title.", id));
@@ -91,14 +95,16 @@ public static partial class AdoTestPlanExporter
             var included = excluded is null && caseIssues.All(i => i.Level != AdoIssueLevel.Blocking);
             var origin = ManualCaseIdentity.Origin(c);
             var requirementSources = origin.Requirements.Select(q => q.SpecificationFile is { } f ? $"{q.RequirementId} ({f})" : q.RequirementId).ToList();
-            var description = Describe(origin, requirementSources, $"{plan.Id:N}/{id}", plan.PlanName);
+            var scenario = c.ParentScenario is { } scenarioKey ? (Key: scenarioKey, Title: plan.Cases.FirstOrDefault(x => x.Source.Kind != ScenarioSourceKind.Manual && x.Source.ScenarioId == scenarioKey)?.Generated.Title ?? c.ScenarioTitle) : default;
+            var description = Describe(origin, requirementSources, $"{plan.Id:N}/{id}", plan.PlanName, c.Source.Kind == ScenarioSourceKind.Manual ? scenario.Title : null);
             cases.Add(new AdoExportCase
             {
                 SourceSpecification = origin.SpecificationFile, SourceScenario = origin.SpecificationScenarioId, RequirementSources = requirementSources,
                 AzureDevOpsIdRemembered = remembered && adoId.Length > 0,
                 CaseId = id, CaseKey = $"{plan.Id:N}/{id}", Title = title, Review = review, Included = excluded is null, ExcludedReason = excluded, Steps = steps.Count,
                 AzureDevOpsId = adoId.Length == 0 ? null : adoId, Requirements = RequirementIds(c), TestData = [.. c.TestData.Select(d => string.IsNullOrWhiteSpace(d.Alias) ? d.AssetId : $"{d.Alias} ({d.AssetId})")],
-                Preconditions = c.EffectivePreconditions, Priority = priority, Issues = caseIssues,
+                Preconditions = text.Preconditions, Priority = priority, Issues = caseIssues,
+                Language = text.Norwegian ? "Norwegian" : "Original", ScenarioKey = scenario.Key, ScenarioTitle = scenario.Title, CaseRevision = plan.Revision,
             });
             if (!included) continue;
             for (var i = 0; i < steps.Count; i++)
@@ -186,12 +192,10 @@ public static partial class AdoTestPlanExporter
         path.Length <= 4000 && !path.StartsWith('\\') && !path.EndsWith('\\') && path.Split('\\').All(s => s.Trim().Length > 0 && s == s.Trim())
         && path.IndexOfAny(['/', ':', '*', '?', '"', '<', '>', '|', '\t', '\r', '\n']) < 0 && !path.Any(char.IsControl);
 
-    private static List<(string Action, string Expected)> Steps(TestCaseDraft c, AdoPreconditionsMode mode)
+    private static List<(string Action, string Expected)> Steps(List<string> actions, List<string?> expected, string? preconditions, AdoPreconditionsMode mode)
     {
-        var actions = c.EffectiveSteps;
-        var expected = c.EffectiveStepExpected;
         var list = actions.Select((a, i) => (Text(a), Text(i < expected.Count ? expected[i] : null))).ToList();
-        if (mode == AdoPreconditionsMode.FirstStep && Text(c.EffectivePreconditions) is { Length: > 0 } pre)
+        if (mode == AdoPreconditionsMode.FirstStep && Text(preconditions) is { Length: > 0 } pre)
             list.Insert(0, ($"Check the preconditions: {pre}", "The preconditions are met"));
         return list;
     }
@@ -226,12 +230,14 @@ public static partial class AdoTestPlanExporter
     private static IEnumerable<string> Cells(AdoExportRow r) => [r.Id, r.WorkItemType, r.Title, r.StepAction, r.StepExpected, r.AreaPath, r.AssignedTo, r.State, r.Priority ?? "", r.Description ?? ""];
 
     /// <summary>The Description cell: where the case came from, in plain words, so the origin travels with the test case into Azure DevOps.</summary>
-    internal static string Describe(ManualRunOrigin origin, IReadOnlyList<string> requirementSources, string caseKey, string planName)
+    internal static string Describe(ManualRunOrigin origin, IReadOnlyList<string> requirementSources, string caseKey, string planName, string? writtenUnderScenario = null)
     {
         var parts = new List<string>();
         parts.Add(origin.SpecificationFile is { } f
             ? $"Prepared in BirkNext from {f}{(origin.SpecificationScenarioId is { } sc ? $", acceptance scenario {sc}" : "")}."
-            : origin.SourceKind == ScenarioSourceKind.Manual ? "Written by hand in BirkNext (no specification source)." : "Prepared in BirkNext from a discovered scenario.");
+            : origin.SourceKind == ScenarioSourceKind.Manual
+                ? writtenUnderScenario is { Length: > 0 } st ? $"Written by hand in BirkNext under the scenario \"{st}\"." : "Written by hand in BirkNext (no specification source)."
+                : "Prepared in BirkNext from a discovered scenario.");
         if (requirementSources.Count > 0) parts.Add($"Requirements: {string.Join("; ", requirementSources)}.");
         parts.Add($"BirkNext test case: {planName} ({caseKey}).");
         return string.Join(" ", parts);
@@ -351,13 +357,13 @@ public static partial class AdoTestPlanExporter
     public static byte[] MappingReport(AdoExportPreview preview, IReadOnlyDictionary<string, string> caseRevisions) =>
         Csv2([
             ["BirkNext case", "Title", "In import file", "Not exported because", "Azure DevOps id", "Plan revision", "Case revision", "Requirements (BirkNext ids)", "Test Data (names only)", "Preconditions",
-             "Source specification", "Acceptance scenario", "Requirements with their specification"],
+             "Source specification", "Acceptance scenario", "Requirements with their specification", "Scenario", "Language"],
             .. preview.Cases.Select(c => (IReadOnlyList<string>)[c.CaseKey, c.Title,
                 c.Included && c.Issues.All(i => i.Level != AdoIssueLevel.Blocking) ? "Yes" : "No",
                 c.ExcludedReason ?? string.Join(" ", c.Issues.Where(i => i.Level == AdoIssueLevel.Blocking).Select(i => i.Message)),
                 c.AzureDevOpsId ?? "", preview.PlanRevision.ToString(System.Globalization.CultureInfo.InvariantCulture), caseRevisions.GetValueOrDefault(c.CaseId) ?? "",
                 string.Join("; ", c.Requirements), string.Join("; ", c.TestData), c.Preconditions ?? "",
-                c.SourceSpecification ?? "", c.SourceScenario ?? "", string.Join("; ", c.RequirementSources)]),
+                c.SourceSpecification ?? "", c.SourceScenario ?? "", string.Join("; ", c.RequirementSources), c.ScenarioTitle is { } st ? $"{st} ({c.ScenarioKey})" : "", c.Language]),
         ]);
 
     private static byte[] Csv2(IEnumerable<IReadOnlyList<string>> lines)

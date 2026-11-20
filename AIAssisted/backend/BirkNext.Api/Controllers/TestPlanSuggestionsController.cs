@@ -106,6 +106,20 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     public Task<ActionResult> AddManualCase(Guid id, [FromBody] AddManualTestCaseRequest request, CancellationToken ct) => Run(async () => Ok(await service.AddManualCaseAsync(id, request, Actor, ct)));
 
+    /// <summary>Test-case variants the evidence of one scenario of the plan supports (proposals only; nothing is added).</summary>
+    [HttpGet("drafts/{id:guid}/variants")]
+    public Task<ActionResult> Variants(Guid id, [FromQuery] string scenario, CancellationToken ct) => Run(async () => Ok(await service.VariantsAsync(id, scenario ?? "", ct)));
+
+    /// <summary>Whether a translation service is configured for Manual Testing (no call is made to find out).</summary>
+    [HttpGet("translation")]
+    public ActionResult Translation([FromServices] BirkNext.Api.Services.TestPlanning.ITestCaseTranslator translator) => Ok(translator.Availability);
+
+    /// <summary>Translates the chosen scenario's test cases to Norwegian with the configured service (a person's explicit action).</summary>
+    [HttpPost("drafts/{id:guid}/translate")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public Task<ActionResult> Translate(Guid id, [FromBody] TranslateScenarioRequest request, [FromServices] BirkNext.Api.Services.TestPlanning.ITestCaseTranslator translator, CancellationToken ct) =>
+        Run(async () => Ok(await service.TranslateScenarioAsync(id, request, translator, Actor, ct)));
+
     /// <summary>
     /// MT-7 reviewed requirement coverage of one project scope: specification requirements of the latest relationship interpretation, the
     /// scenario → requirement associations (decided in Relationship Review) and the tester reviews of those scenarios. Read-only.

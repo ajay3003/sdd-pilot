@@ -84,7 +84,10 @@ public sealed class TestScenarioDiscoveryTests
         c.OpenQuestions.Should().Contain(q => q.Contains("clarify the expected result"));
         var content = D.Content(c);
         content.ExpectedBasis.Should().Be(ExpectedResultBasis.Missing);
-        content.StepExpected.Should().Equal([null]);
+        // The procedure prepares the starting situation and then carries out the action; the action's result stays open (never invented).
+        content.Steps.Last().Should().StartWith(D.ActionStepPrefix);
+        content.StepExpected.Last().Should().BeNull();
+        content.StepExpected.Count(e => e is null).Should().Be(1);
     }
 
     [Fact]

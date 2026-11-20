@@ -177,6 +177,9 @@ public static partial class TestPlanSuggestionEngine
             case CaseReadiness.LinkedButUnsuitable: missing.Add("Test data: a linked asset is not approved or no longer exists"); break;
             case CaseReadiness.NotAssessed: missing.Add("Test data: need not assessed (decide whether this case needs Test Data)"); break;
         }
+        // How the tester observes the result is its own fact (never assumed from a stated expected result).
+        var observed = !string.IsNullOrWhiteSpace(draft.EffectiveObservation);
+        if (!observed && steps.Count > 0) missing.Add("Verification method: " + ScenarioPlanning.NeedsVerificationMethod);
         if (draft.EffectiveType == TestCaseType.Performance) missing.AddRange(PerformanceGaps(draft));
         foreach (var q in draft.Generated.OpenQuestions.Take(5)) missing.Add("Open question: " + q);
 
@@ -192,13 +195,14 @@ public static partial class TestPlanSuggestionEngine
             _ => "Test Data need not assessed",
         });
         if (steps.Count == 0) blockers.Add("No test steps");
+        else if (!observed) blockers.Add("Verification method not identified");
         return draft with
         {
             Missing = missing,
             Testability = new TestCaseTestability
             {
                 InputMethod = steps.Count > 0 ? TestabilityFact.Known : TestabilityFact.Missing, TestData = data, ExpectedBehavior = behaviour,
-                Observation = behaviour, NeedsTechnicalAssistance = false, Blockers = blockers, Readiness = readiness, ReadinessReason = reason,
+                Observation = observed ? TestabilityFact.Known : TestabilityFact.Missing, NeedsTechnicalAssistance = false, Blockers = blockers, Readiness = readiness, ReadinessReason = reason,
                 Summary = blockers.Count == 0
                     ? "Prepared: steps, a confirmed expected result and the Test Data decision are in place. Environment availability and tester permissions are not verified here."
                     : $"Not ready for manual execution: {blockers.Count} open item{(blockers.Count == 1 ? "" : "s")}",

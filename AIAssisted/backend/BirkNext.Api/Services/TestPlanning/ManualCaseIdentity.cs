@@ -23,7 +23,7 @@ public static class ManualCaseIdentity
             foreach (var id in c.Generated.Requirements.Select(r => r.RuleId).Where(i => !string.IsNullOrWhiteSpace(i)).Select(i => i.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
                 sources.Add(new(id, PreparedCaseTraceability.RequirementFile(c.Generated.Evidence, id) ?? specFile, "Specification evidence"));
         foreach (var l in c.RequirementLinks.Where(l => !string.IsNullOrWhiteSpace(l.RequirementId)))
-            sources.Add(new(l.RequirementId.Trim(), string.IsNullOrWhiteSpace(l.SpecificationPath) ? null : l.SpecificationPath.Trim(), "Manual link", string.IsNullOrWhiteSpace(l.LinkedBy) ? null : l.LinkedBy));
+            sources.Add(new(l.RequirementId.Trim(), string.IsNullOrWhiteSpace(l.SpecificationPath) ? null : l.SpecificationPath.Trim(), l.Scope == RequirementLinkScope.Scenario ? "Scenario link" : "Manual link", string.IsNullOrWhiteSpace(l.LinkedBy) ? null : l.LinkedBy));
         return new ManualRunOrigin
         {
             SourceKind = c.Source.Kind, ScenarioFingerprint = c.Source.Fingerprint, SpecificationFile = specFile,

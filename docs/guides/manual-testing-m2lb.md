@@ -129,17 +129,69 @@ the **Needs attention** view lists the 120 with an open point. Use **More filter
 2. Choose **Prepare test cases**. A preview shows what will be added by kind (for example *2 acceptance scenario · 2 UI behaviour · 2 guide
    scenario*), which have no expected result in the evidence (they start as *Needs clarification*), which have no steps or steps without an
    expected result, and which overlap existing cases.
-3. Confirm. Each scenario becomes a draft test case in the plan. A case from the specification carries its starting situation (Given), action
-   (When) and expected outcome (Then), marked *Stated in the project's documentation — confirm by accepting*; add steps where the tester needs
-   them.
+3. Confirm. Each scenario becomes a draft test case in the plan, marked **Generated — not reviewed**. A case from the specification is a
+   short procedure, not one copied line: step 1 *Prepare the starting situation in the test environment: …* (Given) and step 2 *Carry out or
+   trigger: …* (When) with the expected outcome (Then) as its result. How the action is triggered in your environment and how you observe the
+   result are not in the specification: the case says **Needs clarification — verification method not identified** until you fill in
+   **How to verify (observation method)**.
 4. Tests BirkNext did not find are normally added in **Azure DevOps Test Plans** after you import the exported file. Only when such a test
    must be linked to a requirement in BirkNext before the export, open **Advanced: write a test case by hand**, type a title and choose
    **Add test case**. The new case opens at its first step: write what the tester does and what should happen side by side, choose
    **Add step**, and save.
 
+### Scenarios and their test cases
+
+Prepare test cases is organised **by scenario**. A scenario says *what* is tested and why; its test cases say *how* and what result is
+expected. One scenario is open at a time:
+
+- The scenario header shows its title, how many test cases it has and their state (for example *3 test cases · 1 approved · 2 need review*),
+  a **language icon**, **Show Norwegian / Show original** and **+ Add test case**.
+- Open, it shows the scenario's purpose, starting situation, trigger, expected business outcome, the source file and anchor it comes from
+  (for example `SkoleService/specs/001-skoleservice/spec.md#scenario-42`) and the requirements confirmed for the scenario as a whole.
+- **+ Add test case** writes another case under the scenario (for example *No report submitted*, *Valid report submitted*). It starts from
+  the scenario's starting situation; the steps and expected results are yours. A title that looks like an existing case is pointed out —
+  keep it only if it tests something different.
+- **Suggest more test cases** proposes variants only when the scenario's own evidence states them (a further condition such as *even with an
+  upper secondary education relationship*, a stated failure case, or a contract error response). Nothing is added until you choose
+  **Add as test case**.
+- In an open case, **Duplicate as new test case** makes a copy with its own identity (review, history and any Azure DevOps id are not
+  copied); a hand-written case that was never reviewed can be removed (earlier versions keep it); anything reviewed is **excluded** with a
+  reason instead.
+- Older hand-written cases that were never written under a scenario are listed under *Written by hand — no scenario established*. BirkNext
+  does not guess a scenario for them.
+
+### Norwegian text
+
+The language icon (**Translate scenario and test cases to Norwegian**) translates the open scenario and its test cases — no other scenario.
+The original text is never replaced: each case shows the Norwegian fields with the original under each one, and **Show original** switches
+back. Requirement ids, field names, codes, file paths and similar identifiers are kept exactly as they are; a translation that would change
+one is not used. A machine translation is marked *Machine translation — not reviewed*; when you edit it, it becomes *edited by a person*,
+and translating again keeps your text unless you choose to replace it. If the original changes later, the Norwegian text is kept and
+marked *made from an older original — review it*. Translating never approves anything.
+
+Which translator is used is a BirkNext setting (`ManualTesting:Translation:Provider`): **AzureTranslator** (Azure AI Translator; needs a key
+and normally a region), **LibreTranslate** (a local server, for offline use) or **Anthropic**. With none configured, or when the service
+cannot be reached, the icon opens the Norwegian fields so you can write the Norwegian text yourself; everything else works offline.
+
+### Suggested requirements
+
+Each case lists **Suggested requirements** from the project's specification, strongest first, each with *why* and the source file:
+**A** the scenario names the requirement, **B** the requirement refers to the scenario's user story or acceptance scenario, **C** both
+describe the same behaviour (the shared words are shown), **D** possibly related. Choose **Link to this case** (counts as this case's test
+design), **Link to the scenario** (applies to the scenario as a whole — never counted as any single case's test design) or **Not related**
+(not suggested again for this case). A suggestion is never a link until you choose it and save. **Search all requirements** is still
+available below the suggestions.
+
+### Testability checklist
+
+Each case has a short checklist: test environment, required access, test data (*available*, *required but missing*, *needs clarification*,
+*not required* or *not assessed*), execution mechanism, expected outcome, observation mechanism and dependencies. A line is *Ready* only
+when the case states it — approving a case does not make it ready.
+
 ## 6. Edit, save and approve
 
-Open a test case (click its title) to edit it:
+Open a test case (click its title) to edit it. At the top it shows four separate states: **Content** (saved, revised or unsaved changes),
+**Review** (not reviewed, approved, needs clarification, excluded), **Testability** and **Export** (whether an Azure DevOps id is known).
 
 - **Title**, **Preconditions**, **steps** (action and expected result per step) and **Priority** — what the Azure DevOps file carries.
   Norwegian text is kept as typed.
@@ -150,7 +202,8 @@ Open a test case (click its title) to edit it:
 
 Then:
 
-1. Choose **Save draft**. An *Unsaved changes* marker is shown until you save. Name the plan under **Save & export → Save name** (for
+1. Choose **Save draft**. An *Unsaved changes* marker is shown until you save; with nothing to save the button is disabled and the bar says
+   *All changes saved · version n*. Name the plan under **Save & export → Save name** (for
    example *M2LB manuell regresjon*); the name becomes the export file's name.
 2. Record a decision per case: **Approve**, **Needs clarification** (write why in *Rationale*) or **Exclude** (write why).
    - The decision buttons are disabled while there are unsaved changes: **save first**.
@@ -171,8 +224,11 @@ export does not need them.
 2. Fill in **Area Path** (as it is in your Azure DevOps project, for example `M2LB\Manuell test`) and, if you like, **Assigned To**.
    BirkNext cannot check these against Azure DevOps; it marks them *Confirm in Azure DevOps*. Values you change are kept in this browser tab
    across a reload (a note says so); choose **Save as this project's export settings** to use them for every export.
-3. Check the list of cases: each says whether it will be exported and, if not, why. Only **approved** cases are exported unless you tick
-   *Include cases that are not approved yet*. A case missing information blocks the download until you fix or deselect it.
+3. Check the list of cases: each says whether it will be exported and, if not, why, its scenario, and whether it is new in Azure DevOps
+   (no id) or has a known id. Only **approved** cases are exported unless you tick *Include cases that are not approved yet* (they are then
+   exported as drafts; importing them approves nothing).
+   **Export language**: *Original language* or *Norwegian*. In Norwegian, a case with a complete Norwegian text is exported entirely in
+   Norwegian; a case without one is exported in its original language (the list says which) — never half and half. A case missing information blocks the download until you fix or deselect it.
 4. Choose **Excel (.xlsx)** (default) or **CSV**, and **Download**. The file is named
    `<plan>-azure-test-plans-r<version>.xlsx`. The columns are the ones Azure DevOps imports: *ID, Work Item Type, Title, Test Step, Step Action,
    Step Expected, Area Path, Assigned To, State* (plus *Description*, which says where each case came from).
