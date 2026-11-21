@@ -35,7 +35,7 @@ public sealed class TranslationSettingsCardTests : BunitContext
 
     private static TranslationSettingsView View(TranslationSettings? settings = null, bool keySet = false, bool canWrite = true, OfflineTranslationStatus? offline = null) => new()
     {
-        Settings = settings ?? new TranslationSettings(), AzureKeySet = keySet, CanWrite = canWrite, CanManageLibreTranslate = true, Origin = "default",
+        Settings = settings ?? new TranslationSettings { Provider = TranslationProviderKind.EmbeddedOffline }, AzureKeySet = keySet, CanWrite = canWrite, CanManageLibreTranslate = true, Origin = "default",
         Availability = new(true, "BirkNext offline translator (HPLT/translate-en-nb-v2.0-hplt)", "Offline translation on this PC by the model packaged with BirkNext; nothing leaves this PC."),
         Offline = offline ?? Installed,
     };
@@ -59,7 +59,23 @@ public sealed class TranslationSettingsCardTests : BunitContext
     }
 
     [Fact]
-    public void The_default_is_the_offline_translator_English_to_Norwegian_and_Ready_only_after_the_probe_translated()
+    public void The_default_is_the_LibreTranslate_server_shown_in_the_normal_view_with_the_offline_translator_as_fallback()
+    {
+        // 2026-11-21: LibreTranslate is the default translator; its server controls are in the normal view, not under Advanced.
+        var cut = Render(View(new TranslationSettings()));
+        cut.Find("[data-testid=trx-provider] option[selected]").GetAttribute("value").Should().Be("LibreTranslate");
+        cut.Find("[data-testid=trx-provider] option").GetAttribute("value").Should().Be("LibreTranslate", "listed first");
+        cut.Find("[data-testid=trx-libre]").Should().NotBeNull();
+        cut.Find("[data-testid=trx-advanced]").QuerySelector("[data-testid=trx-libre]").Should().BeNull("not hidden under Advanced");
+        cut.Find("[data-testid=trx-advanced]").HasAttribute("open").Should().BeFalse("LibreTranslate is a standard choice");
+        cut.Find("[data-testid=trx-fallback]").HasAttribute("checked").Should().BeTrue();
+        cut.Find("[data-testid=trx-internet]").TextContent.Should().Contain("offline translator packaged with BirkNext is used");
+        cut.FindAll("[data-testid=trx-provider] optgroup").Should().BeEmpty();
+        _probes.Should().Be(0, "the offline model is not started while LibreTranslate is chosen");
+    }
+
+    [Fact]
+    public void The_offline_translator_is_English_to_Norwegian_and_Ready_only_after_the_probe_translated()
     {
         var cut = Render(View());
         cut.Find("[data-testid=trx-provider] option[selected]").GetAttribute("value").Should().Be("EmbeddedOffline");

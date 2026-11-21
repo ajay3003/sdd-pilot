@@ -52,7 +52,7 @@ public sealed class TranslationSettingsTests : IDisposable
     {
         var empty = new TranslationSettingsStore(_dir, Config());
         empty.Effective().Should().Match<(TranslationSettings Settings, string Origin, string?, DateTimeOffset?)>(e =>
-            e.Origin == "default" && e.Settings.Provider == TranslationProviderKind.EmbeddedOffline && e.Settings.SourceLanguage == "en" && e.Settings.TargetLanguages.Single() == "nb");
+            e.Origin == "default" && e.Settings.Provider == TranslationProviderKind.LibreTranslate && e.Settings.SourceLanguage == "en" && e.Settings.TargetLanguages.Single() == "nb");
 
         var configured = new TranslationSettingsStore(Path.Combine(_dir, "c"), Config(("ManualTesting:Translation:Provider", "LibreTranslate"), ("ManualTesting:Translation:LibreTranslate:Url", "http://127.0.0.1:6000")));
         configured.Effective().Origin.Should().Be("configuration");

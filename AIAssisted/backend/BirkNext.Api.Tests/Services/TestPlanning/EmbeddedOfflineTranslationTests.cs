@@ -145,10 +145,11 @@ public sealed class EmbeddedOfflineTranslationTests
     }
 
     [Fact]
-    public void New_installations_default_to_the_embedded_offline_translator_without_internet_fallback_to_it()
+    public void New_installations_default_to_LibreTranslate_with_the_embedded_offline_translator_as_fallback()
     {
         var s = new TranslationSettings();
-        s.Provider.Should().Be(TranslationProviderKind.EmbeddedOffline);
+        s.Provider.Should().Be(TranslationProviderKind.LibreTranslate, "2026-11-21: LibreTranslate is the default");
+        s.OfflineFallback.Should().BeTrue();
         (s.SourceLanguage, s.DefaultTarget).Should().Be(("en", "nb"));
         s.Glossary.Should().NotBeEmpty();
         // A saved file from before keeps its own choice (System.Text.Json reads the saved enum name).

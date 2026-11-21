@@ -4,21 +4,21 @@ namespace BirkNext.TestPlanning;
 
 // ── Translation settings (System Settings → Translation) ───────────────────────────────────────────────────────────────────
 // One installation-wide choice of translator for test-case text, with its languages. Not a Target Environment setting: the translator serves
-// every project and environment. Secrets (the Azure key) are stored encrypted on the server and never returned. The default is the embedded
-// offline translator packaged with BirkNext (English → Norwegian bokmål; no internet, container, account or installation).
+// every project and environment. Secrets (the Azure key) are stored encrypted on the server and never returned. The default (2026-11-21) is the
+// LibreTranslate server (local, 127.0.0.1), falling back to the embedded offline translator packaged with BirkNext when the server cannot be reached.
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TranslationProviderKind
 {
     /// <summary>No translation service: the language action opens the fields for writing the text by hand.</summary>
     Off,
-    /// <summary>A LibreTranslate server (the local one BirkNext runs with Podman; offline once its language models are installed).</summary>
+    /// <summary>A LibreTranslate server (the local one BirkNext runs with Podman; offline once its language models are installed). The default.</summary>
     LibreTranslate,
     /// <summary>Azure AI Translator (online; key and region). Optional (Advanced).</summary>
     AzureTranslator,
     /// <summary>The Anthropic client BirkNext already has (online; Anthropic:ApiKey in the server configuration). Optional (Advanced).</summary>
     Anthropic,
-    /// <summary>The offline translator packaged with BirkNext (CTranslate2 + the HPLT English → Norwegian bokmål model, CPU only). The default.</summary>
+    /// <summary>The offline translator packaged with BirkNext (CTranslate2 + the HPLT English → Norwegian bokmål model, CPU only). The fallback of a LibreTranslate server that cannot be reached.</summary>
     EmbeddedOffline,
 }
 
@@ -71,10 +71,10 @@ public static class TranslationLanguages
 
 public sealed record TranslationSettings
 {
-    /// <summary>Default: the embedded offline translator (English → Norwegian bokmål, packaged with BirkNext). Saved settings keep their choice.</summary>
-    public TranslationProviderKind Provider { get; init; } = TranslationProviderKind.EmbeddedOffline;
-    /// <summary>Only for an online service chosen under Advanced: when it has no key or cannot be reached, translate offline instead (the embedded
-    /// translator when it is installed, else the local LibreTranslate server). Never the other way round: the embedded translator never falls back
+    /// <summary>Default (2026-11-21): the LibreTranslate server, with the embedded offline translator as fallback. Saved settings keep their choice.</summary>
+    public TranslationProviderKind Provider { get; init; } = TranslationProviderKind.LibreTranslate;
+    /// <summary>For LibreTranslate and the online services: when the service has no key or cannot be reached, translate offline instead (the embedded
+    /// translator when it is installed; for an online service without it, the local LibreTranslate server). Never the other way round: the embedded translator never falls back
     /// to the internet. The result always names the service that translated.</summary>
     public bool OfflineFallback { get; init; } = true;
     /// <summary>The language of the original text ("auto" = the service detects it).</summary>

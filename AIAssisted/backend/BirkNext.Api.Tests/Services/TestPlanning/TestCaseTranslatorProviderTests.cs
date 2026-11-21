@@ -48,12 +48,14 @@ public sealed class TestCaseTranslatorProviderTests
     // ── Choice of provider ─────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void The_default_is_the_embedded_offline_translator_and_Azure_under_Advanced_falls_back_to_the_local_server()
+    public void The_default_is_the_local_LibreTranslate_server_and_Azure_under_Advanced_falls_back_to_the_local_server()
     {
-        // 2026-11-20: new installations translate offline with the model packaged with BirkNext (no internet, container or account).
-        new TranslationSettings().Provider.Should().Be(TranslationProviderKind.EmbeddedOffline);
-        TestCaseTranslators.Create(new TranslationSettings(), null, Config(), NoNetwork).Availability.Reason.Should().Be(TestCaseTranslators.NoOfflineEngine,
-            "without the offline engine (not part of this installation) nothing else is used silently");
+        // 2026-11-21: new installations use the local LibreTranslate server (falling back to the packaged offline translator when installed).
+        new TranslationSettings().Provider.Should().Be(TranslationProviderKind.LibreTranslate);
+        TestCaseTranslators.Create(new TranslationSettings(), null, Config(), NoNetwork).Should().BeOfType<LibreTranslateTestCaseTranslator>(
+            "without the offline engine there is no fallback, and nothing else is used silently");
+        TestCaseTranslators.Create(new TranslationSettings { Provider = TranslationProviderKind.EmbeddedOffline }, null, Config(), NoNetwork).Availability.Reason
+            .Should().Be(TestCaseTranslators.NoOfflineEngine);
         var defaults = new TranslationSettings { Provider = TranslationProviderKind.AzureTranslator };
         defaults.SourceLanguage.Should().Be("en");
         defaults.TargetLanguages.Should().Equal("nb");

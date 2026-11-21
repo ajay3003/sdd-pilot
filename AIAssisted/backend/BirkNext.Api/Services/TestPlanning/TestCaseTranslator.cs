@@ -62,8 +62,8 @@ public sealed class UnavailableTestCaseTranslator(string reason) : ITestCaseTran
 }
 
 /// <summary>
-/// The translator the current settings choose (System Settings → Translation, else the server configuration, else the default: the embedded
-/// offline translator, English → Norwegian bokmål). Read on every request, so a change takes effect without a restart. Nothing is called to decide this.
+/// The translator the current settings choose (System Settings → Translation, else the server configuration, else the default: the local
+/// LibreTranslate server, falling back to the embedded offline translator, English → Norwegian bokmål). Read on every request, so a change takes effect without a restart. Nothing is called to decide this.
 /// </summary>
 public sealed class TestCaseTranslatorResolver(TranslationSettingsStore store, IConfiguration config, IHttpClientFactory http, OfflineTranslationEngine? offline = null)
 {
@@ -81,8 +81,10 @@ public static class TestCaseTranslators
     public static ITestCaseTranslator Create(TranslationSettings s, string? azureKey, IConfiguration config, IHttpClientFactory http, OfflineTranslationEngine? offline = null)
     {
         var chosen = Single(s, azureKey, config, http, offline);
-        if (!(s.OfflineFallback && s.Provider is TranslationProviderKind.AzureTranslator or TranslationProviderKind.Anthropic)) return chosen;
+        if (!(s.OfflineFallback && s.Provider is TranslationProviderKind.AzureTranslator or TranslationProviderKind.Anthropic or TranslationProviderKind.LibreTranslate)) return chosen;
         var embedded = offline is null ? null : new EmbeddedOfflineTestCaseTranslator(offline, s.Glossary);
+        // LibreTranslate (the default): a server that is not running falls back to the packaged offline translator only (never to itself).
+        if (s.Provider == TranslationProviderKind.LibreTranslate) return embedded is { Availability.Available: true } ? new FallbackTestCaseTranslator(chosen, embedded) : chosen;
         return new FallbackTestCaseTranslator(chosen, embedded is { Availability.Available: true } ? embedded
             : LibreTranslateTestCaseTranslator.Create(s.EffectiveLibreTranslateUrl, config["ManualTesting:Translation:LibreTranslate:ApiKey"], http));
     }
