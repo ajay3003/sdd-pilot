@@ -269,6 +269,9 @@ public sealed class SddApplicationContext
     /// <summary>How <see cref="Name"/> was derived: PrimarySource, SharedSource, Package or Manual.</summary>
     public string NameBasis { get; set; } = "";
     public DateTimeOffset CreatedAt { get; set; }
+    /// <summary>The Delivery Reporting project created for this project (Delivery Snapshots); null = none linked. Delivery Reporting keeps its own
+    /// snapshots and frozen reports — the link only lets Delivery Snapshots follow the Project list.</summary>
+    public Guid? DeliveryProjectId { get; set; }
 }
 
 /// <summary>Immutable manifest of explicit artifact revision references; content remains owned by Revisions.</summary>

@@ -12,6 +12,7 @@
 @inject IJSRuntime JS
 @inject BirkNext.Web.Services.Operations.BackgroundOperationService Operations
 @inject DeliveryReportingSession Session
+@inject IServiceProvider Services
 @implements IDisposable
 
 @* Delivery Reporting: a standalone weekly delivery report for Scrum Masters and Project Leaders. Everything on this page comes from
@@ -79,7 +80,16 @@
     {
         <form id="dlr-new-project-form" class="dlr-card dlr-inline-form" data-testid="dlr-new-project-form" @onsubmit="CreateProject" @onsubmit:preventDefault>
             <h2 class="dlr-h2">New reporting project</h2>
-            <p class="dlr-muted">A reporting project holds its own snapshots and reports. No environment or existing BirkNext project is needed.</p>
+            <p class="dlr-muted">A reporting project holds its own snapshots and reports. Choose a project you imported, or type a name (no environment or imported project is needed).</p>
+            @if (WorkspaceProjectsWithout() is { Count: > 0 } imported)
+            {
+                @* Create from a project made by Import Project: same name, and the link lets Delivery Snapshots follow the Project list. *@
+                <label class="dlr-field"><span>From an imported project</span>
+                    <select data-testid="dlr-new-project-from" value="@(_newFromApplication ?? "")" @onchange="OnNewFromChanged">
+                        <option value="">— Type a name instead —</option>
+                        @foreach (var a in imported) { <option value="@a.Id">@a.Name</option> }
+                    </select></label>
+            }
             <label class="dlr-field"><span>Name</span><input @ref="_newProjectName" data-testid="dlr-new-project-name" @bind="_newName" maxlength="200" required /></label>
             <label class="dlr-field"><span>Description (optional)</span><input data-testid="dlr-new-project-description" @bind="_newDescription" maxlength="2000" /></label>
             @if (_newProjectError is not null) { <p class="dlr-error" role="alert">@_newProjectError</p> }
@@ -103,6 +113,17 @@
 
     @if (_error is not null) { <p class="dlr-error" role="alert" data-testid="dlr-error">@_error</p> }
     @if (_notice is not null) { <p class="dlr-notice" role="status" data-testid="dlr-notice">@_notice</p> }
+
+    @if (_loaded && CurrentWithoutReportingProject() is { } unlinked)
+    {
+        @* The project chosen in the Project list has no reporting project yet: one click creates it (same name, linked). *@
+        <section class="dlr-card dlr-inline-form" data-testid="dlr-create-for-current">
+            <p><strong>@unlinked.Name</strong> (your current project) has no reporting project yet.</p>
+            <div class="dlr-actions">
+                <button type="button" class="btn-primary" data-testid="dlr-create-for-current-button" @onclick="() => CreateForAsync(unlinked)">Create reporting project for @unlinked.Name</button>
+            </div>
+        </section>
+    }
 
     @if (!_loaded)
     {
@@ -1179,7 +1200,9 @@
             _projects = projects;
             _error = error;
         }
-        var requested = Guid.TryParse(ProjectQuery, out var p) && _projects.Any(x => x.Id == p) ? p : _projects.FirstOrDefault()?.Id;
+        // An explicit ?project= wins; else the reporting project of the project chosen in the Project list; else the first one.
+        var requested = Guid.TryParse(ProjectQuery, out var p) && _projects.Any(x => x.Id == p) ? p
+            : (Lifecycle is { } lifecycle ? DeliveryProjectLinks.ForCurrent(lifecycle, _projects)?.Id : null) ?? _projects.FirstOrDefault()?.Id;
         if (requested != _projectId || !_loaded)
         {
             _projectId = requested;
@@ -1296,11 +1319,55 @@
     {
         var (project, error) = await Api.CreateProjectAsync(_newName, _newDescription);
         if (project is null) { _newProjectError = error; return; }
+        var linked = _newFromApplication is { } from && await LinkAsync(from, project.Id);
         _projects = (await Api.ProjectsAsync()).Projects;
         _newProjectOpen = false;
         _newName = _newDescription = "";
-        _notice = $"Reporting project “{project.Name}” created.";
+        _newFromApplication = null;
+        _notice = $"Reporting project “{project.Name}” created{(linked ? " for the imported project of the same name" : "")}.";
         Nav.NavigateTo(P.SnapshotsHref(project.Id));
+    }
+
+    // ── Link to the projects created by Import Project (workspace) ────────────────────────────────────────────────────
+
+    private string? _newFromApplication;
+
+    /// <summary>The workspace's projects, when this page runs inside a workspace (null in an isolated host).</summary>
+    private BirkNext.Web.Models.SddLifecycleState? Lifecycle => (Services.GetService(typeof(IWorkspaceSessionService)) as IWorkspaceSessionService)?.SddLifecycle;
+
+    private IReadOnlyList<BirkNext.Web.Models.SddApplicationContext> WorkspaceProjectsWithout() =>
+        Lifecycle is { } lifecycle ? DeliveryProjectLinks.WithoutReportingProject(lifecycle, _projects) : [];
+
+    /// <summary>The current workspace project when it has no reporting project yet (the one-click offer); null otherwise.</summary>
+    private BirkNext.Web.Models.SddApplicationContext? CurrentWithoutReportingProject() =>
+        Lifecycle is { } lifecycle && BirkNext.Web.Services.ProjectImport.ApplicationContexts.Current(lifecycle) is { } current
+        && DeliveryProjectLinks.WorkspaceProjects(lifecycle).Any(a => a.Id == current.Id) && DeliveryProjectLinks.For(current, _projects) is null ? current : null;
+
+    private void OnNewFromChanged(ChangeEventArgs e)
+    {
+        _newFromApplication = e.Value?.ToString() is { Length: > 0 } id ? id : null;
+        if (_newFromApplication is { } chosen && Lifecycle is { } lifecycle && BirkNext.Web.Services.ProjectImport.ApplicationContexts.Find(lifecycle, chosen) is { } application)
+            _newName = application.Name;
+    }
+
+    /// <summary>"Create reporting project for M2LB": same name, linked, opened.</summary>
+    private async Task CreateForAsync(BirkNext.Web.Models.SddApplicationContext application)
+    {
+        _error = null;
+        var (project, error) = await Api.CreateProjectAsync(application.Name, null);
+        if (project is null) { _error = error; return; }
+        await LinkAsync(application.Id, project.Id);
+        _projects = (await Api.ProjectsAsync()).Projects;
+        _notice = $"Reporting project “{project.Name}” created for your project {application.Name}. Import its first snapshot next.";
+        Nav.NavigateTo(P.SnapshotsHref(project.Id));
+    }
+
+    /// <summary>Remembers the link on the workspace project and saves the workspace (the reporting project itself is unchanged).</summary>
+    private async Task<bool> LinkAsync(string applicationId, Guid deliveryProjectId)
+    {
+        if (Lifecycle is not { } lifecycle || !DeliveryProjectLinks.Link(lifecycle, applicationId, deliveryProjectId)) return false;
+        if (Services.GetService(typeof(IWorkspaceAutoSaveService)) is IWorkspaceAutoSaveService autoSave) await autoSave.SaveNowAsync();
+        return true;
     }
 
     private void Toggle(string key)
