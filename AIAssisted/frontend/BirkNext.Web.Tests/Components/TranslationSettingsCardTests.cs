@@ -75,6 +75,27 @@ public sealed class TranslationSettingsCardTests : BunitContext
     }
 
     [Fact]
+    public void The_header_says_Ready_for_LibreTranslate_only_when_the_server_answers_and_an_unsaved_choice_is_not_shown_as_the_saved_one()
+    {
+        var notInstalled = Installed with { State = "NotInstalled", Summary = "Offline translation — not available" };
+        var cut = Render(View(new TranslationSettings(), offline: notInstalled),
+            libre: new LibreTranslateServiceStatus { PodmanAvailable = true, ImagePresent = true, Url = "http://127.0.0.1:5050" });
+        cut.WaitForAssertion(() => cut.Find("[data-testid=trx-overall]").TextContent.Should().Be("LibreTranslate not running — starts when a translation needs it"));
+        cut.Find("[data-testid=trx-internet]").TextContent.Should().Contain("offline fallback is not installed");
+        cut.Find($"[data-testid=trx-provider] option[value={TranslationProviderKind.EmbeddedOffline}]").TextContent.Should().Contain("not installed here");
+
+        cut.Find("[data-testid=trx-provider]").Change(TranslationProviderKind.EmbeddedOffline.ToString());
+        cut.Find("[data-testid=trx-overall]").TextContent.Should().Be("Not saved — Save to use this translator", "the header never mixes the saved translator with an unsaved choice");
+    }
+
+    [Fact]
+    public void The_header_says_Ready_for_LibreTranslate_when_the_server_answers()
+    {
+        var cut = Render(View(new TranslationSettings()), libre: new LibreTranslateServiceStatus { PodmanAvailable = true, ImagePresent = true, Running = true, Answering = true });
+        cut.WaitForAssertion(() => cut.Find("[data-testid=trx-overall]").TextContent.Should().Be("Ready: LibreTranslate (local server answering)"));
+    }
+
+    [Fact]
     public void The_offline_translator_is_English_to_Norwegian_and_Ready_only_after_the_probe_translated()
     {
         var cut = Render(View());

@@ -36,7 +36,7 @@
                 <label class="trx-field"><span>Default translator</span>
                     <select @bind="_draft.Provider" @bind:after="ProviderChanged" data-testid="trx-provider">
                         <option value="@TranslationProviderKind.LibreTranslate">LibreTranslate server (default)</option>
-                        <option value="@TranslationProviderKind.EmbeddedOffline">Offline translator (packaged with BirkNext)</option>
+                        <option value="@TranslationProviderKind.EmbeddedOffline">Offline translator (packaged with BirkNext)@(OfflineMissing ? " — not installed here" : "")</option>
                         <option value="@TranslationProviderKind.Off">Off — write translations by hand</option>
                         @if (_advanced || !IsStandard(_draft.Provider))
                         {
@@ -61,7 +61,7 @@
                 <p class="trx-warn" data-testid="trx-pair-warning">The offline translator translates English → Norwegian (bokmål) only. Choose those languages, or another translator under Advanced.</p>
             }
             <p class="trx-muted trx-small" data-testid="trx-internet">Internet fallback: @(offlineChosen ? "disabled — the offline translator never sends text anywhere."
-                : _draft.Provider == TranslationProviderKind.LibreTranslate ? (_draft.OfflineFallback ? "none — if the LibreTranslate server is not running, the offline translator packaged with BirkNext is used." : "none.")
+                : _draft.Provider == TranslationProviderKind.LibreTranslate ? (_draft.OfflineFallback ? (OfflineMissing ? "none — the offline fallback is not installed with this BirkNext, so translation needs the LibreTranslate server running." : "none — if the LibreTranslate server is not running, the offline translator packaged with BirkNext is used.") : "none.")
                 : _draft.OfflineFallback ? "the online service falls back to offline translation, never the other way round." : "off.")</p>
             @if (_draft.Provider is TranslationProviderKind.AzureTranslator or TranslationProviderKind.Anthropic or TranslationProviderKind.LibreTranslate)
             {
@@ -270,9 +270,21 @@
 
     private static bool IsStandard(TranslationProviderKind p) => p is TranslationProviderKind.LibreTranslate or TranslationProviderKind.EmbeddedOffline or TranslationProviderKind.Off;
 
-    /// <summary>The header pill: the offline model's own state when it is the translator (Ready only after a probe), else the availability.</summary>
+    /// <summary>The packaged offline model is not part of this BirkNext (no runtime/translation folder).</summary>
+    private bool OfflineMissing => (_offline ?? _view?.Offline) is { State: "NotInstalled" };
+
+    /// <summary>The header pill describes the SAVED translator (what Manual Testing uses): the offline model's own state when it is the
+    /// translator (Ready only after a probe); for LibreTranslate Ready only when the server answered; and an unsaved change is said as such.</summary>
     private (string Text, string Tone) Overall(TranslationSettingsView v)
     {
+        if (_dirty && _draft.Provider != v.Settings.Provider) return ("Not saved — Save to use this translator", "neutral");
+        if (v.Settings.Provider == TranslationProviderKind.LibreTranslate && _libre is { } libre)
+        {
+            if (libre.Answering) return ("Ready: LibreTranslate (local server answering)", "ok");
+            if (v.Settings.LibreTranslateManaged && v.CanManageLibreTranslate && libre.ImagePresent)
+                return ("LibreTranslate not running — starts when a translation needs it", "neutral");
+            return OfflineMissing || !v.Settings.OfflineFallback ? ("LibreTranslate server not running", "pending") : ("LibreTranslate not running — offline fallback used", "neutral");
+        }
         if (v.Settings.Provider == TranslationProviderKind.EmbeddedOffline)
         {
             var o = _offline ?? v.Offline;

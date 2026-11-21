@@ -42,7 +42,7 @@ public sealed class OfflineTranslationEngine : IAsyncDisposable
     public (OfflineTranslationBundle? Bundle, string? Problem) Bundle()
     {
         var directory = OfflineTranslationBundle.Candidates(_config).FirstOrDefault(d => File.Exists(Path.Combine(d, OfflineTranslationBundle.ManifestFile)));
-        if (directory is null) return (null, "The offline translation model is not installed with this BirkNext (no runtime/translation folder). Use the complete BirkNext Tester Package.");
+        if (directory is null) return (null, "The offline translation model is not installed with this BirkNext (no runtime/translation folder). Use the complete BirkNext Tester Package; on a developer PC build it once with scripts/build-offline-translation.ps1 (see its help) into %LOCALAPPDATA%/BirkNext/offline-translation.");
         var manifest = new FileInfo(Path.Combine(directory, OfflineTranslationBundle.ManifestFile));
         var key = $"{Path.GetFullPath(directory)}|{manifest.Length}|{manifest.LastWriteTimeUtc.Ticks}";
         lock (_verifyLock)
