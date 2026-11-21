@@ -73,7 +73,7 @@
                 <div class="pi-role-grid">
                     @foreach (var role in ImportRoleChoice.Choices)
                     {
-                        <label class="pi-role-option"><input type="checkbox" checked="@Session.ChosenRoles.Contains(role)" data-testid="pi-role" data-role="@role"
+                        <label class="pi-role-option"><input type="checkbox" checked="@Session.ChosenRoles.Contains(role)" data-testid="pi-zip-role" data-role="@role"
                                @onchange="e => { if (e.Value is true) Session.ChosenRoles.Add(role); else Session.ChosenRoles.Remove(role); }" /> @ApplicationContexts.RoleLabel(role)</label>
                     }
                 </div>
