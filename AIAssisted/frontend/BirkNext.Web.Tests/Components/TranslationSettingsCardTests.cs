@@ -98,6 +98,20 @@ public sealed class TranslationSettingsCardTests : BunitContext
     }
 
     [Fact]
+    public void Advanced_is_opened_and_closed_by_its_summary_only_so_it_never_flickers()
+    {
+        // Regression: an @ontoggle handler flipped the state each time Blazor set "open", so with Azure saved the section opened and closed forever.
+        var cut = Render(View(new TranslationSettings { Provider = TranslationProviderKind.AzureTranslator }));
+        var details = () => cut.Find("[data-testid=trx-advanced]");
+        details().HasAttribute("open").Should().BeTrue();
+        details().GetAttribute("blazor:ontoggle").Should().BeNull("the browser's toggle event must not drive the state");
+        cut.Find("[data-testid=trx-advanced-summary]").Click();
+        details().HasAttribute("open").Should().BeFalse();
+        cut.Find("[data-testid=trx-advanced-summary]").Click();
+        details().HasAttribute("open").Should().BeTrue();
+    }
+
+    [Fact]
     public void Azure_under_Advanced_saves_the_choices_and_the_key_only_when_typed_and_the_key_is_never_shown_again()
     {
         var cut = Render(View(new TranslationSettings { Provider = TranslationProviderKind.AzureTranslator }));

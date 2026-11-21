@@ -106,8 +106,10 @@
             </div>
         }
 
-        <details class="trx-advanced" open="@_advanced" @ontoggle="ToggleAdvanced" data-testid="trx-advanced">
-            <summary>Advanced: other translators, more languages, glossary</summary>
+        @* Blazor alone owns "open": the summary click flips _advanced and the browser's own toggle is prevented. (An @ontoggle handler that
+           flipped _advanced looped: setting "open" fires toggle, which flipped it back, which fired toggle again — the section flickered.) *@
+        <details class="trx-advanced" open="@_advanced" data-testid="trx-advanced">
+            <summary @onclick="ToggleAdvanced" @onclick:preventDefault="true" data-testid="trx-advanced-summary">Advanced: other translators, more languages, glossary</summary>
             <div class="trx-advanced-body">
                 <fieldset class="trx-panel" disabled="@(!v.CanWrite || _busy)" data-testid="trx-languages">
                     <legend class="trx-panel-title">More "To" languages</legend>
