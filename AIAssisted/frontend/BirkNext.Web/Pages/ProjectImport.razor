@@ -66,6 +66,24 @@
                     ? $"The package starts a new application. {targetApplication.Name} and its evidence stay as they are."
                     : $"The package is added as evidence for {targetApplication.Name}. Nothing already imported is replaced; a supporting package never replaces the application's primary documents.")</p>
             }
+            @* Optional roles, the same vocabulary as Source Management and Target Environments → Project. Saved after the import only where the
+               content supports them; nothing ticked = detected from content. *@
+            <fieldset class="pi-intent pi-roles" data-testid="pi-roles" disabled="@Session.IsBusy">
+                <legend>What does this ZIP contain? <span class="pi-muted">Optional, several allowed — leave empty to let BirkNext detect it</span></legend>
+                <div class="pi-role-grid">
+                    @foreach (var role in ImportRoleChoice.Choices)
+                    {
+                        <label class="pi-role-option"><input type="checkbox" checked="@Session.ChosenRoles.Contains(role)" data-testid="pi-role" data-role="@role"
+                               @onchange="e => { if (e.Value is true) Session.ChosenRoles.Add(role); else Session.ChosenRoles.Remove(role); }" /> @ApplicationContexts.RoleLabel(role)</label>
+                    }
+                </div>
+                @if (Session.ChosenRoles.Contains(PackageEvidenceRole.PrimaryApplicationSource) && Session.Target == ImportTarget.CurrentApplication
+                     && Activation.CurrentApplication is { } primaryApp && ApplicationPackages().Any(p => p.Role == PackageEvidenceRole.PrimaryApplicationSource))
+                {
+                    <p class="pi-warning" role="status" data-testid="pi-roles-primary-note">@primaryApp.Name already has a primary application source. If this ZIP is a different application, choose <strong>Import another application</strong> above; otherwise it is added as a contributing application source.</p>
+                }
+                <p class="pi-muted pi-small" data-testid="pi-roles-where">After the import the roles appear in Manage sources and, when the active Target Environment tests this project, in its Project roles. A role the content does not show is not saved.</p>
+            </fieldset>
             <div class="pi-methods">
                 <div class="pi-method" data-testid="pi-method-zip">
                     <h3>Manual ZIP import</h3>
@@ -544,6 +562,7 @@
                     <div><dt>Associated application</dt><dd data-testid="pi-result-application">@summary.ApplicationName</dd></div>
                 </dl>
             }
+            @if (Session.RoleOutcome is { Length: > 0 } roleOutcome) { <p class="pi-muted" role="status" data-testid="pi-result-roles">@roleOutcome</p> }
             <p><strong>@done.ProjectName</strong> imported successfully. Import means BirkNext found and recorded the contents — nothing has been reviewed or tested yet. Imported is not reviewed or approved: review the documents next.</p>
             @if (Session.GitQueue.Count > 0)
             {

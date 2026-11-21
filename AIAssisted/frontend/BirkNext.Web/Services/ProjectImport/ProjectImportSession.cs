@@ -1,7 +1,9 @@
 using BirkNext.Integrations;
 using BirkNext.ProjectActivity;
 using BirkNext.ProjectImport;
+using BirkNext.Web.Models;
 using BirkNext.Web.Services.Operations;
+using BirkNext.Web.Services.ProjectEvidence;
 using BirkNext.Web.Services.ProjectActivity;
 
 namespace BirkNext.Web.Services.ProjectImport;
@@ -48,6 +50,10 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
     /// <summary>Which logical application the next import is evidence for: the current one ("Import more evidence", default) or a new one
     /// ("Import another application"). Chosen by the tester before choosing the ZIP; reset to the default after each import.</summary>
     public ImportTarget Target { get; set; } = ImportTarget.CurrentApplication;
+    /// <summary>"What does this ZIP contain?" — roles ticked before the import (empty = detect from content). Reset after each import.</summary>
+    public HashSet<PackageEvidenceRole> ChosenRoles { get; } = [];
+    /// <summary>What happened to the ticked roles: saved in Source Management, and associated in the active Target Environment or why not.</summary>
+    public string? RoleOutcome { get; private set; }
     /// <summary>The import's one-line activity summary ("Supporting/shared source · 4 documents · Source Analysis Partial · 3 items need attention").</summary>
     public ImportActivitySummary? ResultSummary { get; private set; }
     /// <summary>Set when the import finished after the user had selected another project: the import is recorded, the selection is kept.</summary>
@@ -301,6 +307,8 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
             // The package's role needs the backend's classification of its snapshot: read once, then show the application's primary
             // documents (a supporting package imported last never replaces them) and refresh the application's name.
             var setup = await ReadSetupAsync();
+            // Ticked roles: saved on the package when its content supports them (before SettleDocuments, which reads the roles).
+            var roles = ChosenRoles.Count > 0 ? ImportRoleChoice.Apply(record, repository.SddLifecycle, setup, ChosenRoles) : null;
             activation.SettleDocuments(record.ImportId, setup);
             ResultSummary = ImportActivitySummary.Of(repository.SddLifecycle, record, setup, DateTimeOffset.UtcNow);
             KeptSelectionNote = keepSelection
@@ -312,7 +320,9 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
             if (commit.Source.SnapshotId is not null) await applicability.RefreshAsync();
             // Project Evidence (every Target Environment) re-reads its sources: the new package is selectable at once, bindings unchanged.
             evidence?.Invalidate();
+            RoleOutcome = roles is null ? null : await AssociateRolesAsync(record, roles);
             Target = ImportTarget.CurrentApplication;
+            ChosenRoles.Clear();
             // Activity only for an import whose workspace update was saved: never "Imported X" for an import that may not survive a reload.
             if (!SaveWarning && activity is not null && ResultSummary is { } summary)
                 await activity.RecordAsync(summary.Request(record, commit.Provenance.ImportedAt));
@@ -330,6 +340,35 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
             StartedAt = null;
             Notify();
             return OperationOutcome.Failure(Failure.Message);
+        }
+    }
+
+    /// <summary>
+    /// The accepted roles also go to System Settings → Target Environments → Project of the ACTIVE environment — only when that environment's
+    /// Target Application is this package's project (roles are per Target Application; another application's evidence is never changed). The
+    /// same validated, all-or-nothing save as the association editor. Returns the sentence the result shows.
+    /// </summary>
+    private async Task<string> AssociateRolesAsync(SddProjectImportRecord record, ImportRoleChoice.Outcome roles)
+    {
+        var text = roles.Message(record.ProjectName);
+        if (roles.Accepted.Count == 0 || evidence is null) return text;
+        try
+        {
+            var view = await evidence.GetAsync(null, refresh: true);
+            var application = ApplicationContexts.Find(repository.SddLifecycle, record.ApplicationId);
+            if (view.EnvironmentId is not { Length: > 0 } environmentId)
+                return text + " Saved in Source Management. No Target Environment is active, so no environment's Project roles were changed.";
+            var identity = evidence.TargetApplicationOf(environmentId);
+            if (identity is null || application is null || !TargetApplications.SameApplication(identity, application.Name))
+                return text + $" Saved in Source Management. {view.EnvironmentName}'s Target Application is {(identity?.Name ?? "not chosen")}, not {application?.Name ?? record.ProjectName}, so its Project roles were not changed — assign them there if this source belongs to it.";
+            var result = await evidence.AssociateAsync(environmentId, [.. roles.Accepted.Select(r => new SourceAssociationChoice(record.ImportId, r))]);
+            return result.Saved
+                ? text + $" Saved in Source Management and in {view.EnvironmentName} → Project."
+                : text + $" Saved in Source Management; {view.EnvironmentName} → Project was not changed: {string.Join(" ", result.Problems)}";
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return text + " Saved in Source Management; the Target Environment's Project roles could not be updated — assign them there.";
         }
     }
 
@@ -375,7 +414,7 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
     {
         if (Phase is ProjectImportPhase.Importing) return;
         Preview = null; Discovery = null; Commit = null; Failure = null; SaveWarning = false; Duplicate = null; ImportAgain = false; KeptSelectionNote = null; GitRevision = null; AutoDrafts = [];
-        ResultSummary = null; Progress = null; FileName = null; Classified = 0; ClassifyTotal = 0; UploadedBytes = 0; UploadTotalBytes = 0; StartedAt = null; ResultSeen = false;
+        ResultSummary = null; RoleOutcome = null; Progress = null; FileName = null; Classified = 0; ClassifyTotal = 0; UploadedBytes = 0; UploadTotalBytes = 0; StartedAt = null; ResultSeen = false;
         InputGeneration++;
         Phase = ProjectImportPhase.Choose;
         Notify();

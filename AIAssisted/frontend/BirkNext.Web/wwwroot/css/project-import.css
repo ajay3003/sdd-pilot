@@ -208,3 +208,8 @@ p.pi-tone-neutral { border-left: 0; }
 .pi-intent-option { display: flex; gap: .5rem; align-items: flex-start; cursor: pointer; line-height: 1.4; }
 .pi-intent-option input { margin-top: .25rem; flex: none; }
 .pi-intent-option .pi-muted { display: block; }
+
+/* "What does this ZIP contain?" role checkboxes (2026-11-21) */
+.pi-roles .pi-role-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); gap: .35rem .75rem; margin: .4rem 0; }
+.pi-roles .pi-role-option { display: flex; gap: .4rem; align-items: center; }
+.pi-roles legend .pi-muted { font-weight: normal; }
