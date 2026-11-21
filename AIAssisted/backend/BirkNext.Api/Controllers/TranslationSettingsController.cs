@@ -41,6 +41,10 @@ public sealed class TranslationSettingsController(TranslationSettingsStore store
     public async Task<ActionResult<TranslationSettingsView>> Save([FromBody] SaveTranslationSettingsRequest request)
     {
         if (store.Save(request, Actor, Now) is { } problem) return BadRequest(new { message = problem });
+        // Saving LibreTranslate (managed) starts the local server when it is not running yet (in the background; its status shows it).
+        var saved = store.Effective().Settings;
+        if (saved.Provider == TranslationProviderKind.LibreTranslate && saved.LibreTranslateManaged && libre.CanManage)
+            _ = Task.Run(async () => { try { await libre.EnsureRunningAsync(saved, CancellationToken.None); } catch (Exception) { } });
         return await Get();
     }
 

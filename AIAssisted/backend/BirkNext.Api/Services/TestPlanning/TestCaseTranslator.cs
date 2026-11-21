@@ -21,7 +21,7 @@ public interface ITestCaseTranslator
 /// <summary>The translated texts and the service that produced them (recorded with the translation).</summary>
 public sealed record TranslatedTexts(List<string?> Texts, string Provider);
 
-public sealed class TestCaseTranslationException(string message) : Exception(message);
+public sealed class TestCaseTranslationException(string message, Exception? inner = null) : Exception(message, inner);
 
 /// <summary>
 /// The chosen online service (Advanced) with an offline fallback: when the online service has no key or cannot be reached, the embedded offline
@@ -54,6 +54,26 @@ public sealed class FallbackTestCaseTranslator(ITestCaseTranslator primary, ITes
     }
 }
 
+/// <summary>
+/// The managed local LibreTranslate server, started on demand: when it cannot be reached, BirkNext starts it (LibreTranslateServiceManager.EnsureRunningAsync)
+/// and says so. The original error stays when the server answers (a language problem) or is not managed. The offline fallback still applies.
+/// </summary>
+public sealed class AutoStartingLibreTranslator(ITestCaseTranslator inner, LibreTranslateServiceManager manager, TranslationSettings settings) : ITestCaseTranslator
+{
+    public TranslationAvailability Availability { get; } = inner.Availability with { Reason = inner.Availability.Reason + " BirkNext starts it when it is not running." };
+
+    public async Task<TranslatedTexts> TranslateAsync(IReadOnlyList<string?> texts, string source, string target, CancellationToken ct)
+    {
+        try { return await inner.TranslateAsync(texts, source, target, ct); }
+        catch (TestCaseTranslationException e)
+        {
+            var (answering, message) = await manager.EnsureRunningAsync(settings, ct);
+            if (answering || message is null) throw;
+            throw new TestCaseTranslationException($"{message} Nothing was changed.", e);
+        }
+    }
+}
+
 /// <summary>No translation service: the text can still be written by hand.</summary>
 public sealed class UnavailableTestCaseTranslator(string reason) : ITestCaseTranslator
 {
@@ -65,9 +85,10 @@ public sealed class UnavailableTestCaseTranslator(string reason) : ITestCaseTran
 /// The translator the current settings choose (System Settings → Translation, else the server configuration, else the default: the local
 /// LibreTranslate server, falling back to the embedded offline translator, English → Norwegian bokmål). Read on every request, so a change takes effect without a restart. Nothing is called to decide this.
 /// </summary>
-public sealed class TestCaseTranslatorResolver(TranslationSettingsStore store, IConfiguration config, IHttpClientFactory http, OfflineTranslationEngine? offline = null)
+public sealed class TestCaseTranslatorResolver(TranslationSettingsStore store, IConfiguration config, IHttpClientFactory http, OfflineTranslationEngine? offline = null,
+    LibreTranslateServiceManager? libre = null)
 {
-    public ITestCaseTranslator Current() => TestCaseTranslators.Create(store.Effective().Settings, store.AzureKey(), config, http, offline);
+    public ITestCaseTranslator Current() => TestCaseTranslators.Create(store.Effective().Settings, store.AzureKey(), config, http, offline, libre);
     public TranslationSettings Settings() => store.Effective().Settings;
 }
 
@@ -78,9 +99,13 @@ public static class TestCaseTranslators
 
     public const string NoOfflineEngine = "The offline translator is not part of this BirkNext installation. You can write the translated text by hand.";
 
-    public static ITestCaseTranslator Create(TranslationSettings s, string? azureKey, IConfiguration config, IHttpClientFactory http, OfflineTranslationEngine? offline = null)
+    public static ITestCaseTranslator Create(TranslationSettings s, string? azureKey, IConfiguration config, IHttpClientFactory http, OfflineTranslationEngine? offline = null,
+        LibreTranslateServiceManager? libre = null)
     {
         var chosen = Single(s, azureKey, config, http, offline);
+        // The managed local server is started when a translation finds it not running (never at BirkNext start).
+        if (libre is not null && s.Provider == TranslationProviderKind.LibreTranslate && s.LibreTranslateManaged && chosen is LibreTranslateTestCaseTranslator)
+            chosen = new AutoStartingLibreTranslator(chosen, libre, s);
         if (!(s.OfflineFallback && s.Provider is TranslationProviderKind.AzureTranslator or TranslationProviderKind.Anthropic or TranslationProviderKind.LibreTranslate)) return chosen;
         var embedded = offline is null ? null : new EmbeddedOfflineTestCaseTranslator(offline, s.Glossary);
         // LibreTranslate (the default): a server that is not running falls back to the packaged offline translator only (never to itself).

@@ -8,7 +8,9 @@ namespace BirkNext.Api.Services.TestPlanning;
 /// <summary>
 /// The local LibreTranslate server BirkNext runs with Podman for offline translation (System Settings → Translation): download the pinned image
 /// (needs internet once), start, stop and report status fact by fact. The server is published on 127.0.0.1 only; its language models live in a
-/// named volume so they are downloaded once (only the configured languages are loaded). Nothing starts by itself. Not available with the native
+/// named volume so they are downloaded once (only the configured languages are loaded). Started automatically (2026-11-21) when a translation
+/// needs it or LibreTranslate settings are saved (<see cref="EnsureRunningAsync"/>), never at BirkNext start; a server that already answers
+/// or a container that already exists is reused, never removed. Not available with the native
 /// runner (Tester Package): there BirkNext cannot run containers, and another LibreTranslate server's address or Azure is used instead.
 /// </summary>
 public sealed class LibreTranslateServiceManager(IProcessRunner runner, PerformanceTestOptions options, IHttpClientFactory http, ILogger<LibreTranslateServiceManager> logger)
@@ -116,6 +118,44 @@ public sealed class LibreTranslateServiceManager(IProcessRunner runner, Performa
             return $"The local server could not be started: {Clip(run.StandardError)}";
         }
         return $"Started on {s.EffectiveLibreTranslateUrl}. The first start downloads the language models (needs internet once) and takes a few minutes.";
+    }
+
+    public const string AutoStarting = "The local LibreTranslate server was not running, so BirkNext has started it. The first start downloads the language models (needs internet once) and takes a few minutes; translate again shortly.";
+    public const string StillStarting = "The local LibreTranslate server is starting (the first start downloads the language models and takes a few minutes); translate again shortly.";
+    private readonly SemaphoreSlim _ensure = new(1, 1);
+
+    /// <summary>
+    /// Makes sure the managed local server runs: (true, null) when it answers; otherwise it is started when possible and the sentence says what
+    /// happened or what is missing. Reuses an existing container (podman start) and never removes one, so another BirkNext's server on the same
+    /// PC is never stopped. (false, null) when BirkNext does not manage the server (another address, or the Tester Package).
+    /// </summary>
+    public async Task<(bool Answering, string? Message)> EnsureRunningAsync(TranslationSettings s, CancellationToken ct)
+    {
+        if ((await LanguagesAsync(s.EffectiveLibreTranslateUrl, ct)).Answering) return (true, null);
+        if (!CanManage || !s.LibreTranslateManaged) return (false, null);
+        if (!await _ensure.WaitAsync(0, ct)) return (false, StillStarting);
+        try
+        {
+            var version = await Podman(Short, "info", "--format", "{{.Version.Version}}");
+            if (version.StartError is not null) return (false, "The local LibreTranslate server cannot start: Podman is not installed on this PC.");
+            if (version.ExitCode != 0) return (false, "The local LibreTranslate server cannot start: Podman is not running (podman machine start).");
+            var inspect = await Podman(Short, "container", "inspect", "--format", "{{.State.Running}}", ContainerName);
+            if (inspect.ExitCode == 0)
+            {
+                if (inspect.StandardOutput.Trim().Equals("true", StringComparison.OrdinalIgnoreCase)) return (false, StillStarting);
+                var start = await Podman(TimeSpan.FromMinutes(2), "start", ContainerName);
+                if (start.ExitCode == 0) return (false, AutoStarting);
+                logger.LogWarning("The local LibreTranslate container could not be started: {Error}", Clip(start.StandardError));
+                return (false, $"The local LibreTranslate server could not be started: {Clip(start.StandardError)}");
+            }
+            if ((await Podman(Short, "image", "exists", s.LibreTranslateImage)).ExitCode != 0)
+                return (false, "The local LibreTranslate server is not downloaded yet: System Settings → Translation → Download image (needs internet once).");
+            var run = await Podman(TimeSpan.FromMinutes(2), [.. RunArguments(s)]);
+            if (run.ExitCode == 0) return (false, AutoStarting);
+            logger.LogWarning("The local LibreTranslate server could not be started: {Error}", Clip(run.StandardError));
+            return (false, $"The local LibreTranslate server could not be started: {Clip(run.StandardError)}");
+        }
+        finally { _ensure.Release(); }
     }
 
     public async Task<string> StopAsync()

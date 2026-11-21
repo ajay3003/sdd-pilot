@@ -161,4 +161,45 @@ public sealed class TranslationSettingsTests : IDisposable
         var missing = new LibreTranslateServiceManager(new Runner(_ => No), new PerformanceTestOptions(), new Factory(new Handler(_ => new HttpResponseMessage(HttpStatusCode.OK))), NullLogger<LibreTranslateServiceManager>.Instance);
         (await missing.StartAsync(new TranslationSettings())).Should().Be("Download the image first.");
     }
+
+    private static Factory Unreachable => new(new Handler(_ => throw new HttpRequestException("refused")));
+
+    [Fact]
+    public async Task Auto_start_reuses_a_stopped_container_runs_a_new_one_only_when_none_exists_and_never_removes_one()
+    {
+        // 2026-11-21: the local server starts by itself when a translation needs it.
+        var stopped = new Runner(a => a[0] switch { "info" => Ok("5.4.2"), "container" => Ok("false"), _ => Ok() });
+        (await new LibreTranslateServiceManager(stopped, new PerformanceTestOptions(), Unreachable, NullLogger<LibreTranslateServiceManager>.Instance)
+            .EnsureRunningAsync(new TranslationSettings(), default)).Should().Be((false, LibreTranslateServiceManager.AutoStarting));
+        stopped.Commands.Should().Contain("start birknext-libretranslate").And.NotContain(c => c.StartsWith("rm"));
+
+        var none = new Runner(a => a[0] switch { "info" => Ok("5.4.2"), "container" => No, "image" => Ok(), _ => Ok() });
+        (await new LibreTranslateServiceManager(none, new PerformanceTestOptions(), Unreachable, NullLogger<LibreTranslateServiceManager>.Instance)
+            .EnsureRunningAsync(new TranslationSettings(), default)).Message.Should().Be(LibreTranslateServiceManager.AutoStarting);
+        none.Commands.Should().Contain(string.Join(' ', LibreTranslateServiceManager.RunArguments(new TranslationSettings()))).And.NotContain(c => c.StartsWith("rm"));
+
+        var noImage = new Runner(a => a[0] switch { "info" => Ok("5.4.2"), _ => No });
+        (await new LibreTranslateServiceManager(noImage, new PerformanceTestOptions(), Unreachable, NullLogger<LibreTranslateServiceManager>.Instance)
+            .EnsureRunningAsync(new TranslationSettings(), default)).Message.Should().Contain("Download image");
+
+        var answering = new Runner(_ => throw new InvalidOperationException("no process when the server answers"));
+        (await new LibreTranslateServiceManager(answering, new PerformanceTestOptions(), new Factory(new Handler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("[]") })),
+            NullLogger<LibreTranslateServiceManager>.Instance).EnsureRunningAsync(new TranslationSettings(), default)).Should().Be((true, (string?)null));
+
+        var native = new Runner(_ => throw new InvalidOperationException("the Tester Package never runs Podman"));
+        (await new LibreTranslateServiceManager(native, new PerformanceTestOptions { Runner = PerformanceTestOptions.Runners.Native }, Unreachable, NullLogger<LibreTranslateServiceManager>.Instance)
+            .EnsureRunningAsync(new TranslationSettings(), default)).Should().Be((false, (string?)null));
+    }
+
+    [Fact]
+    public async Task A_translation_that_cannot_reach_the_local_server_starts_it_and_says_so()
+    {
+        var runner = new Runner(a => a[0] switch { "info" => Ok("5.4.2"), "container" => Ok("false"), _ => Ok() });
+        var manager = new LibreTranslateServiceManager(runner, new PerformanceTestOptions(), Unreachable, NullLogger<LibreTranslateServiceManager>.Instance);
+        var translator = TestCaseTranslators.Create(new TranslationSettings { OfflineFallback = false }, null, Config(), Unreachable, offline: null, libre: manager);
+        translator.Should().BeOfType<AutoStartingLibreTranslator>();
+        var error = await FluentActions.Awaiting(() => translator.TranslateAsync(["Hello"], "en", "nb", default)).Should().ThrowAsync<TestCaseTranslationException>();
+        error.Which.Message.Should().StartWith(LibreTranslateServiceManager.AutoStarting);
+        runner.Commands.Should().Contain("start birknext-libretranslate");
+    }
 }

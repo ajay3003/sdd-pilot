@@ -137,7 +137,12 @@
                             @if (_libre is { ImagePresent: true, Running: false }) { <button type="button" class="btn-primary btn-sm" @onclick='() => LibreAsync("start")' data-testid="trx-libre-start">Start</button> }
                             @if (_libre is { Running: true }) { <button type="button" class="btn-secondary btn-sm" @onclick='() => LibreAsync("stop")' data-testid="trx-libre-stop">Stop</button> }
                         }
-                        @if (_dirty && _draft.Managed && v.CanManageLibreTranslate) { <span class="trx-muted">Save first, then start the server with these settings.</span> }
+                        @if (_dirty && _draft.Managed && v.CanManageLibreTranslate && v.CanWrite)
+                        {
+                            @* Saving LibreTranslate starts the local server when it is not running (and the image is downloaded). *@
+                            <button type="button" class="btn-primary btn-sm" disabled="@_busy" @onclick="SaveAndRefreshLibreAsync" data-testid="trx-libre-save-start">Save and start</button>
+                        }
+                        @if (_draft.Managed && v.CanManageLibreTranslate) { <span class="trx-muted trx-small" data-testid="trx-libre-auto">BirkNext starts the local server by itself when a translation needs it or when you save; Start only starts it now.</span> }
                     </div>
                 </fieldset>
             }
@@ -359,6 +364,17 @@
         _view = view; _draft = Draft.From(view.Settings); _azureKey = ""; _removeKey = false; _dirty = false;
         _message = "Saved. Manual Testing uses these settings from now on (no restart needed).";
         if (_draft.Provider == TranslationProviderKind.LibreTranslate) await RefreshLibreAsync();
+    }
+
+    /// <summary>"Save and start": the save starts the local server on the backend; the status is read again after a short wait.</summary>
+    private async Task SaveAndRefreshLibreAsync()
+    {
+        await SaveAsync();
+        if (_error is not null) return;
+        _message = "Saved. The local LibreTranslate server is starting; the first start downloads the language models and takes a few minutes.";
+        StateHasChanged();
+        await Task.Delay(TimeSpan.FromSeconds(3));
+        await RefreshLibreAsync();
     }
 
     private async Task RefreshLibreAsync()
