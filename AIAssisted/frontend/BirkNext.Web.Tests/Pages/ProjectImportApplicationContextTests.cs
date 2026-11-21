@@ -117,13 +117,14 @@ public sealed class ProjectImportApplicationContextTests : BunitContext
     private void QueueCommon() => Queue("M2LB.Common", 'c', CommonSnapshot, services: 0, shared: 1, documents: 1);
 
     /// <summary>Imports the queued archives one after another, the way a tester does (Import more evidence after the first).</summary>
-    private IRenderedComponent<ProjectImportPage> ImportQueued(int count, IRenderedComponent<ProjectImportPage>? cut = null, string anotherTestId = "pi-current-import-another")
+    private IRenderedComponent<ProjectImportPage> ImportQueued(int count, IRenderedComponent<ProjectImportPage>? cut = null, string? project = null)
     {
         cut ??= Render<ProjectImportPage>();
         for (var i = 0; i < count; i++)
         {
             if (cut.FindAll("[data-testid=pi-result]").Count > 0) cut.Find("[data-testid=pi-back]").Click();
-            if (cut.FindAll($"[data-testid={anotherTestId}]").Count > 0) cut.Find($"[data-testid={anotherTestId}]").Click();
+            if (cut.FindAll("[data-testid=pi-current-import-another]").Count > 0) cut.Find("[data-testid=pi-current-import-another]").Click();
+            if (project is not null) cut.Find("[data-testid=pi-target-project]").Change(project);
             cut.FindComponents<InputFile>().Single(f => f.Instance.AdditionalAttributes?["data-testid"]?.ToString() == "pi-choose-file")
                 .UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "x.zip"));
             cut.WaitForAssertion(() => cut.FindAll("[data-testid=pi-preview]").Should().NotBeEmpty());
@@ -229,7 +230,7 @@ public sealed class ProjectImportApplicationContextTests : BunitContext
         var cut = ImportQueued(1);
         cut.Find("[data-testid=pi-back]").Click();
         Queue("Orders", 'd', Guid.NewGuid(), services: 2, shared: 0, documents: 1);
-        ImportQueued(1, cut, "pi-current-import-application");
+        ImportQueued(1, cut, "new");
 
         var lifecycle = _repository.SddLifecycle;
         lifecycle.Applications.Should().HaveCount(2);

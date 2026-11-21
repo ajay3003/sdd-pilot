@@ -93,13 +93,15 @@ public static class ApplicationContexts
 
     /// <summary>
     /// Binds a (new or re-imported) package to an application and makes that application current. A re-import of a package already bound to
-    /// an existing application stays with it unless another application was asked for. Returns the application.
+    /// an existing application stays with it unless another application was asked for. <paramref name="applicationId"/>: the project the tester
+    /// chose in "Belongs to project" (any existing one, not only the current one); it wins over both. Returns the application.
     /// </summary>
-    public static SddApplicationContext Assign(SddLifecycleState lifecycle, SddProjectImportRecord record, ImportTarget target, DateTimeOffset now)
+    public static SddApplicationContext Assign(SddLifecycleState lifecycle, SddProjectImportRecord record, ImportTarget target, DateTimeOffset now, string? applicationId = null)
     {
         Ensure(lifecycle, now);
         SddApplicationContext application;
-        if (target == ImportTarget.CurrentApplication && Find(lifecycle, record.ApplicationId) is { } own) application = own;
+        if (target == ImportTarget.CurrentApplication && Find(lifecycle, applicationId) is { } chosen) application = chosen;
+        else if (target == ImportTarget.CurrentApplication && Find(lifecycle, record.ApplicationId) is { } own) application = own;
         else if (target == ImportTarget.CurrentApplication && Current(lifecycle) is { } current) application = current;
         else
         {

@@ -361,6 +361,6 @@ public sealed class ProjectImportPageTests : BunitContext
         _repository.SddLifecycle.ProjectImports.Should().ContainSingle(i => i.ImportId == importId, "clearing deletes nothing: the import stays in history");
         _repository.SddLifecycle.Revisions.Should().Contain(r => r.ProjectImportId == importId);
         cut.FindAll("[data-testid=pi-current]").Should().BeEmpty();
-        cut.Find("[data-testid=pi-choose]").TextContent.Should().Contain("Import more evidence for shop", "without a current import the upload block is open; the application itself was not cleared");
+        cut.Find("[data-testid=pi-choose]").TextContent.Should().Contain("Import a ZIP into shop", "without a current import the upload block is open; the application itself was not cleared");
     }
 }

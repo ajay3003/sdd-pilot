@@ -40,7 +40,7 @@
 
     @if (_phase == Phase.Choose)
     {
-        @* ── Upload: shown without a current project, or after Import ZIP / Import more evidence / Import another application. It sits right under
+        @* ── Upload: shown without a current project, or after Import ZIP. It sits right under
            the header so the action and its form are together; the current import below stays as it is until a new import succeeds. ── *@
         @if (Activation.Current is null || _showUpload)
         {
@@ -51,20 +51,26 @@
             {
                 <p class="pi-muted" data-testid="pi-choose-keeps">@keep.ProjectName stays the current import until the new import succeeds. Imported packages remain available in history.</p>
             }
-            @if (Activation.CurrentApplication is { } targetApplication)
+            @if (Activation.CurrentApplication is not null)
             {
-                <fieldset class="pi-intent" data-testid="pi-intent" disabled="@Session.IsBusy">
-                    <legend>What is this ZIP?</legend>
-                    <label class="pi-intent-option"><input type="radio" name="pi-intent" value="current" data-testid="pi-intent-current"
-                           checked="@(Session.Target == ImportTarget.CurrentApplication)" @onchange="() => SetTarget(ImportTarget.CurrentApplication)" />
-                        <span><strong>Add evidence to current application</strong> <span class="pi-muted">Add source code or documents to @targetApplication.Name.</span></span></label>
-                    <label class="pi-intent-option"><input type="radio" name="pi-intent" value="new" data-testid="pi-intent-new"
-                           checked="@(Session.Target == ImportTarget.NewApplication)" @onchange="() => SetTarget(ImportTarget.NewApplication)" />
-                        <span><strong>Import another application</strong> <span class="pi-muted">Start a different application; @targetApplication.Name stays as it is.</span></span></label>
-                </fieldset>
-                <p class="pi-muted" data-testid="pi-choose-target" data-target="@Session.Target">@(Session.Target == ImportTarget.NewApplication
-                    ? $"The package starts a new application. {targetApplication.Name} and its evidence stay as they are."
-                    : $"The package is added as evidence for {targetApplication.Name}. Nothing already imported is replaced; a supporting package never replaces the application's primary documents.")</p>
+                @* "Belongs to project" (2026-11-21): one field over every project (the entries of the Project list) plus "New project". Replaces the
+                   "Add evidence to current application" / "Import another application" choice: the project a ZIP belongs to cannot be read from its
+                   content (a second repository of the same application looks like another application), so the tester says it here. *@
+                var projects = ProjectChoices();
+                var chosenProject = TargetProject();
+                <div class="pi-intent pi-belongs" data-testid="pi-intent">
+                    <label class="pi-belongs-field" for="pi-target-project"><strong>Belongs to project</strong></label>
+                    <select id="pi-target-project" data-testid="pi-target-project" disabled="@Session.IsBusy" @onchange="e => SetProject(e.Value?.ToString())">
+                        @foreach (var project in projects)
+                        {
+                            <option value="@project.Id" selected="@(Session.Target == ImportTarget.CurrentApplication && chosenProject?.Id == project.Id)">@project.Name</option>
+                        }
+                        <option value="@NewProjectValue" selected="@(Session.Target == ImportTarget.NewApplication)">＋ New project (named after the ZIP)</option>
+                    </select>
+                </div>
+                <p class="pi-muted" data-testid="pi-choose-target" data-target="@Session.Target" data-project="@chosenProject?.Id">@(chosenProject is null
+                    ? "The ZIP starts a new project, listed in the Project list. Existing projects and their evidence stay as they are."
+                    : $"The ZIP is added as evidence for {chosenProject.Name}. Nothing already imported is replaced; a supporting package never replaces the project's primary documents.")</p>
             }
             @* Optional roles, the same vocabulary as Source Management and Target Environments → Project. Saved after the import only where the
                content supports them; nothing ticked = detected from content. *@
@@ -77,10 +83,10 @@
                                @onchange="e => { if (e.Value is true) Session.ChosenRoles.Add(role); else Session.ChosenRoles.Remove(role); }" /> @ApplicationContexts.RoleLabel(role)</label>
                     }
                 </div>
-                @if (Session.ChosenRoles.Contains(PackageEvidenceRole.PrimaryApplicationSource) && Session.Target == ImportTarget.CurrentApplication
-                     && Activation.CurrentApplication is { } primaryApp && ApplicationPackages().Any(p => p.Role == PackageEvidenceRole.PrimaryApplicationSource))
+                @if (Session.ChosenRoles.Contains(PackageEvidenceRole.PrimaryApplicationSource) && TargetProject() is { } primaryApp
+                     && PackagesOf(primaryApp.Id).Any(p => p.Role == PackageEvidenceRole.PrimaryApplicationSource))
                 {
-                    <p class="pi-warning" role="status" data-testid="pi-roles-primary-note">@primaryApp.Name already has a primary application source. If this ZIP is a different application, choose <strong>Import another application</strong> above; otherwise it is added as a contributing application source.</p>
+                    <p class="pi-warning" role="status" data-testid="pi-roles-primary-note">@primaryApp.Name already has a primary application source. If this ZIP is a different application, choose <strong>New project</strong> under Belongs to project; otherwise it is added as a contributing application source.</p>
                 }
                 <p class="pi-muted pi-small" data-testid="pi-roles-where">After the import the roles appear in Manage sources and, when the active Target Environment tests this project, in its Project roles. A role the content does not show is not saved.</p>
             </fieldset>
@@ -251,8 +257,8 @@
                     {
                         <button type="button" class="btn-secondary" data-testid="pi-current-retry-source" disabled="@_retrying" @onclick="() => RetryCurrentSourceAsync(current)">@(_retrying ? "Retrying…" : "Retry creating source analysis")</button>
                     }
-                    <button type="button" class="btn-secondary" id="pi-current-import-another" data-testid="pi-current-import-another" aria-expanded="@(_showUpload && Session.Target == ImportTarget.CurrentApplication ? "true" : "false")" aria-controls="pi-choose" @onclick="ImportMoreEvidence">Import more evidence</button>
-                    <button type="button" class="btn-secondary" id="pi-current-import-application" data-testid="pi-current-import-application" aria-expanded="@(_showUpload && Session.Target == ImportTarget.NewApplication ? "true" : "false")" aria-controls="pi-choose" @onclick="ImportAnotherApplication">Import another application</button>
+                    @* One import action: the project the ZIP belongs to (this one, another one or a new one) is chosen in the form. *@
+                    <button type="button" class="btn-secondary" id="pi-current-import-another" data-testid="pi-current-import-another" aria-expanded="@(_showUpload ? "true" : "false")" aria-controls="pi-choose" @onclick="ImportMoreEvidence">Import ZIP</button>
                     <a href="sources" class="btn-secondary" data-testid="pi-manage-sources">Manage sources</a>
                     <button type="button" class="btn-secondary" data-testid="pi-close" @onclick="CloseCurrent">Clear current import</button>
                 </div>
@@ -846,9 +852,28 @@
         ShowUpload(Session.Target);
     }
 
-    private void ImportMoreEvidence() { _uploadOrigin = "pi-current-import-another"; ShowUpload(ImportTarget.CurrentApplication); }
+    private void ImportMoreEvidence() { _uploadOrigin = "pi-current-import-another"; if (!Session.IsBusy) Session.TargetApplicationId = null; ShowUpload(ImportTarget.CurrentApplication); }
 
-    private void ImportAnotherApplication() { _uploadOrigin = "pi-current-import-application"; ShowUpload(ImportTarget.NewApplication); }
+    private const string NewProjectValue = "new";
+
+    /// <summary>The projects a ZIP can belong to: every project with imports (the entries of the Project list), by name.</summary>
+    private IReadOnlyList<SddApplicationContext> ProjectChoices() =>
+        [.. (Activation.Lifecycle.Applications ?? []).Where(a => ApplicationContexts.Imports(Activation.Lifecycle, a.Id).Count > 0).OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)];
+
+    /// <summary>The project the next import goes to; null = a new project.</summary>
+    private SddApplicationContext? TargetProject() => Session.Target == ImportTarget.NewApplication ? null
+        : ApplicationContexts.Find(Activation.Lifecycle, Session.TargetApplicationId) ?? Activation.CurrentApplication;
+
+    private IReadOnlyList<ApplicationPackage> PackagesOf(string applicationId) =>
+        ApplicationContexts.Packages(Activation.Lifecycle, applicationId, _setup);
+
+    /// <summary>"Belongs to project" changed (only before a file is chosen; an import in progress keeps its project).</summary>
+    private void SetProject(string? value)
+    {
+        if (Session.IsBusy) return;
+        if (value == NewProjectValue) { Session.Target = ImportTarget.NewApplication; Session.TargetApplicationId = null; }
+        else { Session.Target = ImportTarget.CurrentApplication; Session.TargetApplicationId = value; }
+    }
 
     /// <summary>The import intent chosen in the upload form (only before a file is chosen; an import in progress keeps its target).</summary>
     private void SetTarget(ImportTarget target)
@@ -860,7 +885,7 @@
     private string _uploadOrigin = "pi-current-import-another";
 
     private string UploadHeading => Activation.CurrentApplication is not { } application ? "Choose a project archive"
-        : Session.Target == ImportTarget.NewApplication ? "Import another application" : $"Import more evidence for {application.Name}";
+        : TargetProject() is { } project ? $"Import a ZIP into {project.Name}" : "Import a ZIP as a new project";
 
     private bool _moving;
     private string? _moveMessage;
@@ -957,8 +982,8 @@
     {
         <label class="pi-file-button pi-file-button-secondary" data-testid="@testId">
             <InputFile @key="_inputGeneration" id="@inputId" class="pi-file-input" accept=".zip" OnChange="ChooseAsync"
-                       aria-label="Import more evidence: choose project ZIP (maximum 50 MB)" data-testid="@inputId" data-generation="@_inputGeneration" />
-            <span aria-hidden="true">Import more evidence</span>
+                       aria-label="Import ZIP into the current project: choose project ZIP (maximum 50 MB)" data-testid="@inputId" data-generation="@_inputGeneration" />
+            <span aria-hidden="true">Import ZIP</span>
         </label>
     };
 

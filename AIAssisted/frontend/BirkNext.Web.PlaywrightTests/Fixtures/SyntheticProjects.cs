@@ -100,10 +100,10 @@ public static class SyntheticProjects
         await chooser.WaitForAsync(new() { State = WaitForSelectorState.Attached, Timeout = 120000 });
         // With an application already current (e.g. the one the active Target Environment is bound to), the page asks what this ZIP is: the
         // test's project is another application, never extra evidence for someone else's. The workspaces then follow it (2026-11-18).
-        var newApplication = page.GetByTestId("pi-intent-new");
-        if (await newApplication.CountAsync() > 0)
+        var project = page.GetByTestId("pi-target-project");
+        if (await project.CountAsync() > 0)
         {
-            await newApplication.CheckAsync();
+            await project.SelectOptionAsync("new");
             await Assertions.Expect(page.GetByTestId("pi-choose-target")).ToHaveAttributeAsync("data-target", "NewApplication");
         }
         await chooser.SetInputFilesAsync(new FilePayload { Name = $"{name}.zip", MimeType = "application/zip", Buffer = archive });

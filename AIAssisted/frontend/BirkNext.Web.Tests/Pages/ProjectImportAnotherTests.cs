@@ -94,11 +94,11 @@ public sealed class ProjectImportAnotherTests : BunitContext
         var cut = ImportFirst();
         var label = cut.Find("[data-testid=pi-import-another]");
         label.TagName.Should().Be("LABEL");
-        label.TextContent.Trim().Should().Be("Import more evidence");
+        label.TextContent.Trim().Should().Be("Import ZIP");
         var input = cut.Find("[data-testid=pi-import-another-file]");
         input.GetAttribute("type").Should().Be("file", "clicking or pressing Enter/Space opens the chooser at once");
         input.GetAttribute("accept").Should().Be(".zip");
-        input.GetAttribute("aria-label").Should().Contain("Import more evidence");
+        input.GetAttribute("aria-label").Should().Contain("Import ZIP into the current project");
     }
 
     [Fact]
@@ -136,7 +136,7 @@ public sealed class ProjectImportAnotherTests : BunitContext
         // With a current project the upload block is collapsed; Import another project reveals it and moves focus to its file chooser.
         page.FindAll("[data-testid=pi-choose]").Should().BeEmpty();
         var another = page.Find("[data-testid=pi-current] [data-testid=pi-current-import-another]");
-        another.TextContent.Trim().Should().Be("Import more evidence");
+        another.TextContent.Trim().Should().Be("Import ZIP");
         another.GetAttribute("aria-expanded").Should().Be("false");
         another.Click();
         page.Find("[data-testid=pi-current-import-another]").GetAttribute("aria-expanded").Should().Be("true");
@@ -226,15 +226,15 @@ public sealed class ProjectImportAnotherTests : BunitContext
         _activation.CurrentApplication.Should().NotBeNull("the first import created the application");
         var page = Render<ProjectImportPage>();
         page.Find("[data-testid=pi-header-import]").Click();
-        var intent = page.Find("[data-testid=pi-intent]");
-        intent.QuerySelector("legend")!.TextContent.Should().Be("What is this ZIP?");
-        page.Find("[data-testid=pi-intent-current]").HasAttribute("checked").Should().BeTrue("adding evidence to the current application is the safe default: nothing is replaced");
-        page.Find("[data-testid=pi-intent-current]").ParentElement!.TextContent.Should().Contain("Add evidence to current application").And.Contain(_activation.CurrentApplication!.Name);
+        page.Find("[data-testid=pi-intent]").TextContent.Should().Contain("Belongs to project");
+        var current = _activation.CurrentApplication!;
+        page.Find("[data-testid=pi-target-project] option[selected]").GetAttribute("value").Should().Be(current.Id, "the current project is the safe default: nothing is replaced");
+        page.Find("[data-testid=pi-target-project] option[selected]").TextContent.Should().Be(current.Name);
         page.Find("[data-testid=pi-choose-target]").GetAttribute("data-target").Should().Be("CurrentApplication");
 
-        page.Find("[data-testid=pi-intent-new]").Change(true);
+        page.Find("[data-testid=pi-target-project]").Change("new");
         page.Find("[data-testid=pi-choose-target]").GetAttribute("data-target").Should().Be("NewApplication");
-        page.Find("#pi-choose-heading").TextContent.Should().Be("Import another application");
+        page.Find("#pi-choose-heading").TextContent.Should().Be("Import a ZIP as a new project");
 
         page.Find("[data-testid=pi-choose-cancel]").Click();
         page.FindAll("[data-testid=pi-choose]").Should().BeEmpty();

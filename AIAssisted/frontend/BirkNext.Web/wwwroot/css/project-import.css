@@ -213,3 +213,5 @@ p.pi-tone-neutral { border-left: 0; }
 .pi-roles .pi-role-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); gap: .35rem .75rem; margin: .4rem 0; }
 .pi-roles .pi-role-option { display: flex; gap: .4rem; align-items: center; }
 .pi-roles legend .pi-muted { font-weight: normal; }
+.pi-belongs { display: flex; flex-wrap: wrap; gap: .4rem .75rem; align-items: center; }
+.pi-belongs select { min-width: min(100%, 18rem); max-width: 100%; padding: .3rem .5rem; font: inherit; }

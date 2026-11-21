@@ -50,6 +50,9 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
     /// <summary>Which logical application the next import is evidence for: the current one ("Import more evidence", default) or a new one
     /// ("Import another application"). Chosen by the tester before choosing the ZIP; reset to the default after each import.</summary>
     public ImportTarget Target { get; set; } = ImportTarget.CurrentApplication;
+    /// <summary>"Belongs to project": the existing project the ZIP goes to (null = the current one). Only with <see cref="ImportTarget.CurrentApplication"/>;
+    /// <see cref="ImportTarget.NewApplication"/> is "New project". Reset after each import.</summary>
+    public string? TargetApplicationId { get; set; }
     /// <summary>"What does this ZIP contain?" — roles ticked before the import (empty = detect from content). Reset after each import.</summary>
     public HashSet<PackageEvidenceRole> ChosenRoles { get; } = [];
     /// <summary>What happened to the ticked roles: saved in Source Management, and associated in the active Target Environment or why not.</summary>
@@ -301,7 +304,7 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
             // The import belongs to its own project. If the user selected another project while it ran, it is recorded but not made current.
             var keepSelection = SelectionKey() != selectionAtStart;
             var target = Target;
-            var record = activation.Activate(preview, discovery, commit, makeCurrent: !keepSelection, target: target);
+            var record = activation.Activate(preview, discovery, commit, makeCurrent: !keepSelection, target: target, targetApplicationId: target == ImportTarget.CurrentApplication ? TargetApplicationId : null);
             // A Git import carries its link's roles to the package record (the store Project Evidence reads); a person's own earlier choice wins.
             if (record.Git is not null && GitRoles.Count > 0 && record.ConfirmedRoles.Count == 0) record.ConfirmedRoles = [.. GitRoles];
             // The package's role needs the backend's classification of its snapshot: read once, then show the application's primary
@@ -322,6 +325,7 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
             evidence?.Invalidate();
             RoleOutcome = roles is null ? null : await AssociateRolesAsync(record, roles);
             Target = ImportTarget.CurrentApplication;
+            TargetApplicationId = null;
             ChosenRoles.Clear();
             // Activity only for an import whose workspace update was saved: never "Imported X" for an import that may not survive a reload.
             if (!SaveWarning && activity is not null && ResultSummary is { } summary)

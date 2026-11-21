@@ -101,4 +101,19 @@ public sealed class ApplicationContextsTests
 
         ApplicationContexts.Assign(lifecycle, m2lb, ImportTarget.CurrentApplication, DateTimeOffset.UtcNow).Id.Should().Be(first.Id, "re-importing M2LB keeps it in M2LB");
     }
+
+    [Fact]
+    public void Belongs_to_project_puts_a_ZIP_into_any_existing_project_not_only_the_current_one()
+    {
+        var lifecycle = new SddLifecycleState();
+        var m2lb = Record("M2LB", 1); lifecycle.ProjectImports.Add(m2lb);
+        var first = ApplicationContexts.Assign(lifecycle, m2lb, ImportTarget.CurrentApplication, DateTimeOffset.UtcNow);
+        var orders = Record("Orders", 2); lifecycle.ProjectImports.Add(orders);
+        ApplicationContexts.Assign(lifecycle, orders, ImportTarget.NewApplication, DateTimeOffset.UtcNow);
+
+        var docs = Record("M2LB docs", 3); lifecycle.ProjectImports.Add(docs);
+        ApplicationContexts.Assign(lifecycle, docs, ImportTarget.CurrentApplication, DateTimeOffset.UtcNow, first.Id).Id.Should().Be(first.Id, "chosen in Belongs to project although Orders is current");
+        lifecycle.CurrentApplicationId.Should().Be(first.Id, "the chosen project becomes current, as with any import");
+        ApplicationContexts.Assign(lifecycle, m2lb, ImportTarget.CurrentApplication, DateTimeOffset.UtcNow, "app-unknown").Id.Should().Be(first.Id, "an unknown choice falls back to the package's own project");
+    }
 }
