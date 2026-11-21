@@ -146,6 +146,9 @@ public static class ApplicationContexts
             lifecycle.Applications.Add(target);
         }
         record.ApplicationId = target.Id;
+        record.KeptWithApplication = false;
+        // The package whose documents the workspace shows stays shown: its new project becomes the current one (never a project without it).
+        if (lifecycle.CurrentProjectImportId == importId) lifecycle.CurrentApplicationId = target.Id;
         if (from is not null)
         {
             var remaining = Imports(lifecycle, from.Id);
@@ -159,6 +162,27 @@ public static class ApplicationContexts
         if (target.NameBasis != ManualBasis) (target.Name, target.NameBasis) = NameOf(Imports(lifecycle, target.Id));
         return (target, null);
     }
+
+    /// <summary>
+    /// Whether <paramref name="package"/> looks like a different application than the project it was imported into (M2LB added as "more evidence"
+    /// of Tiltak 2): it has its own startup (web/service host) project, the project has other packages, and its name shares nothing with them or
+    /// with a name the tester gave the project. A package that is not the primary source of a project that already has one is the "related
+    /// system" case (MU next to M2LB) and is flagged too. Never flagged once the tester confirmed its roles or chose to keep it.
+    /// </summary>
+    public static bool LooksLikeAnotherApplication(ApplicationPackage package, IReadOnlyList<ApplicationPackage> packages, SddApplicationContext? application)
+    {
+        if (package.RoleConfirmed || package.Record.KeptWithApplication || !package.Package.Has(ProjectEvidenceCapability.ApplicationSource)) return false;
+        var others = packages.Where(p => p.ImportId != package.ImportId).ToList();
+        if (others.Count == 0) return false;
+        if (package.Role == PackageEvidenceRole.PrimaryApplicationSource && others.Any(o => o.Package.Has(ProjectEvidenceCapability.ApplicationSource))) return false;
+        var key = NameKey(package.DisplayName);
+        if (key.Length == 0 || others.Any(o => NameKey(o.DisplayName) == key || NameKey(FamilyOf(o.DisplayName) ?? "") == key)) return false;
+        return !(application is { NameBasis: ManualBasis } manual && NameKey(manual.Name) == key);
+    }
+
+    /// <summary>The first word of a name, lower case ("M2LB.Common" → "m2lb", "Tiltak 2 - Sikkert …" → "tiltak").</summary>
+    public static string NameKey(string? name) =>
+        (name ?? "").Split(['.', ' ', '-', '_', '/', '\\'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault()?.ToLowerInvariant() ?? "";
 
     /// <summary>The role of a package, from its capabilities. Null-safe: without source setup a package's source is not classified.</summary>
     public static PackageEvidenceRole RoleOf(ProjectEvidencePackage package) =>

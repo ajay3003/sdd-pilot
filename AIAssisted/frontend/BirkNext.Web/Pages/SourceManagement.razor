@@ -490,6 +490,7 @@
                 @if (row.Record?.SourceSnapshotId is { } evidence) { <a class="sm-link-action" href="@($"source-analysis?snapshot={evidence:D}")" data-testid="sm-evidence">View analysis</a> }
                 <a class="sm-link-action" href="@SnapshotHref(row.Record?.SourceSnapshotId)" data-testid="sm-snapshots">View snapshots</a>
             </div>
+            @if (row.Record is { } belongsRecord) { @BelongsTo(belongsRecord) }
             <div class="sm-tabs" role="tablist" aria-label="@($"{row.Name} details")">
                 @foreach (var (key, label) in DetailTabs)
                 {
@@ -847,12 +848,12 @@
                 <BusyButton Class="btn-primary btn-sm" Text="Save roles" BusyText="Saving…" Disabled="@(!RolesChanged(row))" OnClick="() => SaveRolesAsync(row, current)" TestId="sm-save-roles" />
                 <button type="button" class="btn-secondary btn-sm" disabled="@(!RolesChanged(row))" @onclick="() => ToggleRoleEditor(row, open: true)" data-testid="sm-reset-roles">Discard changes</button>
             </div>
-            @if (row.Record is { } record) { @BelongsTo(record) }
         </div>
     };
 
     private string _moveTarget = "";
     private string _moveName = "";
+    private bool _moving;
 
     /// <summary>
     /// "Belongs to project": which project (workspace application) the imported package is part of — the entries of the Project list. A package
@@ -864,10 +865,14 @@
         var current = ApplicationContexts.Find(lifecycle, record.ApplicationId);
         var siblings = current is null ? 0 : ApplicationContexts.Imports(lifecycle, current.Id).Count - 1;
         var others = (lifecycle.Applications ?? []).Where(a => a.Id != current?.Id).OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase).ToList();
-        <fieldset class="sm-roles sm-belongs" data-testid="sm-belongs-to">
-            <legend>Belongs to project</legend>
-            <p class="sm-small" data-testid="sm-belongs-current">@(current is null ? "Not part of a project yet." : $"Part of {current.Name}{(siblings > 0 ? $" with {siblings} other package{(siblings == 1 ? "" : "s")}" : "")}.")
+        @* Always visible in the source's details (2026-11-21: it was inside the Roles tab, where nobody found it). *@
+        <div class="sm-belongs" data-testid="sm-belongs-to">
+            <p class="sm-small" data-testid="sm-belongs-current"><span class="sm-facet-label">Belongs to project</span>
+                <strong>@(current?.Name ?? "No project yet")</strong>@(siblings > 0 ? $" — with {siblings} other package{(siblings == 1 ? "" : "s")}" : "")
+                <button type="button" class="sm-link-action" aria-expanded="@(_moving ? "true" : "false")" @onclick="() => _moving = !_moving" data-testid="sm-change-project">@(_moving ? "Cancel" : "Change project")</button>
                 <span class="sm-quiet">The Project list shows one entry per project.</span></p>
+            @if (_moving)
+            {
             <div class="sm-belongs-row">
                 <label class="sm-field"><span class="sm-facet-label">Move to</span>
                     <select @bind="_moveTarget" data-testid="sm-move-target">
@@ -882,7 +887,8 @@
                 <BusyButton Class="btn-secondary btn-sm" Text="@(_moveTarget.Length == 0 ? "Make it its own project" : "Move")" BusyText="Moving…" OnClick="() => MoveAsync(record)" TestId="sm-move" />
             </div>
             <p class="sm-quiet sm-small" data-testid="sm-move-impact">Only the project it belongs to changes. The import, its Source Analysis snapshot, documents, test plans and every Target Environment's Project Evidence stay as they are.</p>
-        </fieldset>
+            }
+        </div>
     };
 
     private async Task MoveAsync(SddProjectImportRecord record)
@@ -893,6 +899,8 @@
         if (application is null) { _error = problem; return; }
         if (Services.GetService(typeof(IWorkspaceAutoSaveService)) is IWorkspaceAutoSaveService autoSave && !await autoSave.SaveNowAsync()) { _error = "The change could not be saved durably; try again."; return; }
         (Services.GetService(typeof(BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService)) as BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService)?.Invalidate();
+        (Services.GetService(typeof(ICurrentWorkspaceProjection)) as ICurrentWorkspaceProjection)?.Invalidate();
+        _moving = false;
         _notice = $"{record.ArchiveFileName} now belongs to {application.Name}. It is listed in the Project list; nothing was re-imported or deleted.";
         _moveTarget = ""; _moveName = "";
         Build();

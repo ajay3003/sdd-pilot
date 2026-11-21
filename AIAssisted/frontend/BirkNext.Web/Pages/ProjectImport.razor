@@ -123,6 +123,20 @@
                             </li>
                         }
                     </ul>
+                    @foreach (var other in packages.Where(p => ApplicationContexts.LooksLikeAnotherApplication(p, packages, application)))
+                    {
+                        @* An application imported as "more evidence" of another one (M2LB under Tiltak 2): say so and offer the one-click fix. *@
+                        <div class="pi-warning pi-another-app" role="status" data-testid="pi-another-application" data-import="@other.ImportId">
+                            <p><strong>@other.DisplayName looks like a different application.</strong> It has its own startup project and its name does not match
+                                @application.Name. It was added as more evidence for @application.Name, so the Project list shows one entry for both.</p>
+                            <div class="pi-actions">
+                                <button type="button" class="btn-primary btn-sm" disabled="@_moving" @onclick="() => MakeOwnProjectAsync(other)" data-testid="pi-another-application-move">Make @other.DisplayName its own project</button>
+                                <button type="button" class="btn-secondary btn-sm" disabled="@_moving" @onclick="() => KeepWithApplicationAsync(other)" data-testid="pi-another-application-keep">Keep it with @application.Name</button>
+                            </div>
+                            <p class="pi-muted">Nothing is re-imported or deleted either way; you can change it later in Manage sources → Belongs to project.</p>
+                        </div>
+                    }
+                    @if (_moveMessage is { } moveMessage) { <p class="pi-muted" role="status" data-testid="pi-move-message">@moveMessage</p> }
                     @if (_setup is { Packs.Count: > 0 } appSetup)
                     {
                         @* Application readiness: all evidence of the workspace is evaluated, never only the package being inspected. *@
@@ -828,6 +842,34 @@
 
     private string UploadHeading => Activation.CurrentApplication is not { } application ? "Choose a project archive"
         : Session.Target == ImportTarget.NewApplication ? "Import another application" : $"Import more evidence for {application.Name}";
+
+    private bool _moving;
+    private string? _moveMessage;
+
+    /// <summary>"Make … its own project": moves the package to a new project named after it (nothing re-imported, unbound or deleted).</summary>
+    private async Task MakeOwnProjectAsync(ApplicationPackage package)
+    {
+        if (ServiceProvider.GetService<IWorkspaceSessionService>() is not { } session) return;
+        _moving = true;
+        var (moved, problem) = ApplicationContexts.MoveImport(session.SddLifecycle, package.ImportId, null, package.DisplayName, DateTimeOffset.UtcNow);
+        _moveMessage = moved is null ? problem : $"{package.DisplayName} is now its own project. Choose it in the Project list; nothing was re-imported or deleted.";
+        if (moved is not null)
+        {
+            if (!await AutoSave.SaveNowAsync()) _moveMessage += " The change could not be saved yet; it is saved automatically when the connection is back.";
+            ServiceProvider.GetService<BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService>()?.Invalidate();
+            // The Project list re-renders on the workspace's Changed event: both projects are listed at once.
+            ServiceProvider.GetService<ICurrentWorkspaceProjection>()?.Invalidate();
+        }
+        _moving = false;
+    }
+
+    /// <summary>"Keep it with …": the tester's answer, stored on the package so the warning does not come back.</summary>
+    private async Task KeepWithApplicationAsync(ApplicationPackage package)
+    {
+        package.Record.KeptWithApplication = true;
+        _moveMessage = null;
+        await AutoSave.SaveNowAsync();
+    }
 
     /// <summary>The current application's packages with their roles (classified from the backend's source setup).</summary>
     private IReadOnlyList<ApplicationPackage> ApplicationPackages() =>

@@ -173,3 +173,6 @@ button.sm-tile:focus-visible { outline: 2px solid var(--clr-primary-focus, var(-
 .sm-belongs-row { display: flex; flex-wrap: wrap; gap: .5rem .75rem; align-items: flex-end; }
 .sm-belongs .sm-field { display: grid; gap: .2rem; min-width: min(100%, 14rem); }
 .sm-belongs .sm-field select, .sm-belongs .sm-field input { padding: .3rem .5rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: var(--radius-sm, 4px); font: inherit; min-width: 0; background: var(--clr-surface-white, #fff); color: inherit; }
+.sm-belongs { display: grid; gap: .5rem; padding: .6rem .75rem; margin: .5rem 0; border: 1px solid var(--clr-border, #d0d7de); border-radius: var(--radius-sm, 4px); }
+.sm-belongs .sm-facet-label { margin-right: .4rem; }
+.sm-belongs .sm-link-action { margin-left: .5rem; }

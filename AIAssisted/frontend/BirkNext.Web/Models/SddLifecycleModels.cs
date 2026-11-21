@@ -235,6 +235,8 @@ public sealed class SddProjectImportRecord
     /// <summary>The logical application this package is evidence for (<see cref="SddApplicationContext.Id"/>). Null only in a workspace saved
     /// before applications existed; <c>ApplicationContexts.Ensure</c> assigns it without changing anything else.</summary>
     public string? ApplicationId { get; set; }
+    /// <summary>The tester answered "Keep it with this project" to the "looks like a different application" warning (reset when moved).</summary>
+    public bool KeptWithApplication { get; set; }
     /// <summary>
     /// Immutable import history of this archive identity (the import id is derived from the archive hash, so importing the same bytes again reuses
     /// this record). The fields above are the mutable operational view (the latest import); every import that produced a different source

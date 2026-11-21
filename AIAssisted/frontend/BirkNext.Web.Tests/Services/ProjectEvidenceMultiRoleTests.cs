@@ -131,4 +131,48 @@ public sealed class ProjectEvidenceMultiRoleTests
         back!.Id.Should().Be("app-t2");
         lifecycle.Applications.Should().NotContain(a => a.Id == m2lb!.Id, "a project left without packages is removed");
     }
+
+    // ── "Looks like a different application" on import ───────────────────────────────────────────────────────────
+
+    private static readonly ProjectEvidencePackage Readmes = Package("t2", "Tiltak 2 - Sikkert digital økosystem", (ProjectEvidenceCapability.Documentation, PackageCapabilityStatus.Ready));
+    private static readonly SddApplicationContext Derived = new() { Id = "app", Name = "Tiltak 2 - Sikkert digital økosystem", NameBasis = ApplicationContexts.PackageBasis };
+
+    private static ApplicationPackage Pkg(ProjectEvidencePackage package, PackageEvidenceRole role, bool kept = false) =>
+        new(new SddProjectImportRecord { ImportId = package.ImportId, ProjectName = package.DisplayName, KeptWithApplication = kept }, package, role);
+
+    [Fact]
+    public void A_package_with_its_own_startup_project_and_an_unrelated_name_is_flagged_as_another_application()
+    {
+        var docs = Pkg(Readmes, PackageEvidenceRole.Documentation);
+        var m2lb = Pkg(M2lb, PackageEvidenceRole.PrimaryApplicationSource);
+        ApplicationContexts.LooksLikeAnotherApplication(m2lb, [docs, m2lb], Derived).Should().BeTrue("M2LB was added as more evidence of Tiltak 2");
+        ApplicationContexts.LooksLikeAnotherApplication(docs, [docs, m2lb], Derived).Should().BeFalse("documentation alone is never an application");
+        ApplicationContexts.LooksLikeAnotherApplication(m2lb, [m2lb], Derived).Should().BeFalse("alone in its project");
+        ApplicationContexts.LooksLikeAnotherApplication(Pkg(M2lb, PackageEvidenceRole.PrimaryApplicationSource, kept: true), [docs, m2lb], Derived).Should().BeFalse("the tester chose to keep it");
+    }
+
+    [Fact]
+    public void A_package_of_the_same_family_or_the_projects_given_name_is_not_flagged()
+    {
+        var common = Pkg(Package("c", "M2LB.Common", (ProjectEvidenceCapability.SupportingSource, PackageCapabilityStatus.Ready)), PackageEvidenceRole.SupportingSource);
+        var api = Pkg(Package("a", "M2LB.Api", (ProjectEvidenceCapability.ApplicationSource, PackageCapabilityStatus.Ready)), PackageEvidenceRole.RelatedApplicationSource);
+        var m2lb = Pkg(M2lb, PackageEvidenceRole.PrimaryApplicationSource);
+        ApplicationContexts.LooksLikeAnotherApplication(api, [m2lb, common, api], Derived).Should().BeFalse("same first word as M2LB");
+        var mu = Pkg(Package("mu", "MU", (ProjectEvidenceCapability.ApplicationSource, PackageCapabilityStatus.Ready)), PackageEvidenceRole.RelatedApplicationSource);
+        ApplicationContexts.LooksLikeAnotherApplication(mu, [m2lb, mu], Derived).Should().BeTrue("a related system is offered as its own project, the tester decides");
+        ApplicationContexts.LooksLikeAnotherApplication(m2lb, [m2lb, mu], Derived).Should().BeFalse("the primary of a project with several systems stays");
+        var manual = new SddApplicationContext { Id = "x", Name = "M2LB", NameBasis = ApplicationContexts.ManualBasis };
+        ApplicationContexts.LooksLikeAnotherApplication(m2lb, [Pkg(Readmes, PackageEvidenceRole.Documentation), m2lb], manual).Should().BeFalse("the tester named the project after it");
+    }
+
+    [Fact]
+    public void Moving_the_package_whose_documents_are_shown_makes_its_new_project_current()
+    {
+        var lifecycle = Workspace();
+        lifecycle.CurrentProjectImportId = "m2lb";
+        lifecycle.ProjectImports[1].KeptWithApplication = true;
+        var (m2lb, _) = ApplicationContexts.MoveImport(lifecycle, "m2lb", null, "M2LB", Now);
+        lifecycle.CurrentApplicationId.Should().Be(m2lb!.Id);
+        lifecycle.ProjectImports[1].KeptWithApplication.Should().BeFalse();
+    }
 }
