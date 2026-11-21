@@ -24,6 +24,10 @@ public sealed class CriticalE2ECompanionWorkflowTests
 
     private static string ExtensionSource()
     {
+        // run-workflow-tests.ps1 builds the tests outside the repository and names the root in BIRKNEXT_REPOSITORY_ROOT.
+        if (Environment.GetEnvironmentVariable("BIRKNEXT_REPOSITORY_ROOT") is { Length: > 0 } root)
+            foreach (var candidate in new[] { Path.Combine(root, "browser-companion"), Path.Combine(root, "AIAssisted", "browser-companion") })
+                if (File.Exists(Path.Combine(candidate, "manifest.json"))) return candidate;
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
             if (Directory.Exists(Path.Combine(dir.FullName, "browser-companion")) && File.Exists(Path.Combine(dir.FullName, "browser-companion", "manifest.json")))
                 return Path.Combine(dir.FullName, "browser-companion");
