@@ -232,6 +232,21 @@ public class ImportProjectOverviewTests
     }
 
     [Fact]
+    public void A_pack_with_only_missing_sources_and_a_built_in_reference_is_not_detected()
+    {
+        // After Reset Local Data the built-in Skolenærvær pack still reports MU/M2LB "Not found" + the Altinn reference: nothing was detected.
+        var missing = new TestPackSourceStatus(new TestPackSourceRole("mu", "MU", "MU source"), TestPackSourceState.Missing);
+        var reference = new TestPackSourceStatus(new TestPackSourceRole("altinn", "Altinn", "Altinn"), TestPackSourceState.ReferenceAvailable);
+        var found = new TestPackSourceStatus(new TestPackSourceRole("m2lb", "M2LB", "M2LB source"), TestPackSourceState.AvailableNotBound);
+        var empty = new SourceSetupView { Packs = [new TestPackSourceSetup("demo", "Demo", [missing, reference])] };
+        ImportProjectOverview.DetectedPacks(empty).Should().BeEmpty();
+        ImportProjectOverview.DetectedPacks(null).Should().BeEmpty();
+        var partly = new SourceSetupView { Packs = [new TestPackSourceSetup("demo", "Demo", [missing, found, reference])] };
+        ImportProjectOverview.DetectedPacks(partly).Should().ContainSingle(p => p.PackId == "demo", "one found source makes the pack detected; its missing ones still need attention");
+        ImportProjectOverview.DetectedPacks(empty, anythingImported: true).Should().ContainSingle("once something is imported, a missing source says what was checked");
+    }
+
+    [Fact]
     public void FoundSource_BuiltInReference_AndOptionalInfrastructure_AreNotAttention()
     {
         var m2lb = new TestPackSourceStatus(new TestPackSourceRole("m2lb", "M2LB", ""), TestPackSourceState.AvailableNotBound) { Candidates = [Candidate("ccc")] };

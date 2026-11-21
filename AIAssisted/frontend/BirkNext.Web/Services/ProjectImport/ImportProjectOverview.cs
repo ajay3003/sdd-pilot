@@ -314,6 +314,15 @@ public static class ImportProjectOverview
         return new ImportSetupLine(status.Role.Key, label, state, attention, optional, action?.Text, action?.AccessibleName, action?.Href);
     }
 
+    /// <summary>The testing packs to show under "Testing setup detected". Once anything is imported every pack is shown, so a missing source says
+    /// what was checked. With nothing imported (first start, or after Reset Local Data) a built-in pack whose sources are all missing was not
+    /// detected and is left out; a pack with a found source or a checked near miss still shows.</summary>
+    public static IReadOnlyList<TestPackSourceSetup> DetectedPacks(SourceSetupView? setup, bool anythingImported = false) =>
+        setup is null ? []
+        : anythingImported || setup.Snapshots.Count > 0 ? setup.Packs
+        : [.. setup.Packs.Where(p => p.Sources.Any(s => s.NearMisses.Count > 0 || s.State is TestPackSourceState.Bound or TestPackSourceState.Available
+            or TestPackSourceState.AvailableNotBound or TestPackSourceState.ReviewRequired))];
+
     /// <summary>"1 setup item requires attention" or "No setup item requires attention".</summary>
     public static string SetupHeadline(TestPackSourceSetup pack)
     {

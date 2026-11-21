@@ -30,7 +30,12 @@
                 }
             </ul>
         }
-        @if (f.Primary.Count == 0)
+        @if (_noProject)
+        {
+            @* Nothing imported (first start or after Reset Local Data): every step would read as blocked, and built-in guides are not this user's evidence. *@
+            <p class="wfp-empty" data-testid="wfp-no-project">No project is imported yet, so there are no next steps. <a href="project-import" class="wfp-link" data-testid="wfp-import-project">Import a project</a></p>
+        }
+        else if (f.Primary.Count == 0)
         {
             <p class="wfp-empty" data-testid="wfp-empty">@(f.Relevant == 0 ? "None of this view's modules has a step to take with the current evidence." : "Every step in this view is done for the current evidence.")</p>
         }
@@ -50,7 +55,7 @@
                 }
             </ol>
         }
-        @if (ShowsTestPreparation(f.View.View) && _plan is { } plan && (plan.Facts.Count > 0 || plan.Actions.Count > 0))
+        @if (!_noProject && ShowsTestPreparation(f.View.View) && _plan is { } plan && (plan.Facts.Count > 0 || plan.Actions.Count > 0))
         {
             @* Test Plan proposals (persisted drafts and snapshots only): the same facts on Dashboard and Recommended Workflow. *@
             <div class="wfp-plan" data-testid="wfp-test-plan">
@@ -89,12 +94,16 @@
     private TestPlanSuggestionsPresentation.PlanFocus? _plan;
     private string? _scopeNotice;
     private bool _planLoaded;
+    /// <summary>No workspace at all (nothing imported, or after Reset Local Data).</summary>
+    private bool _noProject;
 
     protected override async Task OnInitializedAsync()
     {
         _navigation = Services.GetService(typeof(NavigationSectionState)) as NavigationSectionState;
         if (_navigation is not null) _navigation.Changed += OnNavigationChanged;
         if (Services.GetService(typeof(SourceContextApiService)) is SourceContextApiService api) (_context, _) = await api.GetAsync();
+        if (Services.GetService(typeof(ICurrentWorkspaceProjection)) is ICurrentWorkspaceProjection current)
+            _noProject = (await current.GetAsync()).State == CurrentWorkspaceState.NoWorkspace;
         Recompute();
         await LoadPlanAsync();
     }
@@ -102,7 +111,7 @@
     /// <summary>Test Plan proposals are read once, and only while the Manual Testing view is selected (one call; nothing per card).</summary>
     private async Task LoadPlanAsync()
     {
-        if (_planLoaded || _focus is null || !ShowsTestPreparation(_focus.View.View)) return;
+        if (_planLoaded || _noProject || _focus is null || !ShowsTestPreparation(_focus.View.View)) return;
         _planLoaded = true;
         if (Services.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService plans) return;
         // The selected project's own plans when a project is loaded (never another system's); the historical guide summary otherwise.

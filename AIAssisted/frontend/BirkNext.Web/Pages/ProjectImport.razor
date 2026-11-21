@@ -281,11 +281,11 @@
         }
 
         @* ── E · Testing / integration setup detected ── *@
-        @if (_setup is { Packs.Count: > 0 } setup)
+        @if (_setup is { } setup && ImportProjectOverview.DetectedPacks(setup, Activation.Imports.Count > 0) is { Count: > 0 } detectedPacks)
         {
             <section class="pi-card pi-setup-summary" aria-labelledby="pi-setup-heading" data-testid="pi-setup-summary">
                 <h2 id="pi-setup-heading" tabindex="-1">Testing setup detected</h2>
-                @foreach (var pack in setup.Packs)
+                @foreach (var pack in detectedPacks)
                 {
                     var lines = pack.Sources.OrderBy(SourceSetupPresentation.Order).Select(ImportProjectOverview.Line).ToList();
                     <div class="pi-setup-pack" data-testid="pi-setup-pack" data-pack="@pack.PackId">
