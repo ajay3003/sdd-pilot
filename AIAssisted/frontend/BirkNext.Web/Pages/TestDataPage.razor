@@ -17,6 +17,16 @@
     <p class="td-lead" data-testid="td-lead">Test Data owns reusable assets — values, payloads, files, entity references and expected results — with type, status, scope and provenance. Consumers reference assets; they never copy values.</p>
     <p class="td-safety td-safety-compact" role="note" data-testid="td-safety">Sensitive values are never displayed; they stay in the backend and are used only when a test runs. BirkNext never generates identities or business data.</p>
 
+    @if (_builtInsRemoved)
+    {
+        @* After "Reset everything" the built-in defaults stay removed (also after restarts) until the tester brings them back here. *@
+        <div class="td-notice" role="status" data-testid="td-builtins-removed">
+            <span>The built-in Test Data defaults (Skolenærvær default reporter and child) were removed by <strong>Reset everything</strong>. Journeys that need them have no test identity until you add one or restore them.</span>
+            <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="RestoreBuiltInsAsync" data-testid="td-builtins-restore">Restore built-in defaults</button>
+        </div>
+    }
+    @if (_builtInsMessage is { } builtInsMessage) { <p class="td-muted" role="status" data-testid="td-builtins-message">@builtInsMessage</p> }
+
     @* Four sections instead of one long page (NEXT54): readiness and the next action first; the catalog, XML fixtures and the plumbing
        (requests, candidates, sources, reset, documentation) on request. The section lives in the URL. *@
     <nav class="td-sections" aria-label="Test Data sections" data-testid="td-sections">
@@ -641,6 +651,7 @@
             _api = TestDataApiService.Resolve(Services);
             if (FocusAsset is { Length: > 0 and <= 64 } focus) _query = focus;
             await ReloadAsync(null);
+            _builtInsRemoved = await _api.BuiltInDefaultsRemovedAsync();
             if (Services.GetService(typeof(IFrontendAnalysisContextFactory)) is IFrontendAnalysisContextFactory contexts
                 && (await contexts.GetActiveContextAsync()).ActiveProfileOrNull is { } profile)
                 _scopes = [(profile.Id, $"{profile.Name} ({profile.EnvironmentType})")];
@@ -650,6 +661,24 @@
     }
 
     private bool _autoDraftBusy;
+    private bool _builtInsRemoved;
+    private string? _builtInsMessage;
+
+    /// <summary>Restore built-in defaults (explicit): the product reporter and child exist again with their product values.</summary>
+    private async Task RestoreBuiltInsAsync()
+    {
+        if (_api is null) return;
+        _busy = true;
+        try
+        {
+            var (restored, error) = await _api.RestoreBuiltInDefaultsAsync();
+            if (restored is null) { _builtInsMessage = error ?? "The built-in defaults could not be restored."; return; }
+            _builtInsRemoved = false;
+            _builtInsMessage = restored.Count == 0 ? "The built-in defaults already exist." : $"Restored: {string.Join(", ", restored)}.";
+            await ReloadAsync(null);
+        }
+        finally { _busy = false; }
+    }
 
     /// <summary>Runs the import's automatic draft again for the same snapshot (no reimport), then reloads the catalog so the new draft is listed.</summary>
     private async Task RetryAutoDraftAsync(BirkNext.Web.Services.ProjectImport.ProjectImportSession import, Guid snapshot)

@@ -54,23 +54,33 @@ public sealed class AltinnTestDataEditor(AltinnSessionStore identities, Protecte
         return count;
     }
 
-    public int ResetProtectedToProduct()
+    /// <summary>
+    /// "Reset everything" (2026-11-22): the built-in reporter and child are removed — with their edits — and stay removed after restarts, until
+    /// Test Data → Restore built-in defaults. Before, they were put back with their product values at once, so Reset everything looked as if it
+    /// had not deleted protected Test Data. Configured identities are never touched. Returns the identities removed.
+    /// </summary>
+    public IReadOnlyList<string> RemoveBuiltInDefaults(DateTimeOffset now)
     {
-        var reset = 0;
-        foreach (var reporter in options.UnattendedIdPortenTest.Reporters.Where(r => r.BuiltIn))
-        {
-            if (SkoleNaervaerTestIdentityDefaults.Seed(AltinnTestDataProvider.Reporter, reporter.Alias) is not { } seed) continue;
-            if (reporter.TestIdPersonIdentifier != seed || reporter.Label != SkoleNaervaerTestIdentityDefaults.ReporterLabel || reporter.ValueVersion != 0) reset++;
-            (reporter.TestIdPersonIdentifier, reporter.Label, reporter.ValueVersion, reporter.ValueUpdatedAt, reporter.ValueModified) = (seed, SkoleNaervaerTestIdentityDefaults.ReporterLabel, 0, null, false);
-        }
-        foreach (var child in options.SyntheticChildren.Where(c => c.BuiltIn))
-        {
-            if (SkoleNaervaerTestIdentityDefaults.Seed(AltinnTestDataProvider.Child, child.Alias) is not { } seed) continue;
-            if (child.TestPersonIdentifier != seed || child.Label != SkoleNaervaerTestIdentityDefaults.ChildLabel || child.ValueVersion != 0) reset++;
-            (child.TestPersonIdentifier, child.Label, child.ValueVersion, child.ValueUpdatedAt, child.ValueModified) = (seed, SkoleNaervaerTestIdentityDefaults.ChildLabel, 0, null, false);
-        }
+        var removed = options.UnattendedIdPortenTest.Reporters.Where(r => r.BuiltIn).Select(r => r.Alias)
+            .Concat(options.SyntheticChildren.Where(c => c.BuiltIn).Select(c => c.Alias)).Order(StringComparer.Ordinal).ToList();
+        options.UnattendedIdPortenTest.Reporters.RemoveAll(r => r.BuiltIn);
+        options.SyntheticChildren.RemoveAll(c => c.BuiltIn);
         defaults.Clear();
-        return reset;
+        defaults.MarkBuiltInsRemoved(now);
+        return removed;
+    }
+
+    public bool BuiltInDefaultsRemoved => defaults.BuiltInsRemoved;
+
+    /// <summary>Test Data → Restore built-in defaults: the product reporter and child exist again (product values), now and after restarts.</summary>
+    public IReadOnlyList<string> RestoreBuiltInDefaults()
+    {
+        defaults.ClearBuiltInsRemoved();
+        var before = options.UnattendedIdPortenTest.Reporters.Where(r => r.BuiltIn).Select(r => r.Alias)
+            .Concat(options.SyntheticChildren.Where(c => c.BuiltIn).Select(c => c.Alias)).ToHashSet(StringComparer.Ordinal);
+        SkoleNaervaerTestIdentityDefaults.Apply(options);
+        return [.. options.UnattendedIdPortenTest.Reporters.Where(r => r.BuiltIn).Select(r => r.Alias)
+            .Concat(options.SyntheticChildren.Where(c => c.BuiltIn).Select(c => c.Alias)).Where(a => !before.Contains(a)).Order(StringComparer.Ordinal)];
     }
 
     /// <summary>Only built-in identities are persisted (session identities stay memory-only, as they always were).</summary>

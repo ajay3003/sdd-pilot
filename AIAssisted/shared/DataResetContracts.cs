@@ -49,6 +49,6 @@ public sealed record DataResetResult
     public int DeletedRows { get; init; }
     public List<DataResetDomainResult> Domains { get; init; } = [];
     public List<string> Warnings { get; init; } = [];
-    /// <summary>Product-defined defaults that exist again after the reset (they are installation content, not preserved user data).</summary>
-    public List<string> SystemDefaultsRecreated { get; init; } = [];
+    /// <summary>"Reset everything": built-in protected Test Data defaults removed (restorable in Test Data → Restore built-in defaults).</summary>
+    public List<string> ProtectedDefaultsRemoved { get; init; } = [];
 }

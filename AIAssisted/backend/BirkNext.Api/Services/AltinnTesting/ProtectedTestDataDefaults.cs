@@ -27,6 +27,8 @@ public sealed class ProtectedTestDataDefaultsStore
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
     private readonly object _gate = new();
     private readonly string _path;
+    /// <summary>Present after "Reset everything": the built-in defaults were removed and are not seeded again until a tester restores them.</summary>
+    private readonly string _removedPath;
     private readonly ILogger<ProtectedTestDataDefaultsStore> _logger;
     private List<ProtectedDefaultValue> _values;
 
@@ -38,6 +40,7 @@ public sealed class ProtectedTestDataDefaultsStore
         _logger = logger;
         Directory.CreateDirectory(directory);
         _path = Path.Combine(directory, "protected-defaults.json");
+        _removedPath = Path.Combine(directory, "built-in-defaults-removed.json");
         _values = Read() ?? [];
     }
 
@@ -60,6 +63,29 @@ public sealed class ProtectedTestDataDefaultsStore
             _values = [];
             try { if (File.Exists(_path)) File.Delete(_path); }
             catch (IOException ex) { _logger.LogWarning(ex, "Protected Test Data defaults file could not be deleted"); }
+        }
+    }
+
+    /// <summary>True after "Reset everything" removed the built-in defaults, until Test Data → Restore built-in defaults.</summary>
+    public bool BuiltInsRemoved { get { lock (_gate) return File.Exists(_removedPath); } }
+
+    /// <summary>"Reset everything" only: the built-in defaults stay removed after restarts too (2026-11-22: they were seeded back before).</summary>
+    public void MarkBuiltInsRemoved(DateTimeOffset at)
+    {
+        lock (_gate)
+        {
+            try { File.WriteAllText(_removedPath, JsonSerializer.Serialize(new { removedAt = at }, Json)); }
+            catch (IOException ex) { _logger.LogWarning(ex, "The removal of the built-in Test Data defaults could not be recorded; they return after a restart"); }
+        }
+    }
+
+    /// <summary>Test Data → Restore built-in defaults: they are seeded again, now and after restarts.</summary>
+    public void ClearBuiltInsRemoved()
+    {
+        lock (_gate)
+        {
+            try { if (File.Exists(_removedPath)) File.Delete(_removedPath); }
+            catch (IOException ex) { _logger.LogWarning(ex, "The built-in Test Data defaults marker could not be deleted"); }
         }
     }
 
@@ -90,6 +116,13 @@ public sealed class ProtectedTestDataDefaultsStore
     /// </summary>
     public AltinnTestingOptions Overlay(AltinnTestingOptions options)
     {
+        if (BuiltInsRemoved)
+        {
+            // Removed by "Reset everything": the seed added them again when the options were bound; take them out (configured identities stay).
+            options.UnattendedIdPortenTest.Reporters.RemoveAll(r => r.BuiltIn);
+            options.SyntheticChildren.RemoveAll(c => c.BuiltIn);
+            return options;
+        }
         foreach (var value in Values())
         {
             if (value.Role == AltinnTestDataProvider.Reporter && options.UnattendedIdPortenTest.Reporters.FirstOrDefault(r => r.BuiltIn && r.Alias == value.Alias) is { } reporter)

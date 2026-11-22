@@ -22,6 +22,14 @@ public sealed class TestDataController(TestDataSchemaValidationService catalog, 
     public async Task<ActionResult<TestDataAssetDetail>> Asset(string id, CancellationToken ct) =>
         await catalog.DetailAsync(id, ct) is { } detail ? Ok(detail) : NotFound();
 
+    /// <summary>Whether "Reset everything" removed the built-in Test Data defaults (Test Data then offers Restore built-in defaults).</summary>
+    [HttpGet("built-in-defaults")]
+    public ActionResult BuiltInDefaults([FromServices] TestDataLifecycleService lifecycle) => Ok(new { removed = lifecycle.BuiltInDefaultsRemoved });
+
+    /// <summary>Test Data → Restore built-in defaults: the product defaults exist again with their product values (explicit action only).</summary>
+    [HttpPost("built-in-defaults/restore")]
+    public ActionResult RestoreBuiltInDefaults([FromServices] TestDataLifecycleService lifecycle) => Ok(new { restored = lifecycle.RestoreBuiltInDefaults() });
+
     /// <summary>Structural candidates from one exact Source Analysis snapshot (shared contract and data model evidence). Candidates are never
     /// approved, stored or used by being listed; identity fields carry a controlled-reference placeholder, never a generated identity.</summary>
     [HttpGet("candidates")]

@@ -53,7 +53,7 @@ public sealed class DataResetScopeTests : IDisposable
     private static string ChildValue(Harness h) => h.Catalog.Assets().Single(a => a.Alias == SkoleNaervaerTestIdentityDefaults.ChildAlias).Value!.Reveal();
 
     [Fact]
-    public async Task Reset_everything_removes_the_canonical_fixture_and_returns_protected_defaults_to_product_values()
+    public async Task Reset_everything_removes_the_canonical_fixture_and_the_built_in_defaults_until_they_are_restored()
     {
         var h = Build();
         h.Store.Add(Fixture(), new SkoleNaervaerCanonicalFixtures().Fixtures, DateTimeOffset.UtcNow);
@@ -67,13 +67,22 @@ public sealed class DataResetScopeTests : IDisposable
 
         h.Store.Versions().Should().BeEmpty("the canonical fixture is genuinely removed");
         h.Catalog.Assets().Should().NotContain(a => a.Alias == SkoleNaervaerCanonicalFixtures.ValidReportAlias);
-        ChildValue(h).Should().Be(seed, "the product default value applies again");
-        h.Catalog.Assets().Single(a => a.Alias == SkoleNaervaerTestIdentityDefaults.ChildAlias).Label.Should().Be(SkoleNaervaerTestIdentityDefaults.ChildLabel, "the label returns to the product label too");
-        File.Exists(Path.Combine(_dir, "test-data", "protected-defaults.json")).Should().BeFalse("stored edits are deleted, so a restart does not bring them back");
-        summary.ProtectedDefaultsResetToProduct.Should().Be(1);
+        // 2026-11-22: the built-in defaults are deleted too — not put back at once with their product values.
+        h.Catalog.Assets().Should().NotContain(a => a.Alias == SkoleNaervaerTestIdentityDefaults.ChildAlias || a.Alias == SkoleNaervaerTestIdentityDefaults.ReporterAlias);
+        h.Catalog.Assets().Should().NotContain(a => a.IsProtected, "Reset everything leaves no protected Test Data");
+        File.Exists(Path.Combine(_dir, "test-data", "protected-defaults.json")).Should().BeFalse("stored edits are deleted");
         summary.ProtectedFixturesRemoved.Should().Be(1);
-        summary.SystemDefaultsRecreated.Should().Contain([SkoleNaervaerTestIdentityDefaults.ChildAlias, SkoleNaervaerTestIdentityDefaults.ReporterAlias]);
+        summary.ProtectedDefaultsRemoved.Should().Equal(SkoleNaervaerTestIdentityDefaults.ChildAlias, SkoleNaervaerTestIdentityDefaults.ReporterAlias);
         summary.ProtectedDefaultsPreserved.Should().Be(0);
+        h.Lifecycle.BuiltInDefaultsRemoved.Should().BeTrue();
+
+        var restarted = Build();
+        restarted.Catalog.Assets().Should().NotContain(a => a.Alias == SkoleNaervaerTestIdentityDefaults.ChildAlias, "a restart does not seed them back");
+        restarted.Lifecycle.RestoreBuiltInDefaults().Should().Equal(SkoleNaervaerTestIdentityDefaults.ChildAlias, SkoleNaervaerTestIdentityDefaults.ReporterAlias);
+        ChildValue(restarted).Should().Be(seed, "restored with the product value, not the edit");
+        restarted.Catalog.Assets().Single(a => a.Alias == SkoleNaervaerTestIdentityDefaults.ChildAlias).Label.Should().Be(SkoleNaervaerTestIdentityDefaults.ChildLabel);
+        Build().Catalog.Assets().Should().Contain(a => a.Alias == SkoleNaervaerTestIdentityDefaults.ReporterAlias, "restored defaults are seeded after restarts again");
+        h = restarted;
 
         h.Registry.ProtectedAssets().Should().BeEmpty("no stale protection record keyed on an alias-derived id survives");
         h.Store.Add(Fixture(), new SkoleNaervaerCanonicalFixtures().Fixtures, DateTimeOffset.UtcNow);

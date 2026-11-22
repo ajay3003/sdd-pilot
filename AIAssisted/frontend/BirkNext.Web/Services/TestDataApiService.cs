@@ -68,6 +68,11 @@ public interface ITestDataApiService
     Task<(TestDataResetPreview? Preview, string? Error)> ResetPreviewAsync(CancellationToken ct = default) => Task.FromResult<(TestDataResetPreview?, string?)>((null, Unavailable));
     Task<(TestDataResetResult? Result, string? Error)> ResetAsync(int generatedFixturesRemoved, CancellationToken ct = default) =>
         Task.FromResult<(TestDataResetResult?, string?)>((null, Unavailable));
+    /// <summary>Whether "Reset everything" removed the built-in defaults (Test Data then offers Restore built-in defaults).</summary>
+    Task<bool> BuiltInDefaultsRemovedAsync(CancellationToken ct = default) => Task.FromResult(false);
+    /// <summary>Test Data → Restore built-in defaults: the aliases that exist again, or an error.</summary>
+    Task<(IReadOnlyList<string>? Restored, string? Error)> RestoreBuiltInDefaultsAsync(CancellationToken ct = default) =>
+        Task.FromResult<(IReadOnlyList<string>?, string?)>((null, Unavailable));
 
     // Added data (typed resources): saved as Draft versions; never approved, bound or executed by these calls.
     Task<(IReadOnlyList<TestDataResourceView>? Resources, string? Error)> ResourcesAsync(CancellationToken ct = default) =>
@@ -239,6 +244,18 @@ public sealed class TestDataApiService(HttpClient http) : ITestDataApiService
 
     public Task<(TestDataResetResult? Result, string? Error)> ResetAsync(int generatedFixturesRemoved, CancellationToken ct = default) =>
         SendAsync<TestDataResetResult>(HttpMethod.Post, $"api/test-data/reset?generatedFixturesRemoved={generatedFixturesRemoved}", new { }, ct);
+
+    private sealed record BuiltInDefaultsState(bool Removed);
+    private sealed record BuiltInDefaultsRestored(List<string> Restored);
+
+    public async Task<bool> BuiltInDefaultsRemovedAsync(CancellationToken ct = default) =>
+        (await SendAsync<BuiltInDefaultsState>(HttpMethod.Get, "api/test-data/built-in-defaults", null, ct)).Body?.Removed == true;
+
+    public async Task<(IReadOnlyList<string>? Restored, string? Error)> RestoreBuiltInDefaultsAsync(CancellationToken ct = default)
+    {
+        var (body, error) = await SendAsync<BuiltInDefaultsRestored>(HttpMethod.Post, "api/test-data/built-in-defaults/restore", new { }, ct);
+        return (body?.Restored, error);
+    }
 
     public Task<(IReadOnlyList<TestDataResourceView>? Resources, string? Error)> ResourcesAsync(CancellationToken ct = default) =>
         SendAsync<IReadOnlyList<TestDataResourceView>>(HttpMethod.Get, "api/test-data/resources", null, ct);

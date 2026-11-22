@@ -346,10 +346,8 @@ public sealed record TestDataResetSummary
     public int ReferencesRequiringRemapping { get; init; }
     /// <summary>"Reset everything" only: canonical fixture versions removed.</summary>
     public int ProtectedFixturesRemoved { get; init; }
-    /// <summary>"Reset everything" only: protected defaults whose edited values were discarded (they hold product values again).</summary>
-    public int ProtectedDefaultsResetToProduct { get; init; }
-    /// <summary>Product-defined defaults that exist again after "Reset everything" (installation content, not preserved user data).</summary>
-    public List<string> SystemDefaultsRecreated { get; init; } = [];
+    /// <summary>"Reset everything" only: built-in protected defaults removed (they stay removed until Test Data → Restore built-in defaults).</summary>
+    public List<string> ProtectedDefaultsRemoved { get; init; } = [];
 }
 
 /// <summary>

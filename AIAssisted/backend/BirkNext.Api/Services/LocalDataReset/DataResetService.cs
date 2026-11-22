@@ -48,10 +48,10 @@ public sealed class DataResetService(ILocalDatabaseReset guard, LocalDataResetCo
                 Mode = mode, Title = "Reset everything", ConfirmationPhrase = FullConfirmation,
                 Summary = "Permanently removes all resettable local BirkNext data, including protected Test Data and canonical fixtures. This cannot be undone.",
                 Removed = [.. LocalDataResetCoordinator.Cleared, .. LocalDataResetCoordinator.ClearedOnlyWhenResettingEverything,
-                    "Protected Test Data: edited values of protected defaults, their approvals and bindings; canonical XML fixtures"],
+                    "Protected Test Data: the built-in defaults (e.g. skolenaervaer-reporter-default, skolenaervaer-child-default) with their values, approvals and bindings; canonical XML fixtures"],
                 Preserved = [installation, "The highest synthetic CDC key and reserved identities (test keys are never reused)", "Data in external systems (Azure, Altinn, TT02, Service Bus, Event Hub, Git)"],
                 Notes = ["Reset everything means all resettable local application data — not uninstalling BirkNext or dropping its database schema.",
-                    "Product-defined Test Data defaults (e.g. skolenaervaer-child-default, skolenaervaer-reporter-default) exist again after the reset with their product values: they are recreated system defaults, not preserved data. Canonical fixtures such as skolenaervaer-valid-report are removed and must be created again."],
+                    "The built-in Test Data defaults stay removed, also after a restart. Bring them back with their product values in Test Data → Restore built-in defaults. Canonical fixtures such as skolenaervaer-valid-report are removed and must be created again."],
                 Counts = counts, Allowed = refusal is null, NotAllowedReason = refusal,
             },
             DataResetMode.FullPreserveProtected => new DataResetPlan
@@ -110,7 +110,7 @@ public sealed class DataResetService(ILocalDatabaseReset guard, LocalDataResetCo
                 Mode = request.Mode,
                 Status = result.Status switch { "Completed" => "Completed", "CompletedWithWarnings" => "PartiallyCompleted", var other => other },
                 Message = result.Message, ResetAt = result.ResetAt, ResetEpoch = result.ResetEpoch, DeletedRows = result.DeletedRows, Domains = result.Domains, Warnings = result.Warnings,
-                SystemDefaultsRecreated = result.TestData?.SystemDefaultsRecreated ?? [],
+                ProtectedDefaultsRemoved = result.TestData?.ProtectedDefaultsRemoved ?? [],
             };
         }
         finally { Gate.Release(); }

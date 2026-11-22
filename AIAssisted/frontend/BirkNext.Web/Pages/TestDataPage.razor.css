@@ -136,3 +136,7 @@
 .td-review-flags-title { margin: 0 0 .25rem; font-size: 1rem; font-weight: 650; }
 .td-review-flags ul { margin: .4rem 0 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .3rem; }
 .td-review-flags li { overflow-wrap: anywhere; }
+
+/* After Reset everything: the built-in defaults are removed until the tester restores them. */
+.td-notice { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; justify-content: space-between; margin: .5rem 0; padding: .6rem .8rem; border: 1px solid var(--clr-warning, #d97706); border-radius: .5rem; background: var(--clr-warning-bg, #fffbeb); font-size: .875rem; }
+.td-muted { color: var(--clr-text-muted); font-size: .875rem; margin: .25rem 0; }

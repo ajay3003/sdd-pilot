@@ -78,6 +78,30 @@ public sealed class TestDataAssetLifecycleUiTests : BunitContext
     }
 
     [Fact]
+    public void After_Reset_everything_the_removed_built_in_defaults_can_be_restored_explicitly()
+    {
+        _api.Setup(a => a.BuiltInDefaultsRemovedAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _api.Setup(a => a.RestoreBuiltInDefaultsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(((IReadOnlyList<string>?)["skolenaervaer-child-default", "skolenaervaer-reporter-default"], (string?)null));
+        var page = Render<TestDataPage>();
+
+        page.WaitForElement("[data-testid=td-builtins-removed]").TextContent.Should().Contain("Reset everything");
+        page.Find("[data-testid=td-builtins-restore]").Click();
+
+        page.WaitForAssertion(() => page.FindAll("[data-testid=td-builtins-removed]").Should().BeEmpty());
+        page.Find("[data-testid=td-builtins-message]").TextContent.Should().Contain("skolenaervaer-reporter-default");
+        _api.Verify(a => a.RestoreBuiltInDefaultsAsync(It.IsAny<CancellationToken>()), Times.Once());
+    }
+
+    [Fact]
+    public void Without_a_removal_there_is_no_restore_notice()
+    {
+        var page = Render<TestDataPage>();
+        page.WaitForAssertion(() => page.Find("[data-testid=td-page]").GetAttribute("aria-busy").Should().Be("false"));
+        page.FindAll("[data-testid=td-builtins-removed]").Should().BeEmpty();
+    }
+
+    [Fact]
     public void Protected_default_modified_is_a_neutral_marker()
     {
         _catalog = new([Child(version: 1, modified: true)], [], []);

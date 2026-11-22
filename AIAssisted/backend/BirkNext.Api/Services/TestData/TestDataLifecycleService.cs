@@ -27,7 +27,12 @@ public interface ITestDataAssetEditor
     /// "Reset everything" only: every protected default this editor owns returns to its product state (value, label, version) and its stored
     /// edits are deleted — unlike "Restore default value", which restores the value only. Returns how many differed from the product state.
     /// </summary>
-    int ResetProtectedToProduct() => 0;
+    /// <summary>"Reset everything": removes the editor's built-in (protected) defaults so they stay removed until restored. Returns their aliases.</summary>
+    IReadOnlyList<string> RemoveBuiltInDefaults(DateTimeOffset now) => [];
+    /// <summary>True while built-in defaults are removed (Test Data offers Restore built-in defaults).</summary>
+    bool BuiltInDefaultsRemoved => false;
+    /// <summary>Test Data → Restore built-in defaults. Returns the aliases that exist again.</summary>
+    IReadOnlyList<string> RestoreBuiltInDefaults() => [];
 }
 
 /// <summary>A consumer that references Test Data aliases (performance scenarios, release flows …): where, and how to re-point them.</summary>
@@ -337,15 +342,13 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
     }
 
     /// <summary>
-    /// The Test Data part of "Reset everything" (the only path that overrides protection, after explicit typed confirmation): protected defaults get
-    /// their product values back (their edits, approvals and bindings are removed), canonical fixtures are deleted, and every other asset goes as in
-    /// the ordinary full reset. Ordinary deletes of protected assets remain refused. The product defaults exist again afterwards and are reported as
-    /// recreated system defaults, never as preserved data.
+    /// The Test Data part of "Reset everything" (the only path that overrides protection, after explicit typed confirmation): built-in protected
+    /// defaults are removed with their edits, approvals and bindings and stay removed (also after restarts) until Test Data → Restore built-in
+    /// defaults; canonical fixtures are deleted; every other asset goes as in the ordinary full reset. Ordinary deletes of protected assets remain refused.
     /// </summary>
     public async Task<TestDataResetSummary> CompleteFullResetIncludingProtectedAsync(TestDataResetPreview before, CancellationToken ct)
     {
-        var defaults = catalog.Assets().Where(a => a.Ownership == TestDataOwnership.ProtectedDefault).ToList();
-        var reset = _editors.Sum(e => e.ResetProtectedToProduct());
+        var removedDefaults = _editors.SelectMany(e => e.RemoveBuiltInDefaults(time.GetUtcNow())).Order(StringComparer.Ordinal).ToList();
         var fixtures = canonical?.ClearAllForFullReset() ?? 0;
         var removed = registry.ClearAll(clearProtection: true) + _editors.Sum(e => e.ClearLocal());
         catalog.Identities?.RetainOnly(catalog.Assets().Select(a => a.Id), time.GetUtcNow());
@@ -356,9 +359,15 @@ public sealed class TestDataLifecycleService(TestDataCatalog catalog, TestDataRe
             ProtectedDefaultsPreserved = 0, ProtectedFixturesPreserved = 0, ConfigurationAssetsPreserved = before.ConfigurationAssets,
             AssetsRemoved = removed + before.GeneratedFixturesToRemove + fixtures, GeneratedFixturesRemoved = before.GeneratedFixturesToRemove,
             ReferencesRemovedWithConsumers = before.AffectedReferences.Count, ReferencesRequiringRemapping = unresolved,
-            ProtectedFixturesRemoved = fixtures, ProtectedDefaultsResetToProduct = reset, SystemDefaultsRecreated = [.. defaults.Select(a => a.Alias).Order(StringComparer.Ordinal)],
+            ProtectedFixturesRemoved = fixtures, ProtectedDefaultsRemoved = removedDefaults,
         };
     }
+
+    /// <summary>Built-in defaults removed by "Reset everything" (empty when none is removed): Test Data offers to restore them.</summary>
+    public bool BuiltInDefaultsRemoved => _editors.Any(e => e.BuiltInDefaultsRemoved);
+
+    /// <summary>Test Data → Restore built-in defaults (explicit): the product defaults exist again with their product values.</summary>
+    public IReadOnlyList<string> RestoreBuiltInDefaults() => [.. _editors.SelectMany(e => e.RestoreBuiltInDefaults()).Order(StringComparer.Ordinal)];
 
     /// <summary>
     /// The Test Data part of the full Maintenance reset, after the database (consumers, generated fixtures, workspaces) was cleared. <paramref name="before"/>
