@@ -841,6 +841,7 @@ builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandi
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.ApiContractScenarioProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.IntegrationJourneyScenarioProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.ExistingTestScenarioProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.ITestScenarioCandidateProvider, BirkNext.Api.Services.TestPlanning.DeveloperIntegrationTestScenarioProvider>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.TestScenarioDiscoveryService>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationJourneys.IIntegrationJourneyPackRegistry, BirkNext.Api.Services.IntegrationJourneys.IntegrationJourneyPackRegistry>();
 // Project-declared Integration Journeys (name + ordered component chain; design metadata only): Test Coverage association candidates, Scope Registry Journey members.

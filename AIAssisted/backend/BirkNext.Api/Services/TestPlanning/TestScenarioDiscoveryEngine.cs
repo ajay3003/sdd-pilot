@@ -33,12 +33,16 @@ public static class TestScenarioDiscoveryEngine
     public const string ApiContract = "api-contract";
     public const string IntegrationJourneys = "integration-journeys";
     public const string ExistingTests = "existing-tests";
+    public const string DeveloperTests = "developer-tests";
 
     /// <summary>"tsc-" + 16 hex of project | capability | canonical key. The snapshot is not part of it: the same scenario keeps its id across imports.</summary>
     public static string CandidateId(string projectKey, string capability, string canonicalKey) => "tsc-" + E.Sha($"{projectKey.Trim()}|{capability}|{canonicalKey}")[..16];
 
     private static string Clip(string? text, int max) => string.IsNullOrWhiteSpace(text) ? "" : text.Trim().Length <= max ? text.Trim() : text.Trim()[..(max - 1)] + "…";
     private static string? Text(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    /// <summary>Gives a candidate of another provider its stable id, fingerprint and bounded texts (the same rule as every built-in source).</summary>
+    public static DiscoveredScenario FinishCandidate(DiscoveredScenario c, string projectKey) => Finish(c, projectKey);
 
     private static DiscoveredScenario Finish(DiscoveredScenario c, string projectKey) => c with
     {
@@ -60,6 +64,7 @@ public static class TestScenarioDiscoveryEngine
         ApiContract => "API / contract candidates",
         IntegrationJourneys => "Integration journeys",
         ExistingTests => "Existing tests",
+        DeveloperTests => "Behaviour from developer integration tests",
         _ => capability,
     };
 
@@ -71,6 +76,7 @@ public static class TestScenarioDiscoveryEngine
         ApiContract => "Operations of OpenAPI and GraphQL contracts found in the project's source.",
         IntegrationJourneys => "Journeys declared for this project, and test-pack journeys whose sources are this project's source.",
         ExistingTests => "xUnit tests in the project's source, associated with candidates only through explicit requirement references.",
+        DeveloperTests => "For a project without a specification: developer tests that cross a real boundary (browser, hosted API or messaging), one candidate per test class.",
         _ => "",
     };
 

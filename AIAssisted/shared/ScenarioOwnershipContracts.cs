@@ -40,7 +40,7 @@ public static class ScenarioOwnership
 {
     // Capability ids of TestScenarioDiscoveryEngine (kept as literals here: the shared project does not reference the API).
     public const string Specification = "specification", SystemGuide = "system-guide", UiSource = "ui-source", ApiContract = "api-contract",
-        IntegrationJourneys = "integration-journeys", ExistingTests = "existing-tests";
+        IntegrationJourneys = "integration-journeys", ExistingTests = "existing-tests", DeveloperTests = "developer-tests";
 
     public static ScenarioOwnershipInfo Of(DiscoveredScenario c)
     {
@@ -79,6 +79,12 @@ public static class ScenarioOwnership
                 return new(ScenarioPurpose.IntegrationFunctional, "Integration journey", T, M,
                     IsPackJourney(c) ? SpecialistArea.TestPackJourney : SpecialistArea.IntegrationTesting,
                     "A journey through several systems: prepared and run in Integration Testing; a person can still prepare it as a manual end-to-end case.");
+            case DeveloperTests:
+                return c.Type == ScenarioCandidateType.Integration
+                    ? new(ScenarioPurpose.IntegrationFunctional, "Developer integration test", M, T, SpecialistArea.IntegrationTesting,
+                        "Behaviour a developer automated through messaging: a person can check it end to end in the test environment; the systems are also verifiable in Integration Testing.")
+                    : new(ScenarioPurpose.BusinessFunctional, "Developer integration test", M, null, SpecialistArea.None,
+                        "Behaviour a developer automated through the application's API or browser, for a project without a specification: a person checks it in the test environment.");
         }
         // A producer this rule does not know: classified by its own candidate type, or left for review (never guessed).
         return c.Type switch
