@@ -230,6 +230,18 @@ public sealed class SourceManagementRedesignTests : BunitContext
     }
 
     [Fact]
+    public void With_imports_a_connected_repository_is_counted_as_connected_not_as_an_imported_package()
+    {
+        _git.Setup(g => g.LinksAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitSourceLink>)[Link("r1", "Billing")], (string?)null));
+        Register("M2LB.Common", "M2LB-language");
+        var cut = Render<SourceManagementPage>();
+
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=sm-row]").Should().HaveCount(3));
+        cut.Find("[data-testid=sm-summary-total]").TextContent.Should().Contain("2 ZIP · 0 Git imported packages").And.Contain("1 connected, not imported yet");
+        cut.FindAll("[data-testid=sm-empty]").Should().BeEmpty();
+    }
+
+    [Fact]
     public void The_overall_analysis_tone_follows_the_bucket()
     {
         SourceManagementPresentation.BucketTone(SourceAnalysisBucket.Analyzed).Should().Be("ok");

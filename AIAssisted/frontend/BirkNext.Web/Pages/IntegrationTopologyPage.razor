@@ -25,13 +25,16 @@
         <div class="it-actions" role="group" aria-label="Topology actions">
             <button type="button" class="btn-secondary" data-testid="it-refresh" disabled="@_loading" @onclick="() => LoadAsync(false)">Refresh view</button>
             @* Eligibility is computed offline with the view; the button says what it would read before anyone clicks it. With no eligible target
-               it only opens the explanation — nothing runnable is offered. *@
+               it only opens the explanation — nothing runnable is offered. Nothing imported and nothing eligible: not shown at all (2026-11-22). *@
+            @if (!(_view is { } shownView && NoProject(shownView) && eligible == 0))
+            {
             <button type="button" class="btn-secondary" data-testid="it-discover" data-eligible="@eligible" disabled="@_loading" aria-expanded="@(_discoverOpen ? "true" : "false")" aria-controls="it-discovery"
                     aria-describedby="it-discover-state" @onclick="() => _discoverOpen = !_discoverOpen">Discover OpenAPI interfaces…</button>
             <span class="it-note" id="it-discover-state" data-testid="it-discover-state">@(plan is null ? "" : eligible == 0
                 ? "No eligible OpenAPI targets — no configured component declares a readable OpenAPI document."
                 : $"{eligible} component{(eligible == 1 ? "" : "s")} · {plan.Hosts.Count} host{(plan.Hosts.Count == 1 ? "" : "s")} eligible")</span>
             <span class="it-note">Refresh view recomputes from already-stored evidence (no network). Discover OpenAPI interfaces reads declared OpenAPI documents over the network, only when you run it.</span>
+            }
         </div>
     }
 

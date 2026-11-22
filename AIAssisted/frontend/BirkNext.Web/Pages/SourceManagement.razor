@@ -85,7 +85,7 @@
             </p>
         }
         <ul class="sm-tiles @(!HasImports || (summary.Total == 1 && _facts.Count == 1) ? "visually-hidden" : null)" data-testid="sm-summary" aria-label="Imported package summary — choose a tile to filter the list">
-            <li>@Tile("sm-summary-total", summary.Total, summary.Total == 1 ? "source" : "sources", $"{summary.Zip} ZIP · {summary.Git} Git imported packages (each version is one)", null, () => _filter = new() { Sort = _filter.Sort })</li>
+            <li>@Tile("sm-summary-total", summary.Total, summary.Total == 1 ? "source" : "sources", TotalDetail(), null, () => _filter = new() { Sort = _filter.Sort })</li>
             <li>@Tile("sm-summary-review", summary.NeedsReview, "requiring review", summary.NeedsReview == 0 ? "No open decisions" : "Role or association to decide",
                 summary.NeedsReview > 0 ? "attention" : null, () => _filter = _filter with { ReviewOnly = true })</li>
             <li>@Tile("sm-summary-analyzed", summary.Analyzed, "analyzed", "Every area present analyzed completely", null, () => _filter = _filter with { Analysis = nameof(SourceAnalysisBucket.Analyzed) })</li>
@@ -202,6 +202,16 @@
     private List<Row> _rows = [];
     /// <summary>At least one imported package (ZIP or Git). A repository that is only connected is not an imported source.</summary>
     private bool HasImports => _rows.Any(r => r.Record is not null);
+
+    /// <summary>The total tile's detail: imported packages by origin, and connected repositories not imported yet said as such (2026-11-22: a connected
+    /// repository was counted among the "Git imported packages").</summary>
+    private string TotalDetail()
+    {
+        var zip = _facts.Count(f => f.Imported && f.Origin == "ZIP");
+        var git = _facts.Count(f => f.Imported && f.Origin == "Git");
+        var connected = _facts.Count(f => !f.Imported);
+        return $"{zip} ZIP · {git} Git imported packages (each version is one)" + (connected > 0 ? $" · {connected} connected, not imported yet" : "");
+    }
 
     /// <summary>
     /// Nothing imported (2026-11-22): one empty state. A repository only connected in Git Sources is not an imported source (it was counted as

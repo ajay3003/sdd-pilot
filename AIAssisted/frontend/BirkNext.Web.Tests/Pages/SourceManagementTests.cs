@@ -180,7 +180,7 @@ public sealed class SourceManagementTests : BunitContext
         cut.WaitForElement("[data-testid=sm-summary]");
         cut.Find("[data-testid=sm-summary-total] .sm-tile-value").TextContent.Should().Be("1");
         cut.Find("[data-testid=sm-summary-total] .sm-tile-label").TextContent.Should().Be("source");
-        cut.Find("[data-testid=sm-summary-total] .sm-tile-detail").TextContent.Should().Be("0 ZIP · 1 Git imported packages (each version is one)");
+        cut.Find("[data-testid=sm-summary-total] .sm-tile-detail").TextContent.Should().Be("0 ZIP · 0 Git imported packages (each version is one) · 1 connected, not imported yet", "a connected repository is not an imported package");
         cut.Find("[data-testid=sm-summary-git]").TextContent.Should().Be("1 Git");
         cut.Find("[data-testid=sm-summary-applications] .sm-tile-detail").TextContent.Should().Contain("Distinct applications", "the metric says it counts applications, not sources");
         var row = cut.Find("[data-testid=sm-row]");

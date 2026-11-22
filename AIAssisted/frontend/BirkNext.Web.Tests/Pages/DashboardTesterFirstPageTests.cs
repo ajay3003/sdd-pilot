@@ -84,7 +84,7 @@ public class DashboardTesterFirstPageTests : BunitContext
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=db-workspace-empty]"));
         cut.Find("[data-testid=db-workspace-empty] a[href=user-guide]");
-        cut.FindAll("a[href=project-import]").Where(a => a.Closest("[data-testid=db-detailed-analysis]") is null).Select(a => a.OuterHtml)
+        cut.FindAll("a[href=project-import]").Select(a => a.OuterHtml)
             .Should().ContainSingle("one visible Import Project prompt, not a banner, a selector link, a next-steps link and a card");
         cut.FindAll("[data-testid=onboarding-card]").Should().BeEmpty();
         cut.FindAll("[data-testid=db-next-step]").Should().BeEmpty("a recommendation before anything is imported is wrong for every kind of user");

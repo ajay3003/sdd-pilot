@@ -185,6 +185,8 @@ public sealed class IntegrationTopologyPageTests : BunitContext
         page.FindAll("[data-testid=it-steps]").Should().BeEmpty("the steps described a project that does not exist");
         page.FindAll("[data-testid=it-count-unresolved], [data-testid=it-count-coverage], [data-testid=it-attention]").Should().BeEmpty();
         page.Find("[data-testid=it-count-components]").TextContent.Should().Be("2", "what the configuration gives is still shown");
+        page.FindAll("[data-testid=it-discover], [data-testid=it-discover-state]").Should().BeEmpty("no OpenAPI target to discover and no project: the action is not offered");
+        page.Find("[data-testid=it-refresh]");
     }
 
     [Fact]

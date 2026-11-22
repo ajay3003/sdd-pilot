@@ -353,7 +353,14 @@ public sealed class ScenarioCentricManualTestingWorkflowTests : IAsyncLifetime
             await page.Locator($"[data-testid=tps-scenario][data-scenario=\"{s42}\"] [data-testid=tps-scenario-toggle]").ClickAsync();
             var primary = await OpenCaseAsync(page, s42);
             await Assertions.Expect(page.GetByTestId($"tps-step-action-{s42}-1")).ToHaveValueAsync("Carry out or trigger: the period locks");
-            await page.GetByTestId($"tps-step-drag-{s42}-1").DragToAsync(page.GetByTestId($"tps-step-{s42}-0"));
+            // A synthetic HTML5 drag is occasionally dropped by the browser before the page sees it (one run in several, 2026-11-22): the drag
+            // is retried, never replaced by the buttons, so it is still the drag that is tested.
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                await page.GetByTestId($"tps-step-drag-{s42}-1").DragToAsync(page.GetByTestId($"tps-step-{s42}-0"));
+                try { await Assertions.Expect(page.GetByTestId($"tps-step-action-{s42}-0")).ToHaveValueAsync("Carry out or trigger: the period locks", new() { Timeout = 3000 }); break; }
+                catch (PlaywrightException) when (attempt < 2) { }
+            }
             await Assertions.Expect(page.GetByTestId($"tps-step-action-{s42}-0")).ToHaveValueAsync("Carry out or trigger: the period locks");
             await primary.GetByTestId("tps-save").ClickAsync();
             await MessageAsync(page, "Draft saved");

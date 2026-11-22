@@ -440,7 +440,7 @@
                         <SemanticStatusBadge Status="DashboardPresentation.Semantic(area.Status)" QualifiedLabel="@DashboardPresentation.Label(area.Status)" TestId="db-health-status" />
                         @if (area.Result is { } result) { <span class="db-health-result" data-testid="db-health-result">@result</span> }
                         <span class="db-health-text">@area.Explanation</span>
-                        @if (area.ActionLabel is { } action && area.Href is { } href) { <a href="@href" class="db-health-action">@action</a> }
+                        @if (area.ActionLabel is { } action && area.Href is { } href && !RepeatsImportPrompt(href)) { <a href="@href" class="db-health-action" data-testid="db-health-action">@action</a> }
                     </div>
                 }
             </div>
@@ -454,7 +454,7 @@
                         <span class="db-health-row-name">@area.Area <span class="db-health-help">@area.Help</span></span>
                         <SemanticStatusBadge Status="DashboardPresentation.Semantic(area.Status)" QualifiedLabel="@DashboardPresentation.Label(area.Status)" TestId="db-health-status" />
                         <span class="db-health-text">@area.Explanation</span>
-                        @if (area.ActionLabel is { } action && area.Href is { } href) { <a href="@href" class="db-health-action">@action</a> }
+                        @if (area.ActionLabel is { } action && area.Href is { } href && !RepeatsImportPrompt(href)) { <a href="@href" class="db-health-action" data-testid="db-health-action">@action</a> }
                     </li>
                 }
             </ul>
@@ -1026,6 +1026,9 @@
     private DashboardRiskState _risks => DashboardPresentation.Risks(_reviews);
 
     /// <summary>Anything reviewed or tested: a session result or a recorded review decision. Import alone is never a review.</summary>
+    /// <summary>Nothing imported: the empty-state card is the one Import Project prompt, so the detailed rows do not repeat it (2026-11-22).</summary>
+    private bool RepeatsImportPrompt(string href) => _workspace?.State == CurrentWorkspaceState.NoWorkspace && href.TrimStart('/').StartsWith("project-import", StringComparison.Ordinal);
+
     private bool _anythingReviewed => _hasAnySnapshot
         || _workflowReadiness?.DocumentReviewGates.Select(ArtifactReviewPresentation.Of).Any(r => r.IsDecided || r.State == ArtifactReviewState.Stale) == true;
 
