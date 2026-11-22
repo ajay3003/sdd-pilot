@@ -10,6 +10,21 @@ public static class TestPlanSuggestionsPresentation
 {
     public const string Route = "test-plan-suggestions";
 
+    /// <summary>The Azure DevOps Priority values a tester picks from (stored as the digit, which the export maps directly).</summary>
+    public static readonly IReadOnlyList<(string Value, string Label)> Priorities = [("1", "1 – Critical"), ("2", "2 – High"), ("3", "3 – Medium"), ("4", "4 – Low")];
+
+    /// <summary>The Azure DevOps priority (1–4) a stored value means, or null when it means none (older free text such as "soon").</summary>
+    public static string? PriorityValue(string? stored) =>
+        stored is { Length: > 0 } && AdoExport.PriorityMap.TryGetValue(stored.Trim(), out var v) ? v : null;
+
+    /// <summary>The value stored after the picker changes: "" clears it, "custom" keeps the older free text, otherwise the chosen 1–4.</summary>
+    public static string? PickedPriority(string? picked, string? current) => picked switch
+    {
+        null or "" => null,
+        "custom" => current,
+        _ => picked,
+    };
+
     /// <summary>
     /// Why a test case cannot be approved yet, or null when it can. The same content rules as the Azure DevOps export (AdoTestPlanExporter: an
     /// expected result, at least one step, an expected result per step), so an approved case is never blocked only later, at the export. On M2LB
@@ -302,7 +317,8 @@ public static class TestPlanSuggestionsPresentation
 
     public enum CandidateView { Manual, Technical, All, Attention }
 
-    public static readonly IReadOnlyList<CandidateView> Views = [CandidateView.Manual, CandidateView.Technical, CandidateView.All, CandidateView.Attention];
+    // Manual testers first: what to test by hand, then what needs a look, then everything; technical candidates last and set apart (they belong to Technical Testing).
+    public static readonly IReadOnlyList<CandidateView> Views = [CandidateView.Manual, CandidateView.Attention, CandidateView.All, CandidateView.Technical];
 
     public static CandidateView ViewOrDefault(string? view) => view switch
     {

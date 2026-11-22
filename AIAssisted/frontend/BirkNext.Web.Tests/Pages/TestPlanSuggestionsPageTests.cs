@@ -864,6 +864,57 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
     };
 
     [Fact]
+    public void Priority_is_picked_as_Azure_DevOps_1_to_4_and_older_free_text_stays_visible_until_replaced()
+    {
+        // Audit 2026-11-22: Priority was a free-text box; anything but 1–4 (or a known word) was silently left out of the Azure DevOps file.
+        P.Priorities.Select(p => p.Value).Should().Equal("1", "2", "3", "4");
+        P.PriorityValue("High").Should().Be("2");
+        P.PriorityValue(" 3 ").Should().Be("3");
+        P.PriorityValue("soon").Should().BeNull();
+        P.PriorityValue(null).Should().BeNull();
+        P.PickedPriority("", "soon").Should().BeNull("Not set clears it");
+        P.PickedPriority("custom", "soon").Should().Be("soon", "keeping the older text is a choice, never a silent change");
+        P.PickedPriority("1", "soon").Should().Be("1");
+
+        var draft = Draft();
+        draft = draft with { Cases = [draft.Cases[0] with { Edits = draft.Cases[0].Edits with { Priority = "soon" } }, draft.Cases[1]] };
+        var api = new Api(Workspace(drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, 3, 2, 0, 0, 1, 2, 2, "t", DateTimeOffset.UtcNow)]), draft);
+        var cut = Render(api, $"?draft={draft.Id}&area=review");
+        OpenCase(cut, "manglende-barn");
+        var picker = cut.Find("select[data-testid=tps-edit-priority-manglende-barn]");
+        picker.QuerySelectorAll("option").Select(o => o.GetAttribute("value")).Should().Equal("", "1", "2", "3", "4", "custom");
+        cut.Find("[data-testid=tps-priority-unmapped-manglende-barn]").TextContent.Should().Contain("not exported as a priority");
+        picker.Change("2");
+        cut.FindAll("[data-testid=tps-priority-unmapped-manglende-barn]").Should().BeEmpty();
+        cut.Find("[data-testid=tps-save]").Click();
+        api.Saved!.Cases.Single(c => c.ScenarioId == "manglende-barn").Edits.Priority.Should().Be("2");
+    }
+
+    [Fact]
+    public void Discovery_numbers_belong_to_Choose_scenarios_and_a_changed_specification_has_one_Discover_button()
+    {
+        // Audit 2026-11-22: the discovery tiles and sources stood above every step, and a changed specification showed two Discover buttons.
+        SelectProject();
+        var plan = ProjectDraft("library");
+        var api = new Api(Workspace(), plan) { Project = ProjectWorkspace(), Last = Discovery("library", LibraryCandidates) };
+        var cut = Render(api, $"?draft={plan.Id}&area=choose");
+        cut.Find("[data-testid=tps-choose] [data-testid=tps-stats]").Should().NotBeNull();
+        cut.Find("[data-testid=tps-choose] [data-testid=tps-capabilities]").Should().NotBeNull();
+        cut.FindAll("[data-testid=ssp-discover]").Should().BeEmpty("the discover bar owns the one Discover button on this page");
+        cut.Find("[data-testid=tps-discover-run]").TextContent.Should().Be("Discover again");
+
+        cut.Find("[data-testid=tps-area-prepare]").Click();
+        cut.FindAll("[data-testid=tps-stats]").Should().BeEmpty("other steps start right under the project");
+        cut.FindAll("[data-testid=tps-capabilities]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Technical_candidates_are_the_last_view()
+    {
+        P.Views.Should().Equal(P.CandidateView.Manual, P.CandidateView.Attention, P.CandidateView.All, P.CandidateView.Technical);
+    }
+
+    [Fact]
     public void Manual_testing_is_the_default_view_and_switching_views_keeps_every_selection()
     {
         SelectProject();

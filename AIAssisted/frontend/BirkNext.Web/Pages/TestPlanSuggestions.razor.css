@@ -505,3 +505,8 @@ textarea.tps-step-text { resize: vertical; min-height: 2.2rem; }
     .tps-step-list > .tps-step-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "la tools" "act act" "le le" "exp exp" "chip chip"; }
     .tps-step-list > .tps-step-row > .tps-drag { display: none; }
 }
+
+/* Audit round 3 (2026-11-22): technical candidates set apart at the end of the view row; a stale discovery bar is visible, not a second button. */
+.tps-views .tps-view[data-testid="tps-view-technical"] { margin-left: auto; font-size: 0.85rem; }
+.tps-actionbar.is-stale { border: 1px solid var(--clr-warning-border, #d4a72c); background: var(--clr-warning-bg, #fff8c5); border-radius: 10px; padding: 0.5rem 0.75rem; }
+.tps-actionbar.is-stale .tps-muted { color: var(--clr-text, #1f2328); }

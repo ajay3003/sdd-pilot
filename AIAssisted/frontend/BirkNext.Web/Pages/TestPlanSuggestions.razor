@@ -608,6 +608,11 @@
                 }
             </section>
         }
+    };
+
+    // What discovery found (moved from the page header, 2026-11-22): shown in Choose scenarios only, so every other step starts right under the project.
+    private RenderFragment DiscoverySummary() => __builder =>
+    {
         @if (!GuideMode && _discovery is { } discovery)
         {
             @* Compact evidence summary (2026-11-18): the five numbers a tester needs, then the per-source detail on demand. Saved cases are cases of
@@ -692,12 +697,16 @@
     }
 
     /// <summary>The tester chose another module, feature or specification here: its requirements are read again; the picker offers Discover now.</summary>
-    private Task OnSpecificationChangedAsync() => LoadRequirementsAsync();
+    // The specification changed after discovery: the discover bar says so and owns the one Discover button (the picker's own prompt is off here).
+    private bool _specChanged;
+
+    private Task OnSpecificationChangedAsync() { _specChanged = _discovery is not null; return LoadRequirementsAsync(); }
 
     private async Task DiscoverAsync()
     {
         if (_projectKey is null) return;
         _busy = true;
+        _specChanged = false;
         Info("Discovering test scenarios… only the analyzers registered for this project's evidence run.");
         var evidence = await WorkspaceEvidenceAsync();
         var (result, error) = await _api!.DiscoverAsync(new ScenarioDiscoveryRequest { ProjectKey = _projectKey, ProjectName = _projectName, SnapshotId = _snapshotId, EnvironmentId = _environmentId, Workspace = evidence });
@@ -723,12 +732,15 @@
         var overlaps = P.OverlapsWithPlan(_selected, _candidates, _inventory, inDraft);
         var moreFilters = (_catalog.Type is null ? 0 : 1) + (_catalog.Tests is null ? 0 : 1) + (_catalog.AttentionOnly ? 1 : 0);
         <section class="tps-section" data-testid="tps-choose" aria-label="Choose scenarios" data-view="@P.ViewId(_view)">
+            @DiscoverySummary()
             @if (!GuideMode)
             {
-                <BirkNext.Web.Components.SpecificationScopePicker Changed="OnSpecificationChangedAsync" Discover="DiscoverAsync" />
-                <div class="tps-actionbar tps-actionbar-compact" data-testid="tps-discover-bar">
-                    <button type="button" class="tps-btn @(_discovery is null ? null : "tps-btn-quiet")" disabled="@_busy" @onclick="DiscoverAsync" data-testid="tps-discover-run">@(_discovery is null ? "Discover test scenarios" : "Discover again")</button>
-                    <span class="tps-muted tps-small">@(_discovery is null ? "Reads the specification, source snapshot and contracts of this project. Nothing runs until you ask." : "The last result is reused until you discover again; changing a view or filter never re-runs analysis.")</span>
+                <BirkNext.Web.Components.SpecificationScopePicker Changed="OnSpecificationChangedAsync" ShowDiscoverLink="false" />
+                <div class="tps-actionbar tps-actionbar-compact @(_specChanged ? "is-stale" : null)" data-testid="tps-discover-bar" role="@(_specChanged ? "status" : null)">
+                    <button type="button" class="tps-btn @(_discovery is null || _specChanged ? null : "tps-btn-quiet")" disabled="@_busy" @onclick="DiscoverAsync" data-testid="tps-discover-run">@(_discovery is null ? "Discover test scenarios" : "Discover again")</button>
+                    <span class="tps-muted tps-small" data-testid="tps-discover-note">@(_discovery is null ? "Reads the specification, source snapshot and contracts of this project. Nothing runs until you ask."
+                        : _specChanged ? "The specification changed. The scenarios below came from the previous one; test cases already prepared stay in the plan."
+                        : "The last result is reused until you discover again; changing a view or filter never re-runs analysis.")</span>
                 </div>
             }
             @if (_candidates.Count == 0)
@@ -1249,7 +1261,7 @@
                         </div>
                         <div class="tps-edit-grid">
                             @EditField(c, "How to verify (observation method)", c.Generated.ObservationMethod, c.EffectiveObservation, v => c with { Edits = c.Edits with { ObservationMethod = P.TextEdit(c.Generated.ObservationMethod, v) } }, true, "observation")
-                            @EditField(c, "Priority", null, c.Edits.Priority, v => c with { Edits = c.Edits with { Priority = P.TextEdit(null, v) } }, false, "priority")
+                            @PriorityField(c)
                         </div>
                         @if (string.IsNullOrWhiteSpace(c.EffectiveObservation)) { <p class="tps-muted tps-small" data-testid="@($"tps-observation-missing-{sid}")">@ScenarioPlanning.NeedsVerificationMethod. Say how the tester sees the result (a screen, a report, a log, a database query an authorised person runs …).</p> }
                         @Checklist(c, sid)
@@ -1567,6 +1579,24 @@
             @if (multi) { <textarea class="tps-input" rows="@Math.Max(2, C.Rows(effective))" value="@effective" @onchange="e => Change(P.WithCase(_draft!, sid, _ => apply(e.Value?.ToString())))" data-testid="@($"tps-edit-{key}-{sid}")"></textarea> }
             else { <input class="tps-input" value="@effective" @onchange="e => Change(P.WithCase(_draft!, sid, _ => apply(e.Value?.ToString())))" data-testid="@($"tps-edit-{key}-{sid}")" /> }
             @if (edited && generated is not null) { <span class="tps-muted tps-small">From the evidence: @generated</span> }
+        </label>
+    };
+
+    // Azure DevOps Priority is 1–4: a picker, never free text. An older free-text value stays visible (and is replaced only when the tester picks).
+    private RenderFragment PriorityField(TestCaseDraft c) => __builder =>
+    {
+        var sid = c.Source.ScenarioId;
+        var current = c.Edits.Priority;
+        var mapped = P.PriorityValue(current);
+        <label class="tps-field"><span class="tps-k">Priority <span class="tps-muted tps-small">Azure DevOps 1–4</span></span>
+            <select class="tps-input" value="@(mapped ?? (current is null ? "" : "custom"))" aria-label="Priority"
+                    @onchange="e => Change(P.WithCase(_draft!, sid, x => x with { Edits = x.Edits with { Priority = P.PickedPriority(e.Value?.ToString(), current) } }))"
+                    data-testid="@($"tps-edit-priority-{sid}")">
+                <option value="">Not set</option>
+                @foreach (var (value, label) in P.Priorities) { <option value="@value">@label</option> }
+                @if (current is not null && mapped is null) { <option value="custom">“@current” — not an Azure DevOps priority</option> }
+            </select>
+            @if (current is not null && mapped is null) { <span class="tps-muted tps-small" data-testid="@($"tps-priority-unmapped-{sid}")">“@current” is not exported as a priority. Choose 1–4.</span> }
         </label>
     };
 
