@@ -34,6 +34,31 @@ public static class ManualTestingPresentation
 
     public sealed record NextAction(string Label, string Href, string Why);
 
+    /// <summary>Requirement filters of Discover &amp; understand: all, without test design, prepared but not approved, with an approved case.</summary>
+    public const string AllRequirements = "all", WithoutDesign = "none", PreparedOnly = "prepared", WithApproved = "approved";
+
+    public static readonly IReadOnlyList<(string Key, string Label)> RequirementFilters =
+        [(AllRequirements, "All"), (WithoutDesign, "No test design"), (PreparedOnly, "Prepared"), (WithApproved, "Approved")];
+
+    /// <summary>The requirements a filter and a search (id or text, case-insensitive) show, in the specification's order.</summary>
+    public static List<ProjectRequirementOption> FilterRequirements(IEnumerable<ProjectRequirementOption> requirements,
+        IReadOnlyDictionary<string, PreparedRequirementTrace> designed, string filter, string? query)
+    {
+        var q = query?.Trim() ?? string.Empty;
+        return [.. requirements.Where(r =>
+        {
+            var row = designed.GetValueOrDefault(r.RequirementId);
+            var keep = filter switch
+            {
+                WithoutDesign => row is null,
+                PreparedOnly => row is { ApprovedCases: 0 },
+                WithApproved => row is { ApprovedCases: > 0 },
+                _ => true,
+            };
+            return keep && (q.Length == 0 || r.RequirementId.Contains(q, StringComparison.OrdinalIgnoreCase) || (r.Title ?? "").Contains(q, StringComparison.OrdinalIgnoreCase));
+        })];
+    }
+
     public static int Cases(Facts f) => f.Plans.Sum(p => p.Cases);
     public static int Approved(Facts f) => f.Plans.Sum(p => p.Accepted);
     public static int NeedClarification(Facts f) => f.Plans.Sum(p => p.NeedsClarification);

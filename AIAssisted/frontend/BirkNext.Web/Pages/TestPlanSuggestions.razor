@@ -615,11 +615,11 @@
             var found = discovery.Capabilities.Where(x => x.State == DiscoveryCapabilityState.Available).ToList();
             var saved = _draft?.Cases.Count(c => c.Review is not (TestCaseReviewState.Excluded or TestCaseReviewState.Superseded)) ?? 0;
             <dl class="tps-summary" data-testid="tps-stats" aria-label="Discovered candidates">
-                <div class="tps-summary-item" data-testid="tps-stat-total"><dt>Discovered</dt><dd>@_inventory.Total</dd></div>
-                <div class="tps-summary-item" data-testid="tps-stat-manual"><dt>For manual testing</dt><dd>@_inventory.Manual</dd></div>
-                <div class="tps-summary-item" data-testid="tps-stat-technical"><dt>Technical</dt><dd>@_inventory.Technical</dd>@if (_inventory.OperationCandidates > _inventory.DistinctOperations) { <dd class="tps-summary-note" data-testid="tps-stat-operations">@_inventory.OperationCandidates operation entries = @_inventory.DistinctOperations distinct operation@(_inventory.DistinctOperations == 1 ? "" : "s")</dd> }</div>
-                <div class="tps-summary-item" data-testid="tps-stat-saved"><dt>Cases in the plan</dt><dd>@saved</dd></div>
-                <div class="tps-summary-item" data-testid="tps-stat-attention"><dt>Need attention</dt><dd>@_inventory.Attention</dd></div>
+                <div class="tps-summary-item tps-summary-secondary" data-testid="tps-stat-total"><dt>Discovered</dt><dd>@_inventory.Total</dd></div>
+                <div class="tps-summary-item tps-summary-primary" data-testid="tps-stat-manual"><dt>For manual testing</dt><dd>@_inventory.Manual</dd></div>
+                <div class="tps-summary-item tps-summary-secondary" data-testid="tps-stat-technical"><dt>Technical</dt><dd>@_inventory.Technical</dd>@if (_inventory.OperationCandidates > _inventory.DistinctOperations) { <dd class="tps-summary-note" data-testid="tps-stat-operations">@_inventory.OperationCandidates operation entries = @_inventory.DistinctOperations distinct operation@(_inventory.DistinctOperations == 1 ? "" : "s")</dd> }</div>
+                <div class="tps-summary-item tps-summary-primary" data-testid="tps-stat-saved"><dt>Cases in the plan</dt><dd>@saved</dd></div>
+                <div class="tps-summary-item tps-summary-primary @(_inventory.Attention > 0 ? "is-warn" : null)" data-testid="tps-stat-attention"><dt>Need attention</dt><dd>@_inventory.Attention</dd></div>
             </dl>
             <details class="tps-block tps-evidence" data-testid="tps-capabilities" aria-label="Evidence sources">
                 <summary class="tps-evidence-summary"><span class="tps-h3">Evidence sources</span>
@@ -1162,7 +1162,8 @@
                 @if (C.GeneratedNotReviewed(c) is { } gen) { <span class="tps-chip tps-chip-quiet" data-testid="tps-case-generated">@gen</span> }
                 @foreach (var lang in c.TranslatedLanguages) { <span class="tps-tone tps-tone-@C.TranslationTone(c, lang)" data-testid="tps-case-translation" data-language="@lang">@TranslationLanguages.Name(lang)@(ScenarioPlanning.StateOf(c, lang) == TranslationState.SourceChanged ? ": review" : "")</span> }
                 <span class="tps-chip">@P.TypeLabel(c.EffectiveType)</span>
-                <span class="tps-tone tps-tone-@review.Tone" data-testid="tps-case-review">@review.Text</span>
+                @* The generated chip already says "Generated — not reviewed": the review badge is shown only when it says something else. *@
+                @if (C.GeneratedNotReviewed(c) != review.Text) { <span class="tps-tone tps-tone-@review.Tone" data-testid="tps-case-review">@review.Text</span> }
                 <span class="tps-tone tps-tone-@expected.Tone">Expected: @expected.Text</span>
                 @if (c.SourceChanged) { <span class="tps-tone tps-tone-warn">Changed in the evidence</span> }
             </button>
@@ -1203,7 +1204,8 @@
                             @if (c.Generated.Confidence is { } conf) { <span class="tps-muted"> · @ScenarioCandidateTypes.ConfidenceLabel(conf)</span> }</dd>
                     </dl>
                     </details>
-                    @LinkedRequirements(d, c, sid)
+                    @* Audit 2026-11-22: edit first — a tester who can edit sees title, steps and how to verify before requirement links and suggestions. *@
+                    @if (!CanWrite) { @LinkedRequirements(d, c, sid) }
                     @if (CanWrite)
                     {
                         @* Locked while a request is in flight, so a late response can never replace an edit made meanwhile. *@
@@ -1222,6 +1224,8 @@
                                         @ondragover:preventDefault @ondragenter='() => DragEnter($"step:{sid}:{index}")' @ondrop="() => DropStep(d, sid, index)">
                                         <span class="tps-drag" draggable="true" data-drag="@($"step:{sid}:{index}")" title="Drag to reorder the step" aria-hidden="true"
                                               @ondragstart='() => _drag = ("step", sid, index)' @ondragend="DragEnd" data-testid="@($"tps-step-drag-{sid}-{index}")">⋮⋮</span>
+                                        <span class="tps-step-label" aria-hidden="true">Step @(index + 1) · Action</span>
+                                        <span class="tps-step-label tps-step-label-expected" aria-hidden="true">Expected result</span>
                                         <textarea class="tps-input tps-step-text" rows="@C.Rows(c.EffectiveSteps[index])" value="@c.EffectiveSteps[index]" aria-label="Step @(index + 1) action" @onchange="e => Change(P.WithCase(d, sid, x => P.SetStep(x, index, e.Value?.ToString() ?? x.EffectiveSteps[index], null)))" data-testid="@($"tps-step-action-{sid}-{index}")"></textarea>
                                         <textarea class="tps-input tps-step-text tps-step-result" rows="@C.Rows(stepResults[index])" value="@stepResults[index]" placeholder="Needs clarification — expected result not stated" aria-label="Step @(index + 1) expected result" @onchange="e => Change(P.WithCase(d, sid, x => P.SetStep(x, index, null, e.Value?.ToString() ?? string.Empty)))" data-testid="@($"tps-step-expected-{sid}-{index}")"></textarea>
                                         <span class="tps-step-tools">
@@ -1249,6 +1253,7 @@
                         </div>
                         @if (string.IsNullOrWhiteSpace(c.EffectiveObservation)) { <p class="tps-muted tps-small" data-testid="@($"tps-observation-missing-{sid}")">@ScenarioPlanning.NeedsVerificationMethod. Say how the tester sees the result (a screen, a report, a log, a database query an authorised person runs …).</p> }
                         @Checklist(c, sid)
+                        @LinkedRequirements(d, c, sid)
                         @* What reaches the Azure DevOps file is shown above (title, preconditions, steps with their expected results, priority; requirements
                            and Test Data go to the mapping report). The rest is BirkNext's own planning detail: kept, never lost, and collapsed. *@
                         <details class="tps-more" data-testid="tps-more-fields-@sid">

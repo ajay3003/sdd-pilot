@@ -31,95 +31,141 @@
     else
     {
         @if (_ws.Error is { } error) { <p class="mt-alert" role="alert" data-testid="mtd-error">@error</p> }
-        <div class="mt-grid">
-            <section class="mt-card" aria-labelledby="mtd-req-title" data-testid="mtd-requirements">
-                <h2 id="mtd-req-title" class="mt-h">Requirements</h2>
-                @if (_ws.Requirements is not { Count: > 0 } && RequirementLinkPresentation.SpecificationChoiceNeeded(_ws.Specification) is { } choose)
-                {
-                    <p class="mt-muted" data-testid="mtd-req-none" data-reason="choose-specification">@choose Use the lists above, or <a href="specification-explorer" data-testid="mtd-choose-specification">open the Specification Explorer</a>.</p>
-                }
-                else if (_ws.Requirements is null)
-                {
-                    <p class="mt-muted" data-testid="mtd-req-none">@(RequirementLinkPresentation.EmptyReason(_ws.Evidence, null))</p>
-                    <a href="specification-explorer">Open the Specification Explorer</a>
-                }
-                else if (_ws.Requirements.Count == 0)
-                {
-                    <p class="mt-muted" data-testid="mtd-req-none">@(RequirementLinkPresentation.EmptyReason(_ws.Evidence, _ws.Requirements))</p>
-                    <a href="specification-explorer">Open the Specification Explorer</a>
-                }
-                else
-                {
-                    var designed = _trace?.Requirements.ToDictionary(r => r.RequirementId, StringComparer.OrdinalIgnoreCase) ?? [];
-                    <p class="mt-muted" data-testid="mtd-req-summary">@_ws.Requirements.Count requirement@(_ws.Requirements.Count == 1 ? "" : "s") · @designed.Count with test design</p>
-                    @if (_traceError is not null) { <p class="mt-muted" data-testid="mtd-trace-error">Test design state could not be read: @_traceError</p> }
-                    <ul class="mt-list mtd-req-list">
-                        @foreach (var r in _ws.Requirements.Take(_reqLimit))
-                        {
-                            var row = designed.GetValueOrDefault(r.RequirementId);
-                            <li data-testid="mtd-requirement" data-requirement="@r.RequirementId" data-design="@(row is null ? "none" : row.ApprovedCases > 0 ? "approved" : "prepared")">
-                                <strong>@r.RequirementId</strong> <span class="mtd-req-text">@r.Title</span>
-                                <span class="mt-chip @(row is null ? "mt-tone-warn" : row.ApprovedCases > 0 ? "mt-tone-ok" : "mt-tone-info")">@(row is null ? "No test design yet" : row.State)</span>
-                            </li>
-                        }
-                    </ul>
-                    @if (_ws.Requirements.Count > _reqLimit)
-                    {
-                        <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _reqLimit += 25" data-testid="mtd-req-more">Show more (@(_ws.Requirements.Count - _reqLimit) left)</button>
-                    }
-                    <p class="mt-muted"><a href="test-coverage-review">Test Coverage</a> and <a href="artifact-traceability">Requirements Traceability</a> show the same links in detail.</p>
-                }
-            </section>
+        var designedAll = _trace?.Requirements.ToDictionary(r => r.RequirementId, StringComparer.OrdinalIgnoreCase) ?? [];
+        var reqs = _ws.Requirements ?? [];
+        var withDesign = reqs.Count(r => designedAll.ContainsKey(r.RequirementId));
+        var approvedReqs = reqs.Count(r => designedAll.GetValueOrDefault(r.RequirementId) is { ApprovedCases: > 0 });
+        @* At a glance: the four numbers a tester needs before choosing what to test. *@
+        <dl class="mtd-kpis" data-testid="mtd-kpis" aria-label="What needs testing">
+            <div class="mtd-kpi"><dt>Requirements</dt><dd>@reqs.Count</dd></div>
+            <div class="mtd-kpi @(reqs.Count - withDesign > 0 ? "is-warn" : null)"><dt>Without test design</dt><dd>@(reqs.Count - withDesign)</dd></div>
+            <div class="mtd-kpi @(approvedReqs > 0 ? "is-ok" : null)"><dt>With an approved case</dt><dd>@approvedReqs</dd></div>
+            <div class="mtd-kpi"><dt>Scenario suggestions</dt><dd>@(_ws.Discovery?.Candidates.Count.ToString() ?? "—")</dd></div>
+        </dl>
 
-            <section class="mt-card" aria-labelledby="mtd-sug-title" data-testid="mtd-suggestions">
+        <section class="mt-card mtd-suggestions" aria-labelledby="mtd-sug-title" data-testid="mtd-suggestions">
+            <div class="mtd-card-head">
                 <h2 id="mtd-sug-title" class="mt-h">Scenario suggestions</h2>
-                @if (_ws.Discovery is not { } d)
+                @if (_ws.Discovery is null)
                 {
-                    <p class="mt-muted" data-testid="mtd-sug-none">Not discovered yet. Discovery reads only this project's own evidence (specification, source, contracts, journeys, existing tests) and runs only when you ask.</p>
                     <a class="btn btn-primary btn-sm" href="@($"{M.PlanRoute}?area=choose")" data-testid="mtd-discover">Discover scenarios</a>
                 }
                 else
                 {
-                    var clarify = d.Candidates.Count(c => c.NeedsClarification);
-                    <p class="mt-muted" data-testid="mtd-sug-summary">@d.Candidates.Count suggestion@(d.Candidates.Count == 1 ? "" : "s") · discovered @d.DiscoveredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")@(d.SnapshotLabel is { } sl ? $" · {sl}" : "")</p>
-                    @if (d.Candidates.Count > 0)
-                    {
-                        <dl class="mtd-counts">
-                            @foreach (var (label, count) in M.ByType(d)) { <div data-testid="mtd-type"><dt>@label</dt><dd>@count</dd></div> }
-                        </dl>
-                        @if (clarify > 0) { <p data-testid="mtd-clarify"><span class="mt-chip mt-tone-warn">@clarify need clarification</span> <span class="mt-muted">the evidence states no expected result; it is never filled in.</span></p> }
-                        @* The other open points, by kind (same classification as Plan & prepare): an expectation can be clear while a prerequisite or
-                           an observation is still missing. Counted per scenario. *@
-                        var gaps = new[] { BirkNext.TestPlanning.EvidenceGapKind.ContradictoryEvidence, BirkNext.TestPlanning.EvidenceGapKind.ImplementationEvidenceMissing,
-                               BirkNext.TestPlanning.EvidenceGapKind.TestPrerequisiteMissing, BirkNext.TestPlanning.EvidenceGapKind.VerificationMechanismMissing }
-                               .Select(k => (Kind: k, Count: d.Candidates.Count(c => c.Gaps.Any(g => g.Kind == k)))).Where(x => x.Count > 0).ToList();
-                        @if (gaps.Count > 0)
-                        {
-                            <p class="mt-muted" data-testid="mtd-gaps">Also open: @string.Join(" · ", gaps.Select(x => $"{x.Count} {BirkNext.TestPlanning.EvidenceGaps.Label(x.Kind).ToLowerInvariant()}"))</p>
-                        }
-                    }
-                    <p class="mt-muted">Suggestions are candidates found in source and documents, not test cases and not executed tests.</p>
                     <a class="btn btn-primary btn-sm" href="@($"{M.PlanRoute}?area=choose")" data-testid="mtd-choose">Choose scenarios to prepare</a>
                 }
-            </section>
-        </div>
+            </div>
+            @if (_ws.Discovery is not { } d)
+            {
+                <p class="mt-muted" data-testid="mtd-sug-none">Not discovered yet. Discovery reads only this project's own evidence (specification, source, contracts, journeys, existing tests) and runs only when you ask.</p>
+            }
+            else
+            {
+                var clarify = d.Candidates.Count(c => c.NeedsClarification);
+                <p class="mt-muted" data-testid="mtd-sug-summary">@d.Candidates.Count suggestion@(d.Candidates.Count == 1 ? "" : "s") · discovered @d.DiscoveredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")@(d.SnapshotLabel is { } sl ? $" · {sl}" : "") · candidates, not test cases and not executed tests</p>
+                @if (d.Candidates.Count > 0)
+                {
+                    <ul class="mtd-types" aria-label="Suggestions by type">
+                        @foreach (var (label, count) in M.ByType(d)) { <li data-testid="mtd-type"><span>@label</span> <strong>@count</strong></li> }
+                    </ul>
+                    @if (clarify > 0) { <p data-testid="mtd-clarify"><span class="mt-chip mt-tone-warn">@clarify need clarification</span> <span class="mt-muted">the evidence states no expected result; it is never filled in.</span></p> }
+                    @* The other open points, by kind (same classification as Plan & prepare), counted per scenario. *@
+                    var gaps = new[] { BirkNext.TestPlanning.EvidenceGapKind.ContradictoryEvidence, BirkNext.TestPlanning.EvidenceGapKind.ImplementationEvidenceMissing,
+                           BirkNext.TestPlanning.EvidenceGapKind.TestPrerequisiteMissing, BirkNext.TestPlanning.EvidenceGapKind.VerificationMechanismMissing }
+                           .Select(k => (Kind: k, Count: d.Candidates.Count(c => c.Gaps.Any(g => g.Kind == k)))).Where(x => x.Count > 0).ToList();
+                    @if (gaps.Count > 0)
+                    {
+                        <p class="mt-muted" data-testid="mtd-gaps">Also open: @string.Join(" · ", gaps.Select(x => $"{x.Count} {BirkNext.TestPlanning.EvidenceGaps.Label(x.Kind).ToLowerInvariant()}"))</p>
+                    }
+                }
+            }
+        </section>
+
+        <section class="mt-card" aria-labelledby="mtd-req-title" data-testid="mtd-requirements">
+            <div class="mtd-card-head">
+                <h2 id="mtd-req-title" class="mt-h">Requirements</h2>
+                @if (reqs.Count > 0)
+                {
+                    <p class="mt-muted mtd-head-note" data-testid="mtd-req-summary">@reqs.Count requirement@(reqs.Count == 1 ? "" : "s") · @withDesign with test design</p>
+                }
+            </div>
+            @if (_ws.Requirements is not { Count: > 0 } && RequirementLinkPresentation.SpecificationChoiceNeeded(_ws.Specification) is { } choose)
+            {
+                <p class="mt-muted" data-testid="mtd-req-none" data-reason="choose-specification">@choose Use the lists above, or <a href="specification-explorer" data-testid="mtd-choose-specification">open the Specification Explorer</a>.</p>
+            }
+            else if (_ws.Requirements is null)
+            {
+                <p class="mt-muted" data-testid="mtd-req-none">@(RequirementLinkPresentation.EmptyReason(_ws.Evidence, null))</p>
+                <a href="specification-explorer">Open the Specification Explorer</a>
+            }
+            else if (_ws.Requirements.Count == 0)
+            {
+                <p class="mt-muted" data-testid="mtd-req-none">@(RequirementLinkPresentation.EmptyReason(_ws.Evidence, _ws.Requirements))</p>
+                <a href="specification-explorer">Open the Specification Explorer</a>
+            }
+            else
+            {
+                @if (_traceError is not null) { <p class="mt-muted" data-testid="mtd-trace-error">Test design state could not be read: @_traceError</p> }
+                var shown = M.FilterRequirements(_ws.Requirements, designedAll, _reqFilter, _reqQuery);
+                <div class="mtd-toolbar" role="search">
+                    <input type="search" class="mtd-search" placeholder="Search requirements (id or text)" aria-label="Search requirements" value="@_reqQuery"
+                           @oninput="e => { _reqQuery = e.Value?.ToString() ?? string.Empty; _reqLimit = 25; }" data-testid="mtd-req-search" />
+                    <div class="mtd-filters" role="group" aria-label="Show requirements">
+                        @foreach (var (key, label) in M.RequirementFilters)
+                        {
+                            var count = M.FilterRequirements(_ws.Requirements, designedAll, key, string.Empty).Count;
+                            <button type="button" class="mtd-filter" aria-pressed="@(_reqFilter == key ? "true" : "false")" @onclick="() => { _reqFilter = key; _reqLimit = 25; }"
+                                    data-testid="mtd-req-filter" data-filter="@key">@label <span class="mtd-filter-count">@count</span></button>
+                        }
+                    </div>
+                </div>
+                @if (shown.Count == 0)
+                {
+                    <p class="mt-muted" data-testid="mtd-req-empty">No requirement matches. <button type="button" class="mtd-link" @onclick="() => { _reqFilter = M.AllRequirements; _reqQuery = string.Empty; }">Show all</button></p>
+                }
+                <ul class="mtd-req-list">
+                    @foreach (var r in shown.Take(_reqLimit))
+                    {
+                        var row = designedAll.GetValueOrDefault(r.RequirementId);
+                        var open = _expanded.Contains(r.RequirementId);
+                        <li class="mtd-req" data-testid="mtd-requirement" data-requirement="@r.RequirementId" data-design="@(row is null ? "none" : row.ApprovedCases > 0 ? "approved" : "prepared")">
+                            <span class="mtd-req-id">@r.RequirementId</span>
+                            <div class="mtd-req-body">
+                                <p class="mtd-req-text @(open ? "is-open" : null)">@r.Title</p>
+                                @if ((r.Title?.Length ?? 0) > 220)
+                                {
+                                    <button type="button" class="mtd-link" aria-expanded="@(open ? "true" : "false")" @onclick="() => Toggle(r.RequirementId)">@(open ? "Show less" : "Show more")</button>
+                                }
+                            </div>
+                            <span class="mt-chip mtd-req-state @(row is null ? "mt-tone-warn" : row.ApprovedCases > 0 ? "mt-tone-ok" : "mt-tone-info")">@(row is null ? "No test design yet" : row.State)</span>
+                        </li>
+                    }
+                </ul>
+                @if (shown.Count > _reqLimit)
+                {
+                    <button type="button" class="btn btn-secondary btn-sm mtd-more" @onclick="() => _reqLimit += 25" data-testid="mtd-req-more">Show more (@(shown.Count - _reqLimit) left)</button>
+                }
+                <p class="mt-muted mtd-foot"><a href="test-coverage-review">Test Coverage</a> and <a href="artifact-traceability">Requirements Traceability</a> show the same links in detail.</p>
+            }
+        </section>
 
         @if (_ws.Discovery is { } disc)
         {
-            <section class="mt-card" aria-labelledby="mtd-src-title" data-testid="mtd-sources">
-                <h2 id="mtd-src-title" class="mt-h">What the evidence contains</h2>
-                <ul class="mt-list">
+            <details class="mt-card mtd-sources" data-testid="mtd-sources">
+                <summary><h2 class="mt-h" id="mtd-src-title">What the evidence contains</h2>
+                    <span class="mt-muted">@disc.Capabilities.Count(c => c.State == DiscoveryCapabilityState.Available) of @disc.Capabilities.Count sources found something</span></summary>
+                <ul class="mtd-source-grid">
                     @foreach (var c in disc.Capabilities)
                     {
                         <li data-testid="mtd-capability" data-capability="@c.Id" data-state="@c.State">
-                            <strong>@c.Label</strong>
-                            <span class="mt-chip @(c.State == DiscoveryCapabilityState.Available ? "mt-tone-ok" : c.State == DiscoveryCapabilityState.Failed ? "mt-tone-bad" : "mt-tone-muted")">@StateLabel(c.State)</span>
+                            <div class="mtd-source-head"><strong>@c.Label</strong>
+                                <span class="mt-chip @(c.State == DiscoveryCapabilityState.Available ? "mt-tone-ok" : c.State == DiscoveryCapabilityState.Failed ? "mt-tone-bad" : "mt-tone-muted")">@StateLabel(c.State)</span></div>
                             <span class="mt-muted">@c.Detail</span>
                             @if (c.Id == "system-guide" && c.State == DiscoveryCapabilityState.Available) { <a href="system-understanding">Business rules in System Understanding</a> }
                         </li>
                     }
                 </ul>
-            </section>
+            </details>
         }
     }
 </div>
@@ -130,6 +176,11 @@
     private PreparedCaseTraceView? _trace;
     private string? _traceError;
     private int _reqLimit = 25;
+    private string _reqFilter = M.AllRequirements;
+    private string _reqQuery = string.Empty;
+    private readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
+
+    private void Toggle(string id) { if (!_expanded.Remove(id)) _expanded.Add(id); }
     private ICurrentWorkspaceProjection? _projection;
 
     protected override async Task OnInitializedAsync()

@@ -475,3 +475,33 @@ textarea.tps-step-text { resize: vertical; min-height: 2.2rem; }
 .tps-advanced[open] > summary::before, .tps-source-facts[open] > summary::before { transform: rotate(45deg); }
 .tps-advanced > summary:focus-visible, .tps-source-facts > summary:focus-visible { outline: 2px solid var(--clr-focus, #0969da); outline-offset: 2px; border-radius: 4px; }
 .tps-advanced { border-top: 1px solid var(--clr-border-subtle, #eaeef2); padding: 0.55rem 0 0.25rem; }
+
+/* Audit 2026-11-22: what a manual tester acts on first and largest (for manual testing, cases in the plan, need attention); discovered and
+   technical counts are secondary. Cards use the same soft radius and depth as the Manual Testing pages. */
+.tps-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) repeat(2, minmax(0, 0.7fr)); gap: 0.6rem; margin: 0.75rem 0 0.6rem; }
+.tps-summary-item { border-radius: 12px; padding: 0.7rem 0.9rem; background: var(--clr-surface-white, #fff); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); }
+.tps-summary-primary { order: 0; }
+.tps-summary-primary dd { font-size: 1.6rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.tps-summary-primary.is-warn { border-color: var(--clr-warning-border, #fde68a); background: var(--clr-warning-bg-light, #fefce8); }
+.tps-summary-secondary { order: 1; background: var(--clr-surface, #f8fafc); box-shadow: none; }
+.tps-summary-secondary dd { font-size: 1.05rem; color: var(--clr-text-muted, #475569); }
+@media (max-width: 900px) { .tps-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .tps-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tps-summary-primary:first-child { grid-column: 1 / -1; } }
+.tps-context { border-radius: 12px; }
+.tps-actionbar-sticky { border-radius: 12px; backdrop-filter: saturate(1.2) blur(6px); background: color-mix(in srgb, var(--clr-surface-white, #fff) 92%, transparent); }
+
+/* Steps (audit 2026-11-22): numbered, labelled Action / Expected result, side by side on wide screens, stacked on narrow ones. */
+.tps-step-list { list-style: none; padding-left: 0; gap: 0.6rem; }
+.tps-step-list > .tps-step-row { grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) auto; grid-template-areas: "drag la le tools" "drag act exp tools" "chip chip chip chip";
+    gap: 0.2rem 0.6rem; align-items: start; padding: 0.6rem 0.7rem; border: 1px solid var(--clr-border, #e2e8f0); border-radius: 10px; background: var(--clr-surface-white, #fff); }
+.tps-step-list > .tps-step-row > .tps-drag { grid-area: drag; align-self: center; }
+.tps-step-list > .tps-step-row > .tps-step-label { grid-area: la; font-size: 0.75rem; font-weight: 650; color: var(--clr-text-muted, #475569); }
+.tps-step-list > .tps-step-row > .tps-step-label-expected { grid-area: le; }
+.tps-step-list > .tps-step-row > textarea.tps-step-text { grid-area: act; width: 100%; box-sizing: border-box; }
+.tps-step-list > .tps-step-row > textarea.tps-step-text.tps-step-result { grid-area: exp; border-left: 1px solid var(--clr-border-input, #d1d5db); }
+.tps-step-list > .tps-step-row > .tps-step-tools { grid-area: tools; align-self: center; }
+.tps-step-list > .tps-step-row > .tps-chip { grid-area: chip; }
+@media (max-width: 760px) {
+    .tps-step-list > .tps-step-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "la tools" "act act" "le le" "exp exp" "chip chip"; }
+    .tps-step-list > .tps-step-row > .tps-drag { display: none; }
+}

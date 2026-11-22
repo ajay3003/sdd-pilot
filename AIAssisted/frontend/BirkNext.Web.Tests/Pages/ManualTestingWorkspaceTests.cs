@@ -51,6 +51,23 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
     // ── Presentation (pure) ──────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
+    public void Discover_filters_requirements_by_test_design_and_searches_id_and_text()
+    {
+        List<ProjectRequirementOption> reqs = [new("FR-001", "Store the report", "spec.md"), new("FR-002", "Reject a duplicate report", "spec.md"), new("FR-003", "Lock the period", "spec.md")];
+        var designed = new Dictionary<string, PreparedRequirementTrace>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["FR-001"] = new() { RequirementId = "FR-001", ApprovedCases = 1, PreparedCases = 1 },
+            ["FR-002"] = new() { RequirementId = "FR-002", ApprovedCases = 0, PreparedCases = 2 },
+        };
+        M.FilterRequirements(reqs, designed, M.AllRequirements, null).Select(r => r.RequirementId).Should().Equal("FR-001", "FR-002", "FR-003");
+        M.FilterRequirements(reqs, designed, M.WithoutDesign, null).Select(r => r.RequirementId).Should().Equal("FR-003");
+        M.FilterRequirements(reqs, designed, M.PreparedOnly, null).Select(r => r.RequirementId).Should().Equal("FR-002");
+        M.FilterRequirements(reqs, designed, M.WithApproved, null).Select(r => r.RequirementId).Should().Equal("FR-001");
+        M.FilterRequirements(reqs, designed, M.AllRequirements, " report ").Select(r => r.RequirementId).Should().Equal("FR-001", "FR-002");
+        M.FilterRequirements(reqs, designed, M.AllRequirements, "fr-003").Select(r => r.RequirementId).Should().Equal("FR-003");
+    }
+
+    [Fact]
     public void The_next_step_follows_the_stored_records_and_ends_with_the_export()
     {
         M.Facts F(List<TestPlanDraftSummary>? plans = null, ScenarioDiscoveryResult? d = null, string? project = "library") => new(project, "Library", plans ?? [], d, 3);
