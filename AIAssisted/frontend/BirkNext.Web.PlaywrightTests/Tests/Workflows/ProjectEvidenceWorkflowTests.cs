@@ -50,6 +50,10 @@ public sealed class ProjectEvidenceWorkflowTests : IAsyncLifetime
                 await page.GetByTestId("tai-advanced").Locator("summary").ClickAsync();
                 await page.GetByTestId("tai-manual-name").FillAsync(project);
                 await page.GetByTestId("tai-manual-save").ClickAsync();
+                // Replacing an application that already has project evidence asks first (its evidence is archived, never reused silently).
+                var confirm = page.GetByTestId("tai-confirm-yes");
+                try { await confirm.WaitForAsync(new() { Timeout = 5000 }); await confirm.ClickAsync(); }
+                catch (TimeoutException) { }
                 await Assertions.Expect(page.GetByTestId("tai-name")).ToHaveTextAsync(project, new() { Timeout = 30000 });
             }
 
