@@ -186,6 +186,8 @@ public sealed record DiscoveredScenario
     /// <summary>The user story the scenario is written under (specification acceptance scenarios only); null = no story identified. Kept out of
     /// <see cref="Fingerprint"/>: a story move is reported on its own, never as a changed scenario.</summary>
     public BirkNext.TestCoverage.CoverageUserStory? Story { get; init; }
+    /// <summary>The specification's clarifications about this candidate's requirements or story (open, documented, resolved).</summary>
+    public List<BirkNext.TestCoverage.CoverageClarification> Clarifications { get; init; } = [];
     /// <summary>The scenario's number within its story.</summary>
     public int? NumberInStory { get; init; }
     [JsonIgnore] public bool NeedsClarification => ExpectedBehaviour is null;

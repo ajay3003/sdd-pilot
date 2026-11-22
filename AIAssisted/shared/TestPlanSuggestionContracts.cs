@@ -146,6 +146,8 @@ public sealed record TestCaseContent
     public List<CandidateEvidenceRef> Evidence { get; init; } = [];
     public List<CandidateTestAssociation> ExistingTests { get; init; } = [];
     public List<string> OpenQuestions { get; init; } = [];
+    /// <summary>The specification's clarifications about this case's requirements or story, as they were when the case was prepared.</summary>
+    public List<BirkNext.TestCoverage.CoverageClarification> Clarifications { get; init; } = [];
     /// <summary>Required when the evidence states inputs; otherwise Unknown — absence of a description never means "not required".</summary>
     public TestDataNeed TestDataNeed { get; init; }
     public string? Capability { get; init; }

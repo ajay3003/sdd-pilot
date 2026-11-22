@@ -992,6 +992,7 @@
                     @if (c.Steps.Count > 0) { <dt>Steps in the evidence</dt><dd><ol class="tps-plain">@foreach (var s in c.Steps) { <li>@s.Action — <span class="tps-muted">@(s.Expected ?? "expected result not stated")</span></li> }</ol></dd> }
                     @if (c.RequirementIds.Count > 0) { <dt>Requirements</dt><dd>@string.Join(", ", c.RequirementIds)</dd> }
                     @if (c.TestDataNeeds.Count > 0) { <dt>Test Data</dt><dd>@string.Join("; ", c.TestDataNeeds)</dd> }
+                    @if (c.Clarifications.Count > 0) { <dt>Clarifications</dt><dd><ul class="tps-plain" data-testid="tps-candidate-clarifications">@foreach (var k in c.Clarifications) { <li data-testid="tps-clarification" data-state="@k.State"><span class="tps-chip @(k.State == BirkNext.TestCoverage.CoverageClarification.Open ? "tps-chip-warn" : k.State == BirkNext.TestCoverage.CoverageClarification.Resolved ? "tps-chip-ok" : "tps-chip-info")">@ClarificationStates.CaseLabel(k)</span> @k.Question@if ((k.Resolution ?? k.Answer) is { Length: > 0 } answer) { <span> → <strong>@answer</strong></span> }</li> }</ul></dd> }
                     <dt>Existing tests</dt><dd>@(c.ExistingTests.Count == 0 ? "None associated (only explicit references count)" : string.Join("; ", c.ExistingTests.Select(t => $"{t.Name}{(t.Confirmed ? "" : " (candidate — needs review)")}")) + " — source tests, not executed manual tests.")</dd>
                     <dt>Source</dt><dd>@c.SourceCategory · @(c.Area ?? "no area stated") · @c.Engine@(string.IsNullOrEmpty(c.RuleVersion) ? "" : $" · rules {c.RuleVersion}") · @ScenarioCandidateTypes.ConfidenceLabel(c.Confidence)</dd>
                     <dt>Evidence</dt><dd><ul class="tps-plain">@foreach (var e in c.Evidence.Take(8))
@@ -1191,6 +1192,7 @@
                                     </li>
                                 }</ul></dd>
                         }
+                        @if (c.Generated.Clarifications.Count > 0) { <dt>Clarifications</dt><dd><ul class="tps-plain" data-testid="tps-case-clarifications">@foreach (var k in c.Generated.Clarifications) { <li data-testid="tps-clarification" data-state="@k.State"><span class="tps-chip @(k.State == BirkNext.TestCoverage.CoverageClarification.Open ? "tps-chip-warn" : k.State == BirkNext.TestCoverage.CoverageClarification.Resolved ? "tps-chip-ok" : "tps-chip-info")">@ClarificationStates.CaseLabel(k)</span> @k.Question@if ((k.Resolution ?? k.Answer) is { Length: > 0 } answer) { <span> → <strong>@answer</strong></span> }</li> }</ul></dd> }
                         @if (c.Generated.FailureCases.Count > 0) { <dt>Failure cases</dt><dd>@string.Join(" · ", c.Generated.FailureCases)</dd> }
                         @if (c.Generated.ExistingTests.Count > 0) { <dt>Existing tests</dt><dd>@string.Join("; ", c.Generated.ExistingTests.Select(t => t.Name)) <span class="tps-muted">(explicit requirement references)</span></dd> }
                         else if (c.Generated.NamedExistingTests.Count > 0) { <dt>Tests the guide names</dt><dd>@string.Join(" · ", c.Generated.NamedExistingTests) <span class="tps-muted">(names, not verified identities)</span></dd> }

@@ -388,6 +388,19 @@ public sealed record CoverageWorkspaceEvidence
     /// <summary>The user stories of the selected specification (story headings only; in-text references are not stories). Empty for older
     /// clients and for specifications without user stories.</summary>
     public List<CoverageUserStory> Stories { get; init; } = [];
+    /// <summary>The specification's clarifications (## Clarifications Q → A, with the state recorded in BirkNext); superseded ones are not sent.
+    /// Empty for older clients.</summary>
+    public List<CoverageClarification> Clarifications { get; init; } = [];
+}
+
+/// <summary>A clarification of the specification as discovery reads it.</summary>
+/// <param name="State">"Open" (no answer), "Documented" (an answer is written in the specification but nobody confirmed it), or "Resolved"
+/// (resolved in BirkNext with an authoritative reference).</param>
+/// <param name="AffectedIds">The requirement, user story and success-criterion ids the question or answer names (FR-012, US1, SC-003);
+/// empty = the clarification names none and applies to the specification as a whole.</param>
+public sealed record CoverageClarification(string Id, string Question, string? Answer, string State, string? Resolution, List<string> AffectedIds)
+{
+    public const string Open = "Open", Documented = "Documented", Resolved = "Resolved";
 }
 
 /// <summary>A requirement a task of the story names in tasks.md: the task id, its line and text (evidence for a structural story → requirement link).</summary>

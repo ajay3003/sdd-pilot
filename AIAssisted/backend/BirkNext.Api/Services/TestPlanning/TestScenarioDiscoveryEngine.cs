@@ -116,6 +116,8 @@ public static class TestScenarioDiscoveryEngine
                 CanonicalKey = $"scenario:{module}|{s.Id}", Engine = "Specification parser (acceptance scenarios)",
                 OpenQuestions = [.. when is null ? new[] { "The scenario states no action (When): add the steps." } : [], .. then is null ? new[] { "The scenario states no outcome (Then): clarify the expected result." } : []],
             }, projectKey) with { Story = story, NumberInStory = story is null ? null : s.NumberInStory });
+            list[^1] = WithClarifications(list[^1], workspace.Clarifications, [.. s.RequirementIds, s.Id, .. story?.StoryId is { } sid ? new[] { sid } : []],
+                [s.Given, s.When, s.Then]);
         }
         var named = workspace.AcceptanceScenarios.SelectMany(s => s.RequirementIds).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var r in workspace.Requirements.Where(r => !string.IsNullOrWhiteSpace(r.Id) && !named.Contains(r.Id)))
@@ -130,11 +132,36 @@ public static class TestScenarioDiscoveryEngine
                 CanonicalKey = $"requirement:{module}|{r.Id}", Engine = "Specification parser (requirements)",
                 OpenQuestions = ["No acceptance scenario describes how to exercise this requirement: add the steps."],
             }, projectKey));
+            list[^1] = WithClarifications(list[^1], workspace.Clarifications, [r.Id], [r.Text]);
         }
+        var general = workspace.Clarifications.Count(c => c.AffectedIds.Count == 0 && c.State != CoverageClarification.Resolved);
         return new(Capability(Specification, list.Count == 0 ? DiscoveryCapabilityState.NoEvidence : DiscoveryCapabilityState.Available, list.Count,
             list.Count == 0 ? "The selected specification has no acceptance scenarios or requirements the parser recognises."
-                : $"{workspace.AcceptanceScenarios.Count} acceptance scenarios and {workspace.Requirements.Count} requirements{(module is null ? "" : $" ({module})")}.",
+                : $"{workspace.AcceptanceScenarios.Count} acceptance scenarios and {workspace.Requirements.Count} requirements{(module is null ? "" : $" ({module})")}."
+                  + (general == 0 ? "" : $" {general} clarification{(general == 1 ? "" : "s")} of the specification name{(general == 1 ? "s" : "")} no requirement: read {(general == 1 ? "it" : "them")} in Specification Review before testing."),
             "Specification parser"), list);
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex ClarificationMarker =
+        new(@"\[\s*NEEDS CLARIFICATION\s*:?\s*([^\]]*)\]", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// The specification's clarifications about a candidate (any of its requirement, scenario or story ids named by the clarification) and the
+    /// inline [NEEDS CLARIFICATION: …] markers in its own text. An open clarification or marker is an open question (the expected result may
+    /// change); a documented answer and a resolution are shown on the case. A candidate without clarifications keeps its fingerprint unchanged.
+    /// </summary>
+    public static DiscoveredScenario WithClarifications(DiscoveredScenario c, IReadOnlyList<CoverageClarification> clarifications, IReadOnlyList<string> ids,
+        IEnumerable<string?> ownText)
+    {
+        var own = ids.Where(id => !string.IsNullOrWhiteSpace(id)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var about = clarifications.Where(k => k.AffectedIds.Any(own.Contains)).DistinctBy(k => k.Id).ToList();
+        var markers = ownText.Where(t => !string.IsNullOrWhiteSpace(t)).SelectMany(t => ClarificationMarker.Matches(t!).Select(m => m.Groups[1].Value.Trim()))
+            .Distinct(StringComparer.Ordinal).ToList();
+        if (about.Count == 0 && markers.Count == 0) return c;
+        var questions = about.Where(k => k.State == CoverageClarification.Open).Select(k => $"Open clarification in the specification: {Clip(k.Question, 300)}")
+            .Concat(markers.Select(m => m.Length == 0 ? "The specification marks this as NEEDS CLARIFICATION." : $"The specification marks this as NEEDS CLARIFICATION: {Clip(m, 300)}"));
+        var added = c with { Clarifications = about, OpenQuestions = [.. c.OpenQuestions, .. questions] };
+        return added with { Fingerprint = E.Sha(c.Fingerprint + "|" + JsonSerializer.Serialize(new { about, markers }, E.Json)) };
     }
 
     /// <summary>Plain text of a specification fragment for display: list markers, emphasis and code ticks removed (content is never rewritten).</summary>
@@ -570,7 +597,7 @@ public static class TestScenarioDiscoveryEngine
             StageId = AreaSuiteId(group), GroupTitle = group, CandidateType = c.Type, Confidence = c.Confidence,
             Template = [.. c.Template], Evidence = [.. c.Evidence], ExistingTests = [.. c.ExistingTests], OpenQuestions = [.. c.OpenQuestions],
             TestDataNeed = c.TestDataNeeds.Count > 0 ? TestDataNeed.Required : TestDataNeed.Unknown, Capability = c.CapabilityId,
-            Story = c.Story, NumberInStory = c.NumberInStory,
+            Story = c.Story, NumberInStory = c.NumberInStory, Clarifications = [.. c.Clarifications],
         };
     }
 

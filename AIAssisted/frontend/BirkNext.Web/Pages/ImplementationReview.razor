@@ -350,9 +350,7 @@
         return SddSourceAssessment.RequirementImplementation(Linkage, evidence, PackMapped);
     }
 
-    private string QuestionKey(SemanticClarification item) => string.IsNullOrWhiteSpace(item.Id)
-        ? "Q-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(item.Question)))[..12]
-        : item.Id!;
+    private static string QuestionKey(SemanticClarification item) => ClarificationStates.Key(item);
 
     private async Task ResolveQuestionAsync(SemanticClarification item)
     {

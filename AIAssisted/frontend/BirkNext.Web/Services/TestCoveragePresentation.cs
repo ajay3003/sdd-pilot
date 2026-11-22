@@ -52,6 +52,7 @@ public static class TestCoveragePresentation
                 [new CoverageArtifactRef(selected.Id, selected.SourcePath ?? selected.FileName, specification!.HasModules ? selected.Module : null, ArtifactFingerprint.Compute(specification.Content!))],
             SpecificationAvailable = specification is null ? workspace.Specification is not null : selected is not null,
             Requirements = requirements, AcceptanceScenarios = scenarios, Executions = executions, Stories = stories,
+            Clarifications = ClarificationStates.ForDiscovery(spec?.Clarifications ?? [], workspace.SddLifecycle),
         };
     }
 
