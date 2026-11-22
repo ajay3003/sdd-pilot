@@ -28,7 +28,7 @@ public class WorkspacePersistenceController : ControllerBase
         var state = HttpContext.RequestServices.GetService<BirkNext.Api.Services.LocalDataReset.LocalDataResetState>();
         if (state is null || state.Accepts(clientEpoch)) return null;
         _logger.LogWarning("Workspace write refused: client reset epoch {Client} is older than {Current}", clientEpoch, state.Epoch);
-        return Conflict(new { code = "stale-reset-epoch", resetEpoch = state.Epoch, error = "Local data was reset; this browser state is from before the reset and was not saved." });
+        return Conflict(new { code = "stale-reset-epoch", resetEpoch = state.Epoch, keptSettings = state.LastResetKeptSettings, error = "Local data was reset; this browser state is from before the reset and was not saved." });
     }
 
     [HttpPost("save-current")]

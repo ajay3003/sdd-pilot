@@ -10,7 +10,7 @@
 <div class="drp" data-testid="data-reset">
     <div class="drp-intro">
         <p class="drp-lead">Manage local BirkNext data.</p>
-        <p class="drp-muted" data-testid="reset-summary">Remove all local data, all except protected Test Data, or only Delivery Management data. Installation settings, the database schema and external systems are never affected.</p>
+        <p class="drp-muted" data-testid="reset-summary">Remove all local data, all except protected Test Data, all project data while keeping settings, or only Delivery Management data. Installation settings, the database schema and external systems are never affected.</p>
         @if (!Allowed && !string.IsNullOrWhiteSpace(NotAllowedReason)) { <p class="drp-reason" data-testid="reset-not-allowed">@NotAllowedReason</p> }
     </div>
     <button type="button" class="drp-open" data-testid="reset-open" disabled="@(!Allowed || Disabled || _busy)" @onclick="Open">Reset data…</button>
@@ -136,6 +136,7 @@
     [
         new(DataResetMode.FullIncludingProtected, "Reset everything", "All resettable local data, including protected Test Data and canonical fixtures.", "critical"),
         new(DataResetMode.FullPreserveProtected, "Reset everything except protected data", "All project, workspace and review data. Protected Test Data keeps its current values.", "high"),
+        new(DataResetMode.ProjectDataKeepSettings, "Reset project data, keep settings", "All project, workspace and review data. Target Environments, integrations, Git Sources and other settings stay, and so does protected Test Data.", "high"),
         new(DataResetMode.DeliveryManagement, "Reset Delivery Management only", "Delivery Overview and Delivery Reports data, including saved report history.", "moderate"),
     ];
 
@@ -167,6 +168,7 @@
     {
         DataResetMode.FullIncludingProtected => "Reset everything",
         DataResetMode.FullPreserveProtected => "Reset all except protected",
+        DataResetMode.ProjectDataKeepSettings => "Reset project data",
         DataResetMode.DeliveryManagement => "Reset Delivery Management",
         _ => "Reset",
     };
@@ -217,7 +219,7 @@
                 // The backend committed the reset: adopt its epoch first, so nothing this tab still holds can be saved again, then clear every
                 // frontend store and land on the clean Dashboard.
                 (Services.GetService(typeof(LocalDataResetEpoch)) as LocalDataResetEpoch)?.Observe(result.ResetEpoch);
-                if (runtime is not null) await runtime.ClearFrontendRuntimeStateAsync();
+                if (runtime is not null) await runtime.ClearFrontendRuntimeStateAsync(keepSettings: mode == DataResetMode.ProjectDataKeepSettings);
                 var warned = result.Status != "Completed" || (runtime?.LastWarnings.Count ?? 0) > 0;
                 Navigation.NavigateTo(warned ? "dashboard?reset=warnings" : "dashboard?reset=done");
                 return;

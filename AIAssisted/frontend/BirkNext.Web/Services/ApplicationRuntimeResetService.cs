@@ -64,8 +64,13 @@ public sealed class ApplicationRuntimeResetService
     /// <summary>What could not be cleared in the browser (empty on the normal path). A reload then finishes the job.</summary>
     public List<string> LastWarnings { get; } = [];
 
+    /// <summary>The Target Environment settings key: kept by "Reset project data, keep settings" (only the project binding inside is cleared).</summary>
+    public const string SettingsStorageKey = "birknext:frontend-analysis-settings";
+
     /// <summary>Clears all frontend project/workspace state. Steps are independent: one failing never leaves the others undone.</summary>
-    public async Task ClearFrontendRuntimeStateAsync()
+    /// <param name="keepSettings">"Reset project data, keep settings": Target Environments stay (their project binding is cleared) instead of
+    /// returning to the generic seed.</param>
+    public async Task ClearFrontendRuntimeStateAsync(bool keepSettings = false)
     {
         LastWarnings.Clear();
         T? Get<T>() where T : class => _services?.GetService(typeof(T)) as T;
@@ -99,12 +104,15 @@ public sealed class ApplicationRuntimeResetService
         Get<LocalHttpsProxyRuntime>()?.ResetForLocalDataReset();
         await Step("browser storage", async () =>
         {
-            if (_js is not null) await _js.InvokeAsync<string[]>("birkNextStorage.removeProjectState", new object?[] { ProjectStorageKeys.ToArray(), ProjectStoragePrefixes.ToArray() });
+            var keys = keepSettings ? ProjectStorageKeys.Where(k => k != SettingsStorageKey).ToArray() : ProjectStorageKeys.ToArray();
+            if (_js is not null) await _js.InvokeAsync<string[]>("birkNextStorage.removeProjectState", new object?[] { keys, ProjectStoragePrefixes.ToArray() });
         });
         // Target Environments go back to the generic seed (no project URL, integrations, thresholds, authentication or expectations).
         await Step("Target Environments", async () =>
         {
-            if (_js is not null && Get<IFrontendAnalysisSettingsService>() is { } settings) await settings.ResetForLocalDataResetAsync(_js);
+            if (_js is null || Get<IFrontendAnalysisSettingsService>() is not { } settings) return;
+            if (keepSettings) await settings.ClearProjectBindingsForLocalDataResetAsync(_js);
+            else await settings.ResetForLocalDataResetAsync(_js);
         });
 
         // Derived views: ReviewContext and the sidebar applicability badges re-evaluate from the empty state.

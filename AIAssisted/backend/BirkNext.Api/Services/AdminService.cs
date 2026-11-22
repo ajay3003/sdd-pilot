@@ -612,7 +612,10 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
             : "Microsoft sign-in settings saved and applied. No restart is needed.");
     }
 
-    public async Task<(bool Success, string Message, int DeletedRows, DateTimeOffset? ResetAtUtc)> ResetLocalDatabaseAsync()
+    public Task<(bool Success, string Message, int DeletedRows, DateTimeOffset? ResetAtUtc)> ResetLocalDatabaseAsync() => ResetLocalDatabaseAsync([]);
+
+    /// <summary>The local database reset, keeping the tables of <paramref name="keepEntityTypes"/> ("Reset project data, keep settings").</summary>
+    public async Task<(bool Success, string Message, int DeletedRows, DateTimeOffset? ResetAtUtc)> ResetLocalDatabaseAsync(IReadOnlyCollection<Type> keepEntityTypes)
     {
         var dbMode = _config["DatabaseSettings:Mode"] ?? "Unknown";
         if (!_config.GetValue<bool>("AdminSettings:AllowLocalDatabaseReset", true))
@@ -628,9 +631,15 @@ public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseR
         try
         {
             await using var transaction = await _db.Database.BeginTransactionAsync();
+            var kept = keepEntityTypes.Select(type => _db.Model.FindEntityType(type)?.GetTableName()).OfType<string>().ToHashSet(StringComparer.OrdinalIgnoreCase);
             var tables = _db.Model.GetRelationalModel().Tables
-                .Where(t => !PreservedConfigurationTables.Contains(t.Name))
+                .Where(t => !PreservedConfigurationTables.Contains(t.Name) && !kept.Contains(t.Name))
                 .ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
+            // A kept settings table must not depend on a table that is emptied (the DELETE would fail half way): refuse before deleting anything.
+            if (_db.Model.GetRelationalModel().Tables.Where(t => kept.Contains(t.Name))
+                    .SelectMany(t => t.ForeignKeyConstraints.Select(fk => (t.Name, Principal: fk.PrincipalTable.Name)))
+                    .FirstOrDefault(x => tables.ContainsKey(x.Principal)) is { Name: not null } dependency)
+                return (false, $"Reset refused: the kept settings table {dependency.Name} depends on {dependency.Principal}, which would be emptied. Nothing was deleted.", 0, null);
 
             // Refuse to remove records while a tracked CDC or performance operation is active.
             var activeCdc = await _db.ActiveCdcRuns.AnyAsync(r => r.Status.ToLower() == "running")

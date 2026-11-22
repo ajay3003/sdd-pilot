@@ -76,6 +76,27 @@ public sealed class AdminServiceResetDatabaseTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Reset_project_data_keep_settings_empties_project_tables_and_keeps_the_settings_tables()
+    {
+        await SeedAsync();
+        await using (var seed = Db())
+        {
+            seed.ExecutionRetentionSettings.Add(new BirkNext.Api.Models.ExecutionRetentionSettingsRow { Id = 1, Mode = "Days", Days = 30, UpdatedAt = DateTimeOffset.UtcNow, UpdatedBy = "Tester" });
+            seed.AdoExportProfiles.Add(new BirkNext.Api.Models.AdoExportProfileRecord { ProjectKey = "m2lb", ProfileJson = "{}", UpdatedBy = "Tester", UpdatedAt = DateTimeOffset.UtcNow });
+            await seed.SaveChangesAsync();
+        }
+        await using var db = Db();
+
+        var (success, message, _, _) = await Service(db).ResetLocalDatabaseAsync(BirkNext.Api.Services.LocalDataReset.LocalDataResetCoordinator.SettingsEntityTypes);
+
+        success.Should().BeTrue(message);
+        (await CountAsync("integration_suites")).Should().Be(0, "project data is removed");
+        (await CountAsync("integration_suite_runs")).Should().Be(0);
+        (await CountAsync("execution_retention_settings")).Should().Be(1, "settings are kept");
+        (await CountAsync("ado_export_profiles")).Should().Be(1);
+    }
+
+    [Fact]
     public async Task A_model_table_missing_in_the_database_is_refused_before_anything_is_deleted()
     {
         // The reported failure: the build's model is ahead of the database (42P01 relation "integration_suites" does not exist).

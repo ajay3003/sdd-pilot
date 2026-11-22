@@ -105,7 +105,7 @@ else
         await InvokeAsync(async () =>
         {
             await RuntimeReset.PauseAutoSaveForResetAsync();
-            try { await RuntimeReset.ClearFrontendRuntimeStateAsync(); }
+            try { await RuntimeReset.ClearFrontendRuntimeStateAsync(keepSettings: _resetEpoch?.LastResetKeptSettings == true); }
             finally { RuntimeReset.ResumeAutoSaveAfterReset(); }
             Navigation.NavigateTo("dashboard?reset=stale");
         });

@@ -54,6 +54,20 @@ public sealed class DataResetService(ILocalDatabaseReset guard, LocalDataResetCo
                     "The built-in Test Data defaults stay removed, also after a restart. Bring them back with their product values in Test Data → Restore built-in defaults. Canonical fixtures such as skolenaervaer-valid-report are removed and must be created again."],
                 Counts = counts, Allowed = refusal is null, NotAllowedReason = refusal,
             },
+            DataResetMode.ProjectDataKeepSettings => new DataResetPlan
+            {
+                Mode = mode, Title = "Reset project data, keep settings",
+                Summary = "Removes all project and workspace data and review history, like Reset everything except protected data, but keeps system settings: Target Environments, integrations, Altinn settings, Git Sources and other configuration.",
+                Removed = [.. LocalDataResetCoordinator.Cleared.Where(c => !c.StartsWith("Target-environment integration catalogs", StringComparison.Ordinal)),
+                    "Target-environment results: contracts, GraphQL schemas, message flows and applied-template evidence (the integrations themselves are kept)",
+                    "Each Target Environment's link to the deleted project (Project evidence and its archived links)"],
+                Preserved = [.. LocalDataResetCoordinator.SettingsKept,
+                    "Protected Test Data defaults and canonical XML fixtures — current values and content, same stable ids",
+                    LocalDataResetCoordinator.SharedTestAreasKept, installation,
+                    "The highest synthetic CDC key and reserved identities", "Data in external systems"],
+                Notes = ["Performance test definitions, Critical E2E flows and Integration Journeys are project content and are removed."],
+                Counts = counts, Allowed = refusal is null, NotAllowedReason = refusal,
+            },
             DataResetMode.FullPreserveProtected => new DataResetPlan
             {
                 Mode = mode, Title = "Reset everything except protected data",
@@ -104,7 +118,7 @@ public sealed class DataResetService(ILocalDatabaseReset guard, LocalDataResetCo
                         Message = "Reset failed. Delivery Management data was not changed. See server logs for details." };
                 }
             }
-            var result = await coordinator.ResetAsync(request.Mode == DataResetMode.FullIncludingProtected, ct);
+            var result = await coordinator.ResetAsync(request.Mode == DataResetMode.FullIncludingProtected, keepSettings: request.Mode == DataResetMode.ProjectDataKeepSettings, ct);
             return new()
             {
                 Mode = request.Mode,

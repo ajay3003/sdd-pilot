@@ -42,7 +42,7 @@ public sealed class DataResetPanelTests : BunitContext
     private static bool RunEnabled(IRenderedComponent<DataResetPanel> cut) => !cut.Find("[data-testid=reset-run]").HasAttribute("disabled");
 
     [Fact]
-    public void One_entry_point_opens_three_scopes_with_nothing_selected()
+    public void One_entry_point_opens_four_scopes_with_nothing_selected()
     {
         var cut = RenderPanel();
         cut.FindAll("button").Should().ContainSingle(b => b.TextContent.Contains("Reset"), "Reset Local Data and Reset Test Data are replaced by one action");
@@ -53,7 +53,8 @@ public sealed class DataResetPanelTests : BunitContext
         cut.FindAll("[data-testid^=reset-scope-]").Select(e => e.TextContent).Should().SatisfyRespectively(
             first => first.Should().Contain("Reset everything").And.Contain("including protected Test Data"),
             second => second.Should().Contain("Reset everything except protected data"),
-            third => third.Should().Contain("Reset Delivery Management only"));
+            third => third.Should().Contain("Reset project data, keep settings").And.Contain("Git Sources"),
+            fourth => fourth.Should().Contain("Reset Delivery Management only"));
         cut.FindAll("input[type=radio]").Should().OnlyContain(r => !r.HasAttribute("checked"), "no scope is selected by default");
         cut.FindAll("[data-testid=reset-plan]").Should().BeEmpty();
         RunEnabled(cut).Should().BeFalse();

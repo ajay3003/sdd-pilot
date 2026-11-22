@@ -68,6 +68,30 @@ public sealed class LocalDataResetFrontendTests
     }
 
     [Fact]
+    public async Task Reset_project_data_keep_settings_keeps_Target_Environments_and_clears_only_their_project_link()
+    {
+        var (provider, js) = Build();
+        var settings = provider.GetRequiredService<FrontendAnalysisSettingsService>();
+        await settings.LoadAsync(js);
+        settings.Settings.Profiles.Add(new FrontendAnalysisProfile
+        {
+            Id = "m2lb-dev", Name = "M2LB DEV", TargetUrl = "https://m2lb-dev.example.no",
+            Project = new EnvironmentProject { ProjectImportId = "import:abc", ProjectName = "M2LB" }, ArchivedProjects = [new EnvironmentProject { ProjectName = "Old" }],
+        });
+        settings.Settings.ActiveProfileId = "m2lb-dev";
+
+        await provider.GetRequiredService<ApplicationRuntimeResetService>().ClearFrontendRuntimeStateAsync(keepSettings: true);
+
+        var kept = settings.Settings.Profiles.Single(p => p.Id == "m2lb-dev");
+        (kept.Name, kept.TargetUrl).Should().Be(("M2LB DEV", "https://m2lb-dev.example.no"), "the settings stay, with the same id (Git Sources and integrations follow it)");
+        settings.Settings.ActiveProfileId.Should().Be("m2lb-dev");
+        kept.Project.Should().BeNull("the imported project it pointed at was deleted");
+        kept.ArchivedProjects.Should().BeNull();
+        var remove = js.Calls.Single(c => c.Identifier == "birkNextStorage.removeProjectState");
+        ((string[])remove.Args![0]!).Should().NotContain("birknext:frontend-analysis-settings").And.Contain(["birknext:endpoint-discovery", "birknext:integration-target-registry"]);
+    }
+
+    [Fact]
     public async Task Reset_LeavesNoApprovedSecurityConfigurationFromThePreviousProject()
     {
         var (provider, _) = Build();
@@ -171,6 +195,24 @@ public sealed class LocalDataResetFrontendTests
         handler.Bodies.Single().Should().Contain("\"resetEpoch\":2");
         (await notified.Task.WaitAsync(TimeSpan.FromSeconds(5))).Should().Be(3);
         epoch.Value.Should().Be(3);
+        epoch.LastResetKeptSettings.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_stale_tab_learns_that_the_reset_kept_settings()
+    {
+        var epoch = new LocalDataResetEpoch();
+        epoch.Observe(2);
+        var notified = new TaskCompletionSource<int>();
+        epoch.StaleDetected += e => { notified.TrySetResult(e); return Task.CompletedTask; };
+        var workspace = new WorkspaceArtifactRepository { CurrentProject = "m2lb" };
+        var service = new WorkspacePersistenceApiService(new HttpClient(new ConflictHandler("""{"code":"stale-reset-epoch","resetEpoch":3,"keptSettings":true}""")) { BaseAddress = new Uri("http://localhost/") },
+            NullLogger<WorkspacePersistenceApiService>.Instance, workspace, epoch);
+
+        await service.AutoSaveAsync();
+
+        (await notified.Task.WaitAsync(TimeSpan.FromSeconds(5))).Should().Be(3);
+        epoch.LastResetKeptSettings.Should().BeTrue("the layout then clears project state but keeps this browser's Target Environments");
     }
 
     [Fact]

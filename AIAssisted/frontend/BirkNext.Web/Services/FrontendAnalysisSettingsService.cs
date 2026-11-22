@@ -41,6 +41,8 @@ public interface IFrontendAnalysisSettingsService
     /// <summary>Local data reset: replaces every Target Environment with the generic seed profiles (no project URLs, integrations,
     /// thresholds, authentication or expectations) and forgets detection snapshots.</summary>
     Task ResetForLocalDataResetAsync(IJSRuntime js) => Task.CompletedTask;
+    /// <summary>"Reset project data, keep settings": every Target Environment keeps its settings; only its link to the deleted project goes.</summary>
+    Task ClearProjectBindingsForLocalDataResetAsync(IJSRuntime js) => Task.CompletedTask;
 
     FrontendAnalysisProfile CreateProfile(string name, FrontendEnvironmentType environmentType);
     void                    DeleteProfile(string profileId);
@@ -252,6 +254,18 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
         // https://m2lbdev.bufetat.no — never a built-in default); everything else returns to the generic seed.
         _settings = BuildSeedSettings(ConfiguredDevelopmentUrl(_settings));
         IsLoaded = true;
+        _detectionSnapshots = new(StringComparer.Ordinal);
+        await SaveCoreAsync(js, merge: false); // a reset replaces whatever any tab stored; it is never merged
+    }
+
+    public async Task ClearProjectBindingsForLocalDataResetAsync(IJSRuntime js)
+    {
+        if (!IsLoaded) await LoadAsync(js);
+        foreach (var profile in _settings.Profiles)
+        {
+            profile.Project = null;          // the imported project and its evidence bindings were deleted
+            profile.ArchivedProjects = null;
+        }
         _detectionSnapshots = new(StringComparer.Ordinal);
         await SaveCoreAsync(js, merge: false); // a reset replaces whatever any tab stored; it is never merged
     }

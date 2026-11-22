@@ -8,11 +8,13 @@ namespace BirkNext.Maintenance;
 /// <item><see cref="FullIncludingProtected"/> — every resettable local application data domain, including protected and canonical Test Data.</item>
 /// <item><see cref="FullPreserveProtected"/> — the same, but protected Test Data defaults and canonical fixtures survive with their current values.</item>
 /// <item><see cref="DeliveryManagement"/> — only Delivery Management (Delivery Overview / Delivery Reports) data.</item>
+/// <item><see cref="ProjectDataKeepSettings"/> — like <see cref="FullPreserveProtected"/>, but system settings survive too: Target Environments
+/// (without their project binding), integrations, Altinn settings, Azure DevOps export preferences, retention, Setup Library, Parquet rule sets.</item>
 /// </list>
 /// Never the database schema, installation or provider settings, the Sample Project catalog, files outside BirkNext, or external systems.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum DataResetMode { FullIncludingProtected, FullPreserveProtected, DeliveryManagement }
+public enum DataResetMode { FullIncludingProtected, FullPreserveProtected, DeliveryManagement, ProjectDataKeepSettings }
 
 /// <summary>The reviewable impact of a reset scope, shown before anything is deleted.</summary>
 public sealed record DataResetPlan

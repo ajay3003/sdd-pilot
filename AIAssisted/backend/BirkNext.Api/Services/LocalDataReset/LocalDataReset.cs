@@ -29,6 +29,11 @@ public interface ILocalDatabaseReset
 {
     Task<(bool Success, string Message, int DeletedRows, DateTimeOffset? ResetAtUtc)> ResetLocalDatabaseAsync();
 
+    /// <summary>The same reset, keeping the tables of <paramref name="keepEntityTypes"/> (system settings). Refuses — deleting nothing — when a kept
+    /// table depends on a table that would be emptied.</summary>
+    Task<(bool Success, string Message, int DeletedRows, DateTimeOffset? ResetAtUtc)> ResetLocalDatabaseAsync(IReadOnlyCollection<Type> keepEntityTypes) =>
+        keepEntityTypes.Count == 0 ? ResetLocalDatabaseAsync() : Task.FromResult((false, "Reset refused: keeping settings is not supported here.", 0, (DateTimeOffset?)null));
+
     /// <summary>Why no reset may run here (policy, non-local database, production host), or null when it may. Every reset scope checks it.</summary>
     string? ResetRefusal() => null;
 }
@@ -40,7 +45,8 @@ public sealed class LocalDataResetState
     private readonly object _gate = new();
     private Snapshot _state;
 
-    public sealed record Snapshot(int Epoch, DateTimeOffset? LastResetAt, Dictionary<string, int> CdcPersonPkFloors, Dictionary<string, long>? SyntheticIdentityFloors = null);
+    public sealed record Snapshot(int Epoch, DateTimeOffset? LastResetAt, Dictionary<string, int> CdcPersonPkFloors, Dictionary<string, long>? SyntheticIdentityFloors = null,
+        bool LastResetKeptSettings = false);
 
     public LocalDataResetState(IHostEnvironment environment, IConfiguration configuration)
         : this(configuration["LocalDataReset:StatePath"] is { Length: > 0 } configured ? configured : System.IO.Path.Combine(BirkNext.Api.Services.AppDataLocation.Root(environment), "local-data-reset.json")) { }
@@ -53,6 +59,8 @@ public sealed class LocalDataResetState
 
     public int Epoch { get { lock (_gate) return _state.Epoch; } }
     public DateTimeOffset? LastResetAt { get { lock (_gate) return _state.LastResetAt; } }
+    /// <summary>The last reset kept system settings ("Reset project data, keep settings"): a browser tab from before it keeps its Target Environments.</summary>
+    public bool LastResetKeptSettings { get { lock (_gate) return _state.LastResetKeptSettings; } }
     public int? CdcPersonPkFloor(string environmentId) { lock (_gate) return _state.CdcPersonPkFloors.TryGetValue(environmentId, out var f) ? f : null; }
     /// <summary>Highest synthetic identity value already handed out for the environment and scope before the last reset (generic Active Event ledger).</summary>
     public long? SyntheticIdentityFloor(string environmentId, string scope) { lock (_gate) return _state.SyntheticIdentityFloors?.TryGetValue(IdentityKey(environmentId, scope), out var f) == true ? f : null; }
@@ -62,7 +70,7 @@ public sealed class LocalDataResetState
     public bool Accepts(int? clientEpoch) => clientEpoch is { } e ? e == Epoch : Epoch == 0;
 
     /// <summary>Advances the epoch and records the CDC key floors. Throws when the file cannot be written (the caller reports it).</summary>
-    public int Advance(DateTimeOffset at, IReadOnlyDictionary<string, int> cdcFloors, IReadOnlyDictionary<string, long>? identityFloors = null)
+    public int Advance(DateTimeOffset at, IReadOnlyDictionary<string, int> cdcFloors, IReadOnlyDictionary<string, long>? identityFloors = null, bool keptSettings = false)
     {
         lock (_gate)
         {
@@ -70,7 +78,7 @@ public sealed class LocalDataResetState
             foreach (var (env, pk) in cdcFloors) floors[env] = floors.TryGetValue(env, out var old) ? Math.Max(old, pk) : pk;
             var identities = new Dictionary<string, long>(_state.SyntheticIdentityFloors ?? [], StringComparer.Ordinal);
             foreach (var (key, value) in identityFloors ?? new Dictionary<string, long>()) identities[key] = identities.TryGetValue(key, out var old) ? Math.Max(old, value) : value;
-            var next = new Snapshot(_state.Epoch + 1, at, floors, identities);
+            var next = new Snapshot(_state.Epoch + 1, at, floors, identities, keptSettings);
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
             var temp = _path + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(next, Json));
@@ -151,6 +159,29 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
     public static readonly IReadOnlyList<string> ClearedOnlyWhenResettingEverything =
         [.. ResettableSchemas.All.Where(s => s.OnlyWhenResettingEverything).Select(s => s.Description)];
 
+    /// <summary>
+    /// System settings "Reset project data, keep settings" keeps (2026-11-22): configuration a tester sets up once per installation or Target
+    /// Environment, not project results. Each type is one table of the application database; none depends on a table the reset empties.
+    /// </summary>
+    public static readonly IReadOnlyList<Type> SettingsEntityTypes =
+    [
+        typeof(BirkNext.Api.Models.IntegrationPlatformRecord), typeof(BirkNext.Api.Models.IntegrationDefinitionRecord),
+        typeof(BirkNext.Api.Models.IntegrationEnvironmentStateRecord), typeof(BirkNext.Api.Models.ExternalIntegrationRecord),
+        typeof(BirkNext.Api.Models.AltinnEnvironmentSettingsRecord), typeof(BirkNext.Api.Models.AdoExportProfileRecord),
+        typeof(BirkNext.Api.Models.ExecutionRetentionSettingsRow), typeof(BirkNext.Api.Models.SetupLibraryItemRecord),
+        typeof(BirkNext.Api.Models.SetupLibraryVersionRecord), typeof(BirkNext.Api.Models.ParquetRuleSetRecord),
+        typeof(BirkNext.Api.Models.SourceRepositoryAssociationRecord),
+    ];
+
+    /// <summary>What "Reset project data, keep settings" keeps beyond the ordinary preserved list, in the tester's words.</summary>
+    public static readonly IReadOnlyList<string> SettingsKept =
+    [
+        "Target Environments: names, URLs, authentication setup, thresholds, security expectations and feature settings (their link to the deleted project is cleared)",
+        "Integrations per Target Environment (platforms, integrations, external systems) and Altinn settings",
+        "Azure DevOps export preferences, the execution evidence retention setting, the Setup Library and approved Parquet rule sets",
+        "Remembered \"same repository\" decisions; Git Sources and their cloned copies",
+    ];
+
     /// <summary>Why shared test areas survive an ordinary reset (listed as preserved; removed only by "Reset everything").</summary>
     public const string SharedTestAreasKept =
         "Shared test areas (scopes) with their revisions, approvals and review history: they hold reviewed test boundaries, so only Reset everything removes them";
@@ -170,9 +201,12 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
 
     public Task<LocalDataResetResult> ResetAsync(CancellationToken ct = default) => ResetAsync(includeProtected: false, ct);
 
+    public Task<LocalDataResetResult> ResetAsync(bool includeProtected, CancellationToken ct = default) => ResetAsync(includeProtected, keepSettings: false, ct);
+
     /// <param name="includeProtected">True only for the explicitly confirmed "Reset everything" scope: protected Test Data defaults return to their
     /// product values and canonical fixtures are deleted. Otherwise protected Test Data survives with its current values.</param>
-    public async Task<LocalDataResetResult> ResetAsync(bool includeProtected, CancellationToken ct = default)
+    /// <param name="keepSettings">"Reset project data, keep settings": the <see cref="SettingsEntityTypes"/> tables are not emptied.</param>
+    public async Task<LocalDataResetResult> ResetAsync(bool includeProtected, bool keepSettings, CancellationToken ct = default)
     {
         if (!await Gate.WaitAsync(0, ct)) return new() { Status = "Blocked", Message = "A local data reset is already in progress." };
         try
@@ -184,14 +218,14 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
             var testDataBefore = services.GetService<TestDataLifecycleService>() is { } preview ? await TryAsync(() => preview.PreviewResetAsync(ct)) : null;
             var floors = await CdcFloorsAsync(ct);
             var identityFloors = await SyntheticIdentityFloorsAsync(ct);
-            var (success, message, deleted, at) = await admin.ResetLocalDatabaseAsync();
+            var (success, message, deleted, at) = keepSettings ? await admin.ResetLocalDatabaseAsync(SettingsEntityTypes) : await admin.ResetLocalDatabaseAsync();
             if (!success)
                 return new() { Status = message.StartsWith("Reset failed", StringComparison.Ordinal) ? "Failed" : message.StartsWith("Reset blocked", StringComparison.Ordinal) ? "Blocked" : "Refused", Message = message, PreservedDomains = [.. Preserved] };
 
             var warnings = new List<string>();
             var domains = new List<BirkNext.Maintenance.DataResetDomainResult> { new("Application database", "Removed", $"{deleted} records") };
             var epoch = state.Epoch;
-            try { epoch = state.Advance(at ?? DateTimeOffset.UtcNow, floors, identityFloors); }
+            try { epoch = state.Advance(at ?? DateTimeOffset.UtcNow, floors, identityFloors, keepSettings); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 logger.LogError(ex, "Local data reset: the reset epoch could not be saved");
@@ -265,7 +299,8 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
                     + (testData is { } td ? $" Test Data: {td.ProtectedDefaultsPreserved} protected default(s) preserved with their current values, {td.AssetsRemoved} asset(s) removed ({td.GeneratedFixturesRemoved} generated fixture(s))." : ""),
                 ResetAt = at, ResetEpoch = epoch, DatabaseCleared = true, DeletedRows = deleted, BackendStateCleared = warnings.Count == 0,
                 ClearedDomains = [.. Cleared, .. (includeProtected ? ClearedOnlyWhenResettingEverything : [])],
-                PreservedDomains = [.. (includeProtected ? Preserved.Where(p => !p.StartsWith("Protected Test Data", StringComparison.Ordinal) && p != SharedTestAreasKept) : Preserved)],
+                PreservedDomains = [.. (includeProtected ? Preserved.Where(p => !p.StartsWith("Protected Test Data", StringComparison.Ordinal) && p != SharedTestAreasKept) : Preserved),
+                    .. (keepSettings ? SettingsKept : [])],
                 Warnings = warnings, TestData = testData, Domains = domains,
             };
         }

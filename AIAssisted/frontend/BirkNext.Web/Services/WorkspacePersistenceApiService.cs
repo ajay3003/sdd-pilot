@@ -15,13 +15,16 @@ namespace BirkNext.Web.Services;
 public sealed class LocalDataResetEpoch
 {
     public int? Value { get; private set; }
+    /// <summary>The last reset kept system settings: a stale tab clears project state but keeps its Target Environments.</summary>
+    public bool LastResetKeptSettings { get; private set; }
     public event Func<int, Task>? StaleDetected;
     public void Observe(int epoch) => Value = epoch;
     /// <summary>Records the newer epoch and notifies listeners WITHOUT awaiting them: the refusal is detected inside an auto-save that holds the
     /// save gate, and the listener pauses auto-save (which waits for that gate), so awaiting here would deadlock.</summary>
-    internal Task RaiseStaleAsync(int epoch)
+    internal Task RaiseStaleAsync(int epoch, bool keptSettings = false)
     {
         Value = epoch;
+        LastResetKeptSettings = keptSettings;
         if (StaleDetected is { } handler) _ = Task.Run(() => handler(epoch));
         return Task.CompletedTask;
     }
@@ -185,8 +188,9 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
             using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
             if (!doc.RootElement.TryGetProperty("code", out var code) || code.GetString() != "stale-reset-epoch") return false;
             var epoch = doc.RootElement.TryGetProperty("resetEpoch", out var e) && e.TryGetInt32(out var v) ? v : 0;
+            var keptSettings = doc.RootElement.TryGetProperty("keptSettings", out var k) && k.ValueKind == JsonValueKind.True;
             _logger.LogWarning("Workspace write refused: local data was reset (epoch {Epoch}); clearing this browser's leftover state", epoch);
-            if (_epoch is not null) await _epoch.RaiseStaleAsync(epoch);
+            if (_epoch is not null) await _epoch.RaiseStaleAsync(epoch, keptSettings);
             return true;
         }
         catch (JsonException) { return false; }
