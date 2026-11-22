@@ -37,7 +37,7 @@
             <h1 class="pt-title">Performance Test Review</h1>
             <p class="ptc-lead" data-testid="pt-intro">Measure how configured HTTP/API targets behave under controlled load and verify latency, throughput and errors against explicit expectations. <a class="ug-learn-more" href="/user-guide#performance-test-review" data-testid="pt-learn-more">Learn more</a></p>
         </div>
-        @if (_loaded && _profile is not null && _overview is not null)
+        @if (_loaded && _profile is not null && _overview is not null && !NoDefinitionYet)
         {
             <div class="ptc-header-side">
                 <span class="ptc-status-line"><span class="ptc-status-label" aria-hidden="true">Test readiness</span> <span data-testid="pt-status">@Pill(PageState, "Test readiness")</span></span>
@@ -74,6 +74,20 @@
             <span class="ptc-empty-icon" aria-hidden="true">!</span>
             <div><h2>Performance tests could not be loaded</h2><p>Performance tests are stored and executed by the backend; nothing is shown until the overview can be read.</p>
                 <BackendRequestNotice Error="Api.LastReadError" OnRetry="() => ReloadAsync(null)" TestId="pt-unavailable-detail" /></div>
+        </div>
+    }
+    else if (NoDefinitionYet)
+    {
+        @* No saved definition (2026-11-22): the page used to open an unsaved "Baseline check / Main scenario" draft with a red "Draft · incomplete"
+           status, which read as if a test already existed. Nothing is created until the tester asks for it. *@
+        <div class="ptc-empty" data-testid="pt-no-definition">
+            <span class="ptc-empty-icon" aria-hidden="true">◎</span>
+            <div><h2>No performance test yet</h2>
+                <p>A performance test sends controlled load to @_profile.Name (@P.LiveOrigin(_profile)) and checks latency, throughput and errors against thresholds you set. It does not need an imported project.</p>
+                <p class="ptc-empty-actions">
+                    <button type="button" class="btn-primary" @onclick="NewDefinition" data-testid="pt-empty-new">New definition</button>
+                    <button type="button" class="btn-secondary" @onclick="() => NewGraphQlDefinition(null)" data-testid="pt-empty-new-graphql">New GraphQL definition</button>
+                </p></div>
         </div>
     }
     else
@@ -313,6 +327,8 @@
     private PerformanceTestOverview? _overview;
     private PerformanceTestDefinition _draft = new();
     private bool _isNew;
+    /// <summary>No saved definition and nothing started: the empty state instead of an auto-created draft.</summary>
+    private bool NoDefinitionYet => _overview is { Definitions.Count: 0 } && _isNew && !_dirty;
     private bool _dirty;
     private bool _saveFirstPrompt, _saveConfirmed;
 

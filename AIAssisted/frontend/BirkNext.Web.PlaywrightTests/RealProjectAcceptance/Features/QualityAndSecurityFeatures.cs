@@ -75,7 +75,7 @@ public sealed class TargetGatedFeature(
             ["[data-testid=iqr-error]", "[data-testid=act-no-integration]", "[data-testid=act-summary]"], ["[data-testid=act-run]", "[data-testid=act-start]", "[data-testid=act-confirm-send]"],
             note: "Active sends are never performed by acceptance (ActiveSendAllowed=false); the send path was not invoked."),
         new("performance-test-review", "Performance Test Review", "Quality & Testing", "/performance-test-review",
-            ["[data-testid=pt-no-target]", "[data-testid=pt-readiness]"], ["[data-testid=pt-run-start]", "[data-testid=pt-network-check]"]),
+            ["[data-testid=pt-no-target]", "[data-testid=pt-readiness]", "[data-testid=pt-no-definition]"], ["[data-testid=pt-run-start]", "[data-testid=pt-network-check]"]),
         new("critical-e2e", "Critical E2E Regression", "Quality & Testing", "/critical-e2e-regression",
             ["[data-testid=e2e-summary]", "[data-testid=e2e-no-flows]"], ["[data-testid=e2e-run]"],
             note: "No critical flows are configured for an imported project; flows run against a target and were not executed."),

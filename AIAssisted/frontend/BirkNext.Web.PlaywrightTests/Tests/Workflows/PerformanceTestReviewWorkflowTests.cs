@@ -80,10 +80,13 @@ public sealed class PerformanceTestReviewWorkflowTests : IAsyncLifetime
         try
         {
             await page.GotoAsync($"{BrowserTestServers.FrontendUrl}/performance-test-review", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
-            await page.GetByTestId("pt-tab-scenario").WaitForAsync(new() { Timeout = 120000 });
+            // No saved definition opens the empty state (2026-11-22): New definition creates the draft; with saved ones, + New definition.
+            await page.Locator("[data-testid=pt-empty-new], [data-testid=pt-tab-scenario]").First.WaitForAsync(new() { Timeout = 120000 });
 
             // 1. Scenario: one read-only request to the endpoint under test.
-            if (await page.GetByTestId("pt-new").CountAsync() > 0) await page.GetByTestId("pt-new").ClickAsync();
+            if (await page.GetByTestId("pt-empty-new").CountAsync() > 0) await page.GetByTestId("pt-empty-new").ClickAsync();
+            else if (await page.GetByTestId("pt-new").CountAsync() > 0) await page.GetByTestId("pt-new").ClickAsync();
+            await page.GetByTestId("pt-tab-scenario").WaitForAsync(new() { Timeout = 30000 });
             await SetAsync(page, "pt-name", "Items API load");
             await TabAsync(page, "scenario");
             await SetAsync(page, "pt-scenario-name", "List items");

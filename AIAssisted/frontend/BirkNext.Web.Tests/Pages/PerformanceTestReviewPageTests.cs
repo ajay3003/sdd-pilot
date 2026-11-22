@@ -618,11 +618,28 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         Tab(cut, "overview");
     }
 
+    /// <summary>No saved definition opens the empty state (2026-11-22); "New definition" creates the draft.</summary>
+    private static void StartNewDefinition(IRenderedComponent<PerformanceTestReview> cut) => cut.WaitForElement("[data-testid=pt-empty-new]").Click();
+
+    [Fact]
+    public void Without_a_saved_definition_the_page_offers_New_definition_instead_of_an_unsaved_draft()
+    {
+        Register(definitions: []);
+        var cut = Page();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-no-definition]").TextContent.Should().Contain("No performance test yet").And.Contain("does not need an imported project"));
+        cut.FindAll("[data-testid=pt-status], [data-testid=pt-definition-bar]").Should().BeEmpty("no draft status or actions before a definition exists");
+        cut.Markup.Should().NotContain("Baseline check", "nothing is created until the tester asks for it");
+        cut.Find("[data-testid=pt-empty-new]").Click();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=pt-no-definition]").Should().BeEmpty());
+        cut.Find("[data-testid=pt-status]");
+    }
+
     [Fact]
     public void NewProject_StartsFromAGenericDefinition_BasedOnTheTargetEnvironment()
     {
         Register(definitions: []);
         var cut = Page();
+        StartNewDefinition(cut);
         cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Draft · incomplete", "a new definition has no placeholder step"));
         AddManualStep(cut);
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-hero-readiness]").TextContent.Should().Be("Draft"));
@@ -740,6 +757,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
     {
         Register(definitions: []);
         var cut = Page();
+        StartNewDefinition(cut);
         AddManualStep(cut);
         cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Draft"));
 
@@ -759,6 +777,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
     {
         Register(definitions: []);
         var cut = Page();
+        StartNewDefinition(cut);
         AddManualStep(cut);
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-primary-action]"));
         cut.Find("[data-testid=pt-primary-action]").Click();
@@ -779,6 +798,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
     {
         Register(definitions: []);
         var cut = Page();
+        StartNewDefinition(cut);
         AddManualStep(cut);
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-run-open]"));
         cut.Find("[data-testid=pt-run-open]").Click();
@@ -1219,6 +1239,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
     {
         Register(definitions: []);
         var cut = Page();
+        StartNewDefinition(cut);
         AddManualStep(cut);
         cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Draft"));
 
@@ -1246,6 +1267,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
     {
         Register(definitions: []);
         var cut = Page();
+        StartNewDefinition(cut);
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-engine-meaning]").TextContent.Should().Contain("Target execution readiness is evaluated separately"));
         cut.Find("#pt-card-ready-h").TextContent.Should().Contain("Test readiness");
         cut.Find("[data-testid=pt-status] .visually-hidden").TextContent.Should().Be("Test readiness status: ");
