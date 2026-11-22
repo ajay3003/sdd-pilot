@@ -26,19 +26,7 @@
     </div>
 }
 
-@* ── Onboarding ───────────────────────────────────────────────────────────── *@
-@if (!_hasAnyWorkspace && !_hasAnySnapshot)
-{
-    <div class="dashboard-onboarding-card" data-testid="onboarding-card">
-        <div class="dashboard-onboarding-text">
-            <strong>New to BirkNext?</strong>
-            <span>Start by importing your project (documents and source in one ZIP). The <a href="user-guide">User Guide</a> walks through the first steps.</span>
-        </div>
-        <a href="project-import" class="btn-primary dashboard-onboarding-btn">Import a project</a>
-    </div>
-}
-
-    <PageHeader ShowProjectSelector="true" Title="Project Dashboard" Description="Overview of project evidence, specification quality, traceability, reviews and verification. Shows what is available, what has been assessed and what still requires attention.">
+    <PageHeader ShowProjectSelector="true" ProjectSelectorOffersImport="false" Title="Project Dashboard" Description="Overview of project evidence, specification quality, traceability, reviews and verification. Shows what is available, what has been assessed and what still requires attention.">
         <BirkNext.Web.Components.HelpLink Topic="project-quality" Text="How to read this page" />
         @if (_hasAnySnapshot)
         {
@@ -59,7 +47,7 @@
         else if (_workspace.State == CurrentWorkspaceState.NoWorkspace)
         {
             <div class="db-workspace-empty">
-                <p class="db-workspace-message">No workspace loaded. Import your project ZIP (documents and source in one upload) or open a Demo Project to begin.</p>
+                <p class="db-workspace-message" data-testid="db-workspace-empty">No project imported yet. Import your project ZIP (documents and source in one upload) or open a Demo Project to begin. New to BirkNext? The <a href="user-guide">User Guide</a> walks through the first steps.</p>
                 <div class="db-workspace-actions">
                     <a href="project-import" class="db-btn-primary" data-testid="db-import-project">Import Project</a>
                     <a href="demo-projects" class="db-btn-secondary">Open Demo Projects</a>
@@ -138,43 +126,18 @@
         }
     </section>
 
-    @* ══ Recommended next action: the workflow's canonical next step (only unresolved work), directly under the hero ══ *@
-    @if (_nextStep is { } next)
+    @* ══ Review status: loading and failure only. The next steps are "Your next steps" above (per user view); there is no global
+       "Next recommended action" (2026-11-22: one recommendation for every kind of user, and wrong before anything is imported). ══ *@
+    @if (_workspace?.WorkspaceLoaded == true && _workflowReadiness is null)
     {
-        <section class="db-next-step" aria-labelledby="db-next-heading" data-testid="db-next-step" data-key="@next.Key">
-            <h2 id="db-next-heading" class="db-next-eyebrow">Next recommended action</h2>
-            <p class="db-next-title" data-testid="db-next-title">@next.Title</p>
-            <p class="db-next-reason" data-testid="db-next-reason"><span class="db-next-k">Why:</span> @next.Reason</p>
-            <p class="db-next-achieves" data-testid="db-next-achieves"><span class="db-next-k">What it does:</span> @next.Achieves</p>
-            <div class="db-next-actions">
-                <a href="@next.Href" class="db-btn-primary" data-testid="db-next-action">@next.ActionLabel</a>
-                <a href="getting-started" class="db-btn-link" data-testid="db-open-workflow">Why and what comes next</a>
-                @if (RecommendedActionHelp.TopicFor(next) is { } helpTopic) { <BirkNext.Web.Components.HelpLink Topic="@helpTopic" Text="Learn how" /> }
-            </div>
-            @if (next.Then.Count > 0)
-            {
-                <div class="db-next-then" data-testid="db-next-then">
-                    <span class="db-next-k">Then:</span>
-                    <ol>
-                        @foreach (var step in next.Then)
-                        {
-                            <li>@step</li>
-                        }
-                    </ol>
-                </div>
-            }
-        </section>
-    }
-    else if (_workspace?.WorkspaceLoaded == true && _workflowReadiness is null)
-    {
-        <section class="db-next-step" aria-label="Recommended next step" data-testid="db-next-step" aria-busy="@(ReadinessPending ? "true" : "false")">
+        <section class="db-readiness-status" aria-label="Review status" data-testid="db-readiness-status" aria-busy="@(ReadinessPending ? "true" : "false")">
             @if (_readinessError is { } readinessError)
             {
                 <LoadError Title="Could not work out the review status" Message="@readinessError" OnRetry="RetryReadinessAsync" TestId="db-readiness-error" />
             }
             else
             {
-                <InlineLoading Text="Working out the recommended next step…" Class="db-workspace-message" TestId="db-readiness-loading" />
+                <InlineLoading Text="Working out the review status…" Class="db-workspace-message" TestId="db-readiness-loading" />
             }
         </section>
     }
@@ -1047,7 +1010,6 @@
     private string _attentionGroup = "";
     private bool _attentionAll;
     private IReadOnlyList<DashboardKpi> _kpis => DashboardQualitySummary.Cards(_readiness, _attention, _reviews);
-    private DashboardNextStep? _nextStep => _workspace is null ? null : DashboardPresentation.NextStep(_workspace, _workflowReadiness);
     private IReadOnlyList<DashboardFoundFact> _found => _workspace is null ? [] : DashboardPresentation.Found(_workspace, _workflowReadiness);
     private IReadOnlyList<DashboardAttentionItem> _attention => _workspace is null ? []
         : [.. DashboardPresentation.NeedsAttention(_workspace, _workflowReadiness, _reviews), .. SddDashboard.AssociationAttention(_associations) is { } resolve ? [resolve] : Array.Empty<DashboardAttentionItem>()];
@@ -1213,10 +1175,6 @@
         RuntimeReviews.QualityReview.HasResult ||
         RuntimeReviews.ApiQualityReview.HasResult ||
         RuntimeReviews.IntegrationQualityReview.HasResult;
-
-    // While the workspace loads it is not "no workspace": the onboarding card waits for the snapshot.
-    private bool _hasAnyWorkspace =>
-        _workspace is null || _workspace.State != CurrentWorkspaceState.NoWorkspace;
 
     // ── Artifact loaded / analyzed ────────────────────────────────────────────
 

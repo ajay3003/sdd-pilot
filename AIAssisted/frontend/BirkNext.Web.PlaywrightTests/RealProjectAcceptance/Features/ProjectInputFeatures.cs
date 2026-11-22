@@ -161,7 +161,7 @@ public sealed class DashboardFeature : AcceptanceFeature
         var governance = await session.TextAsync("[data-testid=db-governance-value]");
         result.Observe("workspace", name).Observe("origin", origin).Observe("roles", roles).Observe("loaded artifact cards", loadedCards).Observe("governance", governance);
         RecordIdentity(context, FeatureId, "project", name.Replace("📁", "").Trim());
-        if (await session.ExistsAsync("[data-testid=onboarding-card]")) result.Defect("dashboard-onboarding-after-import", "The dashboard shows onboarding although a project was imported.");
+        if (await session.ExistsAsync("[data-testid=db-workspace-empty]")) result.Defect("dashboard-onboarding-after-import", "The dashboard shows the empty state although a project was imported.");
         if (name.Length == 0) result.Defect("dashboard-project-not-recognised", "The dashboard does not name the current workspace.");
         if (roles.Contains("unavailable", StringComparison.OrdinalIgnoreCase) || roles.Contains("Unable", StringComparison.OrdinalIgnoreCase))
             result.Defect("dashboard-roles-unavailable", $"Artifact availability reads \"{roles}\".");

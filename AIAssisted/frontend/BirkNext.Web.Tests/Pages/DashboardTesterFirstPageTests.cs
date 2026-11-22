@@ -10,7 +10,7 @@ using Moq;
 namespace BirkNext.Web.Tests.Pages;
 
 /// <summary>
-/// The Dashboard right after a project import: project, what was found, what needs attention, the recommended next step with why, the
+/// The Dashboard right after a project import: project, what was found, what needs attention, the
 /// selected test environment, and an honest statement that nothing has been reviewed — in that order, with no bare dash as a state.
 /// </summary>
 public class DashboardTesterFirstPageTests : BunitContext
@@ -45,14 +45,13 @@ public class DashboardTesterFirstPageTests : BunitContext
         var workspace = WorkspaceSnapshots.Loaded("M2LB", "import:abc", "M2LB", [.. CurrentWorkspaceSnapshot.WorkflowRoles]);
         var cut = Render(workspace, Imported(workspace, new FrontendAnalysisProfile { Name = "Development", TargetUrl = "https://dev.birk.example.no" }));
 
-        cut.WaitForAssertion(() => cut.Find("[data-testid=db-next-step]"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=db-quality-summary]"));
         cut.Find("[data-testid=db-import-success]").TextContent.Should().Contain("Project imported").And.Contain("Nothing has been reviewed or tested yet").And.Contain("importing is not a quality result");
         cut.Find("[data-testid=db-workspace-name]").TextContent.Trim().Should().Be("M2LB");
         cut.Find("[data-testid=db-test-environment]").TextContent.Should().Be("Target Environment: Development");
 
-        cut.Find("[data-testid=db-next-title]").TextContent.Should().Be("Review imported documents");
-        cut.Find("[data-testid=db-next-reason]").TextContent.Should().Contain("has not been reviewed yet");
-        cut.Find("[data-testid=db-next-action]").TextContent.Should().Be("Review requirements");
+        // No global "Next recommended action" (2026-11-22): "Your next steps" is the per-view next-step block.
+        cut.FindAll("[data-testid=db-next-step]").Should().BeEmpty();
         cut.FindAll("[data-testid=db-found-fact]").Should().NotBeEmpty();
         cut.FindAll("[data-testid=db-attention-item][data-key=dqr-not-run]").Should().BeEmpty("not run is not a problem");
         cut.FindAll("[data-testid=db-next-review][data-key=dqr-not-run]").Should().ContainSingle();
@@ -61,9 +60,8 @@ public class DashboardTesterFirstPageTests : BunitContext
         // collapsed detailed analysis (SDD Quality & Readiness layout).
         var markup = cut.Markup;
         markup.IndexOf("db-quality-summary", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-found", StringComparison.Ordinal));
-        markup.IndexOf("db-workspace-panel", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-next-step", StringComparison.Ordinal), "the recommended next action sits right under the hero");
-        markup.IndexOf("db-next-step", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-review-readiness", StringComparison.Ordinal));
-        markup.IndexOf("db-next-step", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-detailed-analysis", StringComparison.Ordinal));
+        markup.IndexOf("db-workspace-panel", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-quality-summary", StringComparison.Ordinal));
+        markup.IndexOf("db-quality-summary", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("db-detailed-analysis", StringComparison.Ordinal));
         cut.FindAll("[data-testid=db-kpi]").Select(k => k.GetAttribute("data-key")).Should().Equal("evidence", "specification", "traceability", "readiness", "execution", "attention");
         cut.Find("[data-testid=db-kpi][data-key=specification] [data-testid=db-kpi-value]").TextContent.Should().Be("Not assessed", "nothing was reviewed after the import");
         cut.Find("[data-testid=db-kpi][data-key=execution] [data-testid=db-kpi-value]").TextContent.Should().Be("Not read", "this host has no execution evidence client: not read, never zero");
@@ -75,7 +73,21 @@ public class DashboardTesterFirstPageTests : BunitContext
         cut.Find("[data-testid=db-risks-message]").TextContent.Should().Contain("No review findings are available yet");
         cut.Markup.Should().NotContain("No risks detected");
         cut.FindAll("[data-testid=db-health-status]").Should().OnlyContain(s => s.TextContent.Trim().Length > 2, "never a bare dash");
-        cut.FindAll("h2").Select(h => h.TextContent.Trim()).Should().Contain(["Quality summary", "Recent activity", "Next recommended action", "Evidence inventory", "Needs attention", "Review availability", "Assessment status", "Project Artifacts"]);
+        cut.FindAll("h2").Select(h => h.TextContent.Trim()).Should().Contain(["Quality summary", "Recent activity", "Evidence inventory", "Needs attention", "Review availability", "Assessment status", "Project Artifacts"]);
+    }
+
+    [Fact]
+    public void WithNothingImported_ImportProjectIsOfferedOnce_AndThereIsNoRecommendedAction()
+    {
+        var workspace = new CurrentWorkspaceSnapshot(CurrentWorkspaceState.NoWorkspace, null, "", null, null, false, [], "", null, 1);
+        var cut = Render(workspace, ReviewDecisionSemanticsTests.Readiness(workspace, []));
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=db-workspace-empty]"));
+        cut.Find("[data-testid=db-workspace-empty] a[href=user-guide]");
+        cut.FindAll("a[href=project-import]").Where(a => a.Closest("[data-testid=db-detailed-analysis]") is null).Select(a => a.OuterHtml)
+            .Should().ContainSingle("one visible Import Project prompt, not a banner, a selector link, a next-steps link and a card");
+        cut.FindAll("[data-testid=onboarding-card]").Should().BeEmpty();
+        cut.FindAll("[data-testid=db-next-step]").Should().BeEmpty("a recommendation before anything is imported is wrong for every kind of user");
     }
 
     [Fact]

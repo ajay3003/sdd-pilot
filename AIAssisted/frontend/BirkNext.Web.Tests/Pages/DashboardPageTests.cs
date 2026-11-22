@@ -70,7 +70,7 @@ public class DashboardPageTests : BunitContext
         {
             cut.Markup.Should().NotContain(">0%<", "nothing is assessed without a workspace");
             cut.Markup.Should().Contain("Needs setup");
-            cut.Markup.Should().Contain("No workspace loaded");
+            cut.Markup.Should().Contain("No project imported yet");
             cut.Markup.Should().Contain("Assessment status");
             cut.Markup.Should().Contain("Traceability");
             cut.Markup.Should().Contain("Current review risks");
@@ -148,7 +148,7 @@ public class DashboardPageTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("Project Dashboard");
-            cut.Markup.Should().Contain("No workspace loaded");
+            cut.Markup.Should().Contain("No project imported yet");
             cut.Markup.Should().Contain("Needs setup");
         }, timeout: TimeSpan.FromSeconds(1));
     }
@@ -425,7 +425,7 @@ public class DashboardPageTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             Text(cut, "db-workspace-roles").Should().Be("0 document types");
-            cut.Markup.Should().NotContain("No workspace loaded", "a project without documents is still a loaded workspace");
+            cut.Markup.Should().NotContain("No project imported yet", "a project without documents is still a loaded workspace");
             cut.Markup.Should().NotContain("artifacts loaded");
         });
     }
@@ -443,7 +443,7 @@ public class DashboardPageTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("Documents unavailable");
-            cut.Markup.Should().NotContain("No workspace loaded");
+            cut.Markup.Should().NotContain("No project imported yet");
             cut.Markup.Should().NotContain("document types");
         });
     }
@@ -474,7 +474,7 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("No workspace loaded");
+            cut.Markup.Should().Contain("No project imported yet");
             cut.Find("[data-testid=db-health-area][data-key=governance]").GetAttribute("data-status")
                 .Should().Be(nameof(DashboardStatus.NeedsSetup), "no workspace is not a 0% governance score");
             cut.FindAll("[data-status=ReadyToReview]").Should().BeEmpty("nothing can be reviewed without a workspace");

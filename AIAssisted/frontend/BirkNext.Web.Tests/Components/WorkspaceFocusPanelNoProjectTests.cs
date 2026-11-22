@@ -31,15 +31,16 @@ public sealed class WorkspaceFocusPanelNoProjectTests : BunitContext
     }
 
     [Fact]
-    public void Without_an_imported_project_the_panel_links_to_import_and_reads_no_built_in_guide_summary()
+    public void Without_an_imported_project_the_panel_says_so_once_without_counts_or_its_own_import_link()
     {
         Projection(CurrentWorkspaceState.NoWorkspace, null);
         _state.SetView(WorkspaceView.ManualTesting);
 
         var cut = Render<WorkspaceFocusPanel>(p => p.Add(x => x.Capabilities, []));
 
-        cut.Find("[data-testid=wfp-no-project]").TextContent.Should().Contain("No project is imported yet");
-        cut.Find("[data-testid=wfp-import-project]").GetAttribute("href").Should().Be("project-import");
+        cut.Find("[data-testid=wfp-no-project]").TextContent.Should().Contain("once a project is imported");
+        cut.FindAll("a[href=project-import]").Should().BeEmpty("the page's empty state offers Import Project once");
+        cut.FindAll("[data-testid=wfp-ready], [data-testid=wfp-blocked], [data-testid=wfp-done]").Should().BeEmpty("\"1 blocked\" before anything exists is noise");
         cut.FindAll("[data-testid=wfp-action]").Should().BeEmpty();
         cut.FindAll("[data-testid=wfp-test-plan]").Should().BeEmpty();
         _plans.Verify(a => a.SummaryAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never(),

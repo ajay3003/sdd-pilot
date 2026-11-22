@@ -11,11 +11,14 @@
     <section class="wfp @(Compact ? "wfp-compact" : null)" aria-labelledby="wfp-title-@_id" data-testid="workspace-focus" data-view="@f.View.View">
         <div class="wfp-head">
             <h2 id="wfp-title-@_id" class="wfp-title">Your next steps <span class="wfp-view">· @f.View.Label</span></h2>
+            @if (!_noProject)
+            {
             <ul class="wfp-counts" aria-label="Status of the steps in this view">
                 <li data-testid="wfp-ready"><strong>@f.ReadyNow</strong> ready now</li>
                 <li data-testid="wfp-blocked"><strong>@f.Blocked</strong> blocked</li>
                 <li data-testid="wfp-done"><strong>@f.Completed</strong> done</li>
             </ul>
+            }
         </div>
         @if (f.Risks.Count > 0)
         {
@@ -33,7 +36,8 @@
         @if (_noProject)
         {
             @* Nothing imported (first start or after Reset Local Data): every step would read as blocked, and built-in guides are not this user's evidence. *@
-            <p class="wfp-empty" data-testid="wfp-no-project">No project is imported yet, so there are no next steps. <a href="project-import" class="wfp-link" data-testid="wfp-import-project">Import a project</a></p>
+            @* No counts ("1 blocked" before anything exists is noise) and no import link: the page's empty state offers Import Project once. *@
+            <p class="wfp-empty" data-testid="wfp-no-project">Your next steps appear here once a project is imported.</p>
         }
         else if (f.Primary.Count == 0)
         {

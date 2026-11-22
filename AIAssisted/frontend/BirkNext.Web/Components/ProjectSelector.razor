@@ -20,7 +20,7 @@
     }
     else if (Selection is not { HasProjects: true } selection)
     {
-        <span class="psel-note" data-testid="project-selector-empty">No imported project yet — <a href="project-import">import a project</a>.</span>
+        <span class="psel-note" data-testid="project-selector-empty">@if (OfferImport) { <text>No imported project yet — <a href="project-import">import a project</a>.</text> } else { <text>No imported project yet.</text> }</span>
     }
     else
     {
@@ -42,6 +42,9 @@
 }
 
 @code {
+    /// <summary>False where the page already offers Import Project itself (the Dashboard's empty state): the empty selector then only says so.</summary>
+    [Parameter] public bool OfferImport { get; set; } = true;
+
     private readonly string _id = "psel-" + Guid.NewGuid().ToString("N")[..8];
     private int _version;
     private bool _busy;

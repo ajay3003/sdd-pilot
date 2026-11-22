@@ -80,7 +80,7 @@ public sealed class CrossPageWorkspaceContractTests : BunitContext
     private sealed record PageView(bool HasWorkspace, string? Name, IReadOnlyDictionary<string, string> Roles);
 
     private static PageView Dashboard(IRenderedComponent<Dashboard> cut) => new(
-        !cut.Markup.Contains("No workspace loaded"),
+        !cut.Markup.Contains("No project imported yet"),
         cut.FindAll("[data-testid=db-workspace-name]").SingleOrDefault()?.TextContent.Replace("📁", "").Trim(),
         cut.FindAll("[data-testid=db-artifact-card]").ToDictionary(b => b.GetAttribute("data-role")!, b => b.GetAttribute("data-availability")!));
 

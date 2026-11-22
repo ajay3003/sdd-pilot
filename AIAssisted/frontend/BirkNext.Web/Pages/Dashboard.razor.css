@@ -716,42 +716,6 @@
     margin-bottom: 1rem;
 }
 
-.dashboard-onboarding-card {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 0.875rem 1.25rem;
-    margin-bottom: 1.5rem;
-    background: var(--clr-surface-selected);
-    border: 1px solid var(--clr-primary-ring);
-    border-radius: var(--radius-lg);
-}
-
-.dashboard-onboarding-text {
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-    font-size: 0.875rem;
-    color: var(--clr-text-body);
-}
-
-.dashboard-onboarding-text strong {
-    font-weight: 700;
-    color: var(--clr-text-heading);
-}
-
-.dashboard-onboarding-text span { color: var(--clr-text-subtle); }
-
-.dashboard-onboarding-btn {
-    white-space: nowrap;
-    flex-shrink: 0;
-}
-
-@media (max-width: 560px) {
-    .dashboard-onboarding-card { flex-direction: column; align-items: flex-start; }
-}
-
 /* Assessment coverage sits beside the quality chip: how many areas the quality figure is averaged over. */
 .db-assessment-coverage { font-size: 0.8rem; color: var(--clr-text-subtle); align-self: center; }
 
@@ -803,19 +767,6 @@
 .db-attention-action:focus-visible, .db-health-action:focus-visible, .db-artifact-action:focus-visible,
 .db-details > summary:focus-visible { outline: 3px solid #1d4ed8; outline-offset: 2px; }
 .db-export-btn { font-size: 0.8rem; }
-
-/* Recommended next step */
-.db-next-step {
-    border: 2px solid #1d4ed8; border-radius: var(--radius-lg); background: #eff6ff;
-    padding: 1rem 1.25rem; margin-bottom: 1.25rem;
-}
-.db-next-eyebrow { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #1e3a8a; margin: 0 0 0.25rem; }
-.db-next-title { font-size: 1.25rem; font-weight: 700; color: #0f172a; margin: 0 0 0.5rem; }
-.db-next-reason, .db-next-achieves { margin: 0 0 0.35rem; font-size: 0.9rem; color: #1f2937; }
-.db-next-k { font-weight: 700; }
-.db-next-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; margin-top: 0.75rem; }
-.db-next-then { margin-top: 0.75rem; font-size: 0.84rem; color: #1f2937; }
-.db-next-then ol { margin: 0.25rem 0 0; padding-left: 1.25rem; }
 
 /* Found / Needs attention */
 .db-overview-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 0.75rem; }

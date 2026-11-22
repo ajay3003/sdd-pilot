@@ -148,7 +148,7 @@ public class GlobalLoadingFeedbackTests : BunitContext
         var cut = Render<BirkNext.Web.Pages.Dashboard>();
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=db-readiness-loading]"));
-        cut.Find("[data-testid=db-next-step]").GetAttribute("aria-busy").Should().Be("true");
+        cut.Find("[data-testid=db-readiness-status]").GetAttribute("aria-busy").Should().Be("true");
         cut.Find("[data-testid=db-kpis-loading]");
         cut.FindAll("[data-testid=db-kpi]").Should().BeEmpty("KPIs are derived from the review status and are not known yet");
         cut.Find("[data-testid=db-attention-loading]");

@@ -56,6 +56,14 @@ public sealed class ProjectSelectorTests : BunitContext
     }
 
     [Fact]
+    public void Where_the_page_offers_Import_Project_itself_the_empty_selector_only_says_so()
+    {
+        var cut = Render<ProjectSelector>(p => p.Add(x => x.OfferImport, false));
+        cut.Find("[data-testid=project-selector-empty]").TextContent.Trim().Should().Be("No imported project yet.");
+        cut.FindAll("[data-testid=project-selector-empty] a").Should().BeEmpty();
+    }
+
+    [Fact]
     public void While_the_saved_selection_is_read_it_says_loading_never_a_wrong_default()
     {
         Application("app-a", "Library", "import-a");
