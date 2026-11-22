@@ -775,6 +775,7 @@
         {
             navigation.LocationChanged += OnLocationChanged;
             if (ImportRequested(navigation.Uri) && !Session.IsBusy) ShowUpload();
+            else if (QueryHas(navigation.Uri, "git") && !Session.IsBusy && GitSources is not null) OpenGit();
         }
         await LoadEnvironmentAsync();
         await LoadSetupAsync();
@@ -1067,8 +1068,11 @@
         };
 
     /// <summary>?import=… (every "Import source" action) opens import mode; also when it arrives while this page is already shown.</summary>
-    private static bool ImportRequested(string uri) =>
-        Uri.TryCreate(uri, UriKind.Absolute, out var parsed) && parsed.Query.TrimStart('?').Split('&').Any(part => part.Split('=')[0] == "import");
+    private static bool ImportRequested(string uri) => QueryHas(uri, "import");
+
+    /// <summary>?import= opens the ZIP form, ?git= the Git form (Source Management's "Import from Git").</summary>
+    private static bool QueryHas(string uri, string name) =>
+        Uri.TryCreate(uri, UriKind.Absolute, out var parsed) && parsed.Query.TrimStart('?').Split('&').Any(part => part.Split('=')[0] == name);
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {

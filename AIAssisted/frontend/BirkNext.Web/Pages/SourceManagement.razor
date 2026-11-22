@@ -33,11 +33,16 @@
                 <BusyButton Class="btn-secondary" Text="@($"Check all linked repositories ({_links.Count})")" BusyText="Checking linked repositories…" Busy="_checkingAll"
                             Disabled="_busy" OnClick="CheckAllAsync" TestId="sm-check-all" title="Read-only: compares each branch's remote commit with the last imported one. Nothing is imported." />
             }
-            <a class="btn-secondary" href="snapshots" data-testid="sm-registry">Snapshot Registry</a>
-            <a class="btn-primary" href="project-import?import=1" data-testid="sm-import">Import source</a>
+            @if (HasImports)
+            {
+                <a class="btn-secondary" href="snapshots" data-testid="sm-registry">Snapshot Registry</a>
+                <a class="btn-primary" href="project-import?import=1" data-testid="sm-import">Import source</a>
+            }
         </div>
     </header>
 
+    @if (HasImports || !_loaded)
+    {
     <details class="sm-origins" data-testid="sm-origin-help">
         <summary>ZIP or Git — how sources are updated</summary>
         <dl>
@@ -47,6 +52,7 @@
             <dd>A linked Git repository and branch (or pinned commit). <em>Check for updates</em> only compares the remote commit with the imported one; a new revision is imported only when you choose <em>Import revision</em>, through the normal import review.</dd>
         </dl>
     </details>
+    }
 
     @if (_error is not null) { <LoadError Title="Something could not be completed" Message="@_error" TestId="sm-error" /> }
     @if (_linksError is not null) { <LoadError Title="Linked repositories could not be read" Message="@_linksError" OnRetry="ReloadAsync" TestId="sm-links-error" /> }
@@ -58,21 +64,18 @@
     }
     else if (_rows.Count == 0)
     {
-        <section class="sm-empty" data-testid="sm-empty">
-            <h2>No sources yet</h2>
-            <p>Import a project ZIP or a Git repository to see what it contains, its versions and the applications it is evidence for.</p>
-            <a class="btn-primary" href="project-import?import=1">Import source</a>
-        </section>
+        @EmptyCard()
     }
     else
     {
         var summary = SourceManagementPresentation.Summary(_facts);
+        @if (!HasImports) { @EmptyCard() }
         @* Logical sources and their versions (analysis baselines) first: the list below shows imported packages, where each version of one source is a row. *@
-        @if (Services.GetService(typeof(SourceContextApiService)) is not null)
+        @if (HasImports && Services.GetService(typeof(SourceContextApiService)) is not null)
         {
             <BirkNext.Web.Components.SourceManagement.SourceContextPanel OnChanged="ReloadAsync" />
         }
-        @if (summary.Total == 1 && _facts.Count == 1)
+        @if (HasImports && summary.Total == 1 && _facts.Count == 1)
         {
             var only = _facts[0];
             <p class="sm-single" data-testid="sm-summary-single">
@@ -81,7 +84,7 @@
                 · @(summary.NeedsReview == 0 ? "No open source-review decisions" : "1 source-review decision open")
             </p>
         }
-        <ul class="sm-tiles @(summary.Total == 1 && _facts.Count == 1 ? "visually-hidden" : null)" data-testid="sm-summary" aria-label="Imported package summary — choose a tile to filter the list">
+        <ul class="sm-tiles @(!HasImports || (summary.Total == 1 && _facts.Count == 1) ? "visually-hidden" : null)" data-testid="sm-summary" aria-label="Imported package summary — choose a tile to filter the list">
             <li>@Tile("sm-summary-total", summary.Total, summary.Total == 1 ? "source" : "sources", $"{summary.Zip} ZIP · {summary.Git} Git imported packages (each version is one)", null, () => _filter = new() { Sort = _filter.Sort })</li>
             <li>@Tile("sm-summary-review", summary.NeedsReview, "requiring review", summary.NeedsReview == 0 ? "No open decisions" : "Role or association to decide",
                 summary.NeedsReview > 0 ? "attention" : null, () => _filter = _filter with { ReviewOnly = true })</li>
@@ -197,6 +200,24 @@
     private static readonly PackageEvidenceRole[] RoleChoices = [.. Enum.GetValues<PackageEvidenceRole>().Where(r => r != PackageEvidenceRole.NotClassified)];
     private SddApplicationContext? _application;
     private List<Row> _rows = [];
+    /// <summary>At least one imported package (ZIP or Git). A repository that is only connected is not an imported source.</summary>
+    private bool HasImports => _rows.Any(r => r.Record is not null);
+
+    /// <summary>
+    /// Nothing imported (2026-11-22): one empty state. A repository only connected in Git Sources is not an imported source (it was counted as
+    /// "1 imported source" beside "0 imported snapshots"); its row stays below, as "not imported yet", so it can be checked or imported.
+    /// </summary>
+    private RenderFragment EmptyCard() => __builder =>
+    {
+        <section class="sm-empty" data-testid="sm-empty">
+            <h2>No sources imported yet</h2>
+            <p>Import a project ZIP or a Git repository to see what it contains, its versions and the applications it is evidence for.@(_links.Count > 0 ? $" Connected repositories ({_links.Count}) are listed below until you import them." : "")</p>
+            <div class="sm-empty-actions">
+                <a class="btn-primary" href="project-import?import=1" data-testid="sm-empty-import">Import ZIP</a>
+                @if (_links.Count > 0) { <a class="btn-secondary" href="project-import?git=1" data-testid="sm-empty-import-git">Import from Git</a> }
+            </div>
+        </section>
+    };
     private List<SourceRowFacts> _facts = [];
     private IReadOnlyList<GitSourceLink> _links = [];
     private readonly Dictionary<string, IReadOnlyList<GitSourceMatch>> _matches = new(StringComparer.Ordinal);
@@ -347,7 +368,7 @@
     /// <summary>Applications the source is evidence for: every Target Environment whose Project Evidence references the import (shared records).</summary>
     private IReadOnlyList<SourceApplication> AssociatedApplications(Row row)
     {
-        if (row.Record is not { } record || Settings?.Settings.Profiles is not { } profiles) return [];
+        if (row.Record is not { } record || Settings?.Settings?.Profiles is not { } profiles) return [];
         return [.. profiles.Where(p => p.Project?.Evidence.Any(e => e.Sources.Any(s => s.ImportId == record.ImportId)) == true)
             .Select(p => new SourceApplication(TargetApplications.Of(p)?.Name ?? p.Project!.ProjectName, p.Name, p.Id,
                 [.. p.Project!.Evidence.Where(e => e.Sources.Any(s => s.ImportId == record.ImportId))

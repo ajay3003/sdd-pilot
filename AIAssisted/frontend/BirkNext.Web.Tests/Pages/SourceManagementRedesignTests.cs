@@ -86,9 +86,12 @@ public sealed class SourceManagementRedesignTests : BunitContext
 
     private readonly Mock<IGitSourcesApiService> _git = new();
 
-    private void Register()
+    /// <param name="imported">ZIP packages imported into this workspace (a connected repository alone is not an imported source).</param>
+    private void Register(params string[] imported)
     {
         var repository = new WorkspaceArtifactRepository();
+        foreach (var name in imported)
+            repository.SddLifecycle.ProjectImports.Add(new SddProjectImportRecord { ImportId = "import:" + name, ProjectName = name, ArchiveFileName = name + ".zip" });
         var context = new Mock<IFrontendAnalysisContextFactory>();
         context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Name = "Dev" } });
         Services.AddSingleton(_git.Object);
@@ -184,9 +187,8 @@ public sealed class SourceManagementRedesignTests : BunitContext
     [Fact]
     public void One_source_is_one_summary_line_without_tiles_or_toolbar()
     {
-        _git.Setup(g => g.LinksAsync("dev", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(((IReadOnlyList<GitSourceLink>)[Link("r1", "M2LB-language")], (string?)null));
-        Register();
+        _git.Setup(g => g.LinksAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitSourceLink>)[], (string?)null));
+        Register("M2LB-language");
         var cut = Render<SourceManagementPage>();
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=sm-row]").Should().ContainSingle());
         cut.Find("[data-testid=sm-summary-single]").TextContent.Should().Contain("1 imported source").And.Contain("Source Analysis:").And.Contain("No open source-review decisions");
@@ -200,15 +202,31 @@ public sealed class SourceManagementRedesignTests : BunitContext
     [Fact]
     public void Several_sources_keep_tiles_and_filters_and_say_review_is_not_analysis()
     {
-        _git.Setup(g => g.LinksAsync("dev", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(((IReadOnlyList<GitSourceLink>)[Link("r1", "M2LB.Common"), Link("r2", "M2LB-language")], (string?)null));
-        Register();
+        _git.Setup(g => g.LinksAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitSourceLink>)[], (string?)null));
+        Register("M2LB.Common", "M2LB-language");
         var cut = Render<SourceManagementPage>();
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=sm-row]").Should().HaveCount(2));
         cut.FindAll("[data-testid=sm-summary-single]").Should().BeEmpty();
         cut.Find("[data-testid=sm-summary]").ClassList.Should().NotContain("visually-hidden");
         cut.Find("[data-testid=sm-toolbar]");
         cut.Find("[data-testid=sm-summary-note]").TextContent.Should().Contain("They are independent: no open review does not mean the analysis is complete");
+    }
+
+    [Fact]
+    public void A_connected_repository_that_was_never_imported_is_not_counted_as_an_imported_source()
+    {
+        _git.Setup(g => g.LinksAsync("dev", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(((IReadOnlyList<GitSourceLink>)[Link("r1", "M2LB")], (string?)null));
+        Register();
+        var cut = Render<SourceManagementPage>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=sm-empty]").TextContent.Should().Contain("No sources imported yet").And.Contain("Connected repositories (1)"));
+        cut.Find("[data-testid=sm-empty-import]").GetAttribute("href").Should().Be("project-import?import=1");
+        cut.Find("[data-testid=sm-empty-import-git]").GetAttribute("href").Should().Be("project-import?git=1");
+        cut.FindAll("[data-testid=sm-summary-single]").Should().BeEmpty("\"1 imported source\" was wrong: nothing is imported");
+        cut.Find("[data-testid=sm-summary]").ClassList.Should().Contain("visually-hidden", "no tiles of zeros before an import");
+        cut.FindAll("[data-testid=sm-registry], [data-testid=sm-import], [data-testid=sm-origin-help]").Should().BeEmpty("one set of import actions, in the empty state");
+        cut.FindAll("[data-testid=sm-row]").Should().ContainSingle("the connected repository stays listed so it can be checked or imported");
     }
 
     [Fact]

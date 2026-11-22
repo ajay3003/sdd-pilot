@@ -176,3 +176,12 @@ button.sm-tile:focus-visible { outline: 2px solid var(--clr-primary-focus, var(-
 .sm-belongs { display: grid; gap: .5rem; padding: .6rem .75rem; margin: .5rem 0; border: 1px solid var(--clr-border, #d0d7de); border-radius: var(--radius-sm, 4px); }
 .sm-belongs .sm-facet-label { margin-right: .4rem; }
 .sm-belongs .sm-link-action { margin-left: .5rem; }
+
+/* Nothing imported: one empty state; connected repositories are listed as ready to import, never as sources. */
+.sm-empty { margin: 1rem 0; padding: 1rem 1.25rem; border: 1px solid var(--clr-border); border-radius: .5rem; display: grid; gap: .5rem; }
+.sm-empty h2 { margin: 0; font-size: 1.05rem; }
+.sm-empty p { margin: 0; }
+.sm-empty-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.sm-connected { margin-top: .5rem; padding-top: .75rem; border-top: 1px solid var(--clr-border); }
+.sm-connected h3 { margin: 0 0 .25rem; font-size: .9rem; }
+.sm-connected ul { margin: 0 0 .25rem; padding-left: 1.25rem; }
