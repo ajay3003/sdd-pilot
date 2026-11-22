@@ -730,6 +730,7 @@
         var adding = _selected.Count(id => !inDraft.Contains(id));
         var alreadyPrepared = _selected.Count(inDraft.Contains);
         var overlaps = P.OverlapsWithPlan(_selected, _candidates, _inventory, inDraft);
+        var compact = P.Compact(_compact, shown.Count);
         var moreFilters = (_catalog.Type is null ? 0 : 1) + (_catalog.Tests is null ? 0 : 1) + (_catalog.AttentionOnly ? 1 : 0);
         <section class="tps-section" data-testid="tps-choose" aria-label="Choose scenarios" data-view="@P.ViewId(_view)">
             @DiscoverySummary()
@@ -817,9 +818,13 @@
                         <span class="tps-muted tps-small" data-testid="tps-shown-count">@shown.Count of @inView.Count in this view</span>
                         <button type="button" class="tps-btn tps-btn-quiet" disabled="@(shown.Count == 0)" @onclick="() => { foreach (var c in shown) _selected.Add(c.CandidateId); }" data-testid="tps-select-shown">Select visible (@shown.Count)</button>
                         <button type="button" class="tps-btn tps-btn-quiet" disabled="@(_selected.Count == 0)" @onclick="() => { _selected.Clear(); _preview = null; }" data-testid="tps-clear-selection">Clear selection</button>
+                        <span class="tps-density" role="group" aria-label="Row density" data-testid="tps-density">
+                            <button type="button" class="tps-density-btn" aria-pressed="@(compact ? "true" : "false")" @onclick="() => _compact = true" data-testid="tps-density-compact">Compact</button>
+                            <button type="button" class="tps-density-btn" aria-pressed="@(compact ? "false" : "true")" @onclick="() => _compact = false" data-testid="tps-density-detailed">Detailed</button>
+                        </span>
                     </div>
                     @if (shown.Count == 0) { <p class="tps-muted" data-testid="tps-no-match">No scenario matches these filters in this view.</p> }
-                    <div class="tps-groups" data-testid="tps-candidates">
+                    <div class="tps-groups @(compact ? "is-compact" : null)" data-testid="tps-candidates" data-density="@(compact ? "compact" : "detailed")">
                         @{ var groups = P.Group(visible, _grouping, _inventory).ToList(); var firstGroup = true; }
                         @foreach (var group in groups)
                         {
@@ -901,6 +906,9 @@
 
     private bool _revealPreview;
 
+    /// <summary>The tester's row density choice; null until chosen (then a long list starts compact, a short one detailed).</summary>
+    private bool? _compact;
+
     /// <summary>Up to this many matching candidates every group starts open; above it only the first group does.</summary>
     private const int GroupsOpenUpTo = 40;
     private readonly Dictionary<string, bool> _groupOpen = new(StringComparer.Ordinal);
@@ -965,7 +973,7 @@
             <div class="tps-row-main">
                 <label class="tps-row-select">
                     <input type="checkbox" checked="@selected" @onchange="e => { if (e.Value is true) _selected.Add(id); else _selected.Remove(id); _preview = null; }" aria-describedby="tps-sum-@id" data-testid="tps-select-@id" />
-                    <span class="tps-row-title">@c.Title</span>
+                    <span class="tps-row-title" title="@c.Title">@c.Title</span>
                 </label>
                 <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" aria-expanded="@(open ? "true" : "false")" aria-controls="tps-cd-@id" @onclick="() => { if (!_openDetails.Remove(id)) _openDetails.Add(id); }" data-testid="tps-details-@id">@(open ? "Hide details" : "Details")</button>
             </div>

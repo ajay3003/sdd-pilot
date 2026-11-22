@@ -308,6 +308,12 @@ public static class TestPlanSuggestionsPresentation
     /// <summary>Rows rendered per page of the scenario catalog; "Show more" adds the next page (hundreds of candidates stay responsive).</summary>
     public const int PageSize = 60;
 
+    /// <summary>Above this many matching candidates the list starts compact (one line per candidate).</summary>
+    public const int CompactFrom = 20;
+
+    /// <summary>Compact rows: the tester's choice wins; otherwise a long list is compact and a short one detailed.</summary>
+    public static bool Compact(bool? chosen, int shown) => chosen ?? shown > CompactFrom;
+
     public enum CatalogGrouping { Area, Type, Source, Kind, Requirement }
 
     // ── Candidate views (2026-11-18): one inventory, four views ─────────────────────────────────────────────────────

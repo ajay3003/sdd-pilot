@@ -510,3 +510,29 @@ textarea.tps-step-text { resize: vertical; min-height: 2.2rem; }
 .tps-views .tps-view[data-testid="tps-view-technical"] { margin-left: auto; font-size: 0.85rem; }
 .tps-actionbar.is-stale { border: 1px solid var(--clr-warning-border, #d4a72c); background: var(--clr-warning-bg, #fff8c5); border-radius: 10px; padding: 0.5rem 0.75rem; }
 .tps-actionbar.is-stale .tps-muted { color: var(--clr-text, #1f2328); }
+
+/* Compact candidate rows (2026-11-22): one line per candidate — the title, plus only what a tester acts on (needs attention, in the plan,
+   belongs to Technical Testing). Summary and the descriptive labels return in Detailed, and under an opened row's Details. */
+.tps-density { display: inline-flex; margin-left: auto; border: 1px solid var(--clr-border, #d0d7de); border-radius: 8px; overflow: hidden; }
+.tps-density-btn { border: 0; background: none; font: inherit; font-size: 0.82rem; padding: 0.25rem 0.65rem; color: var(--clr-text-muted, #57606a); cursor: pointer; }
+.tps-density-btn + .tps-density-btn { border-left: 1px solid var(--clr-border, #d0d7de); }
+.tps-density-btn[aria-pressed="true"] { background: var(--clr-primary, #0969da); color: #fff; }
+.tps-density-btn:focus-visible { outline: 2px solid var(--clr-focus, #0969da); outline-offset: -2px; }
+.tps-groups.is-compact .tps-row { padding-top: 0.2rem; padding-bottom: 0.2rem; row-gap: 0; }
+.tps-groups.is-compact .tps-row-sum,
+.tps-groups.is-compact .tps-row-meta [data-testid="tps-kind"],
+.tps-groups.is-compact .tps-row-meta [data-testid="tps-type"],
+.tps-groups.is-compact .tps-row-meta [data-testid="tps-area"],
+.tps-groups.is-compact .tps-row-meta [data-testid="tps-existing-tests"],
+.tps-groups.is-compact .tps-row-meta [data-testid="tps-step-gap"] { display: none; }
+.tps-groups.is-compact .tps-row-select { align-items: center; min-height: 1.6rem; }
+.tps-groups.is-compact .tps-row-select input { margin-top: 0; }
+.tps-groups.is-compact .tps-row-title { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tps-groups.is-compact .tps-row-meta .tps-chip { font-size: 0.72rem; white-space: nowrap; }
+/* An opened row shows everything again. */
+.tps-groups.is-compact .tps-row:has(.tps-candidate-details) .tps-row-sum { display: block; white-space: normal; }
+.tps-groups.is-compact .tps-row:has(.tps-candidate-details) .tps-row-title { white-space: normal; }
+@media (max-width: 640px) {
+    .tps-density { margin-left: 0; }
+    .tps-groups.is-compact .tps-row-title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+}

@@ -1,4 +1,4 @@
-using BirkNext.TestPlanning;
+﻿using BirkNext.TestPlanning;
 using BirkNext.Web.Pages;
 using BirkNext.Web.Services;
 using Bunit;
@@ -906,6 +906,29 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         cut.Find("[data-testid=tps-area-prepare]").Click();
         cut.FindAll("[data-testid=tps-stats]").Should().BeEmpty("other steps start right under the project");
         cut.FindAll("[data-testid=tps-capabilities]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_long_candidate_list_starts_compact_and_the_tester_can_switch_density()
+    {
+        // Audit 2026-11-22 (M2LB, 669 candidates): three lines per candidate made the list very long. Compact is one line per candidate.
+        P.Compact(null, P.CompactFrom).Should().BeFalse("a short list starts detailed");
+        P.Compact(null, P.CompactFrom + 1).Should().BeTrue("a long list starts compact");
+        P.Compact(false, 500).Should().BeFalse("the tester's choice wins");
+        P.Compact(true, 2).Should().BeTrue();
+
+        SelectProject();
+        var cut = Render(new Api(Workspace()) { Project = ProjectWorkspace(), Last = Discovery("library", LibraryCandidates) });
+        cut.Find("[data-testid=tps-candidates]").GetAttribute("data-density").Should().Be("detailed");
+        cut.Find("[data-testid=tps-density-detailed]").GetAttribute("aria-pressed").Should().Be("true");
+        cut.Find("[data-testid=tps-density-compact]").Click();
+        cut.Find("[data-testid=tps-candidates]").GetAttribute("data-density").Should().Be("compact");
+        cut.Find("[data-testid=tps-candidates]").ClassList.Should().Contain("is-compact");
+        cut.Find("[data-testid=tps-density-compact]").GetAttribute("aria-pressed").Should().Be("true");
+        cut.Find("[data-testid=tps-candidate-tsc-borrow] .tps-row-title").GetAttribute("title").Should().Be("Borrow a book", "a cut-off title is readable on hover");
+        cut.Find("[data-testid=tps-select-tsc-borrow]").Change(true);
+        cut.Find("[data-testid=tps-density-detailed]").Click();
+        cut.Find("[data-testid=tps-select-tsc-borrow]").HasAttribute("checked").Should().BeTrue("density never changes the selection");
     }
 
     [Fact]
