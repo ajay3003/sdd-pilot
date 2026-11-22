@@ -1,0 +1,45 @@
+@using BirkNext.Web.Services.ProjectImport
+
+@* "What does this … contain?" — the one content question of Project Import, for a ZIP and for a Git repository alike (2026-11-22). One or more
+   roles (the Source Management vocabulary), or "Not sure — let BirkNext detect it"; the two exclude each other. The import is locked until
+   it is answered (ImportRoleChoice.Answered). Bound to the import session, so the ticked roles are saved after either import the same way. *@
+<fieldset class="pi-intent pi-roles" id="@Id" tabindex="-1" data-testid="@TestId" disabled="@Disabled">
+    <legend>@Legend <span class="pi-muted">Tick one or more</span></legend>
+    <div class="pi-role-grid">
+        @foreach (var role in ImportRoleChoice.Choices)
+        {
+            <label class="pi-role-option"><input type="checkbox" checked="@Session.ChosenRoles.Contains(role)" data-testid="@RoleTestId" data-role="@role"
+                   @onchange="e => ToggleAsync(role, e.Value is true)" /> @ApplicationContexts.RoleLabel(role)</label>
+        }
+        <label class="pi-role-option pi-role-detect"><input type="checkbox" checked="@Session.DetectRoles" data-testid="@DetectTestId"
+               @onchange="e => DetectAsync(e.Value is true)" /> Not sure — let BirkNext detect it</label>
+    </div>
+    @ChildContent
+</fieldset>
+
+@code {
+    [Parameter, EditorRequired] public ProjectImportSession Session { get; set; } = default!;
+    [Parameter, EditorRequired] public string Legend { get; set; } = "";
+    [Parameter] public string Id { get; set; } = "pi-roles";
+    [Parameter] public string TestId { get; set; } = "pi-roles";
+    [Parameter] public string RoleTestId { get; set; } = "pi-zip-role";
+    [Parameter] public string DetectTestId { get; set; } = "pi-zip-detect";
+    [Parameter] public bool Disabled { get; set; }
+    /// <summary>Notes under the choices (e.g. where the roles appear afterwards).</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    /// <summary>Raised after every change, so the page can unlock its import step.</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private Task ToggleAsync(PackageEvidenceRole role, bool on)
+    {
+        if (on) { Session.ChosenRoles.Add(role); Session.DetectRoles = false; } else Session.ChosenRoles.Remove(role);
+        return Changed.InvokeAsync();
+    }
+
+    private Task DetectAsync(bool on)
+    {
+        Session.DetectRoles = on;
+        if (on) Session.ChosenRoles.Clear();
+        return Changed.InvokeAsync();
+    }
+}

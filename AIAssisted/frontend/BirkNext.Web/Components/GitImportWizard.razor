@@ -4,6 +4,7 @@
 @using BirkNext.Web.Services.ProjectImport
 @inject IGitSourcesApiService Git
 @inject IFrontendAnalysisContextFactory Contexts
+@inject ProjectImportSession Session
 
 @* Import Project → Git (2026-11-22). Repositories are connected once, in System Settings → Git Sources (their URLs are kept there); here the
    tester only picks one from a list, its branch (or one exact commit) and roles, and imports. "Get the latest code first" (on by default)
@@ -62,13 +63,32 @@
                 @if (GitSourcesPresentation.FetchHint(link.LastFetchFailure) is { } hint) { <p class="giw-muted giw-small" data-testid="giw-hint">@hint</p> }
                 @Configure(link, choice)
 
+                @* The same content question as Import ZIP (shared component): the import stays locked until it is answered. *@
+                <ImportRolesQuestion Session="Session" Legend="What does this repository contain?" Id="giw-roles" TestId="giw-roles" RoleTestId="giw-role" DetectTestId="giw-detect"
+                                     Disabled="@Busy" Changed="() => _rolesHint = false">
+                    <p class="pi-muted pi-small">After the import the roles appear in Manage sources and are kept for this repository's next import. A role the content does not show is not saved.</p>
+                </ImportRolesQuestion>
+
                 <label class="giw-latest"><input type="checkbox" checked="@choice.GetLatest" disabled="@(choice.Commit is { Length: > 0 })" @onchange="e => choice.GetLatest = (bool)e.Value!" data-testid="giw-latest" />
                     Get the latest code first <span class="giw-muted giw-small">(fetches the branch now, so this import is a new snapshot of the current code)</span></label>
 
                 <div class="giw-review" data-testid="giw-review">
                     <p class="giw-muted giw-small">The import goes through the same review as a ZIP. It becomes a new snapshot; earlier snapshots are never replaced.</p>
-                    <button type="button" class="btn-primary" disabled="@(Busy || choice.CommitProblem is not null || (!choice.GetLatest && link.LastFetchedAt is null && choice.Commit is null))"
-                            @onclick="ImportAsync" data-testid="giw-import">Import @link.Repository</button>
+                    @if (RolesAnswered)
+                    {
+                        <button type="button" class="btn-primary" disabled="@(Busy || choice.CommitProblem is not null || (!choice.GetLatest && link.LastFetchedAt is null && choice.Commit is null))"
+                                @onclick="ImportAsync" data-testid="giw-import">Import @link.Repository</button>
+                    }
+                    else
+                    {
+                        @* Looks unavailable until the content question is answered; a click says why (as Choose ZIP file does). *@
+                        <button type="button" class="btn-primary is-disabled" aria-disabled="true" aria-describedby="@(_rolesHint ? "giw-roles-hint" : null)"
+                                @onclick="() => _rolesHint = true" data-testid="giw-import-locked">Import @link.Repository</button>
+                        @if (_rolesHint)
+                        {
+                            <p class="pi-warning" id="giw-roles-hint" role="alert" data-testid="giw-roles-hint">Tick what the repository contains first, or “Not sure — let BirkNext detect it”.</p>
+                        }
+                    }
                     @if (!choice.GetLatest && link.LastFetchedAt is null && choice.Commit is null)
                     {
                         <p class="giw-muted giw-small" data-testid="giw-needs-fetch">Nothing has been fetched from this repository yet: tick “Get the latest code first”.</p>
@@ -95,10 +115,11 @@
         /// <summary>Fetch before importing (default): the import is the branch's current code, not what was fetched last time.</summary>
         public bool GetLatest { get; set; } = true;
         public IReadOnlyList<GitBranch> Branches { get; set; } = [];
-        public HashSet<string> Roles { get; } = new(link.Roles, StringComparer.Ordinal);
     }
 
-    private static readonly PackageEvidenceRole[] RoleChoices = [.. Enum.GetValues<PackageEvidenceRole>().Where(r => r != PackageEvidenceRole.NotClassified)];
+    /// <summary>The content question is answered (one or more roles, or "Not sure"): the import unlocks.</summary>
+    private bool RolesAnswered => ImportRoleChoice.Answered(Session.ChosenRoles, Session.DetectRoles);
+    private bool _rolesHint;
 
     private GitConnectionStatus? _status;
     private IReadOnlyList<GitSourceLink> _links = [];
@@ -137,6 +158,12 @@
         if (_links.FirstOrDefault(l => l.Id == linkId) is not { } link) { _choice = null; return; }
         var choice = new Choice(link);
         _choice = choice;
+        // The repository's roles from its last import are ticked again (an answer the tester can change); none = the question is open.
+        Session.ChosenRoles.Clear();
+        Session.DetectRoles = false;
+        foreach (var saved in link.Roles)
+            if (Enum.TryParse<PackageEvidenceRole>(saved, out var role) && ImportRoleChoice.Choices.Contains(role)) Session.ChosenRoles.Add(role);
+        _rolesHint = false;
         var (branches, error) = await Git.BranchesAsync(link.Id, link.EnvironmentId);
         (choice.Branches, _error) = (branches, error);
         if (choice.Branch.Length == 0 && branches.FirstOrDefault(b => b.IsDefault) is { } fallback) choice.Branch = fallback.Name;
@@ -154,6 +181,8 @@
     {
         if (_environmentId is not { } environment) { _error = "Choose a Target Environment (BirkNext project) first."; return; }
         if (_choice is not { } c) return;
+        if (!RolesAnswered) { _rolesHint = true; return; }
+        var roles = Session.ChosenRoles.Select(r => r.ToString()).ToList();
         if (c.GetLatest && c.Commit is null)
         {
             var (fetched, fetchError) = await Git.FetchAsync(c.Link.Id, c.Link.EnvironmentId);
@@ -162,11 +191,11 @@
             c.Link = fetched;
         }
         // The branch and roles are the link's (shown in Source Management); a specific commit is this import only, never a pin.
-        var (link, error) = await Git.UpdateLinkAsync(c.Link.Id, environment, c.Branch, null, [.. c.Roles]);
+        var (link, error) = await Git.UpdateLinkAsync(c.Link.Id, environment, c.Branch, null, roles);
         if (link is null) { _error = $"{c.Link.Repository}: {error}"; return; }
         c.Link = link;
         _links = [.. _links.Select(l => l.Id == link.Id ? link : l)];
-        await OnImport.InvokeAsync([(new GitImportRequest(link.RepositoryId, c.Branch) { OrganizationUrl = link.OrganizationUrl, Commit = c.Commit, EnvironmentId = environment, Roles = [.. c.Roles] },
+        await OnImport.InvokeAsync([(new GitImportRequest(link.RepositoryId, c.Branch) { OrganizationUrl = link.OrganizationUrl, Commit = c.Commit, EnvironmentId = environment, Roles = roles },
             $"{link.Repository} @ {(c.Commit is { Length: > 0 } sha ? sha[..8] : c.Branch)}")]);
     });
 
@@ -183,13 +212,6 @@
                 <input class="form-control" @bind="choice.Commit" @bind:after="() => CheckCommit(choice)" placeholder="40-character SHA" spellcheck="false" data-testid="giw-commit" />
             </label>
             @if (choice.CommitProblem is { } problem) { <span class="giw-error giw-small" data-testid="giw-commit-problem">@problem</span> }
-            <fieldset class="giw-roles" aria-label="Roles of @link.Repository">
-                <legend class="giw-small">Roles (several allowed; empty = detected from content after import)</legend>
-                @foreach (var role in RoleChoices)
-                {
-                    <label><input type="checkbox" checked="@choice.Roles.Contains(role.ToString())" @onchange="e => { if ((bool)e.Value!) choice.Roles.Add(role.ToString()); else choice.Roles.Remove(role.ToString()); }" data-testid="giw-role" data-role="@role" /> @ApplicationContexts.RoleLabel(role)</label>
-                }
-            </fieldset>
         </div>
     };
 }

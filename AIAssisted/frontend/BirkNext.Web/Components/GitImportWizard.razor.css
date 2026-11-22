@@ -15,3 +15,4 @@
 .giw-muted { color: var(--clr-text-muted); margin: 0; }
 .giw-small { font-size: .8125rem; }
 .giw-error { color: var(--clr-danger); margin: 0; }
+.btn-primary.is-disabled { background: var(--clr-surface-sunken, #e5e7eb); border-color: var(--clr-border, #d0d7de); color: var(--clr-text-muted, #6b7280); cursor: not-allowed; }

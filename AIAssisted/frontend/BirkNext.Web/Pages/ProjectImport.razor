@@ -92,24 +92,14 @@
             }
             @* Optional roles, the same vocabulary as Source Management and Target Environments → Project. Saved after the import only where the
                content supports them; nothing ticked = detected from content. *@
-            <fieldset class="pi-intent pi-roles" id="pi-roles" tabindex="-1" data-testid="pi-roles" disabled="@Session.IsBusy">
-                <legend>1. What does this ZIP contain? <span class="pi-muted">Tick one or more</span></legend>
-                <div class="pi-role-grid">
-                    @foreach (var role in ImportRoleChoice.Choices)
-                    {
-                        <label class="pi-role-option"><input type="checkbox" checked="@Session.ChosenRoles.Contains(role)" data-testid="pi-zip-role" data-role="@role"
-                               @onchange="e => ToggleRole(role, e.Value is true)" /> @ApplicationContexts.RoleLabel(role)</label>
-                    }
-                    <label class="pi-role-option pi-role-detect"><input type="checkbox" checked="@Session.DetectRoles" data-testid="pi-zip-detect"
-                           @onchange="e => SetDetect(e.Value is true)" /> Not sure — let BirkNext detect it</label>
-                </div>
+            <BirkNext.Web.Components.ImportRolesQuestion Session="Session" Legend="1. What does this ZIP contain?" Disabled="@Session.IsBusy" Changed="() => { }">
                 @if (Session.ChosenRoles.Contains(PackageEvidenceRole.PrimaryApplicationSource) && TargetProject() is { } primaryApp
                      && PackagesOf(primaryApp.Id).Any(p => p.Role == PackageEvidenceRole.PrimaryApplicationSource))
                 {
                     <p class="pi-warning" role="status" data-testid="pi-roles-primary-note">@primaryApp.Name already has a primary application source. If this ZIP is a different application, choose <strong>New project</strong> under Belongs to project; otherwise it is added as a contributing application source.</p>
                 }
                 <p class="pi-muted pi-small" data-testid="pi-roles-where">After the import the roles appear in Manage sources and, when the active Target Environment tests this project, in its Project roles. A role the content does not show is not saved.</p>
-            </fieldset>
+            </BirkNext.Web.Components.ImportRolesQuestion>
             <div class="pi-zip-step" data-testid="pi-method-zip">
                 <p class="pi-step-title"><strong>2. Choose the ZIP</strong> <span class="pi-muted">ZIP · maximum 50 MB · documents up to 1 MB each</span></p>
                 <div class="pi-actions">
@@ -929,22 +919,10 @@
     /// <summary>The file button unlocks only after the content question is answered: one or more roles, or "Not sure".</summary>
     private bool CanChooseFile => ImportRoleChoice.Answered(Session.ChosenRoles, Session.DetectRoles);
 
-    /// <summary>A role and "Not sure" exclude each other: ticking one clears the other.</summary>
-    private void ToggleRole(PackageEvidenceRole role, bool on)
-    {
-        if (on) { Session.ChosenRoles.Add(role); Session.DetectRoles = false; } else Session.ChosenRoles.Remove(role);
-    }
-
     /// <summary>"Choose ZIP file" before the content question is answered: say why, and move to the question.</summary>
     private bool _choiceHint;
 
     private void ChooseLockedClicked() { _choiceHint = true; _focusId = "pi-roles"; }
-
-    private void SetDetect(bool on)
-    {
-        Session.DetectRoles = on;
-        if (on) Session.ChosenRoles.Clear();
-    }
 
     private void OpenGit()
     {

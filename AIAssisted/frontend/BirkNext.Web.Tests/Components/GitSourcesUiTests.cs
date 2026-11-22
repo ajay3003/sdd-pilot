@@ -52,6 +52,9 @@ public sealed class GitSourcesUiTests : BunitContext
         Services.AddSingleton(WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
         Services.AddSingleton(Mock.Of<IFrontendAnalysisSettingsService>());
         Services.AddScoped<BirkNext.Web.Services.Operations.BackgroundOperationService>(_ => new BirkNext.Web.Services.Operations.BackgroundOperationService());
+        Services.AddSingleton(Mock.Of<ITechnologyCoverageApiService>());
+        Services.AddScoped<ProjectApplicabilityState>();
+        Services.AddScoped<ProjectImportSession>();
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 
@@ -197,9 +200,11 @@ public sealed class GitSourcesUiTests : BunitContext
     [Fact]
     public void Project_Import_queues_imports_with_the_project_and_the_exact_commit()
     {
-        var link = Link("a", "dev", "LendoPlus");
+        var link = Link("a", "dev", "LendoPlus") with { Roles = [nameof(PackageEvidenceRole.Contracts)] };
         _git.Setup(g => g.LinksAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitSourceLink>)[link], (string?)null));
+        IReadOnlyList<string>? savedRoles = null;
         _git.Setup(g => g.UpdateLinkAsync("a", "dev", It.IsAny<string?>(), null, It.IsAny<IReadOnlyList<string>?>(), It.IsAny<CancellationToken>()))
+            .Callback((string _, string _, string? _, string? _, IReadOnlyList<string>? r, CancellationToken _) => savedRoles = r)
             .ReturnsAsync((link, (string?)null));
         IReadOnlyList<(GitImportRequest Request, string Label)>? queued = null;
         var cut = Render<GitImportWizard>(p => p.Add(x => x.OnImport, (IReadOnlyList<(GitImportRequest, string)> q) => queued = q));
@@ -209,11 +214,14 @@ public sealed class GitSourcesUiTests : BunitContext
         cut.Find("[data-testid=giw-commit-problem]");
         cut.Find("[data-testid=giw-import]").HasAttribute("disabled").Should().BeTrue();
         cut.Find("[data-testid=giw-commit]").Change(Sha.ToUpperInvariant());
+        cut.Find("[data-testid=giw-role][data-role=Contracts]").HasAttribute("checked").Should().BeTrue("the repository's roles from its last import are ticked again");
         cut.Find("[data-testid=giw-import]").Click();
 
         cut.WaitForAssertion(() => queued.Should().NotBeNull());
         var request = queued!.Single().Request;
         (request.RepositoryId, request.Branch, request.Commit, request.EnvironmentId).Should().Be(("git-a", "main", Sha, "dev"));
+        request.Roles.Should().Equal(nameof(PackageEvidenceRole.Contracts));
+        savedRoles.Should().Equal(nameof(PackageEvidenceRole.Contracts));
         _git.Verify(g => g.FetchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never(), "an exact commit needs no new fetch");
     }
 
@@ -249,12 +257,20 @@ public sealed class GitSourcesUiTests : BunitContext
         cut.Find("[data-testid=giw-repo]").Change("b");
         cut.WaitForElement("[data-testid=giw-latest]").HasAttribute("checked").Should().BeTrue("the latest code is imported by default");
         cut.Find("[data-testid=giw-never-imported]");
+        cut.Find("[data-testid=giw-roles] legend").TextContent.Should().Contain("What does this repository contain?");
+        cut.FindAll("[data-testid=giw-import]").Should().BeEmpty("locked until the content question is answered, as Choose ZIP file");
+        cut.FindAll("[data-testid=giw-roles-hint]").Should().BeEmpty("the reminder appears only after a click");
+        cut.Find("[data-testid=giw-import-locked]").Click();
+        cut.Find("[data-testid=giw-roles-hint]").TextContent.Should().Contain("Not sure — let BirkNext detect it");
+        cut.Find("[data-testid=giw-detect]").Change(true);
+        cut.FindAll("[data-testid=giw-roles-hint]").Should().BeEmpty();
         cut.Find("[data-testid=giw-import]").Click();
 
         cut.WaitForAssertion(() => queued.Should().NotBeNull());
         _git.Verify(g => g.FetchAsync("b", "dev", It.IsAny<CancellationToken>()), Times.Once(), "fetched before importing: a new snapshot of the current code");
         var request = queued!.Single().Request;
         (request.RepositoryId, request.Branch, request.Commit).Should().Be(("git-b", "main", (string?)null));
+        request.Roles.Should().BeEmpty("Not sure: detected from the content after the import");
     }
 
     [Fact]
