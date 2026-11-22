@@ -153,6 +153,8 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
     public void CoveragePage_DocumentOnlyProject_SaysWhatIsMissing()
     {
         Register(new ProjectTechnologyCoverage { EnvironmentId = "doc", Notices = ["No source archive has been analyzed for this environment."] });
+        // A project with documents and no source: a loaded workspace (nothing imported at all is the empty state, tested below).
+        Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Docs", "import:doc", "Docs")).Object);
         Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("technology-coverage?tab=detected");
         var cut = Render<TechnologyCoverage>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=tc-no-technologies]"));
@@ -161,6 +163,23 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=tc-review-source-analysis]"));
         cut.Find("[data-testid=tc-review-source-analysis]").GetAttribute("data-status").Should().Be("NotEnoughEvidence");
         cut.Find("[data-testid=tc-review-pipeline-review]").GetAttribute("data-status").Should().Be("NotEnoughEvidence");
+    }
+
+    [Fact]
+    public void CoveragePage_WithNothingImported_ShowsOneEmptyState_AndNoProjectReport()
+    {
+        Register(new ProjectTechnologyCoverage { EnvironmentId = "doc", Notices = [] });
+        var cut = Render<TechnologyCoverage>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tc-no-project]"));
+        cut.Find("[data-testid=tc-import-project]").GetAttribute("href").Should().Be("project-import");
+        foreach (var gone in new[] { "tc-project-facts", "tc-source-principle", "tc-readiness", "tc-attention", "tc-reviews", "tc-source-coverage" })
+            cut.FindAll($"[data-testid={gone}]").Should().BeEmpty($"{gone} describes a project that does not exist");
+        cut.FindAll("[data-testid=tc-review-action]").Should().BeEmpty("no per-row actions before a project exists");
+        cut.Markup.Should().NotContain("Full capability", "a review that can run against the target does not cover a project BirkNext knows nothing about");
+        cut.FindAll("[data-testid^=tc-waiting-], [data-testid^=tc-runnable-]").Select(e => e.GetAttribute("data-testid"))
+            .Should().NotContain(id => id!.Contains("m01", StringComparison.OrdinalIgnoreCase), "domain-specific rows stay hidden");
+        cut.Find("[data-testid=tc-waiting] summary").TextContent.Should().StartWith("Needs a project or setup");
     }
 
     [Fact]

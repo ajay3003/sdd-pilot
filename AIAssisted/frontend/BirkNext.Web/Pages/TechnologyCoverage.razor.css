@@ -83,3 +83,13 @@
 .tc-tab { padding: .5rem .9rem; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; text-decoration: none; color: inherit; font-weight: 600; }
 .tc-tab.is-current { border-color: var(--clr-border); background: var(--clr-surface-white); margin-bottom: -1px; }
 .tc-tab:focus-visible { outline: 2px solid var(--clr-focus, #2563eb); outline-offset: 2px; }
+
+/* Nothing imported: one empty state, then what runs against the Target Environment alone. */
+.tc-empty { margin: .75rem 0 1rem; padding: 1rem 1.25rem; border: 1px solid var(--clr-border); border-radius: .5rem; background: var(--clr-surface-subtle, #f8fafc); }
+.tc-empty-title { font-weight: 600; font-size: 1rem; margin: 0 0 .25rem; }
+.tc-empty-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+.tc-runnable-list { list-style: none; margin: .5rem 0; padding: 0; display: grid; gap: .5rem; }
+.tc-runnable-list li { display: flex; flex-wrap: wrap; gap: .25rem .5rem; align-items: baseline; }
+.tc-runnable-list .sd-context { flex-basis: 100%; }
+.tc-waiting { margin-top: 1rem; }
+.tc-waiting summary { cursor: pointer; font-weight: 600; }

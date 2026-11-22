@@ -6,6 +6,7 @@
 @using G = BirkNext.Web.Services.TechnologyCoverageGuidance
 @inject ProjectApplicabilityState State
 @inject NavigationManager Nav
+@inject IServiceProvider Services
 @implements IDisposable
 
 <PageTitle>Technology &amp; Analysis Coverage</PageTitle>
@@ -48,7 +49,52 @@
         </div>
 
         <section class="tc-section tc-project" aria-labelledby="tc-project-h" data-testid="tc-project">
-            @if (_tab == "project")
+            @if (_tab == "project" && _noProject)
+            {
+            @* Nothing imported (2026-11-22): coverage is worked out from a project's documents and source, so the page says that once and offers
+               Import Project — no tiles, scope line, attention box or per-row actions about a project that does not exist. Reviews that run against
+               the Target Environment alone are listed, without claiming coverage of a project. Domain-specific rows stay hidden. *@
+            <h2 id="tc-project-h">Project coverage</h2>
+            <section class="tc-empty" data-testid="tc-no-project">
+                <p class="tc-empty-title">No project imported yet</p>
+                <p class="sd-muted">Coverage is worked out from a project's documents and source. Import the project (documents and source in one ZIP, or from Git) to see which reviews apply and how much BirkNext can analyze.</p>
+                <div class="tc-empty-actions">
+                    <a href="project-import" class="btn-primary" data-testid="tc-import-project">Import Project</a>
+                    <a href="demo-projects" class="btn-secondary" data-testid="tc-demo-projects">Open Demo Projects</a>
+                </div>
+            </section>
+            var withoutProject = ReviewCatalog.All.Select(r => (Review: r, A: State.For(r.ReviewId))).ToList();
+            var runnable = withoutProject.Where(x => x.A is { } a && G.Dimensions(a.Status).Readiness == "Ready to run").ToList();
+            var waiting = withoutProject.Where(x => x.A is { } a && a.Status != ApplicabilityStatus.NotApplicable && G.Dimensions(a.Status).Readiness != "Ready to run").ToList();
+            @if (runnable.Count > 0)
+            {
+                <section aria-labelledby="tc-runnable-h" data-testid="tc-runnable">
+                    <h3 id="tc-runnable-h">You can already run these against your Target Environment</h3>
+                    <ul class="tc-runnable-list">
+                        @foreach (var (review, a) in runnable)
+                        {
+                            <li data-testid="tc-runnable-@review.ReviewId">
+                                <a href="@review.Route">@review.DisplayName</a> <span class="sd-pill sd-pill-complete">Ready to run</span>
+                                <span class="sd-context">@a!.Reason Coverage of the project: not assessed (no project).</span>
+                            </li>
+                        }
+                    </ul>
+                </section>
+            }
+            @if (waiting.Count > 0)
+            {
+                <details class="tc-waiting" data-testid="tc-waiting">
+                    <summary>Needs a project or setup (@waiting.Count)</summary>
+                    <ul class="tc-runnable-list">
+                        @foreach (var (review, a) in waiting)
+                        {
+                            <li data-testid="tc-waiting-@review.ReviewId"><strong>@review.DisplayName</strong> <span class="sd-context">@a!.Reason</span></li>
+                        }
+                    </ul>
+                </details>
+            }
+            }
+            else if (_tab == "project")
             {
             <h2 id="tc-project-h">Project coverage</h2>
             <p class="sd-muted">What was found in this project's source snapshot and which BirkNext reviews apply to it.</p>
@@ -199,7 +245,7 @@
                 <h3 id="tc-detected-h">Detected technologies</h3>
                 @if (source is null || source.Technologies.Count == 0)
                 {
-                    <p class="sd-empty" data-testid="tc-no-technologies">@(source is null ? "Analyze the project's source in Source Analysis to see its technologies." : "No technology BirkNext recognises was found in the analyzed archive.")</p>
+                    <p class="sd-empty" data-testid="tc-no-technologies">@if (_noProject) { <text>No project imported yet. <a href="project-import">Import Project</a> to see its technologies.</text> } else { @(source is null ? "Analyze the project's source in Source Analysis to see its technologies." : "No technology BirkNext recognises was found in the analyzed archive.") }</p>
                 }
                 else
                 {
@@ -349,9 +395,19 @@
     private void Toggle(string technologyId) { if (!_openTech.Remove(technologyId)) _openTech.Add(technologyId); }
     private static string Id(string technologyId) => technologyId.Replace('.', '-');
 
+    /// <summary>Nothing imported (no workspace) and no source snapshot either: the empty state replaces the project report. A source analyzed
+    /// on its own in Source Analysis is project data, so its report is shown.</summary>
+    private bool _noProject => _noWorkspace && State.Coverage?.SourceSnapshotId is null && State.Coverage?.Source is null;
+    private bool _noWorkspace;
+
     protected override async Task OnInitializedAsync()
     {
         State.Changed += OnChanged;
+        if (Services.GetService(typeof(ICurrentWorkspaceProjection)) is ICurrentWorkspaceProjection workspace)
+        {
+            try { _noWorkspace = (await workspace.GetAsync()).State == CurrentWorkspaceState.NoWorkspace; }
+            catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException) { _noWorkspace = false; }
+        }
         await State.RefreshAsync();
     }
 
