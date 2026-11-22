@@ -19,7 +19,9 @@ public static class TopologyWorkflow
     /// <summary>The tab that holds an attention category's anchor.</summary>
     public static string TabFor(string anchor) => anchor is "it-interfaces" or "it-connections" or "it-inventory-heading" ? InventoryTab : GapsTab;
 
-    public static IReadOnlyList<GuidedStep> Derive(IntegrationTopologyView view, TopologyCoverageView? coverage, int observations, string? profileId, Func<string, string> tabHref)
+    /// <param name="environmentName">The Target Environment's name when the view carries none (never the raw environment id on screen).</param>
+    public static IReadOnlyList<GuidedStep> Derive(IntegrationTopologyView view, TopologyCoverageView? coverage, int observations, string? profileId, Func<string, string> tabHref,
+        string? environmentName = null)
     {
         var connections = view.Connections.Count;
         var gaps = coverage?.Roles.Where(r => TopologyPresentation.SourceGap(r.State)).ToList() ?? [];
@@ -28,7 +30,7 @@ public static class TopologyWorkflow
         var expected = coverage?.Relationships.Count ?? 0;
         var steps = new List<GuidedStep>
         {
-            new("environment", "Select project and environment", GuidedStepState.Done, view.EnvironmentName ?? view.EnvironmentId,
+            new("environment", "Select project and environment", GuidedStepState.Done, view.EnvironmentName ?? environmentName ?? view.EnvironmentId,
                 $"Built {view.GeneratedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC from stored source facts (resolver v{view.ResolverVersion}); snapshots are never changed."),
             coverage is null
                 ? new("coverage", "Review source coverage", GuidedStepState.NotApplicable, "No expected-topology profile",

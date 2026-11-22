@@ -173,6 +173,29 @@ public sealed class IntegrationTopologyPageTests : BunitContext
     };
 
     [Fact]
+    public void WithNothingImported_OneEmptyState_ReplacesTheStepsAndSourceFigures()
+    {
+        Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
+        _api.View = Sample() with { Profiles = ["orders"], Sources = [new(TopologySource.IntegrationCatalog, TopologySourceState.Used, "configured")] };
+        _api.Coverage = Coverage();
+        var page = Render<IntegrationTopologyPage>();
+
+        page.WaitForAssertion(() => page.Find("[data-testid=it-no-project]").TextContent.Should().Contain("No project imported yet").And.Contain("2 components below come only from"));
+        page.Find("[data-testid=it-import-project]").GetAttribute("href").Should().Be("project-import");
+        page.FindAll("[data-testid=it-steps]").Should().BeEmpty("the steps described a project that does not exist");
+        page.FindAll("[data-testid=it-count-unresolved], [data-testid=it-count-coverage], [data-testid=it-attention]").Should().BeEmpty();
+        page.Find("[data-testid=it-count-components]").TextContent.Should().Be("2", "what the configuration gives is still shown");
+    }
+
+    [Fact]
+    public void The_environment_step_names_the_Target_Environment_never_its_id()
+    {
+        _api.View = Sample() with { EnvironmentName = null, EnvironmentId = "626e33c802d4492cb4fabbaa324a9c3f" };
+        var page = Render<IntegrationTopologyPage>();
+        page.WaitForAssertion(() => page.Find("[data-testid=it-steps]").TextContent.Should().Contain("DEV").And.NotContain("626e33c8"));
+    }
+
+    [Fact]
     public void SourceCoverage_AndResolvedVersusExpectedButUnresolved_AreTheDefault_WithMissingSourceGuidance()
     {
         _api.View = Sample() with { Profiles = ["orders"] };

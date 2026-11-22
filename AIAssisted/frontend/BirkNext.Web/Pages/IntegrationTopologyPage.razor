@@ -110,14 +110,27 @@
         </nav>
 
         <div class="it-panel" data-testid="it-panel-overview" hidden="@(CurrentTab != W.OverviewTab)">
-        <GuidedStepList Steps="@W.Derive(view, _coverage, _observationCount, _profile?.Id, TabHref)" TestId="it-steps" Label="Integration Topology steps" />
+        @if (NoProject(view))
+        {
+            @* Nothing imported (2026-11-22): the six steps and the source-coverage figures described a project that does not exist ("5 source roles need
+               action", "9 of 9 expected unresolved"). One empty state; what is shown below comes only from the Target Environment's configuration. *@
+            <section class="it-card it-empty" data-testid="it-no-project">
+                <h2>No project imported yet</h2>
+                <p>Topology is resolved from a project's source, Infrastructure as Code and configured integrations. Import the project to see its components, connections and evidence gaps.@(view.Components.Count > 0 ? $" The {view.Components.Count} component{(view.Components.Count == 1 ? "" : "s")} below come only from this Target Environment's configuration." : "")</p>
+                <div class="it-actions"><a class="btn-primary" href="project-import" data-testid="it-import-project">Import Project</a></div>
+            </section>
+        }
+        else
+        {
+            <GuidedStepList Steps="@W.Derive(view, _coverage, _observationCount, _profile?.Id, TabHref, _profile?.Name)" TestId="it-steps" Label="Integration Topology steps" />
+        }
         <section class="it-card" aria-labelledby="it-summary-heading" data-testid="it-summary">
             <h2 id="it-summary-heading">Topology summary</h2>
             <dl class="it-facts it-summary">
                 <div><dt>Components</dt><dd data-testid="it-count-components">@counts.Components</dd></div>
                 <div><dt>Interfaces</dt><dd data-testid="it-count-interfaces">@counts.Interfaces</dd></div>
                 <div><dt>Resolved connections</dt><dd data-testid="it-count-resolved">@counts.Resolved</dd></div>
-                @if (_coverage is { } summaryCoverage)
+                @if (_coverage is { } summaryCoverage && !NoProject(view))
                 {
                     var open = summaryCoverage.Relationships.Count(item => !P.IsResolved(item.State));
                     <div><dt>Expected but unresolved</dt><dd data-testid="it-count-unresolved">@open of @summaryCoverage.Relationships.Count expected</dd></div>
@@ -127,6 +140,8 @@
                     ? $"{_observationCount} runtime observation{(_observationCount == 1 ? "" : "s")} merged · source: Endpoint Discovery (this browser)" : "None")</dd></div>
             </dl>
             @* Attention by category, mutually exclusive (each item counted once), never one opaque number. *@
+            @if (!NoProject(view))
+            {
             <h3 class="it-subheading" id="it-attention-heading">Needs attention</h3>
             <ul class="it-attention" aria-labelledby="it-attention-heading" data-testid="it-attention">
                 @foreach (var category in attention)
@@ -137,6 +152,7 @@
                     </li>
                 }
             </ul>
+            }
             <p class="it-note" data-testid="it-environment">@(view.EnvironmentName ?? _profile?.Name ?? view.EnvironmentId) · built @view.GeneratedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC · resolver v@(view.ResolverVersion) (rebuilt from stored source facts; snapshots are never changed)</p>
         </section>
 
@@ -506,8 +522,18 @@
         try { Navigation.NavigateTo(TabHref(key)); } catch (InvalidOperationException) { }
     }
 
+    /// <summary>No workspace and no Source Analysis snapshot in the topology: nothing about a project can be shown yet.</summary>
+    private bool NoProject(IntegrationTopologyView view) =>
+        _noWorkspace && view.Sources.FirstOrDefault(s => s.Source == TopologySource.SourceAnalysis)?.State != TopologySourceState.Used;
+    private bool _noWorkspace;
+
     protected override async Task OnInitializedAsync()
     {
+        if (Services.GetService(typeof(ICurrentWorkspaceProjection)) is ICurrentWorkspaceProjection workspace)
+        {
+            try { _noWorkspace = (await workspace.GetAsync()).State == CurrentWorkspaceState.NoWorkspace; }
+            catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException) { _noWorkspace = false; }
+        }
         try
         {
             _profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfileOrNull;
