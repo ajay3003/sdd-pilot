@@ -26,6 +26,8 @@ $backendDir = Join-Path $root "backend\BirkNext.Api"
 $frontendDir = Join-Path $root "frontend\BirkNext.Web"
 $testProject = Join-Path $root "frontend\BirkNext.Web.PlaywrightTests\BirkNext.Web.PlaywrightTests.csproj"
 $database = "birknext_rpa_" + ([Guid]::NewGuid().ToString("N").Substring(0, 8))
+# The isolated backend keeps its file-backed state (Test Data, launch code, sessions) in its own folder: never the developer's App_Data.
+$appData = Join-Path ([IO.Path]::GetTempPath()) $database
 
 if ($Archive -ne "") {
     if (-not (Test-Path $Archive)) { Write-Host "Archive not found: $Archive" -ForegroundColor Red; exit 2 }
@@ -43,7 +45,7 @@ if (-not $NoBuild) {
 
 $saved = @{}
 $names = "BIRKNEXT_REAL_ACCEPTANCE_DATASET", "BIRKNEXT_REAL_ACCEPTANCE_ARCHIVE", "BIRKNEXT_REAL_ACCEPTANCE_MODE", "BIRKNEXT_ACCEPTANCE_FRONTEND_URL",
-    "BIRKNEXT_ACCEPTANCE_BACKEND_URL", "BIRKNEXT_ACCEPTANCE_FRONTEND_BACKEND_URL", "BIRKNEXT_ACCEPTANCE_COMMIT"
+    "BIRKNEXT_ACCEPTANCE_BACKEND_URL", "BIRKNEXT_ACCEPTANCE_FRONTEND_BACKEND_URL", "BIRKNEXT_ACCEPTANCE_COMMIT", "BIRKNEXT_ACCEPTANCE_LAUNCH_CODE_FILE"
 foreach ($n in $names) { $saved[$n] = [Environment]::GetEnvironmentVariable($n) }
 $backend = $null
 $frontend = $null
@@ -58,6 +60,7 @@ try {
         "FRONTEND_ORIGIN" = "http://localhost:$FrontendPort"
         "ConnectionStrings__Default" = "Host=localhost;Port=5432;Database=$database;Username=$PostgresUser;Password=$PostgresPassword"
         "ProjectCompatibility__AcceptanceArchivePath" = $Archive
+        "BIRKNEXT_APP_DATA_DIR" = $appData
     }
     $psi = New-Object System.Diagnostics.ProcessStartInfo "dotnet", "bin\Debug\net8.0\BirkNext.Api.dll"
     $psi.WorkingDirectory = $backendDir
@@ -67,13 +70,20 @@ try {
 
     $frontend = Start-Process dotnet -ArgumentList "run", "--no-build", "--urls", "http://localhost:$FrontendPort" -WorkingDirectory $frontendDir -PassThru -WindowStyle Hidden
 
+    # The API answers 401 until a browser is connected with the local-session launch code: any answer means it is up (2026-11-22).
     foreach ($url in "http://localhost:$BackendPort/api/source-analysis", "http://localhost:$FrontendPort/") {
         $ready = $false
         for ($i = 0; $i -lt 120 -and -not $ready; $i++) {
-            try { Invoke-WebRequest $url -UseBasicParsing -TimeoutSec 5 | Out-Null; $ready = $true } catch { Start-Sleep -Seconds 1 }
+            $status = & curl.exe -s -o NUL -w "%{http_code}" --max-time 5 $url
+            $ready = $status -in '200', '401', '403'
+            if (-not $ready) { Start-Sleep -Seconds 1 }
         }
         if (-not $ready) { Write-Host "Server did not start: $url" -ForegroundColor Red; exit 2 }
     }
+    $launchCode = Join-Path $appData "local-session\launch-code.txt"
+    for ($i = 0; $i -lt 30 -and -not (Test-Path $launchCode); $i++) { Start-Sleep -Seconds 1 }
+    if (-not (Test-Path $launchCode)) { Write-Host "No local-session launch code at $launchCode." -ForegroundColor Red; exit 2 }
+    $env:BIRKNEXT_ACCEPTANCE_LAUNCH_CODE_FILE = $launchCode
 
     $env:BIRKNEXT_REAL_ACCEPTANCE_DATASET = $Dataset
     if ($Archive -ne "") { $env:BIRKNEXT_REAL_ACCEPTANCE_ARCHIVE = $Archive }
@@ -93,5 +103,6 @@ finally {
     if (-not $KeepDatabase) {
         Start-Sleep -Seconds 2
         & podman exec $PostgresContainer psql -U $PostgresUser -d postgres -c "DROP DATABASE IF EXISTS $database WITH (FORCE);" | Out-Null
+        Remove-Item $appData -Recurse -Force -ErrorAction SilentlyContinue
     }
 }

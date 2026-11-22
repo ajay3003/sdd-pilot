@@ -38,7 +38,22 @@ public sealed class PlaywrightAcceptanceSession : IAsyncDisposable
         var playwright = await Microsoft.Playwright.Playwright.CreateAsync();
         var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions { Headless = true });
         var context = await browser.NewContextAsync(new BrowserNewContextOptions { ViewportSize = new() { Width = 1440, Height = 1000 }, AcceptDownloads = true });
-        var backend = new HttpClient { BaseAddress = new Uri(backendUrl.TrimEnd('/') + "/"), Timeout = TimeSpan.FromMinutes(10) };
+        var frontendOriginForSession = new Uri(frontendUrl).GetLeftPart(UriPartial.Authority);
+        var backend = new HttpClient(new HttpClientHandler { CookieContainer = new System.Net.CookieContainer() })
+            { BaseAddress = new Uri(backendUrl.TrimEnd('/') + "/"), Timeout = TimeSpan.FromMinutes(10) };
+        // The API serves only a connected browser (local session, 2026-11): the browser context and the direct client each exchange the isolated
+        // backend's launch code for a session cookie. Unsafe calls carry the frontend Origin and the client header, as the frontend does.
+        if (Environment.GetEnvironmentVariable("BIRKNEXT_ACCEPTANCE_LAUNCH_CODE_FILE") is { Length: > 0 } codeFile && File.Exists(codeFile))
+        {
+            var code = (await File.ReadAllTextAsync(codeFile)).Trim();
+            var headers = new Dictionary<string, string> { ["Origin"] = frontendOriginForSession, ["X-BirkNext-Client"] = "real-project-acceptance" };
+            var connected = await context.APIRequest.PostAsync($"{backendUrl.TrimEnd('/')}/api/local-session", new APIRequestContextOptions { DataObject = new { code }, Headers = headers });
+            if (!connected.Ok) throw new InvalidOperationException($"Could not connect the acceptance browser to {backendUrl} (local session answered {connected.Status}).");
+            backend.DefaultRequestHeaders.Add("Origin", frontendOriginForSession);
+            backend.DefaultRequestHeaders.Add("X-BirkNext-Client", "real-project-acceptance");
+            using var direct = await backend.PostAsJsonAsync("api/local-session", new { code });
+            if (!direct.IsSuccessStatusCode) throw new InvalidOperationException($"Could not connect the acceptance client to {backendUrl} (local session answered {(int)direct.StatusCode}).");
+        }
         var page = await context.NewPageAsync();
         var session = new PlaywrightAcceptanceSession(playwright, browser, context, page, backend, frontendUrl, artifactsDirectory, axeScriptPath);
         page.PageError += (_, error) => session.PageErrors.Add(error.Split('\n')[0]);
