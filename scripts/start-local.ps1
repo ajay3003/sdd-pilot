@@ -73,7 +73,9 @@ function Invoke-NativeCommand {
         [string]$Executable,
         [string[]]$Arguments,
         [switch]$ThrowOnError,
-        [switch]$ShowOutput
+        [switch]$ShowOutput,
+        # When given, the command line, its exit code and its full output are appended here (so a failed build can be read after the window closes).
+        [string]$LogFile
     )
 
     $stdoutFile = [System.IO.Path]::GetTempFileName()
@@ -95,6 +97,13 @@ function Invoke-NativeCommand {
 
         $stdout = Get-Content $stdoutFile -Raw -ErrorAction SilentlyContinue
         $stderr = Get-Content $stderrFile -Raw -ErrorAction SilentlyContinue
+
+        if (-not [string]::IsNullOrWhiteSpace($LogFile)) {
+            $entry = @("[$((Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))] > $Executable $argString (exit code $($process.ExitCode))")
+            if (-not [string]::IsNullOrWhiteSpace($stdout)) { $entry += $stdout.TrimEnd() }
+            if (-not [string]::IsNullOrWhiteSpace($stderr)) { $entry += "[stderr]"; $entry += $stderr.TrimEnd() }
+            Add-Content -Path $LogFile -Value $entry -Encoding UTF8 -ErrorAction SilentlyContinue
+        }
 
         if ($ShowOutput -and -not [string]::IsNullOrWhiteSpace($stdout)) {
             Write-Host $stdout.TrimEnd()
@@ -1009,11 +1018,11 @@ function Start-DotNetProcessLogged {
 
         Info "Restoring $Name..."
         Add-Content -Path $LauncherLogFile -Value "[$((Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))] Restoring $Name"
-        $null = Invoke-NativeCommand -Executable "dotnet" -Arguments @("restore", $Runnable.Path) -ShowOutput -ThrowOnError
+        $null = Invoke-NativeCommand -Executable "dotnet" -Arguments @("restore", $Runnable.Path) -ShowOutput -ThrowOnError -LogFile $LauncherLogFile
 
         Info "Building $Name..."
         Add-Content -Path $LauncherLogFile -Value "[$((Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))] Building $Name"
-        $null = Invoke-NativeCommand -Executable "dotnet" -Arguments @("build", $Runnable.Path, "--no-restore") -ShowOutput -ThrowOnError
+        $null = Invoke-NativeCommand -Executable "dotnet" -Arguments @("build", $Runnable.Path, "--no-restore") -ShowOutput -ThrowOnError -LogFile $LauncherLogFile
 
         Ok "$Name built successfully."
 
