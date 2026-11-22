@@ -57,12 +57,21 @@ public sealed record OfflineTranslationBundle(string Directory, OfflineTranslati
     private string Full(string relative) => Path.GetFullPath(Path.Combine(Directory, relative.Replace('/', Path.DirectorySeparatorChar)));
 
     /// <summary>Where a bundle may be: the configured folder (the Tester Package launcher sets it), else the package layout beside the backend
-    /// (runtime/translation two levels up), else a developer build in %LOCALAPPDATA%\BirkNext\offline-translation. First existing wins.</summary>
-    public static IReadOnlyList<string> Candidates(IConfiguration config)
+    /// (runtime/translation two levels up), else the repository's Git LFS copy (AIAssisted/runtime/translation, found by walking up from the
+    /// backend), else a developer build in %LOCALAPPDATA%\BirkNext\offline-translation. First existing wins.</summary>
+    public static IReadOnlyList<string> Candidates(IConfiguration config) => Candidates(config, AppContext.BaseDirectory);
+
+    public static IReadOnlyList<string> Candidates(IConfiguration config, string baseDirectory)
     {
         var list = new List<string>();
         if (config[DirectoryKey] is { Length: > 0 } configured) list.Add(configured);
-        list.Add(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "runtime", "translation")));
+        list.Add(Path.GetFullPath(Path.Combine(baseDirectory, "..", "..", "runtime", "translation")));
+        // A source checkout: bin/Debug/net8.0 → BirkNext.Api → backend → AIAssisted/runtime/translation (any depth up to the drive root).
+        for (var dir = new DirectoryInfo(baseDirectory); dir is not null; dir = dir.Parent)
+        {
+            var candidate = Path.Combine(dir.FullName, "runtime", "translation");
+            if (!list.Contains(candidate, StringComparer.OrdinalIgnoreCase) && File.Exists(Path.Combine(candidate, ManifestFile))) list.Add(candidate);
+        }
         var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (local.Length > 0) list.Add(Path.Combine(local, "BirkNext", "offline-translation", "translation"));
         return list;
@@ -73,6 +82,7 @@ public sealed record OfflineTranslationBundle(string Directory, OfflineTranslati
     {
         var manifestPath = Path.Combine(directory, ManifestFile);
         if (!File.Exists(manifestPath)) return (null, "The offline translation model is not installed with this BirkNext (no translation-manifest.json).");
+        if (IsLfsPointer(manifestPath)) return (null, LfsNotPulled);
         OfflineTranslationManifest? manifest;
         try { manifest = JsonSerializer.Deserialize<OfflineTranslationManifest>(File.ReadAllText(manifestPath), Json); }
         catch (Exception e) when (e is JsonException or IOException) { return (null, "The offline translation package is damaged: its manifest cannot be read."); }
@@ -88,6 +98,7 @@ public sealed record OfflineTranslationBundle(string Directory, OfflineTranslati
                 return (null, "The offline translation package is damaged: its manifest names a file outside the package.");
             var info = new FileInfo(path);
             if (!info.Exists) return (null, $"The offline translation package is incomplete: {f.Path} is missing. Extract the whole BirkNext package again.");
+            if (info.Length != f.Size && IsLfsPointer(path)) return (null, LfsNotPulled);
             if (info.Length != f.Size || !string.Equals(Sha(path), f.Sha256, StringComparison.OrdinalIgnoreCase))
                 return (null, $"The offline translation package is damaged: {f.Path} has changed. Extract the whole BirkNext package again.");
         }
@@ -96,6 +107,18 @@ public sealed record OfflineTranslationBundle(string Directory, OfflineTranslati
             if (!manifest.Files.Any(f => string.Equals(bundle.Full(f.Path), required, StringComparison.OrdinalIgnoreCase)))
                 return (null, $"The offline translation package is damaged: {Path.GetFileName(required)} is not part of it.");
         return (bundle, null);
+    }
+
+    /// <summary>The bundle is in the repository through Git LFS but this clone holds only the pointer files.</summary>
+    public const string LfsNotPulled = "The offline translation model is in the repository (Git LFS) but was not downloaded with this clone. Run 'git lfs install' and 'git lfs pull' once, then select Check again.";
+
+    /// <summary>A Git LFS pointer file (a small text stub instead of the real content).</summary>
+    public static bool IsLfsPointer(string path)
+    {
+        var info = new FileInfo(path);
+        if (!info.Exists || info.Length > 1024) return false;
+        try { return File.ReadAllText(path).StartsWith("version https://git-lfs.github.com/spec/", StringComparison.Ordinal); }
+        catch (IOException) { return false; }
     }
 
     private static string Sha(string path)

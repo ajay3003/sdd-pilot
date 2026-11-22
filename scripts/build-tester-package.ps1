@@ -150,13 +150,39 @@ try {
         "k6 $($lock.k6.version) is distributed unmodified under the GNU Affero General Public License v3 (licenses/k6-LICENSE.md).`r`nCorresponding source: $($lock.k6.license.sourceOffer)`r`nBinary: $($lock.k6.url)`r`n")
 
     Step "Embedded offline translation ($($lock.offlineTranslation.model.id))"
-    $translationArgs = @{ OutDir = (Join-Path $OutDir 'offline-translation'); DownloadCache = $DownloadCache }
-    if ($AllowDownload) { $translationArgs.AllowDownload = $true }
-    & (Join-Path $PSScriptRoot 'build-offline-translation.ps1') @translationArgs
-    if ($LASTEXITCODE -ne 0) { throw 'The offline translation bundle could not be built (see above); a package without it is not produced' }
     $translationDir = Join-Path $stage ($lock.offlineTranslation.directory -replace '/', '\')
     New-Item -ItemType Directory -Force -Path (Split-Path $translationDir) | Out-Null
-    Move-Item -LiteralPath (Join-Path $OutDir 'offline-translation/translation') -Destination $translationDir
+    # The repository's Git LFS copy (AIAssisted/runtime/translation) is used when it is pulled, of the pinned model revision and unchanged
+    # (every file against its manifest SHA-256); otherwise the bundle is built from the pinned inputs as before.
+    $repoTranslation = Join-Path $ai 'runtime/translation'
+    $repoManifestPath = Join-Path $repoTranslation 'translation-manifest.json'
+    $useRepo = $false
+    if ((Test-Path -LiteralPath $repoManifestPath) -and -not ((Get-Content -LiteralPath $repoManifestPath -TotalCount 1) -like 'version https://git-lfs*')) {
+        $repoManifest = Get-Content -LiteralPath $repoManifestPath -Raw | ConvertFrom-Json
+        $useRepo = $repoManifest.model.revision -eq $lock.offlineTranslation.model.revision
+        foreach ($f in $repoManifest.files) {
+            if (-not $useRepo) { break }
+            $file = Join-Path $repoTranslation ($f.path -replace '/', '\')
+            $useRepo = (Test-Path -LiteralPath $file) -and ((Get-Item -LiteralPath $file).Length -eq $f.size) -and ((Sha256 $file) -eq $f.sha256)
+        }
+        if (-not $useRepo) { Write-Host '  the repository copy is not usable (other model revision, or a file differs from its manifest); building instead' }
+    }
+    if ($useRepo) {
+        Write-Host "  [OK] using the repository copy (Git LFS): $repoTranslation"
+        foreach ($f in $repoManifest.files) {
+            $target = Join-Path $translationDir ($f.path -replace '/', '\')
+            New-Item -ItemType Directory -Force -Path (Split-Path $target) | Out-Null
+            Copy-Item -LiteralPath (Join-Path $repoTranslation ($f.path -replace '/', '\')) -Destination $target
+        }
+        Copy-Item -LiteralPath $repoManifestPath -Destination (Join-Path $translationDir 'translation-manifest.json')
+    }
+    else {
+        $translationArgs = @{ OutDir = (Join-Path $OutDir 'offline-translation'); DownloadCache = $DownloadCache }
+        if ($AllowDownload) { $translationArgs.AllowDownload = $true }
+        & (Join-Path $PSScriptRoot 'build-offline-translation.ps1') @translationArgs
+        if ($LASTEXITCODE -ne 0) { throw 'The offline translation bundle could not be built (see above); a package without it is not produced' }
+        Move-Item -LiteralPath (Join-Path $OutDir 'offline-translation/translation') -Destination $translationDir
+    }
     $translationManifest = Get-Content (Join-Path $translationDir 'translation-manifest.json') -Raw | ConvertFrom-Json
 
     Step 'Runtime manifest'

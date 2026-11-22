@@ -41,7 +41,9 @@ public sealed class OfflineTranslationEngine : IAsyncDisposable
     /// <summary>The bundle in use and its verification (cached until a candidate folder or its manifest changes).</summary>
     public (OfflineTranslationBundle? Bundle, string? Problem) Bundle()
     {
-        var directory = OfflineTranslationBundle.Candidates(_config).FirstOrDefault(d => File.Exists(Path.Combine(d, OfflineTranslationBundle.ManifestFile)));
+        // First bundle that exists; a clone holding only Git LFS pointers is used only when no other bundle exists (so its message is shown).
+        var present = OfflineTranslationBundle.Candidates(_config).Where(d => File.Exists(Path.Combine(d, OfflineTranslationBundle.ManifestFile))).ToList();
+        var directory = present.FirstOrDefault(d => !OfflineTranslationBundle.IsLfsPointer(Path.Combine(d, OfflineTranslationBundle.ManifestFile))) ?? present.FirstOrDefault();
         if (directory is null) return (null, "The offline translation model is not installed with this BirkNext (no runtime/translation folder). Use the complete BirkNext Tester Package; on a developer PC build it once with scripts/build-offline-translation.ps1 (see its help) into %LOCALAPPDATA%/BirkNext/offline-translation.");
         var manifest = new FileInfo(Path.Combine(directory, OfflineTranslationBundle.ManifestFile));
         var key = $"{Path.GetFullPath(directory)}|{manifest.Length}|{manifest.LastWriteTimeUtc.Ticks}";

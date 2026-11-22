@@ -1,0 +1,3 @@
+# Offline translation bundle (Python runtime, CTranslate2/SentencePiece, HPLT en->nb model): stored in Git LFS, never line-ending
+# converted (translation-manifest.json pins the SHA-256 of every file).
+AIAssisted/runtime/translation/** filter=lfs diff=lfs merge=lfs -text

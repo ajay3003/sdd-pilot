@@ -18,6 +18,34 @@ namespace BirkNext.Api.Tests.Services.TestPlanning;
 public sealed class EmbeddedOfflineTranslationTests
 {
     [Fact]
+    public void A_source_checkout_finds_the_repository_bundle_by_walking_up_from_the_backend()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "bn-trx-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var bundle = Directory.CreateDirectory(Path.Combine(root, "AIAssisted", "runtime", "translation")).FullName;
+            File.WriteAllText(Path.Combine(bundle, OfflineTranslationBundle.ManifestFile), "{}");
+            var bin = Directory.CreateDirectory(Path.Combine(root, "AIAssisted", "backend", "BirkNext.Api", "bin", "Debug", "net8.0")).FullName;
+            OfflineTranslationBundle.Candidates(new ConfigurationBuilder().Build(), bin).Should().Contain(bundle);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void A_clone_without_git_lfs_pull_says_so_instead_of_damaged()
+    {
+        var dir = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "bn-trx-" + Guid.NewGuid().ToString("N"))).FullName;
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, OfflineTranslationBundle.ManifestFile),
+                string.Join('\n', "version https://git-lfs.github.com/spec/v1", "oid sha256:0123", "size 20480", ""));
+            OfflineTranslationBundle.IsLfsPointer(Path.Combine(dir, OfflineTranslationBundle.ManifestFile)).Should().BeTrue();
+            OfflineTranslationBundle.Verify(dir).Problem.Should().Be(OfflineTranslationBundle.LfsNotPulled);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
     public void Identifiers_and_glossary_terms_become_markers_and_come_back_unchanged()
     {
         var (masked, tokens) = ScenarioPlanning.Protect("A correction to FR-017 replaces the report in spec.md for Skolenærvær.");

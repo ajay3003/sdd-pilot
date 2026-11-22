@@ -221,3 +221,9 @@ AIAssisted/backend/BirkNext.Api/App_Data/
 
 # Local test archives (real project sources and Terraform with environment values): never committed.
 AIAssisted/testdata/
+
+# =========================================================
+# Offline translation bundle (Git LFS, see .gitattributes): its DLLs/EXEs are content, not build output
+# =========================================================
+!AIAssisted/runtime/translation/**
+AIAssisted/runtime/translation/**/__pycache__/
