@@ -981,7 +981,9 @@ function Start-DotNetProcessLogged {
         # The WASM app takes its environment from the Blazor-Environment response header (Production when absent). This launcher is the
         # loopback-only local tester setup (backend http://localhost:5000), which the frontend accepts only in Development: Production keeps
         # requiring an HTTPS BackendUrl (BackendUrlValidator), so the header is set here rather than relaxing that rule.
-        $argString = "serve --directory `"$($Runnable.Path)`" --port 5173 -h `"Blazor-Environment: Development`""
+        # Cache-Control: no-cache makes the browser ask on every load whether index.html, css/ and js/ changed (unchanged = a short 304), so a
+        # newer package is never shown with the previous version's styles or scripts. _framework files are integrity-checked by Blazor itself.
+        $argString = "serve --directory `"$($Runnable.Path)`" --port 5173 -h `"Blazor-Environment: Development`" -h `"Cache-Control: no-cache`""
     }
     elseif ($Runnable.Kind -eq "Dll") {
         # The published backend binds exactly the address the port preflight checked (unchanged when it came from ASPNETCORE_URLS).
