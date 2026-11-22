@@ -72,9 +72,20 @@ public sealed class UiSourceScenarioProvider : ITestScenarioCandidateProvider
         if (surface is null || surface.Pages.Count == 0)
             return Task.FromResult(new CandidateProviderOutput(D.Capability(D.UiSource, DiscoveryCapabilityState.NoEvidence, 0,
                 surface is null ? "The snapshot has no UI analysis (re-analyze the source to read pages)." : "No Razor or HTML page was found in the source.", engine), []));
-        var list = D.FromUi(context.ProjectKey, SuggestionEngine.Generate(context.ProjectKey, context.Snapshot.Id, surface, []));
+        // A manual tester tests the application's own pages: framework pages (error, not found, sign-in callback) and pages of developer/demo
+        // tools in the same repository are left out, and the detail says how many, so nothing disappears silently.
+        var framework = surface.Pages.Where(D.IsFrameworkPage).ToList();
+        var developer = surface.Pages.Where(p => !D.IsFrameworkPage(p) && D.IsDeveloperToolPage(p)).ToList();
+        var offered = surface with { Pages = [.. surface.Pages.Except(framework).Except(developer)] };
+        var list = D.FromUi(context.ProjectKey, SuggestionEngine.Generate(context.ProjectKey, context.Snapshot.Id, offered, []));
+        var left = new List<string>();
+        if (developer.Count > 0) left.Add($"{developer.Count} page{(developer.Count == 1 ? "" : "s")} of developer or demo tools ({string.Join(", ", developer.Select(p => p.Module).Where(m => m.Length > 0).Distinct(StringComparer.Ordinal).Take(3))})");
+        if (framework.Count(p => p.Routes.Count > 0) is var routed and > 0) left.Add($"{routed} framework page{(routed == 1 ? "" : "s")} (error, not found, sign-in)");
+        var detail = $"{surface.Pages.Count} pages analyzed; {offered.Pages.Count(p => p.Routes.Count > 0)} application page{(offered.Pages.Count(p => p.Routes.Count > 0) == 1 ? "" : "s")} with a route."
+            + (left.Count == 0 ? "" : $" Not offered for manual testing: {string.Join("; ", left)}.");
         return Task.FromResult(new CandidateProviderOutput(D.Capability(D.UiSource, list.Count == 0 ? DiscoveryCapabilityState.NoEvidence : DiscoveryCapabilityState.Available, list.Count,
-            $"{surface.Pages.Count} pages analyzed; {surface.Pages.Count(p => p.Routes.Count > 0)} with a route.", engine,
+            list.Count == 0 && developer.Count > 0 && offered.Pages.All(p => p.Routes.Count == 0)
+                ? $"No application page to test: the only pages with a route are framework pages or belong to developer/demo tools. {detail}" : detail, engine,
             ["Only pages with a parameterless @page route produce candidates.", "React and Angular templates are not analyzed."]), list));
     }
 }
@@ -106,6 +117,13 @@ public sealed class IntegrationJourneyScenarioProvider(DeclaredIntegrationJourne
         var mine = declared is null ? [] : await declared.ForProjectAsync(context.ProjectKey, ct);
         var recognisedPacks = context.Snapshot is null || packs is null ? [] : packs.Packs
             .Where(p => p.SourceRoles.Where(r => !r.RequiresInfrastructureAsCode).Any(r => TestPackSources.Recognizes(r, context.Snapshot!))).ToList();
+        // A pack recognised through one of its sources offers the journeys that source takes part in (an MU source never offers M2LB-only journeys);
+        // a recognised role that names no journeys keeps all of them.
+        IReadOnlySet<string>? JourneysOf(IIntegrationJourneyPack pack)
+        {
+            var roles = pack.SourceRoles.Where(r => !r.RequiresInfrastructureAsCode && TestPackSources.Recognizes(r, context.Snapshot!)).ToList();
+            return roles.Any(r => r.Journeys.Count == 0) ? null : roles.SelectMany(r => r.Journeys).ToHashSet(StringComparer.Ordinal);
+        }
         var list = D.FromDeclaredJourneys(context.ProjectKey, mine).ToList();
         foreach (var pack in recognisedPacks)
         {
@@ -113,7 +131,7 @@ public sealed class IntegrationJourneyScenarioProvider(DeclaredIntegrationJourne
             IReadOnlyList<IntegrationJourneyRun>? history = null;
             if (runs is not null && context.EnvironmentId is { Length: > 0 } environment)
                 history = await runs.ListAsync(new IntegrationJourneyHistoryQuery(environment, PackId: pack.PackId), 500, ct);
-            list.AddRange(D.WithRunEvidence(D.FromPackJourneys(context.ProjectKey, pack), pack, context.EnvironmentId, null, history));
+            list.AddRange(D.WithRunEvidence(D.FromPackJourneys(context.ProjectKey, pack, JourneysOf(pack)), pack, context.EnvironmentId, null, history));
         }
         var detail = $"{mine.Count} declared for this project" + (recognisedPacks.Count == 0 ? "" : $"; test pack(s) {string.Join(", ", recognisedPacks.Select(p => p.DisplayName))} recognise this source");
         return new(D.Capability(D.IntegrationJourneys, list.Count == 0 ? DiscoveryCapabilityState.NoEvidence : DiscoveryCapabilityState.Available, list.Count,
@@ -133,6 +151,10 @@ public sealed class ExistingTestScenarioProvider : ITestScenarioCandidateProvide
                 context.Snapshot is null ? "No source snapshot is linked to this project." : "No xUnit test was discovered in the source.", "xUnit test discovery",
                 inventory?.Limitations), []));
         var links = D.TestLinks(inventory);
+        if (context.Workspace is { Requirements.Count: 0 })
+            return Task.FromResult(new CandidateProviderOutput(D.Capability(D.ExistingTests, DiscoveryCapabilityState.NotApplicable, 0,
+                $"{inventory.Definitions.Count} automated developer tests found. They are not manual test cases; they are shown on a scenario only when "
+                + "the project's specification has a requirement they name, and this project has no specification requirements.", "xUnit test discovery"), [], links));
         return Task.FromResult(new CandidateProviderOutput(D.Capability(D.ExistingTests, DiscoveryCapabilityState.Available, 0,
             $"{inventory.Definitions.Count} tests discovered; {links.Select(l => l.Test.TestId).Distinct().Count()} reference a requirement explicitly. Shown on the candidates they reference.",
             "xUnit test discovery", ["Only xUnit [Fact]/[Theory] are discovered; NUnit, MSTest, Jest and others are not listed individually.", .. inventory.Limitations]), [], links));

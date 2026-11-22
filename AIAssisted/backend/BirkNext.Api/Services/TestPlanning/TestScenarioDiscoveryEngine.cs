@@ -218,8 +218,62 @@ public static class TestScenarioDiscoveryEngine
                 OpenQuestions = [.. s.State == GuideScenarioState.NeedsClarification ? new[] { "The guide marks this scenario as needing clarification." } : []],
             }, projectKey));
         }
+        if (recognisedRoles is { Count: > 0 }) list.AddRange(FromGuideSteps(projectKey, revision, recognisedRoles, list));
         return list;
     }
+
+    /// <summary>
+    /// The guide's steps that lie in this project's own source (their evidence names a recognised role) and that no offered scenario covers, as
+    /// step checks: a project that is one part of a cross-system guide (MU of Skolenærvær) still gets what the guide says about its own part —
+    /// what happens, the expected result and what can go wrong. A step whose evidence names no role is never assumed to be this project's.
+    /// </summary>
+    public static List<DiscoveredScenario> FromGuideSteps(string projectKey, SystemGuideRevision revision, IReadOnlySet<string> recognisedRoles, IReadOnlyList<DiscoveredScenario> offered)
+    {
+        var guide = revision.Content;
+        var reviewed = revision.State == GuideRevisionState.Published;
+        var offeredIds = offered.Where(c => c.CapabilityId == SystemGuide).SelectMany(c => c.Evidence).Select(e => e.Reference.Split('/').Last()).ToHashSet(StringComparer.Ordinal);
+        var covered = guide.Scenarios.Where(s => offeredIds.Contains(s.Id)).SelectMany(s => s.StepIds).ToHashSet(StringComparer.Ordinal);
+        var list = new List<DiscoveredScenario>();
+        foreach (var step in guide.Steps.Where(x => !covered.Contains(x.Id)
+                     && x.Evidence.Any(e => e.SourceRole is { } role && recognisedRoles.Contains(role.Trim()))))
+        {
+            // The step's expected result, else what the guide says it produces (its output) — never invented.
+            var fromOutput = Text(step.ExpectedResult) is null && Text(step.Output) is not null;
+            var expected = Text(step.ExpectedResult) ?? (Text(step.Output) is { } output ? $"Produces: {output}" : null);
+            var component = guide.Components.FirstOrDefault(c => c.Id == step.ComponentId)?.Name;
+            var watch = step.WhatCanGoWrong.Where(w => !string.IsNullOrWhiteSpace(w)).Select(w => w.Trim()).ToList();
+            list.Add(Finish(new DiscoveredScenario
+            {
+                CapabilityId = SystemGuide, SourceCategory = "System Understanding guide", Area = guide.Stages.FirstOrDefault(x => x.Id == step.Stage)?.Title ?? component,
+                Title = step.Title, Purpose = Text(step.Summary) ?? step.Title,
+                Type = ScenarioCandidateType.BusinessFunctional,
+                Confidence = reviewed ? CandidateConfidence.ExplicitSpecification : CandidateConfidence.CandidateAssociation,
+                ExpectedBehaviour = expected, ExpectedBasis = expected is null ? null : $"Guide {revision.GuideKey} revision {revision.Revision}, step {step.Id}{(fromOutput ? " output" : "")} ({(reviewed ? "published" : "not reviewed")})",
+                Preconditions = Text(step.Trigger) is { } trigger ? [$"Trigger: {trigger}"] : [],
+                Steps = [new DiscoveredStep(string.IsNullOrWhiteSpace(step.HowToVerify) ? step.Title : $"{step.Title}: {step.HowToVerify}", expected),
+                    .. watch.Select(w => new DiscoveredStep($"Check what happens when: {w}", "Handled as the guide describes; nothing is lost or silently accepted"))],
+                TestDataNeeds = Text(step.Input) is { } input ? [input] : [],
+                Evidence = [new("guide-step", $"{revision.GuideKey}/step/{step.Id}", $"Guide revision {revision.Revision}")],
+                CanonicalKey = $"guide:{revision.GuideKey}/step/{step.Id}",
+                Engine = $"System Understanding guide r{revision.Revision}",
+                OpenQuestions = ["The guide describes this step but has no test scenario for it yet: review the expected result before testing."],
+            }, projectKey));
+        }
+        return list;
+    }
+
+    private static readonly string[] FrameworkRoutes = ["/error", "/not-found", "/notfound", "/404", "/500", "/access-denied", "/accessdenied", "/logout", "/signout"];
+    private static readonly string[] DeveloperToolSegments = ["demo", "debug", "debugpanel", "sample", "samples", "example", "examples", "playground", "sandbox", "devtools", "storybook"];
+
+    /// <summary>A framework page every web app has (error, not found, the sign-in callback) — not an application function a tester checks.</summary>
+    public static bool IsFrameworkPage(SourceUiPage page) =>
+        page.Routes.Count > 0 && page.Routes.All(r => FrameworkRoutes.Contains(r.TrimEnd('/').ToLowerInvariant(), StringComparer.Ordinal)
+            || r.StartsWith("/authentication/", StringComparison.OrdinalIgnoreCase) || r.StartsWith("/signin-", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>A page of a developer or demo tool in the repository (a project or folder named Demo, Debug, Sample, Example, Playground …).</summary>
+    public static bool IsDeveloperToolPage(SourceUiPage page) =>
+        $"{page.Module}/{page.File}".Split(['/', '\\', '.', '-', '_'], StringSplitOptions.RemoveEmptyEntries)
+            .Any(segment => DeveloperToolSegments.Contains(segment.ToLowerInvariant(), StringComparer.Ordinal));
 
     // ── UI source (Critical E2E suggestion engine) ──────────────────────────────────────────────────────────
 
@@ -355,7 +409,8 @@ public static class TestScenarioDiscoveryEngine
     /// says is still open is classified (a missing test prerequisite or observation is not an unclear expectation). The pack is associated
     /// with the project through its recognised source roles only, so the association stays a candidate for review.
     /// </summary>
-    public static List<DiscoveredScenario> FromPackJourneys(string projectKey, IIntegrationJourneyPack pack) => [.. pack.Journeys.SelectMany(j => j.Scenarios.Select(s =>
+    public static List<DiscoveredScenario> FromPackJourneys(string projectKey, IIntegrationJourneyPack pack, IReadOnlySet<string>? journeyIds = null) =>
+        [.. pack.Journeys.Where(j => journeyIds is null || journeyIds.Contains(j.JourneyId)).SelectMany(j => j.Scenarios.Select(s =>
     {
         var id = $"{pack.PackId}:{j.JourneyId}:{s.ScenarioId}";
         var first = j.Steps.FirstOrDefault();

@@ -232,6 +232,34 @@ public class ImportProjectOverviewTests
     }
 
     [Fact]
+    public void A_source_recognised_in_a_multi_system_pack_asks_for_its_missing_partner_source_by_role_not_file_name()
+    {
+        var hubSnapshot = Guid.NewGuid();
+        var hub = new TestPackSourceStatus(new TestPackSourceRole("hub", "Message hub", "") { Journeys = ["intake"] }, TestPackSourceState.AvailableNotBound)
+        { Candidates = [new TestPackSourceCandidate(hubSnapshot, "anything.zip", "sha", DateTimeOffset.UtcNow)] };
+        var downstream = new TestPackSourceStatus(new TestPackSourceRole("downstream", "Downstream application", "") { Journeys = ["intake", "closing"], ExpectedArtifact = "Downstream repository source archive" },
+            TestPackSourceState.Missing);
+        var optional = new TestPackSourceStatus(new TestPackSourceRole("docs", "Docs", "") { Requirement = TestPackSourceRequirement.Optional }, TestPackSourceState.Missing);
+        var infra = new TestPackSourceStatus(new TestPackSourceRole("iac", "Infrastructure", "") { RequiresInfrastructureAsCode = true }, TestPackSourceState.Missing);
+        var reference = new TestPackSourceStatus(new TestPackSourceRole("api", "Built-in API", "") { Provider = TestPackSourceProvider.TestPackReference }, TestPackSourceState.ReferenceAvailable);
+        var setup = new SourceSetupView { Packs = [new TestPackSourceSetup("demo", "Demo Testing", [hub, downstream, optional, infra, reference])
+            { JourneyNames = new Dictionary<string, string> { ["intake"] = "Intake", ["closing"] = "Closing" } }] };
+
+        var gap = ImportProjectOverview.PartnerSourceGaps(setup, hubSnapshot).Should().ContainSingle("optional, infrastructure and built-in sources are never asked for").Subject;
+        gap.RecognisedAs.Should().Be("Message hub");
+        gap.MissingLabel.Should().Be("Downstream application");
+        gap.Journeys.Should().Equal("Intake", "Closing");
+        ImportProjectOverview.PartnerSourceText(gap).Should().Contain("recognised as Message hub in Demo Testing").And.Contain("Downstream repository source archive")
+            .And.Contain("not the file name");
+        ImportProjectOverview.PartnerSourceGaps(setup, Guid.NewGuid()).Should().BeEmpty("an import the pack did not recognise is not asked for a partner");
+        ImportProjectOverview.PartnerSourceGaps(setup with { Packs = [new TestPackSourceSetup("demo", "Demo Testing", [hub, downstream with { State = TestPackSourceState.AvailableNotBound }])] }, hubSnapshot)
+            .Should().BeEmpty("once the partner source is imported nothing is asked");
+        var item = ImportProjectOverview.Attention(null, setup, new ProjectImportCurrentSource(ProjectImportTone.Available, "", "", hubSnapshot, false, true), true)
+            .Single(i => i.Key == "setup-demo-downstream");
+        item.Text.Should().Be("Also import the Downstream application source");
+    }
+
+    [Fact]
     public void A_pack_with_only_missing_sources_and_a_built_in_reference_is_not_detected()
     {
         // After Reset Local Data the built-in Skolenærvær pack still reports MU/M2LB "Not found" + the Altinn reference: nothing was detected.

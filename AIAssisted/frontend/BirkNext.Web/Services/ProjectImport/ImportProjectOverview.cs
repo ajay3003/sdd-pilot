@@ -11,6 +11,11 @@ public enum ImportAttentionGroup { Documents, TestingSetup, SourceAnalysis, Envi
 public sealed record ImportAttentionItem(string Key, string Text, string? Detail, string ActionLabel, string Href, bool Informational = false,
     ImportAttentionGroup Group = ImportAttentionGroup.Documents);
 
+/// <summary>A required source of a test pack that works together with the source this import was recognised as, and is not imported yet:
+/// the pack's journeys through it, and the test scenarios that depend on them, cannot be prepared until it is.</summary>
+public sealed record PartnerSourceGap(string PackId, string PackName, string RecognisedAs, string RoleKey, string MissingLabel, string? ExpectedArtifact,
+    IReadOnlyList<string> Journeys, string? ActionLabel, string? Href);
+
 /// <summary>Source Analysis of one import, separate from the import itself (an import succeeds even when no source analysis exists).</summary>
 public enum ImportAnalysisState { NoSource, NotCreated, Available, Ready, Partial, NoApplicationCode, Failed }
 
@@ -336,9 +341,42 @@ public static class ImportProjectOverview
     /// Genuine, actionable conditions only, most important first: same-pack document ambiguity (never valid separate packs), a testing source
     /// with several possible matches or none, a source analysis that could not be created, and — as a note — no test environment selected.
     /// </summary>
+    /// <summary>
+    /// The required sources of each test pack that recognised this import's source (from its components and projects, never the file name) and
+    /// are not imported yet. Generic over packs: one source of a multi-system pack (a message hub) says which other system's source (the
+    /// downstream application) is needed, and which journeys wait for it. Infrastructure, optional and built-in reference sources never count.
+    /// </summary>
+    public static IReadOnlyList<PartnerSourceGap> PartnerSourceGaps(SourceSetupView? setup, Guid? snapshotId)
+    {
+        if (setup is null || snapshotId is not { } id) return [];
+        var gaps = new List<PartnerSourceGap>();
+        foreach (var pack in setup.Packs)
+        {
+            static bool Imported(TestPackSourceRole role) => role.Provider == TestPackSourceProvider.ImportedSource && !role.RequiresInfrastructureAsCode;
+            var recognised = pack.Sources.Where(s => Imported(s.Role) && s.Candidates.Any(c => c.SnapshotId == id)).ToList();
+            if (recognised.Count == 0) continue;
+            var asLabel = string.Join(" and ", recognised.Select(s => s.Role.Label).Distinct());
+            foreach (var missing in pack.Sources.Where(s => Imported(s.Role) && s.Role.Requirement == TestPackSourceRequirement.Required
+                         && s.State == TestPackSourceState.Missing && !recognised.Contains(s)))
+            {
+                var line = Line(missing);
+                gaps.Add(new(pack.PackId, pack.DisplayName, asLabel, missing.Role.Key, missing.Role.Label, missing.Role.ExpectedArtifact is { Length: > 0 } a ? a : null,
+                    [.. missing.Role.Journeys.Select(j => pack.JourneyNames.TryGetValue(j, out var name) ? name : j).Distinct()], line.ActionLabel, line.Href));
+            }
+        }
+        return gaps;
+    }
+
+    /// <summary>"Also import the M2LB application source: this ZIP is MU in Skolenærvær Testing …" — one plain sentence per gap.</summary>
+    public static string PartnerSourceText(PartnerSourceGap gap) =>
+        $"This ZIP was recognised as {gap.RecognisedAs} in {gap.PackName}, which works together with {gap.MissingLabel}. "
+        + (gap.Journeys.Count > 0 ? $"Test scenarios for {string.Join(", ", gap.Journeys)} need the {gap.MissingLabel} source as well. " : "")
+        + $"Import {gap.ExpectedArtifact ?? $"the {gap.MissingLabel} source"} too — the order does not matter. Recognised from the code's components and projects, not the file name.";
+
     public static IReadOnlyList<ImportAttentionItem> Attention(CurrentWorkspaceSnapshot? workspace, SourceSetupView? setup, ProjectImportCurrentSource? source, bool environmentSelected)
     {
         var items = new List<ImportAttentionItem>();
+        var partners = PartnerSourceGaps(setup, source?.SnapshotId);
         if (workspace?.Overview is { } o)
         {
             foreach (var role in o.Roles.Where(r => r.Ambiguities.Count > 0))
@@ -364,6 +402,13 @@ public static class ImportProjectOverview
                     _ => $"{status.Role.Label}: {line.State}",
                 };
                 var expected = status.State == TestPackSourceState.Missing && status.Role.ExpectedArtifact is { Length: > 0 } artifact ? $" Expected: {artifact}." : "";
+                // The source this import works with: say why it matters for this import instead of only "missing".
+                if (partners.FirstOrDefault(g => g.PackId == pack.PackId && g.RoleKey == status.Role.Key) is { } partner)
+                {
+                    items.Add(new($"setup-{pack.PackId}-{status.Role.Key}", $"Also import the {status.Role.Label} source", PartnerSourceText(partner),
+                        line.ActionLabel ?? "Import ZIP", line.Href ?? "#pi-setup-heading", Group: ImportAttentionGroup.TestingSetup));
+                    continue;
+                }
                 items.Add(new($"setup-{pack.PackId}-{status.Role.Key}", text, $"{pack.DisplayName}: {SourceSetupPresentation.Sentence(status)}{expected}",
                     line.ActionLabel ?? "Review setup", line.Href ?? "#pi-setup-heading", Group: ImportAttentionGroup.TestingSetup));
             }

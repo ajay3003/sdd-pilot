@@ -569,6 +569,14 @@
                 </dl>
             }
             @if (Session.RoleOutcome is { Length: > 0 } roleOutcome) { <p class="pi-muted" role="status" data-testid="pi-result-roles">@roleOutcome</p> }
+            @* A source of a multi-system test pack whose partner source is not imported: said right after the import, with the one action that fixes it. *@
+            @foreach (var gap in ImportProjectOverview.PartnerSourceGaps(_setup, Activation.Current is { } justImported ? ProjectImportPresentation.CurrentSource(justImported, DateTimeOffset.UtcNow).SnapshotId : null))
+            {
+                <div class="pi-warning pi-partner-source" role="status" data-testid="pi-partner-source" data-pack="@gap.PackId" data-role="@gap.RoleKey">
+                    <strong>Also import the @gap.MissingLabel source.</strong> @ImportProjectOverview.PartnerSourceText(gap)
+                    <button type="button" class="btn-secondary btn-sm" data-testid="pi-partner-source-import" @onclick="ImportZipFromHeader">Import ZIP</button>
+                </div>
+            }
             <p><strong>@done.ProjectName</strong> imported successfully. Import means BirkNext found and recorded the contents — nothing has been reviewed or tested yet. Imported is not reviewed or approved: review the documents next.</p>
             @if (Session.GitQueue.Count > 0)
             {

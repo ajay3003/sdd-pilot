@@ -172,7 +172,7 @@ public sealed class ProjectImportApplicationContextTests : BunitContext
         cut.Find("[data-testid=pi-application-readiness-row][data-role=m2lb] dd").TextContent.Should().Be("Found");
         cut.Find("[data-testid=pi-application-readiness-row][data-role=mu] dd").TextContent.Should().Be("Not found");
         cut.FindAll("[data-testid=pi-attention-item]").Select(i => i.TextContent).Should().NotContain(t => t.Contains("M2LB application source missing"));
-        cut.FindAll("[data-testid=pi-attention-item]").Select(i => i.TextContent).Should().Contain(t => t.Contains("MU (Meldingsutveksleren) source missing"));
+        cut.FindAll("[data-testid=pi-attention-item]").Select(i => i.TextContent).Should().Contain(t => t.Contains("Also import the MU (Meldingsutveksleren) source") && t.Contains("recognised as M2LB application"));
 
         // Two import events under the application's stable id (never a name or archive), each referencing its own package.
         _activity.Recorded.Should().HaveCount(2).And.OnlyContain(r => r.ProjectContextId == app.Id && r.Type == ProjectActivityType.ImportCompleted);
