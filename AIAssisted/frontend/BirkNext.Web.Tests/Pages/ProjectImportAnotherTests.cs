@@ -220,6 +220,22 @@ public sealed class ProjectImportAnotherTests : BunitContext
     }
 
     [Fact]
+    public void Import_ZIP_opens_the_role_checkboxes_before_and_after_the_first_import()
+    {
+        var first = Render<ProjectImportPage>();
+        first.Find("[data-testid=pi-roles]").TextContent.Should().Contain("What does this ZIP contain?");
+        first.FindAll("[data-testid=pi-zip-role]").Count.Should().Be(ImportRoleChoice.Choices.Count);
+        first.Dispose();
+
+        ImportFirst().Dispose();
+        var page = Render<ProjectImportPage>();
+        page.FindAll("[data-testid=pi-roles]").Should().BeEmpty("collapsed until Import ZIP");
+        page.Find("[data-testid=pi-header-import]").Click();
+        page.FindAll("[data-testid=pi-zip-role]").Select(r => r.GetAttribute("data-role")).Should().Equal(ImportRoleChoice.Choices.Select(c => c.ToString()));
+        page.FindAll("[data-testid=pi-zip-role]").Should().OnlyContain(r => !r.HasAttribute("checked"), "nothing ticked = detected from content");
+    }
+
+    [Fact]
     public void With_an_application_the_import_intent_is_explicit_and_cancel_returns_to_Import_ZIP()
     {
         ImportFirst().Dispose();
