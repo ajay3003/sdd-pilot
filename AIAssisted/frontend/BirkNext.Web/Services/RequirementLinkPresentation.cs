@@ -97,6 +97,10 @@ public static class RequirementLinkPresentation
 
     public static StoryStatus ParentStory(TestCaseDraft c, IReadOnlyCollection<Row> rows, IReadOnlyList<CoverageUserStory> stories, bool noSpecification)
     {
+        // A case prepared from a story's own acceptance scenario belongs to that story, whether or not a requirement is linked.
+        if (c.Generated.Story is { } own)
+            return new([stories.FirstOrDefault(s => s.Key == own.Key) ?? own], null,
+                $"from its acceptance scenario{(c.Generated.NumberInStory is { } n ? $" {n}" : "")}");
         var ids = rows.Select(r => r.RequirementId).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var found = stories.Where(s => s.NamedRequirements.Any(ids.Contains) || s.TaskRequirements.Any(t => ids.Contains(t.RequirementId)))
             .DistinctBy(s => CoverageUserStory.KeyOf(s.SpecificationPath, s.Key)).ToList();

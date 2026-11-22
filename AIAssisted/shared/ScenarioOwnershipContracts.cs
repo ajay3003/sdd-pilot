@@ -53,6 +53,9 @@ public static class ScenarioOwnership
                         "A requirement of the specification that no acceptance scenario describes: business behaviour a person checks.")
                     : new(ScenarioPurpose.BusinessFunctional, "Acceptance scenario", M, null, SpecialistArea.None,
                         "An acceptance scenario (Given / When / Then) of the specification: business behaviour a person checks.");
+            case SystemGuide when c.CanonicalKey.Contains("/step/", StringComparison.Ordinal):
+                return new(ScenarioPurpose.BusinessFunctional, "Guide step check", M, null, SpecialistArea.None,
+                    "A step of a System Understanding guide that lies in this project's own source and that no guide scenario covers: a person checks what the step does.");
             case SystemGuide:
                 return c.Type == ScenarioCandidateType.BusinessE2E
                     ? new(ScenarioPurpose.BusinessEndToEnd, "Guide scenario", M, T, SpecialistArea.IntegrationTesting,

@@ -41,6 +41,18 @@ public sealed class ParentStoryPresentationTests
     }
 
     [Fact]
+    public void A_case_from_a_storys_own_acceptance_scenario_belongs_to_that_story_without_a_linked_requirement()
+    {
+        // Audit 2026-11-22 (M2LB): a case prepared under User Story 6 said "Parent User Story: Not identified: no requirement is linked".
+        var c = Case(ScenarioSourceKind.ProjectDiscovery, "specification");
+        c = c with { Generated = c.Generated with { Story = Story, NumberInStory = 3 } };
+        var status = L.ParentStory(c, [], [Story], noSpecification: false);
+        status.Stories.Should().ContainSingle().Which.StoryId.Should().Be("US2");
+        status.Via.Should().Be("from its acceptance scenario 3");
+        status.Reason.Should().BeNull();
+    }
+
+    [Fact]
     public void A_guide_case_says_the_guide_names_no_story_and_its_rule_is_not_a_requirement()
     {
         var status = L.ParentStory(Case(ScenarioSourceKind.ProjectDiscovery, "system-guide", "r-duplicate"), [], [Story], noSpecification: true);

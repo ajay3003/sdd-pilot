@@ -18,7 +18,10 @@ public sealed class ManualTestingWorkspace(IServiceProvider services)
         TestPlanWorkspace? Plans, ScenarioDiscoveryResult? Discovery, CoverageWorkspaceEvidence? Evidence, List<ProjectRequirementOption>? Requirements, string? Error)
     {
         public ManualTestingPresentation.Facts Facts => new(ProjectKey, ProjectName, Plans?.Drafts ?? [], Discovery, Requirements?.Count,
-            Requirements is { Count: > 0 } ? null : RequirementLinkPresentation.SpecificationChoiceNeeded(Specification));
+            Requirements is { Count: > 0 } ? null : RequirementLinkPresentation.SpecificationChoiceNeeded(Specification), AnyProjectImported);
+
+        /// <summary>Whether any project is imported at all (decides "Import a project" or "Choose a project" when none is selected).</summary>
+        public bool AnyProjectImported { get; init; } = true;
 
         /// <summary>The Specification role as the explorers resolve it: says whether a specification still has to be chosen (a monorepo's modules).</summary>
         public ArtifactExplorerState? Specification { get; init; }
@@ -33,7 +36,11 @@ public sealed class ManualTestingWorkspace(IServiceProvider services)
         if (Get<IFrontendAnalysisContextFactory>() is { } contexts)
             try { environment = (await contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id; } catch (InvalidOperationException) { }
         var (snapshotId, basis) = ResolveSnapshot(services);
-        if (key is null) return new(null, null, environment, snapshotId, basis, null, null, null, null, null);
+        if (key is null)
+            return new(null, null, environment, snapshotId, basis, null, null, null, null, null)
+            {
+                AnyProjectImported = Get<IWorkspaceSessionService>() is not { } session || session.SddLifecycle.ProjectImports.Count > 0,
+            };
 
         string? error = null;
         TestPlanWorkspace? plans = null;

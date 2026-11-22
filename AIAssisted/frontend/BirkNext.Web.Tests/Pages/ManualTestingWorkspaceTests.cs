@@ -56,6 +56,9 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         M.Facts F(List<TestPlanDraftSummary>? plans = null, ScenarioDiscoveryResult? d = null, string? project = "library") => new(project, "Library", plans ?? [], d, 3);
 
         M.Next(F(project: null)).Href.Should().Be("project-import");
+        M.Next(F(project: null)).Label.Should().Be("Choose a project", "projects exist: one has to be chosen");
+        M.Next(new M.Facts(null, null, [], null, null, AnyProjectImported: false)).Label.Should().Be("Import a project", "nothing to choose from: import first");
+        M.Steps(new M.Facts(null, null, [], null, null, AnyProjectImported: false)).Should().OnlyContain(s => s.DisabledReason == "Import a project first.");
         M.Next(F()).Should().Match<M.NextAction>(n => n.Label == "Discover what to test" && n.Href == "test-plan-suggestions?area=choose");
         M.Next(F(d: Discovery(4))).Label.Should().Be("Choose scenarios to prepare");
         M.Next(F([Summary(clarify: 1)], Discovery(4))).Should().Match<M.NextAction>(n => n.Label == "Resolve cases that need clarification" && n.Href.Contains($"draft={PlanId}"));

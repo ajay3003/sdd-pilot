@@ -27,7 +27,7 @@ public static class ManualTestingPresentation
     /// <param name="SpecificationChoice">Set when the project holds several specifications and none is chosen (a monorepo): what to choose and why.
     /// Discovery then finds no business scenarios from the specification, so choosing comes first.</param>
     public sealed record Facts(string? ProjectKey, string? ProjectName, IReadOnlyList<TestPlanDraftSummary> Plans, ScenarioDiscoveryResult? Discovery, int? Requirements,
-        string? SpecificationChoice = null);
+        string? SpecificationChoice = null, bool AnyProjectImported = true);
 
     /// <summary>Discover &amp; understand: its Module / Feature / Specification lists choose what manual testing reads.</summary>
     public const string SpecificationRoute = "manual-testing/discover";
@@ -41,8 +41,8 @@ public static class ManualTestingPresentation
     public static IReadOnlyList<GuidedStep> Steps(Facts f)
     {
         if (f.ProjectKey is null)
-            return [.. Stages.Select(s => new GuidedStep(s.Id, s.Title, GuidedStepState.Waiting, "No project", s.Question + " Select or import a project first.",
-                DisabledReason: "Select a project first (Import Project → Use)."))];
+            return [.. Stages.Select(s => new GuidedStep(s.Id, s.Title, GuidedStepState.Waiting, "No project", s.Question,
+                DisabledReason: f.AnyProjectImported ? "Choose a project in the Project list above first." : "Import a project first."))];
         var candidates = f.Discovery?.Candidates.Count ?? 0;
         var clarify = f.Discovery?.Candidates.Count(c => c.NeedsClarification) ?? 0;
         var discover = new GuidedStep("discover", "Discover & understand", f.Discovery is null && f.Plans.Count == 0 ? GuidedStepState.Current : GuidedStepState.Done,
@@ -68,7 +68,10 @@ public static class ManualTestingPresentation
     /// <summary>The one next step, from what is stored (never a fixed workflow position).</summary>
     public static NextAction Next(Facts f)
     {
-        if (f.ProjectKey is null) return new("Select a project", "project-import", "Manual Testing works on one imported project at a time.");
+        if (f.ProjectKey is null)
+            return f.AnyProjectImported
+                ? new("Choose a project", "project-import", "Manual Testing works on one imported project at a time: choose it in the Project list above.")
+                : new("Import a project", "project-import", "Nothing is imported yet. Import a project ZIP — its source, documents or both — and Manual Testing finds what to test.");
         if ((f.Plans.Count == 0 || Cases(f) == 0) && f.SpecificationChoice is { } choose)
             return new("Choose the specification", SpecificationRoute, choose);
         if (f.Plans.Count == 0 || Cases(f) == 0)

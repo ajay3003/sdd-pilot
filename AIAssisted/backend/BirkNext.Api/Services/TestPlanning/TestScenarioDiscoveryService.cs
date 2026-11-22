@@ -42,8 +42,10 @@ public sealed class SystemGuideScenarioProvider(SystemGuideService guides) : ITe
             return new(D.Capability(D.SystemGuide, DiscoveryCapabilityState.NotApplicable, 0, "No System Understanding guide describes this project's source.", "System Understanding"), []);
         // Only the scenarios whose evidence lies in the part of the system this project's source is (see D.InProjectSource).
         var list = recognised.SelectMany(g => D.FromGuide(context.ProjectKey, g.Shown, g.Roles)).ToList();
+        var steps = list.Count(c => c.CanonicalKey.Contains("/step/", StringComparison.Ordinal));
         return new(D.Capability(D.SystemGuide, list.Count == 0 ? DiscoveryCapabilityState.NoEvidence : DiscoveryCapabilityState.Available, list.Count,
-            string.Join("; ", recognised.Select(g => Detail(g.Shown, g.Roles, g.RoleLabels))), "System Understanding"), list);
+            string.Join("; ", recognised.Select(g => Detail(g.Shown, g.Roles, g.RoleLabels)))
+            + (steps == 0 ? "" : $". Plus {steps} step check{(steps == 1 ? "" : "s")} for the guide steps in this project's own source that no scenario covers"), "System Understanding"), list);
     }
 
     /// <summary>"Guide: 4 of 21 scenarios apply to this project's source (MU); 17 are evidenced only in M2LB and are not offered (revision 1, Draft)".</summary>
