@@ -11,7 +11,7 @@ public static class KnownRealProjectDatasets
     /// <summary>Explicit archive path for the selected dataset; overrides the dataset's own variable.</summary>
     public const string ArchiveEnvironmentVariable = "BIRKNEXT_REAL_ACCEPTANCE_ARCHIVE";
 
-    public static RealProjectDatasetRegistry Registry() => new([new M2lbDatasetProvider()]);
+    public static RealProjectDatasetRegistry Registry() => new([new M2lbDatasetProvider(), new GenericDatasetProvider()]);
 
     /// <summary>The configured dataset of this run and its preparation (archive presence + fingerprint), from environment variables.</summary>
     public static DatasetPreparation PrepareFromEnvironment(Func<string, string?>? environment = null)

@@ -278,6 +278,23 @@ public sealed class RealProjectAcceptanceFrameworkTests : IDisposable
     }
 
     [Fact]
+    public void A_generic_archive_is_checked_without_invented_facts_or_a_pinned_hash()
+    {
+        var registry = KnownRealProjectDatasets.Registry();
+        registry.DatasetIds.First().Should().Be(M2lbDatasetProvider.Id, "M2LB stays the default dataset");
+        var archive = Path.Combine(Path.GetTempPath(), "birknext-generic-" + Guid.NewGuid().ToString("N") + ".zip");
+        File.WriteAllBytes(archive, [0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        try
+        {
+            var generic = registry.Resolve(GenericDatasetProvider.Id, archive, _ => null);
+            generic.Expectations.Should().BeEmpty("nothing is claimed about an archive without a dataset description");
+            generic.ExpectedSha256.Should().BeNull();
+            DatasetPreparation.Prepare(generic).State.Should().Be(DatasetPreparationState.Ready, "any version of the archive is accepted, never a hash mismatch");
+        }
+        finally { File.Delete(archive); }
+    }
+
+    [Fact]
     public void Production_assemblies_do_not_reference_acceptance_or_any_dataset()
     {
         var acceptance = typeof(RealProjectAcceptanceRunner).Assembly.GetName().Name!;
