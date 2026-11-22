@@ -31,6 +31,10 @@ public static class GitSourcesPresentation
                 ? "No credential helper is configured. Public repositories, local folders and SSH keys work; private HTTPS repositories need Git Credential Manager (included with Git for Windows)."
                 : $"Git uses the credential helper {string.Join(", ", installation.CredentialHelpers)}. BirkNext never sees the password or token.";
 
+    /// <summary>One line per connected repository in a repository list (Import Project and other pages): name, branch, where it comes from.</summary>
+    public static string PickerLabel(GitSourceLink link) =>
+        $"{link.Repository} · {(link.Branch.Length > 0 ? link.Branch : "default branch")} · {(link.EffectiveKind == "Local" ? "local folder" : Location(link))}";
+
     public static string KindLabel(GitSourceLink link) => link.EffectiveKind == "Local" ? "Local folder" : "Git URL";
 
     /// <summary>Where the repository comes from: the local folder, or the URL without any credential.</summary>

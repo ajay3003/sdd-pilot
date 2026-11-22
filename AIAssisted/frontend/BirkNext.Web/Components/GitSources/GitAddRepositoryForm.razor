@@ -6,10 +6,10 @@
    working tree is never changed. Git Credential Manager signs in in its own window when a private HTTPS repository needs it. *@
 <div class="gar" data-testid="gar">
     <div class="gar-tabs" role="tablist" aria-label="Where the repository is">
-        <button type="button" role="tab" id="gar-tab-local" aria-controls="gar-panel" aria-selected="@(_mode == Mode.Local ? "true" : "false")"
-                class="gar-tab @(_mode == Mode.Local ? "is-active" : "")" @onclick="() => Switch(Mode.Local)" data-testid="gar-mode-local">Local repository</button>
         <button type="button" role="tab" id="gar-tab-url" aria-controls="gar-panel" aria-selected="@(_mode == Mode.Url ? "true" : "false")"
                 class="gar-tab @(_mode == Mode.Url ? "is-active" : "")" @onclick="() => Switch(Mode.Url)" data-testid="gar-mode-url">Clone from Git URL</button>
+        <button type="button" role="tab" id="gar-tab-local" aria-controls="gar-panel" aria-selected="@(_mode == Mode.Local ? "true" : "false")"
+                class="gar-tab @(_mode == Mode.Local ? "is-active" : "")" @onclick="() => Switch(Mode.Local)" data-testid="gar-mode-local">Local repository</button>
     </div>
 
     <div id="gar-panel" role="tabpanel" aria-labelledby="@(_mode == Mode.Local ? "gar-tab-local" : "gar-tab-url")" class="gar-panel">
@@ -88,7 +88,8 @@
     [Parameter] public EventCallback<GitSourceLink> OnAdded { get; set; }
 
     private enum Mode { Local, Url }
-    private Mode _mode = Mode.Local;
+    /// <summary>Clone from Git URL is the default (2026-11-22): repositories are usually added by their URL, kept in Git Sources for every page.</summary>
+    private Mode _mode = Mode.Url;
     private string _path = "", _url = "", _branch = "";
     private GitLocalRepository? _local;
     private GitScanResult? _scan;

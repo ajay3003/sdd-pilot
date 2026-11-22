@@ -184,6 +184,7 @@ public sealed class GitSourcesUiTests : BunitContext
         _git.Setup(g => g.InspectAsync(@"C:\source\Contracts", It.IsAny<CancellationToken>()))
             .ReturnsAsync((new GitLocalRepository("Contracts", @"C:\source\Contracts", "main", false, Sha, null, true, ["origin https://dev.azure.com/org/p/_git/Contracts"], false), (string?)null));
         var cut = Render<GitAddRepositoryForm>(p => p.Add(x => x.EnvironmentId, "dev"));
+        cut.Find("[data-testid=gar-mode-local]").Click();
         cut.Find("[data-testid=gar-add]").HasAttribute("disabled").Should().BeTrue();
 
         cut.Find("[data-testid=gar-path]").Input(@"C:\source\Contracts");
@@ -203,7 +204,7 @@ public sealed class GitSourcesUiTests : BunitContext
         IReadOnlyList<(GitImportRequest Request, string Label)>? queued = null;
         var cut = Render<GitImportWizard>(p => p.Add(x => x.OnImport, (IReadOnlyList<(GitImportRequest, string)> q) => queued = q));
 
-        cut.WaitForElement("[data-testid=giw-repo-check]").Change(true);
+        // One connected repository: it is chosen already.
         cut.WaitForElement("[data-testid=giw-commit]").Change("NOT-A-SHA");
         cut.Find("[data-testid=giw-commit-problem]");
         cut.Find("[data-testid=giw-import]").HasAttribute("disabled").Should().BeTrue();
@@ -213,6 +214,58 @@ public sealed class GitSourcesUiTests : BunitContext
         cut.WaitForAssertion(() => queued.Should().NotBeNull());
         var request = queued!.Single().Request;
         (request.RepositoryId, request.Branch, request.Commit, request.EnvironmentId).Should().Be(("git-a", "main", Sha, "dev"));
+        _git.Verify(g => g.FetchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never(), "an exact commit needs no new fetch");
+    }
+
+    [Fact]
+    public void Adding_a_repository_starts_with_Clone_from_Git_URL()
+    {
+        var cut = Render<GitAddRepositoryForm>(p => p.Add(x => x.EnvironmentId, "dev"));
+
+        cut.Find("[data-testid=gar-mode-url]").GetAttribute("aria-selected").Should().Be("true");
+        cut.Find("[role=tablist] button").GetAttribute("data-testid").Should().Be("gar-mode-url", "the URL tab comes first");
+        cut.Find("[data-testid=gar-url]");
+        cut.FindAll("[data-testid=gar-path]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Project_Import_lists_the_connected_repositories_and_gets_the_latest_code_before_importing()
+    {
+        var a = Link("a", "dev", "LendoPlus");
+        var b = Link("b", "dev", "LendoPlus", "Billing") with { Kind = "Remote", LocalPath = null, RemoteUrl = "https://dev.azure.com/org/p/_git/Billing", LastFetchedAt = null };
+        _git.Setup(g => g.LinksAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(((IReadOnlyList<GitSourceLink>)[a, b], (string?)null));
+        _git.Setup(g => g.FetchAsync("b", "dev", It.IsAny<CancellationToken>())).ReturnsAsync((b with { LastFetchedAt = DateTimeOffset.UtcNow }, (string?)null));
+        _git.Setup(g => g.UpdateLinkAsync("b", "dev", It.IsAny<string?>(), null, It.IsAny<IReadOnlyList<string>?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((b, (string?)null));
+        IReadOnlyList<(GitImportRequest Request, string Label)>? queued = null;
+        var cut = Render<GitImportWizard>(p => p.Add(x => x.OnImport, (IReadOnlyList<(GitImportRequest, string)> q) => queued = q));
+
+        cut.WaitForElements("[data-testid=giw-repo-option]").Select(o => o.TextContent).Should().Equal(
+            "Billing · main · https://dev.azure.com/org/p/_git/Billing", "Contracts · main · local folder");
+        cut.FindAll("[data-testid=giw-chosen]").Should().BeEmpty("two repositories: the tester chooses");
+        cut.FindAll("[data-testid=gar]").Should().BeEmpty("repositories are added in System Settings → Git Sources only");
+        cut.Find("[data-testid=giw-manage]").GetAttribute("href").Should().Be("admin/system-settings?section=git-sources");
+
+        cut.Find("[data-testid=giw-repo]").Change("b");
+        cut.WaitForElement("[data-testid=giw-latest]").HasAttribute("checked").Should().BeTrue("the latest code is imported by default");
+        cut.Find("[data-testid=giw-never-imported]");
+        cut.Find("[data-testid=giw-import]").Click();
+
+        cut.WaitForAssertion(() => queued.Should().NotBeNull());
+        _git.Verify(g => g.FetchAsync("b", "dev", It.IsAny<CancellationToken>()), Times.Once(), "fetched before importing: a new snapshot of the current code");
+        var request = queued!.Single().Request;
+        (request.RepositoryId, request.Branch, request.Commit).Should().Be(("git-b", "main", (string?)null));
+    }
+
+    [Fact]
+    public void Project_Import_without_a_connected_repository_points_to_Git_Sources_and_has_no_add_form()
+    {
+        var cut = Render<GitImportWizard>(p => p.Add(x => x.OnImport, (IReadOnlyList<(GitImportRequest, string)> _) => { }));
+
+        cut.WaitForElement("[data-testid=giw-empty]").TextContent.Should().Contain("System Settings → Git Sources");
+        cut.Find("[data-testid=giw-empty] a").GetAttribute("href").Should().Be("admin/system-settings?section=git-sources");
+        cut.FindAll("[data-testid=gar]").Should().BeEmpty();
+        cut.FindAll("[data-testid=giw-repo]").Should().BeEmpty();
     }
 
     [Fact]

@@ -5,6 +5,7 @@
 @using System.Text
 @inject ImplementationTraceabilityApiService EvidenceApi
 @inject IJSRuntime JS
+@inject IServiceProvider ServiceProvider
 
 <PageTitle>Change Traceability</PageTitle>
 
@@ -88,8 +89,18 @@
                         <input id="it-repo-id"
                                class="form-control"
                                type="text"
-                               placeholder="e.g. my-repo or GUID"
+                               placeholder="@(_repositories.Count > 0 ? "Choose or type a repository" : "e.g. my-repo or GUID")"
+                               list="@(_repositories.Count > 0 ? "it-repo-options" : null)"
+                               data-testid="it-repo-id"
                                @bind="_repositoryId" />
+                        @* The repositories connected in System Settings → Git Sources, as suggestions; any other name or GUID can still be typed. *@
+                        @if (_repositories.Count > 0)
+                        {
+                            <datalist id="it-repo-options" data-testid="it-repo-options">
+                                @foreach (var repo in _repositories) { <option value="@repo.Repository">@BirkNext.Web.Services.GitSourcesPresentation.PickerLabel(repo)</option> }
+                            </datalist>
+                        }
+                        <span class="form-support-ref"><a href="admin/system-settings?section=git-sources" data-testid="it-repo-manage">Add or manage repositories</a></span>
                     </div>
 
                     <div class="form-field">
@@ -505,6 +516,8 @@
 @code {
     private string _workItemInput = string.Empty;
     private string? _repositoryId;
+    /// <summary>Repositories connected to the active project in Git Sources (suggestions only; empty without Git or a project).</summary>
+    private IReadOnlyList<BirkNext.GitSources.GitSourceLink> _repositories = [];
     private string? _branch;
 
     private bool _loading;
@@ -522,9 +535,24 @@
     protected override async Task OnInitializedAsync()
     {
         _status = await EvidenceApi.GetStatusAsync();
+        await LoadRepositoriesAsync();
         _report = EvidenceApi.GetCached();
         if (_report is not null)
             _inputExpanded = false;
+    }
+
+    private async Task LoadRepositoriesAsync()
+    {
+        if (ServiceProvider.GetService(typeof(IGitSourcesApiService)) is not IGitSourcesApiService git
+            || ServiceProvider.GetService(typeof(IFrontendAnalysisContextFactory)) is not IFrontendAnalysisContextFactory contexts) return;
+        try
+        {
+            if ((await contexts.GetActiveContextAsync()).ActiveProfileOrNull?.Id is not { } environment) return;
+            var (links, _) = await git.LinksAsync(environment);
+            _repositories = [.. links.GroupBy(l => l.Repository, StringComparer.OrdinalIgnoreCase).Select(g => g.First()).OrderBy(l => l.Repository, StringComparer.OrdinalIgnoreCase)];
+        }
+        catch (InvalidOperationException) { }
+        catch (HttpRequestException) { }
     }
 
     private async Task FetchEvidence()

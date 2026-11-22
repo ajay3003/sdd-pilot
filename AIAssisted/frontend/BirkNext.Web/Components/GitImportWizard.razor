@@ -5,9 +5,10 @@
 @inject IGitSourcesApiService Git
 @inject IFrontendAnalysisContextFactory Contexts
 
-@* Import Project → Git (Git-only). The repositories connected to this BirkNext project (a local repository or a Git URL, fetched by the person's
-   own Git into BirkNext-owned storage) → branch, or one exact commit, and roles → import, each in turn through the same review as a ZIP.
-   Opening reads only local state; Fetch latest and Add contact a remote only when the person starts them. *@
+@* Import Project → Git (2026-11-22). Repositories are connected once, in System Settings → Git Sources (their URLs are kept there); here the
+   tester only picks one from a list, its branch (or one exact commit) and roles, and imports. "Get the latest code first" (on by default)
+   fetches before importing, so each import is a new snapshot of the current code; earlier snapshots are never replaced. Opening reads only
+   local state; a remote is contacted only when the tester imports with "latest" ticked. *@
 <section class="giw" aria-labelledby="giw-title" data-testid="giw">
     <h3 id="giw-title" class="giw-title">Import from Git</h3>
     <p class="giw-muted">Uses the Git installed on this computer and its sign-in (Git Credential Manager or SSH keys). Read-only: BirkNext never pushes and never changes your working folders.</p>
@@ -19,55 +20,62 @@
     else if (_status.Installation is not { Found: true })
     {
         <p class="giw-muted" data-testid="giw-not-connected">@(_status.Installation?.Problem ?? _status.Message)
-            <a href="admin/system-settings?section=git-sources">Git Sources in System Settings</a>.</p>
+            <a href="@ManageHref">Git Sources in System Settings</a>.</p>
     }
     else if (_environmentId is null)
     {
         <p class="giw-muted" data-testid="giw-no-project">Choose a Target Environment (your BirkNext project) first: repositories are connected per project.</p>
+    }
+    else if (_links.Count == 0)
+    {
+        @if (_error is not null) { <p class="giw-error" role="alert" data-testid="giw-error">@_error</p> }
+        <p class="giw-muted" data-testid="giw-empty">No repository is connected to @(_projectName ?? "this project") yet.
+            Add its Git URL once in <a href="@ManageHref" data-testid="giw-manage">System Settings → Git Sources</a>; it is then listed here and on every page that uses repositories.</p>
     }
     else
     {
         @if (_error is not null) { <p class="giw-error" role="alert" data-testid="giw-error">@_error</p> }
         @if (_busyText is not null) { <p class="giw-muted" role="status" data-testid="giw-busy">@_busyText</p> }
 
-        @if (_links.Count == 0)
-        {
-            <p class="giw-muted" data-testid="giw-empty">No repository is connected to @(_projectName ?? "this project") yet. Add one:</p>
-        }
-        else
-        {
-            <ul class="giw-list" data-testid="giw-repos">
-                @foreach (var link in _links)
-                {
-                    var selected = _selected.TryGetValue(link.Id, out var choice);
-                    <li data-testid="giw-repo" data-repo="@link.Id">
-                        <div class="giw-repo-head">
-                            <label><input type="checkbox" checked="@selected" disabled="@(link.LastFetchedAt is null)" @onchange="e => ToggleAsync(link, (bool)e.Value!)" data-testid="giw-repo-check" />
-                                <strong>@link.Repository</strong></label>
-                            <span class="giw-muted giw-small">@GitSourcesPresentation.KindLabel(link) · @(link.Branch.Length > 0 ? link.Branch : "—") · @GitSourcesPresentation.FetchText(link, DateTimeOffset.UtcNow)</span>
-                            @if (link.LastImport is { } last) { <span class="giw-badge" data-testid="giw-linked">last imported @last.CommitSha[..8]</span> }
-                            <button type="button" class="btn-secondary btn-sm giw-fetch" disabled="@Busy" @onclick="() => FetchAsync(link)" data-testid="giw-fetch">Fetch latest</button>
-                        </div>
-                        @if (GitSourcesPresentation.FetchHint(link.LastFetchFailure) is { } hint) { <p class="giw-muted giw-small" data-testid="giw-hint">@hint</p> }
-                        @if (selected) { @Configure(link, choice!) }
-                    </li>
-                }
-            </ul>
+        <div class="giw-pick">
+            <label for="giw-repo" class="giw-label">Repository</label>
+            <div class="giw-pick-row">
+                <select id="giw-repo" class="form-control giw-select" value="@(_choice?.Link.Id ?? "")" disabled="@Busy" @onchange="e => ChooseAsync(e.Value?.ToString())" data-testid="giw-repo">
+                    <option value="">Choose a repository…</option>
+                    @foreach (var link in _links)
+                    {
+                        <option value="@link.Id" data-testid="giw-repo-option">@GitSourcesPresentation.PickerLabel(link)</option>
+                    }
+                </select>
+                <a href="@ManageHref" class="giw-small" data-testid="giw-manage">Add or manage repositories</a>
+            </div>
+        </div>
 
-            @if (_selected.Count > 0)
-            {
+        @if (_choice is { } choice)
+        {
+            var link = choice.Link;
+            <div class="giw-chosen" data-testid="giw-chosen" data-repo="@link.Id">
+                <p class="giw-muted giw-small" data-testid="giw-repo-facts">@GitSourcesPresentation.KindLabel(link) · @GitSourcesPresentation.FetchText(link, DateTimeOffset.UtcNow)
+                    @if (link.LastImport is { } last) { <span data-testid="giw-linked"> · last imported @last.CommitSha[..8] (@last.Branch, @last.ImportedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</span> }
+                    else { <span data-testid="giw-never-imported"> · not imported yet</span> }
+                </p>
+                @if (GitSourcesPresentation.FetchHint(link.LastFetchFailure) is { } hint) { <p class="giw-muted giw-small" data-testid="giw-hint">@hint</p> }
+                @Configure(link, choice)
+
+                <label class="giw-latest"><input type="checkbox" checked="@choice.GetLatest" disabled="@(choice.Commit is { Length: > 0 })" @onchange="e => choice.GetLatest = (bool)e.Value!" data-testid="giw-latest" />
+                    Get the latest code first <span class="giw-muted giw-small">(fetches the branch now, so this import is a new snapshot of the current code)</span></label>
+
                 <div class="giw-review" data-testid="giw-review">
-                    <p class="giw-muted giw-small">Each repository is imported in turn through the same review as a ZIP. Earlier snapshots are never replaced.</p>
-                    <button type="button" class="btn-primary" disabled="@(Busy || _selected.Values.Any(c => c.CommitProblem is not null))" @onclick="ImportAsync" data-testid="giw-import">
-                        Import @_selected.Count repositor@(_selected.Count == 1 ? "y" : "ies")</button>
+                    <p class="giw-muted giw-small">The import goes through the same review as a ZIP. It becomes a new snapshot; earlier snapshots are never replaced.</p>
+                    <button type="button" class="btn-primary" disabled="@(Busy || choice.CommitProblem is not null || (!choice.GetLatest && link.LastFetchedAt is null && choice.Commit is null))"
+                            @onclick="ImportAsync" data-testid="giw-import">Import @link.Repository</button>
+                    @if (!choice.GetLatest && link.LastFetchedAt is null && choice.Commit is null)
+                    {
+                        <p class="giw-muted giw-small" data-testid="giw-needs-fetch">Nothing has been fetched from this repository yet: tick “Get the latest code first”.</p>
+                    }
                 </div>
-            }
+            </div>
         }
-
-        <details class="giw-add" open="@(_links.Count == 0)" data-testid="giw-add">
-            <summary>Add a repository</summary>
-            <GitAddRepositoryForm EnvironmentId="@_environmentId" ProjectName="@_projectName" OnAdded="OnAdded" />
-        </details>
     }
 </section>
 
@@ -75,12 +83,17 @@
     /// <summary>The queue of imports to run (each through the normal Project Import review), in order.</summary>
     [Parameter, EditorRequired] public EventCallback<IReadOnlyList<(GitImportRequest Request, string Label)>> OnImport { get; set; }
 
+    /// <summary>Repositories are added and managed in one place; the link returns here afterwards.</summary>
+    private const string ManageHref = "admin/system-settings?section=git-sources";
+
     private sealed class Choice(GitSourceLink link)
     {
         public GitSourceLink Link { get; set; } = link;
         public string Branch { get; set; } = link.Branch;
         public string? Commit { get; set; }
         public string? CommitProblem { get; set; }
+        /// <summary>Fetch before importing (default): the import is the branch's current code, not what was fetched last time.</summary>
+        public bool GetLatest { get; set; } = true;
         public IReadOnlyList<GitBranch> Branches { get; set; } = [];
         public HashSet<string> Roles { get; } = new(link.Roles, StringComparer.Ordinal);
     }
@@ -89,7 +102,7 @@
 
     private GitConnectionStatus? _status;
     private IReadOnlyList<GitSourceLink> _links = [];
-    private readonly Dictionary<string, Choice> _selected = new(StringComparer.Ordinal);
+    private Choice? _choice;
     private string? _error, _busyText, _environmentId, _projectName;
     private bool Busy => _busyText is not null;
 
@@ -102,7 +115,13 @@
         }
         catch (InvalidOperationException) { }
         (_status, _error) = await Git.StatusAsync();
-        if (_environmentId is not null && _status?.Installation is { Found: true }) (_links, _error) = await Git.LinksAsync(_environmentId);
+        if (_environmentId is not null && _status?.Installation is { Found: true })
+        {
+            (_links, _error) = await Git.LinksAsync(_environmentId);
+            _links = [.. _links.OrderBy(l => l.Repository, StringComparer.OrdinalIgnoreCase)];
+            // One repository: nothing to choose.
+            if (_links.Count == 1) await ChooseAsync(_links[0].Id);
+        }
     }
 
     private async Task Act(string text, Func<Task> work)
@@ -112,34 +131,15 @@
         finally { _busyText = null; }
     }
 
-    private void Replace(GitSourceLink updated)
+    private async Task ChooseAsync(string? linkId)
     {
-        _links = _links.Where(l => l.Id != updated.Id).Append(updated).OrderBy(l => l.Repository, StringComparer.OrdinalIgnoreCase).ToList();
-        if (_selected.TryGetValue(updated.Id, out var choice)) choice.Link = updated;
-    }
-
-    private Task FetchAsync(GitSourceLink link) => Act("Fetching the latest branches. If Git Credential Manager opens a sign-in window, complete it there…", async () =>
-    {
-        var (updated, error) = await Git.FetchAsync(link.Id, link.EnvironmentId);
-        if (updated is null) { _error = error; return; }
-        Replace(updated);
-        if (_selected.TryGetValue(updated.Id, out var choice)) choice.Branches = (await Git.BranchesAsync(updated.Id, updated.EnvironmentId)).Items;
-    });
-
-    private async Task ToggleAsync(GitSourceLink link, bool on)
-    {
-        if (!on) { _selected.Remove(link.Id); return; }
+        _error = null;
+        if (_links.FirstOrDefault(l => l.Id == linkId) is not { } link) { _choice = null; return; }
         var choice = new Choice(link);
-        _selected[link.Id] = choice;
+        _choice = choice;
         var (branches, error) = await Git.BranchesAsync(link.Id, link.EnvironmentId);
         (choice.Branches, _error) = (branches, error);
         if (choice.Branch.Length == 0 && branches.FirstOrDefault(b => b.IsDefault) is { } fallback) choice.Branch = fallback.Name;
-    }
-
-    private void OnAdded(GitSourceLink link)
-    {
-        Replace(link);
-        _error = link.LastFetchFailure is { } failure ? $"{link.Repository} was added, but fetching it failed: {link.LastFetchProblem ?? GitSourcePolicy.Describe(failure)}" : null;
     }
 
     private void CheckCommit(Choice choice)
@@ -150,20 +150,24 @@
         if (!GitSourcePolicy.IsCommitSha(choice.Commit)) choice.CommitProblem = "A full 40-character commit SHA is required.";
     }
 
-    private Task ImportAsync() => Act("Saving the branch and roles…", async () =>
+    private Task ImportAsync() => Act(_choice is { GetLatest: true, Commit: null } ? "Getting the latest code. If Git Credential Manager opens a sign-in window, complete it there…" : "Saving the branch and roles…", async () =>
     {
         if (_environmentId is not { } environment) { _error = "Choose a Target Environment (BirkNext project) first."; return; }
-        var queue = new List<(GitImportRequest, string)>();
-        foreach (var c in _selected.Values)
+        if (_choice is not { } c) return;
+        if (c.GetLatest && c.Commit is null)
         {
-            // The branch and roles are the link's (shown in Source Management); a specific commit is this import only, never a pin.
-            var (link, error) = await Git.UpdateLinkAsync(c.Link.Id, environment, c.Branch, null, [.. c.Roles]);
-            if (link is null) { _error = $"{c.Link.Repository}: {error}"; return; }
-            Replace(link);
-            queue.Add((new GitImportRequest(link.RepositoryId, c.Branch) { OrganizationUrl = link.OrganizationUrl, Commit = c.Commit, EnvironmentId = environment, Roles = [.. c.Roles] },
-                $"{link.Repository} @ {(c.Commit is { Length: > 0 } sha ? sha[..8] : c.Branch)}"));
+            var (fetched, fetchError) = await Git.FetchAsync(c.Link.Id, c.Link.EnvironmentId);
+            if (fetched is null) { _error = $"Getting the latest code from {c.Link.Repository} failed: {fetchError}"; return; }
+            if (fetched.LastFetchFailure is { } failure) { _error = $"Getting the latest code from {c.Link.Repository} failed: {fetched.LastFetchProblem ?? GitSourcePolicy.Describe(failure)}"; c.Link = fetched; return; }
+            c.Link = fetched;
         }
-        await OnImport.InvokeAsync(queue);
+        // The branch and roles are the link's (shown in Source Management); a specific commit is this import only, never a pin.
+        var (link, error) = await Git.UpdateLinkAsync(c.Link.Id, environment, c.Branch, null, [.. c.Roles]);
+        if (link is null) { _error = $"{c.Link.Repository}: {error}"; return; }
+        c.Link = link;
+        _links = [.. _links.Select(l => l.Id == link.Id ? link : l)];
+        await OnImport.InvokeAsync([(new GitImportRequest(link.RepositoryId, c.Branch) { OrganizationUrl = link.OrganizationUrl, Commit = c.Commit, EnvironmentId = environment, Roles = [.. c.Roles] },
+            $"{link.Repository} @ {(c.Commit is { Length: > 0 } sha ? sha[..8] : c.Branch)}")]);
     });
 
     private RenderFragment Configure(GitSourceLink link, Choice choice) => __builder =>
