@@ -183,6 +183,35 @@ public sealed class ProjectImportAnotherTests : BunitContext
         _activation.Imports.Should().ContainSingle();
     }
 
+    [Fact]
+    public void From_a_preview_Back_and_the_header_buttons_leave_it_without_importing()
+    {
+        var cut = ImportFirst();
+        Queue("billing-b.zip", ShaB, SnapshotB);
+        Choose(cut, "pi-import-another-file", "billing-b.zip");
+        cut.Find("[data-testid=pi-preview]");
+
+        // Back to Import Project, below the preview and in the header (2026-11-22: a preview had no way back).
+        cut.Find("[data-testid=pi-preview-back]").Click();
+        cut.FindAll("[data-testid=pi-preview]").Should().BeEmpty();
+        cut.FindAll("[data-testid=pi-choose]").Should().BeEmpty("back to the start view, no form open");
+        cut.Find("[data-testid=pi-current-archive]").TextContent.Should().Be("orders-a.zip");
+        _activation.Imports.Should().ContainSingle("nothing was imported");
+
+        Queue("billing-b.zip", ShaB, SnapshotB);
+        Choose(cut, "pi-import-another-file", "billing-b.zip");
+        cut.Find("[data-testid=pi-back]").Click();
+        cut.FindAll("[data-testid=pi-preview]").Should().BeEmpty();
+
+        // The header Import ZIP did nothing on a preview: it now leaves the preview and opens the ZIP form.
+        Queue("billing-b.zip", ShaB, SnapshotB);
+        Choose(cut, "pi-import-another-file", "billing-b.zip");
+        cut.Find("[data-testid=pi-header-import]").Click();
+        cut.FindAll("[data-testid=pi-preview]").Should().BeEmpty();
+        cut.Find("[data-testid=pi-choose]");
+        _activation.Imports.Should().ContainSingle();
+    }
+
     // ── Import ZIP is always the primary action at the top (2026-11-13) ─────────────────────────────────────────────────────────────
 
     [Fact]

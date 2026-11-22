@@ -312,7 +312,7 @@ public sealed class ProjectImportBackTests : BunitContext
         Choose(cut, "pi-choose-file", "orders-a.zip");
         cut.Find("[data-testid=pi-import]").Click();
         cut.WaitForAssertion(() => cut.Find("[data-testid=pi-commit-failure]"));
-        cut.FindAll("[data-testid=pi-back]").Should().BeEmpty("there is no result to leave; Retry import and Choose another file are the actions");
+        cut.Find("[data-testid=pi-back]").TextContent.Should().Be("Back to Import Project", "a preview, also after a failed commit, can be left without importing (2026-11-22)");
 
         cut.Find("[data-testid=pi-cancel]").Click();
 

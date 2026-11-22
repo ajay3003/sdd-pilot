@@ -21,7 +21,7 @@
     {
         @* After "Reset everything" the built-in defaults stay removed (also after restarts) until the tester brings them back here. *@
         <div class="td-notice" role="status" data-testid="td-builtins-removed">
-            <span>The built-in Test Data defaults (Skolenærvær default reporter and child) were removed by <strong>Reset everything</strong>. Journeys that need them have no test identity until you add one or restore them.</span>
+            <span>The built-in Test Data defaults were removed by <strong>Reset everything</strong>. Tests that use them have no test data until you add your own or restore them.</span>
             <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="RestoreBuiltInsAsync" data-testid="td-builtins-restore">Restore built-in defaults</button>
         </div>
     }

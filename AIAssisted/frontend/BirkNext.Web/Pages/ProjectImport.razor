@@ -37,10 +37,11 @@
             <button type="button" class="btn btn-secondary" id="pi-header-git" data-testid="pi-header-git" aria-controls="pi-git" aria-expanded="false"
                     disabled="@Session.IsBusy" title="@(Session.IsBusy ? "An import is running" : null)" @onclick="OpenGit">Import from Git</button>
         }
-        @if (_phase == Phase.Result)
+        @if (_phase is Phase.Result or Phase.Preview)
         {
-            @* Same place as Back in the review pages' post-run headers. Secondary: the next steps below stay the primary actions. *@
-            <button type="button" class="btn-secondary" data-testid="pi-back" @onclick="BackToImportProject">Back to Import Project</button>
+            @* Same place as Back in the review pages' post-run headers. Secondary: the next steps below stay the primary actions. From a preview it
+               leaves without importing (the staged archive is released). *@
+            <button type="button" class="btn-secondary" data-testid="pi-back" @onclick="BackFromHeader">Back to Import Project</button>
         }
     </PageHeader>
     <BirkNext.Web.Components.ProjectContextStrip RequiresEnvironment="false" />
@@ -579,7 +580,15 @@
         }
         <div class="pi-actions">
             <button type="button" class="btn-primary" data-testid="pi-import" disabled="@(!ProjectImportPresentation.HasImportableContent(preview, discovery) || (_duplicate is not null && !_importAgain) || NewProjectNameProblem(preview) is not null)" @onclick="ImportAsync">@(_failure is null ? "Import project" : "Retry import")</button>
-            <button type="button" class="btn-secondary" data-testid="pi-cancel" @onclick="CancelAsync">Choose another file</button>
+            @if (Session.GitRevision is not null)
+            {
+                <button type="button" class="btn-secondary" data-testid="pi-cancel" @onclick="ChooseAnotherRepository">Choose another repository</button>
+            }
+            else
+            {
+                <button type="button" class="btn-secondary" data-testid="pi-cancel" @onclick="CancelAsync">Choose another file</button>
+            }
+            <button type="button" class="btn-secondary" data-testid="pi-preview-back" @onclick="LeavePreview">Back to Import Project</button>
         </div>
         @if (_failure is { } commitFailure)
         {
@@ -907,6 +916,8 @@
     {
         if (Session.IsBusy) return;
         if (_phase == Phase.Result) BackToImportProject();
+        // From a preview the header buttons used to do nothing (their forms show only on the start view): leave the preview first.
+        if (_phase == Phase.Preview) LeavePreview();
         _uploadOrigin = "pi-header-import";
         ShowUpload(Session.Target);
     }
@@ -928,6 +939,7 @@
     {
         if (Session.IsBusy) return;
         if (_phase == Phase.Result) BackToImportProject();
+        if (_phase == Phase.Preview) LeavePreview();
         _showGit = true;
         _showUpload = false;
         _focusId = "pi-git";
@@ -1236,6 +1248,34 @@
         _showUpload = false;
         // Focus the top of the upload view (the just-imported current project), not the chooser at the end of the page.
         _focusId = Activation.Current is null ? "pi-header-import" : "pi-current-heading";
+    }
+
+    /// <summary>
+    /// Leaves a preview without importing (2026-11-22: a preview had no way back but "Choose another file", and the header buttons did nothing):
+    /// the staged archive is released, the rest of a Git queue is dropped, and the start view of Import Project is shown. Nothing was imported.
+    /// </summary>
+    private void LeavePreview()
+    {
+        var staging = _preview?.StagingId;
+        Session.GitQueue = [];
+        Reset();
+        _showUpload = false;
+        _showGit = false;
+        _focusId = Activation.Current is null ? "pi-header-import" : "pi-current-heading";
+        if (staging is { } stagingId) _ = DiscardQuietlyAsync(stagingId);
+    }
+
+    private void BackFromHeader()
+    {
+        if (_phase == Phase.Preview) LeavePreview();
+        else BackToImportProject();
+    }
+
+    /// <summary>A Git preview's "Choose another repository": back to the repository list (the ZIP preview's counterpart is Choose another file).</summary>
+    private void ChooseAnotherRepository()
+    {
+        LeavePreview();
+        OpenGit();
     }
 
     private void CancelAsync()
