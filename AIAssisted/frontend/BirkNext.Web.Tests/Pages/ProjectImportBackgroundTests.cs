@@ -77,7 +77,7 @@ public sealed class ProjectImportBackgroundTests : BunitContext
     private IRenderedComponent<ProjectImportPage> StartImport()
     {
         var page = Render<ProjectImportPage>();
-        page.FindComponent<InputFile>().UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "m2lb.zip"));
+        ImportFormSteps.Upload(page).UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "m2lb.zip"));
         page.WaitForAssertion(() => page.Find("[data-testid=pi-preview]"));
         page.Find("[data-testid=pi-import]").Click();
         page.WaitForAssertion(() => page.Find("[data-testid=pi-progress]"));
@@ -204,7 +204,7 @@ public sealed class ProjectImportBackgroundTests : BunitContext
     {
         _previewGate = new();
         var page = Render<ProjectImportPage>();
-        page.FindComponent<InputFile>().UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3, 4], "m2lb.zip"));
+        ImportFormSteps.Upload(page).UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3, 4], "m2lb.zip"));
         page.WaitForAssertion(() => Session.Phase.Should().Be(ProjectImportPhase.Validating));
         var upload = Operations.Operations.Single(o => o.Kind == OperationKind.ProjectImportUpload);
         upload.Status.Should().Be(OperationStatus.Running);

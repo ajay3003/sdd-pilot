@@ -65,11 +65,15 @@ public sealed class ProjectImportLifecycleTests : BunitContext
 
     private static void Choose(IRenderedComponent<ProjectImportPage> cut, string file = "shop.zip")
     {
-        cut.FindComponent<InputFile>().UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], file));
+        ImportFormSteps.Upload(cut).UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], file));
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=pi-preview], [data-testid=pi-failure]").Should().NotBeEmpty());
     }
 
-    private static string Generation(IRenderedComponent<ProjectImportPage> cut) => cut.Find("[data-testid=pi-choose-file]").GetAttribute("data-generation")!;
+    private static string Generation(IRenderedComponent<ProjectImportPage> cut)
+    {
+        ImportFormSteps.Answer(cut);
+        return cut.Find("[data-testid=pi-choose-file]").GetAttribute("data-generation")!;
+    }
 
     [Fact]
     public void ChooseAnotherFile_ClearsEveryArchiveSpecificValue_AndRecreatesTheFileInput()

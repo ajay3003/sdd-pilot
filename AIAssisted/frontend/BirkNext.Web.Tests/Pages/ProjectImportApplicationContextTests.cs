@@ -125,8 +125,7 @@ public sealed class ProjectImportApplicationContextTests : BunitContext
             if (cut.FindAll("[data-testid=pi-result]").Count > 0) cut.Find("[data-testid=pi-back]").Click();
             if (cut.FindAll("[data-testid=pi-current-import-another]").Count > 0) cut.Find("[data-testid=pi-current-import-another]").Click();
             if (project is not null) cut.Find("[data-testid=pi-target-project]").Change(project);
-            cut.FindComponents<InputFile>().Single(f => f.Instance.AdditionalAttributes?["data-testid"]?.ToString() == "pi-choose-file")
-                .UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "x.zip"));
+            ImportFormSteps.Upload(cut).UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "x.zip"));
             cut.WaitForAssertion(() => cut.FindAll("[data-testid=pi-preview]").Should().NotBeEmpty());
             cut.Find("[data-testid=pi-import]").Click();
             cut.WaitForAssertion(() => cut.FindAll("[data-testid=pi-result], [data-testid=pi-commit-failure]").Should().NotBeEmpty());

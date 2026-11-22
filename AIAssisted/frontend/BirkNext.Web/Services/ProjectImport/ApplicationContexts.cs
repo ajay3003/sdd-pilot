@@ -48,6 +48,40 @@ public static class ApplicationContexts
     private static readonly HashSet<string> SharedSegments = new(StringComparer.OrdinalIgnoreCase)
         { "Common", "Shared", "Core", "Contracts", "Abstractions", "Lib", "Libs", "Library", "Libraries", "SharedKernel", "Kernel", "Utils", "Utilities" };
 
+    /// <summary>Longest project name accepted (the Project list and headings stay readable).</summary>
+    public const int MaxNameLength = 80;
+
+    /// <summary>
+    /// Why <paramref name="name"/> cannot be a project's name, or null when it can: not empty, at most <see cref="MaxNameLength"/> characters,
+    /// and not the name of another project (two projects with one name cannot be told apart in the Project list).
+    /// </summary>
+    public static string? NameProblem(SddLifecycleState lifecycle, string? name, string? exceptApplicationId = null)
+    {
+        var trimmed = name?.Trim() ?? "";
+        if (trimmed.Length == 0) return "Enter a project name.";
+        if (trimmed.Length > MaxNameLength) return $"Use at most {MaxNameLength} characters.";
+        return lifecycle.Applications.Any(a => a.Id != exceptApplicationId && string.Equals(a.Name?.Trim(), trimmed, StringComparison.OrdinalIgnoreCase)
+                                             && Imports(lifecycle, a.Id).Count > 0)
+            ? $"A project named “{trimmed}” already exists. Choose another name, or choose that project under Belongs to project."
+            : null;
+    }
+
+    /// <summary>
+    /// Renames a project. The name becomes the tester's own (Manual): later imports never rename it. Only the project's name changes — its
+    /// packages keep their names (a package's name is its archive's root folder, which also identifies its versions). Returns the problem, or null.
+    /// </summary>
+    public static string? Rename(SddLifecycleState lifecycle, string applicationId, string? name)
+    {
+        if (Find(lifecycle, applicationId) is not { } application) return "The project no longer exists.";
+        if (NameProblem(lifecycle, name, applicationId) is { } problem) return problem;
+        application.Name = name!.Trim();
+        application.NameBasis = ManualBasis;
+        return null;
+    }
+
+    /// <summary>The name a new project gets from its first package unless the tester changes it ("M2LB.Common" → "M2LB", as <see cref="NameOf"/> does).</summary>
+    public static string SuggestedName(string packageName) => FamilyOf(packageName) ?? packageName;
+
     public static SddApplicationContext? Find(SddLifecycleState lifecycle, string? applicationId) =>
         applicationId is null ? null : lifecycle.Applications.FirstOrDefault(a => a.Id == applicationId);
 

@@ -243,7 +243,7 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         _preview = ProjectImportActivationTests.Preview(MuSha, source: true) with { Archive = new ProjectImportArchive("hub-renamed.zip", MuSha, 4096, 12) };
         var cut = RenderPage();
         cut.Find("[data-testid=pi-current-import-another]").Click();
-        cut.FindComponent<InputFile>().UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "hub-renamed.zip"));
+        ImportFormSteps.Upload(cut).UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "hub-renamed.zip"));
         cut.WaitForAssertion(() => cut.Find("[data-testid=pi-duplicate]"));
 
         cut.Find("[data-testid=pi-duplicate]").TextContent.Should().Contain("Matching imported source already exists").And.Contain("Tiltak 2 - hub (1).zip");
@@ -261,7 +261,7 @@ public sealed class ProjectImportSourceSetupTests : BunitContext
         _preview = ProjectImportActivationTests.Preview(MuSha, source: true);
         var cut = RenderPage();
         cut.Find("[data-testid=pi-current-import-another]").Click();
-        cut.FindComponent<InputFile>().UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "again.zip"));
+        ImportFormSteps.Upload(cut).UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "again.zip"));
         cut.WaitForAssertion(() => cut.Find("[data-testid=pi-duplicate-use]"));
         cut.Find("[data-testid=pi-duplicate-use]").Click();
 

@@ -44,6 +44,9 @@ public sealed class ProjectEvidenceWorkflowTests : IAsyncLifetime
             await page.Locator("[data-testid=tai-empty], [data-testid=tai-current]").First.WaitForAsync(new() { Timeout = 60000 });
             if (await page.GetByTestId("tai-empty").IsVisibleAsync() || !(await page.GetByTestId("tai-current").InnerTextAsync()).Contains(project))
             {
+                // Another application may already be selected for this environment (an earlier test of the run): the manual form is
+                // offered only while choosing, so change the application first.
+                if (await page.GetByTestId("tai-change").IsVisibleAsync()) await page.GetByTestId("tai-change").ClickAsync();
                 await page.GetByTestId("tai-advanced").Locator("summary").ClickAsync();
                 await page.GetByTestId("tai-manual-name").FillAsync(project);
                 await page.GetByTestId("tai-manual-save").ClickAsync();

@@ -77,8 +77,7 @@ public sealed class ProjectImportBackTests : BunitContext
 
     private static void Choose(IRenderedComponent<ProjectImportPage> cut, string inputTestId, string file)
     {
-        cut.FindComponents<InputFile>().Single(i => i.Instance.AdditionalAttributes?["data-testid"]?.ToString() == inputTestId)
-            .UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], file));
+        ImportFormSteps.Upload(cut).UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], file));
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=pi-preview], [data-testid=pi-failure]").Should().NotBeEmpty());
     }
 
@@ -87,6 +86,7 @@ public sealed class ProjectImportBackTests : BunitContext
     {
         cut.Find("[data-testid=pi-current-import-another]").Click();
         cut.Find("[data-testid=pi-current-import-another]").GetAttribute("aria-expanded").Should().Be("true");
+        ImportFormSteps.Answer(cut);
         cut.FindAll("[data-testid=pi-choose-file]").Should().ContainSingle();
     }
 
@@ -181,17 +181,17 @@ public sealed class ProjectImportBackTests : BunitContext
     public void Back_RecreatesTheFileInput_SoTheSameZipCanBeChosenAgain()
     {
         var cut = ImportFirst();
-        var generation = cut.Find("[data-testid=pi-import-another-file]").GetAttribute("data-generation");
+        const string generation = "0"; // the file input of the first import
         cut.Find("[data-testid=pi-back]").Click();
         RevealUpload(cut);
         cut.Find("[data-testid=pi-choose-file]").GetAttribute("data-generation").Should().NotBe(generation, "no stale file selection survives");
     }
 
     [Fact]
-    public void BackAndImportAnother_AreDifferent_BackChoosesNothing_ImportAnotherIsAFileChooser()
+    public void BackAndImportAnother_AreDifferent_BackChoosesNothing_ImportAnotherOpensTheForm()
     {
         var cut = ImportFirst();
-        cut.Find("[data-testid=pi-import-another-file]").GetAttribute("type").Should().Be("file");
+        cut.Find("[data-testid=pi-import-another]").GetAttribute("type").Should().Be("button", "it opens the ZIP form, which asks what the ZIP contains first");
         cut.Find("[data-testid=pi-back]").GetAttribute("type").Should().Be("button");
 
         cut.Find("[data-testid=pi-back]").Click();
@@ -241,8 +241,7 @@ public sealed class ProjectImportBackTests : BunitContext
             }
             pending.SetResult((null, new SourceUploadFailure("ARCHIVE_INVALID", "validation", "The file is not a ZIP archive.")));
         });
-        cut.FindComponents<InputFile>().Single(i => i.Instance.AdditionalAttributes?["data-testid"]?.ToString() == "pi-import-another-file")
-            .UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "billing-b.zip"));
+        ImportFormSteps.Upload(cut).UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "billing-b.zip"));
 
         // The page starts the upload and returns (the session owns it): wait until the observer saw the validating view.
         SpinWait.SpinUntil(() => validating is not null, TimeSpan.FromSeconds(10));

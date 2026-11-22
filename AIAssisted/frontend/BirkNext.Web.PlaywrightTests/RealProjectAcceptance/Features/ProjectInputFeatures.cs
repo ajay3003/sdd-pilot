@@ -23,9 +23,9 @@ public sealed class ProjectImportFeature : AcceptanceFeature
         var sha = context.Preparation.Fingerprint!.Sha256;
         // Fresh context: a full load of the app is the first navigation of the run.
         await session.Page.GotoAsync(session.FrontendUrl + Route, new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 120_000 });
-        await session.Page.Locator("[data-testid=pi-choose-file]").WaitForAsync(new() { State = WaitForSelectorState.Attached, Timeout = 120_000 });
+        var chooser = await BirkNext.Web.PlaywrightTests.Fixtures.SyntheticProjects.OpenZipFormAsync(session.Page);
         result.Browser = BrowserState.Rendered;
-        await session.Page.Locator("[data-testid=pi-choose-file]").SetInputFilesAsync(archive);
+        await chooser.SetInputFilesAsync(archive);
         var preview = await session.WaitAnyAsync(300_000, "[data-testid=pi-preview]", "[data-testid=pi-failure]");
         if (preview != "[data-testid=pi-preview]")
         {

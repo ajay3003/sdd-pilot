@@ -55,6 +55,10 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
     public string? TargetApplicationId { get; set; }
     /// <summary>"What does this ZIP contain?" — roles ticked before the import (empty = detect from content). Reset after each import.</summary>
     public HashSet<PackageEvidenceRole> ChosenRoles { get; } = [];
+    /// <summary>"Not sure — let BirkNext detect it": the content question is answered without a role (detected from content). Reset after each import.</summary>
+    public bool DetectRoles { get; set; }
+    /// <summary>The project name typed in the preview for a new project (null = the suggested name). Reset with each preview and after each import.</summary>
+    public string? NewProjectName { get; set; }
     /// <summary>What happened to the ticked roles: saved in Source Management, and associated in the active Target Environment or why not.</summary>
     public string? RoleOutcome { get; private set; }
     /// <summary>The import's one-line activity summary ("Supporting/shared source · 4 documents · Source Analysis Partial · 3 items need attention").</summary>
@@ -152,6 +156,7 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
     private async Task<OperationOutcome> AdoptAsync(ProjectImportPreview preview, SourceSetupView? setup, IOperationProgress progress, CancellationToken ct)
     {
         Preview = preview;
+        NewProjectName = null;
         Phase = ProjectImportPhase.Classifying;
         ClassifyTotal = preview.Documents.Count;
         progress.Stage("Detecting document roles", null, 0, ClassifyTotal, "documents");
@@ -304,7 +309,8 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
             // The import belongs to its own project. If the user selected another project while it ran, it is recorded but not made current.
             var keepSelection = SelectionKey() != selectionAtStart;
             var target = Target;
-            var record = activation.Activate(preview, discovery, commit, makeCurrent: !keepSelection, target: target, targetApplicationId: target == ImportTarget.CurrentApplication ? TargetApplicationId : null);
+            var record = activation.Activate(preview, discovery, commit, makeCurrent: !keepSelection, target: target,
+                targetApplicationId: target == ImportTarget.CurrentApplication ? TargetApplicationId : null, newProjectName: NewProjectName);
             // A Git import carries its link's roles to the package record (the store Project Evidence reads); a person's own earlier choice wins.
             if (record.Git is not null && GitRoles.Count > 0 && record.ConfirmedRoles.Count == 0) record.ConfirmedRoles = [.. GitRoles];
             // The package's role needs the backend's classification of its snapshot: read once, then show the application's primary
@@ -327,11 +333,15 @@ public sealed class ProjectImportSession(IProjectImportApiService api, ProjectIm
             Target = ImportTarget.CurrentApplication;
             TargetApplicationId = null;
             ChosenRoles.Clear();
+            DetectRoles = false;
+            NewProjectName = null;
             // Activity only for an import whose workspace update was saved: never "Imported X" for an import that may not survive a reload.
             if (!SaveWarning && activity is not null && ResultSummary is { } summary)
                 await activity.RecordAsync(summary.Request(record, commit.Provenance.ImportedAt));
             Failure = null;
             ResultSeen = false;
+            // The form that started this import is done: the next import opens it again (header Import ZIP / Import from Git).
+            ShowUpload = false;
             Phase = ProjectImportPhase.Result;
             StartedAt = null;
             Notify();

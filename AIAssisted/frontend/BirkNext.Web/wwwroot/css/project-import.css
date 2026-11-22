@@ -215,3 +215,24 @@ p.pi-tone-neutral { border-left: 0; }
 .pi-roles legend .pi-muted { font-weight: normal; }
 .pi-belongs { display: flex; flex-wrap: wrap; gap: .4rem .75rem; align-items: center; }
 .pi-belongs select { min-width: min(100%, 18rem); max-width: 100%; padding: .3rem .5rem; font: inherit; }
+
+/* Import flow like Connected Systems (2026-11-22): header actions open their own form; the ZIP form asks what the ZIP contains first and
+   unlocks the file button only then. */
+.pi-start h2 { font-size: 1.05rem; margin: 0 0 .4rem; }
+.pi-start-ways { margin: 0 0 .4rem; padding-left: 1.1rem; }
+.pi-role-detect { font-style: italic; }
+.pi-zip-step { margin-top: .9rem; }
+.pi-step-title { margin: 0 0 .45rem; }
+.pi-file-button.is-disabled { background: var(--clr-surface-sunken, #e5e7eb); border-color: var(--clr-border, #d0d7de); color: var(--clr-text-muted, #6b7280); cursor: not-allowed; }
+.pi-file-button.is-disabled .pi-file-input { cursor: not-allowed; }
+button.pi-file-button { font: inherit; font-size: .9rem; font-weight: 600; }
+
+/* Project name (2026-11-22): editable in the preview of a new project, and Rename on the project card. */
+.pi-name-row dd { display: flex; flex-direction: column; gap: .3rem; }
+.pi-name-input { font: inherit; padding: .35rem .55rem; border: 1px solid var(--clr-border, #d0d7de); border-radius: var(--radius-md, 6px); max-width: 28rem; width: 100%; }
+.pi-name-input:focus-visible { outline: 2px solid var(--clr-link, #2563eb); outline-offset: 1px; }
+.pi-name-input[aria-invalid="true"] { border-color: #b45309; }
+.pi-link-button { border: 0; background: none; padding: 0 .25rem; margin-left: .4rem; font: inherit; font-size: .85rem; font-weight: 500; color: var(--clr-link, #2563eb); text-decoration: underline; cursor: pointer; }
+.pi-rename { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .5rem; }
+.pi-rename label { width: 100%; margin: 0; }
+.pi-rename .pi-warning { width: 100%; }

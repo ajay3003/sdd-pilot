@@ -27,9 +27,16 @@
     <PageHeader Title="Import Project" Description="Import source code, project documents or additional evidence. Upload one ZIP containing source code, supported project documents, or both.">
         @* The primary import action is always here, before and after the first import (never only at the end of the page). It opens the one
            existing upload flow below; nothing is imported until a file is chosen and its preview confirmed. *@
-        <button type="button" class="btn btn-primary" id="pi-header-import" data-testid="pi-header-import" aria-controls="pi-choose"
-                aria-expanded="@(_phase == Phase.Choose && (Activation.Current is null || _showUpload) ? "true" : "false")"
-                disabled="@Session.IsBusy" title="@(Session.IsBusy ? "An import is running" : null)" @onclick="ImportZipFromHeader">Import ZIP</button>
+        @if (!ZipFormOpen)
+        {
+            <button type="button" class="btn btn-primary" id="pi-header-import" data-testid="pi-header-import" aria-controls="pi-choose" aria-expanded="false"
+                    disabled="@Session.IsBusy" title="@(Session.IsBusy ? "An import is running" : null)" @onclick="ImportZipFromHeader">Import ZIP</button>
+        }
+        @if (GitSources is not null && !GitFormOpen)
+        {
+            <button type="button" class="btn btn-secondary" id="pi-header-git" data-testid="pi-header-git" aria-controls="pi-git" aria-expanded="false"
+                    disabled="@Session.IsBusy" title="@(Session.IsBusy ? "An import is running" : null)" @onclick="OpenGit">Import from Git</button>
+        }
         @if (_phase == Phase.Result)
         {
             @* Same place as Back in the review pages' post-run headers. Secondary: the next steps below stay the primary actions. *@
@@ -42,11 +49,22 @@
     {
         @* ── Upload: shown without a current project, or after Import ZIP. It sits right under
            the header so the action and its form are together; the current import below stays as it is until a new import succeeds. ── *@
-        @if (Activation.Current is null || _showUpload)
+        @if (Activation.Current is null && !_showUpload && !_showGit)
+        {
+            <section class="pi-card pi-start" data-testid="pi-start" aria-label="Start">
+                <h2>No project is imported yet</h2>
+                <ul class="pi-start-ways">
+                    <li><strong>Import ZIP</strong> — a ZIP from your computer with source code, project documents or both.</li>
+                    @if (GitSources is not null) { <li><strong>Import from Git</strong> — a repository on this computer or a Git URL, read-only.</li> }
+                </ul>
+                <p class="pi-muted">BirkNext shows what it found before anything is imported. <a href="demo-projects">Demo Projects</a> remain available as optional examples.</p>
+            </section>
+        }
+        @if (_showUpload)
         {
         <section class="pi-card pi-choose" id="pi-choose" aria-labelledby="pi-choose-heading" data-testid="pi-choose">
             <h2 id="pi-choose-heading" tabindex="-1">@UploadHeading</h2>
-            <p>Upload one ZIP containing project source, project documents, or both. BirkNext shows what it found before anything is imported.</p>
+            <p class="pi-muted">One ZIP with project source, project documents, or both. BirkNext shows what it found before anything is imported.</p>
             @if (Activation.Current is { } keep)
             {
                 <p class="pi-muted" data-testid="pi-choose-keeps">@keep.ProjectName stays the current import until the new import succeeds. Imported packages remain available in history.</p>
@@ -74,14 +92,16 @@
             }
             @* Optional roles, the same vocabulary as Source Management and Target Environments → Project. Saved after the import only where the
                content supports them; nothing ticked = detected from content. *@
-            <fieldset class="pi-intent pi-roles" data-testid="pi-roles" disabled="@Session.IsBusy">
-                <legend>What does this ZIP contain? <span class="pi-muted">Optional, several allowed — leave empty to let BirkNext detect it</span></legend>
+            <fieldset class="pi-intent pi-roles" id="pi-roles" tabindex="-1" data-testid="pi-roles" disabled="@Session.IsBusy">
+                <legend>1. What does this ZIP contain? <span class="pi-muted">Tick one or more</span></legend>
                 <div class="pi-role-grid">
                     @foreach (var role in ImportRoleChoice.Choices)
                     {
                         <label class="pi-role-option"><input type="checkbox" checked="@Session.ChosenRoles.Contains(role)" data-testid="pi-zip-role" data-role="@role"
-                               @onchange="e => { if (e.Value is true) Session.ChosenRoles.Add(role); else Session.ChosenRoles.Remove(role); }" /> @ApplicationContexts.RoleLabel(role)</label>
+                               @onchange="e => ToggleRole(role, e.Value is true)" /> @ApplicationContexts.RoleLabel(role)</label>
                     }
+                    <label class="pi-role-option pi-role-detect"><input type="checkbox" checked="@Session.DetectRoles" data-testid="pi-zip-detect"
+                           @onchange="e => SetDetect(e.Value is true)" /> Not sure — let BirkNext detect it</label>
                 </div>
                 @if (Session.ChosenRoles.Contains(PackageEvidenceRole.PrimaryApplicationSource) && TargetProject() is { } primaryApp
                      && PackagesOf(primaryApp.Id).Any(p => p.Role == PackageEvidenceRole.PrimaryApplicationSource))
@@ -90,33 +110,40 @@
                 }
                 <p class="pi-muted pi-small" data-testid="pi-roles-where">After the import the roles appear in Manage sources and, when the active Target Environment tests this project, in its Project roles. A role the content does not show is not saved.</p>
             </fieldset>
-            <div class="pi-methods">
-                <div class="pi-method" data-testid="pi-method-zip">
-                    <h3>Manual ZIP import</h3>
-                    <p class="pi-muted">Import an exported source repository ZIP from your computer. No Git connection required.</p>
-                <ul class="pi-outcomes" data-testid="pi-outcomes">
-                    <li>Project documents</li>
-                    <li>Source code</li>
-                    <li>Contracts and schemas</li>
-                    <li>Infrastructure configuration</li>
-                </ul>
-                <p class="pi-muted" data-testid="pi-candidates-note">If several documents could be the same document for one feature, you choose which one after import.</p>
+            <div class="pi-zip-step" data-testid="pi-method-zip">
+                <p class="pi-step-title"><strong>2. Choose the ZIP</strong> <span class="pi-muted">ZIP · maximum 50 MB · documents up to 1 MB each</span></p>
                 <div class="pi-actions">
-                    <label class="pi-file-button">
-                        <InputFile @key="_inputGeneration" id="pi-choose-file" class="pi-file-input" accept=".zip" OnChange="ChooseAsync" aria-label="Choose project ZIP (maximum 50 MB)" data-testid="pi-choose-file" data-generation="@_inputGeneration" />
-                        <span aria-hidden="true">Choose project ZIP</span>
-                    </label>
-                    <span class="pi-muted">ZIP · maximum 50 MB · documents up to 1 MB each</span>
-                    @if (Activation.Current is not null) { <button type="button" class="btn-secondary" data-testid="pi-choose-cancel" @onclick="CloseUpload">Cancel</button> }
+                    @if (CanChooseFile)
+                    {
+                        <label class="pi-file-button">
+                            <InputFile @key="_inputGeneration" id="pi-choose-file" class="pi-file-input" accept=".zip" OnChange="ChooseAsync" disabled="@Session.IsBusy"
+                                       aria-label="Choose the ZIP (maximum 50 MB)" data-testid="pi-choose-file" data-generation="@_inputGeneration" />
+                            <span aria-hidden="true">Choose ZIP file</span>
+                        </label>
+                    }
+                    else
+                    {
+                        @* Looks unavailable until the content question is answered; a click says why instead of doing nothing. *@
+                        <button type="button" class="pi-file-button is-disabled" aria-disabled="true" aria-describedby="@(_choiceHint ? "pi-choose-hint" : null)"
+                                data-testid="pi-choose-locked" @onclick="ChooseLockedClicked">Choose ZIP file</button>
+                    }
+                    <button type="button" class="btn-secondary" data-testid="pi-choose-cancel" @onclick="CloseUpload">Cancel</button>
                 </div>
-                </div>
-                <div class="pi-method" data-testid="pi-method-git">
-                    @if (GitSources is not null) { <BirkNext.Web.Components.GitImportWizard OnImport="StartGitQueueAsync" /> }
-                    else { <h3>Git import</h3><p class="pi-muted">Not available in this BirkNext instance.</p> }
-                </div>
+                @if (_choiceHint && !CanChooseFile)
+                {
+                    <p class="pi-warning" id="pi-choose-hint" role="alert" data-testid="pi-choose-hint">Tick what the ZIP contains first, or “Not sure — let BirkNext detect it”.</p>
+                }
+                <p class="pi-muted pi-small" data-testid="pi-candidates-note">If several documents could be the same document for one feature, you choose which one after import.</p>
             </div>
-            <p class="pi-muted" data-testid="pi-source-only-note"><a href="demo-projects">Demo Projects</a> remain available as optional examples. To analyze a source archive on its own, upload it in <a href="source-analysis">Source Analysis</a>: it creates the same source analysis, but no project documents, and it does not become the current project. It is still listed below with the imported sources.</p>
+            <p class="pi-muted pi-small" data-testid="pi-source-only-note">To analyze a source archive on its own, upload it in <a href="source-analysis">Source Analysis</a>: it creates the same source analysis, but no project documents, and it does not become the current project. It is still listed below with the imported sources.</p>
         </section>
+        }
+        @if (_showGit && GitSources is not null)
+        {
+            <section class="pi-card pi-git" id="pi-git" data-testid="pi-method-git" aria-label="Import from Git">
+                <BirkNext.Web.Components.GitImportWizard OnImport="StartGitQueueAsync" />
+                <div class="pi-actions"><button type="button" class="btn-secondary" data-testid="pi-git-cancel" @onclick="CloseGit">Cancel</button></div>
+            </section>
         }
         @if (Activation.Current is { } current)
         {
@@ -132,7 +159,22 @@
             {
                 @* ── 0 · Target application: the logical application all imported evidence belongs to (never the package imported last) ── *@
                 <section class="pi-card pi-application" aria-labelledby="pi-application-heading" data-testid="pi-application" data-application="@application.Id">
-                    <h2 id="pi-application-heading" class="pi-current-heading"><span class="pi-current-eyebrow">Target application</span> <strong data-testid="pi-application-name">@application.Name</strong></h2>
+                    @if (_renaming == application.Id)
+                    {
+                        <form class="pi-rename" data-testid="pi-rename" @onsubmit="() => SaveRenameAsync(application.Id)" @onsubmit:preventDefault>
+                            <label for="pi-rename-input"><span class="pi-current-eyebrow">Project name</span></label>
+                            <input id="pi-rename-input" class="pi-name-input" maxlength="@ApplicationContexts.MaxNameLength" value="@_renameValue" @oninput="e => { _renameValue = e.Value?.ToString() ?? string.Empty; _renameProblem = null; }"
+                                   aria-invalid="@(_renameProblem is null ? "false" : "true")" data-testid="pi-rename-input" />
+                            <button type="submit" class="btn-primary" disabled="@_renameBusy" data-testid="pi-rename-save">Save name</button>
+                            <button type="button" class="btn-secondary" @onclick="CancelRename" data-testid="pi-rename-cancel">Cancel</button>
+                            @if (_renameProblem is { } renameProblem) { <span class="pi-warning" role="alert" data-testid="pi-rename-problem">@renameProblem</span> }
+                        </form>
+                    }
+                    else
+                    {
+                        <h2 id="pi-application-heading" class="pi-current-heading"><span class="pi-current-eyebrow">Target application</span> <strong data-testid="pi-application-name">@application.Name</strong>
+                            <button type="button" class="pi-link-button" id="pi-rename-open" @onclick="() => StartRename(application)" aria-label="Rename @application.Name" data-testid="pi-rename-open">Rename</button></h2>
+                    }
                     <p class="pi-muted" data-testid="pi-application-count">Imported evidence packages: @packages.Count</p>
                     <ul class="pi-application-packages" aria-label="Evidence packages of @application.Name">
                         @foreach (var package in packages)
@@ -470,7 +512,21 @@
                 <p class="pi-muted" data-testid="pi-git-revision">From Git: @git.Repository · branch @git.Branch · commit <code>@git.ShortSha</code>@(git.CommittedAt is { } at ? $" ({at.UtcDateTime:yyyy-MM-dd HH:mm} UTC)" : "") · retrieved @git.RetrievedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC. The commit, not the branch, is what is imported.</p>
             }
             <dl class="pi-facts">
-                <div><dt>Project name</dt><dd data-testid="pi-project-name">@preview.ProjectName <span class="pi-muted">(@ProjectImportPresentation.NameBasis(preview.ProjectNameBasis))</span></dd></div>
+                @if (StartsNewProject)
+                {
+                    <div class="pi-name-row"><dt><label for="pi-new-project-name">Project name</label></dt>
+                        <dd>
+                            <input id="pi-new-project-name" class="pi-name-input" maxlength="@ApplicationContexts.MaxNameLength" value="@NewProjectNameShown(preview)"
+                                   @oninput="e => Session.NewProjectName = e.Value?.ToString()" disabled="@Session.IsBusy" aria-describedby="pi-new-project-name-note"
+                                   aria-invalid="@(NewProjectNameProblem(preview) is null ? "false" : "true")" data-testid="pi-new-project-name" />
+                            <span class="pi-muted pi-small" id="pi-new-project-name-note" data-testid="pi-project-name">Suggested @ProjectImportPresentation.NameBasis(preview.ProjectNameBasis): @preview.ProjectName. Change it if you like — you can also rename the project later.</span>
+                            @if (NewProjectNameProblem(preview) is { } nameProblem) { <span class="pi-warning" role="alert" data-testid="pi-new-project-name-problem">@nameProblem</span> }
+                        </dd></div>
+                }
+                else
+                {
+                    <div><dt>Project</dt><dd data-testid="pi-project-name">@(TargetProject()?.Name ?? preview.ProjectName) <span class="pi-muted">· package @preview.ProjectName (@ProjectImportPresentation.NameBasis(preview.ProjectNameBasis))</span></dd></div>
+                }
                 <div><dt>Size</dt><dd>@ProjectImportPresentation.Size(preview.Archive.SizeBytes) · @preview.Archive.EntryCount.ToString("N0") entries</dd></div>
                 <div><dt>Fingerprint</dt><dd><code title="@preview.Archive.Sha256" data-testid="pi-fingerprint">@ProjectImportPresentation.ShortFingerprint(preview.Archive.Sha256)</code></dd></div>
             </dl>
@@ -533,7 +589,7 @@
             </section>
         }
         <div class="pi-actions">
-            <button type="button" class="btn-primary" data-testid="pi-import" disabled="@(!ProjectImportPresentation.HasImportableContent(preview, discovery) || (_duplicate is not null && !_importAgain))" @onclick="ImportAsync">@(_failure is null ? "Import project" : "Retry import")</button>
+            <button type="button" class="btn-primary" data-testid="pi-import" disabled="@(!ProjectImportPresentation.HasImportableContent(preview, discovery) || (_duplicate is not null && !_importAgain) || NewProjectNameProblem(preview) is not null)" @onclick="ImportAsync">@(_failure is null ? "Import project" : "Retry import")</button>
             <button type="button" class="btn-secondary" data-testid="pi-cancel" @onclick="CancelAsync">Choose another file</button>
         </div>
         @if (_failure is { } commitFailure)
@@ -661,7 +717,7 @@
                 <h2 id="pi-import-actions-heading" class="pi-action-heading">Import</h2>
                 <div class="pi-actions" data-testid="pi-import-actions">
                     <button type="button" class="btn-secondary" data-testid="pi-back-bottom" @onclick="BackToImportProject">Back to Import Project</button>
-                    @ImportAnotherButton("pi-import-another", "pi-import-another-file")
+                    <button type="button" class="btn-secondary" data-testid="pi-import-another" aria-controls="pi-choose" @onclick="ImportZipFromHeader">Import ZIP</button>
                 </div>
             </section>
         </div>
@@ -841,13 +897,19 @@
 
     /// <summary>"Import more evidence" / "Import another application": reveals the upload block for that target and moves focus to its file
     /// chooser. Nothing changes until a file is chosen.</summary>
-    private void ShowUpload() => ShowUpload(ImportTarget.CurrentApplication);
+    private void ShowUpload()
+    {
+        // Opened from the address (?import=…): Cancel returns focus to the page's own Import ZIP, never to a button of an earlier import.
+        _uploadOrigin = Activation.Current is null ? "pi-header-import" : "pi-current-import-another";
+        ShowUpload(ImportTarget.CurrentApplication);
+    }
 
     private void ShowUpload(ImportTarget target)
     {
         if (!Session.IsBusy) Session.Target = target;
         _showUpload = true;
-        _focusId = "pi-choose-file";
+        _showGit = false;
+        _focusId = CanChooseFile ? "pi-choose-file" : "pi-roles";
     }
 
     /// <summary>Header "Import ZIP": the same upload flow from anywhere on the page, including the result of an import. Keeps the chosen intent
@@ -859,6 +921,42 @@
         _uploadOrigin = "pi-header-import";
         ShowUpload(Session.Target);
     }
+
+    /// <summary>The ZIP form is open (its header button is hidden then: one Import ZIP on screen at a time).</summary>
+    private bool ZipFormOpen => _phase == Phase.Choose && _showUpload;
+    private bool GitFormOpen => _phase == Phase.Choose && _showGit;
+    private bool _showGit;
+
+    /// <summary>The file button unlocks only after the content question is answered: one or more roles, or "Not sure".</summary>
+    private bool CanChooseFile => ImportRoleChoice.Answered(Session.ChosenRoles, Session.DetectRoles);
+
+    /// <summary>A role and "Not sure" exclude each other: ticking one clears the other.</summary>
+    private void ToggleRole(PackageEvidenceRole role, bool on)
+    {
+        if (on) { Session.ChosenRoles.Add(role); Session.DetectRoles = false; } else Session.ChosenRoles.Remove(role);
+    }
+
+    /// <summary>"Choose ZIP file" before the content question is answered: say why, and move to the question.</summary>
+    private bool _choiceHint;
+
+    private void ChooseLockedClicked() { _choiceHint = true; _focusId = "pi-roles"; }
+
+    private void SetDetect(bool on)
+    {
+        Session.DetectRoles = on;
+        if (on) Session.ChosenRoles.Clear();
+    }
+
+    private void OpenGit()
+    {
+        if (Session.IsBusy) return;
+        if (_phase == Phase.Result) BackToImportProject();
+        _showGit = true;
+        _showUpload = false;
+        _focusId = "pi-git";
+    }
+
+    private void CloseGit() { _showGit = false; _focusId = GitSources is null ? "pi-header-import" : "pi-header-git"; }
 
     private void ImportMoreEvidence() { _uploadOrigin = "pi-current-import-another"; if (!Session.IsBusy) Session.TargetApplicationId = null; ShowUpload(ImportTarget.CurrentApplication); }
 
@@ -913,6 +1011,42 @@
             ServiceProvider.GetService<ICurrentWorkspaceProjection>()?.Invalidate();
         }
         _moving = false;
+    }
+
+    // ── Project name: typed in the preview for a new project, or renamed on the project card ──
+
+    /// <summary>The ZIP starts a new project (its name is then asked in the preview).</summary>
+    private bool StartsNewProject => Session.Target == ImportTarget.NewApplication || Activation.CurrentApplication is null;
+
+    private string NewProjectNameShown(ProjectImportPreview preview) => Session.NewProjectName ?? ApplicationContexts.SuggestedName(preview.ProjectName);
+
+    private string? NewProjectNameProblem(ProjectImportPreview preview) =>
+        !StartsNewProject ? null : ApplicationContexts.NameProblem(Activation.Lifecycle, NewProjectNameShown(preview));
+
+    private string? _renaming;
+    private string _renameValue = "";
+    private string? _renameProblem;
+    private bool _renameBusy;
+
+    private void StartRename(SddApplicationContext application)
+    {
+        _renaming = application.Id; _renameValue = application.Name; _renameProblem = null; _focusId = "pi-rename-input";
+    }
+
+    private void CancelRename() { _renaming = null; _renameProblem = null; _focusId = "pi-rename-open"; }
+
+    /// <summary>Saves the new name at once (the Project list follows); nothing is re-imported and no package is renamed.</summary>
+    private async Task SaveRenameAsync(string applicationId)
+    {
+        if (ApplicationContexts.Rename(Activation.Lifecycle, applicationId, _renameValue) is { } problem) { _renameProblem = problem; return; }
+        _renameBusy = true;
+        var saved = await AutoSave.SaveNowAsync();
+        _renameBusy = false;
+        _renaming = null;
+        _moveMessage = saved ? null : "The new name could not be saved yet; it is saved automatically when the connection is back.";
+        ServiceProvider.GetService<BirkNext.Web.Services.ProjectEvidence.IProjectEvidenceService>()?.Invalidate();
+        ServiceProvider.GetService<ICurrentWorkspaceProjection>()?.Invalidate();
+        _focusId = "pi-rename-open";
     }
 
     /// <summary>"Keep it with …": the tester's answer, stored on the package so the warning does not come back.</summary>
@@ -981,27 +1115,13 @@
     }
 
     /// <summary>
-    /// "Import another project": opens the file chooser directly (a real file input behind a button-styled label, keyboard-operable like
-    /// Choose project ZIP). It used to only reset the page and scroll to the upload section at its very end, so a second click was needed
-    /// and the action looked like it did nothing. Cancelling the chooser changes nothing; the current project stays current until a new
-    /// import succeeds.
-    /// </summary>
-    private RenderFragment ImportAnotherButton(string testId, string inputId) => __builder =>
-    {
-        <label class="pi-file-button pi-file-button-secondary" data-testid="@testId">
-            <InputFile @key="_inputGeneration" id="@inputId" class="pi-file-input" accept=".zip" OnChange="ChooseAsync"
-                       aria-label="Import ZIP into the current project: choose project ZIP (maximum 50 MB)" data-testid="@inputId" data-generation="@_inputGeneration" />
-            <span aria-hidden="true">Import ZIP</span>
-        </label>
-    };
-
-    /// <summary>
     /// Starts the upload/check of the chosen ZIP as a session operation. The browser file is first copied into memory while this page shows
     /// its input (a local read, measured in bytes); the upload to the backend and everything after it then run from that copy, so leaving
     /// the page no longer breaks them (the file input is removed with the page).
     /// </summary>
     private void ChooseAsync(InputFileChangeEventArgs args)
     {
+        if (!CanChooseFile) { _focusId = "pi-roles"; return; }
         _retrying = false; _currentRetryMessage = null; _useMessage = null;
         var file = args.File;
         // Opened here, while the file input is still on the page: the browser file stream starts its read when it is opened. The session
@@ -1138,7 +1258,7 @@
         Reset();
         _showUpload = false;
         // Focus the top of the upload view (the just-imported current project), not the chooser at the end of the page.
-        _focusId = Activation.Current is null ? "pi-choose-file" : "pi-current-heading";
+        _focusId = Activation.Current is null ? "pi-header-import" : "pi-current-heading";
     }
 
     private void CancelAsync()

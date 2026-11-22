@@ -71,8 +71,7 @@ public sealed class ProjectImportMultiImportTests : BunitContext
 
     private static void Choose(IRenderedComponent<ProjectImportPage> cut, string inputTestId, string file)
     {
-        cut.FindComponents<InputFile>().Single(i => i.Instance.AdditionalAttributes?["data-testid"]?.ToString() == inputTestId)
-            .UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], file));
+        ImportFormSteps.Upload(cut).UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], file));
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=pi-preview], [data-testid=pi-failure]").Should().NotBeEmpty());
     }
 
@@ -140,6 +139,7 @@ public sealed class ProjectImportMultiImportTests : BunitContext
     {
         var cut = ImportSequence(("orders-a.zip", 'a', SnapA));
         cut.Find("[data-testid=pi-current-import-another]").Click();
+        ImportFormSteps.Answer(cut);
         var generation = cut.Find("[data-testid=pi-choose-file]").GetAttribute("data-generation");
 
         Queue("renamed-a.zip", Sha('a'), SnapA);
@@ -184,7 +184,7 @@ public sealed class ProjectImportMultiImportTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=pi-choose]"));
         cut.Find("#pi-choose-heading").TextContent.Should().StartWith("Import a ZIP into ");
         cut.Find("[data-testid=pi-choose-keeps]").TextContent.Should().Contain("orders-a stays the current import until the new import succeeds").And.Contain("Imported packages remain available in history.");
-        JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Last().Arguments.Single().Should().Be("pi-choose-file");
+        JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Last().Arguments.Single().Should().Be("pi-roles");
 
         cut.Find("[data-testid=pi-choose-cancel]").Click();
         cut.FindAll("[data-testid=pi-choose]").Should().BeEmpty();
@@ -196,12 +196,15 @@ public sealed class ProjectImportMultiImportTests : BunitContext
     }
 
     [Fact]
-    public void Opening_the_page_with_the_import_query_shows_the_form_and_cancel_is_only_offered_while_a_project_is_current()
+    public void Opening_the_page_with_the_import_query_shows_the_form_and_cancel_returns_to_the_start()
     {
         Services.GetRequiredService<NavigationManager>().NavigateTo(ProjectImportPresentation.ImportSourceHref);
         var empty = Render<ProjectImportPage>();
         empty.Find("[data-testid=pi-choose]");
-        empty.FindAll("[data-testid=pi-choose-cancel]").Should().BeEmpty("without a current project the form is the page");
+        empty.Find("[data-testid=pi-choose-cancel]").Click();
+        empty.FindAll("[data-testid=pi-choose]").Should().BeEmpty();
+        empty.Find("[data-testid=pi-start]");
+        empty.Find("[data-testid=pi-header-import]");
     }
 
     [Fact]

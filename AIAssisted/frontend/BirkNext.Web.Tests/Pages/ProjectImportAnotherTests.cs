@@ -73,8 +73,7 @@ public sealed class ProjectImportAnotherTests : BunitContext
 
     private static void Choose(IRenderedComponent<ProjectImportPage> cut, string inputTestId, string file)
     {
-        cut.FindComponents<InputFile>().Single(i => i.Instance.AdditionalAttributes?["data-testid"]?.ToString() == inputTestId)
-            .UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], file));
+        ImportFormSteps.Upload(cut).UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], file));
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=pi-preview], [data-testid=pi-failure]").Should().NotBeEmpty());
     }
 
@@ -89,16 +88,18 @@ public sealed class ProjectImportAnotherTests : BunitContext
     }
 
     [Fact]
-    public void AfterASuccessfulImport_ImportAnotherIsItselfAKeyboardReachableFileChooser()
+    public void AfterASuccessfulImport_Import_ZIP_opens_the_form_at_the_content_question()
     {
+        // 2026-11-22: it used to open the file chooser at once, skipping "What does this ZIP contain?".
         var cut = ImportFirst();
-        var label = cut.Find("[data-testid=pi-import-another]");
-        label.TagName.Should().Be("LABEL");
-        label.TextContent.Trim().Should().Be("Import ZIP");
-        var input = cut.Find("[data-testid=pi-import-another-file]");
-        input.GetAttribute("type").Should().Be("file", "clicking or pressing Enter/Space opens the chooser at once");
-        input.GetAttribute("accept").Should().Be(".zip");
-        input.GetAttribute("aria-label").Should().Contain("Import ZIP into the current project");
+        var button = cut.Find("[data-testid=pi-import-another]");
+        button.TagName.Should().Be("BUTTON");
+        button.TextContent.Trim().Should().Be("Import ZIP");
+        button.Click();
+        cut.Find("[data-testid=pi-choose] [data-testid=pi-roles]");
+        cut.FindAll("[data-testid=pi-choose-file]").Should().BeEmpty("no file is chosen before the content question is answered");
+        cut.Find("[data-testid=pi-choose-locked]");
+        cut.WaitForAssertion(() => JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Last().Arguments.Single().Should().Be("pi-roles"));
     }
 
     [Fact]
@@ -140,9 +141,8 @@ public sealed class ProjectImportAnotherTests : BunitContext
         another.GetAttribute("aria-expanded").Should().Be("false");
         another.Click();
         page.Find("[data-testid=pi-current-import-another]").GetAttribute("aria-expanded").Should().Be("true");
-        page.Find("[data-testid=pi-choose]").TextContent.Should().Contain("ZIP · maximum 50 MB · documents up to 1 MB each")
-            .And.Contain("Project documents").And.Contain("Source code").And.Contain("Contracts and schemas").And.Contain("Infrastructure configuration");
-        page.WaitForAssertion(() => JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Last().Arguments.Single().Should().Be("pi-choose-file"));
+        page.Find("[data-testid=pi-choose]").TextContent.Should().Contain("ZIP · maximum 50 MB · documents up to 1 MB each").And.Contain("What does this ZIP contain?");
+        page.WaitForAssertion(() => JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Last().Arguments.Single().Should().Be("pi-roles"));
         _activation.Current!.ArchiveFileName.Should().Be("orders-a.zip", "revealing the upload changes nothing");
         Choose(page, "pi-choose-file", "billing-b.zip");
         page.Find("[data-testid=pi-preview]").TextContent.Should().Contain("billing-b.zip");
@@ -193,10 +193,14 @@ public sealed class ProjectImportAnotherTests : BunitContext
         header.TextContent.Trim().Should().Be("Import ZIP");
         header.ClassList.Should().Contain("btn-primary");
         header.GetAttribute("aria-controls").Should().Be("pi-choose");
-        header.GetAttribute("aria-expanded").Should().Be("true", "without a current import the upload form is already shown");
-        cut.FindAll("[data-testid=pi-intent]").Should().BeEmpty("no application exists yet: the first import needs no intent choice");
+        header.GetAttribute("aria-expanded").Should().Be("false", "like Connected Systems, the form opens on request");
+        cut.Find("[data-testid=pi-start]").TextContent.Should().Contain("No project is imported yet");
+        cut.FindAll("[data-testid=pi-choose]").Should().BeEmpty();
         header.Click();
-        cut.WaitForAssertion(() => JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Last().Arguments.Single().Should().Be("pi-choose-file"));
+        cut.FindAll("[data-testid=pi-intent]").Should().BeEmpty("no application exists yet: the first import needs no intent choice");
+        cut.FindAll("[data-testid=pi-header-import]").Should().BeEmpty("one Import ZIP on screen: the header button is hidden while its form is open");
+        cut.FindAll("[data-testid=pi-start]").Should().BeEmpty();
+        cut.WaitForAssertion(() => JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Last().Arguments.Single().Should().Be("pi-roles"));
         _api.Verify(a => a.PreviewAsync(It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<CancellationToken>()), Times.Never, "the header action never starts an import");
     }
 
@@ -211,11 +215,11 @@ public sealed class ProjectImportAnotherTests : BunitContext
         var header = page.Find("[data-testid=pi-header-import]");
         header.GetAttribute("aria-expanded").Should().Be("false");
         header.Click();
-        page.Find("[data-testid=pi-header-import]").GetAttribute("aria-expanded").Should().Be("true");
+        page.FindAll("[data-testid=pi-header-import]").Should().BeEmpty("one Import ZIP on screen: the header button is hidden while its form is open");
         var markup = page.Markup;
         markup.IndexOf("data-testid=\"pi-choose\"", StringComparison.Ordinal).Should().BeLessThan(markup.IndexOf("data-testid=\"pi-current\"", StringComparison.Ordinal),
             "the opened form sits right under the header, not after the current-import details");
-        page.WaitForAssertion(() => JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Last().Arguments.Single().Should().Be("pi-choose-file"));
+        page.WaitForAssertion(() => JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Last().Arguments.Single().Should().Be("pi-roles"));
         _activation.Current!.ArchiveFileName.Should().Be("orders-a.zip", "opening the form changes nothing");
     }
 
@@ -223,6 +227,7 @@ public sealed class ProjectImportAnotherTests : BunitContext
     public void Import_ZIP_opens_the_role_checkboxes_before_and_after_the_first_import()
     {
         var first = Render<ProjectImportPage>();
+        first.Find("[data-testid=pi-header-import]").Click();
         first.Find("[data-testid=pi-roles]").TextContent.Should().Contain("What does this ZIP contain?");
         first.FindAll("[data-testid=pi-zip-role]").Count.Should().Be(ImportRoleChoice.Choices.Count);
         first.Dispose();
@@ -232,7 +237,9 @@ public sealed class ProjectImportAnotherTests : BunitContext
         page.FindAll("[data-testid=pi-roles]").Should().BeEmpty("collapsed until Import ZIP");
         page.Find("[data-testid=pi-header-import]").Click();
         page.FindAll("[data-testid=pi-zip-role]").Select(r => r.GetAttribute("data-role")).Should().Equal(ImportRoleChoice.Choices.Select(c => c.ToString()));
-        page.FindAll("[data-testid=pi-zip-role]").Should().OnlyContain(r => !r.HasAttribute("checked"), "nothing ticked = detected from content");
+        page.FindAll("[data-testid=pi-zip-role]").Should().OnlyContain(r => !r.HasAttribute("checked"), "nothing is ticked until the tester answers");
+        page.Find("[data-testid=pi-zip-detect]").HasAttribute("checked").Should().BeFalse();
+        page.Find("[data-testid=pi-choose-locked]");
     }
 
     [Fact]
@@ -257,5 +264,86 @@ public sealed class ProjectImportAnotherTests : BunitContext
         page.WaitForAssertion(() => JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Last().Arguments.Single().Should().Be("pi-header-import"));
         _activation.Current!.ArchiveFileName.Should().Be("orders-a.zip", "cancel changes no application, import or history");
         _activation.Imports.Should().ContainSingle();
+    }
+
+    // ── Project name (2026-11-22): typed in the preview of a new project; Rename on the project card ──
+
+    [Fact]
+    public void A_new_projects_name_is_suggested_from_the_ZIP_and_can_be_changed_before_import()
+    {
+        var preview = Queue("orders-a.zip", ShaA, SnapshotA);
+        var cut = Render<ProjectImportPage>();
+        Choose(cut, "pi-choose-file", "orders-a.zip");
+        var name = cut.Find("[data-testid=pi-new-project-name]");
+        name.GetAttribute("value").Should().Be("orders-a", "the suggestion is the name read from the ZIP");
+        cut.Find("[data-testid=pi-project-name]").TextContent.Should().Contain("Suggested").And.Contain("orders-a");
+
+        name.Input("   ");
+        cut.Find("[data-testid=pi-new-project-name-problem]").TextContent.Should().Be("Enter a project name.");
+        cut.Find("[data-testid=pi-import]").HasAttribute("disabled").Should().BeTrue("a project is never created without a name");
+
+        cut.Find("[data-testid=pi-new-project-name]").Input("Order handling");
+        cut.FindAll("[data-testid=pi-new-project-name-problem]").Should().BeEmpty();
+        cut.Find("[data-testid=pi-import]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pi-result]"));
+
+        var application = _activation.CurrentApplication!;
+        application.Name.Should().Be("Order handling");
+        application.NameBasis.Should().Be(ApplicationContexts.ManualBasis, "the tester's name is kept: later imports never rename it");
+        _activation.Current!.ProjectName.Should().Be(preview.ProjectName, "the package keeps its own name (it identifies the package's versions)");
+    }
+
+    [Fact]
+    public void Adding_a_ZIP_to_an_existing_project_shows_that_project_and_asks_for_no_name()
+    {
+        ImportFirst().Dispose();
+        Queue("billing-b.zip", ShaB, SnapshotB);
+        var page = Render<ProjectImportPage>();
+        Choose(page, "pi-choose-file", "billing-b.zip");
+        page.FindAll("[data-testid=pi-new-project-name]").Should().BeEmpty();
+        page.Find("[data-testid=pi-project-name]").TextContent.Should().Contain("orders-a").And.Contain("package billing-b");
+    }
+
+    [Fact]
+    public void A_project_can_be_renamed_on_its_card_and_a_name_in_use_is_refused()
+    {
+        ImportFirst().Dispose();
+        var application = _activation.CurrentApplication!;
+        _repository.SddLifecycle.Applications.Add(new SddApplicationContext { Id = "app-other", Name = "Billing" });
+        _repository.SddLifecycle.ProjectImports.Add(new SddProjectImportRecord { ImportId = "other", ApplicationId = "app-other", ArchiveFileName = "billing.zip" });
+        var page = Render<ProjectImportPage>();
+
+        page.Find("[data-testid=pi-rename-open]").Click();
+        page.Find("[data-testid=pi-rename-input]").GetAttribute("value").Should().Be(application.Name);
+        page.Find("[data-testid=pi-rename-input]").Input("billing");
+        page.Find("[data-testid=pi-rename]").Submit();
+        page.Find("[data-testid=pi-rename-problem]").TextContent.Should().Contain("already exists");
+        application.Name.Should().Be("orders-a", "a refused name changes nothing");
+
+        page.Find("[data-testid=pi-rename-input]").Input("Order handling");
+        page.Find("[data-testid=pi-rename]").Submit();
+        page.WaitForAssertion(() => page.Find("[data-testid=pi-application-name]").TextContent.Should().Be("Order handling"));
+        application.NameBasis.Should().Be(ApplicationContexts.ManualBasis);
+        _activation.Current!.ProjectName.Should().Be("orders-a", "renaming the project renames no package");
+
+        page.Find("[data-testid=pi-rename-open]").Click();
+        page.Find("[data-testid=pi-rename-cancel]").Click();
+        page.FindAll("[data-testid=pi-rename]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Project_name_rules()
+    {
+        var lifecycle = new SddLifecycleState();
+        lifecycle.Applications.Add(new SddApplicationContext { Id = "a", Name = "M2LB" });
+        lifecycle.ProjectImports.Add(new SddProjectImportRecord { ImportId = "i", ApplicationId = "a" });
+        ApplicationContexts.NameProblem(lifecycle, "").Should().Be("Enter a project name.");
+        ApplicationContexts.NameProblem(lifecycle, new string('x', ApplicationContexts.MaxNameLength + 1)).Should().Contain("at most");
+        ApplicationContexts.NameProblem(lifecycle, " m2lb ").Should().Contain("already exists");
+        ApplicationContexts.NameProblem(lifecycle, "M2LB", exceptApplicationId: "a").Should().BeNull("a project keeps its own name");
+        ApplicationContexts.SuggestedName("M2LB.Common").Should().Be("M2LB");
+        ApplicationContexts.Rename(lifecycle, "a", "  M2LB Skole ").Should().BeNull();
+        lifecycle.Applications[0].Name.Should().Be("M2LB Skole");
+        ApplicationContexts.Rename(lifecycle, "missing", "x").Should().Be("The project no longer exists.");
     }
 }

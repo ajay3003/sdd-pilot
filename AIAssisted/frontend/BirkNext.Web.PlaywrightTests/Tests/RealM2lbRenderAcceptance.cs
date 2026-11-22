@@ -100,7 +100,7 @@ public sealed class RealM2lbRenderAcceptance
 
         // No browser storage is reused: the workspace is established only by this production import flow.
         await page.GotoAsync(new Uri(new Uri(frontendUrl), "/project-import").ToString(), new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 60000 });
-        await page.Locator("[data-testid='pi-choose-file']").SetInputFilesAsync(archivePath);
+        await (await BirkNext.Web.PlaywrightTests.Fixtures.SyntheticProjects.OpenZipFormAsync(page)).SetInputFilesAsync(archivePath);
         await page.Locator("[data-testid='pi-preview']").WaitForAsync(new() { Timeout = 180000 });
         string.Equals(await page.Locator("[data-testid='pi-fingerprint']").GetAttributeAsync("title"), ExpectedArchiveSha256,
             StringComparison.OrdinalIgnoreCase).Should().BeTrue("the actual import preview must show the expected archive fingerprint");

@@ -11,6 +11,24 @@ namespace BirkNext.Web.PlaywrightTests.Fixtures;
 /// </summary>
 public static class SyntheticProjects
 {
+    /// <summary>
+    /// Import Project (2026-11-22): opens the ZIP form from the header when it is not open and answers "What does this ZIP contain?" with
+    /// "Not sure — let BirkNext detect it" (what an unticked form meant before); the ZIP file input exists only then. Returns that input.
+    /// </summary>
+    public static async Task<ILocator> OpenZipFormAsync(IPage page)
+    {
+        var form = page.GetByTestId("pi-choose");
+        var header = page.GetByTestId("pi-header-import");
+        await form.Or(header).First.WaitForAsync(new() { Timeout = 120000 });
+        if (await form.CountAsync() == 0) await header.ClickAsync();
+        var detect = page.GetByTestId("pi-zip-detect");
+        await detect.WaitForAsync(new() { Timeout = 60000 });
+        if (!await detect.IsCheckedAsync() && await page.Locator("[data-testid=pi-zip-role]:checked").CountAsync() == 0) await detect.CheckAsync();
+        var chooser = page.GetByTestId("pi-choose-file");
+        await chooser.WaitForAsync(new() { State = WaitForSelectorState.Attached, Timeout = 60000 });
+        return chooser;
+    }
+
     /// <summary>A unique project name for one test (letters and digits only, as a folder name).</summary>
     public static string NewName(string prefix) => prefix + Guid.NewGuid().ToString("N")[..8];
 
@@ -96,8 +114,7 @@ public static class SyntheticProjects
     {
         var frontend = BrowserTestServers.FrontendUrl;
         await page.GotoAsync($"{frontend}/project-import?import=source", new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 60000 });
-        var chooser = page.GetByTestId("pi-choose-file");
-        await chooser.WaitForAsync(new() { State = WaitForSelectorState.Attached, Timeout = 120000 });
+        var chooser = await OpenZipFormAsync(page);
         // With an application already current (e.g. the one the active Target Environment is bound to), the page asks what this ZIP is: the
         // test's project is another application, never extra evidence for someone else's. The workspaces then follow it (2026-11-18).
         var project = page.GetByTestId("pi-target-project");

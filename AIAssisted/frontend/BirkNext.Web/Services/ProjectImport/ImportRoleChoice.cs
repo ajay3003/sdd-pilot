@@ -12,6 +12,9 @@ namespace BirkNext.Web.Services.ProjectImport;
 /// </summary>
 public static class ImportRoleChoice
 {
+    /// <summary>"What does this ZIP contain?" is answered: one or more roles, or "Not sure — let BirkNext detect it". The ZIP is read only then.</summary>
+    public static bool Answered(IReadOnlyCollection<PackageEvidenceRole> roles, bool detect) => roles.Count > 0 || detect;
+
     public sealed record Outcome(IReadOnlyList<PackageEvidenceRole> Accepted, IReadOnlyList<PackageEvidenceRole> Refused, bool Verified)
     {
         public string Message(string packageName)

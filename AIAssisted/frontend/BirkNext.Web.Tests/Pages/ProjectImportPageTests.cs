@@ -70,7 +70,7 @@ public sealed class ProjectImportPageTests : BunitContext
     private IRenderedComponent<ProjectImportPage> ChooseArchive()
     {
         var cut = Render<ProjectImportPage>();
-        cut.FindComponent<InputFile>().UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "shop.zip"));
+        ImportFormSteps.Upload(cut).UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "shop.zip"));
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=pi-preview], [data-testid=pi-failure]").Should().NotBeEmpty());
         return cut;
     }
@@ -79,12 +79,46 @@ public sealed class ProjectImportPageTests : BunitContext
     public void InitialState_OffersOneArchiveForDocumentsSourceOrBoth()
     {
         var cut = Render<ProjectImportPage>();
-
-        cut.Find("[data-testid=pi-choose]").TextContent.Should().Contain("Choose a project archive");
-        cut.Find("[data-testid=pi-outcomes]").TextContent.Should().Contain("Project documents").And.Contain("Source code").And.Contain("Contracts and schemas").And.Contain("Infrastructure configuration");
-        cut.Find("[data-testid=pi-choose-file]").GetAttribute("accept").Should().Be(".zip");
-        cut.Find("[data-testid=pi-choose-file]").GetAttribute("aria-label").Should().Contain("Choose project ZIP");
+        cut.Find("[data-testid=pi-start]").TextContent.Should().Contain("No project is imported yet").And.Contain("source code, project documents or both");
         cut.FindAll("[data-testid=pi-current]").Should().BeEmpty();
+
+        cut.Find("[data-testid=pi-header-import]").Click();
+        cut.Find("[data-testid=pi-choose]").TextContent.Should().Contain("Choose a project archive");
+        cut.FindAll("[data-testid=pi-choose-file]").Should().BeEmpty("the ZIP is chosen after the content question");
+        cut.FindAll("[data-testid=pi-choose-hint]").Should().BeEmpty("the reminder appears only when the locked button is clicked");
+        cut.Find("[data-testid=pi-choose-locked]").GetAttribute("aria-disabled").Should().Be("true");
+        cut.Find("[data-testid=pi-zip-detect]").Change(true);
+        cut.Find("[data-testid=pi-choose-file]").GetAttribute("accept").Should().Be(".zip");
+        cut.Find("[data-testid=pi-choose-file]").GetAttribute("aria-label").Should().Contain("Choose the ZIP");
+    }
+
+    [Fact]
+    public void Choose_ZIP_file_stays_locked_until_the_content_question_is_answered_and_a_click_says_why()
+    {
+        // Audit 2026-11-22: the ZIP could be chosen with the content question unanswered, and nothing said what the checkboxes were for.
+        var cut = Render<ProjectImportPage>();
+        cut.Find("[data-testid=pi-header-import]").Click();
+        cut.Find("[data-testid=pi-choose-locked]").Click();
+        var hint = cut.Find("[data-testid=pi-choose-hint]");
+        hint.ClassList.Should().Contain("pi-warning", "a warning colour, not grey help text");
+        hint.GetAttribute("role").Should().Be("alert");
+        hint.TextContent.Should().Contain("Tick what the ZIP contains first");
+        cut.WaitForAssertion(() => JSInterop.Invocations.Where(i => i.Identifier == "birknextFocusElement").Last().Arguments.Single().Should().Be("pi-roles"));
+        _api.Verify(a => a.PreviewAsync(It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<CancellationToken>()), Times.Never);
+
+        // A role unlocks it and removes the reminder; "Not sure" and a role exclude each other.
+        cut.Find($"[data-testid=pi-zip-role][data-role={PackageEvidenceRole.Documentation}]").Change(true);
+        cut.FindAll("[data-testid=pi-choose-hint]").Should().BeEmpty();
+        cut.Find("[data-testid=pi-choose-file]");
+        cut.Find("[data-testid=pi-zip-detect]").Change(true);
+        cut.Find($"[data-testid=pi-zip-role][data-role={PackageEvidenceRole.Documentation}]").HasAttribute("checked").Should().BeFalse();
+        cut.Find($"[data-testid=pi-zip-role][data-role={PackageEvidenceRole.Documentation}]").Change(true);
+        cut.Find("[data-testid=pi-zip-detect]").HasAttribute("checked").Should().BeFalse();
+        cut.Find($"[data-testid=pi-zip-role][data-role={PackageEvidenceRole.Documentation}]").Change(false);
+        cut.FindAll("[data-testid=pi-choose-file]").Should().BeEmpty("unticking the last answer locks it again");
+        ImportRoleChoice.Answered([], detect: false).Should().BeFalse();
+        ImportRoleChoice.Answered([], detect: true).Should().BeTrue();
+        ImportRoleChoice.Answered([PackageEvidenceRole.Documentation], detect: false).Should().BeTrue();
     }
 
     [Fact]
@@ -361,6 +395,8 @@ public sealed class ProjectImportPageTests : BunitContext
         _repository.SddLifecycle.ProjectImports.Should().ContainSingle(i => i.ImportId == importId, "clearing deletes nothing: the import stays in history");
         _repository.SddLifecycle.Revisions.Should().Contain(r => r.ProjectImportId == importId);
         cut.FindAll("[data-testid=pi-current]").Should().BeEmpty();
-        cut.Find("[data-testid=pi-choose]").TextContent.Should().Contain("Import a ZIP into shop", "without a current import the upload block is open; the application itself was not cleared");
+        cut.Find("[data-testid=pi-start]");
+        cut.Find("[data-testid=pi-header-import]").Click();
+        cut.Find("[data-testid=pi-choose]").TextContent.Should().Contain("Import a ZIP into shop", "the application itself was not cleared");
     }
 }

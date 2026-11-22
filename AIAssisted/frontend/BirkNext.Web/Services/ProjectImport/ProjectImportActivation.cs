@@ -76,7 +76,7 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
     /// <param name="target">The logical application the package is evidence for: the current one (default) or a new one. The package never
     /// replaces the application; <see cref="SettleDocuments"/> decides afterwards whose documents are shown.</param>
     public SddProjectImportRecord Activate(ProjectImportPreview preview, ProjectImportArtifactDiscovery discovery, ProjectImportCommitResult? commit, bool makeCurrent = true,
-        ImportTarget target = ImportTarget.CurrentApplication, string? targetApplicationId = null)
+        ImportTarget target = ImportTarget.CurrentApplication, string? targetApplicationId = null, string? newProjectName = null)
     {
         var lifecycle = repository.SddLifecycle;
         // A selected Sample Project is replaced by the imported project (one current project).
@@ -99,7 +99,12 @@ public sealed class ProjectImportActivation(WorkspaceArtifactRepository reposito
         AppendHistory(record, preview.Archive.ContentSha256);
         RecordGeneratedSet(preview.ImportId, commit?.Source, [.. preview.Documents, .. preview.GeneratedArtifactTexts]);
         var applicationBefore = lifecycle.CurrentApplicationId;
-        ApplicationContexts.Assign(lifecycle, record, target, record.ImportedAt, targetApplicationId);
+        var existing = lifecycle.Applications.Select(a => a.Id).ToHashSet(StringComparer.Ordinal);
+        var assigned = ApplicationContexts.Assign(lifecycle, record, target, record.ImportedAt, targetApplicationId);
+        // The name the tester typed in the preview names the project this import creates (never an existing project, never the package).
+        if (newProjectName is { Length: > 0 } && !existing.Contains(assigned.Id)
+            && !string.Equals(newProjectName.Trim(), assigned.Name, StringComparison.Ordinal))
+            ApplicationContexts.Rename(lifecycle, assigned.Id, newProjectName);
         if (!makeCurrent && applicationBefore is not null) lifecycle.CurrentApplicationId = applicationBefore;
 
         if (makeCurrent) lifecycle.CurrentProjectImportId = preview.ImportId;

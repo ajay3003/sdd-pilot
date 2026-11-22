@@ -199,7 +199,7 @@ public sealed class SourceAnalysisLinkedSnapshotTests : BunitContext
             .ReturnsAsync((ProjectImportActivationTests.Commit(preview, ProjectImportSourceState.Created, created.Id), (SourceUploadFailure?)null));
 
         var import = Render<ProjectImportPage>();
-        import.FindComponent<InputFile>().UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "skole.zip"));
+        ImportFormSteps.Upload(import).UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "skole.zip"));
         import.WaitForAssertion(() => import.Find("[data-testid=pi-source-status]").TextContent.Should().Contain("Source detected"));
         import.Find("[data-testid=pi-import]").Click();
         import.WaitForAssertion(() => import.Find("[data-testid=pi-result]"));
