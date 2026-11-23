@@ -58,3 +58,15 @@ The first run of partition 6 had 2 failures: `CompilerCompatibilityTests.NoPatte
 `ScenariosQueryTests` (its throwaway PostgreSQL container refused the connection; passed when re-run in isolation and in the full rerun —
 transient, environmental). Partitions 1–5 ran on the build before that one-line parenthesisation (no behavioural change); partition 6 and
 the focused suites ran after it. Skipped tests are pre-existing environment-gated skips. Release frontend publish: PASS.
+
+## Unified scope architecture audit addendum — 2026-11-13
+
+This is a static architecture addendum, not a re-verification or status change to G-01…G-11. Branch `008-traceability-first`; first observed HEAD `92aca19df8dd736f081a846c4d4ca02a90969023`, later read `026ade937d7938faab3c0b0e6e112c87d27c10b5`. HEAD/worktree changed while the audit was in progress; concurrent changes were not investigated. No tests were run.
+
+| ID | Additional gap | Classification | Source evidence and next step |
+|---|---|---|---|
+| US-01 | No durable project-local logical System Registry is shared by topology, environment bindings and journeys. | PERSISTENCE_GAP / MODULE_INTEGRATION_GAP | External system instances and Integration Catalog are both environment-keyed (`AIAssisted/backend/BirkNext.Api/Models/IntegrationCatalogRecords.cs`; `ExternalIntegration` in `AIAssisted/shared/ExternalIntegrationContracts.cs`); topology is a composed read model (`Services/IntegrationTopology/TopologyProviders.cs`). Add identity references only after defining the project key mapping. |
+| US-02 | Functional Quality Scopes, canonical functional scopes and journey scopes do not share one versioned membership identity. | MODULE_INTEGRATION_GAP | Delivery scope tables/API in `DeliveryReportingDbContext.cs` and `FunctionalQualityScopeController.cs`; canonical filter in `AIAssisted/shared/CanonicalScope.cs`; journey APIs in `IntegrationJourneysController.cs`. Add adapters and preserve existing semantics. |
+| US-03 | Test Data assets have stable IDs and consumer bindings, but no shared scope/scenario association. | TEST_DATA_GAP | `TestDataAsset.cs` has immutable asset identity/version and `ExternalIntegration.TestDataBindings` has consumer requirement bindings. Associate by reference and calculate per scenario/environment. |
+| US-04 | Topology/source evidence can inform candidates but does not automatically produce reviewed, executable E2E steps and assertions. | MAPPING_GAP / TEST_GENERATION_GAP | `SourceArchitectureTopologyProvider` extracts topology facts; Skolenærvær pack explicitly separates journeys and prerequisites. Generate draft-only scenarios from evidenced steps; retain review and executor gates. |
+| US-05 | Scope revision is not a common part of execution evidence/session context across modules. | EVIDENCE_GAP | Delivery has frozen scope snapshots; journey has its own run store. Add a session link/pin without moving immutable run evidence. |
