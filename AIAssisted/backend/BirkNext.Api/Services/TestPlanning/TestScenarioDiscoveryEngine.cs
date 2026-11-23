@@ -243,12 +243,20 @@ public static class TestScenarioDiscoveryEngine
                     : [],
                 TestDataNeeds = Text(s.TestData) is { } data ? [data] : [],
                 RequirementIds = [.. guide.Rules.Where(r => r.TestScenarioIds.Contains(s.Id, StringComparer.Ordinal)).Select(r => r.Id)],
-                Evidence = [new("guide-scenario", $"{revision.GuideKey}/{s.Id}", $"Guide revision {revision.Revision}")],
+                Evidence = [new("guide-scenario", $"{revision.GuideKey}/{s.Id}", $"Guide revision {revision.Revision}"),
+                    .. s.Evidence
+                    .Concat(steps.SelectMany(step => step.Evidence))
+                    .Concat(guide.Rules.Where(rule => rule.TestScenarioIds.Contains(s.Id, StringComparer.Ordinal)).SelectMany(rule => rule.Evidence))
+                    .Distinct()
+                    .Select(e => new CandidateEvidenceRef("source-evidence",
+                        string.Join(":", new[] { e.SourceLabel, e.File, e.Lines is null ? null : $"lines {e.Lines}" }.Where(x => !string.IsNullOrWhiteSpace(x))),
+                        string.Join(" · ", new[] { e.SourceLabel, e.Class.ToString(), e.Symbol, e.TestId, e.Note }.Where(x => !string.IsNullOrWhiteSpace(x)))))],
                 CanonicalKey = $"guide:{revision.GuideKey}/{s.Id}",
                 ScopeKeys = ["Scenario:" + BirkNext.Interpretation.CanonicalKeys.EntityKey(BirkNext.Interpretation.CanonicalEntityType.Scenario,
                     BirkNext.Interpretation.CorrelationRules.GuideScenarioIdentity(revision.GuideKey, s.Id))],
                 Engine = $"System Understanding guide r{revision.Revision}",
-                OpenQuestions = [.. s.State == GuideScenarioState.NeedsClarification ? new[] { "The guide marks this scenario as needing clarification." } : []],
+                OpenQuestions = [.. s.State == GuideScenarioState.NeedsClarification ? new[] { "The guide marks this scenario as needing clarification." } : [],
+                    .. Text(s.FollowUp) is { } followUp ? new[] { followUp } : []],
             }, projectKey));
         }
         if (recognisedRoles is { Count: > 0 }) list.AddRange(FromGuideSteps(projectKey, revision, recognisedRoles, list));

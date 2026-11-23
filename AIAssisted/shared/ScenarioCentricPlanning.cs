@@ -254,6 +254,36 @@ public static partial class ScenarioPlanning
         return Regex.Replace(translated, "⟦(\\d+)⟧", m => tokens[int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture)]);
     }
 
+    /// <summary>Numeric values are part of the meaning even when they are not identifiers (dates, durations, limits and status codes).</summary>
+    public static bool PreservesNumericValues(string source, string translated)
+    {
+        static string[] Values(string text) => Regex.Matches(text, @"(?<![\p{L}\p{N}])\d+(?:[.,:]\d+)*(?![\p{L}\p{N}])")
+            .Select(m => m.Value).ToArray();
+        return Values(source).SequenceEqual(Values(translated), StringComparer.Ordinal);
+    }
+
+    /// <summary>Fail closed for known English/Norwegian negation and condition markers when a supported target language has a marker set.</summary>
+    public static bool PreservesNegationAndConditions(string source, string translated, string targetLanguage)
+    {
+        (string? Negation, string? Condition) markers = targetLanguage.ToLowerInvariant() switch
+        {
+            "nb" or "no" or "nn" => (Negation: @"\b(ikke|aldri|ingen|intet|uten)\b", Condition: @"\b(hvis|dersom|når|med\s+mindre)\b"),
+            "da" => (Negation: @"\b(ikke|aldrig|ingen|intet|uden)\b", Condition: @"\b(hvis|når|med\s+mindre|såfremt)\b"),
+            "sv" => (Negation: @"\b(inte|aldrig|ingen|inget|utan)\b", Condition: @"\b(om|ifall|när|såvida\s+inte)\b"),
+            "de" => (Negation: @"\b(nicht|nie|niemals|kein|keine|keinen|ohne)\b", Condition: @"\b(wenn|falls|sofern|es\s+sei\s+denn)\b"),
+            "fr" => (Negation: @"\b(ne|n’|n'|jamais|aucun|aucune|sans)\b", Condition: @"\b(si|lorsque|quand|à\s+moins\s+que)\b"),
+            "es" => (Negation: @"\b(no|nunca|jamás|ningún|ninguna|sin)\b", Condition: @"\b(si|cuando|en\s+caso\s+de|a\s+menos\s+que)\b"),
+            _ => ((string?)null, (string?)null),
+        };
+        if (markers.Negation is null) return true; // no defined marker set: numeric/identifier protections still apply
+        var sourceNegation = Regex.IsMatch(source, @"\b(not|never|no|without|neither|nor)\b", RegexOptions.IgnoreCase)
+            || Regex.IsMatch(source, @"\b(ikke|aldri|ingen|intet|uten)\b", RegexOptions.IgnoreCase);
+        var sourceCondition = Regex.IsMatch(source, @"\b(if|when|unless|only\s+if|provided\s+that)\b", RegexOptions.IgnoreCase)
+            || Regex.IsMatch(source, @"\b(hvis|dersom|når|med\s+mindre)\b", RegexOptions.IgnoreCase);
+        return (!sourceNegation || Regex.IsMatch(translated, markers.Negation, RegexOptions.IgnoreCase))
+            && (!sourceCondition || Regex.IsMatch(translated, markers.Condition, RegexOptions.IgnoreCase));
+    }
+
     /// <summary>The exported text of a case in the chosen language: translated only when the case has a complete text in that language (all
     /// fields from one language, never mixed), else the original with the reason. <c>Translated</c> = the text is in <paramref name="language"/>.</summary>
     public static (string Title, string? Preconditions, List<string> Steps, List<string?> StepExpected, bool Translated, string? Note) Localized(TestCaseDraft c, string? language)

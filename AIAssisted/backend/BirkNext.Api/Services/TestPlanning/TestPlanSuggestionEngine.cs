@@ -44,7 +44,8 @@ public static partial class TestPlanSuggestionEngine
     // ── Generation ───────────────────────────────────────────────────────────────────────────────────────────
 
     public static List<TestCaseRequirement> Requirements(SystemGuideContent guide, string scenarioId) =>
-        [.. guide.Rules.Where(r => r.TestScenarioIds.Contains(scenarioId, StringComparer.Ordinal)).Select(r => new TestCaseRequirement(r.Id, r.Title, r.ExpectedBehavior))];
+        [.. guide.Rules.Where(r => r.TestScenarioIds.Contains(scenarioId, StringComparer.Ordinal))
+            .Select(r => new TestCaseRequirement(r.Id, r.Title, r.ExpectedBehavior ?? r.Summary))];
 
     public static string? StageOf(SystemGuideContent guide, GuideTestScenario scenario) =>
         scenario.StepIds.Select(id => guide.Steps.FirstOrDefault(s => s.Id == id)?.Stage).FirstOrDefault(s => !string.IsNullOrWhiteSpace(s));
@@ -73,6 +74,13 @@ public static partial class TestPlanSuggestionEngine
             EnvironmentPrerequisites = components.Count == 0 ? null : "Involved components: " + string.Join(", ", components),
             FailureCases = [.. scenario.FailureCases],
             Requirements = Requirements(guide, scenario.Id),
+            Evidence = [.. scenario.Evidence
+                .Concat(scenario.StepIds.Select(id => guide.Steps.FirstOrDefault(s => s.Id == id)).OfType<GuideStep>().SelectMany(s => s.Evidence))
+                .Concat(guide.Rules.Where(r => r.TestScenarioIds.Contains(scenario.Id, StringComparer.Ordinal)).SelectMany(r => r.Evidence))
+                .Distinct()
+                .Select(e => new CandidateEvidenceRef("source-evidence",
+                string.Join(":", new[] { e.SourceLabel, e.File, e.Lines is null ? null : $"lines {e.Lines}" }.Where(x => !string.IsNullOrWhiteSpace(x))),
+                string.Join(" · ", new[] { e.SourceLabel, e.Class.ToString(), e.Symbol, e.TestId, e.Note }.Where(x => !string.IsNullOrWhiteSpace(x)))))],
             NamedExistingTests = [.. scenario.ExistingTests],
             FollowUp = Blank(scenario.FollowUp),
             StageId = StageOf(guide, scenario),

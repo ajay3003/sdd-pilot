@@ -58,6 +58,44 @@ public sealed class TestPlanSuggestionEngineTests
     }
 
     [Fact]
+    public void Unknown_child_keeps_the_source_generation_conflict_unresolved_and_separate_from_Person_unavailability()
+    {
+        var scenario = S("manglende-barn");
+        scenario.State.Should().Be(GuideScenarioState.NeedsClarification);
+        scenario.ExpectedOutcome.Should().BeNull();
+        scenario.Objective.Should().Contain("M2LB (7).zip").And.Contain("M2LB (5).zip").And.Contain("ikke en oversettelsesvariant");
+        scenario.FollowUp.Should().Contain("ReportIntakeHandler.cs").And.Contain("Rapportinntaksbehandler.cs").And.Contain("linje");
+
+        var generated = E.Generate(Guide, scenario, reviewedGuide: false);
+        generated.ExpectedResult.Should().BeNull();
+        generated.ExpectedBasis.Should().Be(ExpectedResultBasis.NeedsClarification);
+        generated.Requirements.Single(r => r.RuleId == "r-ukjent-barn").ExpectedBehavior.Should().Contain("HTTP 200").And.Contain("HTTP 503");
+        generated.Evidence.Select(e => e.Reference).Should().Contain(r => r.Contains("ReportIntakeHandler.cs") && r.Contains("M2LB (7).zip"))
+            .And.Contain(r => r.Contains("Rapportinntaksbehandler.cs") && r.Contains("M2LB (5).zip"));
+    }
+
+    [Theory]
+    [InlineData("HTTP 200", "HTTP 200", true)]
+    [InlineData("HTTP 503", "HTTP 503", true)]
+    [InlineData("2026-11-23 timeout 3.5 seconds", "2026-11-23 timeout 3.5 sekunder", true)]
+    [InlineData("2026-11-23 timeout 3.5 seconds", "2026-11-24 timeout 3.5 sekunder", false)]
+    [InlineData("HTTP 200", "HTTP 503", false)]
+    public void Numeric_technical_values_are_checked_without_being_translated(string source, string translated, bool expected)
+    {
+        ScenarioPlanning.PreservesNumericValues(source, translated).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("If the child is not found, return HTTP 200", "Hvis barnet ikke finnes, returner HTTP 200", true)]
+    [InlineData("If the child is not found, return HTTP 200", "Hvis barnet finnes, returner HTTP 200", false)]
+    [InlineData("When the service is unavailable, do not write", "Når tjenesten er utilgjengelig, ikke skriv", true)]
+    [InlineData("When the service is unavailable, do not write", "Når tjenesten er utilgjengelig, skriv", false)]
+    public void Translation_validation_preserves_negation_and_conditional_markers(string source, string translated, bool expected)
+    {
+        ScenarioPlanning.PreservesNegationAndConditions(source, translated, "nb").Should().Be(expected);
+    }
+
+    [Fact]
     public void Suites_follow_the_guides_business_process_stages_in_stage_order_and_ungrouped_scenarios_are_shown_for_placement()
     {
         var cases = new[] { "periodelaas", "gyldig-rapport", "manglende-barn", "bufdata-fil", "duplikat-melding" }.Select(id => E.Generate(Guide, S(id), false)).ToList();

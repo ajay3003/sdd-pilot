@@ -99,8 +99,11 @@ public sealed class TestPlanSuggestionServiceTests : IAsyncLifetime, IDisposable
         await using var db = Context();
         var workspace = await Service(db).WorkspaceAsync(null, canWrite: true, default);
         workspace.GuideKey.Should().Be("skolenaervaer");
-        workspace.Candidates.Should().HaveCount(21, "every 'What to test' scenario is a candidate, none invented");
+        workspace.Candidates.Should().HaveCount(22, "every 'What to test' scenario is a candidate, none invented");
         workspace.Candidates.Single(c => c.Source.ScenarioId == "ukjent-xml-versjon").GuideState.Should().Be("NeedsClarification");
+        var unknownChild = workspace.Candidates.Single(c => c.Source.ScenarioId == "manglende-barn");
+        unknownChild.GuideState.Should().Be("NeedsClarification");
+        unknownChild.HasExpected.Should().BeFalse("a genuine cross-revision source disagreement has no single accepted result");
         workspace.Basis!.GuideReviewState.Should().Be("Draft only — not reviewed");
         workspace.Basis.Roles.Should().NotBeEmpty().And.OnlyContain(r => r.State == "NOT_IMPORTED", "nothing is imported in this database");
 
@@ -108,6 +111,10 @@ public sealed class TestPlanSuggestionServiceTests : IAsyncLifetime, IDisposable
         plan.Cases.Select(c => c.Source.ScenarioId).Should().Equal(Seven);
         plan.Cases.Should().OnlyContain(c => c.Review == TestCaseReviewState.Generated && c.Generated.ExpectedBasis != ExpectedResultBasis.ReviewedGuide);
         plan.Cases.Should().OnlyContain(c => !c.Testability.Ready, "a documented scenario is not executable");
+        var unknownChildCase = plan.Cases.Single(c => c.Source.ScenarioId == "manglende-barn");
+        unknownChildCase.Generated.ExpectedBasis.Should().Be(ExpectedResultBasis.NeedsClarification);
+        unknownChildCase.Generated.Evidence.Should().Contain(e => e.Reference.Contains("M2LB (7).zip") && e.Reference.Contains("ReportIntakeHandler.cs"))
+            .And.Contain(e => e.Reference.Contains("M2LB (5).zip") && e.Reference.Contains("Rapportinntaksbehandler.cs"));
         plan.Suites.Select(s => s.Name).Should().Contain(["Skoletjenesten tar imot", "Periodelås", "Levering til Bufdata"]);
         plan.Cases.Single(c => c.Source.ScenarioId == "bufdata-fil").Missing.Should().Contain(m => m.Contains("NEEDS CLARIFICATION"));
         plan.Basis.GuideRevision.Should().Be(1);
@@ -298,7 +305,7 @@ public sealed class TestPlanSuggestionServiceTests : IAsyncLifetime, IDisposable
         var service = Service(db);
         var empty = await service.SummaryAsync(null, default);
         empty.GuideKey.Should().Be("skolenaervaer");
-        empty.Candidates.Should().HaveCount(21);
+        empty.Candidates.Should().HaveCount(22);
         empty.Drafts.Should().BeEmpty();
         var plan = await CreateSeven(db);
         await service.SaveSnapshotAsync(plan.Id, new SaveTestPlanSnapshotRequest(plan.Revision, "L1", null), "lead", default);

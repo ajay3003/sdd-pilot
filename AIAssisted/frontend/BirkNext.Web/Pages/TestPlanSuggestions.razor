@@ -1100,6 +1100,8 @@
                         </ul></dd>
                     }
                     else if (c.OpenQuestions.Count > 0) { <dt>Open questions</dt><dd><ul class="tps-plain">@foreach (var q in c.OpenQuestions) { <li>@q</li> }</ul></dd> }
+                    @if (c.ExpectedBehaviour is null && c.OpenQuestions.Count > 0)
+                    { <dt>Needs clarification</dt><dd data-testid="tps-needs-clarification-@c.CandidateId"><ul class="tps-plain">@foreach (var question in c.OpenQuestions) { <li>@question</li> }</ul></dd> }
                     @if (c.SourcesChecked.Count > 0)
                     {
                         <dt>Sources checked</dt>
@@ -1271,10 +1273,12 @@
                         }
                         @if (c.Generated.Clarifications.Count > 0) { <dt>Clarifications</dt><dd><ul class="tps-plain" data-testid="tps-case-clarifications">@foreach (var k in c.Generated.Clarifications) { <li data-testid="tps-clarification" data-state="@k.State"><span class="tps-chip @(k.State == BirkNext.TestCoverage.CoverageClarification.Open ? "tps-chip-warn" : k.State == BirkNext.TestCoverage.CoverageClarification.Resolved ? "tps-chip-ok" : "tps-chip-info")">@ClarificationStates.CaseLabel(k)</span> @k.Question@if ((k.Resolution ?? k.Answer) is { Length: > 0 } answer) { <span> → <strong>@answer</strong></span> }</li> }</ul></dd> }
                         @if (c.Generated.FailureCases.Count > 0) { <dt>Failure cases</dt><dd>@string.Join(" · ", c.Generated.FailureCases)</dd> }
+                        @if (c.Generated.ExpectedBasis == ExpectedResultBasis.NeedsClarification)
+                        { <dt>Needs clarification</dt><dd data-testid="tps-needs-clarification-@sid">@(c.Generated.FollowUp ?? "Avklar forventet resultat før testing.")</dd> }
                         @if (c.Generated.ExistingTests.Count > 0) { <dt>Existing tests</dt><dd>@string.Join("; ", c.Generated.ExistingTests.Select(t => t.Name)) <span class="tps-muted">(explicit requirement references)</span></dd> }
                         else if (c.Generated.NamedExistingTests.Count > 0) { <dt>Tests the guide names</dt><dd>@string.Join(" · ", c.Generated.NamedExistingTests) <span class="tps-muted">(names, not verified identities)</span></dd> }
                         <dt>Evidence</dt><dd class="tps-small" data-testid="tps-evidence-@sid">
-                            @if (c.Generated.Evidence.Count > 0) { @foreach (var e in c.Generated.Evidence.Take(6)) { <span class="tps-ref" title="@(e.Detail is null ? e.Reference : $"{e.Reference} · {e.Detail}")">@C.ShortReference(e.Reference)</span> } }
+                            @if (c.Generated.Evidence.Count > 0) { @foreach (var e in c.Generated.Evidence.Take(6)) { <span class="tps-ref" title="@(e.Detail is null ? e.Reference : $"{e.Reference} · {e.Detail}")">@C.ShortReference(e.Reference) @if (e.Detail is { } provenance) { <span class="tps-muted">@provenance</span> }</span> } }
                             else if (c.Source.Kind == ScenarioSourceKind.Manual) { <span>Written by hand — no discovered evidence.</span> }
                             else { <span>@c.Source.Owner · @sid@(c.Source.Revision is { } rev ? $" · guide revision {rev}" : "")</span> }
                             @if (c.Generated.Confidence is { } conf) { <span class="tps-muted"> · @ScenarioCandidateTypes.ConfidenceLabel(conf)</span> }</dd>
