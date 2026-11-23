@@ -184,7 +184,7 @@ public sealed class TargetEnvironmentMaterializationTests
         await new ExternalIntegrationsApiService(http).SaveAsync(development.Id, null, Integration());
 
         var reload = await LoadAsync(storage);
-        reload.Settings.Profiles.Select(p => p.Name).Should().Equal("Local", "Development", "QA", "Production");
+        reload.Settings.Profiles.Select(p => p.Name).Should().Equal("QA", "Development", "Local", "Production");
         reload.Settings.Profiles.Single(p => p.Id == development.Id).TargetUrl.Should().NotBe("https://unsaved-edit.example.test");
         settings.Settings.Profiles.Should().Contain(unsavedNew, "the in-memory draft is left as it was");
     }

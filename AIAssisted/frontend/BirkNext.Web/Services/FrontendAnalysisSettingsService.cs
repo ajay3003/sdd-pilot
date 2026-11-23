@@ -91,11 +91,12 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
     // The built-in defaults as seeded on this load, kept until stored: what MaterializeAsync stores and which ids it accepts.
     private string? _seedJson;
     private HashSet<string> _seedProfileIds = new(StringComparer.Ordinal);
-    /// <summary>The active environment; a saved active environment of a disabled type (<see cref="DisabledEnvironmentTypes"/>) is not active.</summary>
+    /// <summary>The active environment. A saved active environment stays active whatever its type: disabling a type (<see cref="DisabledEnvironmentTypes"/>)
+    /// stops it being chosen, never silently drops a saved choice (a profile saved without a type reads as Local, the enum's first value).</summary>
     public FrontendAnalysisProfile?  ActiveProfile =>
         _settings.ActiveResolutionError is not null || string.IsNullOrWhiteSpace(_settings.ActiveProfileId)
             ? null
-            : _settings.Profiles.Where(p => p.Id == _settings.ActiveProfileId).ToList() is { Count: 1 } matches && IsEnabled(matches[0])
+            : _settings.Profiles.Where(p => p.Id == _settings.ActiveProfileId).ToList() is { Count: 1 } matches
                 ? matches[0] : null;
 
     // ── Enabled environment types and display order (2026-11-23) ─────────────────────────────────────────────────────
@@ -399,7 +400,9 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
 
     public void SelectActiveProfile(string profileId)
     {
-        if (_settings.Profiles.Count(p => p.Id == profileId) == 1 && _settings.Profiles.First(p => p.Id == profileId) is var chosen && IsEnabled(chosen))
+        // The disabled types are blocked where people choose (the environment list and Set as Active), not here: profiles saved or created
+        // without a type read as Local (the enum's first value), and programmatic activation of those must keep working.
+        if (_settings.Profiles.Count(p => p.Id == profileId) == 1)
         {
             _settings.ActiveProfileId = profileId;
             _settings.ActiveResolutionError = null;

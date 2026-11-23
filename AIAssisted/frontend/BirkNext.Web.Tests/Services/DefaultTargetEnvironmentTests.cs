@@ -20,21 +20,23 @@ public sealed class DefaultTargetEnvironmentTests
     }
 
     [Fact]
-    public async Task Reset_MakesDevelopmentActive_AndKeepsItsConfiguredFrontendUrl()
+    public async Task Reset_MakesQaActive_AndKeepsDevelopmentsConfiguredFrontendUrl()
     {
+        // 2026-11-23: QA is the default (active and selected) with the QA application as its target; Development keeps its configured URL.
         var (settings, js) = await FreshAsync();
         var dev = settings.Settings.Profiles.Single(p => p.Name == "Development");
         dev.TargetUrl = "https://m2lbdev.bufetat.no";
-        settings.SelectActiveProfile(settings.Settings.Profiles.Single(p => p.Name == "Local").Id);
+        settings.SelectActiveProfile(dev.Id);
         await settings.SaveAsync(js);
 
         await settings.ResetForLocalDataResetAsync(js);
 
-        settings.ActiveProfile!.Name.Should().Be("Development");
-        settings.ActiveProfile.TargetUrl.Should().Be("https://m2lbdev.bufetat.no");
-        settings.Settings.Profiles.Select(p => p.Name).Should().Equal("Local", "Development", "QA", "Production");
+        settings.ActiveProfile!.Name.Should().Be("QA");
+        settings.ActiveProfile.TargetUrl.Should().Be(FrontendAnalysisSettingsService.DefaultQaUrl);
+        settings.Settings.Profiles.Single(p => p.Name == "Development").TargetUrl.Should().Be("https://m2lbdev.bufetat.no");
+        settings.Settings.Profiles.Select(p => p.Name).Should().Equal("QA", "Development", "Local", "Production");
         settings.Settings.Profiles.Single(p => p.Name == "Local").TargetUrl.Should().Be("https://localhost:5001");
-        js.Json.Should().Contain(settings.ActiveProfile.Id, "the reset state is saved, so a reload keeps Development active");
+        js.Json.Should().Contain(settings.ActiveProfile.Id, "the reset state is saved, so a reload keeps QA active");
     }
 
     [Fact]
@@ -42,8 +44,8 @@ public sealed class DefaultTargetEnvironmentTests
     {
         var (settings, js) = await FreshAsync();
         await settings.ResetForLocalDataResetAsync(js);
-        settings.ActiveProfile!.Name.Should().Be("Development");
-        settings.ActiveProfile.TargetUrl.Should().Be("https://example-dev.local");
+        settings.ActiveProfile!.Name.Should().Be("QA");
+        settings.Settings.Profiles.Single(p => p.Name == "Development").TargetUrl.Should().Be("https://example-dev.local");
         FrontendAnalysisSettingsService.IsSeedPlaceholder("https://example-qa.local").Should().BeTrue();
         FrontendAnalysisSettingsService.IsSeedPlaceholder("https://m2lbdev.bufetat.no").Should().BeFalse();
     }
@@ -51,10 +53,10 @@ public sealed class DefaultTargetEnvironmentTests
     [Fact]
     public async Task The_seeded_example_url_is_not_a_target_so_runtime_reviews_do_not_look_ready()
     {
-        // Fresh installation: Development is active with its example URL. Nothing can be tested there, so the run gates and the applicability
-        // of browser/API reviews must treat it as "no target" (2026-11-23: FQR/AQR/Performance/Critical E2E showed Ready to run on an empty DB).
+        // The seeded Development environment keeps an example URL. Nothing can be tested there, so the run gates and the applicability of
+        // browser/API reviews must treat it as "no target" (2026-11-23: FQR/AQR/Performance/Critical E2E showed Ready to run on an empty DB).
         var (settings, _) = await FreshAsync();
-        var dev = settings.ActiveProfile!;
+        var dev = settings.Settings.Profiles.Single(p => p.Name == "Development");
         dev.TargetUrl.Should().Be("https://example-dev.local");
         FrontendAnalysisSettingsService.IsConfiguredTarget(dev.TargetUrl).Should().BeFalse();
         FrontendAnalysisSettingsService.IsConfiguredTarget("").Should().BeFalse();

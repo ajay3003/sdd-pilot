@@ -86,7 +86,6 @@
                     @onclick="() => SelectProfile(p.Id)">
                 <span class="fa-env-dot fa-env-dot-@p.EnvironmentType.ToString().ToLowerInvariant()"></span>
                 @p.Name
-                @if (!enabled) { <span class="fa-disabled-badge">Disabled</span> }
                 @if (p.Id == EffectiveActiveProfile?.Id)
                 {
                     <span class="fa-active-badge">Active</span>
@@ -95,6 +94,7 @@
                 {
                     <span class="fa-selected-badge">Selected</span>
                 }
+                @if (!enabled) { <span class="fa-disabled-badge">Disabled</span> }
             </button>
         }
     </div>

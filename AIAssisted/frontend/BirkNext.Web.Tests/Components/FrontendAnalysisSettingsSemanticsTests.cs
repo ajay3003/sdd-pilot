@@ -189,7 +189,6 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
 
     [Theory]
     [InlineData(FrontendEnvironmentType.Development, "https://m2lbdev.bufetat.no/")]
-    [InlineData(FrontendEnvironmentType.Local, "")]
     [InlineData(FrontendEnvironmentType.QA, "")]
     public void AddEnvironment_StoresUrlAndSavesWithoutDetectionOrActivation(FrontendEnvironmentType type, string url)
     {
@@ -198,7 +197,9 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
         cut.Find(".fa-btn-create").Click();
         var dialog = cut.Find("[role=dialog]");
         dialog.TextContent.Should().Contain("Environment Name").And.Contain("Environment Type").And.Contain("Frontend Base URL");
-        cut.Find("#fa-create-type").GetAttribute("value").Should().Be("Local");
+        // Local and Production are disabled (enabled only in code, 2026-11-23): not offered, and the default type is Development.
+        cut.Find("#fa-create-type").GetAttribute("value").Should().Be("Development");
+        cut.FindAll("#fa-create-type option").Select(o => o.GetAttribute("value")).Should().NotContain(["Local", "Production"]);
         cut.Find("#fa-create-name").Change("M2LB DEV");
         cut.Find("#fa-create-type").Change(type.ToString());
         cut.Find("#fa-create-url").Input(url);

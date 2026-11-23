@@ -124,13 +124,26 @@ public sealed class ActiveTargetEnvironmentTests
     }
 
     [Fact]
-    public async Task FreshInstallation_DefaultsToDevelopment_ActiveAndSelected_LocalOnlyAvailable()
+    public async Task FreshInstallation_DefaultsToQa_ActiveAndSelected_LocalAndProductionDisabled()
     {
+        // 2026-11-23: QA first and active with the QA application; Development next; Local and Production listed last and disabled.
         var settings = new FrontendAnalysisSettingsService();
         await settings.LoadAsync(new Storage(null));
-        settings.ActiveProfile!.Name.Should().Be("Development");
-        settings.Settings.Profiles.Select(p => p.Name).Should().Equal("Local", "Development", "QA", "Production");
-        settings.Settings.Profiles.Single(p => p.Name == "Development").TargetUrl.Should().Be("https://example-dev.local", "no project URL is a built-in default");
+        settings.ActiveProfile!.Name.Should().Be("QA");
+        settings.ActiveProfile.TargetUrl.Should().Be("https://m2lbqa.bufetat.no");
+        settings.Settings.Profiles.Select(p => p.Name).Should().Equal("QA", "Development", "Local", "Production");
+        settings.Settings.Profiles.Single(p => p.Name == "Development").TargetUrl.Should().Be("https://example-dev.local");
+        settings.Settings.Profiles.Where(p => !FrontendAnalysisSettingsService.IsEnabled(p)).Select(p => p.Name).Should().Equal("Local", "Production");
+
+    }
+
+    [Fact]
+    public void Saved_environments_are_listed_QA_Development_then_other_types_then_the_disabled_ones_and_a_disabled_active_one_is_not_active()
+    {
+        FrontendAnalysisProfile P(string name, FrontendEnvironmentType type) => new() { Id = name, Name = name, EnvironmentType = type, TargetUrl = "https://" + name + ".example.org" };
+        var saved = new[] { P("prod", FrontendEnvironmentType.Production), P("local", FrontendEnvironmentType.Local), P("dev", FrontendEnvironmentType.Development),
+            P("staging", FrontendEnvironmentType.Custom), P("qa", FrontendEnvironmentType.QA), P("qa2", FrontendEnvironmentType.QA) };
+        FrontendAnalysisSettingsService.Ordered(saved).Select(p => p.Name).Should().Equal("qa", "qa2", "dev", "staging", "local", "prod");
     }
 
     [Fact]
