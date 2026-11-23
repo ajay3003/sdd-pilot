@@ -77,7 +77,7 @@ public sealed class DedicatedCompanionProvisioner(BrowserCompanionService compan
                 var token = IssueLaunch(scope, _version, _buildId);
                 WriteDedicatedManifest(directory, _scope!.ApprovedOrigins.SingleOrDefault());
                 File.WriteAllText(Path.Combine(directory, "dedicated-launch.json"),
-                    JsonSerializer.Serialize(new { launchToken = token, backend = "http://127.0.0.1:5000" }));
+                    JsonSerializer.Serialize(new { launchToken = token, backend = BirkNextBackendAddress.LoopbackBase }));
                 RemoveOtherBuilds(directory);
                 logger.LogInformation("Dedicated Edge Companion load requested");
                 return directory;

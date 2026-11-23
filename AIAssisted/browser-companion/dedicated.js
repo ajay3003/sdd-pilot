@@ -14,6 +14,16 @@ const DEDICATED_STALE_MS = 20000;
 const DEDICATED_REQUEST_TIMEOUT_MS = 10000;
 const requestTimeout = () => (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(DEDICATED_REQUEST_TIMEOUT_MS) : undefined;
 
+// The managed launch file names the backend BirkNext is actually listening on: 5000 in development, the launcher's port
+// (e.g. 5480) in the Windows tester package. Only a plain loopback origin is accepted, never another host.
+function isLoopbackBackend(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' && (url.hostname === '127.0.0.1' || url.hostname === 'localhost')
+      && url.origin === value && !url.username && !url.password;
+  } catch { return false; }
+}
+
 async function dedicatedPost(config, build, permissionPending) {
   const response = await fetch(`${config.backend}/api/browser-companion/extension/dedicated`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, cache: 'no-store', signal: requestTimeout(),
@@ -32,7 +42,7 @@ async function dedicatedBootstrap() {
     const config = await configResponse.json();
     const build = await (await fetch(chrome.runtime.getURL('build-info.json'))).json();
     globalThis.birkNextBuildId = build.buildId;
-    if (!BACKEND_CANDIDATES.includes(config.backend)) return;
+    if (!isLoopbackBackend(config.backend)) return;
     await chrome.alarms.create('birknext-dedicated', { periodInMinutes: 0.5 });
 
     const { pendingSession: parked } = await chrome.storage.local.get('pendingSession');

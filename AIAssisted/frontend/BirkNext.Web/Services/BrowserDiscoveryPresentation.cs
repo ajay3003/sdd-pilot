@@ -985,9 +985,11 @@ public static class BrowserCompanionSituations
 {
     public static BrowserCompanionSituation Of(BrowserCompanionStatus? status) => status?.State switch
     {
-        null or BrowserCompanionState.NotPaired or BrowserCompanionState.Expired => BrowserCompanionSituation.NotPaired,
+        // PairingPending is a code waiting to be entered: the backend reports it only while no session exists, so it is not a pairing.
+        // Calling it "Paired" put "paired but not connected" next to "Enter the pairing code to finish pairing" (2026-11-23).
+        null or BrowserCompanionState.NotPaired or BrowserCompanionState.Expired or BrowserCompanionState.PairingPending => BrowserCompanionSituation.NotPaired,
         // Pairing exists and is simply not reporting. Saying "not paired" here sends the user to redo work that is done.
-        BrowserCompanionState.Disconnected or BrowserCompanionState.PairingPending => BrowserCompanionSituation.PairedNotConnected,
+        BrowserCompanionState.Disconnected => BrowserCompanionSituation.PairedNotConnected,
         _ => status.EffectiveLive.LivePages.Count > 0
             ? BrowserCompanionSituation.LivePageAvailable
             : BrowserCompanionSituation.ConnectedWithoutLivePage,

@@ -361,7 +361,7 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
     /// backend restart took the in-process proxy down, and Dedicated Edge could not reach the restarted backend until the
     /// proxy was started again. The proxy and the Companion are independent paths.
     /// </summary>
-    public const string ProxyBypassList = "<-loopback>;127.0.0.1:5000;localhost:5000";
+    public static string ProxyBypassList => BirkNextBackendAddress.ProxyBypassList(BirkNextBackendAddress.Port);
 
     /// <summary>Only the loopback proxy, the BirkNext-backend bypass, a dedicated profile, first-run suppression and the validated target URL.</summary>
     public static IReadOnlyList<string> BuildEdgeArguments(int port, string profileDirectory, string targetUrl, string? companionDirectory = null)

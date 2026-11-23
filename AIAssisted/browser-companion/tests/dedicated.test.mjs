@@ -10,8 +10,8 @@ const dev = 'https://m2lbdev.bufetat.no';
 const qa = 'https://m2lbqa.bufetat.no';
 const TOKEN = 'a'.repeat(64);
 
-function harness({ local = {}, transient = {}, granted = [], bootstrap, heartbeat } = {}) {
-  const listeners = {}, posts = [], alarms = new Map();
+function harness({ local = {}, transient = {}, granted = [], bootstrap, heartbeat, backend = 'http://127.0.0.1:5000' } = {}) {
+  const listeners = {}, posts = [], alarms = new Map(), requested = [];
   const grants = new Set(granted.map(o => `${o}/*`));
   let registered = [];
   const event = name => ({ addListener(fn) { listeners[name] = fn; } });
@@ -30,9 +30,10 @@ function harness({ local = {}, transient = {}, granted = [], bootstrap, heartbea
   const json = (value, status = 200) => ({ ok: status < 400, status, json: async () => value, text: async () => JSON.stringify(value) });
   const context = vm.createContext({ chrome, URL, console: { warn() {}, debug() {} }, setTimeout, clearTimeout,
     fetch: async (url, options) => {
-      if (url.endsWith('/dedicated-launch.json')) return json({ launchToken: TOKEN, backend: 'http://127.0.0.1:5000' });
+      if (url.endsWith('/dedicated-launch.json')) return json({ launchToken: TOKEN, backend });
       if (url.endsWith('/build-info.json')) return json({ buildId: 'b'.repeat(64) });
       const route = url.split('/').at(-1);
+      requested.push(url);
       const body = JSON.parse(options.body);
       posts.push({ route, body });
       if (route === 'dedicated') {
@@ -46,7 +47,7 @@ function harness({ local = {}, transient = {}, granted = [], bootstrap, heartbea
   vm.runInContext(readFileSync(new URL('../background.js', import.meta.url), 'utf8'), context);
   const idle = async () => { for (let i = 0; i < 200 && vm.runInContext('dedicatedBusy', context); i++) await new Promise(setImmediate); await new Promise(setImmediate); };
   return {
-    posts, local, transient, alarms, listeners, idle, registered: () => registered,
+    posts, requested, local, transient, alarms, listeners, idle, registered: () => registered,
     routes: route => posts.filter(p => p.route === route),
     grant: async origin => { grants.add(`${origin}/*`); await listeners.permissionAdded?.({}); await new Promise(setImmediate); },
     // The 30-second 'birknext-dedicated' alarm firing.
@@ -59,6 +60,23 @@ function harness({ local = {}, transient = {}, granted = [], bootstrap, heartbea
 
 const paired = (sessionId, origin = dev) => ({ accepted: true, sessionId, profileId: 'dev', environmentName: 'M2LB DEV',
   environmentType: 'Development', approvedOrigins: [origin], expiresAt: '2099-01-01T00:00:00Z' });
+
+test('the backend named by the launch file is used, on any loopback port (tester package: 5480)', async () => {
+  const h = harness({ backend: 'http://127.0.0.1:5480', granted: [dev], bootstrap: () => paired('s1') });
+  await h.idle();
+  assert.equal(h.local.session.sessionId, 's1');
+  assert.equal(h.local.backend, 'http://127.0.0.1:5480');
+  assert.ok(h.requested.length > 0 && h.requested.every(u => u.startsWith('http://127.0.0.1:5480/')), h.requested.join(' '));
+});
+
+test('a launch file naming a non-loopback backend is ignored: nothing is sent anywhere', async () => {
+  for (const backend of ['https://127.0.0.1:5480', 'http://evil.example:5480', 'http://127.0.0.1:5480/api', 'http://user@127.0.0.1:5480']) {
+    const h = harness({ backend, granted: [dev], bootstrap: () => paired('s1') });
+    await h.idle();
+    assert.equal(h.posts.length, 0, backend);
+    assert.equal(h.local.session, undefined, backend);
+  }
+});
 
 test('missing origin permission parks one stable pending session, reports it, and never heartbeats', async () => {
   const h = harness({ bootstrap: () => paired('s1') });

@@ -1094,6 +1094,8 @@ app.Lifetime.ApplicationStarted.Register(() =>
     var addresses = app.Services.GetService<Microsoft.AspNetCore.Hosting.Server.IServer>()?.Features
         .Get<Microsoft.AspNetCore.Hosting.Server.Features.IServerAddressesFeature>()?.Addresses ?? [];
     local.ObserveListeners(addresses);
+    // Dedicated Edge's Companion and its proxy bypass follow the port Kestrel actually bound (the tester package does not use 5000).
+    BirkNext.Api.Services.LocalHttpsProxy.BirkNextBackendAddress.Observe(addresses);
     var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("BirkNext.LocalTesterMode");
     if (local.ModeActive) logger.LogInformation("{Mode} Listening on {Addresses}.", local.ModeDescription, string.Join(", ", addresses));
     else logger.LogWarning("{Mode} Listening on {Addresses}.", local.ModeDescription, string.Join(", ", addresses));
