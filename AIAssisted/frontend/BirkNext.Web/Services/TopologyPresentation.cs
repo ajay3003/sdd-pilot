@@ -160,12 +160,26 @@ public static class TopologyPresentation
         _ => "Applications",
     };
 
-    /// <summary>The page's one-line counts: application components, interfaces (one per normalized identity, however many providers stated it)
-    /// and resolved connections.</summary>
+    /// <summary>The page's one-line counts: application components some source states (a Test Pack's expectation alone is not a component),
+    /// interfaces (one per normalized identity, however many providers stated it) and resolved connections.</summary>
     public static (int Components, int Interfaces, int Resolved) Counts(IntegrationTopologyView view) => (
-        view.Components.Count(item => item.Kind == TopologyComponentKind.Application),
+        view.Components.Count(item => item.Kind == TopologyComponentKind.Application && Stated(item)),
         view.Components.Sum(item => item.Interfaces.Count),
         view.Connections.Count(item => IsResolved(item.Relationship) && item.Status != TopologyStatus.Conflict));
+
+    /// <summary>Stated by a source (configuration, source, metadata, OpenAPI, observation), not only expected by a domain profile.</summary>
+    public static bool Stated(TopologyComponent component) =>
+        component.Provenance.Any(item => item.Source != TopologySource.DomainProfile) || component.Interfaces.Count > 0;
+
+    /// <summary>Components only a domain profile expects (no source states them yet), by profile — shown apart from the component count.</summary>
+    public static IReadOnlyList<TopologyComponent> ExpectedOnly(IntegrationTopologyView view) => [.. view.Components.Where(item => !Stated(item))];
+
+    /// <summary>"Expected by the Skolenærvær profile, not stated by any source yet: Altinn, MU, …"</summary>
+    public static string ExpectedOnlyText(IntegrationTopologyView view, string? profileLabel)
+    {
+        var expected = ExpectedOnly(view);
+        return expected.Count == 0 ? "" : $"{expected.Count} expected by the {profileLabel ?? "Test Pack"} profile, not stated by any source yet: {string.Join(", ", expected.Select(item => item.Name))}";
+    }
 
     /// <summary>A call whose target component is not resolved: a relationship candidate (caller + address), not just an interface warning.</summary>
     public static bool UnresolvedTarget(TopologyInterface item) => item.Direction == TopologyDirection.Calls && item.Status == TopologyStatus.NeedsReview;

@@ -119,7 +119,7 @@
                action", "9 of 9 expected unresolved"). One empty state; what is shown below comes only from the Target Environment's configuration. *@
             <section class="it-card it-empty" data-testid="it-no-project">
                 <h2>No project imported yet</h2>
-                <p>Topology is resolved from a project's source, Infrastructure as Code and configured integrations. Import the project to see its components, connections and evidence gaps.@(view.Components.Count > 0 ? $" The {view.Components.Count} component{(view.Components.Count == 1 ? "" : "s")} below come only from this Target Environment's configuration." : "")</p>
+                <p>Topology is resolved from a project's source, Infrastructure as Code and configured integrations. Import the project to see its components, connections and evidence gaps.@(counts.Components > 0 ? $" The {counts.Components} component{(counts.Components == 1 ? "" : "s")} below come only from this Target Environment's configuration (its systems and Integration Catalog), not from a project." : "")</p>
                 <div class="it-actions"><a class="btn-primary" href="project-import" data-testid="it-import-project">Import Project</a></div>
             </section>
         }
@@ -131,6 +131,11 @@
             <h2 id="it-summary-heading">Topology summary</h2>
             <dl class="it-facts it-summary">
                 <div><dt>Components</dt><dd data-testid="it-count-components">@counts.Components</dd></div>
+                @* A Test Pack profile's expectation is not a component: shown apart, named, never counted (2026-11-23: "7 components" with nothing imported). *@
+                @if (P.ExpectedOnlyText(view, _coverage?.ProfileLabel) is { Length: > 0 } expectedText)
+                {
+                    <div><dt>Expected, not found yet</dt><dd data-testid="it-count-expected">@expectedText</dd></div>
+                }
                 <div><dt>Interfaces</dt><dd data-testid="it-count-interfaces">@counts.Interfaces</dd></div>
                 <div><dt>Resolved connections</dt><dd data-testid="it-count-resolved">@counts.Resolved</dd></div>
                 @if (_coverage is { } summaryCoverage && !NoProject(view))
@@ -326,6 +331,14 @@
         else if (_coverageError is not null)
         {
             <p class="it-note" data-testid="it-coverage-error">Source coverage is not available: @_coverageError</p>
+        }
+        else if (!_loading)
+        {
+            @* No Test Pack profile describes this project: there is nothing to measure gaps against (the panel used to be blank). *@
+            <section class="it-card" data-testid="it-gaps-none">
+                <h2>No expected topology for this project</h2>
+                <p>Evidence gaps are measured against the relationships a Test Pack expects. No Test Pack profile matches the components found in this project's sources, configuration or Integration Catalog, so no source coverage or expected relationship is assessed. Everything the sources state is in the Technical Inventory and on the Topology Map.</p>
+            </section>
         }
 
         </div>

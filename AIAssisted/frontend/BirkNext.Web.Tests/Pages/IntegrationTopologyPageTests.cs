@@ -190,6 +190,35 @@ public sealed class IntegrationTopologyPageTests : BunitContext
     }
 
     [Fact]
+    public void A_profiles_expected_systems_are_named_apart_and_never_counted_as_components()
+    {
+        // 2026-11-23: nothing imported, "Components 7" — Skolenærvær's expectations counted as found.
+        Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(CurrentWorkspaceSnapshot.None()).Object);
+        _api.View = Sample() with
+        {
+            Profiles = ["orders"], Connections = [], Sources = [new(TopologySource.IntegrationCatalog, TopologySourceState.Used, "configured")],
+            Components = [new() { Id = "mm", Name = "MM", Status = TopologyStatus.Expected, Provenance = [From(TopologySource.DomainProfile)] },
+                          new() { Id = "mu", Name = "MU", Status = TopologyStatus.Expected, Provenance = [From(TopologySource.DomainProfile)] }],
+        };
+        _api.Coverage = Coverage();
+        var page = Render<IntegrationTopologyPage>();
+
+        page.WaitForAssertion(() => page.Find("[data-testid=it-count-components]").TextContent.Should().Be("0"));
+        page.Find("[data-testid=it-count-expected]").TextContent.Should().Contain("2 expected by the").And.Contain("not stated by any source yet: MM, MU");
+        page.Find("[data-testid=it-no-project]").TextContent.Should().NotContain("components below come only from", "expectations do not come from the configuration");
+    }
+
+    [Fact]
+    public void Without_a_matching_profile_Evidence_and_gaps_says_why_it_is_empty()
+    {
+        _api.View = Sample() with { Profiles = [] };
+        Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>().NavigateTo("integration-topology?tab=gaps");
+        var page = Render<IntegrationTopologyPage>();
+        page.WaitForAssertion(() => page.Find("[data-testid=it-gaps-none]").TextContent.Should().Contain("No expected topology for this project"));
+        page.FindAll("[data-testid=it-count-expected]").Should().BeEmpty();
+    }
+
+    [Fact]
     public void The_environment_step_names_the_Target_Environment_never_its_id()
     {
         _api.View = Sample() with { EnvironmentName = null, EnvironmentId = "626e33c802d4492cb4fabbaa324a9c3f" };

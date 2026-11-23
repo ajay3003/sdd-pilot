@@ -53,7 +53,11 @@ public sealed class TopologyIntegrationTests
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var view = await response.Content.ReadFromJsonAsync<IntegrationTopologyView>();
         view!.Sources.Should().Contain(item => item.Source == TopologySource.TargetEnvironment && item.State == TopologySourceState.NotAvailable);
-        view.Profiles.Should().Contain("skolenaervaer");
+        // The host reads this PC's stored Source Analysis snapshots: the profile applies only when one of them states one of its systems.
+        var stated = view.Components.Any(c => c.Provenance.Any(p => p.Source != TopologySource.DomainProfile)
+            && c.Provenance.Any(p => p.Source == TopologySource.DomainProfile && p.Reference == "skolenaervaer"));
+        view.Profiles.Contains("skolenaervaer").Should().Be(stated, "a built-in profile applies only where a source states one of its systems");
+        if (!stated) view.Components.Should().NotContain(item => item.Status == TopologyStatus.Expected);
         (await client.PostAsJsonAsync("/api/integration-topology/topology-test-env/discover", new TopologyRequest(null))).StatusCode
             .Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
     }

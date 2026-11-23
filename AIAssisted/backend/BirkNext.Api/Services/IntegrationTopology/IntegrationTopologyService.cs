@@ -55,7 +55,8 @@ public sealed class OpenApiTopologyProvider(IHttpClientFactory http, IOpenApiExt
     }
 }
 
-/// <summary>Domain profiles: their expected components and explicit aliases, so differently named sources merge — never an expected connection.</summary>
+/// <summary>Domain profiles: their expected components and explicit aliases, so differently named sources merge — never an expected connection.
+/// A profile that does not apply to the environment has its expected-only components removed again (<see cref="TopologyProfileApplicability"/>).</summary>
 public sealed class ProfileTopologyProvider(IEnumerable<ITopologyProfile> profiles) : ITopologyProvider
 {
     public int Order => 0;
@@ -69,6 +70,35 @@ public sealed class ProfileTopologyProvider(IEnumerable<ITopologyProfile> profil
                 builder.Component(component.Name, TopologyStatus.Expected, new(TopologySource.DomainProfile, profile.Id, component.Evidence));
             }
         return Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// Whether a domain profile describes this environment's project: some source other than a profile (Source Analysis, the Target Environment,
+/// the Integration Catalog, OpenAPI, observations) states at least one of the profile's components, by name or declared alias. Built-in profiles
+/// used to apply everywhere: a fresh installation with nothing imported showed a built-in profile's 7 expected systems as "7 components", and every
+/// other project was assessed against that profile's expected relationships (2026-11-23).
+/// </summary>
+public static class TopologyProfileApplicability
+{
+    public static bool Applies(ITopologyProfile profile, IntegrationTopologyView view, TopologyBuilder builder)
+    {
+        var keys = profile.Components.Select(component => builder.ComponentKey(component.Name)).ToHashSet(StringComparer.Ordinal);
+        return view.Components.Any(component => keys.Contains(component.Id) && Stated(component));
+    }
+
+    /// <summary>Stated by a source, not only expected by a profile.</summary>
+    public static bool Stated(TopologyComponent component) => component.Provenance.Any(item => item.Source != TopologySource.DomainProfile) || component.Interfaces.Count > 0;
+
+    /// <summary>The view without the expected-only components of profiles that do not apply, listing only the applicable profiles.</summary>
+    public static IntegrationTopologyView Restrict(IntegrationTopologyView view, IReadOnlyCollection<ITopologyProfile> applicable, IReadOnlyCollection<string> dropped)
+    {
+        if (dropped.Count == 0) return view with { Profiles = [.. applicable.Select(profile => profile.Id)] };
+        var kept = applicable.Select(profile => profile.Id).ToHashSet(StringComparer.Ordinal);
+        bool ExpectedOnlyByDropped(TopologyComponent component) => !Stated(component)
+            && component.Provenance.All(item => item.Source == TopologySource.DomainProfile && !kept.Contains(item.Reference))
+            && !view.Connections.Any(c => c.ProducerComponentId == component.Id || c.ConsumerComponentId == component.Id);
+        return view with { Components = [.. view.Components.Where(component => !ExpectedOnlyByDropped(component))], Profiles = [.. kept] };
     }
 }
 
@@ -88,7 +118,10 @@ public sealed class IntegrationTopologyService(IEnumerable<ITopologyProvider> pr
         return (view, builder);
     }
 
-    private async Task<(IntegrationTopologyView View, TopologyBuilder Builder, TopologyContext Context)> BuildCoreAsync(string environmentId, TopologyRequest request, CancellationToken ct)
+    /// <param name="requestedProfile">A profile asked for by id (its coverage or paths): it is kept even when no source states its components yet,
+    /// so its expected relationships read "unresolved" instead of disappearing.</param>
+    private async Task<(IntegrationTopologyView View, TopologyBuilder Builder, TopologyContext Context)> BuildCoreAsync(string environmentId, TopologyRequest request, CancellationToken ct,
+        string? requestedProfile = null)
     {
         var trusted = environments.Resolve(environmentId, out var trustDetail);
         var configured = await catalog.GetAsync(environmentId, trusted?.EnvironmentType, trusted?.TargetUrl, ct);
@@ -109,7 +142,9 @@ public sealed class IntegrationTopologyService(IEnumerable<ITopologyProvider> pr
         foreach (var provider in providers.OrderBy(item => item.Order)) await provider.ContributeAsync(context, builder, ct);
         var view = builder.Build(environmentId, trusted?.DisplayName, clock.GetUtcNow(), [.. profiles.Select(profile => profile.Id)])
             with { ResolverVersion = CrossSourceTopologyProvider.ResolverVersion, Discovery = DiscoveryPlan(trusted) };
-        return (view, builder, context);
+        var applicable = profiles.Where(profile => profile.Id == requestedProfile || TopologyProfileApplicability.Applies(profile, view, builder)).ToList();
+        var dropped = profiles.Where(profile => !applicable.Contains(profile)).Select(profile => profile.Id).ToList();
+        return (TopologyProfileApplicability.Restrict(view, applicable, dropped), builder, context);
     }
 
     /// <summary>What "Discover OpenAPI interfaces" would read — computed from configuration only, no network call. Targets are deduplicated by
@@ -135,7 +170,7 @@ public sealed class IntegrationTopologyService(IEnumerable<ITopologyProvider> pr
     public async Task<IReadOnlyList<TopologyPathResult>?> PathsAsync(string environmentId, string profileId, TopologyRequest request, CancellationToken ct)
     {
         if (profiles.FirstOrDefault(item => string.Equals(item.Id, profileId, StringComparison.Ordinal)) is not { } profile) return null;
-        var (view, builder) = await BuildAsync(environmentId, request, ct);
+        var (view, builder, _) = await BuildCoreAsync(environmentId, request, ct, profile.Id);
         return [.. profile.Paths.Select(path => TopologyPaths.Resolve(view, builder, profile.Id, path))];
     }
 
@@ -143,7 +178,7 @@ public sealed class IntegrationTopologyService(IEnumerable<ITopologyProvider> pr
     public async Task<TopologyCoverageView?> CoverageAsync(string environmentId, string profileId, TopologyRequest request, CancellationToken ct)
     {
         if (profiles.FirstOrDefault(item => string.Equals(item.Id, profileId, StringComparison.Ordinal)) is not { } profile) return null;
-        var (view, builder, context) = await BuildCoreAsync(environmentId, request, ct);
+        var (view, builder, context) = await BuildCoreAsync(environmentId, request, ct, profile.Id);
         // The canonical IQR bindings are read (never written): Bound comes from them only, never from a newest snapshot.
         var bound = bindings is null ? null : await bindings.ListAsync(environmentId, ct);
         return TopologyCoverage.Evaluate(profile, view, builder, context.Snapshots, request, clock.GetUtcNow(), bound);

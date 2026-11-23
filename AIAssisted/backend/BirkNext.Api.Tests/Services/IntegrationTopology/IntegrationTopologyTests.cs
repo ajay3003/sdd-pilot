@@ -172,11 +172,35 @@ public sealed class IntegrationTopologyTests : IAsyncLifetime
     [Fact]
     public async Task NoEvidence_GuessesNothing_AndExpectedPathsStayUnresolved()
     {
+        // Nothing states any Skolenærvær system: the profile does not apply, so its 7 expectations are not components (2026-11-23: a fresh
+        // installation showed "7 components"). Asked for explicitly, its paths still read unresolved.
         var view = await Build(profiles: new SkoleNaervaerTopologyProfile());
-        Component(view, "MM").Status.Should().Be(TopologyStatus.Expected);
-        view.Connections.Should().NotContain(item => item.ProducerComponentId == "mm" || item.ConsumerComponentId == "mm");
+        view.Components.Should().NotContain(item => item.Status == TopologyStatus.Expected);
+        view.Components.Select(item => item.Name).Should().NotContain(["MM", "MU", "Bufdata", "SkoleAdapter", "Skoletjenesten"]);
+        view.Profiles.Should().BeEmpty();
         var paths = await Service(new SkoleNaervaerTopologyProfile()).PathsAsync(Env, SkoleNaervaerTopologyProfile.ProfileId, new(null), default);
         paths!.Single(item => item.PathId == "rapportmottak").Steps.Should().OnlyContain(step => step.State == TopologyPathState.Unresolved && !step.Observed);
+    }
+
+    [Fact]
+    public async Task AProfileApplies_OnceASourceStatesOneOfItsSystems_ByAnAlias_AndOnlyThenListsItsExpectations()
+    {
+        Integration("report-intake", IntegrationKind.HttpApi, "Altinn (TT02)", "MU", "report submission");
+        var view = await Build(profiles: new SkoleNaervaerTopologyProfile());
+        view.Profiles.Should().Equal(SkoleNaervaerTopologyProfile.ProfileId);
+        Component(view, "MM").Status.Should().Be(TopologyStatus.Expected, "the rest of the profile's systems are expectations once it applies");
+        Component(view, "MU").Status.Should().Be(TopologyStatus.Configured);
+    }
+
+    [Fact]
+    public async Task AnUnrelatedProject_IsNotAssessedAgainstABuiltInProfile()
+    {
+        Integration("orders", IntegrationKind.HttpApi, "Shop", "Orders", "/api/orders");
+        var view = await Build(profiles: new SkoleNaervaerTopologyProfile());
+        view.Profiles.Should().BeEmpty();
+        view.Components.Select(item => item.Name).Should().Contain(["Shop", "Orders"]);
+        view.Components.Should().NotContain(item => item.Status == TopologyStatus.Expected, "no Skolenærvær expectation is added to another project");
+        view.Components.Select(item => item.Name).Should().NotContain(["MM", "Bufdata", "SkoleAdapter"]);
     }
 
     [Fact]
