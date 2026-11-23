@@ -17,7 +17,12 @@ namespace BirkNext.Api.Services.TestPlanning.OfflineTranslation;
 public sealed class OfflineTranslationEngine : IAsyncDisposable
 {
     public const string ProbeSentence = "Open the page, fill in all required fields and select Save.";
-    public static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(90);
+    /// <summary>
+    /// Loading normally takes about a second. The first start on a cold PC (a fresh non-persistent AVD session in particular) reads and
+    /// antivirus-scans the 82 MB model and the 61 MB CTranslate2 DLL first: a tester's first start exceeded 90 s on 2026-11-23 and the second
+    /// one succeeded. 180 s lets that first start finish.
+    /// </summary>
+    public static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(180);
     public static readonly TimeSpan IdleStop = TimeSpan.FromMinutes(10);
     public const long MemoryLimitBytes = 2L * 1024 * 1024 * 1024;
 
@@ -28,6 +33,8 @@ public sealed class OfflineTranslationEngine : IAsyncDisposable
     private readonly object _verifyLock = new();
     private (string Key, OfflineTranslationBundle? Bundle, string? Problem)? _verified;
     private Process? _process;
+    /// <summary>The helper's last error-output lines (bounded), so a failed start can say why instead of "did not load".</summary>
+    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _stderrTail = new();
     private JobHandle? _job;
     private ITimer? _idle;
     private OfflineTranslationStatus? _probed;
@@ -189,7 +196,9 @@ public sealed class OfflineTranslationEngine : IAsyncDisposable
         }
         _process = process;
         if (OperatingSystem.IsWindows()) { _job = JobHandle.TryCreate(MemoryLimitBytes); _job?.Add(process); }
+        _stderrTail.Clear();
         _ = DrainErrorsAsync(process);
+        var started = Stopwatch.StartNew();
         using var timer = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timer.CancelAfter(StartTimeout);
         string? first;
@@ -199,12 +208,56 @@ public sealed class OfflineTranslationEngine : IAsyncDisposable
         try { ready = first is null ? null : JsonNode.Parse(first); } catch (JsonException) { }
         if (ready?["ready"]?.GetValue<bool>() != true)
         {
-            var error = ready?["error"]?.GetValue<string>();
+            var error = ready?["error"]?.GetValue<string>() ?? StartFailure(process, first, started.Elapsed);
+            _log.LogWarning("The offline translation helper did not start: {Reason} Last helper output: {Stderr}", error, string.Join(" | ", _stderrTail));
             StopLocked("start failed");
-            throw new TestCaseTranslationException((error ?? "The offline translation model did not load.") + " You can write the translated text by hand.");
+            throw new TestCaseTranslationException(error + " You can write the translated text by hand.");
         }
         _log.LogInformation("Offline translation helper started (pid {Pid}, {Threads} threads, engine {Engine})", process.Id, threads, ready["engine"]?.ToJsonString());
         return process;
+    }
+
+    /// <summary>
+    /// Why the helper did not report ready when it printed no error of its own: it stopped (exit code and its last error line), it answered
+    /// something else, or it was still loading when the start time ran out. "Did not load" alone left testers and IT nothing to act on.
+    /// </summary>
+    private string StartFailure(Process process, string? first, TimeSpan elapsed)
+    {
+        var exited = false;
+        try { exited = process.WaitForExit(500); } catch (InvalidOperationException) { }
+        var last = _stderrTail.LastOrDefault(l => l.Trim().Length > 0)?.Trim();
+        if (exited)
+        {
+            int? code = null;
+            try { code = process.ExitCode; } catch (InvalidOperationException) { }
+            return StartFailureMessage(code, last, elapsed, timedOut: false, first);
+        }
+        return StartFailureMessage(null, last, elapsed, timedOut: first is null, first);
+    }
+
+    internal static string StartFailureMessage(int? exitCode, string? lastError, TimeSpan elapsed, bool timedOut, string? firstLine)
+    {
+        var detail = lastError is { Length: > 0 } e ? $" Last message from the translator: {(e.Length > 200 ? e[..200] + "…" : e)}" : "";
+        if (timedOut)
+            return $"The offline translation model was still loading after {StartTimeout.TotalSeconds:0} seconds and was stopped (the PC may be busy, or antivirus may be scanning the model files the first time they are used). Try again: the next start is usually quick.{detail}";
+        if (exitCode is { } code)
+        {
+            var hex = unchecked((uint)code).ToString("X8");
+            var meaning = hex switch
+            {
+                "C0000005" => " (access violation: the translator crashed while loading)",
+                "C000001D" => " (illegal instruction: this PC's processor lacks an instruction the translator needs)",
+                "C0000135" => " (a required DLL was not found)",
+                "C0000142" => " (a DLL failed to initialise)",
+                "C0000409" => " (the translator stopped itself after a security check)",
+                "C0000417" => " (invalid parameter in the C runtime)",
+                _ => "",
+            };
+            return $"The offline translator stopped while loading the model (exit code {code} / 0x{hex}{meaning}).{detail}";
+        }
+        return firstLine is { Length: > 0 } line
+            ? $"The offline translator answered unexpectedly while loading: {(line.Length > 120 ? line[..120] + "…" : line)}"
+            : $"The offline translation model did not load.{detail}";
     }
 
     private async Task DrainErrorsAsync(Process process)
@@ -213,7 +266,12 @@ public sealed class OfflineTranslationEngine : IAsyncDisposable
         {
             var lines = 0;
             while (await process.StandardError.ReadLineAsync() is { } line)
-                if (++lines <= 50 && line.Length > 0) _log.LogDebug("offline translation helper: {Line}", line.Length > 300 ? line[..300] : line);
+            {
+                if (line.Length == 0) continue;
+                _stderrTail.Enqueue(line.Length > 300 ? line[..300] : line);
+                while (_stderrTail.Count > 20) _stderrTail.TryDequeue(out _);
+                if (++lines <= 50) _log.LogDebug("offline translation helper: {Line}", line.Length > 300 ? line[..300] : line);
+            }
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException or InvalidOperationException) { }
     }

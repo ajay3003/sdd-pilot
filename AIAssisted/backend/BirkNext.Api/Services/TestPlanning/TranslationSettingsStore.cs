@@ -26,6 +26,16 @@ public sealed partial class TranslationSettingsStore
 
     private sealed record Saved(TranslationSettings Settings, string UpdatedBy, DateTimeOffset UpdatedAt);
 
+    /// <summary>
+    /// False where BirkNext cannot run the LibreTranslate server itself (the Windows tester package: no Podman). There the default, and a saved
+    /// "LibreTranslate run by BirkNext" that can never start, mean the offline translator packaged with BirkNext — instead of a translator that
+    /// always reads "not running" and falls back anyway (2026-11-23, AVD tester). A LibreTranslate server at an address someone gave is kept.
+    /// </summary>
+    private readonly bool _canManageLibreTranslate = true;
+
+    public TranslationSettingsStore(string directory, IConfiguration config, bool canManageLibreTranslate) : this(directory, config) =>
+        _canManageLibreTranslate = canManageLibreTranslate;
+
     public TranslationSettingsStore(string directory, IConfiguration config)
     {
         Directory.CreateDirectory(directory);
@@ -45,10 +55,16 @@ public sealed partial class TranslationSettingsStore
     /// <summary>The settings in force and where they come from ("saved", "configuration" or "default").</summary>
     public (TranslationSettings Settings, string Origin, string? UpdatedBy, DateTimeOffset? UpdatedAt) Effective()
     {
-        if (Load() is { } saved) return (saved.Settings, "saved", saved.UpdatedBy, saved.UpdatedAt);
-        if (TestCaseTranslators.FromConfiguration(_config) is { } configured) return (configured, "configuration", null, null);
-        return (new TranslationSettings(), "default", null, null);
+        if (Load() is { } saved) return (Runnable(saved.Settings), "saved", saved.UpdatedBy, saved.UpdatedAt);
+        if (TestCaseTranslators.FromConfiguration(_config) is { } configured) return (Runnable(configured), "configuration", null, null);
+        return (Runnable(new TranslationSettings()), "default", null, null);
     }
+
+    /// <summary>A LibreTranslate server BirkNext would have to run itself, where it cannot, becomes the packaged offline translator.</summary>
+    private TranslationSettings Runnable(TranslationSettings settings) =>
+        !_canManageLibreTranslate && settings.Provider == TranslationProviderKind.LibreTranslate && settings.LibreTranslateManaged
+            ? settings with { Provider = TranslationProviderKind.EmbeddedOffline }
+            : settings;
 
     /// <summary>The Azure key: the one saved here (decrypted in memory only), else the server configuration's; null when none.</summary>
     internal string? AzureKey()

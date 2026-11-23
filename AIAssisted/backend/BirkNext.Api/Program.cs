@@ -822,7 +822,9 @@ builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.TestPlanSuggestion
 // restart. The offline engine owns its helper process and stops it when BirkNext stops (disposed with the container).
 builder.Services.AddSingleton<BirkNext.Api.Services.TestPlanning.OfflineTranslation.OfflineTranslationEngine>();
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.TestPlanning.TranslationSettingsStore(
-    BirkNext.Api.Services.TestPlanning.TranslationSettingsStore.DefaultDirectory(sp.GetRequiredService<IHostEnvironment>()), sp.GetRequiredService<IConfiguration>()));
+    BirkNext.Api.Services.TestPlanning.TranslationSettingsStore.DefaultDirectory(sp.GetRequiredService<IHostEnvironment>()), sp.GetRequiredService<IConfiguration>(),
+    // The tester package (native runners, no Podman) cannot run LibreTranslate: its default is the packaged offline translator.
+    canManageLibreTranslate: !BirkNext.Api.Services.PerformanceTests.PerformanceTestOptions.From(sp.GetRequiredService<IConfiguration>()).UsesNativeRunner));
 builder.Services.AddSingleton<BirkNext.Api.Services.TestPlanning.TestCaseTranslatorResolver>();
 builder.Services.AddSingleton<BirkNext.Api.Services.TestPlanning.LibreTranslateServiceManager>();
 builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.IScenarioReviewSource>(sp => sp.GetRequiredService<BirkNext.Api.Services.TestPlanning.TestPlanSuggestionService>());

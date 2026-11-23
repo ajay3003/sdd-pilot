@@ -65,6 +65,25 @@ public sealed class TranslationSettingsTests : IDisposable
     }
 
     [Fact]
+    public void Where_BirkNext_cannot_run_LibreTranslate_the_packaged_offline_translator_is_the_default()
+    {
+        // The Windows tester package (no Podman): a LibreTranslate server BirkNext would run itself never starts there (2026-11-23, AVD tester).
+        var tester = new TranslationSettingsStore(_dir, Config(), canManageLibreTranslate: false);
+        tester.Effective().Should().Match<(TranslationSettings Settings, string Origin, string?, DateTimeOffset?)>(e =>
+            e.Origin == "default" && e.Settings.Provider == TranslationProviderKind.EmbeddedOffline);
+
+        tester.Save(new SaveTranslationSettingsRequest(new TranslationSettings { Provider = TranslationProviderKind.LibreTranslate }), "a", DateTimeOffset.UnixEpoch).Should().BeNull();
+        tester.Effective().Settings.Provider.Should().Be(TranslationProviderKind.EmbeddedOffline, "a saved BirkNext-run LibreTranslate cannot run here");
+
+        tester.Save(new SaveTranslationSettingsRequest(new TranslationSettings { Provider = TranslationProviderKind.LibreTranslate, LibreTranslateManaged = false,
+            LibreTranslateUrl = "http://translate.internal:5000" }), "a", DateTimeOffset.UnixEpoch).Should().BeNull();
+        tester.Effective().Settings.Provider.Should().Be(TranslationProviderKind.LibreTranslate, "a server someone runs at a given address is kept");
+
+        new TranslationSettingsStore(Path.Combine(_dir, "dev"), Config(), canManageLibreTranslate: true).Effective().Settings.Provider
+            .Should().Be(TranslationProviderKind.LibreTranslate, "development keeps LibreTranslate as the default");
+    }
+
+    [Fact]
     public void The_Azure_key_is_stored_encrypted_never_in_the_settings_file_and_can_be_removed()
     {
         var store = new TranslationSettingsStore(_dir, Config());
@@ -147,6 +166,23 @@ public sealed class TranslationSettingsTests : IDisposable
         manager.CanManage.Should().BeFalse();
         (await manager.StartAsync(new TranslationSettings())).Should().Be(LibreTranslateServiceManager.NativeRunner);
         (await manager.StatusAsync(new TranslationSettings(), default)).Detail.Should().Be(LibreTranslateServiceManager.NativeRunner);
+    }
+
+    [Fact]
+    public async Task A_LibreTranslate_server_that_does_not_answer_names_what_it_needs()
+    {
+        // 2026-11-23 (AVD tester): "The server at http://localhost:5050 does not answer." said nothing about LibreTranslate being a separate server.
+        var runner = new Runner(_ => throw new InvalidOperationException("no process expected"));
+        var refused = new Factory(new Handler(_ => throw new HttpRequestException("refused")));
+        var external = new TranslationSettings { LibreTranslateManaged = false, LibreTranslateUrl = "http://localhost:5050" };
+
+        var tester = new LibreTranslateServiceManager(runner, new PerformanceTestOptions { Runner = PerformanceTestOptions.Runners.Native }, refused, NullLogger<LibreTranslateServiceManager>.Instance);
+        (await tester.StatusAsync(external, default)).Detail.Should().Contain("not included in this BirkNext package").And.Contain("offline translator");
+
+        var developer = new LibreTranslateServiceManager(runner, new PerformanceTestOptions(), refused, NullLogger<LibreTranslateServiceManager>.Instance);
+        (await developer.StatusAsync(external, default)).Detail.Should().Contain("Run it on this PC with Podman");
+        (await developer.StatusAsync(external with { LibreTranslateUrl = "http://translate.internal:5000" }, default)).Detail
+            .Should().Contain("does not answer").And.Contain("reachable from this PC");
     }
 
     [Fact]

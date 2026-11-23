@@ -35,8 +35,9 @@
             <div class="trx-grid trx-grid-3">
                 <label class="trx-field"><span>Default translator</span>
                     <select @bind="_draft.Provider" @bind:after="ProviderChanged" data-testid="trx-provider">
-                        <option value="@TranslationProviderKind.LibreTranslate">LibreTranslate server (default)</option>
-                        <option value="@TranslationProviderKind.EmbeddedOffline">Offline translator (packaged with BirkNext)@(OfflineMissing ? " — not installed here" : "")</option>
+                        @* Where BirkNext cannot run LibreTranslate itself (the tester package), the packaged offline translator is the default. *@
+                        <option value="@TranslationProviderKind.LibreTranslate">@(v.CanManageLibreTranslate ? "LibreTranslate server (default)" : "LibreTranslate server (one you run yourself)")</option>
+                        <option value="@TranslationProviderKind.EmbeddedOffline">Offline translator (packaged with BirkNext)@(OfflineMissing ? " — not installed here" : v.CanManageLibreTranslate ? "" : " (default)")</option>
                         <option value="@TranslationProviderKind.Off">Off — write translations by hand</option>
                         @if (_advanced || !IsStandard(_draft.Provider))
                         {
@@ -79,6 +80,11 @@
                     <span class="trx-pill trx-pill-@(o.Ready ? "ok" : o.State is "Installed" ? "neutral" : "pending")" data-testid="trx-offline-state" role="status">@(_checking ? "Checking…" : o.Summary)</span>
                 </div>
                 @if (o.Detail is { } detail) { <p class="trx-muted trx-small" data-testid="trx-offline-detail">@detail</p> }
+                @if (_checking)
+                {
+                    @* Loading takes about a second once warm, but the first start on a fresh (AVD) session reads and scans the model files first. *@
+                    <InlineLoading Class="trx-notice" TestId="trx-offline-starting" Text="@("Starting the offline translator… The first translation after signing in starts the offline translator, which loads its language model and can take a few minutes on a new session. Later translations take seconds.")" />
+                }
                 @if (o.Model is not null)
                 {
                     <dl class="trx-facts" data-testid="trx-offline-facts">
@@ -156,6 +162,10 @@
             else { <p class="trx-muted" data-testid="trx-read-only">You can read these settings. Changing them needs the system-configuration permission.</p> }
             <span class="trx-muted trx-small" data-testid="trx-origin">@(v.Origin switch { "saved" => $"Saved{(v.UpdatedAt is { } at ? $" {at.ToLocalTime():yyyy-MM-dd HH:mm}" : "")}", "configuration" => "From the server configuration (not saved here yet)", _ => "Default settings (not saved yet)" })</span>
         </div>
+        @if (_testing)
+        {
+            <InlineLoading Class="trx-notice" TestId="trx-test-running" Text="@("Translating the sample sentence… The first translation after signing in starts the offline translator, which loads its language model and can take a few minutes on a new session. Later translations take seconds.")" />
+        }
         @if (_test is { } t)
         {
             <div class="@(t.Ok ? "trx-notice" : "trx-warn")" data-testid="trx-test-result" role="status">
@@ -407,11 +417,13 @@
         if (_view is not null) { var (view, _) = await Api.GetAsync(); if (view is not null) _view = view with { Settings = _view.Settings }; }
     }
 
+    private bool _testing;
+
     private async Task TestAsync()
     {
-        _busy = true; _error = null;
+        _busy = true; _testing = true; _error = null;
         var (result, error) = await Api.TestAsync();
-        _busy = false;
+        _busy = false; _testing = false;
         _test = result;
         if (error is not null) _error = error;
     }

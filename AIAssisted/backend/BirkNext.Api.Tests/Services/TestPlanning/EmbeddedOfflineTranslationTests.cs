@@ -266,4 +266,19 @@ public sealed class RealModelTests(Xunit.Abstractions.ITestOutputHelper output)
         System.Diagnostics.Process.GetProcesses().Any(p => p.Id == pid && !p.HasExited && p.ProcessName.StartsWith("python", StringComparison.OrdinalIgnoreCase))
             .Should().BeFalse("the helper stops with the engine");
     }
+
+    [Fact]
+    public void A_failed_start_says_why_instead_of_did_not_load()
+    {
+        // 2026-11-23: an AVD tester saw only "The offline translation model did not load." — timeout, crash and exit code now read differently.
+        OfflineTranslationEngine.StartFailureMessage(null, null, TimeSpan.FromSeconds(90), timedOut: true, null)
+            .Should().Contain("still loading after 180 seconds").And.Contain("antivirus");
+        OfflineTranslationEngine.StartFailureMessage(unchecked((int)0xC000001D), null, TimeSpan.FromSeconds(2), timedOut: false, null)
+            .Should().Contain("0xC000001D").And.Contain("illegal instruction");
+        OfflineTranslationEngine.StartFailureMessage(unchecked((int)0xC0000135), "ImportError: DLL load failed", TimeSpan.FromSeconds(1), timedOut: false, null)
+            .Should().Contain("required DLL was not found").And.Contain("ImportError: DLL load failed");
+        OfflineTranslationEngine.StartFailureMessage(3, null, TimeSpan.FromSeconds(1), timedOut: false, null).Should().Contain("exit code 3");
+        OfflineTranslationEngine.StartFailureMessage(null, null, TimeSpan.FromSeconds(1), timedOut: false, "Fatal Python error")
+            .Should().Contain("answered unexpectedly").And.Contain("Fatal Python error");
+    }
 }

@@ -2138,6 +2138,9 @@
         _variants[key] = variants;
     }
 
+    /// <summary>The scenario being translated right now (its waiting note); null when none.</summary>
+    private string? _translatingScenario;
+
     private async Task TranslateScenarioAsync(ScenarioGroup g, bool overwrite = false)
     {
         if (_draft is null) return;
@@ -2154,9 +2157,9 @@
             Fail($"No translation service is available. {_translation.Reason.Split(" You can write", 2)[0]} The {name} fields are open in each test case of this scenario so you can write the text by hand.");
             return;
         }
-        _busy = true;
+        _busy = true; _translatingScenario = g.Key;
         var (result, error) = await _api!.TranslateAsync(_draft.Id, new TranslateScenarioRequest(_draft.Revision, g.Key, overwrite, target));
-        _busy = false;
+        _busy = false; _translatingScenario = null;
         if (result is null)
         {
             _shownLanguage[g.Key] = target;
@@ -2341,9 +2344,13 @@
                     {
                         <p class="tps-muted tps-small" data-testid="tps-scenario-no-primary">The scenario's own case is no longer in this plan; the cases written under "@g.Title" stay here.</p>
                     }
+                    @if (_translatingScenario == g.Key)
+                    {
+                        <InlineLoading Class="tps-note tps-note-info" TestId="tps-translate-running" Text="@($"Translating to {targetName}… The first translation after signing in starts the offline translator, which loads its language model and can take a few minutes on a new session. Later translations take seconds.")" />
+                    }
                     @if (_translationHelp == g.Key)
                     {
-                        <p class="tps-note tps-note-warn" data-testid="tps-translate-help" role="status">No translation was made. Set up Azure AI Translator or start the local LibreTranslate server in
+                        <p class="tps-note tps-note-warn" data-testid="tps-translate-help" role="status">No translation was made. Choose the offline translator packaged with BirkNext, set up Azure AI Translator, or start a LibreTranslate server in
                             <a href="admin/system-settings?section=translation" data-testid="tps-translate-settings">System Settings → Translation</a>,
                             or write the @targetName text in the fields below — it is saved like any other change.</p>
                     }

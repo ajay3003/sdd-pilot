@@ -17,7 +17,7 @@ public sealed class LibreTranslateServiceManager(IProcessRunner runner, Performa
 {
     public const string ContainerName = "birknext-libretranslate";
     public const string ModelVolume = "birknext-libretranslate-models";
-    public const string NativeRunner = "BirkNext runs without Podman here (Tester Package), so it cannot run the local LibreTranslate server. Give the address of a LibreTranslate server, or use Azure AI Translator.";
+    public const string NativeRunner = "LibreTranslate is not included in this BirkNext package and BirkNext cannot run it here (no Podman). Use the offline translator packaged with BirkNext, or give the address of a LibreTranslate server someone runs.";
     private static readonly TimeSpan Short = TimeSpan.FromSeconds(30);
 
     public bool CanManage => !options.UsesNativeRunner;
@@ -61,12 +61,29 @@ public sealed class LibreTranslateServiceManager(IProcessRunner runner, Performa
         var pair = answering && PairOffered(languages, s.SourceLanguage, s.DefaultTarget);
         var codes = languages.Select(l => l.Code).ToList();
         string detail = !s.LibreTranslateManaged
-            ? answering ? (pair ? "The server answers and offers the language pair." : $"The server answers but does not offer {Pair(s)}.") : $"The server at {url} does not answer."
+            ? answering ? (pair ? "The server answers and offers the language pair." : $"The server answers but does not offer {Pair(s)}.") : NotAnswering(url)
             : !status.ImagePresent ? "The image is not downloaded yet: choose Download image (needs internet once)."
             : !status.Running ? "The local server is stopped: choose Start."
             : !answering ? "The local server is starting (the first start downloads the language models; this takes a few minutes and needs internet once)."
             : pair ? $"Running on {url} — translates {Pair(s)} offline." : $"Running, but {Pair(s)} is not offered (yet). Check the From and To languages.";
         return status with { Answering = answering, Languages = codes, PairAvailable = pair, Detail = detail };
+    }
+
+    /// <summary>
+    /// A LibreTranslate server that does not answer, with what it needs: LibreTranslate is a separate server, never part of BirkNext itself. On this
+    /// PC that means Podman (BirkNext runs it) or a server someone started; in the tester package only the latter (2026-11-23).
+    /// </summary>
+    private string NotAnswering(string url)
+    {
+        var local = Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.IsLoopback;
+        if (string.IsNullOrWhiteSpace(url)) return "No LibreTranslate server address is set.";
+        if (!CanManage)
+            return local
+                ? $"Nothing answers at {url}. LibreTranslate is a separate server that is not included in this BirkNext package, so it needs to be installed and started on this PC first. Until then, use the offline translator packaged with BirkNext."
+                : $"The LibreTranslate server at {url} does not answer. Check that it is running and reachable from this PC; until then, use the offline translator packaged with BirkNext.";
+        return local
+            ? $"Nothing answers at {url}. LibreTranslate is a separate server: choose \"Run it on this PC with Podman\" so BirkNext starts it, or start your own server at this address."
+            : $"The LibreTranslate server at {url} does not answer. Check that it is running and reachable from this PC.";
     }
 
     private static string Pair(TranslationSettings s) => $"{TranslationLanguages.Name(s.SourceLanguage)} → {TranslationLanguages.Name(s.DefaultTarget)}";
