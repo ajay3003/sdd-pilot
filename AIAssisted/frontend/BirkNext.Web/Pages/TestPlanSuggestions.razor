@@ -162,7 +162,10 @@
     /// <summary>The preparation preview of a bulk selection, shown before anything is created; null when closed.</summary>
     private P.PreparePreview? _preview;
     private P.CatalogFilter _catalog = new();
-    private P.CatalogGrouping _grouping = P.CatalogGrouping.Area;
+    /// <summary>The tester's grouping choice; null = the default (User story when candidates have stories, else Area / module).</summary>
+    private P.CatalogGrouping? _grouping;
+    /// <summary>The tester's Recommended / All choice; null = the default (Recommended for a long list that it narrows).</summary>
+    private bool? _recommended;
     private int _limit = P.PageSize;
     private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
     // The selection survives a reload of this tab (sessionStorage, never sent anywhere): the project it was restored for and what was last kept.
@@ -722,7 +725,12 @@
     {
         // One inventory, four views (2026-11-18): the view narrows what is listed, the filters narrow the view; the selection is never touched by either.
         var inView = _candidates.Where(c => P.InView(c, _inventory.Of(c), _view)).ToList();
-        var shown = P.Apply(inView, _catalog).ToList();
+        // Recommended first (2026-11-23): a long list starts on the highest-priority user-story scenarios with an expected result.
+        var recommended = P.Recommended(inView);
+        var recommendedOn = recommended.Count > 0 && recommended.Count < inView.Count && (_recommended ?? P.RecommendByDefault(inView, recommended));
+        var grouping = _grouping ?? P.DefaultGrouping(inView);
+        var shown = P.Apply(recommendedOn ? recommended : inView, _catalog).ToList();
+        if (grouping == P.CatalogGrouping.Story) shown = [.. P.StoryOrder(shown)];
         var visible = shown.Take(_limit).ToList();
         var inDraft = InPlan;
         var shownIds = shown.Select(c => c.CandidateId).ToHashSet(StringComparer.Ordinal);
@@ -757,7 +765,7 @@
             else
             {
                 <div class="tps-views" role="group" aria-label="Candidate view" data-testid="tps-views">
-                    @foreach (var v in P.Views)
+                    @foreach (var v in P.Views.Where(v => v != P.CandidateView.SystemEvents || _inventory.SystemEvents > 0 || _view == v))
                     {
                         var view = v;
                         var selectedHere = view == P.CandidateView.All ? _selected.Count : _candidates.Count(c => _selected.Contains(c.CandidateId) && P.InView(c, _inventory.Of(c), view));
@@ -780,6 +788,16 @@
                 }
                 else
                 {
+                    @if (recommended.Count > 0 && recommended.Count < inView.Count)
+                    {
+                        <div class="tps-recommend" data-testid="tps-recommend">
+                            <span class="tps-density" role="group" aria-label="Which candidates to list">
+                                <button type="button" class="tps-density-btn" aria-pressed="@(recommendedOn ? "true" : "false")" @onclick="() => { _recommended = true; _limit = P.PageSize; }" data-testid="tps-recommended-on">Recommended <span class="tps-count">@recommended.Count</span></button>
+                                <button type="button" class="tps-density-btn" aria-pressed="@(recommendedOn ? "false" : "true")" @onclick="() => { _recommended = false; _limit = P.PageSize; }" data-testid="tps-recommended-off">All <span class="tps-count">@inView.Count</span></button>
+                            </span>
+                            <span class="tps-muted tps-small" data-testid="tps-recommend-hint">@(recommendedOn ? P.RecommendedHint(recommended) : $"Showing all {inView.Count} candidates in this view.")</span>
+                        </div>
+                    }
                     <div class="tps-filters" role="search" aria-label="Filter candidates">
                         <label class="tps-field tps-field-grow"><span class="tps-k">Search</span><input class="tps-input" type="search" placeholder="Title, purpose, area or requirement" value="@_catalog.Query" @oninput="e => _catalog = _catalog with { Query = e.Value?.ToString() ?? string.Empty }" data-testid="tps-search" /></label>
                         <label class="tps-field"><span class="tps-k">Area</span>
@@ -793,8 +811,8 @@
                                 @foreach (var s in inView.Select(c => c.SourceCategory).Distinct()) { <option value="@s" selected="@(_catalog.Source == s)">@s</option> }
                             </select></label>
                         <label class="tps-field"><span class="tps-k">Group by</span>
-                            <select class="tps-input" @onchange="e => _grouping = Enum.TryParse<P.CatalogGrouping>(e.Value?.ToString(), out var g) ? g : P.CatalogGrouping.Area" data-testid="tps-group-by">
-                                @foreach (var g in Enum.GetValues<P.CatalogGrouping>()) { <option value="@g" selected="@(_grouping == g)">@P.GroupingLabel(g)</option> }
+                            <select class="tps-input" @onchange="e => _grouping = Enum.TryParse<P.CatalogGrouping>(e.Value?.ToString(), out var g) ? g : null" data-testid="tps-group-by">
+                                @foreach (var g in Enum.GetValues<P.CatalogGrouping>().Where(g => g != P.CatalogGrouping.Story || inView.Any(c => c.Story is not null))) { <option value="@g" selected="@(grouping == g)">@P.GroupingLabel(g)</option> }
                             </select></label>
                         <details class="tps-more-filters" data-testid="tps-more-filters" open="@(moreFilters > 0)">
                             <summary>More filters@(moreFilters > 0 ? $" ({moreFilters})" : "")</summary>
@@ -825,7 +843,7 @@
                     </div>
                     @if (shown.Count == 0) { <p class="tps-muted" data-testid="tps-no-match">No scenario matches these filters in this view.</p> }
                     <div class="tps-groups @(compact ? "is-compact" : null)" data-testid="tps-candidates" data-density="@(compact ? "compact" : "detailed")">
-                        @{ var groups = P.Group(visible, _grouping, _inventory).ToList(); var firstGroup = true; }
+                        @{ var groups = P.Group(visible, grouping, _inventory).ToList(); var firstGroup = true; }
                         @foreach (var group in groups)
                         {
                             // Many candidates: only the first group starts open (the headings with their counts are the overview); a few: all open.
@@ -839,7 +857,15 @@
                                             @onclick="() => _groupOpen[group.Id] = !open">@group.Title <span class="tps-count">@group.Items.Count</span>@if (selectedHere > 0) { <span class="tps-tone tps-tone-info">@selectedHere selected</span> }</button>
                                 </h3>
                                 <ul class="tps-rows" id="tps-gl-@group.Id" hidden="@(!open)">
-                                    @if (open) { foreach (var c in group.Items) { @CandidateRow(c, inDraft.Contains(c.CandidateId)) } }
+                                    @if (open)
+                                    {
+                                        @* User story grouping folds the variants of one situation (2026-11-23); other groupings list every row. *@
+                                        foreach (var entry in grouping == P.CatalogGrouping.Story ? P.Fold(group.Items) : group.Items.Select(c => new P.ListEntry(c, null, [c])).ToList())
+                                        {
+                                            if (entry.Single is { } c) { @CandidateRow(c, inDraft.Contains(c.CandidateId)) }
+                                            else { @VariantRow(entry, inDraft) }
+                                        }
+                                    }
                                 </ul>
                             </section>
                         }
@@ -960,6 +986,36 @@
         _manualTitle = $"{c.Title} — variant";
         Info($"A separate case for \"{c.Title}\" is written by hand (for example another data condition). It is not linked to the candidate; edit the title and choose Add test case.");
     }
+
+    /// <summary>Expanded variant groups (by entry key); folded by default.</summary>
+    private readonly HashSet<string> _openVariants = new(StringComparer.Ordinal);
+
+    /// <summary>One situation with its variants: one checkbox selects or clears every variant; the variants open below it.</summary>
+    private RenderFragment VariantRow(P.ListEntry entry, IReadOnlySet<string> inDraft) => __builder =>
+    {
+        var key = entry.Key;
+        var open = _openVariants.Contains(key);
+        var ids = entry.Variants.Select(v => v.CandidateId).ToList();
+        var selectedCount = ids.Count(_selected.Contains);
+        <li class="tps-row tps-variants @(selectedCount == ids.Count ? "is-selected" : null)" data-testid="tps-variants-@key" data-count="@ids.Count">
+            <div class="tps-row-main">
+                <label class="tps-row-select">
+                    <input type="checkbox" checked="@(selectedCount == ids.Count)" aria-label="@($"Select all {ids.Count} variants of {entry.Situation}")"
+                           @onchange="e => { foreach (var id in ids) { if (e.Value is true) _selected.Add(id); else _selected.Remove(id); } _preview = null; }" data-testid="tps-variants-select-@key" />
+                    <span class="tps-row-title">@entry.Situation</span>
+                </label>
+                <button type="button" class="tps-btn tps-btn-quiet tps-btn-xs" aria-expanded="@(open ? "true" : "false")" aria-controls="tps-vl-@key"
+                        @onclick="() => { if (!_openVariants.Remove(key)) _openVariants.Add(key); }" data-testid="tps-variants-toggle-@key">@(open ? "Hide variants" : $"{ids.Count} variants")</button>
+            </div>
+            <p class="tps-row-sum">@(selectedCount > 0 && selectedCount < ids.Count ? $"{selectedCount} of {ids.Count} variants selected. " : "")One situation, @ids.Count variants: @string.Join(" · ", entry.Variants.Select(P.Trigger))</p>
+            @if (open)
+            {
+                <ul class="tps-rows tps-variant-rows" id="tps-vl-@key">
+                    @foreach (var v in entry.Variants) { @CandidateRow(v, inDraft.Contains(v.CandidateId)) }
+                </ul>
+            }
+        </li>
+    };
 
     private RenderFragment CandidateRow(DiscoveredScenario c, bool inPlan) => __builder =>
     {
@@ -1218,7 +1274,7 @@
                         @if (c.Generated.ExistingTests.Count > 0) { <dt>Existing tests</dt><dd>@string.Join("; ", c.Generated.ExistingTests.Select(t => t.Name)) <span class="tps-muted">(explicit requirement references)</span></dd> }
                         else if (c.Generated.NamedExistingTests.Count > 0) { <dt>Tests the guide names</dt><dd>@string.Join(" · ", c.Generated.NamedExistingTests) <span class="tps-muted">(names, not verified identities)</span></dd> }
                         <dt>Evidence</dt><dd class="tps-small" data-testid="tps-evidence-@sid">
-                            @if (c.Generated.Evidence.Count > 0) { @foreach (var e in c.Generated.Evidence.Take(6)) { <span class="tps-ref" title="@e.Reference">@C.ShortReference(e.Reference)</span> } }
+                            @if (c.Generated.Evidence.Count > 0) { @foreach (var e in c.Generated.Evidence.Take(6)) { <span class="tps-ref" title="@(e.Detail is null ? e.Reference : $"{e.Reference} · {e.Detail}")">@C.ShortReference(e.Reference)</span> } }
                             else if (c.Source.Kind == ScenarioSourceKind.Manual) { <span>Written by hand — no discovered evidence.</span> }
                             else { <span>@c.Source.Owner · @sid@(c.Source.Revision is { } rev ? $" · guide revision {rev}" : "")</span> }
                             @if (c.Generated.Confidence is { } conf) { <span class="tps-muted"> · @ScenarioCandidateTypes.ConfidenceLabel(conf)</span> }</dd>
@@ -2032,6 +2088,12 @@
     private readonly Dictionary<string, List<TestCaseVariantProposal>> _variants = new(StringComparer.Ordinal);
     private readonly HashSet<string> _dirtyCases = new(StringComparer.Ordinal);
     private TranslationAvailability? _translation;
+
+    /// <summary>Whether translation is available, as the backend says now. An available answer is reused for this visit; a "not available" one
+    /// is asked again every time — it was cached for the whole visit, so after a tester switched to the offline translator in System Settings
+    /// (or a first check timed out on a cold AVD session) Translate kept saying no service was available until the page was reloaded (2026-11-23).</summary>
+    private async Task<TranslationAvailability> CurrentTranslationAsync() =>
+        _translation is { Available: true } known ? known : await _api!.TranslationAsync();
     private string? _overwriteOffer;
 
     private static string ScenarioDomId(string key) => "tps-scn-" + (key.Length == 0 ? "unresolved" : ScenarioPlanning.Sha(key)[..10]);
@@ -2145,7 +2207,7 @@
     {
         if (_draft is null) return;
         if (_dirty) { Fail("Save or discard your changes first, then translate."); return; }
-        _translation ??= await _api!.TranslationAsync();
+        _translation = await CurrentTranslationAsync();
         var target = _shownLanguage.TryGetValue(g.Key, out var shown) ? shown : Targets[0];
         var name = TranslationLanguages.Name(target);
         _scenarioChosen = true; _openScenario = g.Key;
@@ -2628,7 +2690,7 @@
 
     private async Task OpenTranslateAllAsync()
     {
-        _translation ??= await _api!.TranslationAsync();
+        _translation = await CurrentTranslationAsync();
         _translateAllOpen = !_translateAllOpen;
         _translateAllOverwrite = false;
     }
@@ -2637,7 +2699,7 @@
     {
         if (_draft is null) return;
         if (_dirty) { Fail("Save or discard your changes first, then translate."); return; }
-        _translation ??= await _api!.TranslationAsync();
+        _translation = await CurrentTranslationAsync();
         var target = Targets[0];
         var name = TranslationLanguages.Name(target);
         _translateAllOpen = false;
@@ -2711,7 +2773,7 @@
         </div>
         @if (_translateAllHelp is { } helpLanguage)
         {
-            <p class="tps-note tps-note-warn" data-testid="tps-translate-all-help" role="status">No translation was made. Set up Azure AI Translator or start the local LibreTranslate server in
+            <p class="tps-note tps-note-warn" data-testid="tps-translate-all-help" role="status">No translation was made. Choose the offline translator packaged with BirkNext, set up Azure AI Translator, or start a LibreTranslate server in
                 <a href="admin/system-settings?section=translation" data-testid="tps-translate-settings">System Settings → Translation</a>, or write the @TranslationLanguages.Name(helpLanguage) text in each test case — it is saved like any other change.</p>
         }
     };

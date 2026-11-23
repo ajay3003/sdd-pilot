@@ -6,7 +6,7 @@ namespace BirkNext.Web.Services;
 /// Pure presentation rules for Test Plan Suggestions: areas, filters, labels, the save request built from the working copy (human-owned parts only),
 /// and the evidence-backed next steps the Manual Testing focus panel shows on Dashboard and Recommended Workflow. No I/O.
 /// </summary>
-public static class TestPlanSuggestionsPresentation
+public static partial class TestPlanSuggestionsPresentation
 {
     public const string Route = "test-plan-suggestions";
 
@@ -314,31 +314,128 @@ public static class TestPlanSuggestionsPresentation
     /// <summary>Compact rows: the tester's choice wins; otherwise a long list is compact and a short one detailed.</summary>
     public static bool Compact(bool? chosen, int shown) => chosen ?? shown > CompactFrom;
 
-    public enum CatalogGrouping { Area, Type, Source, Kind, Requirement }
+    /// <summary>How the candidate list is grouped. <see cref="Story"/> is the default whenever candidates are written under user stories (2026-11-23).</summary>
+    public enum CatalogGrouping { Story, Area, Type, Source, Kind, Requirement }
+
+    // ── Recommended first, grouped by user story (2026-11-23) ──────────────────────────────────────────────────────────
+    // 201 flat A–Z rows were noise for a manual tester: P1 story scenarios looked like edge rules from a technical note. The tester now starts on
+    // the highest-priority user-story scenarios that have an expected result, grouped by story in the specification's own order; everything
+    // else is one click away ("All"). Only metadata the candidates already carry is used; nothing is hidden from the plan or re-classified.
+
+    /// <summary>A candidate list longer than this starts on Recommended (when some candidates are recommended).</summary>
+    public const int RecommendWhenMoreThan = 30;
+
+    /// <summary>"P1" → 1, "p2" → 2; anything else (no priority) sorts after every numbered priority.</summary>
+    public static int PriorityRank(string? priority) =>
+        priority is { Length: >= 2 } p && (p[0] is 'P' or 'p') && int.TryParse(p.AsSpan(1), out var n) ? n : int.MaxValue;
+
+    /// <summary>The user-story scenarios of the highest priority present (normally P1) with an expected result in the evidence.</summary>
+    public static IReadOnlyList<DiscoveredScenario> Recommended(IReadOnlyList<DiscoveredScenario> items)
+    {
+        var storied = items.Where(c => c.Story is not null && c.ExpectedBehaviour is not null).ToList();
+        if (storied.Count == 0) return [];
+        var top = storied.Min(c => PriorityRank(c.Story!.Priority));
+        return [.. storied.Where(c => PriorityRank(c.Story!.Priority) == top)];
+    }
+
+    /// <summary>Recommended is the starting point of a long list, never of a short one or of a list it would not narrow.</summary>
+    public static bool RecommendByDefault(IReadOnlyCollection<DiscoveredScenario> all, IReadOnlyCollection<DiscoveredScenario> recommended) =>
+        all.Count > RecommendWhenMoreThan && recommended.Count > 0 && recommended.Count < all.Count;
+
+    /// <summary>What Recommended means, in the tester's words.</summary>
+    public static string RecommendedHint(IReadOnlyList<DiscoveredScenario> recommended) =>
+        recommended.FirstOrDefault()?.Story?.Priority is { Length: > 0 } p
+            ? $"Recommended: the {p} user-story scenarios with an expected result. Start here; All shows every candidate."
+            : "Recommended: the user-story scenarios with an expected result. Start here; All shows every candidate.";
+
+    /// <summary>User story grouping when candidates have stories, else area/module.</summary>
+    public static CatalogGrouping DefaultGrouping(IEnumerable<DiscoveredScenario> items) => items.Any(c => c.Story is not null) ? CatalogGrouping.Story : CatalogGrouping.Area;
+
+    /// <summary>Specification order: stories by priority then story number, scenarios by their number in the story; candidates without a story last.</summary>
+    public static IReadOnlyList<DiscoveredScenario> StoryOrder(IEnumerable<DiscoveredScenario> items) =>
+        [.. items.OrderBy(c => c.Story is null ? 1 : 0).ThenBy(c => PriorityRank(c.Story?.Priority)).ThenBy(c => c.Story?.Ordinal ?? int.MaxValue)
+            .ThenBy(c => c.Story?.Key ?? "", StringComparer.Ordinal).ThenBy(c => c.NumberInStory ?? int.MaxValue).ThenBy(c => c.Title, StringComparer.CurrentCultureIgnoreCase)];
+
+    /// <summary>"US1 · Report attendance from a private institution (P1)"; candidates without a story share one group.</summary>
+    public static string StoryTitle(BirkNext.TestCoverage.CoverageUserStory? story) => story is null ? "Not under a user story"
+        : $"{(story.StoryId is { Length: > 0 } id ? id + " · " : "")}{story.Title}{(story.Priority is { Length: > 0 } p ? $" ({p})" : "")}";
 
     // ── Candidate views (2026-11-18): one inventory, four views ─────────────────────────────────────────────────────
     // A manual tester starts on what a person can test (business, guide and UI behaviour); technical candidates (API operations, authorization
     // checks, page checks, integration journeys) stay one click away in the same inventory. Nothing is copied, persisted per view or hidden from
     // "All candidates", and a selection survives every view switch.
 
-    public enum CandidateView { Manual, Technical, All, Attention }
+    public enum CandidateView { Manual, Technical, All, Attention, SystemEvents }
 
-    // Manual testers first: what to test by hand, then what needs a look, then everything; technical candidates last and set apart (they belong to Technical Testing).
-    public static readonly IReadOnlyList<CandidateView> Views = [CandidateView.Manual, CandidateView.Attention, CandidateView.All, CandidateView.Technical];
+    // Manual testers first: what to test by hand, then what another system or a schedule starts, then what needs a look, then everything; technical
+    // candidates last and set apart (they belong to Technical Testing).
+    public static readonly IReadOnlyList<CandidateView> Views = [CandidateView.Manual, CandidateView.SystemEvents, CandidateView.Attention, CandidateView.All, CandidateView.Technical];
+
+    // ── System events (2026-11-23) ───────────────────────────────────────────────────────────────────────────────────
+    // A manually relevant scenario whose trigger is not something a person does or submits: ingestion from another system, an event another
+    // system publishes, a repeated delivery, a re-run, time passing, a reference becoming resolvable later. They are kept, just listed apart from
+    // "Manual testing" (M2LB SkoleService: 201 manual rows mixed them with user flows). A report or message that "arrives" stays manual: a tester
+    // submits it. Generic English trigger words only, read from the scenario's trigger (its first When step, else the part after " — ", else the title).
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\b(is |are |gets? )?ingested\b|\bingestion\b|\bpublish(es|ed)?\b|\bdelivered (twice|again)\b|\b(is|are) (re-?)?run again\b|\bre-?runs?\b|\b(time|deadline|lock time|retention period) (passes|expires)\b|\b\d{1,2}(st|nd|rd|th) passes\b|\bbecomes? resolvable\b|\bis next read\b|\bsame change\b|\brecord identity\b|\bfull reload\b|\bscheduled job\b",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
+    private static partial System.Text.RegularExpressions.Regex SystemTrigger();
+
+    /// <summary>What starts the scenario: its first When step, else the part of the title after " — ", else the title.</summary>
+    public static string Trigger(DiscoveredScenario c) =>
+        c.Steps.FirstOrDefault()?.Action is { Length: > 0 } when ? when
+        : c.Title.IndexOf(" — ", StringComparison.Ordinal) is var dash and >= 0 ? c.Title[(dash + 3)..] : c.Title;
+
+    /// <summary>A manually relevant candidate started by another system, a schedule or a repeated delivery rather than by a person.</summary>
+    public static bool SystemEvent(DiscoveredScenario c, ScenarioOwnershipInfo o) => o.ManualRelevant && SystemTrigger().IsMatch(Trigger(c));
+
+    // ── Variants (2026-11-23) ────────────────────────────────────────────────────────────────────────────────────────
+    // Scenarios of one user story that share their situation (the title before " — ", e.g. "A locked period — the lock is run again" and
+    // "A locked period — a new report arrives") are one situation with variants: one row, one checkbox for all, expandable to each variant.
+
+    /// <summary>One list entry: a single candidate, or the variants of one situation.</summary>
+    public sealed record ListEntry(DiscoveredScenario? Single, string? Situation, IReadOnlyList<DiscoveredScenario> Variants)
+    {
+        public string Key => Single?.CandidateId ?? "v-" + Slug((Variants[0].Story?.Key ?? "") + "-" + Situation);
+    }
+
+    /// <summary>The situation a story scenario describes (title before " — "), or null.</summary>
+    public static string? Situation(DiscoveredScenario c) =>
+        c.Story is not null && c.Title.IndexOf(" — ", StringComparison.Ordinal) is var dash and > 0 ? c.Title[..dash].Trim() : null;
+
+    /// <summary>The group's rows with variants folded: entries in the order of their first member; a situation with one scenario stays a single row.</summary>
+    public static IReadOnlyList<ListEntry> Fold(IReadOnlyList<DiscoveredScenario> items)
+    {
+        var bySituation = items.Where(c => Situation(c) is not null)
+            .GroupBy(c => (c.Story!.Key, Situation(c)!.ToLowerInvariant())).Where(g => g.Count() > 1)
+            .ToDictionary(g => g.Key, g => g.ToList());
+        var entries = new List<ListEntry>();
+        var placed = new HashSet<(string, string)>();
+        foreach (var c in items)
+        {
+            if (Situation(c) is { } situation && bySituation.TryGetValue((c.Story!.Key, situation.ToLowerInvariant()), out var variants))
+            {
+                if (placed.Add((c.Story!.Key, situation.ToLowerInvariant()))) entries.Add(new ListEntry(null, situation, variants));
+                continue;
+            }
+            entries.Add(new ListEntry(c, null, [c]));
+        }
+        return entries;
+    }
 
     public static CandidateView ViewOrDefault(string? view) => view switch
     {
-        "technical" => CandidateView.Technical, "all" => CandidateView.All, "attention" => CandidateView.Attention, _ => CandidateView.Manual,
+        "technical" => CandidateView.Technical, "all" => CandidateView.All, "attention" => CandidateView.Attention, "system" => CandidateView.SystemEvents, _ => CandidateView.Manual,
     };
 
     public static string ViewId(CandidateView view) => view switch
     {
-        CandidateView.Technical => "technical", CandidateView.All => "all", CandidateView.Attention => "attention", _ => "manual",
+        CandidateView.Technical => "technical", CandidateView.All => "all", CandidateView.Attention => "attention", CandidateView.SystemEvents => "system", _ => "manual",
     };
 
     public static string ViewLabel(CandidateView view) => view switch
     {
-        CandidateView.Technical => "Technical candidates", CandidateView.All => "All candidates", CandidateView.Attention => "Needs attention", _ => "Manual testing",
+        CandidateView.Technical => "Technical candidates", CandidateView.All => "All candidates", CandidateView.Attention => "Needs attention", CandidateView.SystemEvents => "System events", _ => "Manual testing",
     };
 
     public static string ViewHint(CandidateView view) => view switch
@@ -346,6 +443,7 @@ public static class TestPlanSuggestionsPresentation
         CandidateView.Technical => "API operations, authorization checks, page checks and integration journeys. They are normally verified in Technical Testing; you can still prepare one as a manual case.",
         CandidateView.All => "Every discovered candidate, whatever workspace it belongs to.",
         CandidateView.Attention => "Candidates a person must look at first: an unclear expected result, a classified open point, a possible duplicate or an unclassified source.",
+        CandidateView.SystemEvents => "Scenarios started by another system, a schedule or a repeated delivery — not by a person: ingestion, published events, duplicates, re-runs, time passing. Test them with integration test data or in Integration Testing; you can still prepare one as a manual case.",
         _ => "Business scenarios, guide scenarios and UI behaviour a person can test by hand.",
     };
 
@@ -354,10 +452,15 @@ public static class TestPlanSuggestionsPresentation
     public sealed record Inventory(IReadOnlyDictionary<string, ScenarioOwnershipInfo> Owners, IReadOnlyDictionary<string, IReadOnlyList<string>> Operations,
         int Total, int Manual, int Technical, int Attention, int Unclassified, int OperationCandidates)
     {
+        /// <summary>Manually relevant candidates started by another system, a schedule or a repeated delivery (not counted in <see cref="Manual"/>).</summary>
+        public int SystemEvents { get; init; }
         public static readonly Inventory Empty = new(new Dictionary<string, ScenarioOwnershipInfo>(), new Dictionary<string, IReadOnlyList<string>>(), 0, 0, 0, 0, 0, 0);
         public ScenarioOwnershipInfo Of(DiscoveredScenario c) => Owners.TryGetValue(c.CandidateId, out var o) ? o : ScenarioOwnership.Of(c);
         public int DistinctOperations => Operations.Count;
-        public int Count(CandidateView view) => view switch { CandidateView.Manual => Manual, CandidateView.Technical => Technical, CandidateView.Attention => Attention, _ => Total };
+        public int Count(CandidateView view) => view switch
+        {
+            CandidateView.Manual => Manual, CandidateView.Technical => Technical, CandidateView.Attention => Attention, CandidateView.SystemEvents => SystemEvents, _ => Total,
+        };
 
         /// <summary>The other candidates that declare the same contract operation (another file of the same contract), never this one.</summary>
         public IReadOnlyList<string> SameOperation(DiscoveredScenario c) =>
@@ -369,12 +472,13 @@ public static class TestPlanSuggestionsPresentation
         if (candidates.Count == 0) return Inventory.Empty;
         var owners = new Dictionary<string, ScenarioOwnershipInfo>(candidates.Count, StringComparer.Ordinal);
         var operations = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-        int manual = 0, technical = 0, attention = 0, unclassified = 0, operationCandidates = 0;
+        int manual = 0, technical = 0, attention = 0, unclassified = 0, operationCandidates = 0, systemEvents = 0;
         foreach (var c in candidates)
         {
             var o = ScenarioOwnership.Of(c);
             owners[c.CandidateId] = o;
-            if (o.ManualRelevant) manual++;
+            if (SystemEvent(c, o)) systemEvents++;
+            else if (o.ManualRelevant) manual++;
             else if (o.Technical) technical++;
             if (o.NeedsReview) unclassified++;
             if (o.NeedsReview || Warning(c) is not null) attention++;
@@ -385,12 +489,16 @@ public static class TestPlanSuggestionsPresentation
                 list.Add(c.CandidateId);
             }
         }
-        return new(owners, operations.ToDictionary(p => p.Key, p => (IReadOnlyList<string>)p.Value, StringComparer.Ordinal), candidates.Count, manual, technical, attention, unclassified, operationCandidates);
+        return new(owners, operations.ToDictionary(p => p.Key, p => (IReadOnlyList<string>)p.Value, StringComparer.Ordinal), candidates.Count, manual, technical, attention, unclassified, operationCandidates)
+        {
+            SystemEvents = systemEvents,
+        };
     }
 
     public static bool InView(DiscoveredScenario c, ScenarioOwnershipInfo o, CandidateView view) => view switch
     {
-        CandidateView.Manual => o.ManualRelevant,
+        CandidateView.Manual => o.ManualRelevant && !SystemEvent(c, o),
+        CandidateView.SystemEvents => SystemEvent(c, o),
         CandidateView.Technical => o.Technical,
         CandidateView.Attention => o.NeedsReview || Warning(c) is not null,
         _ => true,
@@ -548,7 +656,9 @@ public static class TestPlanSuggestionsPresentation
     /// <summary>Groups by real metadata only (the area/module the evidence names, the candidate type or the source category), in first-seen order.</summary>
     /// <param name="inventory">For <see cref="CatalogGrouping.Kind"/>: the producer's own kind of evidence (acceptance scenario, API operation …).</param>
     public static IReadOnlyList<CatalogGroup> Group(IReadOnlyList<DiscoveredScenario> items, CatalogGrouping by, Inventory? inventory = null) =>
-        [.. items.GroupBy(c => by switch
+        by == CatalogGrouping.Story
+            ? [.. items.GroupBy(c => c.Story?.Key ?? "").Select(g => new CatalogGroup("story-" + (g.Key.Length > 0 ? Slug(g.Key) : "none"), StoryTitle(g.First().Story), [.. g]))]
+            : [.. items.GroupBy(c => by switch
             {
                 CatalogGrouping.Type => ScenarioCandidateTypes.Label(c.Type),
                 CatalogGrouping.Source => c.SourceCategory,
@@ -560,7 +670,7 @@ public static class TestPlanSuggestionsPresentation
 
     public static string GroupingLabel(CatalogGrouping by) => by switch
     {
-        CatalogGrouping.Type => "Type", CatalogGrouping.Source => "Source", CatalogGrouping.Kind => "Kind of evidence", CatalogGrouping.Requirement => "Requirement", _ => "Area / module",
+        CatalogGrouping.Story => "User story", CatalogGrouping.Type => "Type", CatalogGrouping.Source => "Source", CatalogGrouping.Kind => "Kind of evidence", CatalogGrouping.Requirement => "Requirement", _ => "Area / module",
     };
 
     /// <summary>A readable group id from a real area title: letters (any script, e.g. "periodelås") and digits kept, everything else a hyphen.</summary>

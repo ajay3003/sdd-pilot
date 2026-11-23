@@ -536,3 +536,9 @@ textarea.tps-step-text { resize: vertical; min-height: 2.2rem; }
     .tps-density { margin-left: 0; }
     .tps-groups.is-compact .tps-row-title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 }
+
+/* Recommended / All (2026-11-23): where a long candidate list starts. */
+.tps-recommend { display: flex; flex-wrap: wrap; gap: .5rem .75rem; align-items: center; margin: .25rem 0 .5rem; }
+
+/* Variants of one situation (2026-11-23): one row, variants indented below. */
+.tps-variant-rows { margin: .5rem 0 0 1.75rem; padding-left: .75rem; border-left: 2px solid var(--clr-border); }

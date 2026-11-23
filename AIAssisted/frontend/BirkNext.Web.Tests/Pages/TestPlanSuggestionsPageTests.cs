@@ -934,7 +934,8 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
     [Fact]
     public void Technical_candidates_are_the_last_view()
     {
-        P.Views.Should().Equal(P.CandidateView.Manual, P.CandidateView.Attention, P.CandidateView.All, P.CandidateView.Technical);
+        // System events (2026-11-23) sit next to Manual testing; the page shows that view only when a project has such candidates.
+        P.Views.Should().Equal(P.CandidateView.Manual, P.CandidateView.SystemEvents, P.CandidateView.Attention, P.CandidateView.All, P.CandidateView.Technical);
     }
 
     [Fact]

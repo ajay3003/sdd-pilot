@@ -89,7 +89,7 @@ public sealed class ScenarioCentricPrepareTests : BunitContext
             {
                 Revision = draft.Revision + 1, Cases = [.. draft.Cases, Written("manual-new", r.Title, r.ScenarioKey) with { DuplicatedFrom = r.CopyFrom }],
             }, (string?)null));
-        api.Setup(x => x.TranslationAsync(It.IsAny<CancellationToken>())).ReturnsAsync(translation ?? new TranslationAvailability(false, null, "Azure AI Translator has no key yet (System Settings → Translation). You can write the translated text by hand."));
+        api.Setup(x => x.TranslationAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => _availabilityNow ?? translation ?? new TranslationAvailability(false, null, "Azure AI Translator has no key yet (System Settings → Translation). You can write the translated text by hand."));
         api.Setup(x => x.TranslateAsync(DraftId, It.IsAny<TranslateScenarioRequest>(), It.IsAny<CancellationToken>()))
             .Callback<Guid, TranslateScenarioRequest, CancellationToken>((_, r, _) => _translated.Add(r))
             .ReturnsAsync(() => translateError is not null ? ((TranslateScenarioResult?)null, translateError)
@@ -194,6 +194,22 @@ public sealed class ScenarioCentricPrepareTests : BunitContext
         var part = _saves[0].Cases.Single();
         part.RequirementLinks!.Single().Should().Match<ManualRequirementLink>(l => l.RequirementId == "FR-027" && l.Scope == null && l.SuggestionLevel == RequirementSuggestionLevel.Semantic && l.SuggestionReason!.Contains("compulsory"));
         part.RejectedSuggestions!.Single().RequirementId.Should().Be(rejected);
+    }
+
+    /// <summary>What the backend answers now about translation (null: the Render argument); a test changes it to simulate a settings change.</summary>
+    private TranslationAvailability? _availabilityNow;
+
+    [Fact]
+    public void A_not_available_answer_is_asked_again_so_switching_to_the_offline_translator_works_without_a_reload()
+    {
+        // 2026-11-23: after switching from LibreTranslate to the offline translator, Translate still said no service was available.
+        var cut = Render(Draft(Scenario42()), query: "&case=tsc-42");
+        cut.Find("[data-testid=tps-scenario-translate]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tps-message]").TextContent.Should().StartWith("No translation service is available."));
+
+        _availabilityNow = new TranslationAvailability(true, "BirkNext offline translator (model)", "Offline translation on this PC.");
+        cut.Find("[data-testid=tps-scenario-translate]").Click();
+        cut.WaitForAssertion(() => _translated.Should().ContainSingle("the second click asks again and translates with the offline translator"));
     }
 
     [Fact]
