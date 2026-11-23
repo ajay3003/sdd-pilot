@@ -12,15 +12,16 @@ public sealed partial class TestScenarioDiscoveryService
         if (request.SnapshotId is not { } snapshotId || await sources.FindSourceAnalysisAsync(snapshotId, ct) is not { } snapshot)
             throw new TestPlanException(404, "snapshot-not-found", "Kildeversjonen finnes ikke.");
         var application = SourceBaselineService.KeyOf(snapshot);
-        if (store is not null) await store.RestoreApplicationAsync(application, ct);
-        var previous = cache.CurrentForApplication(application);
         var current = await DiscoverAsync(request with { Inspect = false }, ct);
-        if (previous is null || previous.DiscoveryId == current.DiscoveryId)
+        // The previous version is the newest earlier discovery of the application read from different source content — not merely the last
+        // discovery (after a re-import of the same content that would compare a version with itself).
+        var previous = store is null || current.Basis is null ? null : await store.PreviousVersionAsync(application, ScenarioDiscoveryStore.Content(current.Basis), ct);
+        if (previous is null)
             return new ScenarioChangeSummary
             {
                 ApplicationKey = application, CurrentDiscoveryId = current.DiscoveryId, New = current.Candidates.Count,
                 Conflicts = current.Candidates.Count(c => c.Conflicts.Count > 0),
-                Reason = "Ingen tidligere oppdagelse av applikasjonen å sammenligne med: alle scenarioer er nye for BirkNext.",
+                Reason = "Ingen tidligere versjon av applikasjonen (med annet innhold) er oppdaget: alle scenarioer er nye for BirkNext.",
             };
         var before = previous.Candidates.Where(c => c.SourceIdentity.Length > 0).GroupBy(c => c.SourceIdentity, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var after = current.Candidates.Where(c => c.SourceIdentity.Length > 0).GroupBy(c => c.SourceIdentity, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);

@@ -157,6 +157,24 @@ public sealed class TestScenarioDiscoveryTests
     }
 
     [Fact]
+    public void A_UI_check_has_one_identity_in_every_import_of_the_application_and_keeps_its_former_one_findable()
+    {
+        // 2026-11-23: the UI suggestion id includes the project key, so each import of the same application gave the same page check another
+        // identity (a new version compared by import showed it as removed + new). Identity = page, kind and title; the former one is an alias.
+        TestSuggestion Suggestion(string project) => new()
+        {
+            SuggestionId = "sug-" + project, Kind = SuggestionKind.ValidSubmission, Category = SuggestionCategory.UiFunctional, Route = "/reserve",
+            Feature = "Reserve", Title = "Reserve a book (form)", RuleVersion = "v",
+        };
+        var inM2lb = D.FromUi("m2lb", [Suggestion("m2lb")]).Single();
+        var inImport = D.FromUi("import:import-abc", [Suggestion("import:import-abc")]).Single();
+        inImport.SourceIdentity.Should().Be(inM2lb.SourceIdentity, "the same page check in another import of the application");
+        inImport.CandidateId.Should().NotBe(inM2lb.CandidateId, "candidate ids stay project-scoped");
+        inM2lb.FormerIdentities.Should().ContainSingle().Which.Should().Be(D.SourceIdentityOf(D.UiSource, "ui:sug-m2lb"), "a case prepared before still finds it");
+        D.FromUi("m2lb", [Suggestion("m2lb") with { Title = "Reserve a book (list)" }]).Single().SourceIdentity.Should().NotBe(inM2lb.SourceIdentity);
+    }
+
+    [Fact]
     public void Deduplication_uses_the_canonical_identity_only_and_shared_requirements_stay_separate_as_possible_duplicates()
     {
         var spec = D.FromSpecification(Project, Spec(Scenario("US1-1", "reserved", "FR-001"))).Candidates;

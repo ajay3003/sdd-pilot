@@ -559,7 +559,7 @@ public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
             var x = Services(db);
             var first = await x.Discovery.ChangesAsync(new ScenarioDiscoveryRequest { ProjectKey = "import:imp1", SnapshotId = s1, MemberSnapshotIds = [s1] }, default);
             first.Compared.Should().BeFalse("nothing to compare the first import with");
-            first.Reason.Should().Contain("Ingen tidligere");
+            first.Reason.Should().Contain("Ingen tidligere versjon");
         }
         var s2 = await ImportAsync("imp2", "m2lb-language.zip", "content-v2", Spec(A, BChanged, D), DateTimeOffset.UtcNow);
         await using (var db = Context())
@@ -572,6 +572,10 @@ public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
             Scenarios((await x.Discovery.LastAsync("import:imp2", null, default))!).Should().HaveCount(3);
             (changes.New, changes.Changed, changes.Removed, changes.Unchanged, changes.NotCompared).Should().Be((1, 1, 1, 1 + 2, 0),
                 "A unchanged, B changed (400 → 422), C removed, D new; the two requirement candidates (FR-001, FR-002) are unchanged");
+            // Asked again (the latest discovery is now this version): still compared with the previous version, never with itself.
+            var again = await x.Discovery.ChangesAsync(new ScenarioDiscoveryRequest { ProjectKey = "import:imp2", SnapshotId = s2, MemberSnapshotIds = [s2] }, default);
+            (again.Compared, again.New, again.Changed, again.Removed).Should().Be((true, 1, 1, 1));
+            again.PreviousArchives.Should().Contain("m2lb-v1.zip");
         }
     }
 

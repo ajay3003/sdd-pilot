@@ -380,6 +380,10 @@ public static class TestScenarioDiscoveryEngine
             TestDataNeeds = [.. s.TestDataNeeds], RequirementIds = [.. s.RequirementRefs],
             Evidence = [.. s.SourceRefs.Take(8).Select(r => new CandidateEvidenceRef("source-file", r)), .. s.RequirementRefs.Select(r => new CandidateEvidenceRef("requirement", r))],
             CanonicalKey = "ui:" + s.SuggestionId, Engine = $"UI suggestion engine {s.RuleVersion}",
+            // The suggestion id includes the project key, so the same page check had another identity in every import of the application. The
+            // identity is the page, the kind of check and its title (2026-11-23); the former one stays findable for cases prepared before.
+            SourceIdentity = SourceIdentityOf(UiSource, $"ui-check:{s.Route.Trim().ToLowerInvariant()}|{s.Kind}|{Situation(s.Title)}"),
+            FormerIdentities = [SourceIdentityOf(UiSource, "ui:" + s.SuggestionId)],
             OpenQuestions = [.. Text(s.ExpectedHint) is { } hint ? new[] { $"Proposed from source, not confirmed: \"{Clip(hint, 200)}\" — confirm or clarify the expected result." } : []],
         }, projectKey);
     })];

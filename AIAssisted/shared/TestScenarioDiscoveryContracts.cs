@@ -192,6 +192,9 @@ public sealed record DiscoveredScenario
     public int? NumberInStory { get; init; }
     /// <summary>Project-independent identity (capability + canonical key): the same scenario in another import of the same application.</summary>
     public string SourceIdentity { get; init; } = "";
+    /// <summary>Identities this scenario had under an earlier identity rule (2026-11-23: UI scenarios were keyed by project), so cases prepared
+    /// before still find it. Never shown; empty for most candidates.</summary>
+    public List<string> FormerIdentities { get; init; } = [];
     /// <summary>Canonical keys of exact duplicates from other sources merged into this candidate (their evidence is kept above).</summary>
     public List<string> MergedFrom { get; init; } = [];
     /// <summary>Equivalent, related, variant or conflicting candidates of other sources (never merged).</summary>

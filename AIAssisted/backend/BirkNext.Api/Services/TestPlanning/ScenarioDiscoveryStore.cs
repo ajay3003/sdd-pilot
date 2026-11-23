@@ -62,6 +62,21 @@ public sealed class ScenarioDiscoveryStore(AppDbContext db, ScenarioDiscoveryCac
         if (row is not null && Read(row) is { } result) cache.Store(result);
     }
 
+    /// <summary>The application's previous version: the newest stored current result whose source content differs from <paramref name="content"/>
+    /// (the set of member content fingerprints). A re-import of the same content is never "the previous version". Null when there is none.</summary>
+    public async Task<ScenarioDiscoveryResult?> PreviousVersionAsync(string applicationKey, IReadOnlySet<string> content, CancellationToken ct)
+    {
+        var rows = await db.ScenarioDiscoveryResults.AsNoTracking().Where(r => r.ApplicationKey == applicationKey && r.BasisKind != Historical)
+            .OrderByDescending(r => r.DiscoveredAt).Take(50).ToListAsync(ct);
+        foreach (var row in rows)
+            if (Read(row) is { Basis: { } basis } result && !Content(basis).SetEquals(content)) return result;
+        return null;
+    }
+
+    /// <summary>The source content a basis was read from (member content fingerprints, else snapshot ids for older results).</summary>
+    public static HashSet<string> Content(DiscoverySourceBasis basis) =>
+        [.. basis.Members.Where(m => m.Resolved).Select(m => m.ContentFingerprint ?? m.SnapshotId!.Value.ToString())];
+
     /// <summary>A stored result by id, only for its own project.</summary>
     public async Task<ScenarioDiscoveryResult?> FindAsync(string projectKey, string discoveryId, CancellationToken ct)
     {

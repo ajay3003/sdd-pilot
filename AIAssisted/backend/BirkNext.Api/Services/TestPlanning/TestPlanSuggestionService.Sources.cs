@@ -32,6 +32,7 @@ public sealed partial class TestPlanSuggestionService
             {
                 if (c.SourceIdentity.Length > 0) _bySource.TryAdd(c.SourceIdentity, c);
                 foreach (var merged in c.MergedFrom) _bySource.TryAdd(merged, c);
+                foreach (var former in c.FormerIdentities) _bySource.TryAdd(former, c);
             }
         }
 
