@@ -31,6 +31,7 @@
                         <div><dt>Endret</dt><dd data-testid="pi-changes-changed">@_changes.Changed</dd></div>
                         <div><dt>Utgått</dt><dd data-testid="pi-changes-removed">@_changes.Removed</dd></div>
                         <div><dt>Uendret</dt><dd data-testid="pi-changes-unchanged">@_changes.Unchanged</dd></div>
+                        @if (_changes.Moved > 0) { <div><dt>Flyttet (samme tekst)</dt><dd data-testid="pi-changes-moved">@_changes.Moved</dd></div> }
                         @if (_changes.NotCompared > 0) { <div><dt>Ikke sammenlignet</dt><dd data-testid="pi-changes-not-compared">@_changes.NotCompared</dd></div> }
                         <div><dt>Kildekonflikter</dt><dd data-testid="pi-changes-conflicts">@_changes.Conflicts</dd></div>
                         @if (_plansToReview is { } review) { <div><dt>Planer som må gjennomgås</dt><dd data-testid="pi-changes-plans">@review</dd></div> }

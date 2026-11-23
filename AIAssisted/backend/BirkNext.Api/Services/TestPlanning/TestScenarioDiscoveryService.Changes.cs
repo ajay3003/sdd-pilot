@@ -24,13 +24,19 @@ public sealed partial class TestScenarioDiscoveryService
             };
         var before = previous.Candidates.Where(c => c.SourceIdentity.Length > 0).GroupBy(c => c.SourceIdentity, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var after = current.Candidates.Where(c => c.SourceIdentity.Length > 0).GroupBy(c => c.SourceIdentity, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        // A scenario whose identity changed but whose text did not (renumbered, or its file moved in the new version) is the unique candidate with
+        // exactly the same content on both sides — the rule plans follow too (Renumbered). Anything ambiguous stays new / removed.
+        var goneBefore = before.Where(x => !after.ContainsKey(x.Key)).Select(x => x.Value).ToList();
+        var newAfter = after.Where(x => !before.ContainsKey(x.Key)).Select(x => x.Value).ToList();
+        var uniqueGone = goneBefore.GroupBy(Content).Where(g => g.Count() == 1).ToDictionary(g => g.Key, g => g.Single());
+        var moved = newAfter.GroupBy(Content).Where(g => g.Count() == 1 && uniqueGone.ContainsKey(g.Key)).Select(g => g.Key).ToHashSet();
         int added = 0, changed = 0, same = 0, removed = 0, notCompared = 0;
         foreach (var (identity, c) in after)
-            if (!before.TryGetValue(identity, out var old)) added++;
+            if (!before.TryGetValue(identity, out var old)) { if (!moved.Contains(Content(c))) added++; }
             else if (Content(old) == Content(c)) same++;
             else changed++;
         var complete = current.Basis is null || current.Basis.Complete;
-        foreach (var (identity, old) in before.Where(x => !after.ContainsKey(x.Key)))
+        foreach (var (identity, old) in before.Where(x => !after.ContainsKey(x.Key) && !moved.Contains(Content(x.Value))))
         {
             var capability = current.Capabilities.FirstOrDefault(x => x.Id == old.CapabilityId);
             if (complete && capability is { State: DiscoveryCapabilityState.Available or DiscoveryCapabilityState.NoEvidence, PartialFailure: false }) removed++;
@@ -40,7 +46,7 @@ public sealed partial class TestScenarioDiscoveryService
         {
             ApplicationKey = application, Compared = true, CurrentDiscoveryId = current.DiscoveryId, PreviousDiscoveryId = previous.DiscoveryId,
             PreviousArchives = [.. previous.Basis?.Members.Select(m => m.ArchiveName ?? m.DisplayName).OfType<string>() ?? []],
-            New = added, Changed = changed, Removed = removed, Unchanged = same, NotCompared = notCompared,
+            New = added, Changed = changed, Removed = removed, Unchanged = same, Moved = moved.Count, NotCompared = notCompared,
             Conflicts = current.Candidates.Count(c => c.Conflicts.Count > 0),
         };
     }

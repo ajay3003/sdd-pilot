@@ -371,6 +371,8 @@ public sealed record ScenarioChangeSummary
     public int Changed { get; init; }
     public int Removed { get; init; }
     public int Unchanged { get; init; }
+    /// <summary>The same text in a new place (renumbered, or its file moved): the unique scenario with exactly the same content. Not a change.</summary>
+    public int Moved { get; init; }
     public int NotCompared { get; init; }
     /// <summary>Scenarios of the new version whose sources disagree about the expected result.</summary>
     public int Conflicts { get; init; }

@@ -103,7 +103,7 @@ public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
     private const string E = "**Given** no matching child exists, **When** a report arrives, **Then** the service responds 200 and the report is held encrypted.";
 
     /// <summary>An import: a Source Analysis snapshot of the application and the specification captured with it (as Project Import does).</summary>
-    private async Task<Guid> ImportAsync(string importId, string archive, string content, string spec, DateTimeOffset at)
+    private async Task<Guid> ImportAsync(string importId, string archive, string content, string spec, DateTimeOffset at, string specPath = SpecPath)
     {
         var id = Guid.NewGuid();
         await using var db = Context();
@@ -118,7 +118,7 @@ public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
             }, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
         });
         await db.SaveChangesAsync();
-        await new SpecificationCatalogService(db).CaptureAsync(importId, archive, id, [new SpecificationCatalogService.Document(SpecPath, spec)], default);
+        await new SpecificationCatalogService(db).CaptureAsync(importId, archive, id, [new SpecificationCatalogService.Document(specPath, spec)], default);
         return id;
     }
 
@@ -572,6 +572,46 @@ public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
             Scenarios((await x.Discovery.LastAsync("import:imp2", null, default))!).Should().HaveCount(3);
             (changes.New, changes.Changed, changes.Removed, changes.Unchanged, changes.NotCompared).Should().Be((1, 1, 1, 1 + 2, 0),
                 "A unchanged, B changed (400 → 422), C removed, D new; the two requirement candidates (FR-001, FR-002) are unchanged");
+        }
+    }
+
+    [Fact]
+    public async Task A_specification_moved_to_another_file_in_a_new_version_reads_the_same_in_status_impact_refresh_and_the_change_summary()
+    {
+        // Real data (2026-11-23, M2LB → M2LB-language): the specification folder was renamed, so every scenario's identity (file + Given + When)
+        // changed while its text did not. Status said "4 endret", impact "4 utgått" and refresh kept the cases — three answers for one plan.
+        var s1 = await ImportAsync("imp1", "m2lb-v1.zip", "content-v1", Spec(A, B), DateTimeOffset.UtcNow.AddHours(-2));
+        Guid planId; string edited, approved;
+        await using (var db = Context())
+        {
+            var x = Services(db);
+            var d = await x.Discovery.DiscoverAsync(new ScenarioDiscoveryRequest { ProjectKey = "import:imp1", SnapshotId = s1, MemberSnapshotIds = [s1] }, default);
+            var plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest { ProjectKey = "import:imp1", DiscoveryId = d.DiscoveryId, CandidateIds = [.. Scenarios(d).Select(c => c.CandidateId)] }, "anna", default);
+            edited = plan.Cases[0].Source.ScenarioId; approved = plan.Cases[1].Source.ScenarioId;
+            plan = await x.Plans.SaveAsync(plan.Id, WithTitle(plan, edited, "Testers egen tittel"), "anna", default);
+            plan = await x.Plans.ReviewAsync(plan.Id, new ReviewTestCaseRequest(plan.Revision, approved, TestCaseReviewState.Accepted, "ok"), "anna", default);
+            planId = plan.Id;
+        }
+        var s2 = await ImportAsync("imp2", "m2lb-language.zip", "content-v2", Spec(A, B), DateTimeOffset.UtcNow, specPath: "service/specs/001-intake/spec.md");
+        await using (var db = Context())
+        {
+            var x = Services(db);
+            await x.Baselines.SelectBaselineAsync(Repository, s2, "t", "new version", default);
+            var changes = await x.Discovery.ChangesAsync(new ScenarioDiscoveryRequest { ProjectKey = "import:imp2", SnapshotId = s2, MemberSnapshotIds = [s2] }, default);
+            (changes.Removed, changes.New).Should().Be((0, 0), "the same text in a moved file is neither removed nor new");
+            changes.Moved.Should().BeGreaterThanOrEqualTo(2);
+
+            var status = (await x.Plans.ProjectWorkspaceAsync("import:imp1", null, true, default)).PlanStatus![planId];
+            var impact = await x.Plans.ImpactAsync(planId, default);
+            status.Removed.Should().Be(0);
+            impact.Cases.Should().NotContain(c => c.Kinds.Contains(CaseImpactKind.ScenarioRemoved), "impact agrees with status: nothing was removed");
+            impact.Cases.Count.Should().Be(status.Changed, "status and impact count the same cases");
+
+            var before = await x.Plans.DraftAsync(planId, default);
+            var after = await x.Plans.RefreshAsync(planId, before.Revision, "anna", default);
+            after.Cases.Should().NotContain(c => c.Review == TestCaseReviewState.Superseded);
+            after.Cases.Should().Contain(c => c.Edits.Title == "Testers egen tittel", "the tester's edit follows the moved scenario");
+            after.Cases.Should().Contain(c => c.Review == TestCaseReviewState.Accepted, "and so does the approval (the text did not change)");
         }
     }
 

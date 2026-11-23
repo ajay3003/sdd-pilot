@@ -115,7 +115,7 @@ public sealed partial class TestPlanSuggestionService
                 if (c.Source.Kind != ScenarioSourceKind.ProjectDiscovery || c.Review == TestCaseReviewState.Superseded)
                     return c with { SourceChanged = false, SourceState = null, SourceStateReason = null };
                 // A renumbering is a change within one import's specification; a later import's ids are always different (followed by identity).
-                if (moves.TryGetValue(c.Source.ScenarioId, out var moved) && moved.ProjectKey == c.Source.Owner)
+                if (moves.TryGetValue(c.Source.ScenarioId, out var moved) && moved.ProjectKey == c.Source.Owner && ReferenceEquals(Locate(c, index, moves), moved))
                     return c with { SourceChanged = true, SourceState = CaseSourceState.Changed, SourceStateReason = "Samme scenariotekst har fått en ny plass i spesifikasjonen." };
                 if (Locate(c, index, moves) is { } now)
                 {
@@ -136,10 +136,15 @@ public sealed partial class TestPlanSuggestionService
         });
     }
 
-    /// <summary>The case's scenario in a discovery: by identity (or same-import id), else — for a case without an identity — the unique
-    /// specification scenario with the same text in another import (<see cref="Renumbered"/>).</summary>
+    /// <summary>The case's scenario in a discovery — the one rule status, impact and refresh share (2026-11-23): by identity (or same-import id),
+    /// else an unambiguous move (the unique specification scenario with exactly the same text, <see cref="Renumbered"/>: renumbered in its file,
+    /// or its file moved in a new version). Before, impact followed a move only for cases without an identity while status and refresh followed it
+    /// for every case, so one plan read "endret", "utgått" and "unchanged" at the same time.
+    /// A case without an identity (prepared before identities existed) has a positional id that may now name another scenario: its move comes first.</summary>
     private static DiscoveredScenario? Locate(TestCaseDraft c, CandidateIndex index, IReadOnlyDictionary<string, DiscoveredScenario> moves) =>
-        index.Find(c) ?? (c.Generated.SourceIdentity is null && moves.TryGetValue(c.Source.ScenarioId, out var moved) ? moved : null);
+        c.Generated.SourceIdentity is null
+            ? (moves.TryGetValue(c.Source.ScenarioId, out var renumbered) ? renumbered : index.Find(c))
+            : index.Find(c) ?? (moves.TryGetValue(c.Source.ScenarioId, out var moved) ? moved : null);
 
     private static string ConflictKey(IEnumerable<ScenarioConflict>? conflicts) =>
         conflicts is null ? "" : string.Join("|", conflicts.SelectMany(k => k.Claims).Select(x => $"{x.SourceCategory}:{x.Expected}").Order(StringComparer.Ordinal));
@@ -171,7 +176,7 @@ public sealed partial class TestPlanSuggestionService
         // One scenario of the current basis is followed by one case: when several cases reach the same scenario (the source merged them), the case
         // already holding its id — else the first — follows it; the others keep their identity and are flagged, never given a duplicate id.
         var active = current.Cases.Where(c => c.Source.Kind == ScenarioSourceKind.ProjectDiscovery && c.Review != TestCaseReviewState.Superseded).ToList();
-        var targets = active.Select(c => (Id: c.Source.ScenarioId, Target: moves.TryGetValue(c.Source.ScenarioId, out var m) ? m : Locate(c, index, moves)))
+        var targets = active.Select(c => (Id: c.Source.ScenarioId, Target: Locate(c, index, moves)))
             .Where(t => t.Target is not null).ToList();
         var follower = targets.GroupBy(t => t.Target!.CandidateId, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.FirstOrDefault(t => t.Id == g.Key).Id ?? g.First().Id, StringComparer.Ordinal);
@@ -184,7 +189,7 @@ public sealed partial class TestPlanSuggestionService
         {
             if (c.Source.Kind == ScenarioSourceKind.Manual && c.ScenarioKey is { } under && moves.TryGetValue(under, out var to)) return c with { ScenarioKey = to.CandidateId };
             if (c.Source.Kind != ScenarioSourceKind.ProjectDiscovery || c.Review == TestCaseReviewState.Superseded) return E.Assess(c with { SourceChanged = false, SourceState = null, SourceStateReason = null });
-            var candidate = moves.TryGetValue(c.Source.ScenarioId, out var moved) ? moved : Locate(c, index, moves);
+            var candidate = Locate(c, index, moves);
             if (candidate is not null && follower.TryGetValue(candidate.CandidateId, out var holder) && holder != c.Source.ScenarioId)
             {
                 const string merged = "Scenarioet er slått sammen med et annet scenario i gjeldende kilde (samme situasjon og forventet resultat). Vurder om dette testtilfellet fortsatt trengs.";
@@ -308,6 +313,17 @@ public sealed partial class TestPlanSuggestionService
                 continue;
             }
             matched.Add(now.CandidateId);
+            if (moves.TryGetValue(c.Source.ScenarioId, out var movedTo) && ReferenceEquals(movedTo, now) && (c.Generated.SourceIdentity is null || index.Find(c) is null)
+                && now.Fingerprint == c.Source.Fingerprint)
+            {
+                // The same text in a new place (renumbered, or its specification file moved): a change of place, never a removal.
+                impacts.Add(new CaseImpact
+                {
+                    CaseId = c.Source.ScenarioId, Title = c.EffectiveTitle, ReviewedBefore = reviewed, Kinds = [CaseImpactKind.EvidenceChanged],
+                    Summary = $"Samme scenariotekst har fått en ny plass: {now.Evidence.FirstOrDefault(e => e.Kind == "specification")?.Reference ?? now.CandidateId}. Innholdet er uendret.",
+                });
+                continue;
+            }
             var conflictNow = ConflictKey(now.Conflicts) != ConflictKey(c.Generated.Conflicts) && now.Conflicts.Count > 0;
             if (now.Fingerprint == c.Source.Fingerprint && !conflictNow) continue;
             var after = D.Content(now);
