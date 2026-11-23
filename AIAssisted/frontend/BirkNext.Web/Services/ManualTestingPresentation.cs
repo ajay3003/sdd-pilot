@@ -18,8 +18,8 @@ public static class ManualTestingPresentation
     /// export to Azure DevOps Test Plans, where the cases are executed.</summary>
     public static readonly IReadOnlyList<WorkspaceStage> Stages =
     [
-        new("discover", "Discover & understand", "What needs testing?", DiscoverRoute),
-        new("plan", "Plan & prepare", "How will we test it?", PlanRoute),
+        new("discover", "Oppdag og forstå", "Hva må testes?", DiscoverRoute),
+        new("plan", "Planlegg og forbered", "Hvordan tester vi det?", PlanRoute),
     ];
 
     /// <summary>What the home and the stages are derived from.</summary>
@@ -95,20 +95,20 @@ public static class ManualTestingPresentation
     {
         if (f.ProjectKey is null)
             return f.AnyProjectImported
-                ? new("Choose a project", "project-import", "Manual Testing works on one imported project at a time: choose it in the Project list above.")
-                : new("Import a project", "project-import", "Nothing is imported yet. Import a project ZIP — its source, documents or both — and Manual Testing finds what to test.");
+                ? new("Velg applikasjon", "project-import", "Manuell testing jobber med én importert applikasjon om gangen: velg den i prosjektlisten.")
+                : new("Importer en applikasjon", "project-import", "Ingenting er importert ennå. Importer en prosjekt-ZIP — kildekode, dokumenter eller begge — så finner Manuell testing hva som skal testes.");
         if ((f.Plans.Count == 0 || Cases(f) == 0) && f.SpecificationChoice is { } choose)
-            return new("Choose the specification", SpecificationRoute, choose);
+            return new("Velg spesifikasjon", SpecificationRoute, choose);
         if (f.Plans.Count == 0 || Cases(f) == 0)
             return f.Discovery is null
-                ? new("Discover what to test", $"{PlanRoute}?area=choose", "Nothing is prepared yet. Find scenarios in the project's evidence, or write a test case by hand.")
-                : new("Choose scenarios to prepare", $"{PlanRoute}?area=choose", $"{f.Discovery.Candidates.Count} suggestions are waiting; nothing is prepared yet.");
+                ? new("Oppdag scenarioer", $"{PlanRoute}?area=choose&discover=now", "Ingenting er forberedt ennå. Finn scenarioer i applikasjonens kilder, eller skriv et testtilfelle selv.")
+                : new("Velg scenarioer", DiscoverRoute, $"{f.Discovery.Candidates.Count} forslag venter; ingenting er forberedt ennå.");
         if (NeedClarification(f) > 0 && f.Plans.FirstOrDefault(p => p.NeedsClarification > 0) is { } unclear)
-            return new("Resolve cases that need clarification", $"{PlanRoute}?draft={unclear.Id}&area=prepare", $"{NeedClarification(f)} test case(s) wait for an answer before they can be approved.");
+            return new("Avklar testtilfeller", $"{PlanRoute}?draft={unclear.Id}&area=prepare", $"{NeedClarification(f)} testtilfelle(r) venter på svar før de kan godkjennes.");
         if (Approved(f) > 0 && f.Plans.OrderByDescending(p => p.UpdatedAt).FirstOrDefault(p => p.Accepted > 0) is { } ready)
-            return new("Export to Azure DevOps", $"{PlanRoute}?draft={ready.Id}&area=export",
-                $"{Approved(f)} approved case(s) are ready for Azure DevOps Test Plans, where manual tests are executed and results are recorded.");
-        return new("Continue preparation", $"{PlanRoute}?area=prepare", "Review and approve the prepared cases, then export them to Azure DevOps.");
+            return new("Eksporter til Azure DevOps", $"{PlanRoute}?draft={ready.Id}&area=export",
+                $"{Approved(f)} godkjente testtilfelle(r) er klare for Azure DevOps Test Plans, der manuelle tester kjøres og resultatene registreres.");
+        return new("Fortsett forberedelsen", $"{PlanRoute}?area=prepare", "Gå gjennom og godkjenn testtilfellene, og eksporter dem til Azure DevOps.");
     }
 
     /// <summary>Discovery suggestions per source (capability) and per type, for the Discover stage.</summary>

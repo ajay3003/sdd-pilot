@@ -2,169 +2,287 @@
 @using BirkNext.TestPlanning
 @using BirkNext.Web.Services
 @using M = BirkNext.Web.Services.ManualTestingPresentation
+@using S = BirkNext.Web.Services.ScenarioBrowserPresentation
 @implements IDisposable
 @inject IServiceProvider ServiceProvider
+@inject IJSRuntime JS
+@inject NavigationManager Nav
 
-@* Discover & understand: what needs testing in the selected project — its specification's requirements with their test design
-   state (the shared traceability rule), the stored scenario discovery by source and type, existing tests and what needs clarification. Read
-   only: discovery itself runs in Plan & prepare, where scenarios are chosen. Source-derived suggestions are never shown as confirmed tests. *@
-<PageTitle>Discover & understand — Manual Testing</PageTitle>
+@* Oppdag og forstå (2026-11-23): scenarios first. The stored discovery result of the project, browsed as test scenarios (search, filters, a
+   compact list and a detail panel); user stories, requirements and evidence are context of a scenario, not the way in. Selecting scenarios
+   hands them to Plan & prepare (the same per-tab selection that page restores). Read only: nothing is prepared, approved or changed here. *@
+<PageTitle>Oppdag og forstå — Manuell testing</PageTitle>
 
-<div class="mt" data-testid="mtd" aria-busy="@(_loading ? "true" : "false")">
-    <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manual Testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="discover" Title="Discover & understand"
+<div class="mt msb-page" data-testid="mtd" aria-busy="@(_loading ? "true" : "false")">
+    <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manuell testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="discover" Title="Oppdag og forstå"
         ProjectName="@_ws?.ProjectName" Context="@_ws?.SnapshotBasis"
-        Lead="What needs testing? The requirements of the project's specification, scenario suggestions found in its evidence, existing tests and what still needs clarification." />
+        Lead="Hvilke scenarioer må testes? Søk, filtrer og velg scenarioer, og gå videre til å forberede testtilfeller." />
 
     @if (_ws?.ProjectKey is not null)
     {
-        @* Outside the loading branch: reading the requirements again after a change must not remove the lists (and their Discover now). *@
         <BirkNext.Web.Components.SpecificationScopePicker Changed="LoadAsync" />
     }
     @if (_loading)
     {
-        <p class="mt-muted" role="status" data-testid="mtd-loading">Loading what the project's evidence says…</p>
+        <div class="msb-skeleton" role="status" data-testid="mtd-loading"><span>Laster scenarioer …</span></div>
     }
     else if (_ws?.ProjectKey is null)
     {
-        <p class="mt-muted" data-testid="mtd-no-project">No project is selected. <a href="project-import">Import or choose a project</a> first.</p>
+        <p class="msb-empty" data-testid="mtd-no-project">Ingen applikasjon er valgt. <a href="project-import">Importer eller velg en applikasjon</a>.</p>
     }
     else
     {
         @if (_ws.Error is { } error) { <p class="mt-alert" role="alert" data-testid="mtd-error">@error</p> }
-        var designedAll = _trace?.Requirements.ToDictionary(r => r.RequirementId, StringComparer.OrdinalIgnoreCase) ?? [];
-        var reqs = _ws.Requirements ?? [];
-        var withDesign = reqs.Count(r => designedAll.ContainsKey(r.RequirementId));
-        var approvedReqs = reqs.Count(r => designedAll.GetValueOrDefault(r.RequirementId) is { ApprovedCases: > 0 });
-        @* At a glance: the four numbers a tester needs before choosing what to test. *@
-        <dl class="mtd-kpis" data-testid="mtd-kpis" aria-label="What needs testing">
-            <div class="mtd-kpi"><dt>Requirements</dt><dd>@reqs.Count</dd></div>
-            <div class="mtd-kpi @(reqs.Count - withDesign > 0 ? "is-warn" : null)"><dt>Without test design</dt><dd>@(reqs.Count - withDesign)</dd></div>
-            <div class="mtd-kpi @(approvedReqs > 0 ? "is-ok" : null)"><dt>With an approved case</dt><dd>@approvedReqs</dd></div>
-            <div class="mtd-kpi"><dt>Scenario suggestions</dt><dd>@(_ws.Discovery?.Candidates.Count.ToString() ?? "—")</dd></div>
-        </dl>
+        var discovery = _ws.Discovery;
+        var (shown, hidden) = S.Apply(_items, _filter);
+        var pageItems = shown.Take(_limit).ToList();
+        var active = pageItems.FirstOrDefault(i => i.Id == _active) ?? _items.FirstOrDefault(i => i.Id == _active);
+        var clarify = _items.Count(i => i.Status.Key == "clarify");
+        var preparedCases = _items.Sum(i => i.Prepared?.Cases ?? 0);
 
-        <section class="mt-card mtd-suggestions" aria-labelledby="mtd-sug-title" data-testid="mtd-suggestions">
-            <div class="mtd-card-head">
-                <h2 id="mtd-sug-title" class="mt-h">Scenario suggestions</h2>
-                @if (_ws.Discovery is null)
+        @* A. Context: application, source state, what exists — real counts only. *@
+        <section class="msb-context" aria-label="Status" data-testid="mtd-context">
+            <div class="msb-context-source">
+                @if (discovery?.Basis is { } basis)
                 {
-                    <a class="btn btn-primary btn-sm" href="@($"{M.PlanRoute}?area=choose")" data-testid="mtd-discover">Discover scenarios</a>
+                    <span class="msb-dot @(basis.Kind == DiscoveryBasisKind.Historical ? "is-info" : basis.Complete ? "is-ok" : "is-warn")" aria-hidden="true"></span>
+                    <span data-testid="mtd-basis"><strong>@PlanSourcePresentation.BasisTitle(basis)</strong> <span class="mt-muted">@PlanSourcePresentation.BasisSources(basis)</span></span>
                 }
-                else
+                else if (discovery is not null)
                 {
-                    <a class="btn btn-primary btn-sm" href="@($"{M.PlanRoute}?area=choose")" data-testid="mtd-choose">Choose scenarios to prepare</a>
+                    <span class="msb-dot" aria-hidden="true"></span>
+                    <span class="mt-muted" data-testid="mtd-basis">Oppdaget @discovery.DiscoveredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")@(discovery.SnapshotLabel is { } sl ? $" · {sl}" : "")</span>
                 }
             </div>
-            @if (_ws.Discovery is not { } d)
-            {
-                <p class="mt-muted" data-testid="mtd-sug-none">Not discovered yet. Discovery reads only this project's own evidence (specification, source, contracts, journeys, existing tests) and runs only when you ask.</p>
-            }
-            else
-            {
-                var clarify = d.Candidates.Count(c => c.NeedsClarification);
-                <p class="mt-muted" data-testid="mtd-sug-summary">@d.Candidates.Count suggestion@(d.Candidates.Count == 1 ? "" : "s") · discovered @d.DiscoveredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")@(d.SnapshotLabel is { } sl ? $" · {sl}" : "") · candidates, not test cases and not executed tests</p>
-                @if (d.Candidates.Count > 0)
-                {
-                    <ul class="mtd-types" aria-label="Suggestions by type">
-                        @foreach (var (label, count) in M.ByType(d)) { <li data-testid="mtd-type"><span>@label</span> <strong>@count</strong></li> }
-                    </ul>
-                    @if (clarify > 0) { <p data-testid="mtd-clarify"><span class="mt-chip mt-tone-warn">@clarify need clarification</span> <span class="mt-muted">the evidence states no expected result; it is never filled in.</span></p> }
-                    @* The other open points, by kind (same classification as Plan & prepare), counted per scenario. *@
-                    var gaps = new[] { BirkNext.TestPlanning.EvidenceGapKind.ContradictoryEvidence, BirkNext.TestPlanning.EvidenceGapKind.ImplementationEvidenceMissing,
-                           BirkNext.TestPlanning.EvidenceGapKind.TestPrerequisiteMissing, BirkNext.TestPlanning.EvidenceGapKind.VerificationMechanismMissing }
-                           .Select(k => (Kind: k, Count: d.Candidates.Count(c => c.Gaps.Any(g => g.Kind == k)))).Where(x => x.Count > 0).ToList();
-                    @if (gaps.Count > 0)
-                    {
-                        <p class="mt-muted" data-testid="mtd-gaps">Also open: @string.Join(" · ", gaps.Select(x => $"{x.Count} {BirkNext.TestPlanning.EvidenceGaps.Label(x.Kind).ToLowerInvariant()}"))</p>
-                    }
-                }
-            }
+            <dl class="msb-counts" data-testid="mtd-kpis">
+                <div><dt>Forslag</dt><dd data-testid="mtd-count-suggestions">@_items.Count</dd></div>
+                <div><dt>Valgt</dt><dd data-testid="mtd-count-selected">@_selected.Count</dd></div>
+                <div><dt>Testtilfeller</dt><dd data-testid="mtd-count-prepared">@preparedCases</dd></div>
+                <div class="@(clarify > 0 ? "is-warn" : null)"><dt>Trenger avklaring</dt><dd data-testid="mtd-count-clarify">@clarify</dd></div>
+            </dl>
+            <a class="btn btn-secondary btn-sm" href="@($"{M.PlanRoute}?area=choose&discover=now")" data-testid="mtd-discover">@(discovery is null ? "Oppdag scenarioer" : "Oppdag på nytt")</a>
         </section>
 
-        <section class="mt-card" aria-labelledby="mtd-req-title" data-testid="mtd-requirements">
-            <div class="mtd-card-head">
-                <h2 id="mtd-req-title" class="mt-h">Requirements</h2>
-                @if (reqs.Count > 0)
+        @if (discovery is null)
+        {
+            <p class="msb-empty" data-testid="mtd-sug-none">Ingen scenarioer er oppdaget ennå. Oppdagelsen leser bare denne applikasjonens egne kilder (spesifikasjon, kildekode, kontrakter, flyter og tester), og kjører bare når du ber om det.
+                <a href="@($"{M.PlanRoute}?area=choose&discover=now")">Oppdag scenarioer</a></p>
+        }
+        else
+        {
+            @* B. Search and filters (sticky). *@
+            <div class="msb-toolbar" role="search" data-testid="mtd-toolbar">
+                <input type="search" class="msb-search" placeholder="Søk i scenarioer, krav og områder" aria-label="Søk i scenarioer" value="@_filter.Query"
+                       @oninput="e => Set(_filter with { Query = e.Value?.ToString() ?? string.Empty })" data-testid="mtd-search" />
+                <select class="msb-select" aria-label="Område" @onchange="e => Set(_filter with { Area = Opt(e) })" data-testid="mtd-filter-area">
+                    <option value="">Alle områder</option>
+                    @foreach (var a in _items.Select(i => i.Area).Distinct().Order()) { <option value="@a" selected="@(_filter.Area == a)">@a</option> }
+                </select>
+                <select class="msb-select" aria-label="Status" @onchange="e => Set(_filter with { Status = Opt(e) })" data-testid="mtd-filter-status">
+                    <option value="">Alle statuser</option>
+                    @foreach (var (key, label) in S.Statuses) { <option value="@key" selected="@(_filter.Status == key)">@label</option> }
+                </select>
+                <select class="msb-select" aria-label="Type" @onchange="e => Set(_filter with { Type = Opt(e) })" data-testid="mtd-filter-type">
+                    <option value="">Alle typer</option>
+                    @foreach (var t in _items.Select(i => i.TypeLabel).Distinct().Order()) { <option value="@t" selected="@(_filter.Type == t)">@t</option> }
+                </select>
+                @if (_stories.Count > 0)
                 {
-                    <p class="mt-muted mtd-head-note" data-testid="mtd-req-summary">@reqs.Count requirement@(reqs.Count == 1 ? "" : "s") · @withDesign with test design</p>
+                    <select class="msb-select" aria-label="Brukerhistorie" @onchange="e => Set(_filter with { Story = Opt(e) })" data-testid="mtd-filter-story">
+                        <option value="">Alle brukerhistorier</option>
+                        @foreach (var st in _stories) { <option value="@st.Key" selected="@(_filter.Story == st.Key)">@(st.StoryId ?? $"Historie {st.Ordinal}") — @st.Title</option> }
+                    </select>
+                }
+                @if (_requirementIds.Count > 0)
+                {
+                    <select class="msb-select" aria-label="Krav" @onchange="e => Set(_filter with { Requirement = Opt(e) })" data-testid="mtd-filter-requirement">
+                        <option value="">Alle krav</option>
+                        @foreach (var r in _requirementIds) { <option value="@r" selected="@(_filter.Requirement == r)">@r</option> }
+                    </select>
+                }
+                <label class="msb-toggle" data-testid="mtd-show-technical"><input type="checkbox" checked="@(_filter.Technical || _filter.All)" @onchange="e => Set(_filter with { Technical = e.Value is true, All = false })" />
+                    Vis tekniske scenarioer</label>
+                <span class="msb-visible mt-muted" data-testid="mtd-visible" aria-live="polite">Viser @shown.Count av @_items.Count@(hidden > 0 ? $" · {hidden} tekniske skjult" : "")</span>
+                @if (hidden > 0 || _filter != new S.Filter())
+                {
+                    <button type="button" class="msb-link" @onclick="() => Set(new S.Filter(All: true))" data-testid="mtd-show-all">Vis alle</button>
                 }
             </div>
-            @if (_ws.Requirements is not { Count: > 0 } && RequirementLinkPresentation.SpecificationChoiceNeeded(_ws.Specification) is { } choose)
-            {
-                <p class="mt-muted" data-testid="mtd-req-none" data-reason="choose-specification">@choose Use the lists above, or <a href="specification-explorer" data-testid="mtd-choose-specification">open the Specification Explorer</a>.</p>
-            }
-            else if (_ws.Requirements is null)
-            {
-                <p class="mt-muted" data-testid="mtd-req-none">@(RequirementLinkPresentation.EmptyReason(_ws.Evidence, null))</p>
-                <a href="specification-explorer">Open the Specification Explorer</a>
-            }
-            else if (_ws.Requirements.Count == 0)
-            {
-                <p class="mt-muted" data-testid="mtd-req-none">@(RequirementLinkPresentation.EmptyReason(_ws.Evidence, _ws.Requirements))</p>
-                <a href="specification-explorer">Open the Specification Explorer</a>
-            }
-            else
-            {
-                @if (_traceError is not null) { <p class="mt-muted" data-testid="mtd-trace-error">Test design state could not be read: @_traceError</p> }
-                var shown = M.FilterRequirements(_ws.Requirements, designedAll, _reqFilter, _reqQuery);
-                <div class="mtd-toolbar" role="search">
-                    <input type="search" class="mtd-search" placeholder="Search requirements (id or text)" aria-label="Search requirements" value="@_reqQuery"
-                           @oninput="e => { _reqQuery = e.Value?.ToString() ?? string.Empty; _reqLimit = 25; }" data-testid="mtd-req-search" />
-                    <div class="mtd-filters" role="group" aria-label="Show requirements">
-                        @foreach (var (key, label) in M.RequirementFilters)
+
+            <div class="msb-layout">
+                @* C. The scenario collection: compact rows, paged, keyboard-navigable, multi-select. *@
+                <section class="msb-list" aria-label="Scenarioer" data-testid="mtd-scenarios">
+                    @if (shown.Count == 0)
+                    {
+                        <p class="msb-empty" data-testid="mtd-empty">Ingen scenarioer passer filteret. <button type="button" class="msb-link" @onclick="() => Set(new S.Filter())">Nullstill filter</button></p>
+                    }
+                    else
+                    {
+                        <div class="msb-list-head">
+                            <button type="button" class="msb-link" @onclick="() => SelectAll(pageItems)" data-testid="mtd-select-visible">Velg synlige (@pageItems.Count)</button>
+                            @if (_selected.Count > 0) { <button type="button" class="msb-link" @onclick="ClearSelection" data-testid="mtd-clear-selection">Fjern valg</button> }
+                        </div>
+                        <ul class="msb-rows" role="listbox" aria-multiselectable="true" aria-label="Scenarioer" tabindex="0" @onkeydown="e => KeyAsync(e, pageItems)"
+                            aria-activedescendant="@(active is null ? null : $"msb-row-{active.Id}")" data-testid="mtd-rows">
+                            @foreach (var i in pageItems)
+                            {
+                                var selected = _selected.Contains(i.Id);
+                                <li id="@($"msb-row-{i.Id}")" role="option" aria-selected="@(selected ? "true" : "false")" class="msb-row @(i.Id == _active ? "is-active" : null) @(selected ? "is-selected" : null)"
+                                    data-testid="mtd-scenario" data-id="@i.Id" data-relevance="@i.Relevance" @onclick="() => _active = i.Id">
+                                    <input type="checkbox" class="msb-check" checked="@selected" aria-label="@($"Velg {i.Title}")" @onclick:stopPropagation="true"
+                                           @onchange="() => ToggleAsync(i.Id)" data-testid="mtd-select" />
+                                    <span class="msb-row-main">
+                                        <span class="msb-row-title" data-testid="mtd-scenario-title">@i.Title</span>
+                                        <span class="msb-row-meta">@i.Area@(i.Candidate.Story?.Priority is { } pri ? $" · {pri}" : "")@(i.Relevance == S.Relevance.Technical ? " · teknisk" : "")</span>
+                                    </span>
+                                    @if (i.Prepared is { Cases: > 0 } prep) { <span class="msb-count" title="Testtilfeller i lagrede planer">@prep.Cases</span> }
+                                    <span class="msb-status msb-tone-@i.Status.Tone" data-testid="mtd-scenario-status">@i.Status.Text</span>
+                                </li>
+                            }
+                        </ul>
+                        @if (shown.Count > _limit)
                         {
-                            var count = M.FilterRequirements(_ws.Requirements, designedAll, key, string.Empty).Count;
-                            <button type="button" class="mtd-filter" aria-pressed="@(_reqFilter == key ? "true" : "false")" @onclick="() => { _reqFilter = key; _reqLimit = 25; }"
-                                    data-testid="mtd-req-filter" data-filter="@key">@label <span class="mtd-filter-count">@count</span></button>
+                            <button type="button" class="btn btn-secondary btn-sm msb-more" @onclick="() => _limit += S.PageSize" data-testid="mtd-more">Vis flere (@(shown.Count - _limit) igjen)</button>
                         }
-                    </div>
+                    }
+                </section>
+
+                @* D. Scenario detail: what to test, with stories, requirements and evidence as context. *@
+                <aside class="msb-detail" aria-label="Scenariodetaljer" data-testid="mtd-detail">
+                    @if (active is null)
+                    {
+                        <p class="mt-muted">Velg et scenario for å se hva som skal testes.</p>
+                    }
+                    else
+                    {
+                        var c = active.Candidate;
+                        <div class="msb-detail-head">
+                            <h2 class="msb-detail-title" data-testid="mtd-detail-title">@active.Title</h2>
+                            <span class="msb-status msb-tone-@active.Status.Tone">@active.Status.Text</span>
+                        </div>
+                        @if (!string.Equals(active.Title, c.Title, StringComparison.Ordinal)) { <p class="msb-original" data-testid="mtd-detail-original">Opprinnelig tittel: @c.Title</p> }
+                        <p class="msb-chips"><span>@active.TypeLabel</span><span>@active.Area</span>@if (active.Relevance == S.Relevance.Technical) { <span>Teknisk</span> }</p>
+                        @if (!string.IsNullOrWhiteSpace(c.Purpose)) { <p data-testid="mtd-detail-purpose">@c.Purpose</p> }
+                        @if (c.Conflicts.Count > 0)
+                        {
+                            <div class="msb-callout is-bad" data-testid="mtd-detail-conflict">
+                                <strong>Trenger avklaring:</strong> @c.Conflicts[0].Explanation
+                                <ul>@foreach (var claim in c.Conflicts.SelectMany(k => k.Claims).DistinctBy(x => x.CandidateId)) { <li>@claim.SourceCategory: «@claim.Expected»</li> }</ul>
+                            </div>
+                        }
+                        <dl class="msb-facts">
+                            @if (c.Preconditions.Count > 0) { <dt>Forutsetninger</dt><dd data-testid="mtd-detail-preconditions">@string.Join("; ", c.Preconditions)</dd> }
+                            @if (c.Steps.Count > 0)
+                            {
+                                <dt>Steg</dt>
+                                <dd><ol class="msb-steps">@foreach (var step in c.Steps) { <li>@step.Action@if (step.Expected is { } ex) { <span class="msb-step-expected">→ @ex</span> }</li> }</ol></dd>
+                            }
+                            <dt>Forventet resultat</dt>
+                            <dd data-testid="mtd-detail-expected">@(c.ExpectedBehaviour ?? "Ikke oppgitt") <span class="msb-basis">@S.ExpectedBasis(c)</span></dd>
+                            @if (c.TestDataNeeds.Count > 0) { <dt>Testdata</dt><dd>@string.Join("; ", c.TestDataNeeds)</dd> }
+                            <dt>Eksisterende dekning</dt>
+                            <dd data-testid="mtd-detail-coverage">@(active.Prepared is { } p ? $"{p.Cases} testtilfelle{(p.Cases == 1 ? "" : "r")} i lagrede planer, {p.Approved} godkjent" : "Ingen testtilfeller ennå")@if (c.ExistingTests.Count > 0) { <span class="msb-basis">@c.ExistingTests.Count automatisk(e) test(er) refererer kravet — det betyr at testen finnes, ikke at den er bestått.</span> }</dd>
+                            @if (c.Story is { } story) { <dt>Brukerhistorie</dt><dd data-testid="mtd-detail-story">@(story.StoryId ?? $"Historie {story.Ordinal}") — @story.Title</dd> }
+                            @if (c.RequirementIds.Count > 0)
+                            {
+                                <dt>Krav</dt>
+                                <dd data-testid="mtd-detail-requirements">
+                                    @foreach (var r in c.RequirementIds)
+                                    {
+                                        <button type="button" class="msb-req" @onclick="() => Set(_filter with { Requirement = r })" title="Vis alle scenarioer for @r">@r</button>
+                                    }
+                                    <span class="msb-basis">Eksplisitt nevnt i kilden.</span>
+                                </dd>
+                            }
+                            else { <dt>Krav</dt><dd class="mt-muted" data-testid="mtd-detail-requirements">Ingen krav er nevnt i kilden (ikke koblet).</dd> }
+                        </dl>
+                        var open = c.OpenQuestions.Concat(c.Gaps.Where(g => g.Kind != EvidenceGapKind.ContradictoryEvidence).Select(g => g.Question)).Distinct().ToList();
+                        @if (open.Count > 0)
+                        {
+                            <div class="msb-callout is-warn" data-testid="mtd-detail-questions"><strong>Åpne spørsmål</strong><ul>@foreach (var q in open.Take(5)) { <li>@q</li> }</ul></div>
+                        }
+                        @if (c.Relations.Count > 0)
+                        {
+                            <p class="msb-basis" data-testid="mtd-detail-relations">@c.Relations.Count beslektede scenarioer fra andre kilder (@string.Join(", ", c.Relations.Select(r => RelationLabel(r.Relation)).Distinct())).</p>
+                        }
+                        <details class="msb-evidence" data-testid="mtd-detail-evidence">
+                            <summary>Hvorfor foreslått, og kildebevis</summary>
+                            <p>@S.Why(active)</p>
+                            <ul>
+                                @foreach (var e in c.Evidence.Where(e => e.Kind != "derived-from"))
+                                {
+                                    <li><span class="msb-ev-kind">@EvidenceKind(e.Kind)</span> <code>@e.Reference</code>@if (e.Detail is { } detail) { <span class="mt-muted"> — @detail</span> }</li>
+                                }
+                            </ul>
+                            <p class="mt-muted msb-small">Kilde: @c.SourceCategory · @c.Engine@(string.IsNullOrEmpty(c.SnapshotKey) ? "" : $" · kildeversjon {c.SnapshotKey[..Math.Min(8, c.SnapshotKey.Length)]}") · @ScenarioCandidateTypes.ConfidenceLabel(c.Confidence)</p>
+                        </details>
+                        <div class="msb-detail-actions">
+                            <button type="button" class="btn btn-secondary btn-sm" @onclick="() => ToggleAsync(c.CandidateId)" data-testid="mtd-detail-select">@(_selected.Contains(c.CandidateId) ? "Fjern fra valget" : "Velg")</button>
+                            <button type="button" class="btn btn-primary btn-sm" @onclick="() => PrepareOnlyAsync(c.CandidateId)" data-testid="mtd-detail-prepare">Forbered testtilfeller</button>
+                        </div>
+                    }
+                </aside>
+            </div>
+
+            @* E. Continue to Plan & prepare with the selection (sticky). *@
+            @if (_selected.Count > 0)
+            {
+                <div class="msb-selection" role="region" aria-label="Valgte scenarioer" data-testid="mtd-selection">
+                    <strong>@_selected.Count valgt</strong>
+                    <span class="mt-muted">Ingenting er forberedt eller godkjent ennå.</span>
+                    <button type="button" class="msb-link" @onclick="ClearSelection">Fjern valg</button>
+                    <button type="button" class="btn btn-primary btn-sm" @onclick="PrepareAsync" data-testid="mtd-prepare">Forbered testtilfeller →</button>
                 </div>
-                @if (shown.Count == 0)
-                {
-                    <p class="mt-muted" data-testid="mtd-req-empty">No requirement matches. <button type="button" class="mtd-link" @onclick="() => { _reqFilter = M.AllRequirements; _reqQuery = string.Empty; }">Show all</button></p>
-                }
-                <ul class="mtd-req-list">
-                    @foreach (var r in shown.Take(_reqLimit))
+            }
+        }
+
+        @* Supporting context: requirements and the evidence overview (collapsed). *@
+        <details class="msb-context-block" data-testid="mtd-requirements" open="@_reqOpen">
+            @{ var designedAll = _trace?.Requirements.ToDictionary(r => r.RequirementId, StringComparer.OrdinalIgnoreCase) ?? []; var reqs = _ws.Requirements ?? []; }
+            <summary @onclick="() => _reqOpen = !_reqOpen" @onclick:preventDefault="true" data-testid="mtd-req-toggle"><span class="msb-h">Krav</span> <span class="mt-muted" data-testid="mtd-req-summary">@reqs.Count krav · @reqs.Count(r => designedAll.ContainsKey(r.RequirementId)) med testdesign</span></summary>
+            @if (_ws.Requirements is not { Count: > 0 })
+            {
+                <p class="mt-muted" data-testid="mtd-req-none">@(RequirementLinkPresentation.SpecificationChoiceNeeded(_ws.Specification) ?? RequirementLinkPresentation.EmptyReason(_ws.Evidence, _ws.Requirements)) <a href="specification-explorer">Åpne Specification Explorer</a></p>
+            }
+            else if (_reqOpen)
+            {
+                var shownReqs = M.FilterRequirements(_ws.Requirements, designedAll, _reqFilter, _reqQuery);
+                <div class="msb-toolbar msb-toolbar-inline">
+                    <input type="search" class="msb-search" placeholder="Søk i krav (id eller tekst)" aria-label="Søk i krav" value="@_reqQuery" @oninput="e => { _reqQuery = e.Value?.ToString() ?? string.Empty; _reqLimit = 25; }" data-testid="mtd-req-search" />
+                    @foreach (var (key, label) in ReqFilters)
+                    {
+                        <button type="button" class="msb-pill" aria-pressed="@(_reqFilter == key ? "true" : "false")" @onclick="() => { _reqFilter = key; _reqLimit = 25; }" data-testid="mtd-req-filter" data-filter="@key">@label</button>
+                    }
+                </div>
+                <ul class="msb-reqs">
+                    @foreach (var r in shownReqs.Take(_reqLimit))
                     {
                         var row = designedAll.GetValueOrDefault(r.RequirementId);
-                        var open = _expanded.Contains(r.RequirementId);
-                        <li class="mtd-req" data-testid="mtd-requirement" data-requirement="@r.RequirementId" data-design="@(row is null ? "none" : row.ApprovedCases > 0 ? "approved" : "prepared")">
-                            <span class="mtd-req-id">@r.RequirementId</span>
-                            <div class="mtd-req-body">
-                                <p class="mtd-req-text @(open ? "is-open" : null)">@r.Title</p>
-                                @if ((r.Title?.Length ?? 0) > 220)
-                                {
-                                    <button type="button" class="mtd-link" aria-expanded="@(open ? "true" : "false")" @onclick="() => Toggle(r.RequirementId)">@(open ? "Show less" : "Show more")</button>
-                                }
-                            </div>
-                            <span class="mt-chip mtd-req-state @(row is null ? "mt-tone-warn" : row.ApprovedCases > 0 ? "mt-tone-ok" : "mt-tone-info")">@(row is null ? "No test design yet" : row.State)</span>
+                        var linked = _items.Count(i => i.Candidate.RequirementIds.Contains(r.RequirementId, StringComparer.OrdinalIgnoreCase));
+                        <li data-testid="mtd-requirement" data-requirement="@r.RequirementId">
+                            <button type="button" class="msb-req" @onclick="() => Set(new S.Filter(Requirement: r.RequirementId, All: true))" title="Vis scenarioer for kravet">@r.RequirementId</button>
+                            <span class="msb-req-text">@r.Title</span>
+                            <span class="mt-muted msb-small">@linked scenario@(linked == 1 ? "" : "er") · @(row is null ? "ingen testdesign" : row.ApprovedCases > 0 ? "godkjent testtilfelle" : "forberedt")</span>
                         </li>
                     }
                 </ul>
-                @if (shown.Count > _reqLimit)
-                {
-                    <button type="button" class="btn btn-secondary btn-sm mtd-more" @onclick="() => _reqLimit += 25" data-testid="mtd-req-more">Show more (@(shown.Count - _reqLimit) left)</button>
-                }
-                <p class="mt-muted mtd-foot"><a href="test-coverage-review">Test Coverage</a> and <a href="artifact-traceability">Requirements Traceability</a> show the same links in detail.</p>
+                @if (shownReqs.Count > _reqLimit) { <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _reqLimit += 25" data-testid="mtd-req-more">Vis flere (@(shownReqs.Count - _reqLimit))</button> }
+                <p class="mt-muted msb-small"><a href="test-coverage-review">Test Coverage</a> og <a href="artifact-traceability">Requirements Traceability</a> viser alle koblinger.</p>
             }
-        </section>
-
+        </details>
         @if (_ws.Discovery is { } disc)
         {
-            <details class="mt-card mtd-sources" data-testid="mtd-sources">
-                <summary><h2 class="mt-h" id="mtd-src-title">What the evidence contains</h2>
-                    <span class="mt-muted">@disc.Capabilities.Count(c => c.State == DiscoveryCapabilityState.Available) of @disc.Capabilities.Count sources found something</span></summary>
-                <ul class="mtd-source-grid">
+            <details class="msb-context-block" data-testid="mtd-sources">
+                <summary><span class="msb-h">Kildegrunnlag</span>
+                    <span class="mt-muted">@disc.Capabilities.Count(c => c.State == DiscoveryCapabilityState.Available) av @disc.Capabilities.Count kilder fant noe@(disc.Candidates.Count(c => c.Conflicts.Count > 0) is var conflicts and > 0 ? $" · {conflicts} med kildekonflikt" : "")@(disc.Basis is { Complete: false } ? " · kilde mangler" : "")</span></summary>
+                <ul class="msb-sources">
                     @foreach (var c in disc.Capabilities)
                     {
-                        <li data-testid="mtd-capability" data-capability="@c.Id" data-state="@c.State">
-                            <div class="mtd-source-head"><strong>@c.Label</strong>
-                                <span class="mt-chip @(c.State == DiscoveryCapabilityState.Available ? "mt-tone-ok" : c.State == DiscoveryCapabilityState.Failed ? "mt-tone-bad" : "mt-tone-muted")">@StateLabel(c.State)</span></div>
-                            <span class="mt-muted">@c.Detail</span>
-                            @if (c.Id == "system-guide" && c.State == DiscoveryCapabilityState.Available) { <a href="system-understanding">Business rules in System Understanding</a> }
-                        </li>
+                        <li data-testid="mtd-capability" data-capability="@c.Id" data-state="@c.State"><strong>@c.Label</strong> <span class="msb-status msb-tone-@(c.State == DiscoveryCapabilityState.Available ? "ok" : c.State == DiscoveryCapabilityState.Failed ? "bad" : "muted")">@StateLabel(c.State)</span>
+                            <span class="mt-muted msb-small">@c.Detail</span></li>
                     }
                 </ul>
+                @foreach (var l in disc.Limitations.Take(6)) { <p class="mt-muted msb-small">@l</p> }
             </details>
         }
     }
@@ -174,14 +292,21 @@
     private bool _loading = true;
     private ManualTestingWorkspace.Snapshot? _ws;
     private PreparedCaseTraceView? _trace;
-    private string? _traceError;
+    private List<S.Item> _items = [];
+    private List<BirkNext.TestCoverage.CoverageUserStory> _stories = [];
+    private List<string> _requirementIds = [];
+    private S.Filter _filter = new();
+    private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
+    private string? _active;
+    private int _limit = S.PageSize;
+    private bool _reqOpen;
     private int _reqLimit = 25;
     private string _reqFilter = M.AllRequirements;
     private string _reqQuery = string.Empty;
-    private readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
-
-    private void Toggle(string id) { if (!_expanded.Remove(id)) _expanded.Add(id); }
     private ICurrentWorkspaceProjection? _projection;
+
+    private static readonly (string Key, string Label)[] ReqFilters =
+        [(M.AllRequirements, "Alle"), (M.WithoutDesign, "Uten testdesign"), (M.PreparedOnly, "Forberedt"), (M.WithApproved, "Godkjent")];
 
     protected override async Task OnInitializedAsync()
     {
@@ -196,25 +321,97 @@
         try
         {
             _ws = await new ManualTestingWorkspace(ServiceProvider).LoadAsync();
-            _trace = null; _traceError = null;
-            if (_ws.ProjectKey is { } key && _ws.Requirements is { Count: > 0 } requirements
-                && ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is ITestPlanSuggestionsApiService api)
+            _trace = null;
+            var api = ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService;
+            // Saved test cases per scenario: the project's most recent plans, read as stored (never changed here).
+            var plans = new List<TestPlanDraft>();
+            if (api is not null && _ws.Plans is { } ws)
+                foreach (var summary in ws.Drafts.Take(5))
+                    if ((await api.DraftAsync(summary.Id)).Draft is { } draft) plans.Add(draft);
+            var candidates = _ws.Discovery?.Candidates ?? [];
+            _items = S.Items(candidates, S.PreparedCases(candidates, plans));
+            _stories = [.. candidates.Select(c => c.Story).OfType<BirkNext.TestCoverage.CoverageUserStory>().DistinctBy(s => s.Key).OrderBy(s => s.Ordinal)];
+            _requirementIds = [.. candidates.SelectMany(c => c.RequirementIds).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)];
+            _active ??= S.Apply(_items, _filter).Shown.FirstOrDefault()?.Id;
+            if (_ws.ProjectKey is { } key)
             {
-                // The shared traceability rule (the same one Test Coverage and Requirements Traceability use), for the same specification.
-                (_trace, _traceError) = await api.PreparedCaseTraceAsync(key, new PreparedCaseTraceRequest([.. requirements.Select(r => r.SpecificationPath).Distinct()],
-                    [.. requirements.Select(r => r.RequirementId)], requirements.GroupBy(r => r.RequirementId, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Title, StringComparer.OrdinalIgnoreCase)));
+                // The selection this tab already holds (also the one Plan & prepare restores): kept only for scenarios that still exist.
+                var kept = await TabDraftStore.ReadAsync<string[]>(JS, TabDraftStore.SelectionKey(key)) ?? [];
+                foreach (var id in kept.Where(id => _items.Any(i => i.Id == id))) _selected.Add(id);
+                if (_ws.Requirements is { Count: > 0 } requirements && api is not null)
+                    (_trace, _) = await api.PreparedCaseTraceAsync(key, new PreparedCaseTraceRequest([.. requirements.Select(r => r.SpecificationPath).Distinct()],
+                        [.. requirements.Select(r => r.RequirementId)], requirements.GroupBy(r => r.RequirementId, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().Title, StringComparer.OrdinalIgnoreCase)));
             }
         }
         finally { _loading = false; }
     }
 
-    private static string StateLabel(DiscoveryCapabilityState state) => state switch
+    private static string? Opt(ChangeEventArgs e) => e.Value?.ToString() is { Length: > 0 } v ? v : null;
+
+    /// <summary>Filters change what is shown, never the selection (it persists across filters).</summary>
+    private void Set(S.Filter filter)
     {
-        DiscoveryCapabilityState.Available => "Found", DiscoveryCapabilityState.NoEvidence => "No evidence", DiscoveryCapabilityState.NotApplicable => "Not applicable",
-        DiscoveryCapabilityState.Failed => "Could not read", _ => state.ToString(),
+        _filter = filter;
+        _limit = S.PageSize;
+        var shown = S.Apply(_items, _filter).Shown;
+        if (shown.All(i => i.Id != _active)) _active = shown.FirstOrDefault()?.Id;
+    }
+
+    private async Task ToggleAsync(string id)
+    {
+        if (!_selected.Remove(id)) _selected.Add(id);
+        await KeepAsync();
+    }
+
+    private async Task SelectAll(IEnumerable<S.Item> items) { foreach (var i in items) _selected.Add(i.Id); await KeepAsync(); }
+
+    private async Task ClearSelection() { _selected.Clear(); await KeepAsync(); }
+
+    private async Task KeepAsync()
+    {
+        if (_ws?.ProjectKey is not { } key) return;
+        if (_selected.Count == 0) await TabDraftStore.RemoveAsync(JS, TabDraftStore.SelectionKey(key));
+        else await TabDraftStore.WriteAsync(JS, TabDraftStore.SelectionKey(key), _selected.Order(StringComparer.Ordinal).ToArray());
+    }
+
+    private async Task PrepareAsync() { await KeepAsync(); Nav.NavigateTo($"{M.PlanRoute}?area=choose"); }
+
+    private async Task PrepareOnlyAsync(string id) { _selected.Add(id); await PrepareAsync(); }
+
+    /// <summary>↑/↓ move, Space selects, Home/End jump — the list keeps one active scenario whose details are shown.</summary>
+    private async Task KeyAsync(KeyboardEventArgs e, List<S.Item> page)
+    {
+        if (page.Count == 0) return;
+        var index = Math.Max(0, page.FindIndex(i => i.Id == _active));
+        switch (e.Key)
+        {
+            case "ArrowDown": _active = page[Math.Min(page.Count - 1, index + 1)].Id; break;
+            case "ArrowUp": _active = page[Math.Max(0, index - 1)].Id; break;
+            case "Home": _active = page[0].Id; break;
+            case "End": _active = page[^1].Id; break;
+            case " ": if (_active is { } a) await ToggleAsync(a); break;
+        }
+    }
+
+    private static string RelationLabel(ScenarioRelation relation) => relation switch
+    {
+        ScenarioRelation.Equivalent => "tilsvarende", ScenarioRelation.Conflicting => "motstridende", ScenarioRelation.Variant => "variant", ScenarioRelation.Related => "samme krav", _ => "duplikat",
     };
 
-    private void OnProjectChanged() => _ = InvokeAsync(async () => { _ws = null; _trace = null; await LoadAsync(); StateHasChanged(); });
+    private static string EvidenceKind(string kind) => kind switch
+    {
+        "specification" => "Spesifikasjon", "requirement" => "Krav", "story" => "Brukerhistorie", "guide-scenario" or "guide-step" => "Systemforståelse",
+        "source-file" => "Kildefil", "contract-operation" => "API-kontrakt", "journey" => "Integrasjonsflyt", "journey-run" => "Kjøring", "developer-test" => "Utviklertest",
+        "source-evidence" => "Kildebevis", _ => kind,
+    };
+
+    private static string StateLabel(DiscoveryCapabilityState state) => state switch
+    {
+        DiscoveryCapabilityState.Available => "Funnet", DiscoveryCapabilityState.NoEvidence => "Ingen bevis", DiscoveryCapabilityState.NotApplicable => "Ikke aktuelt",
+        DiscoveryCapabilityState.Failed => "Kunne ikke leses", _ => state.ToString(),
+    };
+
+    private void OnProjectChanged() => _ = InvokeAsync(async () => { _ws = null; _trace = null; _items = []; _selected.Clear(); _active = null; await LoadAsync(); StateHasChanged(); });
 
     public void Dispose() { if (_projection is not null) _projection.Changed -= OnProjectChanged; }
 }

@@ -73,15 +73,16 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         M.Facts F(List<TestPlanDraftSummary>? plans = null, ScenarioDiscoveryResult? d = null, string? project = "library") => new(project, "Library", plans ?? [], d, 3);
 
         M.Next(F(project: null)).Href.Should().Be("project-import");
-        M.Next(F(project: null)).Label.Should().Be("Choose a project", "projects exist: one has to be chosen");
-        M.Next(new M.Facts(null, null, [], null, null, AnyProjectImported: false)).Label.Should().Be("Import a project", "nothing to choose from: import first");
+        M.Next(F(project: null)).Label.Should().Be("Velg applikasjon", "projects exist: one has to be chosen");
+        M.Next(new M.Facts(null, null, [], null, null, AnyProjectImported: false)).Label.Should().Be("Importer en applikasjon", "nothing to choose from: import first");
         M.Steps(new M.Facts(null, null, [], null, null, AnyProjectImported: false)).Should().OnlyContain(s => s.DisabledReason == "Import a project first.");
-        M.Next(F()).Should().Match<M.NextAction>(n => n.Label == "Discover what to test" && n.Href == "test-plan-suggestions?area=choose");
-        M.Next(F(d: Discovery(4))).Label.Should().Be("Choose scenarios to prepare");
-        M.Next(F([Summary(clarify: 1)], Discovery(4))).Should().Match<M.NextAction>(n => n.Label == "Resolve cases that need clarification" && n.Href.Contains($"draft={PlanId}"));
-        M.Next(F([Summary()], Discovery(4))).Should().Match<M.NextAction>(n => n.Label == "Export to Azure DevOps" && n.Href == $"test-plan-suggestions?draft={PlanId}&area=export"
-            && n.Why.Contains("Azure DevOps Test Plans, where manual tests are executed"));
-        M.Next(F([Summary(accepted: 0)], Discovery(4))).Label.Should().Be("Continue preparation", "nothing approved: nothing to export yet");
+        M.Next(F()).Should().Match<M.NextAction>(n => n.Label == "Oppdag scenarioer" && n.Href == "test-plan-suggestions?area=choose&discover=now");
+        M.Next(F(d: Discovery(4))).Should().Match<M.NextAction>(n => n.Label == "Velg scenarioer" && n.Href == "manual-testing/discover",
+            "scenarios are chosen where they are browsed (scenario-first)");
+        M.Next(F([Summary(clarify: 1)], Discovery(4))).Should().Match<M.NextAction>(n => n.Label == "Avklar testtilfeller" && n.Href.Contains($"draft={PlanId}"));
+        M.Next(F([Summary()], Discovery(4))).Should().Match<M.NextAction>(n => n.Label == "Eksporter til Azure DevOps" && n.Href == $"test-plan-suggestions?draft={PlanId}&area=export"
+            && n.Why.Contains("Azure DevOps Test Plans, der manuelle tester kjøres"));
+        M.Next(F([Summary(accepted: 0)], Discovery(4))).Label.Should().Be("Fortsett forberedelsen", "nothing approved: nothing to export yet");
     }
 
     [Fact]
@@ -90,9 +91,9 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         const string choose = "This project contains 39 specifications in 14 modules and none is chosen yet.";
         M.Facts F(List<TestPlanDraftSummary>? plans = null, ScenarioDiscoveryResult? d = null) => new("m2lb", "M2LB", plans ?? [], d, null, choose);
 
-        M.Next(F()).Should().Match<M.NextAction>(n => n.Label == "Choose the specification" && n.Href == "manual-testing/discover" && n.Why == choose);
-        M.Next(F(d: Discovery(4))).Label.Should().Be("Choose the specification", "discovery without a specification finds no business scenarios");
-        M.Next(F([Summary()], Discovery(4))).Label.Should().Be("Export to Azure DevOps", "prepared work is never held back by the choice");
+        M.Next(F()).Should().Match<M.NextAction>(n => n.Label == "Velg spesifikasjon" && n.Href == "manual-testing/discover" && n.Why == choose);
+        M.Next(F(d: Discovery(4))).Label.Should().Be("Velg spesifikasjon", "discovery without a specification finds no business scenarios");
+        M.Next(F([Summary()], Discovery(4))).Label.Should().Be("Eksporter til Azure DevOps", "prepared work is never held back by the choice");
         M.Steps(F())[0].Evidence.Should().Contain("Specification not chosen yet");
     }
 
@@ -126,12 +127,15 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         cut.Find("[data-testid=twh-project]").TextContent.Should().Contain("Library");
         cut.Find("[data-testid=twh-stage][data-stage=home]").GetAttribute("aria-current").Should().Be("page");
         cut.FindAll("[data-testid=twh-stage]").Select(a => a.GetAttribute("href")).Should().Equal("manual-testing", "manual-testing/discover", "test-plan-suggestions");
-        cut.Find("[data-testid=mt-next-action]").Should().Match<AngleSharp.Dom.IElement>(a => a.TextContent == "Export to Azure DevOps"
+        cut.Find("[data-testid=mt-next-action]").Should().Match<AngleSharp.Dom.IElement>(a => a.TextContent == "Eksporter til Azure DevOps"
             && a.GetAttribute("href") == $"test-plan-suggestions?draft={PlanId}&area=export");
-        cut.FindAll("[data-testid=mt-stage]").Select(s => s.GetAttribute("data-step")).Should().Equal("discover", "plan");
-        cut.Find("[data-testid=mt-plan]").TextContent.Should().Contain("Library – test plan").And.Contain("2 cases").And.Contain("1 approved");
+        cut.FindAll("[data-testid=mt-stage]").Should().BeEmpty("the stages are navigated once, in the header (no duplicate workflow navigation)");
+        cut.FindAll("[data-testid=twh-stage]").Should().HaveCount(3);
+        cut.Find("[data-testid=mt-plan]").TextContent.Should().Contain("Library – test plan").And.Contain("2 testtilfeller").And.Contain("1 godkjent");
+        cut.Find("[data-testid=mt-count-suggestions]").TextContent.Should().Be("3", "suggestions are counted as suggestions");
+        cut.Find("[data-testid=mt-count-cases]").TextContent.Should().Be("2", "and saved test cases as test cases — never one for the other");
         cut.FindAll("[data-testid=mt-runs]").Should().BeEmpty("BirkNext records no manual runs");
-        cut.Markup.Should().Contain("A prepared, approved or exported test case is not an executed test").And.NotContain("manual-testing/execute");
+        cut.Markup.Should().Contain("et forberedt, godkjent eller eksportert testtilfelle er ikke en kjørt test").And.NotContain("manual-testing/execute");
     }
 
     [Fact]

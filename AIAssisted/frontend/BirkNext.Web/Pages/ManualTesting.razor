@@ -5,24 +5,25 @@
 @implements IDisposable
 @inject IServiceProvider ServiceProvider
 
-@* Manual Testing home: which project, what exists, what needs attention and the one next step — from stored records only (saved plans, the last
-   stored discovery). The two stages are destinations, never gates; test cases are executed in Azure DevOps Test Plans after the export. *@
-<PageTitle>Manual Testing</PageTitle>
+@* Manuell testing (2026-11-23): the tester's work at a glance — the one next step, real counts from saved records (suggestions are never counted
+   as test cases), and the saved plans with their source status. The two stages are in the header only (no second navigation). Test cases are
+   executed in Azure DevOps Test Plans after the export. *@
+<PageTitle>Manuell testing</PageTitle>
 
-<div class="mt" data-testid="mt" aria-busy="@(_loading ? "true" : "false")">
-    <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manual Testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="@null" Title="Manual Testing"
+<div class="mt msb-page" data-testid="mt" aria-busy="@(_loading ? "true" : "false")">
+    <BirkNext.Web.Components.TestingWorkspaceHeader Workspace="Manuell testing" HomeRoute="@M.HomeRoute" Stages="M.Stages" Current="@null" Title="Manuell testing"
         ProjectName="@_ws?.ProjectName" Context="@_ws?.SnapshotBasis"
-        Lead="Your manual testing work for the selected project in one place: understand what needs testing, prepare and review test cases, and export them to Azure DevOps Test Plans, where they are executed.">
-        <Help><BirkNext.Web.Components.HelpLink Topic="manual-testing" Text="How this works" /></Help>
+        Lead="Finn scenarioene som må testes, forbered og gjennomgå testtilfeller, og eksporter dem til Azure DevOps Test Plans.">
+        <Help><BirkNext.Web.Components.HelpLink Topic="manual-testing" Text="Slik fungerer det" /></Help>
     </BirkNext.Web.Components.TestingWorkspaceHeader>
 
     @if (_loading)
     {
-        <p class="mt-muted" role="status" data-testid="mt-loading">Loading the project's test work…</p>
+        <div class="msb-skeleton" role="status" data-testid="mt-loading"><span>Laster …</span></div>
     }
     else if (_ws is null)
     {
-        <p class="mt-muted" data-testid="mt-error">Manual Testing could not be loaded.</p>
+        <p class="msb-empty" data-testid="mt-error">Manuell testing kunne ikke lastes.</p>
     }
     else
     {
@@ -30,41 +31,60 @@
         var next = M.Next(facts);
         @if (_ws.Error is { } error)
         {
-            <p class="mt-alert" role="alert" data-testid="mt-error">@error <button type="button" class="btn btn-secondary btn-sm" @onclick="LoadAsync" data-testid="mt-retry">Try again</button></p>
+            <p class="mt-alert" role="alert" data-testid="mt-error">@error <button type="button" class="btn btn-secondary btn-sm" @onclick="LoadAsync" data-testid="mt-retry">Prøv igjen</button></p>
         }
-        <section class="mt-next" aria-labelledby="mt-next-title" data-testid="mt-next">
-            <h2 id="mt-next-title" class="mt-h">Next step</h2>
+        <section class="msb-next" aria-labelledby="mt-next-title" data-testid="mt-next">
+            <div>
+                <h2 id="mt-next-title" class="msb-h">Neste steg</h2>
+                <p class="mt-muted" data-testid="mt-next-why">@next.Why</p>
+            </div>
             <a class="btn btn-primary" href="@next.Href" data-testid="mt-next-action">@next.Label</a>
-            <p class="mt-muted" data-testid="mt-next-why">@next.Why</p>
         </section>
-
-        <BirkNext.Web.Components.GuidedStepList Steps="@M.Steps(facts)" TitleLevel="2" TestId="mt-stages" StepTestId="mt-stage" Label="Manual Testing stages" />
 
         @if (facts.ProjectKey is not null)
         {
-            <div class="mt-grid">
-                <section class="mt-card" aria-labelledby="mt-plans-title" data-testid="mt-plans">
-                    <h2 id="mt-plans-title" class="mt-h">Saved plans</h2>
-                    @if (facts.Plans.Count == 0)
-                    {
-                        <p class="mt-muted" data-testid="mt-plans-none">No plan yet. <a href="@($"{M.PlanRoute}?area=choose")">Choose scenarios</a> or write a test case by hand in Plan &amp; prepare.</p>
-                    }
-                    else
-                    {
-                        <ul class="mt-list">
-                            @foreach (var p in facts.Plans.Take(8))
-                            {
-                                <li data-testid="mt-plan">
-                                    <a href="@($"{M.PlanRoute}?draft={p.Id}&area=prepare")"><strong>@p.PlanName</strong></a>
-                                    <a class="mt-muted" href="@($"{M.PlanRoute}?draft={p.Id}&area=export")" data-testid="mt-plan-export">Export to Azure DevOps</a>
-                                    <span class="mt-muted">@p.Cases case@(p.Cases == 1 ? "" : "s") · @p.Accepted approved@(p.NeedsClarification > 0 ? $" · {p.NeedsClarification} need clarification" : "") · saved @p.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
-                                </li>
-                            }
-                        </ul>
-                    }
-                </section>
-            </div>
-            <p class="mt-muted mt-boundary">Counts come from saved records only. A prepared, approved or exported test case is not an executed test: manual tests are executed, and their results recorded, in Azure DevOps Test Plans. BirkNext never writes to Azure DevOps; the export is a file you import there.</p>
+            var plans = facts.Plans;
+            var cases = plans.Sum(p => p.Cases);
+            var approved = plans.Sum(p => p.Accepted);
+            var clarify = plans.Sum(p => p.NeedsClarification);
+            var statuses = _ws.Plans?.PlanStatus;
+            <dl class="msb-counts msb-counts-wide" data-testid="mt-counts" aria-label="Status for applikasjonen">
+                <div><dt>Forslag</dt><dd data-testid="mt-count-suggestions">@(_ws.Discovery?.Candidates.Count.ToString() ?? "—")</dd></div>
+                <div><dt>Testtilfeller</dt><dd data-testid="mt-count-cases">@cases</dd></div>
+                <div><dt>Godkjent</dt><dd data-testid="mt-count-approved">@approved</dd></div>
+                <div class="@(clarify > 0 ? "is-warn" : null)"><dt>Trenger avklaring</dt><dd data-testid="mt-count-clarify">@clarify</dd></div>
+                <div><dt>Lagrede planer</dt><dd data-testid="mt-count-plans">@plans.Count</dd></div>
+            </dl>
+
+            <section aria-labelledby="mt-plans-title" data-testid="mt-plans">
+                <h2 id="mt-plans-title" class="msb-h">Lagrede planer</h2>
+                @if (plans.Count == 0)
+                {
+                    <p class="msb-empty" data-testid="mt-plans-none">Ingen plan ennå. <a href="@M.DiscoverRoute">Velg scenarioer</a> eller skriv et testtilfelle selv i Planlegg og forbered.</p>
+                }
+                else
+                {
+                    <ul class="msb-plans">
+                        @foreach (var p in plans.Take(8))
+                        {
+                            var status = statuses is not null && statuses.TryGetValue(p.Id, out var s) ? s : null;
+                            <li class="msb-plan" data-testid="mt-plan">
+                                <div class="msb-plan-main">
+                                    <a href="@($"{M.PlanRoute}?draft={p.Id}&area=prepare")" class="msb-plan-name"><strong>@p.PlanName</strong></a>
+                                    <span class="mt-muted msb-small">@p.Cases testtilfelle@(p.Cases == 1 ? "" : "r") · @p.Accepted godkjent@(p.NeedsClarification > 0 ? $" · {p.NeedsClarification} trenger avklaring" : "") · lagret @p.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                                </div>
+                                @if (status is not null)
+                                {
+                                    <span class="msb-status msb-tone-@(status.State switch { "Klar" => "ok", "Må gjennomgås" or "Kilde mangler" => "warn", "Ny kildeversjon" => "info", _ => "muted" })" title="@status.Message" data-testid="mt-plan-source">@status.State</span>
+                                }
+                                <a class="btn btn-secondary btn-sm" href="@($"{M.PlanRoute}?draft={p.Id}&area=prepare")" data-testid="mt-plan-open">Åpne</a>
+                                <a class="msb-link" href="@($"{M.PlanRoute}?draft={p.Id}&area=export")" data-testid="mt-plan-export">Eksporter</a>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+            <p class="mt-muted msb-small mt-boundary">Tallene kommer fra lagrede data. Et forslag er ikke et testtilfelle, og et forberedt, godkjent eller eksportert testtilfelle er ikke en kjørt test: manuelle tester kjøres, og resultatene registreres, i Azure DevOps Test Plans. BirkNext skriver aldri til Azure DevOps; eksporten er en fil du importerer der.</p>
         }
     }
 </div>
