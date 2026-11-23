@@ -58,19 +58,22 @@ public sealed class TranslationSettingsCardTests : BunitContext
         return cut;
     }
 
+    /// <summary>The selected translator card's value.</summary>
+    private static string? Chosen(IRenderedComponent<TranslationSettingsCard> cut) => cut.Find("[data-testid=trx-provider] input:checked").GetAttribute("value");
+
     [Fact]
-    public void The_default_is_the_LibreTranslate_server_shown_in_the_normal_view_with_the_offline_translator_as_fallback()
+    public void LibreTranslate_is_shown_in_the_normal_view_with_the_offline_translator_as_fallback()
     {
-        // 2026-11-21: LibreTranslate is the default translator; its server controls are in the normal view, not under Advanced.
-        var cut = Render(View(new TranslationSettings()));
-        cut.Find("[data-testid=trx-provider] option[selected]").GetAttribute("value").Should().Be("LibreTranslate");
-        cut.Find("[data-testid=trx-provider] option").GetAttribute("value").Should().Be("LibreTranslate", "listed first");
+        // LibreTranslate's server controls are in the normal view, not under Advanced. Since 2026-11-23 the offline translator is the default.
+        var cut = Render(View(new TranslationSettings { Provider = TranslationProviderKind.LibreTranslate }));
+        Chosen(cut).Should().Be("LibreTranslate");
+        cut.Find("[data-testid=trx-provider-option]").GetAttribute("data-value").Should().Be("EmbeddedOffline", "the default is listed first");
         cut.Find("[data-testid=trx-libre]").Should().NotBeNull();
         cut.Find("[data-testid=trx-advanced]").QuerySelector("[data-testid=trx-libre]").Should().BeNull("not hidden under Advanced");
         cut.Find("[data-testid=trx-advanced]").HasAttribute("open").Should().BeFalse("LibreTranslate is a standard choice");
         cut.Find("[data-testid=trx-fallback]").HasAttribute("checked").Should().BeTrue();
         cut.Find("[data-testid=trx-internet]").TextContent.Should().Contain("offline translator packaged with BirkNext is used");
-        cut.FindAll("[data-testid=trx-provider] optgroup").Should().BeEmpty();
+        cut.FindAll("[data-testid=trx-provider-option][data-online]").Should().BeEmpty();
         _probes.Should().Be(0, "the offline model is not started while LibreTranslate is chosen");
     }
 
@@ -78,31 +81,47 @@ public sealed class TranslationSettingsCardTests : BunitContext
     public void The_header_says_Ready_for_LibreTranslate_only_when_the_server_answers_and_an_unsaved_choice_is_not_shown_as_the_saved_one()
     {
         var notInstalled = Installed with { State = "NotInstalled", Summary = "Offline translation — not available" };
-        var cut = Render(View(new TranslationSettings(), offline: notInstalled),
+        var cut = Render(View(new TranslationSettings { Provider = TranslationProviderKind.LibreTranslate }, offline: notInstalled),
             libre: new LibreTranslateServiceStatus { PodmanAvailable = true, ImagePresent = true, Url = "http://127.0.0.1:5050" });
         cut.WaitForAssertion(() => cut.Find("[data-testid=trx-overall]").TextContent.Should().Be("LibreTranslate not running — starts when a translation needs it"));
         cut.Find("[data-testid=trx-internet]").TextContent.Should().Contain("offline fallback is not installed");
-        cut.Find($"[data-testid=trx-provider] option[value={TranslationProviderKind.EmbeddedOffline}]").TextContent.Should().Contain("not installed here");
+        cut.Find($"[data-testid=trx-provider-option][data-value={TranslationProviderKind.EmbeddedOffline}]").TextContent.Should().Contain("Not installed here");
 
-        cut.Find("[data-testid=trx-provider]").Change(TranslationProviderKind.EmbeddedOffline.ToString());
+        cut.Find($"[data-testid=trx-provider-option][data-value={TranslationProviderKind.EmbeddedOffline}] input").Change(true);
         cut.Find("[data-testid=trx-overall]").TextContent.Should().Be("Not saved — Save to use this translator", "the header never mixes the saved translator with an unsaved choice");
     }
 
     [Fact]
     public void The_header_says_Ready_for_LibreTranslate_when_the_server_answers()
     {
-        var cut = Render(View(new TranslationSettings()), libre: new LibreTranslateServiceStatus { PodmanAvailable = true, ImagePresent = true, Running = true, Answering = true });
+        var cut = Render(View(new TranslationSettings { Provider = TranslationProviderKind.LibreTranslate }), libre: new LibreTranslateServiceStatus { PodmanAvailable = true, ImagePresent = true, Running = true, Answering = true });
         cut.WaitForAssertion(() => cut.Find("[data-testid=trx-overall]").TextContent.Should().Be("Ready: LibreTranslate (local server answering)"));
+    }
+
+    [Fact]
+    public void The_offline_translator_is_the_default_and_how_long_it_stays_loaded_can_be_chosen_including_never()
+    {
+        var cut = Render(View(new TranslationSettings()));
+        Chosen(cut).Should().Be("EmbeddedOffline");
+        cut.Find($"[data-testid=trx-provider-option][data-value={TranslationProviderKind.EmbeddedOffline}]").TextContent.Should().Contain("Default");
+        var idle = cut.Find("[data-testid=trx-idle-stop]");
+        idle.QuerySelectorAll("input").Select(o => o.GetAttribute("value")).Should().Equal("10", "30", "60", "240", "480", "0");
+        idle.QuerySelector("input[value='0']")!.GetAttribute("aria-label").Should().Contain("never stop");
+        idle.QuerySelector("input[value='60']")!.GetAttribute("aria-label").Should().Contain("(default)");
+        idle.QuerySelector("input[value='60']")!.HasAttribute("checked").Should().BeTrue();
+        cut.Find("[data-testid=trx-idle-stop] input[value='0']").Change(true);
+        cut.Find("[data-testid=trx-idle-stop] input[value='0']").HasAttribute("checked").Should().BeTrue();
+        cut.Find("[data-testid=trx-save]").HasAttribute("disabled").Should().BeFalse("a changed choice can be saved");
     }
 
     [Fact]
     public void The_offline_translator_is_English_to_Norwegian_and_Ready_only_after_the_probe_translated()
     {
         var cut = Render(View());
-        cut.Find("[data-testid=trx-provider] option[selected]").GetAttribute("value").Should().Be("EmbeddedOffline");
+        Chosen(cut).Should().Be("EmbeddedOffline");
         cut.Find("[data-testid=trx-source] option[selected]").GetAttribute("value").Should().Be("en");
         cut.Find("[data-testid=trx-to] option[selected]").GetAttribute("value").Should().Be("nb");
-        cut.Find("[data-testid=trx-internet]").TextContent.Should().Contain("disabled");
+        cut.Find("[data-testid=trx-internet]").TextContent.Should().Contain("never");
         cut.WaitForAssertion(() => cut.Find("[data-testid=trx-offline]").GetAttribute("data-state").Should().Be("Ready"));
         _probes.Should().Be(1, "opening the page checks the packaged model once, for real");
         cut.Find("[data-testid=trx-overall]").TextContent.Should().Be("Offline translation — Ready");
@@ -110,7 +129,7 @@ public sealed class TranslationSettingsCardTests : BunitContext
         cut.Find("[data-testid=trx-offline-model]").TextContent.Should().Contain("HPLT").And.Contain("CC-BY-4.0");
         cut.FindAll("[data-testid=trx-azure-key]").Should().BeEmpty("online services are optional, under Advanced");
         cut.FindAll("[data-testid=trx-libre]").Should().BeEmpty("no Podman controls in the normal view");
-        cut.FindAll("[data-testid=trx-provider] optgroup").Should().BeEmpty();
+        cut.FindAll("[data-testid=trx-provider-option][data-online]").Should().BeEmpty();
         cut.Find("[data-testid=trx-origin]").TextContent.Should().Be("Default settings (not saved yet)");
         cut.Find("[data-testid=trx-save]").HasAttribute("disabled").Should().BeTrue("nothing changed yet");
     }

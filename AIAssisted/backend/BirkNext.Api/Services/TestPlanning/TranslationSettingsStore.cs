@@ -110,6 +110,8 @@ public sealed partial class TranslationSettingsStore
         if (targets.Count > MaxTargets) return (null, $"At most {MaxTargets} \"To\" languages.");
         if (targets.FirstOrDefault(t => !TranslationLanguages.IsCode(t)) is { } bad) return (null, $"\"{bad}\" is not a language code.");
         if (targets.Any(t => string.Equals(t, source, StringComparison.OrdinalIgnoreCase))) return (null, "A \"To\" language is the same as the \"From\" language.");
+        if (!TranslationSettings.OfflineIdleStopChoices.Contains(s.OfflineIdleStopMinutes))
+            return (null, "Choose how long the offline translator stays loaded: 10, 30, 60, 240 or 480 minutes, or never stop.");
         if (s.LibreTranslatePort is < 1024 or > 65535 or 5000 or 5173) return (null, "The local LibreTranslate port must be 1024–65535 and not 5000 or 5173 (BirkNext's own ports).");
         if (!ContainerArgumentRules.IsImage(s.LibreTranslateImage ?? "")) return (null, "The LibreTranslate image must be a pinned, fully qualified image (no \":latest\").");
         var url = (s.LibreTranslateUrl ?? "").Trim();

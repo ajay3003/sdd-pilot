@@ -821,6 +821,8 @@ builder.Services.AddScoped<BirkNext.Api.Services.TestPlanning.TestPlanSuggestion
 // Norwegian bokmål, CPU only, no internet). The translator is resolved from the current settings on every request: a change applies without a
 // restart. The offline engine owns its helper process and stops it when BirkNext stops (disposed with the container).
 builder.Services.AddSingleton<BirkNext.Api.Services.TestPlanning.OfflineTranslation.OfflineTranslationEngine>();
+// Loads the offline translator in the background after start, so the first translation does not wait for it (ManualTesting:Translation:WarmUpOffline).
+builder.Services.AddHostedService<BirkNext.Api.Services.TestPlanning.OfflineTranslation.OfflineTranslationWarmup>();
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.TestPlanning.TranslationSettingsStore(
     BirkNext.Api.Services.TestPlanning.TranslationSettingsStore.DefaultDirectory(sp.GetRequiredService<IHostEnvironment>()), sp.GetRequiredService<IConfiguration>(),
     // The tester package (native runners, no Podman) cannot run LibreTranslate: its default is the packaged offline translator.

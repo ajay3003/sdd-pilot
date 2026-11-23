@@ -779,6 +779,8 @@ public sealed class TestPlanSuggestionService(AppDbContext db, SystemGuideServic
                 if (fields[i] is null) { restored.Add(null); continue; }
                 if (answer.Texts[i] is not { } text || ScenarioPlanning.Restore(text, tokens[i]) is not { } back)
                     return (null, "a technical identifier was changed or lost in the translation, so it was not used.");
+                if (!ScenarioPlanning.PreservesNumericValues(fields[i]!, back))
+                    return (null, "a numeric value (such as an HTTP status, date, timeout or limit) changed in translation, so it was not used.");
                 restored.Add(back);
             }
             provider = answer.Provider;

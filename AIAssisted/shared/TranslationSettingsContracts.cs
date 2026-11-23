@@ -71,12 +71,16 @@ public static class TranslationLanguages
 
 public sealed record TranslationSettings
 {
-    /// <summary>Default (2026-11-21): the LibreTranslate server, with the embedded offline translator as fallback. Saved settings keep their choice.</summary>
-    public TranslationProviderKind Provider { get; init; } = TranslationProviderKind.LibreTranslate;
+    /// <summary>Default (2026-11-23): the offline translator packaged with BirkNext — it needs no server, container, key or network. Saved
+    /// settings keep their choice. (2026-11-21 to 11-23 the default was the LibreTranslate server, which needs Podman.)</summary>
+    public TranslationProviderKind Provider { get; init; } = TranslationProviderKind.EmbeddedOffline;
     /// <summary>For LibreTranslate and the online services: when the service has no key or cannot be reached, translate offline instead (the embedded
     /// translator when it is installed; for an online service without it, the local LibreTranslate server). Never the other way round: the embedded translator never falls back
     /// to the internet. The result always names the service that translated.</summary>
     public bool OfflineFallback { get; init; } = true;
+    /// <summary>Minutes the offline translator stays loaded with no translation before it stops and frees its memory (about 125 MB); 0 = never
+    /// stops while BirkNext runs. A stopped translator needs the model load again (seconds when warm, longer on a fresh AVD session).</summary>
+    public int OfflineIdleStopMinutes { get; init; } = DefaultOfflineIdleStopMinutes;
     /// <summary>The language of the original text ("auto" = the service detects it).</summary>
     public string SourceLanguage { get; init; } = TranslationLanguages.English;
     /// <summary>The languages a tester can translate into; the first is the default.</summary>
@@ -92,6 +96,9 @@ public sealed record TranslationSettings
     public List<TranslationGlossaryEntry> Glossary { get; init; } = [.. TranslationGlossary.DefaultEnNb];
 
     public const int DefaultLibreTranslatePort = 5050;
+    public const int DefaultOfflineIdleStopMinutes = 60;
+    /// <summary>The choices offered in System Settings → Translation (0 = never).</summary>
+    public static readonly IReadOnlyList<int> OfflineIdleStopChoices = [10, 30, 60, 240, 480, 0];
     public const string DefaultLibreTranslateImage = "docker.io/libretranslate/libretranslate:v1.6.0";
 
     [JsonIgnore] public string DefaultTarget => TargetLanguages.FirstOrDefault() ?? TranslationLanguages.NorwegianBokmal;

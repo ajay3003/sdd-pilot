@@ -23,7 +23,10 @@ public sealed class OfflineTranslationEngine : IAsyncDisposable
     /// one succeeded. 180 s lets that first start finish.
     /// </summary>
     public static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(180);
-    public static readonly TimeSpan IdleStop = TimeSpan.FromMinutes(10);
+    /// <summary>The helper uses about 125 MB while idle; restarting it costs the model load again, so it stays up for an hour of inactivity
+    /// (was 10 minutes, which made a tester wait again after a short break). This is the default; System Settings → Translation chooses another
+    /// value, or never (<see cref="TranslationSettings.OfflineIdleStopMinutes"/>).</summary>
+    public static readonly TimeSpan IdleStop = TimeSpan.FromMinutes(TranslationSettings.DefaultOfflineIdleStopMinutes);
     public const long MemoryLimitBytes = 2L * 1024 * 1024 * 1024;
 
     private readonly IConfiguration _config;
@@ -40,9 +43,29 @@ public sealed class OfflineTranslationEngine : IAsyncDisposable
     private OfflineTranslationStatus? _probed;
     private bool _disposed;
 
-    public OfflineTranslationEngine(IConfiguration config, ILogger<OfflineTranslationEngine> log, TimeProvider? clock = null)
+    private readonly TranslationSettingsStore? _settings;
+
+    public OfflineTranslationEngine(IConfiguration config, ILogger<OfflineTranslationEngine> log, TimeProvider? clock = null, TranslationSettingsStore? settings = null)
     {
-        _config = config; _log = log; _clock = clock ?? TimeProvider.System;
+        _config = config; _log = log; _clock = clock ?? TimeProvider.System; _settings = settings;
+    }
+
+    /// <summary>The translation settings were saved: a running, idle helper gets its stop rescheduled with the new "keep loaded" choice at once
+    /// (cancelled for "never"). A helper busy translating reschedules by itself when the translation ends.</summary>
+    public void SettingsChanged()
+    {
+        if (_disposed || !_gate.Wait(0)) return;
+        try { if (_process is { HasExited: false }) ScheduleIdleStop(); }
+        finally { _gate.Release(); }
+    }
+
+    /// <summary>How long the helper may stay idle before it stops: the saved setting (read each time, so a change needs no restart); null = never.</summary>
+    public TimeSpan? IdleStopAfter()
+    {
+        int minutes;
+        try { minutes = _settings?.Effective().Settings.OfflineIdleStopMinutes ?? TranslationSettings.DefaultOfflineIdleStopMinutes; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException) { minutes = TranslationSettings.DefaultOfflineIdleStopMinutes; }
+        return minutes <= 0 ? null : TimeSpan.FromMinutes(minutes);
     }
 
     /// <summary>The bundle in use and its verification (cached until a candidate folder or its manifest changes).</summary>
@@ -279,7 +302,7 @@ public sealed class OfflineTranslationEngine : IAsyncDisposable
     private void ScheduleIdleStop()
     {
         _idle?.Dispose();
-        _idle = _clock.CreateTimer(_ => _ = StopWhenIdleAsync(), null, IdleStop, Timeout.InfiniteTimeSpan);
+        _idle = IdleStopAfter() is { } after ? _clock.CreateTimer(_ => _ = StopWhenIdleAsync(), null, after, Timeout.InfiniteTimeSpan) : null;
     }
 
     private async Task StopWhenIdleAsync()

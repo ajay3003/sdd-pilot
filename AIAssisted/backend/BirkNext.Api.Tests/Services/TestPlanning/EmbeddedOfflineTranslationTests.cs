@@ -173,10 +173,10 @@ public sealed class EmbeddedOfflineTranslationTests
     }
 
     [Fact]
-    public void New_installations_default_to_LibreTranslate_with_the_embedded_offline_translator_as_fallback()
+    public void New_installations_default_to_the_embedded_offline_translator()
     {
         var s = new TranslationSettings();
-        s.Provider.Should().Be(TranslationProviderKind.LibreTranslate, "2026-11-21: LibreTranslate is the default");
+        s.Provider.Should().Be(TranslationProviderKind.EmbeddedOffline, "2026-11-23: the packaged offline translator is the default (LibreTranslate needs Podman)");
         s.OfflineFallback.Should().BeTrue();
         (s.SourceLanguage, s.DefaultTarget).Should().Be(("en", "nb"));
         s.Glossary.Should().NotBeEmpty();

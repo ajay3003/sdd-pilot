@@ -50,9 +50,9 @@ public sealed class TestCaseTranslatorProviderTests
     [Fact]
     public void The_default_is_the_local_LibreTranslate_server_and_Azure_under_Advanced_falls_back_to_the_local_server()
     {
-        // 2026-11-21: new installations use the local LibreTranslate server (falling back to the packaged offline translator when installed).
-        new TranslationSettings().Provider.Should().Be(TranslationProviderKind.LibreTranslate);
-        TestCaseTranslators.Create(new TranslationSettings(), null, Config(), NoNetwork).Should().BeOfType<LibreTranslateTestCaseTranslator>(
+        // 2026-11-23: new installations use the packaged offline translator; LibreTranslate is a choice (falling back to the offline translator when installed).
+        new TranslationSettings().Provider.Should().Be(TranslationProviderKind.EmbeddedOffline);
+        TestCaseTranslators.Create(new TranslationSettings { Provider = TranslationProviderKind.LibreTranslate }, null, Config(), NoNetwork).Should().BeOfType<LibreTranslateTestCaseTranslator>(
             "without the offline engine there is no fallback, and nothing else is used silently");
         TestCaseTranslators.Create(new TranslationSettings { Provider = TranslationProviderKind.EmbeddedOffline }, null, Config(), NoNetwork).Availability.Reason
             .Should().Be(TestCaseTranslators.NoOfflineEngine);

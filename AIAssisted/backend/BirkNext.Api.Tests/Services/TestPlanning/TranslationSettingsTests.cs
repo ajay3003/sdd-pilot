@@ -52,7 +52,7 @@ public sealed class TranslationSettingsTests : IDisposable
     {
         var empty = new TranslationSettingsStore(_dir, Config());
         empty.Effective().Should().Match<(TranslationSettings Settings, string Origin, string?, DateTimeOffset?)>(e =>
-            e.Origin == "default" && e.Settings.Provider == TranslationProviderKind.LibreTranslate && e.Settings.SourceLanguage == "en" && e.Settings.TargetLanguages.Single() == "nb");
+            e.Origin == "default" && e.Settings.Provider == TranslationProviderKind.EmbeddedOffline && e.Settings.SourceLanguage == "en" && e.Settings.TargetLanguages.Single() == "nb");
 
         var configured = new TranslationSettingsStore(Path.Combine(_dir, "c"), Config(("ManualTesting:Translation:Provider", "LibreTranslate"), ("ManualTesting:Translation:LibreTranslate:Url", "http://127.0.0.1:6000")));
         configured.Effective().Origin.Should().Be("configuration");
@@ -80,7 +80,30 @@ public sealed class TranslationSettingsTests : IDisposable
         tester.Effective().Settings.Provider.Should().Be(TranslationProviderKind.LibreTranslate, "a server someone runs at a given address is kept");
 
         new TranslationSettingsStore(Path.Combine(_dir, "dev"), Config(), canManageLibreTranslate: true).Effective().Settings.Provider
-            .Should().Be(TranslationProviderKind.LibreTranslate, "development keeps LibreTranslate as the default");
+            .Should().Be(TranslationProviderKind.EmbeddedOffline, "the packaged offline translator is the default everywhere (2026-11-23)");
+    }
+
+    [Fact]
+    public void How_long_the_offline_translator_stays_loaded_is_a_saved_choice_including_never()
+    {
+        var store = new TranslationSettingsStore(_dir, Config());
+        var engine = new BirkNext.Api.Services.TestPlanning.OfflineTranslation.OfflineTranslationEngine(Config(), NullLogger<BirkNext.Api.Services.TestPlanning.OfflineTranslation.OfflineTranslationEngine>.Instance, null, store);
+        engine.IdleStopAfter().Should().Be(TimeSpan.FromMinutes(60), "the default is one hour");
+
+        store.Save(new SaveTranslationSettingsRequest(new TranslationSettings { OfflineIdleStopMinutes = 0 }), "a", DateTimeOffset.UnixEpoch).Should().BeNull();
+        engine.IdleStopAfter().Should().BeNull("never stops; read again without a restart");
+        store.Save(new SaveTranslationSettingsRequest(new TranslationSettings { OfflineIdleStopMinutes = 240 }), "a", DateTimeOffset.UnixEpoch).Should().BeNull();
+        engine.IdleStopAfter().Should().Be(TimeSpan.FromHours(4));
+        store.Save(new SaveTranslationSettingsRequest(new TranslationSettings { OfflineIdleStopMinutes = 7 }), "a", DateTimeOffset.UnixEpoch).Should().Contain("stays loaded");
+    }
+
+    [Fact]
+    public void The_offline_translator_is_warmed_up_when_it_is_used_or_is_the_LibreTranslate_fallback()
+    {
+        BirkNext.Api.Services.TestPlanning.OfflineTranslation.OfflineTranslationWarmup.Wanted(new TranslationSettings()).Should().BeTrue("it is the default");
+        BirkNext.Api.Services.TestPlanning.OfflineTranslation.OfflineTranslationWarmup.Wanted(new TranslationSettings { Provider = TranslationProviderKind.LibreTranslate }).Should().BeTrue("offline fallback");
+        BirkNext.Api.Services.TestPlanning.OfflineTranslation.OfflineTranslationWarmup.Wanted(new TranslationSettings { Provider = TranslationProviderKind.LibreTranslate, OfflineFallback = false }).Should().BeFalse();
+        BirkNext.Api.Services.TestPlanning.OfflineTranslation.OfflineTranslationWarmup.Wanted(new TranslationSettings { Provider = TranslationProviderKind.Off }).Should().BeFalse();
     }
 
     [Fact]
@@ -232,7 +255,7 @@ public sealed class TranslationSettingsTests : IDisposable
     {
         var runner = new Runner(a => a[0] switch { "info" => Ok("5.4.2"), "container" => Ok("false"), _ => Ok() });
         var manager = new LibreTranslateServiceManager(runner, new PerformanceTestOptions(), Unreachable, NullLogger<LibreTranslateServiceManager>.Instance);
-        var translator = TestCaseTranslators.Create(new TranslationSettings { OfflineFallback = false }, null, Config(), Unreachable, offline: null, libre: manager);
+        var translator = TestCaseTranslators.Create(new TranslationSettings { Provider = TranslationProviderKind.LibreTranslate, OfflineFallback = false }, null, Config(), Unreachable, offline: null, libre: manager);
         translator.Should().BeOfType<AutoStartingLibreTranslator>();
         var error = await FluentActions.Awaiting(() => translator.TranslateAsync(["Hello"], "en", "nb", default)).Should().ThrowAsync<TestCaseTranslationException>();
         error.Which.Message.Should().StartWith(LibreTranslateServiceManager.AutoStarting);

@@ -45,6 +45,11 @@ public sealed class TranslationSettingsController(TranslationSettingsStore store
         var saved = store.Effective().Settings;
         if (saved.Provider == TranslationProviderKind.LibreTranslate && saved.LibreTranslateManaged && libre.CanManage)
             _ = Task.Run(async () => { try { await libre.EnsureRunningAsync(saved, CancellationToken.None); } catch (Exception) { } });
+        // The new "keep loaded" choice applies to a running offline translator at once (an earlier scheduled stop is replaced), and choosing the
+        // offline translator loads it now in the background, so the first translation after switching does not wait for the model.
+        offline.SettingsChanged();
+        if (OfflineTranslationWarmup.Wanted(saved))
+            _ = Task.Run(async () => { try { await offline.StatusAsync(probe: true, CancellationToken.None); } catch (Exception) { } });
         return await Get();
     }
 
