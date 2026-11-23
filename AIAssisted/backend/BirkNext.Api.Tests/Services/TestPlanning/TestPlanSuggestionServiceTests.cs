@@ -102,8 +102,8 @@ public sealed class TestPlanSuggestionServiceTests : IAsyncLifetime, IDisposable
         workspace.Candidates.Should().HaveCount(22, "every 'What to test' scenario is a candidate, none invented");
         workspace.Candidates.Single(c => c.Source.ScenarioId == "ukjent-xml-versjon").GuideState.Should().Be("NeedsClarification");
         var unknownChild = workspace.Candidates.Single(c => c.Source.ScenarioId == "manglende-barn");
-        unknownChild.GuideState.Should().Be("NeedsClarification");
-        unknownChild.HasExpected.Should().BeFalse("a genuine cross-revision source disagreement has no single accepted result");
+        unknownChild.GuideState.Should().Be("Suggested");
+        unknownChild.HasExpected.Should().BeTrue("the current authoritative intake contract and integration tests define HTTP 200 with encrypted holding");
         workspace.Basis!.GuideReviewState.Should().Be("Draft only — not reviewed");
         workspace.Basis.Roles.Should().NotBeEmpty().And.OnlyContain(r => r.State == "NOT_IMPORTED", "nothing is imported in this database");
 
@@ -112,9 +112,11 @@ public sealed class TestPlanSuggestionServiceTests : IAsyncLifetime, IDisposable
         plan.Cases.Should().OnlyContain(c => c.Review == TestCaseReviewState.Generated && c.Generated.ExpectedBasis != ExpectedResultBasis.ReviewedGuide);
         plan.Cases.Should().OnlyContain(c => !c.Testability.Ready, "a documented scenario is not executable");
         var unknownChildCase = plan.Cases.Single(c => c.Source.ScenarioId == "manglende-barn");
-        unknownChildCase.Generated.ExpectedBasis.Should().Be(ExpectedResultBasis.NeedsClarification);
-        unknownChildCase.Generated.Evidence.Should().Contain(e => e.Reference.Contains("M2LB (7).zip") && e.Reference.Contains("ReportIntakeHandler.cs"))
-            .And.Contain(e => e.Reference.Contains("M2LB (5).zip") && e.Reference.Contains("Rapportinntaksbehandler.cs"));
+        unknownChildCase.Generated.ExpectedBasis.Should().Be(ExpectedResultBasis.UnreviewedGuide);
+        unknownChildCase.Generated.ExpectedResult.Should().Contain("HTTP 200").And.Contain("kryptert").And.Contain("ikke ordinært behandlet");
+        unknownChildCase.Generated.Evidence.Should().Contain(e => e.Reference.Contains("M2LB.zip") && e.Reference.Contains("rapportinntak.md"))
+            .And.Contain(e => e.Reference.Contains("M2LB.zip") && e.Reference.Contains("ReportIntakeHandler.cs"))
+            .And.Contain(e => e.Reference.Contains("M2LB.zip") && e.Reference.Contains("HeldReportTests.cs"));
         plan.Suites.Select(s => s.Name).Should().Contain(["Skoletjenesten tar imot", "Periodelås", "Levering til Bufdata"]);
         plan.Cases.Single(c => c.Source.ScenarioId == "bufdata-fil").Missing.Should().Contain(m => m.Contains("NEEDS CLARIFICATION"));
         plan.Basis.GuideRevision.Should().Be(1);

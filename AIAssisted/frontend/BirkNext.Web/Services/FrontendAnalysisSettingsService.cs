@@ -91,11 +91,36 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
     // The built-in defaults as seeded on this load, kept until stored: what MaterializeAsync stores and which ids it accepts.
     private string? _seedJson;
     private HashSet<string> _seedProfileIds = new(StringComparer.Ordinal);
+    /// <summary>The active environment; a saved active environment of a disabled type (<see cref="DisabledEnvironmentTypes"/>) is not active.</summary>
     public FrontendAnalysisProfile?  ActiveProfile =>
         _settings.ActiveResolutionError is not null || string.IsNullOrWhiteSpace(_settings.ActiveProfileId)
             ? null
-            : _settings.Profiles.Where(p => p.Id == _settings.ActiveProfileId).ToList() is { Count: 1 } matches
+            : _settings.Profiles.Where(p => p.Id == _settings.ActiveProfileId).ToList() is { Count: 1 } matches && IsEnabled(matches[0])
                 ? matches[0] : null;
+
+    // ── Enabled environment types and display order (2026-11-23) ─────────────────────────────────────────────────────
+    // Testers work on QA (the default) and Development. Local and Production are disabled: listed, never selectable or active, and enabled
+    // only by changing this set in code.
+
+    /// <summary>Environment types that are listed but cannot be selected, set active or created. Change this set in code to enable one.</summary>
+    public static readonly IReadOnlySet<FrontendEnvironmentType> DisabledEnvironmentTypes =
+        new HashSet<FrontendEnvironmentType> { FrontendEnvironmentType.Local, FrontendEnvironmentType.Production };
+
+    public static bool IsEnabled(FrontendEnvironmentType type) => !DisabledEnvironmentTypes.Contains(type);
+    public static bool IsEnabled(FrontendAnalysisProfile profile) => IsEnabled(profile.EnvironmentType);
+
+    /// <summary>Why a disabled environment cannot be used (shown on it).</summary>
+    public const string DisabledReason = "Disabled: Local and Production environments can only be enabled in code.";
+
+    /// <summary>The order environments are listed in: QA, Development, then other enabled types, then Local and Production (disabled).</summary>
+    private static readonly FrontendEnvironmentType[] DisplayOrder =
+        [FrontendEnvironmentType.QA, FrontendEnvironmentType.Development, FrontendEnvironmentType.Test, FrontendEnvironmentType.RC, FrontendEnvironmentType.Custom,
+         FrontendEnvironmentType.Local, FrontendEnvironmentType.Production];
+
+    /// <summary>The environments in display order (saved order kept within one type), whatever order they were saved in.</summary>
+    public static IReadOnlyList<FrontendAnalysisProfile> Ordered(IEnumerable<FrontendAnalysisProfile> profiles) =>
+        [.. profiles.Select((p, i) => (p, i)).OrderBy(x => IsEnabled(x.p) ? 0 : 1).ThenBy(x => Array.IndexOf(DisplayOrder, x.p.EnvironmentType) is var r and >= 0 ? r : DisplayOrder.Length)
+            .ThenBy(x => x.i).Select(x => x.p)];
 
     // ── Persistence ───────────────────────────────────────────────────────────
 
@@ -374,7 +399,7 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
 
     public void SelectActiveProfile(string profileId)
     {
-        if (_settings.Profiles.Count(p => p.Id == profileId) == 1)
+        if (_settings.Profiles.Count(p => p.Id == profileId) == 1 && _settings.Profiles.First(p => p.Id == profileId) is var chosen && IsEnabled(chosen))
         {
             _settings.ActiveProfileId = profileId;
             _settings.ActiveResolutionError = null;
@@ -650,8 +675,8 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
 
     /// <summary>
     /// A Frontend URL someone actually configured: present, absolute, and not one of the seed examples a fresh installation starts with
-    /// ("https://example-dev.local", "https://example-qa.local", "https://example.local"). The seeded Development environment is active on a fresh
-    /// installation, so without this check its example URL would count as a target and runtime reviews would look ready to run (2026-11-23).
+    /// ("https://example-dev.local", "https://example.local"). An example URL never counts as a target, so runtime reviews never look ready to run
+    /// against a placeholder (2026-11-23). The seeded QA environment (active on a fresh installation) has a real target, <see cref="DefaultQaUrl"/>.
     /// </summary>
     public static bool IsConfiguredTarget(string? url) => !IsSeedPlaceholder(url);
 
@@ -665,10 +690,14 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
             .FirstOrDefault(url => !IsSeedPlaceholder(url));
 
     /// <summary>
-    /// The generic seed: Local, Development, QA and Production. Development is the default — active, and therefore selected — on a fresh
-    /// installation and after a complete data reset; Local is available but never chosen automatically. A saved selection is never
-    /// overridden: the seed is used only when nothing is saved, or by the reset.
+    /// The generic seed: QA, Development, Local and Production (Local and Production disabled, see DisabledEnvironmentTypes). QA is the default — active, and therefore selected — on a fresh installation
+    /// and after a complete data reset, with the M2LB QA application as its target (2026-11-23: testers start on QA; Development was the
+    /// default before). Local is available but never chosen automatically. A saved selection is never overridden: the seed is used only when
+    /// nothing is saved, or by the reset.
     /// </summary>
+    /// <summary>The QA environment's target application on a fresh installation.</summary>
+    public const string DefaultQaUrl = "https://m2lbqa.bufetat.no";
+
     private static FrontendAnalysisSettings BuildSeedSettings(string? developmentUrl = null)
     {
         var localId = Guid.NewGuid().ToString("N");
@@ -678,12 +707,12 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
 
         return new FrontendAnalysisSettings
         {
-            ActiveProfileId = devId,
+            ActiveProfileId = qaId,
             Profiles =
             [
-                MakeProfile(localId, "Local",       FrontendEnvironmentType.Local,       "Local development environment", "https://localhost:5001"),
+                MakeProfile(qaId,    "QA",          FrontendEnvironmentType.QA,          "QA environment",                DefaultQaUrl),
                 MakeProfile(devId,   "Development", FrontendEnvironmentType.Development, "Development environment",       developmentUrl ?? "https://example-dev.local"),
-                MakeProfile(qaId,    "QA",          FrontendEnvironmentType.QA,          "QA environment",                "https://example-qa.local"),
+                MakeProfile(localId, "Local",       FrontendEnvironmentType.Local,       "Local development environment", "https://localhost:5001"),
                 MakeProfile(prodId,  "Production",  FrontendEnvironmentType.Production,  "Production environment",        "https://example.local")
             ]
         };

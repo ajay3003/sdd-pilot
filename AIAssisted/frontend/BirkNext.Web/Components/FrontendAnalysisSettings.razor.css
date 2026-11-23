@@ -1521,3 +1521,7 @@
 .fa-target-next, .fa-target-alt { margin: 0; font-size: .875rem; color: var(--clr-text-muted); }
 .fa-target-evidence { margin: .5rem 0 1rem; }
 .fa-target-evidence > summary { cursor: pointer; font-weight: 600; margin-bottom: .5rem; }
+
+/* Disabled environment types (Local, Production; 2026-11-23): listed, never selectable. */
+.fa-profile-chip-disabled { opacity: .55; cursor: not-allowed; }
+.fa-disabled-badge { font-size: 0.7rem; font-weight: 600; color: var(--clr-text-muted); text-transform: uppercase; }

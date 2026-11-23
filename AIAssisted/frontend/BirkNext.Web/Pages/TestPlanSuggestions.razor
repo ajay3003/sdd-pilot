@@ -1249,6 +1249,7 @@
             {
                 <div class="tps-case-body" id="@($"tps-case-body-{sid}")">
                     @CaseStatus(d, c, sid)
+                    <p data-testid="tps-expected-result-@sid"><strong>Expected result:</strong> @(c.EffectiveExpected ?? "Needs clarification — no supported expected result is stated.") <span class="tps-muted">(@c.Generated.ExpectedBasis)</span></p>
                     @if (shown is { } editLanguage) { @TranslationEditor(d, c, sid, editLanguage) }
                     <details class="tps-source-facts" open="@(!CanWrite)" data-testid="@($"tps-source-facts-{sid}")">
                     <summary>From the evidence <span class="tps-muted tps-small">purpose, details, requirements and where it came from</span></summary>

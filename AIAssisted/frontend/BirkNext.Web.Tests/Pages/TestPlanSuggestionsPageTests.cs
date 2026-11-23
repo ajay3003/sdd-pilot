@@ -291,6 +291,34 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
     }
 
     [Fact]
+    public void Review_displays_verified_contract_result_and_source_paths()
+    {
+        var draft = Draft();
+        var original = draft.Cases.Single(c => c.Source.ScenarioId == "manglende-barn");
+        var verified = original with { Generated = original.Generated with
+        {
+            ExpectedResult = "HTTP 200 (Received). Rapporten holdes kryptert og behandles ikke ordinært før barnet kan identifiseres.",
+            ExpectedBasis = ExpectedResultBasis.UnreviewedGuide,
+            FollowUp = null,
+            OpenQuestions = [],
+            Evidence = [new("source-evidence", "M2LB.zip: SkoleService/specs/001-skoleservice/contracts/rapportinntak.md: lines 46, 54", "Specified · HTTP 200 includes held reports; Person unavailable is held"),
+                new("source-evidence", "M2LB.zip: SkoleService/src/M2LB.SkoleService.Api/Rest/ReportIntake/ReportIntakeHandler.cs: lines 52, 58-59, 106, 109", "SourceImplemented · encrypted hold until child is identified"),
+                new("source-evidence", "M2LB.zip: SkoleService/tests/M2LB.SkoleService.Integration/Held/HeldReportTests.cs: lines 42-53", "TestDefined · unknown child receives HTTP 200 and is held encrypted")],
+        } };
+        draft = draft with { Cases = [.. draft.Cases.Select(c => c.Source.ScenarioId == "manglende-barn" ? verified : c)] };
+        var api = new Api(Workspace(canWrite: false, drafts: [new(draft.Id, "skolenaervaer", draft.PlanName, null, draft.Revision, 1, 0, 1, 0, 2, 2, "t", DateTimeOffset.UtcNow)]), draft);
+        var cut = Render(api, $"?draft={draft.Id}&area=review");
+        OpenCase(cut, "manglende-barn");
+        var card = cut.Find("[data-testid=tps-case-manglende-barn]");
+        card.TextContent.Should().Contain("HTTP 200 (Received)").And.Contain("holdes kryptert")
+            .And.Contain("ikke ordinært før barnet kan identifiseres").And.Contain("rapportinntak.md")
+            .And.Contain("ReportIntakeHandler.cs").And.Contain("HeldReportTests.cs")
+            .And.NotContain("NEEDS CLARIFICATION").And.NotContain("HTTP 503");
+        card.QuerySelector("[data-testid=tps-expected-result-manglende-barn]").TextContent.Should()
+            .Contain("HTTP 200 (Received)").And.Contain("holdes kryptert").And.Contain("ikke ordinært før barnet kan identifiseres");
+    }
+
+    [Fact]
     public void Test_Data_and_testability_never_claim_the_environment_and_show_what_is_missing()
     {
         var draft = Draft();

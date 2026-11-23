@@ -76,13 +76,17 @@
 <h2 id="environments-heading" class="fa-section-heading">Environments</h2>
 <div class="fa-profiles-row">
     <div class="fa-profiles-list">
-        @foreach (var p in FaSettings.Settings.Profiles)
+        @* QA first, then Development; Local and Production are listed last and disabled (enabled only in code). *@
+        @foreach (var p in FrontendAnalysisSettingsService.Ordered(FaSettings.Settings.Profiles))
         {
-            <button type="button" class="fa-profile-chip @(p.Id == _selectedProfileId ? "fa-profile-chip-selected" : "")"
-                    aria-pressed="@(p.Id == _selectedProfileId ? "true" : "false")"
+            var enabled = FrontendAnalysisSettingsService.IsEnabled(p);
+            <button type="button" class="fa-profile-chip @(p.Id == _selectedProfileId ? "fa-profile-chip-selected" : "") @(enabled ? "" : "fa-profile-chip-disabled")"
+                    aria-pressed="@(p.Id == _selectedProfileId ? "true" : "false")" disabled="@(!enabled)" title="@(enabled ? null : FrontendAnalysisSettingsService.DisabledReason)"
+                    data-testid="fa-profile-chip" data-env="@p.EnvironmentType" data-enabled="@(enabled ? "true" : "false")"
                     @onclick="() => SelectProfile(p.Id)">
                 <span class="fa-env-dot fa-env-dot-@p.EnvironmentType.ToString().ToLowerInvariant()"></span>
                 @p.Name
+                @if (!enabled) { <span class="fa-disabled-badge">Disabled</span> }
                 @if (p.Id == EffectiveActiveProfile?.Id)
                 {
                     <span class="fa-active-badge">Active</span>
@@ -247,9 +251,9 @@
                         <div class="form-field">
                             <label class="fa-label">Environment Type</label>
                             <select class="form-control" @bind="_editProfile.EnvironmentType">
-                                @foreach (var env in Enum.GetValues<FrontendEnvironmentType>())
+                                @foreach (var env in Enum.GetValues<FrontendEnvironmentType>().Where(e => FrontendAnalysisSettingsService.IsEnabled(e) || e == _editProfile.EnvironmentType))
                                 {
-                                    <option value="@env">@env</option>
+                                    <option value="@env" disabled="@(!FrontendAnalysisSettingsService.IsEnabled(env))">@env@(FrontendAnalysisSettingsService.IsEnabled(env) ? "" : " (disabled)")</option>
                                 }
                             </select>
                         </div>
@@ -1549,7 +1553,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
                 <div class="form-field fa-field-full">
                     <label class="fa-label" for="fa-create-type">Environment Type</label>
                     <select id="fa-create-type" class="form-control" @bind="_newProfileEnv" @bind:after="PrefillNewProfileUrl" data-testid="fa-create-type">
-                        @foreach (var env in Enum.GetValues<FrontendEnvironmentType>())
+                        @foreach (var env in Enum.GetValues<FrontendEnvironmentType>().Where(FrontendAnalysisSettingsService.IsEnabled))
                         {
                             <option value="@env">@env</option>
                         }
@@ -1745,7 +1749,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private string _newProfileUrl = "";
     private bool IsNewProfileUrlValid => string.IsNullOrWhiteSpace(_newProfileUrl) ||
         FrontendAnalysisSettingsService.IsValidUrl(_newProfileUrl);
-    private FrontendEnvironmentType _newProfileEnv = FrontendEnvironmentType.Local;
+    private FrontendEnvironmentType _newProfileEnv = FrontendEnvironmentType.Development;
 
     private bool _showDeleteConfirm;
     private bool _isDeleting;
@@ -2115,7 +2119,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         // environment by now. Keep that choice; only default to the active one when nothing (or an environment that no longer exists) is selected.
         if (_selectedProfileId is null || FaSettings.Settings.Profiles.All(p => p.Id != _selectedProfileId))
             _selectedProfileId = FaSettings.Settings.ActiveProfileId
-                ?? FaSettings.Settings.Profiles.FirstOrDefault()?.Id;
+                ?? FrontendAnalysisSettingsService.Ordered(FaSettings.Settings.Profiles).FirstOrDefault(FrontendAnalysisSettingsService.IsEnabled)?.Id;
         ApplyInitialProfile();
         if (_proxyRuntime is not null) await _proxyRuntime.SynchronizeAsync(CurrentProfile);
         // Restore the persisted public detection snapshot so a restart shows "Previously detected" (revalidated to Current/Stale)
@@ -2384,7 +2388,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             FaSettings.DeleteProfile(_selectedProfileId);
             if (!await SaveSettingsAsync()) return;
             _selectedProfileId = FaSettings.Settings.ActiveProfileId
-                ?? FaSettings.Settings.Profiles.FirstOrDefault()?.Id;
+                ?? FrontendAnalysisSettingsService.Ordered(FaSettings.Settings.Profiles).FirstOrDefault(FrontendAnalysisSettingsService.IsEnabled)?.Id;
             _showDeleteConfirm = false;
         }
         finally
@@ -2408,7 +2412,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     {
         _newProfileName = "";
         _newProfileUrl = "";
-        _newProfileEnv  = FrontendEnvironmentType.Local;
+        _newProfileEnv  = FrontendEnvironmentType.Development;
         _newUrlFromSource = false;
         PrefillNewProfileUrl();
         _showCreateDialog = true;
@@ -2900,7 +2904,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     // Selecting an execution target does not assert reachability or grant authenticated access.
     // Detection and engine readiness retain their independent checks below.
-    private bool CanSetActiveTarget => !_isEditMode && SelectedProfile is { } profile &&
+    private bool CanSetActiveTarget => !_isEditMode && SelectedProfile is { } profile && FrontendAnalysisSettingsService.IsEnabled(profile) &&
         FrontendAnalysisSettingsService.IsValidUrl(profile.TargetUrl ?? "") && FaSettings.ValidateProfile(profile).IsValid;
 
     /// <summary>Detection readiness from detection evidence only. Where sign-in needs a managed browser, detection is complete once the target

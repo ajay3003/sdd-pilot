@@ -58,20 +58,24 @@ public sealed class TestPlanSuggestionEngineTests
     }
 
     [Fact]
-    public void Unknown_child_keeps_the_source_generation_conflict_unresolved_and_separate_from_Person_unavailability()
+    public void Unknown_child_uses_verified_contract_result_and_remains_separate_from_Key_Vault_failure()
     {
         var scenario = S("manglende-barn");
-        scenario.State.Should().Be(GuideScenarioState.NeedsClarification);
-        scenario.ExpectedOutcome.Should().BeNull();
-        scenario.Objective.Should().Contain("M2LB (7).zip").And.Contain("M2LB (5).zip").And.Contain("ikke en oversettelsesvariant");
-        scenario.FollowUp.Should().Contain("ReportIntakeHandler.cs").And.Contain("Rapportinntaksbehandler.cs").And.Contain("linje");
+        scenario.State.Should().Be(GuideScenarioState.Suggested);
+        scenario.ExpectedOutcome.Should().Contain("HTTP 200").And.Contain("kryptert").And.Contain("ikke ordinært behandlet");
+        scenario.FollowUp.Should().BeNull();
+        scenario.StepIds.Should().NotContain("16", "Key Vault unavailability is a separate condition and scenario");
+        var keyVault = S("key-vault-unavailable");
+        keyVault.ExpectedOutcome.Should().Contain("HTTP 503");
+        keyVault.StepIds.Should().Contain("16");
 
         var generated = E.Generate(Guide, scenario, reviewedGuide: false);
-        generated.ExpectedResult.Should().BeNull();
-        generated.ExpectedBasis.Should().Be(ExpectedResultBasis.NeedsClarification);
-        generated.Requirements.Single(r => r.RuleId == "r-ukjent-barn").ExpectedBehavior.Should().Contain("HTTP 200").And.Contain("HTTP 503");
-        generated.Evidence.Select(e => e.Reference).Should().Contain(r => r.Contains("ReportIntakeHandler.cs") && r.Contains("M2LB (7).zip"))
-            .And.Contain(r => r.Contains("Rapportinntaksbehandler.cs") && r.Contains("M2LB (5).zip"));
+        generated.ExpectedResult.Should().Contain("HTTP 200").And.Contain("kryptert").And.Contain("ikke ordinært behandlet");
+        generated.ExpectedBasis.Should().Be(ExpectedResultBasis.UnreviewedGuide);
+        generated.Requirements.Single(r => r.RuleId == "r-ukjent-barn").ExpectedBehavior.Should().Contain("HTTP 200").And.Contain("kryptert");
+        generated.Evidence.Select(e => e.Reference).Should().Contain(r => r.Contains("rapportinntak.md") && r.Contains("M2LB.zip"))
+            .And.Contain(r => r.Contains("ReportIntakeHandler.cs") && r.Contains("M2LB.zip"))
+            .And.Contain(r => r.Contains("HeldReportTests.cs") && r.Contains("M2LB.zip"));
     }
 
     [Theory]
