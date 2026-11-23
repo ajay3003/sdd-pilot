@@ -24,8 +24,11 @@ public static partial class ScenarioBrowserPresentation
 
     public static Relevance RelevanceOf(DiscoveredScenario c, ScenarioOwnershipInfo o)
     {
-        if (o.ManualRelevant || o.NeedsReview) return Relevance.Manual; // uncertain is never hidden
         if (c.Conflicts.Count > 0) return Relevance.Manual;            // contradicting sources need a person
+        // A scenario under a user story about the code base, or about the code base itself (shared rule; uncertain text is never technical).
+        if (ManualTestingRelevance.StoryReason(c.Story) is not null || ManualTestingRelevance.TechnicalReason(c.Title, c.Purpose, c.ExpectedBehaviour) is not null)
+            return Relevance.Technical;
+        if (o.ManualRelevant || o.NeedsReview) return Relevance.Manual; // uncertain is never hidden
         if (o.Purpose == ScenarioPurpose.IntegrationFunctional) return Relevance.Manual; // business integration flows
         if (o.Purpose == ScenarioPurpose.SecurityTechnical && c.RequirementIds.Count > 0) return Relevance.Manual; // functional authorization a requirement names
         return Relevance.Technical;

@@ -58,19 +58,23 @@ public sealed class ManualTestingPlanTests : BunitContext
         Case("api1", "GET /reports", capability: ScenarioOwnership.ApiContract, type: ScenarioCandidateType.ApiContract),
         Case("t1", "Identifiers are English", story: TechStory));
 
-    private void Setup(TestPlanDraft? plan = null, string[]? selection = null, bool canWrite = true)
+    private void Setup(TestPlanDraft? plan = null, string[]? selection = null, bool canWrite = true, bool archived = false)
     {
         plan ??= Standard();
+        var summary = new TestPlanDraftSummary(PlanId, "project:library", plan.PlanName, null, plan.Revision, plan.Cases.Count, 0, 0, 0, 0, 0, "anna", DateTimeOffset.UtcNow)
+            { Lifecycle = archived ? TestPlanLifecycle.Archived : TestPlanLifecycle.Active };
         Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Imported", "library", "Library")).Object);
         _api.Setup(x => x.ProjectAsync("library", It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync((new TestPlanWorkspace
         {
             ProjectKey = "library", GuideKey = "project:library", CanWrite = canWrite,
-            Drafts = [new TestPlanDraftSummary(PlanId, "project:library", plan.PlanName, null, plan.Revision, plan.Cases.Count, 0, 0, 0, 0, 0, "anna", DateTimeOffset.UtcNow)],
+            Drafts = archived ? [] : [summary], ArchivedDrafts = archived ? [summary] : [],
+            TestData = [new TestDataOption("asset-1", "gyldig-rapport", "Gyldig rapport", "Json", "Approved", "Valid", null, null, null, null)],
             PlanStatus = new() { [PlanId] = new PlanSourceStatus { State = "Må gjennomgås", Message = "1 scenario er endret i kilden.", Changed = 1 } },
         }, (string?)null));
         _api.Setup(x => x.LastDiscoveryAsync("library", It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((new ScenarioDiscoveryResult { DiscoveryId = "d1", ProjectKey = "library", Candidates = [new DiscoveredScenario { CandidateId = "c7", ProjectKey = "library", Title = "Scenario 7" }] }, (string?)null));
         _api.Setup(x => x.DraftAsync(PlanId, It.IsAny<CancellationToken>())).ReturnsAsync((plan, (string?)null));
+        _api.Setup(x => x.TranslationAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new TranslationAvailability(true, "offline", ""));
         Services.AddSingleton(_api.Object);
         JSInterop.Mode = JSRuntimeMode.Loose;
         if (selection is not null)
@@ -202,7 +206,7 @@ public sealed class ManualTestingPlanTests : BunitContext
         SaveTestPlanDraftRequest? sent = null;
         _api.Setup(x => x.SaveAsync(PlanId, It.IsAny<SaveTestPlanDraftRequest>(), It.IsAny<CancellationToken>()))
             .Callback<Guid, SaveTestPlanDraftRequest, CancellationToken>((_, r, _) => sent = r)
-            .ReturnsAsync(((TestPlanDraft?)null, (string?)"409 draft-changed"));
+            .ReturnsAsync(((TestPlanDraft?)null, (string?)"The proposal was changed by someone else. Reload it; your change was not saved."));
         var cut = Open();
 
         cut.Find("[data-testid=mtp-save]").HasAttribute("disabled").Should().BeTrue("nothing to save");
@@ -347,7 +351,10 @@ public sealed class ManualTestingPlanTests : BunitContext
             .ReturnsAsync((new TranslateScenarioResult(Standard() with { Revision = 4 }, ["c1"], [], [], "Oversatt 1 testtilfelle."), (string?)null));
         var cut = Open();
 
-        cut.Find("[data-testid=mtp-export]").GetAttribute("href").Should().Be($"test-plan-suggestions?draft={PlanId}&area=export");
+        cut.Find("[data-testid=mtp-advanced]").GetAttribute("href").Should().Be($"test-plan-suggestions?draft={PlanId}&advanced=1");
+        cut.Find("[data-testid=mtp-tool][data-tool=export]").Click();
+        cut.Find("[data-testid=adx]").Should().NotBeNull("the existing Azure DevOps export (with its language choice) is part of the plan page");
+        cut.Find("[data-testid=mtp-tool][data-tool=cases]").Click();
         cut.Find("[data-testid=mtp-translate]").Click();
 
         _api.Verify(x => x.TranslateAsync(PlanId, new TranslateScenarioRequest(3, "c1", false, ScenarioPlanning.Norwegian), It.IsAny<CancellationToken>()));
@@ -371,5 +378,199 @@ public sealed class ManualTestingPlanTests : BunitContext
         cut.Find("[data-testid=mtp-title]").GetAttribute("value").Should().StartWith("Nytt testtilfelle");
         cut.Find("[data-testid=mtp-steps-none]").TextContent.Should().Contain("Ingen teststeg");
         cut.Find("[data-testid=mtp-scenario]").QuerySelectorAll("[data-testid=mtp-case]").Should().HaveCount(3, "several cases under one scenario");
+    }
+
+    // ── H–N: plan lifecycle, tools, translation review, Test Data, conflicts, exclusion (2026-11-23) ─────────────────────────────────
+
+    [Fact]
+    public void H_archiving_asks_first_and_the_archived_plan_becomes_read_only_and_can_be_restored()
+    {
+        Setup();
+        _api.Setup(x => x.ArchiveAsync(PlanId, It.IsAny<TestPlanLifecycleRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new TestPlanDraftSummary(PlanId, "project:library", "Library – test plan", null, 4, 4, 0, 0, 0, 0, 0, "anna", DateTimeOffset.UtcNow) { Lifecycle = TestPlanLifecycle.Archived }, (string?)null));
+        _api.Setup(x => x.UnarchiveAsync(PlanId, It.IsAny<TestPlanLifecycleRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new TestPlanDraftSummary(PlanId, "project:library", "Library – test plan", null, 5, 4, 0, 0, 0, 0, 0, "anna", DateTimeOffset.UtcNow), (string?)null));
+        var cut = Open();
+
+        cut.Find("[data-testid=mtp-archive]").Click();
+        _api.Verify(x => x.ArchiveAsync(It.IsAny<Guid>(), It.IsAny<TestPlanLifecycleRequest>(), It.IsAny<CancellationToken>()), Times.Never, "archiving asks first");
+        cut.Find("[data-testid=mtp-archive-confirm]").TextContent.Should().Contain("Ingenting slettes");
+        cut.Find("[data-testid=mtp-archive-yes]").Click();
+
+        _api.Verify(x => x.ArchiveAsync(PlanId, new TestPlanLifecycleRequest(3, null), It.IsAny<CancellationToken>()));
+        cut.Find("[data-testid=mtp-archived]").TextContent.Should().Contain("arkivert");
+        cut.Find("[data-testid=mtp-title]").HasAttribute("disabled").Should().BeTrue("an archived plan is read-only");
+        cut.FindAll("[data-testid=mtp-actions]").Should().BeEmpty();
+        cut.Find("[data-testid=mtp-unarchive]").Click();
+        _api.Verify(x => x.UnarchiveAsync(PlanId, new TestPlanLifecycleRequest(4, null), It.IsAny<CancellationToken>()));
+    }
+
+    [Fact]
+    public void H_an_archived_plan_opened_by_link_is_shown_read_only()
+    {
+        Setup(archived: true);
+        var cut = Open($"manual-testing/plan?draft={PlanId}");
+        cut.Find("[data-testid=mtp-archived]").Should().NotBeNull();
+        cut.Find("[data-testid=mtp-title]").HasAttribute("disabled").Should().BeTrue();
+        cut.FindAll("[data-testid=mtp-add-case]").Should().BeEmpty();
+        cut.FindAll("[data-testid=mtp-translate-all]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void I_the_versions_tool_lists_revisions_and_restores_one_at_the_plan_revision()
+    {
+        Setup();
+        _api.Setup(x => x.RevisionsAsync(PlanId, It.IsAny<CancellationToken>())).ReturnsAsync((new List<TestPlanRevisionSummary>
+        {
+            new(3, "Saved", "anna", DateTimeOffset.UtcNow, "Library – test plan", 4, true), new(1, "Created", "anna", DateTimeOffset.UtcNow.AddDays(-1), "Library – test plan", 2, false),
+        }, (string?)null));
+        _api.Setup(x => x.RestoreRevisionAsync(PlanId, 3, 1, It.IsAny<CancellationToken>())).ReturnsAsync((Standard() with { Revision = 4 }, (string?)null));
+        var cut = Open();
+
+        cut.Find("[data-testid=mtp-tool][data-tool=versions]").Click();
+        cut.FindAll("[data-testid=mtp-version]").Should().HaveCount(2);
+        cut.Find("[data-testid=mtp-version][data-revision='1'] [data-testid=mtp-version-restore]").Click();
+
+        _api.Verify(x => x.RestoreRevisionAsync(PlanId, 3, 1, It.IsAny<CancellationToken>()));
+        cut.Find("[data-testid=mtp-notice]").TextContent.Should().Contain("revisjon 4");
+    }
+
+    [Fact]
+    public void I_the_source_changes_tool_shows_the_impact_and_refreshes_without_touching_edits()
+    {
+        Setup();
+        _api.Setup(x => x.ImpactAsync(PlanId, It.IsAny<CancellationToken>())).ReturnsAsync((new PlanImpactAnalysis
+        {
+            DraftId = PlanId, PlanRevision = 3, Summary = "1 testtilfelle er endret i kilden.",
+            Cases = [new CaseImpact { CaseId = "c1", Title = "Submit a valid report", Kinds = [CaseImpactKind.ExpectedResultChanged], ReviewedBefore = true,
+                Changes = [new CaseImpactChange("Forventet resultat", "200", "201")] }],
+        }, (string?)null));
+        _api.Setup(x => x.RefreshAsync(PlanId, 3, It.IsAny<CancellationToken>())).ReturnsAsync((Standard() with { Revision = 4 }, (string?)null));
+        var cut = Open();
+
+        cut.Find("[data-testid=mtp-source-changed] button").Click();
+        cut.Find("[data-testid=mtp-changes-summary]").TextContent.Should().Contain("endret i kilden");
+        cut.Find("[data-testid=mtp-change]").TextContent.Should().Contain("forventet resultat endret").And.Contain("var godkjent");
+        cut.Find("[data-testid=mtp-refresh]").Click();
+        _api.Verify(x => x.RefreshAsync(PlanId, 3, It.IsAny<CancellationToken>()));
+    }
+
+    [Fact]
+    public void J_a_translation_is_reviewed_in_the_editor_its_state_is_shown_and_edits_are_saved_with_the_case()
+    {
+        var original = Case("c1", "Submit a valid report", story: Story6);
+        var translated = original.WithTranslation(ScenarioPlanning.Norwegian, new TestCaseTranslation
+        {
+            Title = "Send inn en gyldig rapport", Steps = ["Åpne skjemaet", "Send inn rapporten"], StepExpected = ["Skjemaet vises", null], ExpectedResult = "Rapporten lagres",
+            SourceFingerprint = ScenarioPlanning.SourceFingerprint(original), Origin = TranslationOrigin.Machine, Provider = "offline",
+        });
+        Setup(Plan(translated));
+        SaveTestPlanDraftRequest? sent = null;
+        _api.Setup(x => x.SaveAsync(PlanId, It.IsAny<SaveTestPlanDraftRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, SaveTestPlanDraftRequest, CancellationToken>((_, r, _) => sent = r).ReturnsAsync((Plan(translated) with { Revision = 4 }, (string?)null));
+        var cut = Open();
+
+        cut.Find("[data-testid=mtp-translation-state]").TextContent.Should().Be("Maskinoversatt — ikke gjennomgått");
+        cut.Find("[data-testid=mtp-tr-title]").GetAttribute("value").Should().Be("Send inn en gyldig rapport");
+        cut.FindAll("[data-testid=mtp-tr-step-action]")[1].GetAttribute("value").Should().Be("Send inn rapporten");
+        cut.Find("[data-testid=mtp-save]").HasAttribute("disabled").Should().BeTrue();
+        cut.Find("[data-testid=mtp-tr-expected]").Input("Rapporten er lagret og kvittering vises");
+        cut.Find("[data-testid=mtp-save]").Click();
+
+        var nb = sent!.Cases.Single(c => c.ScenarioId == "c1").Translations![ScenarioPlanning.Norwegian];
+        nb.ExpectedResult.Should().Be("Rapporten er lagret og kvittering vises");
+        nb.Title.Should().Be("Send inn en gyldig rapport", "unchanged fields keep the reviewed text");
+        sent.Cases.Single(c => c.ScenarioId == "c1").Edits.IsEmpty.Should().BeTrue("the original stays as it was");
+    }
+
+    [Fact]
+    public void J_a_translation_made_from_an_older_original_says_so()
+    {
+        var original = Case("c1", "Submit a valid report");
+        var stale = original.WithTranslation(ScenarioPlanning.Norwegian, new TestCaseTranslation { Title = "Gammel tittel", SourceFingerprint = "older", Origin = TranslationOrigin.MachineEdited });
+        Setup(Plan(stale));
+        var cut = Open();
+        cut.Find("[data-testid=mtp-translation-state]").TextContent.Should().Contain("eldre tekst");
+    }
+
+    [Fact]
+    public void K_test_data_is_linked_from_the_catalogue_and_saved_by_asset_id()
+    {
+        Setup();
+        SaveTestPlanDraftRequest? sent = null;
+        _api.Setup(x => x.SaveAsync(PlanId, It.IsAny<SaveTestPlanDraftRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<Guid, SaveTestPlanDraftRequest, CancellationToken>((_, r, _) => sent = r).ReturnsAsync((Standard() with { Revision = 4 }, (string?)null));
+        var cut = Open();
+
+        cut.Find("[data-testid=mtp-testdata-add]").Change("asset-1");
+        cut.Find("[data-testid=mtp-testdata-link]").TextContent.Should().Contain("gyldig-rapport");
+        cut.Find("[data-testid=mtp-save]").Click();
+
+        sent!.Cases.Single(c => c.ScenarioId == "c1").TestDataAssetIds.Should().Equal("asset-1");
+    }
+
+    [Fact]
+    public void L_a_source_conflict_is_resolved_in_the_editor_with_a_chosen_claim_and_a_reason()
+    {
+        var conflict = new ScenarioConflict { Claims = [new ScenarioClaim("cand-spec", "Spesifikasjon", "Status 200", "spec.md#3"), new ScenarioClaim("cand-guide", "Systemforståelse", "Status 503", "guide#2")] };
+        var c3 = Case("c3", "Reject a closed period") with { Generated = Case("c3", "Reject a closed period").Generated with { Conflicts = [conflict] } };
+        Setup(Plan(c3));
+        _api.Setup(x => x.ResolveConflictAsync(PlanId, It.IsAny<ResolveConflictRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync((Plan(c3) with { Revision = 4 }, (string?)null));
+        var cut = Open();
+
+        cut.Find("[data-testid=mtp-case-conflict]").TextContent.Should().Be("Kildekonflikt");
+        cut.Find("[data-testid=mtp-ctx-why]").TextContent.Should().Contain("uenige");
+        cut.FindAll("[data-testid=mtp-claim]")[1].Change(true);
+        cut.Find("[data-testid=mtp-conflict-resolve]").HasAttribute("disabled").Should().BeTrue("a reason is required");
+        cut.Find("[data-testid=mtp-conflict-why]").Input("Tjenesten er nede i vedlikeholdsvinduet");
+        cut.Find("[data-testid=mtp-conflict-resolve]").Click();
+
+        _api.Verify(x => x.ResolveConflictAsync(PlanId, new ResolveConflictRequest(3, "c3", "Status 503", "cand-guide", "Tjenesten er nede i vedlikeholdsvinduet"), It.IsAny<CancellationToken>()));
+    }
+
+    [Fact]
+    public void M_excluding_a_case_needs_a_reason_and_uses_the_review_state()
+    {
+        Setup();
+        _api.Setup(x => x.ReviewAsync(PlanId, It.IsAny<ReviewTestCaseRequest>(), It.IsAny<CancellationToken>())).ReturnsAsync((Standard() with { Revision = 4 }, (string?)null));
+        var cut = Open();
+        cut.Find("[data-testid=mtp-exclude]").Click();
+        cut.Find("[data-testid=mtp-exclude-yes]").HasAttribute("disabled").Should().BeTrue();
+        cut.Find("[data-testid=mtp-exclude-why]").Input("Dekket av en annen test");
+        cut.Find("[data-testid=mtp-exclude-yes]").Click();
+        _api.Verify(x => x.ReviewAsync(PlanId, new ReviewTestCaseRequest(3, "c1", TestCaseReviewState.Excluded, "Dekket av en annen test"), It.IsAny<CancellationToken>()));
+    }
+
+    [Fact]
+    public void N_translate_all_uses_the_existing_plan_translation()
+    {
+        Setup();
+        _api.Setup(x => x.TranslateAllAsync(PlanId, It.IsAny<TranslatePlanRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((new TranslateScenarioResult(Standard() with { Revision = 4 }, ["c1", "m1"], [], [], "Oversatt 2 testtilfeller."), (string?)null));
+        var cut = Open();
+        cut.Find("[data-testid=mtp-translate-all]").Click();
+        _api.Verify(x => x.TranslateAllAsync(PlanId, new TranslatePlanRequest(3, false, ScenarioPlanning.Norwegian), It.IsAny<CancellationToken>()));
+        cut.Find("[data-testid=mtp-notice]").TextContent.Should().Be("Oversatt 2 testtilfeller.");
+    }
+
+    [Fact]
+    public void N_a_case_deep_link_opens_that_case_even_when_it_is_technical()
+    {
+        Setup();
+        var cut = Open($"manual-testing/plan?draft={PlanId}&case=api1");
+        cut.Find("[data-testid=mtp-title]").GetAttribute("value").Should().Be("GET /reports");
+        cut.Find("[data-testid=mtp-technical]").HasAttribute("checked").Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(null, null, null, null, "manual-testing/plan")]
+    [InlineData("66666666-6666-6666-6666-666666666666", "prepare", "c1", null, "manual-testing/plan?draft=66666666-6666-6666-6666-666666666666&case=c1")]
+    [InlineData("66666666-6666-6666-6666-666666666666", "export", null, null, "manual-testing/plan?draft=66666666-6666-6666-6666-666666666666&panel=export")]
+    [InlineData(null, "choose", null, null, "manual-testing/discover")]
+    [InlineData("66666666-6666-6666-6666-666666666666", "prepare", null, "1", null)]
+    public void N_old_plan_links_land_on_the_canonical_page_unless_the_advanced_tools_are_asked_for(string? draft, string? area, string? caseId, string? advanced, string? expected)
+    {
+        ManualTestingPresentation.CanonicalRoute(null, draft, area, caseId, advanced).Should().Be(expected);
+        ManualTestingPresentation.CanonicalRoute("skolenaervaer", draft, area, caseId, null).Should().BeNull("guide-mode plans stay on the full page");
     }
 }

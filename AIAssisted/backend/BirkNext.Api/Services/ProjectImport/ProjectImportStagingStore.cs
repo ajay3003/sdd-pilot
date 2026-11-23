@@ -23,6 +23,8 @@ public sealed class StagedProjectImport(Guid stagingId, string importId, string 
     public DateTimeOffset ExpiresAt { get; } = expiresAt;
     /// <summary>The settled commit result. Set once the source part is settled; a repeated commit returns it instead of committing again.</summary>
     public ProjectImportCommitResult? Committed { get; internal set; }
+    /// <summary>The tester's application choice for this upload ("Ny applikasjon" / "Ny versjon av …"); null = the archive's own identity.</summary>
+    public ProjectImportApplicationChoice? Application { get; internal set; }
     /// <summary>Serialises commits of this staging so two clicks cannot create two snapshots from one upload.</summary>
     public SemaphoreSlim Gate { get; } = new(1, 1);
 }

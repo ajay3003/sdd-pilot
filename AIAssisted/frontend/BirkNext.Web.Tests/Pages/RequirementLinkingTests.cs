@@ -90,7 +90,7 @@ public sealed class RequirementLinkingTests : BunitContext
         });
         Services.AddSingleton(context.Object);
         JSInterop.Mode = JSRuntimeMode.Loose;
-        Services.GetRequiredService<NavigationManager>().NavigateTo($"test-plan-suggestions?draft={DraftId}&area=prepare&case=tsc-borrow");
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"test-plan-suggestions?draft={DraftId}&area=prepare&case=tsc-borrow&advanced=1");
         var cut = Render<TestPlanSuggestions>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=tps-links-tsc-borrow]"));
         return cut;

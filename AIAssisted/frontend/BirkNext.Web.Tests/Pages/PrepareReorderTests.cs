@@ -63,7 +63,7 @@ public sealed class PrepareReorderTests : BunitContext
         Services.AddSingleton<IWorkspaceSessionService>(new WorkspaceArtifactRepository());
         Services.AddSingleton(new Mock<IReviewContextProvider>().Object);
         JSInterop.Mode = JSRuntimeMode.Loose;
-        Services.GetRequiredService<NavigationManager>().NavigateTo($"test-plan-suggestions?draft={DraftId}&area=prepare{query}");
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"test-plan-suggestions?draft={DraftId}&area=prepare{query}&advanced=1");
         var cut = Render<TestPlanSuggestions>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=tps-scenarios]"));
         return cut;

@@ -136,6 +136,65 @@ public sealed record ProjectImportCommitResult
     public DateTimeOffset? StagedUntil { get; init; }
     /// <summary>The implementation-gap evaluation made from this import's SDD documents and snapshot; null when it has no tasks document or failed.</summary>
     public Guid? ImplementationGapEvaluationId { get; init; }
+    /// <summary>The application identity the source snapshot got, and how (null when no source snapshot was created).</summary>
+    public ProjectImportApplicationOutcome? Application { get; init; }
+}
+
+// ── Application identity at import (2026-11-23) ─────────────────────────────────────────────────────────────────────
+// The tester says whether a ZIP is a new application or a new version of one already imported. BirkNext never infers it from the file name:
+// without a choice the archive's own identity (root solution, else archive name) is used, as before.
+
+/// <summary>"Ny applikasjon" or "Ny versjon av eksisterende applikasjon".</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ProjectImportApplicationMode { NewApplication, NewVersion }
+
+/// <summary>An application already imported (one logical source identity over its imports).</summary>
+public sealed record KnownApplication
+{
+    public string Key { get; init; } = "";
+    public string Name { get; init; } = "";
+    public string? LatestArchive { get; init; }
+    public DateTimeOffset LatestImportedAt { get; init; }
+    public int Imports { get; init; }
+}
+
+/// <summary>What the import page needs to ask the question: the archive's own identity and the applications already imported.</summary>
+public sealed record ProjectImportApplicationOptions
+{
+    /// <summary>The identity the archive has on its own (root solution, else the archive file name).</summary>
+    public string ArchiveKey { get; init; } = "";
+    public string ArchiveName { get; init; } = "";
+    public string ArchiveBasis { get; init; } = "";
+    /// <summary>The known application with the same identity as the archive, if any (a plain re-import would join it).</summary>
+    public string? SameIdentityAs { get; init; }
+    public List<KnownApplication> Applications { get; init; } = [];
+    /// <summary>The tester's choice recorded on this staged import, if any.</summary>
+    public ProjectImportApplicationChoice? Choice { get; init; }
+}
+
+/// <param name="ApplicationKey">For <see cref="ProjectImportApplicationMode.NewVersion"/>: the chosen application's key (from the options).</param>
+/// <param name="UseAsCurrent">For a new version: record this import as the application's analysis baseline (the existing Kildeversjoner decision).</param>
+public sealed record ProjectImportApplicationChoice(ProjectImportApplicationMode Mode, string? ApplicationKey = null, bool UseAsCurrent = true)
+{
+    /// <summary>Set by the server: a warning when the archive looks unrelated to the chosen application (no project in common). Never blocks.</summary>
+    public string? Warning { get; init; }
+    /// <summary>Set by the server: the name the application identity will have.</summary>
+    public string? ApplicationName { get; init; }
+}
+
+/// <summary>What the import decided about the application identity.</summary>
+public sealed record ProjectImportApplicationOutcome
+{
+    public ProjectImportApplicationMode Mode { get; init; }
+    public string ApplicationKey { get; init; } = "";
+    public string ApplicationName { get; init; } = "";
+    /// <summary>The archive's own identity, kept for traceability when it differs from the application's.</summary>
+    public string ArchiveKey { get; init; } = "";
+    public string ArchiveName { get; init; } = "";
+    /// <summary>True when this import was recorded as the application's analysis baseline.</summary>
+    public bool BaselineSelected { get; init; }
+    /// <summary>True when the choice was made explicitly (false = archive identity without a choice, e.g. an older client).</summary>
+    public bool Explicit { get; init; }
 }
 
 /// <summary>

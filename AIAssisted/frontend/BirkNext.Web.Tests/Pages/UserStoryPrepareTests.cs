@@ -95,7 +95,7 @@ public sealed class UserStoryPrepareTests : BunitContext
         context.Setup(x => x.GetCurrent()).Returns(new ReviewContext { Specification = new SpecificationSemanticModel { Requirements = [.. Options.Select(o => new SemanticRequirement { Id = o.RequirementId, Text = o.Title })] } });
         Services.AddSingleton(context.Object);
         JSInterop.Mode = JSRuntimeMode.Loose;
-        Services.GetRequiredService<NavigationManager>().NavigateTo($"test-plan-suggestions?draft={DraftId}&area=prepare");
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"test-plan-suggestions?draft={DraftId}&area=prepare&advanced=1");
         var cut = Render<TestPlanSuggestions>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=tps-scenarios]"));
         return cut;

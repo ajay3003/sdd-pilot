@@ -29,6 +29,23 @@ public static class SyntheticProjects
         return chooser;
     }
 
+    /// <summary>
+    /// Import Project (2026-11-23): with applications already imported, the import waits until the tester says whether the ZIP is a new application or a
+    /// new version of one. A test's synthetic project is always a new application.
+    /// </summary>
+    public static async Task ChooseNewApplicationAsync(IPage page)
+    {
+        var card = page.GetByTestId("pi-app-choice");
+        if (await card.CountAsync() == 0) return;
+        var options = page.GetByTestId("pi-app-new").Or(page.GetByTestId("pi-app-first"));
+        try { await options.First.WaitForAsync(new() { Timeout = 30000 }); } catch (TimeoutException) { return; }
+        if (await page.GetByTestId("pi-app-new").CountAsync() > 0)
+        {
+            await page.GetByTestId("pi-app-new").CheckAsync();
+            await page.GetByTestId("pi-app-chosen").WaitForAsync(new() { Timeout = 30000 });
+        }
+    }
+
     /// <summary>A unique project name for one test (letters and digits only, as a folder name).</summary>
     public static string NewName(string prefix) => prefix + Guid.NewGuid().ToString("N")[..8];
 
@@ -127,6 +144,7 @@ public static class SyntheticProjects
         await page.GetByTestId("pi-preview").WaitForAsync(new() { Timeout = 120000 });
         var importAgain = page.GetByTestId("pi-duplicate-import-again");
         if (await importAgain.CountAsync() > 0) await importAgain.ClickAsync();
+        await ChooseNewApplicationAsync(page);
         await page.GetByTestId("pi-import").ClickAsync();
         var result = page.GetByTestId("pi-result");
         // A real 10 MB archive (M2LB) takes about 3 minutes alone and more on a busy machine: 10 minutes before it counts as hung.

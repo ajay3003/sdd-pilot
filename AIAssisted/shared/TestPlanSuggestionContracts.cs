@@ -473,7 +473,33 @@ public sealed record StoryRequirementLink(string StoryKey, ManualRequirementLink
 public sealed record StoryRequirementRejection(string StoryKey, RejectedRequirementSuggestion Rejection);
 
 public sealed record TestPlanDraftSummary(Guid Id, string GuideKey, string PlanName, string? DeliveryLabel, int Revision, int Cases, int Accepted, int NeedsClarification,
-    int MissingExpected, int MissingTestData, int Blocked, string UpdatedBy, DateTimeOffset UpdatedAt);
+    int MissingExpected, int MissingTestData, int Blocked, string UpdatedBy, DateTimeOffset UpdatedAt)
+{
+    /// <summary>Active (normal work) or Archived (read-only, listed apart; restorable). Deleted plans are never listed.</summary>
+    public TestPlanLifecycle Lifecycle { get; init; } = TestPlanLifecycle.Active;
+    /// <summary>When and by whom the plan was last archived, restored or deleted (null = never).</summary>
+    public DateTimeOffset? LifecycleChangedAt { get; init; }
+    public string? LifecycleChangedBy { get; init; }
+    /// <summary>Distinct scenarios the plan's cases belong to (hand-written cases without a scenario are not counted).</summary>
+    public int Scenarios { get; init; }
+    /// <summary>The application the plan follows (logical identity), or null for older plans.</summary>
+    public string? ApplicationKey { get; init; }
+    public string? ProjectName { get; init; }
+}
+
+/// <summary>
+/// A plan's lifecycle (2026-11-23). Archive is the normal way to put a plan away: it is read-only and listed apart until restored. Delete is
+/// logical: the plan disappears from every list and cannot be opened, while its content, revisions and frozen snapshots are kept for audit
+/// (snapshots are immutable and reference the plan). Only an archived plan can be deleted, after the tester confirms its name.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum TestPlanLifecycle { Active, Archived, Deleted }
+
+/// <summary>Archive or restore a plan at the revision the tester saw (a changed plan is refused with 409).</summary>
+public sealed record TestPlanLifecycleRequest(int BaseRevision, string? Reason = null);
+
+/// <summary>Delete an archived plan: the revision the tester saw and the plan's name typed as confirmation.</summary>
+public sealed record DeleteTestPlanRequest(int BaseRevision, string ConfirmName);
 
 /// <summary>A scenario candidate as discovered (one per guide scenario), with its draft preview and filters' facts.</summary>
 public sealed record ScenarioCandidate
@@ -509,6 +535,8 @@ public sealed record TestPlanWorkspace
     public List<ScenarioCandidate> Candidates { get; init; } = [];
     public List<TestPlanStage> Stages { get; init; } = [];
     public List<TestPlanDraftSummary> Drafts { get; init; } = [];
+    /// <summary>Archived plans of the project / application (read-only until restored). Never part of <see cref="Drafts"/>.</summary>
+    public List<TestPlanDraftSummary> ArchivedDrafts { get; init; } = [];
     public List<TestPlanSnapshotSummary> Snapshots { get; init; } = [];
     public List<ExecutableScenarioOption> Executables { get; init; } = [];
     public List<TestDataOption> TestData { get; init; } = [];

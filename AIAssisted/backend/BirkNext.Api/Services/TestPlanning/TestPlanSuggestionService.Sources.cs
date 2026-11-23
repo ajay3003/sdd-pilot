@@ -254,7 +254,7 @@ public sealed partial class TestPlanSuggestionService
     /// their provenance stay on the case; the chosen result becomes the person's expected result.</summary>
     public async Task<TestPlanDraft> ResolveConflictAsync(Guid id, ResolveConflictRequest request, string actor, CancellationToken ct)
     {
-        var row = await Row(id, ct);
+        var row = await Mutable(id, ct);
         if (row.Revision != request.BaseRevision) throw Stale(row);
         var plan = Read(row);
         var target = plan.Cases.FirstOrDefault(c => c.Source.ScenarioId == request.CaseId) ?? throw new TestPlanException(404, "case-not-found", "No such case in this plan.");
@@ -415,15 +415,15 @@ public sealed partial class TestPlanSuggestionService
     }
 
     /// <summary>The project plans of the same application from other imports of it (a plan follows the application). Unreadable rows are skipped.</summary>
-    private async Task<List<TestPlanDraft>> ApplicationDraftsAsync(string applicationKey, string exceptProjectKey, CancellationToken ct)
+    private async Task<List<(TestPlanDraft Plan, TestPlanDraftRecord Row)>> ApplicationDraftsAsync(string applicationKey, string exceptProjectKey, CancellationToken ct)
     {
-        var list = new List<TestPlanDraft>();
+        var list = new List<(TestPlanDraft Plan, TestPlanDraftRecord Row)>();
         foreach (var row in await db.TestPlanDrafts.AsNoTracking().Where(d => d.GuideKey.StartsWith("project:")).ToListAsync(ct))
         {
             try
             {
                 var plan = Read(row);
-                if (plan.ProjectKey is not null && plan.ProjectKey != exceptProjectKey && plan.ApplicationKey == applicationKey) list.Add(plan);
+                if (plan.ProjectKey is not null && plan.ProjectKey != exceptProjectKey && plan.ApplicationKey == applicationKey) list.Add((plan, row));
             }
             catch (JsonException) { }
         }

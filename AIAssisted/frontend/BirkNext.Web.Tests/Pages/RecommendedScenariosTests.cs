@@ -125,7 +125,7 @@ public sealed class RecommendedScenariosTests : BunitContext
         Services.AddSingleton(api.Object);
         Services.AddSingleton(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Projection(BirkNext.Web.Tests.Services.WorkspaceSnapshots.Loaded("Imported", "rec", "Rec")).Object);
         JSInterop.Mode = JSRuntimeMode.Loose;
-        Services.GetRequiredService<NavigationManager>().NavigateTo("test-plan-suggestions");
+        Services.GetRequiredService<NavigationManager>().NavigateTo("test-plan-suggestions?advanced=1");
 
         var cut = Render<TestPlanSuggestions>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=tps-recommended-on]").GetAttribute("aria-pressed").Should().Be("true"));

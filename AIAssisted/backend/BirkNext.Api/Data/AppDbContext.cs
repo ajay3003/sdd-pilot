@@ -1230,6 +1230,11 @@ public class AppDbContext : DbContext
             entity.Property(r => r.CreatedBy).HasMaxLength(200).IsRequired();
             entity.Property(r => r.UpdatedBy).HasMaxLength(200).IsRequired();
             entity.HasIndex(r => r.GuideKey);
+            // Plan lifecycle (2026-11-23): deleted plans are logical deletes, hidden from every query; archived plans are filtered by the service.
+            entity.Property(r => r.Lifecycle).HasMaxLength(20).IsRequired().HasDefaultValue("Active");
+            entity.Property(r => r.LifecycleChangedBy).HasMaxLength(200);
+            entity.Property(r => r.LifecycleReason).HasMaxLength(500);
+            entity.HasQueryFilter(r => r.Lifecycle != "Deleted");
         });
         modelBuilder.Entity<TestPlanSnapshotRecord>(entity =>
         {

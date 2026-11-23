@@ -1,0 +1,119 @@
+@using BirkNext.ProjectImport
+@using BirkNext.Web.Services.ProjectImport
+@* Applikasjon (2026-11-23): the tester says whether the ZIP is a new application or a new version of one already imported. Never inferred from the
+   file name: with applications already imported, nothing is preselected and the import waits for the answer. The choice is recorded on the
+   staged upload by the server, which gives the snapshot that application identity (both imports keep their own snapshot) and, for a new
+   version, can make it the application's analysis baseline. A warning (never a refusal) says when the archive shares no project with the
+   chosen application's latest import. *@
+<section class="pi-card pi-application-choice" aria-labelledby="pi-app-heading" data-testid="pi-app-choice">
+    <h2 id="pi-app-heading">Applikasjon</h2>
+    @if (_options is null)
+    {
+        <p class="pi-muted" role="status">@(_loadError ?? "Henter importerte applikasjoner …")</p>
+    }
+    else if (_options.Applications.Count == 0)
+    {
+        <p data-testid="pi-app-first">Første applikasjon i BirkNext: importeres som ny applikasjon «@_options.ArchiveName».</p>
+    }
+    else
+    {
+        <fieldset class="pi-app-modes" disabled="@Disabled">
+            <legend class="pi-muted">Er dette en ny applikasjon, eller en ny versjon av en som allerede er importert?</legend>
+            <label class="pi-app-mode">
+                <input type="radio" name="pi-app-mode" checked="@(_mode == ProjectImportApplicationMode.NewApplication)" @onchange="() => ChooseAsync(ProjectImportApplicationMode.NewApplication)" data-testid="pi-app-new" />
+                <span><strong>Ny applikasjon</strong>
+                    <span class="pi-muted">@(_options.SameIdentityAs is not null
+                        ? $"Navnet «{_options.ArchiveName}» brukes allerede av en annen applikasjon, så den nye får sitt eget navn{(_choice?.ApplicationName is { } n && _mode == ProjectImportApplicationMode.NewApplication ? $": «{n}»" : "")}."
+                        : $"«{_options.ArchiveName}» blir en egen applikasjon med egne planer.")</span></span>
+            </label>
+            <label class="pi-app-mode">
+                <input type="radio" name="pi-app-mode" checked="@(_mode == ProjectImportApplicationMode.NewVersion)" @onchange="() => _mode = ProjectImportApplicationMode.NewVersion" data-testid="pi-app-version" />
+                <span><strong>Ny versjon av eksisterende applikasjon</strong>
+                    <span class="pi-muted">Begge importene beholdes. Planer følger applikasjonen og sammenlignes med den nye versjonen.</span></span>
+            </label>
+            @if (_mode == ProjectImportApplicationMode.NewVersion)
+            {
+                <div class="pi-app-target">
+                    <label for="pi-app-select"><strong>Applikasjon</strong></label>
+                    <select id="pi-app-select" value="@(_target ?? "")" @onchange="e => TargetAsync(e.Value?.ToString())" data-testid="pi-app-select">
+                        <option value="">Velg applikasjon …</option>
+                        @foreach (var app in _options.Applications)
+                        {
+                            <option value="@app.Key">@app.Name — sist @app.LatestImportedAt.ToLocalTime().ToString("yyyy-MM-dd") (@app.LatestArchive)@(app.Imports > 1 ? $", {app.Imports} importer" : "")</option>
+                        }
+                    </select>
+                    <label class="pi-app-current"><input type="checkbox" checked="@_useAsCurrent" @onchange="e => UseAsCurrentAsync(e.Value is true)" data-testid="pi-app-current" />
+                        Bruk denne versjonen som gjeldende kildegrunnlag for applikasjonen</label>
+                </div>
+            }
+        </fieldset>
+        @if (_options.SameIdentityAs is { } same && _mode is null)
+        {
+            <p class="pi-muted" data-testid="pi-app-same-name">Arkivet har samme navn som «@(_options.Applications.First(a => a.Key == same).Name)». Velg «Ny versjon» hvis det er en nyere utgave av den.</p>
+        }
+        @if (_choice?.Warning is { } warning)
+        {
+            <p class="pi-warning" role="status" data-testid="pi-app-warning">@warning</p>
+        }
+        @if (_error is { } error) { <p class="pi-warning" role="alert" data-testid="pi-app-error">@error</p> }
+        @if (_choice is { } chosen && _error is null)
+        {
+            <p class="pi-muted" role="status" data-testid="pi-app-chosen">@(chosen.Mode == ProjectImportApplicationMode.NewVersion
+                ? $"Importeres som ny versjon av {chosen.ApplicationName}{(chosen.UseAsCurrent ? " og blir gjeldende kildegrunnlag" : "")}."
+                : $"Importeres som ny applikasjon «{chosen.ApplicationName}».")</p>
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public Guid StagingId { get; set; }
+    [Parameter, EditorRequired] public IProjectImportApiService Api { get; set; } = null!;
+    [Parameter] public bool Disabled { get; set; }
+    /// <summary>True when the import must wait for a choice (applications are already imported and none is chosen yet).</summary>
+    [Parameter] public EventCallback<bool> ChoiceRequiredChanged { get; set; }
+
+    private ProjectImportApplicationOptions? _options;
+    private ProjectImportApplicationChoice? _choice;
+    private ProjectImportApplicationMode? _mode;
+    private string? _target, _error, _loadError;
+    private bool _useAsCurrent = true;
+    private Guid _loaded;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loaded == StagingId) return;
+        _loaded = StagingId;
+        _options = null; _choice = null; _mode = null; _target = null; _error = null; _useAsCurrent = true;
+        _options = await Api.ApplicationOptionsAsync(StagingId);
+        _loadError = _options is null ? "De importerte applikasjonene kunne ikke hentes. Arkivets eget navn brukes." : null;
+        if (_options?.Choice is { } held)
+        {
+            _choice = held; _mode = held.Mode; _target = held.ApplicationKey; _useAsCurrent = held.UseAsCurrent;
+        }
+        await ReportAsync();
+    }
+
+    private Task ReportAsync() => ChoiceRequiredChanged.InvokeAsync(_options is { Applications.Count: > 0 } && _choice is null);
+
+    private async Task ChooseAsync(ProjectImportApplicationMode mode)
+    {
+        _mode = mode;
+        if (mode == ProjectImportApplicationMode.NewVersion && _target is null) { _choice = null; await ReportAsync(); return; }
+        var (choice, error) = await Api.ChooseApplicationAsync(StagingId, new ProjectImportApplicationChoice(mode, mode == ProjectImportApplicationMode.NewVersion ? _target : null, _useAsCurrent));
+        _choice = choice;
+        _error = choice is null ? error : null;
+        await ReportAsync();
+    }
+
+    private async Task TargetAsync(string? key)
+    {
+        _target = string.IsNullOrWhiteSpace(key) ? null : key;
+        await ChooseAsync(ProjectImportApplicationMode.NewVersion);
+    }
+
+    private async Task UseAsCurrentAsync(bool value)
+    {
+        _useAsCurrent = value;
+        if (_mode == ProjectImportApplicationMode.NewVersion && _target is not null) await ChooseAsync(ProjectImportApplicationMode.NewVersion);
+    }
+}

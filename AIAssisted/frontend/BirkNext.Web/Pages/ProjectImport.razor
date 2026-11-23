@@ -578,8 +578,13 @@
                 <p>The archive is valid, but it has no supported project documents and no source. Nothing was activated.</p>
             </section>
         }
+        @if (preview.Source.Detected && SourceAnalysisAvailable)
+        {
+            <ImportApplicationChoice StagingId="preview.StagingId" Api="Api" Disabled="Session.IsBusy" ChoiceRequiredChanged="v => _appChoiceRequired = v" />
+        }
         <div class="pi-actions">
-            <button type="button" class="btn-primary" data-testid="pi-import" disabled="@(!ProjectImportPresentation.HasImportableContent(preview, discovery) || (_duplicate is not null && !_importAgain) || NewProjectNameProblem(preview) is not null)" @onclick="ImportAsync">@(_failure is null ? "Import project" : "Retry import")</button>
+            <button type="button" class="btn-primary" data-testid="pi-import" disabled="@(!ProjectImportPresentation.HasImportableContent(preview, discovery) || (_duplicate is not null && !_importAgain) || NewProjectNameProblem(preview) is not null || (_appChoiceRequired && preview.Source.Detected && SourceAnalysisAvailable))" @onclick="ImportAsync">@(_failure is null ? "Import project" : "Retry import")</button>
+            @if (_appChoiceRequired && preview.Source.Detected && SourceAnalysisAvailable) { <span class="pi-muted" data-testid="pi-app-required">Velg «Ny applikasjon» eller «Ny versjon av eksisterende applikasjon» først.</span> }
             @if (Session.GitRevision is not null)
             {
                 <button type="button" class="btn-secondary" data-testid="pi-cancel" @onclick="ChooseAnotherRepository">Choose another repository</button>
@@ -621,6 +626,11 @@
                     <div><dt>Role</dt><dd data-testid="pi-result-role">@summary.RoleLabel</dd></div>
                     <div><dt>Associated application</dt><dd data-testid="pi-result-application">@summary.ApplicationName</dd></div>
                 </dl>
+            }
+            @if (_commit?.Application is { } application && _commit.Source.SnapshotId is { } applicationSnapshot)
+            {
+                <ImportApplicationSummary Outcome="application" ImportId="@done.ImportId" SnapshotId="applicationSnapshot" ProjectName="@done.ProjectName"
+                    Planning="@(ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService)" />
             }
             @if (Session.RoleOutcome is { Length: > 0 } roleOutcome) { <p class="pi-muted" role="status" data-testid="pi-result-roles">@roleOutcome</p> }
             @* A source of a multi-system test pack whose partner source is not imported: said right after the import, with the one action that fixes it. *@
@@ -730,6 +740,8 @@
     private Phase _phase { get => Session.Phase; set => Session.Phase = value; }
     private string? _fileName { get => Session.FileName; set => Session.FileName = value; }
     private ProjectImportPreview? _preview { get => Session.Preview; set => Session.Preview = value; }
+    /// <summary>Applications are already imported and the tester has not said whether this ZIP is a new application or a new version.</summary>
+    private bool _appChoiceRequired;
     private ProjectImportArtifactDiscovery? _discovery { get => Session.Discovery; set => Session.Discovery = value; }
     private ProjectImportCommitResult? _commit { get => Session.Commit; set => Session.Commit = value; }
     private SourceUploadFailure? _failure { get => Session.Failure; set => Session.Failure = value; }

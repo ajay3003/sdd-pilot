@@ -45,6 +45,7 @@ public sealed class ProjectImportFeature : AcceptanceFeature
             : (await session.Page.Locator("[data-testid=pi-project-name]").EvaluateAllAsync<string[]>(
                 "els => els.map(e => (e.firstChild && e.firstChild.nodeType === 3 ? e.firstChild.textContent : e.innerText).trim())")).FirstOrDefault() ?? "";
         result.Observe("project name (preview)", previewName);
+        await BirkNext.Web.PlaywrightTests.Fixtures.SyntheticProjects.ChooseNewApplicationAsync(session.Page);
         await session.Page.Locator("[data-testid=pi-import]").ClickAsync();
         if (await session.WaitAnyAsync(900_000, "[data-testid=pi-result]", "[data-testid=pi-failure]") != "[data-testid=pi-result]")
         {

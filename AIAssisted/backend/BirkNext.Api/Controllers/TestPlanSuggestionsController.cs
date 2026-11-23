@@ -53,6 +53,21 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     public Task<ActionResult> Restore(Guid id, [FromBody] RestoreTestPlanRevisionRequest request, CancellationToken ct) =>
         Run(async () => Ok(await service.RestoreRevisionAsync(id, request, Actor, ct)));
 
+    /// <summary>Archives a plan (read-only, listed apart; content, revisions and snapshots kept).</summary>
+    [HttpPost("drafts/{id:guid}/archive")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public Task<ActionResult> Archive(Guid id, [FromBody] TestPlanLifecycleRequest request, CancellationToken ct) =>
+        Run(async () => Ok(await service.ArchiveAsync(id, request, Actor, ct)));
+    /// <summary>Restores an archived plan to active work.</summary>
+    [HttpPost("drafts/{id:guid}/unarchive")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public Task<ActionResult> Unarchive(Guid id, [FromBody] TestPlanLifecycleRequest request, CancellationToken ct) =>
+        Run(async () => Ok(await service.RestoreFromArchiveAsync(id, request, Actor, ct)));
+    /// <summary>Deletes an archived plan logically (hidden everywhere; content, revisions and snapshots kept for audit). Needs the plan's name.</summary>
+    [HttpPost("drafts/{id:guid}/delete")]
+    [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
+    public Task<ActionResult> Delete(Guid id, [FromBody] DeleteTestPlanRequest request, CancellationToken ct) =>
+        Run(async () => { await service.DeleteAsync(id, request, Actor, ct); return NoContent(); });
     [HttpPost("drafts/{id:guid}/review")]
     [Authorize(Policy = BirkNextPermissions.IntegrationConfigurationWritePolicy)]
     public Task<ActionResult> Review(Guid id, [FromBody] ReviewTestCaseRequest request, CancellationToken ct) => Run(async () => Ok(await service.ReviewAsync(id, request, Actor, ct)));
@@ -103,6 +118,10 @@ public sealed class TestPlanSuggestionsController(TestPlanSuggestionService serv
     public Task<ActionResult> Discover([FromBody] ScenarioDiscoveryRequest request, [FromServices] TestScenarioDiscoveryService discovery, CancellationToken ct) =>
         Run(async () => Ok(await discovery.DiscoverAsync(request, ct)));
 
+    /// <summary>Scenario changes of a new import against the application's previous current discovery (runs discovery; only computed counts).</summary>
+    [HttpPost("discover/changes")]
+    public Task<ActionResult> Changes([FromBody] ScenarioDiscoveryRequest request, [FromServices] TestScenarioDiscoveryService discovery, CancellationToken ct) =>
+        Run(async () => Ok(await discovery.ChangesAsync(request, ct)));
     /// <summary>The last discovery result of the project (and snapshot), also after a restart (stored); 204 when there is none. Runs no analyzer.</summary>
     [HttpGet("discover/last")]
     public Task<ActionResult> LastDiscovery([FromQuery] string projectKey, [FromQuery] Guid? snapshotId, [FromServices] TestScenarioDiscoveryService discovery, CancellationToken ct) =>

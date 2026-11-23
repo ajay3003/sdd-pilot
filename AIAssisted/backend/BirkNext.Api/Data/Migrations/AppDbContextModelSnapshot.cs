@@ -4114,6 +4114,24 @@ namespace BirkNext.Api.Data.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("Lifecycle")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Active");
+
+                    b.Property<DateTimeOffset?>("LifecycleChangedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LifecycleChangedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("LifecycleReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<string>("PlanName")
                         .IsRequired()
                         .HasMaxLength(300)

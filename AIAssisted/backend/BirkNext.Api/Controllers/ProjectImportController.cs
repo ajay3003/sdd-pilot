@@ -27,6 +27,24 @@ public sealed class ProjectImportController(ProjectImportService imports, ILogge
         return Ok(result.Preview);
     }
 
+    /// <summary>The archive's own application identity and the applications already imported ("Ny applikasjon" / "Ny versjon av …").</summary>
+    [HttpGet("{stagingId:guid}/application")]
+    public async Task<IActionResult> ApplicationOptions(Guid stagingId, CancellationToken ct) =>
+        await imports.ApplicationOptionsAsync(stagingId, ct) is { } options ? Ok(options)
+            : Failure(StatusCodes.Status404NotFound, new("IMPORT_STAGING_EXPIRED", "upload", "Preview expired. Choose the ZIP again."));
+
+    /// <summary>Records the tester's application choice on the staged upload (before the import). Never infers it.</summary>
+    [HttpPost("{stagingId:guid}/application")]
+    public async Task<IActionResult> ChooseApplication(Guid stagingId, [FromBody] ProjectImportApplicationChoice choice, CancellationToken ct)
+    {
+        try
+        {
+            return await imports.ChooseApplicationAsync(stagingId, choice, ct) is { } chosen ? Ok(chosen)
+                : Failure(StatusCodes.Status404NotFound, new("IMPORT_STAGING_EXPIRED", "upload", "Preview expired. Choose the ZIP again."));
+        }
+        catch (BirkNext.Api.Services.ProjectImport.ProjectImportChoiceException e) { return Failure(StatusCodes.Status400BadRequest, new(e.Code, "application", e.Message)); }
+    }
+
     /// <summary>Creates (or reuses) the source snapshot of a staged archive. No Target Environment is needed: a target is runtime context and
     /// never owns source snapshots. An environmentId query value sent by an older client is ignored.</summary>
     [HttpPost("{stagingId:guid}/commit")]

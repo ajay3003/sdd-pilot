@@ -1,0 +1,74 @@
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@* Versjoner (2026-11-23): the plan's saved revisions, newest first, with who saved them and why. Restoring makes the chosen revision the next
+   revision (history is never rewritten) and is refused when the plan changed meanwhile. The existing revision service; nothing of its own. *@
+<section class="mtp-panel" aria-labelledby="mtp-versions-title" data-testid="mtp-versions">
+    <h3 id="mtp-versions-title" class="msb-h">Versjoner</h3>
+    @if (_revisions is null)
+    {
+        <p class="mt-muted" role="status">@(_error ?? "Laster versjoner …")</p>
+    }
+    else if (_revisions.Count == 0)
+    {
+        <p class="mt-muted" data-testid="mtp-versions-none">Ingen lagrede versjoner ennå.</p>
+    }
+    else
+    {
+        <ol class="mtp-versions">
+            @foreach (var r in _revisions.Take(_limit))
+            {
+                <li class="mtp-version @(r.Current ? "is-current" : null)" data-testid="mtp-version" data-revision="@r.Revision">
+                    <span class="mtp-version-no">@r.Revision</span>
+                    <span class="mtp-version-main"><strong>@r.Reason</strong> <span class="mt-muted msb-small">@r.SavedBy · @r.SavedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") · @r.Cases testtilfelle@(r.Cases == 1 ? "" : "r")</span></span>
+                    @if (r.Current)
+                    {
+                        <span class="msb-status msb-tone-ok">Gjeldende</span>
+                    }
+                    else if (CanWrite && !ReadOnly)
+                    {
+                        <button type="button" class="msb-link" disabled="@(_busy || Dirty)" title="@(Dirty ? "Lagre eller forkast endringene først." : null)"
+                                @onclick="() => RestoreAsync(r.Revision)" data-testid="mtp-version-restore">Gjenopprett</button>
+                    }
+                </li>
+            }
+        </ol>
+        @if (_revisions.Count > _limit) { <button type="button" class="msb-link" @onclick="() => _limit += 10" data-testid="mtp-versions-more">Vis eldre (@(_revisions.Count - _limit))</button> }
+    }
+    @if (_error is { } e && _revisions is not null) { <p class="mt-alert" role="alert" data-testid="mtp-versions-error">@e</p> }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public TestPlanDraft Draft { get; set; } = new();
+    [Parameter, EditorRequired] public ITestPlanSuggestionsApiService Api { get; set; } = null!;
+    [Parameter] public bool CanWrite { get; set; }
+    [Parameter] public bool ReadOnly { get; set; }
+    [Parameter] public bool Dirty { get; set; }
+    [Parameter] public EventCallback<TestPlanDraft> Restored { get; set; }
+
+    private List<TestPlanRevisionSummary>? _revisions;
+    private string? _error;
+    private bool _busy;
+    private int _limit = 10;
+    private (Guid, int) _loaded;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loaded == (Draft.Id, Draft.Revision)) return;
+        _loaded = (Draft.Id, Draft.Revision);
+        var (revisions, error) = await Api.RevisionsAsync(Draft.Id);
+        _revisions = revisions;
+        _error = revisions is null ? PlanPreparePresentation.Friendly(error, "Versjonene kunne ikke lastes.") : null;
+    }
+
+    private async Task RestoreAsync(int revision)
+    {
+        _busy = true; _error = null;
+        try
+        {
+            var (draft, error) = await Api.RestoreRevisionAsync(Draft.Id, Draft.Revision, revision);
+            if (draft is null) { _error = PlanPreparePresentation.Friendly(error, "Versjonen kunne ikke gjenopprettes."); return; }
+            await Restored.InvokeAsync(draft);
+        }
+        finally { _busy = false; }
+    }
+}

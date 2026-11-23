@@ -182,7 +182,8 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
     {
         Services.AddSingleton<ITestPlanSuggestionsApiService>(api);
         JSInterop.Mode = JSRuntimeMode.Loose;
-        Services.GetRequiredService<NavigationManager>().NavigateTo("test-plan-suggestions" + query);
+        // The full page is the advanced tools since 2026-11-23: ordinary links go to Planlegg og klargjør (CanonicalRoute); these tests exercise the page itself.
+        Services.GetRequiredService<NavigationManager>().NavigateTo("test-plan-suggestions" + (query.Length == 0 ? "?advanced=1" : query + "&advanced=1"));
         var cut = Render<TestPlanSuggestions>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=tps]").GetAttribute("aria-busy").Should().Be("false"));
         return cut;
@@ -574,7 +575,7 @@ public sealed class TestPlanSuggestionsPageTests : BunitContext
         OpenCase(cut, "manglende-barn");
         cut.Find("[data-testid=tps-edit-expected-manglende-barn]").Change("Not saved yet");
         var nav = Services.GetRequiredService<NavigationManager>();
-        cut.InvokeAsync(() => nav.NavigateTo($"test-plan-suggestions?draft={draft.Id}&area=prepare"));
+        cut.InvokeAsync(() => nav.NavigateTo($"test-plan-suggestions?draft={draft.Id}&area=prepare&advanced=1"));
         cut.WaitForAssertion(() => nav.Uri.Should().Contain("area=prepare"));
         JSInterop.Invocations["confirm"].Should().BeEmpty("the edits stay with the same plan");
     }

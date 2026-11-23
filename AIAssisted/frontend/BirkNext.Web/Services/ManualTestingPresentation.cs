@@ -45,11 +45,12 @@ public static class ManualTestingPresentation
 
     /// <summary>The requirements a filter and a search (id or text, case-insensitive) show, in the specification's order.</summary>
     public static List<ProjectRequirementOption> FilterRequirements(IEnumerable<ProjectRequirementOption> requirements,
-        IReadOnlyDictionary<string, PreparedRequirementTrace> designed, string filter, string? query)
+        IReadOnlyDictionary<string, PreparedRequirementTrace> designed, string filter, string? query, bool showTechnical = true)
     {
         var q = query?.Trim() ?? string.Empty;
         return [.. requirements.Where(r =>
         {
+            if (!showTechnical && ManualTestingRelevance.RequirementReason(r.Title) is not null) return false;
             var row = designed.GetValueOrDefault(r.RequirementId);
             var keep = filter switch
             {
@@ -104,14 +105,30 @@ public static class ManualTestingPresentation
             return new("Velg spesifikasjon", SpecificationRoute, choose);
         if (f.Plans.Count == 0 || Cases(f) == 0)
             return f.Discovery is null
-                ? new("Oppdag scenarioer", $"{LegacyPlanRoute}?area=choose&discover=now", "Ingenting er forberedt ennå. Finn scenarioer i applikasjonens kilder, eller skriv et testtilfelle selv.")
+                ? new("Oppdag scenarioer", DiscoverRoute, "Ingenting er forberedt ennå. Finn scenarioer i applikasjonens kilder, eller skriv et testtilfelle selv.")
                 : new("Velg scenarioer", DiscoverRoute, $"{f.Discovery.Candidates.Count} forslag venter; ingenting er forberedt ennå.");
         if (NeedClarification(f) > 0 && f.Plans.FirstOrDefault(p => p.NeedsClarification > 0) is { } unclear)
             return new("Avklar testtilfeller", $"{PlanRoute}?draft={unclear.Id}", $"{NeedClarification(f)} testtilfelle(r) venter på svar før de kan godkjennes.");
         if (Approved(f) > 0 && f.Plans.OrderByDescending(p => p.UpdatedAt).FirstOrDefault(p => p.Accepted > 0) is { } ready)
-            return new("Eksporter til Azure DevOps", $"{LegacyPlanRoute}?draft={ready.Id}&area=export",
+            return new("Eksporter til Azure DevOps", $"{PlanRoute}?draft={ready.Id}&panel=export",
                 $"{Approved(f)} godkjente testtilfelle(r) er klare for Azure DevOps Test Plans, der manuelle tester kjøres og resultatene registreres.");
         return new("Fortsett forberedelsen", PlanRoute, "Gå gjennom og godkjenn testtilfellene, og eksporter dem til Azure DevOps.");
+    }
+
+    /// <summary>
+    /// Where an old Test Plan Suggestions link belongs now (2026-11-23): Planlegg og klargjør is the one place cases are prepared, translated and
+    /// exported; Finn og forstå chooses scenarios. Null = stay on the full page: guide-mode plans (System Understanding), a guide scenario deep link,
+    /// a candidate view, or an explicit request for the advanced tools.
+    /// </summary>
+    public static string? CanonicalRoute(string? guide, string? draft, string? area, string? caseId, string? advanced, string? scenarios = null, string? view = null)
+    {
+        if (!string.IsNullOrWhiteSpace(advanced) || !string.IsNullOrWhiteSpace(guide) || !string.IsNullOrWhiteSpace(scenarios) || !string.IsNullOrWhiteSpace(view)) return null;
+        if (string.Equals(area, "choose", StringComparison.OrdinalIgnoreCase)) return DiscoverRoute;
+        var query = new List<string>();
+        if (Guid.TryParse(draft, out var id)) query.Add($"draft={id}");
+        if (string.Equals(area, "export", StringComparison.OrdinalIgnoreCase)) query.Add("panel=export");
+        if (!string.IsNullOrWhiteSpace(caseId)) query.Add($"case={Uri.EscapeDataString(caseId)}");
+        return query.Count == 0 ? PlanRoute : $"{PlanRoute}?{string.Join("&", query)}";
     }
 
     /// <summary>Discovery suggestions per source (capability) and per type, for the Discover stage.</summary>

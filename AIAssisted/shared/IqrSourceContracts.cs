@@ -44,8 +44,11 @@ public sealed record IqrSourceSnapshot
     /// <summary>Reusable source-evidence domains of the same archive — Infrastructure as Code, Configuration, CI/CD, Contracts and their cross-domain
     /// links (null in snapshots analyzed before they existed). Declared/configured/defined in source only; never deployed or runtime state.</summary>
     public BirkNext.SourceDomains.SourceEvidenceDomainsSnapshot? EvidenceDomains { get; init; }
-    /// <summary>Repository this snapshot belongs to (null in snapshots analyzed before repository identity was captured).</summary>
+    /// <summary>Repository this snapshot belongs to (null in snapshots analyzed before repository identity was captured). For an import the tester
+    /// declared a new version of an existing application, this is that application's identity (basis says so).</summary>
     public BirkNext.SourceEvidence.SourceRepositoryIdentity? Repository { get; init; }
+    /// <summary>The archive's own identity when it differs from <see cref="Repository"/> (an explicit import choice), for lineage; null otherwise.</summary>
+    public BirkNext.SourceEvidence.SourceRepositoryIdentity? ArchiveRepository { get; init; }
     /// <summary>Dependency-relevant evidence for Dependency Review (null in snapshots analyzed before it was captured).</summary>
     public BirkNext.Dependencies.SourceDependencyEvidence? DependencyEvidence { get; init; }
     /// <summary>Allow-listed security source facts, not approved expectations or runtime verification. Null in historical snapshots.</summary>

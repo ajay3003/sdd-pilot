@@ -46,7 +46,7 @@ public sealed class AllModulesPageTests : BunitContext
         var cut = Render<AllModules>();
 
         cut.Find("[data-testid=am-workspace]").TextContent.Should().Contain("Manual Testing");
-        var plan = cut.Find("[data-route='test-plan-suggestions']");
+        var plan = cut.Find("[data-route='manual-testing/plan']");
         plan.GetAttribute("data-reach").Should().Be(nameof(ModuleReach.InView));
         plan.QuerySelector("[data-testid=am-in-view]").Should().NotBeNull();
         var api = cut.Find("[data-route='api-quality-review']");
@@ -73,7 +73,7 @@ public sealed class AllModulesPageTests : BunitContext
         var cut = Render<AllModules>();
 
         cut.Find("[data-testid=am-search]").Input("Test Plan Suggestions");
-        cut.FindAll("[data-testid=am-module]").Select(m => m.GetAttribute("data-route")).Should().Contain("test-plan-suggestions", "an earlier name finds Plan & prepare");
+        cut.FindAll("[data-testid=am-module]").Select(m => m.GetAttribute("data-route")).Should().Contain("manual-testing/plan", "an earlier name finds Plan & prepare (the Test Plan Suggestions page is its advanced tools)");
         cut.Find("[data-testid=am-search]").Input("declared journeys");
         cut.FindAll("[data-testid=am-module]").Select(m => m.GetAttribute("data-route")).Should().Contain("integration-journeys");
         cut.Find("[data-testid=am-search]").Input("zzzz-nothing");

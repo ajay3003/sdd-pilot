@@ -550,6 +550,121 @@ public sealed class SourceDrivenPlanningTests : IAsyncLifetime, IDisposable
         }
     }
 
+    [Fact]
+    public async Task The_change_summary_of_a_new_version_counts_only_what_it_compared()
+    {
+        var s1 = await ImportAsync("imp1", "m2lb-v1.zip", "content-v1", Spec(A, B, C), DateTimeOffset.UtcNow.AddDays(-1));
+        await using (var db = Context())
+        {
+            var x = Services(db);
+            var first = await x.Discovery.ChangesAsync(new ScenarioDiscoveryRequest { ProjectKey = "import:imp1", SnapshotId = s1, MemberSnapshotIds = [s1] }, default);
+            first.Compared.Should().BeFalse("nothing to compare the first import with");
+            first.Reason.Should().Contain("Ingen tidligere");
+        }
+        var s2 = await ImportAsync("imp2", "m2lb-language.zip", "content-v2", Spec(A, BChanged, D), DateTimeOffset.UtcNow);
+        await using (var db = Context())
+        {
+            var x = Services(db);
+            await x.Baselines.SelectBaselineAsync(Repository, s2, "t", "new version", default);
+            var changes = await x.Discovery.ChangesAsync(new ScenarioDiscoveryRequest { ProjectKey = "import:imp2", SnapshotId = s2, MemberSnapshotIds = [s2] }, default);
+            changes.Compared.Should().BeTrue();
+            changes.PreviousArchives.Should().Contain("m2lb-v1.zip");
+            Scenarios((await x.Discovery.LastAsync("import:imp2", null, default))!).Should().HaveCount(3);
+            (changes.New, changes.Changed, changes.Removed, changes.Unchanged, changes.NotCompared).Should().Be((1, 1, 1, 1 + 2, 0),
+                "A unchanged, B changed (400 → 422), C removed, D new; the two requirement candidates (FR-001, FR-002) are unchanged");
+        }
+    }
+
+    // ── Plan lifecycle (2026-11-23) ─────────────────────────────────────────────────────────────────────────────
+
+    private async Task<(Guid PlanId, Guid Snapshot)> PlanAsync(string project = "import:imp1")
+    {
+        var s1 = await ImportAsync("imp1", "m2lb-v1.zip", "content-v1", Spec(A, B), DateTimeOffset.UtcNow);
+        await using var db = Context();
+        var x = Services(db);
+        var d = await x.Discovery.DiscoverAsync(new ScenarioDiscoveryRequest { ProjectKey = project, SnapshotId = s1, MemberSnapshotIds = [s1] }, default);
+        var plan = await x.Plans.CreateProjectAsync(new CreateProjectTestPlanRequest
+        {
+            ProjectKey = project, DiscoveryId = d.DiscoveryId, CandidateIds = [.. Scenarios(d).Select(c => c.CandidateId)], PlanName = "Verifisering m2lb",
+        }, "anna", default);
+        // A tester's edit, an approval and a frozen snapshot: everything archive / restore / delete must keep.
+        var edited = WithTitle(plan, plan.Cases[0].Source.ScenarioId, "Testers egen tittel");
+        plan = await x.Plans.SaveAsync(plan.Id, edited, "anna", default);
+        plan = await x.Plans.ReviewAsync(plan.Id, new ReviewTestCaseRequest(plan.Revision, plan.Cases[1].Source.ScenarioId, TestCaseReviewState.Accepted, "ok"), "anna", default);
+        await x.Plans.SaveSnapshotAsync(plan.Id, new SaveTestPlanSnapshotRequest(plan.Revision, "v1", null), "anna", default);
+        return (plan.Id, s1);
+    }
+
+    [Fact]
+    public async Task An_archived_plan_leaves_the_active_list_is_read_only_and_a_restore_brings_it_back_unchanged()
+    {
+        var (id, _) = await PlanAsync();
+        await using var db = Context();
+        var x = Services(db);
+        var before = await x.Plans.DraftAsync(id, default);
+
+        (await FluentActions.Awaiting(() => x.Plans.ArchiveAsync(id, new TestPlanLifecycleRequest(before.Revision - 1), "anna", default))
+            .Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("draft-changed", "a plan changed since the tester saw it is not archived");
+        var archived = await x.Plans.ArchiveAsync(id, new TestPlanLifecycleRequest(before.Revision, "Ferdig verifisert"), "anna", default);
+        archived.Lifecycle.Should().Be(TestPlanLifecycle.Archived);
+        archived.LifecycleChangedBy.Should().Be("anna");
+
+        var workspace = await x.Plans.ProjectWorkspaceAsync("import:imp1", null, true, default);
+        workspace.Drafts.Should().BeEmpty("archived plans are not part of normal work");
+        workspace.ArchivedDrafts.Should().ContainSingle(p => p.Id == id && p.Scenarios == 2 && p.Accepted == 1);
+        (await x.Plans.ProjectDraftsAsync("import:imp1", default)).Should().BeEmpty("traceability counts active plans only");
+
+        var readable = await x.Plans.DraftAsync(id, default);
+        readable.Cases.Should().BeEquivalentTo(before.Cases, "archiving never changes content");
+        (await FluentActions.Awaiting(() => x.Plans.SaveAsync(id, WithTitle(readable, readable.Cases[0].Source.ScenarioId, "x"), "anna", default))
+            .Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("plan-archived");
+        (await FluentActions.Awaiting(() => x.Plans.ReviewAsync(id, new ReviewTestCaseRequest(readable.Revision, readable.Cases[0].Source.ScenarioId, TestCaseReviewState.Accepted, null), "anna", default))
+            .Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("plan-archived");
+
+        var restored = await x.Plans.RestoreFromArchiveAsync(id, new TestPlanLifecycleRequest(readable.Revision), "anna", default);
+        restored.Lifecycle.Should().Be(TestPlanLifecycle.Active);
+        var after = await x.Plans.DraftAsync(id, default);
+        after.Cases.Should().BeEquivalentTo(before.Cases, "edits, approvals and history survive archive and restore");
+        after.Cases[0].EffectiveTitle.Should().Be("Testers egen tittel");
+        (await x.Plans.RevisionsAsync(id, default)).Select(r => r.Reason).Should().Contain(["Arkivert: Ferdig verifisert", "Gjenopprettet fra arkivet"]);
+        (await x.Plans.ProjectWorkspaceAsync("import:imp1", null, true, default)).Drafts.Should().ContainSingle(p => p.Id == id);
+    }
+
+    [Fact]
+    public async Task Only_an_archived_plan_can_be_deleted_with_its_name_and_delete_is_logical_keeping_revisions_and_snapshots()
+    {
+        var (id, _) = await PlanAsync();
+        await using var db = Context();
+        var x = Services(db);
+        var plan = await x.Plans.DraftAsync(id, default);
+
+        (await FluentActions.Awaiting(() => x.Plans.DeleteAsync(id, new DeleteTestPlanRequest(plan.Revision, plan.PlanName), "anna", default))
+            .Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("plan-not-archived", "an active plan is archived first");
+        var archived = await x.Plans.ArchiveAsync(id, new TestPlanLifecycleRequest(plan.Revision), "anna", default);
+        (await FluentActions.Awaiting(() => x.Plans.DeleteAsync(id, new DeleteTestPlanRequest(archived.Revision, "Verifisering"), "anna", default))
+            .Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("confirm-name", "a partial name never confirms");
+        (await FluentActions.Awaiting(() => x.Plans.DeleteAsync(id, new DeleteTestPlanRequest(archived.Revision - 1, plan.PlanName), "anna", default))
+            .Should().ThrowAsync<TestPlanException>()).Which.Code.Should().Be("draft-changed");
+
+        await x.Plans.DeleteAsync(id, new DeleteTestPlanRequest(archived.Revision, plan.PlanName), "anna", default);
+
+        (await FluentActions.Awaiting(() => x.Plans.DraftAsync(id, default)).Should().ThrowAsync<TestPlanException>()).Which.Status.Should().Be(404);
+        var workspace = await x.Plans.ProjectWorkspaceAsync("import:imp1", null, true, default);
+        workspace.Drafts.Should().BeEmpty();
+        workspace.ArchivedDrafts.Should().BeEmpty("a deleted plan is in no list");
+        // Logical: the row, every revision and the frozen snapshot are kept (no orphaned snapshot, nothing lost for audit).
+        await using var check = Context();
+        var row = await check.TestPlanDrafts.IgnoreQueryFilters().SingleAsync(d => d.Id == id);
+        row.Lifecycle.Should().Be("Deleted");
+        row.LifecycleChangedBy.Should().Be("anna");
+        (await check.TestPlanDraftRevisions.Where(r => r.DraftId == id).Select(r => r.Reason).ToListAsync()).Should().Contain(["Created", "Arkivert", "Slettet"]);
+        (await check.TestPlanSnapshots.CountAsync(s => s.DraftId == id)).Should().Be(1);
+        (await check.TestPlanDrafts.CountAsync(d => d.Id == id)).Should().Be(0, "the global filter hides it from every ordinary query");
+    }
+
+    private static SaveTestPlanDraftRequest WithTitle(TestPlanDraft plan, string scenarioId, string title) =>
+        Human(plan, (c, part) => c.Source.ScenarioId == scenarioId ? part with { Edits = part.Edits with { Title = title } } : part);
+
     // ── Fakes ───────────────────────────────────────────────────────────────────────────────────────────────────
 
     private sealed class FailingSpecificationProvider : ITestScenarioCandidateProvider

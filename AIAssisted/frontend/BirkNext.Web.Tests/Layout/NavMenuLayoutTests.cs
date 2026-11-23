@@ -281,7 +281,7 @@ public sealed class NavMenuLayoutTests : BunitContext
     [InlineData("traceability", new[] { "artifact-traceability", "correlation-review", "snapshots" })] // Impact Analysis is optional and off by default
     [InlineData("source-review", new[] { "source-analysis", "schema-studio", "generated-documentation-explorer", "generated-documentation-health", "technology-coverage", "dependency-review", "pipeline-review", "azure-environment" })]
     // The Manual Testing workspace: home, then its three stages in the tester's order (Plan & prepare is Test Plan Suggestions, moved here).
-    [InlineData("manual-testing-workspace", new[] { "manual-testing", "manual-testing/discover", "manual-testing/plan", "test-plan-suggestions" })]
+    [InlineData("manual-testing-workspace", new[] { "manual-testing", "manual-testing/discover", "manual-testing/plan" })]
     // The Technical Testing workspace: home, then its three stages (summaries over the specialist modules, which stay in Quality & Testing).
     [InlineData("technical-testing-workspace", new[] { "technical-testing", "technical-testing/assess", "technical-testing/configure", "technical-testing/verify", "technical-testing/integrations" })]
     [InlineData("quality-testing", new[] { "test-coverage-review", "code-risk-review", "test-data", "api-quality-review/contracts", "integration-suites", "execution-results", "parquet-viewer", "frontend-quality-review", "api-quality-review", "integration-topology", "integration-quality-review", "integration-journeys", "performance-test-review", "critical-e2e-regression" })]

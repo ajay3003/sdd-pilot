@@ -75,6 +75,18 @@ public interface ITestPlanSuggestionsApiService
     Task<(PreparedCaseTraceView? Trace, string? Error)> PreparedCaseTraceAsync(string projectKey, PreparedCaseTraceRequest request, CancellationToken ct = default) =>
         Task.FromResult<(PreparedCaseTraceView?, string?)>((null, NotAvailable));
 
+    /// <summary>Archives a plan at the revision the tester saw (read-only, listed apart).</summary>
+    Task<(TestPlanDraftSummary? Plan, string? Error)> ArchiveAsync(Guid id, TestPlanLifecycleRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(TestPlanDraftSummary?, string?)>((null, NotAvailable));
+    /// <summary>Restores an archived plan to active work.</summary>
+    Task<(TestPlanDraftSummary? Plan, string? Error)> UnarchiveAsync(Guid id, TestPlanLifecycleRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(TestPlanDraftSummary?, string?)>((null, NotAvailable));
+    /// <summary>Deletes an archived plan (logical; needs its name). Null error = deleted.</summary>
+    Task<string?> DeleteAsync(Guid id, DeleteTestPlanRequest request, CancellationToken ct = default) => Task.FromResult<string?>(NotAvailable);
+    /// <summary>Scenario changes of a new import against the application's previous discovery (runs discovery).</summary>
+    Task<(ScenarioChangeSummary? Changes, string? Error)> ChangesAsync(ScenarioDiscoveryRequest request, CancellationToken ct = default) =>
+        Task.FromResult<(ScenarioChangeSummary?, string?)>((null, NotAvailable));
+
     const string NotAvailable = "Project test planning is not available in this host.";
 }
 
@@ -143,6 +155,28 @@ public sealed class TestPlanSuggestionsApiService(HttpClient http) : ITestPlanSu
             return (null, "Test Plan Suggestions is not reachable.");
         }
     }
+
+    public Task<(TestPlanDraftSummary?, string?)> ArchiveAsync(Guid id, TestPlanLifecycleRequest request, CancellationToken ct = default) =>
+        Send<TestPlanDraftSummary>(() => http.PostAsJsonAsync($"{Base}/drafts/{id}/archive", request, Json, ct), ct);
+
+    public Task<(TestPlanDraftSummary?, string?)> UnarchiveAsync(Guid id, TestPlanLifecycleRequest request, CancellationToken ct = default) =>
+        Send<TestPlanDraftSummary>(() => http.PostAsJsonAsync($"{Base}/drafts/{id}/unarchive", request, Json, ct), ct);
+
+    public async Task<string?> DeleteAsync(Guid id, DeleteTestPlanRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.PostAsJsonAsync($"{Base}/drafts/{id}/delete", request, Json, ct);
+            if (response.IsSuccessStatusCode) return null;
+            if ((int)response.StatusCode is 401 or 403) return "Du har ikke tilgang til å slette planer.";
+            try { return (await response.Content.ReadFromJsonAsync<JsonElement>(Json, ct)).GetProperty("message").GetString(); }
+            catch (Exception e) when (e is JsonException or InvalidOperationException or KeyNotFoundException) { return $"Slettingen feilet (HTTP {(int)response.StatusCode})."; }
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException) { return "Test Plan Suggestions is not reachable."; }
+    }
+
+    public Task<(ScenarioChangeSummary?, string?)> ChangesAsync(ScenarioDiscoveryRequest request, CancellationToken ct = default) =>
+        Send<ScenarioChangeSummary>(() => http.PostAsJsonAsync($"{Base}/discover/changes", request, Json, ct), ct);
 
     public Task<(PlanImpactAnalysis?, string?)> ImpactAsync(Guid id, CancellationToken ct = default) =>
         Send<PlanImpactAnalysis>(() => http.GetAsync($"{Base}/drafts/{id}/impact", ct), ct);

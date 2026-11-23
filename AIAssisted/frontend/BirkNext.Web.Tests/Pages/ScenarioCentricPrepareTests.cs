@@ -113,7 +113,7 @@ public sealed class ScenarioCentricPrepareTests : BunitContext
         });
         Services.AddSingleton(context.Object);
         JSInterop.Mode = JSRuntimeMode.Loose;
-        Services.GetRequiredService<NavigationManager>().NavigateTo($"test-plan-suggestions?draft={DraftId}&area=prepare{query}");
+        Services.GetRequiredService<NavigationManager>().NavigateTo($"test-plan-suggestions?draft={DraftId}&area=prepare{query}&advanced=1");
         var cut = Render<TestPlanSuggestions>();
         cut.WaitForAssertion(() => cut.Find("[data-testid=tps-scenarios]"));
         return cut;

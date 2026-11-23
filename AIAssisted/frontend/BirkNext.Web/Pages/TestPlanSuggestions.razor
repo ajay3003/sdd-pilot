@@ -129,6 +129,8 @@
     [SupplyParameterFromQuery(Name = "view")] public string? ViewQuery { get; set; }
     /// <summary>"now": run discovery once on arrival (the Discover now link after choosing another specification); removed from the address after.</summary>
     [SupplyParameterFromQuery(Name = "discover")] public string? DiscoverQuery { get; set; }
+    /// <summary>"1": open this full page as the advanced tools of a plan (otherwise ordinary links go to Planlegg og klargjør).</summary>
+    [SupplyParameterFromQuery(Name = "advanced")] public string? AdvancedQuery { get; set; }
 
     private ITestPlanSuggestionsApiService? _api;
     private ICurrentWorkspaceProjection? _projection;
@@ -215,6 +217,13 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // One primary workflow (2026-11-23): an ordinary link (bookmarks, Test Coverage / Traceability drill-downs) opens Planlegg og klargjør.
+        if (BirkNext.Web.Services.ManualTestingPresentation.CanonicalRoute(GuideQuery, DraftQuery, AreaQuery, CaseQuery, AdvancedQuery, ScenariosQuery, ViewQuery) is { } canonical)
+        {
+            (ServiceProvider.GetService(typeof(NavigationManager)) as NavigationManager)?.NavigateTo(canonical, replace: true);
+            _loading = false;
+            return;
+        }
         // A project switch asks before discarding unsaved plan changes (the same protection as leaving the page).
         _unsaved = (ServiceProvider.GetService(typeof(BirkNext.Web.Services.ProjectImport.UnsavedWorkGuard)) as BirkNext.Web.Services.ProjectImport.UnsavedWorkGuard)?.Register(() => _dirty && _draft is not null ? "This plan has unsaved changes." : null);
         _api = ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) as ITestPlanSuggestionsApiService;

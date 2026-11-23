@@ -17,6 +17,12 @@ public sealed class TestPlanDraftRecord
     public DateTimeOffset CreatedAt { get; set; }
     public string UpdatedBy { get; set; } = "";
     public DateTimeOffset UpdatedAt { get; set; }
+    /// <summary>Active, Archived or Deleted (<see cref="BirkNext.TestPlanning.TestPlanLifecycle"/>). Deleted is logical: the row, its revisions and
+    /// snapshots are kept for audit; a global query filter hides it from every query.</summary>
+    public string Lifecycle { get; set; } = nameof(BirkNext.TestPlanning.TestPlanLifecycle.Active);
+    public DateTimeOffset? LifecycleChangedAt { get; set; }
+    public string? LifecycleChangedBy { get; set; }
+    public string? LifecycleReason { get; set; }
 }
 
 /// <summary>

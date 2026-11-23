@@ -1,0 +1,91 @@
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@* Kildeendringer (2026-11-23): the plan compared with its application's current source basis (the existing read-only impact analysis), and the
+   existing refresh. Refresh never changes a tester's edits or approvals: changed scenarios are flagged for review, removed ones are marked
+   "Utgått" only after a complete comparison, unreadable sources are "Kilde mangler". *@
+<section class="mtp-panel" aria-labelledby="mtp-changes-title" data-testid="mtp-changes">
+    <h3 id="mtp-changes-title" class="msb-h">Kildeendringer</h3>
+    @if (_impact is null)
+    {
+        <p class="mt-muted" role="status">@(_error ?? "Sammenligner planen med gjeldende kilder …")</p>
+    }
+    else
+    {
+        <p data-testid="mtp-changes-summary">@_impact.Summary</p>
+        @if (_impact.Cases.Count > 0)
+        {
+            <ul class="mtp-impact">
+                @foreach (var c in _impact.Cases.Take(_limit))
+                {
+                    <li data-testid="mtp-change" data-case="@c.CaseId">
+                        <details>
+                            <summary><strong>@c.Title</strong> <span class="mt-muted msb-small">@string.Join(" · ", c.Kinds.Select(Kind))@(c.ReviewedBefore ? " · var godkjent" : "")</span></summary>
+                            @if (!string.IsNullOrWhiteSpace(c.Summary)) { <p class="mt-muted msb-small">@c.Summary</p> }
+                            @foreach (var change in c.Changes)
+                            {
+                                <div class="mtp-diff"><span class="mtp-ctx-label">@change.Field</span><del>@(change.Before ?? "—")</del><ins>@(change.After ?? "—")</ins></div>
+                            }
+                        </details>
+                    </li>
+                }
+            </ul>
+            @if (_impact.Cases.Count > _limit) { <button type="button" class="msb-link" @onclick="() => _limit += 20">Vis flere (@(_impact.Cases.Count - _limit))</button> }
+        }
+        @if (_impact.NewScenarios.Count > 0)
+        {
+            <p class="mt-muted" data-testid="mtp-changes-new">@_impact.NewScenarios.Count nye scenario@(_impact.NewScenarios.Count == 1 ? "" : "er") i gjeldende kilde. <a href="@ManualTestingPresentation.DiscoverRoute">Velg dem i Finn og forstå</a>.</p>
+        }
+        @if (CanWrite && !ReadOnly && (_impact.Cases.Count > 0 || _impact.PlanBasis?.Fingerprint != _impact.CurrentBasis?.Fingerprint))
+        {
+            <div class="mtp-actions">
+                <button type="button" class="btn btn-primary btn-sm" disabled="@(_busy || Dirty)" title="@(Dirty ? "Lagre eller forkast endringene først." : null)" @onclick="RefreshAsync" data-testid="mtp-refresh">Oppdater planen fra gjeldende kilde</button>
+                <span class="mt-muted msb-small">Dine endringer og godkjenninger beholdes. Endrede testtilfeller merkes for gjennomgang.</span>
+            </div>
+        }
+    }
+    @if (_error is { } e && _impact is not null) { <p class="mt-alert" role="alert" data-testid="mtp-changes-error">@e</p> }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public TestPlanDraft Draft { get; set; } = new();
+    [Parameter, EditorRequired] public ITestPlanSuggestionsApiService Api { get; set; } = null!;
+    [Parameter] public bool CanWrite { get; set; }
+    [Parameter] public bool ReadOnly { get; set; }
+    [Parameter] public bool Dirty { get; set; }
+    [Parameter] public EventCallback<TestPlanDraft> Refreshed { get; set; }
+
+    private PlanImpactAnalysis? _impact;
+    private string? _error;
+    private bool _busy;
+    private int _limit = 20;
+    private (Guid, int) _loaded;
+
+    private static string Kind(CaseImpactKind kind) => kind switch
+    {
+        CaseImpactKind.ExpectedResultChanged => "forventet resultat endret", CaseImpactKind.PrerequisiteChanged => "forutsetning endret",
+        CaseImpactKind.RequirementChanged => "krav endret", CaseImpactKind.EvidenceChanged => "kildebevis endret", CaseImpactKind.WordingOnly => "bare ordlyd",
+        CaseImpactKind.ScenarioRemoved => "utgått", CaseImpactKind.SourceUnavailable => "kilde mangler", CaseImpactKind.ConflictIntroduced => "kildekonflikt",
+        CaseImpactKind.NewScenario => "nytt scenario", _ => kind.ToString(),
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loaded == (Draft.Id, Draft.Revision)) return;
+        _loaded = (Draft.Id, Draft.Revision);
+        var (impact, error) = await Api.ImpactAsync(Draft.Id);
+        _impact = impact;
+        _error = impact is null ? PlanPreparePresentation.Friendly(error, "Planen kunne ikke sammenlignes med kildene.") : null;
+    }
+
+    private async Task RefreshAsync()
+    {
+        _busy = true; _error = null;
+        try
+        {
+            var (draft, error) = await Api.RefreshAsync(Draft.Id, Draft.Revision);
+            if (draft is null) { _error = PlanPreparePresentation.Friendly(error, "Planen kunne ikke oppdateres."); return; }
+            await Refreshed.InvokeAsync(draft);
+        }
+        finally { _busy = false; }
+    }
+}

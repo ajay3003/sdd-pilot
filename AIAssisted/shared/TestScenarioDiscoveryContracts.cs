@@ -351,3 +351,27 @@ public sealed record CreateProjectTestPlanRequest
 /// <see cref="Variant"/> = start from a variant the scenario's evidence supports (its key from the variant proposals).</summary>
 public sealed record AddManualTestCaseRequest(int BaseRevision, string Title, string? Purpose, ScenarioCandidateType? Type,
     string? ScenarioKey = null, string? CopyFrom = null, string? Variant = null);
+
+/// <summary>
+/// What changed in an application's scenarios with a new import (2026-11-23): the new import's discovery compared with the application's previous
+/// current discovery, by the stable scenario identity. Only computed counts: <see cref="Compared"/> false (with <see cref="Reason"/>) when there is
+/// nothing to compare with. Removed counts only scenarios whose source was read completely in the new version; the rest are <see cref="NotCompared"/>.
+/// </summary>
+public sealed record ScenarioChangeSummary
+{
+    public string ApplicationKey { get; init; } = "";
+    public bool Compared { get; init; }
+    public string? Reason { get; init; }
+    public string CurrentDiscoveryId { get; init; } = "";
+    public string? PreviousDiscoveryId { get; init; }
+    /// <summary>The archives the previous discovery was made from (for "compared with …").</summary>
+    public List<string> PreviousArchives { get; init; } = [];
+    public int New { get; init; }
+    /// <summary>Title, preconditions, steps or expected result differ (evidence paths alone do not count).</summary>
+    public int Changed { get; init; }
+    public int Removed { get; init; }
+    public int Unchanged { get; init; }
+    public int NotCompared { get; init; }
+    /// <summary>Scenarios of the new version whose sources disagree about the expected result.</summary>
+    public int Conflicts { get; init; }
+}

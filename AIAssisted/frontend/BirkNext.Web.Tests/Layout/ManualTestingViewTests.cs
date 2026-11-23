@@ -29,7 +29,7 @@ public sealed class ManualTestingViewTests : BunitContext
     private static readonly (string Group, string[] Routes)[] Expected =
     [
         // The Manual Testing workspace comes first: home, then its three stages; Plan & prepare is Test Plan Suggestions (one planning page).
-        ("Manual Testing", ["manual-testing", "manual-testing/discover", "manual-testing/plan", "test-plan-suggestions"]),
+        ("Manual Testing", ["manual-testing", "manual-testing/discover", "manual-testing/plan"]),
         ("Project setup", ["project-import", "sources", "demo-projects"]),
         ("Understand the system", ["system-understanding"]),
         ("Requirements", ["specification-explorer", "quality/document", "documentation-drift"]),
@@ -64,8 +64,8 @@ public sealed class ManualTestingViewTests : BunitContext
         var page = NavigationCatalog.Sections.SelectMany(s => s.Items).Single(i => i.Route == "system-understanding");
         page.IsCurrentLocation(NavigationCatalog.TestScenariosRoute).Should().BeTrue("the deep link keeps working and highlights System Understanding");
         WorkspaceViews.IsCurrent(WorkspaceView.ManualTesting, page, NavigationCatalog.TestScenariosRoute).Should().BeTrue();
-        WorkspaceViews.ManualTesting.Groups!.Single(g => g.Id == "manual-workspace").Routes.Should().Contain("test-plan-suggestions",
-            "Test Plan Suggestions (Plan & prepare) is where scenarios are prepared");
+        WorkspaceViews.ManualTesting.Groups!.Single(g => g.Id == "manual-workspace").Routes.Should().Contain("manual-testing/plan",
+            "Plan & prepare is where test cases are prepared (the full Test Plan Suggestions page is its advanced tools, not a second entry)");
         WorkspaceViews.ManualTesting.Groups!.Single(g => g.Id == "manual-prepare").Routes.Should().Equal(["test-data"], "the planning page is listed once, in the workspace");
         WorkspaceViews.ManualTesting.LandingRoute.Should().Be("manual-testing", "the Manual Tester view opens on the workspace home");
     }
@@ -82,7 +82,7 @@ public sealed class ManualTestingViewTests : BunitContext
         State.View.Should().Be(WorkspaceView.ManualTesting);
         cut.FindAll("[data-testid^=nav-section-]").Take(Expected.Length).Select(b => b.TextContent.Trim()).Should().Equal(Expected.Select(e => e.Group));
         cut.Find("[data-testid=nav-section-manual-workspace] + .nav-group").QuerySelectorAll("a").Select(a => (a.GetAttribute("href"), a.TextContent.Trim()))
-            .Should().Equal(("manual-testing", "Manual Testing"), ("manual-testing/discover", "Discover & understand"), ("manual-testing/plan", "Plan & prepare"), ("test-plan-suggestions", "Plans & export"));
+            .Should().Equal(("manual-testing", "Manual Testing"), ("manual-testing/discover", "Discover & understand"), ("manual-testing/plan", "Plan & prepare"));
         cut.Find("[data-testid=nav-section-manual-prepare] + .nav-group").QuerySelectorAll("a").Select(a => a.GetAttribute("href"))
             .Should().Equal("test-data");
         cut.Find("[data-testid=nav-workspace-view-help]").TextContent.Should().Contain("prepare functional tests and test data");
@@ -116,7 +116,7 @@ public sealed class ManualTestingViewTests : BunitContext
         var rendered = cut.FindAll("#nav-groups a").Select(a => a.GetAttribute("href")).ToList();
         rendered.Should().BeEquivalentTo(new[] { "manual-testing", "manual-testing/discover", "manual-testing/plan", "all-modules",
             "project-import", "sources", "demo-projects", "system-understanding", "specification-explorer", "quality/document", "documentation-drift",
-            "test-plan-suggestions", "test-data", "artifact-traceability", "test-coverage-review", "dashboard", "user-guide", "admin/system-settings" }
+            "test-data", "artifact-traceability", "test-coverage-review", "dashboard", "user-guide", "admin/system-settings" }
             .Where(r => catalogue.Single(i => i.Route == r).Visible(features)),
             "the Manual Testing preset plus Dashboard, All modules, User Guide and System Settings, nothing appended");
         foreach (var item in catalogue.Where(i => i.Visible(features) && !rendered.Contains(i.Route)))

@@ -22,10 +22,10 @@ public sealed record ProjectImportPreviewResult(ProjectImportPreview? Preview, S
 /// </list>
 /// Source Analysis keeps owning snapshot identity, currentness and evidence; this service never stores documents and never merges the two.
 /// </summary>
-public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStagingStore staging, IReviewSourceEvidenceProvider sources, ILogger<ProjectImportService> logger,
+public sealed partial class ProjectImportService(IqrSourceStore store, ProjectImportStagingStore staging, IReviewSourceEvidenceProvider sources, ILogger<ProjectImportService> logger,
     BirkNext.Api.Services.GitSources.IGitImportRecorder? gitImports = null, BirkNext.Api.Services.ImplementationGaps.ImplementationGapService? gaps = null,
     BirkNext.Api.Services.Specifications.SpecificationCatalogService? catalogs = null,
-    BirkNext.Api.Services.SystemUnderstanding.SystemGuideService? guides = null)
+    BirkNext.Api.Services.SystemUnderstanding.SystemGuideService? guides = null, BirkNext.Api.Services.SourceAnalysis.SourceBaselineService? baselines = null)
 {
     /// <summary>The import identity: derived from the exact archive bytes, so the same archive always has the same identity.</summary>
     public static string ImportIdFor(string sha256) => "import-" + sha256[..Math.Min(16, sha256.Length)];
@@ -106,7 +106,9 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
                 ImportId = staged.ImportId, ArchiveFileName = staged.Workspace.Archive.FileName, ArchiveSha256 = staged.Workspace.Archive.Sha256,
                 ImportedAt = staging.Now, Git = staging.GitRevisionOf(stagingId),
             };
-            var source = await SourceAsync(staged, provenance, ct, reportProgress);
+            var declared = staged.Application is { } choice ? await DeclaredIdentityAsync(staged, choice, ct) : null;
+            var source = await SourceAsync(staged, provenance, ct, reportProgress, declared);
+            var application = await ApplicationOutcomeAsync(staged, source, declared, ct);
             // A Git import is recorded on its repository links (revision → snapshot) once the source part is settled; a ZIP import has no revision.
             if (provenance.Git is { } git && !source.CanRetry) gitImports?.Record(git, source.SnapshotId, provenance.ImportId);
             var settled = !source.CanRetry;
@@ -130,6 +132,7 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
             var result = new ProjectImportCommitResult
             {
                 StagingId = stagingId, Provenance = provenance, Source = source, StagedUntil = settled ? null : staged.ExpiresAt, ImplementationGapEvaluationId = gapEvaluationId,
+                Application = application,
             };
             if (settled) staging.MarkCommitted(staged, result);
             return result;
@@ -183,7 +186,7 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
     }
 
     private async Task<ProjectImportSourceResult> SourceAsync(StagedProjectImport staged, ProjectImportProvenance provenance, CancellationToken ct,
-        Func<ProjectImportCommitEvent, Task>? reportProgress)
+        Func<ProjectImportCommitEvent, Task>? reportProgress, SourceRepositoryIdentity? declared = null)
     {
         var detection = staged.Source;
         if (!detection.Detected)
@@ -195,12 +198,14 @@ public sealed class ProjectImportService(IqrSourceStore store, ProjectImportStag
         // Target Environment is selected changes neither the archive identity nor this decision.
         await ReportAsync("Checking for an existing source snapshot", "Looking for this archive's current immutable Source Analysis snapshot.");
         var current = (await store.ListSourceAnalysisAsync(1, ct)).FirstOrDefault();
-        if (current?.ProjectImport is { } previous && previous.ImportId == staged.ImportId && current.Archive.Sha256 == staged.Workspace.Archive.Sha256)
+        // A declared application identity different from the current snapshot's needs its own snapshot (snapshots are immutable).
+        if (current?.ProjectImport is { } previous && previous.ImportId == staged.ImportId && current.Archive.Sha256 == staged.Workspace.Archive.Sha256
+            && (declared is null || SourceBaselineServiceKey(current) == declared.Key))
             return Snapshot(ProjectImportSourceState.Reused, current);
 
         try
         {
-            var snapshot = await store.AnalyzeValidatedAsync(null, IqrSourceStore.SourceAnalysisOwner, staged.FileName, staged.Bytes, staged.Workspace, ct, provenance, reportProgress);
+            var snapshot = await store.AnalyzeValidatedAsync(null, IqrSourceStore.SourceAnalysisOwner, staged.FileName, staged.Bytes, staged.Workspace, ct, provenance, reportProgress, declared);
             return Snapshot(ProjectImportSourceState.Created, snapshot);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }

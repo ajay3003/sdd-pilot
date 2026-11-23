@@ -118,9 +118,9 @@ public sealed class NavigationWorkspaceTests : BunitContext
     }
 
     [Theory]
-    [InlineData(WorkspaceView.TestLead, new[] { "artifact-traceability", "test-data", "test-plan-suggestions", "system-understanding", "specification-explorer", "test-coverage-review", "api-quality-review", "api-quality-review/contracts", "integration-quality-review", "performance-test-review", "critical-e2e-regression", "execution-results" })]
+    [InlineData(WorkspaceView.TestLead, new[] { "artifact-traceability", "test-data", "manual-testing/plan", "system-understanding", "specification-explorer", "test-coverage-review", "api-quality-review", "api-quality-review/contracts", "integration-quality-review", "performance-test-review", "critical-e2e-regression", "execution-results" })]
     [InlineData(WorkspaceView.TechnicalTester, new[] { "api-quality-review/contracts", "api-quality-review", "integration-suites", "execution-results", "critical-e2e-regression", "integration-quality-review", "test-data", "test-coverage-review", "performance-test-review", "integration-topology" })]
-    [InlineData(WorkspaceView.ManualTesting, new[] { "manual-testing", "manual-testing/discover", "manual-testing/plan", "system-understanding", "specification-explorer", "quality/document", "test-plan-suggestions", "test-data", "artifact-traceability", "test-coverage-review" })]
+    [InlineData(WorkspaceView.ManualTesting, new[] { "manual-testing", "manual-testing/discover", "manual-testing/plan", "system-understanding", "specification-explorer", "quality/document", "test-data", "artifact-traceability", "test-coverage-review" })]
     [InlineData(WorkspaceView.ScrumMaster, new[] { "delivery-reporting", "delivery-overview", "task-alignment" })]
     [InlineData(WorkspaceView.ProjectLeader, new[] { "dashboard", "delivery-overview", "delivery-reporting", "critical-e2e-regression", "snapshots", "correlation-review" })]
     [InlineData(WorkspaceView.Developer, new[] { "source-analysis", "specification-explorer", "schema-studio", "api-quality-review", "technology-coverage", "dependency-review", "pipeline-review" })]
@@ -146,7 +146,7 @@ public sealed class NavigationWorkspaceTests : BunitContext
         var rendered = cut.FindAll("[id^='nav-section-'] a").Select(a => a.GetAttribute("href")).ToList();
         rendered.Should().Equal(eligible, "every eligible module once, in catalogue order");
         rendered.Should().OnlyHaveUniqueItems();
-        rendered.Should().Contain(["test-data", "test-plan-suggestions", "system-understanding", "dashboard", "artifact-traceability",
+        rendered.Should().Contain(["test-data", "manual-testing/plan", "system-understanding", "dashboard", "artifact-traceability",
             "correlation-review", "critical-e2e-regression", "integration-suites", "execution-results", "performance-test-review"]);
         cut.FindAll("[data-testid=nav-outside-badge]").Should().BeEmpty("nothing is outside All Modules");
         cut.FindAll("[data-outside=true]").Should().BeEmpty();
@@ -184,9 +184,9 @@ public sealed class NavigationWorkspaceTests : BunitContext
         var (tech, dev, manual, lead) = (Of(WorkspaceView.TechnicalTester), Of(WorkspaceView.Developer), Of(WorkspaceView.ManualTesting), Of(WorkspaceView.TestLead));
         tech.SetEquals(dev).Should().BeFalse(); tech.SetEquals(manual).Should().BeFalse();
         tech.Should().Contain(["integration-suites", "critical-e2e-regression", "execution-results"]).And.NotContain(["plan-explorer", "task-alignment", "pipeline-review"]);
-        dev.Should().Contain(["pipeline-review", "task-explorer", "source-analysis"]).And.NotContain(["integration-suites", "critical-e2e-regression", "test-plan-suggestions"]);
+        dev.Should().Contain(["pipeline-review", "task-explorer", "source-analysis"]).And.NotContain(["integration-suites", "critical-e2e-regression", "manual-testing/plan"]);
         manual.Should().NotContain(["source-analysis", "api-quality-review", "pipeline-review", "code-risk-review"], "no developer diagnostics as manual tasks");
-        lead.Should().Contain(["test-plan-suggestions", "test-data"], "Test Lead covers functional preparation")
+        lead.Should().Contain(["manual-testing/plan", "test-data"], "Test Lead covers functional preparation")
             .And.Contain(["critical-e2e-regression", "execution-results", "api-quality-review"], "and technical verification");
         Of(WorkspaceView.ProjectLeader).Should().NotContain(["source-analysis", "integration-suites", "api-quality-review"], "no low-level runners for the project manager");
         Of(WorkspaceView.ScrumMaster).SetEquals(Of(WorkspaceView.ProjectLeader)).Should().BeFalse();

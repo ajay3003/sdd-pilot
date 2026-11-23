@@ -61,7 +61,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         var key = options.FirstOrDefault(g => g.GuideKey == guideKey)?.GuideKey ?? options.FirstOrDefault()?.GuideKey;
         if (key is null) return new TestPlanWorkspace { Guides = options, RuleVersion = E.RuleVersion };
         var (shown, _) = await guides.ShownAsync(key, ct);
-        var drafts = await db.TestPlanDrafts.AsNoTracking().Where(d => d.GuideKey == key).OrderByDescending(d => d.UpdatedAt).ToListAsync(ct);
+        var drafts = await db.TestPlanDrafts.AsNoTracking().Where(d => d.GuideKey == key && d.Lifecycle == ActiveState).OrderByDescending(d => d.UpdatedAt).ToListAsync(ct);
         return new TestPlanWorkspace
         {
             Guides = options, GuideKey = key, RuleVersion = E.RuleVersion, Drafts = [.. drafts.Select(d => Summary(Read(d)))], Snapshots = await SnapshotsAsync(key, ct),
@@ -93,7 +93,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
                 HasObservation = !string.IsNullOrWhiteSpace(s.ObservableEvidence), Correlations = E.Correlate(s.ExistingTests, executables),
             };
         }).ToList();
-        var drafts = await db.TestPlanDrafts.AsNoTracking().Where(d => d.GuideKey == key).OrderByDescending(d => d.UpdatedAt).ToListAsync(ct);
+        var drafts = await db.TestPlanDrafts.AsNoTracking().Where(d => d.GuideKey == key && d.Lifecycle == ActiveState).OrderByDescending(d => d.UpdatedAt).ToListAsync(ct);
         return new TestPlanWorkspace
         {
             Guides = options, GuideKey = key, Basis = await BasisAsync(view, ct, snapshots), Candidates = candidates,
@@ -179,7 +179,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
     /// guide since is flagged (SourceChanged), never silently rewritten. A save from an older draft revision is refused with 409.</summary>
     public async Task<TestPlanDraft> SaveAsync(Guid id, SaveTestPlanDraftRequest request, string actor, CancellationToken ct)
     {
-        var row = await Row(id, ct);
+        var row = await Mutable(id, ct);
         if (row.Revision != request.BaseRevision) throw Stale(row);
         var current = Read(row);
         if (current.ProjectKey is not null) return await SaveProjectAsync(row, current, request, actor, ct);
@@ -207,7 +207,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
     /// <summary>Records one review decision (state, reviewer, rationale) as an event; the earlier events stay.</summary>
     public async Task<TestPlanDraft> ReviewAsync(Guid id, ReviewTestCaseRequest request, string actor, CancellationToken ct)
     {
-        var row = await Row(id, ct);
+        var row = await Mutable(id, ct);
         if (row.Revision != request.BaseRevision) throw Stale(row);
         if (request.State is TestCaseReviewState.Generated or TestCaseReviewState.Superseded)
             throw new TestPlanException(400, "invalid-review-state", "Generated and Superseded are set by BirkNext, not by a review.");
@@ -240,7 +240,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
     /// </summary>
     public async Task<TestPlanDraft> ExcludeScenarioAsync(Guid id, ExcludeScenarioRequest request, string actor, CancellationToken ct)
     {
-        var row = await Row(id, ct);
+        var row = await Mutable(id, ct);
         if (row.Revision != request.BaseRevision) throw Stale(row);
         var rationale = request.Rationale?.Trim();
         if (string.IsNullOrWhiteSpace(rationale)) throw new TestPlanException(400, "rationale-required", "Say why the scenario is excluded.");
@@ -263,7 +263,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
     /// links and review history are kept, and a case whose scenario changed goes back to review (flagged), never silently accepted.</summary>
     public async Task<TestPlanDraft> RefreshAsync(Guid id, int baseRevision, string actor, CancellationToken ct)
     {
-        var row = await Row(id, ct);
+        var row = await Mutable(id, ct);
         if (row.Revision != baseRevision) throw Stale(row);
         var current = Read(row);
         if (current.ProjectKey is not null) return await RefreshProjectAsync(row, current, actor, ct);
@@ -345,7 +345,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         foreach (var key in guideKeys.Where(k => guides.GuideKeys.Contains(k, StringComparer.Ordinal)))
         {
             var current = await CurrentFingerprintsAsync(key, ct);
-            foreach (var row in await db.TestPlanDrafts.AsNoTracking().Where(d => d.GuideKey == key).OrderByDescending(d => d.UpdatedAt).ToListAsync(ct))
+            foreach (var row in await db.TestPlanDrafts.AsNoTracking().Where(d => d.GuideKey == key && d.Lifecycle == ActiveState).OrderByDescending(d => d.UpdatedAt).ToListAsync(ct))
                 foreach (var c in Read(row).Cases.Where(c => c.Source.Kind == ScenarioSourceKind.SystemGuide && c.Review != TestCaseReviewState.Superseded))
                 {
                     if (result.ContainsKey((key, c.Source.ScenarioId))) continue; // the newest draft wins
@@ -536,7 +536,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         var key = TestScenarioDiscoveryService.Key(projectKey);
         var owner = ProjectOwner(key);
         var list = new List<TestPlanDraft>();
-        foreach (var row in await db.TestPlanDrafts.AsNoTracking().Where(d => d.GuideKey == owner).ToListAsync(ct))
+        foreach (var row in await db.TestPlanDrafts.AsNoTracking().Where(d => d.GuideKey == owner && d.Lifecycle == ActiveState).ToListAsync(ct))
         {
             try { if (Read(row) is { } plan && plan.ProjectKey == key) list.Add(plan); }
             catch (JsonException) { }
@@ -558,8 +558,9 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
     {
         var key = TestScenarioDiscoveryService.Key(projectKey);
         var owner = ProjectOwner(key);
-        var drafts = (await db.TestPlanDrafts.AsNoTracking().Where(d => d.GuideKey == owner).OrderByDescending(d => d.UpdatedAt).ToListAsync(ct))
-            .Select(Read).Where(p => p.ProjectKey == key).ToList();
+        var rows = (await db.TestPlanDrafts.AsNoTracking().Where(d => d.GuideKey == owner).OrderByDescending(d => d.UpdatedAt).ToListAsync(ct))
+            .Select(r => (Plan: Read(r), Row: r)).Where(x => x.Plan.ProjectKey == key).ToList();
+        var drafts = rows.Where(x => IsActive(x.Row)).Select(x => x.Plan).ToList();
         // The application's plans from earlier imports of it (a newer import continues them) and the current basis of the application.
         if (discoveryStore is not null) await discoveryStore.RestoreAsync(key, null, ct);
         var current = discoveries?.Latest(key);
@@ -567,7 +568,9 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
         if (application is not null)
         {
             if (discoveryStore is not null) await discoveryStore.RestoreApplicationAsync(application, ct);
-            drafts = [.. drafts, .. await ApplicationDraftsAsync(application, key, ct)];
+            var others = await ApplicationDraftsAsync(application, key, ct);
+            rows = [.. rows, .. others];
+            drafts = [.. drafts, .. others.Where(x => IsActive(x.Row)).Select(x => x.Plan)];
             drafts = [.. drafts.OrderByDescending(d => d.UpdatedAt)];
         }
         var status = new Dictionary<Guid, PlanSourceStatus>();
@@ -578,7 +581,8 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
             $"Critical E2E · {flow.Name}", $"Automated flow v{flow.Version} ({flow.Module}); a definition, not a result")).ToList();
         return new TestPlanWorkspace
         {
-            ProjectKey = key, GuideKey = owner, Drafts = [.. drafts.Select(Summary)], Snapshots = await SnapshotsAsync(owner, ct), Executables = executables,
+            ProjectKey = key, GuideKey = owner, Drafts = [.. drafts.Select(d => Summary(d, rows.First(x => x.Plan.Id == d.Id).Row))],
+            ArchivedDrafts = [.. rows.Where(x => x.Row.Lifecycle == ArchivedState).OrderByDescending(x => x.Row.LifecycleChangedAt).Select(x => Summary(x.Plan, x.Row))], Snapshots = await SnapshotsAsync(owner, ct), Executables = executables,
             TestData = await TestDataOptionsAsync(ct), CanWrite = canWrite, RuleVersion = E.RuleVersion, CurrentBasis = currentBasis, PlanStatus = status,
         };
     }
@@ -606,7 +610,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
 
         if (request.DraftId is { } draftId)
         {
-            var row = await Row(draftId, ct);
+            var row = await Mutable(draftId, ct);
             if (request.BaseRevision is { } baseRevision && row.Revision != baseRevision) throw Stale(row);
             var current = Read(row);
             // A plan of an earlier import of the same application continues here (a plan follows the application, never another application).
@@ -649,7 +653,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
     /// <summary>Adds a hand-written case to a project plan (title and purpose only; nothing generated).</summary>
     public async Task<TestPlanDraft> AddManualCaseAsync(Guid id, AddManualTestCaseRequest request, string actor, CancellationToken ct)
     {
-        var row = await Row(id, ct);
+        var row = await Mutable(id, ct);
         if (row.Revision != request.BaseRevision) throw Stale(row);
         var current = Read(row);
         if (current.ProjectKey is not { } key) throw new TestPlanException(400, "not-a-project-plan", "Hand-written cases are added to project plans.");
@@ -738,7 +742,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
     public async Task<TranslateScenarioResult> TranslateScenarioAsync(Guid id, TranslateScenarioRequest request, ITestCaseTranslator translator, TranslationSettings settings,
         string actor, CancellationToken ct)
     {
-        var row = await Row(id, ct);
+        var row = await Mutable(id, ct);
         if (row.Revision != request.BaseRevision) throw Stale(row);
         var current = Read(row);
         if (string.IsNullOrWhiteSpace(request.ScenarioKey) || current.Cases.All(c => c.ParentScenario != request.ScenarioKey || c.Review == TestCaseReviewState.Superseded))
@@ -750,7 +754,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
     public async Task<TranslateScenarioResult> TranslatePlanAsync(Guid id, TranslatePlanRequest request, ITestCaseTranslator translator, TranslationSettings settings,
         string actor, CancellationToken ct)
     {
-        var row = await Row(id, ct);
+        var row = await Mutable(id, ct);
         if (row.Revision != request.BaseRevision) throw Stale(row);
         var current = Read(row);
         if (current.ProjectKey is null) throw new TestPlanException(400, "not-a-project-plan", "Translation is available for project plans.");
@@ -1285,7 +1289,7 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
     /// cases the restored revision does not hold stay in run history.</summary>
     public async Task<TestPlanDraft> RestoreRevisionAsync(Guid id, RestoreTestPlanRevisionRequest request, string actor, CancellationToken ct)
     {
-        var row = await Row(id, ct);
+        var row = await Mutable(id, ct);
         if (row.Revision != request.BaseRevision) throw new TestPlanException(409, "draft-changed", $"The plan is at revision {row.Revision}; reload it. Nothing was restored.");
         if (request.Revision == row.Revision) throw new TestPlanException(409, "revision-current", "That revision is the current plan.");
         var old = await RevisionAsync(id, request.Revision, ct);
@@ -1335,11 +1339,21 @@ public sealed partial class TestPlanSuggestionService(AppDbContext db, SystemGui
     private static string? Label(string? label) => string.IsNullOrWhiteSpace(label) ? null : label.Trim()[..Math.Min(label.Trim().Length, 200)];
     private static string? Note(string? note) => string.IsNullOrWhiteSpace(note) ? null : note.Trim()[..Math.Min(note.Trim().Length, 1000)];
 
-    private static TestPlanDraftSummary Summary(TestPlanDraft p) => new(p.Id, p.GuideKey, p.PlanName, p.DeliveryLabel, p.Revision, p.Cases.Count,
+    private static TestPlanDraftSummary Summary(TestPlanDraft p, TestPlanDraftRecord? row) => Summary(p) with
+    {
+        Lifecycle = Enum.TryParse<TestPlanLifecycle>(row?.Lifecycle, out var state) ? state : TestPlanLifecycle.Active,
+        LifecycleChangedAt = row?.LifecycleChangedAt, LifecycleChangedBy = row?.LifecycleChangedBy,
+    };
+
+    private static TestPlanDraftSummary Summary(TestPlanDraft p) => new TestPlanDraftSummary(p.Id, p.GuideKey, p.PlanName, p.DeliveryLabel, p.Revision, p.Cases.Count,
         p.Cases.Count(c => c.Review == TestCaseReviewState.Accepted), p.Cases.Count(c => c.Review == TestCaseReviewState.NeedsClarification),
         p.Cases.Count(c => c.Review != TestCaseReviewState.Excluded && c.Missing.Any(m => m.StartsWith("Expected result: NEEDS", StringComparison.Ordinal))),
         p.Cases.Count(c => c.Review != TestCaseReviewState.Excluded && c.TestData.Count == 0),
-        p.Cases.Count(c => c.Review != TestCaseReviewState.Excluded && !c.Testability.Ready), p.UpdatedBy, p.UpdatedAt);
+        p.Cases.Count(c => c.Review != TestCaseReviewState.Excluded && !c.Testability.Ready), p.UpdatedBy, p.UpdatedAt)
+    {
+        Scenarios = p.Cases.Where(c => c.Review != TestCaseReviewState.Superseded).Select(c => c.ParentScenario).OfType<string>().Distinct(StringComparer.Ordinal).Count(),
+        ApplicationKey = p.ApplicationKey, ProjectName = p.ProjectName,
+    };
 
     private static TestPlanSnapshotSummary SnapshotSummary(TestPlanSnapshotRecord s) => new(s.Id, s.DraftId, s.GuideKey, s.Sequence, s.PlanName, s.DeliveryLabel, s.DraftRevision,
         s.ContentFingerprint, s.RuleVersion, s.GuideRevision, s.CaseCount, s.CreatedBy, s.CreatedAt, s.Note);

@@ -134,7 +134,7 @@ public sealed class TestCoverageReviewService(AppDbContext db, IReviewSourceEvid
     private async Task<List<BirkNext.TestPlanning.TestPlanDraft>> DraftsAsync(CancellationToken ct)
     {
         var drafts = new List<BirkNext.TestPlanning.TestPlanDraft>();
-        foreach (var row in await db.TestPlanDrafts.AsNoTracking().ToListAsync(ct))
+        foreach (var row in await db.TestPlanDrafts.AsNoTracking().Where(d => d.Lifecycle == "Active").ToListAsync(ct))
         {
             try
             {

@@ -82,7 +82,7 @@ public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? log
     public static readonly IReadOnlySet<string> IdentityMembers = new HashSet<string>(StringComparer.Ordinal)
     {
         "id", "integrationId", "archive", "commit", "branch", "analyzerVersion", "analyzedAt", "status", "projects", "architecture", "evidenceDomains",
-        "repository", "projectImport", "deploymentCorrelation", "limitations",
+        "repository", "archiveRepository", "projectImport", "deploymentCorrelation", "limitations",
     };
 
     private static readonly JsonSerializerOptions IdentityJson = new(JsonSerializerDefaults.Web)
@@ -198,7 +198,7 @@ public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? log
     /// and is stored without one (<see cref="NoEnvironment"/>); only the legacy per-integration snapshots keep the environment they were uploaded for.</summary>
     internal async Task<IqrSourceSnapshot> AnalyzeValidatedAsync(string? environmentId, string integrationId, string name, byte[] bytes,
         IqrSourceArchiveReader.Workspace workspace, CancellationToken ct = default, BirkNext.ProjectImport.ProjectImportProvenance? projectImport = null,
-        Func<BirkNext.ProjectImport.ProjectImportCommitEvent, Task>? reportProgress = null)
+        Func<BirkNext.ProjectImport.ProjectImportCommitEvent, Task>? reportProgress = null, BirkNext.SourceEvidence.SourceRepositoryIdentity? declaredApplication = null)
     {
         ct.ThrowIfCancellationRequested();
         environmentId = integrationId == SourceAnalysisOwner ? NoEnvironment : environmentId ?? NoEnvironment;
@@ -244,8 +244,11 @@ public sealed class IqrSourceStore(AppDbContext db, ILogger<IqrSourceStore>? log
         // Repository identity and the dependency evidence Dependency Review consumes (manifests, redacted Renovate configs, automation summaries):
         // captured once here so Dependency Review never needs the archive again. Source Analysis supplies evidence; it does not review dependencies.
         await ReportProgressAsync("Analyzing dependency evidence", "Extracting repository identity and dependency manifests from the uploaded archive.");
-        var repository = DependencyReview.SourceDependencyEvidenceExtractor.Identity(name, bytes);
-        snapshot = snapshot with { Repository = repository, DependencyEvidence = new DependencyReview.SourceSnapshotDependencyProvider().Extract(repository.DisplayName, bytes, name).Evidence };
+        var archiveIdentity = DependencyReview.SourceDependencyEvidenceExtractor.Identity(name, bytes);
+        // An application identity the tester declared at import ("Ny versjon av …" / a new application whose name is taken) replaces the archive's
+        // own identity for every module; the archive's identity is kept beside it for lineage. Never inferred.
+        var repository = declaredApplication ?? archiveIdentity;
+        snapshot = snapshot with { Repository = repository, ArchiveRepository = declaredApplication is null || declaredApplication.Key == archiveIdentity.Key ? null : archiveIdentity, DependencyEvidence = new DependencyReview.SourceSnapshotDependencyProvider().Extract(repository.DisplayName, bytes, name).Evidence };
         // Source test definitions (test projects, [Fact]/[Theory], traits, explicit requirement references): discovery only, consumed when execution
         // results are imported. A failure here never fails the snapshot; it is reported as a limitation of an empty inventory.
         await ReportProgressAsync("Discovering test definitions", "Finding test projects and declared test cases in source.");

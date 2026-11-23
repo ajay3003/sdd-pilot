@@ -1,0 +1,75 @@
+@using BirkNext.ProjectImport
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@* After the import (2026-11-23): which application identity the source got, and — on request, because it runs discovery — what changed in the
+   application's scenarios compared with its previous version and which plans need review. Only computed counts are shown. *@
+<div class="pi-app-summary" data-testid="pi-app-summary">
+    <dl class="pi-facts">
+        <div><dt>Applikasjon</dt><dd data-testid="pi-app-result">@Outcome.ApplicationName@(Outcome.Mode == ProjectImportApplicationMode.NewVersion ? " (ny versjon)" : " (ny applikasjon)")</dd></div>
+        @if (Outcome.ArchiveKey != Outcome.ApplicationKey) { <div><dt>Arkivets navn</dt><dd data-testid="pi-app-archive">@Outcome.ArchiveName</dd></div> }
+        @if (Outcome.BaselineSelected) { <div><dt>Kildegrunnlag</dt><dd data-testid="pi-app-baseline">Denne versjonen er gjeldende for applikasjonen</dd></div> }
+    </dl>
+    @if (Planning is not null)
+    {
+        @if (_changes is null)
+        {
+            <button type="button" class="btn-secondary btn-sm" disabled="@_busy" @onclick="CompareAsync" data-testid="pi-app-compare">@(_busy ? "Sammenligner scenarioer …" : "Sammenlign scenarioer med forrige versjon")</button>
+            @if (_error is { } error) { <p class="pi-warning" role="alert" data-testid="pi-app-compare-error">@error</p> }
+        }
+        else
+        {
+            <div data-testid="pi-app-changes">
+                @if (!_changes.Compared)
+                {
+                    <p>@_changes.Reason <span class="pi-muted">@_changes.New scenario@(_changes.New == 1 ? "" : "er") funnet.</span></p>
+                }
+                else
+                {
+                    <p class="pi-muted">Sammenlignet med @(_changes.PreviousArchives.Count > 0 ? string.Join(", ", _changes.PreviousArchives) : "forrige oppdagelse").</p>
+                    <dl class="pi-facts pi-changes">
+                        <div><dt>Nye</dt><dd data-testid="pi-changes-new">@_changes.New</dd></div>
+                        <div><dt>Endret</dt><dd data-testid="pi-changes-changed">@_changes.Changed</dd></div>
+                        <div><dt>Utgått</dt><dd data-testid="pi-changes-removed">@_changes.Removed</dd></div>
+                        <div><dt>Uendret</dt><dd data-testid="pi-changes-unchanged">@_changes.Unchanged</dd></div>
+                        @if (_changes.NotCompared > 0) { <div><dt>Ikke sammenlignet</dt><dd data-testid="pi-changes-not-compared">@_changes.NotCompared</dd></div> }
+                        <div><dt>Kildekonflikter</dt><dd data-testid="pi-changes-conflicts">@_changes.Conflicts</dd></div>
+                        @if (_plansToReview is { } review) { <div><dt>Planer som må gjennomgås</dt><dd data-testid="pi-changes-plans">@review</dd></div> }
+                    </dl>
+                }
+                <a class="btn-secondary btn-sm" href="@ManualTestingPresentation.HomeRoute" data-testid="pi-app-open-manual">Åpne Manuell testing</a>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ProjectImportApplicationOutcome Outcome { get; set; } = new();
+    [Parameter, EditorRequired] public string ImportId { get; set; } = "";
+    [Parameter, EditorRequired] public Guid SnapshotId { get; set; }
+    [Parameter] public string? ProjectName { get; set; }
+    [Parameter] public ITestPlanSuggestionsApiService? Planning { get; set; }
+
+    private ScenarioChangeSummary? _changes;
+    private int? _plansToReview;
+    private bool _busy;
+    private string? _error;
+
+    private async Task CompareAsync()
+    {
+        if (Planning is null) return;
+        _busy = true; _error = null;
+        try
+        {
+            // The import's own project key ("import:<id>"): the same project the import's guide generation and discovery use.
+            var project = $"import:{ImportId}";
+            var (changes, error) = await Planning.ChangesAsync(new ScenarioDiscoveryRequest { ProjectKey = project, ProjectName = ProjectName, SnapshotId = SnapshotId, MemberSnapshotIds = [SnapshotId] });
+            if (changes is null) { _error = error ?? "Scenarioene kunne ikke sammenlignes."; return; }
+            _changes = changes;
+            // Plans of the application (they follow it across imports) whose source status needs a person after this version.
+            var (workspace, _) = await Planning.ProjectAsync(project, null);
+            if (workspace?.PlanStatus is { } status)
+                _plansToReview = status.Values.Count(s => s.State is "Må gjennomgås" or "Ny kildeversjon" or "Kilde mangler");
+        }
+        finally { _busy = false; }
+    }
+}

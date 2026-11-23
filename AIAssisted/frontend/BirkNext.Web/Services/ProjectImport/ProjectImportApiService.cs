@@ -19,11 +19,40 @@ public interface IProjectImportApiService
 
     /// <summary>Releases a staged archive that will not be imported.</summary>
     Task DiscardAsync(Guid stagingId, CancellationToken ct = default);
+
+    /// <summary>The archive's own application identity and the applications already imported (null when unavailable).</summary>
+    Task<ProjectImportApplicationOptions?> ApplicationOptionsAsync(Guid stagingId, CancellationToken ct = default) => Task.FromResult<ProjectImportApplicationOptions?>(null);
+
+    /// <summary>Records "Ny applikasjon" / "Ny versjon av …" on the staged upload before the import.</summary>
+    Task<(ProjectImportApplicationChoice? Choice, string? Error)> ChooseApplicationAsync(Guid stagingId, ProjectImportApplicationChoice choice, CancellationToken ct = default) =>
+        Task.FromResult<(ProjectImportApplicationChoice?, string?)>((null, "Valget er ikke tilgjengelig her."));
 }
 
 public sealed class ProjectImportApiService(HttpClient http) : IProjectImportApiService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    public async Task<ProjectImportApplicationOptions?> ApplicationOptionsAsync(Guid stagingId, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.GetAsync($"api/project-import/{stagingId}/application", ct);
+            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<ProjectImportApplicationOptions>(Json, ct) : null;
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException) { return null; }
+    }
+
+    public async Task<(ProjectImportApplicationChoice? Choice, string? Error)> ChooseApplicationAsync(Guid stagingId, ProjectImportApplicationChoice choice, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await http.PostAsJsonAsync($"api/project-import/{stagingId}/application", choice, Json, ct);
+            if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<ProjectImportApplicationChoice>(Json, ct), null);
+            var failure = await IntegrationCatalogApiService.ReadSourceUploadFailure(response, ct);
+            return (null, failure.Message);
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException) { return (null, "BirkNext svarte ikke. Prøv igjen."); }
+    }
 
     public async Task<(ProjectImportPreview? Preview, SourceUploadFailure? Error)> PreviewAsync(string fileName, Stream content, CancellationToken ct = default)
     {

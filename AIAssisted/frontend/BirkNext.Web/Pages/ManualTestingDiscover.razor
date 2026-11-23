@@ -54,19 +54,20 @@
                     <span class="mt-muted" data-testid="mtd-basis">Oppdaget @discovery.DiscoveredAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")@(discovery.SnapshotLabel is { } sl ? $" · {sl}" : "")</span>
                 }
             </div>
+            @if (_discoverError is { } discoverError) { <p class="mt-alert" role="alert" data-testid="mtd-discover-error">@discoverError</p> }
             <dl class="msb-counts" data-testid="mtd-kpis">
                 <div><dt>Forslag</dt><dd data-testid="mtd-count-suggestions">@_items.Count</dd></div>
                 <div><dt>Valgt</dt><dd data-testid="mtd-count-selected">@_selected.Count</dd></div>
                 <div><dt>Testtilfeller</dt><dd data-testid="mtd-count-prepared">@preparedCases</dd></div>
                 <div class="@(clarify > 0 ? "is-warn" : null)"><dt>Trenger avklaring</dt><dd data-testid="mtd-count-clarify">@clarify</dd></div>
             </dl>
-            <a class="btn btn-secondary btn-sm" href="@($"{M.LegacyPlanRoute}?area=choose&discover=now")" data-testid="mtd-discover">@(discovery is null ? "Oppdag scenarioer" : "Oppdag på nytt")</a>
+            <button type="button" class="btn btn-secondary btn-sm" disabled="@_discovering" @onclick="DiscoverAsync" data-testid="mtd-discover">@(_discovering ? "Finner scenarioer …" : discovery is null ? "Oppdag scenarioer" : "Oppdag på nytt")</button>
         </section>
 
         @if (discovery is null)
         {
             <p class="msb-empty" data-testid="mtd-sug-none">Ingen scenarioer er oppdaget ennå. Oppdagelsen leser bare denne applikasjonens egne kilder (spesifikasjon, kildekode, kontrakter, flyter og tester), og kjører bare når du ber om det.
-                <a href="@($"{M.LegacyPlanRoute}?area=choose&discover=now")">Oppdag scenarioer</a></p>
+                <button type="button" class="msb-link" disabled="@_discovering" @onclick="DiscoverAsync" data-testid="mtd-discover-empty">Oppdag scenarioer</button></p>
         }
         else
         {
@@ -101,7 +102,7 @@
                     </select>
                 }
                 <label class="msb-toggle" data-testid="mtd-show-technical"><input type="checkbox" checked="@(_filter.Technical || _filter.All)" @onchange="e => Set(_filter with { Technical = e.Value is true, All = false })" />
-                    Vis tekniske scenarioer</label>
+                    Vis teknisk innhold</label>
                 <span class="msb-visible mt-muted" data-testid="mtd-visible" aria-live="polite">Viser @shown.Count av @_items.Count@(hidden > 0 ? $" · {hidden} tekniske skjult" : "")</span>
                 @if (hidden > 0 || _filter != new S.Filter())
                 {
@@ -189,7 +190,7 @@
                                 <dd data-testid="mtd-detail-requirements">
                                     @foreach (var r in c.RequirementIds)
                                     {
-                                        <button type="button" class="msb-req" @onclick="() => Set(_filter with { Requirement = r })" title="Vis alle scenarioer for @r">@r</button>
+                                        <button type="button" class="msb-req" @onclick="() => Set(_filter with { Requirement = r })" title="Vis alle scenarioer for @r">@r@(IsTechnicalRequirement(r) ? " · teknisk" : "")</button>
                                     }
                                     <span class="msb-basis">Eksplisitt nevnt i kilden.</span>
                                 </dd>
@@ -246,7 +247,9 @@
             }
             else if (_reqOpen)
             {
-                var shownReqs = M.FilterRequirements(_ws.Requirements, designedAll, _reqFilter, _reqQuery);
+                var showTechnical = _filter.Technical || _filter.All;
+                var shownReqs = M.FilterRequirements(_ws.Requirements, designedAll, _reqFilter, _reqQuery, showTechnical);
+                var hiddenReqs = showTechnical ? 0 : M.FilterRequirements(_ws.Requirements, designedAll, _reqFilter, _reqQuery).Count - shownReqs.Count;
                 <div class="msb-toolbar msb-toolbar-inline">
                     <input type="search" class="msb-search" placeholder="Søk i krav (id eller tekst)" aria-label="Søk i krav" value="@_reqQuery" @oninput="e => { _reqQuery = e.Value?.ToString() ?? string.Empty; _reqLimit = 25; }" data-testid="mtd-req-search" />
                     @foreach (var (key, label) in ReqFilters)
@@ -262,10 +265,15 @@
                         <li data-testid="mtd-requirement" data-requirement="@r.RequirementId">
                             <button type="button" class="msb-req" @onclick="() => Set(new S.Filter(Requirement: r.RequirementId, All: true))" title="Vis scenarioer for kravet">@r.RequirementId</button>
                             <span class="msb-req-text">@r.Title</span>
+                            @if (ManualTestingRelevance.RequirementReason(r.Title) is { } why) { <span class="msb-tag" title="@why" data-testid="mtd-req-technical">teknisk</span> }
                             <span class="mt-muted msb-small">@linked scenario@(linked == 1 ? "" : "er") · @(row is null ? "ingen testdesign" : row.ApprovedCases > 0 ? "godkjent testtilfelle" : "forberedt")</span>
                         </li>
                     }
                 </ul>
+                @if (hiddenReqs > 0)
+                {
+                    <p class="mt-muted msb-small" data-testid="mtd-req-hidden">@hiddenReqs teknisk@(hiddenReqs == 1 ? "" : "e") krav skjult (gjelder kodebasen, ikke atferd en tester ser). Slå på «Vis teknisk innhold» for å se dem.</p>
+                }
                 @if (shownReqs.Count > _reqLimit) { <button type="button" class="btn btn-secondary btn-sm" @onclick="() => _reqLimit += 25" data-testid="mtd-req-more">Vis flere (@(shownReqs.Count - _reqLimit))</button> }
                 <p class="mt-muted msb-small"><a href="test-coverage-review">Test Coverage</a> og <a href="artifact-traceability">Requirements Traceability</a> viser alle koblinger.</p>
             }
@@ -289,8 +297,28 @@
 </div>
 
 @code {
-    private bool _loading = true;
+    private bool _loading = true, _discovering;
+    private string? _discoverError;
     private ManualTestingWorkspace.Snapshot? _ws;
+
+    /// <summary>Runs discovery for the selected application here (explicit only; the same request the planning service always used): one consistent
+    /// source basis of the project's own sources, the specification captured at import. The result replaces the list; the selection is kept.</summary>
+    private async Task DiscoverAsync()
+    {
+        if (_ws?.ProjectKey is not { } key || ServiceProvider.GetService(typeof(ITestPlanSuggestionsApiService)) is not ITestPlanSuggestionsApiService api) return;
+        _discovering = true; _discoverError = null;
+        try
+        {
+            var (result, error) = await api.DiscoverAsync(new ScenarioDiscoveryRequest
+            {
+                ProjectKey = key, ProjectName = _ws.ProjectName, SnapshotId = _ws.SnapshotId, EnvironmentId = _ws.EnvironmentId, Workspace = _ws.Evidence,
+                MemberSnapshotIds = [.. ManualTestingWorkspace.MemberSnapshots(ServiceProvider)],
+            });
+            if (result is null) { _discoverError = error ?? "Oppdagelsen feilet."; return; }
+            await LoadAsync();
+        }
+        finally { _discovering = false; }
+    }
     private PreparedCaseTraceView? _trace;
     private List<S.Item> _items = [];
     private List<BirkNext.TestCoverage.CoverageUserStory> _stories = [];
@@ -345,6 +373,10 @@
         }
         finally { _loading = false; }
     }
+
+    /// <summary>A requirement linked to a scenario stays visible as context; it is only marked when its wording is technical.</summary>
+    private bool IsTechnicalRequirement(string id) => _ws?.Requirements?.FirstOrDefault(x => string.Equals(x.RequirementId, id, StringComparison.OrdinalIgnoreCase)) is { } r
+        && ManualTestingRelevance.RequirementReason(r.Title) is not null;
 
     private static string? Opt(ChangeEventArgs e) => e.Value?.ToString() is { Length: > 0 } v ? v : null;
 

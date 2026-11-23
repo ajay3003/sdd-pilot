@@ -1,0 +1,134 @@
+@using BirkNext.TestPlanning
+@using BirkNext.Web.Services
+@using M = BirkNext.Web.Services.ManualTestingPresentation
+@using P = BirkNext.Web.Services.PlanPreparePresentation
+@* Lagrede planer (2026-11-23): the project's plans as a compact list — name, application, last change, scenarios, test cases, review status and
+   source freshness — with Åpne and Arkiver. "Arkiverte" shows archived plans (read-only, kept apart) with Gjenopprett and Slett. Slett is
+   logical (the plan disappears everywhere; its revisions and frozen snapshots are kept for audit), only for an archived plan, after typing its
+   name, at the revision shown (a changed plan is refused). Nothing is ever deleted by name matching or in bulk. *@
+<section aria-labelledby="mt-plans-title" data-testid="mt-plans">
+    <div class="mtp-plans-head">
+        <h2 id="mt-plans-title" class="msb-h">Lagrede planer</h2>
+        <div class="mtp-segment" role="group" aria-label="Vis planer">
+            <button type="button" aria-pressed="@(!_archivedView ? "true" : "false")" @onclick="() => Show(false)" data-testid="mt-plans-active">Aktive (@Workspace.Drafts.Count)</button>
+            <button type="button" aria-pressed="@(_archivedView ? "true" : "false")" @onclick="() => Show(true)" data-testid="mt-plans-archived">Arkiverte (@Workspace.ArchivedDrafts.Count)</button>
+        </div>
+    </div>
+    @if (_message is { } message) { <p class="mtp-notice" role="status" data-testid="mt-plans-message">@message</p> }
+    @if (_error is { } error) { <p class="mt-alert" role="alert" data-testid="mt-plans-error">@error</p> }
+    @{ var plans = _archivedView ? Workspace.ArchivedDrafts : Workspace.Drafts; }
+    @if (plans.Count == 0)
+    {
+        @if (_archivedView)
+        {
+            <p class="msb-empty" data-testid="mt-plans-archived-none">Ingen arkiverte planer.</p>
+        }
+        else
+        {
+            <p class="msb-empty" data-testid="mt-plans-none">Ingen plan ennå. <a href="@M.DiscoverRoute">Velg scenarioer</a> i Finn og forstå, så lager du testtilfeller i Planlegg og klargjør.</p>
+        }
+    }
+    else
+    {
+        <ul class="msb-plans">
+            @foreach (var p in plans.Take(_limit))
+            {
+                var status = Workspace.PlanStatus is { } st && st.TryGetValue(p.Id, out var s) ? s : null;
+                <li class="msb-plan @(_archivedView ? "is-archived" : null)" data-testid="mt-plan" data-plan="@p.Id">
+                    <div class="msb-plan-main">
+                        <a href="@($"{M.PlanRoute}?draft={p.Id}")" class="msb-plan-name"><strong>@p.PlanName</strong></a>
+                        <span class="mt-muted msb-small" data-testid="mt-plan-facts">@(Application(p) is { } app ? $"{app} · " : "")@p.Scenarios scenario@(p.Scenarios == 1 ? "" : "er") · @p.Cases testtilfelle@(p.Cases == 1 ? "" : "r") · @p.Accepted godkjent@(p.NeedsClarification > 0 ? $" · {p.NeedsClarification} trenger avklaring" : "") · @(_archivedView && p.LifecycleChangedAt is { } at ? $"arkivert {at.ToLocalTime():yyyy-MM-dd HH:mm}{(p.LifecycleChangedBy is { } by ? $" av {by}" : "")}" : $"endret {p.UpdatedAt.ToLocalTime():yyyy-MM-dd HH:mm}")</span>
+                    </div>
+                    @if (!_archivedView && status is not null)
+                    {
+                        <span class="msb-status msb-tone-@(status.State switch { "Klar" => "ok", "Må gjennomgås" or "Kilde mangler" => "warn", "Ny kildeversjon" => "info", _ => "muted" })" title="@status.Message" data-testid="mt-plan-source">@status.State</span>
+                    }
+                    @if (_archivedView) { <span class="msb-status msb-tone-muted">Arkivert</span> }
+                    <a class="btn btn-secondary btn-sm" href="@($"{M.PlanRoute}?draft={p.Id}")" data-testid="mt-plan-open">@(_archivedView ? "Vis" : "Åpne")</a>
+                    @if (!_archivedView)
+                    {
+                        <a class="msb-link" href="@($"{M.PlanRoute}?draft={p.Id}&panel=export")" data-testid="mt-plan-export">Eksporter</a>
+                        @if (CanWrite) { <button type="button" class="msb-link" disabled="@_busy" @onclick="() => ArchiveAsync(p)" data-testid="mt-plan-archive">Arkiver</button> }
+                    }
+                    else if (CanWrite)
+                    {
+                        <button type="button" class="msb-link" disabled="@_busy" @onclick="() => UnarchiveAsync(p)" data-testid="mt-plan-unarchive">Gjenopprett</button>
+                        <button type="button" class="msb-link msb-danger" disabled="@_busy" @onclick="() => { _deleting = p.Id; _confirmName = string.Empty; }" data-testid="mt-plan-delete">Slett</button>
+                    }
+                    @if (_deleting == p.Id)
+                    {
+                        <div class="mtp-confirm mtp-confirm-danger" role="group" aria-label="Slett plan" data-testid="mt-plan-delete-confirm">
+                            <p>Slett «@p.PlanName»? Planen forsvinner fra alle lister og kan ikke åpnes igjen. Versjonene og eksporterte øyeblikksbilder beholdes for sporbarhet.</p>
+                            <label class="mtp-field"><span>Skriv planens navn for å bekrefte</span>
+                                <input type="text" value="@_confirmName" @oninput="e => _confirmName = e.Value?.ToString() ?? string.Empty" autocomplete="off" data-testid="mt-plan-delete-name" /></label>
+                            <button type="button" class="btn btn-danger btn-sm" disabled="@(_busy || _confirmName.Trim() != p.PlanName.Trim())" @onclick="() => DeleteAsync(p)" data-testid="mt-plan-delete-yes">Slett planen</button>
+                            <button type="button" class="msb-link" @onclick="() => _deleting = null" data-testid="mt-plan-delete-no">Avbryt</button>
+                        </div>
+                    }
+                </li>
+            }
+        </ul>
+        @if (plans.Count > _limit) { <button type="button" class="msb-link" @onclick="() => _limit += 10" data-testid="mt-plans-more">Vis flere (@(plans.Count - _limit))</button> }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public TestPlanWorkspace Workspace { get; set; } = new();
+    [Parameter] public ITestPlanSuggestionsApiService? Api { get; set; }
+    [Parameter] public bool ShowArchived { get; set; }
+    /// <summary>A plan was archived, restored or deleted: the owner reloads the workspace.</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private bool _archivedView, _busy;
+    private int _limit = 8;
+    private Guid? _deleting;
+    private string _confirmName = string.Empty;
+    private string? _message, _error;
+    private bool _initialised;
+
+    private bool CanWrite => Workspace.CanWrite && Api is not null;
+
+    protected override void OnParametersSet()
+    {
+        if (_initialised) return;
+        _initialised = true;
+        _archivedView = ShowArchived;
+    }
+
+    private void Show(bool archived) { _archivedView = archived; _limit = 8; _deleting = null; _error = null; }
+
+    private static string? Application(TestPlanDraftSummary p) => p.ProjectName ?? p.ApplicationKey;
+
+    private async Task ArchiveAsync(TestPlanDraftSummary p) => await RunAsync(async api =>
+    {
+        var (done, error) = await api.ArchiveAsync(p.Id, new TestPlanLifecycleRequest(p.Revision));
+        return done is null ? P.Friendly(error, "Planen kunne ikke arkiveres.") : null;
+    }, $"«{p.PlanName}» er arkivert. Du finner den under Arkiverte.");
+
+    private async Task UnarchiveAsync(TestPlanDraftSummary p) => await RunAsync(async api =>
+    {
+        var (done, error) = await api.UnarchiveAsync(p.Id, new TestPlanLifecycleRequest(p.Revision));
+        return done is null ? P.Friendly(error, "Planen kunne ikke gjenopprettes.") : null;
+    }, $"«{p.PlanName}» er gjenopprettet.");
+
+    private async Task DeleteAsync(TestPlanDraftSummary p) => await RunAsync(async api =>
+    {
+        var error = await api.DeleteAsync(p.Id, new DeleteTestPlanRequest(p.Revision, _confirmName.Trim()));
+        if (error is null) _deleting = null;
+        return error is null ? null : P.Friendly(error, "Planen kunne ikke slettes.");
+    }, $"«{p.PlanName}» er slettet.");
+
+    private async Task RunAsync(Func<ITestPlanSuggestionsApiService, Task<string?>> action, string done)
+    {
+        if (Api is not { } api) return;
+        _busy = true; _error = null; _message = null;
+        try
+        {
+            var error = await action(api);
+            if (error is not null) { _error = error; return; }
+            _message = done;
+            await Changed.InvokeAsync();
+        }
+        finally { _busy = false; }
+    }
+}

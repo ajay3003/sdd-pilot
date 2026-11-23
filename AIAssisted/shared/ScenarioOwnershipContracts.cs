@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Text.Json.Serialization;
 
 namespace BirkNext.TestPlanning;
@@ -189,4 +190,48 @@ public static class ScenarioOwnership
     }
 
     private static string? Field(DiscoveredScenario c, string key) => c.Template.FirstOrDefault(t => t.Key == key)?.Value;
+}
+
+/// <summary>
+/// Relevance for manual testing of user stories and functional requirements (2026-11-23), alongside the candidate ownership rule above. A text is
+/// technical only when it is about the code base or its operation (renaming identifiers, refactoring, builds and test suites, telemetry or
+/// configuration names, infrastructure, governing documents) AND says nothing a person could observe (a user, a screen, a message, a status code,
+/// a rejection, access). Anything else — including technical-looking text that defines observable behaviour — counts as relevant: when uncertain,
+/// nothing is hidden. Presentation only: no item is removed from any record, trace, coverage or export.
+/// </summary>
+public static partial class ManualTestingRelevance
+{
+    [GeneratedRegex(@"\b(developers?|utviklere?|code ?base|source code|kildekode(?:n)?|identifiers?|identifikator(?:er|ene)?|refactor\w*|refaktor\w*|renam\w*|namespaces?|"
+        + @"unit tests?|enhetstest\w*|tests? pass\w*|test suite|build pipelines?|ci/cd|pipelines?|telemetry|telemetri|configuration names?|storage names?|logging|"
+        + @"infrastructure|infrastruktur|terraform|deployment|utrulling|governing documents?|styrende dokument\w*|adr[- ]?\d+|architecture decision|"
+        + @"domain term inventory|term inventory|norwegian knowledge|non-domain|(?:to|into|til) (?:english|engelsk)|linting|static analysis|code review|"
+        + @"provisioning health|monitors? (?:the )?(?:provisioning|health)|health checks?|metrics)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex TechnicalWords();
+
+    [GeneratedRegex(@"\b(users?|brukere?(?:n|ne)?|caseworkers?|saksbehandler\w*|citizens?|innbygger\w*|teachers?|lærer\w*|pupils?|students?|elev\w*|"
+        + @"sees?|ser|shown|displayed|vises|visning|screens?|skjerm\w*|pages?|sider?|forms?|skjema\w*|buttons?|knapp\w*|"
+        + @"error messages?|feilmelding\w*|notifications?|varsel|varsler|receives?|mottar|"
+        + @"rejects?\w*|avvis\w*|denied|nektes|access|tilgang\w*|log(?:s|ged)? in|logger inn|"
+        + @"[1-5]\d\d)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ObservableWords();
+
+    /// <summary>Why the text is technical (the matched words), or null when it is relevant for manual testing or uncertain.</summary>
+    public static string? TechnicalReason(params string?[] texts)
+    {
+        var text = string.Join(" ", texts.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => StoryNumbering().Replace(t!, "")));
+        if (text.Length == 0 || ObservableWords().IsMatch(text)) return null;
+        return TechnicalWords().Match(text) is { Success: true } m ? $"Gjelder kodebasen eller driften («{m.Value}»), ikke atferd en tester ser" : null;
+    }
+
+    public static bool IsTechnical(params string?[] texts) => TechnicalReason(texts) is not null;
+
+    // "User Story 2 - …", "Brukerhistorie 1 – …" and "(Priority: P1)" are the document's numbering, not its subject ("User" is not a person here).
+    [GeneratedRegex(@"^\s*(?:user\s+story|brukerhistorie)\s*\d*\s*[-–—:.]?\s*|\s*\((?:priority|prioritet)\s*:[^)]*\)\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex StoryNumbering();
+
+    /// <summary>A user story about the code base: its title (without the document's numbering) and description say so and describe nothing observable.</summary>
+    public static string? StoryReason(BirkNext.TestCoverage.CoverageUserStory? story) => story is null ? null : TechnicalReason(story.Title, story.Description);
+
+    /// <summary>A functional requirement about the code base (its id alone never decides).</summary>
+    public static string? RequirementReason(string? requirementText) => TechnicalReason(requirementText);
 }

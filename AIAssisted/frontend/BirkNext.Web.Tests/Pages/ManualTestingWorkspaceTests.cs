@@ -76,11 +76,11 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         M.Next(F(project: null)).Label.Should().Be("Velg applikasjon", "projects exist: one has to be chosen");
         M.Next(new M.Facts(null, null, [], null, null, AnyProjectImported: false)).Label.Should().Be("Importer en applikasjon", "nothing to choose from: import first");
         M.Steps(new M.Facts(null, null, [], null, null, AnyProjectImported: false)).Should().OnlyContain(s => s.DisabledReason == "Import a project first.");
-        M.Next(F()).Should().Match<M.NextAction>(n => n.Label == "Oppdag scenarioer" && n.Href == "test-plan-suggestions?area=choose&discover=now");
+        M.Next(F()).Should().Match<M.NextAction>(n => n.Label == "Oppdag scenarioer" && n.Href == "manual-testing/discover");
         M.Next(F(d: Discovery(4))).Should().Match<M.NextAction>(n => n.Label == "Velg scenarioer" && n.Href == "manual-testing/discover",
             "scenarios are chosen where they are browsed (scenario-first)");
         M.Next(F([Summary(clarify: 1)], Discovery(4))).Should().Match<M.NextAction>(n => n.Label == "Avklar testtilfeller" && n.Href.Contains($"draft={PlanId}"));
-        M.Next(F([Summary()], Discovery(4))).Should().Match<M.NextAction>(n => n.Label == "Eksporter til Azure DevOps" && n.Href == $"test-plan-suggestions?draft={PlanId}&area=export"
+        M.Next(F([Summary()], Discovery(4))).Should().Match<M.NextAction>(n => n.Label == "Eksporter til Azure DevOps" && n.Href == $"manual-testing/plan?draft={PlanId}&panel=export"
             && n.Why.Contains("Azure DevOps Test Plans, der manuelle tester kjøres"));
         M.Next(F([Summary(accepted: 0)], Discovery(4))).Label.Should().Be("Fortsett forberedelsen", "nothing approved: nothing to export yet");
     }
@@ -128,7 +128,7 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         cut.Find("[data-testid=twh-stage][data-stage=home]").GetAttribute("aria-current").Should().Be("page");
         cut.FindAll("[data-testid=twh-stage]").Select(a => a.GetAttribute("href")).Should().Equal("manual-testing", "manual-testing/discover", "manual-testing/plan");
         cut.Find("[data-testid=mt-next-action]").Should().Match<AngleSharp.Dom.IElement>(a => a.TextContent == "Eksporter til Azure DevOps"
-            && a.GetAttribute("href") == $"test-plan-suggestions?draft={PlanId}&area=export");
+            && a.GetAttribute("href") == $"manual-testing/plan?draft={PlanId}&panel=export");
         cut.FindAll("[data-testid=mt-stage]").Should().BeEmpty("the stages are navigated once, in the header (no duplicate workflow navigation)");
         cut.FindAll("[data-testid=twh-stage]").Should().HaveCount(3);
         cut.Find("[data-testid=mt-plan]").TextContent.Should().Contain("Library – test plan").And.Contain("2 testtilfeller").And.Contain("1 godkjent");
@@ -152,7 +152,7 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
     // ── Retired Execute & document links ─────────────────────────────────────────────────────────────────────
 
     [Theory]
-    [InlineData("manual-testing/execute?draft=44444444-4444-4444-4444-444444444444&case=tsc-borrow", "test-plan-suggestions?draft=44444444-4444-4444-4444-444444444444&area=prepare&case=tsc-borrow")]
+    [InlineData("manual-testing/execute?draft=44444444-4444-4444-4444-444444444444&case=tsc-borrow", "manual-testing/plan?draft=44444444-4444-4444-4444-444444444444&case=tsc-borrow")]
     [InlineData("manual-testing/execute?run=55555555-5555-5555-5555-555555555555", "manual-testing")]
     [InlineData("manual-testing/execute", "manual-testing")]
     public void An_old_Execute_and_document_link_lands_on_the_saved_case_or_on_Manual_Testing(string from, string to)

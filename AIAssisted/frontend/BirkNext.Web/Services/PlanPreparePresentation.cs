@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using BirkNext.TestCoverage;
 using BirkNext.TestPlanning;
 
@@ -65,19 +64,15 @@ public static partial class PlanPreparePresentation
 
     // ── Technical content ──────────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Words that make a user story or a requirement about the code base rather than behaviour a person observes (English and
-    /// Norwegian). Deliberately narrow: an ordinary business story is never matched by a single common word.</summary>
-    [GeneratedRegex(@"\b(developers?|utviklere?|code ?base|source code|kildekode(?:n)?|identifiers?|identifikatorer?|refactor\w*|rename\w*|namespaces?|"
-        + @"tests? pass|unit tests?|enhetstester?|build pipeline|ci/cd|telemetry names?|configuration names?|storage names?|logging names?|"
-        + @"governing documents?|styrende dokumenter|adr[- ]?\d+|domain term inventory|translate[ds]? (?:the )?(?:source|code|identifiers?|non-domain)|"
-        + @"(?:to|into) english|norwegian knowledge|norsk(?:kunnskap| kunnskap)|lint\w*|static analysis|code review)\b",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex TechnicalWords();
+    /// <summary>Technical for manual testing: the shared rule (<see cref="ManualTestingRelevance"/>) — about the code base or its operation and
+    /// nothing a person could observe. Uncertain text is never technical.</summary>
+    public static bool IsTechnicalText(string? text) => ManualTestingRelevance.IsTechnical(text);
 
-    public static bool IsTechnicalText(string? text) => !string.IsNullOrWhiteSpace(text) && TechnicalWords().IsMatch(text);
+    /// <summary>A user story about the code base (renaming identifiers, tests passing, documents agreed …).</summary>
+    public static bool IsTechnicalStory(CoverageUserStory? story) => ManualTestingRelevance.StoryReason(story) is not null;
 
-    /// <summary>A user story about the code base (renaming identifiers, tests passing, documents agreed …): its title or description says so.</summary>
-    public static bool IsTechnicalStory(CoverageUserStory? story) => story is not null && (IsTechnicalText(story.Title) || IsTechnicalText(story.Description));
+    /// <summary>A functional requirement about the code base, by its wording (null text = unknown = not technical).</summary>
+    public static bool IsTechnicalRequirement(string? text) => ManualTestingRelevance.RequirementReason(text) is not null;
 
     /// <summary>Why a case counts as technical (null = shown by default). Never hides what needs a person's decision.</summary>
     public static string? TechnicalReason(TestCaseDraft c)
@@ -162,6 +157,9 @@ public static partial class PlanPreparePresentation
     {
         public string Action { get; set; } = "";
         public string Expected { get; set; } = "";
+        /// <summary>The step in the translation language (shown when the case has a translation).</summary>
+        public string TranslatedAction { get; set; } = "";
+        public string TranslatedExpected { get; set; } = "";
         /// <summary>Stable key for rendering while steps move (never sent).</summary>
         public Guid Key { get; } = Guid.NewGuid();
     }
@@ -176,8 +174,33 @@ public static partial class PlanPreparePresentation
         public string ExpectedResult { get; set; } = "";
         public TestDataNeed TestDataNeed { get; set; }
         public List<StepRow> Steps { get; set; } = [];
+        /// <summary>Linked Test Data assets (immutable asset ids; values are never copied).</summary>
+        public List<string> TestDataAssetIds { get; set; } = [];
+        /// <summary>The Norwegian translation as the reviewer sees and edits it (null = the case has none).</summary>
+        public string? TranslatedTitle { get; set; }
+        public string TranslatedPreconditions { get; set; } = "";
+        public string TranslatedExpected { get; set; } = "";
+        public bool HasTranslation => TranslatedTitle is not null;
 
-        public static CaseForm From(TestCaseDraft c) => new()
+        public static CaseForm From(TestCaseDraft c)
+        {
+            var form = FromOriginal(c);
+            form.TestDataAssetIds = [.. c.TestData.Select(d => d.AssetId)];
+            if (c.Translation(ScenarioPlanning.Norwegian) is { } nb)
+            {
+                form.TranslatedTitle = nb.Title ?? "";
+                form.TranslatedPreconditions = nb.Preconditions ?? "";
+                form.TranslatedExpected = nb.ExpectedResult ?? "";
+                for (var i = 0; i < form.Steps.Count; i++)
+                {
+                    form.Steps[i].TranslatedAction = nb.Steps.ElementAtOrDefault(i) ?? "";
+                    form.Steps[i].TranslatedExpected = nb.StepExpected.ElementAtOrDefault(i) ?? "";
+                }
+            }
+            return form;
+        }
+
+        private static CaseForm FromOriginal(TestCaseDraft c) => new()
         {
             CaseId = IdOf(c),
             Title = c.EffectiveTitle,
@@ -187,6 +210,27 @@ public static partial class PlanPreparePresentation
             TestDataNeed = c.EffectiveTestDataNeed,
             Steps = [.. c.EffectiveSteps.Select((s, i) => new StepRow { Action = s, Expected = c.EffectiveStepExpected.ElementAtOrDefault(i) ?? "" })],
         };
+
+        /// <summary>The translation after this form, or the held one unchanged (same instance) when the reviewer changed nothing. The server
+        /// decides origin (machine to edited) and binds it to the original text; a translation is never created here from nothing.</summary>
+        public TestCaseTranslation? ToTranslation(TestCaseDraft saved)
+        {
+            var held = saved.Translation(ScenarioPlanning.Norwegian);
+            if (held is null || TranslatedTitle is null) return held;
+            var steps = Kept;
+            var next = held with
+            {
+                Title = Blank(TranslatedTitle), Preconditions = Blank(TranslatedPreconditions), ExpectedResult = Blank(TranslatedExpected),
+                Steps = [.. steps.Select(r => r.TranslatedAction.Trim())], StepExpected = [.. steps.Select(r => Blank(r.TranslatedExpected))],
+            };
+            return SameText(held, next) ? held : next;
+        }
+
+        private static string? Blank(string? text) => string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+
+        private static bool SameText(TestCaseTranslation a, TestCaseTranslation b) =>
+            (a.Title ?? "") == (b.Title ?? "") && (a.Preconditions ?? "") == (b.Preconditions ?? "") && (a.ExpectedResult ?? "") == (b.ExpectedResult ?? "")
+            && a.Steps.Select(x => x ?? "").SequenceEqual(b.Steps.Select(x => x ?? "")) && a.StepExpected.Select(x => x ?? "").SequenceEqual(b.StepExpected.Select(x => x ?? ""));
 
         public void AddStep() => Steps.Add(new StepRow());
 
@@ -233,14 +277,80 @@ public static partial class PlanPreparePresentation
                 || !string.Equals(Preconditions.Trim(), now.Preconditions.Trim(), StringComparison.Ordinal)
                 || !string.Equals(ExpectedResult.Trim(), now.ExpectedResult.Trim(), StringComparison.Ordinal)
                 || TestDataNeed != now.TestDataNeed
-                || !Kept.Select(s => (s.Action.Trim(), s.Expected.Trim())).SequenceEqual(now.Kept.Select(s => (s.Action.Trim(), s.Expected.Trim())));
+                || !TestDataAssetIds.Order(StringComparer.Ordinal).SequenceEqual(now.TestDataAssetIds.Order(StringComparer.Ordinal))
+                || !Kept.Select(s => (s.Action.Trim(), s.Expected.Trim())).SequenceEqual(now.Kept.Select(s => (s.Action.Trim(), s.Expected.Trim())))
+                || !ReferenceEquals(ToTranslation(saved), saved.Translation(ScenarioPlanning.Norwegian));
         }
     }
 
     /// <summary>The save request with one case's form applied (all other cases sent as stored).</summary>
     public static SaveTestPlanDraftRequest SaveWith(TestPlanDraft plan, CaseForm form)
     {
-        var changed = TestPlanSuggestionsPresentation.WithCase(plan, form.CaseId, c => c with { Edits = form.ToEdits(c) });
+        var changed = TestPlanSuggestionsPresentation.WithCase(plan, form.CaseId, c =>
+        {
+            var next = c with
+            {
+                Edits = form.ToEdits(c),
+                TestData = [.. form.TestDataAssetIds.Distinct(StringComparer.Ordinal).Select(id => c.TestData.FirstOrDefault(d => d.AssetId == id) ?? new TestCaseDataLink { AssetId = id, Alias = id })],
+            };
+            return form.ToTranslation(c) is { } t && !ReferenceEquals(t, c.Translation(ScenarioPlanning.Norwegian)) ? next.WithTranslation(ScenarioPlanning.Norwegian, t) : next;
+        });
         return TestPlanSuggestionsPresentation.ToSaveRequest(changed);
+    }
+}
+
+/// <summary>Plan-level labels for Planlegg og klargjør and the saved-plan list.</summary>
+public static partial class PlanPreparePresentation
+{
+    /// <summary>The translation's state in the tester's words, or null when the case has none.</summary>
+    public static (string Text, string Tone)? TranslationStatus(TestCaseDraft c)
+    {
+        if (c.Translation(ScenarioPlanning.Norwegian) is not { } nb) return null;
+        if (ScenarioPlanning.StateOf(c) == TranslationState.SourceChanged) return ("Oversatt fra en eldre tekst — gjennomgå", "warn");
+        return nb.Origin switch
+        {
+            TranslationOrigin.Machine => ("Maskinoversatt — ikke gjennomgått", "info"),
+            TranslationOrigin.MachineEdited => ("Maskinoversatt og redigert", "ok"),
+            _ => ("Skrevet av en person", "ok"),
+        };
+    }
+
+    /// <summary>A server message in the tester's words (stale saves and archived plans are the common ones).</summary>
+    public static string Friendly(string? error, string fallback) => error switch
+    {
+        null or "" => fallback,
+        var e when e.Contains("changed by someone else", StringComparison.OrdinalIgnoreCase) || e.Contains("is at revision", StringComparison.OrdinalIgnoreCase)
+            => "Planen er endret et annet sted siden du åpnet den. Endringene dine er ikke lagret; last siden på nytt og gjør dem igjen.",
+        var e => e,
+    };
+
+    public static string LifecycleLabel(TestPlanLifecycle state) => state switch { TestPlanLifecycle.Archived => "Arkivert", TestPlanLifecycle.Deleted => "Slettet", _ => "Aktiv" };
+}
+
+/// <summary>Plan facts and the expected-result basis (never "verified" unless a person decided it).</summary>
+public static partial class PlanPreparePresentation
+{
+    /// <summary>Distinct scenarios the plan's cases belong to (hand-written cases without a scenario are not counted).</summary>
+    public static int ScenarioCount(TestPlanDraft plan) =>
+        plan.Cases.Where(c => c.Review != TestCaseReviewState.Superseded).Select(c => c.ParentScenario).OfType<string>().Distinct(StringComparer.Ordinal).Count();
+
+    /// <summary>Why the expected result is what it is: the source that states it, and whether a person confirmed it.</summary>
+    public static string ExpectedBasisText(TestCaseDraft c)
+    {
+        if (c.ConflictResolution is { } resolved) return $"Avklart av {resolved.ResolvedBy} {resolved.ResolvedAt.ToLocalTime():yyyy-MM-dd}: {resolved.Rationale}";
+        if (c.HasUnresolvedConflict) return "Kildene er uenige — avklar konflikten.";
+        if (c.Edits.ExpectedResult is not null) return "Skrevet av testeren" + (c.Review == TestCaseReviewState.Accepted ? " og godkjent." : "; bekreftes når testtilfellet godkjennes.");
+        var confirmed = c.Review == TestCaseReviewState.Accepted ? " Bekreftet ved godkjenning." : " Bekreftes når testtilfellet godkjennes.";
+        return c.Generated.ExpectedBasis switch
+        {
+            ExpectedResultBasis.Specification => "Står i spesifikasjonen (akseptansekriterium eller krav)." + confirmed,
+            ExpectedResultBasis.Contract => "Dokumentert i API-kontrakten." + confirmed,
+            ExpectedResultBasis.ReviewedGuide => "Står i en gjennomgått systembeskrivelse (Systemforståelse)." + confirmed,
+            ExpectedResultBasis.UnreviewedGuide => "Fra en systembeskrivelse som ikke er gjennomgått — må bekreftes.",
+            ExpectedResultBasis.ReviewerClarified => "Avklart av en gjennomganger.",
+            ExpectedResultBasis.SourceDerived => "Foreslått fra kildekoden. Implementasjonen er ingen fasit — bekreft eller avklar.",
+            ExpectedResultBasis.NeedsClarification => "Kilden er uklar — trenger avklaring.",
+            _ => "Ikke oppgitt i kilden — skriv forventet resultat selv eller avklar.",
+        };
     }
 }
