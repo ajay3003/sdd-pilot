@@ -5,8 +5,10 @@
    in Planlegg og klargjør when it names one (draft and case kept), else on Manual Testing; the history entry is replaced, so Back does not loop. *@
 
 @code {
-    protected override void OnInitialized()
+    // After the first render: navigating while the router is still initialising the page can leave the address on the old link.
+    protected override void OnAfterRender(bool firstRender)
     {
+        if (!firstRender) return;
         var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query);
         var draft = query.TryGetValue("draft", out var d) ? d.ToString() : null;
         var target = Guid.TryParse(draft, out var id)

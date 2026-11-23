@@ -352,3 +352,5 @@
 .pi-app-summary { margin: 0.5rem 0; display: grid; gap: 0.5rem; }
 .pi-changes { display: flex; flex-wrap: wrap; gap: 0.3rem 1.2rem; }
 .pi-changes > div { display: grid; }
+.mtp-testdata select { max-width: 100%; min-width: 0; }
+.mtp-testdata select[data-testid=mtp-testdata-add] { flex: 1 1 12rem; width: 100%; }

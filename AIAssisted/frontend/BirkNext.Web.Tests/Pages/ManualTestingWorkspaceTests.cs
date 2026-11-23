@@ -160,8 +160,8 @@ public sealed class ManualTestingWorkspaceTests : BunitContext
         var navigation = Services.GetRequiredService<NavigationManager>();
         navigation.NavigateTo(from);
 
-        Render<ManualTestingExecuteRedirect>();
+        var cut = Render<ManualTestingExecuteRedirect>();
 
-        navigation.Uri.Should().Be(navigation.BaseUri + to);
+        cut.WaitForAssertion(() => navigation.Uri.Should().Be(navigation.BaseUri + to));
     }
 }

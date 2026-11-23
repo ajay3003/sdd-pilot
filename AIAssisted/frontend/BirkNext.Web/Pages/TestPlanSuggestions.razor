@@ -218,9 +218,10 @@
     protected override async Task OnInitializedAsync()
     {
         // One primary workflow (2026-11-23): an ordinary link (bookmarks, Test Coverage / Traceability drill-downs) opens Planlegg og klargjør.
+        // The navigation happens after the first render: navigating while the router is still initialising this page left the address on the old link.
         if (BirkNext.Web.Services.ManualTestingPresentation.CanonicalRoute(GuideQuery, DraftQuery, AreaQuery, CaseQuery, AdvancedQuery, ScenariosQuery, ViewQuery) is { } canonical)
         {
-            (ServiceProvider.GetService(typeof(NavigationManager)) as NavigationManager)?.NavigateTo(canonical, replace: true);
+            _redirectTo = canonical;
             _loading = false;
             return;
         }
@@ -426,8 +427,17 @@
 
     private Task OnStepAction(string id) { GoArea(id); _revealArea = true; return Task.CompletedTask; }
 
+    /// <summary>The canonical page an ordinary link is sent to (null = this page is used as the advanced tools).</summary>
+    private string? _redirectTo;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_redirectTo is { } target)
+        {
+            _redirectTo = null;
+            (ServiceProvider.GetService(typeof(NavigationManager)) as NavigationManager)?.NavigateTo(target, replace: true);
+            return;
+        }
         await KeepSelectionAsync();
         if (_focusNewStep is { } focus)
         {

@@ -8,6 +8,7 @@ using BirkNext.Web.Services.ProjectImport;
 using Bunit;
 using FluentAssertions;
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using S = BirkNext.Web.Services.ScenarioBrowserPresentation;
 
@@ -220,5 +221,24 @@ public sealed class ManualTestingHardeningTests : BunitContext
         S.RelevanceOf(conflicting, ScenarioOwnership.Of(conflicting)).Should().Be(S.Relevance.Manual, "contradicting sources need a person");
         var business = plain with { CandidateId = "c3", Story = story with { Title = "User Story 1 – User Activated When Assigned to M2LB in Entra (Priority: P1)" }, Title = "User is activated" };
         S.RelevanceOf(business, ScenarioOwnership.Of(business)).Should().Be(S.Relevance.Manual);
+    }
+}
+
+/// <summary>Old Test Plan Suggestions links land on the canonical pages (the page itself redirects before loading anything).</summary>
+public sealed class LegacyPlanLinkRedirectTests : BunitContext
+{
+    [Theory]
+    [InlineData("test-plan-suggestions?area=prepare", "manual-testing/plan")]
+    [InlineData("test-plan-suggestions", "manual-testing/plan")]
+    [InlineData("test-plan-suggestions?area=choose", "manual-testing/discover")]
+    [InlineData("test-plan-suggestions?draft=44444444-4444-4444-4444-444444444444&area=export", "manual-testing/plan?draft=44444444-4444-4444-4444-444444444444&panel=export")]
+    public void An_ordinary_link_is_redirected(string from, string to)
+    {
+        Services.AddSingleton(new Mock<ITestPlanSuggestionsApiService>().Object);
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        var nav = Services.GetRequiredService<NavigationManager>();
+        nav.NavigateTo(from);
+        var cut = Render<BirkNext.Web.Pages.TestPlanSuggestions>();
+        cut.WaitForAssertion(() => nav.Uri.Should().Be(nav.BaseUri + to));
     }
 }
