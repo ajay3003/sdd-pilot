@@ -252,7 +252,21 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
             Pairs.Add((source, target));
             if (fail) throw new TestCaseTranslationException("The fake service is down. Nothing was changed.");
             var prefix = target.ToUpperInvariant() + ": ";
-            return Task.FromResult(new TranslatedTexts([.. texts.Select(t => t is null ? null : losePlaceholders ? prefix + System.Text.RegularExpressions.Regex.Replace(t, "⟦\\d+⟧", "") : prefix + t)], "Fake"));
+            string TranslateMarkers(string text)
+            {
+                var markers = target.ToLowerInvariant() switch
+                {
+                    "nb" or "no" or "nn" => new[] { ("not", "ikke"), ("when", "når"), ("if", "hvis"), ("without", "uten") },
+                    "sv" => new[] { ("not", "inte"), ("when", "när"), ("if", "om"), ("without", "utan") },
+                    _ => Array.Empty<(string, string)>(),
+                };
+                foreach (var (from, to) in markers)
+                    text = System.Text.RegularExpressions.Regex.Replace(text, $@"\b{from}\b", to, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                return text;
+            }
+            return Task.FromResult(new TranslatedTexts([.. texts.Select(t => t is null ? null : losePlaceholders
+                ? prefix + System.Text.RegularExpressions.Regex.Replace(TranslateMarkers(t), "⟦\\d+⟧", "")
+                : prefix + TranslateMarkers(t))], "Fake"));
         }
     }
 
@@ -285,7 +299,10 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
     {
         await using var db = Context();
         var (service, plan, s42, _) = await PlanAsync(db);
-        plan = (await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(), Settings, "anna", default)).Draft!;
+        var translation = await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), new FakeTranslator(), Settings, "anna", default);
+        translation.Draft.Should().NotBeNull(translation.Message);
+        translation.Failed.Should().BeEmpty(translation.Message);
+        plan = translation.Draft!;
 
         // A person edits the Norwegian title: Machine → MachineEdited, recorded with who.
         plan = await service.SaveAsync(plan.Id, Human(plan, (c, part) => c.Source.ScenarioId == s42 ? part with { Translations = new() { ["nb"] = c.Translation("nb")! with { Title = "Barn over opplæringspliktig alder" } } } : part), "inger", default);
@@ -316,7 +333,9 @@ public sealed class ScenarioCentricPlanningServiceTests : IAsyncLifetime, IDispo
         var (service, plan, s42, _) = await PlanAsync(db);
         var translator = new FakeTranslator();
         var settings = Settings with { TargetLanguages = ["nb", "sv"] };
-        plan = (await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), translator, settings, "anna", default)).Draft!;
+        var norwegian = await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42), translator, settings, "anna", default);
+        norwegian.Draft.Should().NotBeNull(norwegian.Message);
+        plan = norwegian.Draft!;
         var sv = await service.TranslateScenarioAsync(plan.Id, new TranslateScenarioRequest(plan.Revision, s42, Target: "sv"), translator, settings, "anna", default);
 
         translator.Pairs.Should().Equal(("en", "nb"), ("en", "sv"));
